@@ -31,14 +31,10 @@ public:
 
     struct partition_reallocation {
         explicit partition_reallocation(
-          model::ntp ntp, uint16_t replication_factor)
-          : ntp(std::move(ntp))
-          , constraints(
-              partition_constraints(ntp.tp.partition, replication_factor)) {}
+          model::partition_id p_id, uint16_t replication_factor)
+          : constraints(partition_constraints(p_id, replication_factor)) {}
 
-        explicit partition_reallocation(model::ntp ntp)
-          : ntp(std::move(ntp)) {}
-
+        partition_reallocation() = default;
         void set_new_replicas(allocation_units units) {
             allocation_units = std::move(units);
             new_replica_set
@@ -47,7 +43,6 @@ public:
 
         void release_assignment_units() { allocation_units.reset(); }
 
-        model::ntp ntp;
         std::optional<partition_constraints> constraints;
         absl::node_hash_set<model::node_id> replicas_to_remove;
         std::optional<allocation_units> allocation_units;
@@ -70,16 +65,51 @@ public:
         // optional node update, if present the update comes from
         // members_manager, otherwise it is on demand update
         std::optional<members_manager::node_update> update;
-
-        std::vector<partition_reallocation> partition_reallocations;
+        // it is ok to use a flat hash map here as it it will be limited in
+        // size by the max concurrent reallocations batch size
+        absl::flat_hash_map<model::ntp, partition_reallocation>
+          partition_reallocations;
         bool finished = false;
         // unevenness error is normalized to be at most 1.0, set to max
         absl::flat_hash_map<partition_allocation_domain, double>
           last_unevenness_error;
-        absl::flat_hash_map<partition_allocation_domain, size_t> last_ntp_index;
         // revision of a related decommission command, present only in
         // recommission update_meta
         std::optional<model::revision_id> decommission_update_revision;
+    };
+
+    struct reallocation_strategy {
+        reallocation_strategy() = default;
+        reallocation_strategy(const reallocation_strategy&) = default;
+        reallocation_strategy(reallocation_strategy&&) = default;
+        reallocation_strategy& operator=(const reallocation_strategy&)
+          = default;
+        reallocation_strategy& operator=(reallocation_strategy&&) = default;
+        virtual ~reallocation_strategy() = default;
+        virtual void reallocations_for_even_partition_count(
+          size_t batch_size,
+          partition_allocator&,
+          topic_table&,
+          update_meta&,
+          partition_allocation_domain)
+          = 0;
+    };
+
+    class default_reallocation_strategy : public reallocation_strategy {
+        void reallocations_for_even_partition_count(
+          size_t batch_size,
+          partition_allocator&,
+          topic_table&,
+          update_meta&,
+          partition_allocation_domain) final;
+
+    private:
+        void calculate_reallocations_batch(
+          size_t batch_size,
+          partition_allocator&,
+          topic_table&,
+          update_meta&,
+          partition_allocation_domain);
     };
 
     members_backend(
@@ -99,20 +129,11 @@ public:
     ss::future<std::error_code> request_rebalance();
 
 private:
-    struct node_replicas {
-        size_t allocated_replicas;
-        size_t max_capacity;
-    };
-    struct unevenness_error_info {
-        double e;
-        double e_step;
-    };
-    using node_replicas_map_t
-      = absl::node_hash_map<model::node_id, members_backend::node_replicas>;
     void start_reconciliation_loop();
     ss::future<> reconciliation_loop();
     ss::future<std::error_code> reconcile();
-    ss::future<> reallocate_replica_set(partition_reallocation&);
+    ss::future<>
+    reconcile_reallocation_state(const model::ntp&, partition_reallocation&);
 
     ss::future<> try_to_finish_update(update_meta&);
     ss::future<> calculate_reallocations(update_meta&);
@@ -124,24 +145,17 @@ private:
     void stop_node_decommissioning(model::node_id);
     void stop_node_addition_and_ondemand_rebalance(model::node_id id);
     void handle_reallocation_finished(model::node_id);
-    void reassign_replicas(partition_assignment&, partition_reallocation&);
-    void
-    calculate_reallocations_batch(update_meta&, partition_allocation_domain);
     void reallocations_for_even_partition_count(
       update_meta&, partition_allocation_domain);
+
     ss::future<> calculate_reallocations_after_decommissioned(update_meta&);
     ss::future<> calculate_reallocations_after_recommissioned(update_meta&);
     std::vector<model::ntp> ntps_moving_from_node_older_than(
       model::node_id, model::revision_id) const;
     void setup_metrics();
-    absl::node_hash_map<model::node_id, node_replicas>
-      calculate_replicas_per_node(partition_allocation_domain) const;
 
-    unevenness_error_info calculate_unevenness_error(
-      const update_meta&, partition_allocation_domain) const;
     bool should_stop_rebalancing_update(const update_meta&) const;
 
-    static size_t calculate_total_replicas(const node_replicas_map_t&);
     ss::sharded<topics_frontend>& _topics_frontend;
     ss::sharded<topic_table>& _topics;
     ss::sharded<partition_allocator>& _allocator;
@@ -149,6 +163,7 @@ private:
     ss::sharded<controller_api>& _api;
     ss::sharded<members_manager>& _members_manager;
     ss::sharded<members_frontend>& _members_frontend;
+    std::unique_ptr<reallocation_strategy> _reallocation_strategy;
     consensus_ptr _raft0;
     ss::sharded<ss::abort_source>& _as;
     ss::gate _bg;
