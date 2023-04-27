@@ -1654,54 +1654,39 @@ struct create_partitions_configuration
     operator<<(std::ostream&, const create_partitions_configuration&);
 };
 
-struct topic_configuration_assignment
+template<typename T>
+struct configuration_with_assignment
   : serde::envelope<
-      topic_configuration_assignment,
+      configuration_with_assignment<T>,
       serde::version<0>,
       serde::compat_version<0>> {
-    topic_configuration_assignment() = default;
+    configuration_with_assignment() = default;
 
-    topic_configuration_assignment(
-      topic_configuration cfg, std::vector<partition_assignment> pas)
-      : cfg(std::move(cfg))
+    configuration_with_assignment(
+      T value, std::vector<partition_assignment> pas)
+      : cfg(std::move(value))
       , assignments(std::move(pas)) {}
 
-    topic_configuration cfg;
+    T cfg;
     std::vector<partition_assignment> assignments;
 
     auto serde_fields() { return std::tie(cfg, assignments); }
 
     friend bool operator==(
-      const topic_configuration_assignment&,
-      const topic_configuration_assignment&)
+      const configuration_with_assignment<T>&,
+      const configuration_with_assignment<T>&)
       = default;
+
+    template<typename V>
+    friend std::ostream&
+    operator<<(std::ostream&, const configuration_with_assignment<V>&);
 };
 
-struct create_partitions_configuration_assignment
-  : serde::envelope<
-      create_partitions_configuration_assignment,
-      serde::version<0>,
-      serde::compat_version<0>> {
-    create_partitions_configuration_assignment() = default;
-    create_partitions_configuration_assignment(
-      create_partitions_configuration cfg,
-      std::vector<partition_assignment> pas)
-      : cfg(std::move(cfg))
-      , assignments(std::move(pas)) {}
+using create_partitions_configuration_assignment
+  = configuration_with_assignment<create_partitions_configuration>;
 
-    create_partitions_configuration cfg;
-    std::vector<partition_assignment> assignments;
-
-    auto serde_fields() { return std::tie(cfg, assignments); }
-
-    friend std::ostream& operator<<(
-      std::ostream&, const create_partitions_configuration_assignment&);
-
-    friend bool operator==(
-      const create_partitions_configuration_assignment&,
-      const create_partitions_configuration_assignment&)
-      = default;
-};
+using topic_configuration_assignment
+  = configuration_with_assignment<topic_configuration>;
 
 struct topic_result
   : serde::envelope<topic_result, serde::version<0>, serde::compat_version<0>> {
@@ -3383,6 +3368,16 @@ constexpr auto common = partition_allocation_domain(0);
 constexpr auto consumer_offsets = partition_allocation_domain(-1);
 } // namespace partition_allocation_domains
 
+template<typename V>
+std::ostream& operator<<(
+  std::ostream& o, const configuration_with_assignment<V>& with_assignment) {
+    fmt::print(
+      o,
+      "{{configuration: {}, assignments: {}}}",
+      with_assignment.cfg,
+      with_assignment.assignments);
+    return o;
+}
 } // namespace cluster
 namespace std {
 template<>
@@ -3475,10 +3470,22 @@ struct adl<cluster::create_topics_reply> {
     cluster::create_topics_reply from(iobuf);
     cluster::create_topics_reply from(iobuf_parser&);
 };
-template<>
-struct adl<cluster::topic_configuration_assignment> {
-    void to(iobuf&, cluster::topic_configuration_assignment&&);
-    cluster::topic_configuration_assignment from(iobuf_parser&);
+template<typename T>
+struct adl<cluster::configuration_with_assignment<T>> {
+    void
+    to(iobuf& b, cluster::configuration_with_assignment<T>&& with_assignment) {
+        reflection::serialize(
+          b,
+          std::move(with_assignment.cfg),
+          std::move(with_assignment.assignments));
+    }
+
+    cluster::configuration_with_assignment<T> from(iobuf_parser& in) {
+        auto cfg = adl<T>{}.from(in);
+        auto assignments
+          = adl<std::vector<cluster::partition_assignment>>{}.from(in);
+        return {std::move(cfg), std::move(assignments)};
+    }
 };
 
 template<>
@@ -3520,12 +3527,6 @@ template<>
 struct adl<cluster::create_partitions_configuration> {
     void to(iobuf&, cluster::create_partitions_configuration&&);
     cluster::create_partitions_configuration from(iobuf_parser&);
-};
-
-template<>
-struct adl<cluster::create_partitions_configuration_assignment> {
-    void to(iobuf&, cluster::create_partitions_configuration_assignment&&);
-    cluster::create_partitions_configuration_assignment from(iobuf_parser&);
 };
 
 template<>
