@@ -468,7 +468,7 @@ void segment_matcher<Fixture>::verify_manifest(
         auto size = s->size_bytes();
         auto comp = s->finished_self_compaction();
         auto m = man.get(sname);
-        BOOST_REQUIRE(m != nullptr); // NOLINT
+        BOOST_REQUIRE(m.has_value());
         BOOST_REQUIRE_EQUAL(base, m->base_offset);
         BOOST_REQUIRE_EQUAL(comm, m->committed_offset);
         BOOST_REQUIRE_EQUAL(size, m->size_bytes);

@@ -79,7 +79,6 @@ FIXTURE_TEST(
     auto conf = get_configuration();
     auto bucket = cloud_storage_clients::bucket_name("bucket");
     partition_manifest m(manifest_ntp, manifest_revision);
-    auto key = model::offset(1);
     model::initial_revision_id segment_ntp_revision{777};
     iobuf segment_bytes = generate_segment(model::offset(1), 20);
     uint64_t clen = segment_bytes.size_bytes();
@@ -107,9 +106,10 @@ FIXTURE_TEST(
                        bucket, path, clen, reset_stream, fib, always_continue)
                      .get();
     BOOST_REQUIRE(upl_res == upload_result::success);
-    m.add(key, meta);
+    m.add(meta);
 
-    remote_segment segment(api.local(), cache.local(), bucket, m, key, fib);
+    remote_segment segment(
+      api.local(), cache.local(), bucket, m, meta.base_offset, fib);
     auto reader_handle
       = segment.data_stream(0, ss::default_priority_class()).get();
 
@@ -162,7 +162,6 @@ FIXTURE_TEST(
     auto conf = get_configuration();
     auto bucket = cloud_storage_clients::bucket_name("bucket");
     partition_manifest m(manifest_ntp, manifest_revision);
-    auto key = model::offset(1);
     iobuf segment_bytes = generate_segment(model::offset(1), 100);
     partition_manifest::segment_meta meta{
       .is_compacted = false,
@@ -182,12 +181,12 @@ FIXTURE_TEST(
                        bucket, path, clen, reset_stream, fib, always_continue)
                      .get();
     BOOST_REQUIRE(upl_res == upload_result::success);
-    m.add(key, meta);
+    m.add(meta);
 
     storage::log_reader_config reader_config(
       model::offset(1), model::offset(1), ss::default_priority_class());
     auto segment = ss::make_lw_shared<remote_segment>(
-      api.local(), cache.local(), bucket, m, key, fib);
+      api.local(), cache.local(), bucket, m, meta.base_offset, fib);
     partition_probe probe(manifest_ntp);
     remote_segment_batch_reader reader(
       segment, reader_config, probe, ssx::semaphore_units());
@@ -247,7 +246,6 @@ void test_remote_segment_batch_reader(
     auto bucket = cloud_storage_clients::bucket_name("bucket");
 
     partition_manifest m(manifest_ntp, manifest_revision);
-    auto key = model::offset(1);
     uint64_t clen = segment_bytes.size_bytes();
     partition_manifest::segment_meta meta{
       .is_compacted = false,
@@ -266,7 +264,7 @@ void test_remote_segment_batch_reader(
                        bucket, path, clen, reset_stream, fib, always_continue)
                      .get();
     BOOST_REQUIRE(upl_res == upload_result::success);
-    m.add(key, meta);
+    m.add(meta);
 
     // pick offsets for fetch request
     model::offset begin = headers.at(ix_begin).base_offset;
@@ -276,7 +274,12 @@ void test_remote_segment_batch_reader(
       begin, end, ss::default_priority_class());
     reader_config.max_bytes = std::numeric_limits<size_t>::max();
     auto segment = ss::make_lw_shared<remote_segment>(
-      fixture.api.local(), fixture.cache.local(), bucket, m, key, fib);
+      fixture.api.local(),
+      fixture.cache.local(),
+      bucket,
+      m,
+      meta.base_offset,
+      fib);
     partition_probe probe(manifest_ntp);
     remote_segment_batch_reader reader(
       segment, reader_config, probe, ssx::semaphore_units());
@@ -357,7 +360,6 @@ FIXTURE_TEST(
     auto bucket = cloud_storage_clients::bucket_name("bucket");
 
     partition_manifest m(manifest_ntp, manifest_revision);
-    auto key = model::offset(1);
     uint64_t clen = segment_bytes.size_bytes();
     partition_manifest::segment_meta meta{
       .is_compacted = false,
@@ -376,10 +378,10 @@ FIXTURE_TEST(
                        bucket, path, clen, reset_stream, fib, always_continue)
                      .get();
     BOOST_REQUIRE(upl_res == upload_result::success);
-    m.add(key, meta);
+    m.add(meta);
 
     auto segment = ss::make_lw_shared<remote_segment>(
-      api.local(), cache.local(), bucket, m, key, fib);
+      api.local(), cache.local(), bucket, m, meta.base_offset, fib);
 
     partition_probe probe(manifest_ntp);
     remote_segment_batch_reader reader(

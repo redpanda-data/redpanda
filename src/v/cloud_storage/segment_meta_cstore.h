@@ -38,7 +38,7 @@ class segment_meta_frame_const_iterator
     using self_t = segment_meta_frame_const_iterator<value_t, decoder_t>;
 
 public:
-    /// Create iterator that points to the begining
+    /// Create iterator that points to the beginning
     explicit segment_meta_frame_const_iterator(
       decoder_t decoder,
       const std::array<value_t, buffer_depth>& head,
@@ -371,11 +371,14 @@ private:
     }
 
     const value_t& dereference() const {
-        vassert(_inner_end != _inner_it, "Can't dereference iterator");
+        vassert(!is_end(), "Can't dereference iterator");
         return *_inner_it;
     }
 
     void increment() {
+#ifndef NDEBUG
+        vassert(!is_end(), "can't increment iterator");
+#endif
         ++_ix_column;
         ++_inner_it;
         if (_inner_it == _inner_end) {
@@ -386,16 +389,9 @@ private:
     }
 
     bool equal(const auto& other) const {
-        // Invariant: _inner_it is never equal to _inner_end
-        // unless the iterator points to the end.
-        bool end_this = _inner_end == _inner_it;
-        bool end_other = other._inner_end == other._inner_it;
-        if (end_this && end_other) {
-            // All 'end' iterators are equal
-            return true;
-        }
-        return _outer_it == other._outer_it && _inner_it == other._inner_it;
-        return true;
+        ssize_t idx = is_end() ? -1 : index();
+        ssize_t oth_idx = other.is_end() ? -1 : other.index();
+        return idx == oth_idx;
     }
 
 public:
@@ -438,7 +434,13 @@ public:
       : _outer_it(_snapshot.end()) {}
 
     // Current index
-    uint32_t index() const { return _ix_column; }
+    size_t index() const { return _ix_column; }
+
+    bool is_end() const {
+        // Invariant: _inner_it is never equal to _inner_end
+        // unless the iterator points to the end.
+        return _inner_it == _inner_end;
+    }
 
 private:
     iter_list_t _snapshot;
@@ -449,7 +451,7 @@ private:
     // because all 'end' iterators are equal.
     frame_iter_t _inner_end{};
     // Current position inside the column
-    uint32_t _ix_column{0};
+    size_t _ix_column{0};
 };
 
 /// Column that represents a single field
@@ -843,14 +845,19 @@ public:
     segment_meta_materializing_iterator&
     operator=(const segment_meta_materializing_iterator&)
       = delete;
-    segment_meta_materializing_iterator(segment_meta_materializing_iterator&&)
-      = default;
+    segment_meta_materializing_iterator(segment_meta_materializing_iterator&&);
     segment_meta_materializing_iterator&
-    operator=(segment_meta_materializing_iterator&&)
-      = default;
+    operator=(segment_meta_materializing_iterator&&);
     explicit segment_meta_materializing_iterator(std::unique_ptr<impl>);
 
     ~segment_meta_materializing_iterator();
+
+    /**
+     * @return the index into the segment_meta_cstore for this iterator
+     */
+    size_t index() const;
+
+    bool is_end() const;
 
 private:
     friend class boost::iterator_core_access;
@@ -874,8 +881,11 @@ public:
     using const_iterator = segment_meta_materializing_iterator;
 
     segment_meta_cstore();
+    segment_meta_cstore(segment_meta_cstore&&) noexcept;
+    segment_meta_cstore& operator=(segment_meta_cstore&&) noexcept;
     ~segment_meta_cstore();
 
+    bool operator==(segment_meta_cstore const& oth) const;
     /// Return iterator
     const_iterator begin() const;
     const_iterator end() const;
@@ -899,6 +909,7 @@ public:
     const_iterator upper_bound(model::offset) const;
     const_iterator lower_bound(model::offset) const;
     const_iterator at_index(size_t ix) const;
+    const_iterator prev(const_iterator const& it) const;
 
     void insert(const segment_meta&);
 

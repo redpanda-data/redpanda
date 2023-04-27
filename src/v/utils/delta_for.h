@@ -85,13 +85,13 @@ struct delta_delta {
         for (uint32_t i = 0; i < row_width; ++i) {
             vassert(
               row[i] >= p,
-              "Value {} can't be larger than the previous one {}",
+              "Value {} can't be smaller than the previous one {}",
               row[i],
               p);
             auto delta = row[i] - p;
             vassert(
               delta >= _step_size,
-              "Delta {} can't be larger than step size {}",
+              "Delta {} can't be smaller than step size {}",
               delta,
               _step_size);
             buf[i] = (row[i] - p) - _step_size;

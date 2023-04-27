@@ -10,12 +10,12 @@
 
 #pragma once
 
-#include "absl/container/btree_map.h"
 #include "cloud_storage/base_manifest.h"
 #include "cloud_storage/types.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/timestamp.h"
+#include "segment_meta_cstore.h"
 #include "serde/serde.h"
 #include "utils/tracking_allocator.h"
 
@@ -105,10 +105,9 @@ public:
     /// Segment key in the maifest
     using key = model::offset;
     using value = segment_meta;
-    using segment_map = util::mem_tracked::map_t<absl::btree_map, key, value>;
+    using segment_map = segment_meta_cstore;
     using replaced_segments_list = std::vector<lw_segment_meta>;
     using const_iterator = segment_map::const_iterator;
-    using const_reverse_iterator = segment_map::const_reverse_iterator;
 
     /// Generate segment name to use in the cloud
     static segment_name generate_remote_segment_name(const value& val);
@@ -147,8 +146,7 @@ public:
       : _ntp(std::move(ntp))
       , _rev(rev)
       , _mem_tracker(std::move(manifest_mem_tracker))
-      , _segments(
-          util::mem_tracked::map<absl::btree_map, key, value>(_mem_tracker))
+      , _segments()
       , _last_offset(lo)
       , _start_offset(so)
       , _last_uploaded_compacted_offset(lco)
@@ -173,7 +171,7 @@ public:
               "can't parse name of the segment in the manifest '{}'",
               nm.name);
             nm.meta.segment_term = maybe_key->term;
-            _segments.insert(std::make_pair(nm.meta.base_offset, nm.meta));
+            _segments.insert(nm.meta);
 
             if (
               nm.meta.base_offset >= _start_offset
@@ -220,8 +218,7 @@ public:
     model::initial_revision_id get_revision_id() const;
 
     /// Find the earliest segment that has max timestamp >= t
-    std::optional<std::reference_wrapper<const segment_meta>>
-    timequery(model::timestamp t) const;
+    std::optional<segment_meta> timequery(model::timestamp t) const;
 
     remote_segment_path generate_segment_path(const segment_meta&) const;
     remote_segment_path generate_segment_path(const lw_segment_meta&) const;
@@ -252,7 +249,7 @@ public:
     bool contains(const segment_name& name) const;
 
     /// Add new segment to the manifest
-    bool add(const key& key, const segment_meta& meta);
+    bool add(segment_meta meta);
     bool add(const segment_name& name, const segment_meta& meta);
 
     /// \brief Truncate the manifest (remove entries from the manifest)
@@ -283,13 +280,11 @@ public:
     bool advance_start_kafka_offset(kafka::offset start_offset);
 
     /// Get segment if available or nullopt
-    const segment_meta* get(const key& key) const;
-    const segment_meta* get(const segment_name& name) const;
+    std::optional<segment_meta> get(const key& key) const;
+    std::optional<segment_meta> get(const segment_name& name) const;
+
     /// Find element of the manifest by offset
     const_iterator find(model::offset o) const;
-
-    /// Get insert iterator for segments set
-    std::insert_iterator<segment_map> get_insert_iterator();
 
     /// Update manifest file from input_stream (remote set)
     ss::future<> update(ss::input_stream<char> is) override;
@@ -378,12 +373,12 @@ private:
     /// from manifest.json file
     void update(partition_manifest_handler&& handler);
 
-    /// Move segments from _segments to _replaced
-    /// Returns the total size in bytes of the replaced segments
-    size_t move_aligned_offset_range(
-      model::offset begin_inclusive,
-      model::offset end_inclusive,
-      const segment_meta& replacing_segment);
+    /// Copy segments from _segments to _replaced
+    /// Returns the total size in bytes of the replaced segments, or nullopt if
+    /// the manifest contains already a segment that has the same remote path as
+    /// replacing segment.
+    std::optional<size_t>
+    move_aligned_offset_range(const segment_meta& replacing_segment);
 
     friend class serialization_cursor_data_source;
 

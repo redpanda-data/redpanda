@@ -49,7 +49,7 @@ static constexpr size_t short_test_size = 10000;
 static constexpr size_t long_test_size = 100000;
 #else
 static constexpr size_t short_test_size = 1500;
-static constexpr size_t long_test_size = 3000;
+static constexpr size_t long_test_size = 10'000;
 #endif
 
 template<class column_t>
@@ -734,6 +734,64 @@ BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_full_upper_bound) {
     }
 }
 
+BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_iterators) {
+    segment_meta_cstore store;
+
+    static auto constexpr segs = std::array{
+      segment_meta{
+        .is_compacted = false,
+        .size_bytes = 1024,
+        .base_offset = model::offset{10},
+        .committed_offset = model::offset{19},
+      },
+      segment_meta{
+        .is_compacted = false,
+        .size_bytes = 2048,
+        .base_offset = model::offset{20},
+        .committed_offset = model::offset{29},
+      },
+      segment_meta{
+        .is_compacted = false,
+        .size_bytes = 4096,
+        .base_offset = model::offset{30},
+        .committed_offset = model::offset{39},
+      },
+      segment_meta{
+        .is_compacted = false,
+        .size_bytes = 4096,
+        .base_offset = model::offset{50},
+        .committed_offset = model::offset{59},
+      },
+    };
+    for (auto meta : segs) {
+        store.insert(meta);
+    }
+
+    BOOST_CHECK_EQUAL(store.size(), segs.size());
+
+    BOOST_CHECK(store.begin() == store.begin());
+    BOOST_CHECK(store.end() == store.end());
+    BOOST_CHECK(store.begin() == store.at_index(0));
+    BOOST_CHECK(++store.begin() == store.at_index(1));
+    BOOST_CHECK(store.end() == ++store.at_index(segs.size() - 1));
+    BOOST_CHECK(store.upper_bound(segs.back().base_offset) == store.end());
+    BOOST_CHECK(++store.begin() == store.upper_bound(segs.front().base_offset));
+    static_assert(segs[0].base_offset() > 0);
+    BOOST_REQUIRE(
+      store.upper_bound(segs.front().base_offset - model::offset{1})
+      == store.begin());
+    if constexpr (requires(segment_meta_cstore store) {
+                      store.begin().index();
+                  }) {
+        // this if constexpr is to quickly share this test between branches TODO
+        // remove later
+        BOOST_CHECK_EQUAL(store.at_index(0).index(), store.begin().index());
+        BOOST_CHECK(store.end().is_end());
+        BOOST_CHECK_EQUAL(
+          store.at_index(segs.size() - 1).index(), segs.size() - 1);
+    }
+}
+
 BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_full_contains) {
     segment_meta_cstore store;
     auto manifest = generate_metadata(short_test_size);
@@ -829,6 +887,89 @@ BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_serde_roundtrip) {
     for (; store_it != store_end; ++store_it, ++manifest_it) {
         BOOST_REQUIRE_EQUAL(*store_it, *manifest_it);
     }
+}
+
+BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_insert_single_replacement) {
+    // only base/committed offset are interesting for this test
+    constexpr static auto base_segment = segment_meta{
+      .is_compacted = false,
+      .size_bytes = 812,
+      .base_offset = model::offset(10),
+      .committed_offset = model::offset(20),
+      .base_timestamp = model::timestamp(1646430092103),
+      .max_timestamp = model::timestamp(1646430092103),
+      .delta_offset = model::offset_delta(0),
+      .archiver_term = model::term_id(2),
+      .segment_term = model::term_id(0),
+      .delta_offset_end = model::offset_delta(0),
+      .sname_format = segment_name_format::v3,
+      .metadata_size_hint = 0,
+    };
+    // this replacement spans more range and comes before base_segment
+    constexpr static auto replacement_segment = [] {
+        auto cpy = base_segment;
+        cpy.base_offset = model::offset{0};
+        return cpy;
+    }();
+    static_assert(
+      replacement_segment.base_offset < base_segment.base_offset
+      && replacement_segment.committed_offset == base_segment.committed_offset);
+
+    segment_meta_cstore store{};
+    store.insert(base_segment);
+    BOOST_CHECK_EQUAL(store.size(), 1);
+    BOOST_CHECK(*store.begin() == base_segment);
+    store.insert(replacement_segment);
+    BOOST_CHECK_EQUAL(store.size(), 1);
+    BOOST_CHECK(*store.begin() == replacement_segment);
+}
+
+BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_insert_whole_range_replacement) {
+    segment_meta_cstore store{};
+    // replacements either start before or exactly at 0
+    constexpr auto seg1 = segment_meta{
+      .is_compacted = false,
+      .size_bytes = 1024,
+      .base_offset = model::offset(0),
+      .committed_offset = model::offset(10)};
+
+    store.insert(seg1);
+
+    BOOST_CHECK_EQUAL(store.size(), 1);
+
+    constexpr auto seg2 = segment_meta{
+      .is_compacted = false,
+      .size_bytes = 1024,
+      .base_offset = model::offset(11),
+      .committed_offset = model::offset(20)};
+
+    store.insert(seg2);
+
+    BOOST_CHECK_EQUAL(store.size(), 2);
+
+    constexpr auto merged_seg = segment_meta{
+      .is_compacted = false,
+      .size_bytes = 2000,
+      .base_offset = model::offset(0),
+      .committed_offset = model::offset(20),
+    };
+
+    store.insert(merged_seg);
+
+    BOOST_CHECK_EQUAL(store.size(), 1);
+    BOOST_CHECK(*store.begin() == merged_seg);
+
+    constexpr auto compacted_seg = segment_meta{
+      .is_compacted = true,
+      .size_bytes = 100,
+      .base_offset = model::offset(0),
+      .committed_offset = model::offset(20),
+    };
+
+    store.insert(compacted_seg);
+
+    BOOST_CHECK_EQUAL(store.size(), 1);
+    BOOST_CHECK(*store.begin() == compacted_seg);
 }
 
 BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_insert_replacements) {

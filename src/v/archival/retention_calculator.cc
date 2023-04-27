@@ -80,8 +80,7 @@ std::optional<retention_calculator> retention_calculator::factory(
 
         if (
           manifest.size() > 0
-          && manifest.begin()->second.max_timestamp
-               < oldest_allowed_timestamp) {
+          && manifest.begin()->max_timestamp < oldest_allowed_timestamp) {
             strats.push_back(
               std::make_unique<time_based_strategy>(oldest_allowed_timestamp));
         }
@@ -101,22 +100,23 @@ retention_calculator::retention_calculator(
   , _strategies(std::move(strategies)) {}
 
 std::optional<model::offset> retention_calculator::next_start_offset() {
-    auto begin = _manifest.first_addressable_segment();
     auto it = std::find_if(
-      begin, _manifest.end(), [this](const auto& entry) -> bool {
+      _manifest.first_addressable_segment(),
+      _manifest.end(),
+      [this](const auto& entry) -> bool {
           return std::all_of(
             _strategies.begin(), _strategies.end(), [&](auto& strat) {
-                return strat->done(entry.second);
+                return strat->done(entry);
             });
       });
 
     // We made it to the end of our strategies and our policies are still not
     // satisfied. Return just past the end -- we will truncate all segments.
     if (it == _manifest.end()) {
-        return model::next_offset(std::prev(it)->second.committed_offset);
+        return model::next_offset(_manifest.get_last_offset());
     }
 
-    return it->second.base_offset;
+    return it->base_offset;
 }
 
 std::optional<ss::sstring> retention_calculator::strategy_name() const {

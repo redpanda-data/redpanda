@@ -97,8 +97,7 @@ remote_partition::borrow_result_t remote_partition::borrow_next_reader(
         if (config.first_timestamp) {
             auto maybe_meta = _manifest.timequery(*config.first_timestamp);
             if (maybe_meta) {
-                mit = _manifest.segment_containing(
-                  maybe_meta->get().base_offset);
+                mit = _manifest.segment_containing(maybe_meta->base_offset);
             }
         } else {
             // In this case the lookup is perfomed by kafka offset.
@@ -125,47 +124,48 @@ remote_partition::borrow_result_t remote_partition::borrow_next_reader(
             // The segment 'mit' points to might not have any
             // data batches. In this case we need to move iterator forward.
             // The check can only be done if we have 'delta_offset_end'.
-            if (mit->second.delta_offset_end == model::offset_delta{}) {
+            if (mit->delta_offset_end == model::offset_delta{}) {
                 break;
             }
-            auto b = mit->second.base_kafka_offset();
-            auto end = mit->second.next_kafka_offset() - kafka::offset(1);
+            auto b = mit->base_kafka_offset();
+            auto end = mit->next_kafka_offset() - kafka::offset(1);
             if (b != end) {
                 break;
             }
-            mit++;
+            ++mit;
         }
     }
     if (mit == _manifest.end()) {
         // No such segment
         return borrow_result_t{};
     }
-    auto iter = _segments.find(mit->first);
+    auto iter = _segments.find(mit->base_offset);
     if (iter != _segments.end()) {
         if (
-          iter->second->segment->get_max_rp_offset()
-          != mit->second.committed_offset) {
+          iter->second->segment->get_max_rp_offset() != mit->committed_offset) {
             offload_segment(iter->first);
             iter = _segments.end();
         }
     }
     if (iter == _segments.end()) {
-        iter = materialize_segment(mit->second);
+        iter = materialize_segment(*mit);
     }
-    auto next_it = std::next(mit);
+    auto mit_committed_offset = mit->committed_offset;
+    auto next_it = std::next(std::move(mit));
     while (next_it != _manifest.end()) {
         // Normally, the segments in the manifest do not overlap.
         // But in some cases we may see them overlapping, for instance
         // if they were produced by older version of redpanda.
         // In this case we want to skip segment if its offset range
         // lies withing the offset range of the current segment.
-        if (mit->second.committed_offset < next_it->second.committed_offset) {
+        if (mit_committed_offset < next_it->committed_offset) {
             break;
         }
-        next_it++;
+        ++next_it;
     }
-    model::offset next_offset = next_it == _manifest.end() ? model::offset{}
-                                                           : next_it->first;
+    model::offset next_offset = next_it == _manifest.end()
+                                  ? model::offset{}
+                                  : next_it->base_offset;
     return borrow_result_t{
       .reader = iter->second->borrow_reader(config, _ctxlog, _probe),
       .next_segment_offset = next_offset};
@@ -627,8 +627,8 @@ remote_partition::get_term_last_offset(model::term_id term) const {
     // look for first segment in next term, segments are sorted by
     // base_offset and term
     for (auto const& p : _manifest) {
-        if (p.second.segment_term > term) {
-            return p.second.base_kafka_offset() - kafka::offset(1);
+        if (p.segment_term > term) {
+            return p.base_kafka_offset() - kafka::offset(1);
         }
     }
     // if last segment term is equal to the one we look for return it
@@ -651,17 +651,18 @@ remote_partition::aborted_transactions(offset_range offsets) {
     // redpanda offsets to extract aborted transactions metadata because
     // tx-manifests contains redpanda offsets.
     std::vector<model::tx_range> result;
-    auto first_it = _manifest.segment_containing(offsets.begin);
-    for (auto it = first_it; it != _manifest.end(); it++) {
-        if (it->second.base_offset > offsets.end_rp) {
+    for (auto it = _manifest.segment_containing(offsets.begin);
+         it != _manifest.end();
+         ++it) {
+        if (it->base_offset > offsets.end_rp) {
             break;
         }
 
         // Segment might be materialized, we need a
         // second map lookup to learn if this is the case.
-        auto m = _segments.find(it->first);
+        auto m = _segments.find(it->base_offset);
         if (m == _segments.end()) {
-            m = materialize_segment(it->second);
+            m = materialize_segment(*it);
         }
         auto tx = co_await m->second->segment->aborted_transactions(
           offsets.begin_rp, offsets.end_rp);
@@ -1045,14 +1046,13 @@ ss::future<> remote_partition::erase(ss::abort_source& as, bool do_finalize) {
         std::vector<cloud_storage_clients::object_key> index_keys;
         index_keys.reserve(batch_size);
 
-        for (size_t k = 0; k < batch_size && segment_i != manifest.end(); ++k) {
-            auto segment_path = manifest.generate_segment_path(
-              segment_i->second);
+        for (size_t k = 0; k < batch_size && segment_i != manifest.end();
+             ++k, ++segment_i) {
+            auto segment_path = manifest.generate_segment_path(*segment_i);
             batch_keys.emplace_back(segment_path);
             tx_batch_keys.emplace_back(
               tx_range_manifest(segment_path).get_manifest_path());
             index_keys.emplace_back(generate_remote_index_path(segment_path));
-            segment_i++;
         }
 
         vlog(

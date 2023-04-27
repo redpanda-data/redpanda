@@ -178,13 +178,13 @@ model::offset segment_collector::find_replacement_boundary() const {
         // first segment after gap: 25-29
         it = std::find_if(
           _manifest.begin(), _manifest.end(), [this](const auto& entry) {
-              return entry.second.base_offset > _begin_inclusive;
+              return entry.base_offset > _begin_inclusive;
           });
 
         // The collection is valid if it can reach the end of the gap: 24
-        replace_boundary = it->second.base_offset - model::offset{1};
+        replace_boundary = it->base_offset - model::offset{1};
     } else {
-        replace_boundary = it->second.committed_offset;
+        replace_boundary = it->committed_offset;
     }
 
     return replace_boundary;
@@ -224,10 +224,10 @@ void segment_collector::align_end_offset_to_manifest(
 
         // If the segment end is not aligned to manifest segment, then
         // pull back to the end of the previous segment.
-        if (it->second.committed_offset == segment_end) {
+        if (it->committed_offset == segment_end) {
             _end_inclusive = segment_end;
         } else {
-            _end_inclusive = it->second.base_offset - model::offset{1};
+            _end_inclusive = it->base_offset - model::offset{1};
         }
     }
 }
@@ -309,10 +309,10 @@ bool segment_collector::should_replace_manifest_segment() const {
         // clash is not possible.
         if (
           segment_to_replace != _manifest.end()
-          && _begin_inclusive == segment_to_replace->second.base_offset
-          && _end_inclusive == segment_to_replace->second.committed_offset) {
+          && _begin_inclusive == segment_to_replace->base_offset
+          && _end_inclusive == segment_to_replace->committed_offset) {
             const bool should = _collected_size
-                                < segment_to_replace->second.size_bytes;
+                                < segment_to_replace->size_bytes;
 
             if (!should) {
                 vlog(
@@ -397,7 +397,7 @@ void segment_collector::align_begin_offset_to_manifest() {
         // manifest: 10-19, 20-29
         // _begin_inclusive: before: 15, after: 20 OR
         // _begin_inclusive: before: 25, after: 30
-        _begin_inclusive = it->second.committed_offset + model::offset{1};
+        _begin_inclusive = it->committed_offset + model::offset{1};
         vlog(
           archival_log.debug,
           "_begin_inclusive skipped to start of next segment for ntp: {} "

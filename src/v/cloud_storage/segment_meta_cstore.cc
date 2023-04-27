@@ -18,6 +18,7 @@
 
 #include <bitset>
 #include <functional>
+#include <limits>
 #include <tuple>
 
 namespace cloud_storage {
@@ -250,12 +251,12 @@ public:
       gauge_col_t::const_iterator,
       gauge_col_t::const_iterator,
       gauge_col_t::const_iterator,
-      counter_col_t::const_iterator,
-      counter_col_t::const_iterator,
       gauge_col_t::const_iterator,
-      counter_col_t::const_iterator,
-      counter_col_t::const_iterator,
-      counter_col_t::const_iterator,
+      gauge_col_t::const_iterator,
+      gauge_col_t::const_iterator,
+      gauge_col_t::const_iterator,
+      gauge_col_t::const_iterator,
+      gauge_col_t::const_iterator,
       gauge_col_t::const_iterator>;
 
     column_store() = default;
@@ -319,21 +320,34 @@ public:
      * commit_offset] aligned to local segments
      * @param offset_seg_it a [base_offset, segment_meta] iterator
      * @param offset_seg_end end sentinel for offset_seg_it
-     * @return a list of segment_meta that where evicted during the process
      */
     auto insert_entries(
       absl::btree_map<model::offset, segment_meta>::const_iterator
         offset_seg_it,
       absl::btree_map<model::offset, segment_meta>::const_iterator
-        offset_seg_end) -> fragmented_vector<segment_meta> {
+        offset_seg_end) {
         if (offset_seg_it == offset_seg_end) {
-            return {};
+            return;
         }
 
         // construct a column_store with the frames and hints that are before
         // the replacements
-        auto first_replacement_index
-          = _base_offset.find(offset_seg_it->first()).index();
+        auto first_replacement_index = [&] {
+            if (
+              _base_offset.size() == 0
+              || offset_seg_it->first() <= *_base_offset.at_index(0)) {
+                // replacements either start before or exactly at 0
+                return size_t{0};
+            }
+            auto candidate = _base_offset.find(offset_seg_it->first());
+            if (candidate.is_end()) {
+                // replacements are append only, return an index that will
+                // signal this
+                return std::numeric_limits<size_t>::max();
+            }
+            // replacements are in the middle of current store
+            return candidate.index();
+        }();
         // tuple of [begin, end] iterators to std::list<frame_t>
         auto to_clone_frames = std::apply(
           [&](auto&... col) {
@@ -367,16 +381,11 @@ public:
         auto unchanged_committed_offset
           = replacement_store.last_committed_offset().value_or(
             model::offset::min());
-        vassert(
-          unchanged_committed_offset < offset_seg_it->first(),
-          "committed_offset of unchanged elements must be strictly less than "
-          "replacements base_offset, by design");
 
         // iterator pointing to first segment not cloned into replacement_store
         auto old_segments_it = upper_bound(unchanged_committed_offset());
         auto old_segments_end = end();
 
-        auto replaced_segments = fragmented_vector<segment_meta>{};
         // merge replacements and old segments into new store
         while (old_segments_it != old_segments_end
                && offset_seg_it != offset_seg_end) {
@@ -401,14 +410,16 @@ public:
 
             // skip over segments superseded by replacement_meta
             while (old_segments_it != old_segments_end) {
-                auto to_replace = dereference(
-                  old_segments_it); // this could potentially be cached for the
-                                    // next iteration of the outer loop
-                if (
-                  to_replace.base_offset > replacement_meta.committed_offset) {
+                // this could potentially be cached for the
+                // next iteration of the outer loop
+                auto to_replace = dereference(old_segments_it);
+                // find first segment that is not completely covered by
+                // replacement_meta
+                if (!(to_replace.base_offset >= replacement_meta.base_offset
+                      && to_replace.committed_offset
+                           <= replacement_meta.committed_offset)) {
                     break;
                 }
-                replaced_segments.push_back(to_replace);
                 details::increment_all(old_segments_it);
             }
         }
@@ -430,7 +441,6 @@ public:
         auto current_data = member_fields();
         auto replacement_data = replacement_store.member_fields();
         std::swap(current_data, replacement_data);
-        return replaced_segments;
     }
 
     static segment_meta dereference(const iterators_t& it) {
@@ -714,14 +724,14 @@ private:
     gauge_col_t _committed_offset{};
     gauge_col_t _base_timestamp{};
     gauge_col_t _max_timestamp{};
-    counter_col_t _delta_offset{};
-    counter_col_t _ntp_revision{};
+    gauge_col_t _delta_offset{};
+    gauge_col_t _ntp_revision{};
     /// The archiver term is not strictly monotonic in manifests
     /// generated by old redpanda versions
     gauge_col_t _archiver_term{};
-    counter_col_t _segment_term{};
-    counter_col_t _delta_offset_end{};
-    counter_col_t _sname_format{};
+    gauge_col_t _segment_term{};
+    gauge_col_t _delta_offset_end{};
+    gauge_col_t _sname_format{};
     gauge_col_t _metadata_size_hint{};
 
     hint_map_t _hints{};
@@ -748,16 +758,36 @@ public:
 
     bool equal(const impl& other) const { return _iters == other._iters; }
 
+    size_t index() const {
+        return std::get<static_cast<size_t>(segment_meta_ix::base_offset)>(
+                 _iters)
+          .index();
+    }
+
+    bool is_end() const {
+        return std::get<static_cast<size_t>(segment_meta_ix::base_offset)>(
+                 _iters)
+          .is_end();
+    }
+
 private:
     column_store::iterators_t _iters;
     mutable std::optional<segment_meta> _curr;
 };
 
 segment_meta_materializing_iterator::segment_meta_materializing_iterator(
+  segment_meta_materializing_iterator&&)
+  = default;
+segment_meta_materializing_iterator&
+segment_meta_materializing_iterator::operator=(
+  segment_meta_materializing_iterator&&)
+  = default;
+segment_meta_materializing_iterator::segment_meta_materializing_iterator(
   std::unique_ptr<impl> i)
   : _impl(std::move(i)) {}
 
-segment_meta_materializing_iterator::~segment_meta_materializing_iterator() {}
+segment_meta_materializing_iterator::~segment_meta_materializing_iterator()
+  = default;
 
 const segment_meta& segment_meta_materializing_iterator::dereference() const {
     return _impl->dereference();
@@ -770,6 +800,13 @@ bool segment_meta_materializing_iterator::equal(
     return _impl->equal(*other._impl);
 }
 
+size_t segment_meta_materializing_iterator::index() const {
+    return _impl->index();
+}
+
+bool segment_meta_materializing_iterator::is_end() const {
+    return _impl->is_end();
+}
 /// Column store implementation
 class segment_meta_cstore::impl
   : public serde::envelope<
@@ -851,9 +888,12 @@ public:
     }
 
     auto inflated_actual_size() const {
-        // TODO how to deal with write_buffer? is it ok to return an approx
-        // value by not flushing?
-        return _col.inflated_actual_size();
+        auto res = _col.inflated_actual_size();
+        // approximate
+        res.first += _write_buffer.size() * sizeof(segment_meta);
+        res.second += _write_buffer.size()
+                      * sizeof(std::pair<model::offset, segment_meta>);
+        return res;
     }
 
     size_t size() const {
@@ -919,7 +959,19 @@ private:
 segment_meta_cstore::segment_meta_cstore()
   : _impl(std::make_unique<impl>()) {}
 
-segment_meta_cstore::~segment_meta_cstore() {}
+segment_meta_cstore::~segment_meta_cstore() = default;
+
+segment_meta_cstore::segment_meta_cstore(
+  segment_meta_cstore&&) noexcept = default;
+segment_meta_cstore&
+segment_meta_cstore::operator=(segment_meta_cstore&&) noexcept = default;
+
+bool segment_meta_cstore::operator==(segment_meta_cstore const& oth) const {
+    // this overload of std::equal in clang stdlib works with const_iterator
+    // because it does not perform a copy of the iterator
+    return size() == oth.size()
+           && std::equal(begin(), end(), oth.begin(), std::equal_to{});
+}
 
 segment_meta_cstore::const_iterator segment_meta_cstore::begin() const {
     return const_iterator(_impl->begin());
@@ -969,6 +1021,14 @@ void segment_meta_cstore::prefix_truncate(model::offset new_start_offset) {
 segment_meta_cstore::const_iterator
 segment_meta_cstore::at_index(size_t ix) const {
     return const_iterator(_impl->at_index(ix));
+}
+
+auto segment_meta_cstore::prev(const_iterator const& it) const
+  -> const_iterator {
+#ifndef NDEBUG
+    vassert(it != begin(), "prev called on a begin() iterator");
+#endif
+    return at_index((it.is_end() ? size() : it.index()) - 1);
 }
 
 void segment_meta_cstore::from_iobuf(iobuf in) {

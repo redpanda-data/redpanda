@@ -291,7 +291,7 @@ fragmented_vector<archival_metadata_stm::segment>
 archival_metadata_stm::segments_from_manifest(
   const cloud_storage::partition_manifest& manifest) {
     fragmented_vector<segment> segments;
-    for (auto [key, meta] : manifest) {
+    for (auto meta : manifest) {
         if (meta.ntp_revision == model::initial_revision_id{}) {
             meta.ntp_revision = manifest.get_revision_id();
         }
@@ -335,8 +335,7 @@ archival_metadata_stm::serialize_manifest_as_batches(
     bb.emplace(model::record_batch_type::archival_metadata, base_offset);
     ss::circular_buffer<model::record_batch> result;
     int batch_size = 0;
-    for (auto kv : m) {
-        auto meta = kv.second;
+    for (auto meta : m) {
         iobuf key_buf = serde::to_iobuf(add_segment_cmd::key);
         if (meta.ntp_revision == model::initial_revision_id{}) {
             meta.ntp_revision = m.get_revision_id();
@@ -1032,10 +1031,9 @@ archival_metadata_stm::get_segments_to_cleanup() const {
             if (it == _manifest->end()) {
                 return false;
             }
-            const auto& s = it->second;
             auto m_name = _manifest->generate_remote_segment_name(
               cloud_storage::partition_manifest::lw_segment_meta::convert(m));
-            auto s_name = _manifest->generate_remote_segment_name(s);
+            auto s_name = _manifest->generate_remote_segment_name(*it);
             // The segment will have the same path as the one we have in
             // manifest in S3 so if we will delete it the data will be lost.
             if (m_name == s_name) {
@@ -1062,8 +1060,8 @@ archival_metadata_stm::get_segments_to_cleanup() const {
 
     auto so = _manifest->get_start_offset().value_or(model::offset(0));
     for (const auto& m : *_manifest) {
-        if (m.second.committed_offset < so) {
-            backlog.push_back(lw_segment_meta::convert(m.second));
+        if (m.committed_offset < so) {
+            backlog.push_back(lw_segment_meta::convert(m));
         } else {
             break;
         }
