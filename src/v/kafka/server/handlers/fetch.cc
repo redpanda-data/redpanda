@@ -35,8 +35,10 @@
 
 #include <seastar/core/do_with.hh>
 #include <seastar/core/future.hh>
+#include <seastar/core/scheduling.hh>
 #include <seastar/core/sleep.hh>
 #include <seastar/core/thread.hh>
+#include <seastar/core/with_scheduling_group.hh>
 #include <seastar/util/log.hh>
 
 #include <boost/range/irange.hpp>
@@ -555,22 +557,27 @@ fetch_handler::handle(request_context rctx, ss::smp_service_group ssg) {
     return ss::do_with(
       std::make_unique<op_context>(std::move(rctx), ssg),
       [](std::unique_ptr<op_context>& octx_ptr) {
-          auto& octx = *octx_ptr;
-          log_request(octx.rctx.header(), octx.request);
-          // top-level error is used for session-level errors
-          if (octx.session_ctx.has_error()) {
-              octx.response.data.error_code = octx.session_ctx.error();
-              return std::move(octx).send_response();
-          }
-          octx.response.data.error_code = error_code::none;
-          // first fetch, do not wait
-          return fetch_topic_partitions(octx)
-            .then([&octx] {
-                return ss::do_until(
-                  [&octx] { return octx.should_stop_fetch(); },
-                  [&octx] { return fetch_topic_partitions(octx); });
-            })
-            .then([&octx] { return std::move(octx).send_response(); });
+          auto sg
+            = octx_ptr->rctx.connection()->server().fetch_scheduling_group();
+          return ss::with_scheduling_group(sg, [&octx_ptr] {
+              auto& octx = *octx_ptr;
+
+              log_request(octx.rctx.header(), octx.request);
+              // top-level error is used for session-level errors
+              if (octx.session_ctx.has_error()) {
+                  octx.response.data.error_code = octx.session_ctx.error();
+                  return std::move(octx).send_response();
+              }
+              octx.response.data.error_code = error_code::none;
+              // first fetch, do not wait
+              return fetch_topic_partitions(octx)
+                .then([&octx] {
+                    return ss::do_until(
+                      [&octx] { return octx.should_stop_fetch(); },
+                      [&octx] { return fetch_topic_partitions(octx); });
+                })
+                .then([&octx] { return std::move(octx).send_response(); });
+          });
       });
 }
 
