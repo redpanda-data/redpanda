@@ -621,6 +621,11 @@ ss::future<> partition::update_configuration(topic_properties properties) {
     // Pass the configuration update into the storage layer
     co_await _raft->log().update_configuration(new_ntp_config);
 
+    // Update cached instance of topic properties
+    if (_topic_cfg) {
+        _topic_cfg->properties = std::move(properties);
+    }
+
     // If this partition's cloud storage mode changed, rebuild the archiver.
     // This must happen after raft update, because it reads raft's
     // ntp_config to decide whether to construct an archiver.

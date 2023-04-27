@@ -148,7 +148,7 @@ class BaseCase:
             if key.endswith("/manifest.json"):
                 res = parse_s3_manifest_path(key)
                 rev = res.revision
-                ntp = res.ntp
+                ntp = res.to_ntp()
                 revisions[ntp] = rev
         for topic in self.topics:
             for partition in self._rpk.describe_topic(topic.name):
@@ -460,11 +460,11 @@ class MissingPartition(BaseCase):
         for key in self._list_objects():
             if key.endswith("/manifest.json") and self.topic_name in key:
                 attr = parse_s3_manifest_path(key)
-                assert attr.ntp.topic == self.topic_name
-                if attr.ntp.partition == 0:
+                assert attr.topic == self.topic_name
+                if attr.partition == 0:
                     manifest = key
                 else:
-                    assert attr.ntp.partition == 1
+                    assert attr.to_ntp().partition == 1
                     data = self._s3.get_object_data(self._bucket, key)
                     obj = json.loads(data)
                     self._part1_offset = obj['last_offset']
@@ -561,7 +561,7 @@ class MissingSegment(BaseCase):
                 attr = parse_s3_segment_path(key)
                 if attr.name.startswith('0'):
                     self._delete(key)
-                    self._smaller_ntp = attr.ntp
+                    self._smaller_ntp = attr.ntpr.to_ntp()
                     break
         else:
             assert False, "No segments found in the bucket"
@@ -636,7 +636,7 @@ class FastCheck(BaseCase):
         ]
         for seg in segments:
             components = parse_s3_segment_path(seg.key)
-            ntp = components.ntp
+            ntp = components.ntpr.to_ntp()
             segment_data = self._s3.get_object_data(self._bucket, seg.key)
             segment_size = len(segment_data)
             segment = SegmentReader(io.BytesIO(segment_data))
