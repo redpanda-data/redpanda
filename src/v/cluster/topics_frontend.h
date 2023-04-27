@@ -26,6 +26,7 @@
 #include "partition_balancer_types.h"
 
 #include <seastar/core/abort_source.hh>
+#include <seastar/core/chunked_fifo.hh>
 #include <seastar/core/sharded.hh>
 
 #include <absl/container/flat_hash_map.h>
@@ -220,7 +221,7 @@ private:
       model::topic_namespace topic, int32_t partition_count) const;
 
     // Generates a new partition assignment for a single partition
-    ss::future<result<std::vector<partition_assignment>>>
+    ss::future<result<ss::chunked_fifo<partition_assignment>>>
     generate_reassignments(
       model::ntp, std::vector<model::node_id> new_replicas);
 

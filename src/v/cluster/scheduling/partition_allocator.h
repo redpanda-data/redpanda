@@ -116,8 +116,8 @@ private:
             _partial.emplace_back(std::forward<Args>(args)...);
         }
 
-        const std::vector<T>& get() const { return _partial; }
-        std::vector<T> finish() && { return std::exchange(_partial, {}); }
+        const ss::chunked_fifo<T>& get() const { return _partial; }
+        ss::chunked_fifo<T> finish() && { return std::exchange(_partial, {}); }
         intermediate_allocation(intermediate_allocation&&) noexcept = default;
 
         intermediate_allocation(
@@ -134,7 +134,7 @@ private:
         }
 
     private:
-        std::vector<T> _partial;
+        ss::chunked_fifo<T> _partial;
         ss::weak_ptr<allocation_state> _state;
         partition_allocation_domain _domain;
     };

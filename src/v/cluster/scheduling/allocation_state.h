@@ -57,9 +57,17 @@ public:
     result<uint32_t> allocate(model::node_id id, partition_allocation_domain);
 
     void rollback(
-      const std::vector<partition_assignment>& pa, partition_allocation_domain);
-    void rollback(
-      const std::vector<model::broker_shard>& v, partition_allocation_domain);
+      const ss::chunked_fifo<partition_assignment>& pa,
+      partition_allocation_domain);
+
+    template<typename Replicas>
+    void
+    rollback(const Replicas& replicas, partition_allocation_domain domain) {
+        verify_shard();
+        for (auto& bs : replicas) {
+            deallocate(bs, domain);
+        }
+    }
 
     bool validate_shard(model::node_id node, uint32_t shard) const;
 

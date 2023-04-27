@@ -16,22 +16,13 @@
 namespace cluster {
 
 void allocation_state::rollback(
-  const std::vector<partition_assignment>& v,
+  const ss::chunked_fifo<partition_assignment>& v,
   const partition_allocation_domain domain) {
     verify_shard();
     for (auto& as : v) {
         rollback(as.replicas, domain);
         // rollback for each assignment as the groups are distinct
         _highest_group = raft::group_id(_highest_group() - 1);
-    }
-}
-
-void allocation_state::rollback(
-  const std::vector<model::broker_shard>& v,
-  const partition_allocation_domain domain) {
-    verify_shard();
-    for (auto& bs : v) {
-        deallocate(bs, domain);
     }
 }
 
@@ -71,7 +62,7 @@ void allocation_state::apply_update(
             continue;
         }
 
-            it->second->allocate_on(bs.shard, domain);
+        it->second->allocate_on(bs.shard, domain);
     }
 }
 

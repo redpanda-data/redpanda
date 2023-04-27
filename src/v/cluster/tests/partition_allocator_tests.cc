@@ -23,7 +23,7 @@
 #include <boost/test/tools/old/interface.hpp>
 
 void validate_replica_set_diversity(
-  const std::vector<cluster::partition_assignment> assignments) {
+  const ss::chunked_fifo<cluster::partition_assignment>& assignments) {
     for (const auto& assignment : assignments) {
         if (assignment.replicas.size() > 1) {
             auto sentinel = assignment.replicas.front();
@@ -151,7 +151,7 @@ FIXTURE_TEST(diverse_replica_sets, partition_allocator_fixture) {
         auto req = make_allocation_request(1, r);
         auto result = allocator.allocate(std::move(req)).get();
         BOOST_REQUIRE(result);
-        auto assignments = result.value()->get_assignments();
+        auto assignments = result.value()->copy_assignments();
         BOOST_REQUIRE(assignments.size() == 1);
         auto replicas = assignments.front().replicas;
         // we need to sort the replica set
@@ -348,7 +348,7 @@ FIXTURE_TEST(allocator_exception_safety_test, partition_allocator_fixture) {
     auto capacity = max_capacity();
     for (int i = 0; i < 500; ++i) {
         auto req = make_allocation_request(1, 1);
-        req.partitions[0].constraints.hard_constraints.push_back(
+        req.partitions.front().constraints.hard_constraints.push_back(
           ss::make_lw_shared<cluster::hard_constraint>(random_evaluator()));
         try {
             auto res = allocator.allocate(std::move(req)).get();

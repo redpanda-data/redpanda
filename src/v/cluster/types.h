@@ -32,6 +32,7 @@
 #include "utils/to_string.h"
 #include "v8_engine/data_policy.h"
 
+#include <seastar/core/chunked_fifo.hh>
 #include <seastar/core/sstring.hh>
 
 #include <absl/container/btree_set.h>
@@ -1677,19 +1678,45 @@ struct configuration_with_assignment
     configuration_with_assignment() = default;
 
     configuration_with_assignment(
-      T value, std::vector<partition_assignment> pas)
+      T value, ss::chunked_fifo<partition_assignment> pas)
       : cfg(std::move(value))
       , assignments(std::move(pas)) {}
 
+    configuration_with_assignment(
+      configuration_with_assignment&&) noexcept = default;
+    configuration_with_assignment&
+    operator=(configuration_with_assignment&&) noexcept = default;
+    configuration_with_assignment&
+    operator=(const configuration_with_assignment&)
+      = delete;
+    ~configuration_with_assignment() = default;
+    // we need to make the type copyable as it is being copied when dispatched
+    // to remote shards
+    configuration_with_assignment(const configuration_with_assignment& src)
+      : cfg(src.cfg) {
+        ss::chunked_fifo<partition_assignment> assignments_cp;
+        assignments_cp.reserve(assignments.size());
+        std::copy(
+          src.assignments.begin(),
+          src.assignments.end(),
+          std::back_inserter(assignments_cp));
+        assignments = std::move(assignments_cp);
+    }
     T cfg;
-    std::vector<partition_assignment> assignments;
+    ss::chunked_fifo<partition_assignment> assignments;
 
     auto serde_fields() { return std::tie(cfg, assignments); }
 
     friend bool operator==(
-      const configuration_with_assignment<T>&,
-      const configuration_with_assignment<T>&)
-      = default;
+      const configuration_with_assignment<T>& lhs,
+      const configuration_with_assignment<T>& rhs) {
+        return lhs.cfg == rhs.cfg
+               && std::equal(
+                 lhs.assignments.begin(),
+                 lhs.assignments.end(),
+                 rhs.assignments.begin(),
+                 rhs.assignments.end());
+    };
 
     template<typename V>
     friend std::ostream&
@@ -3617,7 +3644,7 @@ struct adl<cluster::configuration_with_assignment<T>> {
     cluster::configuration_with_assignment<T> from(iobuf_parser& in) {
         auto cfg = adl<T>{}.from(in);
         auto assignments
-          = adl<std::vector<cluster::partition_assignment>>{}.from(in);
+          = adl<ss::chunked_fifo<cluster::partition_assignment>>{}.from(in);
         return {std::move(cfg), std::move(assignments)};
     }
 };
