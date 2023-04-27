@@ -29,6 +29,9 @@ class SimpleK8sTest(Test):
         node_memory = float(self.redpanda.get_node_memory_mb())
         assert node_memory > 1.0
 
+        node_cpu_count = self.redpanda.get_node_cpu_count()
+        assert node_cpu_count > 0
+
         node_disk_free = self.redpanda.get_node_disk_free()
         assert node_disk_free > 0
 
