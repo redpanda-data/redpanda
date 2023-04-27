@@ -522,12 +522,12 @@ void topic_updates_dispatcher::deallocate_topic(
 }
 
 void topic_updates_dispatcher::update_allocations(
-  std::vector<partition_assignment> assignments,
+  const std::vector<partition_assignment>& assignments,
   const partition_allocation_domain domain) {
     // for create topics we update allocation state
     std::vector<model::broker_shard> shards;
     raft::group_id max_group_id = raft::group_id(0);
-    for (auto& pas : assignments) {
+    for (const auto& pas : assignments) {
         max_group_id = std::max(max_group_id, pas.group);
         std::move(
           pas.replicas.begin(), pas.replicas.end(), std::back_inserter(shards));
