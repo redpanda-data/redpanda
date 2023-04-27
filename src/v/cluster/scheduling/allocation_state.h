@@ -47,7 +47,7 @@ public:
     // Operations on state
     void deallocate(const model::broker_shard&, partition_allocation_domain);
     void apply_update(
-      std::vector<model::broker_shard>,
+      const std::vector<model::broker_shard>&,
       raft::group_id,
       partition_allocation_domain);
     result<uint32_t> allocate(model::node_id id, partition_allocation_domain);
