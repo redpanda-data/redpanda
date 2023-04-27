@@ -546,7 +546,7 @@ void kvstore::replay_segments_in_thread(segment_set segs) {
         ss::remove_file(seg->index().path().string()).get();
     }
 
-    // close the rest
+    // close the rest but leave them alone until the snapshot is taken
     for (auto it = match; it != segs.end(); it++) {
         (*it)->close().get();
     }
@@ -556,6 +556,13 @@ void kvstore::replay_segments_in_thread(segment_set segs) {
     // without ever filling up a segment and snapshotting when rolling. they'll
     // be removed on the next startup.
     save_snapshot().get();
+
+    // gc the replayed segments now that the snapshot has been taken.
+    for (auto it = match; it != segs.end(); it++) {
+        auto seg = *it;
+        ss::remove_file(seg->reader().path().string()).get();
+        ss::remove_file(seg->index().path().string()).get();
+    }
 }
 
 batch_consumer::consume_result kvstore::replay_consumer::accept_batch_start(
