@@ -757,6 +757,7 @@ class RedpandaServiceBase(Service):
         self,
         context,
         num_brokers,
+        *,
         extra_rp_conf=None,
         resource_settings=None,
         si_settings=None,
@@ -1085,8 +1086,11 @@ class RedpandaService(RedpandaServiceBase):
                  schema_registry_config: Optional[SchemaRegistryConfig] = None,
                  disable_cloud_storage_diagnostics=False):
         super(RedpandaService,
-              self).__init__(context, num_brokers, extra_rp_conf,
-                             resource_settings, si_settings)
+              self).__init__(context,
+                             num_brokers,
+                             extra_rp_conf=extra_rp_conf,
+                             resource_settings=resource_settings,
+                             si_settings=si_settings)
         self._security = security
         self._installer: RedpandaInstaller = RedpandaInstaller(self)
         self._pandaproxy_config = pandaproxy_config
