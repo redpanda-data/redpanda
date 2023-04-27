@@ -41,7 +41,7 @@ static constexpr uint32_t sampling_rate = 8;
 static_assert(
   gauge_col_t::max_frame_size % sampling_rate == 0, "Invalid sampling rate");
 
-enum class segment_meta_ix {
+enum class segment_meta_ix : size_t {
     is_compacted,
     size_bytes,
     base_offset,
@@ -123,6 +123,9 @@ auto tuple_map(Fn&& map_fn, auto&& first_tuple, auto&& second_tuple) {
       first_tuple);
 }
 
+constexpr bool is_replaced(model::offset base_offset, segment_meta const& sm) {
+    return base_offset >= sm.base_offset && base_offset <= sm.committed_offset;
+}
 } // namespace details
 
 /// The aggregated columnar storage for segment_meta.
@@ -433,6 +436,10 @@ public:
         return replaced_segments;
     }
 
+    static model::offset dereference_base_offset(const iterators_t& it) {
+        return model::offset{
+          *std::get<static_cast<size_t>(segment_meta_ix::base_offset)>(it)};
+    }
     static segment_meta dereference(const iterators_t& it) {
         segment_meta meta = {};
         details::value_or<segment_meta_ix::is_compacted>(it, meta.is_compacted);
@@ -727,37 +734,125 @@ private:
     hint_map_t _hints{};
 };
 
+class sentinel_t {};
 /// Materializing iterator implementation
 class segment_meta_materializing_iterator::impl {
+    using buffer_iter_t
+      = absl::btree_map<model::offset, segment_meta>::const_iterator;
+
 public:
-    explicit impl(column_store::iterators_t iters)
-      : _iters(std::move(iters))
-      , _curr(std::nullopt) {}
+    explicit impl(
+      column_store::iterators_t cstore_it,
+      column_store::iterators_t cstore_end,
+      buffer_iter_t buffer_it,
+      buffer_iter_t buffer_end)
+      : _cstore_it{.it = std::move(cstore_it), .end_it = std::move(std::get<static_cast<size_t>(segment_meta_ix::base_offset)>(cstore_end))}
+      , _buffer_it{.it = buffer_it, .end_it = buffer_end}
+      , _curr{next()} {} // prime the pump
 
-    const segment_meta& dereference() const {
-        if (!_curr.has_value()) {
-            _curr = column_store::dereference(_iters);
-        }
-        return _curr.value();
+    const segment_meta& dereference() const { return _curr.value(); }
+
+    void increment() { _curr = next(); }
+
+    bool equal(impl const& oth) const {
+        return std::tie(_cstore_it.it, _buffer_it.it)
+               == std::tie(oth._cstore_it.it, oth._buffer_it.it);
     }
-
-    void increment() {
-        _curr = std::nullopt;
-        details::increment_all(_iters);
-    }
-
-    bool equal(const impl& other) const { return _iters == other._iters; }
 
 private:
-    column_store::iterators_t _iters;
+    // invariant: this is an end iterator if empty
+    bool is_empty() const { return !_curr.has_value(); }
+    template<typename Derived>
+    struct adapter_crtp {
+        auto to_derived() -> Derived& { return static_cast<Derived&>(*this); }
+        void truncate_after(model::offset burned_base_offset) {
+            for (auto& adapter = to_derived();
+                 !adapter.is_empty()
+                 && adapter.base_offset_dereference() <= burned_base_offset;
+                 adapter.increment()) {
+            }
+        }
+
+        auto next() -> segment_meta {
+            auto& adapter = to_derived();
+            auto res = adapter.dereference();
+            adapter.increment();
+            return res;
+        }
+
+        auto empty() const -> bool {
+            return !(static_cast<Derived const&>(*this).valid);
+        }
+    };
+    struct column_it_adapter : public adapter_crtp<column_it_adapter> {
+        column_store::iterators_t it;
+        counter_col_t::const_iterator end_it;
+
+        auto base_offset_dereference() const -> model::offset {
+            return column_store::dereference_base_offset(it);
+        }
+        auto dereference() const -> segment_meta {
+            return column_store::dereference(it);
+        }
+        auto increment() { details::increment_all(it); }
+        auto is_empty() {
+            return std::get<static_cast<size_t>(segment_meta_ix::base_offset)>(
+                     it)
+                   == end_it;
+        }
+    };
+
+    struct buffer_it_adapter : public adapter_crtp<buffer_it_adapter> {
+        absl::btree_map<model::offset, segment_meta>::const_iterator it;
+        absl::btree_map<model::offset, segment_meta>::const_iterator end_it;
+
+        auto base_offset_dereference() const -> model::offset {
+            return it->first;
+        }
+        auto dereference() const -> segment_meta { return it->second; }
+        auto increment() { ++it; }
+        auto is_empty() { return it == end_it; }
+    };
+
+    auto next() -> std::optional<segment_meta> {
+        auto const buffer_empty = _buffer_it.is_empty();
+        auto const cstore_empty = _cstore_it.is_empty();
+        if (buffer_empty && cstore_empty) {
+            // no data in either buffer or cstore - end of iteration
+            return std::nullopt;
+        }
+
+        if (buffer_empty) {
+            // only column store has data
+            return _cstore_it.next();
+        }
+        if (cstore_empty) {
+            // only buffer has data
+            return _buffer_it.next();
+        }
+
+        if (
+          _cstore_it.base_offset_dereference()
+          < _buffer_it.base_offset_dereference()) {
+            // _cstore is not replaced by current _buffer_it
+            return _cstore_it.next();
+        } else {
+            // _buffer_it is a replacement for current _cstore_it. increment it
+            // until out of the replacement zone
+            auto res = _buffer_it.next();
+            _cstore_it.truncate_after(res.committed_offset);
+            return res;
+        }
+    }
+
+    column_it_adapter _cstore_it;
+    buffer_it_adapter _buffer_it;
     mutable std::optional<segment_meta> _curr;
 };
 
 segment_meta_materializing_iterator::segment_meta_materializing_iterator(
   std::unique_ptr<impl> i)
   : _impl(std::move(i)) {}
-
-segment_meta_materializing_iterator::~segment_meta_materializing_iterator() {}
 
 const segment_meta& segment_meta_materializing_iterator::dereference() const {
     return _impl->dereference();
@@ -769,6 +864,8 @@ bool segment_meta_materializing_iterator::equal(
   const segment_meta_materializing_iterator& other) const {
     return _impl->equal(*other._impl);
 }
+
+segment_meta_materializing_iterator::~segment_meta_materializing_iterator() {}
 
 /// Column store implementation
 class segment_meta_cstore::impl
@@ -783,36 +880,33 @@ public:
     void append(const segment_meta& meta) { _col.append(meta); }
 
     std::unique_ptr<segment_meta_materializing_iterator::impl> begin() const {
-        flush_write_buffer();
         return std::make_unique<segment_meta_materializing_iterator::impl>(
-          _col.begin());
+          _col.begin(), _col.end(), _write_buffer.begin(), _write_buffer.end());
     }
 
     std::unique_ptr<segment_meta_materializing_iterator::impl> end() const {
-        flush_write_buffer();
         return std::make_unique<segment_meta_materializing_iterator::impl>(
-          _col.end());
-    }
-
-    std::unique_ptr<segment_meta_materializing_iterator::impl>
-    find(model::offset o) const {
-        flush_write_buffer();
-        return std::make_unique<segment_meta_materializing_iterator::impl>(
-          _col.find(o()));
+          _col.end(), _col.end(), _write_buffer.end(), _write_buffer.end());
     }
 
     std::unique_ptr<segment_meta_materializing_iterator::impl>
     lower_bound(model::offset o) const {
         flush_write_buffer();
         return std::make_unique<segment_meta_materializing_iterator::impl>(
-          _col.lower_bound(o()));
+          _col.lower_bound(o()),
+          _col.end(),
+          _write_buffer.begin(),
+          _write_buffer.end());
     }
 
     std::unique_ptr<segment_meta_materializing_iterator::impl>
     upper_bound(model::offset o) const {
         flush_write_buffer();
         return std::make_unique<segment_meta_materializing_iterator::impl>(
-          _col.upper_bound(o()));
+          _col.upper_bound(o()),
+          _col.end(),
+          _write_buffer.begin(),
+          _write_buffer.end());
     }
 
     std::optional<segment_meta> last_segment() const {
@@ -877,7 +971,10 @@ public:
     at_index(size_t ix) const {
         flush_write_buffer();
         return std::make_unique<segment_meta_materializing_iterator::impl>(
-          _col.at_index(ix));
+          _col.at_index(ix),
+          _col.end(),
+          _write_buffer.begin(),
+          _write_buffer.end());
     }
 
     void serde_write(iobuf& out) {
@@ -939,7 +1036,14 @@ std::optional<segment_meta> segment_meta_cstore::last_segment() const {
 
 segment_meta_cstore::const_iterator
 segment_meta_cstore::find(model::offset o) const {
-    return const_iterator(_impl->find(o));
+    auto it = begin();
+    auto end_it = end();
+    for (; it != end_it; ++it) {
+        if (it->base_offset == o) {
+            return it;
+        }
+    }
+    return end_it;
 }
 
 bool segment_meta_cstore::contains(model::offset o) const {
