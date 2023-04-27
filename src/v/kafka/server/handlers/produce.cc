@@ -361,39 +361,40 @@ static partition_produce_stages produce_topic_partition(
                             ntp,
                             source_shard);
                       }
-                auto stages = partition_append(
-                  ntp.tp.partition,
-                  ss::make_lw_shared<replicated_partition>(
-                    std::move(partition)),
-                  bid,
-                  std::move(reader).assume_value(),
-                  acks,
-                  num_records,
-                  batch_size,
-                  timeout);
-                return stages.dispatched
-                  .then_wrapped([source_shard, dispatch = std::move(dispatch)](
-                                  ss::future<> f) mutable {
-                      if (f.failed()) {
-                          (void)ss::smp::submit_to(
-                            source_shard,
-                            [dispatch = std::move(dispatch),
-                             e = f.get_exception()]() mutable {
-                                dispatch->set_exception(e);
-                                dispatch.reset();
-                            });
-                          return;
-                      }
-                      (void)ss::smp::submit_to(
-                        source_shard,
-                        [dispatch = std::move(dispatch)]() mutable {
-                            dispatch->set_value();
-                            dispatch.reset();
+                      auto stages = partition_append(
+                        ntp.tp.partition,
+                        ss::make_lw_shared<replicated_partition>(
+                          std::move(partition)),
+                        bid,
+                        std::move(reader).assume_value(),
+                        acks,
+                        num_records,
+                        batch_size,
+                        timeout);
+                      return stages.dispatched
+                        .then_wrapped(
+                          [source_shard, dispatch = std::move(dispatch)](
+                            ss::future<> f) mutable {
+                              if (f.failed()) {
+                                  (void)ss::smp::submit_to(
+                                    source_shard,
+                                    [dispatch = std::move(dispatch),
+                                     e = f.get_exception()]() mutable {
+                                        dispatch->set_exception(e);
+                                        dispatch.reset();
+                                    });
+                                  return;
+                              }
+                              (void)ss::smp::submit_to(
+                                source_shard,
+                                [dispatch = std::move(dispatch)]() mutable {
+                                    dispatch->set_value();
+                                    dispatch.reset();
+                                });
+                          })
+                        .then([f = std::move(stages.produced)]() mutable {
+                            return std::move(f);
                         });
-                  })
-                  .then([f = std::move(stages.produced)]() mutable {
-                      return std::move(f);
-                  });
                   });
             })
           .then([&octx, start, m = std::move(m)](
