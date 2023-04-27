@@ -136,6 +136,12 @@ server::server(
     _probe.setup_public_metrics();
 }
 
+ss::scheduling_group server::fetch_scheduling_group() const {
+    return config::shard_local_cfg().use_fetch_scheduler_group()
+             ? _fetch_scheduling_group
+             : ss::default_scheduling_group();
+}
+
 coordinator_ntp_mapper& server::coordinator_mapper() {
     return _group_router.local().coordinator_mapper().local();
 }

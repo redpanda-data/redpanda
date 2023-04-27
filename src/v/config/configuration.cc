@@ -517,6 +517,12 @@ configuration::configuration()
       "Maximum number of bytes returned in fetch request",
       {.needs_restart = needs_restart::no, .visibility = visibility::user},
       55_MiB)
+  , use_fetch_scheduler_group(
+      *this,
+      "use_fetch_scheduler_group",
+      "Use a separate scheduler group for fetch processing",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      true)
   , metadata_status_wait_timeout_ms(
       *this,
       "metadata_status_wait_timeout_ms",

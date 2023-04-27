@@ -73,9 +73,16 @@ public:
     ss::future<> apply(ss::lw_shared_ptr<net::connection>) final;
 
     ss::smp_service_group smp_group() const { return _smp_group; }
-    ss::scheduling_group fetch_scheduling_group() const {
-        return _fetch_scheduling_group;
-    }
+
+    /**
+     * @brief Return the scheduling group to use for fetch requests.
+     *
+     * By default, fetches use a dedicated scheduling group, but this may
+     * be changed by configuration to restore the old behavior of lumping
+     * them with most other tasks in the default scheduling group.
+     */
+    ss::scheduling_group fetch_scheduling_group() const;
+
     cluster::topics_frontend& topics_frontend() {
         return _topics_frontend.local();
     }
