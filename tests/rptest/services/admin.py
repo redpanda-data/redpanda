@@ -885,6 +885,26 @@ class Admin:
     def is_node_isolated(self, node):
         return self._request("GET", "debug/is_node_isolated", node=node).json()
 
+    def busy_loop_start(self, node, min_spins_per_scheduling_point,
+                        max_spins_per_scheduling_point, num_fibers):
+        kwargs = {
+            "params": {
+                "min_spins_per_scheduling_point":
+                str(min_spins_per_scheduling_point),
+                "max_spins_per_scheduling_point":
+                str(max_spins_per_scheduling_point),
+                "num_fibers":
+                str(num_fibers)
+            }
+        }
+        return self._request("PUT",
+                             "debug/busy_loop_start",
+                             node=node,
+                             **kwargs)
+
+    def busy_loop_stop(self, node, spins_per_scheduling_point, num_fibers):
+        return self._request("PUT", "debug/busy_loop_stop", node=node).json()
+
     def cloud_storage_usage(self) -> int:
         return int(
             self._request(

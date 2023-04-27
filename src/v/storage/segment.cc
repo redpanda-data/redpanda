@@ -11,6 +11,7 @@
 
 #include "compression/compression.h"
 #include "config/configuration.h"
+#include "random/generators.h"
 #include "ssx/future-util.h"
 #include "storage/compacted_index_writer.h"
 #include "storage/fs_utils.h"
@@ -399,7 +400,15 @@ ss::future<> segment::do_truncate(
     }
 
     f = f.then([this, prev_last_offset, new_max_timestamp] {
-        return _idx.truncate(prev_last_offset, new_max_timestamp);
+        return _idx.truncate(prev_last_offset, new_max_timestamp).then([] {
+            if (random_generators::get_int<int>() % 5 == 0) {
+                vlog(
+                  stlog.info,
+                  "AWONG SIMULATING SIGKILL AFTER INDEX TRUNCATION");
+                exit(0);
+            }
+            return ss::make_ready_future<>();
+        });
     });
 
     // physical file only needs *one* truncation call
