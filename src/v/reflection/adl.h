@@ -94,7 +94,7 @@ struct adl {
         } else if constexpr (is_fragmented_vector || is_chunked_fifo) {
             using value_type = typename type::value_type;
             int32_t n = in.template consume_type<int32_t>();
-            fragmented_vector<value_type> ret;
+            type ret;
             while (n-- > 0) {
                 ret.push_back(adl<value_type>{}.from(in));
             }
