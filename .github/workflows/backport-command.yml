@@ -179,3 +179,16 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.ACTIONS_BOT_TOKEN }}
         run: $SCRIPT_DIR/post_error.sh
         shell: bash
+
+      - name: Create Issue On Error
+        if: failure()
+        env:
+          GITHUB_TOKEN: ${{ secrets.ACTIONS_BOT_TOKEN }}
+          TARGET_MILESTONE: ${{ steps.create_milestone.outputs.milestone }}
+          ORIG_TITLE: ${{ github.event.client_payload.github.payload.issue.title }}
+          ORIG_LABELS: ${{ toJson(github.event.client_payload.github.payload.issue.labels) }}
+          ORIG_ASSIGNEES: ${{ steps.assignees.outputs.assignees }}
+          CREATE_ISSUE_ON_ERROR: "true"
+        id: create_issue_on_backport_error
+        run: $SCRIPT_DIR/create_issue.sh
+        shell: bash
