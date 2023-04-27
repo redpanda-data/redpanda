@@ -407,13 +407,24 @@ ss::future<> metrics_reporter::do_report_metrics() {
     // do this on every node to allow controller snapshotting to proceed.
     co_await try_initialize_cluster_info();
 
+    // Update cluster_id in configuration, if not already set.  Wait until
+    // we become leader, or it gets written by some other node.
+    if (_cluster_info.is_initialized()) {
+        while (!_as.local().abort_requested()
+               && !config::shard_local_cfg().cluster_id().has_value()) {
+            if (_raft0->is_elected_leader()) {
+                co_await propagate_cluster_id();
+            } else {
+                co_await ss::sleep(
+                  config::shard_local_cfg().raft_heartbeat_interval_ms());
+            }
+        }
+    }
+
     // skip reporting if current node is not raft0 leader
     if (!_raft0->is_elected_leader()) {
         co_return;
     }
-
-    // Update cluster_id in configuration, if not already set.
-    co_await propagate_cluster_id();
 
     // report interval has not elapsed
     if (
