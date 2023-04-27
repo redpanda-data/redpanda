@@ -150,6 +150,9 @@ concept is_fragmented_vector
   = detail::is_specialization_of_sized_v<T, fragmented_vector>;
 
 template<typename T>
+concept is_chunked_fifo
+  = detail::is_specialization_of_sized_v<T, ss::chunked_fifo>;
+template<typename T>
 concept is_std_unordered_map
   = ::detail::is_specialization_of_v<T, std::unordered_map>;
 
@@ -194,7 +197,7 @@ inline constexpr auto const is_serde_compatible_v
     || is_absl_node_hash_map<T>
     || is_chrono_duration<T>
     || is_std_unordered_map<T>
-    || is_fragmented_vector<T> || reflection::is_tristate<T> || std::is_same_v<T, ss::net::inet_address>;
+    || is_fragmented_vector<T> || is_chunked_fifo<T> || reflection::is_tristate<T> || std::is_same_v<T, ss::net::inet_address>;
 
 template<typename T>
 inline constexpr auto const are_bytes_and_string_different = !(
@@ -424,6 +427,20 @@ inline void write(iobuf& out, bytes t) {
 
 template<typename T, size_t fragment_size>
 void write(iobuf& out, fragmented_vector<T, fragment_size> t) {
+    if (unlikely(t.size() > std::numeric_limits<serde_size_t>::max())) {
+        throw serde_exception(fmt_with_ctx(
+          ssx::sformat,
+          "serde: fragmented vector size {} exceeds serde_size_t",
+          t.size()));
+    }
+    write(out, static_cast<serde_size_t>(t.size()));
+    for (auto& el : t) {
+        write(out, std::move(el));
+    }
+}
+
+template<typename T>
+void write(iobuf& out, ss::chunked_fifo<T> t) {
     if (unlikely(t.size() > std::numeric_limits<serde_size_t>::max())) {
         throw serde_exception(fmt_with_ctx(
           ssx::sformat,
@@ -821,7 +838,7 @@ void read_nested(iobuf_parser& in, T& t, std::size_t const bytes_left_limit) {
               in, bytes_left_limit);
             t.emplace(std::move(key), std::move(value));
         }
-    } else if constexpr (is_fragmented_vector<Type>) {
+    } else if constexpr (is_fragmented_vector<Type> || is_chunked_fifo<Type>) {
         using value_type = typename Type::value_type;
         const auto size = read_nested<serde_size_t>(in, bytes_left_limit);
         for (auto i = 0U; i < size; ++i) {
