@@ -163,7 +163,7 @@ ss::future<> rpc_server::dispatch_method_once(
                   ss::sstring msg_suffix;
                   rpc::status s = rpc::status::method_not_found;
                   if (!_all_services_added && _service_unavailable_allowed) {
-                      msg_suffix = "during startup. Ignoring...";
+                      msg_suffix = " during startup. Ignoring...";
                       s = rpc::status::service_unavailable;
                   }
                   vlog(
