@@ -19,7 +19,19 @@
 
 namespace kafka {
 
-using fetch_handler = single_stage_handler<fetch_api, 4, 11>;
+/**
+ * Estimate the minimum size of memory required for a fetch request.
+ *
+ * Fetch request processing is adaptive to the amount of memory available,
+ * controlled by kafka::server::memory_fetch_sem(). It can decide to read
+ * from less partitions than requested. However it is required to read from
+ * at least a single partition, and the amount of memory required for that
+ * is accounted for upfront by this estimator.
+ */
+memory_estimate_fn fetch_memory_estimator;
+
+using fetch_handler
+  = single_stage_handler<fetch_api, 4, 11, fetch_memory_estimator>;
 
 /*
  * Fetch operation context
