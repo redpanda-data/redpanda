@@ -236,6 +236,14 @@ public:
         return _conn->server().get_replica_selector();
     }
 
+    ssx::semaphore& memory_sem() const noexcept {
+        return _conn->server().memory();
+    }
+
+    ssx::semaphore& memory_fetch_sem() const noexcept {
+        return _conn->server().memory_fetch_sem();
+    }
+
 private:
     template<typename ResponseType>
     void update_usage_stats(const ResponseType& r, size_t response_size) {
