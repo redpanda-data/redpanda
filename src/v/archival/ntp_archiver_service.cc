@@ -85,7 +85,7 @@ ntp_archiver::ntp_archiver(
       cloud_storage::remote::make_partition_manifest_tags(_ntp, _rev))
   , _tx_tags(cloud_storage::remote::make_tx_manifest_tags(_ntp, _rev)) {
     vassert(
-      _partition && _partition->is_elected_leader(),
+      _partition && _partition->is_leader(),
       "must be the leader to launch ntp_archiver {}",
       _ntp);
     _start_term = _partition->term();
@@ -353,9 +353,8 @@ ss::future<cloud_storage::download_result> ntp_archiver::sync_manifest() {
           deadline, _as);
         builder.add_segments(std::move(mdiff));
         if (
-          new_start_offset.has_value()
-          && old_start_offset.value_or(model::offset())
-               != new_start_offset.value()) {
+          new_start_offset.has_value() && old_start_offset.has_value()
+          && old_start_offset.value() != new_start_offset.value()) {
             builder.truncate(new_start_offset.value());
             needs_cleanup = true;
         }
@@ -395,21 +394,18 @@ void ntp_archiver::update_probe() {
 
 bool ntp_archiver::upload_loop_can_continue() const {
     return !_as.abort_requested() && !_gate.is_closed()
-           && _partition->is_elected_leader()
-           && _partition->term() == _start_term;
+           && _partition->is_leader() && _partition->term() == _start_term;
 }
 
 bool ntp_archiver::sync_manifest_loop_can_continue() const {
     // todo: think about it
     return !_as.abort_requested() && !_gate.is_closed()
-           && _partition->is_elected_leader()
-           && _partition->term() == _start_term;
+           && _partition->is_leader() && _partition->term() == _start_term;
 }
 
 bool ntp_archiver::housekeeping_can_continue() const {
     return !_as.abort_requested() && !_gate.is_closed()
-           && _partition->is_elected_leader()
-           && _partition->term() == _start_term;
+           && _partition->is_leader() && _partition->term() == _start_term;
 }
 
 ss::future<> ntp_archiver::stop() {
@@ -508,13 +504,13 @@ ntp_archiver::upload_segment(upload_candidate candidate) {
       "current term: {}, "
       "original term: {}",
       [this, original_term](cloud_storage::lazy_abort_source& las) {
-          auto lost_leadership = !_partition->is_elected_leader()
+          auto lost_leadership = !_partition->is_leader()
                                  || _partition->term() != original_term;
           if (unlikely(lost_leadership)) {
               std::string reason{las.abort_reason()};
               las.abort_reason(fmt::format(
                 fmt::runtime(reason),
-                _partition->is_elected_leader(),
+                _partition->is_leader(),
                 _partition->term(),
                 original_term));
           }
