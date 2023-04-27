@@ -45,6 +45,7 @@ public:
     ss::future<> restart();
 
 private:
+    friend class schema_id_validator;
     model::node_id _node_id;
     ss::smp_service_group _sg;
     size_t _max_memory;
