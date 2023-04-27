@@ -24,6 +24,7 @@ from rptest.clients.rpk import RpkTool
 from rptest.clients.types import TopicSpec
 from rptest.clients.kafka_cat import KafkaCat
 from rptest.clients.kafka_cli_tools import KafkaCliTools
+from rptest.tests.group_membership_test import GroupCoordinatorTransferUtils
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.services.redpanda import SecurityConfig, LoggingConfig, ResourceSettings, PandaproxyConfig, TLSProvider
 from rptest.services.admin import Admin
@@ -212,13 +213,14 @@ class PandaProxyEndpoints(RedpandaTest):
                  context,
                  pandaproxy_config: PandaproxyConfig = PandaproxyConfig(),
                  **kwargs):
-        super(PandaProxyEndpoints, self).__init__(
-            context,
-            num_brokers=3,
-            extra_rp_conf={"auto_create_topics_enabled": False},
-            log_config=log_config,
-            pandaproxy_config=pandaproxy_config,
-            **kwargs)
+        kwargs.setdefault("extra_rp_conf",
+                          {})["auto_create_topics_enabled"] = False
+        super(PandaProxyEndpoints,
+              self).__init__(context,
+                             num_brokers=3,
+                             log_config=log_config,
+                             pandaproxy_config=pandaproxy_config,
+                             **kwargs)
 
         http.client.HTTPConnection.debuglevel = 1
         http.client.print = lambda *args: self.logger.debug(" ".join(args))
@@ -1714,3 +1716,103 @@ class PandaProxyMTLSAndBasicAuthTest(PandaProxyMTLSBase):
         result = result_raw.json()
         self.logger.debug(result)
         assert result[0] == self.topic
+
+
+class PandaProxyConsumerGroupTest(PandaProxyEndpoints):
+    topics = [
+        TopicSpec(),
+    ]
+
+    def __init__(self, context):
+        super(PandaProxyConsumerGroupTest,
+              self).__init__(context,
+                             extra_rp_conf={
+                                 "enable_leader_balancer": False,
+                                 "group_topic_partitions": 1
+                             })
+
+    @cluster(num_nodes=3)
+    def test_moving_group_coordinator(self):
+        """
+        """
+        self.logger.info(f"Producing to topic: {self.topic}")
+        produce_result_raw = self._produce_topic(
+            self.topic,
+            '''
+        {
+            "records": [
+                {"value": {"object":["vectorized"]}, "partition": 0},
+                {"value": {"object":["pandaproxy"]}, "partition": 0},
+                {"value": {"object":["multibroker"]}, "partition": 0}
+            ]
+        }''',
+            headers=HTTP_PRODUCE_JSON_V2_TOPIC_HEADERS)
+        assert produce_result_raw.status_code == requests.codes.ok
+
+        self.logger.info("Create a consumer group")
+        group_id = f"pandaproxy-group-{uuid.uuid4()}"
+        cc_res = self._create_consumer(group_id)
+        assert cc_res.status_code == requests.codes.ok
+
+        c0 = Consumer(cc_res.json(), self.logger)
+
+        # Subscribe a consumer to topic
+        self.logger.info(f"Subscribe consumer to topic: {self.topic}")
+        sc_res = c0.subscribe([self.topic])
+        assert sc_res.status_code == requests.codes.no_content
+
+        # Attempt to read from topic
+        self.logger.info(f"Consumer fetch")
+        cf_res = c0.fetch(headers=HTTP_CONSUMER_FETCH_JSON_V2_HEADERS)
+        assert cf_res.status_code == requests.codes.ok, f"Status: {cf_res.status_code}"
+        fetch_result = cf_res.json()
+        self.logger.debug(f"fetch result {json.dumps(fetch_result)}")
+        assert len(fetch_result) == 3
+
+        def do_consumer_offset_commit(new_offset: int):
+            sco_req = dict(partitions=[
+                dict(topic=self.topic, partition=0, offset=new_offset)
+            ])
+            co_res_raw = c0.set_offsets(data=json.dumps(sco_req))
+            assert co_res_raw.status_code == requests.codes.no_content
+
+        def do_consumer_offset_fetch():
+            co_req = dict(partitions=[dict(topic=self.topic, partition=0)])
+            offset_result_raw = c0.get_offsets(data=json.dumps(co_req))
+            assert offset_result_raw.status_code == requests.codes.ok
+            res = offset_result_raw.json()
+            self.logger.debug(f"offset result {json.dumps(res)}")
+            # Should be one offset for each partition that we previously set offsets for
+            assert len(res["offsets"]) == 1
+            for r in res["offsets"]:
+                assert r["topic"] == self.topic
+                assert r["partition"] == 0
+                assert r["offset"] == 0
+                assert r["metadata"] == ""
+
+        def do_coordinator_change(utils: GroupCoordinatorTransferUtils):
+            new_leader = utils.select_next_leader()
+
+            wait_until(lambda: utils.transfer_leadership(new_leader),
+                       timeout_sec=10,
+                       backoff_sec=1)
+
+            wait_until(lambda: utils.validate_leadership_transfer(new_leader),
+                       timeout_sec=30,
+                       backoff_sec=5)
+
+        utils = GroupCoordinatorTransferUtils(self.redpanda)
+
+        do_consumer_offset_commit(new_offset=0)
+
+        self.logger.debug("Test offset fetch: before coordinator change")
+        do_consumer_offset_fetch()
+        do_coordinator_change(utils)
+        self.logger.debug("Test offset fetch: after coordinator change")
+        do_consumer_offset_fetch()
+
+        self.logger.debug("Change the coordinator again")
+        do_coordinator_change(utils)
+        self.logger.debug(
+            "Test offset commit: after second coordinator change")
+        do_consumer_offset_commit(new_offset=1)
