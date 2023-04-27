@@ -1669,8 +1669,6 @@ struct topic_configuration_assignment
     topic_configuration cfg;
     std::vector<partition_assignment> assignments;
 
-    model::topic_metadata get_metadata() const;
-
     auto serde_fields() { return std::tie(cfg, assignments); }
 
     friend bool operator==(
