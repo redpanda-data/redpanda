@@ -15,11 +15,15 @@ class HelmTool:
     """
     Wrapper around helm.
     """
-    def __init__(self, redpanda):
+    def __init__(self,
+                 redpanda,
+                 release='redpanda',
+                 chart='redpanda/redpanda',
+                 namespace='redpanda'):
         self._redpanda = redpanda
-        self._release = 'redpanda'
-        self._chart = 'redpanda/redpanda'
-        self._namespace = 'redpanda'
+        self._release = release
+        self._chart = chart
+        self._namespace = namespace
 
     def install(self):
         cmd = [
