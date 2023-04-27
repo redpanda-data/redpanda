@@ -197,20 +197,6 @@ storage::ntp_config topic_configuration::make_ntp_config(
       init_rev};
 }
 
-model::topic_metadata topic_configuration_assignment::get_metadata() const {
-    model::topic_metadata ret(cfg.tp_ns);
-    ret.partitions.reserve(assignments.size());
-    std::transform(
-      std::cbegin(assignments),
-      std::cend(assignments),
-      std::back_inserter(ret.partitions),
-      [](const partition_assignment& pd) {
-          return pd.create_partition_metadata();
-      });
-
-    return ret;
-}
-
 topic_table_delta::topic_table_delta(
   model::ntp ntp,
   cluster::partition_assignment new_assignment,
