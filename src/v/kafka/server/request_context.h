@@ -235,6 +235,8 @@ public:
         return _conn->server().controller_api();
     }
 
+    ss::sharded<server>& server() { return _conn->server().container(); }
+
 private:
     template<typename ResponseType>
     void update_usage_stats(const ResponseType& r, size_t response_size) {
