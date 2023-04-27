@@ -55,7 +55,7 @@ bool allocation_state::validate_shard(
 raft::group_id allocation_state::next_group_id() { return ++_highest_group; }
 
 void allocation_state::apply_update(
-  std::vector<model::broker_shard> replicas,
+  const std::vector<model::broker_shard>& replicas,
   raft::group_id group_id,
   const partition_allocation_domain domain) {
     verify_shard();
@@ -63,30 +63,15 @@ void allocation_state::apply_update(
         return;
     }
     _highest_group = std::max(_highest_group, group_id);
-    // We can use non stable sort algorithm as we do not need to preserver
-    // the order of shards
-    std::sort(
-      replicas.begin(),
-      replicas.end(),
-      [](const model::broker_shard& l, const model::broker_shard& r) {
-          return l.node_id > r.node_id;
-      });
-    auto node_id = std::cbegin(replicas)->node_id;
-    auto it = _nodes.find(node_id);
 
     for (auto const& bs : replicas) {
+        auto it = _nodes.find(bs.node_id);
         if (it == _nodes.end()) {
             // do nothing, node was deleted
             continue;
         }
-        // Thanks to shards being sorted we need to do only
-        //  as many lookups as there are brokers
-        if (it->first != bs.node_id) {
-            it = _nodes.find(bs.node_id);
-        }
-        if (it != _nodes.end()) {
+
             it->second->allocate_on(bs.shard, domain);
-        }
     }
 }
 
