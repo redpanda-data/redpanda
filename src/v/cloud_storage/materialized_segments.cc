@@ -62,30 +62,11 @@ materialized_segments::materialized_segments()
 ss::future<> materialized_segments::stop() {
     cst_log.debug("Stopping materialized_segments...");
     _stm_timer.cancel();
-    _cvar.broken();
 
     co_await _gate.close();
-
-    // Do the last pass over the eviction list to stop remaining items returned
-    // from readers after the eviction loop stopped.
-    for (auto& rs : _eviction_pending) {
-        co_await std::visit(
-          [](auto&& rs) {
-              if (!rs->is_stopped()) {
-                  return rs->stop();
-              } else {
-                  return ss::make_ready_future<>();
-              }
-          },
-          rs);
-    }
     cst_log.debug("Stopped materialized_segments...");
 }
 ss::future<> materialized_segments::start() {
-    // Fiber that consumes from _eviction_list and calls stop
-    // on items before destroying them
-    ssx::spawn_with_gate(_gate, [this] { return run_eviction_loop(); });
-
     // Timer to invoke TTL eviction of segments
     _stm_timer.set_callback([this] {
         trim_segments(std::nullopt);
@@ -112,47 +93,6 @@ size_t materialized_segments::current_readers() const {
 
 size_t materialized_segments::current_segments() const {
     return _segment_units.outstanding();
-}
-
-void materialized_segments::evict_reader(
-  std::unique_ptr<remote_segment_batch_reader> reader) {
-    _eviction_pending.push_back(std::move(reader));
-    _cvar.signal();
-}
-void materialized_segments::evict_segment(
-  ss::lw_shared_ptr<remote_segment> segment) {
-    _eviction_pending.push_back(std::move(segment));
-    _cvar.signal();
-}
-
-ss::future<> materialized_segments::flush_evicted() {
-    if (_eviction_pending.empty() && _eviction_in_flight.empty()) {
-        // Fast path, avoid waking up the eviction loop if there is no work.
-        co_return;
-    }
-
-    auto barrier = ss::make_lw_shared<eviction_barrier>();
-
-    // Write a barrier to the list and wait for the eviction consumer
-    // to reach it: this
-    _eviction_pending.push_back(barrier);
-    _cvar.signal();
-
-    co_await barrier->promise.get_future();
-}
-
-ss::future<> materialized_segments::run_eviction_loop() {
-    // Evict readers asynchronously
-    while (true) {
-        co_await _cvar.wait([this] { return !_eviction_pending.empty(); });
-        _eviction_in_flight = std::exchange(_eviction_pending, {});
-        co_await ss::max_concurrent_for_each(
-          _eviction_in_flight, 1024, [](auto&& rs_variant) {
-              return std::visit(
-                [](auto&& rs) { return rs->stop(); }, rs_variant);
-          });
-        _eviction_in_flight.clear();
-    }
 }
 
 void materialized_segments::register_segment(materialized_segment_state& s) {
@@ -238,7 +178,13 @@ void materialized_segments::trim_readers(size_t target_free) {
         // Readers hold a reference to the segment, so for the
         // segment.owned() check to pass, we need to clear them out.
         while (!st.readers.empty() && _reader_units.current() < target_free) {
-            evict_reader(std::move(st.readers.front()));
+            auto partition = st.parent;
+            // TODO: consider asserting here instead: it's a bug for
+            // 'partition' to be null, since readers outlive the partition, and
+            // we can't create new readers if the partition has been shut down.
+            if (likely(partition)) {
+                partition->evict_reader(std::move(st.readers.front()));
+            }
             st.readers.pop_front();
         }
     }
@@ -352,7 +298,13 @@ void materialized_segments::maybe_trim_segment(
         // Readers hold a reference to the segment, so for the
         // segment.owned() check to pass, we need to clear them out.
         while (!st.readers.empty()) {
-            evict_reader(std::move(st.readers.front()));
+            // TODO: consider asserting here instead: it's a bug for
+            // 'partition' to be null, since readers outlive the partition, and
+            // we can't create new readers if the partition has been shut down.
+            auto partition = st.parent;
+            if (likely(partition)) {
+                partition->evict_reader(std::move(st.readers.front()));
+            }
             st.readers.pop_front();
         }
     }

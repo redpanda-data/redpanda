@@ -125,10 +125,14 @@ public:
       retry_chain_node& parent);
 
     /// Remove objects from S3
-    ss::future<> erase();
+    ss::future<> erase(ss::abort_source&);
 
     /// Hook for materialized_segment to notify us when a segment is evicted
     void offload_segment(model::offset);
+
+    // Place on the eviction queue.
+    void evict_reader(std::unique_ptr<remote_segment_batch_reader> reader);
+    void evict_segment(ss::lw_shared_ptr<remote_segment> segment);
 
 private:
     friend struct materialized_segment_state;
@@ -142,6 +146,8 @@ private:
 
     /// This is exposed for the benefit of the materialized_segment_state
     materialized_segments& materialized();
+
+    ss::future<> run_eviction_loop();
 
     /// Materialize segment if needed and create a reader
     ///
@@ -186,11 +192,40 @@ private:
     retry_chain_node _rtc;
     retry_chain_logger _ctxlog;
     ss::gate _gate;
+    ss::abort_source _as;
     remote& _api;
     cache& _cache;
     const partition_manifest& _manifest;
     s3::bucket_name _bucket;
 
+    /// Special item in eviction_list that holds a promise and sets it
+    /// when the eviction fiber calls stop() (see flush_evicted)
+    struct eviction_barrier {
+        ss::promise<> promise;
+
+        ss::future<> stop() {
+            promise.set_value();
+            stopped = true;
+            return ss::now();
+        }
+
+        bool stopped{false};
+
+        bool is_stopped() const { return stopped; }
+    };
+
+    using evicted_resource_t = std::variant<
+      std::unique_ptr<remote_segment_batch_reader>,
+      ss::lw_shared_ptr<remote_segment>,
+      ss::lw_shared_ptr<eviction_barrier>>;
+    using eviction_list_t = std::deque<evicted_resource_t>;
+
+    /// Kick this condition variable when appending to eviction_list
+    ss::condition_variable _has_evictions_cvar;
+
+    /// List of segments and readers waiting to have their stop() method
+    /// called before destruction
+    eviction_list_t _eviction_pending;
     segment_map_t _segments;
     partition_probe _probe;
 };
