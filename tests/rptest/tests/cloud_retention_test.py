@@ -7,6 +7,8 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
+import time
+
 from ducktape.utils.util import wait_until
 from ducktape.mark import matrix, parametrize
 from ducktape.errors import TimeoutError
@@ -294,7 +296,9 @@ class CloudRetentionTest(PreallocNodesTest):
 
 
 class CloudRetentionTimelyGCTest(RedpandaTest):
-    segment_size = 256 * 1024
+    # 1MiB segments, the smallest that redpanda's default config accepts
+    segment_size = 1024 * 1024
+
     retention_bytes = 10 * segment_size
 
     topics = (TopicSpec(name="panda-topic",
@@ -311,36 +315,57 @@ class CloudRetentionTimelyGCTest(RedpandaTest):
         super().__init__(
             test_context,
             si_settings=si_settings,
-            extra_rp_conf={'cloud_storage_housekeeping_interval_ms': 1000 * 2})
+            # Minimal interval: effect is to run housekeeping on every upload loop.
+            # This means that 2x the max segments per upload loop (4) is the most
+            # we may exceed the retention limit by.
+            extra_rp_conf={'cloud_storage_housekeeping_interval_ms': 1})
 
     @cluster(num_nodes=4, log_allow_list=CHAOS_LOG_ALLOW_LIST)
     @skip_debug_mode
     @matrix(cloud_storage_type=get_cloud_storage_type())
     def test_retention_with_node_failures(self, cloud_storage_type):
         max_overshoot_percentage = 100
-        runtime = 120
+
+        # This runtime must be long enough to accomodate the total write bytes
+        # at this message size, on the slowest test environment.
+        runtime = 240
+        msg_size = 8192
+        write_bytes = int(self.retention_bytes * 4.0)
 
         # Write fast enough that in the test's runtime, we would certainly
         # overshoot the retention size substantially if retention wasn't working.
-        write_rate = (self.retention_bytes * 4.0) / runtime
+        write_rate = write_bytes // runtime
 
         # Write enough data to last the runtime.
-        msg_size = 128
-        msg_count = write_rate * runtime // msg_size
+        msg_count = write_bytes // msg_size
 
-        producer = KgoVerifierProducer(self.test_context,
-                                       self.redpanda,
-                                       self.topic,
-                                       msg_count=msg_count,
-                                       msg_size=msg_size,
-                                       rate_limit_bps=write_rate)
+        producer = KgoVerifierProducer(
+            self.test_context,
+            self.redpanda,
+            self.topic,
+            msg_count=msg_count,
+            msg_size=msg_size,
+            # Use small batches to avoid overshooting segment size target too much
+            batch_max_bytes=max(msg_size * 2, 512),
+            rate_limit_bps=write_rate)
         producer.start()
 
-        def cloud_log_size() -> int:
+        # Wait for some substantial production to happen before we start
+        # inspecting cloud storage
+        producer.wait_for_acks(msg_count / 2,
+                               timeout_sec=runtime,
+                               backoff_sec=5)
+
+        def check_cloud_log_size():
             s3_snapshot = BucketView(self.redpanda, topics=self.topics)
             if not s3_snapshot.is_ntp_in_manifest(self.topic, 0):
                 self.logger.debug(f"No manifest present yet")
-                return 0
+                return
+
+            if s3_snapshot.manifest_for_ntp(topic=self.topic, partition=0).get(
+                    'start_offset', 0) <= 0:
+                self.logger.debug(f"Manifest not prefix-truncated yet")
+                return
 
             cloud_log_size = s3_snapshot.cloud_log_size_for_ntp(self.topic, 0)
             ratio = cloud_log_size / self.retention_bytes
@@ -354,22 +379,20 @@ class CloudRetentionTimelyGCTest(RedpandaTest):
                     f"Cloud log size {overshoot_percentage}% greater than configured"
                     f" retention (max allowed {max_overshoot_percentage}%)")
 
-            return cloud_log_size
-
         pkill_config = ActionConfig(cluster_start_lead_time_sec=10,
                                     min_time_between_actions_sec=10,
                                     max_time_between_actions_sec=20)
+
+        deadline = time.time() + runtime
         with random_process_kills(self.redpanda, pkill_config) as ctx:
-            try:
-                wait_until(lambda: cloud_log_size() == -1,
-                           timeout_sec=runtime,
-                           backoff_sec=5)
-            except TimeoutError as e:
-                # This is the success path. Timing out means that
-                # we've stayed below the max cloud log size threshold
-                # for the duration of the test.
-                pass
-            finally:
-                producer.stop()
+            # This will throw if we violate size constraint
+            while time.time() < deadline:
+                time.sleep(5)
+                check_cloud_log_size()
+
+        # Dropped out without throwing: wait for producer, this includes surfacing
+        # any produce errors
+        producer.wait()
+        producer.stop()
 
         ctx.assert_actions_triggered()
