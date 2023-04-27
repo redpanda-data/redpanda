@@ -53,12 +53,9 @@ cluster_discovery::determine_node_id() {
         co_return registration_result{
           .assigned_node_id = *config::node().node_id()};
     }
-    if (config::node().node_id() != std::nullopt) {
-        // If we're not a founder but we already have a node ID, just return.
-        // We will send it to the controller when we join the cluster.
-        co_return registration_result{
-          .assigned_node_id = *config::node().node_id()};
-    }
+
+    // All non-founder nodes must register before their first start of
+    // the controller.
 
     while (!_as.abort_requested()) {
         auto reg_result = co_await dispatch_node_uuid_registration_to_seeds();
@@ -142,7 +139,10 @@ cluster_discovery::dispatch_node_uuid_registration_to_seeds() {
     for (const auto& s : seed_servers) {
         vlog(
           clusterlog.info,
-          "Requesting node ID for node UUID {} from {}",
+          "Requesting node ID {} for node UUID {} from {}",
+          config::node().node_id().has_value()
+            ? fmt::format("{}", config::node().node_id().value())
+            : "",
           _node_uuid,
           s.addr);
         result<join_node_reply> r(join_node_reply{});

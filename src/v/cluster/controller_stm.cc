@@ -56,6 +56,13 @@ void controller_stm::snapshot_timer_callback() {
         });
 }
 
+bool controller_stm::ready_to_snapshot() const {
+    // cluster info is initialized manually from the first 2 batches of
+    // controller log so we have to wait until it is initialized by
+    // metrics_reporter before making a snapshot.
+    return _metrics_reporter_cluster_info.is_initialized();
+}
+
 ss::future<std::optional<iobuf>>
 controller_stm::maybe_make_snapshot(ssx::semaphore_units apply_mtx_holder) {
     auto started_at = ss::steady_clock_type::now();
@@ -67,15 +74,11 @@ controller_stm::maybe_make_snapshot(ssx::semaphore_units apply_mtx_holder) {
 
     controller_snapshot data;
 
-    if (!_metrics_reporter_cluster_info.is_initialized()) {
-        // cluster info is initialized manually from the first 2 batches of
-        // controller log so we have to wait until it is initialized by
-        // metrics_reporter before making a snapshot.
-        vlog(
-          clusterlog.debug,
-          "skipping snapshotting, metrics reporter not yet initialized");
+    if (!ready_to_snapshot()) {
+        vlog(clusterlog.debug, "skipping snapshotting, not ready");
         co_return std::nullopt;
     }
+
     data.metrics_reporter.cluster_info = _metrics_reporter_cluster_info;
 
     ss::future<> fill_fut = ss::now();

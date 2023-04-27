@@ -1275,6 +1275,18 @@ members_manager::handle_join_request(join_node_request const req) {
           });
     }
 
+    if (!_controller_stm.local().ready_to_snapshot()) {
+        vlog(
+          clusterlog.info,
+          "Rejecting node '{} ({})' join request, cluster is not yet ready to "
+          "add nodes",
+          req.node.id(),
+          node_uuid_str);
+
+        co_return ret_t(
+          join_node_reply{status_t::not_ready, model::unassigned_node_id});
+    }
+
     if (likely(node_id_assignment_supported && req_has_node_uuid)) {
         const auto it = _id_by_uuid.find(node_uuid);
         if (!req_node_id) {

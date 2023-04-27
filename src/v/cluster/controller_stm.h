@@ -65,6 +65,8 @@ public:
 
     virtual ss::future<> stop() final;
 
+    bool ready_to_snapshot() const;
+
 private:
     ss::future<> on_batch_applied() final;
     void snapshot_timer_callback();

@@ -1918,8 +1918,60 @@ void application::wire_up_and_start(::stop_signal& app_signal, bool test_mode) {
     const auto& node_uuid = storage.local().node_uuid();
     cluster::cluster_discovery cd(
       node_uuid, storage.local(), app_signal.abort_source());
-    auto registration_result = cd.determine_node_id().get();
-    auto node_id = registration_result.assigned_node_id;
+
+    bool ever_ran_controller = storage.local()
+                                 .kvs()
+                                 .get(
+                                   storage::kvstore::key_space::controller,
+                                   bytes("configuration_invariants"))
+                                 .has_value();
+
+    model::node_id node_id;
+    if (config::node().node_id().has_value() && ever_ran_controller) {
+        vlog(
+          _log.debug,
+          "Running with already-established node ID {}",
+          config::node().node_id());
+        node_id = config::node().node_id().value();
+    } else {
+        auto registration_result = cd.determine_node_id().get();
+        node_id = registration_result.assigned_node_id;
+
+        if (registration_result.newly_registered) {
+            vlog(
+              _log.info,
+              "Registered with cluster as node ID {}",
+              registration_result.assigned_node_id);
+            if (registration_result.controller_snapshot.has_value()) {
+                // Do something with the controller snapshot
+                auto snap = serde::from_iobuf<cluster::controller_snapshot>(
+                  std::move(registration_result.controller_snapshot.value()));
+
+                // The controller is not started yet, so write state directly
+                // into the feature table and configuration object.  We do not
+                // currently use the rest of the snapshot, but reserve the right
+                // to do so in future (e.g. to prime all the controller stms
+                // from the snapshot)
+                auto ftsnap = std::move(snap.features.snap);
+                ss::smp::invoke_on_all([ftsnap, &ft = feature_table] {
+                    ftsnap.apply(ft.local());
+                }).get();
+                cluster::feature_backend::do_save_local_snapshot(
+                  storage.local(), ftsnap)
+                  .get();
+
+                // The preload object is usually generated from loading a local
+                // cache or from the bootstrap file.  The configuration received
+                // from the cluster during join takes precedence over either of
+                // these, and we replace it.
+                _config_preload
+                  = cluster::config_manager::preload_join(snap).get();
+                cluster::config_manager::write_local_cache(
+                  _config_preload.version, _config_preload.raw_values)
+                  .get();
+            }
+        }
+    }
 
     if (config::node().node_id() == std::nullopt) {
         // If we previously didn't have a node ID, set it in the config. We
@@ -1928,40 +1980,6 @@ void application::wire_up_and_start(::stop_signal& app_signal, bool test_mode) {
             config::node().node_id.set_value(
               std::make_optional<model::node_id>(node_id));
         }).get();
-    }
-
-    if (registration_result.newly_registered) {
-        vlog(
-          _log.info,
-          "Registered with cluster as node ID {}",
-          registration_result.assigned_node_id);
-        if (registration_result.controller_snapshot.has_value()) {
-            // Do something with the controller snapshot
-            auto snap = serde::from_iobuf<cluster::controller_snapshot>(
-              std::move(registration_result.controller_snapshot.value()));
-
-            // The controller is not started yet, so write state directly into
-            // the feature table and configuration object.  We do not currently
-            // use the rest of the snapshot, but reserve the right to do so
-            // in future (e.g. to prime all the controller stms from the
-            // snapshot)
-            auto ftsnap = std::move(snap.features.snap);
-            ss::smp::invoke_on_all([ftsnap, &ft = feature_table] {
-                ftsnap.apply(ft.local());
-            }).get();
-            cluster::feature_backend::do_save_local_snapshot(
-              storage.local(), ftsnap)
-              .get();
-
-            // The preload object is usually generated from loading a local
-            // cache or from the bootstrap file.  The configuration received
-            // from the cluster during join takes precedence over either of
-            // these, and we replace it.
-            _config_preload = cluster::config_manager::preload_join(snap).get();
-            cluster::config_manager::write_local_cache(
-              _config_preload.version, _config_preload.raw_values)
-              .get();
-        }
     }
 
     vlog(
