@@ -13,9 +13,11 @@
 #include "random/generators.h"
 #include "serde/envelope.h"
 #include "serde/serde.h"
+#include "test_utils/randoms.h"
 #include "tristate.h"
 #include "utils/fragmented_vector.h"
 
+#include <seastar/core/chunked_fifo.hh>
 #include <seastar/core/scheduling.hh>
 #include <seastar/core/sstring.hh>
 #include <seastar/net/inet_address.hh>
@@ -1045,4 +1047,20 @@ SEASTAR_THREAD_TEST_CASE(test_async_checksummed) {
                      != std::string_view::npos;
           });
     }
+}
+SEASTAR_THREAD_TEST_CASE(collections_interop) {
+    auto vector = tests::random_vector(
+      []() { return random_generators::gen_alphanum_string(32); }, 1024);
+    ss::chunked_fifo<ss::sstring> fifo;
+    fragmented_vector<ss::sstring> f_vector;
+    std::copy(vector.begin(), vector.end(), std::back_inserter(fifo));
+    std::copy(vector.begin(), vector.end(), std::back_inserter(f_vector));
+
+    auto serialized_vector = serde::to_iobuf(vector);
+    auto serialized_fifo = serde::to_iobuf(std::move(fifo));
+    auto serialized_f_vector = serde::to_iobuf(f_vector.copy());
+
+    // check if serialized representation is the same
+    BOOST_REQUIRE(serialized_vector == serialized_fifo);
+    BOOST_REQUIRE(serialized_vector == serialized_f_vector);
 }
