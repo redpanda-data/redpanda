@@ -82,7 +82,14 @@ DEFAULT_LOG_ALLOW_LIST = [
     # This is expected when tests are intentionally run on low memory configurations
     re.compile(r"Memory: '\d+' below recommended"),
     # A client disconnecting is not bad behaviour on redpanda's part
-    re.compile(r"kafka rpc protocol.*(Connection reset by peer|Broken pipe)")
+    re.compile(r"kafka rpc protocol.*(Connection reset by peer|Broken pipe)"),
+
+    # ubsan supports supressions, but it appears to not support supressions for
+    # generic "undefined behavior", rather only specific ones like invalid
+    # value for type, overflow, alignment, etc...
+    re.compile(
+        r"SUMMARY: UndefinedBehaviorSanitizer: undefined-behavior aead.c:(182|214)"
+    )
 ]
 
 # Log errors that are expected in tests that restart nodes mid-test
@@ -2091,7 +2098,8 @@ class RedpandaService(RedpandaServiceBase):
 
             # List of regexes that will fail the test on if they appear in the log
             match_terms = [
-                "Segmentation fault", "[Aa]ssert", "Exceptional future ignored"
+                "Segmentation fault", "[Aa]ssert",
+                "Exceptional future ignored", "UndefinedBehaviorSanitizer"
             ]
             if self._raise_on_errors:
                 match_terms.append("^ERROR")
