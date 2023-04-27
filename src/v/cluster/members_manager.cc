@@ -937,6 +937,23 @@ wait_for_next_join_retry(std::chrono::milliseconds tout, ss::abort_source& as) {
       });
 }
 
+ss::future<join_node_reply>
+members_manager::make_join_node_success_reply(model::node_id id) {
+    // Provide the joining node with a controller snapshot, so
+    // that it may load correct configuration + feature table
+    // before applying the controller log.
+    return _controller_stm.local().maybe_compose_snapshot().then(
+      [id](std::optional<iobuf> snapshot) {
+          vlog(
+            clusterlog.debug,
+            "Responding to node {} join with {} byte snapshot",
+            id,
+            snapshot.has_value() ? snapshot.value().size_bytes() : 0);
+          return join_node_reply(
+            join_node_reply::status_code::success, id, std::move(snapshot));
+      });
+}
+
 ss::future<result<join_node_reply>> members_manager::dispatch_join_to_remote(
   const config::seed_server& target, join_node_request&& req) {
     vlog(
@@ -1183,8 +1200,8 @@ ss::future<result<join_node_reply>> members_manager::replicate_new_node_uuid(
     }
 
     // On success, return the node ID.
-    co_return ret_t(join_node_reply{
-      join_node_reply::status_code::success, get_node_id(node_uuid)});
+    co_return ret_t(
+      co_await make_join_node_success_reply(get_node_id(node_uuid)));
 }
 
 static bool contains_address(
@@ -1299,7 +1316,7 @@ members_manager::handle_join_request(join_node_request const req) {
             }
             // The requested UUID already exists; this is a duplicate request
             // to assign a node ID. Just return the registered node ID.
-            co_return ret_t(join_node_reply{status_t::success, it->second});
+            co_return ret_t(co_await make_join_node_success_reply(it->second));
         }
         // We've been passed a node ID. The caller expects to be added to the
         // Raft group by the end of this function.
@@ -1350,15 +1367,20 @@ members_manager::handle_join_request(join_node_request const req) {
         auto update_req = configuration_update_request(req.node, _self.id());
         co_return co_await handle_configuration_update_request(
           std::move(update_req))
-          .then([node_id](result<configuration_update_reply> r) {
-              if (r) {
-                  auto success = r.value().success;
-                  return ret_t(join_node_reply{
-                    success ? status_t::success : status_t::error,
-                    success ? node_id : model::unassigned_node_id});
-              }
-              return ret_t(r.error());
-          });
+          .then(
+            [this, node_id](
+              result<configuration_update_reply> r) -> ss::future<ret_t> {
+                if (r) {
+                    if (r.value().success) {
+                        return make_join_node_success_reply(node_id).then(
+                          [](join_node_reply r) { return ret_t(r); });
+                    } else {
+                        return ss::make_ready_future<ret_t>(join_node_reply{
+                          status_t::error, model::unassigned_node_id});
+                    }
+                }
+                return ss::make_ready_future<ret_t>(r.error());
+            });
     }
 
     // Older versions of Redpanda don't support having multiple servers pointed
@@ -1394,19 +1416,8 @@ members_manager::handle_join_request(join_node_request const req) {
                 "Added node {} to cluster, preparing response",
                 node.id());
 
-              // Provide the joining node with a controller snapshot, so
-              // that it may load correct configuration + feature table
-              // before applying the controller log.
-              return _controller_stm.local().maybe_compose_snapshot().then(
-                [node_id = node.id()](std::optional<iobuf> snapshot) {
-                    vlog(
-                      clusterlog.debug,
-                      "Responding to node {} join with {} byte snapshot",
-                      node_id,
-                      snapshot.has_value() ? snapshot.value().size_bytes() : 0);
-                    return ret_t(join_node_reply(
-                      status_t::success, node_id, std::move(snapshot)));
-                });
+              return make_join_node_success_reply(node.id()).then(
+                [](join_node_reply r) { return ret_t(r); });
           }
           vlog(
             clusterlog.warn,
