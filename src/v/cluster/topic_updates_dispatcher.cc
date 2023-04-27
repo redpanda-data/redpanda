@@ -17,6 +17,7 @@
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "raft/types.h"
+#include "ssx/future-util.h"
 
 #include <absl/container/node_hash_map.h>
 #include <fmt/ranges.h>
@@ -450,30 +451,18 @@ ss::future<std::error_code> do_apply(
 template<typename Cmd>
 ss::future<std::error_code>
 topic_updates_dispatcher::dispatch_updates_to_cores(Cmd cmd, model::offset o) {
-    using ret_t = std::vector<std::error_code>;
-    return ss::do_with(
-      ret_t{}, [this, cmd = std::move(cmd), o](ret_t& ret) mutable {
-          ret.reserve(ss::smp::count);
-          return ss::parallel_for_each(
-                   boost::irange(0, (int)ss::smp::count),
-                   [this, &ret, cmd = std::move(cmd), o](int shard) mutable {
-                       return do_apply(shard, cmd, _topic_table, o)
-                         .then([&ret](std::error_code r) { ret.push_back(r); });
-                   })
-            .then([&ret] { return std::move(ret); })
-            .then([](std::vector<std::error_code> results) mutable {
-                auto ret = results.front();
-                for (auto& r : results) {
-                    vassert(
-                      ret == r,
-                      "State inconsistency across shards detected, expected "
-                      "result: {}, have: {}",
-                      ret,
-                      r);
-                }
-                return ret;
-            });
+    auto results = co_await ssx::parallel_transform(
+      boost::irange<ss::shard_id>(0, ss::smp::count),
+      [this, cmd = std::move(cmd), o](ss::shard_id shard) mutable {
+          return do_apply(shard, cmd, _topic_table, o);
       });
+
+    vassert(
+      std::equal(std::next(results.begin()), results.end(), results.begin()),
+      "State inconsistency across shards detected results: {}",
+      results);
+
+    co_return results.front();
 }
 
 void topic_updates_dispatcher::deallocate_topic(
