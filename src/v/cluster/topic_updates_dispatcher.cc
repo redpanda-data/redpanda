@@ -39,370 +39,351 @@ topic_updates_dispatcher::topic_updates_dispatcher(
 
 ss::future<std::error_code>
 topic_updates_dispatcher::apply_update(model::record_batch b) {
-    auto base_offset = b.base_offset();
-    return deserialize(std::move(b), commands)
-      .then([this, base_offset](auto cmd) {
-          return ss::visit(
-            std::move(cmd),
-            [this, base_offset](delete_topic_cmd del_cmd) {
-                auto topic_assignments
-                  = _topic_table.local().get_topic_assignments(del_cmd.value);
-                in_progress_map in_progress;
+    auto offset = b.base_offset();
+    auto cmd = co_await deserialize(std::move(b), commands);
 
-                if (topic_assignments) {
-                    in_progress = collect_in_progress(
-                      del_cmd.key, *topic_assignments);
-                }
-                return dispatch_updates_to_cores(del_cmd, base_offset)
-                  .then(
-                    [this,
-                     tp_ns = std::move(del_cmd.key),
-                     topic_assignments = std::move(topic_assignments),
-                     in_progress = std::move(in_progress)](std::error_code ec) {
-                        if (ec == errc::success) {
-                            vassert(
-                              topic_assignments.has_value(),
-                              "Topic had to exist before successful delete");
-                            deallocate_topic(
-                              *topic_assignments,
-                              in_progress,
-                              get_allocation_domain(tp_ns));
+    co_return co_await std::visit(
+      [this, offset](auto cmd) { return apply(std::move(cmd), offset); },
+      std::move(cmd));
+}
 
-                            for (const auto& p_as : *topic_assignments) {
-                                _partition_balancer_state.local()
-                                  .handle_ntp_update(
-                                    tp_ns.ns,
-                                    tp_ns.tp,
-                                    p_as.id,
-                                    p_as.replicas,
-                                    {});
-                            }
-                        }
+ss::future<std::error_code> topic_updates_dispatcher::apply(
+  create_topic_cmd command, model::offset offset) {
+    return dispatch_updates_to_cores(command, offset)
+      .then([this, command](std::error_code ec) {
+          if (ec == errc::success) {
+              const auto& tp_ns = command.key;
+              update_allocations(
+                command.value.assignments, get_allocation_domain(tp_ns));
 
-                        return ec;
-                    });
-            },
-            [this, base_offset](create_topic_cmd create_cmd) {
-                return dispatch_updates_to_cores(create_cmd, base_offset)
-                  .then([this, create_cmd](std::error_code ec) {
-                      if (ec == errc::success) {
-                          const auto& tp_ns = create_cmd.key;
-                          update_allocations(
-                            create_cmd.value.assignments,
-                            get_allocation_domain(tp_ns));
+              for (const auto& p_as : command.value.assignments) {
+                  _partition_balancer_state.local().handle_ntp_update(
+                    tp_ns.ns, tp_ns.tp, p_as.id, {}, p_as.replicas);
+              }
+          }
+          return ec;
+      })
 
-                          for (const auto& p_as :
-                               create_cmd.value.assignments) {
-                              _partition_balancer_state.local()
-                                .handle_ntp_update(
-                                  tp_ns.ns,
-                                  tp_ns.tp,
-                                  p_as.id,
-                                  {},
-                                  p_as.replicas);
-                          }
-                      }
-                      return ec;
-                  })
-
-                  .then([this, create_cmd](std::error_code ec) {
-                      if (ec == errc::success) {
-                          std::vector<ntp_leader> leaders;
-                          const auto& tp_ns = create_cmd.value.cfg.tp_ns;
-                          for (auto& p_as : create_cmd.value.assignments) {
-                              leaders.emplace_back(
-                                model::ntp(tp_ns.ns, tp_ns.tp, p_as.id),
-                                p_as.replicas.begin()->node_id);
-                          }
-                          return update_leaders_with_estimates(leaders).then(
-                            [ec]() {
-                                return ss::make_ready_future<std::error_code>(
-                                  ec);
-                            });
-                      }
-                      return ss::make_ready_future<std::error_code>(ec);
-                  });
-            },
-            [this, base_offset](move_partition_replicas_cmd cmd) {
-                auto p_as = _topic_table.local().get_partition_assignment(
-                  cmd.key);
-                return dispatch_updates_to_cores(cmd, base_offset)
-                  .then([this, p_as = std::move(p_as), cmd = std::move(cmd)](
-                          std::error_code ec) {
-                      if (!ec) {
-                          const auto& ntp = cmd.key;
-                          vassert(
-                            p_as.has_value(),
-                            "Partition {} have to exist before successful "
-                            "partition reallocation",
-                            ntp);
-                          auto to_add = subtract_replica_sets(
-                            cmd.value, p_as->replicas);
-                          _partition_allocator.local().add_allocations(
-                            to_add, get_allocation_domain(ntp));
-
-                          _partition_balancer_state.local().handle_ntp_update(
-                            ntp.ns,
-                            ntp.tp.topic,
-                            ntp.tp.partition,
-                            p_as->replicas,
-                            cmd.value);
-                      }
-                      return ec;
-                  });
-            },
-            [this, base_offset](cancel_moving_partition_replicas_cmd cmd) {
-                auto current_assignment
-                  = _topic_table.local().get_partition_assignment(cmd.key);
-                auto new_target_replicas
-                  = _topic_table.local().get_previous_replica_set(cmd.key);
-                auto ntp = cmd.key;
-                return dispatch_updates_to_cores(std::move(cmd), base_offset)
-                  .then([this,
-                         ntp = std::move(ntp),
-                         current_assignment = std::move(current_assignment),
-                         new_target_replicas = std::move(new_target_replicas)](
-                          std::error_code ec) {
-                      if (ec) {
-                          return ec;
-                      }
-                      vassert(
-                        current_assignment.has_value()
-                          && new_target_replicas.has_value(),
-                        "Previous replicas for NTP {} must exists as finish "
-                        "update can only be applied to partition that is "
-                        "currently being updated",
-                        ntp);
-
-                      _partition_balancer_state.local().handle_ntp_update(
-                        ntp.ns,
-                        ntp.tp.topic,
-                        ntp.tp.partition,
-                        current_assignment->replicas,
-                        *new_target_replicas);
-                      return ec;
-                  });
-            },
-            [this, base_offset](finish_moving_partition_replicas_cmd cmd) {
-                // initial replica set of the move command (not changed when
-                // operation is cancelled)
-                auto previous_replicas
-                  = _topic_table.local().get_previous_replica_set(cmd.key);
-                // requested/target replica set of original move command(not
-                // changed when move is cancelled)
-                auto target_replicas
-                  = _topic_table.local().get_target_replica_set(cmd.key);
-                /**
-                 * Finish moving command may be related either with cancellation
-                 * or with finish of an original move
-                 *
-                 * For original move the direction of data transfer is:
-                 *
-                 *  previous_replica -> target_replicas
-                 *
-                 * for cancelled move it is:
-                 *
-                 *  target_replicas -> previous_replicas
-                 *
-                 * Finish command contains the final replica set it will be
-                 * target_replicas for finished move and previous_replicas for
-                 * finished cancellation
-                 */
-                return dispatch_updates_to_cores(cmd, base_offset)
-                  .then([this,
-                         ntp = std::move(cmd.key),
-                         previous_replicas = std::move(previous_replicas),
-                         target_replicas = std::move(target_replicas),
-                         command_replicas = std::move(cmd.value)](
-                          std::error_code ec) {
-                      if (ec) {
-                          return ec;
-                      }
-                      vassert(
-                        previous_replicas.has_value(),
-                        "Previous replicas for NTP {} must exists as finish "
-                        "update can only be applied to partition that is "
-                        "currently being updated",
-                        ntp);
-                      vassert(
-                        target_replicas.has_value(),
-                        "Target replicas for NTP {} must exists as finish "
-                        "update can only be applied to partition that is "
-                        "currently being updated",
-                        ntp);
-                      std::vector<model::broker_shard> to_delete;
-                      // move was successful, not cancelled
-                      if (target_replicas == command_replicas) {
-                          to_delete = subtract_replica_sets(
-                            *previous_replicas, command_replicas);
-                      } else {
-                          vassert(
-                            previous_replicas == command_replicas,
-                            "When finishing cancelled move of partition {} the "
-                            "finish command replica set {} must be equal to "
-                            "previous_replicas {} from topic table in progress "
-                            "update tracker",
-                            ntp,
-                            command_replicas,
-                            previous_replicas);
-                          to_delete = subtract_replica_sets(
-                            *target_replicas, command_replicas);
-                      }
-                      _partition_allocator.local().remove_allocations(
-                        to_delete, get_allocation_domain(ntp));
-
-                      return ec;
-                  });
-            },
-            [this, base_offset](revert_cancel_partition_move_cmd cmd) {
-                /**
-                 * In this case partition underlying raft group reconfiguration
-                 * already finished when it is attempted to be cancelled.
-                 *
-                 * In the case where original move was scheduled
-                 * to happen from replica set A to B:
-                 *
-                 *      A->B
-                 *
-                 * Cancellation would result in reconfiguration:
-                 *
-                 *      B->A
-                 * But since the move A->B finished we update the topic table
-                 * back to the state from before the cancellation
-                 *
-                 */
-
-                // Replica set that the original move was requested from (A from
-                // an example above)
-                auto previous_replicas
-                  = _topic_table.local().get_previous_replica_set(
-                    cmd.value.ntp);
-                auto target_replicas
-                  = _topic_table.local().get_target_replica_set(cmd.value.ntp);
-                return dispatch_updates_to_cores(cmd, base_offset)
-                  .then([this,
-                         ntp = std::move(cmd.value.ntp),
-                         previous_replicas = std::move(previous_replicas),
-                         target_replicas = std::move(target_replicas)](
-                          std::error_code ec) {
-                      if (ec) {
-                          return ec;
-                      }
-
-                      vassert(
-                        previous_replicas.has_value(),
-                        "Previous replicas for NTP {} must exists as revert "
-                        "update can only be applied to partition that move is "
-                        "currently being cancelled",
-                        ntp);
-                      vassert(
-                        target_replicas.has_value(),
-                        "Target replicas for NTP {} must exists as revert "
-                        "update can only be applied to partition that move is "
-                        "currently being cancelled",
-                        ntp);
-
-                      auto to_delete = subtract_replica_sets(
-                        *previous_replicas, *target_replicas);
-                      _partition_allocator.local().remove_allocations(
-                        to_delete, get_allocation_domain(ntp));
-
-                      _partition_balancer_state.local().handle_ntp_update(
-                        ntp.ns,
-                        ntp.tp.topic,
-                        ntp.tp.partition,
-                        *previous_replicas,
-                        *target_replicas);
-                      return ec;
-                  });
-            },
-            [this, base_offset](update_topic_properties_cmd cmd) {
-                return dispatch_updates_to_cores(std::move(cmd), base_offset);
-            },
-            [this, base_offset](create_partition_cmd cmd) {
-                return dispatch_updates_to_cores(cmd, base_offset)
-                  .then([this, cmd](std::error_code ec) {
-                      if (ec == errc::success) {
-                          const auto& tp_ns = cmd.key;
-                          update_allocations(
-                            cmd.value.assignments,
-                            get_allocation_domain(tp_ns));
-
-                          for (const auto& p_as : cmd.value.assignments) {
-                              _partition_balancer_state.local()
-                                .handle_ntp_update(
-                                  tp_ns.ns,
-                                  tp_ns.tp,
-                                  p_as.id,
-                                  {},
-                                  p_as.replicas);
-                          }
-                      }
-                      return ec;
-                  });
-            },
-            [this, base_offset](create_non_replicable_topic_cmd cmd) {
-                auto assignments = _topic_table.local().get_topic_assignments(
-                  cmd.key.source);
-                return dispatch_updates_to_cores(cmd, base_offset)
-                  .then([this,
-                         assignments = std::move(assignments),
-                         allocation_domain = get_allocation_domain(
-                           cmd.key.name)](std::error_code ec) {
-                      if (ec == errc::success) {
-                          vassert(
-                            assignments.has_value(), "null topic_metadata");
-                          std::vector<partition_assignment> p_as;
-                          p_as.reserve(assignments->size());
-                          std::move(
-                            assignments->begin(),
-                            assignments->end(),
-                            std::back_inserter(p_as));
-                          update_allocations(
-                            std::move(p_as), allocation_domain);
-                      }
-                      return ec;
-                  });
-            },
-            [this, base_offset](move_topic_replicas_cmd cmd) {
-                auto assignments = _topic_table.local().get_topic_assignments(
-                  cmd.key);
-                return dispatch_updates_to_cores(cmd, base_offset)
-                  .then([this,
-                         assignments = std::move(assignments),
-                         cmd = std::move(cmd)](std::error_code ec) {
-                      if (!assignments.has_value()) {
-                          return std::error_code(errc::topic_not_exists);
-                      }
-                      if (ec == errc::success) {
-                          for (const auto& [partition_id, replicas] :
-                               cmd.value) {
-                              auto assigment_it = assignments.value().find(
-                                partition_id);
-                              auto ntp = model::ntp(
-                                cmd.key.ns, cmd.key.tp, partition_id);
-                              if (assigment_it == assignments.value().end()) {
-                                  return std::error_code(
-                                    errc::partition_not_exists);
-                              }
-                              auto to_add = subtract_replica_sets(
-                                replicas, assigment_it->replicas);
-                              _partition_allocator.local().add_allocations(
-                                to_add, get_allocation_domain(ntp));
-                              _partition_balancer_state.local()
-                                .handle_ntp_update(
-                                  ntp.ns,
-                                  ntp.tp.topic,
-                                  ntp.tp.partition,
-                                  assigment_it->replicas,
-                                  replicas);
-                          }
-                      }
-                      return ec;
-                  });
-            });
+      .then([this, command](std::error_code ec) {
+          if (ec == errc::success) {
+              std::vector<ntp_leader> leaders;
+              const auto& tp_ns = command.value.cfg.tp_ns;
+              for (auto& p_as : command.value.assignments) {
+                  leaders.emplace_back(
+                    model::ntp(tp_ns.ns, tp_ns.tp, p_as.id),
+                    p_as.replicas.begin()->node_id);
+              }
+              return update_leaders_with_estimates(leaders).then(
+                [ec]() { return ss::make_ready_future<std::error_code>(ec); });
+          }
+          return ss::make_ready_future<std::error_code>(ec);
       });
 }
+ss::future<std::error_code>
+topic_updates_dispatcher::apply(delete_topic_cmd cmd, model::offset offset) {
+    auto topic_assignments = _topic_table.local().get_topic_assignments(
+      cmd.value);
+    in_progress_map in_progress;
+
+    if (topic_assignments) {
+        in_progress = collect_in_progress(cmd.key, *topic_assignments);
+    }
+    return dispatch_updates_to_cores(cmd, offset)
+      .then([this,
+             tp_ns = std::move(cmd.key),
+             topic_assignments = std::move(topic_assignments),
+             in_progress = std::move(in_progress)](std::error_code ec) {
+          if (ec == errc::success) {
+              vassert(
+                topic_assignments.has_value(),
+                "Topic had to exist before successful delete");
+              vlog(
+                clusterlog.trace,
+                "Deallocating ntp: {},  in_progress ops: {}",
+                tp_ns,
+                in_progress);
+              deallocate_topic(
+                tp_ns,
+                *topic_assignments,
+                in_progress,
+                get_allocation_domain(tp_ns));
+
+              for (const auto& p_as : *topic_assignments) {
+                  _partition_balancer_state.local().handle_ntp_update(
+                    tp_ns.ns, tp_ns.tp, p_as.id, p_as.replicas, {});
+              }
+          }
+
+          return ec;
+      });
+}
+ss::future<std::error_code> topic_updates_dispatcher::apply(
+  move_partition_replicas_cmd cmd, model::offset offset) {
+    auto p_as = _topic_table.local().get_partition_assignment(cmd.key);
+    return dispatch_updates_to_cores(cmd, offset)
+      .then([this, p_as = std::move(p_as), cmd = std::move(cmd)](
+              std::error_code ec) {
+          if (!ec) {
+              const auto& ntp = cmd.key;
+              vassert(
+                p_as.has_value(),
+                "Partition {} have to exist before successful "
+                "partition reallocation",
+                ntp);
+              auto to_add = subtract_replica_sets(cmd.value, p_as->replicas);
+              _partition_allocator.local().add_allocations(
+                to_add, get_allocation_domain(ntp));
+
+              _partition_balancer_state.local().handle_ntp_update(
+                ntp.ns,
+                ntp.tp.topic,
+                ntp.tp.partition,
+                p_as->replicas,
+                cmd.value);
+          }
+          return ec;
+      });
+}
+ss::future<std::error_code> topic_updates_dispatcher::apply(
+  cancel_moving_partition_replicas_cmd cmd, model::offset offset) {
+    auto current_assignment = _topic_table.local().get_partition_assignment(
+      cmd.key);
+    auto new_target_replicas = _topic_table.local().get_previous_replica_set(
+      cmd.key);
+    auto ntp = cmd.key;
+    return dispatch_updates_to_cores(std::move(cmd), offset)
+      .then([this,
+             ntp = std::move(ntp),
+             current_assignment = std::move(current_assignment),
+             new_target_replicas = std::move(new_target_replicas)](
+              std::error_code ec) {
+          if (ec) {
+              return ec;
+          }
+          vassert(
+            current_assignment.has_value() && new_target_replicas.has_value(),
+            "Previous replicas for NTP {} must exists as finish "
+            "update can only be applied to partition that is "
+            "currently being updated",
+            ntp);
+
+          _partition_balancer_state.local().handle_ntp_update(
+            ntp.ns,
+            ntp.tp.topic,
+            ntp.tp.partition,
+            current_assignment->replicas,
+            *new_target_replicas);
+          return ec;
+      });
+}
+ss::future<std::error_code> topic_updates_dispatcher::apply(
+  finish_moving_partition_replicas_cmd cmd, model::offset offset) {
+    // initial replica set of the move command (not changed when
+    // operation is cancelled)
+    auto previous_replicas = _topic_table.local().get_previous_replica_set(
+      cmd.key);
+    // requested/target replica set of original move command(not
+    // changed when move is cancelled)
+    auto target_replicas = _topic_table.local().get_target_replica_set(cmd.key);
+    /**
+     * Finish moving command may be related either with cancellation
+     * or with finish of an original move
+     *
+     * For original move the direction of data transfer is:
+     *
+     *  previous_replica -> target_replicas
+     *
+     * for cancelled move it is:
+     *
+     *  target_replicas -> previous_replicas
+     *
+     * Finish command contains the final replica set it will be
+     * target_replicas for finished move and previous_replicas for
+     * finished cancellation
+     */
+    return dispatch_updates_to_cores(cmd, offset)
+      .then([this,
+             ntp = std::move(cmd.key),
+             previous_replicas = std::move(previous_replicas),
+             target_replicas = std::move(target_replicas),
+             command_replicas = std::move(cmd.value)](std::error_code ec) {
+          if (ec) {
+              return ec;
+          }
+          vassert(
+            previous_replicas.has_value(),
+            "Previous replicas for NTP {} must exists as finish "
+            "update can only be applied to partition that is "
+            "currently being updated",
+            ntp);
+          vassert(
+            target_replicas.has_value(),
+            "Target replicas for NTP {} must exists as finish "
+            "update can only be applied to partition that is "
+            "currently being updated",
+            ntp);
+          std::vector<model::broker_shard> to_delete;
+          // move was successful, not cancelled
+          if (target_replicas == command_replicas) {
+              to_delete = subtract_replica_sets(
+                *previous_replicas, command_replicas);
+          } else {
+              vassert(
+                previous_replicas == command_replicas,
+                "When finishing cancelled move of partition {} the "
+                "finish command replica set {} must be equal to "
+                "previous_replicas {} from topic table in progress "
+                "update tracker",
+                ntp,
+                command_replicas,
+                previous_replicas);
+              to_delete = subtract_replica_sets(
+                *target_replicas, command_replicas);
+          }
+          _partition_allocator.local().remove_allocations(
+            to_delete, get_allocation_domain(ntp));
+
+          return ec;
+      });
+}
+ss::future<std::error_code> topic_updates_dispatcher::apply(
+  update_topic_properties_cmd cmd, model::offset offset) {
+    return dispatch_updates_to_cores(std::move(cmd), offset);
+}
+
+ss::future<std::error_code> topic_updates_dispatcher::apply(
+  create_partition_cmd cmd, model::offset offset) {
+    return dispatch_updates_to_cores(cmd, offset)
+      .then([this, cmd](std::error_code ec) {
+          if (ec == errc::success) {
+              const auto& tp_ns = cmd.key;
+              update_allocations(
+                cmd.value.assignments, get_allocation_domain(tp_ns));
+
+              for (const auto& p_as : cmd.value.assignments) {
+                  _partition_balancer_state.local().handle_ntp_update(
+                    tp_ns.ns, tp_ns.tp, p_as.id, {}, p_as.replicas);
+              }
+          }
+          return ec;
+      });
+}
+ss::future<std::error_code> topic_updates_dispatcher::apply(
+  create_non_replicable_topic_cmd cmd, model::offset offset) {
+    auto assignments = _topic_table.local().get_topic_assignments(
+      cmd.key.source);
+    return dispatch_updates_to_cores(cmd, offset)
+      .then([this,
+             assignments = std::move(assignments),
+             allocation_domain = get_allocation_domain(cmd.key.name)](
+              std::error_code ec) {
+          if (ec == errc::success) {
+              vassert(assignments.has_value(), "null topic_metadata");
+              std::vector<partition_assignment> p_as;
+              p_as.reserve(assignments->size());
+              std::move(
+                assignments->begin(),
+                assignments->end(),
+                std::back_inserter(p_as));
+              update_allocations(std::move(p_as), allocation_domain);
+          }
+          return ec;
+      });
+}
+
+ss::future<std::error_code> topic_updates_dispatcher::apply(
+  move_topic_replicas_cmd cmd, model::offset offset) {
+    auto assignments = _topic_table.local().get_topic_assignments(cmd.key);
+    return dispatch_updates_to_cores(cmd, offset)
+      .then([this, assignments = std::move(assignments), cmd = std::move(cmd)](
+              std::error_code ec) {
+          if (!assignments.has_value()) {
+              return std::error_code(errc::topic_not_exists);
+          }
+          if (ec == errc::success) {
+              for (const auto& [partition_id, replicas] : cmd.value) {
+                  auto assigment_it = assignments.value().find(partition_id);
+                  auto ntp = model::ntp(cmd.key.ns, cmd.key.tp, partition_id);
+                  if (assigment_it == assignments.value().end()) {
+                      return std::error_code(errc::partition_not_exists);
+                  }
+                  auto to_add = subtract_replica_sets(
+                    replicas, assigment_it->replicas);
+                  _partition_allocator.local().add_allocations(
+                    to_add, get_allocation_domain(ntp));
+                  _partition_balancer_state.local().handle_ntp_update(
+                    ntp.ns,
+                    ntp.tp.topic,
+                    ntp.tp.partition,
+                    assigment_it->replicas,
+                    replicas);
+              }
+          }
+          return ec;
+      });
+}
+ss::future<std::error_code> topic_updates_dispatcher::apply(
+  revert_cancel_partition_move_cmd cmd, model::offset offset) {
+    /**
+     * In this case partition underlying raft group reconfiguration
+     * already finished when it is attempted to be cancelled.
+     *
+     * In the case where original move was scheduled
+     * to happen from replica set A to B:
+     *
+     *      A->B
+     *
+     * Cancellation would result in reconfiguration:
+     *
+     *      B->A
+     * But since the move A->B finished we update the topic table
+     * back to the state from before the cancellation
+     *
+     */
+
+    // Replica set that the original move was requested from (A from
+    // an example above)
+    auto previous_replicas = _topic_table.local().get_previous_replica_set(
+      cmd.value.ntp);
+    auto target_replicas = _topic_table.local().get_target_replica_set(
+      cmd.value.ntp);
+    return dispatch_updates_to_cores(cmd, offset)
+      .then([this,
+             ntp = std::move(cmd.value.ntp),
+             previous_replicas = std::move(previous_replicas),
+             target_replicas = std::move(target_replicas)](std::error_code ec) {
+          if (ec) {
+              return ec;
+          }
+
+          vassert(
+            previous_replicas.has_value(),
+            "Previous replicas for NTP {} must exists as revert "
+            "update can only be applied to partition that move is "
+            "currently being cancelled",
+            ntp);
+          vassert(
+            target_replicas.has_value(),
+            "Target replicas for NTP {} must exists as revert "
+            "update can only be applied to partition that move is "
+            "currently being cancelled",
+            ntp);
+
+          auto to_delete = subtract_replica_sets(
+            *previous_replicas, *target_replicas);
+          _partition_allocator.local().remove_allocations(
+            to_delete, get_allocation_domain(ntp));
+
+          _partition_balancer_state.local().handle_ntp_update(
+            ntp.ns,
+            ntp.tp.topic,
+            ntp.tp.partition,
+            *previous_replicas,
+            *target_replicas);
+          return ec;
+      });
+}
+
 topic_updates_dispatcher::in_progress_map
 topic_updates_dispatcher::collect_in_progress(
   const model::topic_namespace& tp_ns,
