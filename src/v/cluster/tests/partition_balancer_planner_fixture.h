@@ -22,6 +22,8 @@
 #include "test_utils/fixture.h"
 #include "units.h"
 
+#include <seastar/core/chunked_fifo.hh>
+
 #include <chrono>
 #include <optional>
 
@@ -113,7 +115,7 @@ struct partition_balancer_planner_fixture {
                      .allocate(std::move(req))
                      .get()
                      .value()
-                     ->get_assignments();
+                     ->copy_assignments();
 
         return {cfg, std::move(pas)};
     }
@@ -149,7 +151,7 @@ struct partition_balancer_planner_fixture {
           partition_nodes.size(),
           replication_factor);
 
-        std::vector<cluster::partition_assignment> assignments;
+        ss::chunked_fifo<cluster::partition_assignment> assignments;
         for (size_t i = 0; i < partition_nodes.size(); ++i) {
             const auto& nodes = partition_nodes[i];
             BOOST_REQUIRE_EQUAL(nodes.size(), replication_factor);
@@ -163,7 +165,7 @@ struct partition_balancer_planner_fixture {
         }
         cluster::create_topic_cmd cmd{
           make_tp_ns(name),
-          cluster::topic_configuration_assignment{cfg, std::move(assignments)}};
+          cluster::topic_configuration_assignment(cfg, std::move(assignments))};
 
         dispatch_command(std::move(cmd));
     }

@@ -13,6 +13,7 @@
 
 #include "cluster/logger.h"
 #include "cluster/scheduling/allocation_state.h"
+#include "utils/to_string.h"
 
 #include <fmt/ostream.h>
 
@@ -60,7 +61,7 @@ void allocation_constraints::add(allocation_constraints other) {
 }
 
 allocation_units::allocation_units(
-  std::vector<partition_assignment> assignments,
+  ss::chunked_fifo<partition_assignment> assignments,
   allocation_state& state,
   const partition_allocation_domain domain)
   : _assignments(std::move(assignments))
@@ -68,7 +69,7 @@ allocation_units::allocation_units(
   , _domain(domain) {}
 
 allocation_units::allocation_units(
-  std::vector<partition_assignment> assignments,
+  ss::chunked_fifo<partition_assignment> assignments,
   std::vector<model::broker_shard> previous_allocations,
   allocation_state& state,
   const partition_allocation_domain domain)

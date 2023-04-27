@@ -19,10 +19,12 @@
 #include "units.h"
 #include "v8_engine/data_policy.h"
 
+#include <seastar/core/chunked_fifo.hh>
 #include <seastar/core/loop.hh>
 #include <seastar/testing/thread_test_case.hh>
 
 #include <chrono>
+#include <vector>
 
 using namespace std::chrono_literals; // NOLINT
 
@@ -666,7 +668,7 @@ SEASTAR_THREAD_TEST_CASE(create_topics_reply_uniform_rt_test) {
       cluster::create_topics_reply>();
 }
 
-template<class ReqIn, class ReqOut>
+template<class ReqIn, class ReqOut, class Cont>
 void topic_configuration_assignment_roundtrip() {
     using cfg_t = decltype(ReqIn::cfg);
     auto tc = cfg_t(model::ns("default"), model::topic("tp-1"), 12, 3);
@@ -690,8 +692,11 @@ void topic_configuration_assignment_roundtrip() {
         model::broker_shard{.node_id = model::node_id{5}, .shard = 2},
       },
     };
+    Cont p_as;
+    p_as.push_back(p1);
+    p_as.push_back(p2);
 
-    ReqIn assign_cfg(tc, {p1, p2});
+    ReqIn assign_cfg(tc, std::move(p_as));
 
     auto res = serialize_upgrade_rpc<ReqIn, ReqOut>(std::move(assign_cfg));
 
@@ -715,13 +720,15 @@ void topic_configuration_assignment_roundtrip() {
 SEASTAR_THREAD_TEST_CASE(topics_configuration_assignment_upgrade_rt_test) {
     topic_configuration_assignment_roundtrip<
       old::topic_configuration_assignment,
-      cluster::topic_configuration_assignment>();
+      cluster::topic_configuration_assignment,
+      std::vector<cluster::partition_assignment>>();
 }
 
 SEASTAR_THREAD_TEST_CASE(topics_configuration_assignment_uniform_rt_test) {
     topic_configuration_assignment_roundtrip<
       cluster::topic_configuration_assignment,
-      cluster::topic_configuration_assignment>();
+      cluster::topic_configuration_assignment,
+      ss::chunked_fifo<cluster::partition_assignment>>();
 }
 
 template<class T>

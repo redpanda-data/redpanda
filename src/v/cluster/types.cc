@@ -20,6 +20,7 @@
 #include "tristate.h"
 #include "utils/to_string.h"
 
+#include <seastar/core/chunked_fifo.hh>
 #include <seastar/core/sstring.hh>
 
 #include <fmt/ostream.h>
@@ -593,7 +594,7 @@ operator<<(std::ostream& o, const incremental_topic_custom_updates& i) {
 
 namespace {
 cluster::assignments_set to_assignments_map(
-  std::vector<cluster::partition_assignment> assignment_vector) {
+  ss::chunked_fifo<cluster::partition_assignment> assignment_vector) {
     cluster::assignments_set ret;
     for (auto& p_as : assignment_vector) {
         ret.emplace(std::move(p_as));

@@ -19,6 +19,8 @@
 #include "raft/types.h"
 #include "ssx/future-util.h"
 
+#include <seastar/coroutine/maybe_yield.hh>
+
 #include <absl/container/node_hash_map.h>
 #include <fmt/ranges.h>
 
@@ -50,35 +52,33 @@ topic_updates_dispatcher::apply_update(model::record_batch b) {
 
 ss::future<std::error_code> topic_updates_dispatcher::apply(
   create_topic_cmd command, model::offset offset) {
-    return dispatch_updates_to_cores(command, offset)
-      .then([this, command](std::error_code ec) {
-          if (ec == errc::success) {
-              const auto& tp_ns = command.key;
-              update_allocations(
-                command.value.assignments, get_allocation_domain(tp_ns));
+    auto tp_ns = command.key;
+    ss::chunked_fifo<partition_assignment> assignments;
 
-              for (const auto& p_as : command.value.assignments) {
-                  _partition_balancer_state.local().handle_ntp_update(
-                    tp_ns.ns, tp_ns.tp, p_as.id, {}, p_as.replicas);
-              }
-          }
-          return ec;
-      })
+    std::copy(
+      command.value.assignments.begin(),
+      command.value.assignments.end(),
+      std::back_inserter(assignments));
 
-      .then([this, command](std::error_code ec) {
-          if (ec == errc::success) {
-              std::vector<ntp_leader> leaders;
-              const auto& tp_ns = command.value.cfg.tp_ns;
-              for (auto& p_as : command.value.assignments) {
-                  leaders.emplace_back(
-                    model::ntp(tp_ns.ns, tp_ns.tp, p_as.id),
-                    p_as.replicas.begin()->node_id);
-              }
-              return update_leaders_with_estimates(leaders).then(
-                [ec]() { return ss::make_ready_future<std::error_code>(ec); });
-          }
-          return ss::make_ready_future<std::error_code>(ec);
-      });
+    auto ec = co_await dispatch_updates_to_cores(std::move(command), offset);
+
+    if (ec == errc::success) {
+        update_allocations(assignments, get_allocation_domain(tp_ns));
+        ss::chunked_fifo<ntp_leader> leaders;
+        for (const auto& p_as : assignments) {
+            _partition_balancer_state.local().handle_ntp_update(
+              tp_ns.ns, tp_ns.tp, p_as.id, {}, p_as.replicas);
+            leaders.emplace_back(
+              model::ntp(tp_ns.ns, tp_ns.tp, p_as.id),
+              p_as.replicas.begin()->node_id);
+            co_await ss::coroutine::maybe_yield();
+        }
+        co_await update_leaders_with_estimates(std::move(leaders));
+
+        co_return errc::success;
+    }
+
+    co_return ec;
 }
 ss::future<std::error_code>
 topic_updates_dispatcher::apply(delete_topic_cmd cmd, model::offset offset) {
@@ -254,20 +254,24 @@ ss::future<std::error_code> topic_updates_dispatcher::apply(
 
 ss::future<std::error_code> topic_updates_dispatcher::apply(
   create_partition_cmd cmd, model::offset offset) {
-    return dispatch_updates_to_cores(cmd, offset)
-      .then([this, cmd](std::error_code ec) {
-          if (ec == errc::success) {
-              const auto& tp_ns = cmd.key;
-              update_allocations(
-                cmd.value.assignments, get_allocation_domain(tp_ns));
+    auto tp_ns = cmd.key;
+    ss::chunked_fifo<partition_assignment> assignments;
 
-              for (const auto& p_as : cmd.value.assignments) {
-                  _partition_balancer_state.local().handle_ntp_update(
-                    tp_ns.ns, tp_ns.tp, p_as.id, {}, p_as.replicas);
-              }
-          }
-          return ec;
-      });
+    std::copy(
+      cmd.value.assignments.begin(),
+      cmd.value.assignments.end(),
+      std::back_inserter(assignments));
+    auto ec = co_await dispatch_updates_to_cores(std::move(cmd), offset);
+
+    if (ec == errc::success) {
+        update_allocations(assignments, get_allocation_domain(tp_ns));
+
+        for (const auto& p_as : assignments) {
+            _partition_balancer_state.local().handle_ntp_update(
+              tp_ns.ns, tp_ns.tp, p_as.id, {}, p_as.replicas);
+        }
+    }
+    co_return ec;
 }
 ss::future<std::error_code> topic_updates_dispatcher::apply(
   create_non_replicable_topic_cmd cmd, model::offset offset) {
@@ -286,7 +290,7 @@ ss::future<std::error_code> topic_updates_dispatcher::apply(
                 assignments->begin(),
                 assignments->end(),
                 std::back_inserter(p_as));
-              update_allocations(std::move(p_as), allocation_domain);
+              update_allocations(p_as, allocation_domain);
           }
           return ec;
       });
@@ -416,19 +420,17 @@ topic_updates_dispatcher::collect_in_progress(
 }
 
 ss::future<> topic_updates_dispatcher::update_leaders_with_estimates(
-  std::vector<ntp_leader> leaders) {
-    for (const auto& i : leaders) {
-        vlog(
-          clusterlog.debug,
-          "update_leaders_with_estimates: new NTP {} leader {}",
-          i.first,
-          i.second);
-    }
+  ss::chunked_fifo<ntp_leader> leaders) {
     return ss::do_with(
-      std::move(leaders), [this](std::vector<ntp_leader>& leaders) {
+      std::move(leaders), [this](ss::chunked_fifo<ntp_leader>& leaders) {
           return ss::parallel_for_each(leaders, [this](ntp_leader& leader) {
+              vlog(
+                clusterlog.debug,
+                "update_leaders_with_estimates: new NTP {} leader {}",
+                leader.first,
+                leader.second);
               return _partition_leaders_table.invoke_on_all(
-                [leader](partition_leaders_table& l) {
+                [leader = std::move(leader)](partition_leaders_table& l) {
                     return l.update_partition_leader(
                       leader.first, model::term_id(1), leader.second);
                 });
@@ -490,21 +492,13 @@ void topic_updates_dispatcher::deallocate_topic(
         }
     }
 }
-
+template<typename T>
 void topic_updates_dispatcher::update_allocations(
-  const std::vector<partition_assignment>& assignments,
-  const partition_allocation_domain domain) {
-    // for create topics we update allocation state
-    std::vector<model::broker_shard> shards;
-    raft::group_id max_group_id = raft::group_id(0);
+  const T& assignments, const partition_allocation_domain domain) {
     for (const auto& pas : assignments) {
-        max_group_id = std::max(max_group_id, pas.group);
-        std::move(
-          pas.replicas.begin(), pas.replicas.end(), std::back_inserter(shards));
+        _partition_allocator.local().update_allocation_state(
+          pas.replicas, pas.group, domain);
     }
-
-    _partition_allocator.local().update_allocation_state(
-      shards, max_group_id, domain);
 }
 
 } // namespace cluster

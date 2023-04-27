@@ -18,6 +18,7 @@
 #include "model/fundamental.h"
 #include "model/record.h"
 
+#include <seastar/core/chunked_fifo.hh>
 #include <seastar/core/sharded.hh>
 
 namespace cluster {
@@ -101,9 +102,10 @@ private:
 
     using ntp_leader = std::pair<model::ntp, model::node_id>;
 
-    ss::future<> update_leaders_with_estimates(std::vector<ntp_leader> leaders);
-    void update_allocations(
-      const std::vector<partition_assignment>&, partition_allocation_domain);
+    ss::future<>
+    update_leaders_with_estimates(ss::chunked_fifo<ntp_leader> leaders);
+    template<typename T>
+    void update_allocations(const T&, partition_allocation_domain);
 
     void deallocate_topic(
       const model::topic_namespace&,

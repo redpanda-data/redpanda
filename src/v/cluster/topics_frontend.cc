@@ -559,7 +559,8 @@ ss::future<topic_result> topics_frontend::replicate_create_topic(
     auto tp_ns = cfg.tp_ns;
     create_topic_cmd cmd(
       tp_ns,
-      topic_configuration_assignment(std::move(cfg), units->get_assignments()));
+      topic_configuration_assignment(
+        std::move(cfg), units->copy_assignments()));
 
     for (auto& p_as : cmd.value.assignments) {
         std::shuffle(
@@ -935,7 +936,7 @@ ss::future<topic_result> topics_frontend::do_create_partition(
 
     auto tp_ns = p_cfg.tp_ns;
     create_partitions_configuration_assignment payload(
-      std::move(p_cfg), units.value()->get_assignments());
+      std::move(p_cfg), units.value()->copy_assignments());
     create_partition_cmd cmd = create_partition_cmd(tp_ns, std::move(payload));
 
     try {
@@ -1338,7 +1339,7 @@ allocation_request make_allocation_request(
     return req;
 }
 
-ss::future<result<std::vector<partition_assignment>>>
+ss::future<result<ss::chunked_fifo<partition_assignment>>>
 topics_frontend::generate_reassignments(
   model::ntp ntp, std::vector<model::node_id> new_replicas) {
     auto tp_metadata = _topics.local().get_topic_metadata_ref(
@@ -1362,7 +1363,7 @@ topics_frontend::generate_reassignments(
         co_return units.error();
     }
 
-    auto assignments = units.value()->get_assignments();
+    auto assignments = units.value()->copy_assignments();
     if (assignments.empty()) {
         co_return errc::no_partition_assignments;
     }

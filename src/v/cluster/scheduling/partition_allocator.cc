@@ -20,6 +20,7 @@
 #include "units.h"
 #include "utils/human.h"
 
+#include <seastar/core/chunked_fifo.hh>
 #include <seastar/core/sharded.hh>
 #include <seastar/core/shared_ptr.hh>
 #include <seastar/coroutine/maybe_yield.hh>
@@ -108,8 +109,12 @@ partition_allocator::allocate_partition(
         replicas.push_back(replica.value());
         all_replicas.push_back(replica.value());
     }
-
-    return std::move(replicas).finish();
+    auto replicas_fifo = std::move(replicas).finish();
+    std::vector<model::broker_shard> ret;
+    ret.reserve(replicas_fifo.size());
+    std::move(
+      replicas_fifo.begin(), replicas_fifo.end(), std::back_inserter(ret));
+    return ret;
 }
 
 /**
@@ -341,9 +346,10 @@ result<allocation_units> partition_allocator::reallocate_partition(
       current_assignment.id,
       std::move(replicas.value()),
     };
-
+    ss::chunked_fifo<partition_assignment> p_as;
+    p_as.push_back(std::move(assignment));
     return allocation_units(
-      {std::move(assignment)}, current_assignment.replicas, *_state, domain);
+      std::move(p_as), current_assignment.replicas, *_state, domain);
 }
 
 void partition_allocator::deallocate(

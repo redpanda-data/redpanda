@@ -16,6 +16,7 @@
 #include "model/fundamental.h"
 #include "vassert.h"
 
+#include <seastar/core/chunked_fifo.hh>
 #include <seastar/core/weak_ptr.hh>
 #include <seastar/util/noncopyable_function.hh>
 
@@ -155,11 +156,11 @@ struct allocation_units {
     using pointer = ss::foreign_ptr<std::unique_ptr<allocation_units>>;
 
     allocation_units(
-      std::vector<partition_assignment>,
+      ss::chunked_fifo<partition_assignment>,
       allocation_state&,
       partition_allocation_domain);
     allocation_units(
-      std::vector<partition_assignment>,
+      ss::chunked_fifo<partition_assignment>,
       std::vector<model::broker_shard>,
       allocation_state&,
       partition_allocation_domain);
@@ -170,12 +171,20 @@ struct allocation_units {
 
     ~allocation_units();
 
-    const std::vector<partition_assignment>& get_assignments() const {
+    const ss::chunked_fifo<partition_assignment>& get_assignments() const {
         return _assignments;
     }
 
+    ss::chunked_fifo<partition_assignment> copy_assignments() {
+        ss::chunked_fifo<partition_assignment> p_as;
+        p_as.reserve(_assignments.size());
+        std::copy(
+          _assignments.begin(), _assignments.end(), std::back_inserter(p_as));
+        return p_as;
+    }
+
 private:
-    std::vector<partition_assignment> _assignments;
+    ss::chunked_fifo<partition_assignment> _assignments;
     // set of previous replicas, they will not be reverted when allocation units
     // goes out of scope
     absl::node_hash_set<model::broker_shard> _previous;
@@ -215,7 +224,7 @@ struct allocation_request {
     allocation_request& operator=(allocation_request&&) = default;
     ~allocation_request() = default;
 
-    std::vector<partition_constraints> partitions;
+    ss::chunked_fifo<partition_constraints> partitions;
     partition_allocation_domain domain;
 
     friend std::ostream& operator<<(std::ostream&, const allocation_request&);

@@ -95,7 +95,7 @@ ss::future<bool> health_manager::ensure_partition_replication(model::ntp ntp) {
         co_return false;
     }
 
-    auto new_assignments = allocation.value().get_assignments();
+    auto new_assignments = allocation.value().copy_assignments();
 
     auto it = std::find_if(
       new_assignments.cbegin(),
