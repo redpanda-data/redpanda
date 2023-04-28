@@ -333,7 +333,6 @@ struct fetch_plan {
 
 ss::future<read_result> read_from_ntp(
   cluster::partition_manager&,
-  coproc::partition_manager&,
   const model::ntp&,
   fetch_config,
   bool,

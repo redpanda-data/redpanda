@@ -65,8 +65,7 @@ static ss::future<std::vector<epoch_end_offset>> fetch_offsets_from_shard(
         for (auto& r : requests) {
             auto p = make_partition_proxy(
               r.ntp,
-              ctx.partition_manager().local(),
-              ctx.coproc_partition_manager().local());
+              ctx.partition_manager().local());
             // offsets_for_leader_epoch request should only be answered by
             // leader
             if (!p || !p->is_leader()) {

@@ -136,7 +136,6 @@ public:
           app.controller->get_security_frontend(),
           app.controller->get_api(),
           app.tx_gateway_frontend,
-          app.cp_partition_manager,
           std::nullopt,
           *app.thread_worker);
 

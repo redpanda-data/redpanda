@@ -1530,7 +1530,6 @@ void application::wire_up_redpanda_services(model::node_id node_id) {
         std::ref(controller->get_security_frontend()),
         std::ref(controller->get_api()),
         std::ref(tx_gateway_frontend),
-        std::ref(cp_partition_manager),
         qdc_config,
         std::ref(*thread_worker))
       .get();

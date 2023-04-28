@@ -9,6 +9,7 @@
  */
 
 #pragma once
+#include "coproc/fwd.h"
 #include "coproc/types.h"
 #include "kafka/client/client.h"
 #include "model/record_batch_reader.h"
