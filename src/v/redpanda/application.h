@@ -124,7 +124,6 @@ public:
     ss::sharded<features::feature_table> feature_table;
 
     ss::sharded<kafka::coordinator_ntp_mapper> coordinator_ntp_mapper;
-    ss::sharded<kafka::fetch_session_cache> fetch_session_cache;
     ss::sharded<kafka::group_router> group_router;
     ss::sharded<kafka::quota_manager> quota_mgr;
     ss::sharded<kafka::snc_quota_manager> snc_quota_mgr;

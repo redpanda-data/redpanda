@@ -130,7 +130,6 @@ public:
           app.usage_manager,
           app.shard_table,
           app.partition_manager,
-          app.fetch_session_cache,
           app.id_allocator_frontend,
           app.controller->get_credential_store(),
           app.controller->get_authorizer(),

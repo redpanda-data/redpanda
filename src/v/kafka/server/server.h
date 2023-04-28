@@ -17,6 +17,7 @@
 #include "features/feature_table.h"
 #include "kafka/latency_probe.h"
 #include "kafka/server/fetch_metadata_cache.hh"
+#include "kafka/server/fetch_session_cache.h"
 #include "kafka/server/fwd.h"
 #include "kafka/server/queue_depth_monitor.h"
 #include "net/server.h"
@@ -50,7 +51,6 @@ public:
       ss::sharded<kafka::usage_manager>&,
       ss::sharded<cluster::shard_table>&,
       ss::sharded<cluster::partition_manager>&,
-      ss::sharded<fetch_session_cache>&,
       ss::sharded<cluster::id_allocator_frontend>&,
       ss::sharded<security::credential_store>&,
       ss::sharded<security::authorizer>&,
@@ -111,9 +111,7 @@ public:
     }
     coordinator_ntp_mapper& coordinator_mapper();
 
-    fetch_session_cache& fetch_sessions_cache() {
-        return _fetch_session_cache.local();
-    }
+    fetch_session_cache& fetch_sessions_cache() { return _fetch_session_cache; }
     quota_manager& quota_mgr() { return _quota_mgr.local(); }
     usage_manager& usage_mgr() { return _usage_manager.local(); }
     snc_quota_manager& snc_quota_mgr() { return _snc_quota_mgr.local(); }
@@ -180,7 +178,7 @@ private:
     ss::sharded<kafka::usage_manager>& _usage_manager;
     ss::sharded<cluster::shard_table>& _shard_table;
     ss::sharded<cluster::partition_manager>& _partition_manager;
-    ss::sharded<kafka::fetch_session_cache>& _fetch_session_cache;
+    kafka::fetch_session_cache _fetch_session_cache;
     ss::sharded<cluster::id_allocator_frontend>& _id_allocator_frontend;
     bool _is_idempotence_enabled{false};
     bool _are_transactions_enabled{false};
