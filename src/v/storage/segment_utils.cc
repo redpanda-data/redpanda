@@ -473,6 +473,8 @@ ss::future<> do_swap_data_file_handles(
       old_name,
       s->reader().filename());
     co_await ss::rename_file(old_name, s->reader().filename());
+    // the on disk file is changing so clear the size cache
+    s->clear_cached_disk_usage();
 
     auto r = segment_reader(
       s->reader().path(),
