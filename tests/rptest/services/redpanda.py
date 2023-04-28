@@ -757,9 +757,11 @@ class RedpandaServiceBase(Service):
         self,
         context,
         num_brokers,
+        *,
         extra_rp_conf=None,
         resource_settings=None,
         si_settings=None,
+        superuser: Optional[SaslCredentials] = None,
     ):
         super(RedpandaServiceBase, self).__init__(context,
                                                   num_nodes=num_brokers)
@@ -771,11 +773,27 @@ class RedpandaServiceBase(Service):
         else:
             self._si_settings = None
 
+        if superuser is None:
+            superuser = self.SUPERUSER_CREDENTIALS
+            self._skip_create_superuser = False
+        else:
+            # When we are passed explicit superuser credentials, presume that the caller
+            # is taking care of user creation themselves (e.g. when testing credential bootstrap)
+            self._skip_create_superuser = True
+
+        self._superuser = superuser
+
+        self._admin = Admin(self,
+                            auth=(self._superuser.username,
+                                  self._superuser.password))
+
         if resource_settings is None:
             resource_settings = ResourceSettings()
         self._resource_settings = resource_settings
 
         self._trim_logs = self._context.globals.get(self.TRIM_LOGS_KEY, True)
+
+        self._node_id_by_idx = {}
 
     def start_node(self, node, **kwargs):
         pass
@@ -951,6 +969,23 @@ class RedpandaServiceBase(Service):
     def si_settings(self):
         return self._si_settings
 
+    def _for_nodes(self, nodes, cb: callable, *, parallel: bool) -> list:
+        if not parallel:
+            # Trivial case: just loop and call
+            for n in nodes:
+                cb(n)
+            return list(map(cb, nodes))
+
+        n_workers = len(nodes)
+        if n_workers > 0:
+            with concurrent.futures.ThreadPoolExecutor(
+                    max_workers=n_workers) as executor:
+                # The list() wrapper is to cause futures to be evaluated here+now
+                # (including throwing any exceptions) and not just spawned in background.
+                return list(executor.map(cb, nodes))
+        else:
+            return []
+
     def trim_logs(self):
         if not self._trim_logs:
             return
@@ -965,10 +1000,39 @@ class RedpandaServiceBase(Service):
 
         self._for_nodes(self.nodes, prune, parallel=True)
 
+    def node_id(self, node, force_refresh=False, timeout_sec=30):
+        """
+        Returns the node ID of a given node. Uses a cached value unless
+        'force_refresh' is set to True.
+
+        NOTE: this is not thread-safe.
+        """
+        idx = self.idx(node)
+        if not force_refresh:
+            if idx in self._node_id_by_idx:
+                return self._node_id_by_idx[idx]
+
+        def _try_get_node_id():
+            try:
+                node_cfg = self._admin.get_node_config(node)
+            except:
+                return (False, -1)
+            return (True, node_cfg["node_id"])
+
+        node_id = wait_until_result(
+            _try_get_node_id,
+            timeout_sec=timeout_sec,
+            err_msg=f"couldn't reach admin endpoint for {node.account.hostname}"
+        )
+        self.logger.info(f"Got node ID for {node.account.hostname}: {node_id}")
+        self._node_id_by_idx[idx] = node_id
+        return node_id
+
 
 class RedpandaServiceK8s(RedpandaServiceBase):
     def __init__(self, context, num_brokers):
         super(RedpandaServiceK8s, self).__init__(context, num_brokers)
+        self._trim_logs = False
         self._helm = HelmTool(self)
         self._kubectl = KubectlTool(self)
 
@@ -991,7 +1055,6 @@ class RedpandaServiceK8s(RedpandaServiceBase):
 
     def clean_node(self, node, **kwargs):
         self._helm.uninstall()
-        pass
 
     def get_node_memory_mb(self):
         line = self._kubectl.exec("cat /proc/meminfo | grep MemTotal")
@@ -1009,7 +1072,7 @@ class RedpandaServiceK8s(RedpandaServiceBase):
         else:
             # If dir doesn't exist yet, use the parent.
             df_path = os.path.dirname(self.PERSISTENT_ROOT)
-        df_out = node.account.ssh_output(f"df --output=avail {df_path}")
+        df_out = self._kubectl.exec(f"df --output=avail {df_path}")
         avail_kb = int(df_out.strip().split(b"\n")[1].strip())
         return avail_kb * 1024
 
@@ -1022,7 +1085,7 @@ class RedpandaServiceK8s(RedpandaServiceBase):
         :return: yields strings
         """
         first = True
-        cmd = f"lsof -nP -p {self.redpanda_pid(node)}"
+        cmd = f"ls -l /proc/$(ls -l /proc/*/exe | grep /opt/redpanda/libexec/redpanda | head -1 | cut -d' ' -f 9 | cut -d / -f 3)/fd"
         if filter is not None:
             cmd += f" | grep {filter}"
         for line in self._kubectl.exec(cmd):
@@ -1041,12 +1104,11 @@ class RedpandaServiceK8s(RedpandaServiceBase):
     def node_id(self, node, force_refresh=False, timeout_sec=30):
         pass
 
-    def set_cluster_config(self,
-                           values: dict,
-                           expect_restart: bool = False,
-                           admin_client: Optional[Admin] = None,
-                           timeout: int = 10):
-        pass
+    def set_cluster_config(self, values: dict, timeout: int = 300):
+        """
+        Updates the values of the helm release
+        """
+        self._helm.upgrade_config_cluster(values)
 
 
 class RedpandaService(RedpandaServiceBase):
@@ -1068,23 +1130,18 @@ class RedpandaService(RedpandaServiceBase):
                  pandaproxy_config: Optional[PandaproxyConfig] = None,
                  schema_registry_config: Optional[SchemaRegistryConfig] = None,
                  disable_cloud_storage_diagnostics=False):
-        super(RedpandaService,
-              self).__init__(context, num_brokers, extra_rp_conf,
-                             resource_settings, si_settings)
+        super(RedpandaService, self).__init__(
+            context,
+            num_brokers,
+            extra_rp_conf=extra_rp_conf,
+            resource_settings=resource_settings,
+            si_settings=si_settings,
+            superuser=superuser,
+        )
         self._security = security
         self._installer: RedpandaInstaller = RedpandaInstaller(self)
         self._pandaproxy_config = pandaproxy_config
         self._schema_registry_config = schema_registry_config
-
-        if superuser is None:
-            superuser = self.SUPERUSER_CREDENTIALS
-            self._skip_create_superuser = False
-        else:
-            # When we are passed explicit superuser credentials, presume that the caller
-            # is taking care of user creation themselves (e.g. when testing credential bootstrap)
-            self._skip_create_superuser = True
-
-        self._superuser = superuser
 
         if node_ready_timeout_s is None:
             node_ready_timeout_s = RedpandaService.DEFAULT_NODE_READY_TIMEOUT_SEC
@@ -1108,9 +1165,6 @@ class RedpandaService(RedpandaServiceBase):
                 'seastar_memory': 'debug'
             })
 
-        self._admin = Admin(self,
-                            auth=(self._superuser.username,
-                                  self._superuser.password))
         self._started = []
         self._security_config = dict()
 
@@ -1149,8 +1203,6 @@ class RedpandaService(RedpandaServiceBase):
         # Each time we start a node and write out its node_config (redpanda.yaml),
         # stash a copy here so that we can quickly look up e.g. addresses later.
         self._node_configs = {}
-
-        self._node_id_by_idx = {}
 
         self._seed_servers = [self.nodes[0]] if len(self.nodes) > 0 else []
 
@@ -1279,23 +1331,6 @@ class RedpandaService(RedpandaServiceBase):
             if self.PERSISTENT_ROOT in line:
                 return int(line.split()[2])
         assert False, "couldn't parse df output"
-
-    def _for_nodes(self, nodes, cb: callable, *, parallel: bool) -> list:
-        if not parallel:
-            # Trivial case: just loop and call
-            for n in nodes:
-                cb(n)
-            return list(map(cb, nodes))
-
-        n_workers = len(nodes)
-        if n_workers > 0:
-            with concurrent.futures.ThreadPoolExecutor(
-                    max_workers=n_workers) as executor:
-                # The list() wrapper is to cause futures to be evaluated here+now
-                # (including throwing any exceptions) and not just spawned in background.
-                return list(executor.map(cb, nodes))
-        else:
-            return []
 
     def _startup_poll_interval(self, first_start):
         """
@@ -2874,34 +2909,6 @@ class RedpandaService(RedpandaServiceBase):
             assert num_shards > 0
             shards_per_node[self.idx(node)] = num_shards
         return shards_per_node
-
-    def node_id(self, node, force_refresh=False, timeout_sec=30):
-        """
-        Returns the node ID of a given node. Uses a cached value unless
-        'force_refresh' is set to True.
-
-        NOTE: this is not thread-safe.
-        """
-        idx = self.idx(node)
-        if not force_refresh:
-            if idx in self._node_id_by_idx:
-                return self._node_id_by_idx[idx]
-
-        def _try_get_node_id():
-            try:
-                node_cfg = self._admin.get_node_config(node)
-            except:
-                return (False, -1)
-            return (True, node_cfg["node_id"])
-
-        node_id = wait_until_result(
-            _try_get_node_id,
-            timeout_sec=timeout_sec,
-            err_msg=f"couldn't reach admin endpoint for {node.account.hostname}"
-        )
-        self.logger.info(f"Got node ID for {node.account.hostname}: {node_id}")
-        self._node_id_by_idx[idx] = node_id
-        return node_id
 
     def cov_enabled(self):
         cov_option = self._context.globals.get(self.COV_KEY,
