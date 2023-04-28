@@ -9,6 +9,7 @@
 
 #include "kafka/server/handlers/alter_configs.h"
 
+#include "cluster/metadata_cache.h"
 #include "cluster/types.h"
 #include "config/configuration.h"
 #include "kafka/protocol/errors.h"
@@ -120,7 +121,8 @@ void check_data_policy(std::string_view property_name) {
 }
 
 checked<cluster::topic_properties_update, alter_configs_resource_response>
-create_topic_properties_update(alter_configs_resource& resource) {
+create_topic_properties_update(
+  const request_context& ctx, alter_configs_resource& resource) {
     model::topic_namespace tp_ns(
       model::kafka_namespace, model::topic(resource.resource_name));
     cluster::topic_properties_update update(tp_ns);
@@ -132,8 +134,6 @@ create_topic_properties_update(alter_configs_resource& resource) {
      * configuration in topic table, the only difference is the replication
      * factor, if not set in the request explicitly it will not be overriden.
      */
-    update.properties.cleanup_policy_bitflags.op
-      = cluster::incremental_update_operation::set;
     update.properties.compaction_strategy.op
       = cluster::incremental_update_operation::set;
     update.properties.compression.op
@@ -152,6 +152,15 @@ create_topic_properties_update(alter_configs_resource& resource) {
       = cluster::incremental_update_operation::none;
     update.custom_properties.data_policy.op
       = cluster::incremental_update_operation::none;
+
+    /**
+     * Since 'cleanup.policy' is always defaulted to 'delete' at topic creation,
+     * we must special case the handling to preserve this default.
+     */
+    update.properties.cleanup_policy_bitflags.op
+      = cluster::incremental_update_operation::set;
+    update.properties.cleanup_policy_bitflags.value
+      = ctx.metadata_cache().get_default_cleanup_policy_bitflags();
 
     for (auto& cfg : resource.configs) {
         try {
@@ -285,8 +294,11 @@ alter_topic_configuration(
     return do_alter_topics_configuration<
       alter_configs_resource,
       alter_configs_resource_response>(
-      ctx, std::move(resources), validate_only, [](alter_configs_resource& r) {
-          return create_topic_properties_update(r);
+      ctx,
+      std::move(resources),
+      validate_only,
+      [&ctx](alter_configs_resource& r) {
+          return create_topic_properties_update(ctx, r);
       });
 }
 
