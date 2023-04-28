@@ -174,17 +174,6 @@ public:
 
     ss::future<> flush() final {
         assert_file_not_closed();
-        if (!_pending_ops.empty()) {
-            vlog(
-              finjectlog.error,
-              "flush called concurrently with other operations on file "
-              "{}. inflight_writes={}, pending_flushes={}",
-              _path,
-              maybe_dump_appender_inflight_writes(),
-              maybe_dump_appender_pending_flushes());
-
-            output_pending_ops();
-        }
         return with_op(
           ssx::sformat("ss::future<> flush(void)"),
           maybe_inject_failure(failable_op_type::flush).then([this]() {
