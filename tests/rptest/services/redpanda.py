@@ -2095,6 +2095,88 @@ class RedpandaService(RedpandaServiceBase):
                 with archive.open(filename, "w") as outstr:
                     outstr.write(body)
 
+    def raise_on_storage_usage_inconsistency(self):
+        def tracked(fstat):
+            """
+            filter out files at the root of redpanda's data directory. these
+            are not included right now in the local storage costs returned by
+            the admin api. we may want to update this in the future, but
+            paying the cost to look at the files which are generally small,
+            and non-reclaimable doesn't seem worth the hassle. however, for
+            small experiements they are relatively large, so we need to filter
+            them out for the purposes of looking at the accuracy of storage
+            usage tracking.
+
+            Example files:
+                  DIR cloud_storage_cache
+                   26 startup_log
+                10685 config_cache.yaml
+            """
+            file, size = fstat
+            if len(file.parents) == 1:
+                return False
+            if file.parents[-2].name == "cloud_storage_cache":
+                return False
+            return True
+
+        def inspect_node(node):
+            """
+            Fetch reported size from admin interface, query the local file
+            system, and compute a percentage difference between reported and
+            observed disk usage.
+            """
+            try:
+                reported = self._admin.get_local_storage_usage(node)
+                reported_total = reported["data"] + reported[
+                    "index"] + reported["compaction"]
+                observed = list(self.data_stat(node))
+                observed_total = sum(s for _, s in filter(tracked, observed))
+                diff = observed_total - reported_total
+                return abs(
+                    diff / reported_total
+                ), reported, reported_total, observed, observed_total
+            except:
+                return 0.0, None, None, None, None
+
+        # inspect the node and check that we fall below a 5% threshold
+        # difference. at this point the test is over, but we allow for a couple
+        # retries in case things need to settle.
+        nodes = [(n, None) for n in self.nodes]
+        for _ in range(3):
+            retries = []
+            for node, _ in nodes:
+                pct_diff, *deets = inspect_node(node)
+                if pct_diff > 0.05:
+                    retries.append((node, (pct_diff, *deets)))
+            if not retries:
+                # all good
+                return
+            nodes = retries
+            time.sleep(5)
+
+        # if one or more nodes failed the check, then report information about
+        # the situation and fail the test by raising an exception.
+        nodes = []
+        max_node, max_diff = retries[0][0], retries[0][1][0]
+        for node, deets in retries:
+            nodes.append(self.idx(node))
+            pct_diff, reported, reported_total, observed, observed_total = deets
+            if pct_diff > max_diff:
+                max_diff = pct_diff
+                max_node = node
+            diff = observed_total - reported_total
+            for file, size in observed:
+                self.logger.debug(
+                    f"Observed file [{self.idx(node)}]: {size:7} {file}")
+            self.logger.warn(
+                f"Storage usage [{self.idx(node)}]: obs {observed_total:7} rep {reported_total:7} diff {diff:7} pct {pct_diff}"
+            )
+
+        max_node = self.idx(max_node)
+        raise RuntimeError(
+            f"Storage usage inconsistency on nodes {nodes}: max difference {max_diff} on node {max_node}"
+        )
+
     def raise_on_bad_logs(self, allow_list=None):
         """
         Raise a BadLogLines exception if any nodes' logs contain errors
