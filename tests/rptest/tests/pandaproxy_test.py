@@ -7,16 +7,22 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
+import datetime
 from ducktape.mark import matrix, parametrize
+from ducktape.tests.test import TestLoggerMaker
 from ducktape.utils.util import wait_until
 import http.client
 import json
+from queue import PriorityQueue
+import random
 import requests
 import socket
 import ssl
+import string
 import threading
-from typing import Optional, List, Dict, Union
+from typing import Any, Optional, List, Dict, Union
 import urllib.parse
 import urllib.request
 import uuid
@@ -32,12 +38,16 @@ from rptest.services.redpanda_installer import RedpandaInstaller, wait_for_num_v
 from rptest.services import tls
 from rptest.tests.group_membership_test import GroupCoordinatorTransferUtils
 from rptest.tests.redpanda_test import RedpandaTest
-from rptest.util import search_logs_with_timeout
+from rptest.util import search_logs_with_timeout, repeat_for_x_seconds, wait_until_result
 from rptest.utils.utf8 import CONTROL_CHARS_MAP
 
 
 def create_topic_names(count):
     return list(f"pandaproxy-topic-{uuid.uuid4()}" for _ in range(count))
+
+
+def gen_ascii(size: int):
+    return "".join(random.choice(string.ascii_lowercase) for _ in range(size))
 
 
 HTTP_GET_BROKERS_HEADERS = {
@@ -326,7 +336,8 @@ class PandaProxyEndpoints(RedpandaTest):
     def _create_named_consumer(self,
                                group_id,
                                name,
-                               headers=HTTP_CREATE_CONSUMER_HEADERS):
+                               headers=HTTP_CREATE_CONSUMER_HEADERS,
+                               **kwargs):
         res = requests.post(f"{self._base_uri()}/consumers/{group_id}",
                             json.dumps({
                                 "format": "binary",
@@ -336,7 +347,8 @@ class PandaProxyEndpoints(RedpandaTest):
                                 "fetch.min.bytes": "1",
                                 "consumer.request.timeout.ms": "10000"
                             }),
-                            headers=headers)
+                            headers=headers,
+                            **kwargs)
         return res
 
     def _test_http_proxy_restart(self,
@@ -2231,3 +2243,234 @@ class PandaProxyConsumerGroupTest(PandaProxyEndpoints):
         self.logger.debug(
             "Test offset commit: after second coordinator change")
         do_consumer_offset_commit(new_offset=1)
+
+
+class VerifiablePriorityQueue:
+    """
+    A priority queue used with VerifiablePandaproxyProducers/Consumers to verify some event properties:
+    (1) Every event produced is also consumed
+    (2) Every event is consumed atleast once
+    (3) Events are consumed in the same order they are produced in all consumers
+
+    This class uses python's PriorityQueue which internally use locks to temporarily block competing threads.
+    See python docs for more info: https://docs.python.org/3/library/queue.html
+    """
+    def __init__(self,
+                 logger: TestLoggerMaker,
+                 maxsize: int = 0,
+                 q_name: str = gen_ascii(16)):
+        self.last_known_pos = -1
+        self.q = PriorityQueue(maxsize)
+        self.q_name = q_name
+        self.logger = logger
+
+    def has_events(self):
+        return self.q.qsize() > 0
+
+    def add(self, timestamp: datetime.datetime, event: Any):
+        timestamp_event = (timestamp, event)
+        self.logger.debug(
+            f"Queue {self.q_name}, Adding timestamp_event {timestamp_event}")
+        self.q.put(timestamp_event)
+        self.logger.debug(
+            f"Queue {self.q_name}, relative size {self.q.qsize()} after add")
+
+    def remove(self):
+        self.logger.debug(f"Queue {self.q_name}, Removing timestamp_event...")
+        timestamp_event = self.q.get()
+        self.logger.debug(
+            f"Queue {self.q_name}, Removed timestamp_event {timestamp_event}, relative size {self.q.qsize()}"
+        )
+        return timestamp_event
+
+    def get_event_pos(self, event: Any, consumers: list):
+        assert len(consumers) > 0
+
+        def do_get_event_pos():
+            try:
+                i = consumers[0].events.index(event)
+                return True, i
+            except ValueError:
+                return False, None
+
+        # Retry a few times in-case one of the consumers has not fetched the event yet
+        wait_until_result(
+            do_get_event_pos,
+            timeout_sec=30,
+            backoff_sec=1,
+            err_msg=
+            f"Failed to get event position. No consumer fetched the event.")
+
+    def do_verify_event_in_consumers(self, event: Any, expected_pos: int,
+                                     consumers: list):
+        def do_verify():
+            for cons in consumers:
+                # If index throws, then property 1 & 2 are violated
+                try:
+                    event_pos = cons.events.index(event)
+                except ValueError:
+                    self.logger.debug(
+                        f"Property 1 & 2 violated, Consumer {cons.instance_id} did not fetch event {event}, retrying..."
+                    )
+                    return False
+
+                # If the fetched position is not expected, then property 3 is violated
+                if event_pos != expected_pos:
+                    self.logger.debug(
+                        f"Property 3 violated, Consumer {cons.instance_id} has event {event} at position {event_pos} instead of {expected_pos}, retrying..."
+                    )
+                    return False
+
+            return True
+
+        # Retry a few times in-case one of the consumers has not fetched the event yet
+        wait_until(
+            do_verify,
+            timeout_sec=30,
+            backoff_sec=1,
+            err_msg=f"A consumer violated an event property: event {event}")
+
+    def verify_event_in_consumers(self, event: Any, consumers: list):
+        event_pos = self.get_event_pos(event, consumers)
+        self.do_verify_event_in_consumers(event, event_pos, consumers)
+        # If the event's position is not exactly one less than the last known position, then propery 3 is violated
+        if event_pos - 1 != self.last_known_pos:
+            raise RuntimeError(
+                f"Property 3 violated, Queue {self.q_name}, Event {event} is in the wrong position {event_pos}"
+            )
+        self.last_known_pos = event_pos
+
+
+class VerifiablePandaproxyProducer(threading.Thread):
+    def __init__(self,
+                 topic: TopicSpec,
+                 produce_handle: Callable,
+                 queue_add_handle: Callable,
+                 timeout_sec: int,
+                 logger: TestLoggerMaker,
+                 msg_size_bytes: int = 512,
+                 prod_name: str = gen_ascii(16),
+                 auth_tuple: Optional[tuple[str, str]] = None):
+        threading.Thread.__init__(self)
+        self.daemon = True
+        self.topic = topic
+        self._produce_topic = produce_handle
+        self._queue_add = queue_add_handle
+        self.timeout_sec = timeout_sec
+        self.logger = logger
+        self.msg_size_bytes = msg_size_bytes
+        self.auth_tuple = auth_tuple
+        self.last_result_raw = None
+        self.done = False
+        self.exception = None
+        self.name = prod_name
+
+    def run(self):
+        def do_produce():
+            msg_ascii = gen_ascii(size=self.msg_size_bytes)
+            data = json.dumps({"records": [{"value": msg_ascii}]})
+            self.logger.debug(f"Producer {self.name} producing {data}")
+            self.last_result_raw = self._produce_topic(
+                self.topic.name,
+                data,
+                headers=HTTP_PRODUCE_JSON_V2_TOPIC_HEADERS,
+                auth=self.auth_tuple)
+            self.logger.debug(
+                f"Producer {self.name} raw produce result {self.last_result_raw}"
+            )
+            assert self.last_result_raw.status_code == requests.codes.ok
+            produce_result = self.last_result_raw.json()
+            self.logger.debug(
+                f"Producer {self.name} produce result {json.dumps(produce_result)}"
+            )
+            assert "offsets" in produce_result
+            assert len(produce_result["offsets"]) == 1
+            offset = produce_result["offsets"][0]
+            assert "error_code" not in offset, offset["error_code"]
+
+            self._queue_add(timestamp=datetime.datetime.now(),
+                            event={
+                                "topic": self.topic.name,
+                                "key": None,
+                                "value": msg_ascii,
+                                "partition": offset["partition"],
+                                "offset": offset["offset"]
+                            })
+
+        try:
+            repeat_for_x_seconds(do_produce,
+                                 timeout_s=self.timeout_sec,
+                                 backoff_sec=.1)
+        except Exception as ex:
+            self.exception = ex
+        finally:
+            self.done = True
+
+
+class VerifiablePandaproxyConsumer(threading.Thread):
+    def __init__(self,
+                 topic: TopicSpec,
+                 consumer: Consumer,
+                 timeout_sec: int,
+                 logger: TestLoggerMaker,
+                 auth_tuple: Optional[tuple[str, str]] = None):
+        threading.Thread.__init__(self)
+        self.daemon = True
+        self.topic = topic
+        self.consumer = consumer
+        self.timeout_sec = timeout_sec
+        self.logger = logger
+        self.auth_tuple = auth_tuple
+        self.last_result_raw = None
+        self.done = False
+        self.exception = None
+        self.events = []
+        self.name = self.consumer.instance_id
+
+    def run(self):
+        sc_res = self.consumer.subscribe([self.topic.name],
+                                         auth=self.auth_tuple)
+        assert sc_res.status_code == requests.codes.no_content
+
+        def do_consume():
+            self.last_result_raw = self.consumer.fetch(
+                headers=HTTP_CONSUMER_FETCH_JSON_V2_HEADERS,
+                auth=self.auth_tuple)
+            self.logger.debug(
+                f"Consumer {self.name} raw fetch result {self.last_result_raw}"
+            )
+            fetch_result = self.last_result_raw.json()
+            self.logger.debug(
+                f"Consumer {self.name} fetch result {fetch_result}")
+            if self.last_result_raw.status_code == requests.codes.ok:
+                for r in fetch_result:
+                    assert type(r["partition"]) == int
+                    assert type(r["offset"]) == int
+                    assert type(r["value"]) == str
+
+                # Currently, the PP consumers always consume from the begininng of the topic,
+                # so overwriting events is OK
+                self.events = fetch_result
+            elif self.last_result_raw.status_code == requests.codes.bad_request and fetch_result[
+                    "message"] == "not_leader_for_partition":
+                # Within the RP internal kafka client, RP will auto-update metadata if there
+                # is *any* error at the partition level such as not_leader_for_partition.
+                # However, this update happens *after* RP returns the response.
+                # Therefore, reissuing the fetch should succeed.
+                self.logger.debug(
+                    f"Consumer {self.name} recieved error not_leader_for_partition. Reissuing fetch request"
+                )
+            else:
+                self.logger.debug(
+                    f"Consumer {self.name} failed to fetch: raw result {self.last_result_raw}, json result {fetch_result}"
+                )
+                raise RuntimeError(f"Consumer {self.name} failed to fetch")
+
+        try:
+            repeat_for_x_seconds(do_consume,
+                                 timeout_s=self.timeout_sec,
+                                 backoff_sec=.1)
+        except Exception as ex:
+            self.exception = ex
+        finally:
+            self.done = True

@@ -9,10 +9,12 @@
 
 import os
 import pprint
+from collections.abc import Callable
 from contextlib import contextmanager
 from typing import Optional
 
 from ducktape.utils.util import wait_until
+import ducktape.errors
 from requests.exceptions import HTTPError
 
 from rptest.clients.kafka_cli_tools import KafkaCliTools
@@ -371,3 +373,16 @@ def search_logs_with_timeout(redpanda, pattern: str, timeout_s: int = 5):
     wait_until(lambda: redpanda.search_log_any(pattern),
                timeout_sec=timeout_s,
                err_msg=f"Failed to find pattern: {pattern}")
+
+
+def repeat_for_x_seconds(cond: Callable,
+                         timeout_s: int = 10,
+                         backoff_sec: int = 1):
+    def do_call():
+        cond()
+        return False
+
+    try:
+        wait_until(do_call, timeout_sec=timeout_s, backoff_sec=backoff_sec)
+    except ducktape.errors.TimeoutError as ex:
+        pass
