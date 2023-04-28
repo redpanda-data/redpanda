@@ -33,6 +33,7 @@
 #include "storage/segment_appender_utils.h"
 #include "storage/segment_utils.h"
 #include "storage/version.h"
+#include "utils/fragmented_vector.h"
 #include "vassert.h"
 
 #include <seastar/core/abort_source.hh>
@@ -237,6 +238,23 @@ ss::circular_buffer<model::record_batch> make_ghost_batches_in_gaps(
   ss::circular_buffer<model::record_batch>&& batches) {
     ss::circular_buffer<model::record_batch> res;
     res.reserve(batches.size());
+    for (auto& b : batches) {
+        // gap
+        if (b.base_offset() > expected_start) {
+            auto gb = make_ghost_batches(
+              expected_start, prev_offset(b.base_offset()), b.term());
+            std::move(gb.begin(), gb.end(), std::back_inserter(res));
+        }
+        expected_start = next_offset(b.last_offset());
+        res.push_back(std::move(b));
+    }
+    return res;
+}
+
+fragmented_vector<model::record_batch> make_ghost_batches_in_gaps(
+  model::offset expected_start,
+  fragmented_vector<model::record_batch>&& batches) {
+    fragmented_vector<model::record_batch> res;
     for (auto& b : batches) {
         // gap
         if (b.base_offset() > expected_start) {
