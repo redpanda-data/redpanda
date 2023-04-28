@@ -87,6 +87,18 @@ void handler_probe::setup_metrics() {
           sm::description("Number of requests in progress"),
           labels)
           .aggregate(aggregate_labels),
+        sm::make_counter(
+          "bytes_received",
+          [this] { return _bytes_received; },
+          sm::description("Number of bytes received from requests"),
+          labels)
+          .aggregate(aggregate_labels),
+        sm::make_counter(
+          "bytes_sent",
+          [this] { return _bytes_sent; },
+          sm::description("Number of bytes sent in replies"),
+          labels)
+          .aggregate(aggregate_labels),
       });
 }
 
