@@ -19,6 +19,57 @@ from rptest.util import wait_until_result
 from rptest.clients.types import TopicSpec
 from rptest.services.admin import Admin
 from rptest.tests.redpanda_test import RedpandaTest
+from ducktape.tests.test import TestLoggerMaker
+
+
+class LeadershipTransferUtils:
+    def __init__(self, kc: KafkaCat, logger: TestLoggerMaker):
+        self.kc = kc
+        self.logger = logger
+
+    def get_partition_metadata(self, topic: str):
+        def do_get_partition_metadata():
+            meta = self.kc.metadata()
+            topics = meta["topics"]
+            self.logger.debug(topics)
+            assert len(topics) == 1
+            assert topics[0]["topic"] == topic
+            partition = random.choice(topics[0]["partitions"])
+            return partition["leader"] > 0, partition
+
+        return wait_until_result(do_get_partition_metadata,
+                                 timeout_sec=30,
+                                 backoff_sec=2,
+                                 err_msg="No partition with leader available")
+
+    def get_target_node_from_partition(self, partition: dict):
+        try:
+            target_node_id = next(
+                filter(lambda r: r["id"] != partition["leader"],
+                       partition["replicas"]))["id"]
+            return target_node_id
+        except StopIteration:
+            raise RuntimeError(
+                f"Failed to get target node from partition: {partition}")
+
+    def wait_until_transfer_completes(self, partition_id: int,
+                                      target_node_id: int):
+        def transfer_complete():
+            for _ in range(3):  # just give it a moment
+                time.sleep(1)
+                meta = self.kc.metadata()
+                self.logger.debug(meta["topics"][0]["partitions"])
+                partition = next(
+                    filter(lambda p: p["partition"] == partition_id,
+                           meta["topics"][0]["partitions"]))
+                if partition["leader"] == target_node_id:
+                    return True
+            return False
+
+        wait_until(lambda: transfer_complete(),
+                   timeout_sec=30,
+                   backoff_sec=5,
+                   err_msg="Transfer did not complete")
 
 
 class LeadershipTransferTest(RedpandaTest):
@@ -40,12 +91,11 @@ class LeadershipTransferTest(RedpandaTest):
     @cluster(num_nodes=3)
     def test_controller_recovery(self):
         kc = KafkaCat(self.redpanda)
+        utils = LeadershipTransferUtils(kc, self.logger)
 
         # choose a partition and a target node
-        partition = self._get_partition(kc)
-        target_node_id = next(
-            filter(lambda r: r["id"] != partition["leader"],
-                   partition["replicas"]))["id"]
+        partition = utils.get_partition_metadata(self.topic)
+        target_node_id = utils.get_target_node_from_partition(partition)
         self.logger.debug(
             f"Transfering leader from {partition['leader']} to {target_node_id}"
         )
@@ -68,35 +118,7 @@ class LeadershipTransferTest(RedpandaTest):
         admin.partition_transfer_leadership("kafka", self.topic, partition_id,
                                             target_node_id)
 
-        def transfer_complete():
-            for _ in range(3):  # just give it a moment
-                time.sleep(1)
-                meta = kc.metadata()
-                partition = next(
-                    filter(lambda p: p["partition"] == partition_id,
-                           meta["topics"][0]["partitions"]))
-                if partition["leader"] == target_node_id:
-                    return True
-            return False
-
-        wait_until(lambda: transfer_complete(),
-                   timeout_sec=30,
-                   backoff_sec=5,
-                   err_msg="Transfer did not complete")
-
-    def _get_partition(self, kc):
-        def get_partition():
-            meta = kc.metadata()
-            topics = meta["topics"]
-            assert len(topics) == 1
-            assert topics[0]["topic"] == self.topic
-            partition = random.choice(topics[0]["partitions"])
-            return partition["leader"] > 0, partition
-
-        return wait_until_result(get_partition,
-                                 timeout_sec=30,
-                                 backoff_sec=2,
-                                 err_msg="No partition with leader available")
+        utils.wait_until_transfer_completes(partition_id, target_node_id)
 
     @cluster(num_nodes=3)
     def test_self_transfer(self):
