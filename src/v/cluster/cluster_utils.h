@@ -14,6 +14,7 @@
 #include "cluster/errc.h"
 #include "cluster/fwd.h"
 #include "cluster/logger.h"
+#include "cluster/members_table.h"
 #include "cluster/types.h"
 #include "config/node_config.h"
 #include "config/tls_config.h"
@@ -384,5 +385,18 @@ get_allocation_domain(const model::ntp& ntp) {
 
 partition_state get_partition_state(ss::lw_shared_ptr<cluster::partition>);
 partition_raft_state get_partition_raft_state(consensus_ptr);
+
+/**
+ * Check that the configuration is valid, if not return a string with the
+ * error cause.
+ *
+ * @param current_brokers current broker vector
+ * @param to_update broker being added
+ * @return std::optional<ss::sstring> - present if there is an error, nullopt
+ * otherwise
+ */
+std::optional<ss::sstring> check_result_configuration(
+  const members_table::cache_t& current_brokers,
+  const model::broker& to_update);
 
 } // namespace cluster
