@@ -90,6 +90,18 @@ void handler_probe::setup_metrics(
           sm::description("A running total of kafka requests in progress"),
           labels)
           .aggregate(aggregate_labels),
+        sm::make_counter(
+          "received_bytes_total",
+          [this] { return _bytes_received; },
+          sm::description("Number of bytes received from kafka requests"),
+          labels)
+          .aggregate(aggregate_labels),
+        sm::make_counter(
+          "sent_bytes_total",
+          [this] { return _bytes_sent; },
+          sm::description("Number of bytes sent in kafka replies"),
+          labels)
+          .aggregate(aggregate_labels),
       });
 }
 
