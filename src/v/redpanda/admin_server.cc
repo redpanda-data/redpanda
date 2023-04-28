@@ -78,6 +78,7 @@
 #include "redpanda/admin/api-doc/status.json.h"
 #include "redpanda/admin/api-doc/transaction.json.h"
 #include "redpanda/admin/api-doc/usage.json.h"
+#include "resource_mgmt/memory_sampling.h"
 #include "rpc/errc.h"
 #include "security/acl.h"
 #include "security/credential_store.h"
@@ -93,9 +94,11 @@
 
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/loop.hh>
+#include <seastar/core/map_reduce.hh>
 #include <seastar/core/prometheus.hh>
 #include <seastar/core/reactor.hh>
 #include <seastar/core/sharded.hh>
+#include <seastar/core/smp.hh>
 #include <seastar/core/sstring.hh>
 #include <seastar/core/timer.hh>
 #include <seastar/core/with_scheduling_group.hh>
@@ -117,9 +120,11 @@
 #include <boost/lexical_cast/bad_lexical_cast.hpp>
 #include <fmt/core.h>
 
+#include <algorithm>
 #include <charconv>
 #include <chrono>
 #include <limits>
+#include <memory>
 #include <stdexcept>
 #include <system_error>
 #include <type_traits>
@@ -203,7 +208,8 @@ admin_server::admin_server(
   ss::sharded<cluster::topic_recovery_status_frontend>&
     topic_recovery_status_frontend,
   ss::sharded<cluster::tx_registry_frontend>& tx_registry_frontend,
-  ss::sharded<storage::node>& storage_node)
+  ss::sharded<storage::node>& storage_node,
+  ss::sharded<memory_sampling>& memory_sampling_service)
   : _log_level_timer([this] { log_level_timer_handler(); })
   , _server("admin")
   , _cfg(std::move(cfg))
@@ -225,6 +231,7 @@ admin_server::admin_server(
   , _topic_recovery_status_frontend(topic_recovery_status_frontend)
   , _tx_registry_frontend(tx_registry_frontend)
   , _storage_node(storage_node)
+  , _memory_sampling_service(memory_sampling_service)
   , _default_blocked_reactor_notify(
       ss::engine().get_blocked_reactor_notify_ms()) {}
 
@@ -4128,6 +4135,13 @@ void admin_server::register_debug_routes() {
             });
       });
 
+    register_route<superuser>(
+      ss::httpd::debug_json::sampled_memory_profile,
+      [this](std::unique_ptr<ss::http::request> req)
+        -> ss::future<ss::json::json_return_type> {
+          return sampled_memory_profile_handler(std::move(req));
+      });
+
     register_route<user>(
       ss::httpd::debug_json::restart_service,
       [this](std::unique_ptr<ss::http::request> req) {
@@ -5004,4 +5018,47 @@ admin_server::restart_service_handler(std::unique_ptr<ss::http::request> req) {
     vlog(logger.info, "Restart redpanda service: {}", to_string_view(*service));
     co_await restart_redpanda_service(*service);
     co_return ss::json::json_return_type(ss::json::json_void());
+}
+
+ss::future<ss::json::json_return_type>
+admin_server::sampled_memory_profile_handler(
+  std::unique_ptr<ss::http::request> req) {
+    vlog(logger.info, "Request to sampled memory profile");
+
+    std::optional<size_t> shard_id;
+    if (auto e = req->get_query_param("shard"); !e.empty()) {
+        try {
+            shard_id = boost::lexical_cast<size_t>(e);
+        } catch (const boost::bad_lexical_cast&) {
+            throw ss::httpd::bad_param_exception(
+              fmt::format("Invalid parameter 'shard_id' value {{{}}}", e));
+        }
+    }
+
+    if (shard_id.has_value()) {
+        auto max_shard_id = ss::smp::count;
+        if (*shard_id > max_shard_id) {
+            throw ss::httpd::bad_param_exception(fmt::format(
+              "Shard id too high, max shard id is {}", max_shard_id));
+        }
+    }
+
+    auto profiles = co_await _memory_sampling_service.local()
+                      .get_sampled_memory_profiles(shard_id);
+
+    std::vector<ss::httpd::debug_json::memory_profile> resp(profiles.size());
+    for (size_t i = 0; i < resp.size(); ++i) {
+        resp[i].shard = profiles[i].shard_id;
+
+        for (auto& allocation_sites : profiles[i].allocation_sites) {
+            ss::httpd::debug_json::allocation_site allocation_site;
+            allocation_site.size = allocation_sites.size;
+            allocation_site.count = allocation_sites.count;
+            allocation_site.backtrace = std::move(allocation_sites.backtrace);
+            resp[i].allocation_sites.push(allocation_site);
+        }
+    }
+
+    co_return co_await ss::make_ready_future<ss::json::json_return_type>(
+      std::move(resp));
 }

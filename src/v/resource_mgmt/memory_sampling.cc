@@ -19,8 +19,12 @@
 #include <seastar/core/condition-variable.hh>
 #include <seastar/core/future.hh>
 #include <seastar/core/memory.hh>
+#include <seastar/core/smp.hh>
 #include <seastar/core/sstring.hh>
 #include <seastar/util/memory_diagnostics.hh>
+
+#include <limits>
+#include <vector>
 
 constexpr std::string_view diagnostics_header() {
     return "Top-N alloc sites - size count stack:";
@@ -151,4 +155,45 @@ ss::future<> memory_sampling::stop() {
     _low_watermark_cond.broken();
 
     co_await _low_watermark_gate.close();
+}
+
+memory_sampling::serialized_memory_profile
+memory_sampling::get_sampled_memory_profile() {
+    auto stacks = ss::memory::sampled_memory_profile();
+
+    std::vector<memory_sampling::serialized_memory_profile::allocation_site>
+      allocation_sites;
+    allocation_sites.reserve(stacks.size());
+
+    for (auto& stack : stacks) {
+        allocation_sites.emplace_back(
+          stack.size,
+          stack.count,
+          ssx::sformat("{}", std::move(stack.backtrace)));
+    }
+
+    return memory_sampling::serialized_memory_profile{
+      ss::this_shard_id(), std::move(allocation_sites)};
+}
+
+ss::future<std::vector<memory_sampling::serialized_memory_profile>>
+memory_sampling::get_sampled_memory_profiles(std::optional<size_t> shard_id) {
+    using result_t = memory_sampling::serialized_memory_profile;
+    std::vector<result_t> resp;
+
+    if (shard_id.has_value()) {
+        resp.push_back(co_await container().invoke_on(*shard_id, [](auto&) {
+            return memory_sampling::get_sampled_memory_profile();
+        }));
+    } else {
+        resp = co_await container().map_reduce0(
+          [](auto&) { return memory_sampling::get_sampled_memory_profile(); },
+          std::vector<result_t>{},
+          [](std::vector<result_t> all, result_t result) {
+              all.push_back(std::move(result));
+              return all;
+          });
+    }
+
+    co_return resp;
 }

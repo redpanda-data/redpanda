@@ -993,3 +993,17 @@ class Admin:
                              f"debug/storage/disk_stat/{disk_type}",
                              json=json,
                              node=node)
+
+    def get_sampled_memory_profile(self, node=None, shard=None):
+        """
+        Gets the sampled memory profile debug output
+        """
+        if shard is not None:
+            kwargs = {"params": {"shard": shard}}
+        else:
+            kwargs = {}
+
+        return self._request("get",
+                             "debug/sampled_memory_profile",
+                             node=node,
+                             **kwargs).json()
