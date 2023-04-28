@@ -39,6 +39,10 @@ public:
         _requests_in_progress++;
     }
 
+    void add_bytes_received(size_t bytes) { _bytes_received += bytes; }
+
+    void add_bytes_sent(size_t bytes) { _bytes_sent += bytes; }
+
 private:
     uint64_t _requests_completed{0};
     uint64_t _requests_errored{0};
@@ -47,6 +51,9 @@ private:
     uint64_t _requests_in_progress_every_ns{0};
 
     ss::lowres_clock::time_point _last_recorded_in_progress;
+
+    uint64_t _bytes_received{0};
+    uint64_t _bytes_sent{0};
 };
 
 /**
