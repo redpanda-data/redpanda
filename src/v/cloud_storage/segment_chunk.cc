@@ -213,15 +213,22 @@ ss::future<> segment_chunks::trim_chunk_files() {
       to_release.begin(),
       to_release.end(),
       [](const auto& it_a, const auto& it_b) {
+          auto cmp = it_a->second.required_by_readers_in_future
+                     < it_b->second.required_by_readers_in_future;
           if (
             it_a->second.required_by_readers_in_future
             != it_b->second.required_by_readers_in_future) {
-              return it_a->second.required_by_readers_in_future
-                     < it_b->second.required_by_readers_in_future;
+              return cmp;
           }
 
-          return it_a->second.required_after_n_chunks
-                 > it_a->second.required_after_n_chunks;
+          if (
+            it_a->second.required_after_n_chunks != 0
+            && it_b->second.required_after_n_chunks != 0) {
+              return it_a->second.required_after_n_chunks
+                     > it_a->second.required_after_n_chunks;
+          }
+
+          return cmp;
       });
 
     std::vector<ss::lw_shared_ptr<ss::file>> files_to_close;
@@ -358,6 +365,7 @@ chunk_data_source_impl::~chunk_data_source_impl() {
     vassert(
       !_current_stream.has_value(),
       "stream not closed before destroying data source");
+    vlog(_ctxlog.debug, "chunk data source destroyed");
 }
 
 ss::future<ss::temporary_buffer<char>> chunk_data_source_impl::get() {

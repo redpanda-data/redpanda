@@ -445,11 +445,7 @@ ss::future<> remote_segment::do_hydrate_segment() {
       _bucket,
       _path,
       [this](uint64_t size_bytes, ss::input_stream<char> s) {
-          auto index_not_in_object_store = _sname_format
-                                             == segment_name_format::v1
-                                           || _sname_format
-                                                == segment_name_format::v2;
-          if (unlikely(index_not_in_object_store)) {
+          if (should_download_full_segment()) {
               return put_segment_in_cache_and_create_index(
                 size_bytes, std::move(s));
           } else {
@@ -721,6 +717,18 @@ void remote_segment::set_waiter_errors(const std::exception_ptr& err) {
     }
 };
 
+bool remote_segment::should_download_full_segment() const {
+    return _fallback_mode || _sname_format <= segment_name_format::v2;
+}
+
+bool remote_segment::is_state_materialized() const {
+    if (should_download_full_segment()) {
+        return bool(_data_file);
+    } else {
+        return _index.has_value();
+    }
+}
+
 ss::future<> remote_segment::run_hydrate_bg() {
     ss::gate::holder guard(_gate);
 
@@ -750,15 +758,16 @@ ss::future<> remote_segment::run_hydrate_bg() {
             co_await _bg_cvar.wait(
               [this] { return !_wait_list.empty() || _gate.is_closed(); });
 
-            bool should_download_segment = _fallback_mode
-                                           || _sname_format
-                                                <= segment_name_format::v2;
-            if (should_download_segment) {
+            if (should_download_full_segment()) {
+                vlog(
+                  _ctxlog.debug, "adding full segment to hydrate paths list");
                 hydration.add_request(
                   _path,
                   [this] { return do_hydrate_segment(); },
                   [this] { return do_materialize_segment(); },
                   hydration_request::kind::segment);
+                vlog(_ctxlog.debug, "removing index from hydrate paths list");
+                hydration.remove_request(_index_path);
             }
 
             vlog(
@@ -769,24 +778,7 @@ ss::future<> remote_segment::run_hydrate_bg() {
               _wait_list.size(),
               _data_file ? "available" : "not available");
             std::exception_ptr err;
-            // Check if the core segment data is hydrated. This could be the
-            // file handle
-            // to segment being open (for meta version v2 or lower) or the index
-            // being populated (for meta version v3 or newer)
-            auto segment_data_hydrated = [this,
-                                          should_download_segment]() -> bool {
-                if (should_download_segment) {
-                    return bool(_data_file);
-                } else {
-                    return _index.has_value();
-                }
-            };
-            if (!segment_data_hydrated() || !_tx_range) {
-                // We don't have a _data_file set so we have to check cache
-                // and retrieve the file out of it or hydrate.
-                // If _data_file is initialized we can use it safely since the
-                // cache can't delete it until we close it.
-
+            if (!is_state_materialized() || !_tx_range) {
                 co_await hydration.update_current_path_states();
                 if (co_await hydration.is_cache_thrashing()) {
                     co_await ss::sleep(_cache_backoff_jitter.next_duration());
@@ -801,13 +793,13 @@ ss::future<> remote_segment::run_hydrate_bg() {
                     }
                 }
             }
-            // Invariant: here we should have a data file or error to be set.
-            // If the hydration failed we will have 'err' set to some value. The
-            // error needs to be propagated further. Otherwise we will always
-            // have _data_file set because if we don't we will retry the
-            // hydration earlier.
+            // Invariant: here we should have segment state materialized or
+            // error to be set. If the hydration failed we will have 'err' set
+            // to some value. The error needs to be propagated further.
+            // Otherwise we will always have state materialized because if we
+            // don't we will retry the hydration earlier.
             vassert(
-              segment_data_hydrated() || err,
+              is_state_materialized() || err,
               "Segment hydration succeded but file isn't available");
 
             // When operating in index-only (v3 or above version of segment
@@ -854,6 +846,11 @@ ss::future<> remote_segment::hydrate() {
           // format where the full segment was downloaded, and try to hydrate
           // again.
           if (ex.path == _index_path && !_fallback_mode) {
+              vlog(
+                _ctxlog.info,
+                "failed to download index with error [{}], switching to "
+                "fallback mode and retrying hydration.",
+                ex);
               _fallback_mode = fallback_mode::yes;
               return hydrate().then([] {
                   // This is an empty file to match the type returned by `fut`.
@@ -1340,6 +1337,10 @@ void hydration_loop_state::add_request(
        .hydrate_action = std::move(h),
        .materialize_action = std::move(m),
        .path_kind = path_kind});
+}
+
+void hydration_loop_state::remove_request(const std::filesystem::path& p) {
+    std::erase_if(_states, [&p](const auto& state) { return state.path == p; });
 }
 
 ss::future<> hydration_loop_state::update_current_path_states() {

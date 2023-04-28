@@ -213,6 +213,17 @@ private:
         return _chunk_root / fmt::format("{}", chunk_start);
     }
 
+    /// Decides if the remote segment should download the full segment as part
+    /// of the hydration process. This is true if we are working with a segment
+    /// format newer than v2 and we are not in fallback mode
+    bool should_download_full_segment() const;
+
+    /// Is the remote segment state materialized, IE do we need to hydrate or
+    /// not. For segment format v0, v1 and v2, the data file handle should be
+    /// opened. For newer formats, v3 or later, the index should be
+    /// materialized.
+    bool is_state_materialized() const;
+
     ss::gate _gate;
     remote& _api;
     cache& _cache;
@@ -410,6 +421,8 @@ struct hydration_loop_state {
       hydrate_action_t h,
       materialize_action_t m,
       hydration_request::kind path_kind);
+
+    void remove_request(const std::filesystem::path& p);
 
     ss::future<> update_current_path_states();
 
