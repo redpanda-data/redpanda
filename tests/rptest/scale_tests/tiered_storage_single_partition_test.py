@@ -106,6 +106,16 @@ class TieredStorageSinglePartitionTest(RedpandaTest):
                 for node in self.redpanda.nodes:
                     self.redpanda.restart_nodes([node])
 
+            def metadata_readable():
+                return next(rpk.describe_topic(
+                    self.topic, tolerant=True)).high_watermark is not None
+
+            # Wait for the cluster to recover after final restart, so that subsequent
+            # post-stress success conditions can count on their queries succeeding.
+            self.redpanda.wait_until(metadata_readable,
+                                     timeout_sec=30,
+                                     backoff_sec=1)
+
         producer.wait(timeout_sec=expect_duration)
 
         produce_duration = time.time() - t1
