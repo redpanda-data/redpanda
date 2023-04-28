@@ -104,7 +104,7 @@ offset_translator::start(must_reset reset, bootstrap_state&& bootstrap) {
     if (reset) {
         vlog(_logger.info, "resetting offset translation state");
 
-        _state = storage::offset_translator_state(
+        *_state = storage::offset_translator_state(
           _state->ntp(), model::offset::min(), 0);
         ++_map_version;
         _highest_known_offset = model::offset::min();
@@ -118,7 +118,7 @@ offset_translator::start(must_reset reset, bootstrap_state&& bootstrap) {
           highest_known_offset_key());
 
         if (map_buf && highest_known_offset_buf) {
-            _state = storage::offset_translator_state::from_serialized_map(
+            *_state = storage::offset_translator_state::from_serialized_map(
               _state->ntp(), std::move(*map_buf));
             _highest_known_offset = reflection::from_iobuf<model::offset>(
               std::move(*highest_known_offset_buf));
@@ -135,7 +135,7 @@ offset_translator::start(must_reset reset, bootstrap_state&& bootstrap) {
               "offset translation kvstore state not found, loading from "
               "provided bootstrap state");
 
-            _state = storage::offset_translator_state::from_bootstrap_state(
+            *_state = storage::offset_translator_state::from_bootstrap_state(
               _state->ntp(), bootstrap.offset2delta);
             ++_map_version;
             _highest_known_offset = bootstrap.highest_known_offset;
@@ -292,7 +292,7 @@ offset_translator::prefix_truncate_reset(model::offset offset, int64_t delta) {
       _highest_known_offset,
       _state);
 
-    _state = storage::offset_translator_state(_state->ntp(), offset, delta);
+    *_state = storage::offset_translator_state(_state->ntp(), offset, delta);
     ++_map_version;
 
     _highest_known_offset = offset;
