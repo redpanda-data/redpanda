@@ -15,8 +15,11 @@ if [[ -n $(echo "$ORIG_LABELS" | jq '.[] | select(.name == "kind/backport")') ]]
 fi
 
 additional_body=""
-if [[ ! -z $CREATE_ISSUE_ON_ERROR ]]; then
+orig_assignees=$ORIG_ASSIGNEES
+
+if [[ -n $CREATE_ISSUE_ON_ERROR ]]; then
   additional_body="Note that this issue was created as a placeholder, since the original PR's commit(s) could not be automatically cherry-picked."
+  orig_assignees=$(gh issue view $PR_NUMBER --json author --jq .author.login)
 fi
 
 backport_issue_url=$(gh_issue_url)
@@ -24,7 +27,7 @@ if [[ -z $backport_issue_url ]]; then
   gh issue create --title "[$BACKPORT_BRANCH] $ORIG_TITLE" \
     --label "kind/backport" \
     --repo "$TARGET_ORG/$TARGET_REPO" \
-    --assignee "$ORIG_ASSIGNEES" \
+    --assignee "$orig_assignees" \
     --milestone "$TARGET_MILESTONE" \
     --body "Backport $ORIG_ISSUE_URL to branch $BACKPORT_BRANCH. $additional_body"
 else
