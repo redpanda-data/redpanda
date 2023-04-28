@@ -94,7 +94,7 @@ class ThroughputLimitsSnc(RedpandaTest):
                 self.ConfigProp.QUOTA_NODE_MAX_EG
         ]:
             r = self.rnd.randrange(4)
-            min = 128  # practical minimum
+            min = 256  # practical minimum
             if r == 0:
                 return None
             if r == 1:
