@@ -118,6 +118,7 @@ ss::future<> connection_context::process_one_request() {
         _server.probe().header_corrupted();
         co_return;
     }
+    _server.handler_probe(h->key).add_bytes_received(sz.value());
 
     try {
         co_return co_await dispatch_method_once(
@@ -569,6 +570,7 @@ ss::future<> connection_context::maybe_process_responses() {
                   *_snc_quota_context, response_size);
             }
         }
+        _server.handler_probe(request_key).add_bytes_sent(response_size);
         try {
             return conn->write(std::move(msg))
               .then([] {
