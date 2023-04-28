@@ -35,4 +35,6 @@ class SimpleK8sTest(Test):
         node_disk_free = self.redpanda.get_node_disk_free()
         assert node_disk_free > 0
 
+        self.redpanda.lsof_node(1)
+
         self.redpanda.set_cluster_config({})
