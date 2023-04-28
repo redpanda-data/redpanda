@@ -77,7 +77,7 @@ public:
     ss::future<result<tm_transaction, tx_errc>>
       describe_tx(kafka::transactional_id);
     ss::future<tx_errc>
-    set_draining_tx(cluster::draining_txs draining, model::ntp tx_ntp);
+    set_draining_txes(cluster::draining_txs draining, model::ntp tx_ntp);
 
     ss::future<tx_errc> delete_partition_from_tx(
       kafka::transactional_id, tm_transaction::tx_partition);
@@ -268,7 +268,7 @@ private:
     ss::future<result<tm_transaction, tx_errc>>
       describe_tx(ss::shared_ptr<tm_stm>, kafka::transactional_id);
     ss::future<tx_errc>
-      do_set_draining_tx(ss::shared_ptr<tm_stm>, cluster::draining_txs);
+      do_set_draining_txes(ss::shared_ptr<tm_stm>, cluster::draining_txs);
 
     void expire_old_txs();
     ss::future<> expire_old_txs(ss::shared_ptr<tm_stm>);

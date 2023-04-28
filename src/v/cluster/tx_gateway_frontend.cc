@@ -3341,7 +3341,7 @@ ss::future<result<tm_transaction, tx_errc>> tx_gateway_frontend::describe_tx(
     co_return co_await get_tx(term, stm, tid, timeout);
 }
 
-ss::future<tx_errc> tx_gateway_frontend::set_draining_tx(
+ss::future<tx_errc> tx_gateway_frontend::set_draining_txes(
   cluster::draining_txs draining, model::ntp tx_ntp) {
     auto shard = _shard_table.local().shard_for(tx_ntp);
 
@@ -3378,14 +3378,14 @@ ss::future<tx_errc> tx_gateway_frontend::set_draining_tx(
                 return stm->write_lock().then(
                   [&self, stm, draining = std::move(draining)](
                     ss::basic_rwlock<>::holder unit) {
-                      return self.do_set_draining_tx(stm, draining)
+                      return self.do_set_draining_txes(stm, draining)
                         .finally([u = std::move(unit)] {});
                   });
             });
       });
 }
 
-ss::future<tx_errc> tx_gateway_frontend::do_set_draining_tx(
+ss::future<tx_errc> tx_gateway_frontend::do_set_draining_txes(
   ss::shared_ptr<tm_stm> stm, cluster::draining_txs draining) {
     auto term_opt = co_await stm->sync();
     if (!term_opt.has_value()) {

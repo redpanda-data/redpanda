@@ -9,6 +9,9 @@
  * by the Apache License, Version 2.0
  */
 
+#include "kafka/protocol/types.h"
+#include "pandaproxy/json/rjson_util.h"
+#include "redpanda/draining_txes.h"
 #define BOOST_TEST_MODULE cli_parser
 #include "redpanda/cli_parser.h"
 
@@ -157,4 +160,70 @@ BOOST_AUTO_TEST_CASE(test_redpanda_and_ss_opts) {
         BOOST_REQUIRE(parser.validate_into(vm));
         BOOST_REQUIRE(!vm.empty());
     }
+}
+
+BOOST_AUTO_TEST_CASE(test_drain_tx_parse_test) {
+    ss::sstring data = R"(
+        {
+            "repartitioning_id": 0,
+            "transactional_ids": ["tx_1", "tx_2"],
+            "hash_ranges": [
+                {
+                    "from": 0,
+                    "to": 10
+                },
+                {
+                    "from": 100,
+                    "to": 4294967295
+                }
+            ]
+        })";
+    auto req_data = pandaproxy::json::rjson_parse(
+      data.c_str(),
+      pandaproxy::json::mark_transactions_draining_request_handler());
+    BOOST_REQUIRE(req_data.contains(kafka::transactional_id("tx_1")));
+    BOOST_REQUIRE(req_data.contains(kafka::transactional_id("tx_2")));
+    BOOST_REQUIRE_EQUAL(req_data.transactions.size(), 2);
+    BOOST_REQUIRE(req_data.contains(100));
+    BOOST_REQUIRE(req_data.contains(4294967295));
+    BOOST_REQUIRE(req_data.contains(0));
+    BOOST_REQUIRE(req_data.contains(10));
+    BOOST_REQUIRE_EQUAL(req_data.ranges.ranges.size(), 2);
+
+    ss::sstring data2 = R"(
+        {
+            "repartitioning_id": 2147483647,
+            "hash_ranges": [
+                {
+                    "from": 0,
+                    "to": 10
+                },
+                {
+                    "from": 100,
+                    "to": 4294967295
+                }
+            ]
+        })";
+    req_data = pandaproxy::json::rjson_parse(
+      data2.c_str(),
+      pandaproxy::json::mark_transactions_draining_request_handler());
+    BOOST_REQUIRE_EQUAL(req_data.transactions.size(), 0);
+    BOOST_REQUIRE(req_data.contains(100));
+    BOOST_REQUIRE(req_data.contains(4294967295));
+    BOOST_REQUIRE(req_data.contains(0));
+    BOOST_REQUIRE(req_data.contains(10));
+    BOOST_REQUIRE_EQUAL(req_data.ranges.ranges.size(), 2);
+
+    ss::sstring data_3 = R"(
+        {
+            "repartitioning_id": -1,
+            "transactional_ids": ["tx_1", "tx_2"]
+        })";
+    req_data = pandaproxy::json::rjson_parse(
+      data_3.c_str(),
+      pandaproxy::json::mark_transactions_draining_request_handler());
+    BOOST_REQUIRE(req_data.contains(kafka::transactional_id("tx_1")));
+    BOOST_REQUIRE(req_data.contains(kafka::transactional_id("tx_2")));
+    BOOST_REQUIRE_EQUAL(req_data.transactions.size(), 2);
+    BOOST_REQUIRE_EQUAL(req_data.ranges.ranges.size(), 0);
 }
