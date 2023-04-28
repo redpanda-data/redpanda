@@ -1085,7 +1085,7 @@ class RedpandaServiceK8s(RedpandaServiceBase):
         :return: yields strings
         """
         first = True
-        cmd = f"lsof -nP -p {self.redpanda_pid(node)}"
+        cmd = f"ls -l /proc/$(ls -l /proc/*/exe | grep /opt/redpanda/libexec/redpanda | head -1 | cut -d' ' -f 9 | cut -d / -f 3)/fd"
         if filter is not None:
             cmd += f" | grep {filter}"
         for line in self._kubectl.exec(cmd):
