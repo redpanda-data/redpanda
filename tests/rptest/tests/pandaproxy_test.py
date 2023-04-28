@@ -37,6 +37,7 @@ from rptest.services.redpanda import SecurityConfig, LoggingConfig, ResourceSett
 from rptest.services.redpanda_installer import RedpandaInstaller, wait_for_num_versions
 from rptest.services import tls
 from rptest.tests.group_membership_test import GroupCoordinatorTransferUtils
+from rptest.tests.leadership_transfer_test import LeadershipTransferUtils
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.util import search_logs_with_timeout, repeat_for_x_seconds, wait_until_result
 from rptest.utils.utf8 import CONTROL_CHARS_MAP
@@ -2474,3 +2475,105 @@ class VerifiablePandaproxyConsumer(threading.Thread):
             self.exception = ex
         finally:
             self.done = True
+
+
+class LeadershipTransferTest(PandaProxyEndpoints):
+    topics = [
+        TopicSpec(partition_count=3, replication_factor=3),
+    ]
+
+    def __init__(self, context):
+        # Disable pandaproxy by default since it is set later in the test
+        super(LeadershipTransferTest,
+              self).__init__(context,
+                             extra_rp_conf={
+                                 "enable_leader_balancer": False,
+                                 "partition_autobalancing_mode": "off"
+                             })
+
+        self.producers = []
+        self.consumers = []
+        self.prio_q = VerifiablePriorityQueue(self.logger)
+
+    def _start_one_producer(self,
+                            topic: TopicSpec,
+                            timeout_sec: int,
+                            msg_size_bytes: int = 512,
+                            auth_tuple: Optional[tuple[str, str]] = None):
+        self.producers.append(
+            VerifiablePandaproxyProducer(topic, self._produce_topic,
+                                         self.prio_q.add, timeout_sec,
+                                         self.logger, msg_size_bytes,
+                                         auth_tuple))
+        self.producers[-1].start()
+        return self.producers[-1]
+
+    def _start_one_consumer(self,
+                            topic: TopicSpec,
+                            group_id: str,
+                            timeout_sec: int,
+                            auth_tuple: Optional[tuple[str, str]] = None):
+        cc_res = self._create_named_consumer(
+            group_id, name=f"cons-{len(self.consumers)}", auth=auth_tuple)
+        assert cc_res.status_code == requests.codes.ok
+        self.consumers.append(
+            VerifiablePandaproxyConsumer(topic,
+                                         Consumer(cc_res.json(), self.logger),
+                                         timeout_sec, self.logger, auth_tuple))
+        self.consumers[-1].start()
+        return self.consumers[-1]
+
+    @cluster(num_nodes=3)
+    def test_leadership_transfer_with_load(self):
+        timeout_sec = 30
+        self._start_one_producer(self.topics[0], timeout_sec=timeout_sec)
+
+        group_id = f"pandaproxy-group-{uuid.uuid4()}"
+        self._start_one_consumer(self.topics[0],
+                                 group_id,
+                                 timeout_sec=timeout_sec)
+
+        kc = KafkaCat(self.redpanda)
+        admin = Admin(self.redpanda)
+        utils = LeadershipTransferUtils(kc, self.logger)
+
+        def do_transfer():
+            partition = utils.get_partition_metadata(self.topic)
+            target_node_id = utils.get_target_node_from_partition(partition)
+            self.logger.debug(
+                f"Transfering leader from {partition['leader']} to {target_node_id}"
+            )
+
+            # Send the request to any host, they should redirect to
+            # the leader of the partition.
+            partition_id = partition['partition']
+            admin.partition_transfer_leadership("kafka", self.topic,
+                                                partition_id, target_node_id)
+            utils.wait_until_transfer_completes(self.topic, partition_id,
+                                                target_node_id)
+
+        self.logger.debug("Start leadership transfer loop")
+        repeat_for_x_seconds(do_transfer, timeout_s=timeout_sec, backoff_sec=1)
+
+        # Dequeue outside of the VerifiableConsumer because PP consumers can only fetch from the
+        # beginning of the topic. So
+        def remove_from_q():
+            while self.prio_q.has_events():
+                timestamp_event = self.prio_q.remove()
+                self.prio_q.verify_event_in_consumers(timestamp_event[1],
+                                                      self.consumers)
+
+        dequeue_th = threading.Thread(target=remove_from_q)
+        dequeue_th.start()
+
+        for prod in self.producers:
+            prod.join()
+            if prod.exception is not None:
+                raise prod.exception
+
+        for cons in self.consumers:
+            cons.join()
+            if cons.exception is not None:
+                raise cons.exception
+
+        dequeue_th.join()

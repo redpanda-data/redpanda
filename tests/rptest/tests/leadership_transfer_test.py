@@ -27,14 +27,28 @@ class LeadershipTransferUtils:
         self.kc = kc
         self.logger = logger
 
+    def get_metadata_for_topic(self, topic: str):
+        meta = self.kc.metadata()
+        topics = meta["topics"]
+        self.logger.debug(topics)
+        try:
+            topic_metadata = next(
+                filter(lambda md: md["topic"] == topic, topics))
+            self.logger.debug(f"topic metadata {topic_metadata}")
+            return topic_metadata
+        except StopIteration:
+            # Failed to find topic metadata
+            self.logger.debug(f"Failed to find topic metadata for {topic}")
+            raise
+
     def get_partition_metadata(self, topic: str):
         def do_get_partition_metadata():
-            meta = self.kc.metadata()
-            topics = meta["topics"]
-            self.logger.debug(topics)
-            assert len(topics) == 1
-            assert topics[0]["topic"] == topic
-            partition = random.choice(topics[0]["partitions"])
+            topic_metadata = None
+            try:
+                topic_metadata = self.get_metadata_for_topic(topic)
+            except StopIteration:
+                return False
+            partition = random.choice(topic_metadata["partitions"])
             return partition["leader"] > 0, partition
 
         return wait_until_result(do_get_partition_metadata,
@@ -52,16 +66,15 @@ class LeadershipTransferUtils:
             raise RuntimeError(
                 f"Failed to get target node from partition: {partition}")
 
-    def wait_until_transfer_completes(self, partition_id: int,
+    def wait_until_transfer_completes(self, topic: str, partition_id: int,
                                       target_node_id: int):
         def transfer_complete():
             for _ in range(3):  # just give it a moment
                 time.sleep(1)
-                meta = self.kc.metadata()
-                self.logger.debug(meta["topics"][0]["partitions"])
+                topic_metadata = self.get_metadata_for_topic(topic)
                 partition = next(
                     filter(lambda p: p["partition"] == partition_id,
-                           meta["topics"][0]["partitions"]))
+                           topic_metadata["partitions"]))
                 if partition["leader"] == target_node_id:
                     return True
             return False
@@ -118,7 +131,8 @@ class LeadershipTransferTest(RedpandaTest):
         admin.partition_transfer_leadership("kafka", self.topic, partition_id,
                                             target_node_id)
 
-        utils.wait_until_transfer_completes(partition_id, target_node_id)
+        utils.wait_until_transfer_completes(self.topic, partition_id,
+                                            target_node_id)
 
     @cluster(num_nodes=3)
     def test_self_transfer(self):
