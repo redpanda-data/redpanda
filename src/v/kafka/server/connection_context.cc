@@ -94,6 +94,7 @@ ss::future<> connection_context::process_one_request() {
         _server.probe().header_corrupted();
         co_return;
     }
+    _server.handler_probe(h->key).add_bytes_received(sz.value());
 
     try {
         co_return co_await dispatch_method_once(
@@ -523,10 +524,12 @@ ss::future<> connection_context::maybe_process_responses() {
         // throttle_ms has been serialized long ago already. With the current
         // approach, egress token bucket level will always be an extra burst
         // into the negative while under pressure.
-        if (_kafka_throughput_controlled_api_keys().at(
-              resp_and_res.resources->request_data.request_key)) {
-            _server.snc_quota_mgr().record_response(msg.size());
+        auto response_size = msg.size();
+        auto request_key = resp_and_res.resources->request_data.request_key;
+        if (_kafka_throughput_controlled_api_keys().at(request_key)) {
+            _server.snc_quota_mgr().record_response(response_size);
         }
+        _server.handler_probe(request_key).add_bytes_sent(response_size);
         try {
             return conn->write(std::move(msg))
               .then([] {
