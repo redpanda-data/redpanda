@@ -163,6 +163,10 @@ public:
 
     const offset_index::coarse_index_t& get_coarse_index() const;
 
+    bool is_fallback_engaged() const {
+        return _fallback_mode == fallback_mode::yes;
+    }
+
 private:
     /// get a file offset for the corresponding kafka offset
     /// if the index is available
