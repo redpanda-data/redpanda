@@ -78,7 +78,8 @@ class segment_chunks {
     using chunk_map_t = absl::btree_map<file_offset_t, segment_chunk>;
 
 public:
-    explicit segment_chunks(remote_segment& segment);
+    explicit segment_chunks(
+      remote_segment& segment, uint64_t max_hydrated_chunks);
 
     segment_chunks(const segment_chunks&) = delete;
     segment_chunks& operator=(const segment_chunks&) = delete;
@@ -143,6 +144,8 @@ private:
 
     retry_chain_node _rtc;
     retry_chain_logger _ctxlog;
+
+    uint64_t _max_hydrated_chunks;
 };
 
 class chunk_data_source_impl final : public ss::data_source_impl {

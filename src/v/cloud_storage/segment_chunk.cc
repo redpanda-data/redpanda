@@ -45,12 +45,14 @@ segment_chunk::operator<=>(const segment_chunk& chunk) const {
     return required_that <=> required_this;
 }
 
-segment_chunks::segment_chunks(remote_segment& segment)
+segment_chunks::segment_chunks(
+  remote_segment& segment, uint64_t max_hydrated_chunks)
   : _segment(segment)
   , _cache_backoff_jitter(cache_backoff_duration)
   , _eviction_jitter(eviction_duration)
   , _rtc{_as}
-  , _ctxlog(cst_log, _rtc, _segment.get_segment_path()().native()) {}
+  , _ctxlog(cst_log, _rtc, _segment.get_segment_path()().native())
+  , _max_hydrated_chunks{max_hydrated_chunks} {}
 
 ss::future<> segment_chunks::start() {
     if (_started) {
@@ -221,7 +223,7 @@ ss::future<> segment_chunks::trim_chunk_files() {
         }
     }
 
-    bool need_trim = hydrated_chunks > _segment.max_hydrated_chunks();
+    bool need_trim = hydrated_chunks > _max_hydrated_chunks;
     vlog(
       _ctxlog.trace,
       "{} hydrated chunks, need trim: {}",
@@ -248,7 +250,7 @@ ss::future<> segment_chunks::trim_chunk_files() {
     // a scheduling point, it is possible that a chunk may get its file handle
     // acquired by a reader while it is waiting to be closed.
     for (auto& it : to_release) {
-        if (hydrated_chunks <= _segment.max_hydrated_chunks()) {
+        if (hydrated_chunks <= _max_hydrated_chunks) {
             break;
         }
 
@@ -257,7 +259,7 @@ ss::future<> segment_chunks::trim_chunk_files() {
           "marking chunk starting at offset {} for release, pending for "
           "release: {} chunks",
           it->first,
-          hydrated_chunks - _segment.max_hydrated_chunks());
+          hydrated_chunks - _max_hydrated_chunks);
         files_to_close.push_back(std::move(it->second.handle.value()));
         it->second.handle = std::nullopt;
         it->second.current_state = chunk_state::not_available;

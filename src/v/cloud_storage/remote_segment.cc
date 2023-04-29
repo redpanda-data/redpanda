@@ -170,8 +170,10 @@ remote_segment::remote_segment(
     if (_chunks_in_segment <= min_chunks_in_segment_threshold) {
         _max_hydrated_chunks = _chunks_in_segment;
     } else {
-        _max_hydrated_chunks = _chunks_in_segment
-                               * default_hydrated_chunks_ratio;
+        _max_hydrated_chunks = std::max(
+          static_cast<uint64_t>(
+            _chunks_in_segment * default_hydrated_chunks_ratio),
+          uint64_t{1});
     }
 
     vassert(
@@ -192,7 +194,7 @@ remote_segment::remote_segment(
       _max_hydrated_chunks,
       _chunk_size);
 
-    _chunks_api.emplace(*this);
+    _chunks_api.emplace(*this, _max_hydrated_chunks);
     // run hydration loop in the background
     ssx::background = run_hydrate_bg();
 }
