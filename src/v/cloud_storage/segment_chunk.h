@@ -112,8 +112,6 @@ public:
 
     file_offset_t get_next_chunk_start(file_offset_t f) const;
 
-    void mark_hydrated(file_offset_t chunk_start);
-
 private:
     // Attempts to download chunk into cache and load the file handle into
     // segment_chunk. Should be retried if there is a failure due to cache

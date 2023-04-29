@@ -196,6 +196,7 @@ segment_chunks::hydrate_chunk(file_offset_t chunk_start) {
       "hydrate loop ended without materializing chunk handle for id {}",
       chunk_start);
     auto handle = chunk.handle.value();
+    chunk.current_state = chunk_state::hydrated;
 
     while (!chunk.waiters.empty()) {
         chunk.waiters.front().set_value(handle);
@@ -338,14 +339,6 @@ file_offset_t segment_chunks::get_next_chunk_start(file_offset_t f) const {
     return next->first;
 }
 
-void segment_chunks::mark_hydrated(file_offset_t chunk_start) {
-    vassert(
-      _chunks.contains(chunk_start),
-      "No chunk found starting at {}",
-      chunk_start);
-    _chunks[chunk_start].current_state = chunk_state::hydrated;
-}
-
 chunk_data_source_impl::chunk_data_source_impl(
   segment_chunks& chunks,
   remote_segment& segment,
@@ -424,11 +417,6 @@ chunk_data_source_impl::load_stream_for_chunk(file_offset_t chunk_start) {
                   return ss::make_exception_future<segment_chunk::handle_t>(ex);
               });
           });
-
-    // Mark the chunk hydrated after it has been shared with the data source, so
-    // that it does not get trimmed between hydration and copying the handle.
-    // This may be called by all waiters waiting for the handle.
-    _chunks.mark_hydrated(chunk_start);
 
     if (_current_stream) {
         co_await _current_stream->close();
