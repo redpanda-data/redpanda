@@ -13,6 +13,7 @@
 #include "bytes/iobuf.h"
 #include "bytes/iobuf_parser.h"
 #include "cloud_storage/types.h"
+#include "cloud_storage_clients/client.h"
 #include "cloud_storage_clients/client_probe.h"
 #include "seastarx.h"
 #include "test_utils/async.h"
@@ -28,6 +29,8 @@
 #include <boost/property_tree/json_parser.hpp>
 #include <boost/test/tools/old/interface.hpp>
 #include <boost/test/unit_test.hpp>
+
+#include <charconv>
 
 using namespace std::chrono_literals;
 
@@ -116,6 +119,16 @@ ss::sstring list_objects_resp(
     ret += "</CommonPrefixes>\n";
     ret += "</ListBucketResult>\n";
     return ret;
+}
+
+uint64_t string_view_to_ul(std::string_view sv) {
+    uint64_t result;
+    auto conv_res = std::from_chars(sv.data(), sv.data() + sv.size(), result);
+    vassert(
+      conv_res.ec != std::errc::invalid_argument,
+      "failed to convert {} to an unsigned long",
+      sv);
+    return result;
 }
 
 } // anonymous namespace
@@ -237,7 +250,16 @@ void s3_imposter_fixture::set_routes(
                     repl.set_status(reply::status_type::not_found);
                     return error_payload;
                 }
-                return *it->second.body;
+
+                auto bytes_requested = request.get_header("Range");
+                const auto& body = it->second.body.value();
+                if (!bytes_requested.empty()) {
+                    auto byte_range = parse_byte_header(bytes_requested);
+                    return body.substr(
+                      byte_range.first,
+                      byte_range.second - byte_range.first + 1);
+                }
+                return body;
             } else if (request._method == "PUT") {
                 vlog(
                   fixt_log.trace, "Received PUT request to {}", request._url);
@@ -318,4 +340,17 @@ enable_cloud_storage_fixture::enable_cloud_storage_fixture() {
         cfg.cloud_storage_bucket.set_value(
           std::optional<ss::sstring>{"test-bucket"});
     }).get();
+}
+
+cloud_storage_clients::http_byte_range parse_byte_header(std::string_view s) {
+    auto bytes_start = s.find('=');
+    vassert(bytes_start != s.npos, "invalid byte range {}", s);
+    std::string_view bytes_value = s.substr(bytes_start + 1);
+
+    auto split_at = bytes_value.find('-');
+    vassert(split_at != bytes_value.npos, "invalid byte range {}", bytes_value);
+
+    return std::make_pair(
+      string_view_to_ul(bytes_value.substr(0, split_at)),
+      string_view_to_ul(bytes_value.substr(split_at + 1)));
 }

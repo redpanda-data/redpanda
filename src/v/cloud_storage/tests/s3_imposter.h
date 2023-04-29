@@ -11,6 +11,7 @@
 #pragma once
 
 #include "cloud_storage/base_manifest.h"
+#include "cloud_storage_clients/client.h"
 #include "config/configuration.h"
 #include "http/tests/registered_urls.h"
 
@@ -106,3 +107,5 @@ public:
         config::shard_local_cfg().cloud_storage_enabled.set_value(false);
     }
 };
+
+cloud_storage_clients::http_byte_range parse_byte_header(std::string_view s);
