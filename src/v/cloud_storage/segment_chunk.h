@@ -70,6 +70,8 @@ struct segment_chunk {
     // hydration and the others wait for the hydration to finish.
     using expiry_handler = std::function<void(ss::promise<handle_t>&)>;
     ss::expiring_fifo<ss::promise<handle_t>, expiry_handler> waiters;
+
+    std::strong_ordering operator<=>(const segment_chunk&) const;
 };
 
 class segment_chunks {

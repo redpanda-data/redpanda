@@ -23,6 +23,28 @@ void expiry_handler_impl(ss::promise<segment_chunk::handle_t>& pr) {
     pr.set_exception(ss::timed_out_error());
 }
 
+std::strong_ordering
+segment_chunk::operator<=>(const segment_chunk& chunk) const {
+    const auto cmp = required_by_readers_in_future
+                     <=> chunk.required_by_readers_in_future;
+    if (cmp != std::strong_ordering::equal) {
+        return cmp;
+    }
+
+    // A low required_after_n_chunks means the chunk is required sooner than the
+    // other chunk. However the default value of required_after_n_chunks is 0
+    // which can erroneously win in sorting by appearing lowest, so if one of
+    // the two compared numbers is 0 and the other is not, the non zero number
+    // must win.
+    const auto required_this = required_after_n_chunks > 0
+                                 ? required_after_n_chunks
+                                 : UINT_MAX;
+    const auto required_that = chunk.required_after_n_chunks > 0
+                                 ? chunk.required_after_n_chunks
+                                 : UINT_MAX;
+    return required_that <=> required_this;
+}
+
 segment_chunks::segment_chunks(remote_segment& segment)
   : _segment(segment)
   , _cache_backoff_jitter(cache_backoff_duration)
@@ -213,22 +235,7 @@ ss::future<> segment_chunks::trim_chunk_files() {
       to_release.begin(),
       to_release.end(),
       [](const auto& it_a, const auto& it_b) {
-          auto cmp = it_a->second.required_by_readers_in_future
-                     < it_b->second.required_by_readers_in_future;
-          if (
-            it_a->second.required_by_readers_in_future
-            != it_b->second.required_by_readers_in_future) {
-              return cmp;
-          }
-
-          if (
-            it_a->second.required_after_n_chunks != 0
-            && it_b->second.required_after_n_chunks != 0) {
-              return it_a->second.required_after_n_chunks
-                     > it_a->second.required_after_n_chunks;
-          }
-
-          return cmp;
+          return it_a->second <=> it_b->second == std::strong_ordering::less;
       });
 
     std::vector<ss::lw_shared_ptr<ss::file>> files_to_close;
