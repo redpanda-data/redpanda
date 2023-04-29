@@ -71,7 +71,7 @@ public:
 
     cloud_storage_clients::s3_configuration get_configuration();
 
-    void disable_search_on_get_list() { _search_on_get_list = false; }
+    void set_search_on_get_list(bool should) { _search_on_get_list = should; }
 
 private:
     void set_routes(

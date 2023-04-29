@@ -466,17 +466,14 @@ FIXTURE_TEST(test_list_bucket, s3_imposter_fixture) {
             for (int k = 0; k < third; k++) {
                 cloud_storage_clients::object_key path{
                   fmt::format("{}/{}/{}", i, j, k)};
-                auto result = remote.local()
-                                .upload_object(
-                                  bucket, path, iobuf{}, fib, upload_tags)
-                                .get();
+                auto result = r.upload_object(bucket, path, "", fib).get();
                 BOOST_REQUIRE_EQUAL(
                   cloud_storage::upload_result::success, result);
             }
         }
     }
     {
-        auto result = remote.local().list_objects(bucket, fib).get();
+        auto result = r.list_objects(bucket, fib).get();
         BOOST_REQUIRE(result.has_value());
         BOOST_REQUIRE_EQUAL(
           result.value().contents.size(), first * second * third);
@@ -484,8 +481,7 @@ FIXTURE_TEST(test_list_bucket, s3_imposter_fixture) {
     }
     {
         cloud_storage_clients::object_key prefix("/");
-        auto result
-          = remote.local().list_objects(bucket, fib, prefix, '/').get();
+        auto result = r.list_objects(bucket, fib, prefix, '/').get();
         BOOST_REQUIRE(result.has_value());
         BOOST_REQUIRE_EQUAL(
           result.value().contents.size(), first * second * third);
@@ -493,22 +489,21 @@ FIXTURE_TEST(test_list_bucket, s3_imposter_fixture) {
     }
     {
         cloud_storage_clients::object_key prefix("/1/");
-        auto result = remote.local().list_objects(bucket, fib, prefix).get();
+        auto result = r.list_objects(bucket, fib, prefix).get();
         BOOST_REQUIRE(result.has_value());
         BOOST_REQUIRE_EQUAL(result.value().contents.size(), second * third);
         BOOST_REQUIRE(result.value().common_prefixes.empty());
     }
     {
         cloud_storage_clients::object_key prefix("/1/");
-        auto result
-          = remote.local().list_objects(bucket, fib, prefix, '/').get();
+        auto result = r.list_objects(bucket, fib, prefix, '/').get();
         BOOST_REQUIRE(result.has_value());
         BOOST_REQUIRE_EQUAL(result.value().contents.size(), second * third);
         BOOST_REQUIRE_EQUAL(result.value().common_prefixes.size(), second);
     }
 }
 
-FIXTURE_TEST(test_list_bucket_with_prefix, remote_fixture) {
+FIXTURE_TEST(test_list_bucket_with_prefix, s3_imposter_fixture) {
     set_expectations_and_listen({});
     auto conf = get_configuration();
     remote r{connection_limit{10}, conf, config_file};
@@ -520,16 +515,13 @@ FIXTURE_TEST(test_list_bucket_with_prefix, remote_fixture) {
         for (const char second : {'a', 'b'}) {
             cloud_storage_clients::object_key path{
               fmt::format("{}/{}", first, second)};
-            auto result = remote.local()
-                            .upload_object(
-                              bucket, path, iobuf{}, fib, upload_tags)
-                            .get();
+            auto result = r.upload_object(bucket, path, "", fib).get();
             BOOST_REQUIRE_EQUAL(cloud_storage::upload_result::success, result);
         }
     }
 
     auto result = r.list_objects(
-                      bucket, fib, cloud_storage_clients::object_key{"/x/"})
+                     bucket, fib, cloud_storage_clients::object_key{"/x/"})
                     .get();
     BOOST_REQUIRE(result.has_value());
     auto items = result.value().contents;
@@ -537,13 +529,10 @@ FIXTURE_TEST(test_list_bucket_with_prefix, remote_fixture) {
     BOOST_REQUIRE_EQUAL(items[0].key, "/x/a");
     BOOST_REQUIRE_EQUAL(items[1].key, "/x/b");
     auto request = get_requests().back();
-    BOOST_REQUIRE_EQUAL(request.method, "GET");
-    BOOST_REQUIRE_EQUAL(request.q_list_type, "2");
-    BOOST_REQUIRE_EQUAL(request.q_prefix, "/x/");
-    BOOST_REQUIRE_EQUAL(request.h_prefix, "/x/");
+    BOOST_REQUIRE_EQUAL(request._method, "GET");
 }
 
-FIXTURE_TEST(test_list_bucket_with_filter, remote_fixture) {
+FIXTURE_TEST(test_list_bucket_with_filter, s3_imposter_fixture) {
     set_expectations_and_listen({});
     auto conf = get_configuration();
     remote r{connection_limit{10}, conf, config_file};
@@ -551,17 +540,15 @@ FIXTURE_TEST(test_list_bucket_with_filter, remote_fixture) {
     retry_chain_node fib(never_abort, 100ms, 20ms);
     cloud_storage_clients::bucket_name bucket{"test"};
     cloud_storage_clients::object_key path{"b"};
-    auto upl_result = r.upload_object(bucket, path, iobuf{}, fib, upload_tags)
-                        .get();
+    auto upl_result = r.upload_object(bucket, path, "", fib).get();
     BOOST_REQUIRE_EQUAL(cloud_storage::upload_result::success, upl_result);
 
-    auto result = r
-                    .list_objects(
-                      bucket,
-                      fib,
-                      std::nullopt,
-                      std::nullopt,
-                      [](const auto& item) { return item.key == "/b"; })
+    auto result = r.list_objects(
+                     bucket,
+                     fib,
+                     std::nullopt,
+                     std::nullopt,
+                     [](const auto& item) { return item.key == "/b"; })
                     .get();
     BOOST_REQUIRE(result.has_value());
     auto items = result.value().contents;

@@ -25,12 +25,6 @@ namespace {
 const ss::sstring no_manifests = R"XML(
     <ListBucketResult>
       <IsTruncated>false</IsTruncated>
-      <Contents>
-          <Key>a</Key>
-      </Contents>
-      <Contents>
-          <Key>b</Key>
-      </Contents>
       <NextContinuationToken>n</NextContinuationToken>
     </ListBucketResult>
     )XML";
@@ -98,6 +92,30 @@ const s3_imposter_fixture::expectation recovery_state{
   .body = recovery_results,
 };
 
+// Generates expectations such that listing on a manifest prefix will result in
+// a response that contains no manifests.
+std::vector<s3_imposter_fixture::expectation>
+generate_no_manifests_expectations(
+  std::vector<s3_imposter_fixture::expectation> additional_expectations) {
+    std::vector<uint64_t> prefixes;
+    prefixes.reserve(16);
+    for (uint64_t i = 0x00000000; i <= 0xF0000000; i += 0x10000000) {
+        prefixes.emplace_back(i);
+    }
+    std::vector<s3_imposter_fixture::expectation> expectations;
+    expectations.reserve(prefixes.size());
+    for (const auto& prefix_bitmask : prefixes) {
+        expectations.emplace_back(s3_imposter_fixture::expectation{
+          .url = fmt::format("/?list-type=2&prefix={:08x}/", prefix_bitmask),
+          .body = no_manifests,
+        });
+    }
+    for (auto& e : additional_expectations) {
+        expectations.emplace_back(std::move(e));
+    }
+    return expectations;
+}
+
 } // namespace
 
 class fixture
@@ -110,7 +128,7 @@ public:
         redpanda_thread_fixture::init_cloud_storage_tag{},
         httpd_port_number()) {
         // This test will manually set expectations for list requests.
-        disable_search_on_get_list();
+        set_search_on_get_list(false);
     }
 
     void wait_for_topic(model::topic_namespace tp_ns) {
@@ -165,8 +183,8 @@ FIXTURE_TEST(start_with_good_request, fixture) {
 }
 
 FIXTURE_TEST(recovery_with_no_topics_exits_early, fixture) {
-    set_expectations_and_listen(
-      {{.url = root_level.url, .body = no_manifests}});
+    set_search_on_get_list(true);
+    set_expectations_and_listen({});
 
     auto& service = app.topic_recovery_service;
     auto result = service.local().start_recovery({});
@@ -178,10 +196,10 @@ FIXTURE_TEST(recovery_with_no_topics_exits_early, fixture) {
     BOOST_REQUIRE_EQUAL(result, expected);
 
     // Wait until one request is received, to list bucket for manifest files
-    wait_for_n_requests(1, equals::yes);
+    wait_for_n_requests(16, equals::yes);
 
     const auto& list_topics_req = get_requests()[0];
-    BOOST_REQUIRE_EQUAL(list_topics_req._url, root_level.url);
+    BOOST_REQUIRE_EQUAL(list_topics_req._url, "/?list-type=2&prefix=00000000/");
 
     // Wait until recovery exits after finding no topics to create
     tests::cooperative_spin_wait_with_timeout(10s, [&service] {
@@ -189,7 +207,7 @@ FIXTURE_TEST(recovery_with_no_topics_exits_early, fixture) {
     }).get();
 
     // No other calls were made
-    BOOST_REQUIRE_EQUAL(get_requests().size(), 1);
+    BOOST_REQUIRE_EQUAL(get_requests().size(), 16);
 }
 
 void do_test(fixture& f) {
@@ -203,18 +221,11 @@ void do_test(fixture& f) {
     BOOST_REQUIRE_EQUAL(result, expected);
 
     // Wait until three requests are received:
-    // 1. to list bucket for topic meta prefixes
-    // 2. to list the topic meta prefix itself
-    // 3. to download manifest
-    f.wait_for_n_requests(3, fixture::equals::yes);
+    // 1..16. to list bucket for topic meta prefixes
+    // 17. to download manifest
+    f.wait_for_n_requests(17, fixture::equals::yes);
 
-    const auto& list_topics_req = f.get_requests()[0];
-    BOOST_REQUIRE_EQUAL(list_topics_req._url, root_level.url);
-
-    const auto& list_prefix_req = f.get_requests()[1];
-    BOOST_REQUIRE_EQUAL(list_prefix_req._url, meta_level.url);
-
-    const auto& get_manifest_req = f.get_requests()[2];
+    const auto& get_manifest_req = f.get_requests()[16];
     BOOST_REQUIRE_EQUAL(get_manifest_req._url, manifest.url);
 
     // Wait until recovery exits after finding no topics to create
@@ -222,20 +233,19 @@ void do_test(fixture& f) {
         return service.local().is_active() == false;
     }).get();
 
-    BOOST_REQUIRE_EQUAL(f.get_requests().size(), 3);
+    BOOST_REQUIRE_EQUAL(f.get_requests().size(), 17);
 }
 
 FIXTURE_TEST(recovery_with_unparseable_topic_manifest, fixture) {
-    set_expectations_and_listen(
-      {root_level, meta_level, {.url = manifest.url, .body = "bad json"}});
+    set_expectations_and_listen(generate_no_manifests_expectations(
+      {meta_level, {.url = manifest.url, .body = "bad json"}}));
     do_test(*this);
 }
 
 FIXTURE_TEST(recovery_with_missing_topic_manifest, fixture) {
-    set_expectations_and_listen({
-      root_level,
+    set_expectations_and_listen(generate_no_manifests_expectations({
       meta_level,
-    });
+    }));
     do_test(*this);
 }
 
@@ -249,7 +259,8 @@ FIXTURE_TEST(recovery_with_existing_topic, fixture) {
                                  .create_topics(topic_cfg, model::no_timeout)
                                  .get();
     wait_for_topics(std::move(topic_create_result)).get();
-    set_expectations_and_listen({root_level, meta_level});
+    set_expectations_and_listen(
+      generate_no_manifests_expectations({meta_level}));
 
     auto& service = app.topic_recovery_service;
     auto result = service.local().start_recovery({});
@@ -259,24 +270,18 @@ FIXTURE_TEST(recovery_with_existing_topic, fixture) {
       .message = "recovery started"};
 
     BOOST_REQUIRE_EQUAL(result, expected);
-    wait_for_n_requests(2, equals::yes);
-
-    const auto& list_topics_req = get_requests()[0];
-    BOOST_REQUIRE_EQUAL(list_topics_req._url, root_level.url);
-
-    const auto& prefix_req = get_requests()[1];
-    BOOST_REQUIRE_EQUAL(prefix_req._url, meta_level.url);
+    wait_for_n_requests(16, equals::yes);
 
     tests::cooperative_spin_wait_with_timeout(10s, [&service] {
         return service.local().is_active() == false;
     }).get();
 
-    BOOST_REQUIRE_EQUAL(get_requests().size(), 2);
+    BOOST_REQUIRE_EQUAL(get_requests().size(), 16);
 }
 
 FIXTURE_TEST(recovery_where_topic_is_created, fixture) {
-    set_expectations_and_listen(
-      {root_level, meta_level, manifest, recovery_state});
+    set_expectations_and_listen(generate_no_manifests_expectations(
+      {meta_level, manifest, recovery_state}));
 
     auto& service = app.topic_recovery_service;
     auto result = service.local().start_recovery({});
@@ -286,16 +291,7 @@ FIXTURE_TEST(recovery_where_topic_is_created, fixture) {
       .message = "recovery started"};
 
     BOOST_REQUIRE_EQUAL(result, expected);
-    wait_for_n_requests(3);
-
-    const auto& list_topics_req = get_requests()[0];
-    BOOST_REQUIRE_EQUAL(list_topics_req._url, root_level.url);
-
-    const auto& prefix_req = get_requests()[1];
-    BOOST_REQUIRE_EQUAL(prefix_req._url, meta_level.url);
-
-    const auto& get_manifest = get_requests()[2];
-    BOOST_REQUIRE_EQUAL(get_manifest._url, manifest.url);
+    wait_for_n_requests(16);
 
     // Wait for the topic to appear
     wait_for_topic(tp_ns);
@@ -324,25 +320,27 @@ FIXTURE_TEST(recovery_where_topic_is_created, fixture) {
     // 2. list prefix content
     // 3. download manifest
     // 4. try to clear recovery results from previous runs
-    BOOST_REQUIRE_GE(get_requests().size(), 4);
+    BOOST_REQUIRE_GE(get_requests().size(), 18);
 }
 
 FIXTURE_TEST(recovery_result_clear_before_start, fixture) {
-    set_expectations_and_listen(
-      {root_level, meta_level, manifest, recovery_state});
+    set_expectations_and_listen(generate_no_manifests_expectations(
+      {meta_level, manifest, recovery_state}));
 
     auto& service = app.topic_recovery_service;
     service.local().start_recovery({});
-    wait_for_n_requests(5);
+    wait_for_n_requests(22);
 
-    const auto& delete_request = get_requests()[4];
+    // 16 to check each manifest prefix, 1 to download the topic manifest, 1 to
+    // check recovery results, 1 to delete.
+    const auto& delete_request = get_requests()[18];
     BOOST_REQUIRE_EQUAL(delete_request._url, "/?delete");
     BOOST_REQUIRE_EQUAL(delete_request._method, "POST");
 }
 
 FIXTURE_TEST(recovery_download_tracking, fixture) {
-    set_expectations_and_listen(
-      {root_level, meta_level, manifest, recovery_state});
+    set_expectations_and_listen(generate_no_manifests_expectations(
+      {meta_level, manifest, recovery_state}));
 
     auto& service = app.topic_recovery_service;
     service.local().start_recovery({});
@@ -364,10 +362,9 @@ FIXTURE_TEST(recovery_download_tracking, fixture) {
 }
 
 FIXTURE_TEST(recovery_with_topic_name_pattern_without_match, fixture) {
-    set_expectations_and_listen({
-      root_level,
+    set_expectations_and_listen(generate_no_manifests_expectations({
       meta_level,
-    });
+    }));
 
     ss::httpd::request r;
     r._headers = {{"Content-Type", "application/json"}};
@@ -376,18 +373,18 @@ FIXTURE_TEST(recovery_with_topic_name_pattern_without_match, fixture) {
     auto& service = app.topic_recovery_service;
     service.local().start_recovery(r);
 
-    wait_for_n_requests(2, equals::yes);
+    wait_for_n_requests(16, equals::yes);
 
     tests::cooperative_spin_wait_with_timeout(10s, [&service] {
         return !service.local().is_active();
     }).get();
 
-    BOOST_REQUIRE_EQUAL(get_requests().size(), 2);
+    BOOST_REQUIRE_EQUAL(get_requests().size(), 16);
 }
 
 FIXTURE_TEST(recovery_with_topic_name_pattern_with_match, fixture) {
-    set_expectations_and_listen(
-      {root_level, meta_level, manifest, recovery_state});
+    set_expectations_and_listen(generate_no_manifests_expectations(
+      {meta_level, manifest, recovery_state}));
 
     ss::httpd::request r;
     r._headers = {{"Content-Type", "application/json"}};
@@ -396,13 +393,13 @@ FIXTURE_TEST(recovery_with_topic_name_pattern_with_match, fixture) {
     auto& service = app.topic_recovery_service;
     service.local().start_recovery(r);
 
-    wait_for_n_requests(5);
+    wait_for_n_requests(19);
     wait_for_topic(tp_ns);
 }
 
 FIXTURE_TEST(recovery_with_retention_ms_override, fixture) {
-    set_expectations_and_listen(
-      {root_level, meta_level, manifest, recovery_state});
+    set_expectations_and_listen(generate_no_manifests_expectations(
+      {meta_level, manifest, recovery_state}));
 
     ss::httpd::request r;
     r._headers = {{"Content-Type", "application/json"}};
@@ -412,7 +409,7 @@ FIXTURE_TEST(recovery_with_retention_ms_override, fixture) {
     auto& service = app.topic_recovery_service;
     service.local().start_recovery(r);
 
-    wait_for_n_requests(5);
+    wait_for_n_requests(19);
     wait_for_topic(tp_ns);
     auto topic = app.controller->get_topics_state().local().get_topic_cfg(
       tp_ns);
@@ -424,9 +421,8 @@ FIXTURE_TEST(recovery_with_retention_ms_override, fixture) {
 }
 
 FIXTURE_TEST(recovery_with_retention_bytes_override, fixture) {
-    set_expectations_and_listen(
-      {root_level, meta_level, manifest, recovery_state});
-
+    set_expectations_and_listen(generate_no_manifests_expectations(
+      {meta_level, manifest, recovery_state}));
     ss::httpd::request r;
     r._headers = {{"Content-Type", "application/json"}};
     r.content_length = 1;
@@ -447,8 +443,8 @@ FIXTURE_TEST(recovery_with_retention_bytes_override, fixture) {
 }
 
 FIXTURE_TEST(recovery_status, fixture) {
-    set_expectations_and_listen(
-      {root_level, meta_level, manifest, recovery_state});
+    set_expectations_and_listen(generate_no_manifests_expectations(
+      {meta_level, manifest, recovery_state}));
 
     ss::httpd::request r;
     r._headers = {{"Content-Type", "application/json"}};

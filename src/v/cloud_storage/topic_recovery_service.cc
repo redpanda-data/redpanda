@@ -227,38 +227,14 @@ collect_manifest_paths(
     const auto& bucket = cfg.bucket;
     auto rtc = make_rtc(as, cfg);
 
-    // List only the items at the top of the bucket hierarchy. The delimiter
-    // ensures that any "directories" will be collected into the common_prefixes
-    // field of the result.
-    auto top_level = co_await remote.list_objects(
-      bucket, rtc, std::nullopt, '/');
-    if (top_level.has_error()) {
-        vlog(
-          cst_log.error,
-          "Failed to list top level items: {}",
-          top_level.error());
-        co_return recovery_error_ctx::make("failed to list top level items");
+    // Look under each manifest prefix for topic manifests.
+    std::array<uint64_t, 16> prefixes;
+    for (int i = 0; i < 16; ++i) {
+        prefixes.at(i) = 0x10000000 * static_cast<uint64_t>(i);
     }
-
-    auto prefixes = top_level.value().common_prefixes;
-    for (const auto& prefix : prefixes) {
-        vlog(cst_log.trace, "found top level prefix: {}", prefix);
-    }
-
-    // Filter out prefixes which do not match the prefix expression that topic
-    // manifests use
-    auto it = std::remove_if(
-      prefixes.begin(), prefixes.end(), [](const auto& prefix) {
-          return !std::regex_match(prefix.cbegin(), prefix.cend(), prefix_expr);
-      });
-    prefixes.erase(it, prefixes.end());
-
-    for (auto& prefix : prefixes) {
-        vlog(cst_log.trace, "found possible topic meta prefix: {}", prefix);
-    }
-
     std::vector<remote_segment_path> paths;
-    for (const auto& prefix : prefixes) {
+    for (const auto& prefix_bitmask : prefixes) {
+        const auto prefix = fmt::format("{:08x}/", prefix_bitmask);
         auto rtc = make_rtc(as, cfg);
 
         // This request is restricted to prefix, it should only return the
