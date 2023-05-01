@@ -30,6 +30,7 @@
 #include "model/timeout_clock.h"
 #include "random/generators.h"
 #include "resource_mgmt/io_priority.h"
+#include "ssx/future-util.h"
 #include "ssx/semaphore.h"
 #include "storage/parser_utils.h"
 #include "utils/to_string.h"
@@ -146,14 +147,11 @@ read_result::memory_units_t::~memory_units_t() noexcept {
     if (shard == ss::this_shard_id()) {
         return;
     }
-    auto f = ss::smp::submit_to(
+    ssx::background = ss::smp::submit_to(
       shard, [uk = std::move(kafka), uf = std::move(fetch)]() mutable noexcept {
           uk.return_all();
           uf.return_all();
       });
-    if (!f.available()) {
-        ss::engine().run_in_background(std::move(f));
-    }
 }
 
 /**
@@ -168,7 +166,7 @@ read_result::memory_units_t::~memory_units_t() noexcept {
  *   is assumed that a batch size has already been consumed from kafka
  *   memory semaphore for it.
  */
-read_result::memory_units_t reserve_memory_units(
+static read_result::memory_units_t reserve_memory_units(
   ssx::semaphore& memory_sem,
   ssx::semaphore& memory_fetch_sem,
   const size_t max_bytes,
@@ -327,6 +325,8 @@ make_ntp_fetch_config(const model::ntp& ntp, const fetch_config& fetch_cfg) {
     return ntp_fetch_config(ntp, fetch_cfg);
 }
 
+namespace testing {
+
 ss::future<read_result> read_from_ntp(
   cluster::partition_manager& cluster_pm,
   coproc::partition_manager& coproc_pm,
@@ -347,6 +347,17 @@ ss::future<read_result> read_from_ntp(
       memory_sem,
       memory_fetch_sem);
 }
+
+read_result::memory_units_t reserve_memory_units(
+  ssx::semaphore& memory_sem,
+  ssx::semaphore& memory_fetch_sem,
+  const size_t max_bytes,
+  const bool obligatory_batch_read) {
+    return kafka::reserve_memory_units(
+      memory_sem, memory_fetch_sem, max_bytes, obligatory_batch_read);
+}
+
+} // namespace testing
 
 static void fill_fetch_responses(
   op_context& octx,
@@ -470,7 +481,7 @@ static ss::future<std::vector<read_result>> fetch_ntps_in_parallel(
         }
     }
 
-    const auto first_p_id = ntp_fetch_configs.front().ktp().get_partition();
+    const auto first_p_id = ntp_fetch_configs.front().ntp().tp.partition;
     auto results = co_await ssx::parallel_transform(
       std::move(ntp_fetch_configs),
       [&cluster_pm,
