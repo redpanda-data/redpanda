@@ -2159,7 +2159,8 @@ class RedpandaService(RedpandaServiceBase):
         nodes = []
         max_node, max_diff = retries[0][0], retries[0][1][0]
         for node, deets in retries:
-            nodes.append(self.idx(node))
+            node_name = f"{self.idx(node)}:{node.account.hostname}"
+            nodes.append(node_name)
             pct_diff, reported, reported_total, observed, observed_total = deets
             if pct_diff > max_diff:
                 max_diff = pct_diff
@@ -2167,12 +2168,12 @@ class RedpandaService(RedpandaServiceBase):
             diff = observed_total - reported_total
             for file, size in observed:
                 self.logger.debug(
-                    f"Observed file [{self.idx(node)}]: {size:7} {file}")
+                    f"Observed file [{node_name}]: {size:7} {file}")
             self.logger.warn(
-                f"Storage usage [{self.idx(node)}]: obs {observed_total:7} rep {reported_total:7} diff {diff:7} pct {pct_diff}"
+                f"Storage usage [{node_name}]: obs {observed_total:7} rep {reported_total:7} diff {diff:7} pct {pct_diff}"
             )
 
-        max_node = self.idx(max_node)
+        max_node = f"{self.idx(max_node)}:{max_node.account.hostname}"
         raise RuntimeError(
             f"Storage usage inconsistency on nodes {nodes}: max difference {max_diff} on node {max_node}"
         )
