@@ -74,27 +74,11 @@ allocation_units::allocation_units(
   , _state(state.weak_from_this())
   , _domain(domain) {}
 
-allocation_units::allocation_units(
-  ss::chunked_fifo<partition_assignment> assignments,
-  std::vector<model::broker_shard> previous_allocations,
-  allocation_state& state,
-  const partition_allocation_domain domain)
-  : _assignments(std::move(assignments))
-  , _state(state.weak_from_this())
-  , _domain(domain) {
-    _previous.reserve(previous_allocations.size());
-    for (auto& prev : previous_allocations) {
-        _previous.emplace(prev);
-    }
-}
-
 allocation_units::~allocation_units() {
     oncore_debug_verify(_oncore);
     for (auto& pas : _assignments) {
         for (auto& replica : pas.replicas) {
-            if (!_previous.contains(replica) && _state) {
-                _state->deallocate(replica, _domain);
-            }
+            _state->deallocate(replica, _domain);
         }
     }
 }

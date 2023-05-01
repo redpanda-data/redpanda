@@ -183,11 +183,6 @@ struct allocation_units {
       ss::chunked_fifo<partition_assignment>,
       allocation_state&,
       partition_allocation_domain);
-    allocation_units(
-      ss::chunked_fifo<partition_assignment>,
-      std::vector<model::broker_shard>,
-      allocation_state&,
-      partition_allocation_domain);
     allocation_units& operator=(allocation_units&&) = default;
     allocation_units& operator=(const allocation_units&) = delete;
     allocation_units(const allocation_units&) = delete;
@@ -209,9 +204,6 @@ struct allocation_units {
 
 private:
     ss::chunked_fifo<partition_assignment> _assignments;
-    // set of previous replicas, they will not be reverted when allocation units
-    // goes out of scope
-    absl::node_hash_set<model::broker_shard> _previous;
     // keep the pointer to make this type movable
     ss::weak_ptr<allocation_state> _state;
     partition_allocation_domain _domain;
