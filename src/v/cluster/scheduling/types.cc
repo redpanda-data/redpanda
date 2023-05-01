@@ -99,6 +99,52 @@ allocation_units::~allocation_units() {
     }
 }
 
+allocated_partition::allocated_partition(
+  std::vector<model::broker_shard> replicas, partition_allocation_domain domain)
+  : _replicas(std::move(replicas))
+  , _domain(domain) {}
+
+void allocated_partition::add_replica(
+  model::broker_shard replica, allocation_state& state) {
+    if (_state) {
+        vassert(
+          _state.get() == &state, "allocation_state object must be the same");
+    } else {
+        _state = state.weak_from_this();
+    }
+
+    if (!_original) {
+        _original = absl::flat_hash_set<model::broker_shard>(
+          _replicas.begin(), _replicas.end());
+    }
+
+    _replicas.push_back(replica);
+}
+
+bool allocated_partition::is_original(
+  const model::broker_shard& replica) const {
+    if (_original) {
+        return _original->contains(replica);
+    }
+    return std::find(_replicas.begin(), _replicas.end(), replica)
+           != _replicas.end();
+}
+
+allocated_partition::~allocated_partition() {
+    oncore_debug_verify(_oncore);
+
+    if (!_original || !_state) {
+        // no new allocations took place or object was moved from
+        return;
+    }
+
+    for (const auto& bs : _replicas) {
+        if (!_original->contains(bs)) {
+            _state->deallocate(bs, _domain);
+        }
+    }
+}
+
 partition_constraints::partition_constraints(
   model::partition_id id, uint16_t replication_factor)
   : partition_constraints(id, replication_factor, allocation_constraints{}) {}

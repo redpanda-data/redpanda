@@ -219,6 +219,36 @@ private:
     [[no_unique_address]] oncore _oncore;
 };
 
+class allocated_partition {
+public:
+    // construct an object from an original assignment
+    allocated_partition(
+      std::vector<model::broker_shard>, partition_allocation_domain);
+
+    const std::vector<model::broker_shard>& replicas() const {
+        return _replicas;
+    }
+    bool is_original(const model::broker_shard&) const;
+
+    allocated_partition& operator=(allocated_partition&&) = default;
+    allocated_partition& operator=(const allocated_partition&) = delete;
+    allocated_partition(const allocated_partition&) = delete;
+    allocated_partition(allocated_partition&&) = default;
+    ~allocated_partition();
+
+private:
+    friend class partition_allocator;
+    void add_replica(model::broker_shard, allocation_state&);
+
+private:
+    std::vector<model::broker_shard> _replicas;
+    std::optional<absl::flat_hash_set<model::broker_shard>> _original;
+    partition_allocation_domain _domain;
+    ss::weak_ptr<allocation_state> _state;
+    // oncore checker to ensure destruction happens on the same core
+    [[no_unique_address]] oncore _oncore;
+};
+
 /**
  * Configuration used to request manual allocation configuration for topic.
  * Custom allocation only designate nodes where partition should be placed but
