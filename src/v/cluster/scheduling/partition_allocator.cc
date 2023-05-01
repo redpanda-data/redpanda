@@ -26,6 +26,7 @@
 #include <seastar/core/sharded.hh>
 #include <seastar/core/shared_ptr.hh>
 #include <seastar/coroutine/maybe_yield.hh>
+#include <seastar/util/defer.hh>
 #include <seastar/util/later.hh>
 
 #include <absl/container/node_hash_set.h>
@@ -102,7 +103,7 @@ result<allocated_partition> partition_allocator::allocate_partition(
         if (!replica) {
             return replica.error();
         }
-        ret.add_replica(replica.value());
+        ret.add_replica(replica.value(), std::nullopt);
     }
     return ret;
 }
@@ -313,6 +314,46 @@ result<allocated_partition> partition_allocator::reallocate_partition(
 
     return allocate_partition(
       std::move(partition_constraints), domain, current_assignment.replicas);
+}
+
+allocated_partition partition_allocator::make_allocated_partition(
+  std::vector<model::broker_shard> replicas,
+  partition_allocation_domain domain) const {
+    return allocated_partition{std::move(replicas), domain, *_state};
+}
+
+result<model::broker_shard> partition_allocator::reallocate_replica(
+  allocated_partition& partition,
+  model::node_id prev_node,
+  allocation_constraints constraints) {
+    vlog(
+      clusterlog.trace,
+      "reallocating replica {} for partition (all replicas: {}) with "
+      "constraints: {}",
+      prev_node,
+      partition.replicas(),
+      constraints);
+
+    std::optional<allocated_partition::previous_replica> prev
+      = partition.prepare_move(prev_node);
+    if (!prev) {
+        return errc::node_does_not_exists;
+    }
+    auto revert = ss::defer([&] { partition.cancel_move(*prev); });
+
+    auto effective_constraints = default_constraints(partition._domain);
+    effective_constraints.add(std::move(constraints));
+
+    auto replica = _allocation_strategy.allocate_replica(
+      partition._replicas, effective_constraints, *_state, partition._domain);
+    if (!replica) {
+        return replica;
+    }
+
+    revert.cancel();
+    partition.add_replica(replica.value(), prev);
+
+    return replica;
 }
 
 void partition_allocator::add_allocations(

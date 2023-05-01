@@ -233,7 +233,16 @@ private:
       partition_allocation_domain,
       allocation_state&);
 
-    void add_replica(model::broker_shard);
+    struct previous_replica {
+        model::broker_shard bs;
+        size_t idx;
+        std::optional<model::broker_shard> original;
+    };
+
+    std::optional<previous_replica> prepare_move(model::node_id previous);
+    void
+    add_replica(model::broker_shard, const std::optional<previous_replica>&);
+    void cancel_move(const previous_replica&);
 
     // used to move the allocation to allocation_units
     std::vector<model::broker_shard> release_new_partition();

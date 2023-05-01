@@ -46,11 +46,23 @@ public:
      */
     ss::future<result<allocation_units::pointer>> allocate(allocation_request);
 
-    // Reallocate an already existing partition
+    /// Reallocate an already existing partition
     result<allocated_partition> reallocate_partition(
       partition_constraints,
       const partition_assignment&,
       partition_allocation_domain);
+
+    /// Create allocated_partition object from current replicas for use with the
+    /// allocate_replica method.
+    allocated_partition make_allocated_partition(
+      std::vector<model::broker_shard> replicas,
+      partition_allocation_domain) const;
+
+    /// try to substitute an existing replica with a newly allocated one and add
+    /// it to the allocated_partition object. If the request fails,
+    /// allocated_partition remains unchanged.
+    result<model::broker_shard> reallocate_replica(
+      allocated_partition&, model::node_id previous, allocation_constraints);
 
     // State accessors
 
