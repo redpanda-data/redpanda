@@ -61,11 +61,7 @@ central configuration store (and via 'rpk cluster config edit').
 			schema, err := client.ClusterConfigSchema(cmd.Context())
 			out.MaybeDie(err, "unable to query config schema: %v", err)
 
-			configFile, err := p.LocateRedpandaConfig(fs)
-			// The LocateRedpandaConfig error type is a full
-			// explanation, pass it through without qualification.
-			out.MaybeDieErr(err)
-
+			configFile := cfg.FileLocation()
 			configIn, err := afero.ReadFile(fs, configFile)
 			out.MaybeDie(err, "unable to read config file %q: %v", configFile, err)
 

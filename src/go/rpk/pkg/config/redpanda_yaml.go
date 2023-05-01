@@ -23,6 +23,10 @@ type (
 		fileLocation string
 		rawFile      []byte
 
+		rpkFile         *RpkYaml
+		rpkFileLocation string
+		rpkRawFile      []byte
+
 		Redpanda             RedpandaNodeConfig `yaml:"redpanda,omitempty" json:"redpanda"`
 		Rpk                  RpkNodeConfig      `yaml:"rpk,omitempty" json:"rpk"`
 		Pandaproxy           *Pandaproxy        `yaml:"pandaproxy,omitempty" json:"pandaproxy,omitempty"`

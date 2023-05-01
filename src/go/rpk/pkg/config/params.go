@@ -91,6 +91,16 @@ const (
 // DefaultPath is where redpanda's configuration is located by default.
 const DefaultPath = "/etc/redpanda/redpanda.yaml"
 
+// DefaultRpkYamlPath returns the OS equivalent of ~/.config/rpk/rpk.yaml,
+// if $HOME is defined. The returned path is an absolute path.
+func DefaultRpkYamlPath() (string, bool) {
+	configDir, err := os.UserConfigDir()
+	if err != nil {
+		return "", false
+	}
+	return filepath.Join(configDir, "rpk", "rpk.yaml"), true
+}
+
 // Params contains rpk-wide configuration parameters.
 type Params struct {
 	// ConfigFlag is any flag-specified config path.
@@ -325,19 +335,10 @@ func (p *Params) Load(fs afero.Fs) (*Config, error) {
 	c := DevDefault()
 
 	if err := p.readConfig(fs, c); err != nil {
-		// Sometimes a config file will not exist (e.g. rpk running on MacOS),
-		// which is OK. In those cases, just return the default config.
-		if !errors.Is(err, afero.ErrFileNotFound) {
-			return nil, err
-		}
-		// If there is no file, we set the file location to the passed
-		// --config value, otherwise we use the default.
-		if p.ConfigFlag != "" {
-			c.fileLocation = p.ConfigFlag
-		} else {
-			c.fileLocation = DefaultPath
-		}
+		return nil, err
 	}
+
+	c.mergeRpkIntoRedpanda()
 	c.backcompat()
 	p.backcompatFlagsToOverrides()
 	if err := p.processOverrides(c); err != nil {
@@ -446,10 +447,10 @@ func (p *Params) Logger() *zap.Logger {
 	return p.logger
 }
 
-// isSameLoaded checks if the config object content is the same as the one
-// loaded. The function returns a boolean indicating if the two config objects
-// are equal.
-func (c *Config) isSameLoaded() bool {
+// isTheSameAsRawFile checks if the config object content is the same as the
+// one loaded. The function returns a boolean indicating if the two config
+// objects are equal.
+func (c *Config) isTheSameAsRawFile() bool {
 	var init, final *Config
 	if err := yaml.Unmarshal(c.RawFile(), &init); err != nil {
 		return false
@@ -487,7 +488,7 @@ func (c *Config) isSameLoaded() bool {
 func (c *Config) Write(fs afero.Fs) (rerr error) {
 	// We return early if the config is the same as the one loaded in the first
 	// place and avoid writing the file.
-	if c.isSameLoaded() {
+	if c.isTheSameAsRawFile() {
 		return nil
 	}
 	location := c.fileLocation
@@ -502,61 +503,95 @@ func (c *Config) Write(fs afero.Fs) (rerr error) {
 	return rpkos.ReplaceFile(fs, location, b, 0o644)
 }
 
-// LocateRedpandaConfig returns the filepath location of redpanda.yaml.
-func (p *Params) LocateRedpandaConfig(fs afero.Fs) (string, error) {
-	return p.locateConfig(fs, false)
+func readFile(fs afero.Fs, path string) (string, []byte, error) {
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		return "", nil, err
+	}
+	file, err := afero.ReadFile(fs, abs)
+	if err != nil {
+		return "", nil, err
+	}
+	return abs, file, err
 }
 
-func (p *Params) locateConfig(fs afero.Fs, includeRpk bool) (string, error) {
-	paths := []string{p.ConfigFlag}
-	if p.ConfigFlag == "" {
-		paths = nil
-		if includeRpk {
-			if configDir, _ := os.UserConfigDir(); configDir != "" {
-				paths = append(paths, filepath.Join(configDir, "rpk", "rpk.yaml"))
-			}
+// readConfig reads both the rpk.yaml and redpanda.yaml files, filling in
+// c.fileLocation and c.rpkFileLocation as appropriate.
+func (p *Params) readConfig(fs afero.Fs, c *Config) error {
+	if err := p.readRpkConfig(fs, c); err != nil {
+		return err
+	}
+	if err := p.readRedpandaConfig(fs, c); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (p *Params) readRpkConfig(fs afero.Fs, c *Config) error {
+	def, ok := DefaultRpkYamlPath()
+	path := def
+	if p.ConfigFlag != "" {
+		path = p.ConfigFlag
+	} else if !ok {
+		return errors.New("unable to load the user config directory -- is $HOME unset?")
+	}
+	abs, file, err := readFile(fs, path)
+	if err != nil {
+		if !errors.Is(err, afero.ErrFileNotFound) {
+			return err
 		}
+		// If the file does not exist, either the default path does not
+		// yet exist OR the --config path does not exist. For the
+		// latter, we have the config flag as both fileLocation and
+		// rpkFileLocation. The command that is running will create
+		// either one of these files, and then re-running the command
+		// will load it properly.
+		c.rpkFileLocation = abs
+		return nil
+	}
+	if err := yaml.Unmarshal(file, &c.rpkFile); err != nil {
+		return fmt.Errorf("unable to yaml decode %s: %v", path, err)
+	}
+	if c.rpkFile.Version != 1 {
+		c.rpkFile = nil
+		c.rpkFileLocation = def // this config is not an rpk.yaml; use our default path
+		return nil
+	}
+	c.rpkFileLocation = abs
+	c.rpkRawFile = file
+	return nil
+}
+
+func (p *Params) readRedpandaConfig(fs afero.Fs, c *Config) error {
+	paths := []string{p.ConfigFlag}
+	def := p.ConfigFlag
+	if p.ConfigFlag == "" {
+		paths = paths[:0]
 		if cd, _ := os.Getwd(); cd != "" {
 			paths = append(paths, filepath.Join(cd, "redpanda.yaml"))
 		}
 		paths = append(paths, filepath.FromSlash(DefaultPath))
+		def = paths[len(paths)-1]
 	}
-
 	for _, path := range paths {
-		// Ignore error: we only care whether it exists, other
-		// stat() errors are not interesting.
-		exists, _ := afero.Exists(fs, path)
-		if exists {
-			return path, nil
+		abs, file, err := readFile(fs, path)
+		if err != nil {
+			if errors.Is(err, afero.ErrFileNotFound) {
+				continue
+			}
 		}
-	}
 
-	return "", fmt.Errorf("%w: unable to find config in searched paths %v", afero.ErrFileNotFound, paths)
-}
-
-func (p *Params) readConfig(fs afero.Fs, c *Config) error {
-	path, err := p.locateConfig(fs, true)
-	if err != nil {
-		return err
+		if err := yaml.Unmarshal(file, c); err != nil {
+			return fmt.Errorf("unable to yaml decode %s: %v", path, err)
+		}
+		yaml.Unmarshal(file, &c.file) // cannot error since previous did not
+		c.fileLocation = abs
+		c.file.fileLocation = abs
+		c.rawFile = file
+		c.file.rawFile = file
+		return nil
 	}
-
-	file, err := afero.ReadFile(fs, path)
-	if err != nil {
-		return err
-	}
-
-	if err := yaml.Unmarshal(file, c); err != nil {
-		return fmt.Errorf("unable to yaml decode %s: %v", path, err)
-	}
-	yaml.Unmarshal(file, &c.file) // cannot error since previous did not
-	abs, err := filepath.Abs(path)
-	if err != nil {
-		return err
-	}
-	c.fileLocation = abs
-	c.file.fileLocation = abs
-	c.rawFile = file
-	c.file.rawFile = file
+	c.fileLocation = def // file not found in any searched location
 	return nil
 }
 
@@ -572,6 +607,45 @@ func (c *Config) backcompat() {
 	}
 	if r.AdminAPI.TLS == nil {
 		r.AdminAPI.TLS = r.TLS
+	}
+}
+
+func (c *Config) mergeRpkIntoRedpanda() {
+	rnew := c.rpkFile
+	if rnew == nil {
+		return
+	}
+	rold := &c.Rpk
+
+	currentCx := rnew.CurrentContext
+	if currentCx == "" {
+		currentCx = "default"
+	}
+	var cx *RpkContext
+	for _, c := range rnew.Contexts {
+		if c.Name == currentCx {
+			cx = &c
+			break
+		}
+	}
+	if cx == nil {
+		return
+	}
+	if k := cx.KafkaAPI; k != nil {
+		rold.KafkaAPI = RpkKafkaAPI{
+			Brokers: k.Brokers,
+			TLS:     k.TLS,
+			SASL:    k.SASL,
+		}
+	}
+	if a := cx.AdminAPI; a != nil {
+		rold.AdminAPI = RpkAdminAPI{
+			Addresses: a.Addresses,
+			TLS:       a.TLS,
+		}
+	}
+	if t := rnew.Tuners; t != nil {
+		rold.Tuners = rnew.Tuners.asNodeTuners()
 	}
 }
 
