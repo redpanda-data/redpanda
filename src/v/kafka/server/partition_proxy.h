@@ -123,7 +123,7 @@ partition_proxy make_partition_proxy(Args&&... args) {
     return partition_proxy(std::make_unique<Impl>(std::forward<Args>(args)...));
 }
 
-std::optional<partition_proxy> make_partition_proxy(
-  const model::ntp&, cluster::partition_manager&, coproc::partition_manager&);
+std::optional<partition_proxy>
+make_partition_proxy(const model::ntp&, cluster::partition_manager&);
 
 } // namespace kafka

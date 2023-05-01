@@ -91,14 +91,12 @@ server::server(
   ss::sharded<kafka::usage_manager>& usage_manager,
   ss::sharded<cluster::shard_table>& tbl,
   ss::sharded<cluster::partition_manager>& pm,
-  ss::sharded<fetch_session_cache>& session_cache,
   ss::sharded<cluster::id_allocator_frontend>& id_allocator_frontend,
   ss::sharded<security::credential_store>& credentials,
   ss::sharded<security::authorizer>& authorizer,
   ss::sharded<cluster::security_frontend>& sec_fe,
   ss::sharded<cluster::controller_api>& controller_api,
   ss::sharded<cluster::tx_gateway_frontend>& tx_gateway_frontend,
-  ss::sharded<coproc::partition_manager>& coproc_partition_manager,
   std::optional<qdc_monitor::config> qdc_config,
   ssx::thread_worker& tw) noexcept
   : net::server(cfg, klog)
@@ -114,7 +112,8 @@ server::server(
   , _usage_manager(usage_manager)
   , _shard_table(tbl)
   , _partition_manager(pm)
-  , _fetch_session_cache(session_cache)
+  , _fetch_session_cache(
+      config::shard_local_cfg().fetch_session_eviction_timeout_ms())
   , _id_allocator_frontend(id_allocator_frontend)
   , _is_idempotence_enabled(
       config::shard_local_cfg().enable_idempotence.value())
@@ -125,7 +124,6 @@ server::server(
   , _security_frontend(sec_fe)
   , _controller_api(controller_api)
   , _tx_gateway_frontend(tx_gateway_frontend)
-  , _coproc_partition_manager(coproc_partition_manager)
   , _mtls_principal_mapper(
       config::shard_local_cfg().kafka_mtls_principal_mapping_rules.bind())
   , _gssapi_principal_mapper(

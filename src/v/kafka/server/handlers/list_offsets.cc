@@ -67,8 +67,7 @@ static ss::future<list_offset_partition_response> list_offsets_partition(
   model::isolation_level isolation_lvl,
   kafka::leader_epoch current_leader_epoch,
   cluster::partition_manager& mgr) {
-    auto kafka_partition = make_partition_proxy(
-      ntp, mgr, octx.rctx.coproc_partition_manager().local());
+    auto kafka_partition = make_partition_proxy(ntp, mgr);
     if (!kafka_partition) {
         co_return list_offsets_response::make_partition(
           ntp.tp.partition, error_code::unknown_topic_or_partition);

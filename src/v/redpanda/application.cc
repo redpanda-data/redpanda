@@ -61,7 +61,6 @@
 #include "features/fwd.h"
 #include "kafka/client/configuration.h"
 #include "kafka/server/coordinator_ntp_mapper.h"
-#include "kafka/server/fetch_session_cache.h"
 #include "kafka/server/group_manager.h"
 #include "kafka/server/group_router.h"
 #include "kafka/server/queue_depth_monitor.h"
@@ -1524,20 +1523,14 @@ void application::wire_up_redpanda_services(model::node_id node_id) {
         std::ref(usage_manager),
         std::ref(shard_table),
         std::ref(partition_manager),
-        std::ref(fetch_session_cache),
         std::ref(id_allocator_frontend),
         std::ref(controller->get_credential_store()),
         std::ref(controller->get_authorizer()),
         std::ref(controller->get_security_frontend()),
         std::ref(controller->get_api()),
         std::ref(tx_gateway_frontend),
-        std::ref(cp_partition_manager),
         qdc_config,
         std::ref(*thread_worker))
-      .get();
-    construct_service(
-      fetch_session_cache,
-      config::shard_local_cfg().fetch_session_eviction_timeout_ms())
       .get();
     construct_service(
       _compaction_controller,
