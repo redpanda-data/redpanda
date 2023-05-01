@@ -67,7 +67,8 @@ public:
      */
     ss::future<result<allocation_units::pointer>> allocate(allocation_request);
 
-    result<allocation_units> reallocate_partition(
+    // Reallocate an already existing partition
+    result<allocated_partition> reallocate_partition(
       partition_constraints,
       const partition_assignment&,
       partition_allocation_domain);
@@ -146,11 +147,6 @@ private:
       partition_constraints,
       partition_allocation_domain,
       const std::vector<model::broker_shard>& not_changed_replicas = {});
-
-    result<std::vector<model::broker_shard>> do_reallocate_partition(
-      partition_constraints,
-      partition_allocation_domain,
-      const std::vector<model::broker_shard>&);
 
     allocation_constraints
     default_constraints(const partition_allocation_domain);

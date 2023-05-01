@@ -220,11 +220,11 @@ ss::future<> partition_balancer_backend::do_tick() {
     co_await ss::max_concurrent_for_each(
       plan_data.reassignments,
       32,
-      [this, current_term](ntp_reassignments& reassignment) {
+      [this, current_term](ntp_reassignment& reassignment) {
           return _topics_frontend
             .move_partition_replicas(
               reassignment.ntp,
-              reassignment.allocation_units.get_assignments().front().replicas,
+              reassignment.allocated.replicas(),
               model::timeout_clock::now() + add_move_cmd_timeout,
               current_term)
             .then([reassignment = std::move(reassignment)](auto errc) {

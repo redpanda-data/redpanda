@@ -589,12 +589,10 @@ ss::future<> members_backend::calculate_reallocations_after_decommissioned(
 bool is_reassigned_to_node(
   const members_backend::partition_reallocation& reallocation,
   model::node_id node_id) {
-    if (!reallocation.allocation_units.has_value()) {
+    if (!reallocation.allocated.has_value()) {
         return false;
     }
-    return is_in_replica_set(
-      reallocation.allocation_units->get_assignments().front().replicas,
-      node_id);
+    return is_in_replica_set(reallocation.allocated->replicas(), node_id);
 }
 
 void members_backend::default_reallocation_strategy::
@@ -705,14 +703,11 @@ void members_backend::default_reallocation_strategy::
                     reallocation.replicas_to_remove.emplace(id);
                     reassign_replicas(ntp, allocator, p, reallocation);
 
-                    if (!reallocation.allocation_units.has_value()) {
+                    if (!reallocation.allocated.has_value()) {
                         continue;
                     }
-                    const auto& new_assignment = reallocation.allocation_units
-                                                   .value()
-                                                   .get_assignments()
-                                                   .begin()
-                                                   ->replicas;
+                    const auto& new_assignment
+                      = reallocation.allocated.value().replicas();
                     // skip if partition was reassigned to the same node
                     if (is_reassigned_to_node(reallocation, id)) {
                         continue;
@@ -909,7 +904,7 @@ ss::future<std::error_code> members_backend::reconcile() {
     if (_last_term != current_term) {
         for (auto& [_, reallocation] : meta.partition_reallocations) {
             if (reallocation.state == reallocation_state::reassigned) {
-                reallocation.release_assignment_units();
+                reallocation.release_allocated();
                 reallocation.new_replica_set.clear();
                 reallocation.state = reallocation_state::initial;
             }
@@ -1168,7 +1163,7 @@ ss::future<> members_backend::reconcile_reallocation_state(
         }
         // success, update state and move on
         meta.state = reallocation_state::requested;
-        meta.release_assignment_units();
+        meta.release_allocated();
         [[fallthrough]];
     }
     case reallocation_state::requested: {

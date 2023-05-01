@@ -232,10 +232,9 @@ struct partition_balancer_planner_fixture {
         move_partition_replicas(std::move(ntp), std::move(new_replicas));
     }
 
-    void move_partition_replicas(cluster::ntp_reassignments& reassignment) {
+    void move_partition_replicas(cluster::ntp_reassignment& reassignment) {
         move_partition_replicas(
-          reassignment.ntp,
-          reassignment.allocation_units.get_assignments().front().replicas);
+          reassignment.ntp, reassignment.allocated.replicas());
     }
 
     void cancel_partition_move(model::ntp ntp) {

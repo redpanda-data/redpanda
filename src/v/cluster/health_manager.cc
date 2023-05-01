@@ -94,46 +94,10 @@ ss::future<bool> health_manager::ensure_partition_replication(model::ntp ntp) {
           allocation.error().message());
         co_return false;
     }
-
-    auto new_assignments = allocation.value().copy_assignments();
-
-    auto it = std::find_if(
-      new_assignments.cbegin(),
-      new_assignments.cend(),
-      [id = ntp.tp.partition](const auto& a) { return a.id == id; });
-
-    if (it == new_assignments.cend()) {
-        vlog(
-          clusterlog.warn,
-          "Health manager: could not find new allocation for {}",
-          ntp);
-        co_return false;
-    }
-
-    /*
-     * TODO: this check that the replicas are on different nodes should be
-     * unncessary and removed once the allocation constraints are setup
-     * correctly. current the following bug is related to the allocator
-     * constraints not being applied properly:
-     *
-     *    https://github.com/redpanda-data/redpanda/issues/2195
-     */
-    {
-        std::set<model::node_id> nodes;
-        for (const auto& r : it->replicas) {
-            nodes.insert(r.node_id);
-        }
-        if (nodes.size() != _target_replication_factor) {
-            vlog(
-              clusterlog.warn,
-              "Health manager: could not satisfy allocation for {}",
-              ntp);
-            co_return false;
-        }
-    }
+    const auto& replicas = allocation.value().replicas();
 
     auto err = co_await _topics_frontend.local().move_partition_replicas(
-      ntp, it->replicas, model::timeout_clock::now() + set_replicas_timeout);
+      ntp, replicas, model::timeout_clock::now() + set_replicas_timeout);
     if (err) {
         vlog(
           clusterlog.warn,
@@ -145,9 +109,9 @@ ss::future<bool> health_manager::ensure_partition_replication(model::ntp ntp) {
 
     vlog(
       clusterlog.info,
-      "Increasing replication factor for {} to {}",
+      "Increasing replication factor for {} (new replicas: {})",
       ntp,
-      it->replicas.size());
+      replicas);
 
     // short delay for things to stablize
     co_await ss::sleep_abortable(stabilize_delay, _as.local());

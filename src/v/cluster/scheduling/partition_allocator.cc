@@ -301,57 +301,37 @@ partition_allocator::allocate(allocation_request request) {
       std::move(assignments).finish(), *_state, request.domain));
 }
 
-result<std::vector<model::broker_shard>>
-partition_allocator::do_reallocate_partition(
-  partition_constraints p_constraints,
-  const partition_allocation_domain domain,
-  const std::vector<model::broker_shard>& not_changed_replicas) {
-    vlog(
-      clusterlog.debug,
-      "reallocating {}, replicas left: {}",
-      p_constraints,
-      not_changed_replicas);
-    /**
-     * We do not have to reallocate any of the replicas, do nothing
-     */
-    if (p_constraints.replication_factor == not_changed_replicas.size()) {
-        return not_changed_replicas;
-    }
-
-    auto result = allocate_partition(
-      std::move(p_constraints), domain, not_changed_replicas);
-    if (!result) {
-        return result.error();
-    }
-    auto new_replicas = std::move(result.value());
-    std::move(
-      not_changed_replicas.begin(),
-      not_changed_replicas.end(),
-      std::back_inserter(new_replicas));
-
-    return new_replicas;
-}
-
-result<allocation_units> partition_allocator::reallocate_partition(
+result<allocated_partition> partition_allocator::reallocate_partition(
   partition_constraints partition_constraints,
   const partition_assignment& current_assignment,
   const partition_allocation_domain domain) {
-    auto replicas = do_reallocate_partition(
-      std::move(partition_constraints), domain, current_assignment.replicas);
+    vlog(
+      clusterlog.debug,
+      "reallocating {}, replicas left: {}",
+      partition_constraints,
+      current_assignment.replicas);
 
-    if (!replicas) {
-        return replicas.error();
+    /**
+     * We do not have to reallocate any of the replicas, do nothing
+     */
+    if (
+      partition_constraints.replication_factor
+      == current_assignment.replicas.size()) {
+        return allocated_partition{current_assignment.replicas, domain};
     }
 
-    partition_assignment assignment{
-      current_assignment.group,
-      current_assignment.id,
-      std::move(replicas.value()),
-    };
-    ss::chunked_fifo<partition_assignment> p_as;
-    p_as.push_back(std::move(assignment));
-    return allocation_units(
-      std::move(p_as), current_assignment.replicas, *_state, domain);
+    auto new_replicas = allocate_partition(
+      std::move(partition_constraints), domain, current_assignment.replicas);
+    if (!new_replicas) {
+        return new_replicas.error();
+    }
+
+    allocated_partition result{current_assignment.replicas, domain};
+    for (const auto& bs : new_replicas.value()) {
+        result.add_replica(bs, *_state);
+    }
+
+    return result;
 }
 
 void partition_allocator::deallocate(

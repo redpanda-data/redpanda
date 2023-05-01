@@ -35,17 +35,16 @@ public:
           : constraints(partition_constraints(p_id, replication_factor)) {}
 
         partition_reallocation() = default;
-        void set_new_replicas(allocation_units units) {
-            allocation_units = std::move(units);
-            new_replica_set
-              = allocation_units->get_assignments().front().replicas;
+        void set_new_replicas(allocated_partition units) {
+            allocated = std::move(units);
+            new_replica_set = allocated->replicas();
         }
 
-        void release_assignment_units() { allocation_units.reset(); }
+        void release_allocated() { allocated.reset(); }
 
         std::optional<partition_constraints> constraints;
         absl::node_hash_set<model::node_id> replicas_to_remove;
-        std::optional<allocation_units> allocation_units;
+        std::optional<allocated_partition> allocated;
         std::vector<model::broker_shard> new_replica_set;
         std::vector<model::broker_shard> current_replica_set;
         reallocation_state state = reallocation_state::initial;

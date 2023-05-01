@@ -237,7 +237,7 @@ partition_constraints partition_balancer_planner::get_partition_constraints(
       std::move(allocation_constraints));
 }
 
-result<allocation_units> partition_balancer_planner::get_reallocation(
+result<allocated_partition> partition_balancer_planner::get_reallocation(
   const model::ntp& ntp,
   const partition_assignment& assignments,
   size_t partition_size,
@@ -270,8 +270,7 @@ result<allocation_units> partition_balancer_planner::get_reallocation(
 
     rrs.moving_partitions.insert(ntp);
     rrs.planned_moves_size += partition_size;
-    for (const auto r :
-         reallocation.value().get_assignments().front().replicas) {
+    for (const auto r : reallocation.value().replicas()) {
         if (
           std::find(stable_replicas.begin(), stable_replicas.end(), r)
           == stable_replicas.end()) {
@@ -298,18 +297,18 @@ result<allocation_units> partition_balancer_planner::get_reallocation(
 void partition_balancer_planner::plan_data::add_reassignment(
   model::ntp ntp,
   const std::vector<model::broker_shard>& orig_replicas,
-  allocation_units allocation_units,
+  allocated_partition reallocation,
   std::string_view reason) {
     vlog(
       clusterlog.info,
       "ntp: {}, planning move {} -> {} (reason: {})",
       ntp,
       orig_replicas,
-      allocation_units.get_assignments().front().replicas,
+      reallocation.replicas(),
       reason);
 
-    reassignments.emplace_back(ntp_reassignments{
-      .ntp = ntp, .allocation_units = std::move(allocation_units)});
+    reassignments.emplace_back(
+      ntp_reassignment{.ntp = ntp, .allocated = std::move(reallocation)});
 }
 
 /*

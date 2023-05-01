@@ -22,18 +22,23 @@
 #include <absl/container/flat_hash_set.h>
 #include <boost/test/tools/old/interface.hpp>
 
-void validate_replica_set_diversity(
+static void validate_replica_set_diversity(
+  const std::vector<model::broker_shard>& replicas) {
+    if (replicas.size() > 1) {
+        auto sentinel = replicas.front();
+        BOOST_TEST_REQUIRE(std::all_of(
+          std::next(replicas.begin()),
+          replicas.end(),
+          [sentinel](const model::broker_shard bs) {
+              return sentinel.node_id != bs.node_id;
+          }));
+    }
+}
+
+static void validate_replica_set_diversity(
   const ss::chunked_fifo<cluster::partition_assignment>& assignments) {
     for (const auto& assignment : assignments) {
-        if (assignment.replicas.size() > 1) {
-            auto sentinel = assignment.replicas.front();
-            BOOST_TEST_REQUIRE(std::all_of(
-              std::next(assignment.replicas.begin()),
-              assignment.replicas.end(),
-              [sentinel](const model::broker_shard bs) {
-                  return sentinel.node_id != bs.node_id;
-              }));
-        }
+        validate_replica_set_diversity(assignment.replicas);
     }
 }
 
@@ -428,7 +433,7 @@ FIXTURE_TEST(change_replication_factor, partition_allocator_fixture) {
       cluster::partition_allocation_domains::common);
 
     BOOST_CHECK_EQUAL(expected_success.has_value(), true);
-    validate_replica_set_diversity(expected_success.value().get_assignments());
+    validate_replica_set_diversity({expected_success.value().replicas()});
 }
 FIXTURE_TEST(rack_aware_assignment_1, partition_allocator_fixture) {
     std::vector<std::tuple<int, model::rack_id, int>> id_rack_ncpu = {
