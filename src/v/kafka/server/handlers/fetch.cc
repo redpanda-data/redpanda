@@ -169,7 +169,7 @@ read_result::memory_units_t::~memory_units_t() noexcept {
  *   is assumed that a batch size has already been consumed from kafka
  *   memory semaphore for it.
  */
-read_result::memory_units_t reserve_memory_units(
+static read_result::memory_units_t reserve_memory_units(
   ssx::semaphore& memory_sem,
   ssx::semaphore& memory_fetch_sem,
   const size_t max_bytes,
@@ -357,6 +357,8 @@ static ss::future<read_result> do_read_from_ntp(
     co_return result;
 }
 
+namespace testing {
+
 ss::future<read_result> read_from_ntp(
   cluster::partition_manager& cluster_pm,
   const replica_selector& replica_selector,
@@ -377,6 +379,17 @@ ss::future<read_result> read_from_ntp(
       memory_sem,
       memory_fetch_sem);
 }
+
+read_result::memory_units_t reserve_memory_units(
+  ssx::semaphore& memory_sem,
+  ssx::semaphore& memory_fetch_sem,
+  const size_t max_bytes,
+  const bool obligatory_batch_read) {
+    return kafka::reserve_memory_units(
+      memory_sem, memory_fetch_sem, max_bytes, obligatory_batch_read);
+}
+
+} // namespace testing
 
 static void fill_fetch_responses(
   op_context& octx,

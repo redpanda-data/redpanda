@@ -367,6 +367,11 @@ struct fetch_plan {
     }
 };
 
+/*
+ * Unit Tests Exposure
+ */
+namespace testing {
+
 ss::future<read_result> read_from_ntp(
   cluster::partition_manager&,
   const replica_selector&,
@@ -378,13 +383,18 @@ ss::future<read_result> read_from_ntp(
   ssx::semaphore& memory_sem,
   ssx::semaphore& memory_fetch_sem);
 
-namespace testing {
 /**
  * Create a fetch plan with the simple fetch planner.
  *
  * Exposed for testing/benchmarking only.
  */
 kafka::fetch_plan make_simple_fetch_plan(op_context& octx);
-} // namespace testing
 
+read_result::memory_units_t reserve_memory_units(
+  ssx::semaphore& memory_sem,
+  ssx::semaphore& memory_fetch_sem,
+  const size_t max_bytes,
+  const bool obligatory_batch_read);
+
+} // namespace testing
 } // namespace kafka
