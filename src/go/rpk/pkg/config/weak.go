@@ -664,7 +664,8 @@ func (t *TLS) UnmarshalYAML(n *yaml.Node) error {
 	var internal struct {
 		KeyFile        weakString `yaml:"key_file"`
 		CertFile       weakString `yaml:"cert_file"`
-		TruststoreFile weakString `yaml:"truststore_file"`
+		CAFile         weakString `yaml:"ca_file"`
+		TruststoreFile weakString `yaml:"truststore_file"` // BACKCOMPAT 23-05-01 we deserialize truststore_file into ca_file
 	}
 
 	if err := n.Decode(&internal); err != nil {
@@ -673,6 +674,9 @@ func (t *TLS) UnmarshalYAML(n *yaml.Node) error {
 	t.KeyFile = string(internal.KeyFile)
 	t.CertFile = string(internal.CertFile)
 	t.TruststoreFile = string(internal.TruststoreFile)
+	if internal.CAFile != "" {
+		t.TruststoreFile = string(internal.CAFile)
+	}
 	return nil
 }
 

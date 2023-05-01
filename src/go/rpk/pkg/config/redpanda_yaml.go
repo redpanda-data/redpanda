@@ -112,10 +112,12 @@ type (
 		AuthN   *string `yaml:"authentication_method,omitempty" json:"authentication_method,omitempty"`
 	}
 
+	// BACKCOMPAT 23-05-01: The CA used to be "truststore_file" in yaml; we
+	// deserialize truststore_file AND ca_file. See weak.go.
 	TLS struct {
 		KeyFile        string `yaml:"key_file,omitempty" json:"key_file"`
 		CertFile       string `yaml:"cert_file,omitempty" json:"cert_file"`
-		TruststoreFile string `yaml:"truststore_file,omitempty" json:"truststore_file"`
+		TruststoreFile string `yaml:"ca_file,omitempty" json:"ca_file"`
 	}
 
 	ServerTLS struct {
