@@ -349,6 +349,10 @@ struct fetch_plan {
     }
 };
 
+/*
+ * Unit Tests Exposure
+ */
+
 ss::future<read_result> read_from_ntp(
   cluster::partition_manager&,
   op_context&,
@@ -356,5 +360,8 @@ ss::future<read_result> read_from_ntp(
   fetch_config,
   bool,
   bool obligatory_batch_read);
+
+read_result::memory_units_t reserve_memory_units(
+  const request_context& rctx, size_t max_bytes, bool obligatory_batch_read);
 
 } // namespace kafka
