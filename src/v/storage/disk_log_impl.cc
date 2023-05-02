@@ -1437,8 +1437,20 @@ ss::future<> disk_log_impl::do_truncate_prefix(truncate_prefix_config cfg) {
 ss::future<> disk_log_impl::truncate(truncate_config cfg) {
     vassert(!_closed, "truncate() on closed log - {}", *this);
     return _failure_probes.truncate().then([this, cfg]() mutable {
-        // dispatch the actual truncation
-        return do_truncate(cfg, std::nullopt);
+        // Before truncation, erase any claim about a particular segment being
+        // clean: this may refer to a segment we are about to delete, or it
+        // may refer to a segment that we will modify the indices+data for: on
+        // subsequent startup we must assume that these segments require
+        // recovery.  The clean_segment_key will get written again on next
+        // clean shutdown.
+        return _kvstore
+          .remove(
+            kvstore::key_space::storage,
+            internal::clean_segment_key(config().ntp()))
+          .then([this, cfg] {
+              // dispatch the actual truncation
+              return do_truncate(cfg, std::nullopt);
+          });
     });
 }
 
