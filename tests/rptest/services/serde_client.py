@@ -110,3 +110,13 @@ class SerdeClient(BackgroundThreadService):
 
         for line in ssh_output:
             self.logger.debug(line)
+
+    def __enter__(self):
+        self.run()
+
+    def __exit__(self, *args):
+        self.reset()
+
+    def reset(self):
+        self.worker_errors.clear()
+        self.errors = ''
