@@ -25,7 +25,7 @@ jobs:
         with:
           # Can be "open", "closed", or "all".  Defaults to "open".
           state: closed
-      - run: echo "PR_NUMBER=${PR}" >> $GITHUB_ENV
+      - run: echo "PR_NUMBER=${PR}" >>"$GITHUB_ENV"
         if: success() && steps.findPr.outputs.number
         env:
           PR: ${{ steps.findPr.outputs.pr }}
