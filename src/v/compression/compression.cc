@@ -14,8 +14,23 @@
 #include "compression/internal/snappy_java_compressor.h"
 #include "compression/internal/zstd_compressor.h"
 #include "vassert.h"
+#include "vlog.h"
 
 namespace compression {
+
+/*
+ * There are no users of this, but we need to make sure it isn't compiled away
+ * in release mode so that it still shows up in the registered loggers list
+ * which rpk needs to be in sync with.
+ *
+ * Putting it here instead of in its own compilation unit seemed to have tricked
+ * the optimizer. Added a log statement below too, just for good measure.
+ *
+ * As soon as rpk supports logger name discovery via admin api this can be fully
+ * removed.
+ */
+ss::logger complog{"compression"};
+
 iobuf compressor::compress(const iobuf& io, type t) {
     switch (t) {
     case type::none:
@@ -29,6 +44,7 @@ iobuf compressor::compress(const iobuf& io, type t) {
     case type::zstd:
         return internal::zstd_compressor::compress(io);
     default:
+        vlog(complog.error, "Cannot compress type {}", t);
         vassert(false, "Cannot compress type {}", t);
     }
 }
