@@ -8,6 +8,12 @@ import (
 	"strings"
 )
 
+// SplitSchemeHostPort returns an optional scheme, a parsed host, an optional
+// port, and any parsing error.
+func SplitSchemeHostPort(h string) (scheme, host, port string, err error) {
+	return splitSchemeHostPort(h)
+}
+
 // ParseHostMaybeScheme parses an optional scheme, required valid hostname, and
 // optional port from the given input.
 //
