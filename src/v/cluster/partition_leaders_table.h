@@ -20,7 +20,6 @@
 
 #include <seastar/core/sharded.hh>
 
-#include <absl/container/flat_hash_map.h>
 #include <absl/container/node_hash_map.h>
 
 #include <optional>
@@ -197,7 +196,7 @@ private:
     std::optional<leader_meta>
       find_leader_meta(model::topic_namespace_view, model::partition_id) const;
 
-    absl::flat_hash_map<leader_key, leader_meta, leader_key_hash, leader_key_eq>
+    absl::node_hash_map<leader_key, leader_meta, leader_key_hash, leader_key_eq>
       _leaders;
 
     // per-ntp notifications for leadership election. note that the
