@@ -1186,7 +1186,7 @@ ss::future<std::error_code> topics_frontend::increase_replication_factor(
 
     // units shold exist during replicate_and_wait call
     using units_from_allocator
-      = ss::foreign_ptr<std::unique_ptr<allocation_units>>;
+      = ss::foreign_ptr<std::unique_ptr<allocated_partition>>;
     std::vector<units_from_allocator> units;
     units.reserve(partition_count);
 
@@ -1246,7 +1246,7 @@ ss::future<std::error_code> topics_frontend::increase_replication_factor(
                     get_allocation_domain(ntp));
               })
             .then([&error, &units, &new_assignments, topic, p_id](
-                    result<allocation_units> reallocation) {
+                    result<allocated_partition> reallocation) {
                 if (!reallocation) {
                     vlog(
                       clusterlog.warn,
@@ -1259,13 +1259,13 @@ ss::future<std::error_code> topics_frontend::increase_replication_factor(
                     return;
                 }
 
-                units_from_allocator ptr = std::make_unique<allocation_units>(
-                  std::move(reallocation.value()));
+                units_from_allocator ptr
+                  = std::make_unique<allocated_partition>(
+                    std::move(reallocation.value()));
 
                 units.emplace_back(std::move(ptr));
 
-                new_assignments.emplace_back(
-                  p_id, units.back()->get_assignments().front().replicas);
+                new_assignments.emplace_back(p_id, units.back()->replicas());
             });
       });
 

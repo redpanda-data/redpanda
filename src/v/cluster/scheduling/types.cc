@@ -74,27 +74,65 @@ allocation_units::allocation_units(
   , _state(state.weak_from_this())
   , _domain(domain) {}
 
-allocation_units::allocation_units(
-  ss::chunked_fifo<partition_assignment> assignments,
-  std::vector<model::broker_shard> previous_allocations,
-  allocation_state& state,
-  const partition_allocation_domain domain)
-  : _assignments(std::move(assignments))
-  , _state(state.weak_from_this())
-  , _domain(domain) {
-    _previous.reserve(previous_allocations.size());
-    for (auto& prev : previous_allocations) {
-        _previous.emplace(prev);
-    }
-}
-
 allocation_units::~allocation_units() {
     oncore_debug_verify(_oncore);
     for (auto& pas : _assignments) {
         for (auto& replica : pas.replicas) {
-            if (!_previous.contains(replica) && _state) {
-                _state->deallocate(replica, _domain);
-            }
+            _state->deallocate(replica, _domain);
+        }
+    }
+}
+
+allocated_partition::allocated_partition(
+  std::vector<model::broker_shard> replicas, partition_allocation_domain domain)
+  : _replicas(std::move(replicas))
+  , _domain(domain) {}
+
+void allocated_partition::add_replica(
+  model::broker_shard replica, allocation_state& state) {
+    if (_state) {
+        vassert(
+          _state.get() == &state, "allocation_state object must be the same");
+    } else {
+        _state = state.weak_from_this();
+    }
+
+    if (!_original) {
+        _original = absl::flat_hash_set<model::broker_shard>(
+          _replicas.begin(), _replicas.end());
+    }
+
+    _replicas.push_back(replica);
+}
+
+std::vector<model::broker_shard> allocated_partition::release_new_partition() {
+    vassert(
+      _original && _original->empty(),
+      "new partition shouldn't have previous replicas");
+    _state = nullptr;
+    return std::move(_replicas);
+}
+
+bool allocated_partition::is_original(
+  const model::broker_shard& replica) const {
+    if (_original) {
+        return _original->contains(replica);
+    }
+    return std::find(_replicas.begin(), _replicas.end(), replica)
+           != _replicas.end();
+}
+
+allocated_partition::~allocated_partition() {
+    oncore_debug_verify(_oncore);
+
+    if (!_original || !_state) {
+        // no new allocations took place or object was moved from
+        return;
+    }
+
+    for (const auto& bs : _replicas) {
+        if (!_original->contains(bs)) {
+            _state->deallocate(bs, _domain);
         }
     }
 }

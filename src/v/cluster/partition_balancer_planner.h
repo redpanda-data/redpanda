@@ -19,9 +19,9 @@
 
 namespace cluster {
 
-struct ntp_reassignments {
+struct ntp_reassignment {
     model::ntp ntp;
-    allocation_units allocation_units;
+    allocated_partition allocated;
 };
 
 struct planner_config {
@@ -55,7 +55,7 @@ public:
 
     struct plan_data {
         partition_balancer_violations violations;
-        std::vector<ntp_reassignments> reassignments;
+        std::vector<ntp_reassignment> reassignments;
         std::vector<model::ntp> cancellations;
         size_t failed_reassignments_count = 0;
         status status = status::empty;
@@ -63,7 +63,7 @@ public:
         void add_reassignment(
           model::ntp,
           const std::vector<model::broker_shard>& orig_replicas,
-          allocation_units,
+          allocated_partition,
           std::string_view reason);
     };
 
@@ -92,7 +92,7 @@ private:
       double max_disk_usage_ratio,
       reallocation_request_state&) const;
 
-    result<allocation_units> get_reallocation(
+    result<allocated_partition> get_reallocation(
       const model::ntp&,
       const partition_assignment&,
       size_t partition_size,

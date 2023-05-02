@@ -109,10 +109,7 @@ FIXTURE_TEST(test_node_down, partition_balancer_planner_fixture) {
     std::unordered_set<model::node_id> expected_nodes(
       {model::node_id(1), model::node_id(2), model::node_id(3)});
 
-    auto new_replicas = plan_data.reassignments.front()
-                          .allocation_units.get_assignments()
-                          .front()
-                          .replicas;
+    auto new_replicas = plan_data.reassignments.front().allocated.replicas();
     check_expected_assignments(new_replicas, expected_nodes);
 }
 
@@ -182,10 +179,7 @@ FIXTURE_TEST(
     std::unordered_set<model::node_id> expected_nodes(
       {model::node_id(1), model::node_id(2), model::node_id(4)});
 
-    auto new_replicas = plan_data.reassignments.front()
-                          .allocation_units.get_assignments()
-                          .front()
-                          .replicas;
+    auto new_replicas = plan_data.reassignments.front().allocated.replicas();
     check_expected_assignments(new_replicas, expected_nodes);
 }
 /*
@@ -222,10 +216,7 @@ FIXTURE_TEST(
 
     std::unordered_set<model::node_id> expected_nodes(
       {model::node_id(1), model::node_id(2), model::node_id(3)});
-    auto new_replicas = plan_data.reassignments.front()
-                          .allocation_units.get_assignments()
-                          .front()
-                          .replicas;
+    auto new_replicas = plan_data.reassignments.front().allocated.replicas();
     check_expected_assignments(new_replicas, expected_nodes);
 }
 
@@ -295,10 +286,7 @@ FIXTURE_TEST(test_move_from_full_node, partition_balancer_planner_fixture) {
     std::unordered_set<model::node_id> expected_nodes(
       {model::node_id(1), model::node_id(2), model::node_id(3)});
 
-    auto new_replicas = plan_data.reassignments.front()
-                          .allocation_units.get_assignments()
-                          .front()
-                          .replicas;
+    auto new_replicas = plan_data.reassignments.front().allocated.replicas();
     check_expected_assignments(new_replicas, expected_nodes);
 }
 
@@ -339,12 +327,10 @@ FIXTURE_TEST(
     std::unordered_set<model::node_id> expected_nodes(
       {model::node_id(1), model::node_id(2), model::node_id(3)});
 
-    auto new_replicas_1
-      = reassignments[0].allocation_units.get_assignments().front().replicas;
+    auto new_replicas_1 = reassignments[0].allocated.replicas();
     check_expected_assignments(new_replicas_1, expected_nodes);
 
-    auto new_replicas_2
-      = reassignments[1].allocation_units.get_assignments().front().replicas;
+    auto new_replicas_2 = reassignments[1].allocated.replicas();
     check_expected_assignments(new_replicas_2, expected_nodes);
 }
 
@@ -387,13 +373,11 @@ FIXTURE_TEST(
     std::unordered_set<model::node_id> expected_nodes(
       {model::node_id(3), model::node_id(4), model::node_id(5)});
 
-    auto new_replicas_1
-      = reassignments[0].allocation_units.get_assignments().front().replicas;
+    auto new_replicas_1 = reassignments[0].allocated.replicas();
     BOOST_REQUIRE_EQUAL(new_replicas_1.size(), expected_nodes.size());
     check_expected_assignments(new_replicas_1, expected_nodes);
 
-    auto new_replicas_2
-      = reassignments[1].allocation_units.get_assignments().front().replicas;
+    auto new_replicas_2 = reassignments[1].allocated.replicas();
     check_expected_assignments(new_replicas_2, expected_nodes);
 }
 
@@ -432,8 +416,7 @@ FIXTURE_TEST(
     const auto& reassignments = plan_data.reassignments;
     BOOST_REQUIRE_EQUAL(reassignments.size(), 1);
 
-    auto new_replicas
-      = reassignments[0].allocation_units.get_assignments().front().replicas;
+    auto new_replicas = reassignments[0].allocated.replicas();
     std::unordered_set<model::node_id> new_replicas_set;
     for (const auto& bs : new_replicas) {
         new_replicas_set.insert(bs.node_id);
@@ -490,8 +473,7 @@ FIXTURE_TEST(test_move_part_of_replicas, partition_balancer_planner_fixture) {
     std::unordered_set<model::node_id> expected_nodes(
       {model::node_id(0), model::node_id(3), model::node_id(4)});
 
-    auto new_replicas
-      = reassignments[0].allocation_units.get_assignments().front().replicas;
+    auto new_replicas = reassignments[0].allocated.replicas();
     check_expected_assignments(new_replicas, expected_nodes);
 }
 
@@ -545,16 +527,14 @@ FIXTURE_TEST(
     BOOST_REQUIRE_EQUAL(plan_data.reassignments.size(), 2);
     std::unordered_set<model::node_id> expected_nodes({model::node_id(2)});
 
-    auto new_replicas_1
-      = reassignments[0].allocation_units.get_assignments().front().replicas;
+    auto new_replicas_1 = reassignments[0].allocated.replicas();
 
     check_expected_assignments(new_replicas_1, expected_nodes);
     // First move less size node
     BOOST_REQUIRE_EQUAL(reassignments[0].ntp.tp.topic, "topic-1");
     BOOST_REQUIRE_EQUAL(reassignments[0].ntp.tp.partition, 2);
 
-    auto new_replicas_2
-      = reassignments[1].allocation_units.get_assignments().front().replicas;
+    auto new_replicas_2 = reassignments[1].allocated.replicas();
     check_expected_assignments(new_replicas_2, expected_nodes);
     BOOST_REQUIRE_EQUAL(reassignments[1].ntp.tp.topic, "topic-1");
     BOOST_REQUIRE_EQUAL(reassignments[1].ntp.tp.partition, 1);
@@ -610,8 +590,7 @@ FIXTURE_TEST(test_lot_of_partitions, partition_balancer_planner_fixture) {
     size_t node_4_counter = 0;
 
     for (auto& reassignment : reassignments) {
-        auto new_replicas
-          = reassignment.allocation_units.get_assignments().front().replicas;
+        auto new_replicas = reassignment.allocated.replicas();
         BOOST_REQUIRE(new_replicas.size() == 3);
         for (const auto r : new_replicas) {
             BOOST_REQUIRE(expected_nodes.contains(r.node_id));
@@ -662,10 +641,8 @@ FIXTURE_TEST(test_node_cancelation, partition_balancer_planner_fixture) {
     std::unordered_set<model::node_id> expected_nodes(
       {model::node_id(1), model::node_id(2), model::node_id(3)});
 
-    auto new_replicas = planner_result.reassignments.front()
-                          .allocation_units.get_assignments()
-                          .front()
-                          .replicas;
+    auto new_replicas
+      = planner_result.reassignments.front().allocated.replicas();
     check_expected_assignments(new_replicas, expected_nodes);
 
     for (auto& reassignment : planner_result.reassignments) {
@@ -724,10 +701,7 @@ FIXTURE_TEST(test_rack_awareness, partition_balancer_planner_fixture) {
     std::unordered_set<model::node_id> expected_nodes(
       {model::node_id(1), model::node_id(2), model::node_id(4)});
 
-    auto new_replicas = plan_data.reassignments.front()
-                          .allocation_units.get_assignments()
-                          .front()
-                          .replicas;
+    auto new_replicas = plan_data.reassignments.front().allocated.replicas();
     check_expected_assignments(new_replicas, expected_nodes);
 }
 
@@ -886,8 +860,7 @@ FIXTURE_TEST(test_rack_awareness_repair, partition_balancer_planner_fixture) {
     check_violations(plan_data, {}, {});
     BOOST_REQUIRE_EQUAL(plan_data.reassignments.size(), 2);
     for (const auto& ras : plan_data.reassignments) {
-        const auto& new_replicas
-          = ras.allocation_units.get_assignments().front().replicas;
+        const auto& new_replicas = ras.allocated.replicas();
         BOOST_REQUIRE_EQUAL(new_replicas.size(), 3);
         absl::node_hash_set<model::rack_id> racks;
         for (const auto& bs : new_replicas) {
