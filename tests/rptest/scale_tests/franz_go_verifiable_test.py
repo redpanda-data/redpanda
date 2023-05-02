@@ -21,7 +21,9 @@ from rptest.services.kgo_verifier_services import (
     KgoVerifierRandomConsumer,
     KgoVerifierConsumerGroupConsumer,
 )
-from rptest.services.redpanda import CloudStorageType, SISettings, RESTART_LOG_ALLOW_LIST, get_cloud_storage_type
+from rptest.services.redpanda import RedpandaService, CloudStorageType, SISettings, RESTART_LOG_ALLOW_LIST, get_cloud_storage_type, FAILURE_INJECTION_LOG_ALLOW_LIST
+from rptest.services.redpanda_monitor import RedpandaMonitor
+from rptest.services.storage_failure_injection import FailureInjectionConfig, NTPFailureInjectionConfig, FailureConfig, NTP, Operation, BatchType
 from rptest.tests.prealloc_nodes import PreallocNodesTest
 from rptest.utils.mode_checks import skip_debug_mode
 
@@ -94,13 +96,67 @@ class KgoVerifierTest(KgoVerifierBase):
 
     topics = (TopicSpec(partition_count=100, replication_factor=3), )
 
-    @cluster(num_nodes=4)
-    def test_with_all_type_of_loads(self):
+    def _generate_failure_injection_config(self) -> FailureInjectionConfig:
+        failure_probability = 0.0001
+        delay_probability = 10
+        min_delay_ms = 10
+        max_delay_ms = 30
+
+        failure_configs = [
+            FailureConfig(operation=op,
+                          failure_probability=failure_probability,
+                          delay_probability=delay_probability,
+                          min_delay_ms=min_delay_ms,
+                          max_delay_ms=max_delay_ms) for op in Operation
+            if op != Operation.truncate
+        ]
+
+        failure_configs.append(
+            FailureConfig(operation=Operation.truncate,
+                          failure_probability=50))
+
+        ntps: list[NTP] = []
+        ntps.append(NTP(namespace="redpanda", topic="controller", partition=0))
+
+        # Each shard gets its own kvstore ntp. The servers on which the test is running
+        # will have less than 64 cores, but having failure configuration for non-existing
+        # partitions is not an issue.
+        for shard in range(64):
+            ntps.append(NTP(namespace="redpanda", topic="kvstore",
+                            partition=0))
+
+        ntps += [
+            NTP(topic=self.topic, partition=p)
+            for p in range(self.topics[0].partition_count)
+        ]
+
+        ntp_failure_configs = [
+            NTPFailureInjectionConfig(ntp=ntp, failure_configs=failure_configs)
+            for ntp in ntps
+        ]
+
+        return FailureInjectionConfig(seed=0,
+                                      ntp_failure_configs=ntp_failure_configs)
+
+    def _workload(self, inject_failures=False):
         self.logger.info(f"Environment: {os.environ}")
         if os.environ.get('BUILD_TYPE', None) == 'debug':
             self.logger.info(
                 "Skipping test in debug mode (requires release build)")
             return
+
+        if inject_failures:
+            finject_cfg = self._generate_failure_injection_config()
+            self.redpanda.set_up_failure_injection(
+                finject_cfg=finject_cfg,
+                enabled=True,
+                nodes=[self.redpanda.nodes[0]],
+                tolerate_crashes=True)
+            RedpandaMonitor(self.test_context, self.redpanda).start()
+
+        self.redpanda.start()
+
+        self._create_initial_topics()
 
         self._producer.start(clean=False)
 
@@ -121,6 +177,21 @@ class KgoVerifierTest(KgoVerifierBase):
         assert self._seq_consumer.consumer_status.validator.valid_reads >= wrote_at_least
         assert self._rand_consumer.consumer_status.validator.total_reads >= self.RANDOM_READ_COUNT * self.RANDOM_READ_PARALLEL
         assert self._cg_consumer.consumer_status.validator.valid_reads >= wrote_at_least
+
+    def setUp(self):
+        # Skip the inherited redpanda start-up logic as extra
+        # configuration is required when running with failure injection.
+        pass
+
+    @cluster(num_nodes=4)
+    def test_with_all_type_of_loads(self):
+        self._workload()
+
+    @cluster(num_nodes=5,
+             log_allow_list=RESTART_LOG_ALLOW_LIST +
+             FAILURE_INJECTION_LOG_ALLOW_LIST)
+    def test_with_all_type_of_loads_with_failures(self):
+        self._workload(inject_failures=True)
 
 
 KGO_LOG_ALLOW_LIST = [

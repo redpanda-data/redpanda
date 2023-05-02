@@ -106,6 +106,14 @@ RESTART_LOG_ALLOW_LIST = [
     re.compile("Error \"raft::errc:19\" on replicating"),
 ]
 
+FAILURE_INJECTION_LOG_ALLOW_LIST = [
+    re.compile(
+        "Assert failure: .* filesystem error: Injected Failure: Input/output error"
+    ),
+    re.compile("assert - Backtrace below:"),
+    re.compile("finject - .* flush called concurrently with other operations")
+]
+
 # Log errors that are expected in chaos-style tests that e.g.
 # stop redpanda nodes uncleanly
 CHAOS_LOG_ALLOW_LIST = [
@@ -711,6 +719,8 @@ class RedpandaServiceBase(Service):
 
     # Where we put a compressed binary if saving it after failure
     EXECUTABLE_SAVE_PATH = "/tmp/redpanda.gz"
+
+    FAILURE_INJECTION_CONFIG_PATH = "/etc/redpanda/failure_injection_config.json"
 
     # When configuring multiple listeners for testing, a secondary port to use
     # instead of the default.
