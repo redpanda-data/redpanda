@@ -11,6 +11,7 @@
 
 #pragma once
 #include "cluster/metadata_cache.h"
+#include "cluster/partition_manager.h"
 #include "cluster/tm_tx_hash_ranges.h"
 #include "hashing/murmur.h"
 #include "kafka/protocol/types.h"
@@ -62,20 +63,21 @@ public:
       : _md(md)
       , _tp_ns(std::move(tx_coordinator_topic)) {}
 
-    std::optional<model::ntp>
-    ntp_for(const kafka::transactional_id& tx_id) const {
+    ss::future<std::optional<model::ntp>>
+    ntp_for(kafka::transactional_id tx_id) const {
         auto cfg = _md.local().get_topic_cfg(_tp_ns);
         if (!cfg) {
             // Transaction coordinator topic not exist in cache
             // should be catched by caller (find_coordinator)
             // It must wait for topic in cache or init topic
-            return std::nullopt;
+            co_return std::nullopt;
         }
         int32_t partitions_amount = cfg->partition_count;
+
         tm_tx_hash_type tx_id_hash = get_tx_id_hash(tx_id);
         auto partition = get_partition_from_default_distribution(
           tx_id_hash, partitions_amount);
-        return model::ntp(_tp_ns.ns, _tp_ns.tp, partition);
+        co_return model::ntp(_tp_ns.ns, _tp_ns.tp, partition);
     }
 
     const model::ns& ns() const { return _tp_ns.ns; }

@@ -130,6 +130,13 @@ ss::future<tm_stm::op_status> tm_stm::try_init_hosted_transactions(
     if (_hosted_txes.inited) {
         co_return op_status::success;
     }
+    if (!_feature_table.local().is_active(
+          features::feature::transaction_partitioning)) {
+        co_return tm_stm::op_status::success;
+    }
+
+    auto units = co_await _cache->write_lock();
+
     model::partition_id partition = get_partition();
     auto initial_hash_range = default_tm_hash_range(
       partition, tx_coordinator_partition_amount);
@@ -319,10 +326,6 @@ tm_stm::do_sync(model::timeout_clock::duration timeout) {
 
 ss::future<tm_stm::op_status> tm_stm::update_hosted_transactions(
   model::term_id term, tm_tx_hosted_transactions hr) {
-    if (!_feature_table.local().is_active(
-          features::feature::transaction_partitioning)) {
-            co_return tm_stm::op_status::success;
-    }
     auto gh = _gate.hold();
     co_return co_await do_update_hosted_transactions(term, std::move(hr));
 }
@@ -803,6 +806,10 @@ ss::future<tm_stm::op_status> tm_stm::add_group(
 }
 
 bool tm_stm::hosts(const kafka::transactional_id& tx_id) {
+    if (!_feature_table.local().is_active(
+          features::feature::transaction_partitioning)) {
+        return true;
+    }
     return _hosted_txes.contains(tx_id);
 }
 
@@ -850,8 +857,7 @@ ss::future<stm_snapshot> tm_stm::take_snapshot() {
         auto sync_res = co_await sync();
         if (sync_res.has_error()) {
             throw std::runtime_error(fmt::format(
-              "Cannot sync before taking snapshot, err: {}",
-              sync_res.error()));
+              "Cannot sync before taking snapshot, err: {}", sync_res.error()));
         }
         auto term = sync_res.value();
         auto update_hash_ranges_res = co_await update_hosted_transactions(
