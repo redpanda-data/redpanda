@@ -18,6 +18,7 @@
 #include "model/fundamental.h"
 #include "model/record.h"
 
+#include <seastar/core/chunked_fifo.hh>
 #include <seastar/core/sharded.hh>
 
 namespace cluster {
@@ -84,11 +85,29 @@ private:
     template<typename Cmd>
     ss::future<std::error_code> dispatch_updates_to_cores(Cmd, model::offset);
 
+    ss::future<std::error_code> apply(create_topic_cmd, model::offset);
+    ss::future<std::error_code> apply(delete_topic_cmd, model::offset);
+    ss::future<std::error_code>
+      apply(move_partition_replicas_cmd, model::offset);
+    ss::future<std::error_code>
+      apply(finish_moving_partition_replicas_cmd, model::offset);
+    ss::future<std::error_code>
+      apply(update_topic_properties_cmd, model::offset);
+    ss::future<std::error_code> apply(create_partition_cmd, model::offset);
+    ss::future<std::error_code>
+      apply(create_non_replicable_topic_cmd, model::offset);
+    ss::future<std::error_code>
+      apply(cancel_moving_partition_replicas_cmd, model::offset);
+    ss::future<std::error_code> apply(move_topic_replicas_cmd, model::offset);
+    ss::future<std::error_code>
+      apply(revert_cancel_partition_move_cmd, model::offset);
+
     using ntp_leader = std::pair<model::ntp, model::node_id>;
 
-    ss::future<> update_leaders_with_estimates(std::vector<ntp_leader> leaders);
-    void update_allocations(
-      std::vector<partition_assignment>, partition_allocation_domain);
+    ss::future<>
+    update_leaders_with_estimates(ss::chunked_fifo<ntp_leader> leaders);
+    template<typename T>
+    void update_allocations(const T&, partition_allocation_domain);
 
     void deallocate_topic(
       const model::topic_namespace&,

@@ -97,7 +97,7 @@ struct strategy_test_fixture {
 
         cluster::topic_configuration_assignment t_cfg;
 
-        t_cfg.assignments = units->get_assignments();
+        t_cfg.assignments = units->copy_assignments();
         t_cfg.cfg.tp_ns = model::topic_namespace(
           model::kafka_namespace,
           model::topic(fmt::format("test-topic-{}", rev_offset())));
