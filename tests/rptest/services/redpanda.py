@@ -52,6 +52,7 @@ from rptest.services import tls
 from rptest.services.admin import Admin
 from rptest.services.redpanda_installer import RedpandaInstaller, VERSION_RE as RI_VERSION_RE, int_tuple as ri_int_tuple
 from rptest.services.rolling_restarter import RollingRestarter
+from rptest.services.storage_failure_injection import FailureInjectionConfig
 from rptest.services.storage import ClusterStorage, NodeStorage
 from rptest.services.utils import BadLogLines, NodeCrash
 from rptest.util import wait_until_result
@@ -1143,6 +1144,8 @@ class RedpandaService(RedpandaServiceBase):
         self._installer: RedpandaInstaller = RedpandaInstaller(self)
         self._pandaproxy_config = pandaproxy_config
         self._schema_registry_config = schema_registry_config
+        self._failure_injection_enabled = False
+        self._tolerate_crashes = False
 
         if node_ready_timeout_s is None:
             node_ready_timeout_s = RedpandaService.DEFAULT_NODE_READY_TIMEOUT_SEC
@@ -1160,11 +1163,13 @@ class RedpandaService(RedpandaServiceBase):
                     self.LOG_LEVEL_KEY, self.DEFAULT_LOG_LEVEL)
             else:
                 self._log_level = log_level
-            self._log_config = LoggingConfig(self._log_level, {
-                'exception': 'debug',
-                'io': 'debug',
-                'seastar_memory': 'debug'
-            })
+            self._log_config = LoggingConfig(
+                self._log_level, {
+                    'exception': 'debug',
+                    'io': 'debug',
+                    'seastar_memory': 'debug',
+                    'finject': 'trace'
+                })
 
         self._started = []
         self._security_config = dict()
@@ -1586,21 +1591,24 @@ class RedpandaService(RedpandaServiceBase):
 
         node.account.ssh(cmd)
 
+    def check_node(self, node):
+        pid = self.redpanda_pid(node)
+        if not pid:
+            self.logger.warn(f"No redpanda PIDs found on {node.name}")
+            return False
+
+        if not node.account.exists(f"/proc/{pid}"):
+            self.logger.warn(f"PID {pid} (node {node.name}) dead")
+            return False
+
+        # fall through
+        return True
+
     def all_up(self):
-        def check_node(node):
-            pid = self.redpanda_pid(node)
-            if not pid:
-                self.logger.warn(f"No redpanda PIDs found on {node.name}")
-                return False
-
-            if not node.account.exists(f"/proc/{pid}"):
-                self.logger.warn(f"PID {pid} (node {node.name}) dead")
-                return False
-
-            # fall through
-            return True
-
-        return all(self._for_nodes(self._started, check_node, parallel=True))
+        return all(
+            self._for_nodes(self._started,
+                            lambda n: self.check_node(n),
+                            parallel=True))
 
     def wait_until(self, fn, timeout_sec, backoff_sec, err_msg=None):
         """
@@ -1620,7 +1628,7 @@ class RedpandaService(RedpandaServiceBase):
             r = fn()
             if not r and time.time() > t_initial + grace_period:
                 # Check the cluster is up before waiting + retrying
-                assert self.all_up()
+                assert self.all_up() or self._tolerate_crashes
             return r
 
         wait_until(wrapped,
@@ -2030,7 +2038,12 @@ class RedpandaService(RedpandaServiceBase):
                         (node, "Redpanda process unexpectedly stopped"))
 
         if crashes:
-            raise NodeCrash(crashes)
+            if self._tolerate_crashes:
+                self.logger.warn(
+                    f"Detected crashes, but RedpandaService is configured to allow them: {crashes}"
+                )
+            else:
+                raise NodeCrash(crashes)
 
     def cloud_storage_diagnostics(self):
         """
@@ -2465,12 +2478,13 @@ class RedpandaService(RedpandaServiceBase):
     def remove_local_data(self, node):
         node.account.remove(f"{RedpandaService.PERSISTENT_ROOT}/data/*")
 
-    def redpanda_pid(self, node):
+    def redpanda_pid(self, node, timeout=None):
         try:
             cmd = "ps ax | grep -i 'redpanda' | grep -v grep | grep -v 'version'| grep -v \"\[redpanda\]\" | awk '{print $1}'"
             for p in node.account.ssh_capture(cmd,
                                               allow_fail=True,
-                                              callback=int):
+                                              callback=int,
+                                              timeout_sec=timeout):
                 return p
 
         except (RemoteCommandError, ValueError):
@@ -3262,6 +3276,42 @@ class RedpandaService(RedpandaServiceBase):
                 raise RuntimeError(
                     f"Object storage scrub detected fatal anomalies of type {fatal_anomalies}"
                 )
+
+    def set_up_failure_injection(self, finject_cfg: FailureInjectionConfig,
+                                 enabled: bool, nodes: list[ClusterNode],
+                                 tolerate_crashes: bool):
+        """
+        Deploy the given failure injection configuration to the
+        requested nodes. Should be called before
+        `RedpandaService.start`.
+        """
+        tmp_file = "/tmp/failure_injection_config.json"
+        finject_cfg.write_to_file(tmp_file)
+        for node in nodes:
+            node.account.mkdirs(
+                os.path.dirname(RedpandaService.FAILURE_INJECTION_CONFIG_PATH))
+            node.account.copy_to(tmp_file,
+                                 RedpandaService.FAILURE_INJECTION_CONFIG_PATH)
+
+            self._extra_node_conf[node].update({
+                "storage_failure_injection_enabled":
+                enabled,
+                "storage_failure_injection_config_path":
+                RedpandaService.FAILURE_INJECTION_CONFIG_PATH
+            })
+
+        # Disable segment size jitter in order to get more deterministic
+        # failure injection.
+        self.add_extra_rp_conf({"log_segment_size_jitter_percent": 0})
+
+        # This flag prevents RedpandaService from asserting out when it
+        # detects that a Redpanda node has crashed. See
+        # `RedpandaService.wait_until`.
+        self._failure_injection_enabled = True
+
+        self._tolerate_crashes = tolerate_crashes
+
+        self.logger.info(f"Set up failure injection config for nodes: {nodes}")
 
 
 def make_redpanda_service(environment):
