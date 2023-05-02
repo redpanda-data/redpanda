@@ -286,7 +286,31 @@ ss::future<> segment_chunks::trim_chunk_files() {
     _eviction_timer.rearm(_eviction_jitter());
 }
 
-void segment_chunks::register_future_readers(
+void segment_chunks::register_readers(file_offset_t first, file_offset_t last) {
+    vassert(_started, "chunk API is not started");
+
+    if (last <= first) {
+        // If working with a single chunk, there are no future readers.
+        return;
+    }
+
+    auto start = _chunks.find(first);
+    vassert(
+      start != _chunks.end(), "No chunk found starting at first: {}", first);
+
+    auto end = _chunks.find(last);
+    vassert(end != _chunks.end(), "No chunk found starting at last: {}", last);
+
+    auto required_after = 1;
+    end = std::next(end);
+    for (auto it = start; it != end; ++required_after, ++it) {
+        auto& chunk = it->second;
+        chunk.required_by_readers_in_future += 1;
+        chunk.required_after_n_chunks += required_after;
+    }
+}
+
+void segment_chunks::mark_acquired_and_update_stats(
   file_offset_t first, file_offset_t last) {
     vassert(_started, "chunk API is not started");
 
@@ -297,26 +321,10 @@ void segment_chunks::register_future_readers(
       start != _chunks.end(), "No chunk found starting at first: {}", first);
     vassert(end != _chunks.end(), "No chunk found starting at last: {}", last);
 
-    auto required_after = 0;
-    for (auto it = start; it != std::next(end); ++required_after, ++it) {
-        auto& chunk = it->second;
-        chunk.required_by_readers_in_future += 1;
-        chunk.required_after_n_chunks += required_after;
-    }
-}
-
-void segment_chunks::mark_chunk_read(file_offset_t first, file_offset_t last) {
-    vassert(_started, "chunk API is not started");
-
-    auto start = _chunks.find(first);
-    auto end = _chunks.find(last);
-
-    vassert(
-      start != _chunks.end(), "No chunk found starting at first: {}", first);
-    vassert(end != _chunks.end(), "No chunk found starting at last: {}", last);
-
     start->second.required_by_readers_in_future -= 1;
-    for (auto it = std::next(start); it != end; ++it) {
+
+    end = std::next(end);
+    for (auto it = start; it != end; ++it) {
         it->second.required_after_n_chunks -= 1;
     }
 }
@@ -339,6 +347,10 @@ file_offset_t segment_chunks::get_next_chunk_start(file_offset_t f) const {
     return next->first;
 }
 
+segment_chunks::iterator_t segment_chunks::begin() { return _chunks.begin(); }
+
+segment_chunks::iterator_t segment_chunks::end() { return _chunks.end(); }
+
 chunk_data_source_impl::chunk_data_source_impl(
   segment_chunks& chunks,
   remote_segment& segment,
@@ -360,7 +372,7 @@ chunk_data_source_impl::chunk_data_source_impl(
       "chunk data source initialized with file position {} to {}",
       _first_chunk_start,
       _last_chunk_start);
-    _chunks.register_future_readers(_current_chunk_start, _last_chunk_start);
+    _chunks.register_readers(_current_chunk_start, _last_chunk_start);
 }
 
 chunk_data_source_impl::~chunk_data_source_impl() {
@@ -384,7 +396,6 @@ ss::future<ss::temporary_buffer<char>> chunk_data_source_impl::get() {
 
     auto buf = co_await _current_stream->read();
     while (buf.empty() && _current_chunk_start < _last_chunk_start) {
-        _chunks.mark_chunk_read(_current_chunk_start, _last_chunk_start);
         _current_chunk_start = _chunks.get_next_chunk_start(
           _current_chunk_start);
         co_await load_stream_for_chunk(_current_chunk_start);
@@ -417,6 +428,12 @@ chunk_data_source_impl::load_stream_for_chunk(file_offset_t chunk_start) {
                   return ss::make_exception_future<segment_chunk::handle_t>(ex);
               });
           });
+
+    // Decrement the required_by_readers_in_future count by 1, we have acquired
+    // the file handle here. Once we are done with this handle, if it is not
+    // shared with any other data source, it should be eligible for trimming.
+    _chunks.mark_acquired_and_update_stats(
+      _current_chunk_start, _last_chunk_start);
 
     if (_current_stream) {
         co_await _current_stream->close();

@@ -697,3 +697,36 @@ FIXTURE_TEST(test_chunk_hydration, cloud_storage_fixture) {
         }
     }
 }
+
+FIXTURE_TEST(test_chunk_future_reader_stats, cloud_storage_fixture) {
+    config::shard_local_cfg().cloud_storage_cache_chunk_size.set_value(
+      static_cast<uint64_t>(128_KiB));
+
+    auto key = model::offset(1);
+    retry_chain_node fib(never_abort, 10s, 200ms);
+    iobuf segment_bytes = generate_segment(model::offset(1), 300);
+
+    auto m = chunk_read_baseline(*this, key, fib, segment_bytes.copy());
+    remote_segment segment(api.local(), cache.local(), bucket, m, key, fib);
+    segment_chunks chunk_api{segment, segment.max_hydrated_chunks()};
+    auto close_segment = ss::defer([&segment] { segment.stop().get(); });
+    segment.hydrate().get();
+    chunk_api.start().get();
+
+    file_offset_t end = std::prev(chunk_api.end())->first;
+    chunk_api.register_readers(0, end);
+
+    auto required_after = 1;
+    for (const auto& [_, chunk] : chunk_api) {
+        BOOST_REQUIRE_EQUAL(chunk.required_by_readers_in_future, 1);
+        BOOST_REQUIRE_EQUAL(chunk.required_after_n_chunks, required_after++);
+    }
+
+    for (const auto& [chunk_start, chunk] : chunk_api) {
+        BOOST_REQUIRE_EQUAL(chunk.required_by_readers_in_future, 1);
+        BOOST_REQUIRE_EQUAL(chunk.required_after_n_chunks, 1);
+        chunk_api.mark_acquired_and_update_stats(chunk_start, end);
+        BOOST_REQUIRE_EQUAL(chunk.required_by_readers_in_future, 0);
+        BOOST_REQUIRE_EQUAL(chunk.required_after_n_chunks, 0);
+    }
+}

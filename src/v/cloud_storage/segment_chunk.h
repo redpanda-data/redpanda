@@ -100,17 +100,24 @@ public:
     // required_by_readers_in_future value by one, and increment the
     // required_after_n_chunks values with progressively larger values to denote
     // how far in future the chunk will be required.
-    void register_future_readers(file_offset_t first, file_offset_t last);
+    void register_readers(file_offset_t first, file_offset_t last);
 
-    // Mark the first chunk id as read by decrementing its
+    // Mark the first chunk id as acquired by decrementing its
     // required_by_readers_in_future count, and decrement the
-    // required_after_n_chunks counts for everything from (first, last] by one.
-    void mark_chunk_read(file_offset_t first, file_offset_t last);
+    // required_after_n_chunks counts for everything from [first, last] by one.
+    // A chunk with required_by_readers_in_future count 0 which does not share
+    // its handle with any data source is eligible for trimming.
+    void
+    mark_acquired_and_update_stats(file_offset_t first, file_offset_t last);
 
     // Returns reference to metadata for chunk for given chunk id
     segment_chunk& get(file_offset_t);
 
     file_offset_t get_next_chunk_start(file_offset_t f) const;
+
+    using iterator_t = chunk_map_t::iterator;
+    iterator_t begin();
+    iterator_t end();
 
 private:
     // Attempts to download chunk into cache and load the file handle into
