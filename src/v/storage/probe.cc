@@ -119,19 +119,21 @@ void probe::setup_metrics(const model::ntp& ntp) {
        sm::make_counter(
          "log_segments_created",
          [this] { return _log_segments_created; },
-         sm::description("Number of created log segments"),
+         sm::description(
+           "Total number of local log segments created since node startup"),
          labels)
          .aggregate(aggregate_labels),
        sm::make_counter(
          "log_segments_removed",
          [this] { return _log_segments_removed; },
-         sm::description("Number of removed log segments"),
+         sm::description(
+           "Total number of local log segments removed since node startup"),
          labels)
          .aggregate(aggregate_labels),
        sm::make_counter(
          "log_segments_active",
          [this] { return _log_segments_active; },
-         sm::description("Number of active log segments"),
+         sm::description("Current number of local log segments"),
          labels)
          .aggregate(aggregate_labels),
        sm::make_counter(
