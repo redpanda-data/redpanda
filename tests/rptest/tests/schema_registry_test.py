@@ -159,12 +159,13 @@ class SchemaRegistryEndpoints(RedpandaTest):
     def _base_uri(self):
         return f"http://{self.redpanda.nodes[0].account.hostname}:8081"
 
-    def _get_kafka_cli_tools(self):
+    def _get_rpk_tools(self):
         sasl_enabled = self.redpanda.sasl_enabled()
         cfg = self.redpanda.security_config() if sasl_enabled else {}
-        return KafkaCliTools(self.redpanda,
-                             user=cfg.get('sasl_plain_username'),
-                             passwd=cfg.get('sasl_plain_password'))
+        return RpkTool(self.redpanda,
+                       username=cfg.get('sasl_plain_username'),
+                       password=cfg.get('sasl_plain_password'),
+                       sasl_mechanism=cfg.get('sasl_mechanism'))
 
     def _get_serde_client(self,
                           schema_type: SchemaType,
@@ -194,32 +195,34 @@ class SchemaRegistryEndpoints(RedpandaTest):
         return requests.get(
             f"http://{self.redpanda.nodes[0].account.hostname}:8082/topics")
 
-    def _create_topics(self,
-                       names=create_topic_names(1),
-                       partitions=1,
-                       replicas=1,
-                       cleanup_policy=TopicSpec.CLEANUP_DELETE):
-        self.logger.debug(f"Creating topics: {names}")
-        kafka_tools = self._get_kafka_cli_tools()
-        for name in names:
-            kafka_tools.create_topic(
-                TopicSpec(name=name,
-                          partition_count=partitions,
-                          replication_factor=replicas))
+    def _create_topic(self,
+                      topic=create_topic_names(1),
+                      partition_count=1,
+                      replication_factor=1,
+                      config={
+                          TopicSpec.PROPERTY_CLEANUP_POLICY:
+                          TopicSpec.CLEANUP_DELETE
+                      }):
+        self.logger.debug(f"Creating topic: {topic}")
+        rpk_tools = self._get_rpk_tools()
+        rpk_tools.create_topic(topic=topic,
+                               partitions=partition_count,
+                               replicas=replication_factor,
+                               config=config)
 
-        def has_topics():
+        def has_topic():
             self_topics = self._get_topics()
             self.logger.info(
-                f"set(names): {set(names)}, self._get_topics().status_code: {self_topics.status_code}, self_topics.json(): {self_topics.json()}"
+                f"name: {topic}, self._get_topics().status_code: {self_topics.status_code}, self_topics.json(): {self_topics.json()}"
             )
-            return set(names).issubset(self_topics.json())
+            return topic in self_topics.json()
 
-        wait_until(has_topics,
+        wait_until(has_topic,
                    timeout_sec=10,
                    backoff_sec=1,
-                   err_msg="Timeout waiting for topics: {names}")
+                   err_msg="Timeout waiting for topic: {topic}")
 
-        return names
+        return topic
 
     def _get_config(self, headers=HTTP_GET_HEADERS, **kwargs):
         return self._request("GET", "config", headers=headers, **kwargs)
@@ -1190,7 +1193,7 @@ class SchemaRegistryTestMethods(SchemaRegistryEndpoints):
         """
 
         topic = f"serde-topic-{protocol.name}-{client_type.name}"
-        self._create_topics([topic])
+        self._create_topic(topic=topic)
         schema_reg = self.redpanda.schema_reg().split(',', 1)[0]
         self.logger.info(
             f"Connecting to redpanda: {self.redpanda.brokers()} schema_Reg: {schema_reg}"
