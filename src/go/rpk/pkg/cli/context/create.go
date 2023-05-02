@@ -1,0 +1,207 @@
+// Copyright 2023 Redpanda Data, Inc.
+//
+// Use of this software is governed by the Business Source License
+// included in the file licenses/BSL.md
+//
+// As of the Change Date specified in that file, in accordance with
+// the Business Source License, use of this software will be governed
+// by the Apache License, Version 2.0
+
+package context
+
+import (
+	"context"
+	"fmt"
+	"strings"
+	"time"
+
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cloudapi"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/oauth"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/oauth/providers/auth0"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/out"
+	"github.com/spf13/afero"
+	"github.com/spf13/cobra"
+	"gopkg.in/yaml.v3"
+)
+
+func newCreateCommand(fs afero.Fs, p *config.Params) *cobra.Command {
+	var (
+		set         []string
+		fromSimple  string
+		fromCloud   string
+		description string
+	)
+
+	cmd := &cobra.Command{
+		Use:   "create [NAME]",
+		Short: "Create an rpk context",
+		Args:  cobra.MaximumNArgs(1),
+		Run: func(cmd *cobra.Command, args []string) {
+			cfg, err := p.Load(fs)
+			out.MaybeDie(err, "unable to load config: %v", err)
+
+			y, err := cfg.ActualRpkYamlOrEmpty()
+			out.MaybeDie(err, "unable to load rpk.yaml: %v", err)
+
+			if len(args) == 0 {
+				args = append(args, "default")
+			}
+			name := args[0]
+			if name == "" {
+				out.Die("context name cannot be empty")
+			}
+
+			ctx, cancel := context.WithTimeout(cmd.Context(), 10*time.Second)
+			defer cancel()
+			cloudMTLS, cloudSASL, err := createCtx(ctx, fs, y, cfg, fromSimple, fromCloud, set, name, description)
+			out.MaybeDieErr(err)
+
+			fmt.Printf("Created and switched to new context %q.\n", name)
+
+			if cloudMTLS {
+				fmt.Println(`
+This cluster uses mTLS. Please ensure you have client certificates on your
+machine an then run
+    rpk context set kafka_api.tls.ca_cert /path/to/ca.pem
+    rpk context set kafka_api.tls.client_cert /path/to/client.pem
+    rpk context set kafka_api.tls.client_key /path/to/key.pem`)
+			}
+			if cloudSASL {
+				fmt.Println(`
+If your cluster requires SASL, generate SASL credentials in the UI and then set
+them in rpk with
+    rpk context set kafka_api.sasl.user {sasl_username}
+    rpk context set kafka_api.sasl.password {sasl_password}`)
+			}
+		},
+	}
+
+	cmd.Flags().StringSliceVarP(&set, "set", "s", nil, "Create and switch to a new context, filling context fields with key=value pairs")
+	cmd.Flags().StringVar(&fromSimple, "from-simple", "", "Create and switch to a new context from a (simpler to define) redpanda.yaml file")
+	cmd.Flags().StringVar(&fromCloud, "from-cloud", "", "Create and switch to a new context generated from a Redpanda Cloud cluster ID")
+	cmd.Flags().StringVarP(&description, "description", "d", "", "Optional description of the context")
+
+	cmd.RegisterFlagCompletionFunc("set", createSetCompletion)
+
+	return cmd
+}
+
+// This returns whether the command should print cloud mTLS or SASL messages.
+func createCtx(
+	ctx context.Context,
+	fs afero.Fs,
+	y *config.RpkYaml,
+	cfg *config.Config,
+	fromSimple string,
+	fromCloud string,
+	set []string,
+	name string,
+	description string,
+) (cloudMTLS, cloudSASL bool, err error) {
+	if fromCloud != "" && fromSimple != "" {
+		return false, false, fmt.Errorf("cannot use --from-cloud and --from-simple together")
+	}
+	if cx := y.Context(name); cx != nil {
+		return false, false, fmt.Errorf("context %q already exists", name)
+	}
+
+	var cx config.RpkContext
+	switch {
+	case fromCloud != "":
+		var err error
+		cx, cloudMTLS, cloudSASL, err = createCloudContext(ctx, y, cfg, fromCloud)
+		if err != nil {
+			return false, false, err
+		}
+
+	case fromSimple != "":
+		var nodeCfg config.RpkNodeConfig
+		switch {
+		case fromSimple == "loaded" || fromSimple == "current":
+			nodeCfg = cfg.MaterializedRedpandaYaml().Rpk
+		default:
+			raw, err := afero.ReadFile(fs, fromSimple)
+			if err != nil {
+				return false, false, fmt.Errorf("unable to read file %q: %v", fromSimple, err)
+			}
+			var rpyaml config.RedpandaYaml
+			if err := yaml.Unmarshal(raw, &rpyaml); err != nil {
+				return false, false, fmt.Errorf("unable to yaml decode file %q: %v", fromSimple, err)
+			}
+			nodeCfg = rpyaml.Rpk
+		}
+		cx = config.RpkContext{
+			KafkaAPI: nodeCfg.KafkaAPI,
+			AdminAPI: nodeCfg.AdminAPI,
+		}
+	}
+
+	for _, kv := range set {
+		split := strings.SplitN(kv, "=", 2)
+		if len(split) != 2 {
+			return false, false, fmt.Errorf("invalid key=value pair %q", kv)
+		}
+		err := config.Set(&cx, split[0], split[1])
+		if err != nil {
+			return false, false, err
+		}
+	}
+	if cloudSASL && cx.KafkaAPI.SASL != nil {
+		cloudSASL = false
+	}
+
+	cx.Name = name
+	cx.Description = description
+	y.CurrentContext = name
+	y.Contexts = append([]config.RpkContext{cx}, y.Contexts...)
+	if err := y.Write(fs); err != nil {
+		return false, false, fmt.Errorf("unable to write rpk file: %v", err)
+	}
+	return
+}
+
+func createSetCompletion(_ *cobra.Command, _ []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+	var possibilities []string
+	for _, p := range setPossibilities {
+		if strings.HasPrefix(p, toComplete) {
+			possibilities = append(possibilities, p+"=")
+		}
+	}
+	return possibilities, cobra.ShellCompDirectiveNoSpace
+}
+
+func createCloudContext(ctx context.Context, y *config.RpkYaml, cfg *config.Config, clusterID string) (cx config.RpkContext, cloudMTLS, cloudSASL bool, err error) {
+	a := y.Auth(y.CurrentCloudAuth)
+	if a == nil {
+		return cx, false, false, fmt.Errorf("missing auth for current_cloud_auth %q", y.CurrentCloudAuth)
+	}
+
+	overrides := cfg.DevOverrides()
+	auth0Cl := auth0.NewClient(overrides)
+	expired, err := oauth.ValidateToken(a.AuthToken, auth0Cl.Audience(), a.ClientID)
+	if err != nil {
+		return cx, false, false, err
+	}
+	if expired {
+		return cx, false, false, fmt.Errorf("token for %q has expired, please login again", y.CurrentCloudAuth)
+	}
+	cl := cloudapi.NewClient(overrides.CloudAPIURL, a.AuthToken)
+
+	c, err := cl.Cluster(ctx, clusterID)
+	if err != nil {
+		return cx, false, false, fmt.Errorf("unable to request details for cluster %q: %w", clusterID, err)
+	}
+	if len(c.Status.Listeners.Kafka.Default.URLs) == 0 {
+		return cx, false, false, fmt.Errorf("cluster %q has no kafka listeners", clusterID)
+	}
+	cx.KafkaAPI.Brokers = c.Status.Listeners.Kafka.Default.URLs
+	if l := c.Spec.KafkaListeners.Listeners; len(l) > 0 {
+		if l[0].TLS != nil {
+			cx.KafkaAPI.TLS = new(config.TLS)
+			cloudMTLS = l[0].TLS.RequireClientAuth
+		}
+		cloudSASL = l[0].SASL != nil
+	}
+	return cx, cloudMTLS, cloudSASL, nil
+}

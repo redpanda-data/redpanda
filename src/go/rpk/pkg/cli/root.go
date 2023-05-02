@@ -23,6 +23,7 @@ import (
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cloud"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cluster"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/container"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/context"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/debug"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/generate"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/group"
@@ -98,6 +99,7 @@ func Execute() {
 		cloud.NewCommand(fs, p, osExec),
 		cluster.NewCommand(fs, p),
 		container.NewCommand(),
+		context.NewCommand(fs, p),
 		debug.NewCommand(fs, p),
 		generate.NewCommand(fs, p),
 		group.NewCommand(fs, p),

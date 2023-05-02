@@ -1,0 +1,81 @@
+// Copyright 2023 Redpanda Data, Inc.
+//
+// Use of this software is governed by the Business Source License
+// included in the file licenses/BSL.md
+//
+// As of the Change Date specified in that file, in accordance with
+// the Business Source License, use of this software will be governed
+// by the Apache License, Version 2.0
+
+package context
+
+import (
+	"fmt"
+
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
+	rpkos "github.com/redpanda-data/redpanda/src/go/rpk/pkg/os"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/out"
+	"github.com/spf13/afero"
+	"github.com/spf13/cobra"
+)
+
+func newEditCommand(fs afero.Fs, p *config.Params) *cobra.Command {
+	var raw bool
+	cmd := &cobra.Command{
+		Use:               "edit [NAME]",
+		Short:             "Edit an rpk cloud context",
+		Args:              cobra.MaximumNArgs(1),
+		ValidArgsFunction: validContexts(fs, p),
+		Run: func(_ *cobra.Command, args []string) {
+			cfg, err := p.Load(fs)
+			out.MaybeDie(err, "unable to load config: %v", err)
+
+			y := cfg.MaterializedRpkYaml()
+			if raw {
+				var ok bool
+				y, ok = cfg.ActualRpkYaml()
+				if !ok {
+					out.Die("rpk.yaml file does not exist")
+				}
+			}
+
+			if len(args) == 0 {
+				args = append(args, y.CurrentContext)
+			}
+			name := args[0]
+			cx := y.Context(name)
+			if cx == nil {
+				out.Die("context %s does not exist", name)
+				return
+			}
+
+			update, err := rpkos.EditTmpYAMLFile(fs, *cx)
+			out.MaybeDieErr(err)
+
+			var renamed, updatedCurrent bool
+			if update.Name != name {
+				renamed = true
+				if y.CurrentContext == name {
+					updatedCurrent = true
+					y.CurrentContext = update.Name
+				}
+			}
+			*cx = update
+
+			err = y.Write(fs)
+			out.MaybeDie(err, "unable to write rpk.yaml: %v", err)
+
+			if renamed {
+				fmt.Printf("Context %q updated successfully and renamed to %q.\n", name, cx.Name)
+				if updatedCurrent {
+					fmt.Printf("Current context has been updated to %q.\n", cx.Name)
+				}
+			} else {
+				fmt.Printf("Context %q updated successfully.\n", name)
+			}
+		},
+	}
+
+	cmd.Flags().BoolVar(&raw, "raw", false, "Edit context directly as it exists in rpk.yaml without any environment variables nor flags applied")
+	return cmd
+}
