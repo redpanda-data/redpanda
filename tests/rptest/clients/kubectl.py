@@ -14,12 +14,13 @@ class KubectlTool:
     """
     Wrapper around kubectl.
     """
-    def __init__(self, redpanda, namespace='redpanda'):
+    def __init__(self, redpanda, cmd_prefix=[], namespace='redpanda'):
         self._redpanda = redpanda
+        self._cmd_prefix = cmd_prefix
         self._namespace = namespace
 
     def exec(self, remote_cmd):
-        cmd = [
+        cmd = self._cmd_prefix + [
             'kubectl', 'exec', '-n', self._namespace, 'redpanda-0', '--',
             'bash', '-c'
         ] + [remote_cmd]
@@ -32,7 +33,7 @@ class KubectlTool:
         return res
 
     def exists(self, remote_path):
-        cmd = [
+        cmd = self._cmd_prefix + [
             'kubectl', 'exec', '-n', self._namespace, 'redpanda-0', '--',
             'stat'
         ] + [remote_path]
