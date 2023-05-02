@@ -141,7 +141,7 @@ class CloudRetentionTest(PreallocNodesTest):
             total_of_hwms = 0
             for p in range(0, num_partitions):
                 try:
-                    manifest = s3_snapshot.manifest_for_ntp(self.topic_name, 0)
+                    manifest = s3_snapshot.manifest_for_ntp(self.topic_name, p)
                 except:
                     return False
 
