@@ -351,6 +351,7 @@ int application::run(int ac, char** av) {
                 });
                 // must initialize configuration before services
                 hydrate_config(cfg);
+                sync_disks().get();
                 initialize();
                 check_environment();
                 check_for_crash_loop();
@@ -373,6 +374,27 @@ int application::run(int ac, char** av) {
             return 0;
         });
     });
+}
+
+ss::future<> application::sync_disks() {
+    /*
+     * The last running instance of redpanda might have left un-flushed
+     * data or metadata in the filesystem.
+     *
+     * This does not help us in the case of e.g. IO-failed fsync() calls, which
+     * generally mark pages as clean anyway[1], but it does provide a more
+     * consistent basis for reasoning about persistence of metadata changes
+     * that might not have been fsync'd by a previous run of Redpanda.
+     *
+     * 1. https://dl.acm.org/doi/pdf/10.1145/3450338
+     */
+    vlog(_log.info, "Running syncfs on data directory...");
+    auto data_dir = co_await ss::open_directory(config::node().data_directory().as_sstring());
+    co_await data_dir.syncfs();
+
+    vlog(_log.info, "Running syncfs on cache directory...");
+    auto cache_dir = co_await ss::open_directory(config::node().cloud_storage_cache_path().string());
+    co_await cache_dir.syncfs();
 }
 
 void application::initialize(

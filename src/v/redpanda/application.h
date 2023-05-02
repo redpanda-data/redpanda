@@ -70,6 +70,7 @@ class application {
 public:
     int run(int, char**);
 
+    ss::future<> sync_disks();
     void initialize(
       std::optional<YAML::Node> proxy_cfg = std::nullopt,
       std::optional<YAML::Node> proxy_client_cfg = std::nullopt,

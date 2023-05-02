@@ -134,6 +134,13 @@ public:
           get_file_impl(_file)->flush());
     }
 
+    ss::future<> syncfs() final {
+        assert_file_not_closed();
+        return with_op(
+          ssx::sformat("ss::future<> syncfs(void)"),
+          get_file_impl(_file)->syncfs());
+    }
+
     ss::future<struct stat> stat() final {
         assert_file_not_closed();
         return with_op(
