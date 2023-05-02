@@ -98,8 +98,8 @@ ss::future<> rpc_client_protocol::reset_backoff(model::node_id n) {
 
 ss::future<bool> rpc_client_protocol::ensure_disconnect(model::node_id n) {
     struct resetter {
-        rpc::transport& transport;
-        resetter(rpc::transport& t)
+        ss::lw_shared_ptr<rpc::transport> transport;
+        resetter(ss::lw_shared_ptr<rpc::transport> t)
           : transport(t) {}
     };
 
@@ -112,9 +112,9 @@ ss::future<bool> rpc_client_protocol::ensure_disconnect(model::node_id n) {
         [](resetter r) {
             // Give the caller a bool clue as to whether we really shut
             // anything down (false indicates this was a no-op)
-            bool was_valid = r.transport.is_valid();
+            bool was_valid = r.transport->is_valid();
 
-            r.transport.shutdown();
+            r.transport->shutdown();
             return was_valid;
         })
       .then([]([[maybe_unused]] result<bool> r) {

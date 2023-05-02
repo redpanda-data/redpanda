@@ -114,7 +114,8 @@ private:
     ss::future<> process_reply(process_batch_reply);
     void notify_waiters();
 
-    ss::future<ss::stop_iteration> process_send_write(rpc::transport*);
+    ss::future<ss::stop_iteration>
+      process_send_write(ss::lw_shared_ptr<rpc::transport>);
 
 private:
     /// State to track in-progress ntp modifications

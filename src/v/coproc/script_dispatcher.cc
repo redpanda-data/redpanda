@@ -360,7 +360,7 @@ script_dispatcher::do_heartbeat(int8_t connect_attempts) {
         }
         co_return co_await do_heartbeat(connect_attempts - 1);
     }
-    supervisor_client_protocol client(*transport.value());
+    supervisor_client_protocol client(transport.value());
     co_return co_await client.heartbeat(
       empty_request(), rpc::client_opts(timeout));
 }
@@ -400,7 +400,7 @@ script_dispatcher::get_client() {
             co_await ss::sleep(dur);
             dur = std::min(model::timeout_clock::duration(10s), dur * 2);
         } else {
-            co_return supervisor_client_protocol(*transport.value());
+            co_return supervisor_client_protocol(transport.value());
         }
     }
 }

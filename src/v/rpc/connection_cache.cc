@@ -17,8 +17,13 @@
 
 namespace rpc {
 
-connection_cache::connection_cache(std::optional<connection_cache_label> label)
-  : _label(std::move(label)) {}
+connection_cache::connection_cache(
+  ss::sharded<ss::abort_source>& as,
+  std::optional<connection_cache_label> label)
+  : _label(std::move(label)) {
+    _as_subscription = as.local().subscribe(
+      [this]() mutable noexcept { shutdown(); });
+}
 
 /// \brief needs to be a future, because mutations may come from different
 /// fibers and they need to be synchronized
@@ -59,17 +64,28 @@ ss::future<> connection_cache::remove(model::node_id n) {
 }
 
 /// \brief closes all client connections
-ss::future<> connection_cache::stop() {
-    return _mutex.with([this]() {
-        return parallel_for_each(_cache, [](auto& it) {
-            auto& [_, cli] = it;
-            return cli->stop();
-        });
-        _cache.clear();
-        // mark mutex as broken to prevent new connections from being created
-        // after stop
-        _mutex.broken();
+ss::future<> connection_cache::do_shutdown() {
+    auto units = co_await _mutex.get_units();
+    // Exchange ensures the cache is invalidated and concurrent
+    // accesses wait on the mutex to populate new entries.
+    auto cache = std::exchange(_cache, {});
+    co_await parallel_for_each(cache, [](auto& it) {
+        auto& [_, cli] = it;
+        return cli->stop();
     });
+    cache.clear();
+    // mark mutex as broken to prevent new connections from being created
+    // after stop
+    _mutex.broken();
+}
+
+void connection_cache::shutdown() {
+    ssx::spawn_with_gate(_gate, [this] { return do_shutdown(); });
+}
+
+ss::future<> connection_cache::stop() {
+    shutdown();
+    return _gate.close();
 }
 
 } // namespace rpc

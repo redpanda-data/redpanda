@@ -41,6 +41,7 @@ public:
       ss::shard_id max_shards = ss::smp::count);
 
     explicit connection_cache(
+      ss::sharded<ss::abort_source>&,
       std::optional<connection_cache_label> label = std::nullopt);
 
     bool contains(model::node_id n) const {
@@ -57,6 +58,9 @@ public:
     ss::future<> remove(model::node_id n);
 
     /// \brief closes all connections
+    ss::future<> do_shutdown();
+    void shutdown();
+
     ss::future<> stop();
 
     /**
@@ -90,16 +94,22 @@ public:
                   return ss::futurize<ret_t>::convert(
                     rpc::make_error_code(errc::missing_node_rpc_client));
               }
-              return cache.get(node_id)
-                ->get_connected(connection_timeout.timeout_at())
-                .then([f = std::forward<Func>(f)](
-                        result<rpc::transport*> transport) mutable {
-                    if (!transport) {
-                        // Connection error
-                        return ss::futurize<ret_t>::convert(transport.error());
-                    }
-                    return ss::futurize<ret_t>::convert(
-                      f(Protocol(*transport.value())));
+              return ss::do_with(
+                cache.get(node_id),
+                [connection_timeout = connection_timeout.timeout_at(),
+                 f = std::forward<Func>(f)](auto& transport_ptr) mutable {
+                    return transport_ptr->get_connected(connection_timeout)
+                      .then([f = std::forward<Func>(f)](
+                              result<ss::lw_shared_ptr<rpc::transport>>
+                                transport) mutable {
+                          if (!transport) {
+                              // Connection error
+                              return ss::futurize<ret_t>::convert(
+                                transport.error());
+                          }
+                          return ss::futurize<ret_t>::convert(
+                            f(Protocol(transport.value())));
+                      });
                 });
           });
     }
@@ -144,6 +154,8 @@ private:
     mutex _mutex; // to add/remove nodes
     underlying _cache;
     transport_version _default_transport_version{transport_version::v2};
+    ss::gate _gate;
+    ss::optimized_optional<ss::abort_source::subscription> _as_subscription;
 };
 inline ss::shard_id connection_cache::shard_for(
   model::node_id self,
