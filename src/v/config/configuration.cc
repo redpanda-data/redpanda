@@ -272,7 +272,8 @@ configuration::configuration()
       "cluster_id",
       "Cluster identifier",
       {.needs_restart = needs_restart::no},
-      std::nullopt)
+      std::nullopt,
+      &validate_non_empty_string_opt)
   , disable_metrics(
       *this,
       "disable_metrics",
@@ -990,31 +991,36 @@ configuration::configuration()
       "cloud_storage_access_key",
       "AWS access key",
       {.visibility = visibility::user},
-      std::nullopt)
+      std::nullopt,
+      &validate_non_empty_string_opt)
   , cloud_storage_secret_key(
       *this,
       "cloud_storage_secret_key",
       "AWS secret key",
       {.visibility = visibility::user, .secret = is_secret::yes},
-      std::nullopt)
+      std::nullopt,
+      &validate_non_empty_string_opt)
   , cloud_storage_region(
       *this,
       "cloud_storage_region",
       "AWS region that houses the bucket used for storage",
       {.visibility = visibility::user},
-      std::nullopt)
+      std::nullopt,
+      &validate_non_empty_string_opt)
   , cloud_storage_bucket(
       *this,
       "cloud_storage_bucket",
       "AWS bucket that should be used to store data",
       {.visibility = visibility::user},
-      std::nullopt)
+      std::nullopt,
+      &validate_non_empty_string_opt)
   , cloud_storage_api_endpoint(
       *this,
       "cloud_storage_api_endpoint",
       "Optional API endpoint",
       {.visibility = visibility::user},
-      std::nullopt)
+      std::nullopt,
+      &validate_non_empty_string_opt)
   , cloud_storage_credentials_source(
       *this,
       "cloud_storage_credentials_source",
@@ -1078,7 +1084,8 @@ configuration::configuration()
       "Path to certificate that should be used to validate server certificate "
       "during TLS handshake",
       {.visibility = visibility::user},
-      std::nullopt)
+      std::nullopt,
+      &validate_non_empty_string_opt)
   , cloud_storage_initial_backoff_ms(
       *this,
       "cloud_storage_initial_backoff_ms",
@@ -1151,7 +1158,8 @@ configuration::configuration()
       "Derived from cloud_storage_credentials_source if not set. Only required "
       "when using IAM role based access.",
       {.needs_restart = needs_restart::yes, .visibility = visibility::tunable},
-      std::nullopt)
+      std::nullopt,
+      &validate_non_empty_string_opt)
   , cloud_storage_upload_ctrl_update_interval_ms(
       *this,
       "cloud_storage_upload_ctrl_update_interval_ms",

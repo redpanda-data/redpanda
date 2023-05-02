@@ -67,4 +67,22 @@ validate_connection_rate(const std::vector<ss::sstring>& ips_with_limit) {
     return std::nullopt;
 }
 
+std::optional<ss::sstring>
+validate_non_empty_string_vec(const std::vector<ss::sstring>& vs) {
+    for (const auto& s : vs) {
+        if (s.empty()) {
+            return "Empty strings are not valid in this collection";
+        }
+    }
+    return std::nullopt;
+}
+
+std::optional<ss::sstring>
+validate_non_empty_string_opt(const std::optional<ss::sstring>& os) {
+    if (os.has_value() && os.value().empty()) {
+        return "Empty string is not valid";
+    } else {
+        return std::nullopt;
+    }
+}
 }; // namespace config
