@@ -11,7 +11,6 @@
 
 #include "bytes/bytes.h"
 #include "bytes/details/io_allocation_size.h"
-#include "compression/logger.h"
 #include "likely.h"
 #include "units.h"
 #include "vassert.h"

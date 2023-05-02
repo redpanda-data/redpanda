@@ -12,7 +12,6 @@
 #include "bytes/bytes.h"
 #include "bytes/details/io_iterator_consumer.h"
 #include "bytes/iobuf.h"
-#include "compression/logger.h"
 #include "compression/snappy_standard_compressor.h"
 #include "likely.h"
 #include "vlog.h"
