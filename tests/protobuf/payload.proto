@@ -22,3 +22,34 @@ message Payload {
     int32 val = 1;
     google.protobuf.Timestamp timestamp = 2;
 }
+
+message A {
+    message B {
+        message C {
+            message D {
+                message M00 {}
+                message M01 {}
+                message M02 {}
+                message M03 {}
+                message M04 {}
+                message M05 {}
+                message M06 {}
+                message M07 {}
+                message M08 {}
+                message M09 {}
+                message M10 {}
+                message M11 {}
+                message M12 {}
+                message M13 {}
+                message M14 {}
+                message M15 {}
+                message M16 {}
+                message M17 {}
+                message NestedPayload {
+                    int32 val = 1;
+                    google.protobuf.Timestamp timestamp = 2;
+                }
+            }
+        }
+    }
+}

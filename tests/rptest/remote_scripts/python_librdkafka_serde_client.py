@@ -32,7 +32,10 @@ class SchemaType(IntEnum):
     PROTOBUF = 2
 
 
-ProtobuPayloadClasses = {"com.redpanda.Payload": payload_pb2.Payload}
+ProtobuPayloadClasses = {
+    "com.redpanda.Payload": payload_pb2.Payload,
+    "com.redpanda.A.B.C.D.NestedPayload": payload_pb2.A.B.C.D.NestedPayload
+}
 
 
 class AvroPayload(OrderedDict):
@@ -55,7 +58,20 @@ AVRO_SCHEMA_PAYLOAD = '''{
 }
 '''
 
-AvroSchemas = {"com.redpanda.Payload": AVRO_SCHEMA_PAYLOAD}
+AVRO_SCHEMA_NESTED_PAYLOAD = '''{
+"type": "record",
+"name": "NestedPayload",
+"namespace": "com.redpanda.A.B.C.D",
+  "fields": [
+    {"name": "val", "type": "int"}
+  ]
+}
+'''
+
+AvroSchemas = {
+    "com.redpanda.Payload": AVRO_SCHEMA_PAYLOAD,
+    "com.redpanda.A.B.C.D.NestedPayload": AVRO_SCHEMA_NESTED_PAYLOAD
+}
 
 
 def make_protobuf_payload(payload_class, val: int):
