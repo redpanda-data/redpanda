@@ -184,13 +184,18 @@ class ActionInjectorThread(Thread):
         self._stop_requested = Event()
         self.action_triggered = False
         self.reverse_action_triggered = False
+        self._ex = None
 
     def run(self):
-        admin = Admin(self.redpanda)
+        try:
+            self._run()
+        except Exception as e:
+            self._ex = e
 
+    def _run(self):
         def all_nodes_started(nodes):
-            statuses = [admin.ready(node).get("status") for node in nodes]
-            return all(status == 'ready' for status in statuses)
+            statuses = [self.redpanda.is_node_ready(node) for node in nodes]
+            return all(status is True for status in statuses)
 
         wait_until(lambda: all_nodes_started(self.redpanda.nodes),
                    timeout_sec=self.config.cluster_start_lead_time_sec,
@@ -222,8 +227,13 @@ class ActionInjectorThread(Thread):
         )
         wait_until(lambda: all_nodes_started(self.redpanda.started_nodes()),
                    timeout_sec=self.config.cluster_start_lead_time_sec,
-                   backoff_sec=2,
+                   backoff_sec=0.5,
                    err_msg='Cluster did not recover after failures')
+
+    def join(self, *args, **kwargs):
+        super().join(*args, **kwargs)
+        if self._ex is not None:
+            raise self._ex
 
     def stop(self):
         self._stop_requested.set()

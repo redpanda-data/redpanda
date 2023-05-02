@@ -1698,7 +1698,7 @@ class RedpandaService(RedpandaServiceBase):
             else:
                 yield filename
 
-    def __is_status_ready(self, node):
+    def is_node_ready(self, node):
         """
         Calls Admin API's v1/status/ready endpoint to verify if the node
         is ready
@@ -1773,7 +1773,7 @@ class RedpandaService(RedpandaServiceBase):
                 )
             elif not skip_readiness_check:
                 wait_until(
-                    lambda: self.__is_status_ready(node),
+                    lambda: self.is_node_ready(node),
                     timeout_sec=timeout,
                     backoff_sec=self._startup_poll_interval(first_start),
                     err_msg=
@@ -1815,7 +1815,7 @@ class RedpandaService(RedpandaServiceBase):
                                additional_args, env_vars)
 
             wait_until(
-                lambda: self.__is_status_ready(node),
+                lambda: self.is_node_ready(node),
                 timeout_sec=60,
                 backoff_sec=1,
                 err_msg=
