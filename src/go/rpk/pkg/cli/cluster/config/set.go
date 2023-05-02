@@ -56,10 +56,10 @@ If an empty string is given as the value, the property is reset to its default.`
 			key := args[0]
 			value := args[1]
 
-			cfg, err := p.Load(fs)
+			cx, err := p.LoadMaterializedContext(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)
 
-			client, err := admin.NewClient(fs, cfg)
+			client, err := admin.NewClient(fs, cx)
 			out.MaybeDie(err, "unable to initialize admin client: %v", err)
 
 			schema, err := client.ClusterConfigSchema(cmd.Context())

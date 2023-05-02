@@ -199,7 +199,7 @@ schema_registry: {}
 			fs := afero.NewMemMapFs()
 
 			if test.cfgFile != "" {
-				err := afero.WriteFile(fs, config.DefaultPath, []byte(test.cfgFile), 0o644)
+				err := afero.WriteFile(fs, config.DefaultRedpandaYamlPath, []byte(test.cfgFile), 0o644)
 				if err != nil {
 					t.Errorf("unexpected failure writing passed config file: %v", err)
 					return
@@ -225,7 +225,7 @@ schema_registry: {}
 				return
 			}
 
-			file, err := afero.ReadFile(fs, config.DefaultPath)
+			file, err := afero.ReadFile(fs, config.DefaultRedpandaYamlPath)
 			if err != nil {
 				t.Errorf("unexpected failure reading config file: %v", err)
 				return

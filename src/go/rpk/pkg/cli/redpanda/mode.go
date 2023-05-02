@@ -47,14 +47,13 @@ func executeMode(fs afero.Fs, p *config.Params, mode string) error {
 	if err != nil {
 		return fmt.Errorf("unable to load config: %v", err)
 	}
-	cfg = cfg.FileOrDefaults() // we modify fields in the raw file without writing env / flag overrides
-	cfg, err = config.SetMode(mode, cfg)
-	if err != nil {
+	y := cfg.ActualRedpandaYamlOrDefaults() // we modify fields in the raw file without writing env / flag overrides
+	if err := y.SetMode(mode); err != nil {
 		return err
 	}
 
-	fmt.Printf("Writing %q mode defaults to %q\n", mode, cfg.FileLocation())
-	err = cfg.Write(fs)
+	fmt.Printf("Writing %q mode defaults to %q\n", mode, y.FileLocation())
+	err = y.Write(fs)
 	if err != nil {
 		return err
 	}

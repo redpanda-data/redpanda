@@ -50,10 +50,10 @@ the cleanup.policy=compact config option set.
 `,
 
 		Run: func(cmd *cobra.Command, topics []string) {
-			cfg, err := p.Load(fs)
+			cx, err := p.LoadMaterializedContext(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)
 
-			cl, err := kafka.NewFranzClient(fs, p, cfg)
+			cl, err := kafka.NewFranzClient(fs, cx)
 			out.MaybeDie(err, "unable to initialize kafka client: %v", err)
 			defer cl.Close()
 

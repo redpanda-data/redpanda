@@ -72,10 +72,10 @@ the end of an array to extend it:
 		Run: func(cmd *cobra.Command, args []string) {
 			cfg, err := p.Load(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)
-			cfg = cfg.FileOrDefaults() // we set fields in the raw file without writing env / flag overrides
-			err = config.Set(cfg, args[0], args[1])
+			y := cfg.ActualRedpandaYamlOrDefaults() // we set fields in the raw file without writing env / flag overrides
+			err = config.Set(y, args[0], args[1])
 			out.MaybeDie(err, "unable to set %q:%v", args[0], err)
-			err = cfg.Write(fs)
+			err = y.Write(fs)
 			out.MaybeDieErr(err)
 		},
 	}
@@ -112,7 +112,7 @@ you must use the --self flag to specify which ip redpanda should listen on.
 		Run: func(cmd *cobra.Command, args []string) {
 			cfg, err := p.Load(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)
-			cfg = cfg.FileOrDefaults() // we modify fields in the raw file without writing env / flag overrides
+			y := cfg.ActualRedpandaYamlOrDefaults() // we modify fields in the raw file without writing env / flag overrides
 
 			seeds, err := parseSeedIPs(ips)
 			out.MaybeDieErr(err)
@@ -121,7 +121,7 @@ you must use the --self flag to specify which ip redpanda should listen on.
 			out.MaybeDieErr(err)
 
 			if id >= 0 {
-				cfg.Redpanda.ID = &id
+				y.Redpanda.ID = &id
 			}
 
 			// Defaults returns one RPC, one KafkaAPI, and one
@@ -145,10 +145,10 @@ you must use the --self flag to specify which ip redpanda should listen on.
 				panic("defaults now have more than one kafka / admin api address, bug!")
 			}
 
-			if a := &cfg.Redpanda.RPCServer.Address; *a == config.DefaultListenAddress {
+			if a := &y.Redpanda.RPCServer.Address; *a == config.DefaultListenAddress {
 				*a = selfIP
 			}
-			if a := &cfg.Redpanda.KafkaAPI; len(*a) == 1 {
+			if a := &y.Redpanda.KafkaAPI; len(*a) == 1 {
 				if first := &((*a)[0].Address); *first == config.DefaultListenAddress {
 					*first = selfIP
 				}
@@ -158,7 +158,7 @@ you must use the --self flag to specify which ip redpanda should listen on.
 					Port:    config.DefaultKafkaPort,
 				}}
 			}
-			if a := &cfg.Redpanda.AdminAPI; len(*a) == 1 {
+			if a := &y.Redpanda.AdminAPI; len(*a) == 1 {
 				if first := &((*a)[0]).Address; *first == config.DefaultListenAddress {
 					*first = selfIP
 				}
@@ -168,9 +168,9 @@ you must use the --self flag to specify which ip redpanda should listen on.
 					Port:    config.DefaultAdminPort,
 				}}
 			}
-			cfg.Redpanda.SeedServers = seeds
+			y.Redpanda.SeedServers = seeds
 
-			err = cfg.Write(fs)
+			err = y.Write(fs)
 			out.MaybeDie(err, "error writing config file: %v", err)
 		},
 	}

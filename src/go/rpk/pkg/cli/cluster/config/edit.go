@@ -43,10 +43,10 @@ to edit all properties including these tunables.
 `,
 		Args: cobra.ExactArgs(0),
 		Run: func(cmd *cobra.Command, _ []string) {
-			cfg, err := p.Load(fs)
+			cx, err := p.LoadMaterializedContext(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)
 
-			client, err := admin.NewClient(fs, cfg)
+			client, err := admin.NewClient(fs, cx)
 			out.MaybeDie(err, "unable to initialize admin client: %v", err)
 
 			// GET the schema

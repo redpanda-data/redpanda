@@ -88,15 +88,15 @@ To learn more about a tuner, run 'rpk redpanda tune help <tuner name>'.
 			out.MaybeDieErr(err)
 
 			tunerParams.CPUMask = cpuMask
-			cfg, err := p.Load(fs)
+			y, err := p.LoadMaterializedRedpandaYaml(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)
 			var tunerFactory factory.TunersFactory
 			if outTuneScriptFile != "" {
-				tunerFactory = factory.NewScriptRenderingTunersFactory(fs, cfg.Rpk.Tuners, outTuneScriptFile, timeout)
+				tunerFactory = factory.NewScriptRenderingTunersFactory(fs, y.Rpk.Tuners, outTuneScriptFile, timeout)
 			} else {
-				tunerFactory = factory.NewDirectExecutorTunersFactory(fs, cfg.Rpk.Tuners, timeout)
+				tunerFactory = factory.NewDirectExecutorTunersFactory(fs, y.Rpk.Tuners, timeout)
 			}
-			exit1, err := tune(cfg, tuners, tunerFactory, &tunerParams)
+			exit1, err := tune(y, tuners, tunerFactory, &tunerParams)
 			out.MaybeDieErr(err)
 			if exit1 {
 				os.Exit(1)
@@ -127,12 +127,12 @@ func addTunerParamsFlags(cmd *cobra.Command, tunerParams *factory.TunerParams) {
 }
 
 func tune(
-	conf *config.Config,
+	y *config.RedpandaYaml,
 	tunerNames []string,
 	tunersFactory factory.TunersFactory,
 	params *factory.TunerParams,
 ) (bool, error) {
-	params, err := factory.MergeTunerParamsConfig(params, conf)
+	params, err := factory.MergeTunerParamsConfig(params, y)
 	if err != nil {
 		return false, err
 	}
@@ -145,7 +145,7 @@ func tune(
 	)
 
 	for _, tunerName := range tunerNames {
-		enabled := factory.IsTunerEnabled(tunerName, conf.Rpk.Tuners)
+		enabled := factory.IsTunerEnabled(tunerName, y.Rpk.Tuners)
 		allDisabled = allDisabled && !enabled
 		tuner := tunersFactory.CreateTuner(tunerName, params)
 		supported, reason := tuner.CheckIfSupported()

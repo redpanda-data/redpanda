@@ -22,11 +22,11 @@ import (
 )
 
 func Check(
-	fs afero.Fs, conf *config.Config, timeout time.Duration,
+	fs afero.Fs, y *config.RedpandaYaml, timeout time.Duration,
 ) ([]CheckResult, error) {
 	var results []CheckResult
-	ioConfigFile := redpanda.GetIOConfigPath(filepath.Dir(conf.FileLocation()))
-	checkersMap, err := RedpandaCheckers(fs, ioConfigFile, conf, timeout)
+	ioConfigFile := redpanda.GetIOConfigPath(filepath.Dir(y.FileLocation()))
+	checkersMap, err := RedpandaCheckers(fs, ioConfigFile, y, timeout)
 	if err != nil {
 		return results, err
 	}
