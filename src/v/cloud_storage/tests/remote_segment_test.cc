@@ -167,16 +167,16 @@ void upload_index(
     builder->consume().get();
     builder->close().get();
     auto ixbuf = ix.to_iobuf();
-    BOOST_REQUIRE(
-      f.api.local()
-        .upload_object(
-          bucket,
-          cloud_storage_clients::object_key{path().native() + ".index"},
-          std::move(ixbuf),
-          fib,
-          remote::default_index_tags)
-        .get()
-      == upload_result::success);
+    auto upload_res = f.api.local()
+                        .upload_object(
+                          bucket,
+                          cloud_storage_clients::object_key{
+                            path().native() + ".index"},
+                          std::move(ixbuf),
+                          fib,
+                          remote::default_index_tags)
+                        .get();
+    BOOST_REQUIRE(upload_res == upload_result::success);
 }
 
 FIXTURE_TEST(
@@ -490,7 +490,7 @@ static partition_manifest chunk_read_baseline(
         .upload_segment(bucket, path, clen, reset_stream, fib, always_continue)
         .get()
       == upload_result::success);
-    m.add(key, meta);
+    m.add(meta);
 
     return m;
 }
@@ -728,5 +728,73 @@ FIXTURE_TEST(test_chunk_future_reader_stats, cloud_storage_fixture) {
         chunk_api.mark_acquired_and_update_stats(chunk_start, end);
         BOOST_REQUIRE_EQUAL(chunk.required_by_readers_in_future, 0);
         BOOST_REQUIRE_EQUAL(chunk.required_after_n_chunks, 0);
+    }
+}
+
+FIXTURE_TEST(test_chunk_multiple_readers, cloud_storage_fixture) {
+    /**
+     * This test exercises using many readers against a remote segment while
+     * using chunks. The idea is to exercise the waitlist per chunk but there
+     * are no deterministic assertions for this in the test, we simply wait for
+     * all reads to finish for all readers.
+     */
+    config::shard_local_cfg().cloud_storage_cache_chunk_size.set_value(
+      static_cast<uint64_t>(128_KiB));
+
+    auto key = model::offset(1);
+    retry_chain_node fib(never_abort, 300s, 200ms);
+    iobuf segment_bytes = generate_segment(model::offset(1), 300);
+
+    auto m = chunk_read_baseline(*this, key, fib, segment_bytes.copy());
+    auto segment = ss::make_lw_shared<remote_segment>(
+      api.local(), cache.local(), bucket, m, key, fib);
+
+    segment_chunks chunk_api{*segment, segment->max_hydrated_chunks()};
+    auto close_segment = ss::defer([&segment] { segment->stop().get(); });
+
+    segment->hydrate().get();
+    chunk_api.start().get();
+
+    storage::offset_translator_state ot_state(m.get_ntp());
+
+    storage::log_reader_config reader_config(
+      model::offset{1}, model::offset{1000000}, ss::default_priority_class());
+    reader_config.max_bytes = std::numeric_limits<size_t>::max();
+
+    partition_probe probe(manifest_ntp);
+
+    std::vector<std::unique_ptr<remote_segment_batch_reader>> readers{};
+    readers.reserve(10);
+
+    for (auto i = 0; i < 1000; ++i) {
+        readers.push_back(std::make_unique<remote_segment_batch_reader>(
+          segment, reader_config, probe, ssx::semaphore_units()));
+    }
+
+    auto all_readers_done = [&readers] {
+        return std::all_of(
+          readers.cbegin(), readers.cend(), [](const auto& reader) {
+              return reader->is_eof();
+          });
+    };
+
+    while (!all_readers_done()) {
+        std::vector<
+          ss::future<result<ss::circular_buffer<model::record_batch>>>>
+          reads;
+        reads.reserve(readers.size());
+        for (auto& reader : readers) {
+            reads.push_back(reader->read_some(model::no_timeout, ot_state));
+        }
+
+        auto results = ss::when_all_succeed(reads.begin(), reads.end()).get();
+        BOOST_REQUIRE(
+          std::all_of(results.begin(), results.end(), [](const auto& result) {
+              return !result.has_error();
+          }));
+    }
+
+    for (auto& reader : readers) {
+        reader->stop().get();
     }
 }
