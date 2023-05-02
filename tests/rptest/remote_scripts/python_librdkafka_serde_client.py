@@ -11,6 +11,7 @@
 
 import argparse
 import json
+import sys
 import logging
 from collections import OrderedDict
 from datetime import datetime
@@ -19,6 +20,7 @@ from typing import Optional
 from uuid import uuid4
 
 from confluent_kafka import DeserializingConsumer, SerializingProducer
+from confluent_kafka.cimpl import KafkaError
 from confluent_kafka.serialization import StringDeserializer, StringSerializer
 from confluent_kafka.schema_registry import SchemaRegistryClient, topic_subject_name_strategy, record_subject_name_strategy, topic_record_subject_name_strategy
 from confluent_kafka.schema_registry.avro import AvroDeserializer, AvroSerializer
@@ -178,8 +180,10 @@ class SerdeClient:
         }
 
     def produce(self, count: int):
-        def increment(err, msg):
-            assert err is None
+        def increment(err: KafkaError, msg):
+            if err is not None:
+                self.logger.error(f"Produce err: {err}")
+                sys.exit(err.code())
             assert msg is not None
             assert msg.offset() == self.acked
             self.logger.debug("Acked offset %d", msg.offset())
