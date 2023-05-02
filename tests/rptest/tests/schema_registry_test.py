@@ -172,7 +172,8 @@ class SchemaRegistryEndpoints(RedpandaTest):
                           topic: str,
                           count: int,
                           skip_known_types: Optional[bool] = None,
-                          subject_name_strategy: Optional[str] = None):
+                          subject_name_strategy: Optional[str] = None,
+                          payload_class: Optional[str] = None):
         schema_reg = self.redpanda.schema_reg().split(',', 1)[0]
         sasl_enabled = self.redpanda.sasl_enabled()
         sec_cfg = self.redpanda.security_config() if sasl_enabled else None
@@ -186,7 +187,8 @@ class SchemaRegistryEndpoints(RedpandaTest):
                            topic=topic,
                            security_config=sec_cfg,
                            skip_known_types=skip_known_types,
-                           subject_name_strategy=subject_name_strategy)
+                           subject_name_strategy=subject_name_strategy,
+                           payload_class=payload_class)
 
     def _get_topics(self):
         return requests.get(
