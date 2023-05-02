@@ -17,7 +17,9 @@ import time
 import random
 import socket
 
-from ducktape.mark import parametrize
+from confluent_kafka.schema_registry import topic_subject_name_strategy, record_subject_name_strategy, topic_record_subject_name_strategy
+from confluent_kafka.serialization import (MessageField, SerializationContext)
+from ducktape.mark import parametrize, matrix
 from ducktape.services.background_thread import BackgroundThreadService
 from ducktape.utils.util import wait_until
 
@@ -37,6 +39,24 @@ from rptest.util import inject_remote_script, search_logs_with_timeout
 
 def create_topic_names(count):
     return list(f"pandaproxy-topic-{uuid.uuid4()}" for _ in range(count))
+
+
+def get_subject_name(sns: str, topic: str, field: MessageField,
+                     record_name: str):
+    return {
+        TopicSpec.SubjectNameStrategy.TOPIC_NAME:
+        topic_subject_name_strategy,
+        TopicSpec.SubjectNameStrategyCompat.TOPIC_NAME:
+        topic_subject_name_strategy,
+        TopicSpec.SubjectNameStrategy.RECORD_NAME:
+        record_subject_name_strategy,
+        TopicSpec.SubjectNameStrategyCompat.RECORD_NAME:
+        record_subject_name_strategy,
+        TopicSpec.SubjectNameStrategy.TOPIC_RECORD_NAME:
+        topic_record_subject_name_strategy,
+        TopicSpec.SubjectNameStrategyCompat.TOPIC_RECORD_NAME:
+        topic_record_subject_name_strategy
+    }[sns](SerializationContext(topic, field), record_name)
 
 
 HTTP_GET_HEADERS = {"Accept": "application/vnd.schemaregistry.v1+json"}
@@ -1228,6 +1248,106 @@ class SchemaRegistryTestMethods(SchemaRegistryEndpoints):
             assert schema.json().get("schemaType") is None
         else:
             assert schema.json()["schemaType"] == protocol.name
+
+    @cluster(num_nodes=4)
+    @matrix(protocol=[SchemaType.AVRO, SchemaType.PROTOBUF],
+            client_type=[SerdeClientType.Python],
+            validate_schema_id=[True],
+            subject_name_strategy=list(TopicSpec.SubjectNameStrategyCompat),
+            payload_class=[
+                "com.redpanda.Payload", "com.redpanda.A.B.C.D.NestedPayload"
+            ])
+    def test_schema_id_validation(self,
+                                  protocol: SchemaType,
+                                  client_type: SerdeClientType,
+                                  skip_known_types: Optional[bool] = None,
+                                  validate_schema_id: Optional[bool] = None,
+                                  subject_name_strategy: Optional[str] = None,
+                                  payload_class: str = "com.redpanda.Payload"):
+        Admin(self.redpanda).put_feature("schema_id_validation",
+                                         {"state": "active"})
+        self.redpanda.await_feature("schema_id_validation",
+                                    True,
+                                    timeout_sec=10)
+
+        def get_next_strategy(subject_name_strategy):
+            all_strategies = list(TopicSpec.SubjectNameStrategyCompat)
+            index = all_strategies.index(subject_name_strategy)
+            return all_strategies[(index + 1) % len(all_strategies)]
+
+        # Create a topic with incorrect strategy
+        topic = f"serde-topic-{protocol.name}-{client_type.name}"
+
+        def check_subject():
+            expected = get_subject_name(subject_name_strategy, topic,
+                                        MessageField.VALUE, payload_class)
+            result_raw = self._get_subjects()
+            assert result_raw.status_code == requests.codes.ok
+            res_subjects = result_raw.json()
+            self.logger.debug(
+                f"SUBJECTS: {res_subjects}, expected: {expected}")
+
+            return expected in res_subjects
+
+        def bool_alpha(b: bool) -> str:
+            return f"{b}".lower()
+
+        self._create_topic(
+            topic=topic,
+            config={
+                TopicSpec.PROPERTY_RECORD_VALUE_SCHEMA_ID_VALIDATION_COMPAT:
+                bool_alpha(validate_schema_id),
+                TopicSpec.PROPERTY_RECORD_VALUE_SUBJECT_NAME_STRATEGY_COMPAT:
+                get_next_strategy(subject_name_strategy)
+            })
+        schema_reg = self.redpanda.schema_reg().split(',', 1)[0]
+        self.logger.info(
+            f"Connecting to redpanda: {self.redpanda.brokers()} schema_Reg: {schema_reg}"
+        )
+
+        Admin(self.redpanda).put_feature("schema_id_validation",
+                                         {"state": "active"})
+        self.redpanda.await_feature("schema_id_validation",
+                                    True,
+                                    timeout_sec=10)
+
+        # Test against misconfigered strategy
+        client = self._get_serde_client(
+            protocol,
+            client_type,
+            topic,
+            2,
+            skip_known_types,
+            subject_name_strategy=subject_name_strategy,
+            payload_class=payload_class)
+
+        self.logger.debug("Running client, expecting failure")
+        try:
+            client.run()
+            assert False, "expected exit code 87"
+        except Exception as ex:
+            if "returned non-zero exit status 87" not in ex.args[0]:
+                self.logger.debug("RemoteCommandError exit WAS NOT 87!")
+                raise
+            self.logger.debug("RemoteCommandError exit WAS 87!")
+        finally:
+            client.reset()
+
+        self.logger.debug("Client completed")
+
+        assert check_subject()
+
+        # Update the strategy to the expected one
+        self._alter_topic_config(
+            topic=topic,
+            set_key=TopicSpec.
+            PROPERTY_RECORD_VALUE_SUBJECT_NAME_STRATEGY_COMPAT,
+            set_value=subject_name_strategy)
+
+        self.logger.debug("Running client, expecting success")
+        client.run()
+
+        self.logger.debug("Client completed")
 
     @cluster(num_nodes=3)
     def test_restarts(self):
