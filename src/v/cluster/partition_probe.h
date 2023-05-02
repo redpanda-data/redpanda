@@ -82,5 +82,4 @@ private:
     ss::metrics::metric_groups _public_metrics;
 };
 
-partition_probe make_materialized_partition_probe();
 } // namespace cluster
