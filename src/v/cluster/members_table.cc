@@ -18,6 +18,7 @@
 #include "vlog.h"
 
 #include <algorithm>
+#include <optional>
 #include <vector>
 
 namespace cluster {
@@ -379,4 +380,34 @@ void members_table::notify_members_updated() {
     }
 }
 
+std::optional<model::node_assignment>
+members_table::get_node_assignment(model::node_id id) const {
+    auto it = _nodes.find(id);
+    if (it == _nodes.end()) {
+        return std::nullopt;
+    }
+    return model::node_assignment{
+      .region = it->second.broker.region(), .rack = it->second.broker.rack()};
+}
+
+std::vector<model::node_id>
+members_table::node_ids_in(const model::region_id& region) const {
+    return node_ids_matching([&region](const node_metadata& nm) {
+        return nm.broker.region() == region;
+    });
+}
+
+std::vector<model::node_id>
+members_table::node_ids_in(const model::rack_id& rack) const {
+    return node_ids_matching([&rack](const node_metadata& nm) {
+        return !nm.broker.region().has_value() && nm.broker.rack() == rack;
+    });
+}
+
+std::vector<model::node_id> members_table::node_ids_in(
+  const model::region_id& region, const model::rack_id& rack) const {
+    return node_ids_matching([&region, &rack](const node_metadata& nm) {
+        return nm.broker.region() == region && nm.broker.rack() == rack;
+    });
+}
 } // namespace cluster

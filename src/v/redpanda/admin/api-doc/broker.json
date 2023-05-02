@@ -282,6 +282,10 @@
                 "maintenance_status": {
                     "type": "maintenance_status",
                     "description": "Node maintenance status"
+                },
+                "region": {
+                    "type": "string",
+                    "description": "region id"
                 }
             }
         },

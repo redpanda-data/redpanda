@@ -57,6 +57,7 @@ struct barrier_fixture {
               net::unresolved_address{},
               net::unresolved_address{},
               std::nullopt,
+              std::nullopt,
               model::broker_properties{}));
         }
         for (auto& br : brokers) {

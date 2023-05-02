@@ -66,14 +66,6 @@ service::service(
   , _conn_cache(conn_cache)
   , _partition_manager(partition_manager) {}
 
-ss::future<join_reply>
-service::join(join_request&& req, rpc::streaming_context& context) {
-    auto jnr = join_node_request(invalid_version, invalid_version, req.node);
-    return join_node(std::move(jnr), context).then([](join_node_reply r) {
-        return join_reply{r.success};
-    });
-}
-
 ss::future<join_node_reply>
 service::join_node(join_node_request&& req, rpc::streaming_context&) {
     // For now, the new-style join_node_request only differs from join_request

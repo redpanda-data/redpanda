@@ -986,30 +986,6 @@ struct abort_group_tx_reply
     auto serde_fields() { return std::tie(ec); }
 };
 
-/// Old-style request sent by node to join raft-0
-/// - Does not specify logical version
-/// - Always specifies node_id
-/// (remove this RPC two versions after join_node_request was
-///  added to replace it)
-struct join_request
-  : serde::envelope<join_request, serde::version<0>, serde::compat_version<0>> {
-    join_request() noexcept = default;
-
-    explicit join_request(model::broker b)
-      : node(std::move(b)) {}
-
-    model::broker node;
-
-    friend bool operator==(const join_request&, const join_request&) = default;
-
-    friend std::ostream& operator<<(std::ostream& o, const join_request& r) {
-        fmt::print(o, "node {}", r.node);
-        return o;
-    }
-
-    auto serde_fields() { return std::tie(node); }
-};
-
 struct join_reply
   : serde::envelope<join_reply, serde::version<0>, serde::compat_version<0>> {
     bool success;
@@ -3563,13 +3539,6 @@ template<>
 struct adl<cluster::topic_configuration> {
     void to(iobuf&, cluster::topic_configuration&&);
     cluster::topic_configuration from(iobuf_parser&);
-};
-
-template<>
-struct adl<cluster::join_request> {
-    void to(iobuf&, cluster::join_request&&);
-    cluster::join_request from(iobuf);
-    cluster::join_request from(iobuf_parser&);
 };
 
 template<>

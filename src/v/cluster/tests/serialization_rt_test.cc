@@ -80,6 +80,7 @@ SEASTAR_THREAD_TEST_CASE(broker_metadata_rt_test) {
       net::unresolved_address("127.0.0.1", 9092),
       net::unresolved_address("172.0.1.2", 9999),
       model::rack_id("test"),
+      model::region_id("test-region"),
       model::broker_properties{
         .cores = 8,
         .available_memory_gb = 1024,
@@ -1301,10 +1302,6 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
         cluster::config_status_reply data{
           .error = cluster::errc::allocation_error,
         };
-        roundtrip_test(data);
-    }
-    {
-        cluster::join_request data{model::random_broker()};
         roundtrip_test(data);
     }
     {

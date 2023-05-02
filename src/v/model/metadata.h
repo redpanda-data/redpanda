@@ -55,8 +55,42 @@ using revision_id = named_type<int64_t, struct revision_id_model_type>;
 using initial_revision_id
   = named_type<int64_t, struct initial_revision_id_model_type>;
 
-/// Rack id type
+/**
+ * Rack and region defines a node place in a cluster topology.
+ *
+ * By default nodes are placed in the region and racks.
+ *
+ * All together the two labels allow to define a hierarchical topology of the
+ * cluster.
+ *
+ * We allow nodes to have only rack configured but if they have a region
+ * assigned this implies that the rack is also defined.
+ *
+ *
+ *                                   ┌─────────┐
+ *                   ┌───────────────┤ cluster ├───────────────┐
+ *                   │               └────┬────┘               │
+ *                   │                    │                    │
+ *             ┌─────┴─────┐        ┌─────┴─────┐        ┌─────┴─────┐
+ *           ┌─┤ region_a1 ├─┐      │ region_b1 │      ┌─┤ region_c1 ├─┐
+ *           │ └───────────┘ │      └─────┬─────┘      │ └───────────┘ │
+ *           │               │            │            │               │
+ *      ┌────┴────┐     ┌────┴────┐  ┌────┴────┐  ┌────┴────┐     ┌────┴────┐
+ *      │ rack_10 │     │ rack_11 │  │ rack_1b │  │ rack_10 │     │ rack_20 │
+ *      └─────────┘     └─────────┘  └─────────┘  └─────────┘     └─────────┘
+ *
+ */
+using region_id = named_type<ss::sstring, struct region_id_model_type>;
 using rack_id = named_type<ss::sstring, struct rack_id_model_type>;
+
+/**
+ * Class defining node placement in the cluster
+ */
+struct node_assignment {
+    std::optional<model::region_id> region;
+    std::optional<model::rack_id> rack;
+};
+
 struct broker_properties
   : serde::
       envelope<broker_properties, serde::version<0>, serde::compat_version<0>> {
@@ -156,7 +190,7 @@ std::ostream& operator<<(std::ostream&, maintenance_state);
 
 class broker
   : public serde::
-      envelope<broker, serde::version<0>, serde::compat_version<0>> {
+      envelope<broker, serde::version<1>, serde::compat_version<0>> {
 public:
     broker() noexcept = default;
 
@@ -165,11 +199,13 @@ public:
       std::vector<broker_endpoint> kafka_advertised_listeners,
       net::unresolved_address rpc_address,
       std::optional<rack_id> rack,
+      std::optional<region_id> region,
       broker_properties props) noexcept
       : _id(id)
       , _kafka_advertised_listeners(std::move(kafka_advertised_listeners))
       , _rpc_address(std::move(rpc_address))
       , _rack(std::move(rack))
+      , _region(std::move(region))
       , _properties(std::move(props)) {}
 
     broker(
@@ -177,12 +213,14 @@ public:
       net::unresolved_address kafka_advertised_listener,
       net::unresolved_address rpc_address,
       std::optional<rack_id> rack,
+      std::optional<region_id> region,
       broker_properties props) noexcept
       : broker(
         id,
         {broker_endpoint(std::move(kafka_advertised_listener))},
         std::move(rpc_address),
         std::move(rack),
+        std::move(region),
         std::move(props)) {}
 
     broker(broker&&) noexcept = default;
@@ -197,6 +235,11 @@ public:
     }
     const net::unresolved_address& rpc_address() const { return _rpc_address; }
     const std::optional<rack_id>& rack() const { return _rack; }
+    const std::optional<region_id>& region() const { return _region; }
+
+    node_assignment node_assignment() const {
+        return {.region = _region, .rack = _rack};
+    }
 
     void replace_unassigned_node_id(const node_id id) {
         vassert(
@@ -210,7 +253,12 @@ public:
 
     auto serde_fields() {
         return std::tie(
-          _id, _kafka_advertised_listeners, _rpc_address, _rack, _properties);
+          _id,
+          _kafka_advertised_listeners,
+          _rpc_address,
+          _rack,
+          _properties,
+          _region);
     }
 
 private:
@@ -218,6 +266,7 @@ private:
     std::vector<broker_endpoint> _kafka_advertised_listeners;
     net::unresolved_address _rpc_address;
     std::optional<rack_id> _rack;
+    std::optional<region_id> _region;
     broker_properties _properties;
 
     friend std::ostream& operator<<(std::ostream&, const broker&);
@@ -481,7 +530,7 @@ struct broker_v0 {
     model::broker_properties properties;
 
     model::broker to_v3() const {
-        return model::broker(id, kafka_address, rpc_address, rack, properties);
+        return {id, kafka_address, rpc_address, rack, std::nullopt, properties};
     }
 };
 

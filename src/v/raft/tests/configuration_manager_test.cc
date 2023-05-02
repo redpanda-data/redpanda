@@ -79,18 +79,14 @@ struct config_manager_fixture {
     }
 
     raft::group_configuration random_configuration() {
-        std::vector<model::broker> nodes;
+        std::vector<raft::vnode> nodes;
         nodes.reserve(3);
-        std::vector<model::broker> learners;
-        learners.reserve(2);
-        for (auto i = 0; i < 3; ++i) {
-            nodes.push_back(model::random_broker(i, i));
+        for (int i = 0; i < 3; ++i) {
+            nodes.emplace_back(
+              model::node_id(i),
+              model::revision_id(random_generators::get_int(100)));
         }
-        for (auto i = 0; i < 2; ++i) {
-            learners.push_back(model::random_broker(i, i));
-        }
-        return raft::group_configuration(
-          std::move(nodes), model::revision_id(0));
+        return {std::move(nodes), model::revision_id(0)};
     }
 
     raft::group_configuration add_random_cfg(model::offset offset) {

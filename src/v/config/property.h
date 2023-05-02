@@ -596,6 +596,8 @@ consteval std::string_view property_type_name() {
         return "broker_endpoint";
     } else if constexpr (std::is_same_v<type, model::rack_id>) {
         return "rack_id";
+    } else if constexpr (std::is_same_v<type, model::region_id>) {
+        return "region_id";
     } else if constexpr (std::is_same_v<
                            type,
                            model::partition_autobalancing_mode>) {

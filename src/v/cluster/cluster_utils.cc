@@ -160,6 +160,7 @@ model::broker make_self_broker(const config::node_config& node_cfg) {
       kafka_addr,
       rpc_addr,
       node_cfg.rack,
+      node_cfg.region,
       model::broker_properties{
         // TODO: populate or remote etc_props, mount_paths
         .cores = ss::smp::count,

@@ -33,8 +33,16 @@ std::vector<model::broker> random_brokers() {
     return ret;
 }
 
+std::vector<raft::vnode> random_vnodes() {
+    std::vector<raft::vnode> ret;
+    for (auto i = 0; i < random_generators::get_int(5, 10); ++i) {
+        ret.push_back(raft::vnode(model::node_id(i), model::revision_id(i)));
+    }
+    return ret;
+}
+
 raft::group_configuration random_configuration() {
-    auto brokers = random_brokers();
+    auto brokers = random_vnodes();
     raft::group_nodes current;
     for (auto& b : brokers) {
         if (random_generators::get_int(0, 100) > 50) {
@@ -82,7 +90,6 @@ raft::group_configuration random_configuration() {
           });
     }
     return {
-      std::move(brokers),
       std::move(current),
       tests::random_named_int<model::revision_id>(),
       std::move(update),
@@ -462,6 +469,7 @@ SEASTAR_THREAD_TEST_CASE(configuration_broker_many_endpoints) {
       },
       tests::random_net_address(),
       std::nullopt,
+      std::nullopt,
       model::broker_properties{
         .cores = random_generators::get_int<uint32_t>(96)});
 
@@ -473,6 +481,7 @@ SEASTAR_THREAD_TEST_CASE(configuration_broker_many_endpoints) {
         model::broker_endpoint("foobar3", tests::random_net_address()),
       },
       tests::random_net_address(),
+      std::nullopt,
       std::nullopt,
       model::broker_properties{
         .cores = random_generators::get_int<uint32_t>(96)});

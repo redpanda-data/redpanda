@@ -169,7 +169,9 @@ struct partition_balancer_planner_fixture {
     }
 
     void allocator_register_nodes(
-      size_t nodes_amount, const std::vector<ss::sstring>& rack_ids = {}) {
+      size_t nodes_amount,
+      const std::vector<ss::sstring>& rack_ids = {},
+      const std::vector<ss::sstring>& region_ids = {}) {
         if (!rack_ids.empty()) {
             vassert(
               rack_ids.size() == nodes_amount,
@@ -190,6 +192,10 @@ struct partition_balancer_planner_fixture {
             if (!rack_ids.empty()) {
                 rack_id = model::rack_id{rack_ids[i]};
             }
+            std::optional<model::region_id> region_id;
+            if (!region_ids.empty()) {
+                region_id = model::region_id{region_ids[i]};
+            }
 
             workers.allocator.local().register_node(
               create_allocation_node(model::node_id(last_node_idx), 4));
@@ -198,6 +204,7 @@ struct partition_balancer_planner_fixture {
               net::unresolved_address{},
               net::unresolved_address{},
               rack_id,
+              std::move(region_id),
               model::broker_properties{
                 .cores = 4,
                 .available_memory_gb = 2,
