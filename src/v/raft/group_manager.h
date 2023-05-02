@@ -51,7 +51,7 @@ public:
       recovery_memory_quota::config_provider_fn recovery_mem_cfg,
       ss::sharded<rpc::connection_cache>& clients,
       ss::sharded<storage::api>& storage,
-      ss::sharded<recovery_throttle>&,
+      ss::sharded<coordinated_recovery_throttle>&,
       ss::sharded<features::feature_table>&);
 
     ss::future<> start();
@@ -101,7 +101,7 @@ private:
       _notifications;
     ss::metrics::metric_groups _metrics;
     storage::api& _storage;
-    recovery_throttle& _recovery_throttle;
+    coordinated_recovery_throttle& _recovery_throttle;
     recovery_memory_quota _recovery_mem_quota;
     features::feature_table& _feature_table;
     bool _is_ready;

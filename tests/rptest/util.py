@@ -371,3 +371,34 @@ def search_logs_with_timeout(redpanda, pattern: str, timeout_s: int = 5):
     wait_until(lambda: redpanda.search_log_any(pattern),
                timeout_sec=timeout_s,
                err_msg=f"Failed to find pattern: {pattern}")
+
+
+def wait_for_recovery_throttle_rate(redpanda, new_rate: int):
+    # Recovery rate activates in the next coordinator tick, wait for it
+    # to happen.
+    def wait_for_throttle_update():
+        def check_throttle_rate(node):
+            try:
+                metrics = list(redpanda.metrics(node))
+                family = filter(
+                    lambda fam: fam.name ==
+                    "vectorized_raft_recovery_partition_movement_assigned_bandwidth",
+                    metrics)
+                shard_rates = next(family).samples
+                num_shards = len(shard_rates)
+                # Account for rounding error
+                # Ex: if a rate 1 is divided among 2 shards, each shard gets nothing
+                expected_rate = int(new_rate / num_shards) * num_shards
+                current_rate = int(sum([m.value for m in shard_rates]))
+                redpanda.logger.debug(
+                    f"Node {node.name} has total rate: {current_rate}, expecting: {expected_rate}"
+                )
+                return current_rate == expected_rate
+            except:
+                redpanda.logger.debug(
+                    f"Error getting throttle rate for {node}", exc_info=True)
+                return False
+
+        return all([check_throttle_rate(n) for n in redpanda.started_nodes()])
+
+    wait_until(wait_for_throttle_update, timeout_sec=90, backoff_sec=1)

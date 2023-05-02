@@ -97,7 +97,8 @@ consensus::consensus(
   consensus_client_protocol client,
   consensus::leader_cb_t cb,
   storage::api& storage,
-  std::optional<std::reference_wrapper<recovery_throttle>> recovery_throttle,
+  std::optional<std::reference_wrapper<coordinated_recovery_throttle>>
+    recovery_throttle,
   recovery_memory_quota& recovery_mem_quota,
   features::feature_table& ft,
   std::optional<voter_priority> voter_priority_override,

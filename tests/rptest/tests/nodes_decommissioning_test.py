@@ -15,6 +15,7 @@ from time import sleep
 from rptest.clients.default import DefaultClient
 
 from rptest.utils.mode_checks import skip_debug_mode
+from rptest.util import wait_for_recovery_throttle_rate
 from rptest.clients.rpk import RpkTool
 from rptest.services.cluster import cluster
 from ducktape.utils.util import wait_until
@@ -119,12 +120,14 @@ class NodesDecommissioningTest(EndToEndTest):
 
         wait_until(requested_status, timeout_sec=timeout_sec, backoff_sec=1)
 
-    def _set_recovery_rate(self, rate):
+    def _set_recovery_rate(self, new_rate: int):
         # use admin API to leverage the retry policy when controller returns 503
         patch_result = self.admin.patch_cluster_config(
-            upsert={"raft_learner_recovery_rate": rate})
+            upsert={"raft_learner_recovery_rate": new_rate})
         self.logger.debug(
-            f"setting recovery rate to {rate} result: {patch_result}")
+            f"setting recovery rate to {new_rate} result: {patch_result}")
+        wait_for_recovery_throttle_rate(redpanda=self.redpanda,
+                                        new_rate=new_rate)
 
     # after node was removed the state should be consistent on all other not removed nodes
     def _check_state_consistent(self, decommissioned_id):

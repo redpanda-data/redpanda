@@ -34,6 +34,7 @@ v_cc_library(
     follower_queue.cc
     offset_translator.cc
     recovery_memory_quota.cc
+    coordinated_recovery_throttle.cc
   DEPS
     v::storage
     raft_rpc
