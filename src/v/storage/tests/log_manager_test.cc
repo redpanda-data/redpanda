@@ -71,7 +71,9 @@ SEASTAR_THREAD_TEST_CASE(test_can_load_logs) {
       .get();
 
     ss::sharded<memory_sampling> memory_sampling_service;
-    memory_sampling_service.start(std::ref(test_logger)).get();
+    memory_sampling_service
+      .start(std::ref(test_logger), config::mock_binding<bool>(false))
+      .get();
 
     storage::api store(
       [conf]() {

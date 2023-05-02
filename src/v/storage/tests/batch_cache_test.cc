@@ -50,7 +50,9 @@ public:
     batch_cache_test_fixture()
       : test_logger("batch-cache-test")
       , cache(opts, memory_sampling_service) {
-        memory_sampling_service.start(std::ref(test_logger)).get();
+        memory_sampling_service
+          .start(std::ref(test_logger), config::mock_binding<bool>(false))
+          .get();
     }
 
     auto& get_lru() { return cache._lru; };
@@ -145,7 +147,9 @@ SEASTAR_THREAD_TEST_CASE(touch) {
 
         seastar::logger test_logger("test");
         ss::sharded<memory_sampling> memory_sampling_service;
-        memory_sampling_service.start(std::ref(test_logger)).get();
+        memory_sampling_service
+          .start(std::ref(test_logger), config::mock_binding<bool>(false))
+          .get();
         auto action = ss::defer(
           [&memory_sampling_service] { memory_sampling_service.stop().get(); });
 
@@ -169,7 +173,9 @@ SEASTAR_THREAD_TEST_CASE(touch) {
         // build the cache the same way
         seastar::logger test_logger("test");
         ss::sharded<memory_sampling> memory_sampling_service;
-        memory_sampling_service.start(std::ref(test_logger)).get();
+        memory_sampling_service
+          .start(std::ref(test_logger), config::mock_binding<bool>(false))
+          .get();
         auto action = ss::defer(
           [&memory_sampling_service] { memory_sampling_service.stop().get(); });
 

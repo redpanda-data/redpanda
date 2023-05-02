@@ -35,7 +35,12 @@ SEASTAR_THREAD_TEST_CASE(reclaim_notifies_memory_sampling) {
 
     std::string_view needle("Top-N alloc");
     const auto first_log_limit = 0.80;
-    memory_sampling_service.start(std::ref(test_logger), first_log_limit, 0.2)
+    memory_sampling_service
+      .start(
+        std::ref(test_logger),
+        config::mock_binding<bool>(true),
+        first_log_limit,
+        0.2)
       .get();
     memory_sampling_service.invoke_on_all(&memory_sampling::start).get();
 

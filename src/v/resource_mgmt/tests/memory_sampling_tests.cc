@@ -81,7 +81,11 @@ SEASTAR_THREAD_TEST_CASE(test_low_watermark_logging) {
     const auto first_log_limit = 0.90;
     const auto second_log_limit = 0.80;
 
-    memory_sampling sampling(dummy_logger, first_log_limit, second_log_limit);
+    memory_sampling sampling(
+      dummy_logger,
+      config::mock_binding<bool>(true),
+      first_log_limit,
+      second_log_limit);
     sampling.start();
 
     std::string_view needle("Top-N alloc");

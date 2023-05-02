@@ -398,7 +398,11 @@ void application::initialize(
   std::optional<YAML::Node> schema_reg_cfg,
   std::optional<YAML::Node> schema_reg_client_cfg,
   std::optional<scheduling_groups> groups) {
-    construct_service(_memory_sampling, std::ref(_log)).get();
+    construct_service(
+      _memory_sampling, std::ref(_log), ss::sharded_parameter([]() {
+          return config::shard_local_cfg().sampled_memory_profile.bind();
+      }))
+      .get();
     _memory_sampling.invoke_on_all(&memory_sampling::start).get();
 
     // Set up the abort_on_oom value based on the associated cluster config

@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include "config/property.h"
 #include "seastarx.h"
 
 #include <seastar/core/condition-variable.hh>
@@ -85,12 +86,13 @@ public:
 
     /// Constructs the service. Logger will be used to log top stacks under high
     /// memory pressure
-    explicit memory_sampling(ss::logger& logger);
+    explicit memory_sampling(ss::logger& logger, config::binding<bool> enabled);
 
     /// Constructor as above but allows overriding high memory thresholds. Used
     /// for testing.
     explicit memory_sampling(
       ss::logger& logger,
+      config::binding<bool> enabled,
       double first_log_limit_fraction,
       double second_log_limit_fraction);
 
@@ -108,7 +110,12 @@ private:
     static memory_sampling::serialized_memory_profile
     get_sampled_memory_profile();
 
+    void on_enabled_change();
+
     ss::logger& _logger;
+
+    /// Are we currently sampling memory
+    config::binding<bool> _enabled;
 
     // When a memory reclaim from the seastar allocator happens the batch_cache
     // notifies us via below condvar. If we see a new low watermark that's and

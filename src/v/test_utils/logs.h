@@ -40,7 +40,9 @@ static inline ss::future<> persist_log_file(
 
         seastar::logger test_logger("test");
         ss::sharded<memory_sampling> memory_sampling_service;
-        memory_sampling_service.start(std::ref(test_logger)).get();
+        memory_sampling_service
+          .start(std::ref(test_logger), config::mock_binding<bool>(false))
+          .get();
 
         ss::sharded<storage::api> storage;
         storage
@@ -122,7 +124,9 @@ read_log_file(ss::sstring base_dir, model::ntp file_ntp) {
 
         seastar::logger test_logger("test");
         ss::sharded<memory_sampling> memory_sampling_service;
-        memory_sampling_service.start(std::ref(test_logger)).get();
+        memory_sampling_service
+          .start(std::ref(test_logger), config::mock_binding<bool>(false))
+          .get();
 
         ss::sharded<storage::api> storage;
         storage

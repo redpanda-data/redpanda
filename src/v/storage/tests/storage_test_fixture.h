@@ -217,7 +217,9 @@ public:
           .invoke_on_all(
             [](features::feature_table& f) { f.testing_activate_all(); })
           .get();
-        memory_sampling_service.start(std::ref(tlog)).get();
+        memory_sampling_service
+          .start(std::ref(tlog), config::mock_binding<bool>(false))
+          .get();
 
         kvstore.start().get();
     }

@@ -124,27 +124,50 @@ ss::future<> memory_sampling::start_low_available_memory_logging() {
     }
 }
 
-memory_sampling::memory_sampling(ss::logger& logger)
-  : _logger(logger)
-  , _first_log_limit_fraction(0.2)
-  , _second_log_limit_fraction(0.1) {}
+memory_sampling::memory_sampling(
+  ss::logger& logger, config::binding<bool> enabled)
+  : memory_sampling(logger, std::move(enabled), 0.2, 0.1) {}
 
 memory_sampling::memory_sampling(
   ss::logger& logger,
+  config::binding<bool> enabled,
   double first_log_limit_fraction,
   double second_log_limit_fraction)
   : _logger(logger)
+  , _enabled(std::move(enabled))
   , _first_log_limit_fraction(first_log_limit_fraction)
-  , _second_log_limit_fraction(second_log_limit_fraction) {}
+  , _second_log_limit_fraction(second_log_limit_fraction) {
+    _enabled.watch([this]() { on_enabled_change(); });
+}
 
-void memory_sampling::start() {
-    setup_additional_oom_diagnostics();
-
+void memory_sampling::on_enabled_change() {
     // We chose a sampling rate of ~3MB. From testing this has a very low
     // overhead of something like ~1%. We could still get away with something
     // smaller like 1MB and have acceptable overhead (~3%) but 3MB should be a
     // safer default for the initial rollout.
-    ss::memory::set_heap_profiling_sampling_rate(3000037);
+    const size_t sampling_rate = 3000037;
+
+    // Note no logging here as seastar already logs about this
+    if (_enabled()) {
+        if (ss::memory::get_heap_profiling_sample_rate() == sampling_rate) {
+            return;
+        }
+
+        ss::memory::set_heap_profiling_sampling_rate(sampling_rate);
+    } else {
+        if (ss::memory::get_heap_profiling_sample_rate() == 0) {
+            return;
+        }
+
+        ss::memory::set_heap_profiling_sampling_rate(0);
+    }
+}
+
+void memory_sampling::start() {
+    setup_additional_oom_diagnostics();
+
+    // start now if enabled
+    on_enabled_change();
 
     ssx::spawn_with_gate(_low_watermark_gate, [this]() {
         return start_low_available_memory_logging();

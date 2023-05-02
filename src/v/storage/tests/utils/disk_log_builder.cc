@@ -34,7 +34,9 @@ disk_log_builder::disk_log_builder(storage::log_config config)
       [this]() { return _log_config; },
       _feature_table,
       _memory_sampling_service) {
-    _memory_sampling_service.start(std::ref(_test_logger)).get();
+    _memory_sampling_service
+      .start(std::ref(_test_logger), config::mock_binding<bool>(false))
+      .get();
 }
 
 // Batch generation

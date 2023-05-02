@@ -47,7 +47,9 @@ FIXTURE_TEST(reclaim, fixture) {
 
     seastar::logger test_logger("test");
     ss::sharded<memory_sampling> memory_sampling_service;
-    memory_sampling_service.start(std::ref(test_logger)).get();
+    memory_sampling_service
+      .start(std::ref(test_logger), config::mock_binding<bool>(false))
+      .get();
 
     storage::batch_cache cache(opts, memory_sampling_service);
     storage::batch_cache_index index(cache);
