@@ -105,6 +105,14 @@ void allocated_partition::add_replica(
     _replicas.push_back(replica);
 }
 
+std::vector<model::broker_shard> allocated_partition::release_new_partition() {
+    vassert(
+      _original && _original->empty(),
+      "new partition shouldn't have previous replicas");
+    _state = nullptr;
+    return std::move(_replicas);
+}
+
 bool allocated_partition::is_original(
   const model::broker_shard& replica) const {
     if (_original) {

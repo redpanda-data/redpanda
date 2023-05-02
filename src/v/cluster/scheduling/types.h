@@ -231,6 +231,8 @@ public:
 private:
     friend class partition_allocator;
     void add_replica(model::broker_shard, allocation_state&);
+    // used to move the allocation to allocation_units
+    std::vector<model::broker_shard> release_new_partition();
 
 private:
     std::vector<model::broker_shard> _replicas;

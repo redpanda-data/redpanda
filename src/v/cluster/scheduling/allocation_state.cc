@@ -20,7 +20,9 @@ void allocation_state::rollback(
   const partition_allocation_domain domain) {
     verify_shard();
     for (auto& as : v) {
-        rollback(as.replicas, domain);
+        for (auto& bs : as.replicas) {
+            deallocate(bs, domain);
+        }
         // rollback for each assignment as the groups are distinct
         _highest_group = raft::group_id(_highest_group() - 1);
     }
