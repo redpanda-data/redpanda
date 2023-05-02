@@ -141,6 +141,15 @@ func (k *KafkaSA) Cleanup(ctx context.Context) error {
 		return nil
 	}
 
+	if exp, err := redpandav1alpha1.FinalizersExpired(k.consoleobj); err != nil {
+		k.log.Error(err, "invalid configuration for finalizers timeout")
+	} else if exp {
+		// Just delete the finalizers and forget
+		k.log.Info("finalizers timed out for console: removing SA finalizer")
+		controllerutil.RemoveFinalizer(k.consoleobj, ConsoleSAFinalizer)
+		return k.Update(ctx, k.consoleobj)
+	}
+
 	adminAPI, err := NewAdminAPI(ctx, k.Client, k.scheme, k.clusterobj, k.clusterDomain, k.adminAPI, k.log)
 	if err != nil {
 		return err
@@ -230,6 +239,15 @@ func (k *KafkaACL) Key() (nsn types.NamespacedName) {
 func (k *KafkaACL) Cleanup(ctx context.Context) error {
 	if !controllerutil.ContainsFinalizer(k.consoleobj, ConsoleACLFinalizer) {
 		return nil
+	}
+
+	if exp, err := redpandav1alpha1.FinalizersExpired(k.consoleobj); err != nil {
+		k.log.Error(err, "invalid configuration for finalizers timeout")
+	} else if exp {
+		// Just delete the finalizers and forget
+		k.log.Info("finalizers timed out for console: removing ACL finalizer")
+		controllerutil.RemoveFinalizer(k.consoleobj, ConsoleACLFinalizer)
+		return k.Update(ctx, k.consoleobj)
 	}
 
 	kadmclient, b, err := k.createAdminClient(ctx)

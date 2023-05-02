@@ -3,6 +3,7 @@ package v1alpha1
 import (
 	"context"
 	"fmt"
+	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -76,4 +77,35 @@ type IngressConfig struct {
 	Annotations map[string]string `json:"annotations,omitempty"`
 	// If present, it's appended to the subdomain to form the ingress hostname.
 	Endpoint string `json:"endpoint,omitempty"`
+}
+
+// FinalizersTimeoutAnnotation is an annotation containing an optional
+// timeout (Go format) to consider when processing finalizers.
+// After the indicated amount of time has passed from the time of deletion of
+// the custom resource, finalizers are simply removed without further actions,
+// to let the custom resource be cleaned up.
+var FinalizersTimeoutAnnotation = "operator.redpanda.com/finalizers-timeout"
+
+// FinalizersExpired indicates if finalizers are expired, which means that
+// either no "redpanda.com/finalizers-timeout" annotation is set on the resource,
+// or the amount of time indicated in the annotation has passed since the time
+// when the resource has been deleted (if it has been deleted).
+// An error is returned if the time indicated in the annotation is not parseable.
+func FinalizersExpired(o client.Object) (bool, error) {
+	v, ok := o.GetAnnotations()[FinalizersTimeoutAnnotation]
+	if !ok || v == "" {
+		// no annotation found, finalizers never expire
+		return false, nil
+	}
+	d, err := time.ParseDuration(v)
+	if err != nil {
+		return false, fmt.Errorf("could not parse timeout value %q in the %q annotation: %w", v, FinalizersTimeoutAnnotation, err)
+	}
+	dts := o.GetDeletionTimestamp()
+	if dts == nil || dts.IsZero() {
+		// object not deleted, no reference to compute expiration time
+		return false, nil
+	}
+
+	return dts.Add(d).Before(time.Now()), nil
 }
