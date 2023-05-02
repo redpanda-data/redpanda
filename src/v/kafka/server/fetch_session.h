@@ -100,7 +100,9 @@ private:
 
     static auto make_partition_iterator(io_list_t::const_iterator it) {
         return boost::iterators::make_transform_iterator(
-          it, [](const entry& e) { return e.partition; });
+          it, [](const entry& e) -> const kafka::fetch_session_partition& {
+              return e.partition;
+          });
     }
 
 public:
