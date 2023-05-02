@@ -10,14 +10,11 @@
 package config
 
 import (
-	"fmt"
-	"strings"
+	"github.com/spf13/afero"
+	"go.uber.org/zap"
 )
 
 const (
-	ModeDev  = "dev"
-	ModeProd = "prod"
-
 	DefaultKafkaPort     = 9092
 	DefaultSchemaRegPort = 8081
 	DefaultProxyPort     = 8082
@@ -29,228 +26,115 @@ const (
 	DefaultBallastFileSize = "1GiB"
 )
 
-func DevDefault() *Config {
-	return &Config{
-		fileLocation: DefaultPath,
-		Redpanda: RedpandaNodeConfig{
-			Directory: "/var/lib/redpanda/data",
-			RPCServer: SocketAddress{
-				Address: DefaultListenAddress,
-				Port:    DefaultRPCPort,
-			},
-			KafkaAPI: []NamedAuthNSocketAddress{{
-				Address: DefaultListenAddress,
-				Port:    DefaultKafkaPort,
-			}},
-			AdminAPI: []NamedSocketAddress{{
-				Address: DefaultListenAddress,
-				Port:    DefaultAdminPort,
-			}},
-			SeedServers:   []SeedServer{},
-			DeveloperMode: true,
-		},
-		Rpk: RpkNodeConfig{
-			Overprovisioned: true,
-			Tuners: RpkNodeTuners{
-				CoredumpDir: "/var/lib/redpanda/coredump",
-			},
-		},
-		// enable pandaproxy and schema_registry by default
-		Pandaproxy:     &Pandaproxy{},
-		SchemaRegistry: &SchemaRegistry{},
+// Config encapsulates a redpanda.yaml and/or an rpk.yaml. This is the
+// entrypoint that params.Config returns, after which you can get either the
+// materialized or actual configurations.
+type Config struct {
+	configFlag string // --config, for rare use cases -- see below
+
+	redpandaYaml       RedpandaYaml // processed, defaults/env/flags
+	redpandaYamlActual RedpandaYaml // unprocessed
+	redpandaYamlExists bool         // whether the redpanda.yaml file exists
+
+	rpkYaml       RpkYaml // processed, defaults/env/flags
+	rpkYamlActual RpkYaml // unprocessed
+	rpkYamlExists bool    // whether the rpk.yaml file exists
+
+	logger *zap.Logger
+}
+
+// MaterializedRedpandaYaml returns a redpanda.yaml, starting with defaults,
+// then decoding a potential file, then applying env vars and then flags.
+func (c *Config) MaterializedRedpandaYaml() *RedpandaYaml {
+	return &c.redpandaYaml
+}
+
+// ActualRedpandaYaml returns an actual redpanda.yaml if it exists, with no
+// other defaults over overrides applied.
+func (c *Config) ActualRedpandaYaml() (*RedpandaYaml, bool) {
+	return &c.redpandaYamlActual, c.redpandaYamlExists
+}
+
+// ActualRedpandaYamlOrDefaults returns an actual redpanda.yaml if it exists,
+// otherwise this returns dev defaults. This function is meant to be used
+// for writing a redpanda.yaml file, populating it with defaults if needed.
+func (c *Config) ActualRedpandaYamlOrDefaults() *RedpandaYaml {
+	if c.redpandaYamlExists {
+		return &c.redpandaYamlActual
 	}
+	redpandaYaml := DevDefault()
+	if c.configFlag != "" { // --config set but the file does not yet exist
+		redpandaYaml.fileLocation = c.configFlag
+	}
+	return redpandaYaml
 }
 
-func ProdDefault() *Config {
-	cfg := DevDefault()
-	return setProduction(cfg)
+// MaterializedRpkYaml returns an rpk.yaml, starting with defaults, then
+// decoding a potential file, then applying env vars and then flags.
+func (c *Config) MaterializedRpkYaml() *RpkYaml {
+	return &c.rpkYaml
 }
 
-// FileOrDefaults return the configuration as read from the file or the default
-// configuration if there is no file loaded.
-func (c *Config) FileOrDefaults() *Config {
-	if c.file != nil {
-		return c.file
+// MaterializedContext returns an rpk.yaml's current materialized context,
+// starting with defaults, then decoding a potential file, then applying env
+// vars and then flags. This always returns non-nil due to a guaranee from
+// Params.Load.
+func (c *Config) MaterializedContext() *RpkContext {
+	return c.rpkYaml.Context(c.rpkYaml.CurrentContext)
+}
+
+// ActualRpkYaml returns an actual rpk.yaml if it exists, with no other
+// defaults over overrides applied.
+func (c *Config) ActualRpkYaml() (*RpkYaml, bool) {
+	return &c.rpkYamlActual, c.rpkYamlExists
+}
+
+// ActualRpkYamlOrDefaults returns an actual rpk.yaml if it exists, otherwise
+// this returns a blank rpk.yaml. If this function tries to return a default
+// rpk.yaml but cannot read the user config dir, this returns an error.
+func (c *Config) ActualRpkYamlOrEmpty() (*RpkYaml, error) {
+	if c.rpkYamlExists {
+		return &c.rpkYamlActual, nil
+	}
+	rpkYaml := emptyMaterializedRpkYaml()
+	if c.configFlag != "" {
+		rpkYaml.fileLocation = c.configFlag
 	} else {
-		cfg := DevDefault()
-		// --config set but the file doesn't exist yet:
-		if c.fileLocation != "" {
-			cfg.fileLocation = c.fileLocation
+		path, err := DefaultRpkYamlPath()
+		if err != nil {
+			return nil, err
 		}
-		return cfg // no file, write the defaults
+		rpkYaml.fileLocation = path
 	}
+	return &rpkYaml, nil
 }
 
-///////////
-// MODES //
-///////////
-
-func AvailableModes() []string {
-	return []string{
-		ModeDev,
-		"development",
-		ModeProd,
-		"production",
-	}
-}
-
-func SetMode(mode string, conf *Config) (*Config, error) {
-	m, err := normalizeMode(mode)
+// LoadMaterializedRedpandaYaml is a shortcut for p.Load followed by
+// cfg.MaterializedRedpandaYaml.
+func (p *Params) LoadMaterializedRedpandaYaml(fs afero.Fs) (*RedpandaYaml, error) {
+	cfg, err := p.Load(fs)
 	if err != nil {
 		return nil, err
 	}
-	switch m {
-	case ModeDev:
-		return setDevelopment(conf), nil
+	return cfg.MaterializedRedpandaYaml(), nil
+}
 
-	case ModeProd:
-		return setProduction(conf), nil
-
-	default:
-		err := fmt.Errorf(
-			"'%s' is not a supported mode. Available modes: %s",
-			mode,
-			strings.Join(AvailableModes(), ", "),
-		)
+// LoadActualRedpandaYaml is a shortcut for p.Load followed by
+// cfg.ActualRedpandaYaml.
+func (p *Params) LoadActualRedpandaYamlOrDefaults(fs afero.Fs) (*RedpandaYaml, error) {
+	cfg, err := p.Load(fs)
+	if err != nil {
 		return nil, err
 	}
+	return cfg.ActualRedpandaYamlOrDefaults(), nil
 }
 
-func setDevelopment(conf *Config) *Config {
-	conf.Redpanda.DeveloperMode = true
-	// Defaults to setting all tuners to false
-	conf.Rpk = RpkNodeConfig{
-		TLS:                  conf.Rpk.TLS,
-		SASL:                 conf.Rpk.SASL,
-		KafkaAPI:             conf.Rpk.KafkaAPI,
-		AdminAPI:             conf.Rpk.AdminAPI,
-		AdditionalStartFlags: conf.Rpk.AdditionalStartFlags,
-		SMP:                  DevDefault().Rpk.SMP,
-		Overprovisioned:      true,
-		Tuners: RpkNodeTuners{
-			CoredumpDir:     conf.Rpk.Tuners.CoredumpDir,
-			BallastFilePath: conf.Rpk.Tuners.BallastFilePath,
-			BallastFileSize: conf.Rpk.Tuners.BallastFileSize,
-		},
+// LoadMaterializedContext is a shortcut for p.Load followed by
+// cfg.MaterializedContext.
+func (p *Params) LoadMaterializedContext(fs afero.Fs) (*RpkContext, error) {
+	cfg, err := p.Load(fs)
+	if err != nil {
+		return nil, err
 	}
-	return conf
-}
-
-func setProduction(conf *Config) *Config {
-	conf.Redpanda.DeveloperMode = false
-	conf.Rpk.Overprovisioned = false
-	conf.Rpk.Tuners.TuneNetwork = true
-	conf.Rpk.Tuners.TuneDiskScheduler = true
-	conf.Rpk.Tuners.TuneNomerges = true
-	conf.Rpk.Tuners.TuneDiskIrq = true
-	conf.Rpk.Tuners.TuneFstrim = false
-	conf.Rpk.Tuners.TuneCPU = true
-	conf.Rpk.Tuners.TuneAioEvents = true
-	conf.Rpk.Tuners.TuneClocksource = true
-	conf.Rpk.Tuners.TuneSwappiness = true
-	conf.Rpk.Tuners.TuneDiskWriteCache = true
-	conf.Rpk.Tuners.TuneBallastFile = true
-	return conf
-}
-
-func normalizeMode(mode string) (string, error) {
-	switch mode {
-	case "":
-		fallthrough
-	case "development", ModeDev:
-		return ModeDev, nil
-
-	case "production", ModeProd:
-		return ModeProd, nil
-
-	default:
-		err := fmt.Errorf(
-			"'%s' is not a supported mode. Available modes: %s",
-			mode,
-			strings.Join(AvailableModes(), ", "),
-		)
-		return "", err
-	}
-}
-
-////////////////
-// VALIDATION // -- this is only used in redpanda_checkers, and could be stronger -- this is essentially just a config validation
-////////////////
-
-// Check checks if the redpanda and rpk configuration is valid before running
-// the tuners. See: redpanda_checkers.
-func (c *Config) Check() (bool, []error) {
-	errs := checkRedpandaConfig(c)
-	errs = append(
-		errs,
-		checkRpkNodeConfig(c)...,
-	)
-	ok := len(errs) == 0
-	return ok, errs
-}
-
-func checkRedpandaConfig(cfg *Config) []error {
-	var errs []error
-	rp := cfg.Redpanda
-	// top level check
-	if rp.Directory == "" {
-		errs = append(errs, fmt.Errorf("redpanda.data_directory can't be empty"))
-	}
-	if rp.ID != nil && *rp.ID < 0 {
-		errs = append(errs, fmt.Errorf("redpanda.node_id can't be a negative integer"))
-	}
-
-	// rpc server
-	if rp.RPCServer == (SocketAddress{}) {
-		errs = append(errs, fmt.Errorf("redpanda.rpc_server missing"))
-	} else {
-		saErrs := checkSocketAddress(rp.RPCServer, "redpanda.rpc_server")
-		if len(saErrs) > 0 {
-			errs = append(errs, saErrs...)
-		}
-	}
-
-	// kafka api
-	if len(rp.KafkaAPI) == 0 {
-		errs = append(errs, fmt.Errorf("redpanda.kafka_api missing"))
-	} else {
-		for i, addr := range rp.KafkaAPI {
-			configPath := fmt.Sprintf("redpanda.kafka_api[%d]", i)
-			saErrs := checkSocketAddress(SocketAddress{addr.Address, addr.Port}, configPath)
-			if len(saErrs) > 0 {
-				errs = append(errs, saErrs...)
-			}
-		}
-	}
-
-	// seed servers
-	if len(rp.SeedServers) > 0 {
-		for i, seed := range rp.SeedServers {
-			configPath := fmt.Sprintf("redpanda.seed_servers[%d].host", i)
-			saErrs := checkSocketAddress(seed.Host, configPath)
-			if len(saErrs) > 0 {
-				errs = append(errs, saErrs...)
-			}
-		}
-	}
-	return errs
-}
-
-func checkRpkNodeConfig(cfg *Config) []error {
-	var errs []error
-	if cfg.Rpk.Tuners.TuneCoredump && cfg.Rpk.Tuners.CoredumpDir == "" {
-		errs = append(errs, fmt.Errorf("if rpk.tune_coredump is set to true, rpk.coredump_dir can't be empty"))
-	}
-	return errs
-}
-
-func checkSocketAddress(s SocketAddress, configPath string) []error {
-	var errs []error
-	if s.Port == 0 {
-		errs = append(errs, fmt.Errorf("%s.port can't be 0", configPath))
-	}
-	if s.Address == "" {
-		errs = append(errs, fmt.Errorf("%s.address can't be empty", configPath))
-	}
-	return errs
+	return cfg.MaterializedContext(), nil
 }

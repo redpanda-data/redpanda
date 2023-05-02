@@ -295,7 +295,7 @@ func (ss *seedServers) UnmarshalYAML(n *yaml.Node) error {
 
 // Custom unmarshallers for all the config related types.
 
-func (c *Config) UnmarshalYAML(n *yaml.Node) error {
+func (y *RedpandaYaml) UnmarshalYAML(n *yaml.Node) error {
 	var internal struct {
 		Redpanda             RedpandaNodeConfig `yaml:"redpanda"`
 		Rpk                  RpkNodeConfig      `yaml:"rpk"`
@@ -309,13 +309,13 @@ func (c *Config) UnmarshalYAML(n *yaml.Node) error {
 	if err := n.Decode(&internal); err != nil {
 		return err
 	}
-	c.Redpanda = internal.Redpanda
-	c.Rpk = internal.Rpk
-	c.Pandaproxy = internal.Pandaproxy
-	c.PandaproxyClient = internal.PandaproxyClient
-	c.SchemaRegistry = internal.SchemaRegistry
-	c.SchemaRegistryClient = internal.SchemaRegistryClient
-	c.Other = internal.Other
+	y.Redpanda = internal.Redpanda
+	y.Rpk = internal.Rpk
+	y.Pandaproxy = internal.Pandaproxy
+	y.PandaproxyClient = internal.PandaproxyClient
+	y.SchemaRegistry = internal.SchemaRegistry
+	y.SchemaRegistryClient = internal.SchemaRegistryClient
+	y.Other = internal.Other
 
 	return nil
 }

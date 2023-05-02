@@ -22,7 +22,6 @@ import (
 	"sync"
 	"time"
 
-	rpkos "github.com/redpanda-data/redpanda/src/go/rpk/pkg/os"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 	"golang.org/x/term"
@@ -30,6 +29,8 @@ import (
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
+
+	rpknet "github.com/redpanda-data/redpanda/src/go/rpk/pkg/net"
 )
 
 const (
@@ -87,19 +88,6 @@ const (
 	xAdminClientCert = "admin.tls.client_cert_path"
 	xAdminClientKey  = "admin.tls.client_key_path"
 )
-
-// DefaultPath is where redpanda's configuration is located by default.
-const DefaultPath = "/etc/redpanda/redpanda.yaml"
-
-// DefaultRpkYamlPath returns the OS equivalent of ~/.config/rpk/rpk.yaml,
-// if $HOME is defined. The returned path is an absolute path.
-func DefaultRpkYamlPath() (string, bool) {
-	configDir, err := os.UserConfigDir()
-	if err != nil {
-		return "", false
-	}
-	return filepath.Join(configDir, "rpk", "rpk.yaml"), true
-}
 
 // Params contains rpk-wide configuration parameters.
 type Params struct {
@@ -332,20 +320,36 @@ func (p *Params) backcompatFlagsToOverrides() {
 //   - Processes env and flag overrides.
 //   - Sets unset default values.
 func (p *Params) Load(fs afero.Fs) (*Config, error) {
-	c := DevDefault()
+	c := &Config{
+		configFlag:   p.ConfigFlag,
+		redpandaYaml: *DevDefault(),
+		rpkYaml:      defaultMaterializedRpkYaml(),
+		logger:       p.Logger(),
+	}
+	c.rpkYaml.Contexts[0].KafkaAPI = c.redpandaYaml.Rpk.KafkaAPI
+	c.rpkYaml.Contexts[0].AdminAPI = c.redpandaYaml.Rpk.AdminAPI
 
-	if err := p.readConfig(fs, c); err != nil {
+	if err := p.readRpkConfig(fs, c); err != nil {
+		return nil, err
+	}
+	if err := p.readRedpandaConfig(fs, c); err != nil {
 		return nil, err
 	}
 
-	c.mergeRpkIntoRedpanda()
-	c.backcompat()
+	c.redpandaYaml.backcompat()
+	c.mergeRpkIntoRedpanda(true)     // merge actual rpk.yaml KafkaAPI,AdminAPI,Tuners into redpanda.yaml rpk section
+	c.addUnsetRedpandaDefaults(true) // merge from actual redpanda.yaml redpanda section to rpk section
+	c.ensureRpkContext()             // ensure materialized rpk.yaml has a loaded context
+	c.mergeRedpandaIntoRpk()         // merge redpanda.yaml rpk section back into rpk.yaml KafkaAPI,AdminAPI,Tuners (picks up redpanda.yaml extras sections were empty)
 	p.backcompatFlagsToOverrides()
-	if err := p.processOverrides(c); err != nil {
+	if err := p.processOverrides(c); err != nil { // override rpk.yaml context from env&flags
 		return nil, err
 	}
-	c.addUnsetDefaults()
-
+	c.mergeRpkIntoRedpanda(false)     // merge materialized rpk.yaml into redpanda.yaml rpk section (picks up env&flags)
+	c.addUnsetRedpandaDefaults(false) // merge from materialized redpanda.yaml redpanda section to rpk section (picks up original redpanda.yaml defaults)
+	c.mergeRedpandaIntoRpk()          // merge from redpanda.yaml rpk section back to rpk.yaml, picks up final redpanda.yaml defaults
+	c.fixSchemePorts()                // strip any scheme, default any missing ports
+	c.addConfigToContexts()
 	return c, nil
 }
 
@@ -447,62 +451,6 @@ func (p *Params) Logger() *zap.Logger {
 	return p.logger
 }
 
-// isTheSameAsRawFile checks if the config object content is the same as the
-// one loaded. The function returns a boolean indicating if the two config
-// objects are equal.
-func (c *Config) isTheSameAsRawFile() bool {
-	var init, final *Config
-	if err := yaml.Unmarshal(c.RawFile(), &init); err != nil {
-		return false
-	}
-
-	// We marshal to later unmarshal the passed cfg to avoid comparing a
-	// configuration with loaded unexported values such as
-	// (file, fileLocation or rawFile)
-	finalRaw, err := yaml.Marshal(c)
-	if err != nil {
-		return false
-	}
-
-	if err := yaml.Unmarshal(finalRaw, &final); err != nil {
-		return false
-	}
-
-	// If we have a file with an older version of the SeedServer, we should
-	// write the file to disk even if the contents are the same. This is
-	// necessary because Redpanda no longer parses older SeedServer versions.
-	//
-	// For more information, see github.com/redpanda-data/redpanda/issues/8915.
-	if init != nil {
-		for _, s := range init.Redpanda.SeedServers {
-			if s.untabbed {
-				return false
-			}
-		}
-	}
-
-	return reflect.DeepEqual(init, final)
-}
-
-// Write writes loaded configuration parameters to redpanda.yaml.
-func (c *Config) Write(fs afero.Fs) (rerr error) {
-	// We return early if the config is the same as the one loaded in the first
-	// place and avoid writing the file.
-	if c.isTheSameAsRawFile() {
-		return nil
-	}
-	location := c.fileLocation
-	if location == "" {
-		location = DefaultPath
-	}
-	b, err := yaml.Marshal(c)
-	if err != nil {
-		return fmt.Errorf("marshal error in loaded config, err: %s", err)
-	}
-
-	return rpkos.ReplaceFile(fs, location, b, 0o644)
-}
-
 func readFile(fs afero.Fs, path string) (string, []byte, error) {
 	abs, err := filepath.Abs(path)
 	if err != nil {
@@ -515,63 +463,55 @@ func readFile(fs afero.Fs, path string) (string, []byte, error) {
 	return abs, file, err
 }
 
-// readConfig reads both the rpk.yaml and redpanda.yaml files, filling in
-// c.fileLocation and c.rpkFileLocation as appropriate.
-func (p *Params) readConfig(fs afero.Fs, c *Config) error {
-	if err := p.readRpkConfig(fs, c); err != nil {
-		return err
-	}
-	if err := p.readRedpandaConfig(fs, c); err != nil {
-		return err
-	}
-	return nil
-}
-
 func (p *Params) readRpkConfig(fs afero.Fs, c *Config) error {
-	def, ok := DefaultRpkYamlPath()
+	def, err := DefaultRpkYamlPath()
 	path := def
 	if p.ConfigFlag != "" {
 		path = p.ConfigFlag
-	} else if !ok {
-		return errors.New("unable to load the user config directory -- is $HOME unset?")
+	} else if err != nil {
+		return err
 	}
 	abs, file, err := readFile(fs, path)
 	if err != nil {
 		if !errors.Is(err, afero.ErrFileNotFound) {
 			return err
 		}
-		// If the file does not exist, either the default path does not
-		// yet exist OR the --config path does not exist. For the
-		// latter, we have the config flag as both fileLocation and
-		// rpkFileLocation. The command that is running will create
-		// either one of these files, and then re-running the command
-		// will load it properly.
-		c.rpkFileLocation = abs
+		// The file does not exist. We might create it. The user could
+		// be trying to create either an rpk.yaml or a redpanda.yaml.
+		// All rpk.yaml creation commands are under rpk {auth,context},
+		// whereas there as only three redpanda.yaml creation commands.
+		// Since they do not overlap, it is ok to save this config flag
+		// as the file location for both of these.
+		c.rpkYaml.fileLocation = abs
+		c.rpkYamlActual.fileLocation = abs
 		return nil
 	}
-	if err := yaml.Unmarshal(file, &c.rpkFile); err != nil {
+	before := c.rpkYaml
+	if err := yaml.Unmarshal(file, &c.rpkYaml); err != nil {
 		return fmt.Errorf("unable to yaml decode %s: %v", path, err)
 	}
-	if c.rpkFile.Version != 1 {
-		c.rpkFile = nil
-		c.rpkFileLocation = def // this config is not an rpk.yaml; use our default path
+	if c.rpkYaml.Version != 1 {
+		c.rpkYaml = before // this config is not an rpk.yaml; preserve our defaults
 		return nil
 	}
-	c.rpkFileLocation = abs
-	c.rpkRawFile = file
+	yaml.Unmarshal(file, &c.rpkYamlActual)
+
+	c.rpkYamlExists = true
+	c.rpkYaml.fileLocation = abs
+	c.rpkYamlActual.fileLocation = abs
+	c.rpkYaml.fileRaw = file
+	c.rpkYamlActual.fileRaw = file
 	return nil
 }
 
 func (p *Params) readRedpandaConfig(fs afero.Fs, c *Config) error {
 	paths := []string{p.ConfigFlag}
-	def := p.ConfigFlag
 	if p.ConfigFlag == "" {
 		paths = paths[:0]
 		if cd, _ := os.Getwd(); cd != "" {
 			paths = append(paths, filepath.Join(cd, "redpanda.yaml"))
 		}
-		paths = append(paths, filepath.FromSlash(DefaultPath))
-		def = paths[len(paths)-1]
+		paths = append(paths, filepath.FromSlash(DefaultRedpandaYamlPath))
 	}
 	for _, path := range paths {
 		abs, file, err := readFile(fs, path)
@@ -581,24 +521,28 @@ func (p *Params) readRedpandaConfig(fs afero.Fs, c *Config) error {
 			}
 		}
 
-		if err := yaml.Unmarshal(file, c); err != nil {
+		if err := yaml.Unmarshal(file, &c.redpandaYaml); err != nil {
 			return fmt.Errorf("unable to yaml decode %s: %v", path, err)
 		}
-		yaml.Unmarshal(file, &c.file) // cannot error since previous did not
-		c.fileLocation = abs
-		c.file.fileLocation = abs
-		c.rawFile = file
-		c.file.rawFile = file
+		yaml.Unmarshal(file, &c.redpandaYamlActual)
+
+		c.redpandaYamlExists = true
+		c.redpandaYaml.fileLocation = abs
+		c.redpandaYamlActual.fileLocation = abs
+		c.redpandaYaml.fileRaw = file
+		c.redpandaYamlActual.fileRaw = file
 		return nil
 	}
-	c.fileLocation = def // file not found in any searched location
+	location := paths[len(paths)-1]
+	c.redpandaYaml.fileLocation = location
+	c.redpandaYamlActual.fileLocation = location
 	return nil
 }
 
 // Before we process overrides, we process any backwards compatibility from the
 // loaded file.
-func (c *Config) backcompat() {
-	r := &c.Rpk
+func (y *RedpandaYaml) backcompat() {
+	r := &y.Rpk
 	if r.KafkaAPI.TLS == nil {
 		r.KafkaAPI.TLS = r.TLS
 	}
@@ -610,42 +554,64 @@ func (c *Config) backcompat() {
 	}
 }
 
-func (c *Config) mergeRpkIntoRedpanda() {
-	rnew := c.rpkFile
-	if rnew == nil {
-		return
+// We merge rpk.yaml files into our materialized redpanda.yaml rpk section,
+// only if the rpk section contains relevant bits of information.
+//
+// We start with the actual file itself: if the file is populated, we use it.
+// Later, after doing a bunch of default setting to the materialized rpk.yaml,
+// we call this again to migrate any final new additions.
+func (c *Config) mergeRpkIntoRedpanda(actual bool) {
+	src := &c.rpkYaml
+	if actual {
+		src = &c.rpkYamlActual
 	}
-	rold := &c.Rpk
+	dst := &c.redpandaYaml.Rpk
 
-	currentCx := rnew.CurrentContext
-	if currentCx == "" {
-		currentCx = "default"
+	if src.Tuners != (RpkNodeTuners{}) {
+		dst.Tuners = src.Tuners
 	}
-	var cx *RpkContext
-	for _, c := range rnew.Contexts {
-		if c.Name == currentCx {
-			cx = &c
-			break
-		}
-	}
+
+	cx := src.Context(src.CurrentContext)
 	if cx == nil {
 		return
 	}
-	if k := cx.KafkaAPI; k != nil {
-		rold.KafkaAPI = RpkKafkaAPI{
-			Brokers: k.Brokers,
-			TLS:     k.TLS,
-			SASL:    k.SASL,
-		}
+	if !reflect.DeepEqual(cx.KafkaAPI, RpkKafkaAPI{}) {
+		dst.KafkaAPI = cx.KafkaAPI
 	}
-	if a := cx.AdminAPI; a != nil {
-		rold.AdminAPI = RpkAdminAPI{
-			Addresses: a.Addresses,
-			TLS:       a.TLS,
-		}
+	if !reflect.DeepEqual(cx.AdminAPI, RpkAdminAPI{}) {
+		dst.AdminAPI = cx.AdminAPI
 	}
-	if t := rnew.Tuners; t != nil {
-		rold.Tuners = rnew.Tuners.asNodeTuners()
+}
+
+// This function ensures a context exists in the materialized rpk.yaml.
+func (c *Config) ensureRpkContext() {
+	dst := &c.rpkYaml
+	cx := dst.Context(dst.CurrentContext)
+	if cx != nil {
+		return
+	}
+	dst.Contexts = append(defaultMaterializedRpkYaml().Contexts, dst.Contexts...)
+	dst.CurrentContext = dst.Contexts[0].Name
+}
+
+// We merge redpanda.yaml's rpk section back into rpk.yaml's context.  This
+// picks up any extras from addUnsetRedpandaDefaults that were not set in the
+// rpk file. We call this after ensureRpkContext, so we do not need to
+// nil-check the context.
+func (c *Config) mergeRedpandaIntoRpk() {
+	src := &c.redpandaYaml.Rpk
+	dst := &c.rpkYaml
+
+	if src.Tuners != (RpkNodeTuners{}) {
+		dst.Tuners = src.Tuners
+	}
+
+	cx := dst.Context(dst.CurrentContext)
+	if reflect.DeepEqual(cx.KafkaAPI, RpkKafkaAPI{}) {
+		cx.KafkaAPI = src.KafkaAPI
+	}
+	if reflect.DeepEqual(cx.AdminAPI, RpkAdminAPI{}) {
+		cx.AdminAPI = src.AdminAPI
 	}
 }
 
@@ -665,9 +631,10 @@ func splitCommaIntoStrings(in string, dst *[]string) error {
 // Process overrides processes env and flag overrides into a config file (so
 // that we result in our priority order: flag, env, file).
 func (p *Params) processOverrides(c *Config) error {
-	r := &c.Rpk
-	k := &r.KafkaAPI
-	a := &r.AdminAPI
+	r := &c.rpkYaml
+	cx := r.Context(r.CurrentContext) // must exist by this point
+	k := &cx.KafkaAPI
+	a := &cx.AdminAPI
 
 	// We have three "make" functions that initialize pointer values if
 	// necessary.
@@ -786,42 +753,101 @@ func (p *Params) processOverrides(c *Config) error {
 
 // As a final step in initializing a config, we add a few defaults to some
 // specific unset values.
-func (c *Config) addUnsetDefaults() {
+func (c *Config) addUnsetRedpandaDefaults(actual bool) {
+	src := c.redpandaYaml
+	if actual {
+		src = c.redpandaYamlActual
+	}
+	dst := &c.redpandaYaml
 	defaultFromRedpanda(
-		namedAuthnToNamed(c.Redpanda.KafkaAPI),
-		c.Redpanda.KafkaAPITLS,
-		&c.Rpk.KafkaAPI.Brokers,
+		namedAuthnToNamed(src.Redpanda.KafkaAPI),
+		src.Redpanda.KafkaAPITLS,
+		&dst.Rpk.KafkaAPI.Brokers,
 	)
 	defaultFromRedpanda(
-		c.Redpanda.AdminAPI,
-		c.Redpanda.AdminAPITLS,
-		&c.Rpk.AdminAPI.Addresses,
+		src.Redpanda.AdminAPI,
+		src.Redpanda.AdminAPITLS,
+		&dst.Rpk.AdminAPI.Addresses,
 	)
 
-	if len(c.Rpk.KafkaAPI.Brokers) == 0 && len(c.Rpk.AdminAPI.Addresses) > 0 {
-		host, _, err := net.SplitHostPort(c.Rpk.AdminAPI.Addresses[0])
+	if len(dst.Rpk.KafkaAPI.Brokers) == 0 && len(dst.Rpk.AdminAPI.Addresses) > 0 {
+		_, host, _, err := rpknet.SplitSchemeHostPort(dst.Rpk.AdminAPI.Addresses[0])
 		if err == nil {
 			host = net.JoinHostPort(host, strconv.Itoa(DefaultKafkaPort))
-			c.Rpk.KafkaAPI.Brokers = []string{host}
-			c.Rpk.KafkaAPI.TLS = c.Rpk.AdminAPI.TLS
+			dst.Rpk.KafkaAPI.Brokers = []string{host}
+			dst.Rpk.KafkaAPI.TLS = dst.Rpk.AdminAPI.TLS
 		}
 	}
 
-	if len(c.Rpk.AdminAPI.Addresses) == 0 && len(c.Rpk.KafkaAPI.Brokers) > 0 {
-		host, _, err := net.SplitHostPort(c.Rpk.KafkaAPI.Brokers[0])
+	if len(dst.Rpk.AdminAPI.Addresses) == 0 && len(dst.Rpk.KafkaAPI.Brokers) > 0 {
+		_, host, _, err := rpknet.SplitSchemeHostPort(dst.Rpk.KafkaAPI.Brokers[0])
 		if err == nil {
 			host = net.JoinHostPort(host, strconv.Itoa(DefaultAdminPort))
-			c.Rpk.AdminAPI.Addresses = []string{host}
-			c.Rpk.AdminAPI.TLS = c.Rpk.KafkaAPI.TLS
+			dst.Rpk.AdminAPI.Addresses = []string{host}
+			dst.Rpk.AdminAPI.TLS = dst.Rpk.KafkaAPI.TLS
 		}
 	}
 
-	if len(c.Rpk.KafkaAPI.Brokers) == 0 {
-		c.Rpk.KafkaAPI.Brokers = []string{net.JoinHostPort("127.0.0.1", strconv.Itoa(DefaultKafkaPort))}
+	if len(dst.Rpk.KafkaAPI.Brokers) == 0 {
+		dst.Rpk.KafkaAPI.Brokers = []string{net.JoinHostPort("127.0.0.1", strconv.Itoa(DefaultKafkaPort))}
 	}
 
-	if len(c.Rpk.AdminAPI.Addresses) == 0 {
-		c.Rpk.AdminAPI.Addresses = []string{net.JoinHostPort("127.0.0.1", strconv.Itoa(DefaultAdminPort))}
+	if len(dst.Rpk.AdminAPI.Addresses) == 0 {
+		dst.Rpk.AdminAPI.Addresses = []string{net.JoinHostPort("127.0.0.1", strconv.Itoa(DefaultAdminPort))}
+	}
+}
+
+func (c *Config) fixSchemePorts() error {
+	for i, k := range c.redpandaYaml.Rpk.KafkaAPI.Brokers {
+		_, host, port, err := rpknet.SplitSchemeHostPort(k)
+		if err != nil {
+			return fmt.Errorf("unable to fix broker address %v: %w", k, err)
+		}
+		if port == "" {
+			port = strconv.Itoa(DefaultKafkaPort)
+		}
+		c.redpandaYaml.Rpk.KafkaAPI.Brokers[i] = net.JoinHostPort(host, port)
+	}
+	for i, a := range c.redpandaYaml.Rpk.AdminAPI.Addresses {
+		_, host, port, err := rpknet.SplitSchemeHostPort(a)
+		if err != nil {
+			return fmt.Errorf("unable to fix admin address %v: %w", a, err)
+		}
+		if port == "" {
+			port = strconv.Itoa(DefaultKafkaPort)
+		}
+		c.redpandaYaml.Rpk.AdminAPI.Addresses[i] = net.JoinHostPort(host, port)
+	}
+	cx := c.rpkYaml.Context(c.rpkYaml.CurrentContext)
+	for i, k := range cx.KafkaAPI.Brokers {
+		_, host, port, err := rpknet.SplitSchemeHostPort(k)
+		if err != nil {
+			return fmt.Errorf("unable to fix broker address %v: %w", k, err)
+		}
+		if port == "" {
+			port = strconv.Itoa(DefaultKafkaPort)
+		}
+		cx.KafkaAPI.Brokers[i] = net.JoinHostPort(host, port)
+	}
+	for i, a := range cx.AdminAPI.Addresses {
+		_, host, port, err := rpknet.SplitSchemeHostPort(a)
+		if err != nil {
+			return fmt.Errorf("unable to fix admin address %v: %w", a, err)
+		}
+		if port == "" {
+			port = strconv.Itoa(DefaultAdminPort)
+		}
+		cx.AdminAPI.Addresses[i] = net.JoinHostPort(host, port)
+	}
+	return nil
+}
+
+func (c *Config) addConfigToContexts() {
+	for i := range c.rpkYaml.Contexts {
+		c.rpkYaml.Contexts[i].c = c
+	}
+	for i := range c.rpkYamlActual.Contexts {
+		c.rpkYamlActual.Contexts[i].c = c
 	}
 }
 

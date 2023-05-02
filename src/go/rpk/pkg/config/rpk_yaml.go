@@ -9,22 +9,71 @@
 
 package config
 
+import (
+	"errors"
+	"fmt"
+	"os"
+	"path/filepath"
+	"reflect"
+
+	"github.com/spf13/afero"
+	"go.uber.org/zap"
+	"gopkg.in/yaml.v3"
+
+	rpkos "github.com/redpanda-data/redpanda/src/go/rpk/pkg/os"
+)
+
+// DefaultRpkYamlPath returns the OS equivalent of ~/.config/rpk/rpk.yaml, if
+// $HOME is defined. The returned path is an absolute path.
+func DefaultRpkYamlPath() (string, error) {
+	configDir, err := os.UserConfigDir()
+	if err != nil {
+		return "", errors.New("unable to load the user config directory -- is $HOME unset?")
+	}
+	return filepath.Join(configDir, "rpk", "rpk.yaml"), nil
+}
+
+func defaultMaterializedRpkYaml() RpkYaml {
+	return RpkYaml{
+		CurrentContext: "default",
+		Contexts: []RpkContext{{
+			Name:        "default",
+			Description: "Default rpk context",
+		}},
+		Version: 1,
+	}
+}
+
+func emptyMaterializedRpkYaml() RpkYaml {
+	return RpkYaml{
+		Version: 1,
+	}
+}
+
 type (
 	// RpkYaml contains the configuration for ~/.config/rpk/config.yml, the
 	// next generation of rpk's configuration file.
 	RpkYaml struct {
+		fileLocation string
+		fileRaw      []byte
+
 		Version        int            `yaml:"version"`
-		CurrentContext string         `yaml:"current_context,omitempty"`
+		CurrentContext string         `yaml:"current_context"`
 		Contexts       []RpkContext   `yaml:"contexts,omitempty"`
 		CloudAuths     []RpkCloudAuth `yaml:"cloud_auth,omitempty"`
-		Tuners         *RpkTuners     `yaml:"tuners,omitempty"`
+		Tuners         RpkNodeTuners  `yaml:"tuners,omitempty"`
 	}
 
 	RpkContext struct {
 		Name         string           `yaml:"name,omitempty"`
+		Description  string           `yaml:"description,omitempty"`
 		CloudCluster *RpkCloudCluster `yaml:"cloud_cluster,omitempty"`
-		KafkaAPI     *RpkKafkaAPI     `yaml:"kafka_api,omitempty"`
-		AdminAPI     *RpkAdminAPI     `yaml:"admin_api,omitempty"`
+		KafkaAPI     RpkKafkaAPI      `yaml:"kafka_api,omitempty"`
+		AdminAPI     RpkAdminAPI      `yaml:"admin_api,omitempty"`
+
+		// We stash the config struct itself so that we can provide
+		// the Logger.
+		c *Config
 	}
 
 	RpkCloudCluster struct {
@@ -41,49 +90,72 @@ type (
 		OrganizationID string `yaml:"organization,omitempty"`
 		Name           string `yaml:"name,omitempty"`
 	}
-
-	RpkTuners struct {
-		Network              bool   `yaml:"network,omitempty"`
-		DiskScheduler        bool   `yaml:"disk_scheduler,omitempty"`
-		Nomerges             bool   `yaml:"disk_nomerges,omitempty"`
-		DiskWriteCache       bool   `yaml:"disk_write_cache,omitempty"`
-		DiskIrq              bool   `yaml:"disk_irq,omitempty"`
-		Fstrim               bool   `yaml:"fstrim,omitempty"`
-		CPU                  bool   `yaml:"cpu,omitempty"`
-		AioEvents            bool   `yaml:"aio_events,omitempty"`
-		Clocksource          bool   `yaml:"clocksource,omitempty"`
-		Swappiness           bool   `yaml:"swappiness,omitempty"`
-		TransparentHugePages bool   `yaml:"transparent_hugepages,omitempty"`
-		Coredump             bool   `yaml:"coredump,omitempty"`
-		CoredumpDir          string `yaml:"coredump_dir,omitempty"`
-		BallastFile          bool   `yaml:"ballast_file,omitempty"`
-		BallastFilePath      string `yaml:"ballast_file_path,omitempty"`
-		BallastFileSize      string `yaml:"ballast_file_size,omitempty"`
-		WellKnownIo          string `yaml:"well_known_io,omitempty"`
-	}
 )
 
-func (t *RpkTuners) asNodeTuners() RpkNodeTuners {
-	if t == nil {
-		return RpkNodeTuners{}
+// ContextReturns the given context, or nil if it doesn't exist.
+func (y *RpkYaml) Context(name string) *RpkContext {
+	for i, cx := range y.Contexts {
+		if cx.Name == name {
+			return &y.Contexts[i]
+		}
 	}
-	return RpkNodeTuners{
-		TuneNetwork:              t.Network,
-		TuneDiskScheduler:        t.DiskScheduler,
-		TuneNomerges:             t.Nomerges,
-		TuneDiskWriteCache:       t.DiskWriteCache,
-		TuneDiskIrq:              t.DiskIrq,
-		TuneFstrim:               t.Fstrim,
-		TuneCPU:                  t.CPU,
-		TuneAioEvents:            t.AioEvents,
-		TuneClocksource:          t.Clocksource,
-		TuneSwappiness:           t.Swappiness,
-		TuneTransparentHugePages: t.TransparentHugePages,
-		TuneCoredump:             t.Coredump,
-		CoredumpDir:              t.CoredumpDir,
-		TuneBallastFile:          t.BallastFile,
-		BallastFilePath:          t.BallastFilePath,
-		BallastFileSize:          t.BallastFileSize,
-		WellKnownIo:              t.WellKnownIo,
+	return nil
+}
+
+///////////
+// FUNCS //
+///////////
+
+// Logger returns the logger for the original configuration, or a nop logger if
+// it was invalid.
+func (cx *RpkContext) Logger() *zap.Logger {
+	return cx.c.logger
+}
+
+// SugarLogger returns Logger().Sugar().
+func (cx *RpkContext) SugarLogger() *zap.SugaredLogger {
+	return cx.c.logger.Sugar()
+}
+
+// Returns if the raw config is the same as the one in memory.
+func (y *RpkYaml) isTheSameAsRawFile() bool {
+	var init, final *RpkYaml
+	if err := yaml.Unmarshal(y.fileRaw, &init); err != nil {
+		return false
 	}
+	// Avoid DeepEqual comparisons on non-exported fields.
+	finalRaw, err := yaml.Marshal(y)
+	if err != nil {
+		return false
+	}
+	if err := yaml.Unmarshal(finalRaw, &final); err != nil {
+		return false
+	}
+	return reflect.DeepEqual(init, final)
+}
+
+// Write writes the configuration at the previously loaded path, or the default
+// path.
+func (y *RpkYaml) Write(fs afero.Fs) error {
+	if y.isTheSameAsRawFile() {
+		return nil
+	}
+	location := y.fileLocation
+	if location == "" {
+		def, err := DefaultRpkYamlPath()
+		if err != nil {
+			return err
+		}
+		location = def
+	}
+	return y.WriteAt(fs, location)
+}
+
+// WriteAt writes the configuration to the given path.
+func (y *RpkYaml) WriteAt(fs afero.Fs, path string) error {
+	b, err := yaml.Marshal(y)
+	if err != nil {
+		return fmt.Errorf("marshal error in loaded config, err: %s", err)
+	}
+	return rpkos.ReplaceFile(fs, path, b, 0o644)
 }

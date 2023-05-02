@@ -853,7 +853,7 @@ func TestConfig_UnmarshalYAML(t *testing.T) {
 	for _, test := range []struct {
 		name   string
 		data   string
-		exp    *Config
+		exp    *RedpandaYaml
 		expErr bool
 	}{
 		{
@@ -979,7 +979,7 @@ rpk:
   tune_aio_events: false
   tune_clocksource: true
 `,
-			exp: &Config{
+			exp: &RedpandaYaml{
 				Redpanda: RedpandaNodeConfig{
 					Directory:      "var/lib/redpanda/data",
 					ID:             intPtr(1),
@@ -1130,7 +1130,7 @@ redpanda:
     port: 33145
   rack: "rack-id"
 `,
-			exp: &Config{
+			exp: &RedpandaYaml{
 				Redpanda: RedpandaNodeConfig{
 					Directory:      "var/lib/redpanda/data",
 					ID:             nil,
@@ -1301,7 +1301,7 @@ rpk:
   tune_aio_events: false
   tune_clocksource: 1
 `,
-			exp: &Config{
+			exp: &RedpandaYaml{
 				Redpanda: RedpandaNodeConfig{
 					Directory:      "var/lib/redpanda/data",
 					ID:             intPtr(1),
@@ -1407,7 +1407,7 @@ rpk:
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			var ts struct {
-				Config *Config `yaml:",inline"`
+				RedpandaYaml *RedpandaYaml `yaml:",inline"`
 			}
 			err := yaml.Unmarshal([]byte(test.data), &ts)
 
@@ -1420,7 +1420,7 @@ rpk:
 			if test.expErr {
 				return
 			}
-			require.Equal(t, test.exp, ts.Config)
+			require.Equal(t, test.exp, ts.RedpandaYaml)
 		})
 	}
 }

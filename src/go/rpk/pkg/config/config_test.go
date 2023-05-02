@@ -17,14 +17,14 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func getValidConfig() *Config {
-	conf := DevDefault()
-	conf.Redpanda.SeedServers = []SeedServer{
+func testRedpandaYaml() *RedpandaYaml {
+	y := DevDefault()
+	y.Redpanda.SeedServers = []SeedServer{
 		{Host: SocketAddress{"127.0.0.1", 33145}},
 		{Host: SocketAddress{"127.0.0.1", 33146}},
 	}
-	conf.Redpanda.DeveloperMode = false
-	conf.Rpk = RpkNodeConfig{
+	y.Redpanda.DeveloperMode = false
+	y.Rpk = RpkNodeConfig{
 		EnableMemoryLocking: true,
 		Tuners: RpkNodeTuners{
 			TuneNetwork:              true,
@@ -44,8 +44,7 @@ func getValidConfig() *Config {
 			WellKnownIo:              "vendor:vm:storage",
 		},
 	}
-	conf.fileLocation = DefaultPath
-	return conf
+	return y
 }
 
 func TestSet(t *testing.T) {
@@ -54,38 +53,38 @@ func TestSet(t *testing.T) {
 		name      string
 		key       string
 		value     string
-		check     func(st *testing.T, c *Config)
+		check     func(st *testing.T, y *RedpandaYaml)
 		expectErr bool
 	}{
 		{
 			name:  "parse '1' as an int and not as bool (true)",
 			key:   "redpanda.node_id",
 			value: "1",
-			check: func(st *testing.T, c *Config) {
-				require.Exactly(st, 1, *c.Redpanda.ID)
+			check: func(st *testing.T, y *RedpandaYaml) {
+				require.Exactly(st, 1, *y.Redpanda.ID)
 			},
 		},
 		{
 			name:  "set single integer fields",
 			key:   "redpanda.node_id",
 			value: "54312",
-			check: func(st *testing.T, c *Config) {
-				require.Exactly(st, 54312, *c.Redpanda.ID)
+			check: func(st *testing.T, y *RedpandaYaml) {
+				require.Exactly(st, 54312, *y.Redpanda.ID)
 			},
 		},
 		{
 			name:  "detect single integer fields if format isn't passed",
 			key:   "redpanda.node_id",
 			value: "54312",
-			check: func(st *testing.T, c *Config) {
-				require.Exactly(st, 54312, *c.Redpanda.ID)
+			check: func(st *testing.T, y *RedpandaYaml) {
+				require.Exactly(st, 54312, *y.Redpanda.ID)
 			},
 		},
 		{
 			name:  "set single float fields",
 			key:   "redpanda.float_field",
 			value: "42.3",
-			check: func(st *testing.T, cfg *Config) {
+			check: func(st *testing.T, cfg *RedpandaYaml) {
 				require.Exactly(st, 42.3, cfg.Redpanda.Other["float_field"])
 			},
 		},
@@ -93,7 +92,7 @@ func TestSet(t *testing.T) {
 			name:  "detect single float fields if format isn't passed",
 			key:   "redpanda.float_field",
 			value: "42.3",
-			check: func(st *testing.T, cfg *Config) {
+			check: func(st *testing.T, cfg *RedpandaYaml) {
 				require.Exactly(st, 42.3, cfg.Redpanda.Other["float_field"])
 			},
 		},
@@ -101,67 +100,67 @@ func TestSet(t *testing.T) {
 			name:  "set single string fields",
 			key:   "redpanda.data_directory",
 			value: "/var/lib/differentdir",
-			check: func(st *testing.T, c *Config) {
-				require.Exactly(st, "/var/lib/differentdir", c.Redpanda.Directory)
+			check: func(st *testing.T, y *RedpandaYaml) {
+				require.Exactly(st, "/var/lib/differentdir", y.Redpanda.Directory)
 			},
 		},
 		{
 			name:  "detect single string fields if format isn't passed",
 			key:   "redpanda.data_directory",
 			value: "/var/lib/differentdir",
-			check: func(st *testing.T, c *Config) {
-				require.Exactly(st, "/var/lib/differentdir", c.Redpanda.Directory)
+			check: func(st *testing.T, y *RedpandaYaml) {
+				require.Exactly(st, "/var/lib/differentdir", y.Redpanda.Directory)
 			},
 		},
 		{
 			name:  "set single bool fields",
 			key:   "rpk.tune_network",
 			value: "true",
-			check: func(st *testing.T, c *Config) {
-				require.Exactly(st, true, c.Rpk.Tuners.TuneNetwork)
+			check: func(st *testing.T, y *RedpandaYaml) {
+				require.Exactly(st, true, y.Rpk.Tuners.TuneNetwork)
 			},
 		},
 		{
 			name:  "set single bool fields in Other fields (json)",
 			key:   "redpanda.enable_metrics_test",
 			value: "true",
-			check: func(st *testing.T, c *Config) {
-				require.Exactly(st, true, c.Redpanda.Other["enable_metrics_test"])
+			check: func(st *testing.T, y *RedpandaYaml) {
+				require.Exactly(st, true, y.Redpanda.Other["enable_metrics_test"])
 			},
 		},
 		{
 			name:  "set single number in Other fields (json)",
 			key:   "redpanda.timeout_test",
 			value: "123991",
-			check: func(st *testing.T, c *Config) {
-				require.Exactly(st, 123991, c.Redpanda.Other["timeout_test"])
+			check: func(st *testing.T, y *RedpandaYaml) {
+				require.Exactly(st, 123991, y.Redpanda.Other["timeout_test"])
 			},
 		},
 		{
 			name:  "set single strings in Other fields (json)",
 			key:   "redpanda.test_name",
 			value: `"my_name"`,
-			check: func(st *testing.T, c *Config) {
-				require.Exactly(st, "my_name", c.Redpanda.Other["test_name"])
+			check: func(st *testing.T, y *RedpandaYaml) {
+				require.Exactly(st, "my_name", y.Redpanda.Other["test_name"])
 			},
 		},
 		{
 			name:  "set objects in Other fields (json)",
 			key:   "redpanda.my_object",
 			value: `{"name":"test","enabled":true}`,
-			check: func(st *testing.T, c *Config) {
+			check: func(st *testing.T, y *RedpandaYaml) {
 				require.Exactly(st, map[string]interface{}{
 					"name":    "test",
 					"enabled": true,
-				}, c.Redpanda.Other["my_object"])
+				}, y.Redpanda.Other["my_object"])
 			},
 		},
 		{
 			name:  "detect single bool fields if format isn't passed",
 			key:   "rpk.tune_cpu",
 			value: "true",
-			check: func(st *testing.T, c *Config) {
-				require.Exactly(st, true, c.Rpk.Tuners.TuneCPU)
+			check: func(st *testing.T, y *RedpandaYaml) {
+				require.Exactly(st, true, y.Rpk.Tuners.TuneCPU)
 			},
 		},
 		{
@@ -169,7 +168,7 @@ func TestSet(t *testing.T) {
 			key:  "rpk",
 			value: `tune_disk_irq: true
 tune_cpu: true`,
-			check: func(st *testing.T, c *Config) {
+			check: func(st *testing.T, y *RedpandaYaml) {
 				expected := RpkNodeConfig{
 					Overprovisioned:     false,
 					EnableMemoryLocking: false,
@@ -188,15 +187,15 @@ tune_cpu: true`,
 						TuneDiskWriteCache:       false,
 					},
 				}
-				require.Exactly(st, expected, c.Rpk)
+				require.Exactly(st, expected, y.Rpk)
 			},
 		},
 		{
 			name:  "detect pandaproxy client single field if format isn't passed",
 			key:   "pandaproxy_client.retries",
 			value: "42",
-			check: func(st *testing.T, c *Config) {
-				require.Exactly(st, 42, c.PandaproxyClient.Other["retries"])
+			check: func(st *testing.T, y *RedpandaYaml) {
+				require.Exactly(st, 42, y.PandaproxyClient.Other["retries"])
 			},
 		},
 		{
@@ -209,7 +208,7 @@ tune_cpu: true`,
   address: 10.21.34.58
   port: 9092
 `,
-			check: func(st *testing.T, c *Config) {
+			check: func(st *testing.T, y *RedpandaYaml) {
 				expected := []NamedAuthNSocketAddress{{
 					Name:    "external",
 					Address: "192.168.73.45",
@@ -219,7 +218,7 @@ tune_cpu: true`,
 					Address: "10.21.34.58",
 					Port:    9092,
 				}}
-				require.Exactly(st, expected, c.Redpanda.KafkaAPI)
+				require.Exactly(st, expected, y.Redpanda.KafkaAPI)
 			},
 		},
 		{
@@ -233,7 +232,7 @@ tune_cpu: true`,
   address: 10.21.34.58
   port: 9092
 `,
-			check: func(st *testing.T, c *Config) {
+			check: func(st *testing.T, y *RedpandaYaml) {
 				expected := []NamedAuthNSocketAddress{{
 					Name:    "external",
 					Address: "192.168.73.45",
@@ -244,7 +243,7 @@ tune_cpu: true`,
 					Address: "10.21.34.58",
 					Port:    9092,
 				}}
-				require.Exactly(st, expected, c.Redpanda.KafkaAPI)
+				require.Exactly(st, expected, y.Redpanda.KafkaAPI)
 			},
 		},
 		{
@@ -254,12 +253,12 @@ tune_cpu: true`,
 		  "address": "192.168.54.2",
 		  "port": 9092
 		}]`,
-			check: func(st *testing.T, c *Config) {
+			check: func(st *testing.T, y *RedpandaYaml) {
 				expected := []NamedAuthNSocketAddress{{
 					Port:    9092,
 					Address: "192.168.54.2",
 				}}
-				require.Exactly(st, expected, c.Redpanda.KafkaAPI)
+				require.Exactly(st, expected, y.Redpanda.KafkaAPI)
 			},
 		},
 		{
@@ -269,12 +268,12 @@ tune_cpu: true`,
 		  "address": "192.168.54.2",
 		  "port": 9092
 		}]`,
-			check: func(st *testing.T, c *Config) {
+			check: func(st *testing.T, y *RedpandaYaml) {
 				expected := []NamedSocketAddress{{
 					Port:    9092,
 					Address: "192.168.54.2",
 				}}
-				require.Exactly(st, expected, c.Redpanda.AdvertisedKafkaAPI)
+				require.Exactly(st, expected, y.Redpanda.AdvertisedKafkaAPI)
 			},
 		},
 
@@ -282,8 +281,8 @@ tune_cpu: true`,
 			name:  "set value of a slice",
 			key:   "redpanda.admin.port",
 			value: "9641",
-			check: func(st *testing.T, c *Config) {
-				require.Exactly(st, 9641, c.Redpanda.AdminAPI[0].Port)
+			check: func(st *testing.T, y *RedpandaYaml) {
+				require.Exactly(st, 9641, y.Redpanda.AdminAPI[0].Port)
 			},
 		},
 
@@ -291,16 +290,16 @@ tune_cpu: true`,
 			name:  "set value of a slice with an index",
 			key:   "redpanda.admin[0].port",
 			value: "9641",
-			check: func(st *testing.T, c *Config) {
-				require.Exactly(st, 9641, c.Redpanda.AdminAPI[0].Port)
+			check: func(st *testing.T, y *RedpandaYaml) {
+				require.Exactly(st, 9641, y.Redpanda.AdminAPI[0].Port)
 			},
 		},
 		{
 			name:  "set value of a slice with an index at end extends slice",
 			key:   "redpanda.admin[1].port",
 			value: "9648",
-			check: func(st *testing.T, c *Config) {
-				require.Exactly(st, 9648, c.Redpanda.AdminAPI[1].Port)
+			check: func(st *testing.T, y *RedpandaYaml) {
+				require.Exactly(st, 9648, y.Redpanda.AdminAPI[1].Port)
 			},
 		},
 
@@ -308,8 +307,8 @@ tune_cpu: true`,
 			name:  "set slice single values",
 			key:   "redpanda.seed_servers.host.address",
 			value: "foo",
-			check: func(st *testing.T, c *Config) {
-				require.Exactly(st, "foo", c.Redpanda.SeedServers[0].Host.Address)
+			check: func(st *testing.T, y *RedpandaYaml) {
+				require.Exactly(st, "foo", y.Redpanda.SeedServers[0].Host.Address)
 			},
 		},
 
@@ -317,9 +316,9 @@ tune_cpu: true`,
 			name:  "set slice object",
 			key:   "redpanda.seed_servers.host",
 			value: `{address: 0.0.0.0, port: 80}`,
-			check: func(st *testing.T, c *Config) {
-				require.Exactly(st, "0.0.0.0", c.Redpanda.SeedServers[0].Host.Address)
-				require.Exactly(st, 80, c.Redpanda.SeedServers[0].Host.Port)
+			check: func(st *testing.T, y *RedpandaYaml) {
+				require.Exactly(st, "0.0.0.0", y.Redpanda.SeedServers[0].Host.Address)
+				require.Exactly(st, 80, y.Redpanda.SeedServers[0].Host.Port)
 			},
 		},
 
@@ -327,9 +326,9 @@ tune_cpu: true`,
 			name:  "set slice with object defaults to index 0",
 			key:   "redpanda.advertised_kafka_api",
 			value: `{address: 3.250.158.1, port: 9092}`,
-			check: func(st *testing.T, c *Config) {
-				require.Exactly(st, "3.250.158.1", c.Redpanda.AdvertisedKafkaAPI[0].Address)
-				require.Exactly(st, 9092, c.Redpanda.AdvertisedKafkaAPI[0].Port)
+			check: func(st *testing.T, y *RedpandaYaml) {
+				require.Exactly(st, "3.250.158.1", y.Redpanda.AdvertisedKafkaAPI[0].Address)
+				require.Exactly(st, 9092, y.Redpanda.AdvertisedKafkaAPI[0].Port)
 			},
 		},
 
@@ -337,16 +336,16 @@ tune_cpu: true`,
 			name:  "slices with one element works",
 			key:   "rpk.kafka_api.brokers",
 			value: `127.0.0.0:9092`,
-			check: func(st *testing.T, c *Config) {
-				require.Exactly(st, "127.0.0.0:9092", c.Rpk.KafkaAPI.Brokers[0])
+			check: func(st *testing.T, y *RedpandaYaml) {
+				require.Exactly(st, "127.0.0.0:9092", y.Rpk.KafkaAPI.Brokers[0])
 			},
 		},
 		{
 			name:  "slices with one element works with indexing",
 			key:   "rpk.kafka_api.brokers[0]",
 			value: `127.0.0.0:9092`,
-			check: func(st *testing.T, c *Config) {
-				require.Exactly(st, "127.0.0.0:9092", c.Rpk.KafkaAPI.Brokers[0])
+			check: func(st *testing.T, y *RedpandaYaml) {
+				require.Exactly(st, "127.0.0.0:9092", y.Rpk.KafkaAPI.Brokers[0])
 			},
 		},
 
@@ -407,23 +406,22 @@ tune_cpu: true`,
 			fs := afero.NewMemMapFs()
 			cfg, err := new(Params).Load(fs)
 			require.NoError(t, err)
-			err = Set(cfg, tt.key, tt.value)
+			y := cfg.MaterializedRedpandaYaml()
+			err = Set(y, tt.key, tt.value)
 			if tt.expectErr {
 				require.Error(t, err)
 				return
 			}
 			require.NoError(t, err)
-			if tt.check != nil {
-				tt.check(t, cfg)
-			}
+			tt.check(t, y)
 		})
 	}
 }
 
 func TestDevDefault(t *testing.T) {
 	defaultConfig := DevDefault()
-	expected := &Config{
-		fileLocation:   DefaultPath,
+	expected := &RedpandaYaml{
+		fileLocation:   DefaultRedpandaYamlPath,
 		Pandaproxy:     &Pandaproxy{},
 		SchemaRegistry: &SchemaRegistry{},
 		Redpanda: RedpandaNodeConfig{
@@ -453,8 +451,8 @@ func TestDevDefault(t *testing.T) {
 
 func TestProdDefault(t *testing.T) {
 	defaultConfig := ProdDefault()
-	expected := &Config{
-		fileLocation:   DefaultPath,
+	expected := &RedpandaYaml{
+		fileLocation:   DefaultRedpandaYamlPath,
 		Pandaproxy:     &Pandaproxy{},
 		SchemaRegistry: &SchemaRegistry{},
 		Redpanda: RedpandaNodeConfig{
@@ -493,17 +491,19 @@ func TestProdDefault(t *testing.T) {
 	require.Exactly(t, expected, defaultConfig)
 }
 
+// This somewhat duplicates TestParamsRedpandaYamlWrite but has some different
+// configurations. TODO: merge tests.
 func TestWrite(t *testing.T) {
 	tests := []struct {
 		name         string
 		existingConf string
-		conf         func() *Config
+		conf         func() *RedpandaYaml
 		wantErr      bool
 		expected     string
 	}{
 		{
 			name: "write default values",
-			conf: getValidConfig,
+			conf: testRedpandaYaml,
 			expected: `redpanda:
     data_directory: /var/lib/redpanda/data
     seed_servers:
@@ -545,13 +545,13 @@ schema_registry: {}
 		},
 		{
 			name: "write additional values",
-			conf: func() *Config {
-				c := getValidConfig()
-				c.Redpanda.AdvertisedRPCAPI = &SocketAddress{
+			conf: func() *RedpandaYaml {
+				y := testRedpandaYaml()
+				y.Redpanda.AdvertisedRPCAPI = &SocketAddress{
 					"174.32.64.2",
 					33145,
 				}
-				return c
+				return y
 			},
 			expected: `redpanda:
     data_directory: /var/lib/redpanda/data
@@ -597,10 +597,10 @@ schema_registry: {}
 		},
 		{
 			name: "write if empty struct is passed",
-			conf: func() *Config {
-				c := getValidConfig()
-				c.Rpk = RpkNodeConfig{}
-				return c
+			conf: func() *RedpandaYaml {
+				y := testRedpandaYaml()
+				y.Rpk = RpkNodeConfig{}
+				return y
 			},
 			wantErr: false,
 			expected: `redpanda:
@@ -627,14 +627,14 @@ schema_registry: {}
 		},
 		{
 			name: "write unrecognized values ('Other' map).",
-			conf: func() *Config {
-				c := getValidConfig()
+			conf: func() *RedpandaYaml {
+				y := testRedpandaYaml()
 				size := 536870912
-				if c.Redpanda.Other == nil {
-					c.Redpanda.Other = make(map[string]interface{})
+				if y.Redpanda.Other == nil {
+					y.Redpanda.Other = make(map[string]interface{})
 				}
-				c.Redpanda.Other["log_segment_size"] = &size
-				return c
+				y.Redpanda.Other["log_segment_size"] = &size
+				return y
 			},
 			wantErr: false,
 			expected: `redpanda:
@@ -703,8 +703,8 @@ schema_registry: {}
 }
 
 func TestSetMode(t *testing.T) {
-	fillRpkNodeConfig := func(mode string) func() *Config {
-		return func() *Config {
+	fillRpkNodeConfig := func(mode string) func() *RedpandaYaml {
+		return func() *RedpandaYaml {
 			conf := DevDefault()
 			val := mode == ModeProd
 			conf.Redpanda.DeveloperMode = !val
@@ -732,8 +732,8 @@ func TestSetMode(t *testing.T) {
 	tests := []struct {
 		name           string
 		mode           string
-		startingConf   func() *Config
-		expectedConfig func() *Config
+		startingConf   func() *RedpandaYaml
+		expectedConfig func() *RedpandaYaml
 		expectedErrMsg string
 	}{
 		{
@@ -764,11 +764,11 @@ func TestSetMode(t *testing.T) {
 		{
 			name:           "it should return an error for invalid modes",
 			mode:           "winning",
-			expectedErrMsg: "'winning' is not a supported mode. Available modes: dev, development, prod, production",
+			expectedErrMsg: "unknown mode \"winning\"",
 		},
 		{
 			name: "it should preserve all the values that shouldn't be reset",
-			startingConf: func() *Config {
+			startingConf: func() *RedpandaYaml {
 				conf := DevDefault()
 				conf.Rpk.AdminAPI = RpkAdminAPI{
 					Addresses: []string{"some.addr.com:33145"},
@@ -784,7 +784,7 @@ func TestSetMode(t *testing.T) {
 				return conf
 			},
 			mode: ModeProd,
-			expectedConfig: func() *Config {
+			expectedConfig: func() *RedpandaYaml {
 				conf := fillRpkNodeConfig(ModeProd)()
 				conf.Rpk.AdminAPI = RpkAdminAPI{
 					Addresses: []string{"some.addr.com:33145"},
@@ -804,17 +804,17 @@ func TestSetMode(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(st *testing.T) {
-			defaultConf := DevDefault()
+			y := DevDefault()
 			if tt.startingConf != nil {
-				defaultConf = tt.startingConf()
+				y = tt.startingConf()
 			}
-			conf, err := SetMode(tt.mode, defaultConf)
+			err := y.SetMode(tt.mode)
 			if tt.expectedErrMsg != "" {
 				require.EqualError(t, err, tt.expectedErrMsg)
 				return
 			}
 			require.NoError(t, err)
-			require.Exactly(t, tt.expectedConfig(), conf)
+			require.Exactly(t, tt.expectedConfig(), y)
 		})
 	}
 }
@@ -822,18 +822,18 @@ func TestSetMode(t *testing.T) {
 func TestCheckConfig(t *testing.T) {
 	tests := []struct {
 		name     string
-		conf     func() *Config
+		conf     func() *RedpandaYaml
 		expected []string
 	}{
 		{
 			name:     "shall return no errors when config is valid",
-			conf:     getValidConfig,
+			conf:     testRedpandaYaml,
 			expected: []string{},
 		},
 		{
 			name: "shall return an error when config file does not contain data directory setting",
-			conf: func() *Config {
-				c := getValidConfig()
+			conf: func() *RedpandaYaml {
+				c := testRedpandaYaml()
 				c.Redpanda.Directory = ""
 				return c
 			},
@@ -841,8 +841,8 @@ func TestCheckConfig(t *testing.T) {
 		},
 		{
 			name: "shall return an error when id of server is negative",
-			conf: func() *Config {
-				c := getValidConfig()
+			conf: func() *RedpandaYaml {
+				c := testRedpandaYaml()
 				c.Redpanda.ID = new(int)
 				*c.Redpanda.ID = -100
 				return c
@@ -851,8 +851,8 @@ func TestCheckConfig(t *testing.T) {
 		},
 		{
 			name: "shall return an error when the RPC server port is 0",
-			conf: func() *Config {
-				c := getValidConfig()
+			conf: func() *RedpandaYaml {
+				c := testRedpandaYaml()
 				c.Redpanda.RPCServer.Port = 0
 				return c
 			},
@@ -860,8 +860,8 @@ func TestCheckConfig(t *testing.T) {
 		},
 		{
 			name: "shall return an error when the RPC server address is empty",
-			conf: func() *Config {
-				c := getValidConfig()
+			conf: func() *RedpandaYaml {
+				c := testRedpandaYaml()
 				c.Redpanda.RPCServer.Address = ""
 				return c
 			},
@@ -869,8 +869,8 @@ func TestCheckConfig(t *testing.T) {
 		},
 		{
 			name: "shall return an error when the Kafka API port is 0",
-			conf: func() *Config {
-				c := getValidConfig()
+			conf: func() *RedpandaYaml {
+				c := testRedpandaYaml()
 				c.Redpanda.KafkaAPI[0].Port = 0
 				return c
 			},
@@ -878,8 +878,8 @@ func TestCheckConfig(t *testing.T) {
 		},
 		{
 			name: "shall return an error when the Kafka API address is empty",
-			conf: func() *Config {
-				c := getValidConfig()
+			conf: func() *RedpandaYaml {
+				c := testRedpandaYaml()
 				c.Redpanda.KafkaAPI[0].Address = ""
 				return c
 			},
@@ -887,8 +887,8 @@ func TestCheckConfig(t *testing.T) {
 		},
 		{
 			name: "shall return an error when one of the seed servers' address is empty",
-			conf: func() *Config {
-				c := getValidConfig()
+			conf: func() *RedpandaYaml {
+				c := testRedpandaYaml()
 				c.Redpanda.SeedServers[0].Host.Address = ""
 				return c
 			},
@@ -896,8 +896,8 @@ func TestCheckConfig(t *testing.T) {
 		},
 		{
 			name: "shall return an error when one of the seed servers' port is 0",
-			conf: func() *Config {
-				c := getValidConfig()
+			conf: func() *RedpandaYaml {
+				c := testRedpandaYaml()
 				c.Redpanda.SeedServers[1].Host.Port = 0
 				return c
 			},
@@ -906,8 +906,8 @@ func TestCheckConfig(t *testing.T) {
 		{
 			name: "shall return no errors when tune_coredump is set to false," +
 				"regardless of coredump_dir's value",
-			conf: func() *Config {
-				c := getValidConfig()
+			conf: func() *RedpandaYaml {
+				c := testRedpandaYaml()
 				c.Rpk.Tuners.TuneCoredump = false
 				c.Rpk.Tuners.CoredumpDir = ""
 				return c
@@ -917,8 +917,8 @@ func TestCheckConfig(t *testing.T) {
 		{
 			name: "shall return an error when tune_coredump is set to true," +
 				"but coredump_dir is empty",
-			conf: func() *Config {
-				c := getValidConfig()
+			conf: func() *RedpandaYaml {
+				c := testRedpandaYaml()
 				c.Rpk.Tuners.CoredumpDir = ""
 				return c
 			},
@@ -927,8 +927,8 @@ func TestCheckConfig(t *testing.T) {
 		{
 			name: "shall return no error if setup is empty," +
 				"but coredump_dir is empty",
-			conf: func() *Config {
-				c := getValidConfig()
+			conf: func() *RedpandaYaml {
+				c := testRedpandaYaml()
 				c.Rpk.Tuners.WellKnownIo = ""
 				return c
 			},
