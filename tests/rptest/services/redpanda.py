@@ -2117,6 +2117,14 @@ class RedpandaService(RedpandaServiceBase):
                 return False
             if file.parents[-2].name == "cloud_storage_cache":
                 return False
+            if "compaction.staging" in file.name:
+                # compaction staging files are temporary and are generally
+                # cleaned up after compaction finishes, or at next round of
+                # compaction if a file was stranded. during shutdown of any
+                # generic test we don't have a good opportunity to force this to
+                # happen without placing a lot of restrictions on shutdown. for
+                # the time being just ignore these.
+                return False
             return True
 
         def inspect_node(node):
