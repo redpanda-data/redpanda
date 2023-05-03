@@ -50,11 +50,11 @@ local_monitor::local_monitor(
   ss::sstring cache_directory,
   ss::sharded<storage::node_api>& node_api,
   ss::sharded<storage::api>& api)
-  : _free_bytes_alert_threshold(alert_bytes)
-  , _free_percent_alert_threshold(alert_percent)
-  , _min_free_bytes(min_bytes)
-  , _data_directory(data_directory)
-  , _cache_directory(cache_directory)
+  : _free_bytes_alert_threshold(std::move(alert_bytes))
+  , _free_percent_alert_threshold(std::move(alert_percent))
+  , _min_free_bytes(std::move(min_bytes))
+  , _data_directory(std::move(data_directory))
+  , _cache_directory(std::move(cache_directory))
   , _storage_node_api(node_api)
   , _storage_api(api) {
     // Intentionally undocumented environment variable, only for use
