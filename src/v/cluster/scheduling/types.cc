@@ -78,7 +78,7 @@ allocation_units::~allocation_units() {
     oncore_debug_verify(_oncore);
     for (auto& pas : _assignments) {
         for (auto& replica : pas.replicas) {
-            _state->deallocate(replica, _domain);
+            _state->remove_allocation(replica, _domain);
         }
     }
 }
@@ -132,7 +132,7 @@ allocated_partition::~allocated_partition() {
 
     for (const auto& bs : _replicas) {
         if (!_original->contains(bs)) {
-            _state->deallocate(bs, _domain);
+            _state->remove_allocation(bs, _domain);
         }
     }
 }

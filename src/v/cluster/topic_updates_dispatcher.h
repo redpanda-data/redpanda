@@ -107,7 +107,8 @@ private:
     ss::future<>
     update_leaders_with_estimates(ss::chunked_fifo<ntp_leader> leaders);
     template<typename T>
-    void update_allocations(const T&, partition_allocation_domain);
+    void
+    add_allocations_for_new_partitions(const T&, partition_allocation_domain);
 
     void deallocate_topic(
       const model::topic_namespace&,

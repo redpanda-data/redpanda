@@ -78,7 +78,7 @@ struct partition_allocator_fixture {
                        .get();
 
         for (auto& pas : units.value()->get_assignments()) {
-            allocator.state().apply_update(
+            allocator.add_allocations_for_new_partition(
               pas.replicas,
               pas.group,
               cluster::partition_allocation_domains::common);

@@ -64,7 +64,8 @@ ss::future<std::error_code> topic_updates_dispatcher::apply(
     auto ec = co_await dispatch_updates_to_cores(std::move(command), offset);
 
     if (ec == errc::success) {
-        update_allocations(assignments, get_allocation_domain(tp_ns));
+        add_allocations_for_new_partitions(
+          assignments, get_allocation_domain(tp_ns));
         ss::chunked_fifo<ntp_leader> leaders;
         for (const auto& p_as : assignments) {
             _partition_balancer_state.local().handle_ntp_update(
@@ -265,7 +266,8 @@ ss::future<std::error_code> topic_updates_dispatcher::apply(
     auto ec = co_await dispatch_updates_to_cores(std::move(cmd), offset);
 
     if (ec == errc::success) {
-        update_allocations(assignments, get_allocation_domain(tp_ns));
+        add_allocations_for_new_partitions(
+          assignments, get_allocation_domain(tp_ns));
 
         for (const auto& p_as : assignments) {
             _partition_balancer_state.local().handle_ntp_update(
@@ -291,7 +293,7 @@ ss::future<std::error_code> topic_updates_dispatcher::apply(
                 assignments->begin(),
                 assignments->end(),
                 std::back_inserter(p_as));
-              update_allocations(p_as, allocation_domain);
+              add_allocations_for_new_partitions(p_as, allocation_domain);
           }
           return ec;
       });
@@ -494,10 +496,11 @@ void topic_updates_dispatcher::deallocate_topic(
     }
 }
 template<typename T>
-void topic_updates_dispatcher::update_allocations(
+void topic_updates_dispatcher::add_allocations_for_new_partitions(
   const T& assignments, const partition_allocation_domain domain) {
+    auto& allocator = _partition_allocator.local();
     for (const auto& pas : assignments) {
-        _partition_allocator.local().update_allocation_state(
+        allocator.add_allocations_for_new_partition(
           pas.replicas, pas.group, domain);
     }
 }

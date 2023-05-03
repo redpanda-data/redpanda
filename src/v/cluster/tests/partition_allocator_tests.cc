@@ -232,10 +232,8 @@ FIXTURE_TEST(recovery_test, partition_allocator_fixture) {
     };
     // 100 topics with 12 partitions each replicated on 3 nodes each
     auto replicas = create_replicas(100, 12);
-    allocator.update_allocation_state(
-      replicas,
-      raft::group_id(0),
-      cluster::partition_allocation_domains::common);
+    allocator.add_allocations(
+      replicas, cluster::partition_allocation_domains::common);
     // each node in the cluster holds one replica for each partition,
     // so it has to have topics * partitions shards allocated
     cluster::allocation_node::allocation_capacity allocated_shards{100 * 12};
@@ -360,7 +358,7 @@ FIXTURE_TEST(allocator_exception_safety_test, partition_allocator_fixture) {
             if (res) {
                 capacity--;
                 for (auto& as : res.value()->get_assignments()) {
-                    allocator.update_allocation_state(
+                    allocator.add_allocations_for_new_partition(
                       as.replicas,
                       as.group,
                       cluster::partition_allocation_domains::common);
@@ -385,7 +383,7 @@ FIXTURE_TEST(updating_nodes_properties, partition_allocator_fixture) {
         auto res = allocator.allocate(std::move(req)).get();
         if (res) {
             for (auto& as : res.value()->get_assignments()) {
-                allocator.update_allocation_state(
+                allocator.add_allocations_for_new_partition(
                   as.replicas,
                   as.group,
                   cluster::partition_allocation_domains::common);

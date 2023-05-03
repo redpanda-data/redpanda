@@ -48,13 +48,14 @@ public:
     const underlying_t& allocation_nodes() const { return _nodes; }
     int16_t available_nodes() const;
 
-    // Operations on state
-    void deallocate(const model::broker_shard&, partition_allocation_domain);
-    void apply_update(
-      const std::vector<model::broker_shard>&,
-      raft::group_id,
-      partition_allocation_domain);
+    // choose a shard for a replica and add the corresponding allocation.
     result<uint32_t> allocate(model::node_id id, partition_allocation_domain);
+
+    // Operations on state
+    void
+    add_allocation(const model::broker_shard&, partition_allocation_domain);
+    void
+    remove_allocation(const model::broker_shard&, partition_allocation_domain);
 
     void rollback(
       const ss::chunked_fifo<partition_assignment>& pa,
@@ -65,7 +66,9 @@ public:
     // Raft group id
     raft::group_id next_group_id();
     raft::group_id last_group_id() const { return _highest_group; }
-    void set_last_group_id(raft::group_id id) { _highest_group = id; }
+    void update_highest_group_id(raft::group_id id) {
+        _highest_group = std::max(_highest_group, id);
+    }
 
 private:
     /**

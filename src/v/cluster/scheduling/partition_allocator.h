@@ -73,27 +73,22 @@ public:
       const partition_assignment&,
       partition_allocation_domain);
 
-    /// Best effort. Does not throw if we cannot find the replicas.
-    /// Allocation domain must match the one used to allocate the partition.
-    void deallocate(
-      const std::vector<model::broker_shard>&, partition_allocation_domain);
-
-    /// updates the state of allocation, it is used during recovery and
-    /// when processing raft0 committed notifications.
-    /// Allocation domain must match the one used to allocate the partition.
-    void update_allocation_state(
-      const std::vector<model::broker_shard>&,
-      raft::group_id,
-      partition_allocation_domain);
-
+    /// Best effort. Do not throw if we cannot find the replicas.
     void add_allocations(
       const std::vector<model::broker_shard>&, partition_allocation_domain);
     void remove_allocations(
       const std::vector<model::broker_shard>&, partition_allocation_domain);
 
+    void add_allocations_for_new_partition(
+      const std::vector<model::broker_shard>& replicas,
+      raft::group_id group_id,
+      partition_allocation_domain domain) {
+        add_allocations(replicas, domain);
+        _state->update_highest_group_id(group_id);
+    }
+
     bool is_rack_awareness_enabled() const { return _enable_rack_awareness(); }
 
-    allocation_state& state() { return *_state; }
     const allocation_state& state() const { return *_state; }
 
     ss::future<> apply_snapshot(const controller_snapshot&);
