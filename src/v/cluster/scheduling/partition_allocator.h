@@ -38,6 +38,35 @@ public:
       config::binding<uint32_t>,
       config::binding<bool>);
 
+    // Replica placement APIs
+
+    /**
+     * Return an allocation_units object wrapping the result of the allocating
+     * the given allocation request, or an error if it was not possible.
+     */
+    ss::future<result<allocation_units::pointer>> allocate(allocation_request);
+
+    // Reallocate an already existing partition
+    result<allocated_partition> reallocate_partition(
+      partition_constraints,
+      const partition_assignment&,
+      partition_allocation_domain);
+
+    // State accessors
+
+    bool is_rack_awareness_enabled() const { return _enable_rack_awareness(); }
+
+    bool is_empty(model::node_id id) const { return _state->is_empty(id); }
+    bool contains_node(model::node_id n) const {
+        return _state->contains_node(n);
+    }
+
+    const allocation_state& state() const { return *_state; }
+
+    // State update functions called when processing controller commands
+
+    // Node state updates
+
     void register_node(allocation_state::node_ptr n) {
         _state->register_node(std::move(n));
     }
@@ -56,22 +85,7 @@ public:
     void decommission_node(model::node_id id) { _state->decommission_node(id); }
     void recommission_node(model::node_id id) { _state->recommission_node(id); }
 
-    bool is_empty(model::node_id id) const { return _state->is_empty(id); }
-    bool contains_node(model::node_id n) const {
-        return _state->contains_node(n);
-    }
-
-    /**
-     * Return an allocation_units object wrapping the result of the allocating
-     * the given allocation request, or an error if it was not possible.
-     */
-    ss::future<result<allocation_units::pointer>> allocate(allocation_request);
-
-    // Reallocate an already existing partition
-    result<allocated_partition> reallocate_partition(
-      partition_constraints,
-      const partition_assignment&,
-      partition_allocation_domain);
+    // Partition state updates
 
     /// Best effort. Do not throw if we cannot find the replicas.
     void add_allocations(
@@ -86,10 +100,6 @@ public:
         add_allocations(replicas, domain);
         _state->update_highest_group_id(group_id);
     }
-
-    bool is_rack_awareness_enabled() const { return _enable_rack_awareness(); }
-
-    const allocation_state& state() const { return *_state; }
 
     ss::future<> apply_snapshot(const controller_snapshot&);
 
