@@ -429,6 +429,7 @@ topic_table::apply(cancel_moving_partition_replicas_cmd cmd, model::offset o) {
             co_return errc::no_update_in_progress;
         }
         break;
+    case reconfiguration_state::force_update:
     case reconfiguration_state::force_cancelled:
         // partition reconfiguration already cancelled forcibly
         co_return errc::no_update_in_progress;
@@ -1097,7 +1098,9 @@ public:
             update_it != topic.updates.end()) {
             const auto& update = update_it->second;
 
-            if (update.state == reconfiguration_state::in_progress) {
+            if (
+              update.state == reconfiguration_state::in_progress
+              || update.state == reconfiguration_state::force_update) {
                 cur_assignment.replicas = update_it->second.target_assignment;
             }
 
@@ -1131,6 +1134,10 @@ public:
                     // cancellation because if later the "cancel revert" event
                     // happens, controller_backend has to execute the update
                     // delta to make progress.
+                    auto op_type = update.state
+                                       == reconfiguration_state::force_update
+                                     ? delta::op_type::force_update
+                                     : delta::op_type::update;
                     _pending_deltas.emplace_back(
                       ntp,
                       partition_assignment(
@@ -1138,7 +1145,7 @@ public:
                         p_id,
                         update_it->second.target_assignment),
                       model::offset{update.revision},
-                      delta::op_type::update,
+                      op_type,
                       partition.replicas,
                       update_replicas_revisions(
                         partition.replicas_revisions,
@@ -1158,6 +1165,7 @@ public:
 
                 switch (update.state) {
                 case reconfiguration_state::in_progress:
+                case reconfiguration_state::force_update:
                     break;
                 case reconfiguration_state::cancelled:
                     add_cancel_delta(topic_table_delta::op_type::cancel_update);

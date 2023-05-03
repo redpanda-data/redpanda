@@ -1029,6 +1029,8 @@ std::ostream& operator<<(std::ostream& o, reconfiguration_state update) {
     switch (update) {
     case reconfiguration_state::in_progress:
         return o << "in_progress";
+    case reconfiguration_state::force_update:
+        return o << "force_update";
     case reconfiguration_state::cancelled:
         return o << "cancelled";
     case reconfiguration_state::force_cancelled:
