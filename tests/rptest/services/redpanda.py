@@ -47,12 +47,13 @@ from rptest.clients.kubectl import KubectlTool
 from rptest.clients.rpk import RpkTool
 from rptest.clients.rpk_remote import RpkRemoteTool
 from rptest.clients.python_librdkafka import PythonLibrdkafka
+from rptest.clients.offline_log_viewer import OfflineLogViewer
 from rptest.services import tls
 from rptest.services.admin import Admin
 from rptest.services.redpanda_installer import RedpandaInstaller, VERSION_RE as RI_VERSION_RE, int_tuple as ri_int_tuple
 from rptest.services.rolling_restarter import RollingRestarter
 from rptest.services.storage import ClusterStorage, NodeStorage
-from rptest.services.utils import BadLogLines, NodeCrash
+from rptest.services.utils import BadLogLines, NodeCrash, UnknownDataDirectoryFile
 from rptest.util import wait_until_result
 
 Partition = collections.namedtuple('Partition',
@@ -2093,6 +2094,23 @@ class RedpandaService(RedpandaServiceBase):
                 filename = m.replace("/", "_")
                 with archive.open(filename, "w") as outstr:
                     outstr.write(body)
+
+    def raise_on_unknown_data_directory_file(self):
+        log_viewer = OfflineLogViewer(self)
+
+        unknown_files = collections.defaultdict(list)
+        for node in self.nodes:
+            description = log_viewer.inspect_data_directory(node)
+            test_name = self._context.function_name
+            for unknown in description["unknown"]:
+                path = unknown['path']
+                type = unknown['type']
+                unknown_files[node].append(path)
+                self.logger.warn(
+                    f"[{test_name}] OLV encountered unknown {type} on {node.account.hostname}: {path}"
+                )
+        if unknown_files:
+            raise UnknownDataDirectoryFile(unknown_files)
 
     def raise_on_bad_logs(self, allow_list=None):
         """
