@@ -130,6 +130,26 @@ ss::future<error_outcome> uploader::upload_next_metadata(
           upload_result);
         co_return error_outcome::upload_failed;
     }
+    if (co_await term_has_changed(synced_term)) {
+        co_return error_outcome::term_has_changed;
+    }
+    // Take a snapshot of the metadata for this cluster and then assert
+    // that we are still leader in this term. This ensures that even if
+    // another replica were to become leader during the deletes, the new
+    // leader's view of the world will be unaffected by them.
+    auto orphaned_by_manifest = co_await list_orphaned_by_manifest(
+      _remote, _cluster_uuid, _bucket, manifest, retry_node);
+    if (co_await term_has_changed(synced_term)) {
+        co_return error_outcome::term_has_changed;
+    }
+    for (const auto& s : orphaned_by_manifest) {
+        auto path = std::filesystem::path{s};
+        auto key = cloud_storage_clients::object_key{path};
+        auto res = co_await _remote.delete_object(_bucket, key, retry_node);
+        if (res != cloud_storage::upload_result::success) {
+            vlog(clusterlog.warn, "Failed to delete orphaned metadata: {}", s);
+        }
+    }
     co_return error_outcome::success;
 }
 

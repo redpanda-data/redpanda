@@ -39,4 +39,13 @@ ss::future<cluster_manifest_result> download_highest_manifest_for_cluster(
   const cloud_storage_clients::bucket_name& bucket,
   retry_chain_node& retry_node);
 
+// Returns keys with the cluster UUID prefix aren't referenced by the manifest
+// and can be safely deleted.
+ss::future<std::list<ss::sstring>> list_orphaned_by_manifest(
+  cloud_storage::remote& remote,
+  const model::cluster_uuid& cluster_uuid,
+  const cloud_storage_clients::bucket_name& bucket,
+  const cluster_metadata_manifest& manifest,
+  retry_chain_node& retry_node);
+
 } // namespace cluster::cloud_metadata
