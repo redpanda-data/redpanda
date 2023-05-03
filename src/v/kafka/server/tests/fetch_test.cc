@@ -677,7 +677,7 @@ struct reserve_memory_units_fixture : redpanda_thread_fixture {
     // from each memory semaphore
     r test_case(size_t max_bytes, bool obligatory_batch_read) const {
         auto mu = kafka::reserve_memory_units(
-          rctx, max_bytes, obligatory_batch_read);
+          rctx, max_bytes, obligatory_batch_read, {});
         return {mu.kafka.count(), mu.fetch.count()};
     }
 };

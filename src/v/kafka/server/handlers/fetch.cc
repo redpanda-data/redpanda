@@ -36,6 +36,7 @@
 
 #include <seastar/core/do_with.hh>
 #include <seastar/core/future.hh>
+#include <seastar/core/memory.hh>
 #include <seastar/core/scheduling.hh>
 #include <seastar/core/sleep.hh>
 #include <seastar/core/thread.hh>
@@ -158,7 +159,8 @@ static ss::future<read_result> read_from_partition(
 read_result::memory_units_t reserve_memory_units(
   const request_context& rctx,
   const size_t max_bytes,
-  const bool obligatory_batch_read) {
+  const bool obligatory_batch_read,
+  const model::ntp& ntp) {
     read_result::memory_units_t memory_units;
     const size_t memory_kafka_now = rctx.memory_sem().current();
     const size_t memory_fetch = rctx.memory_fetch_sem().current();
@@ -208,6 +210,20 @@ read_result::memory_units_t reserve_memory_units(
         }
     }
 
+    const char* const obligatory_caption = obligatory_batch_read ? "+est" : "";
+    vlog(
+      klog.trace,
+      "fmu - [{}] Reserved: {{fetch: {}, kafka: {}{}}}, "
+      "requested: {}, "
+      "semf/semk/freem: ;{};{};{};reserved",
+      ntp,
+      memory_units.fetch.count(),
+      memory_units.kafka.count(),
+      obligatory_caption,
+      max_bytes,
+      rctx.memory_fetch_sem().available_units(),
+      rctx.memory_sem().available_units(),
+      ss::memory::stats().free_memory());
     return memory_units;
 }
 
@@ -234,7 +250,8 @@ static void adjust_memory_units(
   const request_context& rctx,
   read_result::memory_units_t& memory_units,
   const size_t read_bytes,
-  const bool obligatory_read) {
+  const bool obligatory_read,
+  const model::ntp& ntp) {
     const size_t batch_size_estimate
       = config::shard_local_cfg().kafka_memory_batch_size_estimate_for_fetch();
     // for kafka memsemaphore, account for the pre-allocated amount that is not
@@ -244,10 +261,31 @@ static void adjust_memory_units(
                                                read_bytes, batch_size_estimate)
                                                - batch_size_estimate
                                            : read_bytes;
+    const size_t memory_units_orig_fetch = memory_units.fetch.count();
+    const size_t memory_units_orig_kafka = memory_units.kafka.count();
+
     adjust_semaphore_units(
       rctx.memory_fetch_sem(), memory_units.fetch, read_bytes);
     adjust_semaphore_units(
       rctx.memory_sem(), memory_units.kafka, read_after_obligatory);
+
+    const char* const obligatory_caption = obligatory_read ? "+est" : "";
+    vlog(
+      klog.trace,
+      "fmu - [{}] Fetched: {}, reserved: {{fetch: {}, kafka: {}{}}}, "
+      "adjusted: {{fetch: {}, kafka: {}{}}}, "
+      "semf/semk/freem: ;{};{};{};fetched",
+      ntp,
+      read_bytes,
+      memory_units_orig_fetch,
+      memory_units_orig_kafka,
+      obligatory_caption,
+      memory_units.fetch.count(),
+      memory_units.kafka.count(),
+      obligatory_caption,
+      rctx.memory_fetch_sem().available_units(),
+      rctx.memory_sem().available_units(),
+      ss::memory::stats().free_memory());
 }
 
 /**
@@ -264,7 +302,10 @@ static ss::future<read_result> do_read_from_ntp(
     read_result::memory_units_t memory_units;
     if (!ntp_config.cfg.skip_read) {
         memory_units = reserve_memory_units(
-          octx.rctx, ntp_config.cfg.max_bytes, obligatory_batch_read);
+          octx.rctx,
+          ntp_config.cfg.max_bytes,
+          obligatory_batch_read,
+          ntp_config.ntp());
         if (!memory_units.fetch) {
             ntp_config.cfg.skip_read = true;
         } else if (ntp_config.cfg.max_bytes > memory_units.fetch.count()) {
@@ -359,7 +400,11 @@ static ss::future<read_result> do_read_from_ntp(
       std::move(*kafka_partition), ntp_config.cfg, foreign_read, octx.deadline);
 
     adjust_memory_units(
-      octx.rctx, memory_units, result.data_size_bytes(), obligatory_batch_read);
+      octx.rctx,
+      memory_units,
+      result.data_size_bytes(),
+      obligatory_batch_read,
+      ntp_config.ntp());
     result.memory_units = std::move(memory_units);
     co_return result;
 }
