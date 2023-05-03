@@ -31,6 +31,7 @@
 using namespace cluster::cloud_metadata;
 
 namespace {
+ss::logger logger("uploader_test");
 static ss::abort_source never_abort;
 } // anonymous namespace
 
@@ -71,6 +72,36 @@ public:
         }
         *downloaded_manifest = std::move(m_res.value());
         co_return true;
+    }
+
+    ss::future<bool> list_contains_manifest_contents(
+      const cluster::cloud_metadata::cluster_metadata_manifest& manifest) {
+        ss::abort_source as;
+        retry_chain_node retry_node(
+          as, ss::lowres_clock::time_point::max(), 10ms);
+        auto list_res = co_await remote.list_objects(bucket, retry_node);
+        BOOST_REQUIRE(!list_res.has_error());
+        const auto& items = list_res.value().contents;
+        if (items.empty()) {
+            co_return false;
+        }
+        int expected_count = 0;
+        vlog(
+          logger.debug,
+          "Looking for metadata {} and {}",
+          manifest.get_manifest_path()().string(),
+          manifest.controller_snapshot_path);
+        for (const auto& item : items) {
+            vlog(logger.debug, "Listed item: {}", item.key);
+            if (
+              item.key == manifest.get_manifest_path()().string()
+              || item.key == manifest.controller_snapshot_path) {
+                expected_count += 1;
+            }
+        }
+        // If we were expecting the metadata, both manifest and snapshot must be
+        // present.
+        co_return expected_count == 2;
     }
 
 protected:
@@ -306,4 +337,61 @@ FIXTURE_TEST(test_upload_in_term, cluster_metadata_uploader_fixture) {
     const auto new_snap_offset = get_local_snap_offset();
     BOOST_REQUIRE_NE(new_snap_offset, snap_offset);
     check_uploads_in_term_and_stepdown(new_snap_offset);
+}
+
+FIXTURE_TEST(
+  test_upload_loop_deletes_orphans, cluster_metadata_uploader_fixture) {
+    // Write a snapshot and begin the upload loop.
+    tests::cooperative_spin_wait_with_timeout(5s, [this] {
+        return controller_stm.maybe_write_snapshot();
+    }).get();
+    config::shard_local_cfg()
+      .cloud_storage_cluster_metadata_upload_interval_ms.set_value(1000ms);
+    cluster::cloud_metadata::uploader uploader(
+      cluster_uuid, bucket, remote, raft0);
+    tests::cooperative_spin_wait_with_timeout(5s, [this] {
+        return raft0->is_leader();
+    }).get();
+
+    auto upload_in_term = uploader.upload_until_term_change();
+    auto defer = ss::defer([&] {
+        uploader.stop_and_wait().get();
+        try {
+            upload_in_term.get();
+        } catch (...) {
+        }
+    });
+    // Wait for some valid metadata to show up.
+    cluster::cloud_metadata::cluster_metadata_manifest manifest;
+    tests::cooperative_spin_wait_with_timeout(5s, [this, &manifest] {
+        return downloaded_manifest_has_higher_id(
+          cluster::cloud_metadata::cluster_metadata_id{-1}, &manifest);
+    }).get();
+    tests::cooperative_spin_wait_with_timeout(5s, [this, &manifest] {
+        return list_contains_manifest_contents(manifest);
+    }).get();
+    // Now do something to trigger another controller snapshot.
+    auto result = app.controller->get_config_frontend()
+                    .local()
+                    .do_patch(
+                      cluster::config_update_request{
+                        .upsert = {{"cluster_id", "foo"}}},
+                      model::timeout_clock::now() + 5s)
+                    .get();
+    BOOST_REQUIRE(!result.errc);
+    tests::cooperative_spin_wait_with_timeout(5s, [this] {
+        return controller_stm.maybe_write_snapshot();
+    }).get();
+
+    // The uploader should delete the stale manifest and snapshot.
+    tests::cooperative_spin_wait_with_timeout(5s, [this] {
+        auto& s3_reqs = get_requests();
+        int num_deletes = 0;
+        for (const auto& r : s3_reqs) {
+            if (r.method == "DELETE") {
+                num_deletes++;
+            }
+        }
+        return num_deletes >= 2;
+    }).get();
 }
