@@ -9,13 +9,13 @@ from rptest.services.kgo_verifier_services import KgoVerifierProducer, KgoVerifi
 from rptest.services.kgo_verifier_services import KgoVerifierRandomConsumer
 from rptest.services.redpanda import SISettings
 from rptest.tests.prealloc_nodes import PreallocNodesTest
-from rptest.util import Scale
+from rptest.util import Scale, wait_for_removal_of_n_segments
 from rptest.utils.si_utils import nodes_report_cloud_segments
 
 
 class CloudStorageChunkReadTest(PreallocNodesTest):
     def __init__(self, test_context):
-        self.log_segment_size = 1048576 * 10
+        self.log_segment_size = 1048576 * 5
         self.test_context = test_context
         self.si_settings = SISettings(
             test_context=test_context,
@@ -45,10 +45,6 @@ class CloudStorageChunkReadTest(PreallocNodesTest):
 
     def setup(self):
         super().setup()
-        for t in self.topics:
-            self.client().alter_topic_config(
-                t.name, TopicSpec.PROPERTY_RETENTION_LOCAL_TARGET_BYTES,
-                2 * self.log_segment_size)
 
     def teardown(self):
         self.redpanda.cloud_storage_client.empty_bucket(
@@ -68,6 +64,23 @@ class CloudStorageChunkReadTest(PreallocNodesTest):
             backoff_sec=3)
         producer.stop()
         producer.wait()
+
+        original_snapshot = self.redpanda.storage(
+            all_nodes=True).segments_by_node('kafka',
+                                             self.topic,
+                                             partition_idx=0)
+        for t in self.topics:
+            self.client().alter_topic_config(
+                t.name, TopicSpec.PROPERTY_RETENTION_LOCAL_TARGET_BYTES,
+                self.log_segment_size)
+
+        # Wait for half of the segments to be removed, to exercise the read path
+        # when using the sequential consumer later on.
+        wait_for_removal_of_n_segments(self.redpanda,
+                                       self.topic,
+                                       partition_idx=0,
+                                       n=n_segments // 2,
+                                       original_snapshot=original_snapshot)
 
         return producer
 

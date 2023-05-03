@@ -458,9 +458,11 @@ class CloudStorageTimingStressTest(RedpandaTest, PartitionMovementMixin):
 
         self.epilogue()
 
-    @cluster(
-        num_nodes=5,
-        log_allow_list=[r"Error in hydraton loop: .*Connection reset by peer"])
+    @cluster(num_nodes=5,
+             log_allow_list=[
+                 r"Error in hydraton loop: .*Connection reset by peer",
+                 r"failed to hydrate chunk.*Connection reset by peer"
+             ])
     @skip_debug_mode
     def test_cloud_storage_with_partition_moves(self):
         """
