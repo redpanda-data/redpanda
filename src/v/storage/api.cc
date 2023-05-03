@@ -26,4 +26,9 @@ ss::future<usage_report> api::disk_usage() {
       [](usage_report acc, usage_report update) { return acc + update; });
 }
 
+void api::handle_disk_notification(
+  uint64_t total_space, uint64_t free_space, storage::disk_space_alert) {
+    _resources.update_allowance(total_space, free_space);
+}
+
 } // namespace storage

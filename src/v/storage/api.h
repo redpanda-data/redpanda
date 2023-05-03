@@ -153,6 +153,14 @@ public:
      */
     ss::future<usage_report> disk_usage();
 
+    /*
+     * Handle a disk notification (e.g. low space)
+     */
+    void handle_disk_notification(
+      uint64_t total_space,
+      uint64_t free_space,
+      storage::disk_space_alert alert);
+
 private:
     storage_resources _resources;
 
