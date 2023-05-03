@@ -2366,6 +2366,10 @@ consensus::open_snapshot() {
     };
 }
 
+ss::future<std::optional<ss::file>> consensus::open_snapshot_file() const {
+    return _snapshot_mgr.open_snapshot_file();
+}
+
 ss::future<std::error_code> consensus::replicate_configuration(
   ssx::semaphore_units u, group_configuration cfg) {
     // under the _op_sem lock
