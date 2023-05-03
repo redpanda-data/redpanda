@@ -276,6 +276,90 @@ ss::future<> log_manager::housekeeping() {
             // time for some chores
         }
 
+        /*
+         * When we are in a low disk space situation we would like to reclaim
+         * data as fast as possible since being in that state may cause all
+         * sorts of problems like blocking producers, or even crashing the
+         * system. The fastest way to do this is to apply retention rules to
+         * partitions in the order of most to least amount of reclaimable data.
+         * This amount can be estimated using the log::disk_usage(gc_config)
+         * interface.
+         */
+        if (
+          _disk_space_alert == disk_space_alert::degraded
+          || _disk_space_alert == disk_space_alert::low_space) {
+            /*
+             * build a schedule of partitions to gc ordered by amount of
+             * estimated reclaimable space. since logs may be asynchronously
+             * deleted doing this safely is tricky.
+             */
+            absl::btree_map<size_t, model::ntp, std::greater<>> ntp_by_gc_size;
+
+            /*
+             * first we build a collection of ntp's as their estimated
+             * reclaimable disk space. the loop and disk_usage() are safe
+             * against concurrent log removals.
+             */
+            for (auto& log_meta : _logs_list) {
+                /*
+                 * applying segment.ms will make reclaimable data from the
+                 * active segment visible.
+                 */
+                co_await log_meta.handle.apply_segment_ms();
+                if (!log_meta.link.is_linked()) {
+                    continue;
+                }
+
+                auto ntp = log_meta.handle.config().ntp();
+                auto log = dynamic_cast<disk_log_impl*>(
+                  log_meta.handle.get_impl());
+                auto usage = co_await log->disk_usage(
+                  gc_config(collection_threshold(), _config.retention_bytes()));
+
+                /*
+                 * NOTE: this estimate is for local retention policy only. for a
+                 * policy that considers removing data uploaded to the cloud,
+                 * this estimate is available in `usage.reclaim.available`.
+                 */
+                ntp_by_gc_size.emplace(usage.reclaim.retention, std::move(ntp));
+            }
+
+            /*
+             * Since we don't hold on to a per-log gate after we've recorded it
+             * in the container above, we need to lookup the ntp by name in the
+             * official log registry to avoid problems with concurrent removals
+             * since the log interface does not tolerate ops on closed logs.
+             */
+            for (const auto& candidate : ntp_by_gc_size) {
+                auto log = get(candidate.second);
+                if (!log.has_value()) {
+                    continue;
+                }
+                co_await log->gc(
+                  gc_config(collection_threshold(), _config.retention_bytes()));
+            }
+        }
+
+        /*
+         * Fall through for an iteration of the original housekeeping loop which
+         * will perform compaction. Additional scheduling heuristics will be
+         * added here, including:
+         *
+         * - Logs can be compacted in order of most space savings first, but the
+         *   estimation will be harder, most likely based on recent compaction
+         *   ratio acehived.
+         *
+         * - It may be wise to skip compaction completely in extreme low-disk
+         *   situations because the compaction process itself requires
+         *   additional disk space to stage new segments and indices.
+         *
+         * - Enhance the `disk_usage` interface to estimate when new data will
+         *   become reclaimable and cancel non-impactful housekeeping work.
+         *
+         * - Early out compaction process if a new disk space alert arives so
+         *   that we return this main scheduling loop.
+         */
+
         auto prev_sg = co_await ss::coroutine::switch_to(_config.compaction_sg);
 
         try {
@@ -652,6 +736,24 @@ ss::future<usage_report> log_manager::disk_usage() {
       },
       usage_report{},
       [](usage_report acc, usage_report update) { return acc + update; });
+}
+
+/*
+ *
+ */
+void log_manager::handle_disk_notification(storage::disk_space_alert alert) {
+    /*
+     * early debounce: disk alerts are delivered periodically by the health
+     * manager even when the state doesn't change. only pass on new states.
+     * beware of flapping alerts here. we only deliver new, non-ok alerts, which
+     * should help, but may prove to be insufficient.
+     */
+    if (_disk_space_alert != alert) {
+        _disk_space_alert = alert;
+        if (alert != disk_space_alert::ok) {
+            _housekeeping_sem.signal();
+        }
+    }
 }
 
 } // namespace storage
