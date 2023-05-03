@@ -5,4 +5,4 @@ metadata:
   name: redpanda
 spec:
   chartRef:
-    chartVersion: "3.0.6"
+    chartVersion: "4.0.13"
