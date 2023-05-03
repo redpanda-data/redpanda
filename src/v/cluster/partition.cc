@@ -882,6 +882,22 @@ ss::future<> partition::remove_remote_persistent_state(ss::abort_source& as) {
                   get_ntp_config(),
                   get_ntp_config().is_archival_enabled(),
                   get_ntp_config().is_read_replica_mode_enabled());
+
+                // Paranoid double-check that this is not a read replica and
+                // that remote delete is not enabled (this is already implied
+                // by the outer condition, but re-checking directly adjacent
+                // to where we call the erase method).
+                if (
+                  get_ntp_config().is_read_replica_mode_enabled()
+                  || !get_ntp_config().remote_delete()) {
+                    vlog(
+                      clusterlog.error,
+                      "Blocking deletion of {}, configuration does not permit "
+                      "it",
+                      ntp());
+                    co_return;
+                }
+
                 co_await _cloud_storage_partition->try_erase(as);
             }
         }

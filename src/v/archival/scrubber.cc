@@ -40,6 +40,7 @@ scrubber::scrubber(
   , _members_table(mt) {}
 
 ss::future<scrubber::purge_result> scrubber::purge_partition(
+  const cluster::nt_lifecycle_marker& lifecycle_marker,
   const cloud_storage_clients::bucket_name& bucket,
   model::ntp ntp,
   model::initial_revision_id remote_revision,
@@ -48,6 +49,29 @@ ss::future<scrubber::purge_result> scrubber::purge_partition(
       ss::lowres_clock::now() + 5s, 1s, &parent_rtc);
 
     purge_result result{.status = purge_status::success, .ops = 0};
+
+    if (lifecycle_marker.config.is_read_replica()) {
+        // Paranoia check: should never happen.
+        // It never makes sense to have written a lifecycle marker that
+        // has read replica flag set, something isn't right here, do not
+        // delete.
+        vlog(
+          archival_log.error,
+          "Read replica mode set in tombstone on {}, refusing to purge",
+          ntp);
+        co_return result;
+    }
+
+    if (!lifecycle_marker.config.properties.remote_delete) {
+        // Paranoia check: should never happen.
+        // We should not have been called for a topic with remote delete
+        // disabled, but double-check just in case.
+        vlog(
+          archival_log.error,
+          "Remote delete disabled in tombstone on {}, refusing to purge",
+          ntp);
+        co_return result;
+    }
 
     // TODO: tip off remote() to not retry on SlowDown responses: if we hit
     // one during housekeeping we should drop out.  Maybe retry_chain_node
@@ -221,7 +245,7 @@ scrubber::run(retry_chain_node& parent_rtc, run_quota_t quota) {
                 }
 
                 auto purge_r = co_await purge_partition(
-                  bucket, ntp, marker.initial_revision_id, parent_rtc);
+                  marker, bucket, ntp, marker.initial_revision_id, parent_rtc);
 
                 result.consumed += run_quota_t(purge_r.ops);
                 result.remaining

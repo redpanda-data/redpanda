@@ -11,6 +11,7 @@
 #include "archival/types.h"
 #include "cloud_storage/fwd.h"
 #include "cluster/fwd.h"
+#include "cluster/types.h"
 
 #include <seastar/core/future.hh>
 
@@ -62,6 +63,7 @@ private:
     };
 
     ss::future<purge_result> purge_partition(
+      const cluster::nt_lifecycle_marker&,
       const cloud_storage_clients::bucket_name& bucket,
       model::ntp,
       model::initial_revision_id,
