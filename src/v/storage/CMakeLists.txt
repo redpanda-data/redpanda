@@ -36,6 +36,7 @@ v_cc_library(
     offset_to_filepos.cc
     fs_utils.cc
     file_sanitizer_types.cc
+    api.cc
   DEPS
     Seastar::seastar
     v::bytes

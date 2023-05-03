@@ -103,15 +103,19 @@ ss::future<> segment::close() {
           size,
           *this);
     }
+
+    clear_cached_disk_usage();
 }
 
 ss::future<usage> segment::persistent_size() {
     usage u;
 
     /*
-     * accumulate the size of the segment file and each index.
+     * accumulate the size of the segment file and each index. because the
+     * segment appender will transparently extend the size of the segment file
+     * using fallocate, always stat the on disk size for the head partition.
      */
-    if (_data_disk_usage_size.has_value()) {
+    if (!_appender && _data_disk_usage_size.has_value()) {
         u.data = _data_disk_usage_size.value();
     } else {
         try {
@@ -337,6 +341,7 @@ ss::future<> segment::do_flush() {
         _tracker.committed_offset = std::max(o, _tracker.committed_offset);
         _tracker.stable_offset = _tracker.committed_offset;
         _reader.set_file_size(std::max(fsize, _reader.file_size()));
+        clear_cached_disk_usage();
     });
 }
 
@@ -633,6 +638,9 @@ void segment::advance_stable_offset(size_t offset) {
     _reader.set_file_size(it->first);
     _tracker.stable_offset = it->second;
     _inflight.erase(_inflight.begin(), std::next(it));
+
+    // after data gets flushed out of the appender recheck on disk size
+    clear_cached_disk_usage();
 }
 
 std::ostream& operator<<(std::ostream& o, const segment::offset_tracker& t) {

@@ -23,6 +23,7 @@ import collections
 import re
 import uuid
 import zipfile
+import pathlib
 from enum import Enum, IntEnum
 from typing import Mapping, Optional, Tuple, Union, Any
 
@@ -2094,6 +2095,97 @@ class RedpandaService(RedpandaServiceBase):
                 with archive.open(filename, "w") as outstr:
                     outstr.write(body)
 
+    def raise_on_storage_usage_inconsistency(self):
+        def tracked(fstat):
+            """
+            filter out files at the root of redpanda's data directory. these
+            are not included right now in the local storage costs returned by
+            the admin api. we may want to update this in the future, but
+            paying the cost to look at the files which are generally small,
+            and non-reclaimable doesn't seem worth the hassle. however, for
+            small experiements they are relatively large, so we need to filter
+            them out for the purposes of looking at the accuracy of storage
+            usage tracking.
+
+            Example files:
+                  DIR cloud_storage_cache
+                   26 startup_log
+                10685 config_cache.yaml
+            """
+            file, size = fstat
+            if len(file.parents) == 1:
+                return False
+            if file.parents[-2].name == "cloud_storage_cache":
+                return False
+            if "compaction.staging" in file.name:
+                # compaction staging files are temporary and are generally
+                # cleaned up after compaction finishes, or at next round of
+                # compaction if a file was stranded. during shutdown of any
+                # generic test we don't have a good opportunity to force this to
+                # happen without placing a lot of restrictions on shutdown. for
+                # the time being just ignore these.
+                return False
+            return True
+
+        def inspect_node(node):
+            """
+            Fetch reported size from admin interface, query the local file
+            system, and compute a percentage difference between reported and
+            observed disk usage.
+            """
+            try:
+                reported = self._admin.get_local_storage_usage(node)
+                reported_total = reported["data"] + reported[
+                    "index"] + reported["compaction"]
+                observed = list(self.data_stat(node))
+                observed_total = sum(s for _, s in filter(tracked, observed))
+                diff = observed_total - reported_total
+                return abs(
+                    diff / reported_total
+                ), reported, reported_total, observed, observed_total
+            except:
+                return 0.0, None, None, None, None
+
+        # inspect the node and check that we fall below a 5% threshold
+        # difference. at this point the test is over, but we allow for a couple
+        # retries in case things need to settle.
+        nodes = [(n, None) for n in self.nodes]
+        for _ in range(3):
+            retries = []
+            for node, _ in nodes:
+                pct_diff, *deets = inspect_node(node)
+                if pct_diff > 0.05:
+                    retries.append((node, (pct_diff, *deets)))
+            if not retries:
+                # all good
+                return
+            nodes = retries
+            time.sleep(5)
+
+        # if one or more nodes failed the check, then report information about
+        # the situation and fail the test by raising an exception.
+        nodes = []
+        max_node, max_diff = retries[0][0], retries[0][1][0]
+        for node, deets in retries:
+            node_name = f"{self.idx(node)}:{node.account.hostname}"
+            nodes.append(node_name)
+            pct_diff, reported, reported_total, observed, observed_total = deets
+            if pct_diff > max_diff:
+                max_diff = pct_diff
+                max_node = node
+            diff = observed_total - reported_total
+            for file, size in observed:
+                self.logger.debug(
+                    f"Observed file [{node_name}]: {size:7} {file}")
+            self.logger.warn(
+                f"Storage usage [{node_name}]: obs {observed_total:7} rep {reported_total:7} diff {diff:7} pct {pct_diff}"
+            )
+
+        max_node = f"{self.idx(max_node)}:{max_node.account.hostname}"
+        raise RuntimeError(
+            f"Storage usage inconsistency on nodes {nodes}: max difference {max_diff} on node {max_node}"
+        )
+
     def raise_on_bad_logs(self, allow_list=None):
         """
         Raise a BadLogLines exception if any nodes' logs contain errors
@@ -2759,6 +2851,29 @@ class RedpandaService(RedpandaServiceBase):
             tokens[1].rstrip("\x00"): (tokens[0], int(tokens[2]))
             for tokens in map(lambda l: l.split(), lines)
         }
+
+    def data_stat(self, node: ClusterNode):
+        """
+        Return a collection of (file path, file size) tuples for all files found
+        under the Redpanda data directory. File paths are normalized to be relative
+        to the data directory.
+        """
+        cmd = f"find {RedpandaService.DATA_DIR} -type f -exec stat -c '%n %s' '{{}}' \;"
+        lines = node.account.ssh_output(cmd)
+        lines = lines.decode().split("\n")
+
+        # 1. find and stat race. skip any files that were deleted.
+        # 2. skip empty lines: find may stick one on the end of the results
+        lines = filter(lambda l: "No such file or directory" not in l, lines)
+        lines = filter(lambda l: len(l) > 0, lines)
+
+        # split into pathlib.Path / file size pairs
+        parts = map(lambda l: l.split(), lines)
+        parts = ((pathlib.Path(f), int(s)) for f, s in parts)
+
+        # return results with relative paths
+        data_path = pathlib.Path(RedpandaService.DATA_DIR)
+        return ((p.relative_to(data_path), s) for p, s in parts)
 
     def broker_address(self, node, listener: str = "dnslistener"):
         assert node in self.nodes, f"where node is {node.name}"

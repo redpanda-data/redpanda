@@ -99,7 +99,7 @@ private:
 };
 
 // Top-level sharded storage API.
-class api {
+class api : public ss::peering_sharded_service<api> {
 public:
     explicit api(
       std::function<kvstore_config()> kv_conf_cb,
@@ -145,6 +145,12 @@ public:
     kvstore& kvs() { return *_kvstore; }
     log_manager& log_mgr() { return *_log_mgr; }
     storage_resources& resources() { return _resources; }
+
+    /*
+     * Return disk space usage for kvstore and all logs. The information
+     * returned is accumulated from all cores.
+     */
+    ss::future<usage_report> disk_usage();
 
 private:
     storage_resources _resources;

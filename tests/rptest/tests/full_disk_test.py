@@ -10,12 +10,14 @@ import random
 import requests
 from pickletools import long1
 from time import sleep, time, time_ns
+from collections import defaultdict
 
 from ducktape.cluster.cluster import ClusterNode
 from ducktape.tests.test import TestContext
 from ducktape.utils.util import wait_until
 from kafka import KafkaProducer
 from kafka.errors import BrokerNotAvailableError, NotLeaderForPartitionError
+from rptest.clients.kafka_cli_tools import KafkaCliTools
 from rptest.clients.default import DefaultClient
 from rptest.clients.kafka_cli_tools import KafkaCliTools
 from rptest.clients.types import TopicSpec
@@ -246,3 +248,39 @@ class FullDiskTest(EndToEndTest):
             self.bytes_prod.expect_rate(not_producing)
 
             self.full_disk.clear_low_space()
+
+
+class LocalDiskReportTest(RedpandaTest):
+    topics = (TopicSpec(), TopicSpec(partition_count=4))
+
+    def check(self, threshold):
+        admin = Admin(self.redpanda)
+        for node in self.redpanda.nodes:
+            reported = admin.get_local_storage_usage(node)
+            reported_total = reported["data"] + reported["index"] + reported[
+                "compaction"]
+            observed = self.redpanda.data_stat(node)
+            observed_total = sum(s for _, s in observed)
+            diff = observed_total - reported_total
+            pct_diff = abs(diff / reported_total)
+            if pct_diff > threshold:
+                return False
+        return True
+
+    @cluster(num_nodes=3)
+    def test_basic_usage_report(self):
+        # start-up
+        wait_until(lambda: self.check(0.05), timeout_sec=10, backoff_sec=5)
+
+        for _ in range(2):
+            # write some data
+            self.kafka_tools = KafkaCliTools(self.redpanda)
+            for topic in self.topics:
+                self.kafka_tools.produce(topic.name, 10000, 1024)
+
+            wait_until(lambda: self.check(0.05), timeout_sec=10, backoff_sec=5)
+
+            # restart the cluster
+            self.redpanda.rolling_restart_nodes(self.redpanda.nodes)
+
+            wait_until(lambda: self.check(0.05), timeout_sec=10, backoff_sec=5)

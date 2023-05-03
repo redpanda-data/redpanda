@@ -21,6 +21,7 @@
 #include "ssx/future-util.h"
 #include "storage/batch_cache.h"
 #include "storage/compacted_index_writer.h"
+#include "storage/disk_log_impl.h"
 #include "storage/file_sanitizer.h"
 #include "storage/fs_utils.h"
 #include "storage/kvstore.h"
@@ -42,6 +43,7 @@
 #include <seastar/core/future-util.hh>
 #include <seastar/core/future.hh>
 #include <seastar/core/gate.hh>
+#include <seastar/core/map_reduce.hh>
 #include <seastar/core/print.hh>
 #include <seastar/core/seastar.hh>
 #include <seastar/core/shared_ptr.hh>
@@ -600,4 +602,42 @@ std::ostream& operator<<(std::ostream& o, const log_manager& m) {
              << ", compaction_timer.armed:" << m._housekeeping_timer.armed()
              << "}";
 }
+
+ss::future<usage_report> log_manager::disk_usage() {
+    /*
+     * settings here should mirror those in housekeeping.
+     *
+     * TODO: this will be factored out to make the sharing of settings easier to
+     * maintain.
+     */
+    model::timestamp collection_threshold;
+    if (!_config.delete_retention()) {
+        collection_threshold = model::timestamp(0);
+    } else {
+        collection_threshold = model::timestamp(
+          model::timestamp::now().value()
+          - _config.delete_retention()->count());
+    }
+
+    fragmented_vector<log> logs;
+    for (auto& it : _logs) {
+        logs.push_back(it.second->handle);
+    }
+
+    co_return co_await ss::map_reduce(
+      logs.begin(),
+      logs.end(),
+      [this, collection_threshold](log l) {
+          auto log = dynamic_cast<disk_log_impl*>(l.get_impl());
+          return log->disk_usage(compaction_config(
+            collection_threshold,
+            _config.retention_bytes(),
+            l.stm_manager()->max_collectible_offset(),
+            _config.compaction_priority,
+            _abort_source));
+      },
+      usage_report{},
+      [](usage_report acc, usage_report update) { return acc + update; });
+}
+
 } // namespace storage

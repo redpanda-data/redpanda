@@ -408,6 +408,13 @@ struct compaction_result {
 struct reclaim_size_limits {
     size_t retention{0};
     size_t available{0};
+
+    friend reclaim_size_limits
+    operator+(reclaim_size_limits lhs, const reclaim_size_limits& rhs) {
+        lhs.retention += rhs.retention;
+        lhs.available += rhs.available;
+        return lhs;
+    }
 };
 
 /*
@@ -441,6 +448,12 @@ struct usage {
 struct usage_report {
     usage usage;
     reclaim_size_limits reclaim;
+
+    friend usage_report operator+(usage_report lhs, const usage_report& rhs) {
+        lhs.usage = lhs.usage + rhs.usage;
+        lhs.reclaim = lhs.reclaim + rhs.reclaim;
+        return lhs;
+    }
 };
 
 } // namespace storage

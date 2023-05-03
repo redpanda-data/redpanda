@@ -224,6 +224,11 @@ public:
 
     storage_resources& resources() { return _resources; }
 
+    /*
+     * Return disk usage information for all logs managed on the current core.
+     */
+    ss::future<usage_report> disk_usage();
+
 private:
     using logs_type
       = absl::flat_hash_map<model::ntp, std::unique_ptr<log_housekeeping_meta>>;
