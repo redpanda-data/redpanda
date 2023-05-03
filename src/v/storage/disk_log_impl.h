@@ -136,7 +136,7 @@ private:
       storage::compaction_config cfg);
     std::optional<std::pair<segment_set::iterator, segment_set::iterator>>
     find_compaction_range(const compaction_config&);
-    ss::future<std::optional<model::offset>> gc(compaction_config);
+    ss::future<std::optional<model::offset>> gc(gc_config);
 
     ss::future<> remove_empty_segments();
 
@@ -167,8 +167,8 @@ private:
     // These methods search the log for the offset to evict at such that
     // the retention policy is satisfied. If no such offset is found
     // std::nullopt is returned.
-    std::optional<model::offset> size_based_gc_max_offset(compaction_config);
-    std::optional<model::offset> time_based_gc_max_offset(compaction_config);
+    std::optional<model::offset> size_based_gc_max_offset(gc_config);
+    std::optional<model::offset> time_based_gc_max_offset(gc_config);
 
     /// Conditionally adjust retention timestamp on any segment that appears
     /// to have invalid timestamps, to ensure retention can proceed.
@@ -185,7 +185,7 @@ private:
 
     bool is_cloud_retention_active() const;
 
-    std::optional<model::offset> retention_offset(compaction_config);
+    std::optional<model::offset> retention_offset(gc_config);
 
 private:
     size_t max_segment_size() const;

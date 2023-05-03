@@ -511,8 +511,8 @@ struct compact_op final : opfuzz::op {
           *(ctx._as),
           storage::ntp_sanitizer_config{.sanitize_only = true});
         if (random_generators::get_int(0, 100) > 70) {
-            cfg.eviction_time = model::timestamp::now();
-            cfg.max_bytes = 10_MiB;
+            cfg.gc.eviction_time = model::timestamp::now();
+            cfg.gc.max_bytes = 10_MiB;
         }
         vlog(
           fuzzlogger.info,

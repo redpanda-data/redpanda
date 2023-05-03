@@ -338,6 +338,15 @@ struct log_reader_config {
     friend std::ostream& operator<<(std::ostream& o, const log_reader_config&);
 };
 
+struct gc_config {
+    // remove everything below eviction time
+    model::timestamp eviction_time;
+    // remove one segment if log is > max_bytes
+    std::optional<size_t> max_bytes;
+
+    friend std::ostream& operator<<(std::ostream&, const gc_config&);
+};
+
 struct compaction_config {
     explicit compaction_config(
       model::timestamp upper,
@@ -346,17 +355,20 @@ struct compaction_config {
       ss::io_priority_class p,
       ss::abort_source& as,
       std::optional<ntp_sanitizer_config> san_cfg = std::nullopt)
-      : eviction_time(upper)
-      , max_bytes(max_bytes_in_log)
+      : gc({
+        .eviction_time = upper,
+        .max_bytes = max_bytes_in_log,
+      })
       , max_collectible_offset(max_collect_offset)
       , iopc(p)
       , sanitizer_config(std::move(san_cfg))
       , asrc(&as) {}
 
-    // remove everything below eviction time
-    model::timestamp eviction_time;
-    // remove one segment if log is > max_bytes
-    std::optional<size_t> max_bytes;
+    // retained this intentionally (and temporarily) to control code churn in
+    // the patch series. will be removed after compact and gc are fully
+    // separated.
+    gc_config gc;
+
     // Cannot delete or compact past this offset (i.e. for unresolved txn
     // records): that is, only offsets <= this may be compacted.
     model::offset max_collectible_offset;

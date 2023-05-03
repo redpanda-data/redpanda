@@ -196,7 +196,7 @@ ss::future<std::optional<ss::sstring>> disk_log_impl::close() {
 }
 
 std::optional<model::offset>
-disk_log_impl::size_based_gc_max_offset(compaction_config cfg) {
+disk_log_impl::size_based_gc_max_offset(gc_config cfg) {
     if (!cfg.max_bytes.has_value()) {
         return std::nullopt;
     }
@@ -228,7 +228,7 @@ disk_log_impl::size_based_gc_max_offset(compaction_config cfg) {
 }
 
 std::optional<model::offset>
-disk_log_impl::time_based_gc_max_offset(compaction_config cfg) {
+disk_log_impl::time_based_gc_max_offset(gc_config cfg) {
     // The following compaction has a Kafka behavior compatibility bug. for
     // which we defer do nothing at the moment, possibly crashing the machine
     // and running out of disk. Kafka uses the same logic below as of
@@ -675,20 +675,20 @@ disk_log_impl::override_retention_config(compaction_config cfg) const {
     }
 
     if (local_retention_bytes.has_optional_value()) {
-        if (cfg.max_bytes) {
-            cfg.max_bytes = std::min(
-              local_retention_bytes.value(), cfg.max_bytes.value());
+        if (cfg.gc.max_bytes) {
+            cfg.gc.max_bytes = std::min(
+              local_retention_bytes.value(), cfg.gc.max_bytes.value());
         } else {
-            cfg.max_bytes = local_retention_bytes.value();
+            cfg.gc.max_bytes = local_retention_bytes.value();
         }
     }
 
     if (local_retention_ms.has_optional_value()) {
-        cfg.eviction_time = std::max(
+        cfg.gc.eviction_time = std::max(
           model::timestamp(
             model::timestamp::now().value()
             - local_retention_ms.value().count()),
-          cfg.eviction_time);
+          cfg.gc.eviction_time);
     }
 
     vlog(
@@ -718,10 +718,10 @@ disk_log_impl::apply_overrides(compaction_config defaults) const {
      */
     auto retention_bytes = config().get_overrides().retention_bytes;
     if (retention_bytes.is_disabled()) {
-        ret.max_bytes = std::nullopt;
+        ret.gc.max_bytes = std::nullopt;
     }
     if (retention_bytes.has_optional_value()) {
-        ret.max_bytes = retention_bytes.value();
+        ret.gc.max_bytes = retention_bytes.value();
     }
 
     /**
@@ -729,10 +729,10 @@ disk_log_impl::apply_overrides(compaction_config defaults) const {
      */
     auto retention_time = config().get_overrides().retention_time;
     if (retention_time.is_disabled()) {
-        ret.eviction_time = model::timestamp::min();
+        ret.gc.eviction_time = model::timestamp::min();
     }
     if (retention_time.has_optional_value()) {
-        ret.eviction_time = model::timestamp(
+        ret.gc.eviction_time = model::timestamp(
           model::timestamp::now().value() - retention_time.value().count());
     }
 
@@ -750,7 +750,7 @@ ss::future<> disk_log_impl::compact(compaction_config cfg) {
 
     std::optional<model::offset> new_start_offset;
     if (config().is_collectable()) {
-        new_start_offset = co_await gc(cfg);
+        new_start_offset = co_await gc(cfg.gc);
     }
 
     if (config().is_compacted() && !_segs.empty()) {
@@ -760,8 +760,7 @@ ss::future<> disk_log_impl::compact(compaction_config cfg) {
     _probe.set_compaction_ratio(_compaction_ratio.get());
 }
 
-ss::future<std::optional<model::offset>>
-disk_log_impl::gc(compaction_config cfg) {
+ss::future<std::optional<model::offset>> disk_log_impl::gc(gc_config cfg) {
     vassert(!_closed, "gc on closed log - {}", *this);
     vlog(
       gclog.trace,
@@ -843,8 +842,7 @@ ss::future<> disk_log_impl::retention_adjust_timestamps(
     }
 }
 
-std::optional<model::offset>
-disk_log_impl::retention_offset(compaction_config cfg) {
+std::optional<model::offset> disk_log_impl::retention_offset(gc_config cfg) {
     if (deletion_exempt(config().ntp())) {
         vlog(
           gclog.trace,
@@ -1788,7 +1786,7 @@ ss::future<usage_report> disk_log_impl::disk_usage(compaction_config cfg) {
     std::optional<model::offset> max_offset;
     if (config().is_collectable()) {
         cfg = apply_overrides(cfg);
-        max_offset = retention_offset(cfg);
+        max_offset = retention_offset(cfg.gc);
     }
 
     /*
