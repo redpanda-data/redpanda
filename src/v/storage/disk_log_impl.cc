@@ -641,8 +641,7 @@ ss::future<compaction_result> disk_log_impl::compact_adjacent_segments(
     co_return ret;
 }
 
-compaction_config
-disk_log_impl::override_retention_config(compaction_config cfg) const {
+gc_config disk_log_impl::override_retention_config(gc_config cfg) const {
     // cloud_retention is disabled, do not override
     if (!is_cloud_retention_active()) {
         return cfg;
@@ -675,20 +674,20 @@ disk_log_impl::override_retention_config(compaction_config cfg) const {
     }
 
     if (local_retention_bytes.has_optional_value()) {
-        if (cfg.gc.max_bytes) {
-            cfg.gc.max_bytes = std::min(
-              local_retention_bytes.value(), cfg.gc.max_bytes.value());
+        if (cfg.max_bytes) {
+            cfg.max_bytes = std::min(
+              local_retention_bytes.value(), cfg.max_bytes.value());
         } else {
-            cfg.gc.max_bytes = local_retention_bytes.value();
+            cfg.max_bytes = local_retention_bytes.value();
         }
     }
 
     if (local_retention_ms.has_optional_value()) {
-        cfg.gc.eviction_time = std::max(
+        cfg.eviction_time = std::max(
           model::timestamp(
             model::timestamp::now().value()
             - local_retention_ms.value().count()),
-          cfg.gc.eviction_time);
+          cfg.eviction_time);
     }
 
     vlog(
@@ -705,23 +704,22 @@ bool disk_log_impl::is_cloud_retention_active() const {
            && (config().is_archival_enabled());
 }
 
-compaction_config
-disk_log_impl::apply_overrides(compaction_config defaults) const {
+gc_config disk_log_impl::apply_overrides(gc_config defaults) const {
     if (!config().has_overrides()) {
         return override_retention_config(defaults);
     }
 
-    compaction_config ret = defaults;
+    auto ret = defaults;
 
     /**
      * Override retention bytes
      */
     auto retention_bytes = config().get_overrides().retention_bytes;
     if (retention_bytes.is_disabled()) {
-        ret.gc.max_bytes = std::nullopt;
+        ret.max_bytes = std::nullopt;
     }
     if (retention_bytes.has_optional_value()) {
-        ret.gc.max_bytes = retention_bytes.value();
+        ret.max_bytes = retention_bytes.value();
     }
 
     /**
@@ -729,10 +727,10 @@ disk_log_impl::apply_overrides(compaction_config defaults) const {
      */
     auto retention_time = config().get_overrides().retention_time;
     if (retention_time.is_disabled()) {
-        ret.gc.eviction_time = model::timestamp::min();
+        ret.eviction_time = model::timestamp::min();
     }
     if (retention_time.has_optional_value()) {
-        ret.gc.eviction_time = model::timestamp(
+        ret.eviction_time = model::timestamp(
           model::timestamp::now().value() - retention_time.value().count());
     }
 
@@ -746,7 +744,7 @@ ss::future<> disk_log_impl::compact(compaction_config cfg) {
       "[{}] house keeping with configuration from manager: {}",
       config().ntp(),
       cfg);
-    cfg = apply_overrides(cfg);
+    cfg.gc = apply_overrides(cfg.gc);
 
     std::optional<model::offset> new_start_offset;
     if (config().is_collectable()) {
@@ -1785,7 +1783,7 @@ log make_disk_backed_log(
 ss::future<usage_report> disk_log_impl::disk_usage(compaction_config cfg) {
     std::optional<model::offset> max_offset;
     if (config().is_collectable()) {
-        cfg = apply_overrides(cfg);
+        cfg.gc = apply_overrides(cfg.gc);
         max_offset = retention_offset(cfg.gc);
     }
 

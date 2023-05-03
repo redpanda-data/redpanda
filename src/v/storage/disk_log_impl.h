@@ -175,13 +175,13 @@ private:
     ss::future<>
     retention_adjust_timestamps(std::chrono::seconds ignore_in_future);
 
-    compaction_config apply_overrides(compaction_config) const;
+    gc_config apply_overrides(gc_config) const;
 
     storage_resources& resources();
 
     void wrote_stm_bytes(size_t);
 
-    compaction_config override_retention_config(compaction_config cfg) const;
+    gc_config override_retention_config(gc_config) const;
 
     bool is_cloud_retention_active() const;
 
