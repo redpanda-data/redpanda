@@ -307,15 +307,10 @@ remote_segment::offset_data_stream(
         data_stream = ss::make_file_input_stream(
           _data_file, pos.file_pos, std::move(options));
     } else {
-        // If the first_timestamp is supplied, this data source effectively ends
-        // up reading the entire segment in chunks.
-        auto start_koff = first_timestamp.has_value()
-                            ? _base_rp_offset - _base_offset_delta
-                            : start;
         auto chunk_ds = std::make_unique<chunk_data_source_impl>(
           _chunks_api.value(),
           *this,
-          start_koff,
+          pos.kaf_offset,
           end,
           pos.file_pos,
           std::move(options));
