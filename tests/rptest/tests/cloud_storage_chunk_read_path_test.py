@@ -47,7 +47,8 @@ class CloudStorageChunkReadTest(PreallocNodesTest):
         super().setup()
         for t in self.topics:
             self.client().alter_topic_config(
-                t.name, TopicSpec.PROPERTY_RETENTION_LOCAL_TARGET_MS, 1000)
+                t.name, TopicSpec.PROPERTY_RETENTION_LOCAL_TARGET_BYTES,
+                2 * self.log_segment_size)
 
     def teardown(self):
         self.redpanda.cloud_storage_client.empty_bucket(
