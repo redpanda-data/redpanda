@@ -1072,16 +1072,17 @@ size_t disk_log_impl::bytes_left_before_roll() const {
 }
 
 ss::future<> disk_log_impl::force_roll(ss::io_priority_class iopc) {
+    auto roll_lock_holder = co_await _segments_rolling_lock.get_units();
     auto t = term();
     auto next_offset = offsets().dirty_offset + model::offset(1);
     if (_segs.empty()) {
-        return new_segment(next_offset, t, iopc);
+        co_return co_await new_segment(next_offset, t, iopc);
     }
     auto ptr = _segs.back();
     if (!ptr->has_appender()) {
-        return new_segment(next_offset, t, iopc);
+        co_return co_await new_segment(next_offset, t, iopc);
     }
-    return ptr->release_appender(_readers_cache.get())
+    co_return co_await ptr->release_appender(_readers_cache.get())
       .then([this, next_offset, t, iopc] {
           return new_segment(next_offset, t, iopc);
       });
