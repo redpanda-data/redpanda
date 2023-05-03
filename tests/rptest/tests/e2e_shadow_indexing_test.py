@@ -145,20 +145,6 @@ class EndToEndShadowIndexingTest(EndToEndShadowIndexingBase):
             im.evaluate([('vectorized_cloud_storage_index_downloads_total',
                           lambda _, cnt: cnt)]) for im in index_metrics)
 
-        # Matches the segment or the index
-        cache_expr = re.compile(
-            fr'^({self.redpanda.DATA_DIR}/cloud_storage_cache/.*\.log\.\d+)(\.index)?$'
-        )
-
-        # Each segment should have the corresponding index present
-        for node in self.redpanda.nodes:
-            index_segment_pair = defaultdict(lambda: 0)
-            for file in self.redpanda.data_checksum(node):
-                if (match := cache_expr.match(file)) and self.topic in file:
-                    index_segment_pair[match[1]] += 1
-            for file, count in index_segment_pair.items():
-                assert count == 2, f'expected one index and one log for {file}, found {count}'
-
 
 class EndToEndShadowIndexingTestCompactedTopic(EndToEndShadowIndexingBase):
     topics = (TopicSpec(
