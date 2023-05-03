@@ -230,6 +230,11 @@ public:
      */
     ss::future<usage_report> disk_usage();
 
+    /*
+     *
+     */
+    void handle_disk_notification(storage::disk_space_alert);
+
 private:
     using logs_type
       = absl::flat_hash_map<model::ntp, std::unique_ptr<log_housekeeping_meta>>;
@@ -245,6 +250,7 @@ private:
      */
     ss::future<> housekeeping();
     ssx::semaphore _housekeeping_sem{0, "log_manager::housekeeping"};
+    disk_space_alert _disk_space_alert{disk_space_alert::ok};
 
     std::optional<batch_cache_index> create_cache(with_cache);
 

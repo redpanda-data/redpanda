@@ -1808,6 +1808,9 @@ log make_disk_backed_log(
 }
 
 ss::future<usage_report> disk_log_impl::disk_usage(gc_config cfg) {
+    // protect against concurrent log removal with housekeeping loop
+    auto gate = _compaction_housekeeping_gate.hold();
+
     std::optional<model::offset> max_offset;
     if (config().is_collectable()) {
         cfg = apply_overrides(cfg);
