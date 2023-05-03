@@ -67,6 +67,14 @@ public:
     property<bool> upgrade_override_checks;
     property<std::optional<size_t>> memory_allocation_warning_threshold;
 
+    // If true, inject low level failures in the storage layer according
+    // to the configuration at `storage_failure_injection_config_path`.
+    property<bool> storage_failure_injection_enabled;
+
+    // Path to the configuration file for low level storage failure injection.
+    property<std::optional<std::filesystem::path>>
+      storage_failure_injection_config_path;
+
     // build pidfile path: `<data_directory>/pid.lock`
     std::filesystem::path pidfile_path() const {
         return data_directory().path / "pid.lock";

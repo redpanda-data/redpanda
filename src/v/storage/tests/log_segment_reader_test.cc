@@ -14,13 +14,13 @@
 #include "model/timeout_clock.h"
 #include "random/generators.h"
 #include "storage/disk_log_appender.h"
+#include "storage/file_sanitizer.h"
 #include "storage/log_reader.h"
 #include "storage/segment.h"
 #include "storage/segment_appender.h"
 #include "storage/segment_appender_utils.h"
 #include "storage/segment_reader.h"
 #include "utils/disk_log_builder.h"
-#include "utils/file_sanitizer.h"
 
 #include <seastar/core/thread.hh>
 #include <seastar/testing/thread_test_case.hh>

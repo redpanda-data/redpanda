@@ -10,19 +10,8 @@
 #include "storage/segment_appender_utils.h"
 
 #include "model/record.h"
-#include "model/timestamp.h"
 #include "reflection/adl.h"
-#include "storage/logger.h"
-#include "utils/vint.h"
-#include "vassert.h"
 
-#include <seastar/core/byteorder.hh>
-#include <seastar/core/future-util.hh>
-
-#include <bits/stdint-uintn.h>
-
-#include <memory>
-#include <type_traits>
 namespace storage {
 
 iobuf disk_header_to_iobuf(const model::record_batch_header& h) {
@@ -48,16 +37,6 @@ iobuf disk_header_to_iobuf(const model::record_batch_header& h) {
       model::packed_record_batch_header_size,
       b.size_bytes());
     return b;
-}
-
-ss::future<>
-write(segment_appender& appender, const model::record_batch& batch) {
-    auto hdrbuf = std::make_unique<iobuf>(disk_header_to_iobuf(batch.header()));
-    auto ptr = hdrbuf.get();
-    return appender.append(*ptr).then(
-      [&appender, &batch, cpy = std::move(hdrbuf)] {
-          return appender.append(batch.data());
-      });
 }
 
 } // namespace storage

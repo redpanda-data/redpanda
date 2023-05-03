@@ -14,6 +14,7 @@
 #include "model/fundamental.h"
 #include "model/record_batch_types.h"
 #include "storage/compacted_index.h"
+#include "storage/file_sanitizer_types.h"
 #include "storage/types.h"
 
 #include <seastar/core/file.hh>
@@ -163,8 +164,8 @@ inline ss::future<> compacted_index_writer::close() { return _impl->close(); }
 compacted_index_writer make_file_backed_compacted_index(
   ss::sstring filename,
   ss::io_priority_class p,
-  debug_sanitize_files debug,
   bool truncate,
-  storage_resources& resources);
+  storage_resources& resources,
+  std::optional<ntp_sanitizer_config> sanitizer_config);
 
 } // namespace storage

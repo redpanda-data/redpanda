@@ -66,7 +66,7 @@ private:
           8192,
           config::mock_binding(std::chrono::milliseconds(10)),
           _test_dir,
-          storage::debug_sanitize_files::yes);
+          storage::make_sanitized_file_config());
     }
 
     storage::storage_resources resources{};

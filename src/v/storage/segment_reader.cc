@@ -27,11 +27,11 @@ segment_reader::segment_reader(
   segment_full_path path,
   size_t buffer_size,
   unsigned read_ahead,
-  debug_sanitize_files sanitize) noexcept
+  std::optional<ntp_sanitizer_config> ntp_sanitizer_config) noexcept
   : _path(std::move(path))
   , _buffer_size(buffer_size)
   , _read_ahead(read_ahead)
-  , _sanitize(sanitize) {}
+  , _sanitizer_config(std::move(ntp_sanitizer_config)) {}
 
 segment_reader::~segment_reader() noexcept {
     if (!_streams.empty() || _data_file_refcount > 0) {
@@ -56,7 +56,7 @@ segment_reader::segment_reader(segment_reader&& rhs) noexcept
   , _file_size(rhs._file_size)
   , _buffer_size(rhs._buffer_size)
   , _read_ahead(rhs._read_ahead)
-  , _sanitize(rhs._sanitize)
+  , _sanitizer_config(std::move(rhs._sanitizer_config))
   , _gate(std::move(rhs._gate)) {
     for (auto& i : _streams) {
         i._parent = this;
@@ -70,7 +70,7 @@ segment_reader& segment_reader::operator=(segment_reader&& rhs) noexcept {
     _file_size = rhs._file_size;
     _buffer_size = rhs._buffer_size;
     _read_ahead = rhs._read_ahead;
-    _sanitize = rhs._sanitize;
+    _sanitizer_config = std::move(rhs._sanitizer_config);
     _gate = std::move(rhs._gate);
     _streams = std::move(rhs._streams);
     for (auto& i : _streams) {
@@ -129,7 +129,7 @@ ss::future<segment_reader_handle> segment_reader::get() {
     if (!_data_file) {
         vlog(stlog.debug, "Opening segment file {}", _path);
         _data_file = co_await internal::make_reader_handle(
-          std::filesystem::path(_path), _sanitize);
+          std::filesystem::path(_path), _sanitizer_config);
     }
 
     _data_file_refcount++;

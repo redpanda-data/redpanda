@@ -9,11 +9,11 @@
 
 #include "model/fundamental.h"
 #include "random/generators.h"
+#include "storage/file_sanitizer.h"
 #include "storage/opfuzz/opfuzz.h"
 #include "storage/tests/storage_test_fixture.h"
 #include "storage/types.h"
 #include "test_utils/fixture.h"
-#include "utils/file_sanitizer.h"
 
 #include <seastar/util/defer.hh>
 #include <seastar/util/log.hh>
@@ -36,7 +36,6 @@ FIXTURE_TEST(test_random_workload, storage_test_fixture) {
     storage::log_manager mngr = make_log_manager(storage::log_config(
       std::move(test_dir),
       200_MiB,
-      storage::debug_sanitize_files::no,
       ss::default_priority_class(),
       storage::with_cache::yes));
     auto deferred = ss::defer([&mngr]() mutable { mngr.stop().get0(); });
@@ -84,7 +83,6 @@ FIXTURE_TEST(test_random_remove, storage_test_fixture) {
     storage::log_manager mngr = make_log_manager(storage::log_config(
       std::move(test_dir),
       200_MiB,
-      storage::debug_sanitize_files::no,
       ss::default_priority_class(),
       storage::with_cache::yes));
     auto deferred = ss::defer([&mngr]() mutable { mngr.stop().get0(); });

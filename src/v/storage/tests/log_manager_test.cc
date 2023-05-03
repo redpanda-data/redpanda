@@ -14,10 +14,10 @@
 #include "storage/api.h"
 #include "storage/directories.h"
 #include "storage/disk_log_appender.h"
+#include "storage/file_sanitizer.h"
 #include "storage/segment_appender.h"
 #include "storage/segment_appender_utils.h"
 #include "storage/segment_reader.h"
-#include "utils/file_sanitizer.h"
 
 #include <seastar/core/thread.hh>
 #include <seastar/testing/thread_test_case.hh>
@@ -44,7 +44,11 @@ void write_batches(ss::lw_shared_ptr<segment> seg) {
 }
 
 log_config make_config() {
-    return log_config{"test.dir", 1024, debug_sanitize_files::yes};
+    return log_config{
+      "test.dir",
+      1024,
+      ss::default_priority_class(),
+      storage::make_sanitized_file_config()};
 }
 
 ntp_config config_from_ntp(const model::ntp& ntp) {
@@ -70,7 +74,7 @@ SEASTAR_THREAD_TEST_CASE(test_can_load_logs) {
             1_MiB,
             config::mock_binding(10ms),
             conf.base_dir,
-            storage::debug_sanitize_files::yes);
+            storage::make_sanitized_file_config());
       },
       [conf]() { return conf; },
       feature_table);

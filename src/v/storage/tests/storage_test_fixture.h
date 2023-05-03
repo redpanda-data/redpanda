@@ -198,7 +198,7 @@ public:
             1_MiB,
             config::mock_binding(10ms),
             test_dir,
-            storage::debug_sanitize_files::yes),
+            storage::make_sanitized_file_config()),
           resources,
           feature_table) {
         configure_unit_test_logging();
@@ -249,9 +249,9 @@ public:
         auto cfg = storage::log_config(
           std::move(test_dir),
           200_MiB,
-          storage::debug_sanitize_files::yes,
           ss::default_priority_class(),
-          cache);
+          cache,
+          storage::make_sanitized_file_config());
         return cfg;
     }
 

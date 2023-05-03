@@ -355,20 +355,20 @@ static ss::future<segment_set> do_recover(
  */
 static ss::future<segment_set::underlying_t> open_segments(
   partition_path ppath,
-  debug_sanitize_files sanitize_fileops,
   std::function<std::optional<batch_cache_index>()> cache_factory,
   ss::abort_source& as,
   size_t buf_size,
   unsigned read_ahead,
   storage_resources& resources,
-  ss::sharded<features::feature_table>& feature_table) {
+  ss::sharded<features::feature_table>& feature_table,
+  const std::optional<ntp_sanitizer_config>& ntp_sanitizer_config) {
     using segs_type = segment_set::underlying_t;
     return ss::do_with(
       segs_type{},
       [&as,
        ppath,
        cache_factory,
-       sanitize_fileops,
+       ntp_sanitizer_config,
        buf_size,
        read_ahead,
        &resources,
@@ -378,7 +378,7 @@ static ss::future<segment_set::underlying_t> open_segments(
             [&as,
              ppath,
              cache_factory,
-             sanitize_fileops,
+             san_cfg = ntp_sanitizer_config,
              &segs,
              buf_size,
              read_ahead,
@@ -404,12 +404,12 @@ static ss::future<segment_set::underlying_t> open_segments(
 
                 return open_segment(
                          *path,
-                         sanitize_fileops,
                          cache_factory(),
                          buf_size,
                          read_ahead,
                          resources,
-                         feature_table)
+                         feature_table,
+                         san_cfg)
                   .then([&segs](ss::lw_shared_ptr<segment> p) {
                       segs.push_back(std::move(p));
                   });
@@ -427,7 +427,6 @@ static ss::future<segment_set::underlying_t> open_segments(
 
 ss::future<segment_set> recover_segments(
   partition_path path,
-  debug_sanitize_files sanitize_fileops,
   bool is_compaction_enabled,
   std::function<std::optional<batch_cache_index>()> cache_factory,
   ss::abort_source& as,
@@ -435,25 +434,26 @@ ss::future<segment_set> recover_segments(
   unsigned read_readahead_count,
   std::optional<ss::sstring> last_clean_segment,
   storage_resources& resources,
-  ss::sharded<features::feature_table>& feature_table) {
+  ss::sharded<features::feature_table>& feature_table,
+  std::optional<ntp_sanitizer_config> ntp_sanitizer_config) {
     return ss::recursive_touch_directory(ss::sstring(path))
       .then([&as,
              path,
              cache_factory,
-             sanitize_fileops,
+             ntp_sanitizer_config,
              read_buf_size,
              read_readahead_count,
              &resources,
              &feature_table] {
           return open_segments(
             path,
-            sanitize_fileops,
             cache_factory,
             as,
             read_buf_size,
             read_readahead_count,
             resources,
-            feature_table);
+            feature_table,
+            ntp_sanitizer_config);
       })
       .then([&as,
              is_compaction_enabled,

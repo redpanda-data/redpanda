@@ -289,6 +289,28 @@
                     ]
                 }
             ]
+        },
+        {
+            "path": "/v1/debug/set_storage_failure_injection_enabled",
+            "operations": [
+                {
+                    "method": "PUT",
+                    "summary": "Set the value of the storage_failure_injection_enabled node config",
+                    "type": "void",
+                    "nickname": "set_storage_failure_injection_enabled",
+                    "produces": [
+                        "application/json"
+                    ],
+                    "parameters": [
+                        {
+                        "name": "value",
+                        "in": "query",
+                        "required": true,
+                        "type": "boolean"
+                        }
+                    ]
+                }
+            ]
         }
     ],
     "models": {

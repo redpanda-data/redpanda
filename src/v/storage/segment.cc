@@ -13,6 +13,7 @@
 #include "config/configuration.h"
 #include "ssx/future-util.h"
 #include "storage/compacted_index_writer.h"
+#include "storage/file_sanitizer.h"
 #include "storage/fs_utils.h"
 #include "storage/fwd.h"
 #include "storage/logger.h"
@@ -23,7 +24,6 @@
 #include "storage/segment_utils.h"
 #include "storage/types.h"
 #include "storage/version.h"
-#include "utils/file_sanitizer.h"
 #include "vassert.h"
 #include "vlog.h"
 
@@ -506,33 +506,33 @@ ss::future<append_result> segment::do_append(const model::record_batch& b) {
     }
     const auto start_physical_offset = _appender->file_byte_offset();
     _generation_id++;
-    // proxy serialization to segment_appender_utils
-    auto write_fut
-      = write(*_appender, b).then([this, &b, start_physical_offset] {
-            _tracker.dirty_offset = b.last_offset();
-            const auto end_physical_offset = _appender->file_byte_offset();
-            const auto expected_end_physical = start_physical_offset
-                                               + b.header().size_bytes;
-            vassert(
-              end_physical_offset == expected_end_physical,
-              "size must be deterministic: end_offset:{}, expected:{}, "
-              "batch.header:{} - {}",
-              end_physical_offset,
-              expected_end_physical,
-              b.header(),
-              *this);
-            // inflight index. trimmed on every dma_write in appender
-            _inflight.emplace(end_physical_offset, b.last_offset());
-            // index the write
-            _idx.maybe_track(b.header(), start_physical_offset);
-            auto ret = append_result{
-              .base_offset = b.base_offset(),
-              .last_offset = b.last_offset(),
-              .byte_size = (size_t)b.size_bytes()};
-            // cache always copies the batch
-            cache_put(b);
-            return ret;
-        });
+    // proxy serialization to segment_appender
+    auto write_fut = _appender->append(b).then(
+      [this, &b, start_physical_offset] {
+          _tracker.dirty_offset = b.last_offset();
+          const auto end_physical_offset = _appender->file_byte_offset();
+          const auto expected_end_physical = start_physical_offset
+                                             + b.header().size_bytes;
+          vassert(
+            end_physical_offset == expected_end_physical,
+            "size must be deterministic: end_offset:{}, expected:{}, "
+            "batch.header:{} - {}",
+            end_physical_offset,
+            expected_end_physical,
+            b.header(),
+            *this);
+          // inflight index. trimmed on every dma_write in appender
+          _inflight.emplace(end_physical_offset, b.last_offset());
+          // index the write
+          _idx.maybe_track(b.header(), start_physical_offset);
+          auto ret = append_result{
+            .base_offset = b.base_offset(),
+            .last_offset = b.last_offset(),
+            .byte_size = (size_t)b.size_bytes()};
+          // cache always copies the batch
+          cache_put(b);
+          return ret;
+      });
     auto index_fut = compaction_index_batch(b);
     return ss::when_all(std::move(write_fut), std::move(index_fut))
       .then([this, batch_type = b.header().type](
@@ -694,12 +694,12 @@ auto with_segment(ss::lw_shared_ptr<segment> s, Func&& f) {
 
 ss::future<ss::lw_shared_ptr<segment>> open_segment(
   segment_full_path path,
-  debug_sanitize_files sanitize_fileops,
   std::optional<batch_cache_index> batch_cache,
   size_t buf_size,
   unsigned read_ahead,
   storage_resources& resources,
-  ss::sharded<features::feature_table>& feature_table) {
+  ss::sharded<features::feature_table>& feature_table,
+  std::optional<ntp_sanitizer_config> ntp_sanitizer_config) {
     if (path.get_version() != record_version_type::v1) {
         throw std::runtime_error(fmt::format(
           "Segment has invalid version {} != {} path {}",
@@ -709,7 +709,7 @@ ss::future<ss::lw_shared_ptr<segment>> open_segment(
     }
 
     auto rdr = std::make_unique<segment_reader>(
-      path, buf_size, read_ahead, sanitize_fileops);
+      path, buf_size, read_ahead, ntp_sanitizer_config);
     co_await rdr->load_size();
 
     auto idx = segment_index(
@@ -717,7 +717,7 @@ ss::future<ss::lw_shared_ptr<segment>> open_segment(
       path.get_base_offset(),
       segment_index::default_data_buffer_step,
       feature_table,
-      sanitize_fileops);
+      std::move(ntp_sanitizer_config));
 
     co_return ss::make_lw_shared<segment>(
       segment::offset_tracker(path.get_term(), path.get_base_offset()),
@@ -737,33 +737,33 @@ ss::future<ss::lw_shared_ptr<segment>> make_segment(
   record_version_type version,
   size_t buf_size,
   unsigned read_ahead,
-  debug_sanitize_files sanitize_fileops,
   std::optional<batch_cache_index> batch_cache,
   storage_resources& resources,
-  ss::sharded<features::feature_table>& feature_table) {
+  ss::sharded<features::feature_table>& feature_table,
+  std::optional<ntp_sanitizer_config> ntp_sanitizer_config) {
     auto path = segment_full_path(ntpc, base_offset, term, version);
     vlog(stlog.info, "Creating new segment {}", path);
     return open_segment(
              path,
-             sanitize_fileops,
              std::move(batch_cache),
              buf_size,
              read_ahead,
              resources,
-             feature_table)
-      .then([path, &ntpc, sanitize_fileops, pc, &resources](
-              ss::lw_shared_ptr<segment> seg) {
+             feature_table,
+             ntp_sanitizer_config)
+      .then([path, &ntpc, pc, &resources, ntp_sanitizer_config](
+              ss::lw_shared_ptr<segment> seg) mutable {
           return with_segment(
             std::move(seg),
-            [path, &ntpc, sanitize_fileops, pc, &resources](
-              const ss::lw_shared_ptr<segment>& seg) {
+            [path, &ntpc, pc, &resources, ntp_sanitizer_config](
+              const ss::lw_shared_ptr<segment>& seg) mutable {
                 return internal::make_segment_appender(
                          path,
-                         sanitize_fileops,
                          internal::number_of_chunks_from_config(ntpc),
                          internal::segment_size_from_config(ntpc),
                          pc,
-                         resources)
+                         resources,
+                         std::move(ntp_sanitizer_config))
                   .then([seg, &resources](segment_appender_ptr a) {
                       return ss::make_ready_future<ss::lw_shared_ptr<segment>>(
                         ss::make_lw_shared<segment>(
@@ -779,18 +779,21 @@ ss::future<ss::lw_shared_ptr<segment>> make_segment(
                   });
             });
       })
-      .then([path, &ntpc, sanitize_fileops, pc, &resources](
-              ss::lw_shared_ptr<segment> seg) {
+      .then([path, &ntpc, pc, &resources, ntp_sanitizer_config](
+              ss::lw_shared_ptr<segment> seg) mutable {
           if (!ntpc.is_compacted()) {
               return ss::make_ready_future<ss::lw_shared_ptr<segment>>(seg);
           }
           return with_segment(
             seg,
-            [path, sanitize_fileops, pc, &resources](
-              const ss::lw_shared_ptr<segment>& seg) {
+            [path, pc, &resources, ntp_sanitizer_config](
+              const ss::lw_shared_ptr<segment>& seg) mutable {
                 auto compacted_path = path.to_compacted_index();
                 return internal::make_compacted_index_writer(
-                         compacted_path, sanitize_fileops, pc, resources)
+                         compacted_path,
+                         pc,
+                         resources,
+                         std::move(ntp_sanitizer_config))
                   .then([seg, &resources](compacted_index_writer compact) {
                       return ss::make_ready_future<ss::lw_shared_ptr<segment>>(
                         ss::make_lw_shared<segment>(

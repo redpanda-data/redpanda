@@ -348,16 +348,11 @@ static json::Document parse_json_body(ss::http::request const& req) {
  */
 static void
 apply_validator(json::validator& validator, json::Document const& doc) {
-    validator.schema_validator.Reset();
-    validator.schema_validator.ResetError();
-
-    if (!doc.Accept(validator.schema_validator)) {
-        json::StringBuffer val_buf;
-        json::Writer<json::StringBuffer> w{val_buf};
-        validator.schema_validator.GetError().Accept(w);
-        auto s = ss::sstring{val_buf.GetString(), val_buf.GetSize()};
-        throw ss::httpd::bad_request_exception(
-          fmt::format("JSON request body does not conform to schema: {}", s));
+    try {
+        json::validate(validator, doc);
+    } catch (json::json_validation_error& err) {
+        throw ss::httpd::bad_request_exception(fmt::format(
+          "JSON request body does not conform to schema: {}", err.what()));
     }
 }
 
@@ -3992,6 +3987,24 @@ void admin_server::register_debug_routes() {
       [this](std::unique_ptr<ss::http::request> req)
         -> ss::future<ss::json::json_return_type> {
           return get_partition_state_handler(std::move(req));
+      });
+
+    register_route<superuser>(
+      ss::httpd::debug_json::set_storage_failure_injection_enabled,
+      [](std::unique_ptr<ss::http::request> req) {
+          auto value = req->get_query_param("value");
+          if (value != "true" && value != "false") {
+              throw ss::httpd::bad_param_exception(fmt::format(
+                "Invalid parameter 'value' {{{}}}. Should be 'true' or "
+                "'false'",
+                value));
+          }
+
+          config::node().storage_failure_injection_enabled.set_value(
+            value == "true");
+
+          return ss::make_ready_future<ss::json::json_return_type>(
+            ss::json::json_void());
       });
 }
 

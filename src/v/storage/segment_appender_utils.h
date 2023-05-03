@@ -18,7 +18,4 @@ namespace storage {
 
 iobuf disk_header_to_iobuf(const model::record_batch_header& h);
 
-ss::future<>
-write(segment_appender& appender, const model::record_batch& batch);
-
 } // namespace storage

@@ -449,7 +449,7 @@ inline void rjson_serialize(
           ss.rdstate()));
     }
     w.Key("address");
-    rjson_serialize(w, ss.str());
+    rjson_serialize<std::string_view>(w, ss.str());
     w.EndObject();
 }
 

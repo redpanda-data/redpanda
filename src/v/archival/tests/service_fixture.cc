@@ -224,7 +224,8 @@ archiver_fixture::get_started_log_builder(
     auto conf = storage::log_config(
       config::node().data_directory().as_sstring(),
       1_MiB,
-      storage::debug_sanitize_files::yes);
+      ss::default_priority_class(),
+      storage::make_sanitized_file_config());
     auto builder = std::make_unique<storage::disk_log_builder>(std::move(conf));
     builder->start(std::move(ntp_cfg)).get();
     return builder;

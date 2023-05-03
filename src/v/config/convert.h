@@ -393,4 +393,18 @@ struct convert<model::leader_balancer_mode> {
     }
 };
 
+template<>
+struct convert<std::filesystem::path> {
+    using type = std::filesystem::path;
+
+    static Node encode(const type& rhs) { return Node(rhs.native()); }
+
+    static bool decode(const Node& node, type& rhs) {
+        auto value = node.as<std::string>();
+        rhs = std::filesystem::path{value};
+
+        return true;
+    }
+};
+
 } // namespace YAML

@@ -43,11 +43,14 @@ static inline ss::future<> persist_log_file(
                 1_MiB,
                 config::mock_binding(10ms),
                 base_dir,
-                storage::debug_sanitize_files::yes);
+                storage::make_sanitized_file_config());
           },
           [base_dir]() {
               return storage::log_config(
-                base_dir, 1_GiB, storage::debug_sanitize_files::yes);
+                base_dir,
+                1_GiB,
+                ss::default_priority_class(),
+                storage::make_sanitized_file_config());
           },
           feature_table);
         storage.start().get();
@@ -111,11 +114,14 @@ read_log_file(ss::sstring base_dir, model::ntp file_ntp) {
                 1_MiB,
                 config::mock_binding(10ms),
                 base_dir,
-                storage::debug_sanitize_files::yes);
+                storage::make_sanitized_file_config());
           },
           [base_dir]() {
               return storage::log_config(
-                base_dir, 1_GiB, storage::debug_sanitize_files::yes);
+                base_dir,
+                1_GiB,
+                ss::default_priority_class(),
+                storage::make_sanitized_file_config());
           },
           feature_table);
         storage.start().get();

@@ -13,6 +13,7 @@
 
 #include "storage/batch_cache.h"
 #include "storage/compacted_index_writer.h"
+#include "storage/file_sanitizer_types.h"
 #include "storage/fs_utils.h"
 #include "storage/fwd.h"
 #include "storage/segment_appender.h"
@@ -286,12 +287,12 @@ private:
  */
 ss::future<ss::lw_shared_ptr<segment>> open_segment(
   segment_full_path path,
-  debug_sanitize_files sanitize_fileops,
   std::optional<batch_cache_index> batch_cache,
   size_t buf_size,
   unsigned read_ahead,
   storage_resources&,
-  ss::sharded<features::feature_table>& feature_table);
+  ss::sharded<features::feature_table>& feature_table,
+  std::optional<ntp_sanitizer_config> ntp_sanitizer_config);
 
 ss::future<ss::lw_shared_ptr<segment>> make_segment(
   const ntp_config& ntpc,
@@ -301,10 +302,10 @@ ss::future<ss::lw_shared_ptr<segment>> make_segment(
   record_version_type version,
   size_t buf_size,
   unsigned read_ahead,
-  debug_sanitize_files sanitize_fileops,
   std::optional<batch_cache_index> batch_cache,
   storage_resources&,
-  ss::sharded<features::feature_table>& feature_table);
+  ss::sharded<features::feature_table>& feature_table,
+  std::optional<ntp_sanitizer_config> ntp_sanitizer_config);
 
 // bitflags operators
 [[gnu::always_inline]] inline segment::bitflags

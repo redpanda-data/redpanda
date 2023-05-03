@@ -43,7 +43,12 @@ kvstore::kvstore(
       std::filesystem::path(_ntpc.work_directory()),
       simple_snapshot_manager::default_snapshot_filename,
       ss::default_priority_class())
-  , _timer([this] { _sem.signal(); }) {}
+  , _timer([this] { _sem.signal(); }) {
+    if (_conf.sanitizer_config) {
+        _ntp_sanitizer_config = _conf.sanitizer_config->get_config_for_ntp(
+          _ntpc.ntp());
+    }
+}
 
 ss::future<> kvstore::start() {
     vlog(lg.debug, "Starting kvstore: dir {}", _ntpc.work_directory());
@@ -264,10 +269,10 @@ ss::future<> kvstore::roll() {
                  record_version_type::v1,
                  config::shard_local_cfg().storage_read_buffer_size(),
                  config::shard_local_cfg().storage_read_readahead_count(),
-                 _conf.sanitize_fileops,
                  std::nullopt,
                  _resources,
-                 _feature_table)
+                 _feature_table,
+                 _ntp_sanitizer_config)
           .then([this](ss::lw_shared_ptr<segment> seg) {
               _segment = std::move(seg);
           });
@@ -307,10 +312,10 @@ ss::future<> kvstore::roll() {
                        record_version_type::v1,
                        config::shard_local_cfg().storage_read_buffer_size(),
                        config::shard_local_cfg().storage_read_readahead_count(),
-                       _conf.sanitize_fileops,
                        std::nullopt,
                        _resources,
-                       _feature_table)
+                       _feature_table,
+                       _ntp_sanitizer_config)
                 .then([this](ss::lw_shared_ptr<segment> seg) {
                     _segment = std::move(seg);
                 });
@@ -389,7 +394,6 @@ ss::future<> kvstore::recover() {
         auto segments
           = recover_segments(
               partition_path(_ntpc),
-              debug_sanitize_files::yes,
               _ntpc.is_compacted(),
               [] { return std::nullopt; },
               _as,
@@ -397,7 +401,8 @@ ss::future<> kvstore::recover() {
               config::shard_local_cfg().storage_read_readahead_count(),
               std::nullopt,
               _resources,
-              _feature_table)
+              _feature_table,
+              _ntp_sanitizer_config)
               .get0();
 
         replay_segments_in_thread(std::move(segments));

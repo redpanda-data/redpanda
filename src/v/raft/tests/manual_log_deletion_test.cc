@@ -64,7 +64,7 @@ struct manual_deletion_fixture : public raft_test_fixture {
                       model::offset::max(),
                       ss::default_priority_class(),
                       as,
-                      storage::debug_sanitize_files::yes))
+                      storage::ntp_sanitizer_config{.sanitize_only = true}))
                     .get0();
                   if (n.log->offsets().start_offset <= model::offset(0)) {
                       return false;

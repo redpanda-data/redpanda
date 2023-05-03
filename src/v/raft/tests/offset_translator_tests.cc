@@ -64,12 +64,15 @@ struct base_fixture {
           1_MiB,
           config::mock_binding(10ms),
           _test_dir,
-          storage::debug_sanitize_files::yes);
+          storage::make_sanitized_file_config());
     }
 
     storage::log_config make_log_cfg() const {
         return storage::log_config(
-          _test_dir, 100_MiB, storage::debug_sanitize_files::yes);
+          _test_dir,
+          100_MiB,
+          ss::default_priority_class(),
+          storage::make_sanitized_file_config());
     }
 
     raft::offset_translator make_offset_translator() {

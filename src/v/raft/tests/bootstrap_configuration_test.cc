@@ -39,15 +39,15 @@ struct bootstrap_fixture : raft::simple_record_fixture {
               1_MiB,
               config::mock_binding(10ms),
               "test.dir",
-              storage::debug_sanitize_files::yes);
+              storage::make_sanitized_file_config());
         },
         []() {
             return storage::log_config(
               "test.dir",
               1_GiB,
-              storage::debug_sanitize_files::yes,
               ss::default_priority_class(),
-              storage::with_cache::no);
+              storage::with_cache::no,
+              storage::make_sanitized_file_config());
         },
         _feature_table) {
         _feature_table.start().get();

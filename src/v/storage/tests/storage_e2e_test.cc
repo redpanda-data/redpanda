@@ -2038,7 +2038,7 @@ FIXTURE_TEST(committed_offset_updates, storage_test_fixture) {
     auto cfg = default_log_config(test_dir);
     cfg.cache = storage::with_cache::no;
     cfg.max_segment_size = config::mock_binding<size_t>(500_MiB);
-    cfg.sanitize_fileops = storage::debug_sanitize_files::no;
+    cfg.file_config = std::nullopt;
     storage::ntp_config::default_overrides overrides;
     ss::abort_source as;
     storage::log_manager mgr = make_log_manager(cfg);

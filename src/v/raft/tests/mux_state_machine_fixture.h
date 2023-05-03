@@ -51,7 +51,7 @@ struct mux_state_machine_fixture {
           8192,
           config::mock_binding(std::chrono::milliseconds(10)),
           _data_dir,
-          storage::debug_sanitize_files::yes);
+          storage::make_sanitized_file_config());
 
         _storage
           .start(
@@ -150,9 +150,9 @@ struct mux_state_machine_fixture {
         return storage::log_config(
           _data_dir,
           100_MiB,
-          storage::debug_sanitize_files::yes,
           ss::default_priority_class(),
-          storage::with_cache::yes);
+          storage::with_cache::yes,
+          storage::make_sanitized_file_config());
     }
 
     model::broker self_broker() {

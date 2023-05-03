@@ -75,17 +75,17 @@ struct kvstore_config {
     size_t max_segment_size;
     config::binding<std::chrono::milliseconds> commit_interval;
     ss::sstring base_dir;
-    debug_sanitize_files sanitize_fileops;
+    std::optional<storage::file_sanitize_config> sanitizer_config;
 
     kvstore_config(
       size_t max_segment_size,
       config::binding<std::chrono::milliseconds> commit_interval,
       ss::sstring base_dir,
-      debug_sanitize_files sanitize_fileops)
+      std::optional<storage::file_sanitize_config> sanitizer_config)
       : max_segment_size(max_segment_size)
       , commit_interval(commit_interval)
       , base_dir(std::move(base_dir))
-      , sanitize_fileops(sanitize_fileops) {}
+      , sanitizer_config(std::move(sanitizer_config)) {}
 };
 
 class kvstore {
@@ -152,6 +152,7 @@ private:
     ss::lw_shared_ptr<segment> _segment;
     model::offset _next_offset;
     absl::node_hash_map<bytes, iobuf, bytes_type_hash, bytes_type_eq> _db;
+    std::optional<ntp_sanitizer_config> _ntp_sanitizer_config;
 
     ss::future<> put(key_space ks, bytes key, std::optional<iobuf> value);
     void apply_op(bytes key, std::optional<iobuf> value);
