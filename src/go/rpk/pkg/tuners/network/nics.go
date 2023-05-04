@@ -24,7 +24,6 @@ func getDefaultMode(
 		if err != nil {
 			return "", err
 		}
-		zap.L().Sugar().Debugf("Calculating default mode for '%s'", nic.Name())
 		numOfCores, err := cpuMasks.GetNumberOfCores(cpuMask)
 		if err != nil {
 			return "", err
@@ -33,15 +32,15 @@ func getDefaultMode(
 		if err != nil {
 			return "", err
 		}
-		zap.L().Sugar().Debugf("Considering '%d' cores and '%d' PUs", numOfCores, numOfPUs)
 
-		if numOfPUs <= 4 || rxQueuesCount == int(numOfPUs) {
-			return irq.Mq, nil
-		} else if numOfCores <= 4 {
-			return irq.Sq, nil
-		} else {
-			return irq.SqSplit, nil
-		}
+		// Currently we use only the mq mode because the idea behind sq and sq-split modes is that
+		// a core is *dedicated* to IRQs (i.e., Redpanda core does not run on that core or lcore),
+		// but we don't currently support propagating a cpuset to Redpanda, so it will run on the IRQ
+		// core, causing it to be the primary bottleneck.
+		zap.L().Sugar().Debugf("Using mq mode (hardcoded) for '%s': '%d' cores, '%d' PUs and '%d' rx queues",
+			nic.Name(), numOfCores, numOfPUs, rxQueuesCount)
+
+		return irq.Mq, nil
 	}
 
 	if nic.IsBondIface() {
