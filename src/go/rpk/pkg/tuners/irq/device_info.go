@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"path"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -99,7 +100,10 @@ func (deviceInfo *deviceInfo) GetIRQs(
 			}
 		}
 	}
-	log.Debugf("DeviceInfo '%s' IRQs '%v'", irqConfigDir, irqs)
+
+	sort.Ints(irqs)
+
+	zap.L().Sugar().Debugf("DeviceInfo '%s' IRQs '%v'", irqConfigDir, irqs)
 	return irqs, nil
 }
 
