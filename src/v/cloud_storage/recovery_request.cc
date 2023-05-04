@@ -99,8 +99,10 @@ void recovery_request::parse_request_body() {
             json::StringBuffer sbuf;
             json::Writer<json::StringBuffer> w{sbuf};
             validator.schema_validator.GetError().Accept(w);
-            throw bad_request{
-              fmt::format("invalid request body: {}", sbuf.GetString())};
+            throw bad_request{fmt::format(
+              "invalid request body '{}': {}",
+              _request.content.data(),
+              sbuf.GetString())};
         }
 
         if (document.HasMember("topic_names_pattern")) {
