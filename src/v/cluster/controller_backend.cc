@@ -542,9 +542,10 @@ bool is_finishing_operation(
 } // namespace
 
 ss::future<> controller_backend::do_bootstrap() {
-    return ss::parallel_for_each(
+    return ss::max_concurrent_for_each(
       _topic_deltas.begin(),
       _topic_deltas.end(),
+      1024,
       [this](underlying_t::value_type& ntp_deltas) {
           return bootstrap_ntp(ntp_deltas.first, ntp_deltas.second);
       });
@@ -923,9 +924,10 @@ ss::future<> controller_backend::reconcile_topics() {
             return ss::now();
         }
         // reconcile NTPs in parallel
-        return ss::parallel_for_each(
+        return ss::max_concurrent_for_each(
                  _topic_deltas.begin(),
                  _topic_deltas.end(),
+                 1024,
                  [this](underlying_t::value_type& ntp_deltas) {
                      return reconcile_ntp(ntp_deltas.second);
                  })
