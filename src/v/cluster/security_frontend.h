@@ -54,6 +54,10 @@ public:
       std::vector<security::acl_binding_filter>,
       model::timeout_clock::duration);
 
+    ss::future<describe_acls_reply> describe_acls(
+      security::acl_binding_filter filter,
+      model::timeout_clock::duration timeout);
+
     /**
      * For use during cluster creation, if RP_BOOTSTRAP_USER is set
      * then returns the user creds specified in it
@@ -77,9 +81,17 @@ private:
       std::vector<security::acl_binding_filter>,
       model::timeout_clock::duration);
 
+    std::vector<acl_resource>
+    do_describe_acls(const security::acl_binding_filter& filter);
+
     ss::future<std::vector<delete_acls_result>> dispatch_delete_acls_to_leader(
       model::node_id,
       std::vector<security::acl_binding_filter>,
+      model::timeout_clock::duration);
+
+    ss::future<describe_acls_reply> dispatch_describe_acls_to_leader(
+      model::node_id,
+      security::acl_binding_filter,
       model::timeout_clock::duration);
 
     model::node_id _self;

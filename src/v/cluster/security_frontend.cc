@@ -339,4 +339,98 @@ security_frontend::get_bootstrap_user_creds_from_env() {
       std::in_place, std::move(username), std::move(credentials));
 }
 
+std::vector<acl_resource> security_frontend::do_describe_acls(
+  const security::acl_binding_filter& filter) {
+    /*
+     * collapse common acls by pattern
+     */
+    absl::flat_hash_map<
+      security::resource_pattern,
+      std::vector<security::acl_entry>>
+      entries;
+
+    auto bindings = _authorizer.local().acls(filter);
+
+    for (const auto& binding : bindings) {
+        entries[binding.pattern()].push_back(binding.entry());
+    }
+
+    std::vector<acl_resource> resources;
+    resources.reserve(entries.size());
+    for (const auto& entry : entries) {
+        acl_resource resource;
+
+        // resource pattern
+        resource.type = entry.first.resource();
+        resource.name = entry.first.name();
+        resource.pattern_type = entry.first.pattern();
+
+        // acl entries
+        for (auto& acl : entry.second) {
+            // ignore ephemeral_users
+            auto ephemeral_user = security::principal_type::ephemeral_user;
+            if (acl.principal().type() == ephemeral_user) {
+                continue;
+            }
+            acl_description desc{
+              .principal = acl.principal(),
+              .host = acl.host(),
+              .operation = acl.operation(),
+              .permission_type = acl.permission(),
+            };
+            resource.acls.push_back(std::move(desc));
+        }
+        resources.push_back(std::move(resource));
+    }
+    return resources;
+}
+
+ss::future<describe_acls_reply>
+security_frontend::dispatch_describe_acls_to_leader(
+  model::node_id leader,
+  security::acl_binding_filter filter,
+  model::timeout_clock::duration timeout) {
+    vlog(clusterlog.trace, "Dispatching describe_acls to {}", leader);
+    return _connections.local()
+      .with_node_client<cluster::controller_client_protocol>(
+        _self,
+        ss::this_shard_id(),
+        leader,
+        timeout,
+        [filter, timeout](controller_client_protocol cp) mutable {
+            return cp.describe_acls(
+              describe_acls_request{.filter = std::move(filter)},
+              rpc::client_opts(timeout));
+        })
+      .then(&rpc::get_ctx_data<describe_acls_reply>)
+      .then([](result<describe_acls_reply> r) {
+          if (r.has_error()) {
+              return describe_acls_reply{.error = map_errc(r.error())};
+          }
+          return describe_acls_reply{
+            .error = errc::success,
+            .acl_resources = std::move(r.value().acl_resources)};
+      });
+}
+
+ss::future<describe_acls_reply> security_frontend::describe_acls(
+  security::acl_binding_filter filter, model::timeout_clock::duration timeout) {
+    vlog(clusterlog.trace, "describe_acls: {}", filter);
+
+    auto leader = _leaders.local().get_leader(model::controller_ntp);
+
+    if (!leader) {
+        co_return describe_acls_reply{.error = errc::no_leader_controller};
+    }
+    // current node is a leader controller
+    if (leader == _self) {
+        auto acls = do_describe_acls(filter);
+        co_return describe_acls_reply{
+          .error = errc::success, .acl_resources = std::move(acls)};
+    }
+
+    co_return co_await dispatch_describe_acls_to_leader(
+      leader.value(), filter, timeout);
+}
+
 } // namespace cluster
