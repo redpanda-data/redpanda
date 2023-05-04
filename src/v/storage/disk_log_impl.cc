@@ -1780,11 +1780,11 @@ log make_disk_backed_log(
     return log(ptr);
 }
 
-ss::future<usage_report> disk_log_impl::disk_usage(compaction_config cfg) {
+ss::future<usage_report> disk_log_impl::disk_usage(gc_config cfg) {
     std::optional<model::offset> max_offset;
     if (config().is_collectable()) {
-        cfg.gc = apply_overrides(cfg.gc);
-        max_offset = retention_offset(cfg.gc);
+        cfg = apply_overrides(cfg);
+        max_offset = retention_offset(cfg);
     }
 
     /*

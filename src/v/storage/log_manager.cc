@@ -636,12 +636,8 @@ ss::future<usage_report> log_manager::disk_usage() {
       logs.end(),
       [this, collection_threshold](log l) {
           auto log = dynamic_cast<disk_log_impl*>(l.get_impl());
-          return log->disk_usage(compaction_config(
-            collection_threshold,
-            _config.retention_bytes(),
-            l.stm_manager()->max_collectible_offset(),
-            _config.compaction_priority,
-            _abort_source));
+          return log->disk_usage(
+            gc_config(collection_threshold, _config.retention_bytes()));
       },
       usage_report{},
       [](usage_report acc, usage_report update) { return acc + update; });

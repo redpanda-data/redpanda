@@ -339,6 +339,10 @@ struct log_reader_config {
 };
 
 struct gc_config {
+    gc_config(model::timestamp upper, std::optional<size_t> max_bytes_in_log)
+      : eviction_time(upper)
+      , max_bytes(max_bytes_in_log) {}
+
     // remove everything below eviction time
     model::timestamp eviction_time;
     // remove one segment if log is > max_bytes
@@ -355,10 +359,7 @@ struct compaction_config {
       ss::io_priority_class p,
       ss::abort_source& as,
       std::optional<ntp_sanitizer_config> san_cfg = std::nullopt)
-      : gc({
-        .eviction_time = upper,
-        .max_bytes = max_bytes_in_log,
-      })
+      : gc(upper, max_bytes_in_log)
       , max_collectible_offset(max_collect_offset)
       , iopc(p)
       , sanitizer_config(std::move(san_cfg))
