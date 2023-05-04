@@ -498,6 +498,10 @@ size_t partition_manifest::segments_metadata_bytes() const {
     return _segments.inflated_actual_size().second;
 }
 
+void partition_manifest::flush_write_buffer() {
+    _segments.flush_write_buffer();
+}
+
 uint64_t partition_manifest::compute_cloud_log_size() const {
     return std::transform_reduce(
       find(_start_offset),

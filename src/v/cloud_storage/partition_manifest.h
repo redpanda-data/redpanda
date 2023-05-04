@@ -265,6 +265,9 @@ public:
     // manifest, or 0 if the memory is not being tracked.
     size_t segments_metadata_bytes() const;
 
+    // Flush c-store write buffer
+    void flush_write_buffer();
+
     // Returns the cached size in bytes of all segments available to clients.
     // (i.e. all segments after and including the segment that starts at
     // the current _start_offset).
