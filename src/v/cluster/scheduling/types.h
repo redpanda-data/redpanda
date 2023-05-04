@@ -216,6 +216,9 @@ public:
     const std::vector<model::broker_shard>& replicas() const {
         return _replicas;
     }
+
+    bool has_changes() const;
+
     bool is_original(const model::broker_shard&) const;
 
     allocated_partition& operator=(allocated_partition&&) = default;

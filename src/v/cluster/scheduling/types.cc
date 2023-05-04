@@ -193,6 +193,21 @@ std::vector<model::broker_shard> allocated_partition::release_new_partition() {
     return std::move(_replicas);
 }
 
+bool allocated_partition::has_changes() const {
+    if (!_original) {
+        return false;
+    }
+    if (_replicas.size() != _original->size()) {
+        return true;
+    }
+    for (const auto& bs : _replicas) {
+        if (!_original->contains(bs)) {
+            return true;
+        }
+    }
+    return false;
+}
+
 bool allocated_partition::is_original(
   const model::broker_shard& replica) const {
     if (_original) {
