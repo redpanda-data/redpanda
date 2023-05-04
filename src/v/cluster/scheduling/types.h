@@ -213,10 +213,6 @@ private:
 
 class allocated_partition {
 public:
-    // construct an object from an original assignment
-    allocated_partition(
-      std::vector<model::broker_shard>, partition_allocation_domain);
-
     const std::vector<model::broker_shard>& replicas() const {
         return _replicas;
     }
@@ -230,7 +226,15 @@ public:
 
 private:
     friend class partition_allocator;
-    void add_replica(model::broker_shard, allocation_state&);
+
+    // construct an object from an original assignment
+    allocated_partition(
+      std::vector<model::broker_shard>,
+      partition_allocation_domain,
+      allocation_state&);
+
+    void add_replica(model::broker_shard);
+
     // used to move the allocation to allocation_units
     std::vector<model::broker_shard> release_new_partition();
 

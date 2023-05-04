@@ -84,19 +84,14 @@ allocation_units::~allocation_units() {
 }
 
 allocated_partition::allocated_partition(
-  std::vector<model::broker_shard> replicas, partition_allocation_domain domain)
+  std::vector<model::broker_shard> replicas,
+  partition_allocation_domain domain,
+  allocation_state& state)
   : _replicas(std::move(replicas))
-  , _domain(domain) {}
+  , _domain(domain)
+  , _state(state.weak_from_this()) {}
 
-void allocated_partition::add_replica(
-  model::broker_shard replica, allocation_state& state) {
-    if (_state) {
-        vassert(
-          _state.get() == &state, "allocation_state object must be the same");
-    } else {
-        _state = state.weak_from_this();
-    }
-
+void allocated_partition::add_replica(model::broker_shard replica) {
     if (!_original) {
         _original = absl::flat_hash_set<model::broker_shard>(
           _replicas.begin(), _replicas.end());

@@ -91,8 +91,7 @@ result<allocated_partition> partition_allocator::allocate_partition(
         return errc::topic_invalid_replication_factor;
     }
 
-    allocated_partition ret{not_changed_replicas, domain};
-
+    allocated_partition ret{not_changed_replicas, domain, *_state};
     for (auto r = 0; r < replicas_to_allocate; ++r) {
         auto effective_constraints = default_constraints(domain);
         effective_constraints.add(p_constraints.constraints);
@@ -103,7 +102,7 @@ result<allocated_partition> partition_allocator::allocate_partition(
         if (!replica) {
             return replica.error();
         }
-        ret.add_replica(replica.value(), *_state);
+        ret.add_replica(replica.value());
     }
     return ret;
 }
@@ -308,7 +307,8 @@ result<allocated_partition> partition_allocator::reallocate_partition(
     if (
       partition_constraints.replication_factor
       == current_assignment.replicas.size()) {
-        return allocated_partition{current_assignment.replicas, domain};
+        return allocated_partition{
+          current_assignment.replicas, domain, *_state};
     }
 
     return allocate_partition(
