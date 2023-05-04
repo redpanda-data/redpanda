@@ -146,7 +146,7 @@ ss::future<usage_report> disk_log_builder::disk_usage(
 
 ss::future<std::optional<model::offset>>
 disk_log_builder::apply_retention(gc_config cfg) {
-    return get_disk_log_impl().gc(cfg);
+    return get_disk_log_impl().do_gc(cfg);
 }
 
 ss::future<> disk_log_builder::apply_compaction(

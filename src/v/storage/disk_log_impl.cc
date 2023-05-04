@@ -744,13 +744,16 @@ ss::future<> disk_log_impl::housekeeping(housekeeping_config cfg) {
       "[{}] house keeping with configuration from manager: {}",
       config().ntp(),
       cfg);
-    cfg.gc = apply_overrides(cfg.gc);
 
-    std::optional<model::offset> new_start_offset;
-    if (config().is_collectable()) {
-        new_start_offset = co_await gc(cfg.gc);
-    }
+    /*
+     * gc/retention policy
+     */
+    auto new_start_offset = co_await do_gc(cfg.gc);
 
+    /*
+     * comapction. could factor out into a public interface like gc/retention if
+     * there is a need to run it separately.
+     */
     if (config().is_compacted() && !_segs.empty()) {
         co_await do_compact(cfg.compact, new_start_offset);
     }
@@ -758,8 +761,20 @@ ss::future<> disk_log_impl::housekeeping(housekeeping_config cfg) {
     _probe.set_compaction_ratio(_compaction_ratio.get());
 }
 
-ss::future<std::optional<model::offset>> disk_log_impl::gc(gc_config cfg) {
+ss::future<> disk_log_impl::gc(gc_config cfg) {
+    ss::gate::holder holder{_compaction_housekeeping_gate};
+    co_await do_gc(cfg);
+}
+
+ss::future<std::optional<model::offset>> disk_log_impl::do_gc(gc_config cfg) {
     vassert(!_closed, "gc on closed log - {}", *this);
+
+    cfg = apply_overrides(cfg);
+
+    if (!config().is_collectable()) {
+        co_return std::nullopt;
+    }
+
     vlog(
       gclog.trace,
       "[{}] applying 'deletion' log cleanup policy with config: {}",

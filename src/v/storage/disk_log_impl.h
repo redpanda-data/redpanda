@@ -73,6 +73,7 @@ public:
     ss::future<> truncate_prefix(truncate_prefix_config) final;
     ss::future<> housekeeping(housekeeping_config) final;
     ss::future<> apply_segment_ms() final;
+    ss::future<> gc(gc_config) final;
 
     ss::future<model::offset> monitor_eviction(ss::abort_source&) final;
 
@@ -136,7 +137,7 @@ private:
       storage::compaction_config cfg);
     std::optional<std::pair<segment_set::iterator, segment_set::iterator>>
     find_compaction_range(const compaction_config&);
-    ss::future<std::optional<model::offset>> gc(gc_config);
+    ss::future<std::optional<model::offset>> do_gc(gc_config);
 
     ss::future<> remove_empty_segments();
 
