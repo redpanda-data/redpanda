@@ -292,6 +292,10 @@ public:
           _majority_replicated_index, _visibility_upper_bound_index);
     };
 
+    model::offset last_leader_visible_index() const {
+        return _last_leader_visible_offset;
+    };
+
     ss::future<offset_configuration>
     wait_for_config_change(model::offset last_seen, ss::abort_source& as) {
         return _configuration_manager.wait_for_change(last_seen, as);
@@ -429,6 +433,8 @@ public:
     void unblock_new_leadership() { _node_priority_override.reset(); }
 
     const follower_stats& get_follower_stats() const { return _fstats; }
+
+    model::offset get_flushed_offset() const { return _flushed_offset; }
 
 private:
     friend replicate_entries_stm;
@@ -752,6 +758,7 @@ private:
      * majority.
      */
     model::offset _last_quorum_replicated_index;
+    model::offset _last_leader_visible_offset;
     consistency_level _last_write_consistency_level;
     offset_monitor _consumable_offset_monitor;
     ss::condition_variable _follower_reply;

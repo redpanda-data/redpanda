@@ -129,6 +129,10 @@ public:
         return model::next_offset(_raft->last_visible_index());
     }
 
+    model::offset leader_high_watermark() const {
+        return model::next_offset(_raft->last_leader_visible_index());
+    }
+
     model::term_id term() { return _raft->term(); }
 
     model::offset dirty_offset() const {
@@ -349,6 +353,8 @@ public:
     ss::sharded<features::feature_table>& feature_table() const {
         return _feature_table;
     }
+
+    result<std::vector<raft::follower_metrics>> get_follower_metrics() const;
 
 private:
     ss::future<std::optional<storage::timequery_result>>

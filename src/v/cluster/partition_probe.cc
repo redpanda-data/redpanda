@@ -228,15 +228,4 @@ void replicated_partition_probe::setup_public_metrics(const model::ntp& ntp) {
       });
 }
 
-partition_probe make_materialized_partition_probe() {
-    // TODO: implement partition probe for materialized partitions
-    class impl : public partition_probe::impl {
-        void setup_metrics(const model::ntp&) final {}
-        void add_records_fetched(uint64_t) final {}
-        void add_records_produced(uint64_t) final {}
-        void add_bytes_fetched(uint64_t) final {}
-        void add_bytes_produced(uint64_t) final {}
-    };
-    return partition_probe(std::make_unique<impl>());
-}
 } // namespace cluster

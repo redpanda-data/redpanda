@@ -306,7 +306,9 @@ std::optional<model::offset> replicated_partition::get_leader_epoch_last_offset(
 }
 
 ss::future<error_code> replicated_partition::validate_fetch_offset(
-  model::offset fetch_offset, model::timeout_clock::time_point deadline) {
+  model::offset fetch_offset,
+  bool reading_from_follower,
+  model::timeout_clock::time_point deadline) {
     /**
      * Make sure that we will update high watermark offset if it isn't yet
      * initialized.
@@ -330,6 +332,21 @@ ss::future<error_code> replicated_partition::validate_fetch_offset(
           _translator->from_log_offset(_partition->dirty_offset()));
     }
 
+    // offset validation logic on follower
+    if (reading_from_follower && !_partition->is_leader()) {
+        if (fetch_offset < start_offset()) {
+            co_return error_code::offset_out_of_range;
+        }
+        if (
+          fetch_offset > high_watermark()
+          && fetch_offset <= leader_high_watermark()) {
+            co_return error_code::offset_not_available;
+        }
+        if (fetch_offset > leader_high_watermark()) {
+            co_return error_code::offset_out_of_range;
+        }
+        co_return error_code::none;
+    }
     while (log_end.has_value() && fetch_offset > high_watermark()
            && fetch_offset <= log_end) {
         if (model::timeout_clock::now() > deadline) {
@@ -365,9 +382,47 @@ ss::future<error_code> replicated_partition::validate_fetch_offset(
           _partition->high_watermark());
     }
 
-    co_return fetch_offset >= start_offset() && fetch_offset <= high_watermark()
+    co_return fetch_offset >= start_offset() && fetch_offset <= log_end_offset()
       ? error_code::none
       : error_code::offset_out_of_range;
+}
+
+result<partition_info> replicated_partition::get_partition_info() const {
+    partition_info ret;
+    ret.leader = _partition->get_leader_id();
+    ret.replicas.reserve(_partition->raft()->get_follower_count() + 1);
+    auto followers = _partition->get_follower_metrics();
+
+    if (followers.has_error()) {
+        return followers.error();
+    }
+    auto start_offset = _partition->start_offset();
+
+    auto clamped_translate = [this, start_offset](model::offset to_translate) {
+        return to_translate >= start_offset
+                 ? _translator->from_log_offset(to_translate)
+                 : _translator->from_log_offset(start_offset);
+    };
+
+    for (const auto& follower_metric : followers.value()) {
+        ret.replicas.push_back(replica_info{
+          .id = follower_metric.id,
+          .high_watermark = model::next_offset(
+            clamped_translate(follower_metric.match_index)),
+          .log_end_offset = model::next_offset(
+            clamped_translate(follower_metric.dirty_log_index)),
+          .is_alive = follower_metric.is_live,
+        });
+    }
+
+    ret.replicas.push_back(replica_info{
+      .id = _partition->raft()->self().id(),
+      .high_watermark = high_watermark(),
+      .log_end_offset = log_dirty_offset(),
+      .is_alive = true,
+    });
+
+    return {std::move(ret)};
 }
 
 } // namespace kafka

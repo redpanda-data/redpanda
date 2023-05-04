@@ -14,6 +14,7 @@
 #include "cloud_storage/remote_partition.h"
 #include "cluster/logger.h"
 #include "cluster/tm_stm_cache_manager.h"
+#include "cluster/types.h"
 #include "config/configuration.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
@@ -978,6 +979,14 @@ partition::transfer_leadership(transfer_leadership_request req) {
     }
 
     co_return co_await _raft->do_transfer_leadership(req);
+}
+
+result<std::vector<raft::follower_metrics>>
+partition::get_follower_metrics() const {
+    if (!_raft->is_leader()) {
+        return errc::not_leader;
+    };
+    return _raft->get_follower_metrics();
 }
 
 std::ostream& operator<<(std::ostream& o, const partition& x) {

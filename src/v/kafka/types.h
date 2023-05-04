@@ -14,6 +14,7 @@
 #include "bytes/details/out_of_range.h"
 #include "kafka/protocol/types.h"
 #include "model/fundamental.h"
+#include "model/metadata.h"
 #include "reflection/adl.h"
 #include "seastarx.h"
 #include "utils/base64.h"
@@ -122,6 +123,20 @@ inline kafka::leader_epoch leader_epoch_from_term(model::term_id term) {
         return kafka::invalid_leader_epoch;
     }
 }
+/**
+ * Describes single partition replica. Used by replica selector
+ */
+struct replica_info {
+    model::node_id id;
+    model::offset high_watermark;
+    model::offset log_end_offset;
+    bool is_alive;
+};
+
+struct partition_info {
+    std::vector<replica_info> replicas;
+    std::optional<model::node_id> leader;
+};
 } // namespace kafka
 
 /*

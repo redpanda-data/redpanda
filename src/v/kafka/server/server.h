@@ -18,6 +18,7 @@
 #include "kafka/server/fetch_metadata_cache.hh"
 #include "kafka/server/fetch_session_cache.h"
 #include "kafka/server/fwd.h"
+#include "kafka/server/handlers/fetch/replica_selector.h"
 #include "kafka/server/queue_depth_monitor.h"
 #include "net/server.h"
 #include "security/fwd.h"
@@ -160,6 +161,10 @@ public:
     static std::vector<bool>
     convert_api_names_to_key_bitmap(const std::vector<ss::sstring>& api_names);
 
+    const replica_selector& get_replica_selector() const {
+        return *_replica_selector;
+    }
+
 private:
     ss::smp_service_group _smp_group;
     ss::scheduling_group _fetch_scheduling_group;
@@ -187,9 +192,9 @@ private:
     security::tls::principal_mapper _mtls_principal_mapper;
     security::gssapi_principal_mapper _gssapi_principal_mapper;
     security::krb5::configurator _krb_configurator;
-
     class latency_probe _probe;
     ssx::thread_worker& _thread_worker;
+    std::unique_ptr<replica_selector> _replica_selector;
 };
 
 } // namespace kafka

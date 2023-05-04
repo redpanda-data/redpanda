@@ -10,6 +10,7 @@
  */
 #pragma once
 
+#include "cluster/members_table.h"
 #include "cluster/partition.h"
 #include "cluster/partition_probe.h"
 #include "kafka/protocol/errors.h"
@@ -64,6 +65,29 @@ public:
             }
         }
         return _translator->from_log_offset(_partition->high_watermark());
+    }
+
+    model::offset log_end_offset() const {
+        return model::next_offset(log_dirty_offset());
+    }
+
+    model::offset log_dirty_offset() const {
+        if (_partition->is_read_replica_mode_enabled()) {
+            if (_partition->cloud_data_available()) {
+                return _partition->next_cloud_offset();
+            } else {
+                return model::offset(-1);
+            }
+        }
+        return _translator->from_log_offset(_partition->dirty_offset());
+    }
+
+    model::offset leader_high_watermark() const {
+        if (_partition->is_read_replica_mode_enabled()) {
+            return high_watermark();
+        }
+        return _translator->from_log_offset(
+          _partition->leader_high_watermark());
     }
 
     checked<model::offset, error_code> last_stable_offset() const final {
@@ -126,7 +150,9 @@ public:
     }
 
     ss::future<error_code> validate_fetch_offset(
-      model::offset, model::timeout_clock::time_point) final;
+      model::offset, bool, model::timeout_clock::time_point) final;
+
+    result<partition_info> get_partition_info() const final;
 
 private:
     ss::future<std::vector<cluster::rm_stm::tx_range>>

@@ -13,7 +13,6 @@
 
 #include "cluster/partition_manager.h"
 #include "coproc/partition_manager.h"
-#include "kafka/server/materialized_partition.h"
 #include "kafka/server/replicated_partition.h"
 
 namespace kafka {

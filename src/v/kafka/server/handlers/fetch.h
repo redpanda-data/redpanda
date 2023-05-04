@@ -11,8 +11,10 @@
 #pragma once
 #include "cluster/rm_stm.h"
 #include "kafka/protocol/fetch.h"
+#include "kafka/server/handlers/fetch/replica_selector.h"
 #include "kafka/server/handlers/handler.h"
 #include "kafka/types.h"
+#include "model/metadata.h"
 #include "utils/intrusive_list_helpers.h"
 
 namespace kafka {
@@ -96,8 +98,8 @@ struct op_context {
 
     bool should_stop_fetch() const {
         return !request.debounce_delay() || over_min_bytes()
-               || is_empty_request() || response_error
-               || deadline <= model::timeout_clock::now();
+               || is_empty_request() || contains_preferred_replica
+               || response_error || deadline <= model::timeout_clock::now();
     }
 
     bool over_min_bytes() const {
@@ -158,6 +160,9 @@ struct op_context {
     bool initial_fetch = true;
     fetch_session_ctx session_ctx;
     iteration_order_t iteration_order;
+    // for fetches that have preferred replica set we skip read, therefore we
+    // need other indicator of finished fetch request.
+    bool contains_preferred_replica = false;
 };
 
 struct fetch_config {
@@ -169,17 +174,21 @@ struct fetch_config {
     bool strict_max_bytes{false};
     bool skip_read{false};
     kafka::leader_epoch current_leader_epoch;
+    bool read_from_follower{false};
+    std::optional<model::rack_id> consumer_rack_id;
 
     friend std::ostream& operator<<(std::ostream& o, const fetch_config& cfg) {
         fmt::print(
           o,
-          R"({{"start_offset": {}, "max_offset": {}, "isolation_lvl": {}, "max_bytes": {}, "strict_max_bytes": {}, "current_leader_epoch:" {}}})",
+          R"({{"start_offset": {}, "max_offset": {}, "isolation_lvl": {}, "max_bytes": {}, "strict_max_bytes": {}, "current_leader_epoch:" {}, "follower_read:" {}, "consumer_rack_id": {}}})",
           cfg.start_offset,
           cfg.max_offset,
           cfg.isolation_level,
           cfg.max_bytes,
           cfg.strict_max_bytes,
-          cfg.current_leader_epoch);
+          cfg.current_leader_epoch,
+          cfg.read_from_follower,
+          cfg.consumer_rack_id);
         return o;
     }
 };
@@ -210,6 +219,13 @@ struct read_result {
     explicit read_result(error_code e)
       : error(e) {}
 
+    // special case for offset_out_of_range_error
+    read_result(
+      error_code e, model::offset start_offset, model::offset high_watermark)
+      : start_offset(start_offset)
+      , high_watermark(high_watermark)
+      , error(e) {}
+
     read_result(
       variant_t data,
       model::offset start_offset,
@@ -223,10 +239,15 @@ struct read_result {
       , error(error_code::none)
       , aborted_transactions(std::move(aborted_transactions)) {}
 
-    read_result(model::offset start_offset, model::offset hw, model::offset lso)
+    read_result(
+      model::offset start_offset,
+      model::offset hw,
+      model::offset lso,
+      std::optional<model::node_id> preferred_replica = std::nullopt)
       : start_offset(start_offset)
       , high_watermark(hw)
       , last_stable_offset(lso)
+      , preferred_replica(preferred_replica)
       , error(error_code::none) {}
 
     bool has_data() const {
@@ -268,6 +289,7 @@ struct read_result {
     model::offset start_offset;
     model::offset high_watermark;
     model::offset last_stable_offset;
+    std::optional<model::node_id> preferred_replica;
     error_code error;
     model::partition_id partition;
     std::vector<cluster::rm_stm::tx_range> aborted_transactions;
@@ -333,6 +355,7 @@ struct fetch_plan {
 
 ss::future<read_result> read_from_ntp(
   cluster::partition_manager&,
+  const replica_selector&,
   const model::ntp&,
   fetch_config,
   bool,

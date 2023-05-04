@@ -14,7 +14,6 @@
 #include "cluster/shard_table.h"
 #include "kafka/protocol/errors.h"
 #include "kafka/server/handlers/details/leader_epoch.h"
-#include "kafka/server/materialized_partition.h"
 #include "kafka/server/partition_proxy.h"
 #include "kafka/server/replicated_partition.h"
 #include "kafka/server/request_context.h"

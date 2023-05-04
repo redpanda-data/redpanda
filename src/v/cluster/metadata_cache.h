@@ -123,6 +123,7 @@ public:
     /// Returns single broker if exists in cache,returns copy as the content of
     /// broker can change
     std::optional<node_metadata> get_node_metadata(model::node_id) const;
+    std::optional<model::rack_id> get_node_rack_id(model::node_id) const;
 
     bool should_reject_writes() const;
 
