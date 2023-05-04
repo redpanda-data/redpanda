@@ -567,7 +567,7 @@ controller_backend::bootstrap_ntp(const model::ntp& ntp, deltas_t& deltas) {
 ss::future<> controller_backend::fetch_deltas() {
     return _topics.local()
       .wait_for_changes(_as.local())
-      .then([this](std::vector<topic_table::delta> deltas) {
+      .then([this](fragmented_vector<topic_table::delta> deltas) {
           return ss::with_semaphore(
             _topics_sem, 1, [this, deltas = std::move(deltas)]() mutable {
                 for (auto& d : deltas) {

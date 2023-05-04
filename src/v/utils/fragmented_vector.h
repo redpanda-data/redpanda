@@ -99,15 +99,23 @@ public:
 
     fragmented_vector copy() const noexcept { return *this; }
 
+    void swap(fragmented_vector& other) noexcept {
+        std::swap(_size, other._size);
+        std::swap(_capacity, other._capacity);
+        std::swap(_frags, other._frags);
+    }
+
     template<class E = T>
     void push_back(E&& elem) {
-        if (_size == _capacity) {
-            std::vector<T> frag;
-            frag.reserve(elems_per_frag);
-            _frags.push_back(std::move(frag));
-            _capacity += elems_per_frag;
-        }
+        maybe_add_capacity();
         _frags.back().push_back(std::forward<E>(elem));
+        ++_size;
+    }
+
+    template<class... Args>
+    void emplace_back(Args&&... args) {
+        maybe_add_capacity();
+        _frags.back().emplace_back(std::forward<Args>(args)...);
         ++_size;
     }
 
@@ -275,6 +283,16 @@ public:
         }
         os << "]";
         return os;
+    }
+
+private:
+    void maybe_add_capacity() {
+        if (_size == _capacity) {
+            std::vector<T> frag;
+            frag.reserve(elems_per_frag);
+            _frags.push_back(std::move(frag));
+            _capacity += elems_per_frag;
+        }
     }
 
 private:
