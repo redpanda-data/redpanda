@@ -244,6 +244,7 @@ private:
      *        runs inside a seastar thread
      */
     ss::future<> housekeeping();
+    ssx::semaphore _housekeeping_sem{0, "log_manager::housekeeping"};
 
     std::optional<batch_cache_index> create_cache(with_cache);
 

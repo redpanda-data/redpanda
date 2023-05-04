@@ -46,6 +46,7 @@
 #include <seastar/core/map_reduce.hh>
 #include <seastar/core/print.hh>
 #include <seastar/core/seastar.hh>
+#include <seastar/core/semaphore.hh>
 #include <seastar/core/shared_ptr.hh>
 #include <seastar/core/thread.hh>
 #include <seastar/core/with_scheduling_group.hh>
@@ -142,6 +143,7 @@ log_manager::log_manager(
     _config.compaction_interval.watch([this]() {
         _jitter = simple_time_jitter<ss::lowres_clock>{
           _config.compaction_interval()};
+        _housekeeping_sem.signal();
     });
 }
 
@@ -171,6 +173,7 @@ ss::future<> log_manager::start() {
 
 ss::future<> log_manager::stop() {
     _abort_source.request_abort();
+    _housekeeping_sem.broken();
 
     co_await _open_gate.close();
     co_await ss::coroutine::parallel_for_each(
@@ -242,7 +245,24 @@ log_manager::housekeeping_scan(model::timestamp collection_threshold) {
 
 ss::future<> log_manager::housekeeping() {
     while (true) {
-        co_await ss::sleep_abortable(_jitter.next_duration(), _abort_source);
+        try {
+            const auto prev_jitter_base = _jitter.base_duration();
+            co_await _housekeeping_sem.wait(
+              _jitter.next_duration(),
+              std::max(_housekeeping_sem.current(), size_t(1)));
+
+            /*
+             * if it appears that the compaction interval config changed while
+             * we were sleeping then reschedule rather than run immediately.
+             * this attempts to avoid thundering herd since config changes are
+             * delivered immediately to all shards.
+             */
+            if (_jitter.base_duration() != prev_jitter_base) {
+                continue;
+            }
+        } catch (const ss::semaphore_timed_out&) {
+            // time for some chores
+        }
 
         // files created before this threshold will be collected
         model::timestamp collection_threshold;
