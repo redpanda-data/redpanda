@@ -737,7 +737,7 @@ gc_config disk_log_impl::apply_overrides(gc_config defaults) const {
     return override_retention_config(ret);
 }
 
-ss::future<> disk_log_impl::compact(compaction_config cfg) {
+ss::future<> disk_log_impl::housekeeping(housekeeping_config cfg) {
     ss::gate::holder holder{_compaction_housekeeping_gate};
     vlog(
       gclog.trace,
@@ -752,7 +752,7 @@ ss::future<> disk_log_impl::compact(compaction_config cfg) {
     }
 
     if (config().is_compacted() && !_segs.empty()) {
-        co_await do_compact(cfg, new_start_offset);
+        co_await do_compact(cfg.compact, new_start_offset);
     }
 
     _probe.set_compaction_ratio(_compaction_ratio.get());

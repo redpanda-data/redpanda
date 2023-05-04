@@ -117,7 +117,7 @@ ss::future<> disk_log_builder::gc(
     auto eviction_future = get_log().monitor_eviction(as);
 
     get_log()
-      .compact(compaction_config(
+      .housekeeping(housekeeping_config(
         collection_upper_bound,
         max_partition_retention_size,
         model::offset::max(),

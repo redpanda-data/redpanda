@@ -165,12 +165,16 @@ std::ostream& operator<<(std::ostream& os, const gc_config& cfg) {
 std::ostream& operator<<(std::ostream& o, const compaction_config& c) {
     fmt::print(
       o,
-      "{{gc:{}, max_collectible_offset:{}, "
+      "{{max_collectible_offset:{}, "
       "should_sanitize:{}}}",
-      c.gc,
       c.max_collectible_offset,
       c.sanitizer_config);
     return o;
+}
+
+std::ostream& operator<<(std::ostream& os, const housekeeping_config& cfg) {
+    fmt::print(os, "{{compact:{}, gc:{}}}", cfg.compact, cfg.gc);
+    return os;
 }
 
 std::ostream& operator<<(std::ostream& o, const compaction_result& r) {

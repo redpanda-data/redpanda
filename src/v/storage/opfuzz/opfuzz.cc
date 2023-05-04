@@ -503,7 +503,7 @@ struct compact_op final : opfuzz::op {
     ~compact_op() noexcept override = default;
     const char* name() const final { return "compact_op"; }
     ss::future<> invoke(opfuzz::op_context ctx) final {
-        compaction_config cfg(
+        housekeeping_config cfg(
           model::timestamp::max(),
           std::nullopt,
           model::offset::max(),
@@ -520,7 +520,7 @@ struct compact_op final : opfuzz::op {
           ctx.log->config().ntp(),
           cfg,
           *ctx.log);
-        return ctx.log->compact(cfg);
+        return ctx.log->housekeeping(cfg);
     }
 };
 

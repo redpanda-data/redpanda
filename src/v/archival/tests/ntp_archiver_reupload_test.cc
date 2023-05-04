@@ -240,7 +240,7 @@ struct reupload_fixture : public archiver_fixture {
         auto size_before = seg_set.size();
 
         disk_log_impl()
-          ->compact(storage::compaction_config{
+          ->housekeeping(storage::housekeeping_config{
             model::timestamp::max(),
             std::nullopt,
             model::offset::max(),

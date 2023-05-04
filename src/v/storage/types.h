@@ -352,23 +352,15 @@ struct gc_config {
 };
 
 struct compaction_config {
-    explicit compaction_config(
-      model::timestamp upper,
-      std::optional<size_t> max_bytes_in_log,
+    compaction_config(
       model::offset max_collect_offset,
       ss::io_priority_class p,
       ss::abort_source& as,
       std::optional<ntp_sanitizer_config> san_cfg = std::nullopt)
-      : gc(upper, max_bytes_in_log)
-      , max_collectible_offset(max_collect_offset)
+      : max_collectible_offset(max_collect_offset)
       , iopc(p)
       , sanitizer_config(std::move(san_cfg))
       , asrc(&as) {}
-
-    // retained this intentionally (and temporarily) to control code churn in
-    // the patch series. will be removed after compact and gc are fully
-    // separated.
-    gc_config gc;
 
     // Cannot delete or compact past this offset (i.e. for unresolved txn
     // records): that is, only offsets <= this may be compacted.
@@ -381,6 +373,29 @@ struct compaction_config {
     ss::abort_source* asrc;
 
     friend std::ostream& operator<<(std::ostream&, const compaction_config&);
+};
+
+/*
+ * Compaction and garbage collection are two distinct processes with their own
+ * configuration. However, the vast majority of the time they are invoked
+ * together as a single operation in a form of periodic housekeeping. This
+ * structure is a convenience wrapper around the two configs.
+ */
+struct housekeeping_config {
+    housekeeping_config(
+      model::timestamp upper,
+      std::optional<size_t> max_bytes_in_log,
+      model::offset max_collect_offset,
+      ss::io_priority_class p,
+      ss::abort_source& as,
+      std::optional<ntp_sanitizer_config> san_cfg = std::nullopt)
+      : compact(max_collect_offset, p, as, std::move(san_cfg))
+      , gc(upper, max_bytes_in_log) {}
+
+    compaction_config compact;
+    gc_config gc;
+
+    friend std::ostream& operator<<(std::ostream&, const housekeeping_config&);
 };
 
 struct compaction_result {

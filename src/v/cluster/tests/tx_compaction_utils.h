@@ -115,7 +115,7 @@ public:
         log->flush().get0();
         log->force_roll(ss::default_priority_class()).get0();
         ss::abort_source as{};
-        storage::compaction_config ccfg(
+        storage::housekeeping_config ccfg(
           model::timestamp::min(),
           std::nullopt,
           model::offset::max(),
@@ -124,7 +124,7 @@ public:
         // Compacts until a single sealed segment remains, other than the
         // currently active one.
         tests::cooperative_spin_wait_with_timeout(30s, [log, ccfg]() {
-            return log->compact(ccfg).then(
+            return log->housekeeping(ccfg).then(
               [log]() { return log->segment_count() == 2; });
         }).get();
 

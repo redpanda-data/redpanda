@@ -80,13 +80,13 @@ FIXTURE_TEST(test_produce_consume_from_cloud, e2e_fixture) {
 
     // Compact the local log to GC to the collectible offset.
     ss::abort_source as;
-    storage::compaction_config compaction_conf(
+    storage::housekeeping_config housekeeping_conf(
       model::timestamp::min(),
       1,
       log->stm_manager()->max_collectible_offset(),
       ss::default_priority_class(),
       as);
-    partition->log().compact(compaction_conf).get();
+    partition->log().housekeeping(housekeeping_conf).get();
     // NOTE: the storage layer only initially requests eviction; it relies on
     // Raft to write a snapshot and subsequently truncate.
     tests::cooperative_spin_wait_with_timeout(3s, [log] {

@@ -244,7 +244,7 @@ log_manager::housekeeping_scan(model::timestamp collection_threshold) {
 
         auto ntp_sanitizer_cfg = _config.maybe_get_ntp_sanitizer_config(
           current_log.handle.config().ntp());
-        co_await current_log.handle.compact(compaction_config(
+        co_await current_log.handle.housekeeping(housekeeping_config(
           collection_threshold,
           _config.retention_bytes(),
           current_log.handle.stm_manager()->max_collectible_offset(),
