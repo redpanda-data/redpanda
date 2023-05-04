@@ -137,8 +137,12 @@ ss::future<> ntp_archiver::start() {
 }
 
 void ntp_archiver::notify_leadership(std::optional<model::node_id> leader_id) {
-    if (leader_id && *leader_id == _parent.raft()->self().id()) {
+    bool is_leader = leader_id && *leader_id == _parent.raft()->self().id();
+    if (is_leader) {
         _leader_cond.signal();
+    }
+    if (_local_segment_merger) {
+        _local_segment_merger->set_enabled(is_leader);
     }
 }
 
