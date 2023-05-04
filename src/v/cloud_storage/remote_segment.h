@@ -90,8 +90,6 @@ public:
     /// Get base offset of the segment (kafka offset)
     const kafka::offset get_base_kafka_offset() const;
 
-    uint64_t get_chunks_in_segment() const;
-
     ss::future<> stop();
 
     /// create an input stream _sharing_ the underlying file handle
@@ -132,7 +130,7 @@ public:
     retry_chain_node* get_retry_chain_node() { return &_rtc; }
 
     bool download_in_progress() const noexcept {
-        if (_sname_format <= segment_name_format::v2 || _fallback_mode) {
+        if (is_legacy_mode_engaged()) {
             return !_wait_list.empty();
         } else {
             return _chunks_api->downloads_in_progress();
@@ -219,8 +217,9 @@ private:
 
     /// Decides if the remote segment should download the full segment as part
     /// of the hydration process. This is true if we are working with a segment
-    /// format newer than v2 and we are not in fallback mode
-    bool should_download_full_segment() const;
+    /// format older than v3 or we are in fallback mode. In newer formats we
+    /// download chunks of the segment instead of the entire segment file.
+    bool is_legacy_mode_engaged() const;
 
     /// Is the remote segment state materialized, IE do we need to hydrate or
     /// not. For segment format v0, v1 and v2, the data file handle should be

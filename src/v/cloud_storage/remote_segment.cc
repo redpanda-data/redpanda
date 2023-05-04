@@ -199,10 +199,6 @@ remote_segment::remote_segment(
     ssx::background = run_hydrate_bg();
 }
 
-uint64_t remote_segment::get_chunks_in_segment() const {
-    return _chunks_in_segment;
-}
-
 const model::ntp& remote_segment::get_ntp() const { return _ntp; }
 
 const model::offset remote_segment::get_max_rp_offset() const {
@@ -303,7 +299,7 @@ remote_segment::offset_data_stream(
     options.io_priority_class = io_priority;
 
     ss::input_stream<char> data_stream;
-    if (_sname_format <= segment_name_format::v2 || _fallback_mode) {
+    if (is_legacy_mode_engaged()) {
         data_stream = ss::make_file_input_stream(
           _data_file, pos.file_pos, std::move(options));
     } else {
@@ -442,7 +438,7 @@ ss::future<> remote_segment::do_hydrate_segment() {
       _bucket,
       _path,
       [this](uint64_t size_bytes, ss::input_stream<char> s) {
-          if (should_download_full_segment()) {
+          if (is_legacy_mode_engaged()) {
               return put_segment_in_cache_and_create_index(
                 size_bytes, std::move(s));
           } else {
@@ -714,12 +710,12 @@ void remote_segment::set_waiter_errors(const std::exception_ptr& err) {
     }
 };
 
-bool remote_segment::should_download_full_segment() const {
+bool remote_segment::is_legacy_mode_engaged() const {
     return _fallback_mode || _sname_format <= segment_name_format::v2;
 }
 
 bool remote_segment::is_state_materialized() const {
-    if (should_download_full_segment()) {
+    if (is_legacy_mode_engaged()) {
         return bool(_data_file);
     } else {
         return _index.has_value();
@@ -742,7 +738,7 @@ ss::future<> remote_segment::run_hydrate_bg() {
       [this] { return do_materialize_txrange(); },
       hydration_request::kind::tx);
 
-    if (_sname_format >= segment_name_format::v3) {
+    if (!is_legacy_mode_engaged()) {
         hydration.add_request(
           generate_index_path(_path),
           [this] { return do_hydrate_index(); },
@@ -755,7 +751,7 @@ ss::future<> remote_segment::run_hydrate_bg() {
             co_await _bg_cvar.wait(
               [this] { return !_wait_list.empty() || _gate.is_closed(); });
 
-            if (should_download_full_segment()) {
+            if (is_legacy_mode_engaged()) {
                 vlog(
                   _ctxlog.debug, "adding full segment to hydrate paths list");
                 hydration.add_request(
