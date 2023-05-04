@@ -48,7 +48,10 @@ class EndToEndShadowIndexingBase(EndToEndTest):
         replication_factor=3,
     ), )
 
-    def __init__(self, test_context, extra_rp_conf=None, environment=None):
+    def __init__(self,
+                 test_context,
+                 extra_rp_conf=None,
+                 environment={'__REDPANDA_TOPIC_REC_DL_CHECK_MILLIS': 5000}):
         super(EndToEndShadowIndexingBase,
               self).__init__(test_context=test_context)
 
@@ -252,6 +255,50 @@ class EndToEndShadowIndexingTest(EndToEndShadowIndexingBase):
 
         self.start_consumer()
         self.run_validation()
+
+    @skip_debug_mode
+    @cluster(num_nodes=4)
+    def test_recover(self):
+        # Recovery will leave behind results files, which aren't tracked.
+        # TODO: remove when recovery is controller-driven instead of using
+        # results objects.
+        self.start_producer()
+        produce_until_segments(
+            redpanda=self.redpanda,
+            topic=self.topic,
+            partition_idx=0,
+            count=10,
+        )
+        original_snapshot = self.redpanda.storage(
+            all_nodes=True).segments_by_node("kafka", self.topic, 0)
+        self.kafka_tools.alter_topic_config(
+            self.topic,
+            {
+                TopicSpec.PROPERTY_RETENTION_LOCAL_TARGET_BYTES:
+                5 * self.segment_size,
+            },
+        )
+
+        wait_for_removal_of_n_segments(redpanda=self.redpanda,
+                                       topic=self.topic,
+                                       partition_idx=0,
+                                       n=6,
+                                       original_snapshot=original_snapshot)
+
+        self.redpanda.stop()
+        self.redpanda.remove_local_data(self.redpanda.nodes[0])
+        self.redpanda.restart_nodes(self.redpanda.nodes)
+        self.redpanda._admin.await_stable_leader("controller",
+                                                 partition=0,
+                                                 namespace='redpanda',
+                                                 timeout_s=60,
+                                                 backoff_s=2)
+
+        rpk = RpkTool(self.redpanda)
+        rpk.cluster_recovery_start(wait=True)
+        wait_until(lambda: len(set(rpk.list_topics())) == 1,
+                   timeout_sec=30,
+                   backoff_sec=1)
 
 
 class EndToEndShadowIndexingTestCompactedTopic(EndToEndShadowIndexingBase):
