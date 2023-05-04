@@ -196,7 +196,7 @@ ss::future<std::optional<ss::sstring>> disk_log_impl::close() {
 }
 
 std::optional<model::offset>
-disk_log_impl::size_based_gc_max_offset(compaction_config cfg) {
+disk_log_impl::size_based_gc_max_offset(gc_config cfg) {
     if (!cfg.max_bytes.has_value()) {
         return std::nullopt;
     }
@@ -228,7 +228,7 @@ disk_log_impl::size_based_gc_max_offset(compaction_config cfg) {
 }
 
 std::optional<model::offset>
-disk_log_impl::time_based_gc_max_offset(compaction_config cfg) {
+disk_log_impl::time_based_gc_max_offset(gc_config cfg) {
     // The following compaction has a Kafka behavior compatibility bug. for
     // which we defer do nothing at the moment, possibly crashing the machine
     // and running out of disk. Kafka uses the same logic below as of
@@ -641,8 +641,7 @@ ss::future<compaction_result> disk_log_impl::compact_adjacent_segments(
     co_return ret;
 }
 
-compaction_config
-disk_log_impl::override_retention_config(compaction_config cfg) const {
+gc_config disk_log_impl::override_retention_config(gc_config cfg) const {
     // cloud_retention is disabled, do not override
     if (!is_cloud_retention_active()) {
         return cfg;
@@ -705,13 +704,12 @@ bool disk_log_impl::is_cloud_retention_active() const {
            && (config().is_archival_enabled());
 }
 
-compaction_config
-disk_log_impl::apply_overrides(compaction_config defaults) const {
+gc_config disk_log_impl::apply_overrides(gc_config defaults) const {
     if (!config().has_overrides()) {
         return override_retention_config(defaults);
     }
 
-    compaction_config ret = defaults;
+    auto ret = defaults;
 
     /**
      * Override retention bytes
@@ -739,30 +737,44 @@ disk_log_impl::apply_overrides(compaction_config defaults) const {
     return override_retention_config(ret);
 }
 
-ss::future<> disk_log_impl::compact(compaction_config cfg) {
+ss::future<> disk_log_impl::housekeeping(housekeeping_config cfg) {
     ss::gate::holder holder{_compaction_housekeeping_gate};
     vlog(
       gclog.trace,
       "[{}] house keeping with configuration from manager: {}",
       config().ntp(),
       cfg);
-    cfg = apply_overrides(cfg);
 
-    std::optional<model::offset> new_start_offset;
-    if (config().is_collectable()) {
-        new_start_offset = co_await gc(cfg);
-    }
+    /*
+     * gc/retention policy
+     */
+    auto new_start_offset = co_await do_gc(cfg.gc);
 
+    /*
+     * comapction. could factor out into a public interface like gc/retention if
+     * there is a need to run it separately.
+     */
     if (config().is_compacted() && !_segs.empty()) {
-        co_await do_compact(cfg, new_start_offset);
+        co_await do_compact(cfg.compact, new_start_offset);
     }
 
     _probe.set_compaction_ratio(_compaction_ratio.get());
 }
 
-ss::future<std::optional<model::offset>>
-disk_log_impl::gc(compaction_config cfg) {
+ss::future<> disk_log_impl::gc(gc_config cfg) {
+    ss::gate::holder holder{_compaction_housekeeping_gate};
+    co_await do_gc(cfg);
+}
+
+ss::future<std::optional<model::offset>> disk_log_impl::do_gc(gc_config cfg) {
     vassert(!_closed, "gc on closed log - {}", *this);
+
+    cfg = apply_overrides(cfg);
+
+    if (!config().is_collectable()) {
+        co_return std::nullopt;
+    }
+
     vlog(
       gclog.trace,
       "[{}] applying 'deletion' log cleanup policy with config: {}",
@@ -843,8 +855,7 @@ ss::future<> disk_log_impl::retention_adjust_timestamps(
     }
 }
 
-std::optional<model::offset>
-disk_log_impl::retention_offset(compaction_config cfg) {
+std::optional<model::offset> disk_log_impl::retention_offset(gc_config cfg) {
     if (deletion_exempt(config().ntp())) {
         vlog(
           gclog.trace,
@@ -1119,7 +1130,7 @@ ss::future<> disk_log_impl::maybe_roll(
     }
 }
 
-ss::future<> disk_log_impl::do_housekeeping() {
+ss::future<> disk_log_impl::apply_segment_ms() {
     auto gate = _compaction_housekeeping_gate.hold();
     // do_housekeeping races with maybe_roll to use new_segment.
     // take a lock to prevent problems
@@ -1784,7 +1795,7 @@ log make_disk_backed_log(
     return log(ptr);
 }
 
-ss::future<usage_report> disk_log_impl::disk_usage(compaction_config cfg) {
+ss::future<usage_report> disk_log_impl::disk_usage(gc_config cfg) {
     std::optional<model::offset> max_offset;
     if (config().is_collectable()) {
         cfg = apply_overrides(cfg);

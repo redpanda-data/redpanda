@@ -58,7 +58,7 @@ struct manual_deletion_fixture : public raft_test_fixture {
           [this] {
               for (auto& [_, n] : gr.get_members()) {
                   n.log
-                    ->compact(storage::compaction_config(
+                    ->housekeeping(storage::housekeeping_config(
                       retention_timestamp,
                       100_MiB,
                       model::offset::max(),

@@ -631,7 +631,7 @@ FIXTURE_TEST(
 
     ss::abort_source as{};
     log
-      ->compact(storage::compaction_config(
+      ->housekeeping(storage::housekeeping_config(
         model::timestamp::now(),
         std::nullopt,
         model::offset::max(),

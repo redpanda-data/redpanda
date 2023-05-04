@@ -49,13 +49,14 @@ public:
 
         // it shouldn't block for a long time as it will block other logs
         // eviction
-        virtual ss::future<> compact(compaction_config) = 0;
+        virtual ss::future<> housekeeping(housekeeping_config) = 0;
         virtual ss::future<> truncate(truncate_config) = 0;
         virtual ss::future<> truncate_prefix(truncate_prefix_config) = 0;
+        virtual ss::future<> gc(gc_config) = 0;
 
         // TODO should compact be merged in this?
         // run housekeeping task, like rolling segments
-        virtual ss::future<> do_housekeeping() = 0;
+        virtual ss::future<> apply_segment_ms() = 0;
 
         virtual ss::future<model::record_batch_reader>
           make_reader(log_reader_config) = 0;
@@ -174,9 +175,13 @@ public:
         return _impl->timequery(cfg);
     }
 
-    ss::future<> compact(compaction_config cfg) { return _impl->compact(cfg); }
+    ss::future<> housekeeping(housekeeping_config cfg) {
+        return _impl->housekeeping(cfg);
+    }
 
-    ss::future<> housekeeping() { return _impl->do_housekeeping(); }
+    ss::future<> gc(gc_config cfg) { return _impl->gc(cfg); }
+
+    ss::future<> apply_segment_ms() { return _impl->apply_segment_ms(); }
     /**
      * \brief Returns a future that resolves when log eviction is scheduled
      *

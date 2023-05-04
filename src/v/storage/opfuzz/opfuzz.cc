@@ -503,7 +503,7 @@ struct compact_op final : opfuzz::op {
     ~compact_op() noexcept override = default;
     const char* name() const final { return "compact_op"; }
     ss::future<> invoke(opfuzz::op_context ctx) final {
-        compaction_config cfg(
+        housekeeping_config cfg(
           model::timestamp::max(),
           std::nullopt,
           model::offset::max(),
@@ -511,8 +511,8 @@ struct compact_op final : opfuzz::op {
           *(ctx._as),
           storage::ntp_sanitizer_config{.sanitize_only = true});
         if (random_generators::get_int(0, 100) > 70) {
-            cfg.eviction_time = model::timestamp::now();
-            cfg.max_bytes = 10_MiB;
+            cfg.gc.eviction_time = model::timestamp::now();
+            cfg.gc.max_bytes = 10_MiB;
         }
         vlog(
           fuzzlogger.info,
@@ -520,7 +520,7 @@ struct compact_op final : opfuzz::op {
           ctx.log->config().ntp(),
           cfg,
           *ctx.log);
-        return ctx.log->compact(cfg);
+        return ctx.log->housekeeping(cfg);
     }
 };
 

@@ -210,12 +210,19 @@ log_manager::housekeeping_scan(model::timestamp collection_threshold) {
         co_return;
     }
 
-    // TODO handle this after compaction?
-    // handle segment.ms sequentially, since compaction is already sequential
-    // when this will be unified with compaction, the whole task could be made
-    // concurrent
+    /*
+     * Apply segment ms will roll the active segment if it is old enough. This
+     * is best done prior to running gc or compaction because it ensures that
+     * an inactive partition eventually makes data in its most recent segment
+     * eligible for these housekeeping processes.
+     *
+     * TODO:
+     *   handle this after compaction? handle segment.ms sequentially, since
+     *   compaction is already sequential when this will be unified with
+     *   compaction, the whole task could be made concurrent
+     */
     for (auto& log_meta : _logs_list) {
-        co_await log_meta.handle.housekeeping();
+        co_await log_meta.handle.apply_segment_ms();
     }
 
     for (auto& log_meta : _logs_list) {
@@ -237,7 +244,7 @@ log_manager::housekeeping_scan(model::timestamp collection_threshold) {
 
         auto ntp_sanitizer_cfg = _config.maybe_get_ntp_sanitizer_config(
           current_log.handle.config().ntp());
-        co_await current_log.handle.compact(compaction_config(
+        co_await current_log.handle.housekeeping(housekeeping_config(
           collection_threshold,
           _config.retention_bytes(),
           current_log.handle.stm_manager()->max_collectible_offset(),
@@ -629,12 +636,8 @@ ss::future<usage_report> log_manager::disk_usage() {
       logs.end(),
       [this, collection_threshold](log l) {
           auto log = dynamic_cast<disk_log_impl*>(l.get_impl());
-          return log->disk_usage(compaction_config(
-            collection_threshold,
-            _config.retention_bytes(),
-            l.stm_manager()->max_collectible_offset(),
-            _config.compaction_priority,
-            _abort_source));
+          return log->disk_usage(
+            gc_config(collection_threshold, _config.retention_bytes()));
       },
       usage_report{},
       [](usage_report acc, usage_report update) { return acc + update; });

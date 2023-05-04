@@ -356,7 +356,7 @@ FIXTURE_TEST(
     // garbadge collect first append series
     ss::abort_source as;
     log
-      .compact(compaction_config(
+      .housekeeping(housekeeping_config(
         ts,
         std::nullopt,
         model::offset::max(),
@@ -536,7 +536,7 @@ FIXTURE_TEST(test_concurrent_prefix_truncate_and_gc, storage_test_fixture) {
     // for the log eviction stm with an offset until which
     // to evict. The test does not listen for the notification,
     // so this call is basically a no-op.
-    auto f1 = log.compact(compaction_config(
+    auto f1 = log.housekeeping(housekeeping_config(
       ts,
       std::nullopt,
       model::offset::max(),

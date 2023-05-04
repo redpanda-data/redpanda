@@ -153,16 +153,28 @@ std::ostream& operator<<(std::ostream& o, const offset_stats& s) {
     return o;
 }
 
+std::ostream& operator<<(std::ostream& os, const gc_config& cfg) {
+    fmt::print(
+      os,
+      "{{eviction_time:{}, max_bytes:{}}}",
+      cfg.eviction_time,
+      cfg.max_bytes.value_or(-1));
+    return os;
+}
+
 std::ostream& operator<<(std::ostream& o, const compaction_config& c) {
     fmt::print(
       o,
-      "{{evicition_time:{}, max_bytes:{}, max_collectible_offset:{}, "
+      "{{max_collectible_offset:{}, "
       "should_sanitize:{}}}",
-      c.eviction_time,
-      c.max_bytes.value_or(-1),
       c.max_collectible_offset,
       c.sanitizer_config);
     return o;
+}
+
+std::ostream& operator<<(std::ostream& os, const housekeeping_config& cfg) {
+    fmt::print(os, "{{compact:{}, gc:{}}}", cfg.compact, cfg.gc);
+    return os;
 }
 
 std::ostream& operator<<(std::ostream& o, const compaction_result& r) {

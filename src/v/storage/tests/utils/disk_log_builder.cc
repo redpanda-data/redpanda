@@ -117,7 +117,7 @@ ss::future<> disk_log_builder::gc(
     auto eviction_future = get_log().monitor_eviction(as);
 
     get_log()
-      .compact(compaction_config(
+      .housekeeping(housekeeping_config(
         collection_upper_bound,
         max_partition_retention_size,
         model::offset::max(),
@@ -140,17 +140,13 @@ ss::future<> disk_log_builder::gc(
 ss::future<usage_report> disk_log_builder::disk_usage(
   model::timestamp collection_upper_bound,
   std::optional<size_t> max_partition_retention_size) {
-    return get_disk_log_impl().disk_usage(compaction_config(
-      collection_upper_bound,
-      max_partition_retention_size,
-      model::offset::max(),
-      ss::default_priority_class(),
-      _abort_source));
+    return get_disk_log_impl().disk_usage(
+      gc_config(collection_upper_bound, max_partition_retention_size));
 }
 
 ss::future<std::optional<model::offset>>
-disk_log_builder::apply_retention(compaction_config cfg) {
-    return get_disk_log_impl().gc(cfg);
+disk_log_builder::apply_retention(gc_config cfg) {
+    return get_disk_log_impl().do_gc(cfg);
 }
 
 ss::future<> disk_log_builder::apply_compaction(

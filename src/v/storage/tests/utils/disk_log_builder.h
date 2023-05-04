@@ -306,8 +306,7 @@ public:
     ss::future<usage_report> disk_usage(
       model::timestamp collection_upper_bound,
       std::optional<size_t> max_partition_retention_size);
-    ss::future<std::optional<model::offset>>
-    apply_retention(compaction_config cfg);
+    ss::future<std::optional<model::offset>> apply_retention(gc_config cfg);
     ss::future<> apply_compaction(
       compaction_config cfg,
       std::optional<model::offset> new_start_offset = std::nullopt);
