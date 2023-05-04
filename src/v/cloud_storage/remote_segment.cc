@@ -16,6 +16,7 @@
 #include "cloud_storage/logger.h"
 #include "cloud_storage/partition_manifest.h"
 #include "cloud_storage/remote_segment_index.h"
+#include "cloud_storage/segment_chunk_data_source.h"
 #include "cloud_storage/tx_range_manifest.h"
 #include "cloud_storage/types.h"
 #include "config/configuration.h"
@@ -52,7 +53,7 @@
 namespace cloud_storage {
 
 std::filesystem::path
-generate_remote_index_path(const cloud_storage::remote_segment_path& p) {
+generate_index_path(const cloud_storage::remote_segment_path& p) {
     return fmt::format("{}.index", p().native());
 }
 
@@ -131,6 +132,8 @@ remote_segment::remote_segment(
       key);
 
     _path = m.generate_segment_path(*meta);
+    _index_path = generate_index_path(_path);
+    _chunk_root = fmt::format("{}_chunks", _path().native());
 
     _term = meta->segment_term;
 
@@ -147,6 +150,54 @@ remote_segment::remote_segment(
       && meta->metadata_size_hint == 0) {
         // The tx-manifest is empty, no need to download it.
         _tx_range.emplace();
+    }
+
+    _chunk_size = config::shard_local_cfg().cloud_storage_cache_chunk_size();
+    vassert(_chunk_size != 0, "cloud_storage_cache_chunk_size should not be 0");
+
+    // The max hydrated chunks per segment are either 0.5 of total number of
+    // chunks possible, or in case of small segments the total number of chunks
+    // possible. In the second case we should be able to hydrate the entire
+    // segment in chunks at the same time. In the first case roughly half the
+    // segment may be hydrated at a time.
+    _chunks_in_segment = std::max(
+      static_cast<uint64_t>(ceil(_size / _chunk_size)), _chunks_in_segment);
+
+    if (
+      _chunks_in_segment <= config::shard_local_cfg()
+                              .cloud_storage_min_chunks_per_segment_threshold) {
+        _max_hydrated_chunks = _chunks_in_segment;
+    } else {
+        _max_hydrated_chunks = std::max(
+          static_cast<uint64_t>(
+            _chunks_in_segment
+            * config::shard_local_cfg()
+                .cloud_storage_hydrated_chunks_per_segment_ratio),
+          uint64_t{1});
+    }
+
+    vassert(
+      _max_hydrated_chunks > 0 && _max_hydrated_chunks <= _chunks_in_segment,
+      "invalid max hydrated chunks: {}, chunks in segment: {}, chunk size: {}, "
+      "segment size: {}",
+      _max_hydrated_chunks,
+      _chunks_in_segment,
+      _chunk_size,
+      _size);
+
+    vlog(
+      _ctxlog.trace,
+      "total {} chunks in segment of size {}, max hydrated chunks at a time: "
+      "{}, chunk size: {}",
+      _chunks_in_segment,
+      _size,
+      _max_hydrated_chunks,
+      _chunk_size);
+
+    _chunks_api.emplace(*this, _max_hydrated_chunks);
+
+    if (config::shard_local_cfg().cloud_storage_disable_chunk_reads) {
+        _fallback_mode = fallback_mode::yes;
     }
 
     // run hydration loop in the background
@@ -190,6 +241,9 @@ ss::future<> remote_segment::stop() {
           });
     }
 
+    if (_chunks_api) {
+        co_await _chunks_api->stop();
+    }
     _stopped = true;
 }
 
@@ -210,13 +264,11 @@ remote_segment::data_stream(size_t pos, ss::io_priority_class io_priority) {
 
 ss::future<remote_segment::input_stream_with_offsets>
 remote_segment::offset_data_stream(
-  kafka::offset kafka_offset,
+  kafka::offset start,
+  kafka::offset end,
   std::optional<model::timestamp> first_timestamp,
   ss::io_priority_class io_priority) {
-    vlog(
-      _ctxlog.debug,
-      "remote segment file input stream at offset {}",
-      kafka_offset);
+    vlog(_ctxlog.debug, "remote segment file input stream at offset {}", start);
     ss::gate::holder g(_gate);
     co_await hydrate();
     offset_index::find_result pos;
@@ -233,12 +285,11 @@ remote_segment::offset_data_stream(
           .file_pos = 0,
         };
     } else {
-        pos = maybe_get_offsets(kafka_offset)
-                .value_or(offset_index::find_result{
-                  .rp_offset = _base_rp_offset,
-                  .kaf_offset = _base_rp_offset - _base_offset_delta,
-                  .file_pos = 0,
-                });
+        pos = maybe_get_offsets(start).value_or(offset_index::find_result{
+          .rp_offset = _base_rp_offset,
+          .kaf_offset = _base_rp_offset - _base_offset_delta,
+          .file_pos = 0,
+        });
     }
     vlog(
       _ctxlog.debug,
@@ -251,8 +302,23 @@ remote_segment::offset_data_stream(
     options.read_ahead
       = config::shard_local_cfg().storage_read_readahead_count();
     options.io_priority_class = io_priority;
-    auto data_stream = ss::make_file_input_stream(
-      _data_file, pos.file_pos, std::move(options));
+
+    ss::input_stream<char> data_stream;
+    if (is_legacy_mode_engaged()) {
+        data_stream = ss::make_file_input_stream(
+          _data_file, pos.file_pos, std::move(options));
+    } else {
+        auto chunk_ds = std::make_unique<chunk_data_source_impl>(
+          _chunks_api.value(),
+          *this,
+          pos.kaf_offset,
+          end,
+          pos.file_pos,
+          std::move(options));
+        data_stream = ss::input_stream<char>{
+          ss::data_source{std::move(chunk_ds)}};
+    }
+
     co_return input_stream_with_offsets{
       .stream = std::move(data_stream),
       .rp_offset = pos.rp_offset,
@@ -323,7 +389,7 @@ ss::future<uint64_t> remote_segment::put_segment_in_cache_and_create_index(
     }
     if (index_prepared) {
         auto index_stream = make_iobuf_input_stream(tmpidx.to_iobuf());
-        co_await _cache.put(generate_remote_index_path(_path), index_stream);
+        co_await _cache.put(generate_index_path(_path), index_stream);
         _index = std::move(tmpidx);
     }
     co_return size_bytes;
@@ -345,6 +411,26 @@ ss::future<uint64_t> remote_segment::put_segment_in_cache(
     co_return size_bytes;
 }
 
+ss::future<uint64_t> remote_segment::put_chunk_in_cache(
+  uint64_t size,
+  ss::input_stream<char> stream,
+  chunk_start_offset_t chunk_start) {
+    try {
+        co_await _cache.put(get_path_to_chunk(chunk_start), stream)
+          .finally([&stream] { return stream.close(); });
+    } catch (...) {
+        auto put_exception = std::current_exception();
+        vlog(
+          _ctxlog.warn,
+          "Failed to write segment chunk {} to cache, error: {}",
+          chunk_start,
+          put_exception);
+        std::rethrow_exception(put_exception);
+    }
+
+    co_return size;
+}
+
 ss::future<> remote_segment::do_hydrate_segment() {
     retry_chain_node local_rtc(
       cache_hydration_timeout, cache_hydration_backoff, &_rtc);
@@ -357,11 +443,7 @@ ss::future<> remote_segment::do_hydrate_segment() {
       _bucket,
       _path,
       [this](uint64_t size_bytes, ss::input_stream<char> s) {
-          auto index_not_in_object_store = _sname_format
-                                             == segment_name_format::v1
-                                           || _sname_format
-                                                == segment_name_format::v2;
-          if (unlikely(index_not_in_object_store)) {
+          if (is_legacy_mode_engaged()) {
               return put_segment_in_cache_and_create_index(
                 size_bytes, std::move(s));
           } else {
@@ -391,19 +473,20 @@ ss::future<> remote_segment::do_hydrate_index() {
       0,
       remote_segment_sampling_step_bytes);
 
-    auto index_path = generate_remote_index_path(_path);
     auto result = co_await _api.download_index(
-      _bucket, remote_segment_path{index_path}, ix, local_rtc);
+      _bucket, remote_segment_path{_index_path}, ix, local_rtc);
 
     if (result != download_result::success) {
-        throw download_exception(result, index_path);
+        throw download_exception(result, _index_path);
     }
 
     _index = std::move(ix);
+    _coarse_index.emplace(_index->build_coarse_index(_chunk_size));
+    co_await _chunks_api->start();
     auto buf = _index->to_iobuf();
 
     auto str = make_iobuf_input_stream(std::move(buf));
-    co_await _cache.put(index_path, str).finally([&str] {
+    co_await _cache.put(_index_path, str).finally([&str] {
         return str.close();
     });
 }
@@ -547,7 +630,7 @@ ss::future<bool> remote_segment::maybe_materialize_index() {
     }
 
     ss::gate::holder guard(_gate);
-    auto path = generate_remote_index_path(_path);
+    auto path = generate_index_path(_path);
     offset_index ix(
       _base_rp_offset,
       _base_rp_offset - _base_offset_delta,
@@ -576,6 +659,8 @@ ss::future<bool> remote_segment::maybe_materialize_index() {
             });
             ix.from_iobuf(std::move(state));
             _index = std::move(ix);
+            _coarse_index.emplace(_index->build_coarse_index(_chunk_size));
+            co_await _chunks_api->start();
         } catch (...) {
             // In case of any failure during index materialization just continue
             // without the index.
@@ -630,6 +715,18 @@ void remote_segment::set_waiter_errors(const std::exception_ptr& err) {
     }
 };
 
+bool remote_segment::is_legacy_mode_engaged() const {
+    return _fallback_mode || _sname_format <= segment_name_format::v2;
+}
+
+bool remote_segment::is_state_materialized() const {
+    if (is_legacy_mode_engaged()) {
+        return bool(_data_file);
+    } else {
+        return _index.has_value();
+    }
+}
+
 ss::future<> remote_segment::run_hydrate_bg() {
     ss::gate::holder guard(_gate);
 
@@ -641,22 +738,14 @@ ss::future<> remote_segment::run_hydrate_bg() {
     auto tx_path = generate_remote_tx_path(_path)();
 
     hydration.add_request(
-      _path,
-      [this] { return do_hydrate_segment(); },
-      [this] { return do_materialize_segment(); },
-      hydration_request::kind::segment);
-
-    hydration.add_request(
       tx_path,
       [this] { return do_hydrate_txrange(); },
       [this] { return do_materialize_txrange(); },
       hydration_request::kind::tx);
 
-    if (
-      _sname_format != segment_name_format::v1
-      && _sname_format != segment_name_format::v2) {
+    if (!is_legacy_mode_engaged()) {
         hydration.add_request(
-          generate_remote_index_path(_path),
+          generate_index_path(_path),
           [this] { return do_hydrate_index(); },
           [this] { return maybe_materialize_index(); },
           hydration_request::kind::index);
@@ -666,6 +755,19 @@ ss::future<> remote_segment::run_hydrate_bg() {
         while (!_gate.is_closed()) {
             co_await _bg_cvar.wait(
               [this] { return !_wait_list.empty() || _gate.is_closed(); });
+
+            if (is_legacy_mode_engaged()) {
+                vlog(
+                  _ctxlog.debug, "adding full segment to hydrate paths list");
+                hydration.add_request(
+                  _path,
+                  [this] { return do_hydrate_segment(); },
+                  [this] { return do_materialize_segment(); },
+                  hydration_request::kind::segment);
+                vlog(_ctxlog.debug, "removing index from hydrate paths list");
+                hydration.remove_request(_index_path);
+            }
+
             vlog(
               _ctxlog.debug,
               "Segment {} requested, {} consumers are awaiting, data file is "
@@ -674,12 +776,7 @@ ss::future<> remote_segment::run_hydrate_bg() {
               _wait_list.size(),
               _data_file ? "available" : "not available");
             std::exception_ptr err;
-            if (!_data_file || !_tx_range) {
-                // We don't have a _data_file set so we have to check cache
-                // and retrieve the file out of it or hydrate.
-                // If _data_file is initialized we can use it safely since the
-                // cache can't delete it until we close it.
-
+            if (!is_state_materialized() || !_tx_range) {
                 co_await hydration.update_current_path_states();
                 if (co_await hydration.is_cache_thrashing()) {
                     co_await ss::sleep(_cache_backoff_jitter.next_duration());
@@ -694,14 +791,19 @@ ss::future<> remote_segment::run_hydrate_bg() {
                     }
                 }
             }
-            // Invariant: here we should have a data file or error to be set.
-            // If the hydration failed we will have 'err' set to some value. The
-            // error needs to be propagated further. Otherwise we will always
-            // have _data_file set because if we don't we will retry the
-            // hydration earlier.
+            // Invariant: here we should have segment state materialized or
+            // error to be set. If the hydration failed we will have 'err' set
+            // to some value. The error needs to be propagated further.
+            // Otherwise we will always have state materialized because if we
+            // don't we will retry the hydration earlier.
             vassert(
-              _data_file || err,
+              is_state_materialized() || err,
               "Segment hydration succeded but file isn't available");
+
+            // When operating in index-only (v3 or above version of segment
+            // meta), the waiter does not need the data file to be present, only
+            // the index is required. This promise is still set to the data file
+            // but it will be absent and unused.
             while (!_wait_list.empty()) {
                 auto& p = _wait_list.front();
                 if (err) {
@@ -729,14 +831,69 @@ ss::future<> remote_segment::run_hydrate_bg() {
 }
 
 ss::future<> remote_segment::hydrate() {
-    return ss::with_gate(_gate, [this] {
-        vlog(_ctxlog.debug, "segment {} hydration requested", _path);
-        ss::promise<ss::file> p;
-        auto fut = p.get_future();
-        _wait_list.push_back(std::move(p), ss::lowres_clock::time_point::max());
-        _bg_cvar.signal();
-        return fut.discard_result();
-    });
+    gate_guard g{_gate};
+    vlog(_ctxlog.debug, "segment {} hydration requested", _path);
+    ss::promise<ss::file> p;
+    auto fut = p.get_future();
+    _wait_list.push_back(std::move(p), ss::lowres_clock::time_point::max());
+    _bg_cvar.signal();
+    return fut
+      .handle_exception_type([this](const download_exception& ex) {
+          // If we are working with an index-only format, and index download
+          // failed, we may not be able to progress. So we fallback to old
+          // format where the full segment was downloaded, and try to hydrate
+          // again.
+          if (ex.path == _index_path && !_fallback_mode) {
+              vlog(
+                _ctxlog.info,
+                "failed to download index with error [{}], switching to "
+                "fallback mode and retrying hydration.",
+                ex);
+              _fallback_mode = fallback_mode::yes;
+              return hydrate().then([] {
+                  // This is an empty file to match the type returned by `fut`.
+                  // The result is discarded immediately so it is unused.
+                  return ss::file{};
+              });
+          }
+
+          // If the download failure was something other than the index, OR
+          // if we are in the fallback mode already or if we are working
+          // with old format, rethrow the exception and let the upper layer
+          // handle it.
+          throw;
+      })
+      .discard_result();
+}
+
+ss::future<> remote_segment::hydrate_chunk(
+  chunk_start_offset_t start, std::optional<chunk_start_offset_t> end) {
+    retry_chain_node rtc{
+      cache_hydration_timeout, cache_hydration_backoff, &_rtc};
+
+    const auto space_required = end.value_or(_size - 1) - start + 1;
+    const auto reserved = co_await _cache.reserve_space(space_required);
+
+    auto res = co_await _api.download_segment(
+      _bucket,
+      _path,
+      [this, start](auto size, auto stream) {
+          return put_chunk_in_cache(size, std::move(stream), start);
+      },
+      rtc,
+      std::make_pair(start, end.value_or(_size - 1)));
+    if (res != download_result::success) {
+        throw download_exception{res, _path};
+    }
+}
+
+ss::future<ss::file>
+remote_segment::materialize_chunk(chunk_start_offset_t chunk_start) {
+    auto res = co_await _cache.get(get_path_to_chunk(chunk_start));
+    if (!res.has_value()) {
+        co_return ss::file{};
+    }
+    co_return res.value().body;
 }
 
 ss::future<std::vector<model::tx_range>>
@@ -766,6 +923,41 @@ remote_segment::aborted_transactions(model::offset from, model::offset to) {
       from,
       to);
     co_return result;
+}
+
+uint64_t remote_segment::max_hydrated_chunks() const {
+    return _max_hydrated_chunks;
+}
+
+chunk_start_offset_t
+remote_segment::get_chunk_start_for_kafka_offset(kafka::offset koff) const {
+    vassert(
+      _coarse_index.has_value(),
+      "cannot find byte range for kafka offset {} when coarse index is not "
+      "initialized.",
+      koff);
+
+    vlog(_ctxlog.trace, "get_chunk_start_for_kafka_offset {}", koff);
+
+    if (unlikely(_coarse_index->empty())) {
+        return 0;
+    }
+
+    // TODO (abhijat) assert that koff >= segment base kafka && koff <= segment
+    // end kafka
+    auto it = _coarse_index->upper_bound(koff);
+    // The kafka offset lies in the first chunk of the file.
+    if (it == _coarse_index->begin()) {
+        return 0;
+    }
+
+    it = std::prev(it);
+    return static_cast<uint64_t>(it->second);
+}
+
+const offset_index::coarse_index_t& remote_segment::get_coarse_index() const {
+    vassert(_coarse_index.has_value(), "coarse index is not initialized");
+    return _coarse_index.value();
 }
 
 /// Batch consumer that connects to remote_segment_batch_reader.
@@ -1064,6 +1256,7 @@ remote_segment_batch_reader::init_parser() {
 
     auto stream_off = co_await _seg->offset_data_stream(
       model::offset_cast(_config.start_offset),
+      model::offset_cast(_config.max_offset),
       _config.first_timestamp,
       priority_manager::local().shadow_indexing_priority());
 
@@ -1130,12 +1323,26 @@ void hydration_loop_state::add_request(
   hydrate_action_t h,
   materialize_action_t m,
   hydration_request::kind path_kind) {
+    // Do not re-add the path. A path may be added conditionally in a
+    // loop, we should only add it the first time it is requested.
+    if (auto it = std::find_if(
+          _states.cbegin(),
+          _states.cend(),
+          [&p](const auto& st) { return st.path == p; });
+        it != _states.end()) {
+        return;
+    }
+
     _states.push_back(
       {.path = p,
        .was_cached = false,
        .hydrate_action = std::move(h),
        .materialize_action = std::move(m),
        .path_kind = path_kind});
+}
+
+void hydration_loop_state::remove_request(const std::filesystem::path& p) {
+    std::erase_if(_states, [&p](const auto& state) { return state.path == p; });
 }
 
 ss::future<> hydration_loop_state::update_current_path_states() {
