@@ -19,11 +19,12 @@ constexpr auto cache_backoff_duration = 5s;
 constexpr auto eviction_duration = 10s;
 
 ss::future<cloud_storage::segment_chunk::handle_t> add_waiter_to_chunk(
-  cloud_storage::file_offset_t chunk_start,
+  cloud_storage::chunk_start_offset_t chunk_start,
   cloud_storage::segment_chunk& chunk) {
     ss::promise<cloud_storage::segment_chunk::handle_t> p;
     auto f = p.get_future();
     chunk.waiters.push_back(std::move(p), ss::lowres_clock::time_point::max());
+
     using cloud_storage::cst_log;
     vlog(
       cst_log.trace,
@@ -106,29 +107,23 @@ bool segment_chunks::downloads_in_progress() const {
     });
 }
 
-ss::future<bool> segment_chunks::do_hydrate_and_materialize(
-  file_offset_t chunk_start, segment_chunk& chunk) {
+ss::future<ss::file>
+segment_chunks::do_hydrate_and_materialize(chunk_start_offset_t chunk_start) {
     gate_guard g{_gate};
     vassert(_started, "chunk API is not started");
 
     auto it = _chunks.find(chunk_start);
-    std::optional<file_offset_t> chunk_end = std::nullopt;
+    std::optional<chunk_start_offset_t> chunk_end = std::nullopt;
     if (auto next = std::next(it); next != _chunks.end()) {
         chunk_end = next->first - 1;
     }
 
     co_await _segment.hydrate_chunk(chunk_start, chunk_end);
-    auto file_handle = co_await _segment.materialize_chunk(chunk_start);
-    if (!file_handle) {
-        co_return false;
-    }
-
-    chunk.handle = ss::make_lw_shared(std::move(file_handle));
-    co_return true;
+    co_return co_await _segment.materialize_chunk(chunk_start);
 }
 
 ss::future<segment_chunk::handle_t>
-segment_chunks::hydrate_chunk(file_offset_t chunk_start) {
+segment_chunks::hydrate_chunk(chunk_start_offset_t chunk_start) {
     gate_guard g{_gate};
     vassert(_started, "chunk API is not started");
 
@@ -158,13 +153,20 @@ segment_chunks::hydrate_chunk(file_offset_t chunk_start) {
         chunk.current_state = chunk_state::download_in_progress;
 
         // Keep retrying if materialization fails.
-        while (!co_await do_hydrate_and_materialize(chunk_start, chunk)) {
-            vlog(
-              _ctxlog.trace,
-              "do_hydrate_and_materialize failed for chunk id {}",
-              chunk_start);
-            co_await ss::sleep_abortable(
-              _cache_backoff_jitter.next_jitter_duration(), _as);
+        bool done = false;
+        while (!done) {
+            auto handle = co_await do_hydrate_and_materialize(chunk_start);
+            if (handle) {
+                done = true;
+                chunk.handle = ss::make_lw_shared(std::move(handle));
+            } else {
+                vlog(
+                  _ctxlog.trace,
+                  "do_hydrate_and_materialize failed for chunk start offset {}",
+                  chunk_start);
+                co_await ss::sleep_abortable(
+                  _cache_backoff_jitter.next_jitter_duration(), _as);
+            }
         }
     } catch (const std::exception& ex) {
         while (!chunk.waiters.empty()) {
@@ -269,7 +271,8 @@ ss::future<> segment_chunks::trim_chunk_files() {
     _eviction_timer.rearm(_eviction_jitter());
 }
 
-void segment_chunks::register_readers(file_offset_t first, file_offset_t last) {
+void segment_chunks::register_readers(
+  chunk_start_offset_t first, chunk_start_offset_t last) {
     vassert(_started, "chunk API is not started");
 
     if (last <= first) {
@@ -294,7 +297,7 @@ void segment_chunks::register_readers(file_offset_t first, file_offset_t last) {
 }
 
 void segment_chunks::mark_acquired_and_update_stats(
-  file_offset_t first, file_offset_t last) {
+  chunk_start_offset_t first, chunk_start_offset_t last) {
     vassert(_started, "chunk API is not started");
 
     auto start = _chunks.find(first);
@@ -312,7 +315,7 @@ void segment_chunks::mark_acquired_and_update_stats(
     }
 }
 
-segment_chunk& segment_chunks::get(file_offset_t chunk_start) {
+segment_chunk& segment_chunks::get(chunk_start_offset_t chunk_start) {
     vassert(_started, "chunk API is not started");
 
     vassert(
@@ -322,7 +325,8 @@ segment_chunk& segment_chunks::get(file_offset_t chunk_start) {
     return _chunks[chunk_start];
 }
 
-file_offset_t segment_chunks::get_next_chunk_start(file_offset_t f) const {
+chunk_start_offset_t
+segment_chunks::get_next_chunk_start(chunk_start_offset_t f) const {
     vassert(_chunks.contains(f), "No chunk found starting at {}", f);
     auto it = _chunks.find(f);
     auto next = std::next(it);

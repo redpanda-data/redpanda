@@ -120,12 +120,12 @@ public:
     /// Hydrate a part of a segment, identified by the given start and end
     /// offsets. If the end offset is std::nullopt, the last offset in the file
     /// is used as the end offset.
-    ss::future<>
-    hydrate_chunk(file_offset_t start, std::optional<file_offset_t> end);
+    ss::future<> hydrate_chunk(
+      chunk_start_offset_t start, std::optional<chunk_start_offset_t> end);
 
     /// Loads the segment chunk file from cache into an open file handle. If the
     /// file is not present in cache, the returned file handle is unopened.
-    ss::future<ss::file> materialize_chunk(file_offset_t);
+    ss::future<ss::file> materialize_chunk(chunk_start_offset_t);
 
     retry_chain_node* get_retry_chain_node() { return &_rtc; }
 
@@ -157,7 +157,8 @@ public:
     /// The returned start offset is guaranteed to be the start of a batch. If
     /// the coarse index is empty (which may happen when the remote segment is
     /// smaller than chunk size), offset 0 is returned.
-    file_offset_t get_chunk_start_for_kafka_offset(kafka::offset koff) const;
+    chunk_start_offset_t
+    get_chunk_start_for_kafka_offset(kafka::offset koff) const;
 
     const offset_index::coarse_index_t& get_coarse_index() const;
 
@@ -194,7 +195,7 @@ private:
     /// Stores a segment chunk in cache. The chunk is stored in a path derived
     /// from the segment path: <segment_path>_chunks/chunk_start_file_offset.
     ss::future<uint64_t> put_chunk_in_cache(
-      uint64_t, ss::input_stream<char>, file_offset_t chunk_start);
+      uint64_t, ss::input_stream<char>, chunk_start_offset_t chunk_start);
 
     /// Hydrate tx manifest. Method downloads the manifest file to the cache
     /// dir.
@@ -211,7 +212,8 @@ private:
     /// Load segment index from file (if available)
     ss::future<bool> maybe_materialize_index();
 
-    std::filesystem::path get_path_to_chunk(file_offset_t chunk_start) const {
+    std::filesystem::path
+    get_path_to_chunk(chunk_start_offset_t chunk_start) const {
         return _chunk_root / fmt::format("{}", chunk_start);
     }
 

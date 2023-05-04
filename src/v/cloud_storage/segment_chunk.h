@@ -22,7 +22,7 @@ struct log_reader_config;
 
 namespace cloud_storage {
 
-using file_offset_t = uint64_t;
+using chunk_start_offset_t = uint64_t;
 
 enum class chunk_state {
     not_available,

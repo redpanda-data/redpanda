@@ -713,7 +713,7 @@ FIXTURE_TEST(test_chunk_future_reader_stats, cloud_storage_fixture) {
     segment.hydrate().get();
     chunk_api.start().get();
 
-    file_offset_t end = std::prev(chunk_api.end())->first;
+    chunk_start_offset_t end = std::prev(chunk_api.end())->first;
     chunk_api.register_readers(0, end);
 
     auto required_after = 1;

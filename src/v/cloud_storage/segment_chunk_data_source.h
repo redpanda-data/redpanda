@@ -26,7 +26,7 @@ public:
       remote_segment& segment,
       kafka::offset start,
       kafka::offset end,
-      file_offset_t begin_stream_at,
+      int64_t begin_stream_at,
       ss::file_input_stream_options stream_options);
 
     chunk_data_source_impl(const chunk_data_source_impl&) = delete;
@@ -45,16 +45,16 @@ private:
     // into it. The stream for the first chunk starts at the reader config start
     // offset, and the stream for the last chunk ends at the reader config last
     // offset.
-    ss::future<> load_stream_for_chunk(file_offset_t chunk_start);
+    ss::future<> load_stream_for_chunk(chunk_start_offset_t chunk_start);
 
     segment_chunks& _chunks;
     remote_segment& _segment;
 
-    file_offset_t _first_chunk_start;
-    file_offset_t _last_chunk_start;
-    file_offset_t _begin_stream_at;
+    chunk_start_offset_t _first_chunk_start;
+    chunk_start_offset_t _last_chunk_start;
+    uint64_t _begin_stream_at;
 
-    file_offset_t _current_chunk_start;
+    chunk_start_offset_t _current_chunk_start;
     std::optional<ss::input_stream<char>> _current_stream{};
 
     ss::lw_shared_ptr<ss::file> _current_data_file;

@@ -21,7 +21,7 @@ chunk_data_source_impl::chunk_data_source_impl(
   remote_segment& segment,
   kafka::offset start,
   kafka::offset end,
-  file_offset_t begin_stream_at,
+  int64_t begin_stream_at,
   ss::file_input_stream_options stream_options)
   : _chunks(chunks)
   , _segment(segment)
@@ -70,8 +70,8 @@ ss::future<ss::temporary_buffer<char>> chunk_data_source_impl::get() {
     co_return buf;
 }
 
-ss::future<>
-chunk_data_source_impl::load_stream_for_chunk(file_offset_t chunk_start) {
+ss::future<> chunk_data_source_impl::load_stream_for_chunk(
+  chunk_start_offset_t chunk_start) {
     vlog(_ctxlog.debug, "loading stream for chunk starting at {}", chunk_start);
 
     _current_data_file
@@ -110,7 +110,7 @@ chunk_data_source_impl::load_stream_for_chunk(file_offset_t chunk_start) {
     // consumes data from this source expects all offsets to be below the delta.
     // Setting the appropriate start offset on the file stream makes sure that
     // we do not break that assertion.
-    file_offset_t begin = 0;
+    uint64_t begin = 0;
     if (_current_chunk_start == _first_chunk_start) {
         begin = _begin_stream_at;
     }

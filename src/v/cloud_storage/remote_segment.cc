@@ -410,7 +410,9 @@ ss::future<uint64_t> remote_segment::put_segment_in_cache(
 }
 
 ss::future<uint64_t> remote_segment::put_chunk_in_cache(
-  uint64_t size, ss::input_stream<char> stream, file_offset_t chunk_start) {
+  uint64_t size,
+  ss::input_stream<char> stream,
+  chunk_start_offset_t chunk_start) {
     try {
         co_await _cache.put(get_path_to_chunk(chunk_start), stream)
           .finally([&stream] { return stream.close(); });
@@ -863,7 +865,7 @@ ss::future<> remote_segment::hydrate() {
 }
 
 ss::future<> remote_segment::hydrate_chunk(
-  file_offset_t start, std::optional<file_offset_t> end) {
+  chunk_start_offset_t start, std::optional<chunk_start_offset_t> end) {
     retry_chain_node rtc{
       cache_hydration_timeout, cache_hydration_backoff, &_rtc};
     auto res = co_await _api.download_segment(
@@ -880,7 +882,7 @@ ss::future<> remote_segment::hydrate_chunk(
 }
 
 ss::future<ss::file>
-remote_segment::materialize_chunk(file_offset_t chunk_start) {
+remote_segment::materialize_chunk(chunk_start_offset_t chunk_start) {
     auto res = co_await _cache.get(get_path_to_chunk(chunk_start));
     if (!res.has_value()) {
         co_return ss::file{};
@@ -921,7 +923,7 @@ uint64_t remote_segment::max_hydrated_chunks() const {
     return _max_hydrated_chunks;
 }
 
-file_offset_t
+chunk_start_offset_t
 remote_segment::get_chunk_start_for_kafka_offset(kafka::offset koff) const {
     vassert(
       _coarse_index.has_value(),
