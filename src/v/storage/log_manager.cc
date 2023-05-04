@@ -244,6 +244,18 @@ log_manager::housekeeping_scan(model::timestamp collection_threshold) {
 }
 
 ss::future<> log_manager::housekeeping() {
+    /*
+     * data older than this threshold may be garbage collected
+     */
+    const auto collection_threshold = [this] {
+        if (!_config.delete_retention().has_value()) {
+            return model::timestamp(0);
+        }
+        const auto now = model::timestamp::now().value();
+        const auto retention = _config.delete_retention().value().count();
+        return model::timestamp(now - retention);
+    };
+
     while (true) {
         try {
             const auto prev_jitter_base = _jitter.base_duration();
@@ -264,20 +276,10 @@ ss::future<> log_manager::housekeeping() {
             // time for some chores
         }
 
-        // files created before this threshold will be collected
-        model::timestamp collection_threshold;
-        if (!_config.delete_retention()) {
-            collection_threshold = model::timestamp(0);
-        } else {
-            collection_threshold = model::timestamp(
-              model::timestamp::now().value()
-              - _config.delete_retention()->count());
-        }
-
         auto prev_sg = co_await ss::coroutine::switch_to(_config.compaction_sg);
 
         try {
-            co_await housekeeping_scan(collection_threshold);
+            co_await housekeeping_scan(collection_threshold());
         } catch (const std::exception& e) {
             vlog(stlog.info, "Error processing housekeeping(): {}", e);
         }
