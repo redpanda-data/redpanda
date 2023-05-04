@@ -925,3 +925,10 @@ class Admin:
         """
         return self._request("get", "debug/local_storage_usage",
                              node=node).json()
+
+    def set_storage_failure_injection(self, node, value: bool):
+        str_value = "true" if value else "false"
+        return self._request(
+            "PUT",
+            f"debug/set_storage_failure_injection_enabled?value={str_value}",
+            node=node)
