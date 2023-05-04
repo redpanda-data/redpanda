@@ -16,7 +16,7 @@
 #include "cloud_storage/partition_probe.h"
 #include "cloud_storage/remote.h"
 #include "cloud_storage/remote_segment_index.h"
-#include "cloud_storage/segment_chunk.h"
+#include "cloud_storage/segment_chunk_api.h"
 #include "cloud_storage/types.h"
 #include "cloud_storage_clients/types.h"
 #include "model/fundamental.h"

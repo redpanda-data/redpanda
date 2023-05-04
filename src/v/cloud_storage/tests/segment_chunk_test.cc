@@ -35,7 +35,8 @@ SEASTAR_THREAD_TEST_CASE(test_chunk_ordering) {
     chunks.clear();
 
     // Secondary ordering is on required_after_n_chunks, lower values are more
-    // important.
+    // important. A lower required_after_n_chunks means that a chunk is required
+    // soon.
     chunks.push_back(
       {.required_by_readers_in_future = 10, .required_after_n_chunks = 1});
     chunks.push_back(
@@ -45,7 +46,9 @@ SEASTAR_THREAD_TEST_CASE(test_chunk_ordering) {
     chunks.push_back(
       {.required_by_readers_in_future = 10, .required_after_n_chunks = 4});
     // Chunk with 0 value of required_after_n_chunks will appear first in
-    // ascending sort.
+    // ascending sort. Since 0 is the default, a value of 0 means that a chunk
+    // is not required by any readers. A value of 1 means that the chunks is
+    // next to be read for some data source.
     chunks.push_back(
       {.required_by_readers_in_future = 10, .required_after_n_chunks = 0});
 
