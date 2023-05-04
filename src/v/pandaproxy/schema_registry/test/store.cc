@@ -638,6 +638,52 @@ BOOST_AUTO_TEST_CASE(test_store_delete_subject_version) {
       pps::error_code::subject_version_not_found);
 }
 
+BOOST_AUTO_TEST_CASE(test_store_subject_version_latest) {
+    pps::seq_marker dummy_marker;
+    pps::store s;
+    s.set_compatibility(pps::compatibility_level::none).value();
+
+    // First insert, expect id{1}, version{1}
+    s.insert({subject0, string_def0});
+    // First insert, expect id{2}, version{2}
+    s.insert({subject0, int_def0});
+
+    // Test latest
+    auto latest = s.get_subject_version_id(
+      subject0, std::nullopt, pps::include_deleted::yes);
+    BOOST_REQUIRE(latest.has_value());
+    BOOST_REQUIRE_EQUAL(latest.assume_value().version, pps::schema_version{2});
+    BOOST_REQUIRE_EQUAL(latest.assume_value().deleted, pps::is_deleted::no);
+
+    latest = s.get_subject_version_id(
+      subject0, std::nullopt, pps::include_deleted::no);
+    BOOST_REQUIRE(latest.has_value());
+    BOOST_REQUIRE_EQUAL(latest.assume_value().version, pps::schema_version{2});
+    BOOST_REQUIRE_EQUAL(latest.assume_value().deleted, pps::is_deleted::no);
+
+    // soft-delete version 2
+    BOOST_REQUIRE_NO_THROW(s.upsert_subject(
+      dummy_marker,
+      subject0,
+      {},
+      pps::schema_version{2},
+      pps::schema_id{1},
+      pps::is_deleted::yes));
+
+    // Test latest
+    latest = s.get_subject_version_id(
+      subject0, std::nullopt, pps::include_deleted::yes);
+    BOOST_REQUIRE(latest.has_value());
+    BOOST_REQUIRE_EQUAL(latest.assume_value().version, pps::schema_version{2});
+    BOOST_REQUIRE_EQUAL(latest.assume_value().deleted, pps::is_deleted::yes);
+
+    latest = s.get_subject_version_id(
+      subject0, std::nullopt, pps::include_deleted::no);
+    BOOST_REQUIRE(latest.has_value());
+    BOOST_REQUIRE_EQUAL(latest.assume_value().version, pps::schema_version{1});
+    BOOST_REQUIRE_EQUAL(latest.assume_value().deleted, pps::is_deleted::no);
+}
+
 BOOST_AUTO_TEST_CASE(test_store_delete_subject_after_delete_version) {
     std::vector<pps::schema_version> expected_vers{{pps::schema_version{2}}};
 
