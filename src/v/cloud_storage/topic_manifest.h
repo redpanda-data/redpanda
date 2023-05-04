@@ -61,6 +61,8 @@ public:
         return _topic_config;
     }
 
+    bool operator==(const topic_manifest& other) const = default;
+
 private:
     /// Update manifest content from json document that supposed to be generated
     /// from manifest.json file
