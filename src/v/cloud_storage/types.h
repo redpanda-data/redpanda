@@ -195,4 +195,65 @@ struct segment_meta {
 };
 std::ostream& operator<<(std::ostream& o, const segment_meta& r);
 
+enum class error_outcome {
+    // Represent general failure that can't be handled and doesn't fit into
+    // any particular category (like download failure)
+    failure,
+    scan_bucket_error,
+    manifest_download_error,
+    manifest_upload_error,
+    manifest_not_found,
+    segment_download_error,
+    segment_upload_error,
+    segment_not_found,
+    // Represent transient error that can be retried. This is the only error
+    // outcome that shouldn't be bubbled up to the client.
+    repeat,
+};
+
+struct error_outcome_category final : public std::error_category {
+    const char* name() const noexcept final {
+        return "cloud_storage::error_outcome";
+    }
+
+    std::string message(int c) const final {
+        switch (static_cast<error_outcome>(c)) {
+        case error_outcome::failure:
+            return "cloud storage failure";
+        case error_outcome::scan_bucket_error:
+            return "cloud storage scan bucket error";
+        case error_outcome::manifest_download_error:
+            return "cloud storage manifest download error";
+        case error_outcome::manifest_upload_error:
+            return "cloud storage manifest upload error";
+        case error_outcome::manifest_not_found:
+            return "cloud storage manifest not found";
+        case error_outcome::segment_download_error:
+            return "cloud storage segment download error";
+        case error_outcome::segment_upload_error:
+            return "cloud storage segment upload error";
+        case error_outcome::segment_not_found:
+            return "cloud storage segment not found";
+        case error_outcome::repeat:
+            return "cloud storage repeat operation";
+        default:
+            return "unknown";
+        }
+    }
+};
+
+inline const std::error_category& error_category() noexcept {
+    static error_outcome_category e;
+    return e;
+}
+
+inline std::error_code make_error_code(error_outcome e) noexcept {
+    return {static_cast<int>(e), error_category()};
+}
+
 } // namespace cloud_storage
+
+namespace std {
+template<>
+struct is_error_code_enum<cloud_storage::error_outcome> : true_type {};
+} // namespace std
