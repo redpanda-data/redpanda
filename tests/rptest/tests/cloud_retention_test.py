@@ -40,7 +40,8 @@ class CloudRetentionTest(PreallocNodesTest):
         # test run.
         pass
 
-    @cluster(num_nodes=4)
+    @cluster(num_nodes=4,
+             log_allow_list=[r"failed to hydrate chunk.*NotFound"])
     @matrix(max_consume_rate_mb=[20, None],
             cloud_storage_type=get_cloud_storage_type())
     @skip_debug_mode

@@ -147,17 +147,23 @@ class EndToEndShadowIndexingTest(EndToEndShadowIndexingBase):
 
         # Matches the segment or the index
         cache_expr = re.compile(
-            fr'^({self.redpanda.DATA_DIR}/cloud_storage_cache/.*\.log\.\d+)(\.index)?$'
+            fr'^({self.redpanda.DATA_DIR}/cloud_storage_cache/.*\.log\.\d+)[(_chunks/.*)|(.index)]?$'
         )
 
         # Each segment should have the corresponding index present
         for node in self.redpanda.nodes:
-            index_segment_pair = defaultdict(lambda: 0)
+            index_segment_pair = defaultdict(lambda: [0, False])
             for file in self.redpanda.data_checksum(node):
                 if (match := cache_expr.match(file)) and self.topic in file:
-                    index_segment_pair[match[1]] += 1
-            for file, count in index_segment_pair.items():
-                assert count == 2, f'expected one index and one log for {file}, found {count}'
+                    entry = index_segment_pair[match[1]]
+                    if file.endswith('.index') or '_chunks' not in file:
+                        entry[0] += 1
+                    # Count chunks just once
+                    elif not entry[1] and '_chunks' in file:
+                        entry[1] = True
+                        entry[0] += 1
+            for file, (count, _) in index_segment_pair.items():
+                assert count == 2, f'expected one index and one log or one set of chunks for {file}, found {count}'
 
 
 class EndToEndShadowIndexingTestCompactedTopic(EndToEndShadowIndexingBase):

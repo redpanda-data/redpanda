@@ -385,7 +385,7 @@ class CloudStorageTimingStressTest(RedpandaTest, PartitionMovementMixin):
         self.consumer.wait()
 
         self.redpanda.metric_sum(
-            "redpanda_cloud_storage_delete_segments",
+            "redpanda_cloud_storage_deleted_segments",
             metrics_endpoint=MetricsEndpoint.PUBLIC_METRICS) > 0
 
         self.redpanda.metric_sum(
@@ -454,9 +454,12 @@ class CloudStorageTimingStressTest(RedpandaTest, PartitionMovementMixin):
 
         self.epilogue()
 
-    @cluster(
-        num_nodes=5,
-        log_allow_list=[r"Error in hydraton loop: .*Connection reset by peer"])
+    @cluster(num_nodes=5,
+             log_allow_list=[
+                 r"Error in hydraton loop: .*Connection reset by peer",
+                 r"failed to hydrate chunk.*Connection reset by peer",
+                 r"failed to hydrate chunk.*NotFound"
+             ])
     @skip_debug_mode
     def test_cloud_storage_with_partition_moves(self):
         """
