@@ -11,6 +11,7 @@ import time
 import signal
 import concurrent.futures
 from collections import Counter
+from dataclasses import dataclass
 
 from ducktape.mark import matrix, ok_to_fail
 from ducktape.utils.util import wait_until, TimeoutError
@@ -21,7 +22,9 @@ from rptest.clients.rpk import RpkTool, RpkException
 from rptest.tests.prealloc_nodes import PreallocNodesTest
 from rptest.utils.si_utils import nodes_report_cloud_segments
 from rptest.services.rpk_consumer import RpkConsumer
-from rptest.services.redpanda import ResourceSettings, RESTART_LOG_ALLOW_LIST, SISettings, LoggingConfig, MetricsEndpoint
+from rptest.services.storage_failure_injection import FailureInjectionConfig, NTPFailureInjectionConfig, FailureConfig, NTP, Operation, BatchType
+from rptest.services.redpanda import RedpandaService, ResourceSettings, RESTART_LOG_ALLOW_LIST, FAILURE_INJECTION_LOG_ALLOW_LIST, SISettings, LoggingConfig, MetricsEndpoint
+from rptest.services.redpanda_monitor import RedpandaMonitor
 from rptest.services.kgo_verifier_services import KgoVerifierProducer, KgoVerifierSeqConsumer, KgoVerifierRandomConsumer
 from rptest.services.kgo_repeater_service import KgoRepeaterService, repeater_traffic
 from rptest.services.openmessaging_benchmark import OpenMessagingBenchmark
@@ -242,6 +245,15 @@ class ScaleParameters:
         return self.redpanda.logger
 
 
+@dataclass
+class ManyPartitionsTimeoutsConfig:
+    node_leadership_evacuated: int = 30
+    leadership_balanced: int = 10
+    elections_complete: int = 60
+    producer_wrote_first_checkpoint: int = 30
+    leader_transfer_factor: int = 2
+
+
 class ManyPartitionsTest(PreallocNodesTest):
     """
     Validates basic functionality in the presence of larger numbers
@@ -257,11 +269,20 @@ class ManyPartitionsTest(PreallocNodesTest):
 
     LEADER_BALANCER_PERIOD_MS = 30000
 
+    DEFAULT_TIMEOUTS = ManyPartitionsTimeoutsConfig()
+    FINJECT_TIMEOUTS = ManyPartitionsTimeoutsConfig(
+        node_leadership_evacuated=60,
+        leadership_balanced=30,
+        elections_complete=100,
+        producer_wrote_first_checkpoint=45,
+        leader_transfer_factor=4)
+
     def __init__(self, test_ctx, *args, **kwargs):
         self._ctx = test_ctx
         super(ManyPartitionsTest, self).__init__(
             test_ctx,
             *args,
+            log_level="trace",
             num_brokers=9,
             node_prealloc_count=3,
             extra_rp_conf={
@@ -321,6 +342,8 @@ class ManyPartitionsTest(PreallocNodesTest):
                                      }),
             **kwargs)
         self.rpk = RpkTool(self.redpanda)
+
+        self.timeouts = self.DEFAULT_TIMEOUTS
 
     def _all_elections_done(self, topic_names: list[str], p_per_topic: int):
         any_incomplete = False
@@ -508,7 +531,8 @@ class ManyPartitionsTest(PreallocNodesTest):
         # Wait for leaderships to stabilize on the surviving nodes
         wait_until(
             lambda: self._node_leadership_evacuated(topic_names, n_partitions,
-                                                    node_id), 30, 1)
+                                                    node_id),
+            self.timeouts.node_leadership_evacuated, 1)
 
         self.redpanda.start_node(node, timeout=self.EXPECT_START_TIME)
 
@@ -516,9 +540,10 @@ class ManyPartitionsTest(PreallocNodesTest):
         # per second.  2x margin for error.  Up to the leader balancer period
         # wait for it to activate.
         transfers_per_sec = 10
-        expect_leader_transfer_time = 2 * (
+        expect_leader_transfer_time = self.timeouts.leader_transfer_factor * (
             n_partitions / len(self.redpanda.nodes)) / transfers_per_sec + (
-                self.LEADER_BALANCER_PERIOD_MS / 1000) * 2
+                self.LEADER_BALANCER_PERIOD_MS /
+                1000) * self.timeouts.leader_transfer_factor
 
         # Wait for leaderships to achieve balance.  This is bounded by:
         #  - Time for leader_balancer to issue+await all the transfers
@@ -527,7 +552,7 @@ class ManyPartitionsTest(PreallocNodesTest):
         t1 = time.time()
         wait_until(
             lambda: self._node_leadership_balanced(topic_names, n_partitions),
-            expect_leader_transfer_time, 10)
+            expect_leader_transfer_time, self.timeouts.leadership_balanced)
         self.logger.info(
             f"Leaderships balanced in {time.time() - t1:.2f} seconds")
 
@@ -557,7 +582,7 @@ class ManyPartitionsTest(PreallocNodesTest):
 
             wait_until(
                 lambda: self._all_elections_done(topic_names, n_partitions),
-                timeout_sec=60,
+                timeout_sec=self.timeouts.elections_complete,
                 backoff_sec=5)
             self.logger.info(f"Post-restart elections done.")
 
@@ -726,7 +751,7 @@ class ManyPartitionsTest(PreallocNodesTest):
         # Don't start consumers until the producer has written out its first
         # checkpoint with valid ranges.
         wait_until(lambda: fast_producer.produce_status.acked > 0,
-                   timeout_sec=30,
+                   timeout_sec=self.timeouts.producer_wrote_first_checkpoint,
                    backoff_sec=1.0)
 
         rand_ios = 100
@@ -876,6 +901,13 @@ class ManyPartitionsTest(PreallocNodesTest):
     def test_many_partitions(self):
         self._test_many_partitions(compacted=False)
 
+    @cluster(num_nodes=13,
+             log_allow_list=RESTART_LOG_ALLOW_LIST +
+             FAILURE_INJECTION_LOG_ALLOW_LIST)
+    def test_many_partitions_with_failure_injection(self):
+        self._test_many_partitions(compacted=False,
+                                   failure_injection_enabled=True)
+
     @ok_to_fail  # https://github.com/redpanda-data/redpanda/issues/8777
     @cluster(num_nodes=12, log_allow_list=RESTART_LOG_ALLOW_LIST)
     @matrix(compacted=[False])  # FIXME: run with compaction
@@ -892,7 +924,44 @@ class ManyPartitionsTest(PreallocNodesTest):
         # peak partition count.
         self._run_omb(scale)
 
-    def _test_many_partitions(self, compacted, tiered_storage_enabled=False):
+    def _generate_failure_injection_config(
+            self, topic_names, partitions_per_topic) -> FailureInjectionConfig:
+        failure_probability = 0.00001
+
+        failure_configs = [
+            FailureConfig(operation=op,
+                          failure_probability=failure_probability)
+            for op in Operation
+        ]
+
+        ntps: list[NTP] = []
+        ntps.append(NTP(namespace="redpanda", topic="controller", partition=0))
+
+        # Each shard gets its own kvstore ntp. The servers on which the test is running
+        # will have less than 64 cores, but having failure configuration for non-existing
+        # partitions is not an issue.
+        for shard in range(64):
+            ntps.append(NTP(namespace="redpanda", topic="kvstore",
+                            partition=0))
+
+        for topic in topic_names:
+            ntps += [
+                NTP(topic=topic, partition=p)
+                for p in range(partitions_per_topic)
+            ]
+
+        ntp_failure_configs = [
+            NTPFailureInjectionConfig(ntp=ntp, failure_configs=failure_configs)
+            for ntp in ntps
+        ]
+
+        return FailureInjectionConfig(seed=0,
+                                      ntp_failure_configs=ntp_failure_configs)
+
+    def _test_many_partitions(self,
+                              compacted,
+                              tiered_storage_enabled=False,
+                              failure_injection_enabled=False):
         """
         Validate that redpanda works with partition counts close to its resource
         limits.
@@ -954,10 +1023,23 @@ class ManyPartitionsTest(PreallocNodesTest):
             int(scale.expect_bandwidth / len(self.redpanda.nodes) * 3)
         })
 
+        topic_names = [f"scale_{i:06d}" for i in range(0, n_topics)]
+
+        if failure_injection_enabled:
+            self.timeouts = self.FINJECT_TIMEOUTS
+
+            finject_cfg = self._generate_failure_injection_config(
+                topic_names, n_partitions)
+            self.redpanda.set_up_failure_injection(
+                finject_cfg=finject_cfg,
+                enabled=True,
+                nodes=[self.redpanda.nodes[0]],
+                tolerate_crashes=True)
+            RedpandaMonitor(self.test_context, self.redpanda).start()
+
         self.redpanda.start(parallel=True)
 
         self.logger.info("Entering topic creation")
-        topic_names = [f"scale_{i:06d}" for i in range(0, n_topics)]
         for tn in topic_names:
             self.logger.info(
                 f"Creating topic {tn} with {n_partitions} partitions")
@@ -984,7 +1066,7 @@ class ManyPartitionsTest(PreallocNodesTest):
 
         self.logger.info(f"Awaiting elections...")
         wait_until(lambda: self._all_elections_done(topic_names, n_partitions),
-                   timeout_sec=60,
+                   timeout_sec=self.timeouts.elections_complete,
                    backoff_sec=5)
         self.logger.info(f"Initial elections done.")
 
