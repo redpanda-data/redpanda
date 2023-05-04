@@ -103,7 +103,7 @@ func (deviceInfo *deviceInfo) GetIRQs(
 
 	sort.Ints(irqs)
 
-	zap.L().Sugar().Debugf("DeviceInfo '%s' IRQs '%v'", irqConfigDir, irqs)
+	log.Debugf("DeviceInfo '%s' IRQs '%v'", irqConfigDir, irqs)
 	return irqs, nil
 }
 
