@@ -9,6 +9,7 @@
 
 #include "cluster/cluster_utils.h"
 #include "cluster/scheduling/allocation_node.h"
+#include "cluster/scheduling/constraints.h"
 #include "cluster/scheduling/types.h"
 #include "cluster/tests/partition_allocator_fixture.h"
 #include "model/metadata.h"
@@ -565,4 +566,112 @@ FIXTURE_TEST(even_distribution_pri_allocation, partition_allocator_fixture) {
             // deallocated
         }
     }
+}
+
+FIXTURE_TEST(incrementally_reallocate_replicas, partition_allocator_fixture) {
+    register_node(0, 1);
+    register_node(1, 1);
+    register_node(2, 1);
+
+    // allocate a partition with 3 replicas on 3 nodes
+    auto domain = cluster::partition_allocation_domains::common;
+    auto req = make_allocation_request(1, 3);
+    auto res = allocator.allocate(std::move(req)).get();
+    auto original_replicas = res.value()->get_assignments().front().replicas;
+
+    // add another node to move replicas to and from
+    register_node(3, 1);
+
+    auto check_partition_counts = [&](const std::vector<size_t>& expected) {
+        for (const auto& node : allocator.state().allocation_nodes()) {
+            model::node_id node_id = node.first;
+            auto count = node.second->domain_allocated_partitions(domain);
+            BOOST_REQUIRE_EQUAL(count(), expected.at(node_id()));
+        }
+    };
+
+    check_partition_counts({1, 1, 1, 0});
+
+    {
+        cluster::allocated_partition reallocated
+          = allocator.make_allocated_partition(original_replicas, domain);
+
+        cluster::allocation_constraints not_on_old_nodes;
+        not_on_old_nodes.add(cluster::distinct_from(original_replicas));
+
+        // move to node 3
+        auto moved = allocator.reallocate_replica(
+          reallocated, model::node_id{0}, not_on_old_nodes);
+        BOOST_REQUIRE(moved.has_value());
+        BOOST_REQUIRE_EQUAL(moved.value().node_id, model::node_id{3});
+        BOOST_REQUIRE(reallocated.has_changes());
+        BOOST_REQUIRE_EQUAL(
+          reallocated.replicas().at(2).node_id, model::node_id{3});
+
+        check_partition_counts({1, 1, 1, 1});
+
+        // there is no replica on node 0 any more
+        auto moved2 = allocator.reallocate_replica(
+          reallocated, model::node_id{0}, not_on_old_nodes);
+        BOOST_REQUIRE(moved2.has_error());
+        BOOST_REQUIRE_EQUAL(
+          moved2.error(), cluster::errc::node_does_not_exists);
+
+        // node 3 already has a replica so the replica on node 1 has nowhere to
+        // move
+        auto moved3 = allocator.reallocate_replica(
+          reallocated, model::node_id{1}, not_on_old_nodes);
+        BOOST_REQUIRE(moved3.has_error());
+        BOOST_REQUIRE_EQUAL(
+          moved3.error(), cluster::errc::no_eligible_allocation_nodes);
+
+        check_partition_counts({1, 1, 1, 1});
+
+        // replicas can move to the same place
+        auto moved4 = allocator.reallocate_replica(
+          reallocated, model::node_id{3}, not_on_old_nodes);
+        BOOST_REQUIRE(moved4.has_value());
+        BOOST_REQUIRE_EQUAL(moved4.value().node_id, model::node_id{3});
+        BOOST_REQUIRE_EQUAL(
+          reallocated.replicas().at(2).node_id, model::node_id{3});
+
+        check_partition_counts({1, 1, 1, 1});
+
+        auto moved5 = allocator.reallocate_replica(
+          reallocated, model::node_id{2}, cluster::allocation_constraints{});
+        BOOST_REQUIRE(moved5.has_value());
+        BOOST_REQUIRE_EQUAL(moved5.value().node_id, model::node_id{2});
+        BOOST_REQUIRE_EQUAL(
+          reallocated.replicas().at(2).node_id, model::node_id{2});
+
+        check_partition_counts({1, 1, 1, 1});
+
+        std::vector new_replicas(reallocated.replicas());
+        cluster::allocation_constraints not_on_new_nodes;
+        not_on_new_nodes.add(cluster::distinct_from(new_replicas));
+
+        // move reallocated replica back to node 0
+        auto moved6 = allocator.reallocate_replica(
+          reallocated, model::node_id{3}, not_on_new_nodes);
+        BOOST_REQUIRE(moved6.has_value());
+        BOOST_REQUIRE_EQUAL(moved6.value().node_id, model::node_id{0});
+        BOOST_REQUIRE(!reallocated.has_changes());
+        BOOST_REQUIRE_EQUAL(
+          reallocated.replicas().at(2).node_id, model::node_id{0});
+
+        check_partition_counts({1, 1, 1, 0});
+
+        // do another move so that we have something to revert
+        auto moved7 = allocator.reallocate_replica(
+          reallocated, model::node_id{1}, not_on_old_nodes);
+        BOOST_REQUIRE(moved7.has_value());
+        BOOST_REQUIRE_EQUAL(moved7.value().node_id, model::node_id{3});
+        BOOST_REQUIRE(reallocated.has_changes());
+        BOOST_REQUIRE_EQUAL(
+          reallocated.replicas().at(2).node_id, model::node_id{3});
+
+        check_partition_counts({1, 1, 1, 1});
+    }
+
+    check_partition_counts({1, 1, 1, 0});
 }
