@@ -852,22 +852,25 @@ void cache::notify_disk_status(
 
     bool block_puts = (alert == storage::disk_space_alert::degraded);
 
-    if (block_puts && !_block_puts) {
-        // Start blocking: log, and propagate to other shards
-        vlog(
-          cst_log.warn,
-          "Tiered storage cache blocking segment promotions, disk space is "
-          "critically low.");
+    if (block_puts != _block_puts) {
+        if (block_puts) {
+            // Start blocking
+            vlog(
+              cst_log.warn,
+              "Tiered storage cache blocking segment promotions, disk space is "
+              "critically low.");
+        } else {
+            // Stop blocking
+            vlog(
+              cst_log.info,
+              "Tiered storage cache un-blocking promotions, disk space is no "
+              "longer critical.");
+        }
+
         ssx::spawn_with_gate(_gate, [this, block_puts]() {
             return container().invoke_on_all(
               [block_puts](cache& c) { c.set_block_puts(block_puts); });
         });
-    } else if (!block_puts && _block_puts) {
-        // Log on un-blocking
-        vlog(
-          cst_log.info,
-          "Tiered storage cache un-blocking promotions, disk space is no "
-          "longer critical.");
     }
 }
 
