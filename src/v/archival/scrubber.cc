@@ -99,8 +99,17 @@ ss::future<scrubber::purge_result> scrubber::purge_partition(
         co_return result;
     }
 
+    // A rough guess at how many ops will be involved in deletion, so that
+    // we don't have to plumb ops-counting all the way down into object store
+    // clients' implementations of plural object delete (different
+    // implementations may do bigger/smaller batches).  This 1000 number
+    // reflects the number of objects per S3 DeleteObjects.
+    auto estimate_delete_ops = manifest.size() / 1000;
+
     auto partition_r = co_await cloud_storage::remote_partition::erase(
       _api, bucket, std::move(manifest), _as);
+
+    result.ops += estimate_delete_ops;
 
     if (partition_r != cloud_storage::remote_partition::erase_result::erased) {
         vlog(
