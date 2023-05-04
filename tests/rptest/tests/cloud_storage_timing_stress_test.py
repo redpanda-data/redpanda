@@ -247,11 +247,6 @@ class CloudStorageTimingStressTest(RedpandaTest, PartitionMovementMixin):
         self.admin = Admin(self.redpanda)
         self.checks = []
 
-        # Fine tune the allowed overshoot for debug builds as they are
-        # significantly slower.
-        if self.debug_mode:
-            self.allow_runtime_overshoot_by = 2.5
-
     def _create_producer(self) -> KgoVerifierProducer:
         bps = self.produce_byte_rate_per_ntp * self.topics[0].partition_count
         bytes_count = bps * self.target_runtime
@@ -445,6 +440,7 @@ class CloudStorageTimingStressTest(RedpandaTest, PartitionMovementMixin):
             self.logger.info(f"All checks completed successfuly")
 
     @cluster(num_nodes=5)
+    @skip_debug_mode
     def test_cloud_storage(self):
         """
         This is the baseline test. It runs the workload and performs the checks
