@@ -3496,7 +3496,7 @@ FIXTURE_TEST(test_skipping_compaction_below_start_offset, log_builder_fixture) {
     // Call into `disk_log_impl::gc` and listen for the eviction
     // notification being created.
     auto eviction_future = log.monitor_eviction(abs);
-    auto new_start_offset = b.apply_retention(cfg).get();
+    auto new_start_offset = b.apply_retention(cfg.gc).get();
     BOOST_REQUIRE(new_start_offset);
 
     BOOST_REQUIRE_EQUAL(log.segment_count(), 2);
