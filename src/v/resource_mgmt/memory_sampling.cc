@@ -13,6 +13,7 @@
 
 #include "resource_mgmt/available_memory.h"
 #include "ssx/future-util.h"
+#include "ssx/sformat.h"
 #include "vlog.h"
 
 #include <seastar/core/condition-variable.hh>
@@ -21,13 +22,9 @@
 #include <seastar/core/sstring.hh>
 #include <seastar/util/memory_diagnostics.hh>
 
-#include <fmt/core.h>
-
 constexpr std::string_view diagnostics_header() {
     return "Top-N alloc sites - size count stack:";
 }
-
-constexpr std::string_view allocation_site_format_str() { return "{} {} {}\n"; }
 
 /// Put `top_n` allocation sites into the front of `allocation_sites`
 static void top_n_allocation_sites(
@@ -39,13 +36,41 @@ static void top_n_allocation_sites(
       [](const auto& lhs, const auto& rhs) { return lhs.size > rhs.size; });
 }
 
-ss::sstring memory_sampling::format_allocation_site(
-  const ss::memory::allocation_site& alloc_site) {
-    return fmt::format(
-      allocation_site_format_str(),
-      alloc_site.size,
-      alloc_site.count,
-      alloc_site.backtrace);
+ss::noncopyable_function<void(ss::memory::memory_diagnostics_writer)>
+memory_sampling::get_oom_diagnostics_callback() {
+    // preallocate those so that we don't allocate on OOM
+    std::vector<seastar::memory::allocation_site> allocation_sites(1000);
+    std::vector<char> format_buf(1000);
+
+    return [allocation_sites = std::move(allocation_sites),
+            format_buf = std::move(format_buf)](
+             seastar::memory::memory_diagnostics_writer writer) mutable {
+        auto num_sites = ss::memory::sampled_memory_profile(allocation_sites);
+
+        const size_t top_n = std::min(size_t(10), num_sites);
+        top_n_allocation_sites(allocation_sites, top_n);
+
+        writer(diagnostics_header());
+        writer("\n");
+
+        for (size_t i = 0; i < top_n; ++i) {
+            auto bytes_written = fmt::format_to_n(
+                                   format_buf.begin(),
+                                   format_buf.size(),
+                                   "{}",
+                                   allocation_sites[i])
+                                   .size;
+
+            writer(std::string_view(format_buf.data(), bytes_written));
+        }
+    };
+}
+
+/// We want to print the top-n allocation sites on OOM
+/// Set this up and make sure we don't allocate extra at that point
+void setup_additional_oom_diagnostics() {
+    seastar::memory::set_additional_diagnostics_producer(
+      memory_sampling::get_oom_diagnostics_callback());
 }
 
 void memory_sampling::notify_of_reclaim() { _low_watermark_cond.signal(); }
@@ -109,6 +134,8 @@ memory_sampling::memory_sampling(
   , _second_log_limit_fraction(second_log_limit_fraction) {}
 
 void memory_sampling::start() {
+    setup_additional_oom_diagnostics();
+
     // We chose a sampling rate of ~3MB. From testing this has a very low
     // overhead of something like ~1%. We could still get away with something
     // smaller like 1MB and have acceptable overhead (~3%) but 3MB should be a

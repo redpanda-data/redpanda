@@ -20,6 +20,8 @@
 #include <seastar/core/sharded.hh>
 #include <seastar/core/timer.hh>
 #include <seastar/util/log.hh>
+#include <seastar/util/memory_diagnostics.hh>
+#include <seastar/util/noncopyable_function.hh>
 
 #include <fmt/core.h>
 #include <fmt/format.h>
@@ -60,6 +62,11 @@ public:
       ss::logger& logger,
       double first_log_limit_fraction,
       double second_log_limit_fraction);
+
+    /// Returns the callback we register to run on OOM to add the memory
+    /// sampling output
+    static ss::noncopyable_function<void(ss::memory::memory_diagnostics_writer)>
+    get_oom_diagnostics_callback();
 
 private:
     /// Starts the background future running the allocation site logging on low

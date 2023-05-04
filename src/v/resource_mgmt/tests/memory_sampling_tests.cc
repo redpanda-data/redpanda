@@ -20,12 +20,58 @@
 
 #include <boost/test/tools/old/interface.hpp>
 #include <boost/test/unit_test.hpp>
+#include <fmt/core.h>
 
 #include <chrono>
 #include <sstream>
 #include <string>
 
 #ifndef SEASTAR_DEFAULT_ALLOCATOR
+
+SEASTAR_THREAD_TEST_CASE(test_no_allocs_in_oom_callback) {
+    seastar::memory::scoped_heap_profiling profiling(16000);
+
+    std::vector<std::vector<char>> dummy_bufs;
+    std::vector<char> output_buffer;
+    const size_t max_output_size = 1000000;
+    output_buffer.reserve(max_output_size);
+
+    std::vector<seastar::memory::allocation_site> allocation_sites(1000);
+    size_t sampled_sites = 0;
+
+    // make sure we have at least one allocation site
+    while (sampled_sites == 0) {
+        dummy_bufs.emplace_back(1000);
+        sampled_sites = seastar::memory::sampled_memory_profile(
+          allocation_sites);
+    }
+
+    auto oom_callback = memory_sampling::get_oom_diagnostics_callback();
+    auto writer = [&output_buffer](std::string_view bytes) {
+        if (output_buffer.size() + bytes.size() < max_output_size) {
+            output_buffer.insert(
+              output_buffer.end(), bytes.begin(), bytes.end());
+        }
+    };
+
+    auto before = seastar::memory::stats();
+    oom_callback(writer);
+    auto after = seastar::memory::stats();
+
+    // to make sure we are actually testing something
+    BOOST_REQUIRE_GT(before.mallocs(), 0);
+    BOOST_REQUIRE_GT(output_buffer.size(), 0);
+    BOOST_REQUIRE_EQUAL(before.large_allocations(), after.large_allocations());
+    BOOST_REQUIRE_EQUAL(before.allocated_memory(), after.allocated_memory());
+    BOOST_REQUIRE_EQUAL(before.mallocs(), after.mallocs());
+
+    // confirm an average allocation site fits into the oom writer line buffer
+    auto allocation_site_needle = fmt::format("{}", allocation_sites[0]);
+    BOOST_REQUIRE_NE(
+      std::string_view(output_buffer.data(), output_buffer.size())
+        .find(allocation_site_needle),
+      std::string_view::npos);
+}
 
 SEASTAR_THREAD_TEST_CASE(test_low_watermark_logging) {
     seastar::logger dummy_logger("dummy");
