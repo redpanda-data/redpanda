@@ -206,12 +206,19 @@ log_manager::housekeeping_scan(model::timestamp collection_threshold) {
         co_return;
     }
 
-    // TODO handle this after compaction?
-    // handle segment.ms sequentially, since compaction is already sequential
-    // when this will be unified with compaction, the whole task could be made
-    // concurrent
+    /*
+     * Apply segment ms will roll the active segment if it is old enough. This
+     * is best done prior to running gc or compaction because it ensures that
+     * an inactive partition eventually makes data in its most recent segment
+     * eligible for these housekeeping processes.
+     *
+     * TODO:
+     *   handle this after compaction? handle segment.ms sequentially, since
+     *   compaction is already sequential when this will be unified with
+     *   compaction, the whole task could be made concurrent
+     */
     for (auto& log_meta : _logs_list) {
-        co_await log_meta.handle.housekeeping();
+        co_await log_meta.handle.apply_segment_ms();
     }
 
     for (auto& log_meta : _logs_list) {

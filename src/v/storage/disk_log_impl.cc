@@ -1144,7 +1144,7 @@ ss::future<> disk_log_impl::maybe_roll(
     }
 }
 
-ss::future<> disk_log_impl::do_housekeeping() {
+ss::future<> disk_log_impl::apply_segment_ms() {
     auto gate = _compaction_housekeeping_gate.hold();
     // do_housekeeping races with maybe_roll to use new_segment.
     // take a lock to prevent problems

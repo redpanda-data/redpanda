@@ -55,7 +55,7 @@ public:
 
         // TODO should compact be merged in this?
         // run housekeeping task, like rolling segments
-        virtual ss::future<> do_housekeeping() = 0;
+        virtual ss::future<> apply_segment_ms() = 0;
 
         virtual ss::future<model::record_batch_reader>
           make_reader(log_reader_config) = 0;
@@ -179,7 +179,7 @@ public:
 
     ss::future<> compact(compaction_config cfg) { return _impl->compact(cfg); }
 
-    ss::future<> housekeeping() { return _impl->do_housekeeping(); }
+    ss::future<> apply_segment_ms() { return _impl->apply_segment_ms(); }
     /**
      * \brief Returns a future that resolves when log eviction is scheduled
      *
