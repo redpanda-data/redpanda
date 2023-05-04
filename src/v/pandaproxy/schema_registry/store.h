@@ -123,10 +123,14 @@ public:
 
         if (!version.has_value()) {
             auto const& versions = sub_it->second.versions;
-            if (versions.empty() || (!inc_del && versions.back().deleted)) {
+            auto it = std::find_if(
+              versions.rbegin(), versions.rend(), [inc_del](const auto& ver) {
+                  return inc_del || !ver.deleted;
+              });
+            if (it == versions.rend()) {
                 return not_found(sub);
             }
-            return *std::prev(versions.end());
+            return *it;
         }
 
         auto v_it = BOOST_OUTCOME_TRYX(
