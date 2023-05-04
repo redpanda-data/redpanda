@@ -829,8 +829,8 @@ class segment_meta_cstore::impl
       segment_meta_cstore::impl,
       serde::version<0>,
       serde::compat_version<0>> {
-    // TODO tunable?
-    constexpr static auto max_buffer_entries = 1024u;
+    // Max write buffer capacity
+    constexpr static auto max_buffer_entries = 64UL;
 
 public:
     void append(const segment_meta& meta) { _col.append(meta); }
