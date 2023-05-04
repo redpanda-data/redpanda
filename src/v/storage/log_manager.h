@@ -193,6 +193,7 @@ public:
       ss::noncopyable_function<bool(model::ntp, partition_path::metadata)>
         orphan_filter);
 
+    ss::future<> start();
     ss::future<> stop();
 
     ss::future<ss::lw_shared_ptr<segment>> make_log_segment(
@@ -242,7 +243,6 @@ private:
      * \brief delete old segments and trigger compacted segments
      *        runs inside a seastar thread
      */
-    void trigger_housekeeping();
     ss::future<> housekeeping();
 
     std::optional<batch_cache_index> create_cache(with_cache);
@@ -258,7 +258,6 @@ private:
     storage_resources& _resources;
     ss::sharded<features::feature_table>& _feature_table;
     simple_time_jitter<ss::lowres_clock> _jitter;
-    ss::timer<ss::lowres_clock> _housekeeping_timer;
     logs_type _logs;
     compaction_list_type _logs_list;
     batch_cache _batch_cache;

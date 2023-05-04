@@ -115,6 +115,7 @@ public:
         return _kvstore->start().then([this] {
             _log_mgr = std::make_unique<log_manager>(
               _log_conf_cb(), kvs(), _resources, _feature_table);
+            return _log_mgr->start();
         });
     }
 

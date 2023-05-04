@@ -51,6 +51,7 @@
 #include <seastar/core/with_scheduling_group.hh>
 #include <seastar/coroutine/maybe_yield.hh>
 #include <seastar/coroutine/parallel_for_each.hh>
+#include <seastar/coroutine/switch_to.hh>
 #include <seastar/util/file.hh>
 
 #include <boost/algorithm/string/predicate.hpp>
@@ -138,32 +139,9 @@ log_manager::log_manager(
   , _feature_table(feature_table)
   , _jitter(_config.compaction_interval())
   , _batch_cache(config.reclaim_opts) {
-    _housekeeping_timer.set_callback([this] { trigger_housekeeping(); });
-    _housekeeping_timer.rearm(_jitter());
-
     _config.compaction_interval.watch([this]() {
         _jitter = simple_time_jitter<ss::lowres_clock>{
           _config.compaction_interval()};
-        if (_housekeeping_timer.cancel()) {
-            // rearm is behind the result of cancel, to ensure that no more
-            // than one trigger_housekeeping is in flight
-            _housekeeping_timer.rearm(_jitter());
-        }
-    });
-}
-void log_manager::trigger_housekeeping() {
-    ssx::background = ssx::spawn_with_gate_then(_open_gate, [this] {
-                          return housekeeping().finally([this] {
-                              // all of these *MUST* be in the finally
-                              if (_open_gate.is_closed()) {
-                                  return;
-                              }
-                              // _jitter is queried in the same execution
-                              // context to fix an interleaving bug issue/8492
-                              _housekeeping_timer.rearm(_jitter());
-                          });
-                      }).handle_exception([](std::exception_ptr e) {
-        vlog(stlog.info, "Error processing housekeeping(): {}", e);
     });
 }
 
@@ -186,8 +164,12 @@ ss::future<> log_manager::clean_close(storage::log& log) {
     }
 }
 
+ss::future<> log_manager::start() {
+    ssx::spawn_with_gate(_open_gate, [this] { return housekeeping(); });
+    co_return;
+}
+
 ss::future<> log_manager::stop() {
-    _housekeeping_timer.cancel();
     _abort_source.request_abort();
 
     co_await _open_gate.close();
@@ -259,20 +241,29 @@ log_manager::housekeeping_scan(model::timestamp collection_threshold) {
 }
 
 ss::future<> log_manager::housekeeping() {
-    // files created before this threshold will be collected
-    model::timestamp collection_threshold;
-    if (!_config.delete_retention()) {
-        collection_threshold = model::timestamp(0);
-    } else {
-        collection_threshold = model::timestamp(
-          model::timestamp::now().value()
-          - _config.delete_retention()->count());
-    }
+    while (true) {
+        co_await ss::sleep_abortable(_jitter.next_duration(), _abort_source);
 
-    return ss::with_scheduling_group(
-      _config.compaction_sg, [this, collection_threshold] {
-          return housekeeping_scan(collection_threshold);
-      });
+        // files created before this threshold will be collected
+        model::timestamp collection_threshold;
+        if (!_config.delete_retention()) {
+            collection_threshold = model::timestamp(0);
+        } else {
+            collection_threshold = model::timestamp(
+              model::timestamp::now().value()
+              - _config.delete_retention()->count());
+        }
+
+        auto prev_sg = co_await ss::coroutine::switch_to(_config.compaction_sg);
+
+        try {
+            co_await housekeeping_scan(collection_threshold);
+        } catch (const std::exception& e) {
+            vlog(stlog.info, "Error processing housekeeping(): {}", e);
+        }
+
+        co_await ss::coroutine::switch_to(prev_sg);
+    }
 }
 
 /**
@@ -605,9 +596,7 @@ std::ostream& operator<<(std::ostream& o, const log_config& c) {
 }
 std::ostream& operator<<(std::ostream& o, const log_manager& m) {
     return o << "{config:" << m._config << ", logs.size:" << m._logs.size()
-             << ", cache:" << m._batch_cache
-             << ", compaction_timer.armed:" << m._housekeeping_timer.armed()
-             << "}";
+             << ", cache:" << m._batch_cache << "}";
 }
 
 ss::future<usage_report> log_manager::disk_usage() {
