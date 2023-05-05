@@ -11,6 +11,8 @@
 
 #include "model/fundamental.h"
 #include "model/metadata.h"
+#include "model/record_batch_reader.h"
+#include "model/timeout_clock.h"
 #include "raft/consensus_utils.h"
 #include "raft/errc.h"
 #include "raft/group_configuration.h"
@@ -591,19 +593,29 @@ void heartbeat_reply::serde_read(iobuf_parser& src, const serde::header& hdr) {
 }
 
 ss::future<> append_entries_request::serde_async_write(iobuf& dst) {
-    auto mem_batches = co_await model::consume_reader_to_memory(
-      std::move(batches()), model::no_timeout);
-
-    iobuf out;
     using serde::write;
 
-    write(out, static_cast<uint32_t>(mem_batches.size()));
-    for (auto& batch : mem_batches) {
-        // intentionally using reflection here for batches which are not yet
-        // supported with serde, but also have largely solidified.
-        reflection::serialize(out, std::move(batch));
-        co_await ss::coroutine::maybe_yield();
-    }
+    class streaming_writer {
+    public:
+        ss::future<ss::stop_iteration> operator()(model::record_batch b) {
+            reflection::serialize(_out, std::move(b));
+            ++_count;
+            co_return ss::stop_iteration::no;
+        }
+        iobuf end_of_stream() {
+            iobuf header;
+            write(header, static_cast<uint32_t>(_count));
+            _out.prepend(std::move(header));
+            return std::move(_out);
+        }
+
+    private:
+        uint32_t _count = 0;
+        iobuf _out;
+    };
+
+    iobuf out = co_await batches().consume(
+      streaming_writer{}, model::no_timeout);
 
     write(out, node_id);
     write(out, target_node_id);
@@ -620,14 +632,14 @@ ss::future<> append_entries_request::serde_async_read(
     iobuf_parser in(std::move(tmp));
 
     auto batch_count = read_nested<uint32_t>(in, 0U);
-    auto batches = ss::circular_buffer<model::record_batch>{};
-    batches.reserve(batch_count);
+    auto batches = fragmented_vector<model::record_batch>{};
     for (uint32_t i = 0; i < batch_count; ++i) {
         batches.push_back(reflection::adl<model::record_batch>{}.from(in));
         co_await ss::coroutine::maybe_yield();
     }
 
-    _batches = model::make_memory_record_batch_reader(std::move(batches));
+    _batches = model::make_foreign_fragmented_memory_record_batch_reader(
+      std::move(batches));
     node_id = read_nested<raft::vnode>(in, 0U);
     target_node_id = read_nested<raft::vnode>(in, 0U);
     meta = read_nested<raft::protocol_metadata>(in, 0U);
