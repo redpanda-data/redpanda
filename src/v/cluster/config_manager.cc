@@ -371,7 +371,7 @@ static void preload_local(
 }
 
 ss::future<config_manager::preload_result>
-config_manager::preload_join(const controller_snapshot& snap) {
+config_manager::preload_join(const controller_join_snapshot& snap) {
     preload_result result;
 
     result.version = snap.config.version;

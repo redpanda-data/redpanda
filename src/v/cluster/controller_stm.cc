@@ -63,6 +63,43 @@ bool controller_stm::ready_to_snapshot() const {
     return _metrics_reporter_cluster_info.is_initialized();
 }
 
+ss::future<std::optional<iobuf>> controller_stm::maybe_make_join_snapshot() {
+    // We do **not** check the controller_snapshots feature flag here:
+    // even if snapshotting in general is turned off, it is still safe
+    // to send snapshots to joining nodes: they will just ignore
+    // it if they don't want it.
+
+    // This function is a very quick operation, but because the generic
+    // fill_snapshot methods are async, we must hold mutex+gate to ensure
+    // safety in the same way as the more general
+    // mux_state_stm::maybe_write_snapshot does
+    auto gate_holder = _gate.hold();
+    auto write_snapshot_mtx_holder = co_await _write_snapshot_mtx.get_units();
+
+    if (!ready_to_snapshot()) {
+        vlog(clusterlog.debug, "skipping join snapshotting, not ready");
+        co_return std::nullopt;
+    }
+
+    // The various stms fill_snapshot methods expect a full controller
+    // snapshot, so we will partially populate this and then move
+    // out the parts we want for the join snapshot.
+    controller_snapshot snapshot;
+
+    auto apply_mtx_holder = co_await _apply_mtx.get_units();
+    model::offset last_applied = get_last_applied_offset();
+    co_await std::get<bootstrap_backend&>(_state).fill_snapshot(snapshot);
+    co_await std::get<feature_backend&>(_state).fill_snapshot(snapshot);
+    co_await std::get<config_manager&>(_state).fill_snapshot(snapshot);
+    apply_mtx_holder.return_all();
+
+    co_return serde::to_iobuf(controller_join_snapshot{
+      .last_applied = last_applied,
+      .bootstrap = std::move(snapshot.bootstrap),
+      .features = std::move(snapshot.features),
+      .config = std::move(snapshot.config)});
+}
+
 ss::future<std::optional<iobuf>>
 controller_stm::maybe_make_snapshot(ssx::semaphore_units apply_mtx_holder) {
     auto started_at = ss::steady_clock_type::now();

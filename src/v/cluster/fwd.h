@@ -64,6 +64,7 @@ class self_test_frontend;
 class topic_recovery_status_frontend;
 class node_isolation_watcher;
 struct controller_snapshot;
+struct controller_join_snapshot;
 
 namespace node {
 class local_monitor;

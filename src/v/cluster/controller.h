@@ -155,6 +155,18 @@ public:
         });
     }
 
+    /// Helper for use during cluster join: a join RPC reply may
+    /// tip us off about the last applied controller offset of some
+    /// other node, and we may wait for that to ensure our controller
+    /// state is current before trying to serve client I/O.
+    ss::future<>
+    wait_for_offset(model::offset target, ss::abort_source& shard0_as) {
+        return _stm.invoke_on(
+          controller_stm_shard, [target, &as = shard0_as](auto& stm) {
+              return stm.wait(target, model::no_timeout, as);
+          });
+    }
+
     model::offset get_start_offset() const { return _raft0->start_offset(); }
 
     model::offset get_commited_index() const {

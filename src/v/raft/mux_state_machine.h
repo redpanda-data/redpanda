@@ -215,6 +215,7 @@ private:
     ss::condition_variable _new_result;
     absl::flat_hash_set<model::record_batch_type> _not_handled_batch_types;
 
+protected:
     // Mutexes must be locked in the same order as declared
 
     // Locked for the whole duration of writing a snapshot to ensure that there
@@ -224,7 +225,6 @@ private:
     // to ensure that the state machine state does not change.
     mutex _apply_mtx;
 
-protected:
     // we keep states in a tuple to automatically dispatch updates to correct
     // state
     std::tuple<T&...> _state;
@@ -492,15 +492,6 @@ requires(State<T>, ...)
     co_await _raft->write_snapshot(
       raft::write_snapshot_cfg(offset, std::move(snapshot_buf.value())));
     co_return true;
-}
-
-template<typename... T>
-requires(State<T>, ...) ss::future<std::optional<iobuf>> mux_state_machine<
-  T...>::maybe_compose_snapshot() {
-    auto gate_holder = _gate.hold();
-    auto apply_mtx_holder = co_await _apply_mtx.get_units();
-
-    co_return co_await maybe_make_snapshot(std::move(apply_mtx_holder));
 }
 
 } // namespace raft

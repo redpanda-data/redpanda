@@ -1944,8 +1944,9 @@ void application::wire_up_and_start(::stop_signal& app_signal, bool test_mode) {
               registration_result.assigned_node_id);
             if (registration_result.controller_snapshot.has_value()) {
                 // Do something with the controller snapshot
-                auto snap = serde::from_iobuf<cluster::controller_snapshot>(
-                  std::move(registration_result.controller_snapshot.value()));
+                auto snap
+                  = serde::from_iobuf<cluster::controller_join_snapshot>(
+                    std::move(registration_result.controller_snapshot.value()));
 
                 // The controller is not started yet, so write state directly
                 // into the feature table and configuration object.  We do not

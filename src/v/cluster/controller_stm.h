@@ -67,6 +67,10 @@ public:
 
     bool ready_to_snapshot() const;
 
+    /// Compose a mini-snapshot for joining nodes: this is a specialized
+    /// peer of the more general maybe_make_snapshot
+    ss::future<std::optional<iobuf>> maybe_make_join_snapshot();
+
 private:
     ss::future<> on_batch_applied() final;
     void snapshot_timer_callback();

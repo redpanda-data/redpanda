@@ -61,7 +61,8 @@ public:
 
     // Preload while joining the cluster, from a controller snapshot sent
     // in response to a join request.
-    static ss::future<preload_result> preload_join(const controller_snapshot&);
+    static ss::future<preload_result>
+    preload_join(const controller_join_snapshot&);
 
     ss::future<> start();
     ss::future<> stop();

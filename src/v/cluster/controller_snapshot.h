@@ -236,4 +236,30 @@ struct controller_snapshot
     ss::future<> serde_async_read(iobuf_parser&, serde::header const);
 };
 
+/// A subset of the controller snapshot used to initialize nodes joining
+/// the cluster.  This does not include any of the large per-partition
+/// structures.
+struct controller_join_snapshot
+  : public serde::envelope<
+      controller_join_snapshot,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    // Joining node should use this offset as the controllers
+    // 'bootstrap_last_applied' so that the joining node will not start Kafka
+    // API until it has replayed all the known controller history.
+    model::offset last_applied;
+
+    // Joining nodes should apply this state before starting controller for
+    // the first time.
+    controller_snapshot_parts::bootstrap_t bootstrap;
+    controller_snapshot_parts::features_t features;
+    controller_snapshot_parts::config_t config;
+    controller_snapshot_parts::metrics_reporter_t metrics_reporter;
+
+    auto serde_fields() {
+        return std::tie(
+          last_applied, bootstrap, features, config, metrics_reporter);
+    }
+};
+
 } // namespace cluster
