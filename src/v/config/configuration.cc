@@ -2036,7 +2036,13 @@ configuration::configuration()
       "Interval, in seconds, of how often a message informing the operator "
       "that unsafe strings are permitted",
       {.needs_restart = needs_restart::no, .visibility = visibility::user},
-      300s) {}
+      300s)
+  , kafka_schema_id_validation_cache_capacity(
+      *this,
+      "kafka_schema_id_validation_cache_capacity",
+      "Per-shard capacity of the cache for validating schema IDs.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      128) {}
 
 configuration::error_map_t configuration::load(const YAML::Node& root_node) {
     if (!root_node["redpanda"]) {
