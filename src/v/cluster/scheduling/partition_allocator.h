@@ -46,11 +46,15 @@ public:
      */
     ss::future<result<allocation_units::pointer>> allocate(allocation_request);
 
-    /// Reallocate an already existing partition
+    /// Reallocate an already existing partition. Existing replicas from
+    /// replicas_to_reallocate will be reallocated, and a number of additional
+    /// replicas to reach the requested replication factor will be allocated
+    /// anew.
     result<allocated_partition> reallocate_partition(
       partition_constraints,
       const partition_assignment&,
-      partition_allocation_domain);
+      partition_allocation_domain,
+      const std::vector<model::node_id>& replicas_to_reallocate = {});
 
     /// Create allocated_partition object from current replicas for use with the
     /// allocate_replica method.
@@ -163,10 +167,13 @@ private:
     std::error_code
     check_cluster_limits(allocation_request const& request) const;
 
-    result<allocated_partition> allocate_partition(
-      partition_constraints,
-      partition_allocation_domain,
-      const std::vector<model::broker_shard>& not_changed_replicas = {});
+    result<allocated_partition> allocate_new_partition(
+      partition_constraints, partition_allocation_domain);
+
+    result<model::broker_shard> do_allocate_replica(
+      allocated_partition&,
+      std::optional<model::node_id> previous,
+      const allocation_constraints&);
 
     allocation_constraints
     default_constraints(const partition_allocation_domain);
