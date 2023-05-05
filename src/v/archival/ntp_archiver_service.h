@@ -193,16 +193,20 @@ public:
     /// candidate.remote_segments).
     ///
     /// \param scanner is a user provided function used to find upload candidate
-    /// \return nullopt or the upload candidate
-    ss::future<std::optional<upload_candidate_with_locks>>
+    /// \return {nullopt, nullopt} or the archiver lock and upload candidate
+    ss::future<std::pair<
+      std::optional<ssx::semaphore_units>,
+      std::optional<upload_candidate_with_locks>>>
     find_reupload_candidate(manifest_scanner_t scanner);
 
     /**
-     * Upload segment provided from the outside of the ntp_archiver
+     * Upload segment provided from the outside of the ntp_archiver.
      *
      * The method can be used to upload segments stored locally in the
      * redpanda data directory or remotely in cloud storage.
      *
+     * \param archiver_units are the units for the archiver that must have
+     *        already been taken
      * \param candidate is an upload candidate
      * \param source_rtc is used to pass retry_chain_node that belongs
      *        to the caller. This way the caller can use its own abort_source
@@ -211,6 +215,7 @@ public:
      * \return true on success and false otherwise
      */
     ss::future<bool> upload(
+      ssx::semaphore_units archiver_units,
       upload_candidate_with_locks candidate,
       std::optional<std::reference_wrapper<retry_chain_node>> source_rtc);
 
@@ -415,7 +420,15 @@ private:
     ss::abort_source _as;
     retry_chain_node _rtcnode;
     retry_chain_logger _rtclog;
+
+    // Ensures that operations on the archival state are only performed by a
+    // single driving fiber (archiver loop, housekeeping job, etc) at a time.
+    //
+    // NOTE: must be taken before doing anything that acquires segment read
+    // locks (e.g. selecting segments for upload, replicating and waiting on
+    // the underlying Raft STM).
     ssx::semaphore _mutex{1, "archive/ntp"};
+
     ss::lw_shared_ptr<const configuration> _conf;
     config::binding<std::chrono::milliseconds> _sync_manifest_timeout;
     config::binding<size_t> _max_segments_pending_deletion;

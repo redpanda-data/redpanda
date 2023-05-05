@@ -1465,18 +1465,21 @@ ntp_archiver::get_housekeeping_jobs() {
     return res;
 }
 
-ss::future<std::optional<upload_candidate_with_locks>>
+ss::future<std::pair<
+  std::optional<ssx::semaphore_units>,
+  std::optional<upload_candidate_with_locks>>>
 ntp_archiver::find_reupload_candidate(manifest_scanner_t scanner) {
     if (!may_begin_uploads()) {
-        co_return std::nullopt;
+        co_return std::make_pair(std::nullopt, std::nullopt);
     }
     auto run = scanner(_parent.start_offset(), manifest());
     if (!run.has_value()) {
         vlog(_rtclog.debug, "Scan didn't resulted in upload candidate");
-        co_return std::nullopt;
+        co_return std::make_pair(std::nullopt, std::nullopt);
     } else {
         vlog(_rtclog.debug, "Scan result: {}", run);
     }
+    auto units = co_await ss::get_units(_mutex, 1, _as);
     if (run->meta.base_offset >= _parent.start_offset()) {
         auto log_generic = _parent.log();
         auto& log = dynamic_cast<storage::disk_log_impl&>(
@@ -1493,7 +1496,7 @@ ntp_archiver::find_reupload_candidate(manifest_scanner_t scanner) {
           _conf->upload_io_priority, _conf->segment_upload_timeout);
         if (candidate.candidate.exposed_name().empty()) {
             vlog(_rtclog.warn, "Failed to make upload candidate");
-            co_return std::nullopt;
+            co_return std::make_pair(std::nullopt, std::nullopt);
         }
         if (candidate.candidate.content_length != run->meta.size_bytes) {
             vlog(
@@ -1502,9 +1505,9 @@ ntp_archiver::find_reupload_candidate(manifest_scanner_t scanner) {
               "actual {}",
               candidate.candidate,
               run->meta);
-            co_return std::nullopt;
+            co_return std::make_pair(std::nullopt, std::nullopt);
         }
-        co_return candidate;
+        co_return std::make_pair(std::move(units), std::move(candidate));
     }
     // segment_name exposed_name;
     upload_candidate candidate = {};
@@ -1521,12 +1524,16 @@ ntp_archiver::find_reupload_candidate(manifest_scanner_t scanner) {
       = cloud_storage::partition_manifest::generate_remote_segment_name(
         run->meta);
     // Create a remote upload candidate
-    co_return upload_candidate_with_locks{std::move(candidate)};
+    co_return std::make_pair(
+      std::move(units), upload_candidate_with_locks{std::move(candidate)});
 }
 
 ss::future<bool> ntp_archiver::upload(
+  ssx::semaphore_units archiver_units,
   upload_candidate_with_locks upload_locks,
   std::optional<std::reference_wrapper<retry_chain_node>> source_rtc) {
+    ss::gate::holder holder(_gate);
+    auto units = std::move(archiver_units);
     if (upload_locks.candidate.sources.size() > 0) {
         return do_upload_local(std::move(upload_locks), source_rtc);
     }
@@ -1563,8 +1570,6 @@ ss::future<bool> ntp_archiver::do_upload_local(
           upload.exposed_name);
         co_return false;
     }
-
-    auto units = co_await ss::get_units(_mutex, 1, _as);
 
     auto offset = upload.final_offset;
     auto base = upload.starting_offset;
