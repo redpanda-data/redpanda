@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"sync"
 
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
 )
@@ -24,7 +25,7 @@ var (
 
 // ManagedHook is a hook to be called with the given fake-plugin-installed exec
 // command and return a potentially wrapped command.
-type ManagedHook func(*cobra.Command, afero.Fs) *cobra.Command
+type ManagedHook func(*cobra.Command, afero.Fs, *config.Params) *cobra.Command
 
 type regManaged struct {
 	replaceArgs []string
