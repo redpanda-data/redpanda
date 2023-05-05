@@ -107,6 +107,20 @@ static void set_local_kafka_client_config(
     }
 }
 
+static void set_pp_kafka_client_defaults(
+  pandaproxy::rest::configuration& proxy_config,
+  kafka::client::configuration& client_config) {
+    // override pandaparoxy_client.consumer_session_timeout_ms with
+    // pandaproxy.consumer_instance_timeout_ms
+    client_config.consumer_session_timeout.set_value(
+      proxy_config.consumer_instance_timeout.value());
+
+    if (!client_config.client_identifier.is_overriden()) {
+        client_config.client_identifier.set_value(
+          std::make_optional<ss::sstring>("pandaproxy_client"));
+    }
+}
+
 static void
 set_sr_kafka_client_defaults(kafka::client::configuration& client_config) {
     if (!client_config.produce_batch_delay.is_overriden()) {
@@ -117,6 +131,10 @@ set_sr_kafka_client_defaults(kafka::client::configuration& client_config) {
     }
     if (!client_config.produce_batch_size_bytes.is_overriden()) {
         client_config.produce_batch_size_bytes.set_value(int32_t(0));
+    }
+    if (!client_config.client_identifier.is_overriden()) {
+        client_config.client_identifier.set_value(
+          std::make_optional<ss::sstring>("schema_registry_client"));
     }
 }
 
@@ -472,10 +490,7 @@ void application::hydrate_config(const po::variables_map& cfg) {
         } else {
             set_local_kafka_client_config(_proxy_client_config, config::node());
         }
-        // override pandaparoxy_client.consumer_session_timeout_ms with
-        // pandaproxy.consumer_instance_timeout_ms
-        _proxy_client_config->consumer_session_timeout.set_value(
-          _proxy_config->consumer_instance_timeout.value());
+        set_pp_kafka_client_defaults(*_proxy_config, *_proxy_client_config);
         config_printer("pandaproxy", *_proxy_config);
         config_printer("pandaproxy_client", *_proxy_client_config);
     }
