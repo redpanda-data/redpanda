@@ -91,6 +91,17 @@ void rjson_serialize(
     w.EndArray();
 }
 
+template<typename T, size_t max_fragment_size>
+void rjson_serialize(
+  json::Writer<json::StringBuffer>& w,
+  const fragmented_vector<T, max_fragment_size>& v) {
+    w.StartArray();
+    for (const auto& e : v) {
+        rjson_serialize(w, e);
+    }
+    w.EndArray();
+}
+
 template<typename T, typename A>
 void rjson_serialize(
   json::Writer<json::StringBuffer>& w, const ss::circular_buffer<T, A>& v) {
