@@ -15,6 +15,7 @@ namespace pandaproxy::schema_registry {
 
 class api;
 struct configuration;
+class schema_id_cache;
 class seq_writer;
 class service;
 class sharded_store;
