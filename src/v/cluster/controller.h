@@ -173,6 +173,8 @@ public:
         return _raft0->committed_offset();
     }
 
+    static const bytes invariants_key;
+
 private:
     friend controller_probe;
 

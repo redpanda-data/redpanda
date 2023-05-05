@@ -1832,10 +1832,10 @@ void application::start_bootstrap_services() {
           .get0();
     }
 
-    static const bytes invariants_key("configuration_invariants");
     auto configured_node_id = config::node().node_id();
     if (auto invariants_buf = storage.local().kvs().get(
-          storage::kvstore::key_space::controller, invariants_key);
+          storage::kvstore::key_space::controller,
+          cluster::controller::invariants_key);
         invariants_buf) {
         auto invariants
           = reflection::from_iobuf<cluster::configuration_invariants>(
@@ -1923,7 +1923,7 @@ void application::wire_up_and_start(::stop_signal& app_signal, bool test_mode) {
                                  .kvs()
                                  .get(
                                    storage::kvstore::key_space::controller,
-                                   bytes("configuration_invariants"))
+                                   cluster::controller::invariants_key)
                                  .has_value();
 
     model::node_id node_id;
@@ -1970,6 +1970,13 @@ void application::wire_up_and_start(::stop_signal& app_signal, bool test_mode) {
                 cluster::config_manager::write_local_cache(
                   _config_preload.version, _config_preload.raw_values)
                   .get();
+
+                // During controller::start, we wait to reach an applied offset.
+                // By priming this from the join snapshot, we may ensure that
+                // we wait until this node has replicated all the controller
+                // metadata since it joined, before we proceed with e.g.
+                // listening for Kafka API requests.
+                _await_controller_last_applied = snap.last_applied;
             }
         }
     }
@@ -2209,6 +2216,16 @@ void application::start_runtime_services(
     quota_mgr.invoke_on_all(&kafka::quota_manager::start).get();
     snc_quota_mgr.invoke_on_all(&kafka::snc_quota_manager::start).get();
     usage_manager.invoke_on_all(&kafka::usage_manager::start).get();
+
+    if (_await_controller_last_applied.has_value()) {
+        syschecks::systemd_message(
+          "Waiting for controller to replicate (joining cluster)")
+          .get();
+        controller
+          ->wait_for_offset(
+            _await_controller_last_applied.value(), app_signal.abort_source())
+          .get();
+    }
 
     if (!config::node().admin().empty()) {
         _admin.invoke_on_all(&admin_server::start).get0();

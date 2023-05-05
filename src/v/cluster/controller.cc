@@ -62,6 +62,8 @@
 
 namespace cluster {
 
+const bytes controller::invariants_key{"configuration_invariants"};
+
 controller::controller(
   config_manager::preload_result&& config_preload,
   ss::sharded<rpc::connection_cache>& ccache,
@@ -715,7 +717,6 @@ int16_t controller::internal_topic_replication() const {
  * @return
  */
 ss::future<> controller::validate_configuration_invariants() {
-    static const bytes invariants_key("configuration_invariants");
     auto invariants_buf = _storage.local().kvs().get(
       storage::kvstore::key_space::controller, invariants_key);
     vassert(
