@@ -214,6 +214,12 @@ admin.tls.client_cert_path=/path/to/cert.pem
 admin.tls.client_key_path=/path/to/key.pem
   A filepath to a PEM encoded client key file to talk to your broker's Admin
   API listeners with mTLS.
+
+cloud.client_id=somestring
+  An oauth client ID to use for authenticating with the Redpanda Cloud API.
+
+cloud.client_secret=somelongerstring
+  An oauth client secret to use for authenticating with the Redpanda Cloud API.
 `
 }
 
@@ -232,6 +238,8 @@ admin.tls.enabled=boolean
 admin.tls.ca_cert_path=/path/to/ca.pem
 admin.tls.client_cert_path=/path/to/cert.pem
 admin.tls.client_key_path=/path/to/key.pem
+cloud.client_id=somestring
+cloud.client_secret=somelongerstring
 `
 }
 
