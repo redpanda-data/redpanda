@@ -54,17 +54,27 @@ const (
 	FlagTLSKey    = "tls-key"
 	FlagSASLUser  = "user"
 
-	envBrokers       = "REDPANDA_BROKERS"
-	envTLSCA         = "REDPANDA_TLS_TRUSTSTORE"
-	envTLSCert       = "REDPANDA_TLS_CERT"
-	envTLSKey        = "REDPANDA_TLS_KEY"
-	envSASLMechanism = "REDPANDA_SASL_MECHANISM"
-	envSASLUser      = "REDPANDA_SASL_USERNAME"
-	envSASLPass      = "REDPANDA_SASL_PASSWORD"
-	envAdminHosts    = "REDPANDA_API_ADMIN_ADDRS"
-	envAdminTLSCA    = "REDPANDA_ADMIN_TLS_TRUSTSTORE"
-	envAdminTLSCert  = "REDPANDA_ADMIN_TLS_CERT"
-	envAdminTLSKey   = "REDPANDA_ADMIN_TLS_KEY"
+	envBrokers            = "REDPANDA_BROKERS"
+	envTLSTruststore      = "REDPANDA_TLS_TRUSTSTORE" // backcompat, deprecated
+	envTLSCA              = "REDPANDA_TLS_CA"
+	envTLSCert            = "REDPANDA_TLS_CERT"
+	envTLSKey             = "REDPANDA_TLS_KEY"
+	envSASLMechanism      = "REDPANDA_SASL_MECHANISM"
+	envSASLUser           = "REDPANDA_SASL_USERNAME"
+	envSASLPass           = "REDPANDA_SASL_PASSWORD"
+	envAdminHosts         = "REDPANDA_API_ADMIN_ADDRS"
+	envAdminTLSTruststore = "REDPANDA_ADMIN_TLS_TRUSTSTORE" // backcompat, deprecated
+	envAdminTLSCA         = "REDPANDA_ADMIN_TLS_CA"
+	envAdminTLSCert       = "REDPANDA_ADMIN_TLS_CERT"
+	envAdminTLSKey        = "REDPANDA_ADMIN_TLS_KEY"
+
+	// The following flags and env vars are used in `rpk cloud`. We will
+	// always support them, but they are also duplicated by -X auth.*.
+	FlagClientID     = "client-id"
+	FlagClientSecret = "client-secret"
+
+	envClientID     = "RPK_CLOUD_CLIENT_ID"
+	envClientSecret = "RPK_CLOUD_CLIENT_SECRET"
 )
 
 // This block contains what will eventually be used as keys in the global
@@ -87,6 +97,9 @@ const (
 	xAdminCACert     = "admin.tls.ca_cert_path"
 	xAdminClientCert = "admin.tls.client_cert_path"
 	xAdminClientKey  = "admin.tls.client_key_path"
+
+	xCloudClientID     = "cloud.client_id"
+	xCloudClientSecret = "cloud.client_secret"
 )
 
 // Params contains rpk-wide configuration parameters.
@@ -131,6 +144,9 @@ type Params struct {
 	adminCAFile    string
 	adminCertFile  string
 	adminKeyFile   string
+
+	cloudClientID     string
+	cloudClientSecret string
 }
 
 // ParamsHelp returns the long help text for -X help.
@@ -264,6 +280,14 @@ func (p *Params) InstallAdminFlags(cmd *cobra.Command) {
 	pf.StringVar(&p.adminKeyFile, flagAdminTLSKey, "", "The certificate key to be used for TLS authentication with the admin API")
 }
 
+// InstallCloudFlags adds the --client-id and --client-secret flags that
+// existed in the `rpk cloud` subcommands.
+func (p *Params) InstallCloudFlags(cmd *cobra.Command) {
+	cmd.Flags().StringVar(&p.cloudClientID, FlagClientID, "", "The client ID of the organization in Redpanda Cloud")
+	cmd.Flags().StringVar(&p.cloudClientSecret, FlagClientSecret, "", "The client secret of the organization in Redpanda Cloud")
+	cmd.MarkFlagsRequiredTogether(FlagClientID, FlagClientSecret)
+}
+
 func (p *Params) backcompatFlagsToOverrides() {
 	if len(p.brokers) > 0 {
 		p.FlagOverrides = append(p.FlagOverrides, fmt.Sprintf("%s=%s", xKafkaBrokers, strings.Join(p.brokers, ",")))
@@ -306,6 +330,13 @@ func (p *Params) backcompatFlagsToOverrides() {
 	if p.adminKeyFile != "" {
 		p.FlagOverrides = append(p.FlagOverrides, fmt.Sprintf("%s=%s", xAdminClientKey, p.adminKeyFile))
 	}
+
+	if p.cloudClientID != "" {
+		p.FlagOverrides = append(p.FlagOverrides, fmt.Sprintf("%s=%s", xCloudClientID, p.cloudClientID))
+	}
+	if p.cloudClientSecret != "" {
+		p.FlagOverrides = append(p.FlagOverrides, fmt.Sprintf("%s=%s", xCloudClientSecret, p.cloudClientSecret))
+	}
 }
 
 ///////////////////////
@@ -320,11 +351,14 @@ func (p *Params) backcompatFlagsToOverrides() {
 //   - Processes env and flag overrides.
 //   - Sets unset default values.
 func (p *Params) Load(fs afero.Fs) (*Config, error) {
+	defRpk, err := defaultMaterializedRpkYaml()
+	if err != nil {
+		return nil, err
+	}
 	c := &Config{
-		configFlag:   p.ConfigFlag,
+		p:            p,
 		redpandaYaml: *DevDefault(),
-		rpkYaml:      defaultMaterializedRpkYaml(),
-		logger:       p.Logger(),
+		rpkYaml:      defRpk,
 	}
 	c.rpkYaml.Contexts[0].KafkaAPI = c.redpandaYaml.Rpk.KafkaAPI
 	c.rpkYaml.Contexts[0].AdminAPI = c.redpandaYaml.Rpk.AdminAPI
@@ -340,6 +374,7 @@ func (p *Params) Load(fs afero.Fs) (*Config, error) {
 	c.mergeRpkIntoRedpanda(true)     // merge actual rpk.yaml KafkaAPI,AdminAPI,Tuners into redpanda.yaml rpk section
 	c.addUnsetRedpandaDefaults(true) // merge from actual redpanda.yaml redpanda section to rpk section
 	c.ensureRpkContext()             // ensure materialized rpk.yaml has a loaded context
+	c.ensureRpkCloudAuth()           // ensure materialized rpk.yaml has a current auth
 	c.mergeRedpandaIntoRpk()         // merge redpanda.yaml rpk section back into rpk.yaml KafkaAPI,AdminAPI,Tuners (picks up redpanda.yaml extras sections were empty)
 	p.backcompatFlagsToOverrides()
 	if err := p.processOverrides(c); err != nil { // override rpk.yaml context from env&flags
@@ -350,6 +385,7 @@ func (p *Params) Load(fs afero.Fs) (*Config, error) {
 	c.mergeRedpandaIntoRpk()          // merge from redpanda.yaml rpk section back to rpk.yaml, picks up final redpanda.yaml defaults
 	c.fixSchemePorts()                // strip any scheme, default any missing ports
 	c.addConfigToContexts()
+	c.parseDevOverrides()
 	return c, nil
 }
 
@@ -454,11 +490,11 @@ func (p *Params) Logger() *zap.Logger {
 func readFile(fs afero.Fs, path string) (string, []byte, error) {
 	abs, err := filepath.Abs(path)
 	if err != nil {
-		return "", nil, err
+		return abs, nil, err
 	}
 	file, err := afero.ReadFile(fs, abs)
 	if err != nil {
-		return "", nil, err
+		return abs, nil, err
 	}
 	return abs, file, err
 }
@@ -583,15 +619,38 @@ func (c *Config) mergeRpkIntoRedpanda(actual bool) {
 	}
 }
 
-// This function ensures a context exists in the materialized rpk.yaml.
+// This function ensures a current context exists in the materialized rpk.yaml.
 func (c *Config) ensureRpkContext() {
 	dst := &c.rpkYaml
 	cx := dst.Context(dst.CurrentContext)
 	if cx != nil {
 		return
 	}
-	dst.Contexts = append(defaultMaterializedRpkYaml().Contexts, dst.Contexts...)
-	dst.CurrentContext = dst.Contexts[0].Name
+
+	def := DefaultRpkContext()
+	dst.CurrentContext = def.Name
+	cx = dst.Context(dst.CurrentContext)
+	if cx != nil {
+		return
+	}
+	dst.PushContext(def)
+}
+
+// This function ensures a current auth exists in the materialized rpk.yaml.
+func (c *Config) ensureRpkCloudAuth() {
+	dst := &c.rpkYaml
+	auth := dst.Auth(dst.CurrentCloudAuth)
+	if auth != nil {
+		return
+	}
+
+	def := DefaultRpkCloudAuth()
+	dst.CurrentCloudAuth = def.Name
+	auth = dst.Auth(dst.CurrentCloudAuth)
+	if auth != nil {
+		return
+	}
+	dst.PushAuth(def)
 }
 
 // We merge redpanda.yaml's rpk section back into rpk.yaml's context.  This
@@ -635,6 +694,7 @@ func (p *Params) processOverrides(c *Config) error {
 	cx := r.Context(r.CurrentContext) // must exist by this point
 	k := &cx.KafkaAPI
 	a := &cx.AdminAPI
+	auth := r.Auth(r.CurrentCloudAuth)
 
 	// We have three "make" functions that initialize pointer values if
 	// necessary.
@@ -676,6 +736,9 @@ func (p *Params) processOverrides(c *Config) error {
 		xAdminCACert:     func(v string) error { mkAdminTLS(); a.TLS.TruststoreFile = v; return nil },
 		xAdminClientCert: func(v string) error { mkAdminTLS(); a.TLS.CertFile = v; return nil },
 		xAdminClientKey:  func(v string) error { mkAdminTLS(); a.TLS.KeyFile = v; return nil },
+
+		xCloudClientID:     func(v string) error { auth.ClientID = v; return nil },
+		xCloudClientSecret: func(v string) error { auth.ClientSecret = v; return nil },
 	}
 
 	// The parse function accepts the given overrides (key=value pairs) and
@@ -713,6 +776,7 @@ func (p *Params) processOverrides(c *Config) error {
 		targetKey string
 	}{
 		{envBrokers, xKafkaBrokers},
+		{envTLSTruststore, xKafkaCACert},
 		{envTLSCA, xKafkaCACert},
 		{envTLSCert, xKafkaClientCert},
 		{envTLSKey, xKafkaClientKey},
@@ -720,9 +784,12 @@ func (p *Params) processOverrides(c *Config) error {
 		{envSASLUser, xKafkaSASLUser},
 		{envSASLPass, xKafkaSASLPass},
 		{envAdminHosts, xAdminHosts},
+		{envAdminTLSTruststore, xAdminCACert},
 		{envAdminTLSCA, xAdminCACert},
 		{envAdminTLSCert, xAdminClientCert},
 		{envAdminTLSKey, xAdminClientKey},
+		{envClientID, xCloudClientID},
+		{envClientSecret, xCloudClientSecret},
 	} {
 		if v, exists := os.LookupEnv(envMapping.old); exists {
 			envOverrides = append(envOverrides, envMapping.targetKey+"="+v)
@@ -848,6 +915,19 @@ func (c *Config) addConfigToContexts() {
 	}
 	for i := range c.rpkYamlActual.Contexts {
 		c.rpkYamlActual.Contexts[i].c = c
+	}
+}
+
+func (c *Config) parseDevOverrides() {
+	v := reflect.ValueOf(&c.devOverrides)
+	v = reflect.Indirect(v)
+	t := v.Type()
+	for i := 0; i < v.NumField(); i++ {
+		envKey, ok := t.Field(i).Tag.Lookup("env")
+		if !ok {
+			panic(fmt.Sprintf("missing env tag on DevOverride.%s", t.Field(i).Name))
+		}
+		v.Field(i).SetString(os.Getenv(envKey))
 	}
 }
 

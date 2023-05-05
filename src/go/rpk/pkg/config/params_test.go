@@ -725,6 +725,7 @@ schema_registry: {}
 `,
 			expMaterializedRpk: `version: 1
 current_context: default
+current_cloud_auth: default
 contexts:
     - name: default
       description: Default rpk context
@@ -734,6 +735,9 @@ contexts:
       admin_api:
         addresses:
             - 127.0.0.1:9644
+cloud_auth:
+    - name: default
+      description: Default rpk cloud auth
 tuners:
     coredump_dir: /var/lib/redpanda/coredump
 `,
@@ -798,6 +802,7 @@ rpk:
 `,
 			expMaterializedRpk: `version: 1
 current_context: default
+current_cloud_auth: default
 contexts:
     - name: default
       description: Default rpk context
@@ -807,6 +812,9 @@ contexts:
       admin_api:
         addresses:
             - 0.0.0.3:9644
+cloud_auth:
+    - name: default
+      description: Default rpk cloud auth
 tuners:
     tune_network: true
     tune_disk_scheduler: true
@@ -825,12 +833,16 @@ tuners:
 			name: "rpk.yaml exists",
 			rpkYaml: `version: 1
 current_context: foo
+current_cloud_auth: fizz
 contexts:
     - name: foo
       description: descriptosphere
       kafka_api:
         brokers:
             - 0.0.0.3
+cloud_auth:
+    - name: fizz
+      description: fizzy
 tuners:
     tune_disk_nomerges: true
     tune_disk_write_cache: true
@@ -866,6 +878,7 @@ schema_registry: {}
 `,
 			expMaterializedRpk: `version: 1
 current_context: foo
+current_cloud_auth: fizz
 contexts:
     - name: foo
       description: descriptosphere
@@ -875,6 +888,9 @@ contexts:
       admin_api:
         addresses:
             - 0.0.0.3:9644
+cloud_auth:
+    - name: fizz
+      description: fizzy
 tuners:
     tune_disk_nomerges: true
     tune_disk_write_cache: true
@@ -910,6 +926,7 @@ rpk:
 `,
 			rpkYaml: `version: 1
 current_context: foo
+current_cloud_auth: default
 contexts:
     - name: foo
       description: descriptosphere
@@ -944,6 +961,7 @@ rpk:
 
 			expMaterializedRpk: `version: 1
 current_context: foo
+current_cloud_auth: default
 contexts:
     - name: foo
       description: descriptosphere
@@ -953,6 +971,9 @@ contexts:
       admin_api:
         addresses:
             - 128.0.0.4:9644
+cloud_auth:
+    - name: default
+      description: Default rpk cloud auth
 tuners:
     tune_network: true
     tune_disk_scheduler: true
@@ -1017,4 +1038,14 @@ tuners:
 			testfs.ExpectExact(t, fs, m)
 		})
 	}
+}
+
+func TestConfig_parseDevOverrides(t *testing.T) {
+	var c Config
+	defer func() {
+		if x := recover(); x != nil {
+			t.Fatal(x)
+		}
+	}()
+	c.parseDevOverrides()
 }

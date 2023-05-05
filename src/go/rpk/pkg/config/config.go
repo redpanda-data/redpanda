@@ -11,7 +11,6 @@ package config
 
 import (
 	"github.com/spf13/afero"
-	"go.uber.org/zap"
 )
 
 const (
@@ -26,21 +25,44 @@ const (
 	DefaultBallastFileSize = "1GiB"
 )
 
+// DevOverrides contains available overrides that are used for developer
+// testing. This list can be used wherever in rpk. These are not persisted to
+// any configuration file and they are not available as flags.
+type DevOverrides struct {
+	// CloudAuthURL is used by `rpk cloud` to override the auth0 URL
+	// we talk to.
+	CloudAuthURL string `env:"RPK_CLOUD_AUTH_URL"`
+	// CloudAuthAudience is used by `rpk cloud` to override the auth0
+	// audience we use.
+	CloudAuthAudience string `env:"RPK_CLOUD_AUTH_AUDIENCE"`
+	// CloudAuthAppClientID is used by `rpk cloud` to override the client
+	// ID we use when talking to auth0.
+	CloudAuthAppClientID string `env:"RPK_AUTH_APP_CLIENT_ID"`
+	// CloudAPIURL is used by `rpk cloud` to override the Redpanda Cloud
+	// URL we talk to.
+	CloudAPIURL string `env:"RPK_CLOUD_URL"`
+	// BYOCSkipVersionCheck is used by `rpk cloud byoc` and skips any byoc
+	// plugin version checking, instead using whatever is available.
+	BYOCSkipVersionCheck string `env:"RPK_CLOUD_SKIP_VERSION_CHECK"`
+}
+
 // Config encapsulates a redpanda.yaml and/or an rpk.yaml. This is the
 // entrypoint that params.Config returns, after which you can get either the
 // materialized or actual configurations.
 type Config struct {
-	configFlag string // --config, for rare use cases -- see below
+	p *Params
 
 	redpandaYaml       RedpandaYaml // processed, defaults/env/flags
 	redpandaYamlActual RedpandaYaml // unprocessed
 	redpandaYamlExists bool         // whether the redpanda.yaml file exists
+	redpandaYamlInitd  bool         // if OrDefaults was returned to initialize a new "actual" file that has not yet been written
 
 	rpkYaml       RpkYaml // processed, defaults/env/flags
 	rpkYamlActual RpkYaml // unprocessed
 	rpkYamlExists bool    // whether the rpk.yaml file exists
+	rpkYamlInitd  bool    // if OrEmpty was returned to initialize a new "actual" file that has not yet been written
 
-	logger *zap.Logger
+	devOverrides DevOverrides
 }
 
 // MaterializedRedpandaYaml returns a redpanda.yaml, starting with defaults,
@@ -59,14 +81,16 @@ func (c *Config) ActualRedpandaYaml() (*RedpandaYaml, bool) {
 // otherwise this returns dev defaults. This function is meant to be used
 // for writing a redpanda.yaml file, populating it with defaults if needed.
 func (c *Config) ActualRedpandaYamlOrDefaults() *RedpandaYaml {
-	if c.redpandaYamlExists {
+	if c.redpandaYamlExists || c.redpandaYamlInitd {
 		return &c.redpandaYamlActual
 	}
+	defer func() { c.redpandaYamlInitd = true }()
 	redpandaYaml := DevDefault()
-	if c.configFlag != "" { // --config set but the file does not yet exist
-		redpandaYaml.fileLocation = c.configFlag
+	if c.p.ConfigFlag != "" { // --config set but the file does not yet exist
+		redpandaYaml.fileLocation = c.p.ConfigFlag
 	}
-	return redpandaYaml
+	c.redpandaYamlActual = *redpandaYaml
+	return &c.redpandaYamlActual
 }
 
 // MaterializedRpkYaml returns an rpk.yaml, starting with defaults, then
@@ -92,13 +116,14 @@ func (c *Config) ActualRpkYaml() (*RpkYaml, bool) {
 // ActualRpkYamlOrDefaults returns an actual rpk.yaml if it exists, otherwise
 // this returns a blank rpk.yaml. If this function tries to return a default
 // rpk.yaml but cannot read the user config dir, this returns an error.
-func (c *Config) ActualRpkYamlOrEmpty() (*RpkYaml, error) {
-	if c.rpkYamlExists {
+func (c *Config) ActualRpkYamlOrEmpty() (y *RpkYaml, err error) {
+	if c.rpkYamlExists || c.rpkYamlInitd {
 		return &c.rpkYamlActual, nil
 	}
+	defer func() { c.rpkYamlInitd = true }()
 	rpkYaml := emptyMaterializedRpkYaml()
-	if c.configFlag != "" {
-		rpkYaml.fileLocation = c.configFlag
+	if c.p.ConfigFlag != "" {
+		rpkYaml.fileLocation = c.p.ConfigFlag
 	} else {
 		path, err := DefaultRpkYamlPath()
 		if err != nil {
@@ -106,7 +131,13 @@ func (c *Config) ActualRpkYamlOrEmpty() (*RpkYaml, error) {
 		}
 		rpkYaml.fileLocation = path
 	}
-	return &rpkYaml, nil
+	c.rpkYamlActual = rpkYaml
+	return &c.rpkYamlActual, nil
+}
+
+// DevEnvOverrides returns any currently set dev overrides.
+func (c *Config) DevOverrides() DevOverrides {
+	return c.devOverrides
 }
 
 // LoadMaterializedRedpandaYaml is a shortcut for p.Load followed by
