@@ -118,10 +118,10 @@ struct compat_check<cluster::get_leadership_reply> {
     }
     static std::vector<compat_binary>
     to_binary(cluster::get_leadership_reply obj) {
-        return {compat_binary::serde(obj)};
+        return {compat_binary::serde(std::move(obj))};
     }
     static void check(cluster::get_leadership_reply obj, compat_binary test) {
-        verify_serde_only(obj, std::move(test));
+        verify_serde_only(std::move(obj), std::move(test));
     }
 };
 
