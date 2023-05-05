@@ -176,12 +176,14 @@ model::offset segment_collector::find_replacement_boundary() const {
     // _begin_inclusive (in gap): 22.
     if (it == _manifest.end()) {
         // first segment after gap: 25-29
-        it = std::find_if(
-          _manifest.begin(), _manifest.end(), [this](const auto& entry) {
-              return entry.base_offset > _begin_inclusive;
-          });
-
+        for (it = _manifest.begin(); it != _manifest.end(); ++it) {
+            const auto& entry = *it;
+            if (entry.base_offset > _begin_inclusive) {
+                break;
+            }
+        }
         // The collection is valid if it can reach the end of the gap: 24
+        vassert(it != _manifest.end(), "Trying to dereference end iterator");
         replace_boundary = it->base_offset - model::offset{1};
     } else {
         replace_boundary = it->committed_offset;
