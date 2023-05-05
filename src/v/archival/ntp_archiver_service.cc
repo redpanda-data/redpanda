@@ -249,7 +249,9 @@ ss::future<> ntp_archiver::sync_manifest_until_abort() {
               e);
         } catch (...) {
             vlog(
-              _rtclog.error, "upload loop error: {}", std::current_exception());
+              _rtclog.error,
+              "sync manifest loop error: {}",
+              std::current_exception());
         }
     }
 }
