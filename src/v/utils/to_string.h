@@ -61,18 +61,18 @@ struct fmt::formatter<ss::chunked_fifo<T>> {
     template<typename FormatContext>
     typename FormatContext::iterator
     format(const type& fifo, FormatContext& ctx) const {
-        format_to(ctx.out(), "[");
+        fmt::format_to(ctx.out(), "[");
         if (!fifo.empty()) {
             auto it = fifo.begin();
-            format_to(ctx.out(), "{}", *(it++));
+            fmt::format_to(ctx.out(), "{}", *(it++));
 
             for (; it != fifo.end(); ++it) {
-                format_to(ctx.out(), ", {}", *it);
+                fmt::format_to(ctx.out(), ", {}", *it);
             }
             return ctx.out();
         }
 
-        format_to(ctx.out(), "]");
+        fmt::format_to(ctx.out(), "]");
         return ctx.out();
     }
 };

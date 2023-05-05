@@ -198,19 +198,19 @@ fmt::formatter<security::tls::rule, char, void>::format<
   security::tls::rule const& r,
   fmt::basic_format_context<fmt::appender, char>& ctx) const {
     if (r._is_default) {
-        return format_to(ctx.out(), "DEFAULT");
+        return fmt::format_to(ctx.out(), "DEFAULT");
     }
-    format_to(ctx.out(), "RULE:");
+    fmt::format_to(ctx.out(), "RULE:");
     if (r._pattern.has_value()) {
-        format_to(ctx.out(), "{}", *r._pattern);
+        fmt::format_to(ctx.out(), "{}", *r._pattern);
     }
     if (r._replacement.has_value()) {
-        format_to(ctx.out(), "/{}", *r._replacement);
+        fmt::format_to(ctx.out(), "/{}", *r._replacement);
     }
     if (r._to_lower) {
-        format_to(ctx.out(), "/L");
+        fmt::format_to(ctx.out(), "/L");
     } else if (r._to_upper) {
-        format_to(ctx.out(), "/U");
+        fmt::format_to(ctx.out(), "/U");
     }
     return ctx.out();
 }
@@ -221,5 +221,5 @@ fmt::formatter<security::tls::principal_mapper, char, void>::format<
   fmt::basic_format_context<fmt::appender, char>>(
   security::tls::principal_mapper const& r,
   fmt::basic_format_context<fmt::appender, char>& ctx) const {
-    return format_to(ctx.out(), "[{}]", fmt::join(r._rules, ", "));
+    return fmt::format_to(ctx.out(), "[{}]", fmt::join(r._rules, ", "));
 }
