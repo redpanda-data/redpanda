@@ -170,8 +170,7 @@ ss::future<> partition_balancer_backend::do_tick() {
     _last_violations = std::move(plan_data.violations);
     if (
       _state.topics().has_updates_in_progress()
-      || plan_data.status == planner_status::cancellations_planned
-      || plan_data.status == planner_status::movement_planned) {
+      || plan_data.status == planner_status::actions_planned) {
         _last_status = partition_balancer_status::in_progress;
     } else if (plan_data.status == planner_status::waiting_for_reports) {
         _last_status = partition_balancer_status::starting;

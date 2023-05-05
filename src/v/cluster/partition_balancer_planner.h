@@ -47,8 +47,7 @@ public:
 
     enum class status {
         empty,
-        movement_planned,
-        cancellations_planned,
+        actions_planned,
         waiting_for_maintenance_end,
         waiting_for_reports,
     };

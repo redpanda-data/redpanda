@@ -708,7 +708,7 @@ partition_balancer_planner::plan_reassignments(
     if (_state.topics().has_updates_in_progress()) {
         get_unavailable_node_movement_cancellations(result, rrs);
         if (!result.cancellations.empty()) {
-            result.status = status::cancellations_planned;
+            result.status = status::actions_planned;
         }
         return result;
     }
@@ -732,7 +732,7 @@ partition_balancer_planner::plan_reassignments(
     get_full_node_reassignments(result, rrs);
 
     if (!result.reassignments.empty()) {
-        result.status = status::movement_planned;
+        result.status = status::actions_planned;
     }
 
     return result;
