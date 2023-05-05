@@ -268,7 +268,6 @@ result<allocated_partition> partition_balancer_planner::get_reallocation(
         return reallocation;
     }
 
-    rrs.moving_partitions.insert(ntp);
     rrs.planned_moves_size += partition_size;
     for (const auto r : reallocation.value().replicas()) {
         if (
@@ -294,7 +293,7 @@ result<allocated_partition> partition_balancer_planner::get_reallocation(
     return reallocation;
 }
 
-void partition_balancer_planner::plan_data::add_reassignment(
+void partition_balancer_planner::reallocation_request_state::add_reassignment(
   model::ntp ntp,
   const std::vector<model::broker_shard>& orig_replicas,
   allocated_partition reallocation,
@@ -307,8 +306,7 @@ void partition_balancer_planner::plan_data::add_reassignment(
       reallocation.replicas(),
       reason);
 
-    reassignments.emplace_back(
-      ntp_reassignment{.ntp = ntp, .allocated = std::move(reallocation)});
+    reassignments.emplace(ntp, std::move(reallocation));
 }
 
 /*
@@ -316,7 +314,7 @@ void partition_balancer_planner::plan_data::add_reassignment(
  * It can move to nodes that are violating soft_max_disk_usage_ratio constraint
  */
 void partition_balancer_planner::get_unavailable_nodes_reassignments(
-  plan_data& result, reallocation_request_state& rrs) {
+  reallocation_request_state& rrs) {
     if (rrs.timed_out_unavailable_nodes.empty()) {
         return;
     }
@@ -329,7 +327,7 @@ void partition_balancer_planner::get_unavailable_nodes_reassignments(
             }
 
             auto ntp = model::ntp(t.first.ns, t.first.tp, a.id);
-            if (rrs.moving_partitions.contains(ntp)) {
+            if (rrs.reassignments.contains(ntp)) {
                 continue;
             }
 
@@ -348,7 +346,7 @@ void partition_balancer_planner::get_unavailable_nodes_reassignments(
             if (
               !partition_size.has_value()
               || !is_partition_movement_possible(a.replicas, rrs)) {
-                result.failed_reassignments_count += 1;
+                rrs.failed_reassignments_count += 1;
                 continue;
             }
 
@@ -366,13 +364,13 @@ void partition_balancer_planner::get_unavailable_nodes_reassignments(
               stable_replicas,
               rrs);
             if (new_allocation_units) {
-                result.add_reassignment(
+                rrs.add_reassignment(
                   ntp,
                   a.replicas,
                   std::move(new_allocation_units.value()),
                   "unavailable nodes");
             } else {
-                result.failed_reassignments_count += 1;
+                rrs.failed_reassignments_count += 1;
             }
         }
     }
@@ -389,7 +387,7 @@ void partition_balancer_planner::get_unavailable_nodes_reassignments(
 /// arbitrarily choose the first appearing replica to remain there (note: this
 /// is probably not optimal choice).
 void partition_balancer_planner::get_rack_constraint_repair_reassignments(
-  plan_data& result, reallocation_request_state& rrs) {
+  reallocation_request_state& rrs) {
     if (_state.ntps_with_broken_rack_constraint().empty()) {
         return;
     }
@@ -409,7 +407,7 @@ void partition_balancer_planner::get_rack_constraint_repair_reassignments(
             return;
         }
 
-        if (rrs.moving_partitions.contains(ntp)) {
+        if (rrs.reassignments.contains(ntp)) {
             continue;
         }
 
@@ -449,7 +447,7 @@ void partition_balancer_planner::get_rack_constraint_repair_reassignments(
         if (
           !partition_size.has_value()
           || !is_partition_movement_possible(orig_replicas, rrs)) {
-            result.failed_reassignments_count += 1;
+            rrs.failed_reassignments_count += 1;
             continue;
         }
 
@@ -467,13 +465,13 @@ void partition_balancer_planner::get_rack_constraint_repair_reassignments(
           stable_replicas,
           rrs);
         if (new_allocation_units) {
-            result.add_reassignment(
+            rrs.add_reassignment(
               ntp,
               orig_replicas,
               std::move(new_allocation_units.value()),
               "rack constraint repair");
         } else {
-            result.failed_reassignments_count += 1;
+            rrs.failed_reassignments_count += 1;
         }
     }
 }
@@ -489,7 +487,7 @@ void partition_balancer_planner::get_rack_constraint_repair_reassignments(
  * request fails, we retry while leaving some of these replicas intact.
  */
 void partition_balancer_planner::get_full_node_reassignments(
-  plan_data& result, reallocation_request_state& rrs) {
+  reallocation_request_state& rrs) {
     std::vector<const node_disk_space*> sorted_full_nodes;
     for (const auto& kv : rrs.node_disk_reports) {
         const auto* node_disk = &kv.second;
@@ -529,7 +527,7 @@ void partition_balancer_planner::get_full_node_reassignments(
             if (partition_size_opt.has_value()) {
                 ntp_on_node_sizes.emplace(partition_size_opt.value(), ntp);
             } else {
-                result.failed_reassignments_count += 1;
+                rrs.failed_reassignments_count += 1;
             }
         }
 
@@ -541,7 +539,7 @@ void partition_balancer_planner::get_full_node_reassignments(
             }
 
             const auto& partition_to_move = ntp_size_it->second;
-            if (rrs.moving_partitions.contains(partition_to_move)) {
+            if (rrs.reassignments.contains(partition_to_move)) {
                 ntp_size_it++;
                 continue;
             }
@@ -554,7 +552,7 @@ void partition_balancer_planner::get_full_node_reassignments(
 
             if (!is_partition_movement_possible(
                   current_assignments->replicas, rrs)) {
-                result.failed_reassignments_count += 1;
+                rrs.failed_reassignments_count += 1;
                 ntp_size_it++;
                 continue;
             }
@@ -622,7 +620,7 @@ void partition_balancer_planner::get_full_node_reassignments(
                   rrs);
 
                 if (new_allocation_units) {
-                    result.add_reassignment(
+                    rrs.add_reassignment(
                       partition_to_move,
                       current_assignments->replicas,
                       std::move(new_allocation_units.value()),
@@ -634,7 +632,7 @@ void partition_balancer_planner::get_full_node_reassignments(
                 }
             }
             if (!success) {
-                result.failed_reassignments_count += 1;
+                rrs.failed_reassignments_count += 1;
             }
 
             ntp_size_it++;
@@ -647,7 +645,7 @@ void partition_balancer_planner::get_full_node_reassignments(
  * and previous replica set doesn't contain this node
  */
 void partition_balancer_planner::get_unavailable_node_movement_cancellations(
-  plan_data& result, const reallocation_request_state& rrs) {
+  reallocation_request_state& rrs) {
     for (const auto& update : _state.topics().updates_in_progress()) {
         if (update.second.get_state() != reconfiguration_state::in_progress) {
             continue;
@@ -679,13 +677,34 @@ void partition_balancer_planner::get_unavailable_node_movement_cancellations(
                       update.second.get_previous_replicas(),
                       current_assignments->replicas);
 
-                    result.cancellations.push_back(update.first);
+                    rrs.cancellations.emplace(update.first);
                 } else {
-                    result.failed_reassignments_count += 1;
+                    rrs.failed_reassignments_count += 1;
                 }
                 break;
             }
         }
+    }
+}
+
+void partition_balancer_planner::reallocation_request_state::collect_actions(
+  partition_balancer_planner::plan_data& result) {
+    result.reassignments.reserve(reassignments.size());
+    for (auto& [ntp, reallocated] : reassignments) {
+        result.reassignments.push_back(
+          ntp_reassignment{.ntp = ntp, .allocated = std::move(reallocated)});
+    }
+
+    result.failed_reassignments_count = failed_reassignments_count;
+
+    result.cancellations.reserve(cancellations.size());
+    std::move(
+      cancellations.begin(),
+      cancellations.end(),
+      std::back_inserter(result.cancellations));
+
+    if (!result.cancellations.empty() || !result.reassignments.empty()) {
+        result.status = status::actions_planned;
     }
 }
 
@@ -706,10 +725,9 @@ partition_balancer_planner::plan_reassignments(
     }
 
     if (_state.topics().has_updates_in_progress()) {
-        get_unavailable_node_movement_cancellations(result, rrs);
-        if (!result.cancellations.empty()) {
-            result.status = status::actions_planned;
-        }
+        get_unavailable_node_movement_cancellations(rrs);
+
+        rrs.collect_actions(result);
         return result;
     }
 
@@ -727,14 +745,11 @@ partition_balancer_planner::plan_reassignments(
 
     init_ntp_sizes_from_health_report(health_report, rrs);
 
-    get_unavailable_nodes_reassignments(result, rrs);
-    get_rack_constraint_repair_reassignments(result, rrs);
-    get_full_node_reassignments(result, rrs);
+    get_unavailable_nodes_reassignments(rrs);
+    get_rack_constraint_repair_reassignments(rrs);
+    get_full_node_reassignments(rrs);
 
-    if (!result.reassignments.empty()) {
-        result.status = status::actions_planned;
-    }
-
+    rrs.collect_actions(result);
     return result;
 }
 

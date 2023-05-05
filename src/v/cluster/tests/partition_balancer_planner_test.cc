@@ -532,12 +532,12 @@ FIXTURE_TEST(
     check_expected_assignments(new_replicas_1, expected_nodes);
     // First move less size node
     BOOST_REQUIRE_EQUAL(reassignments[0].ntp.tp.topic, "topic-1");
-    BOOST_REQUIRE_EQUAL(reassignments[0].ntp.tp.partition, 2);
+    BOOST_REQUIRE_EQUAL(reassignments[0].ntp.tp.partition, 1);
 
     auto new_replicas_2 = reassignments[1].allocated.replicas();
     check_expected_assignments(new_replicas_2, expected_nodes);
     BOOST_REQUIRE_EQUAL(reassignments[1].ntp.tp.topic, "topic-1");
-    BOOST_REQUIRE_EQUAL(reassignments[1].ntp.tp.partition, 1);
+    BOOST_REQUIRE_EQUAL(reassignments[1].ntp.tp.partition, 2);
 }
 
 /*

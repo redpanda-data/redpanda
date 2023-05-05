@@ -58,12 +58,6 @@ public:
         std::vector<model::ntp> cancellations;
         size_t failed_reassignments_count = 0;
         status status = status::empty;
-
-        void add_reassignment(
-          model::ntp,
-          const std::vector<model::broker_shard>& orig_replicas,
-          allocated_partition,
-          std::string_view reason);
     };
 
     plan_data plan_reassignments(
@@ -80,9 +74,18 @@ private:
 
         absl::flat_hash_map<model::ntp, size_t> ntp_sizes;
 
-        // Partitions that are planned to move in current planner request
-        absl::flat_hash_set<model::ntp> moving_partitions;
+        absl::btree_map<model::ntp, allocated_partition> reassignments;
+        size_t failed_reassignments_count = 0;
         uint64_t planned_moves_size = 0;
+        absl::btree_set<model::ntp> cancellations;
+
+        void add_reassignment(
+          model::ntp,
+          const std::vector<model::broker_shard>& orig_replicas,
+          allocated_partition,
+          std::string_view reason);
+
+        void collect_actions(plan_data&);
     };
 
     partition_constraints get_partition_constraints(
@@ -99,13 +102,11 @@ private:
       const std::vector<model::broker_shard>& stable_replicas,
       reallocation_request_state&);
 
-    void get_unavailable_nodes_reassignments(
-      plan_data&, reallocation_request_state&);
+    void get_unavailable_nodes_reassignments(reallocation_request_state&);
 
-    void get_rack_constraint_repair_reassignments(
-      plan_data&, reallocation_request_state&);
+    void get_rack_constraint_repair_reassignments(reallocation_request_state&);
 
-    void get_full_node_reassignments(plan_data&, reallocation_request_state&);
+    void get_full_node_reassignments(reallocation_request_state&);
 
     void init_per_node_state(
       const cluster_health_report&,
@@ -113,8 +114,8 @@ private:
       reallocation_request_state&,
       plan_data&) const;
 
-    void get_unavailable_node_movement_cancellations(
-      plan_data&, const reallocation_request_state&);
+    void
+    get_unavailable_node_movement_cancellations(reallocation_request_state&);
 
     bool is_partition_movement_possible(
       const std::vector<model::broker_shard>& current_replicas,
