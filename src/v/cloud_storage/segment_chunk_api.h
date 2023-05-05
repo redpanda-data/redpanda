@@ -11,6 +11,7 @@
 #pragma once
 
 #include "cloud_storage/segment_chunk.h"
+#include "model/metadata.h"
 #include "random/simple_time_jitter.h"
 #include "utils/retry_chain_node.h"
 
@@ -23,9 +24,9 @@ namespace cloud_storage {
 class remote_segment;
 
 class segment_chunks {
+public:
     using chunk_map_t = absl::btree_map<chunk_start_offset_t, segment_chunk>;
 
-public:
     explicit segment_chunks(
       remote_segment& segment, uint64_t max_hydrated_chunks);
 
@@ -104,5 +105,66 @@ private:
 
     uint64_t _max_hydrated_chunks;
 };
+
+class chunk_eviction_strategy {
+public:
+    chunk_eviction_strategy() = default;
+    chunk_eviction_strategy(const chunk_eviction_strategy&) = delete;
+    chunk_eviction_strategy(chunk_eviction_strategy&&) = delete;
+    chunk_eviction_strategy& operator=(const chunk_eviction_strategy&) = delete;
+    chunk_eviction_strategy& operator=(chunk_eviction_strategy&&) = delete;
+
+    virtual ~chunk_eviction_strategy() = default;
+
+    virtual ss::future<> evict(
+      std::vector<segment_chunks::chunk_map_t::iterator> chunks,
+      retry_chain_logger& rtc)
+      = 0;
+
+protected:
+    virtual ss::future<> close_files(
+      std::vector<ss::lw_shared_ptr<ss::file>> files_to_close,
+      retry_chain_logger& rtc);
+};
+
+class eager_chunk_eviction_strategy : public chunk_eviction_strategy {
+public:
+    ss::future<> evict(
+      std::vector<segment_chunks::chunk_map_t::iterator> chunks,
+      retry_chain_logger& rtc) override;
+};
+
+class capped_chunk_eviction_strategy : public chunk_eviction_strategy {
+public:
+    capped_chunk_eviction_strategy(
+      uint64_t max_chunks, uint64_t hydrated_chunks);
+
+    ss::future<> evict(
+      std::vector<segment_chunks::chunk_map_t::iterator> chunks,
+      retry_chain_logger& rtc) override;
+
+private:
+    uint64_t _max_chunks;
+    uint64_t _hydrated_chunks;
+};
+
+class predictive_chunk_eviction_strategy : public chunk_eviction_strategy {
+public:
+    predictive_chunk_eviction_strategy(
+      uint64_t max_chunks, uint64_t hydrated_chunks);
+
+    ss::future<> evict(
+      std::vector<segment_chunks::chunk_map_t::iterator> chunks,
+      retry_chain_logger& rtc) override;
+
+private:
+    uint64_t _max_chunks;
+    uint64_t _hydrated_chunks;
+};
+
+std::unique_ptr<chunk_eviction_strategy> make_eviction_strategy(
+  model::cloud_storage_chunk_eviction_strategy k,
+  uint64_t max_chunks,
+  uint64_t hydrated_chunks);
 
 } // namespace cloud_storage

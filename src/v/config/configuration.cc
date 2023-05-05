@@ -1556,6 +1556,17 @@ configuration::configuration()
       "are downloaded.",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       false)
+  , cloud_storage_chunk_eviction_strategy(
+      *this,
+      "cloud_storage_chunk_eviction_strategy",
+      "Selects a strategy for evicting unused cache chunks.",
+      {.needs_restart = needs_restart::no,
+       .example = "eager",
+       .visibility = visibility::tunable},
+      model::cloud_storage_chunk_eviction_strategy::eager,
+      {model::cloud_storage_chunk_eviction_strategy::eager,
+       model::cloud_storage_chunk_eviction_strategy::capped,
+       model::cloud_storage_chunk_eviction_strategy::predictive})
   , superusers(
       *this,
       "superusers",

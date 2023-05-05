@@ -468,6 +468,24 @@ leader_balancer_mode_to_string(leader_balancer_mode mode) {
 std::ostream& operator<<(std::ostream&, leader_balancer_mode);
 std::istream& operator>>(std::istream&, leader_balancer_mode&);
 
+enum class cloud_storage_chunk_eviction_strategy {
+    eager = 0,
+    capped = 1,
+    predictive = 2,
+};
+
+inline std::ostream&
+operator<<(std::ostream& os, cloud_storage_chunk_eviction_strategy st) {
+    switch (st) {
+    case cloud_storage_chunk_eviction_strategy::eager:
+        return os << "eager";
+    case cloud_storage_chunk_eviction_strategy::capped:
+        return os << "capped";
+    case cloud_storage_chunk_eviction_strategy::predictive:
+        return os << "predictive";
+    }
+}
+
 namespace internal {
 /*
  * Old version for use in backwards compatibility serialization /

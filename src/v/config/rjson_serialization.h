@@ -74,4 +74,8 @@ void rjson_serialize(
 void rjson_serialize(
   json::Writer<json::StringBuffer>& w, const model::leader_balancer_mode& v);
 
+void rjson_serialize(
+  json::Writer<json::StringBuffer>& w,
+  const model::cloud_storage_chunk_eviction_strategy& v);
+
 } // namespace json

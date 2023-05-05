@@ -213,65 +213,12 @@ ss::future<> segment_chunks::trim_chunk_files() {
         }
     }
 
-    bool need_trim = hydrated_chunks > _max_hydrated_chunks;
-    vlog(
-      _ctxlog.trace,
-      "{} hydrated chunks, need trim: {}",
-      hydrated_chunks,
-      need_trim);
-    if (!need_trim) {
-        co_return;
-    }
+    auto eviction_strategy = make_eviction_strategy(
+      config::shard_local_cfg().cloud_storage_chunk_eviction_strategy,
+      _max_hydrated_chunks,
+      hydrated_chunks);
 
-    std::sort(
-      to_release.begin(),
-      to_release.end(),
-      [](const auto& it_a, const auto& it_b) {
-          return it_a->second <=> it_b->second == std::strong_ordering::less;
-      });
-
-    std::vector<ss::lw_shared_ptr<ss::file>> files_to_close;
-    files_to_close.reserve(to_release.size());
-
-    // The files to close are first moved out of chunks and into a vector. This
-    // is necessary to make sure that the chunks are no longer able to use the
-    // file handle about to be closed before a scheduling point. If the file
-    // handles are closed in this loop, because the close operation is
-    // a scheduling point, it is possible that a chunk may get its file handle
-    // acquired by a reader while it is waiting to be closed.
-    for (auto& it : to_release) {
-        if (hydrated_chunks <= _max_hydrated_chunks) {
-            break;
-        }
-
-        vlog(
-          _ctxlog.trace,
-          "marking chunk starting at offset {} for release, pending for "
-          "release: {} chunks",
-          it->first,
-          hydrated_chunks - _max_hydrated_chunks);
-        files_to_close.push_back(std::move(it->second.handle.value()));
-        it->second.handle = std::nullopt;
-        it->second.current_state = chunk_state::not_available;
-        hydrated_chunks -= 1;
-    }
-
-    std::vector<ss::future<>> fs;
-    fs.reserve(files_to_close.size());
-
-    for (auto& f : files_to_close) {
-        fs.push_back(f->close());
-    }
-
-    auto close_results = co_await ss::when_all(fs.begin(), fs.end());
-    for (const auto& result : close_results) {
-        if (result.failed()) {
-            vlog(
-              _ctxlog.warn,
-              "failed to close a chunk file handle during eviction");
-        }
-    }
-
+    co_await eviction_strategy->evict(std::move(to_release), _ctxlog);
     _eviction_timer.rearm(_eviction_jitter());
 }
 
@@ -341,5 +288,141 @@ segment_chunks::get_next_chunk_start(chunk_start_offset_t f) const {
 segment_chunks::iterator_t segment_chunks::begin() { return _chunks.begin(); }
 
 segment_chunks::iterator_t segment_chunks::end() { return _chunks.end(); }
+
+ss::future<> chunk_eviction_strategy::close_files(
+  std::vector<ss::lw_shared_ptr<ss::file>> files_to_close,
+  retry_chain_logger& rtc) {
+    std::vector<ss::future<>> fs;
+    fs.reserve(files_to_close.size());
+
+    for (auto& f : files_to_close) {
+        fs.push_back(f->close());
+    }
+
+    auto close_results = co_await ss::when_all(fs.begin(), fs.end());
+    for (const auto& result : close_results) {
+        if (result.failed()) {
+            vlog(
+              rtc.warn, "failed to close a chunk file handle during eviction");
+        }
+    }
+}
+
+ss::future<> eager_chunk_eviction_strategy::evict(
+  std::vector<segment_chunks::chunk_map_t::iterator> chunks,
+  retry_chain_logger& rtc) {
+    std::vector<ss::lw_shared_ptr<ss::file>> files_to_close;
+    files_to_close.reserve(chunks.size());
+
+    for (auto& it : chunks) {
+        files_to_close.push_back(std::move(it->second.handle.value()));
+        it->second.handle = std::nullopt;
+        it->second.current_state = chunk_state::not_available;
+    }
+
+    co_return co_await close_files(std::move(files_to_close), rtc);
+}
+
+capped_chunk_eviction_strategy::capped_chunk_eviction_strategy(
+  uint64_t max_chunks, uint64_t hydrated_chunks)
+  : _max_chunks(max_chunks)
+  , _hydrated_chunks(hydrated_chunks) {}
+
+ss::future<> capped_chunk_eviction_strategy::evict(
+  std::vector<segment_chunks::chunk_map_t::iterator> chunks,
+  retry_chain_logger& rtc) {
+    bool need_trim = _hydrated_chunks > _max_chunks;
+    vlog(
+      rtc.trace,
+      "{} hydrated chunks, need trim: {}",
+      _hydrated_chunks,
+      need_trim);
+    if (!need_trim) {
+        co_return;
+    }
+
+    std::vector<ss::lw_shared_ptr<ss::file>> files_to_close;
+    files_to_close.reserve(chunks.size());
+    for (auto& it : chunks) {
+        if (_hydrated_chunks <= _max_chunks) {
+            break;
+        }
+
+        vlog(
+          rtc.trace,
+          "marking chunk starting at offset {} for release, pending for "
+          "release: {} chunks",
+          it->first,
+          _hydrated_chunks - _max_chunks);
+        files_to_close.push_back(std::move(it->second.handle.value()));
+        it->second.handle = std::nullopt;
+        it->second.current_state = chunk_state::not_available;
+        _hydrated_chunks -= 1;
+    }
+
+    co_return co_await close_files(std::move(files_to_close), rtc);
+}
+
+predictive_chunk_eviction_strategy::predictive_chunk_eviction_strategy(
+  uint64_t max_chunks, uint64_t hydrated_chunks)
+  : _max_chunks(max_chunks)
+  , _hydrated_chunks(hydrated_chunks) {}
+
+ss::future<> predictive_chunk_eviction_strategy::evict(
+  std::vector<segment_chunks::chunk_map_t::iterator> chunks,
+  retry_chain_logger& rtc) {
+    bool need_trim = _hydrated_chunks > _max_chunks;
+    vlog(
+      rtc.trace,
+      "{} hydrated chunks, need trim: {}",
+      _hydrated_chunks,
+      need_trim);
+    if (!need_trim) {
+        co_return;
+    }
+
+    std::sort(
+      chunks.begin(), chunks.end(), [](const auto& it_a, const auto& it_b) {
+          return it_a->second <=> it_b->second == std::strong_ordering::less;
+      });
+
+    std::vector<ss::lw_shared_ptr<ss::file>> files_to_close;
+    files_to_close.reserve(chunks.size());
+
+    for (auto& it : chunks) {
+        if (_hydrated_chunks <= _max_chunks) {
+            break;
+        }
+
+        vlog(
+          rtc.trace,
+          "marking chunk starting at offset {} for release, pending for "
+          "release: {} chunks",
+          it->first,
+          _hydrated_chunks - _max_chunks);
+        files_to_close.push_back(std::move(it->second.handle.value()));
+        it->second.handle = std::nullopt;
+        it->second.current_state = chunk_state::not_available;
+        _hydrated_chunks -= 1;
+    }
+
+    co_return co_await close_files(std::move(files_to_close), rtc);
+}
+
+std::unique_ptr<chunk_eviction_strategy> make_eviction_strategy(
+  model::cloud_storage_chunk_eviction_strategy k,
+  uint64_t max_chunks,
+  uint64_t hydrated_chunks) {
+    switch (k) {
+    case model::cloud_storage_chunk_eviction_strategy::eager:
+        return std::make_unique<eager_chunk_eviction_strategy>();
+    case model::cloud_storage_chunk_eviction_strategy::capped:
+        return std::make_unique<capped_chunk_eviction_strategy>(
+          max_chunks, hydrated_chunks);
+    case model::cloud_storage_chunk_eviction_strategy::predictive:
+        return std::make_unique<predictive_chunk_eviction_strategy>(
+          max_chunks, hydrated_chunks);
+    }
+}
 
 } // namespace cloud_storage
