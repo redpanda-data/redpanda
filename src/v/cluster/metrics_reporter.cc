@@ -283,7 +283,7 @@ ss::future<> metrics_reporter::try_initialize_cluster_info() {
     // a UUID.  No timeout: we cannot generate any reports until this
     // happens.
     if (_raft0->committed_offset() < model::offset{2}) {
-        vlog(clusterlog.info, "Waiting to initialize cluster UUID...");
+        vlog(clusterlog.info, "Waiting to initialize cluster metrics ID...");
         co_await _controller_stm.local().wait(
           model::offset{2},
           model::timeout_clock::time_point::max(),
@@ -326,7 +326,8 @@ ss::future<> metrics_reporter::try_initialize_cluster_info() {
     boost::uuids::random_generator_mt19937 uuid_gen(mersenne_twister);
 
     _cluster_info.uuid = fmt::format("{}", uuid_gen());
-    vlog(clusterlog.info, "Generated cluster UUID {}", _cluster_info.uuid);
+    vlog(
+      clusterlog.info, "Generated cluster metrics ID {}", _cluster_info.uuid);
 }
 
 /**
