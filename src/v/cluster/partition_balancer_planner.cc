@@ -66,10 +66,35 @@ partition_balancer_planner::partition_balancer_planner(
       _config.soft_max_disk_usage_ratio, _config.hard_max_disk_usage_ratio);
 }
 
+class partition_balancer_planner::request_context {
+public:
+    std::vector<model::node_id> all_nodes;
+    absl::flat_hash_set<model::node_id> all_unavailable_nodes;
+    absl::flat_hash_set<model::node_id> timed_out_unavailable_nodes;
+    size_t num_nodes_in_maintenance = 0;
+    absl::flat_hash_set<model::node_id> decommissioning_nodes;
+    absl::flat_hash_map<model::node_id, node_disk_space> node_disk_reports;
+
+    absl::flat_hash_map<model::ntp, size_t> ntp_sizes;
+
+    absl::btree_map<model::ntp, allocated_partition> reassignments;
+    size_t failed_reassignments_count = 0;
+    uint64_t planned_moves_size = 0;
+    absl::btree_set<model::ntp> cancellations;
+
+    void add_reassignment(
+      model::ntp,
+      const std::vector<model::broker_shard>& orig_replicas,
+      allocated_partition,
+      std::string_view reason);
+
+    void collect_actions(plan_data&);
+};
+
 void partition_balancer_planner::init_per_node_state(
   const cluster_health_report& health_report,
   const std::vector<raft::follower_metrics>& follower_metrics,
-  reallocation_request_state& rrs,
+  request_context& ctx,
   plan_data& result) const {
     for (const auto& [id, broker] : _state.members().nodes()) {
         if (
@@ -78,20 +103,20 @@ void partition_balancer_planner::init_per_node_state(
             continue;
         }
 
-        rrs.all_nodes.push_back(id);
+        ctx.all_nodes.push_back(id);
 
         if (
           broker.state.get_maintenance_state()
           == model::maintenance_state::active) {
             vlog(clusterlog.debug, "node {}: in maintenance", id);
-            rrs.num_nodes_in_maintenance += 1;
+            ctx.num_nodes_in_maintenance += 1;
         }
 
         if (
           broker.state.get_membership_state()
           == model::membership_state::draining) {
             vlog(clusterlog.debug, "node {}: decommissioning", id);
-            rrs.decommissioning_nodes.insert(id);
+            ctx.decommissioning_nodes.insert(id);
         }
     }
 
@@ -110,10 +135,10 @@ void partition_balancer_planner::init_per_node_state(
             continue;
         }
 
-        rrs.all_unavailable_nodes.insert(follower.id);
+        ctx.all_unavailable_nodes.insert(follower.id);
 
         if (unavailable_dur > _config.node_availability_timeout_sec) {
-            rrs.timed_out_unavailable_nodes.insert(follower.id);
+            ctx.timed_out_unavailable_nodes.insert(follower.id);
             model::timestamp unavailable_since = model::to_timestamp(
               model::timestamp_clock::now()
               - std::chrono::duration_cast<model::timestamp_clock::duration>(
@@ -127,11 +152,11 @@ void partition_balancer_planner::init_per_node_state(
         const uint64_t total = node_report.local_state.data_disk.total;
         const uint64_t free = node_report.local_state.data_disk.free;
 
-        rrs.node_disk_reports.emplace(
+        ctx.node_disk_reports.emplace(
           node_report.id, node_disk_space(node_report.id, total, total - free));
     }
 
-    for (const auto& [id, disk] : rrs.node_disk_reports) {
+    for (const auto& [id, disk] : ctx.node_disk_reports) {
         double used_space_ratio = disk.original_used_ratio();
         vlog(
           clusterlog.debug,
@@ -148,11 +173,11 @@ void partition_balancer_planner::init_per_node_state(
 }
 
 void partition_balancer_planner::init_ntp_sizes_from_health_report(
-  const cluster_health_report& health_report, reallocation_request_state& rrs) {
+  const cluster_health_report& health_report, request_context& ctx) {
     for (const auto& node_report : health_report.node_reports) {
         for (const auto& tp_ns : node_report.topics) {
             for (const auto& partition : tp_ns.partitions) {
-                rrs.ntp_sizes[model::ntp(
+                ctx.ntp_sizes[model::ntp(
                   tp_ns.tp_ns.ns, tp_ns.tp_ns.tp, partition.id)]
                   = partition.size_bytes;
             }
@@ -161,11 +186,11 @@ void partition_balancer_planner::init_ntp_sizes_from_health_report(
 }
 
 bool partition_balancer_planner::all_reports_received(
-  const reallocation_request_state& rrs) {
-    for (auto id : rrs.all_nodes) {
+  const request_context& ctx) {
+    for (auto id : ctx.all_nodes) {
         if (
-          !rrs.all_unavailable_nodes.contains(id)
-          && !rrs.node_disk_reports.contains(id)) {
+          !ctx.all_unavailable_nodes.contains(id)
+          && !ctx.node_disk_reports.contains(id)) {
             vlog(clusterlog.info, "No disk report for node {}", id);
             return false;
         }
@@ -175,13 +200,13 @@ bool partition_balancer_planner::all_reports_received(
 
 bool partition_balancer_planner::is_partition_movement_possible(
   const std::vector<model::broker_shard>& current_replicas,
-  const reallocation_request_state& rrs) {
+  const request_context& ctx) {
     // Check that nodes quorum is available
     size_t available_nodes_amount = std::count_if(
       current_replicas.begin(),
       current_replicas.end(),
-      [&rrs](const model::broker_shard& bs) {
-          return !rrs.all_unavailable_nodes.contains(bs.node_id);
+      [&ctx](const model::broker_shard& bs) {
+          return !ctx.all_unavailable_nodes.contains(bs.node_id);
       });
     if (available_nodes_amount * 2 < current_replicas.size()) {
         return false;
@@ -190,9 +215,9 @@ bool partition_balancer_planner::is_partition_movement_possible(
 }
 
 std::optional<size_t> partition_balancer_planner::get_partition_size(
-  const model::ntp& ntp, const reallocation_request_state& rrs) {
-    const auto ntp_data = rrs.ntp_sizes.find(ntp);
-    if (ntp_data == rrs.ntp_sizes.end()) {
+  const model::ntp& ntp, const request_context& ctx) {
+    const auto ntp_data = ctx.ntp_sizes.find(ntp);
+    if (ntp_data == ctx.ntp_sizes.end()) {
         vlog(
           clusterlog.info,
           "Partition {} status was not found in cluster health "
@@ -208,12 +233,12 @@ partition_constraints partition_balancer_planner::get_partition_constraints(
   const partition_assignment& assignments,
   size_t partition_size,
   double max_disk_usage_ratio,
-  reallocation_request_state& rrs) const {
+  request_context& ctx) const {
     allocation_constraints allocation_constraints;
 
     // Add constraint on least disk usage
     allocation_constraints.add(
-      least_disk_filled(max_disk_usage_ratio, rrs.node_disk_reports));
+      least_disk_filled(max_disk_usage_ratio, ctx.node_disk_reports));
 
     // Add constraint on partition max_disk_usage_ratio overfill
     size_t upper_bound_for_partition_size = partition_size
@@ -221,14 +246,14 @@ partition_constraints partition_balancer_planner::get_partition_constraints(
     allocation_constraints.add(disk_not_overflowed_by_partition(
       max_disk_usage_ratio,
       upper_bound_for_partition_size,
-      rrs.node_disk_reports));
+      ctx.node_disk_reports));
 
     // Add constraint on unavailable nodes
-    allocation_constraints.add(distinct_from(rrs.timed_out_unavailable_nodes));
+    allocation_constraints.add(distinct_from(ctx.timed_out_unavailable_nodes));
 
     // Add constraint on decommissioning nodes
-    if (!rrs.decommissioning_nodes.empty()) {
-        allocation_constraints.add(distinct_from(rrs.decommissioning_nodes));
+    if (!ctx.decommissioning_nodes.empty()) {
+        allocation_constraints.add(distinct_from(ctx.decommissioning_nodes));
     }
 
     return partition_constraints(
@@ -243,7 +268,7 @@ result<allocated_partition> partition_balancer_planner::get_reallocation(
   size_t partition_size,
   partition_constraints constraints,
   const std::vector<model::broker_shard>& stable_replicas,
-  reallocation_request_state& rrs) {
+  request_context& ctx) {
     vlog(
       clusterlog.debug,
       "trying to find reallocation for ntp {} with stable_replicas: {}",
@@ -268,13 +293,13 @@ result<allocated_partition> partition_balancer_planner::get_reallocation(
         return reallocation;
     }
 
-    rrs.planned_moves_size += partition_size;
+    ctx.planned_moves_size += partition_size;
     for (const auto r : reallocation.value().replicas()) {
         if (
           std::find(stable_replicas.begin(), stable_replicas.end(), r)
           == stable_replicas.end()) {
-            auto disk_it = rrs.node_disk_reports.find(r.node_id);
-            if (disk_it != rrs.node_disk_reports.end()) {
+            auto disk_it = ctx.node_disk_reports.find(r.node_id);
+            if (disk_it != ctx.node_disk_reports.end()) {
                 disk_it->second.assigned += partition_size;
             }
         }
@@ -283,8 +308,8 @@ result<allocated_partition> partition_balancer_planner::get_reallocation(
         if (
           std::find(stable_replicas.begin(), stable_replicas.end(), r)
           == stable_replicas.end()) {
-            auto disk_it = rrs.node_disk_reports.find(r.node_id);
-            if (disk_it != rrs.node_disk_reports.end()) {
+            auto disk_it = ctx.node_disk_reports.find(r.node_id);
+            if (disk_it != ctx.node_disk_reports.end()) {
                 disk_it->second.released += partition_size;
             }
         }
@@ -293,7 +318,7 @@ result<allocated_partition> partition_balancer_planner::get_reallocation(
     return reallocation;
 }
 
-void partition_balancer_planner::reallocation_request_state::add_reassignment(
+void partition_balancer_planner::request_context::add_reassignment(
   model::ntp ntp,
   const std::vector<model::broker_shard>& orig_replicas,
   allocated_partition reallocation,
@@ -314,26 +339,26 @@ void partition_balancer_planner::reallocation_request_state::add_reassignment(
  * It can move to nodes that are violating soft_max_disk_usage_ratio constraint
  */
 void partition_balancer_planner::get_unavailable_nodes_reassignments(
-  reallocation_request_state& rrs) {
-    if (rrs.timed_out_unavailable_nodes.empty()) {
+  request_context& ctx) {
+    if (ctx.timed_out_unavailable_nodes.empty()) {
         return;
     }
 
     for (const auto& t : _state.topics().topics_map()) {
         for (const auto& a : t.second.get_assignments()) {
             // End adding movements if batch is collected
-            if (rrs.planned_moves_size >= _config.movement_disk_size_batch) {
+            if (ctx.planned_moves_size >= _config.movement_disk_size_batch) {
                 return;
             }
 
             auto ntp = model::ntp(t.first.ns, t.first.tp, a.id);
-            if (rrs.reassignments.contains(ntp)) {
+            if (ctx.reassignments.contains(ntp)) {
                 continue;
             }
 
             std::vector<model::broker_shard> stable_replicas;
             for (const auto& bs : a.replicas) {
-                if (!rrs.timed_out_unavailable_nodes.contains(bs.node_id)) {
+                if (!ctx.timed_out_unavailable_nodes.contains(bs.node_id)) {
                     stable_replicas.push_back(bs);
                 }
             }
@@ -342,11 +367,11 @@ void partition_balancer_planner::get_unavailable_nodes_reassignments(
                 continue;
             }
 
-            auto partition_size = get_partition_size(ntp, rrs);
+            auto partition_size = get_partition_size(ntp, ctx);
             if (
               !partition_size.has_value()
-              || !is_partition_movement_possible(a.replicas, rrs)) {
-                rrs.failed_reassignments_count += 1;
+              || !is_partition_movement_possible(a.replicas, ctx)) {
+                ctx.failed_reassignments_count += 1;
                 continue;
             }
 
@@ -354,7 +379,7 @@ void partition_balancer_planner::get_unavailable_nodes_reassignments(
               a,
               partition_size.value(),
               _config.hard_max_disk_usage_ratio,
-              rrs);
+              ctx);
 
             auto new_allocation_units = get_reallocation(
               ntp,
@@ -362,15 +387,15 @@ void partition_balancer_planner::get_unavailable_nodes_reassignments(
               partition_size.value(),
               std::move(constraints),
               stable_replicas,
-              rrs);
+              ctx);
             if (new_allocation_units) {
-                rrs.add_reassignment(
+                ctx.add_reassignment(
                   ntp,
                   a.replicas,
                   std::move(new_allocation_units.value()),
                   "unavailable nodes");
             } else {
-                rrs.failed_reassignments_count += 1;
+                ctx.failed_reassignments_count += 1;
             }
         }
     }
@@ -387,14 +412,14 @@ void partition_balancer_planner::get_unavailable_nodes_reassignments(
 /// arbitrarily choose the first appearing replica to remain there (note: this
 /// is probably not optimal choice).
 void partition_balancer_planner::get_rack_constraint_repair_reassignments(
-  reallocation_request_state& rrs) {
+  request_context& ctx) {
     if (_state.ntps_with_broken_rack_constraint().empty()) {
         return;
     }
 
     absl::flat_hash_set<model::rack_id> available_racks;
-    for (auto node_id : rrs.all_nodes) {
-        if (!rrs.timed_out_unavailable_nodes.contains(node_id)) {
+    for (auto node_id : ctx.all_nodes) {
+        if (!ctx.timed_out_unavailable_nodes.contains(node_id)) {
             auto rack = _state.members().get_node_rack_id(node_id);
             if (rack) {
                 available_racks.insert(*rack);
@@ -403,11 +428,11 @@ void partition_balancer_planner::get_rack_constraint_repair_reassignments(
     }
 
     for (const auto& ntp : _state.ntps_with_broken_rack_constraint()) {
-        if (rrs.planned_moves_size >= _config.movement_disk_size_batch) {
+        if (ctx.planned_moves_size >= _config.movement_disk_size_batch) {
             return;
         }
 
-        if (rrs.reassignments.contains(ntp)) {
+        if (ctx.reassignments.contains(ntp)) {
             continue;
         }
 
@@ -443,11 +468,11 @@ void partition_balancer_planner::get_rack_constraint_repair_reassignments(
             continue;
         }
 
-        auto partition_size = get_partition_size(ntp, rrs);
+        auto partition_size = get_partition_size(ntp, ctx);
         if (
           !partition_size.has_value()
-          || !is_partition_movement_possible(orig_replicas, rrs)) {
-            rrs.failed_reassignments_count += 1;
+          || !is_partition_movement_possible(orig_replicas, ctx)) {
+            ctx.failed_reassignments_count += 1;
             continue;
         }
 
@@ -455,7 +480,7 @@ void partition_balancer_planner::get_rack_constraint_repair_reassignments(
           *assignment,
           partition_size.value(),
           _config.hard_max_disk_usage_ratio,
-          rrs);
+          ctx);
 
         auto new_allocation_units = get_reallocation(
           ntp,
@@ -463,15 +488,15 @@ void partition_balancer_planner::get_rack_constraint_repair_reassignments(
           partition_size.value(),
           std::move(constraints),
           stable_replicas,
-          rrs);
+          ctx);
         if (new_allocation_units) {
-            rrs.add_reassignment(
+            ctx.add_reassignment(
               ntp,
               orig_replicas,
               std::move(new_allocation_units.value()),
               "rack constraint repair");
         } else {
-            rrs.failed_reassignments_count += 1;
+            ctx.failed_reassignments_count += 1;
         }
     }
 }
@@ -487,9 +512,9 @@ void partition_balancer_planner::get_rack_constraint_repair_reassignments(
  * request fails, we retry while leaving some of these replicas intact.
  */
 void partition_balancer_planner::get_full_node_reassignments(
-  reallocation_request_state& rrs) {
+  request_context& ctx) {
     std::vector<const node_disk_space*> sorted_full_nodes;
-    for (const auto& kv : rrs.node_disk_reports) {
+    for (const auto& kv : ctx.node_disk_reports) {
         const auto* node_disk = &kv.second;
         if (node_disk->final_used_ratio() > _config.soft_max_disk_usage_ratio) {
             sorted_full_nodes.push_back(node_disk);
@@ -517,29 +542,29 @@ void partition_balancer_planner::get_full_node_reassignments(
     }
 
     for (const auto* node_disk : sorted_full_nodes) {
-        if (rrs.planned_moves_size >= _config.movement_disk_size_batch) {
+        if (ctx.planned_moves_size >= _config.movement_disk_size_batch) {
             return;
         }
 
         absl::btree_multimap<size_t, model::ntp> ntp_on_node_sizes;
         for (const auto& ntp : ntp_on_nodes[node_disk->node_id]) {
-            auto partition_size_opt = get_partition_size(ntp, rrs);
+            auto partition_size_opt = get_partition_size(ntp, ctx);
             if (partition_size_opt.has_value()) {
                 ntp_on_node_sizes.emplace(partition_size_opt.value(), ntp);
             } else {
-                rrs.failed_reassignments_count += 1;
+                ctx.failed_reassignments_count += 1;
             }
         }
 
         auto ntp_size_it = ntp_on_node_sizes.begin();
         while (node_disk->final_used_ratio() > _config.soft_max_disk_usage_ratio
                && ntp_size_it != ntp_on_node_sizes.end()) {
-            if (rrs.planned_moves_size >= _config.movement_disk_size_batch) {
+            if (ctx.planned_moves_size >= _config.movement_disk_size_batch) {
                 return;
             }
 
             const auto& partition_to_move = ntp_size_it->second;
-            if (rrs.reassignments.contains(partition_to_move)) {
+            if (ctx.reassignments.contains(partition_to_move)) {
                 ntp_size_it++;
                 continue;
             }
@@ -551,8 +576,8 @@ void partition_balancer_planner::get_full_node_reassignments(
                 partition_to_move.tp.partition);
 
             if (!is_partition_movement_possible(
-                  current_assignments->replicas, rrs)) {
-                rrs.failed_reassignments_count += 1;
+                  current_assignments->replicas, ctx)) {
+                ctx.failed_reassignments_count += 1;
                 ntp_size_it++;
                 continue;
             }
@@ -561,7 +586,7 @@ void partition_balancer_planner::get_full_node_reassignments(
               *current_assignments,
               ntp_size_it->first,
               _config.soft_max_disk_usage_ratio,
-              rrs);
+              ctx);
 
             struct full_node_replica {
                 model::broker_shard bs;
@@ -571,12 +596,12 @@ void partition_balancer_planner::get_full_node_reassignments(
             std::vector<model::broker_shard> stable_replicas;
 
             for (const auto& r : current_assignments->replicas) {
-                if (rrs.timed_out_unavailable_nodes.contains(r.node_id)) {
+                if (ctx.timed_out_unavailable_nodes.contains(r.node_id)) {
                     continue;
                 }
 
-                auto disk_it = rrs.node_disk_reports.find(r.node_id);
-                if (disk_it == rrs.node_disk_reports.end()) {
+                auto disk_it = ctx.node_disk_reports.find(r.node_id);
+                if (disk_it == ctx.node_disk_reports.end()) {
                     // A replica on a node we recently lost contact with (but
                     // availability timeout hasn't elapsed yet). Better leave it
                     // where it is.
@@ -617,10 +642,10 @@ void partition_balancer_planner::get_full_node_reassignments(
                   ntp_size_it->first,
                   constraints,
                   stable_replicas,
-                  rrs);
+                  ctx);
 
                 if (new_allocation_units) {
-                    rrs.add_reassignment(
+                    ctx.add_reassignment(
                       partition_to_move,
                       current_assignments->replicas,
                       std::move(new_allocation_units.value()),
@@ -632,7 +657,7 @@ void partition_balancer_planner::get_full_node_reassignments(
                 }
             }
             if (!success) {
-                rrs.failed_reassignments_count += 1;
+                ctx.failed_reassignments_count += 1;
             }
 
             ntp_size_it++;
@@ -645,7 +670,7 @@ void partition_balancer_planner::get_full_node_reassignments(
  * and previous replica set doesn't contain this node
  */
 void partition_balancer_planner::get_unavailable_node_movement_cancellations(
-  reallocation_request_state& rrs) {
+  request_context& ctx) {
     for (const auto& update : _state.topics().updates_in_progress()) {
         if (update.second.get_state() != reconfiguration_state::in_progress) {
             continue;
@@ -655,7 +680,7 @@ void partition_balancer_planner::get_unavailable_node_movement_cancellations(
         bool was_on_decommissioning_node = false;
         for (const auto& r : update.second.get_previous_replicas()) {
             previous_replicas_set.insert(r.node_id);
-            if (rrs.decommissioning_nodes.contains(r.node_id)) {
+            if (ctx.decommissioning_nodes.contains(r.node_id)) {
                 was_on_decommissioning_node = true;
             }
         }
@@ -667,7 +692,7 @@ void partition_balancer_planner::get_unavailable_node_movement_cancellations(
         }
         for (const auto& r : current_assignments->replicas) {
             if (
-              rrs.timed_out_unavailable_nodes.contains(r.node_id)
+              ctx.timed_out_unavailable_nodes.contains(r.node_id)
               && !previous_replicas_set.contains(r.node_id)) {
                 if (!was_on_decommissioning_node) {
                     vlog(
@@ -677,9 +702,9 @@ void partition_balancer_planner::get_unavailable_node_movement_cancellations(
                       update.second.get_previous_replicas(),
                       current_assignments->replicas);
 
-                    rrs.cancellations.emplace(update.first);
+                    ctx.cancellations.emplace(update.first);
                 } else {
-                    rrs.failed_reassignments_count += 1;
+                    ctx.failed_reassignments_count += 1;
                 }
                 break;
             }
@@ -687,7 +712,7 @@ void partition_balancer_planner::get_unavailable_node_movement_cancellations(
     }
 }
 
-void partition_balancer_planner::reallocation_request_state::collect_actions(
+void partition_balancer_planner::request_context::collect_actions(
   partition_balancer_planner::plan_data& result) {
     result.reassignments.reserve(reassignments.size());
     for (auto& [ntp, reallocated] : reassignments) {
@@ -712,12 +737,12 @@ partition_balancer_planner::plan_data
 partition_balancer_planner::plan_reassignments(
   const cluster_health_report& health_report,
   const std::vector<raft::follower_metrics>& follower_metrics) {
-    reallocation_request_state rrs;
+    request_context ctx;
     plan_data result;
 
-    init_per_node_state(health_report, follower_metrics, rrs, result);
+    init_per_node_state(health_report, follower_metrics, ctx, result);
 
-    if (rrs.num_nodes_in_maintenance > 0) {
+    if (ctx.num_nodes_in_maintenance > 0) {
         if (!result.violations.is_empty()) {
             result.status = status::waiting_for_maintenance_end;
         }
@@ -725,13 +750,13 @@ partition_balancer_planner::plan_reassignments(
     }
 
     if (_state.topics().has_updates_in_progress()) {
-        get_unavailable_node_movement_cancellations(rrs);
+        get_unavailable_node_movement_cancellations(ctx);
 
-        rrs.collect_actions(result);
+        ctx.collect_actions(result);
         return result;
     }
 
-    if (!all_reports_received(rrs)) {
+    if (!all_reports_received(ctx)) {
         result.status = status::waiting_for_reports;
         return result;
     }
@@ -743,13 +768,13 @@ partition_balancer_planner::plan_reassignments(
         return result;
     }
 
-    init_ntp_sizes_from_health_report(health_report, rrs);
+    init_ntp_sizes_from_health_report(health_report, ctx);
 
-    get_unavailable_nodes_reassignments(rrs);
-    get_rack_constraint_repair_reassignments(rrs);
-    get_full_node_reassignments(rrs);
+    get_unavailable_nodes_reassignments(ctx);
+    get_rack_constraint_repair_reassignments(ctx);
+    get_full_node_reassignments(ctx);
 
-    rrs.collect_actions(result);
+    ctx.collect_actions(result);
     return result;
 }
 

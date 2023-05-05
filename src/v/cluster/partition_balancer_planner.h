@@ -64,35 +64,13 @@ public:
       const cluster_health_report&, const std::vector<raft::follower_metrics>&);
 
 private:
-    struct reallocation_request_state {
-        std::vector<model::node_id> all_nodes;
-        absl::flat_hash_set<model::node_id> all_unavailable_nodes;
-        absl::flat_hash_set<model::node_id> timed_out_unavailable_nodes;
-        size_t num_nodes_in_maintenance = 0;
-        absl::flat_hash_set<model::node_id> decommissioning_nodes;
-        absl::flat_hash_map<model::node_id, node_disk_space> node_disk_reports;
-
-        absl::flat_hash_map<model::ntp, size_t> ntp_sizes;
-
-        absl::btree_map<model::ntp, allocated_partition> reassignments;
-        size_t failed_reassignments_count = 0;
-        uint64_t planned_moves_size = 0;
-        absl::btree_set<model::ntp> cancellations;
-
-        void add_reassignment(
-          model::ntp,
-          const std::vector<model::broker_shard>& orig_replicas,
-          allocated_partition,
-          std::string_view reason);
-
-        void collect_actions(plan_data&);
-    };
+    class request_context;
 
     partition_constraints get_partition_constraints(
       const partition_assignment& assignments,
       size_t partition_size,
       double max_disk_usage_ratio,
-      reallocation_request_state&) const;
+      request_context&) const;
 
     result<allocated_partition> get_reallocation(
       const model::ntp&,
@@ -100,34 +78,33 @@ private:
       size_t partition_size,
       partition_constraints,
       const std::vector<model::broker_shard>& stable_replicas,
-      reallocation_request_state&);
+      request_context&);
 
-    void get_unavailable_nodes_reassignments(reallocation_request_state&);
+    void get_unavailable_nodes_reassignments(request_context&);
 
-    void get_rack_constraint_repair_reassignments(reallocation_request_state&);
+    void get_rack_constraint_repair_reassignments(request_context&);
 
-    void get_full_node_reassignments(reallocation_request_state&);
+    void get_full_node_reassignments(request_context&);
 
     void init_per_node_state(
       const cluster_health_report&,
       const std::vector<raft::follower_metrics>&,
-      reallocation_request_state&,
+      request_context&,
       plan_data&) const;
 
-    void
-    get_unavailable_node_movement_cancellations(reallocation_request_state&);
+    void get_unavailable_node_movement_cancellations(request_context&);
 
     bool is_partition_movement_possible(
       const std::vector<model::broker_shard>& current_replicas,
-      const reallocation_request_state&);
+      const request_context&);
 
     void init_ntp_sizes_from_health_report(
-      const cluster_health_report& health_report, reallocation_request_state&);
+      const cluster_health_report& health_report, request_context&);
 
-    std::optional<size_t> get_partition_size(
-      const model::ntp& ntp, const reallocation_request_state&);
+    std::optional<size_t>
+    get_partition_size(const model::ntp& ntp, const request_context&);
 
-    bool all_reports_received(const reallocation_request_state&);
+    bool all_reports_received(const request_context&);
 
     planner_config _config;
     partition_balancer_state& _state;
