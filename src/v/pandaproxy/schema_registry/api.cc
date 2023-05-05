@@ -9,11 +9,13 @@
 
 #include "pandaproxy/schema_registry/api.h"
 
+#include "config/configuration.h"
 #include "kafka/client/client.h"
 #include "kafka/client/configuration.h"
 #include "model/metadata.h"
 #include "pandaproxy/logger.h"
 #include "pandaproxy/schema_registry/configuration.h"
+#include "pandaproxy/schema_registry/schema_id_cache.h"
 #include "pandaproxy/schema_registry/seq_writer.h"
 #include "pandaproxy/schema_registry/service.h"
 #include "pandaproxy/schema_registry/sharded_store.h"
@@ -43,6 +45,10 @@ api::~api() noexcept = default;
 ss::future<> api::start() {
     _store = std::make_unique<sharded_store>();
     co_await _store->start(_sg);
+    co_await _schema_id_cache.start(ss::sharded_parameter([] {
+        return config::shard_local_cfg()
+          .kafka_schema_id_validation_cache_capacity.bind();
+    }));
     co_await _client.start(
       config::to_yaml(_client_cfg, config::redact_secrets::no),
       [this](std::exception_ptr ex) {
@@ -66,6 +72,7 @@ ss::future<> api::stop() {
     co_await _service.stop();
     co_await _sequencer.stop();
     co_await _client.stop();
+    co_await _schema_id_cache.stop();
     if (_store) {
         co_await _store->stop();
     }
