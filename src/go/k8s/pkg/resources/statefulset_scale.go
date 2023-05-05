@@ -302,7 +302,7 @@ func (r *StatefulSetResource) disableMaintenanceModeOnDecommissionedNodes(
 	}
 
 	r.logger.Info("Forcing deletion of maintenance mode for the decommissioned node", "node_id", ordinal)
-	err = adminAPI.DisableMaintenanceMode(ctx, int(ordinal))
+	err = adminAPI.DisableMaintenanceMode(ctx, int(ordinal), false)
 	if err != nil {
 		var httpErr *admin.HTTPResponseError
 		if errors.As(err, &httpErr) {
