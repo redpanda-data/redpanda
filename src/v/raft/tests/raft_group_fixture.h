@@ -148,10 +148,15 @@ struct raft_node {
           storage.local().log_mgr().manage(std::move(ntp_cfg)).get0());
 
         recovery_throttle
-          .start(ss::sharded_parameter([] {
-              return config::shard_local_cfg()
-                .raft_learner_recovery_rate.bind();
-          }))
+          .start(
+            ss::sharded_parameter([] {
+                return config::shard_local_cfg()
+                  .raft_learner_recovery_rate.bind();
+            }),
+            ss::sharded_parameter([] {
+                return config::shard_local_cfg()
+                  .raft_recovery_throttle_disable_dynamic_mode.bind();
+            }))
           .get();
 
         // setup consensus
@@ -346,7 +351,7 @@ struct raft_node {
     bool started = false;
     model::broker broker;
     ss::sharded<storage::api> storage;
-    ss::sharded<raft::recovery_throttle> recovery_throttle;
+    ss::sharded<raft::coordinated_recovery_throttle> recovery_throttle;
     std::unique_ptr<storage::log> log;
     ss::sharded<rpc::connection_cache> cache;
     ss::sharded<rpc::rpc_server> server;
