@@ -132,8 +132,10 @@ struct manifest_topic_configuration {
         std::optional<size_t> segment_size;
         tristate<size_t> retention_bytes{std::nullopt};
         tristate<std::chrono::milliseconds> retention_duration{std::nullopt};
+        bool operator==(const topic_properties& other) const = default;
     };
     topic_properties properties;
+    bool operator==(const manifest_topic_configuration& other) const = default;
 };
 
 struct segment_meta {
