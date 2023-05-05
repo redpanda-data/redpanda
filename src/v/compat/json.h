@@ -110,6 +110,15 @@ void read_value(json::Value const& v, std::vector<T>& target) {
 }
 
 template<typename T>
+void read_value(json::Value const& v, fragmented_vector<T>& target) {
+    for (auto const& e : v.GetArray()) {
+        auto t = T{};
+        read_value(e, t);
+        target.push_back(t);
+    }
+}
+
+template<typename T>
 void read_value(json::Value const& v, std::optional<T>& target) {
     if (v.IsNull()) {
         target = std::nullopt;
@@ -163,7 +172,7 @@ requires(!std::is_enum_v<T>) void read_member(
     if (it != v.MemberEnd()) {
         read_value(it->value, target);
     } else {
-        target = {};
+        target = T{};
         std::cout << "key " << key << " not found, default initializing"
                   << std::endl;
     }
