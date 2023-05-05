@@ -257,13 +257,18 @@ ss::future<> metadata_dissemination_service::process_get_update_reply(
     }
     // Update all NTP leaders
     vlog(clusterlog.trace, "updating leadership from get_metadata");
-    return _leaders
-      .invoke_on_all([reply = std::move(reply_result.value())](
-                       partition_leaders_table& leaders) mutable {
-          for (auto& l : reply.leaders) {
-              leaders.update_partition_leader(l.ntp, l.term, l.leader_id);
-          }
-      })
+
+    return ss::do_with(
+             std::move(reply_result.value().leaders),
+             [this](auto& reply) {
+                 return _leaders.invoke_on_all(
+                   [&reply](partition_leaders_table& leaders) {
+                       for (const auto& l : reply) {
+                           leaders.update_partition_leader(
+                             l.ntp, l.term, l.leader_id);
+                       }
+                   });
+             })
       .then([&meta] { meta.success = true; });
 }
 

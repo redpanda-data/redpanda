@@ -184,11 +184,11 @@ struct get_leadership_reply
       get_leadership_reply,
       serde::version<0>,
       serde::compat_version<0>> {
-    std::vector<ntp_leader> leaders;
+    fragmented_vector<ntp_leader> leaders;
 
     get_leadership_reply() noexcept = default;
 
-    explicit get_leadership_reply(std::vector<ntp_leader> leaders)
+    explicit get_leadership_reply(fragmented_vector<ntp_leader> leaders)
       : leaders(std::move(leaders)) {}
 
     friend bool
@@ -202,6 +202,13 @@ struct get_leadership_reply
     }
 
     auto serde_fields() { return std::tie(leaders); }
+
+    /*
+     * Support for serde compat check
+     */
+    get_leadership_reply copy() const {
+        return get_leadership_reply{leaders.copy()};
+    }
 };
 
 } // namespace cluster
@@ -213,7 +220,7 @@ struct adl<cluster::get_leadership_reply> {
         serialize(out, r.leaders);
     }
     cluster::get_leadership_reply from(iobuf_parser& in) {
-        auto leaders = adl<std::vector<cluster::ntp_leader>>{}.from(in);
+        auto leaders = adl<fragmented_vector<cluster::ntp_leader>>{}.from(in);
         return cluster::get_leadership_reply(std::move(leaders));
     }
 };
