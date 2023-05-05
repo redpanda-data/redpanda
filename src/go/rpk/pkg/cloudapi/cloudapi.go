@@ -16,6 +16,9 @@ import (
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/httpapi"
 )
 
+// ProdURL is the hostname of the Redpanda API.
+const ProdURL = "https://cloud-api.prd.cloud.redpanda.com"
+
 // Client talks to the cloud API.
 type Client struct {
 	cl *httpapi.Client
