@@ -1464,6 +1464,7 @@ void application::wire_up_redpanda_services(
       std::ref(metadata_cache),
       std::ref(_connection_cache),
       std::ref(controller->get_partition_leaders()),
+      node_id,
       std::ref(controller))
       .get();
 

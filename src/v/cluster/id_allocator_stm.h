@@ -13,6 +13,7 @@
 
 #include "cluster/fwd.h"
 #include "cluster/persisted_stm.h"
+#include "cluster/types.h"
 #include "model/fundamental.h"
 #include "model/record.h"
 #include "raft/errc.h"
