@@ -85,13 +85,15 @@ metadata_dissemination_handler::do_update_leadership(
 
 static get_leadership_reply
 make_get_leadership_reply(const partition_leaders_table& leaders) {
-    std::vector<ntp_leader> ret;
+    fragmented_vector<ntp_leader> ret;
+
     leaders.for_each_leader([&ret](
                               model::topic_namespace_view tp_ns,
                               model::partition_id pid,
                               std::optional<model::node_id> leader,
                               model::term_id term) mutable {
-        ret.emplace_back(model::ntp(tp_ns.ns, tp_ns.tp, pid), term, leader);
+        ret.push_back(
+          ntp_leader{model::ntp(tp_ns.ns, tp_ns.tp, pid), term, leader});
     });
 
     return get_leadership_reply{std::move(ret)};
