@@ -206,6 +206,23 @@ def decode_topic_command_serde(k_rdr: Reader, rdr: Reader):
         cmd['topic'] = rdr.read_string()
         k_rdr.read_string()
         k_rdr.read_string()
+    elif cmd['type'] == 10:
+        # This command replaces delete_topic in Redpanda 23.2
+        cmd['type_string'] = 'topic_lifecycle_transition'
+        cmd['namespace'] = k_rdr.read_string()
+        cmd['topic'] = k_rdr.read_string()
+        cmd['transition'] = rdr.read_envelope(
+            lambda rdr, _v: {
+                'nt':
+                rdr.read_envelope(
+                    lambda rdr, _v: {
+                        'namespace': rdr.read_string(),
+                        'topic': rdr.read_string(),
+                        'initial_revision_id': rdr.read_int64()
+                    }),
+                'mode':
+                rdr.read_serde_enum(),
+            })
     elif cmd['type'] == 2:
         cmd['type_string'] = 'update_partitions'
         cmd['namespace'] = k_rdr.read_string()
