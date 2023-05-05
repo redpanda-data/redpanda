@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/lestrrat-go/jwx/jwt"
-	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cloud/cloudcfg"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 )
 
 type (
@@ -17,12 +17,14 @@ type (
 	Client interface {
 		// Audience returns the audience used to generate the token.
 		Audience() string
+		// AuthClientID returns the auth client ID that is used to generate the token.
+		AuthClientID() string
 		// Token is the access token request using client credentials flow.
-		Token(context.Context, cloudcfg.Config) (Token, error)
+		Token(ctx context.Context, clientID, clientSecret string) (Token, error)
 		// DeviceCode is the device authorization request in the device flow.
-		DeviceCode(context.Context, cloudcfg.Config) (DeviceCode, error)
+		DeviceCode(context.Context) (DeviceCode, error)
 		// DeviceToken is the access token request using device flow.
-		DeviceToken(ctx context.Context, cfg cloudcfg.Config, deviceCode string) (Token, error)
+		DeviceToken(ctx context.Context, deviceCode string) (Token, error)
 		// URLOpener is the utility function to open URLs in the browser for
 		// authentication purposes.
 		URLOpener(string) error
@@ -56,37 +58,37 @@ type (
 // ClientCredentialFlow follows the OAuth 2.0 client credential authentication
 // flow. First it validates whether the configuration already have a valid
 // token.
-func ClientCredentialFlow(ctx context.Context, cl Client, cfg *cloudcfg.Config) (Token, error) {
+func ClientCredentialFlow(ctx context.Context, cl Client, auth *config.RpkCloudAuth) (Token, error) {
 	// We only validate the token if we have the client ID, if one of them is
 	// not present we just start the login flow again.
-	if cfg.AuthToken != "" && cfg.ClientID != "" {
-		expired, err := validateToken(cfg.AuthToken, cl.Audience(), cfg.ClientID)
+	if auth.AuthToken != "" && auth.ClientID != "" {
+		expired, err := ValidateToken(auth.AuthToken, cl.Audience(), auth.ClientID)
 		if err != nil {
 			return Token{}, err
 		}
 		if !expired {
-			return Token{AccessToken: cfg.AuthToken}, nil
+			return Token{AccessToken: auth.AuthToken}, nil
 		}
 	}
-	return cl.Token(ctx, *cfg)
+	return cl.Token(ctx, auth.ClientID, auth.ClientSecret)
 }
 
 // DeviceFlow follows the OAuth 2.0 device authentication flow. First it
 // validates whether the configuration already have a valid token.
-func DeviceFlow(ctx context.Context, cl Client, cfg *cloudcfg.Config) (Token, error) {
+func DeviceFlow(ctx context.Context, cl Client, auth *config.RpkCloudAuth) (Token, error) {
 	// We only validate the token if we have the client ID, if one of them is
 	// not present we just start the login flow again.
-	if cfg.AuthToken != "" && cfg.ClientID != "" {
-		expired, err := validateToken(cfg.AuthToken, cl.Audience(), cfg.ClientID)
+	if auth.AuthToken != "" && auth.ClientID != "" {
+		expired, err := ValidateToken(auth.AuthToken, cl.Audience(), auth.ClientID)
 		if err != nil {
 			return Token{}, err
 		}
 		if !expired {
-			return Token{AccessToken: cfg.AuthToken}, nil
+			return Token{AccessToken: auth.AuthToken}, nil
 		}
 	}
 
-	dcode, err := cl.DeviceCode(ctx, *cfg)
+	dcode, err := cl.DeviceCode(ctx)
 	if err != nil {
 		return Token{}, fmt.Errorf("unable to request the device authorization: %w", err)
 	}
@@ -100,16 +102,16 @@ func DeviceFlow(ctx context.Context, cl Client, cfg *cloudcfg.Config) (Token, er
 
 	fmt.Printf("Opening your browser for authentication, if does not open automatically, please open %q and proceed to login.\n", dcode.VerificationURLComplete)
 
-	token, err := waitForDeviceToken(ctx, cl, *cfg, dcode)
+	token, err := waitForDeviceToken(ctx, cl, dcode)
 	if err != nil {
 		return Token{}, err
 	}
 
-	cfg.ClientID = cfg.AuthClientID // if everything succeeded, save the clientID to the one used to generate  the token
+	auth.ClientID = cl.AuthClientID() // if everything succeeded, save the clientID to the one used to generate the token
 	return token, nil
 }
 
-func waitForDeviceToken(ctx context.Context, cl Client, cfg cloudcfg.Config, dcode DeviceCode) (Token, error) {
+func waitForDeviceToken(ctx context.Context, cl Client, dcode DeviceCode) (Token, error) {
 	interval := 5
 	if dcode.Interval > 0 {
 		interval = dcode.Interval
@@ -126,7 +128,7 @@ func waitForDeviceToken(ctx context.Context, cl Client, cfg cloudcfg.Config, dco
 	var token Token
 	var err error
 	for {
-		token, err = cl.DeviceToken(ctx, cfg, dcode.DeviceCode)
+		token, err = cl.DeviceToken(ctx, dcode.DeviceCode)
 		if err == nil {
 			return token, nil
 		}
@@ -151,13 +153,13 @@ func waitForDeviceToken(ctx context.Context, cl Client, cfg cloudcfg.Config, dco
 	}
 }
 
-// validateToken validates that the token is valid, not yet expired, it is for
+// ValidateToken validates that the token is valid, not yet expired, it is for
 // the given audience, and it is for the given client ID.
 //
 // If the token is valid, this returns false, nil.
 // If the token is expired, this returns true, nil
 // Otherwise, this returns false, *BadClientTokenError.
-func validateToken(token, audience string, clientIDs ...string) (expired bool, rerr error) {
+func ValidateToken(token, audience string, clientIDs ...string) (expired bool, rerr error) {
 	defer func() {
 		if rerr != nil {
 			rerr = &BadClientTokenError{rerr}
