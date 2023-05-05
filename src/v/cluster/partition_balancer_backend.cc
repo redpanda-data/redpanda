@@ -163,7 +163,7 @@ ss::future<> partition_balancer_backend::do_tick() {
             .segment_fallocation_step = _segment_fallocation_step()},
           _state,
           _partition_allocator)
-          .plan_reassignments(health_report.value(), follower_metrics);
+          .plan_actions(health_report.value(), follower_metrics);
 
     _last_leader_term = _raft0->term();
     _last_tick_time = ss::lowres_clock::now();

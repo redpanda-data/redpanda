@@ -60,7 +60,7 @@ public:
         status status = status::empty;
     };
 
-    plan_data plan_reassignments(
+    plan_data plan_actions(
       const cluster_health_report&, const std::vector<raft::follower_metrics>&);
 
 private:

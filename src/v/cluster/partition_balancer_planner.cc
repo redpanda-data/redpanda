@@ -733,8 +733,7 @@ void partition_balancer_planner::request_context::collect_actions(
     }
 }
 
-partition_balancer_planner::plan_data
-partition_balancer_planner::plan_reassignments(
+partition_balancer_planner::plan_data partition_balancer_planner::plan_actions(
   const cluster_health_report& health_report,
   const std::vector<raft::follower_metrics>& follower_metrics) {
     request_context ctx;

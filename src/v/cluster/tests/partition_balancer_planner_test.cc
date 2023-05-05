@@ -71,7 +71,7 @@ FIXTURE_TEST(test_stable, partition_balancer_planner_fixture) {
     auto hr = create_health_report();
     auto fm = create_follower_metrics();
 
-    auto plan_data = planner.plan_reassignments(hr, fm);
+    auto plan_data = planner.plan_actions(hr, fm);
     check_violations(plan_data, {}, {});
     BOOST_REQUIRE_EQUAL(plan_data.reassignments.size(), 0);
 }
@@ -100,7 +100,7 @@ FIXTURE_TEST(test_node_down, partition_balancer_planner_fixture) {
     std::set<size_t> unavailable_nodes = {0};
     auto fm = create_follower_metrics(unavailable_nodes);
 
-    auto plan_data = planner.plan_reassignments(hr, fm);
+    auto plan_data = planner.plan_actions(hr, fm);
 
     check_violations(plan_data, unavailable_nodes, {});
 
@@ -137,7 +137,7 @@ FIXTURE_TEST(test_no_quorum_for_partition, partition_balancer_planner_fixture) {
     std::set<size_t> unavailable_nodes = {0, 1};
     auto fm = create_follower_metrics(unavailable_nodes);
 
-    auto plan_data = planner.plan_reassignments(hr, fm);
+    auto plan_data = planner.plan_actions(hr, fm);
     BOOST_REQUIRE_EQUAL(plan_data.reassignments.size(), 0);
 }
 
@@ -170,7 +170,7 @@ FIXTURE_TEST(
     std::set<size_t> unavailable_nodes = {0};
     auto fm = create_follower_metrics(unavailable_nodes);
 
-    auto plan_data = planner.plan_reassignments(hr, fm);
+    auto plan_data = planner.plan_actions(hr, fm);
 
     check_violations(plan_data, unavailable_nodes, {});
 
@@ -208,7 +208,7 @@ FIXTURE_TEST(
     std::set<size_t> unavailable_nodes = {0};
     auto fm = create_follower_metrics(unavailable_nodes);
 
-    auto plan_data = planner.plan_reassignments(hr, fm);
+    auto plan_data = planner.plan_actions(hr, fm);
 
     check_violations(plan_data, unavailable_nodes, {});
 
@@ -246,7 +246,7 @@ FIXTURE_TEST(
     std::set<size_t> unavailable_nodes = {0};
     auto fm = create_follower_metrics(unavailable_nodes);
 
-    auto plan_data = planner.plan_reassignments(hr, fm);
+    auto plan_data = planner.plan_actions(hr, fm);
 
     check_violations(plan_data, unavailable_nodes, full_nodes);
 
@@ -277,7 +277,7 @@ FIXTURE_TEST(test_move_from_full_node, partition_balancer_planner_fixture) {
 
     auto fm = create_follower_metrics();
 
-    auto plan_data = planner.plan_reassignments(hr, fm);
+    auto plan_data = planner.plan_actions(hr, fm);
 
     check_violations(plan_data, {}, full_nodes);
 
@@ -317,7 +317,7 @@ FIXTURE_TEST(
     std::set<size_t> unavailable_nodes = {0};
     auto fm = create_follower_metrics(unavailable_nodes);
 
-    auto plan_data = planner.plan_reassignments(hr, fm);
+    auto plan_data = planner.plan_actions(hr, fm);
 
     check_violations(plan_data, unavailable_nodes, {});
 
@@ -364,7 +364,7 @@ FIXTURE_TEST(
     auto hr = create_health_report(full_nodes);
     auto fm = create_follower_metrics();
 
-    auto plan_data = planner.plan_reassignments(hr, fm);
+    auto plan_data = planner.plan_actions(hr, fm);
     check_violations(plan_data, {}, full_nodes);
 
     const auto& reassignments = plan_data.reassignments;
@@ -410,7 +410,7 @@ FIXTURE_TEST(
     std::set<size_t> unavailable_nodes = {0};
     auto fm = create_follower_metrics(unavailable_nodes);
 
-    auto plan_data = planner.plan_reassignments(hr, fm);
+    auto plan_data = planner.plan_actions(hr, fm);
     check_violations(plan_data, unavailable_nodes, full_nodes);
 
     const auto& reassignments = plan_data.reassignments;
@@ -462,7 +462,7 @@ FIXTURE_TEST(test_move_part_of_replicas, partition_balancer_planner_fixture) {
     hr.node_reports[1].local_state.data_disk.free -= 1_MiB;
     hr.node_reports[2].local_state.data_disk.free -= 2_MiB;
 
-    auto plan_data = planner.plan_reassignments(hr, fm);
+    auto plan_data = planner.plan_actions(hr, fm);
 
     check_violations(plan_data, {}, full_nodes);
 
@@ -519,7 +519,7 @@ FIXTURE_TEST(
         }
     }
 
-    auto plan_data = planner.plan_reassignments(hr, fm);
+    auto plan_data = planner.plan_actions(hr, fm);
 
     check_violations(plan_data, {}, full_nodes);
 
@@ -574,7 +574,7 @@ FIXTURE_TEST(test_lot_of_partitions, partition_balancer_planner_fixture) {
     std::set<size_t> unavailable_nodes = {0};
     auto fm = create_follower_metrics(unavailable_nodes);
 
-    auto plan_data = planner.plan_reassignments(hr, fm);
+    auto plan_data = planner.plan_actions(hr, fm);
     check_violations(plan_data, unavailable_nodes, {});
 
     const auto& reassignments = plan_data.reassignments;
@@ -632,7 +632,7 @@ FIXTURE_TEST(test_node_cancelation, partition_balancer_planner_fixture) {
     std::set<size_t> unavailable_nodes = {0};
     auto fm = create_follower_metrics(unavailable_nodes);
 
-    auto planner_result = planner.plan_reassignments(hr, fm);
+    auto planner_result = planner.plan_actions(hr, fm);
 
     BOOST_REQUIRE_EQUAL(planner_result.reassignments.size(), 1);
 
@@ -654,7 +654,7 @@ FIXTURE_TEST(test_node_cancelation, partition_balancer_planner_fixture) {
     unavailable_nodes = {0, 3};
     fm = create_follower_metrics(unavailable_nodes);
 
-    planner_result = planner.plan_reassignments(hr, fm);
+    planner_result = planner.plan_actions(hr, fm);
     BOOST_REQUIRE(planner_result.reassignments.size() == 0);
     BOOST_REQUIRE(planner_result.cancellations.size() == 1);
     BOOST_REQUIRE(planner_result.cancellations.front() == ntp);
@@ -692,7 +692,7 @@ FIXTURE_TEST(test_rack_awareness, partition_balancer_planner_fixture) {
     std::set<size_t> unavailable_nodes = {0};
     auto fm = create_follower_metrics(unavailable_nodes);
 
-    auto plan_data = planner.plan_reassignments(hr, fm);
+    auto plan_data = planner.plan_actions(hr, fm);
 
     check_violations(plan_data, unavailable_nodes, {});
 
@@ -726,7 +726,7 @@ FIXTURE_TEST(
 
     set_maintenance_mode(model::node_id{3});
 
-    auto plan_data = planner.plan_reassignments(hr, fm);
+    auto plan_data = planner.plan_actions(hr, fm);
 
     check_violations(plan_data, unavailable_nodes, {});
     BOOST_REQUIRE_EQUAL(plan_data.reassignments.size(), 0);
@@ -755,7 +755,7 @@ FIXTURE_TEST(
     auto fm = create_follower_metrics(unavailable_nodes);
     set_decommissioning(model::node_id{3});
 
-    auto plan_data = planner.plan_reassignments(hr, fm);
+    auto plan_data = planner.plan_actions(hr, fm);
 
     check_violations(plan_data, unavailable_nodes, {});
     BOOST_REQUIRE_EQUAL(plan_data.reassignments.size(), 0);
@@ -790,7 +790,7 @@ FIXTURE_TEST(
         model::broker_shard{model::node_id{3}, 0},
       });
 
-    auto plan_data = planner.plan_reassignments(hr, fm);
+    auto plan_data = planner.plan_actions(hr, fm);
 
     check_violations(plan_data, unavailable_nodes, {});
     BOOST_REQUIRE_EQUAL(plan_data.reassignments.size(), 0);
@@ -855,7 +855,7 @@ FIXTURE_TEST(test_rack_awareness_repair, partition_balancer_planner_fixture) {
     auto hr = create_health_report();
     auto fm = create_follower_metrics({});
 
-    auto plan_data = planner.plan_reassignments(hr, fm);
+    auto plan_data = planner.plan_actions(hr, fm);
 
     check_violations(plan_data, {}, {});
     BOOST_REQUIRE_EQUAL(plan_data.reassignments.size(), 2);
