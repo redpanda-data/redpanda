@@ -2170,6 +2170,26 @@ void application::start_kafka(
       .local()
       .await_membership(node_id, app_signal.abort_source())
       .get();
+
+    // Before starting the Kafka API, wait for the cluster ID to be initialized,
+    // because Kafka clients interpret a changing cluster ID as a client
+    // connecting to multiple clusters and print warnings.
+    if (
+      !config::shard_local_cfg().cluster_id().has_value()
+      && feature_table.local().get_original_version()
+           >= cluster::cluster_version{10}) {
+        // This check only applies for clusters created with Redpanda >=23.2,
+        // because this is the version that has fast initialization of
+        // cluster_id, whereas older versions may wait several minutes to
+        // initialize it, causing issues during fast upgrades where the previous
+        // version may have run too briefly to have initialized cluster_id
+        vlog(_log.info, "Waiting for Cluster ID to initialize...");
+        ss::condition_variable cvar;
+        auto binding = config::shard_local_cfg().cluster_id.bind();
+        binding.watch([&cvar] { cvar.signal(); });
+        cvar.wait().get();
+    }
+
     _kafka_server.invoke_on_all(&net::server::start).get();
     vlog(
       _log.info,

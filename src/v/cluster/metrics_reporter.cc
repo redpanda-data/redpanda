@@ -110,6 +110,7 @@ metrics_reporter::metrics_reporter(
   ss::sharded<ss::abort_source>& as)
   : _raft0(std::move(raft0))
   , _cluster_info(controller_stm.local().get_metrics_reporter_cluster_info())
+  , _controller_stm(controller_stm)
   , _members_table(members_table)
   , _topics(topic_table)
   , _health_monitor(health_monitor)
@@ -124,12 +125,17 @@ ss::future<> metrics_reporter::start() {
       config::shard_local_cfg().metrics_reporter_url());
     _tick_timer.set_callback([this] { report_metrics(); });
 
-    const auto initial_delay = 10s;
+    _last_success = model::timeout_clock::now();
 
-    // A shorter initial wait than the tick interval, so that we
-    // give the cluster state a chance to stabilize, but also send
-    // a report reasonably promptly.
-    _tick_timer.arm(initial_delay);
+    // Immediately enter the report loop, as on a fresh cluster this will
+    // be what initializes the cluster UUId.  It will not actually transmit
+    // a report on the first call, because the interval has not yet elapsed
+    // since the _last_success we just set to now().
+    // It is important to do this promptly and not wait here, because the
+    // controller cannot generate snapshots until the cluster UUID
+    // is initialized.
+    report_metrics();
+
     co_return;
 }
 
@@ -273,17 +279,20 @@ ss::future<> metrics_reporter::try_initialize_cluster_info() {
         co_return;
     }
 
+    // Wait until the controller log has seen enough batches to generate
+    // a UUID.  No timeout: we cannot generate any reports until this
+    // happens.
+    if (_raft0->committed_offset() < model::offset{2}) {
+        vlog(clusterlog.info, "Waiting to initialize cluster metrics ID...");
+        co_await _controller_stm.local().wait(
+          model::offset{2},
+          model::timeout_clock::time_point::max(),
+          std::ref(_as.local()));
+    }
+
     if (_raft0->start_offset() > model::offset{0}) {
         // Controller log already snapshotted, wait until cluster info gets
         // initialized from the snapshot.
-        co_return;
-    }
-
-    /**
-     * In order to seed the UUID generator we use a hash over first two batches
-     * timestamps and initial raft-0 configuration
-     */
-    if (_raft0->committed_offset() < model::offset{2}) {
         co_return;
     }
 
@@ -317,6 +326,8 @@ ss::future<> metrics_reporter::try_initialize_cluster_info() {
     boost::uuids::random_generator_mt19937 uuid_gen(mersenne_twister);
 
     _cluster_info.uuid = fmt::format("{}", uuid_gen());
+    vlog(
+      clusterlog.info, "Generated cluster metrics ID {}", _cluster_info.uuid);
 }
 
 /**
@@ -397,13 +408,24 @@ ss::future<> metrics_reporter::do_report_metrics() {
     // do this on every node to allow controller snapshotting to proceed.
     co_await try_initialize_cluster_info();
 
+    // Update cluster_id in configuration, if not already set.  Wait until
+    // we become leader, or it gets written by some other node.
+    if (_cluster_info.is_initialized()) {
+        while (!_as.local().abort_requested()
+               && !config::shard_local_cfg().cluster_id().has_value()) {
+            if (_raft0->is_elected_leader()) {
+                co_await propagate_cluster_id();
+            } else {
+                co_await ss::sleep(
+                  config::shard_local_cfg().raft_heartbeat_interval_ms());
+            }
+        }
+    }
+
     // skip reporting if current node is not raft0 leader
     if (!_raft0->is_elected_leader()) {
         co_return;
     }
-
-    // Update cluster_id in configuration, if not already set.
-    co_await propagate_cluster_id();
 
     // report interval has not elapsed
     if (

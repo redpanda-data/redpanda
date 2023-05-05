@@ -106,6 +106,7 @@ private:
 
     consensus_ptr _raft0;
     metrics_reporter_cluster_info& _cluster_info; // owned by controller_stm
+    ss::sharded<controller_stm>& _controller_stm;
     ss::sharded<members_table>& _members_table;
     ss::sharded<topic_table>& _topics;
     ss::sharded<health_monitor_frontend>& _health_monitor;
