@@ -11,6 +11,7 @@
 
 #include "archival/fwd.h"
 #include "archival/ntp_archiver_service.h"
+#include "archival/scrubber.h"
 #include "archival/upload_controller.h"
 #include "archival/upload_housekeeping_service.h"
 #include "cli_parser.h"
@@ -1189,6 +1190,36 @@ void application::wire_up_redpanda_services(model::node_id node_id) {
       std::ref(feature_table),
       std::ref(cloud_storage_api));
     controller->wire_up().get0();
+
+    if (archival_storage_enabled()) {
+        construct_service(
+          _archival_scrubber,
+          ss::sharded_parameter(
+            [&api = cloud_storage_api]() { return std::ref(api.local()); }),
+          ss::sharded_parameter([&t = controller->get_topics_state()]() {
+              return std::ref(t.local());
+          }),
+          std::ref(controller->get_topics_frontend()),
+          std::ref(controller->get_members_table()))
+          .get();
+
+        _archival_scrubber
+          .invoke_on_all([&housekeeping = _archival_upload_housekeeping](
+                           archival::scrubber& s) {
+              housekeeping.local().register_jobs({s});
+          })
+          .get();
+
+        _deferred.emplace_back([this] {
+            _archival_scrubber
+              .invoke_on_all([&housekeeping = _archival_upload_housekeeping,
+                              this](archival::scrubber& s) {
+                  vlog(_log.debug, "Deregistering scrubber housekeeping jobs");
+                  housekeeping.local().deregister_jobs({s});
+              })
+              .get();
+        });
+    }
 
     construct_single_service_sharded(
       self_test_backend,

@@ -224,6 +224,11 @@ public:
       absl::flat_hash_set<model::topic_namespace>,
       model::topic_namespace_hash,
       model::topic_namespace_eq>;
+    using lifecycle_markers_t = absl::node_hash_map<
+      nt_revision,
+      nt_lifecycle_marker,
+      nt_revision_hash,
+      nt_revision_eq>;
 
     using delta_range_t
       = boost::iterator_range<fragmented_vector<delta>::const_iterator>;
@@ -267,6 +272,8 @@ public:
     /// State machine applies
     ss::future<std::error_code> apply(create_topic_cmd, model::offset);
     ss::future<std::error_code> apply(delete_topic_cmd, model::offset);
+    ss::future<std::error_code>
+      apply(topic_lifecycle_transition, model::offset);
     ss::future<std::error_code>
       apply(move_partition_replicas_cmd, model::offset);
     ss::future<std::error_code>
@@ -444,6 +451,13 @@ public:
      */
     size_t get_node_partition_count(model::node_id) const;
 
+    /**
+     * See which topics have pending deletion work
+     */
+    const lifecycle_markers_t& get_lifecycle_markers() const {
+        return _lifecycle_markers;
+    }
+
 private:
     friend topic_table_probe;
 
@@ -470,8 +484,12 @@ private:
 
     class snapshot_applier;
 
+    std::error_code
+    do_local_delete(model::topic_namespace nt, model::offset offset);
+
     underlying_t _topics;
     hierarchy_t _topics_hierarchy;
+    lifecycle_markers_t _lifecycle_markers;
     size_t _partition_count{0};
 
     updates_t _updates_in_progress;

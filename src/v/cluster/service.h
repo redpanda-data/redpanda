@@ -50,6 +50,9 @@ public:
     virtual ss::future<create_topics_reply>
     create_topics(create_topics_request&&, rpc::streaming_context&) override;
 
+    virtual ss::future<purged_topic_reply>
+    purged_topic(purged_topic_request&&, rpc::streaming_context&) override;
+
     ss::future<create_non_replicable_topics_reply> create_non_replicable_topics(
       create_non_replicable_topics_request&&, rpc::streaming_context&) final;
 

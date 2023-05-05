@@ -93,6 +93,7 @@ static constexpr int8_t create_non_replicable_topic_cmd_type = 6;
 static constexpr int8_t cancel_moving_partition_replicas_cmd_type = 7;
 static constexpr int8_t move_topic_replicas_cmd_type = 8;
 static constexpr int8_t revert_cancel_partition_move_cmd_type = 9;
+static constexpr int8_t topic_lifecycle_transition_cmd_type = 10;
 
 static constexpr int8_t create_user_cmd_type = 5;
 static constexpr int8_t delete_user_cmd_type = 6;
@@ -138,6 +139,13 @@ using delete_topic_cmd = controller_command<
   delete_topic_cmd_type,
   model::record_batch_type::topic_management_cmd,
   serde_opts::adl_and_serde>;
+
+using topic_lifecycle_transition_cmd = controller_command<
+  model::topic_namespace,
+  topic_lifecycle_transition,
+  topic_lifecycle_transition_cmd_type,
+  model::record_batch_type::topic_management_cmd,
+  serde_opts::serde_only>;
 
 using move_partition_replicas_cmd = controller_command<
   model::ntp,

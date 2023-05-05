@@ -817,76 +817,6 @@ bool remote_partition::bounds_timestamp(model::timestamp t) const {
     }
 }
 
-/**
- * This is an error-handling wrapper around remote::delete_object.
- *
- * During topic deletion, we wish to handle DeleteObject errors in a
- * particular way:
- * - Throw on timeout: this indicates a transient condition,
- *   and we shall rely on the controller to try applying this
- *   topic deletion operation again.
- * - Give up on deletion on other errors non-timeout errors may be
- *   permanent (e.g. bucket does not exist, or authorization errors).  In
- * these cases we log the issue and give up: worst case we are leaving
- * garbage behind. We do _not_ proceed to delete subsequent objects (such as
- * the manifest), to preserve the invariant that a removed offset means the
- * segments were already removed.
- *
- * @return true if the caller should stop trying to delete things and
- * silently return, false if successful, throws if deletion should be
- * retried.
- */
-ss::future<bool> remote_partition::tolerant_delete_object(
-  const cloud_storage_clients::bucket_name& bucket,
-  const cloud_storage_clients::object_key& path,
-  retry_chain_node& parent) {
-    auto result = co_await _api.delete_object(bucket, path, parent);
-    if (result == upload_result::timedout) {
-        throw std::runtime_error(fmt::format(
-          "Timed out deleting objects for partition {} (key {})",
-          _manifest.get_ntp(),
-          path));
-    } else if (result != upload_result::success) {
-        vlog(
-          _ctxlog.warn,
-          "Error ({}) deleting objects for partition (key {})",
-          result,
-          path);
-        co_return true;
-    } else {
-        co_return false;
-    }
-}
-
-ss::future<bool> remote_partition::tolerant_delete_objects(
-  const cloud_storage_clients::bucket_name& bucket,
-  std::vector<cloud_storage_clients::object_key>&& keys,
-  retry_chain_node& parent) {
-    if (keys.empty()) {
-        co_return false;
-    }
-
-    // Copy first key so that we can use it in error messages
-    auto first_key = keys[0];
-
-    auto result = co_await _api.delete_objects(bucket, std::move(keys), parent);
-    if (result == upload_result::timedout) {
-        throw std::runtime_error(fmt::format(
-          "Timed out deleting objects for partition {} (keys {}-)",
-          _manifest.get_ntp(),
-          first_key));
-    } else if (result != upload_result::success) {
-        vlog(
-          _ctxlog.warn,
-          "Error ({}) deleting objects for partition (keys {}-)",
-          result,
-          first_key);
-        co_return true;
-    } else {
-        co_return false;
-    }
-}
-
 static constexpr ss::lowres_clock::duration erase_timeout = 60s;
 static constexpr ss::lowres_clock::duration erase_backoff = 1s;
 
@@ -908,9 +838,9 @@ remote_partition::finalize(ss::abort_source& as) {
 
     if (manifest_get_result != download_result::success) {
         vlog(
-          _ctxlog.warn,
-          "Failed to fetch manifest during finalize(), remote manifest may be "
-          "left in incomplete state after topic deletion. Error: {}",
+          _ctxlog.debug,
+          "Failed to fetch manifest during finalize(), maybe another node"
+          "already completed deletino. Error: {}",
           manifest_get_result);
         co_return finalize_result{.get_status = manifest_get_result};
     }
@@ -965,73 +895,15 @@ remote_partition::finalize(ss::abort_source& as) {
     }
 }
 
-/**
- * The caller is responsible for determining whether it is appropriate
- * to delete data in S3, for example it is not appropriate if this is
- * a read replica topic.
- *
- * Q: Why is erase() part of remote_partition, when in general writes
- *    flow through the archiver and remote_partition is mainly for
- *    reads?
- * A: Because the erase operation works in terms of what it reads from
- *    S3, not the state of the archival metadata stm (which can be out
- *    of date if e.g. we were not the leader)
- */
-ss::future<> remote_partition::erase(ss::abort_source& as, bool do_finalize) {
-    // Even though we are going to delete objects, it is still important
-    // to flush metadata first, so that if we are interrupted, a future
-    // node doing a tombstone-driven deletion can accurately get the
-    // segment list.
-    remote_partition::finalize_result finalize_result;
-    if (do_finalize) {
-        finalize_result = co_await finalize(as);
-    } else {
-        finalize_result = remote_partition::finalize_result{
-          // Synthetic success, as we will no-op on non-voters
-          .get_status = download_result::success};
-    }
-
-    if (finalize_result.get_status != download_result::success) {
-        // If we couldn't read a remote manifest at all, give up here rather
-        // than issuing a lot of deletion requests that will probably also fail.
-        co_return;
-    }
-
-    const partition_manifest& manifest = finalize_result.manifest.has_value()
-                                           ? finalize_result.manifest.value()
-                                           : _manifest;
-
-    vlog(_ctxlog.info, "Erasing remote storage content...");
-
-    // TODO: Edge case 1
-    // There is a rare race in which objects might get left behind in S3.
-    //
-    // Consider 3 nodes 1,2,3.
-    // Node 1 is controller leader.  Node 3 is this partition's leader.
-    // Node 1 receives a delete topic request, replicates to 2, and
-    // acks to the client.
-    // Nodes 1 and 2 proceed to tear down the partition.
-    // Node 3 experiences a delay seeing the controller message,
-    // and is still running archival fiber, writing new objects to S3.
-    // Now stop Node 3, and force-decommission it.
-    // The last couple of objects written by Node 3 are left behind in S3.
-    // (TODO: perhaps document this as a caveat of force-decom operations?)
-
-    // TODO: Edge case 2
-    // Archiver writes objects to S3 before it writes an update manifest.
-    // If a topic is deleted while undergoing writes, it may end up leaving
-    // some garbage segments behind.
-    // (TODO: fix this by implementing a scrub operation that finds objects
-    //  not mentioned in the manifest, and call this before erase())
-
+ss::future<remote_partition::erase_result> remote_partition::erase(
+  cloud_storage::remote& api,
+  cloud_storage_clients::bucket_name bucket,
+  partition_manifest manifest,
+  ss::abort_source& as) {
     // This function is called after ::stop, so we may not use our
     // main retry_chain_node which is bound to our abort source,
     // and construct a special one.
     retry_chain_node local_rtc(as, erase_timeout, erase_backoff);
-
-    // Having handled errors above, now our partition manifest fetch was
-    // either a notfound (skip straight to erasing topic manifest), or a
-    // success (iterate through manifest deleting segements)
 
     // Erase all segments
     const size_t batch_size = 1000;
@@ -1056,52 +928,90 @@ ss::future<> remote_partition::erase(ss::abort_source& as, bool do_finalize) {
         }
 
         vlog(
-          _ctxlog.debug,
-          "Erasing segments {}-{}",
+          cst_log.info,
+          "[{}] Erasing segments {}-{}",
+          manifest.get_ntp(),
           *(batch_keys.begin()),
           *(--batch_keys.end()));
 
-        if (co_await tolerant_delete_objects(
-              _bucket, std::move(batch_keys), local_rtc)) {
-            co_return;
-        }
-
-        if (co_await tolerant_delete_objects(
-              _bucket, std::move(tx_batch_keys), local_rtc)) {
-            co_return;
-        }
-
-        if (co_await tolerant_delete_objects(
-              _bucket, std::move(index_keys), local_rtc)) {
-            co_return;
+        for (const auto& object_set : {batch_keys, tx_batch_keys, index_keys}) {
+            if (
+              co_await api.delete_objects(
+                bucket, std::move(object_set), local_rtc)
+              != upload_result::success) {
+                vlog(
+                  cst_log.info,
+                  "[{}] Failed to erase some segments, deferring deletion",
+                  manifest.get_ntp());
+                co_return erase_result::failed;
+            }
         }
     }
 
-    // Erase the partition manifest
+    // If we got this far, we succeeded deleting all objects referenced by
+    // the manifest, so many delete the manifest itself.
     auto manifest_path = manifest.get_manifest_path();
-    vlog(_ctxlog.debug, "Erasing partition manifest {}", manifest_path);
-    if (co_await tolerant_delete_object(
-          _bucket,
-          cloud_storage_clients::object_key(manifest_path),
-          local_rtc)) {
-        co_return;
+    vlog(
+      cst_log.debug,
+      "[{}] Erasing partition manifest {}",
+      manifest.get_ntp(),
+      manifest_path);
+    if (
+      co_await api.delete_object(
+        bucket, cloud_storage_clients::object_key(manifest_path), local_rtc)
+      != upload_result::success) {
+        vlog(
+          cst_log.info,
+          "[{}] Failed to erase {}, deferring deletion",
+          manifest.get_ntp(),
+          manifest_path);
+        co_return erase_result::failed;
     };
 
-    // If I am partition 0, also delete the topic manifest
-    // Note: this behavior means that absence of the topic manifest does
-    // *not* imply full removal of topic, whereas absence of partition
-    // manifest does imply full removal of partition data.
-    if (get_ntp().tp.partition == model::partition_id{0}) {
-        auto topic_manifest_path = topic_manifest::get_topic_manifest_path(
-          get_ntp().ns, get_ntp().tp.topic);
-        vlog(_ctxlog.debug, "Erasing topic manifest {}", topic_manifest_path);
-        if (co_await tolerant_delete_object(
-              _bucket,
-              cloud_storage_clients::object_key(topic_manifest_path),
-              local_rtc)) {
-            co_return;
-        };
+    co_return erase_result::erased;
+}
+
+/**
+ * The caller is responsible for determining whether it is appropriate
+ * to delete data in S3, for example it is not appropriate if this is
+ * a read replica topic.
+ *
+ * Q: Why is try_erase() part of remote_partition, when in general writes
+ *    flow through the archiver and remote_partition is mainly for
+ *    reads?
+ * A: Because the erase operation works in terms of what it reads from
+ *    S3, not the state of the archival metadata stm (which can be out
+ *    of date if e.g. we were not the leader)
+ */
+ss::future<> remote_partition::try_erase(ss::abort_source& as) {
+    vlog(
+      _ctxlog.info,
+      "Attempting to erase remote storage content for {}",
+      _manifest.get_ntp());
+
+    // This function is called after ::stop, so we may not use our
+    // main retry_chain_node which is bound to our abort source,
+    // and construct a special one.
+    retry_chain_node local_rtc(as, erase_timeout, erase_backoff);
+
+    // Download manifest because we may not be running on the most up to
+    // date node, but hopefully the latest leader will have uploaded
+    // manifest in finalize().
+    partition_manifest manifest(
+      _manifest.get_ntp(), _manifest.get_revision_id());
+    auto manifest_path = manifest.get_manifest_path();
+    auto manifest_get_result = co_await _api.maybe_download_manifest(
+      _bucket, manifest_path, manifest, local_rtc);
+
+    if (manifest_get_result != download_result::success) {
+        vlog(
+          _ctxlog.info,
+          "Failed to fetch manifest {}, deferring cleanup on topic erase",
+          manifest_path);
+        co_return;
     }
+
+    co_await erase(_api, _bucket, std::move(manifest), as);
 }
 
 void remote_partition::offload_segment(model::offset o) {

@@ -106,35 +106,40 @@ ss::future<> topic_table::stop() {
 ss::future<std::error_code>
 topic_table::apply(delete_topic_cmd cmd, model::offset offset) {
     _last_applied_revision_id = model::revision_id(offset);
+
+    co_return do_local_delete(cmd.key, offset);
+}
+
+std::error_code
+topic_table::do_local_delete(model::topic_namespace nt, model::offset offset) {
     auto delete_type = delta::op_type::del;
-    if (auto tp = _topics.find(cmd.value); tp != _topics.end()) {
+    if (auto tp = _topics.find(nt); tp != _topics.end()) {
         if (!tp->second.is_topic_replicable()) {
             delete_type = delta::op_type::del_non_replicable;
             model::topic_namespace_view tp_nsv{
-              cmd.key.ns, tp->second.get_source_topic()};
+              nt.ns, tp->second.get_source_topic()};
             auto found = _topics_hierarchy.find(tp_nsv);
             vassert(
               found != _topics_hierarchy.end(),
               "Missing source for non_replicable topic: {}",
               tp_nsv);
             vassert(
-              found->second.erase(cmd.value) > 0,
+              found->second.erase(nt) > 0,
               "non_replicable_topic should exist in hierarchy: {}",
               tp_nsv);
         } else {
             /// Prevent deletion of source topics that have non_replicable
             /// topics. To delete this topic all of its non_replicable descedent
             /// topics must first be deleted
-            auto found = _topics_hierarchy.find(cmd.value);
+            auto found = _topics_hierarchy.find(nt);
             if (found != _topics_hierarchy.end() && !found->second.empty()) {
-                return ss::make_ready_future<std::error_code>(
-                  errc::source_topic_still_in_use);
+                return std::error_code(errc::source_topic_still_in_use);
             }
         }
 
         for (auto& p_as : tp->second.get_assignments()) {
             _partition_count--;
-            auto ntp = model::ntp(cmd.key.ns, cmd.key.tp, p_as.id);
+            auto ntp = model::ntp(nt.ns, nt.tp, p_as.id);
             _updates_in_progress.erase(ntp);
             _pending_deltas.emplace_back(
               std::move(ntp), p_as, offset, delete_type);
@@ -142,13 +147,68 @@ topic_table::apply(delete_topic_cmd cmd, model::offset offset) {
 
         _topics.erase(tp);
         notify_waiters();
-        _probe.handle_topic_deletion(cmd.key);
+        _probe.handle_topic_deletion(nt);
 
-        return ss::make_ready_future<std::error_code>(errc::success);
+        return errc::success;
     }
 
-    return ss::make_ready_future<std::error_code>(errc::topic_not_exists);
+    return errc::topic_not_exists;
 }
+
+ss::future<std::error_code>
+topic_table::apply(topic_lifecycle_transition soft_del, model::offset offset) {
+    _last_applied_revision_id = model::revision_id(offset);
+
+    if (soft_del.mode == topic_lifecycle_transition_mode::pending_gc) {
+        // Create tombstone
+        auto tp = _topics.find(soft_del.topic.nt);
+        if (tp == _topics.end()) {
+            return ss::make_ready_future<std::error_code>(
+              errc::topic_not_exists);
+        }
+
+        auto tombstone = nt_lifecycle_marker{
+          .config = tp->second.get_configuration(),
+          .initial_revision_id = tp->second.get_remote_revision().value_or(
+            model::initial_revision_id(tp->second.get_revision()))};
+
+        _lifecycle_markers.emplace(soft_del.topic, tombstone);
+        vlog(
+          clusterlog.debug,
+          "Created tombstone for topic {} {}",
+          soft_del.topic.nt,
+          soft_del.topic.initial_revision_id);
+    } else if (soft_del.mode == topic_lifecycle_transition_mode::drop) {
+        if (_lifecycle_markers.contains(soft_del.topic)) {
+            vlog(
+              clusterlog.debug,
+              "Purged tombstone for {} {}",
+              soft_del.topic.nt,
+              soft_del.topic.initial_revision_id);
+            _lifecycle_markers.erase(soft_del.topic);
+            return ss::make_ready_future<std::error_code>(errc::success);
+        } else {
+            // This is harmless but should not happen and indicates a bug.
+            vlog(
+              clusterlog.error,
+              "Unexpected request to drop non-existent tombstone {} {}",
+              soft_del.topic.nt,
+              soft_del.topic.initial_revision_id);
+            return ss::make_ready_future<std::error_code>(
+              errc::topic_not_exists);
+        }
+    }
+
+    if (
+      soft_del.mode == topic_lifecycle_transition_mode::pending_gc
+      || soft_del.mode == topic_lifecycle_transition_mode::oneshot_delete) {
+        return ss::make_ready_future<std::error_code>(
+          do_local_delete(soft_del.topic.nt, offset));
+    } else {
+        return ss::make_ready_future<std::error_code>(errc::success);
+    }
+}
+
 ss::future<std::error_code>
 topic_table::apply(create_partition_cmd cmd, model::offset offset) {
     _last_applied_revision_id = model::revision_id(offset);
@@ -851,6 +911,10 @@ topic_table::fill_snapshot(controller_snapshot& controller_snap) const {
             .updates = std::move(updates),
           });
     }
+
+    for (const auto& [ntr, lm] : _lifecycle_markers) {
+        snap.lifecycle_markers.emplace(ntr, lm);
+    }
 }
 
 // helper class to hold context needed for adding/deleting ntps when applying a
@@ -1238,6 +1302,10 @@ ss::future<> topic_table::apply_snapshot(
 
     // 3. notify delta waiters
     notify_waiters();
+
+    // Lifecycle markers is a simple static collection without notifications
+    // etc, so we can just copy directly into place.
+    _lifecycle_markers = controller_snap.topics.lifecycle_markers;
 
     _last_applied_revision_id = snap_revision;
 }

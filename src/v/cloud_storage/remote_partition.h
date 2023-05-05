@@ -127,17 +127,6 @@ public:
     ss::future<std::vector<model::tx_range>>
     aborted_transactions(offset_range offsets);
 
-    /// Helper for erase()
-    ss::future<bool> tolerant_delete_object(
-      const cloud_storage_clients::bucket_name& bucket,
-      const cloud_storage_clients::object_key& path,
-      retry_chain_node& parent);
-
-    ss::future<bool> tolerant_delete_objects(
-      const cloud_storage_clients::bucket_name& bucket,
-      std::vector<cloud_storage_clients::object_key>&& keys,
-      retry_chain_node& parent);
-
     struct finalize_result {
         // If this is set, use this manifest for deletion instead of the usual
         // local state (the remote content was newer than our local content)
@@ -149,8 +138,18 @@ public:
     /// remote deletion disabled.
     ss::future<finalize_result> finalize(ss::abort_source&);
 
-    /// Remove objects from S3
-    ss::future<> erase(ss::abort_source&, bool finalize);
+    /// Remove objects from S3, on a best effort basis that may drop out
+    /// on failures.  Robust deletion is delegated to the scrubber if this
+    /// doesn't get it all done.
+    ss::future<> try_erase(ss::abort_source&);
+
+    enum class erase_result { erased, failed };
+
+    static ss::future<erase_result> erase(
+      cloud_storage::remote&,
+      cloud_storage_clients::bucket_name,
+      partition_manifest,
+      ss::abort_source&);
 
     /// Hook for materialized_segment to notify us when a segment is evicted
     void offload_segment(model::offset);

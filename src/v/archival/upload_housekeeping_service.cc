@@ -73,6 +73,9 @@ upload_housekeeping_service::upload_housekeeping_service(
         _api_utilization = std::make_unique<sliding_window_t>(
           initial, _idle_timeout(), ma_resolution);
     });
+
+    _epoch_duration.watch(
+      [this] { _epoch_timer.rearm_periodic(_epoch_duration()); });
 }
 
 upload_housekeeping_service::~upload_housekeeping_service() {}
@@ -324,6 +327,10 @@ ss::future<> housekeeping_workflow::run_jobs_bg() {
                 jobs_executed++;
                 quota = res.remaining;
                 maybe_update_probe(res);
+            } catch (const ss::gate_closed_exception&) {
+                // Shutting down
+            } catch (const ss::abort_requested_exception&) {
+                // Shutting down
             } catch (...) {
                 vlog(
                   archival_log.warn,

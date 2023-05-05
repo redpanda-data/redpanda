@@ -143,6 +143,16 @@ bool topic_properties::has_overrides() const {
            || segment_ms.is_engaged();
 }
 
+bool topic_properties::requires_remote_erase() const {
+    // A topic requires remote erase if it matches all of:
+    // * Using tiered storage
+    // * Not a read replica
+    // * Has redpanda.remote.delete=true
+    auto mode = shadow_indexing.value_or(model::shadow_indexing_mode::disabled);
+    return mode != model::shadow_indexing_mode::disabled
+           && !read_replica.value_or(false) && remote_delete;
+}
+
 storage::ntp_config::default_overrides
 topic_properties::get_ntp_cfg_overrides() const {
     storage::ntp_config::default_overrides ret;
@@ -1033,6 +1043,16 @@ std::ostream& operator<<(std::ostream& o, const cloud_storage_mode& mode) {
         return o << "read_replica";
     }
     __builtin_unreachable();
+}
+
+std::ostream& operator<<(std::ostream& o, const nt_revision& ntr) {
+    fmt::print(
+      o,
+      "{{ns: {{{}}}, topic: {{}}, revision: {{{}}}}}",
+      ntr.nt.ns,
+      ntr.nt.tp,
+      ntr.initial_revision_id);
+    return o;
 }
 
 } // namespace cluster
