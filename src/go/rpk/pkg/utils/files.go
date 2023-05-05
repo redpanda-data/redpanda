@@ -15,6 +15,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -61,6 +62,7 @@ func ListFilesInPath(fs afero.Fs, path string) []string {
 	for _, fileInfo := range files {
 		names = append(names, fileInfo.Name())
 	}
+	sort.Strings(names)
 	return names
 }
 
