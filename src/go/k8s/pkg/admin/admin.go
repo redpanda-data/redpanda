@@ -102,7 +102,7 @@ type AdminAPIClient interface {
 	RecommissionBroker(ctx context.Context, node int) error
 
 	EnableMaintenanceMode(ctx context.Context, node int) error
-	DisableMaintenanceMode(ctx context.Context, node int) error
+	DisableMaintenanceMode(ctx context.Context, node int, useLeaderNode bool) error
 
 	GetHealthOverview(ctx context.Context) (admin.ClusterHealthOverview, error)
 }

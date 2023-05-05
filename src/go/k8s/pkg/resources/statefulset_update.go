@@ -357,7 +357,7 @@ func (r *StatefulSetResource) checkMaintenanceMode(ctx context.Context, ordinal 
 	if br.Maintenance != nil && br.Maintenance.Draining {
 		r.logger.Info("Disable broker maintenance mode as patch is empty",
 			"pod-ordinal", ordinal)
-		err = adminAPIClient.DisableMaintenanceMode(ctx, nodeConf.NodeID)
+		err = adminAPIClient.DisableMaintenanceMode(ctx, nodeConf.NodeID, false)
 		if err != nil {
 			return fmt.Errorf("disabling maintenance mode: %w", err)
 		}

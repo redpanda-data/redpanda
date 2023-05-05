@@ -333,7 +333,7 @@ func (r *StatefulSetResource) disableMaintenanceModeOnDecommissionedNodes(
 	}
 
 	log.Info("Forcing deletion of maintenance mode for the decommissioned node")
-	err = adminAPI.DisableMaintenanceMode(ctx, int(*brokerID))
+	err = adminAPI.DisableMaintenanceMode(ctx, int(*brokerID), false)
 	if err != nil {
 		var httpErr *admin.HTTPResponseError
 		if errors.As(err, &httpErr) {

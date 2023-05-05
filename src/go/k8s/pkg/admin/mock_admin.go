@@ -420,7 +420,7 @@ func (m *MockAdminAPI) EnableMaintenanceMode(_ context.Context, _ int) error {
 	return nil
 }
 
-func (m *MockAdminAPI) DisableMaintenanceMode(_ context.Context, _ int) error {
+func (m *MockAdminAPI) DisableMaintenanceMode(_ context.Context, _ int, _ bool) error {
 	m.Log.WithName("DisableMaintenanceMode").Info("called")
 	return nil
 }
