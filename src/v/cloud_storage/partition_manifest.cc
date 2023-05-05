@@ -989,9 +989,9 @@ struct partition_manifest_handler
         std::string_view sv(str, length);
         switch (_state) {
         case state::expect_manifest_value:
-            if ("namespace" == _manifest_key) {
+            if (_manifest_key == "namespace") {
                 _namespace = model::ns(ss::sstring(sv));
-            } else if ("topic" == _manifest_key) {
+            } else if (_manifest_key == "topic") {
                 _topic = model::topic(ss::sstring(sv));
             } else {
                 return false;
@@ -1020,27 +1020,27 @@ struct partition_manifest_handler
     bool Uint64(uint64_t u) {
         switch (_state) {
         case state::expect_manifest_value:
-            if ("version" == _manifest_key) {
+            if (_manifest_key == "version") {
                 _version = u;
-            } else if ("partition" == _manifest_key) {
+            } else if (_manifest_key == "partition") {
                 _partition_id = model::partition_id(u);
-            } else if ("revision" == _manifest_key) {
+            } else if (_manifest_key == "revision") {
                 _revision_id = model::initial_revision_id(u);
-            } else if ("last_offset" == _manifest_key) {
+            } else if (_manifest_key == "last_offset") {
                 _last_offset = model::offset(u);
-            } else if ("start_offset" == _manifest_key) {
+            } else if (_manifest_key == "start_offset") {
                 _start_offset = model::offset(u);
-            } else if ("last_uploaded_compacted_offset" == _manifest_key) {
+            } else if (_manifest_key == "last_uploaded_compacted_offset") {
                 _last_uploaded_compacted_offset = model::offset(u);
-            } else if ("insync_offset" == _manifest_key) {
+            } else if (_manifest_key == "insync_offset") {
                 _insync_offset = model::offset(u);
-            } else if ("cloud_log_size_bytes" == _manifest_key) {
+            } else if (_manifest_key == "cloud_log_size_bytes") {
                 _cloud_log_size_bytes = u;
-            } else if ("archive_start_offset" == _manifest_key) {
+            } else if (_manifest_key == "archive_start_offset") {
                 _archive_start_offset = model::offset(u);
-            } else if ("archive_start_offset_delta" == _manifest_key) {
+            } else if (_manifest_key == "archive_start_offset_delta") {
                 _archive_start_offset_delta = model::offset_delta(u);
-            } else if ("archive_clean_offset" == _manifest_key) {
+            } else if (_manifest_key == "archive_clean_offset") {
                 _archive_clean_offset = model::offset(u);
             } else {
                 return false;
@@ -1049,29 +1049,29 @@ struct partition_manifest_handler
             return true;
         case state::expect_replaced_meta_value:
         case state::expect_segment_meta_value:
-            if ("size_bytes" == _segment_meta_key) {
+            if (_segment_meta_key == "size_bytes") {
                 _size_bytes = static_cast<size_t>(u);
-            } else if ("base_offset" == _segment_meta_key) {
+            } else if (_segment_meta_key == "base_offset") {
                 _base_offset = model::offset(u);
-            } else if ("committed_offset" == _segment_meta_key) {
+            } else if (_segment_meta_key == "committed_offset") {
                 _committed_offset = model::offset(u);
-            } else if ("base_timestamp" == _segment_meta_key) {
+            } else if (_segment_meta_key == "base_timestamp") {
                 _base_timestamp = model::timestamp(u);
-            } else if ("max_timestamp" == _segment_meta_key) {
+            } else if (_segment_meta_key == "max_timestamp") {
                 _max_timestamp = model::timestamp(u);
-            } else if ("delta_offset" == _segment_meta_key) {
+            } else if (_segment_meta_key == "delta_offset") {
                 _delta_offset = model::offset_delta(u);
-            } else if ("ntp_revision" == _segment_meta_key) {
+            } else if (_segment_meta_key == "ntp_revision") {
                 _ntp_revision = model::initial_revision_id(u);
-            } else if ("archiver_term" == _segment_meta_key) {
+            } else if (_segment_meta_key == "archiver_term") {
                 _archiver_term = model::term_id(u);
-            } else if ("segment_term" == _segment_meta_key) {
+            } else if (_segment_meta_key == "segment_term") {
                 _segment_term = model::term_id(u);
-            } else if ("delta_offset_end" == _segment_meta_key) {
+            } else if (_segment_meta_key == "delta_offset_end") {
                 _delta_offset_end = model::offset_delta(u);
-            } else if ("sname_format" == _segment_meta_key) {
+            } else if (_segment_meta_key == "sname_format") {
                 _meta_sname_format = segment_name_format(u);
-            } else if ("metadata_size_hint" == _segment_meta_key) {
+            } else if (_segment_meta_key == "metadata_size_hint") {
                 _metadata_size_hint = static_cast<size_t>(u);
             }
             if (_state == state::expect_segment_meta_value) {
@@ -1169,14 +1169,14 @@ struct partition_manifest_handler
     bool Bool(bool b) {
         switch (_state) {
         case state::expect_segment_meta_value:
-            if ("is_compacted" == _segment_meta_key) {
+            if (_segment_meta_key == "is_compacted") {
                 _is_compacted = b;
                 _state = state::expect_segment_meta_key;
                 return true;
             }
             return false;
         case state::expect_replaced_meta_value:
-            if ("is_compacted" == _segment_meta_key) {
+            if (_segment_meta_key == "is_compacted") {
                 _is_compacted = b;
                 _state = state::expect_replaced_meta_key;
                 return true;

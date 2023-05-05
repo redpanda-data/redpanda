@@ -84,7 +84,7 @@ struct descriptor_equal {
 
     bool
     operator()(const pb::FileDescriptor* lhs, const ss::sstring& rhs) const {
-        return lhs->name() == rhs;
+        return ss::sstring(lhs->name()) == rhs;
     }
 };
 

@@ -72,17 +72,17 @@ struct topic_manifest_handler
         std::string_view sv(str, length);
         switch (_state) {
         case state::expect_value:
-            if ("namespace" == _key) {
+            if (_key == "namespace") {
                 _namespace = model::ns(ss::sstring(sv));
-            } else if ("topic" == _key) {
+            } else if (_key == "topic") {
                 _topic = model::topic(ss::sstring(sv));
-            } else if ("compression" == _key) {
+            } else if (_key == "compression") {
                 compression_sv = ss::sstring(sv);
-            } else if ("cleanup_policy_bitflags" == _key) {
+            } else if (_key == "cleanup_policy_bitflags") {
                 cleanup_policy_bitflags_sv = ss::sstring(sv);
-            } else if ("compaction_strategy" == _key) {
+            } else if (_key == "compaction_strategy") {
                 compaction_strategy_sv = ss::sstring(sv);
-            } else if ("timestamp_type" == _key) {
+            } else if (_key == "timestamp_type") {
                 timestamp_type_sv = ss::sstring(sv);
             } else {
                 return false;
@@ -100,19 +100,19 @@ struct topic_manifest_handler
     bool Uint64(uint64_t u) {
         switch (_state) {
         case state::expect_value:
-            if ("version" == _key) {
+            if (_key == "version") {
                 _version = u;
-            } else if ("partition_count" == _key) {
+            } else if (_key == "partition_count") {
                 _partition_count = u;
-            } else if ("replication_factor" == _key) {
+            } else if (_key == "replication_factor") {
                 _replication_factor = u;
-            } else if ("revision_id" == _key) {
+            } else if (_key == "revision_id") {
                 _revision_id = model::initial_revision_id(u);
-            } else if ("segment_size" == _key) {
+            } else if (_key == "segment_size") {
                 _properties.segment_size = u;
-            } else if ("retention_bytes" == _key) {
+            } else if (_key == "retention_bytes") {
                 _properties.retention_bytes = tristate<size_t>(u);
-            } else if ("retention_duration" == _key) {
+            } else if (_key == "retention_duration") {
                 _properties.retention_duration
                   = tristate<std::chrono::milliseconds>(
                     std::chrono::milliseconds(u));
