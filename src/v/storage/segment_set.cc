@@ -276,7 +276,7 @@ static ss::future<segment_set> unsafe_do_recover(
             if (
               last_clean_segment
               && std::filesystem::path(s->filename()).filename().string()
-                   == last_clean_segment.value()) {
+                   == std::string(last_clean_segment.value())) {
                 vlog(
                   stlog.debug,
                   "Skipping recovery of {}, it is marked clean",
