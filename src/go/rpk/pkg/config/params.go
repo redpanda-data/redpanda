@@ -363,6 +363,9 @@ func (p *Params) Load(fs afero.Fs) (*Config, error) {
 	c.rpkYaml.Contexts[0].KafkaAPI = c.redpandaYaml.Rpk.KafkaAPI
 	c.rpkYaml.Contexts[0].AdminAPI = c.redpandaYaml.Rpk.AdminAPI
 
+	if err := p.backcompatOldCloudYaml(fs); err != nil {
+		return nil, err
+	}
 	if err := p.readRpkConfig(fs, c); err != nil {
 		return nil, err
 	}
@@ -499,6 +502,87 @@ func readFile(fs afero.Fs, path string) (string, []byte, error) {
 	return abs, file, err
 }
 
+func (p *Params) backcompatOldCloudYaml(fs afero.Fs) error {
+	def, err := DefaultRpkYamlPath()
+	if err != nil {
+		// If the user has deliberately unset HOME and is using a --config
+		// flag, we will just avoid backcompatting the __cloud.yaml file.
+		if p.ConfigFlag != "" {
+			return nil
+		}
+		return err
+	}
+
+	// Read and parse the old file. If it does not exist, that's great.
+	oldPath := filepath.Join(filepath.Dir(def), "__cloud.yaml")
+	_, raw, err := readFile(fs, oldPath)
+	if err != nil {
+		if errors.Is(err, afero.ErrFileNotFound) {
+			return nil
+		}
+		return fmt.Errorf("unable to backcompat __cloud.yaml file: %v", err)
+	}
+	var old struct {
+		ClientID     string `yaml:"client_id"`
+		ClientSecret string `yaml:"client_secret"`
+		AuthToken    string `yaml:"auth_token"`
+	}
+	if err := yaml.Unmarshal(raw, &old); err != nil {
+		return fmt.Errorf("unable to yaml decode %s: %v", oldPath, err)
+	}
+
+	// For the rpk.yaml, if it does not exist, we will create it.
+	// We only support the default path, not any --config override.
+	// We do not want to migrate into some custom path.
+	_, rawRpkYaml, err := readFile(fs, def)
+	if err != nil && !errors.Is(err, afero.ErrFileNotFound) {
+		return fmt.Errorf("unable to read %s: %v", def, err)
+	}
+	var rpkYaml RpkYaml
+	if errors.Is(err, afero.ErrFileNotFound) {
+		rpkYaml = emptyMaterializedRpkYaml()
+	} else {
+		if err := yaml.Unmarshal(rawRpkYaml, &rpkYaml); err != nil {
+			return fmt.Errorf("unable to yaml decode %s: %v", def, err)
+		}
+		if rpkYaml.Version < 1 {
+			return fmt.Errorf("%s is not in the expected rpk.yaml format", def)
+		} else if rpkYaml.Version > 1 {
+			return fmt.Errorf("%s is using a newer rpk.yaml format than we understand, please upgrade rpk", def)
+		}
+	}
+	rpkYaml.fileLocation = def
+
+	var exists bool
+	for _, a := range rpkYaml.CloudAuths {
+		if a.ClientID == old.ClientID && a.ClientSecret == old.ClientSecret {
+			exists = true
+			break
+		}
+	}
+	if !exists {
+		a := RpkCloudAuth{
+			Name:         "for_byoc",
+			Description:  "Client ID and Secret for BYOC",
+			ClientID:     old.ClientID,
+			ClientSecret: old.ClientSecret,
+			AuthToken:    old.AuthToken,
+		}
+		rpkYaml.PushAuth(a)
+		if rpkYaml.CurrentCloudAuth == "" {
+			rpkYaml.CurrentCloudAuth = a.Name
+		}
+		if err := rpkYaml.Write(fs); err != nil {
+			return fmt.Errorf("unable to migrate %s to %s: %v", oldPath, def, err)
+		}
+	}
+	// If we fail at removing the old file, that's ok. We will try again
+	// the next time this command runs.
+	fs.Remove(oldPath)
+
+	return nil
+}
+
 func (p *Params) readRpkConfig(fs afero.Fs, c *Config) error {
 	def, err := DefaultRpkYamlPath()
 	path := def
@@ -526,9 +610,14 @@ func (p *Params) readRpkConfig(fs afero.Fs, c *Config) error {
 	if err := yaml.Unmarshal(file, &c.rpkYaml); err != nil {
 		return fmt.Errorf("unable to yaml decode %s: %v", path, err)
 	}
-	if c.rpkYaml.Version != 1 {
+	if c.rpkYaml.Version < 1 {
+		if p.ConfigFlag == "" {
+			return fmt.Errorf("%s is not in the expected rpk.yaml format", def)
+		}
 		c.rpkYaml = before // this config is not an rpk.yaml; preserve our defaults
 		return nil
+	} else if c.rpkYaml.Version > 1 {
+		return fmt.Errorf("%s is using a newer rpk.yaml format than we understand, please upgrade rpk", def)
 	}
 	yaml.Unmarshal(file, &c.rpkYamlActual)
 

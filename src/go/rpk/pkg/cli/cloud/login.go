@@ -48,13 +48,13 @@ Cloud client credentials can be used to login to Redpanda, they can be created
 in the Clients tab of the Users section in the Redpanda Cloud online interface. 
 client credentials can be provided in three ways, in order of preference:
 
-* In $HOME/.config/rpk/__cloud.yaml, in 'client_id' and 'client_secret' fields
+* In your rpk cloud auth, 'client_id' and 'client_secret' fields
 * Through RPK_CLOUD_CLIENT_ID and RPK_CLOUD_CLIENT_SECRET environment variables
 * Through the --client-id and --client-secret flags
 
 If none of these are provided, rpk will use the SSO method to login. 
 If you specify environment variables or flags, they will not be synced to the
-__cloud.yaml file unless the --save flag is passed. The cloud authorization 
+rpk.yaml file unless the --save flag is passed. The cloud authorization 
 token and client ID is always synced.
 `,
 		Run: func(cmd *cobra.Command, _ []string) {
