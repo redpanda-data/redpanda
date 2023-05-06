@@ -208,6 +208,29 @@ bool allocated_partition::has_changes() const {
     return false;
 }
 
+bool allocated_partition::has_node_changes() const {
+    if (!_original) {
+        return false;
+    }
+    if (_replicas.size() != _original->size()) {
+        return true;
+    }
+
+    absl::flat_hash_set<model::node_id> original;
+    original.reserve(_original->size());
+    for (const auto& bs : *_original) {
+        original.insert(bs.node_id);
+    }
+
+    absl::flat_hash_set<model::node_id> current;
+    current.reserve(_replicas.size());
+    for (const auto& bs : _replicas) {
+        current.insert(bs.node_id);
+    }
+
+    return original != current;
+}
+
 bool allocated_partition::is_original(
   const model::broker_shard& replica) const {
     if (_original) {
