@@ -66,18 +66,18 @@ public:
 private:
     class request_context;
 
-    partition_constraints get_partition_constraints(
-      const partition_assignment& assignments,
+    allocation_constraints get_allocation_constraints(
       size_t partition_size,
       double max_disk_usage_ratio,
       request_context&) const;
 
-    result<allocated_partition> get_reallocation(
+    result<model::broker_shard> move_replica(
       const model::ntp&,
-      const partition_assignment&,
+      allocated_partition&,
       size_t partition_size,
-      partition_constraints,
-      const std::vector<model::broker_shard>& stable_replicas,
+      model::node_id previous,
+      allocation_constraints,
+      std::string_view reason,
       request_context&);
 
     void get_unavailable_nodes_reassignments(request_context&);
