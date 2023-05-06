@@ -237,7 +237,7 @@ fmt::formatter<security::license, char, void>::format<
   fmt::basic_format_context<fmt::appender, char>>(
   const security::license& r,
   fmt::basic_format_context<fmt::appender, char>& ctx) const {
-    return format_to(
+    return fmt::format_to(
       ctx.out(),
       "[Version: {0}, Organization: {1}, Type: {2} Expiry(epoch): {3}]",
       r.format_version,

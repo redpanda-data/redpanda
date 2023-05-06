@@ -35,7 +35,7 @@ SEASTAR_THREAD_TEST_CASE(test_override_address) {
         auto rc = cloud_roles::make_refresh_credentials(
           kind, as, [](auto) { return ss::now(); }, region);
         BOOST_REQUIRE_EQUAL(
-          std::string(name) + "{address:{host: localhost, port: 1234}}",
+          ss::sstring(name) + "{address:{host: localhost, port: 1234}}",
           ssx::sformat("{}", rc));
     }
 }

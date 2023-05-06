@@ -84,7 +84,7 @@ struct descriptor_equal {
 
     bool
     operator()(const pb::FileDescriptor* lhs, const ss::sstring& rhs) const {
-        return lhs->name() == rhs;
+        return ss::sstring(lhs->name()) == rhs;
     }
 };
 
@@ -496,7 +496,7 @@ struct fmt::formatter<pandaproxy::schema_registry::io_error_collector::err> {
 
     template<typename FormatContext>
     auto format(const type::err& e, FormatContext& ctx) const {
-        return format_to(
+        return fmt::format_to(
           ctx.out(),
           "{}: line: '{}', col: '{}', msg: '{}'",
           e.lvl == type::level::error ? "error" : "warn",
@@ -514,7 +514,7 @@ struct fmt::formatter<pandaproxy::schema_registry::dp_error_collector::err> {
 
     template<typename FormatContext>
     auto format(const type::err& e, FormatContext& ctx) const {
-        return format_to(
+        return fmt::format_to(
           ctx.out(),
           "{}: subject: '{}', element_name: '{}', descriptor: '{}', location: "
           "'{}', msg: '{}'",

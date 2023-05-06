@@ -453,12 +453,12 @@ fmt::formatter<security::gssapi_name, char, void>::format<
   fmt::basic_format_context<fmt::appender, char>>(
   security::gssapi_name const& r,
   fmt::basic_format_context<fmt::appender, char>& ctx) const {
-    format_to(ctx.out(), "{}", r._primary);
+    fmt::format_to(ctx.out(), "{}", r._primary);
     if (!r._host_name.empty()) {
-        format_to(ctx.out(), "/{}", r._host_name);
+        fmt::format_to(ctx.out(), "/{}", r._host_name);
     }
     if (!r._realm.empty()) {
-        format_to(ctx.out(), "@{}", r._realm);
+        fmt::format_to(ctx.out(), "@{}", r._realm);
     }
 
     return ctx.out();
@@ -471,26 +471,28 @@ fmt::formatter<security::gssapi_rule, char, void>::format<
   security::gssapi_rule const& r,
   fmt::basic_format_context<fmt::appender, char>& ctx) const {
     if (r._is_default) {
-        return format_to(ctx.out(), "DEFAULT");
+        return fmt::format_to(ctx.out(), "DEFAULT");
     }
-    format_to(ctx.out(), "RULE:[{}:{}]", r._number_of_components, r._format);
+    fmt::format_to(
+      ctx.out(), "RULE:[{}:{}]", r._number_of_components, r._format);
     if (!r._match.empty()) {
-        format_to(ctx.out(), "({})", r._match);
+        fmt::format_to(ctx.out(), "({})", r._match);
     }
     if (r._from_pattern) {
-        format_to(ctx.out(), "s/{}/{}/", r._from_pattern_str, r._to_pattern);
+        fmt::format_to(
+          ctx.out(), "s/{}/{}/", r._from_pattern_str, r._to_pattern);
         if (r._repeat) {
-            format_to(ctx.out(), "g");
+            fmt::format_to(ctx.out(), "g");
         }
     }
     switch (r._case_change) {
     case security::gssapi_rule::noop:
         break;
     case security::gssapi_rule::make_lower:
-        format_to(ctx.out(), "/L");
+        fmt::format_to(ctx.out(), "/L");
         break;
     case security::gssapi_rule::make_upper:
-        format_to(ctx.out(), "/U");
+        fmt::format_to(ctx.out(), "/U");
         break;
     }
 
@@ -503,5 +505,5 @@ fmt::formatter<security::gssapi_principal_mapper, char, void>::format<
   fmt::basic_format_context<fmt::appender, char>>(
   security::gssapi_principal_mapper const& r,
   fmt::basic_format_context<fmt::appender, char>& ctx) const {
-    return format_to(ctx.out(), "[{}]", fmt::join(r._rules, ", "));
+    return fmt::format_to(ctx.out(), "[{}]", fmt::join(r._rules, ", "));
 }

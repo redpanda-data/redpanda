@@ -11,6 +11,7 @@
 
 #include <cinttypes>
 #include <concepts>
+#include <cstddef>
 #include <type_traits>
 
 namespace serde {
