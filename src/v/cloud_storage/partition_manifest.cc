@@ -1856,14 +1856,18 @@ partition_manifest::timequery(model::timestamp t) const {
     if (segment_iter->base_timestamp < t) {
         // Our guess's base_timestamp is before the search point, so our
         // result must be this segment or a later one: search forward
-        return *std::find_if(
-          std::move(segment_iter),
-          _segments.at_index(_segments.size() - 1),
-          [&](auto const& s) {
-              // We found a segment bounding the search point - or -
-              // We found the first segment after the search point
-              return s.max_timestamp >= t || s.base_timestamp > t;
-          });
+        const auto& end = _segments.at_index(_segments.size() - 1);
+        for (; segment_iter != end; ++segment_iter) {
+            const auto& s = *segment_iter;
+            // We found a segment bounding the search point - or -
+            // We found the first segment after the search point
+            if (s.max_timestamp >= t || s.base_timestamp > t) {
+                return s;
+            }
+        }
+        vassert(
+          end != _segments.end(), "Trying to dereference invalid iterator");
+        return *end;
     } else {
         // Search backwards: we must peek at each preceding segment
         // to see if its max_timestamp is >= the query t, before
