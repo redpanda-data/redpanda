@@ -1,0 +1,18 @@
+apiVersion: redpanda.vectorized.io/v1alpha1
+kind: Cluster
+metadata:
+  name: cluster
+  namespace: console
+status:
+  replicas: 1
+  restarting: false
+  conditions:
+    - type: ClusterConfigured
+      status: "True"
+
+---
+
+apiVersion: kuttl.dev/v1beta1
+kind: TestAssert
+collectors:
+  - command: ../../../hack/get-redpanda-info.sh console

@@ -1,0 +1,7 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: cluster
+  namespace: console
+spec:
+  replicas: 0
