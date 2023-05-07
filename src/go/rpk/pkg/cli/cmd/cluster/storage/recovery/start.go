@@ -77,10 +77,14 @@ recovery process until it's finished.`,
 				out.MaybeDie(err, "failed to poll automated recovery status: %v", err)
 
 				pending := false
-				for _, topicDownload := range status.TopicDownloads {
-					if topicDownload.PendingDownloads > 0 {
-						pending = true
-						break
+				if status.State != "inactive" {
+					pending = true
+				} else {
+					for _, topicDownload := range status.TopicDownloads {
+						if topicDownload.PendingDownloads > 0 {
+							pending = true
+							break
+						}
 					}
 				}
 
