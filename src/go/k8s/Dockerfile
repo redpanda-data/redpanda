@@ -1,4 +1,4 @@
-FROM public.ecr.aws/docker/library/golang:1.20.1 as builder
+FROM public.ecr.aws/docker/library/golang:1.20.4 as builder
 
 ARG TARGETARCH
 
