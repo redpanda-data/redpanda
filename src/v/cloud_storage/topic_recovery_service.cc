@@ -157,6 +157,7 @@ topic_recovery_service::start_recovery(ss::httpd::request req) {
         }
 
         recovery_request request{std::move(req)};
+        _state = state::starting;
         ssx::spawn_with_gate(_gate, [this, r = std::move(request)]() mutable {
             return start_bg_recovery_task(std::move(r)).then([](auto result) {
                 if (result.has_error()) {
@@ -257,19 +258,7 @@ collect_manifest_paths(
 
 ss::future<result<void, recovery_error_ctx>>
 topic_recovery_service::start_bg_recovery_task(recovery_request request) {
-    if (is_active()) {
-        vlog(cst_log.warn, "A recovery is already active");
-        co_return recovery_error_ctx::make(
-          "A recovery is already active",
-          recovery_error_code::recovery_already_running);
-    }
-
     vlog(cst_log.info, "Starting recovery task with request: {}", request);
-    // Setting this state here ensures that another request coming in soon after
-    // on the same shard is rejected. If we set this state after the RPC call,
-    // it is possible that two requests sent back to back on the controller
-    // leader assume that no other recovery is running.
-    _state = state::starting;
     if (_pending_status_timer.cancel()) {
         vlog(
           cst_log.warn,
