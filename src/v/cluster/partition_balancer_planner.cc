@@ -82,7 +82,28 @@ public:
     uint64_t planned_moves_size = 0;
     absl::btree_set<model::ntp> cancellations;
 
+    bool is_batch_full() const {
+        return planned_moves_size >= _parent._config.movement_disk_size_batch;
+    }
+
+    bool is_partition_movement_possible(
+      const std::vector<model::broker_shard>& current_replicas) const;
+
+    allocation_constraints get_allocation_constraints(
+      size_t partition_size, double max_disk_usage_ratio) const;
+
+private:
+    friend class partition_balancer_planner;
+
+    request_context(partition_balancer_planner& parent)
+      : _parent(parent) {}
+
+    bool all_reports_received() const;
+
     void collect_actions(plan_data&);
+
+private:
+    partition_balancer_planner& _parent;
 };
 
 void partition_balancer_planner::init_per_node_state(
@@ -179,12 +200,11 @@ void partition_balancer_planner::init_ntp_sizes_from_health_report(
     }
 }
 
-bool partition_balancer_planner::all_reports_received(
-  const request_context& ctx) {
-    for (auto id : ctx.all_nodes) {
+bool partition_balancer_planner::request_context::all_reports_received() const {
+    for (auto id : all_nodes) {
         if (
-          !ctx.all_unavailable_nodes.contains(id)
-          && !ctx.node_disk_reports.contains(id)) {
+          !all_unavailable_nodes.contains(id)
+          && !node_disk_reports.contains(id)) {
             vlog(clusterlog.info, "No disk report for node {}", id);
             return false;
         }
@@ -192,15 +212,15 @@ bool partition_balancer_planner::all_reports_received(
     return true;
 }
 
-bool partition_balancer_planner::is_partition_movement_possible(
-  const std::vector<model::broker_shard>& current_replicas,
-  const request_context& ctx) {
+bool partition_balancer_planner::request_context::
+  is_partition_movement_possible(
+    const std::vector<model::broker_shard>& current_replicas) const {
     // Check that nodes quorum is available
     size_t available_nodes_amount = std::count_if(
       current_replicas.begin(),
       current_replicas.end(),
-      [&ctx](const model::broker_shard& bs) {
-          return !ctx.all_unavailable_nodes.contains(bs.node_id);
+      [this](const model::broker_shard& bs) {
+          return !all_unavailable_nodes.contains(bs.node_id);
       });
     if (available_nodes_amount * 2 < current_replicas.size()) {
         return false;
@@ -223,30 +243,26 @@ std::optional<size_t> partition_balancer_planner::get_partition_size(
     return std::nullopt;
 }
 
-allocation_constraints partition_balancer_planner::get_allocation_constraints(
-  size_t partition_size,
-  double max_disk_usage_ratio,
-  request_context& ctx) const {
+allocation_constraints
+partition_balancer_planner::request_context::get_allocation_constraints(
+  size_t partition_size, double max_disk_usage_ratio) const {
     allocation_constraints constraints;
 
     // Add constraint on least disk usage
-    constraints.add(
-      least_disk_filled(max_disk_usage_ratio, ctx.node_disk_reports));
+    constraints.add(least_disk_filled(max_disk_usage_ratio, node_disk_reports));
 
     // Add constraint on partition max_disk_usage_ratio overfill
-    size_t upper_bound_for_partition_size = partition_size
-                                            + _config.segment_fallocation_step;
+    size_t upper_bound_for_partition_size
+      = partition_size + _parent._config.segment_fallocation_step;
     constraints.add(disk_not_overflowed_by_partition(
-      max_disk_usage_ratio,
-      upper_bound_for_partition_size,
-      ctx.node_disk_reports));
+      max_disk_usage_ratio, upper_bound_for_partition_size, node_disk_reports));
 
     // Add constraint on unavailable nodes
-    constraints.add(distinct_from(ctx.timed_out_unavailable_nodes));
+    constraints.add(distinct_from(timed_out_unavailable_nodes));
 
     // Add constraint on decommissioning nodes
-    if (!ctx.decommissioning_nodes.empty()) {
-        constraints.add(distinct_from(ctx.decommissioning_nodes));
+    if (!decommissioning_nodes.empty()) {
+        constraints.add(distinct_from(decommissioning_nodes));
     }
 
     return constraints;
@@ -314,7 +330,7 @@ void partition_balancer_planner::get_unavailable_nodes_reassignments(
     for (const auto& t : _state.topics().topics_map()) {
         for (const auto& a : t.second.get_assignments()) {
             // End adding movements if batch is collected
-            if (ctx.planned_moves_size >= _config.movement_disk_size_batch) {
+            if (ctx.is_batch_full()) {
                 return;
             }
 
@@ -337,7 +353,7 @@ void partition_balancer_planner::get_unavailable_nodes_reassignments(
             auto partition_size = get_partition_size(ntp, ctx);
             if (
               !partition_size.has_value()
-              || !is_partition_movement_possible(a.replicas, ctx)) {
+              || !ctx.is_partition_movement_possible(a.replicas)) {
                 ctx.failed_reassignments_count += 1;
                 continue;
             }
@@ -345,8 +361,8 @@ void partition_balancer_planner::get_unavailable_nodes_reassignments(
             auto reallocated = _partition_allocator.make_allocated_partition(
               a.replicas, get_allocation_domain(ntp));
 
-            auto constraints = get_allocation_constraints(
-              partition_size.value(), _config.hard_max_disk_usage_ratio, ctx);
+            auto constraints = ctx.get_allocation_constraints(
+              partition_size.value(), _config.hard_max_disk_usage_ratio);
 
             for (const auto& replica : to_move) {
                 auto moved = move_replica(
@@ -397,7 +413,7 @@ void partition_balancer_planner::get_rack_constraint_repair_reassignments(
     }
 
     for (const auto& ntp : _state.ntps_with_broken_rack_constraint()) {
-        if (ctx.planned_moves_size >= _config.movement_disk_size_batch) {
+        if (ctx.is_batch_full()) {
             return;
         }
 
@@ -438,7 +454,7 @@ void partition_balancer_planner::get_rack_constraint_repair_reassignments(
         auto partition_size = get_partition_size(ntp, ctx);
         if (
           !partition_size.has_value()
-          || !is_partition_movement_possible(orig_replicas, ctx)) {
+          || !ctx.is_partition_movement_possible(orig_replicas)) {
             ctx.failed_reassignments_count += 1;
             continue;
         }
@@ -446,8 +462,8 @@ void partition_balancer_planner::get_rack_constraint_repair_reassignments(
         auto reallocated = _partition_allocator.make_allocated_partition(
           orig_replicas, get_allocation_domain(ntp));
 
-        auto constraints = get_allocation_constraints(
-          partition_size.value(), _config.hard_max_disk_usage_ratio, ctx);
+        auto constraints = ctx.get_allocation_constraints(
+          partition_size.value(), _config.hard_max_disk_usage_ratio);
 
         for (const auto& replica : to_move) {
             auto moved = move_replica(
@@ -511,7 +527,7 @@ void partition_balancer_planner::get_full_node_reassignments(
     }
 
     for (const auto* node_disk : sorted_full_nodes) {
-        if (ctx.planned_moves_size >= _config.movement_disk_size_batch) {
+        if (ctx.is_batch_full()) {
             return;
         }
 
@@ -528,7 +544,7 @@ void partition_balancer_planner::get_full_node_reassignments(
         auto ntp_size_it = ntp_on_node_sizes.begin();
         while (node_disk->final_used_ratio() > _config.soft_max_disk_usage_ratio
                && ntp_size_it != ntp_on_node_sizes.end()) {
-            if (ctx.planned_moves_size >= _config.movement_disk_size_batch) {
+            if (ctx.is_batch_full()) {
                 return;
             }
 
@@ -545,7 +561,7 @@ void partition_balancer_planner::get_full_node_reassignments(
                                                partition_to_move.tp.partition)
                                              ->replicas;
 
-            if (!is_partition_movement_possible(current_replicas, ctx)) {
+            if (!ctx.is_partition_movement_possible(current_replicas)) {
                 ctx.failed_reassignments_count += 1;
                 ntp_size_it++;
                 continue;
@@ -593,8 +609,8 @@ void partition_balancer_planner::get_full_node_reassignments(
             auto reallocated = _partition_allocator.make_allocated_partition(
               current_replicas, get_allocation_domain(ntp_size_it->second));
 
-            auto constraints = get_allocation_constraints(
-              ntp_size_it->first, _config.soft_max_disk_usage_ratio, ctx);
+            auto constraints = ctx.get_allocation_constraints(
+              ntp_size_it->first, _config.soft_max_disk_usage_ratio);
 
             for (const auto& replica : full_node_replicas) {
                 auto moved = move_replica(
@@ -691,7 +707,7 @@ void partition_balancer_planner::request_context::collect_actions(
 partition_balancer_planner::plan_data partition_balancer_planner::plan_actions(
   const cluster_health_report& health_report,
   const std::vector<raft::follower_metrics>& follower_metrics) {
-    request_context ctx;
+    request_context ctx(*this);
     plan_data result;
 
     init_per_node_state(health_report, follower_metrics, ctx, result);
@@ -710,7 +726,7 @@ partition_balancer_planner::plan_data partition_balancer_planner::plan_actions(
         return result;
     }
 
-    if (!all_reports_received(ctx)) {
+    if (!ctx.all_reports_received()) {
         result.status = status::waiting_for_reports;
         return result;
     }

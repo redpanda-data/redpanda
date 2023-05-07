@@ -66,10 +66,17 @@ public:
 private:
     class request_context;
 
-    allocation_constraints get_allocation_constraints(
-      size_t partition_size,
-      double max_disk_usage_ratio,
-      request_context&) const;
+    void init_per_node_state(
+      const cluster_health_report&,
+      const std::vector<raft::follower_metrics>&,
+      request_context&,
+      plan_data&) const;
+
+    void init_ntp_sizes_from_health_report(
+      const cluster_health_report& health_report, request_context&);
+
+    std::optional<size_t>
+    get_partition_size(const model::ntp& ntp, const request_context&);
 
     result<model::broker_shard> move_replica(
       const model::ntp&,
@@ -80,31 +87,12 @@ private:
       std::string_view reason,
       request_context&);
 
+    void get_unavailable_node_movement_cancellations(request_context&);
     void get_unavailable_nodes_reassignments(request_context&);
 
     void get_rack_constraint_repair_reassignments(request_context&);
 
     void get_full_node_reassignments(request_context&);
-
-    void init_per_node_state(
-      const cluster_health_report&,
-      const std::vector<raft::follower_metrics>&,
-      request_context&,
-      plan_data&) const;
-
-    void get_unavailable_node_movement_cancellations(request_context&);
-
-    bool is_partition_movement_possible(
-      const std::vector<model::broker_shard>& current_replicas,
-      const request_context&);
-
-    void init_ntp_sizes_from_health_report(
-      const cluster_health_report& health_report, request_context&);
-
-    std::optional<size_t>
-    get_partition_size(const model::ntp& ntp, const request_context&);
-
-    bool all_reports_received(const request_context&);
 
     planner_config _config;
     partition_balancer_state& _state;
