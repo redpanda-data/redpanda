@@ -574,6 +574,7 @@ class ShadowIndexingManyPartitionsTest(PreallocNodesTest):
                 "cloud_storage_enable_segment_merging": False,
                 'log_segment_size_min': 1024,
             },
+            environment={'__REDPANDA_TOPIC_REC_DL_CHECK_MILLIS': 5000},
             si_settings=si_settings)
         self.kafka_tools = KafkaCliTools(self.redpanda)
 
@@ -617,6 +618,45 @@ class ShadowIndexingManyPartitionsTest(PreallocNodesTest):
         seq_consumer.start(clean=False)
         seq_consumer.wait()
         self.redpanda.stop_node(self.redpanda.nodes[0])
+
+    @skip_debug_mode
+    @cluster(num_nodes=2)
+    def test_many_partitions_recovery(self):
+        """
+        Test that reproduces an OOM when doing recovery with a large dataset in
+        the bucket.
+        """
+        producer = KgoVerifierProducer(self.test_context,
+                                       self.redpanda,
+                                       self.topic,
+                                       msg_size=1024,
+                                       msg_count=1000 * 1000,
+                                       custom_node=self.preallocated_nodes)
+        producer.start()
+        try:
+            wait_until(
+                lambda: nodes_report_cloud_segments(self.redpanda, 100 * 200),
+                timeout_sec=180,
+                backoff_sec=3)
+        finally:
+            producer.stop()
+            producer.wait()
+
+        node = self.redpanda.nodes[0]
+        self.redpanda.stop()
+        self.redpanda.remove_local_data(node)
+        self.redpanda.restart_nodes(self.redpanda.nodes)
+        self.redpanda._admin.await_stable_leader("controller",
+                                                 partition=0,
+                                                 namespace='redpanda',
+                                                 timeout_s=60,
+                                                 backoff_s=2)
+
+        rpk = RpkTool(self.redpanda)
+        rpk.cluster_recovery_start(wait=True)
+        wait_until(lambda: len(set(rpk.list_topics())) == 1,
+                   timeout_sec=120,
+                   backoff_sec=3)
 
 
 class ShadowIndexingWhileBusyTest(PreallocNodesTest):
