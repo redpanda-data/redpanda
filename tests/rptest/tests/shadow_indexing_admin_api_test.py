@@ -183,7 +183,7 @@ class SIAdminApiTest(RedpandaTest):
                     payload=payload)
             except requests.exceptions.HTTPError as e:
                 assert e.response.status_code == requests.status_codes.codes[
-                    'bad_request'], f'unexpected status code: {response} for {payload}'
+                    'bad_request'], f'unexpected status code: {e.response} for {payload}'
 
     @cluster(num_nodes=3)
     def test_topic_recovery_status_to_non_controller(self):
