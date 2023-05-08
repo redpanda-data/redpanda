@@ -15,6 +15,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/fluxcd/pkg/runtime/logger"
 	"github.com/go-logr/logr"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -74,10 +75,10 @@ const (
 func (r *ConsoleReconciler) Reconcile(
 	ctx context.Context, req ctrl.Request,
 ) (ctrl.Result, error) {
-	log := r.Log.WithValues("redpandaconsole", req.NamespacedName)
+	log := ctrl.LoggerFrom(ctx).WithName("ConsoleReconciler.Reconcile")
 
-	log.Info(fmt.Sprintf("Starting reconcile loop for %v", req.NamespacedName))
-	defer log.Info(fmt.Sprintf("Finished reconcile loop for %v", req.NamespacedName))
+	log.Info("Starting reconcile loop")
+	defer log.Info("Finished reconcile loop")
 
 	console := &redpandav1alpha1.Console{}
 	if err := r.Get(ctx, req.NamespacedName, console); err != nil {
@@ -122,7 +123,7 @@ func (r *ConsoleReconciler) Reconcile(
 		return ctrl.Result{}, err
 	}
 
-	r.Log.V(debugLogLevel).Info("console", "observed generation", console.Status.ObservedGeneration, "generation", console.GetGeneration())
+	r.Log.V(logger.DebugLevel).Info("console", "observed generation", console.Status.ObservedGeneration, "generation", console.GetGeneration())
 	var s state
 	switch {
 	case !console.GetDeletionTimestamp().IsZero():
@@ -147,8 +148,9 @@ func (r *Reconciling) Do(
 	ctx context.Context,
 	console *redpandav1alpha1.Console,
 	cluster *redpandav1alpha1.Cluster,
-	log logr.Logger,
+	l logr.Logger,
 ) (ctrl.Result, error) {
+	log := l.WithName("Reconciling.Do")
 	// Ensure items in the store are updated
 	if err := r.Store.Sync(ctx, cluster); err != nil {
 		return ctrl.Result{}, fmt.Errorf("sync console store: %w", err)
@@ -195,14 +197,14 @@ func (r *Reconciling) Do(
 		if err := each.Ensure(ctx); err != nil { //nolint:gocritic // more readable
 			var ra *resources.RequeueAfterError
 			if errors.As(err, &ra) {
-				log.V(debugLogLevel).Info(fmt.Sprintf("Requeue ensuring resource after %d: %s", ra.RequeueAfter, ra.Msg))
+				log.V(logger.DebugLevel).Info(fmt.Sprintf("Requeue ensuring resource after %d: %s", ra.RequeueAfter, ra.Msg))
 				// RequeueAfterError is used to delay retry
 				log.Info(fmt.Sprintf("Ensuring resource failed, requeueing after %s: %s", ra.RequeueAfter, ra.Msg))
 				return ctrl.Result{RequeueAfter: ra.RequeueAfter}, nil
 			}
 			var r *resources.RequeueError
 			if errors.As(err, &r) {
-				log.V(debugLogLevel).Info(fmt.Sprintf("Requeue ensuring resource: %s", r.Msg))
+				log.V(logger.DebugLevel).Info(fmt.Sprintf("Requeue ensuring resource: %s", r.Msg))
 				// RequeueError is used to skip controller logging the error and using default retry backoff
 				// Don't return the error, as it is most likely not an actual error
 				return ctrl.Result{Requeue: true}, nil
@@ -230,8 +232,9 @@ func (r *Deleting) Do(
 	ctx context.Context,
 	console *redpandav1alpha1.Console,
 	cluster *redpandav1alpha1.Cluster,
-	log logr.Logger,
+	l logr.Logger,
 ) (ctrl.Result, error) {
+	log := l.WithName("Deleting.Do")
 	applyResources := []resources.ManagedResource{
 		consolepkg.NewKafkaSA(r.Client, r.Scheme, console, cluster, r.clusterDomain, r.AdminAPIClientFactory, log),
 		consolepkg.NewKafkaACL(r.Client, r.Scheme, console, cluster, r.KafkaAdminClientFactory, r.Store, log),
@@ -250,8 +253,9 @@ func (r *Deleting) Do(
 func (r *ConsoleReconciler) handleSpecChange(
 	ctx context.Context, console *redpandav1alpha1.Console,
 ) error {
+	log := r.Log.WithName("handleSpecChange")
 	if console.Status.ConfigMapRef != nil {
-		r.Log.V(debugLogLevel).Info("handle spec change", "config map name", console.Status.ConfigMapRef.Name, "config map namespace", console.Status.ConfigMapRef.Namespace)
+		log.V(logger.DebugLevel).WithValues("config map name", console.Status.ConfigMapRef.Name, "config map namespace", console.Status.ConfigMapRef.Namespace).Info("handle spec change")
 		// We are creating new ConfigMap for every spec change so Deployment can detect changes and redeploy Pods
 		// Unset Status.ConfigMapRef so we can delete the previous unused ConfigMap
 		previousConfigMapRef := fmt.Sprintf("%s/%s", console.Status.ConfigMapRef.Namespace, console.Status.ConfigMapRef.Name)

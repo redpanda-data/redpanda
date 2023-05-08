@@ -13,6 +13,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/fluxcd/pkg/runtime/logger"
 	"github.com/go-logr/logr"
 	netv1 "k8s.io/api/networking/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -30,8 +31,6 @@ const (
 
 	// SSLPassthroughAnnotation is the annotation for ingress nginx SSL passthrough
 	SSLPassthroughAnnotation = "nginx.ingress.kubernetes.io/ssl-passthrough" //nolint:gosec // This value does not contain credentials.
-
-	debugLogLevel = 4
 
 	// LEClusterIssuer is the LetsEncrypt issuer
 	LEClusterIssuer = "letsencrypt-dns-prod"
@@ -63,7 +62,7 @@ func NewIngress(
 	subdomain string,
 	svcName string,
 	svcPortName string,
-	logger logr.Logger,
+	l logr.Logger,
 ) *IngressResource {
 	return &IngressResource{
 		client,
@@ -76,7 +75,7 @@ func NewIngress(
 		nil,
 		nil,
 		"",
-		logger.WithValues(
+		l.WithValues(
 			"Kind", ingressKind(),
 		),
 	}
@@ -166,7 +165,7 @@ func (r *IngressResource) Ensure(ctx context.Context) error {
 	ingressDisabled := r.userConfig != nil && r.userConfig.Enabled != nil && !*r.userConfig.Enabled
 	emptyHost := r.host() == ""
 	if ingressDisabled || emptyHost {
-		r.logger.V(debugLogLevel).Info("ingress will not be created", "disabled", ingressDisabled, "empty_host", emptyHost)
+		r.logger.V(logger.DebugLevel).Info("ingress will not be created", "disabled", ingressDisabled, "empty_host", emptyHost)
 		key := r.Key()
 		ingress := netv1.Ingress{
 			ObjectMeta: metav1.ObjectMeta{

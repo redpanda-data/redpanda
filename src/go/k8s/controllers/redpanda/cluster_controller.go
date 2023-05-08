@@ -19,6 +19,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/fluxcd/pkg/runtime/logger"
 	"github.com/go-logr/logr"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -103,11 +104,13 @@ type ClusterReconciler struct {
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.7.0/pkg/reconcile
 //
 //nolint:funlen,gocyclo // todo break down
-func (r *ClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	log := r.Log.WithValues("redpandacluster", req.NamespacedName)
+func (r *ClusterReconciler) Reconcile(
+	ctx context.Context, req ctrl.Request,
+) (ctrl.Result, error) {
+	log := ctrl.LoggerFrom(ctx).WithName("ClusterReconciler.Reconcile")
 
-	log.Info(fmt.Sprintf("Starting reconcile loop for %v", req.NamespacedName))
-	defer log.Info(fmt.Sprintf("Finished reconcile loop for %v", req.NamespacedName))
+	log.Info("Starting reconcile loop")
+	defer log.Info("Finished reconcile loop")
 
 	var redpandaCluster redpandav1alpha1.Cluster
 	crb := resources.NewClusterRoleBinding(r.Client, &redpandaCluster, r.Scheme, log)
@@ -130,7 +133,7 @@ func (r *ClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 
 	// if the cluster isn't being deleted, add a finalizer
 	if !controllerutil.ContainsFinalizer(&redpandaCluster, FinalizerKey) {
-		log.V(7).Info("adding finalizer")
+		log.V(logger.DebugLevel).Info("adding finalizer")
 		controllerutil.AddFinalizer(&redpandaCluster, FinalizerKey)
 		if err := r.Update(ctx, &redpandaCluster); err != nil {
 			return ctrl.Result{}, fmt.Errorf("unable to set Cluster finalizer: %w", err)
@@ -363,8 +366,9 @@ func validateImagePullPolicy(imagePullPolicy corev1.PullPolicy) error {
 
 //nolint:funlen,gocyclo // refactor in the next iteration
 func (r *ClusterReconciler) handlePodFinalizer(
-	ctx context.Context, rp *redpandav1alpha1.Cluster, log logr.Logger,
+	ctx context.Context, rp *redpandav1alpha1.Cluster, l logr.Logger,
 ) error {
+	log := l.WithName("handlePodFinalizer")
 	pods, err := r.podList(ctx, rp)
 	if err != nil {
 		return fmt.Errorf("unable to fetch PodList: %w", err)
@@ -488,10 +492,11 @@ func (r *ClusterReconciler) handlePodFinalizer(
 }
 
 func (r *ClusterReconciler) removePodFinalizer(
-	ctx context.Context, pod *corev1.Pod, log logr.Logger,
+	ctx context.Context, pod *corev1.Pod, l logr.Logger,
 ) error {
+	log := l.WithName("removePodFinalizer")
 	if controllerutil.ContainsFinalizer(pod, FinalizerKey) {
-		log.V(7).WithValues("namespace", pod.Namespace, "name", pod.Name).Info("removing finalizer")
+		log.V(logger.DebugLevel).WithValues("namespace", pod.Namespace, "name", pod.Name).Info("removing finalizer")
 		controllerutil.RemoveFinalizer(pod, FinalizerKey)
 		if err := r.Update(ctx, pod); err != nil {
 			return err
@@ -501,10 +506,11 @@ func (r *ClusterReconciler) removePodFinalizer(
 }
 
 func (r *ClusterReconciler) setPodFinalizer(
-	ctx context.Context, pod *corev1.Pod, log logr.Logger,
+	ctx context.Context, pod *corev1.Pod, l logr.Logger,
 ) error {
+	log := l.WithName("setPodFinalizer")
 	if !controllerutil.ContainsFinalizer(pod, FinalizerKey) {
-		log.V(7).WithValues("namespace", pod.Namespace, "name", pod.Name).Info("adding finalizer")
+		log.V(logger.DebugLevel).WithValues("namespace", pod.Namespace, "name", pod.Name).Info("adding finalizer")
 		controllerutil.AddFinalizer(pod, FinalizerKey)
 		if err := r.Update(ctx, pod); err != nil {
 			return err
@@ -514,9 +520,10 @@ func (r *ClusterReconciler) setPodFinalizer(
 }
 
 func (r *ClusterReconciler) setPodNodeIDAnnotation(
-	ctx context.Context, rp *redpandav1alpha1.Cluster, log logr.Logger,
+	ctx context.Context, rp *redpandav1alpha1.Cluster, l logr.Logger,
 ) error {
-	log.V(6).Info("setting pod node-id annotation")
+	log := l.WithName("setPodNodeIDAnnotation")
+	log.V(logger.DebugLevel).Info("setting pod node-id annotation")
 	pods, err := r.podList(ctx, rp)
 	if err != nil {
 		return fmt.Errorf("unable to fetch PodList: %w", err)
@@ -562,9 +569,10 @@ func (r *ClusterReconciler) setPodNodeIDAnnotation(
 }
 
 func (r *ClusterReconciler) decommissionBroker(
-	ctx context.Context, rp *redpandav1alpha1.Cluster, nodeID int, log logr.Logger,
+	ctx context.Context, rp *redpandav1alpha1.Cluster, nodeID int, l logr.Logger,
 ) error {
-	log.V(6).WithValues("node-id", nodeID).Info("decommission broker")
+	log := l.WithName("decommissionBroker").WithValues("node-id", nodeID)
+	log.V(logger.DebugLevel).Info("decommission broker")
 
 	redpandaPorts := networking.NewRedpandaPorts(rp)
 	headlessPorts := collectHeadlessPorts(redpandaPorts)
@@ -589,7 +597,8 @@ func (r *ClusterReconciler) decommissionBroker(
 	return nil
 }
 
-func (r *ClusterReconciler) fetchAdminNodeID(ctx context.Context, rp *redpandav1alpha1.Cluster, pod *corev1.Pod, log logr.Logger) (int32, error) {
+func (r *ClusterReconciler) fetchAdminNodeID(ctx context.Context, rp *redpandav1alpha1.Cluster, pod *corev1.Pod, l logr.Logger) (int32, error) {
+	log := l.WithName("fetchAdminNodeID")
 	redpandaPorts := networking.NewRedpandaPorts(rp)
 	headlessPorts := collectHeadlessPorts(redpandaPorts)
 	clusterPorts := collectClusterPorts(redpandaPorts, rp)
@@ -913,10 +922,12 @@ func (r *ClusterReconciler) createExternalNodesList(
 }
 
 func (r *ClusterReconciler) handleClusterDeletion(
-	ctx context.Context, redpandaCluster *redpandav1alpha1.Cluster, log logr.Logger,
+	ctx context.Context, redpandaCluster *redpandav1alpha1.Cluster, l logr.Logger,
 ) (reconcile.Result, error) {
+	log := l.WithName("handleClusterDeletion")
+	log.V(logger.DebugLevel).Info("handling cluster deletion")
 	if controllerutil.ContainsFinalizer(redpandaCluster, FinalizerKey) {
-		log.V(7).Info("removing finalizers")
+		log.V(logger.DebugLevel).Info("removing finalizers")
 		pods, err := r.podList(ctx, redpandaCluster)
 		if err != nil {
 			return ctrl.Result{}, fmt.Errorf("unable to list Pods: %w", err)
@@ -1135,25 +1146,26 @@ func collectClusterPorts(
 }
 
 func isRedpandaClusterManaged(
-	log logr.Logger, redpandaCluster *redpandav1alpha1.Cluster,
+	l logr.Logger, redpandaCluster *redpandav1alpha1.Cluster,
 ) bool {
+	log := l.WithName("isRedpandaClusterManaged")
 	managedAnnotationKey := redpandav1alpha1.GroupVersion.Group + "/managed"
 	if managed, exists := redpandaCluster.Annotations[managedAnnotationKey]; exists && managed == "false" {
-		log.Info(fmt.Sprintf("management of %s is disabled; to enable it, change the '%s' annotation to true or remove it",
-			redpandaCluster.Name, managedAnnotationKey))
+		log.Info(fmt.Sprintf("management is disabled; to enable it, change the '%s' annotation to true or remove it",
+			managedAnnotationKey))
 		return false
 	}
 	return true
 }
 
 func isRedpandaClusterVersionManaged(
-	log logr.Logger,
+	l logr.Logger,
 	redpandaCluster *redpandav1alpha1.Cluster,
 	restrictToRedpandaVersion string,
 ) bool {
+	log := l.WithName("isRedpandaClusterVersionManaged").WithValues("restrictToRedpandaVersion", restrictToRedpandaVersion, "cluster spec.version", redpandaCluster.Status.Version)
 	if restrictToRedpandaVersion != "" && restrictToRedpandaVersion != redpandaCluster.Spec.Version {
-		log.Info(fmt.Sprintf("management of %s is restricted to cluster (spec) version %s; cluster has spec version %s and status version %s",
-			redpandaCluster.Name, restrictToRedpandaVersion, redpandaCluster.Spec.Version, redpandaCluster.Status.Version))
+		log.Info("not managed due to version management restriction")
 		return false
 	}
 	return true

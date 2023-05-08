@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/cloudhut/common/rest"
+	"github.com/fluxcd/pkg/runtime/logger"
 	"github.com/go-logr/logr"
 	"github.com/redpanda-data/console/backend/pkg/config"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/api/admin"
@@ -47,14 +48,15 @@ func NewConfigMap(
 		scheme:     scheme,
 		consoleobj: consoleobj,
 		clusterobj: clusterobj,
-		log:        log,
+		log:        log.WithName("ConfigMap"),
 	}
 }
 
 // Ensure implements Resource interface
 func (cm *ConfigMap) Ensure(ctx context.Context) error {
+	log := cm.log.WithName("Ensure")
 	if ref := cm.consoleobj.Status.ConfigMapRef; ref != nil {
-		cm.log.V(debugLogLevel).Info("config map ref still exist", "config map name", cm.consoleobj.Status.ConfigMapRef.Name, "config map namespace", cm.consoleobj.Status.ConfigMapRef.Namespace)
+		log.V(logger.DebugLevel).Info("config map ref still exist", "config map name", cm.consoleobj.Status.ConfigMapRef.Name, "config map namespace", cm.consoleobj.Status.ConfigMapRef.Namespace)
 		// Check ConfigMap is present, in case it is manually deleted
 		err := cm.Get(ctx, client.ObjectKey{Namespace: ref.Namespace, Name: ref.Name}, &corev1.ConfigMap{})
 		if apierrors.IsNotFound(err) {
@@ -92,7 +94,7 @@ func (cm *ConfigMap) Ensure(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	cm.log.V(debugLogLevel).Info("Creating new ConfigMap", "data", configuration)
+	log.V(logger.DebugLevel).WithValues("data", configuration).Info("Creating new ConfigMap")
 
 	// Create new ConfigMap instead of updating existing so Deployment will trigger a reconcile
 	immutable := true
@@ -119,7 +121,7 @@ func (cm *ConfigMap) Ensure(ctx context.Context) error {
 	// Other Resources may set Console status if they are also watching GenerationMatchesObserved()
 	cm.consoleobj.Status.ConfigMapRef = &corev1.ObjectReference{Namespace: obj.GetNamespace(), Name: obj.GetName()}
 
-	cm.log.Info("config map ref updated", "config map name", cm.consoleobj.Status.ConfigMapRef.Name, "config map namespace", cm.consoleobj.Status.ConfigMapRef.Namespace)
+	log.WithValues("config map name", cm.consoleobj.Status.ConfigMapRef.Name, "config map namespace", cm.consoleobj.Status.ConfigMapRef.Namespace).Info("config map ref updated")
 	return nil
 }
 
@@ -633,8 +635,9 @@ func (cm *ConfigMap) buildConfigCluster(
 // DeleteUnused makes sure that old unreferenced ConfigMaps are deleted
 // ConfigMaps are recreated upon Console update, old ones should be cleaned up
 func (cm *ConfigMap) DeleteUnused(ctx context.Context) error {
+	log := cm.log.WithName("DeleteUnused")
 	if ref := cm.consoleobj.Status.ConfigMapRef; ref != nil {
-		cm.log.Info("delete unused config map reference", "config map name", ref.Name, "config map namespace", ref.Namespace)
+		log.WithValues("config map name", ref.Name, "config map namespace", ref.Namespace).Info("delete unused config map reference")
 		if err := cm.delete(ctx, ref.Name); err != nil {
 			return err
 		}

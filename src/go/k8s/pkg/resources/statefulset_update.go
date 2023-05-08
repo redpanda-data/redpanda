@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/cisco-open/k8s-objectmatcher/patch"
+	"github.com/fluxcd/pkg/runtime/logger"
 	"github.com/prometheus/common/expfmt"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -107,7 +108,7 @@ func (r *StatefulSetResource) runUpdate(
 
 func (r *StatefulSetResource) isClusterHealthy(ctx context.Context) error {
 	if !featuregates.ClusterHealth(r.pandaCluster.Status.Version) {
-		r.logger.V(debugLogLevel).Info("Cluster health endpoint is not available", "version", r.pandaCluster.Spec.Version)
+		r.logger.V(logger.DebugLevel).Info("Cluster health endpoint is not available", "version", r.pandaCluster.Spec.Version)
 		return nil
 	}
 

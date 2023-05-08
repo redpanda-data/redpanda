@@ -9,6 +9,7 @@ import (
 	"hash"
 	"time"
 
+	"github.com/fluxcd/pkg/runtime/logger"
 	"github.com/go-logr/logr"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -28,21 +29,21 @@ type license struct {
 	logger         logr.Logger
 }
 
-func NewLicense(cl client.Client, scheme *runtime.Scheme, cluster *redpandav1alpha1.Cluster, aa admin.AdminAPIClient, logger logr.Logger) *license {
+func NewLicense(cl client.Client, scheme *runtime.Scheme, cluster *redpandav1alpha1.Cluster, aa admin.AdminAPIClient, l logr.Logger) *license {
 	return &license{
 		Client:         cl,
 		scheme:         scheme,
 		cluster:        cluster,
 		adminAPIClient: aa,
 		hash:           sha256.New(),
-		logger:         logger,
+		logger:         l,
 	}
 }
 
 // Ensure manages license and makes sure it is loaded in the Cluster
 func (l *license) Ensure(ctx context.Context) error {
 	if l.cluster.Spec.LicenseRef == nil || l.adminAPIClient == nil {
-		l.logger.V(debugLogLevel).Info(
+		l.logger.V(logger.DebugLevel).Info(
 			"Skip ensuring license, licenseRef or adminAPI internal listener not found",
 			"licenseRef", l.cluster.Spec.LicenseRef,
 			"adminAPIClientIsNil", l.adminAPIClient == nil,
@@ -88,7 +89,7 @@ func (l *license) load(ctx context.Context, license []byte) error {
 
 	prop := info.Properties
 	if cs := checksum(l.hash, license); info.Loaded && prop.Checksum == cs {
-		l.logger.V(debugLogLevel).Info(
+		l.logger.V(logger.DebugLevel).Info(
 			"Skip setting license, loaded license have same checksum",
 			"loaded checksum", prop.Checksum,
 			"checksum", cs,

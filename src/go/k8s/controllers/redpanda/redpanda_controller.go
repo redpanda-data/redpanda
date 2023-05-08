@@ -100,10 +100,9 @@ func (r *RedpandaReconciler) SetupWithManager(mgr ctrl.Manager) error {
 
 func (r *RedpandaReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	start := time.Now()
-	log := ctrl.LoggerFrom(ctx)
-	log.WithValues("redpanda", req.NamespacedName)
+	log := ctrl.LoggerFrom(ctx).WithName("RedpandaReconciler.Reconcile")
 
-	log.Info(fmt.Sprintf("Starting reconcile loop for %v", req.NamespacedName))
+	log.Info("Starting reconcile loop")
 
 	rp := &v1alpha1.Redpanda{}
 	if err := r.Client.Get(ctx, req.NamespacedName, rp); err != nil {
@@ -122,10 +121,10 @@ func (r *RedpandaReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 
 	// Examine if the object is under deletion
 	if !rp.ObjectMeta.DeletionTimestamp.IsZero() {
-		return r.reconcileDelete(ctx, req, rp)
+		return r.reconcileDelete(ctx, rp)
 	}
 
-	rp, result, err := r.reconcile(ctx, req, rp)
+	rp, result, err := r.reconcile(ctx, rp)
 
 	// Update status after reconciliation.
 	if updateStatusErr := r.patchRedpandaStatus(ctx, rp); updateStatusErr != nil {
@@ -143,9 +142,9 @@ func (r *RedpandaReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	return result, err
 }
 
-func (r *RedpandaReconciler) reconcile(ctx context.Context, req ctrl.Request, rp *v1alpha1.Redpanda) (*v1alpha1.Redpanda, ctrl.Result, error) {
+func (r *RedpandaReconciler) reconcile(ctx context.Context, rp *v1alpha1.Redpanda) (*v1alpha1.Redpanda, ctrl.Result, error) {
 	log := ctrl.LoggerFrom(ctx)
-	log.WithValues("redpanda", req.NamespacedName)
+	log.WithName("RedpandaReconciler.reconcile")
 
 	// Observe HelmRelease generation.
 	if rp.Status.ObservedGeneration != rp.Generation {
@@ -236,9 +235,6 @@ func (r *RedpandaReconciler) checkIfResourceIsReady(log logr.Logger, msgNotReady
 
 func (r *RedpandaReconciler) reconcileHelmRelease(ctx context.Context, rp *v1alpha1.Redpanda) (*v1alpha1.Redpanda, *helmv2beta1.HelmRelease, error) {
 	var err error
-	log := ctrl.LoggerFrom(ctx)
-	rpKey := types.NamespacedName{Namespace: rp.Namespace, Name: rp.Name}
-	log.WithValues("redpanda", rpKey)
 
 	// Check if HelmRelease exists or create it
 	hr := &helmv2beta1.HelmRelease{}
@@ -270,7 +266,7 @@ func (r *RedpandaReconciler) reconcileHelmRelease(ctx context.Context, rp *v1alp
 		return rp, hr, errTemplated
 	}
 
-	if r.helmReleaseRequiresUpdate(hr, hrTemplate) {
+	if r.helmReleaseRequiresUpdate(ctx, hr, hrTemplate) {
 		hr.Spec = hrTemplate.Spec
 		if err = r.Client.Update(ctx, hr); err != nil {
 			r.event(rp, rp.Status.LastAttemptedRevision, v1alpha1.EventSeverityError, err.Error())
@@ -304,10 +300,7 @@ func (r *RedpandaReconciler) reconcileHelmRepository(ctx context.Context, rp *v1
 	return rp, repo, nil
 }
 
-func (r *RedpandaReconciler) reconcileDelete(ctx context.Context, req ctrl.Request, rp *v1alpha1.Redpanda) (ctrl.Result, error) {
-	log := ctrl.LoggerFrom(ctx)
-	log.WithValues("redpanda", req.NamespacedName)
-
+func (r *RedpandaReconciler) reconcileDelete(ctx context.Context, rp *v1alpha1.Redpanda) (ctrl.Result, error) {
 	if err := r.deleteHelmRelease(ctx, rp); err != nil {
 		return ctrl.Result{}, err
 	}
@@ -321,9 +314,6 @@ func (r *RedpandaReconciler) reconcileDelete(ctx context.Context, req ctrl.Reque
 }
 
 func (r *RedpandaReconciler) createHelmRelease(ctx context.Context, rp *v1alpha1.Redpanda) (*helmv2beta1.HelmRelease, error) {
-	log := ctrl.LoggerFrom(ctx)
-	log.WithValues("redpanda", rp.Name)
-
 	// create helmRelease resource from template
 	hRelease, err := r.createHelmReleaseFromTemplate(ctx, rp)
 	if err != nil {
@@ -349,9 +339,6 @@ func (r *RedpandaReconciler) createHelmRelease(ctx context.Context, rp *v1alpha1
 }
 
 func (r *RedpandaReconciler) deleteHelmRelease(ctx context.Context, rp *v1alpha1.Redpanda) error {
-	log := ctrl.LoggerFrom(ctx)
-	log.WithValues("redpanda", rp.Name)
-
 	if rp.Status.HelmRelease == "" {
 		return nil
 	}
@@ -375,8 +362,7 @@ func (r *RedpandaReconciler) deleteHelmRelease(ctx context.Context, rp *v1alpha1
 }
 
 func (r *RedpandaReconciler) createHelmReleaseFromTemplate(ctx context.Context, rp *v1alpha1.Redpanda) (*helmv2beta1.HelmRelease, error) {
-	log := ctrl.LoggerFrom(ctx)
-	log.WithValues("redpanda", rp.Name)
+	log := ctrl.LoggerFrom(ctx).WithName("RedpandaReconciler.createHelmReleaseFromTemplate")
 
 	values, err := rp.ValuesJSON()
 	if err != nil {
@@ -455,9 +441,8 @@ func (r *RedpandaReconciler) event(rp *v1alpha1.Redpanda, revision, severity, ms
 	r.EventRecorder.AnnotatedEventf(rp, metaData, eventType, severity, msg)
 }
 
-func (r *RedpandaReconciler) helmReleaseRequiresUpdate(hr, hrTemplate *helmv2beta1.HelmRelease) bool {
-	log := ctrl.LoggerFrom(context.Background())
-	log.WithValues("redpanda", hr.Name)
+func (r *RedpandaReconciler) helmReleaseRequiresUpdate(ctx context.Context, hr, hrTemplate *helmv2beta1.HelmRelease) bool {
+	log := ctrl.LoggerFrom(ctx).WithName("RedpandaReconciler.helmReleaseRequiresUpdate")
 
 	switch {
 	case !reflect.DeepEqual(hr.Spec.Values, hrTemplate.Spec.Values):

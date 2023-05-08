@@ -39,8 +39,9 @@ func (r *ClusterReconciler) reconcileConfiguration(
 	statefulSetResource *resources.StatefulSetResource,
 	pki *certmanager.PkiReconciler,
 	fqdn string,
-	log logr.Logger,
+	l logr.Logger,
 ) error {
+	log := l.WithName("reconcileConfiguration")
 	errorWithContext := newErrorWithContext(redpandaCluster.Namespace, redpandaCluster.Name)
 	if !featuregates.CentralizedConfiguration(redpandaCluster.Spec.Version) {
 		log.Info("Cluster is not using centralized configuration, skipping...")
@@ -180,8 +181,9 @@ func (r *ClusterReconciler) applyPatchIfNeeded(
 	clusterConfig admin.Config,
 	status admin.ConfigStatusResponse,
 	lastAppliedConfiguration map[string]interface{},
-	log logr.Logger,
+	l logr.Logger,
 ) (success bool, err error) {
+	log := l.WithName("applyPatchIfNeeded")
 	errorWithContext := newErrorWithContext(redpandaCluster.Namespace, redpandaCluster.Name)
 
 	var invalidProperties []string
@@ -255,8 +257,9 @@ func (r *ClusterReconciler) retrieveClusterState(
 func (r *ClusterReconciler) ensureConditionPresent(
 	ctx context.Context,
 	redpandaCluster *redpandav1alpha1.Cluster,
-	log logr.Logger,
+	l logr.Logger,
 ) (bool, error) {
+	log := l.WithName("ensureConditionPresent")
 	if condition := redpandaCluster.Status.GetCondition(redpandav1alpha1.ClusterConfiguredConditionType); condition == nil {
 		// nil condition means that no change has been detected earlier, but we can't assume that configuration is in sync
 		// because of multiple reasons, for example:
@@ -313,8 +316,9 @@ func (r *ClusterReconciler) synchronizeStatusWithCluster(
 	ctx context.Context,
 	redpandaCluster *redpandav1alpha1.Cluster,
 	adminAPI adminutils.AdminAPIClient,
-	log logr.Logger,
+	l logr.Logger,
 ) (*redpandav1alpha1.ClusterCondition, error) {
+	log := l.WithName("synchronizeStatusWithCluster")
 	errorWithContext := newErrorWithContext(redpandaCluster.Namespace, redpandaCluster.Name)
 	// Check status again on the leader using admin API
 	status, err := adminAPI.ClusterConfigStatus(ctx, true)
@@ -399,11 +403,12 @@ func mapStatusToCondition(
 }
 
 func needsRestart(
-	clusterStatus admin.ConfigStatusResponse, log logr.Logger,
+	clusterStatus admin.ConfigStatusResponse, l logr.Logger,
 ) bool {
+	log := l.WithName("needsRestart")
 	nodeNeedsRestart := false
 	for i := range clusterStatus {
-		log.Info(fmt.Sprintf("Node %d restart status is %v", clusterStatus[i].NodeID, clusterStatus[i].Restart))
+		log.WithValues("broker id", clusterStatus[i].NodeID, "restart status", clusterStatus[i].Restart).Info("broker restart status")
 		if clusterStatus[i].Restart {
 			nodeNeedsRestart = true
 		}
@@ -412,8 +417,9 @@ func needsRestart(
 }
 
 func isSafeToRestart(
-	clusterStatus admin.ConfigStatusResponse, log logr.Logger,
+	clusterStatus admin.ConfigStatusResponse, l logr.Logger,
 ) bool {
+	log := l.WithName("isSafeToRestart")
 	configVersions := make(map[int64]bool)
 	for i := range clusterStatus {
 		log.Info(fmt.Sprintf("Node %d is using config version %d", clusterStatus[i].NodeID, clusterStatus[i].ConfigVersion))

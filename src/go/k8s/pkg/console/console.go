@@ -19,10 +19,6 @@ import (
 	redpandav1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
 )
 
-const (
-	debugLogLevel = 4
-)
-
 // ConsoleConfig is the config passed to the Redpanda Console app
 type ConsoleConfig struct {
 	// Grabbed from https://github.com/redpanda-data/console/

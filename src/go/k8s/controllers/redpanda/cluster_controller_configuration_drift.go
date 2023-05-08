@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/fluxcd/pkg/runtime/logger"
 	"github.com/go-logr/logr"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -34,8 +35,6 @@ import (
 
 const (
 	defaultDriftCheckPeriod = 1 * time.Minute
-
-	debugLogLevel = 4
 )
 
 // ClusterConfigurationDriftReconciler detects drifts in the cluster configuration and triggers a reconciliation.
@@ -55,10 +54,10 @@ type ClusterConfigurationDriftReconciler struct {
 func (r *ClusterConfigurationDriftReconciler) Reconcile(
 	ctx context.Context, req ctrl.Request,
 ) (ctrl.Result, error) {
-	log := r.Log.WithValues("redpandacluster", req.NamespacedName)
+	log := ctrl.LoggerFrom(ctx).WithName("ClusterConfigurationDriftReconciler.Reconcile")
 
-	log.V(debugLogLevel).Info(fmt.Sprintf("Starting configuration drift reconcile loop for %v", req.NamespacedName))
-	defer log.V(debugLogLevel).Info(fmt.Sprintf("Finished configuration drift reconcile loop for %v", req.NamespacedName))
+	log.V(logger.DebugLevel).Info("Starting configuration drift reconcile loop")
+	defer log.V(logger.DebugLevel).Info("Finished configuration drift reconcile loop")
 
 	var redpandaCluster redpandav1alpha1.Cluster
 	if err := r.Get(ctx, req.NamespacedName, &redpandaCluster); err != nil {

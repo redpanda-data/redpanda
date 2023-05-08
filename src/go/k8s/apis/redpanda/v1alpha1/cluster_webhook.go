@@ -20,6 +20,7 @@ import (
 	"strings"
 
 	cmmeta "github.com/cert-manager/cert-manager/pkg/apis/meta/v1"
+	"github.com/go-logr/logr"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -29,7 +30,6 @@ import (
 	"k8s.io/apimachinery/pkg/util/validation/field"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources/featuregates"
@@ -83,9 +83,6 @@ type redpandaResourceField struct {
 	path      *field.Path
 }
 
-// log is for logging in this package.
-var log = logf.Log.WithName("cluster-resource")
-
 // kclient is controller-runtime client.
 var kclient client.Client
 
@@ -125,7 +122,8 @@ func sidecarResourceFields(c *Cluster) []resourceField {
 // Default implements defaulting webhook logic - all defaults that should be
 // applied to cluster CRD after user submits it should be put in here
 func (r *Cluster) Default() {
-	log.Info("default", "name", r.Name)
+	log := ctrl.Log.WithName("Cluster.Default").WithValues("namespace", r.Namespace, "name", r.Name)
+	log.Info("defaulting")
 	if r.Spec.Configuration.SchemaRegistry != nil && r.Spec.Configuration.SchemaRegistry.Port == 0 {
 		r.Spec.Configuration.SchemaRegistry.Port = defaultSchemaRegistryPort
 	}
@@ -200,9 +198,10 @@ var _ webhook.Validator = &Cluster{}
 
 // ValidateCreate implements webhook.Validator so a webhook will be registered for the type
 func (r *Cluster) ValidateCreate() error {
-	log.Info("validate create", "name", r.Name)
+	log := ctrl.Log.WithName("Cluster.ValidateCreate").WithValues("namespace", r.Namespace, "name", r.Name)
+	log.Info("validating create")
 
-	allErrs := r.validateCommon()
+	allErrs := r.validateCommon(log)
 
 	if len(allErrs) == 0 {
 		return nil
@@ -215,7 +214,8 @@ func (r *Cluster) ValidateCreate() error {
 
 // ValidateUpdate implements webhook.Validator so a webhook will be registered for the type
 func (r *Cluster) ValidateUpdate(old runtime.Object) error {
-	log.Info("validate update", "name", r.Name)
+	log := ctrl.Log.WithName("Cluster.ValidateUpdate").WithValues("namespace", r.Namespace, "name", r.Name)
+	log.Info("validating update")
 
 	// Don't validate if the cluster is being deleted.
 	// After receiving delete, the controller will update the cluster CR to remove the finalzer.
@@ -227,7 +227,7 @@ func (r *Cluster) ValidateUpdate(old runtime.Object) error {
 	}
 
 	oldCluster := old.(*Cluster)
-	allErrs := r.validateCommon()
+	allErrs := r.validateCommon(log)
 
 	allErrs = append(allErrs, r.validateDownscaling(oldCluster)...)
 
@@ -244,12 +244,13 @@ func (r *Cluster) ValidateUpdate(old runtime.Object) error {
 		r.Name, allErrs)
 }
 
-func (r *Cluster) validateCommon() field.ErrorList {
+func (r *Cluster) validateCommon(log logr.Logger) field.ErrorList {
+	vcLog := log.WithName("validateCommon")
 	var allErrs field.ErrorList
 	allErrs = append(allErrs, r.validateScaling()...)
-	allErrs = append(allErrs, r.validateKafkaListeners()...)
+	allErrs = append(allErrs, r.validateKafkaListeners(vcLog)...)
 	allErrs = append(allErrs, r.validateAdminListeners()...)
-	allErrs = append(allErrs, r.validatePandaproxyListeners()...)
+	allErrs = append(allErrs, r.validatePandaproxyListeners(vcLog)...)
 	allErrs = append(allErrs, r.validateSchemaRegistryListener()...)
 	allErrs = append(allErrs, r.checkCollidingPorts()...)
 	allErrs = append(allErrs, r.validateRedpandaMemory()...)
@@ -350,7 +351,8 @@ func (r *Cluster) validateAdminListeners() field.ErrorList {
 	return allErrs
 }
 
-func (r *Cluster) validateKafkaListeners() field.ErrorList {
+func (r *Cluster) validateKafkaListeners(l logr.Logger) field.ErrorList {
+	log := l.WithName("validateKafkaListeners")
 	var allErrs field.ErrorList
 	if len(r.Spec.Configuration.KafkaAPI) == 0 {
 		allErrs = append(allErrs,
@@ -456,9 +458,10 @@ func checkValidEndpointTemplate(tmpl string) error {
 }
 
 //nolint:funlen,gocyclo // it's a sequence of checks
-func (r *Cluster) validatePandaproxyListeners() field.ErrorList {
+func (r *Cluster) validatePandaproxyListeners(l logr.Logger) field.ErrorList {
 	var allErrs field.ErrorList
 	var proxyExternal *PandaproxyAPI
+	log := l.WithName("validatePandaproxyListeners")
 	kafkaExternal := r.ExternalListener()
 	p := r.Spec.Configuration.PandaproxyAPI
 	for i := range r.Spec.Configuration.PandaproxyAPI {
