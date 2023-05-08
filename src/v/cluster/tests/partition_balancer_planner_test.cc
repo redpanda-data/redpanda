@@ -523,19 +523,17 @@ FIXTURE_TEST(
 
     const auto& reassignments = plan_data.reassignments;
     BOOST_REQUIRE_EQUAL(plan_data.reassignments.size(), 2);
+
     std::unordered_set<model::node_id> expected_nodes({model::node_id(2)});
-
-    auto new_replicas_1 = reassignments[0].allocated.replicas();
-
-    check_expected_assignments(new_replicas_1, expected_nodes);
-    // First move less size node
-    BOOST_REQUIRE_EQUAL(reassignments[0].ntp.tp.topic, "topic-1");
-    BOOST_REQUIRE_EQUAL(reassignments[0].ntp.tp.partition, 1);
-
-    auto new_replicas_2 = reassignments[1].allocated.replicas();
-    check_expected_assignments(new_replicas_2, expected_nodes);
-    BOOST_REQUIRE_EQUAL(reassignments[1].ntp.tp.topic, "topic-1");
-    BOOST_REQUIRE_EQUAL(reassignments[1].ntp.tp.partition, 2);
+    for (const auto& reassignment : reassignments) {
+        BOOST_REQUIRE_EQUAL(reassignment.ntp.tp.topic, "topic-1");
+        check_expected_assignments(
+          reassignment.allocated.replicas(), expected_nodes);
+        auto partition = reassignment.ntp.tp.partition;
+        BOOST_REQUIRE_MESSAGE(
+          partition == 1 || partition == 2,
+          "unexpected partition: " << partition);
+    }
 }
 
 /*

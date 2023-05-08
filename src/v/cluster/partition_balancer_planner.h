@@ -76,24 +76,12 @@ private:
     void init_ntp_sizes_from_health_report(
       const cluster_health_report& health_report, request_context&);
 
-    std::optional<size_t>
-    get_partition_size(const model::ntp& ntp, const request_context&);
-
-    result<model::broker_shard> move_replica(
-      const model::ntp&,
-      allocated_partition&,
-      size_t partition_size,
-      model::node_id previous,
-      allocation_constraints,
-      std::string_view reason,
-      request_context&);
-
     void get_unavailable_node_movement_cancellations(request_context&);
-    void get_unavailable_nodes_reassignments(request_context&);
+    static void get_unavailable_nodes_reassignments(request_context&);
 
-    void get_rack_constraint_repair_reassignments(request_context&);
+    static void get_rack_constraint_repair_reassignments(request_context&);
 
-    void get_full_node_reassignments(request_context&);
+    static void get_full_node_reassignments(request_context&);
 
     planner_config _config;
     partition_balancer_state& _state;
