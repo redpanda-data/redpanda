@@ -180,12 +180,13 @@ struct fetch_config {
     friend std::ostream& operator<<(std::ostream& o, const fetch_config& cfg) {
         fmt::print(
           o,
-          R"({{"start_offset": {}, "max_offset": {}, "isolation_lvl": {}, "max_bytes": {}, "strict_max_bytes": {}, "current_leader_epoch:" {}, "follower_read:" {}, "consumer_rack_id": {}}})",
+          R"({{"start_offset": {}, "max_offset": {}, "isolation_lvl": {}, "max_bytes": {}, "strict_max_bytes": {}, "skip_read": {}, "current_leader_epoch:" {}, "follower_read:" {}, "consumer_rack_id": {}}})",
           cfg.start_offset,
           cfg.max_offset,
           cfg.isolation_level,
           cfg.max_bytes,
           cfg.strict_max_bytes,
+          cfg.skip_read,
           cfg.current_leader_epoch,
           cfg.read_from_follower,
           cfg.consumer_rack_id);

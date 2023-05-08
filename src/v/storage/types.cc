@@ -56,6 +56,10 @@ std::ostream& operator<<(std::ostream& o, const log_reader_config& cfg) {
     } else {
         o << "nullopt";
     }
+    o << ", bytes_consumed:" << cfg.bytes_consumed;
+    o << ", over_budget:" << cfg.over_budget;
+    o << ", strict_max_bytes:" << cfg.strict_max_bytes;
+    o << ", skip_batch_cache:" << cfg.skip_batch_cache;
     return o << "}";
 }
 
