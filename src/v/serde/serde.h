@@ -14,9 +14,11 @@
 #include "hashing/crc32c.h"
 #include "likely.h"
 #include "reflection/type_traits.h"
+#include "serde/checksum_t.h"
 #include "serde/envelope_for_each_field.h"
 #include "serde/logger.h"
 #include "serde/serde_exception.h"
+#include "serde/serde_is_enum.h"
 #include "serde/serde_size_t.h"
 #include "serde/type_str.h"
 #include "ssx/future-util.h"
@@ -46,16 +48,6 @@
 #include <type_traits>
 
 namespace serde {
-
-template<typename T>
-inline constexpr bool serde_is_enum_v =
-#if __has_cpp_attribute(__cpp_lib_is_scoped_enum)
-  std::is_scoped_enum_v<T>;
-#else
-  std::is_enum_v<T>;
-#endif
-
-using checksum_t = uint32_t;
 
 template<typename To, typename From>
 To bit_cast(From const& f) {
