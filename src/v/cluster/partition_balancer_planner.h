@@ -65,6 +65,7 @@ public:
 
 private:
     class request_context;
+    class partition;
 
     void init_per_node_state(
       const cluster_health_report&,
