@@ -26,9 +26,6 @@
 namespace cluster::cloud_metadata {
 
 // Manifest containing information about cluster metadata.
-//
-// NOTE: while it's not a requirement to be serialized with serde, we'll use
-// serde-style versioning to simplify reasoning about compatibility.
 struct cluster_metadata_manifest
   : public serde::envelope<
       cluster_metadata_manifest,
@@ -36,6 +33,15 @@ struct cluster_metadata_manifest
       serde::compat_version<0>>
   , public cloud_storage::base_manifest {
     using duration = std::chrono::milliseconds;
+
+    auto serde_fields() {
+        return std::tie(
+          upload_time_since_epoch,
+          cluster_uuid,
+          metadata_id,
+          controller_snapshot_offset,
+          controller_snapshot_path);
+    }
 
     // Upload time in milliseconds since the epoch. Informational only.
     duration upload_time_since_epoch{0};
