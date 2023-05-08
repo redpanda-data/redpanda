@@ -5,7 +5,7 @@ seastar_generate_swagger(
   OUT_FILE ${CMAKE_CURRENT_BINARY_DIR}/../api/api-doc/schema_registry.json.h
 )
 
-find_package(protobuf)
+find_package(Protobuf REQUIRED)
 find_package(Avro)
 
 v_cc_library(

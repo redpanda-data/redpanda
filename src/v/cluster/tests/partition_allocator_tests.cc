@@ -491,7 +491,7 @@ FIXTURE_TEST(rack_aware_assignment_2, partition_allocator_fixture) {
         auto rack_it = std::lower_bound(
           id_rack_ncpu.begin(),
           id_rack_ncpu.end(),
-          std::make_tuple(node_id(), ss::sstring(), 0));
+          std::make_tuple(node_id(), model::rack_id(""), 0));
         BOOST_REQUIRE(rack_it != id_rack_ncpu.end());
         BOOST_REQUIRE(std::get<0>(*rack_it) == node_id());
         auto rack = std::get<1>(*rack_it);

@@ -1,4 +1,4 @@
-FROM fedora:36
+FROM fedora:38
 
 COPY --chown=0:0 install-dependencies.sh /
 
