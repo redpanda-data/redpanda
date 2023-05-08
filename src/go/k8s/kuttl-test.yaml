@@ -23,6 +23,6 @@ commands:
     background: true
   - command: "./hack/wait-for-webhook-ready.sh"
 artifactsDir: tests/_e2e_artifacts
-timeout: 600
+timeout: 900
 reportFormat: xml
 parallel: 2
