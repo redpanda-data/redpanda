@@ -1140,6 +1140,18 @@ func Set[T any](p *T, key, value string) error {
 			return err
 		}
 	}
+	finalTag := tags[len(tags)-1]
+	if len(tags) > 1 && finalTag == "enabled" && tags[len(tags)-2] == "tls" {
+		switch value {
+		case "{}":
+		case "true":
+			value = "{}"
+		default:
+			return fmt.Errorf("%s must be true or {}", key)
+		}
+		tags = tags[:len(tags)-1]
+		finalTag = tags[len(tags)-1]
+	}
 
 	field, other, err := getField(tags, "", reflect.ValueOf(p).Elem())
 	if err != nil {
@@ -1149,9 +1161,7 @@ func Set[T any](p *T, key, value string) error {
 
 	// For Other fields, we need to wrap the value in key:value format when
 	// unmarshaling, and we forbid indexing.
-	var finalTag string
 	if isOther {
-		finalTag = tags[len(tags)-1]
 		if _, index, _ := splitTagIndex(finalTag); index >= 0 {
 			return fmt.Errorf("cannot index into unknown field %q", finalTag)
 		}
@@ -1162,18 +1172,25 @@ func Set[T any](p *T, key, value string) error {
 		return errors.New("rpk bug, please describe how you encountered this at https://github.com/redpanda-data/redpanda/issues/new?assignees=&labels=kind%2Fbug&template=01_bug_report.md")
 	}
 
-	var unmarshal func([]byte, interface{}) error
 	if isOther {
 		value = fmt.Sprintf("%s: %s", finalTag, value)
 	}
-	unmarshal = yaml.Unmarshal
 
 	// If we cannot unmarshal, but our error looks like we are trying to
 	// unmarshal a single element into a slice, we index[0] into the slice
 	// and try unmarshaling again.
-	if err := unmarshal([]byte(value), field.Addr().Interface()); err != nil {
+	rawv := []byte(value)
+	if err := yaml.Unmarshal(rawv, field.Addr().Interface()); err != nil {
+		// First we try wrapped with [ and ].
+		if wrapped, ok := tryValueAsUnwrappedArray(field, value, err); ok {
+			if err := yaml.Unmarshal([]byte(wrapped), field.Addr().Interface()); err == nil {
+				return nil
+			}
+		}
+		// If that still fails, we try setting a slice value if the
+		// target is a slice.
 		if elem0, ok := tryValueAsSlice0(field, err); ok {
-			return unmarshal([]byte(value), elem0.Addr().Interface())
+			return yaml.Unmarshal(rawv, elem0.Addr().Interface())
 		}
 		return err
 	}
@@ -1331,6 +1348,30 @@ func splitTagIndex(tag string) (string, int, error) {
 	}
 
 	return field, -1, nil
+}
+
+// If a person tries to set an array field with a comma-separated string that
+// is not wrapped in [], then we try wrapping. This makes setting brokers
+// easier. We keep our parsing a bit simple; if a person is trying to set
+// {"foo":"bar"},{"biz":"baz"}, we will not try to wrap. This supports the most
+// common / only expected use case.
+func tryValueAsUnwrappedArray(v reflect.Value, setValue string, err error) (string, bool) {
+	if v.Kind() != reflect.Slice || !strings.Contains(err.Error(), "cannot unmarshal !!") {
+		return "", false // if our destination is not a slice, or the error is not a destination-type-mismatch error, we do not wrap
+	}
+	if setValue == "" {
+		return "", false // we do not try wrapping empty strings in brackets
+	}
+	if setValue[0] == '[' || setValue[len(setValue)-1] == ']' {
+		return "", false // if this is already array-ish, we do not wrap
+	}
+	if setValue[0] == '{' || setValue[len(setValue)-1] == '}' {
+		return "", false // if this is a yaml object, we do not wrap
+	}
+	if comma := strings.IndexByte(setValue, ','); comma < 1 || comma > len(setValue)-1 {
+		return "", false // if there is no comma in the middle, we do not assume this is a comma-separated list
+	}
+	return "[" + setValue + "]", true
 }
 
 // If a value is a slice and our error indicates we are decoding a single

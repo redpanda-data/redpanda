@@ -333,6 +333,32 @@ tune_cpu: true`,
 		},
 
 		{
+			name:  "set tls.enabled=true initializes empty tls",
+			key:   "rpk.kafka_api.tls.enabled",
+			value: "true",
+			check: func(st *testing.T, y *RedpandaYaml) {
+				require.Exactly(st, new(TLS), y.Rpk.KafkaAPI.TLS)
+			},
+		},
+		{
+			name:  "set tls={} initializes empty tls",
+			key:   "rpk.kafka_api.tls",
+			value: "{}",
+			check: func(st *testing.T, y *RedpandaYaml) {
+				require.Exactly(st, new(TLS), y.Rpk.KafkaAPI.TLS)
+			},
+		},
+		{
+			name:  "set array without brackets works",
+			key:   "rpk.kafka_api.brokers",
+			value: "127.0.0.1,127.0.0.2",
+			check: func(st *testing.T, y *RedpandaYaml) {
+				require.Exactly(st, (*TLS)(nil), y.Rpk.KafkaAPI.TLS)
+				require.Exactly(st, []string{"127.0.0.1", "127.0.0.2"}, y.Rpk.KafkaAPI.Brokers)
+			},
+		},
+
+		{
 			name:  "slices with one element works",
 			key:   "rpk.kafka_api.brokers",
 			value: `127.0.0.0:9092`,
