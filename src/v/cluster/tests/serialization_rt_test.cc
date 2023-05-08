@@ -12,6 +12,7 @@
 #include "cluster/metadata_dissemination_types.h"
 #include "cluster/tests/utils.h"
 #include "cluster/types.h"
+#include "compat/check.h"
 #include "model/compression.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
@@ -458,8 +459,9 @@ struct adl<partition_status_v1> {
 } // namespace reflection
 
 template<typename T>
-void roundtrip_test(const T original) {
-    auto serde_in = original;
+void roundtrip_test(T a) {
+    using compat::compat_copy;
+    auto [serde_in, original] = compat_copy(std::move(a));
     auto serde_out = serde::to_iobuf(std::move(serde_in));
 
     T from_serde;
@@ -838,12 +840,12 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
 
     roundtrip_test(cluster::get_leadership_request());
 
-    roundtrip_test(cluster::get_leadership_reply({
-      cluster::ntp_leader(
-        model::random_ntp(),
-        tests::random_named_int<model::term_id>(),
-        tests::random_named_int<model::node_id>()),
-    }));
+    fragmented_vector<cluster::ntp_leader> leaders;
+    leaders.emplace_back(
+      model::random_ntp(),
+      tests::random_named_int<model::term_id>(),
+      tests::random_named_int<model::node_id>());
+    roundtrip_test(cluster::get_leadership_reply(std::move(leaders)));
 
     roundtrip_test(
       cluster::allocate_id_request(random_timeout_clock_duration()));
