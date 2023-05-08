@@ -88,6 +88,8 @@ type (
 		Tuners           RpkNodeTuners  `yaml:"tuners,omitempty"`
 	}
 
+	// NOTE: if adding fields to this struct, check if
+	// setPossibilities in `rpk context` needs to be updated.
 	RpkContext struct {
 		Name         string           `yaml:"name,omitempty"`
 		Description  string           `yaml:"description,omitempty"`
@@ -132,6 +134,18 @@ func (y *RpkYaml) PushContext(cx RpkContext) string {
 	return cx.Name
 }
 
+// MoveContextToFront moves the given context to the front of the list.
+func (y *RpkYaml) MoveContextToFront(cx *RpkContext) {
+	reordered := []RpkContext{*cx}
+	for i := range y.Contexts {
+		if &y.Contexts[i] == cx {
+			continue
+		}
+		reordered = append(reordered, y.Contexts[i])
+	}
+	y.Contexts = reordered
+}
+
 // Auth returns the given auth, or nil if it does not exist.
 func (y *RpkYaml) Auth(name string) *RpkCloudAuth {
 	for i, a := range y.CloudAuths {
@@ -146,6 +160,30 @@ func (y *RpkYaml) Auth(name string) *RpkCloudAuth {
 func (y *RpkYaml) PushAuth(a RpkCloudAuth) string {
 	y.CloudAuths = append([]RpkCloudAuth{a}, y.CloudAuths...)
 	return a.Name
+}
+
+// MoveAuthToFront moves the given auth to the front of the list.
+func (y *RpkYaml) MoveAuthToFront(a *RpkCloudAuth) {
+	reordered := []RpkCloudAuth{*a}
+	for i := range y.CloudAuths {
+		if &y.CloudAuths[i] == a {
+			continue
+		}
+		reordered = append(reordered, y.CloudAuths[i])
+	}
+	y.CloudAuths = reordered
+}
+
+// Kind returns either a known auth kind or "uninitialized".
+func (a *RpkCloudAuth) Kind() (string, bool) {
+	switch {
+	case a.ClientID != "" && a.ClientSecret != "":
+		return "client-credentials", true
+	case a.ClientID != "":
+		return "sso", true
+	default:
+		return "uninitialized", false
+	}
 }
 
 ///////////
