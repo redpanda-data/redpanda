@@ -383,7 +383,7 @@ FIXTURE_TEST(
 
 /*
  * 5 nodes; 1 topic; 1 node down; 1 node full;
- * Move from unavailable node leaves a replica on the full node.
+ * One replica is moved from unavailable node, another from the full one.
  * Actual
  *   node_0: partitions: 1; down: True; disk: unfilled;
  *   node_1: partitions: 1; down: False; disk: full;
@@ -422,12 +422,10 @@ FIXTURE_TEST(
         new_replicas_set.insert(bs.node_id);
     }
 
-    std::unordered_set<model::node_id> expected1{
-      model::node_id(1), model::node_id(2), model::node_id(3)};
-    std::unordered_set<model::node_id> expected2{
-      model::node_id(1), model::node_id(2), model::node_id(4)};
+    std::unordered_set<model::node_id> expected{
+      model::node_id(2), model::node_id(3), model::node_id(4)};
     BOOST_REQUIRE_MESSAGE(
-      new_replicas_set == expected1 || new_replicas_set == expected2,
+      new_replicas_set == expected,
       "unexpected new replica set: " << new_replicas);
 }
 
