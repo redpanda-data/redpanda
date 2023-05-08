@@ -46,6 +46,7 @@
 #include <charconv>
 #include <iterator>
 #include <memory>
+#include <numeric>
 #include <optional>
 #include <stdexcept>
 #include <tuple>

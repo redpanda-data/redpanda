@@ -18,6 +18,7 @@
 #include <seastar/core/smp.hh>
 
 #include <absl/container/btree_map.h>
+#include <absl/container/btree_set.h>
 
 #include <exception>
 #include <variant>

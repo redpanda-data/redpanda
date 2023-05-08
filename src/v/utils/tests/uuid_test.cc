@@ -13,6 +13,7 @@
 
 #include <seastar/testing/thread_test_case.hh>
 
+#include <absl/container/flat_hash_map.h>
 #include <boost/test/unit_test.hpp>
 
 using test_uuid = named_type<uuid_t, struct test_uuid_tag>;

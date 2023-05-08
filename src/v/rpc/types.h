@@ -19,6 +19,7 @@
 #include "seastarx.h"
 #include "ssx/semaphore.h"
 #include "utils/hdr_hist.h"
+#include "vassert.h"
 
 #include <seastar/core/future.hh>
 #include <seastar/core/iostream.hh>

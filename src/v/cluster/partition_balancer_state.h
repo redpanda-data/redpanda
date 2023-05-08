@@ -16,6 +16,8 @@
 
 #include <seastar/core/sharded.hh>
 
+#include <absl/container/btree_set.h>
+
 namespace cluster {
 
 /// Class that stores state that is needed for functioning of the partition
