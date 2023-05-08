@@ -54,6 +54,33 @@ func TestClusterCertificates(t *testing.T) {
 			},
 		},
 	}
+	validateVolumesFn := func(volName string, expectedSecretItems []string) func([]corev1.Volume) bool {
+		return func(vols []corev1.Volume) bool {
+			for i := range vols {
+				v := vols[i]
+				if v.Name == volName {
+					if len(v.VolumeSource.Secret.Items) != len(expectedSecretItems) {
+						return false
+					}
+					/* lazy way validation as we don't have many items */
+					for _, i := range expectedSecretItems {
+						found := false
+						for _, j := range v.VolumeSource.Secret.Items {
+							if i == j.Key {
+								found = true
+							}
+						}
+						if !found {
+							return false
+						}
+					}
+					return true
+				}
+			}
+			return false
+		}
+	}
+
 	tests := []struct {
 		name              string
 		pandaCluster      *v1alpha1.Cluster
@@ -303,35 +330,43 @@ func TestClusterCertificates(t *testing.T) {
 				},
 			},
 		}, []string{}, 0, nil, nil},
-		{"pandaproxy api tls", &v1alpha1.Cluster{
-			ObjectMeta: v1.ObjectMeta{Name: "test", Namespace: "test"},
-			Spec: v1alpha1.ClusterSpec{
-				Configuration: v1alpha1.RedpandaConfig{
-					PandaproxyAPI: []v1alpha1.PandaproxyAPI{
-						{
-							TLS: v1alpha1.PandaproxyAPITLS{
-								Enabled: true,
+		{
+			"pandaproxy api tls", &v1alpha1.Cluster{
+				ObjectMeta: v1.ObjectMeta{Name: "test", Namespace: "test"},
+				Spec: v1alpha1.ClusterSpec{
+					Configuration: v1alpha1.RedpandaConfig{
+						PandaproxyAPI: []v1alpha1.PandaproxyAPI{
+							{
+								TLS: v1alpha1.PandaproxyAPITLS{
+									Enabled: true,
+								},
 							},
 						},
 					},
 				},
 			},
-		}, []string{"test-proxy-selfsigned-issuer", "test-proxy-root-certificate", "test-proxy-root-issuer", "test-proxy-api-node"}, 1, nil, nil},
-		{"pandaproxy api mutual tls", &v1alpha1.Cluster{
-			ObjectMeta: v1.ObjectMeta{Name: "test", Namespace: "test"},
-			Spec: v1alpha1.ClusterSpec{
-				Configuration: v1alpha1.RedpandaConfig{
-					PandaproxyAPI: []v1alpha1.PandaproxyAPI{
-						{
-							TLS: v1alpha1.PandaproxyAPITLS{
-								Enabled:           true,
-								RequireClientAuth: true,
+			[]string{"test-proxy-selfsigned-issuer", "test-proxy-root-certificate", "test-proxy-root-issuer", "test-proxy-api-node"},
+			1, validateVolumesFn("tlspandaproxycert", []string{"tls.crt", "tls.key"}), nil,
+		},
+		{
+			"pandaproxy api mutual tls", &v1alpha1.Cluster{
+				ObjectMeta: v1.ObjectMeta{Name: "test", Namespace: "test"},
+				Spec: v1alpha1.ClusterSpec{
+					Configuration: v1alpha1.RedpandaConfig{
+						PandaproxyAPI: []v1alpha1.PandaproxyAPI{
+							{
+								TLS: v1alpha1.PandaproxyAPITLS{
+									Enabled:           true,
+									RequireClientAuth: true,
+								},
 							},
 						},
 					},
 				},
 			},
-		}, []string{"test-proxy-selfsigned-issuer", "test-proxy-root-certificate", "test-proxy-root-issuer", "test-proxy-api-node", "test-proxy-api-client"}, 2, nil, nil},
+			[]string{"test-proxy-selfsigned-issuer", "test-proxy-root-certificate", "test-proxy-root-issuer", "test-proxy-api-node", "test-proxy-api-client"},
+			2, validateVolumesFn("tlspandaproxycert", []string{"tls.crt", "tls.key"}), nil,
+		},
 		{
 			"pandaproxy api mutual tls with external ca provided by customer",
 			&v1alpha1.Cluster{
@@ -353,7 +388,7 @@ func TestClusterCertificates(t *testing.T) {
 				},
 			},
 			[]string{"test-proxy-api-trusted-client-ca", "test-proxy-selfsigned-issuer", "test-proxy-root-certificate", "test-proxy-root-issuer", "test-proxy-api-node", "test-proxy-api-client"},
-			2, nil, nil,
+			2, validateVolumesFn("tlspandaproxycert", []string{"tls.crt", "tls.key"}), nil,
 		},
 		{
 			"pandaproxy api mutual tls with external ca provided by customer and external node issuer",
@@ -380,7 +415,7 @@ func TestClusterCertificates(t *testing.T) {
 				},
 			},
 			[]string{"test-proxy-api-trusted-client-ca", "test-proxy-selfsigned-issuer", "test-proxy-root-certificate", "test-proxy-root-issuer", "test-proxy-api-node", "test-proxy-api-client"},
-			2, nil, nil,
+			2, validateVolumesFn("tlspandaproxycert", []string{"tls.crt", "tls.key"}), nil,
 		},
 		{"schematregistry api tls disabled", &v1alpha1.Cluster{
 			ObjectMeta: v1.ObjectMeta{Name: "test", Namespace: "test"},
@@ -408,7 +443,7 @@ func TestClusterCertificates(t *testing.T) {
 				},
 			},
 			[]string{"test-schema-registry-selfsigned-issuer", "test-schema-registry-root-certificate", "test-schema-registry-root-issuer", "test-schema-registry-node"},
-			1, nil, nil,
+			1, validateVolumesFn("tlsschemaregistrycert", []string{"tls.crt", "tls.key"}), nil,
 		},
 		{
 			"schematregistry api mutual tls", &v1alpha1.Cluster{
@@ -425,7 +460,28 @@ func TestClusterCertificates(t *testing.T) {
 				},
 			},
 			[]string{"test-schema-registry-selfsigned-issuer", "test-schema-registry-root-certificate", "test-schema-registry-root-issuer", "test-schema-registry-node", "test-schema-registry-client"},
-			2, nil, nil,
+			2, validateVolumesFn("tlsschemaregistrycert", []string{"tls.crt", "tls.key"}), nil,
+		},
+		{
+			"schematregistry with tls, nodesecretref and without requireClientAuth", &v1alpha1.Cluster{
+				ObjectMeta: v1.ObjectMeta{Name: "test", Namespace: "test"},
+				Spec: v1alpha1.ClusterSpec{
+					Configuration: v1alpha1.RedpandaConfig{
+						SchemaRegistry: &v1alpha1.SchemaRegistryAPI{
+							TLS: &v1alpha1.SchemaRegistryAPITLS{
+								Enabled:           true,
+								RequireClientAuth: false,
+								NodeSecretRef: &corev1.ObjectReference{
+									Name:      secret.Name,
+									Namespace: secret.Namespace,
+								},
+							},
+						},
+					},
+				},
+			},
+			[]string{"test-schema-registry-selfsigned-issuer", "test-schema-registry-root-certificate", "test-schema-registry-root-issuer"},
+			1, validateVolumesFn("tlsschemaregistrycert", []string{"tls.crt", "tls.key"}), nil,
 		},
 		{
 			"kafka and schematregistry with nodesecretref", &v1alpha1.Cluster{
@@ -458,7 +514,7 @@ func TestClusterCertificates(t *testing.T) {
 				},
 			},
 			[]string{"test-kafka-selfsigned-issuer", "test-kafka-root-certificate", "test-kafka-root-issuer", "test-operator-client", "test-user-client", "test-admin-client", "test-schema-registry-selfsigned-issuer", "test-schema-registry-root-certificate", "test-schema-registry-root-issuer", "test-schema-registry-client"},
-			4, nil, &config.ServerTLS{
+			4, validateVolumesFn("tlsschemaregistrycert", []string{"tls.crt", "tls.key"}), &config.ServerTLS{
 				Enabled:        true,
 				KeyFile:        "/etc/tls/certs/ca/tls.key",
 				CertFile:       "/etc/tls/certs/ca/tls.crt",
@@ -483,7 +539,7 @@ func TestClusterCertificates(t *testing.T) {
 				},
 			},
 			[]string{"test-schema-registry-trusted-client-ca", "test-schema-registry-selfsigned-issuer", "test-schema-registry-root-certificate", "test-schema-registry-root-issuer", "test-schema-registry-node", "test-schema-registry-client"},
-			2, nil, nil,
+			2, validateVolumesFn("tlsschemaregistrycert", []string{"tls.crt", "tls.key"}), nil,
 		},
 		{
 			"schematregistry api mutual tls with external ca provided by customer and external node issuer", &v1alpha1.Cluster{
@@ -507,7 +563,7 @@ func TestClusterCertificates(t *testing.T) {
 				},
 			},
 			[]string{"test-schema-registry-trusted-client-ca", "test-schema-registry-selfsigned-issuer", "test-schema-registry-root-certificate", "test-schema-registry-root-issuer", "test-schema-registry-node", "test-schema-registry-client"},
-			2, nil, nil,
+			2, validateVolumesFn("tlsschemaregistrycert", []string{"tls.crt", "tls.key"}), nil,
 		},
 	}
 	for _, tt := range tests {
@@ -535,7 +591,7 @@ func TestClusterCertificates(t *testing.T) {
 			require.Equal(t, tt.volumesCount, len(v), fmt.Sprintf("%s: volumes count don't match", tt.name))
 			require.Equal(t, tt.volumesCount, len(vm), fmt.Sprintf("%s: volume mounts count don't match", tt.name))
 			if tt.verifyVolumes != nil {
-				require.True(t, tt.verifyVolumes(v), "failed during volumes verification")
+				require.True(t, tt.verifyVolumes(v), fmt.Sprintf("failed during volumes verification in the test: %v", tt.name))
 			}
 			brokerTLS := cc.KafkaClientBrokerTLS(resourcetypes.GetTLSMountPoints())
 			require.Equal(t, tt.expectedBrokerTLS == nil, brokerTLS == nil)
