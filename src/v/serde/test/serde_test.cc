@@ -11,9 +11,9 @@
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "random/generators.h"
+#include "serde/is_serde_compatible.h"
 #include "serde/serde.h"
 #include "test_utils/randoms.h"
-#include "serde/is_serde_compatible.h"
 #include "tristate.h"
 #include "utils/fragmented_vector.h"
 

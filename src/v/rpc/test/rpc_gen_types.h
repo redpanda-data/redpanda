@@ -15,6 +15,7 @@
 #include "rpc/parse_utils.h"
 #include "seastarx.h"
 #include "serde/envelope.h"
+#include "serde/is_serde_compatible.h"
 #include "serde/serde.h"
 
 #include <seastar/core/sstring.hh>
