@@ -2,6 +2,7 @@
 v_cc_library(
   NAME cloud_storage
   SRCS
+    base_manifest.cc
     cache_service.cc
     access_time_tracker.cc
     cache_probe.cc

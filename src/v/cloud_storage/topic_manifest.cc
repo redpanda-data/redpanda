@@ -173,7 +173,7 @@ topic_manifest::topic_manifest(
 topic_manifest::topic_manifest()
   : _topic_config(std::nullopt) {}
 
-void topic_manifest::update(const topic_manifest_handler& handler) {
+void topic_manifest::do_update(const topic_manifest_handler& handler) {
     if (handler._version != topic_manifest_version) {
         throw std::runtime_error(fmt_with_ctx(
           fmt::format,
@@ -286,7 +286,7 @@ ss::future<> topic_manifest::update(ss::input_stream<char> is) {
     topic_manifest_handler handler;
     if (reader.Parse(wrapper, handler)) {
         vlog(cst_log.debug, "Parsed successfully!");
-        topic_manifest::update(handler);
+        topic_manifest::do_update(handler);
     } else {
         rapidjson::ParseErrorCode e = reader.GetParseErrorCode();
         size_t o = reader.GetErrorOffset();
@@ -309,7 +309,7 @@ ss::future<> topic_manifest::update(ss::input_stream<char> is) {
     co_return;
 }
 
-ss::future<serialized_json_stream> topic_manifest::serialize() const {
+ss::future<serialized_data_stream> topic_manifest::serialize() const {
     iobuf serialized;
     iobuf_ostreambuf obuf(serialized);
     std::ostream os(&obuf);
@@ -321,7 +321,7 @@ ss::future<serialized_json_stream> topic_manifest::serialize() const {
           get_manifest_path()));
     }
     size_t size_bytes = serialized.size_bytes();
-    co_return serialized_json_stream{
+    co_return serialized_data_stream{
       .stream = make_iobuf_input_stream(std::move(serialized)),
       .size_bytes = size_bytes};
 }

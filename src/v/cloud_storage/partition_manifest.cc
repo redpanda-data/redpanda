@@ -1380,7 +1380,7 @@ ss::future<> partition_manifest::update(ss::input_stream<char> is) {
     partition_manifest_handler handler(_mem_tracker);
 
     if (reader.Parse(wrapper, handler)) {
-        partition_manifest::update(std::move(handler));
+        partition_manifest::do_update(std::move(handler));
     } else {
         rapidjson::ParseErrorCode e = reader.GetParseErrorCode();
         size_t o = reader.GetErrorOffset();
@@ -1396,7 +1396,7 @@ ss::future<> partition_manifest::update(ss::input_stream<char> is) {
     co_return;
 }
 
-void partition_manifest::update(partition_manifest_handler&& handler) {
+void partition_manifest::do_update(partition_manifest_handler&& handler) {
     if (handler._version != static_cast<int>(manifest_version::v1)) {
         throw std::runtime_error(fmt_with_ctx(
           fmt::format,
@@ -1482,7 +1482,7 @@ struct partition_manifest::serialization_cursor {
     bool epilogue_done{false};
 };
 
-ss::future<serialized_json_stream> partition_manifest::serialize() const {
+ss::future<serialized_data_stream> partition_manifest::serialize() const {
     auto iso = _insync_offset;
     iobuf serialized;
     iobuf_ostreambuf obuf(serialized);
@@ -1510,7 +1510,7 @@ ss::future<serialized_json_stream> partition_manifest::serialize() const {
           get_manifest_path()));
     }
     size_t size_bytes = serialized.size_bytes();
-    co_return serialized_json_stream{
+    co_return serialized_data_stream{
       .stream = make_iobuf_input_stream(std::move(serialized)),
       .size_bytes = size_bytes};
 }

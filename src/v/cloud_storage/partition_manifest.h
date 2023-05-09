@@ -298,7 +298,7 @@ public:
     /// Serialize manifest object
     ///
     /// \return asynchronous input_stream with the serialized json
-    ss::future<serialized_json_stream> serialize() const override;
+    ss::future<serialized_data_stream> serialize() const override;
 
     /// Serialize manifest object
     ///
@@ -405,7 +405,7 @@ private:
 
     /// Update manifest content from json document that supposed to be generated
     /// from manifest.json file
-    void update(partition_manifest_handler&& handler);
+    void do_update(partition_manifest_handler&& handler);
 
     /// Copy segments from _segments to _replaced
     /// Returns the total size in bytes of the replaced segments, or nullopt if
