@@ -28,7 +28,7 @@ type Client struct {
 // If the host is empty, this defaults to the prod API host.
 func NewClient(host, authToken string) *Client {
 	if host == "" {
-		host = "https://cloud-api.prd.cloud.redpanda.com"
+		host = ProdURL
 	}
 	return &Client{
 		cl: httpapi.NewClient(
