@@ -1042,6 +1042,8 @@ struct partition_manifest_handler
                 _archive_start_offset_delta = model::offset_delta(u);
             } else if (_manifest_key == "archive_clean_offset") {
                 _archive_clean_offset = model::offset(u);
+            } else if (_manifest_key == "start_kafka_offset") {
+                _start_kafka_offset = kafka::offset(u);
             } else {
                 return false;
             }
@@ -1271,6 +1273,7 @@ struct partition_manifest_handler
     std::optional<model::offset> _archive_start_offset;
     std::optional<model::offset_delta> _archive_start_offset_delta;
     std::optional<model::offset> _archive_clean_offset;
+    std::optional<kafka::offset> _start_kafka_offset;
 
     // required segment meta fields
     std::optional<bool> _is_compacted;
@@ -1443,6 +1446,8 @@ void partition_manifest::update(partition_manifest_handler&& handler) {
     } else {
         _cloud_log_size_bytes = compute_cloud_log_size();
     }
+
+    _start_kafka_offset = handler._start_kafka_offset.value_or(kafka::offset{});
 }
 
 // This object is supposed to track state of the asynchronous
@@ -1580,6 +1585,11 @@ void partition_manifest::serialize_begin(
     if (_archive_clean_offset != model::offset{}) {
         w.Key("archive_clean_offset");
         w.Int64(_archive_clean_offset());
+    }
+
+    if (_start_kafka_offset != kafka::offset{}) {
+        w.Key("start_kafka_offset");
+        w.Int64(_start_kafka_offset());
     }
     cursor->prologue_done = true;
 }
