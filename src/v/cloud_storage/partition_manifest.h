@@ -16,9 +16,11 @@
 #include "model/metadata.h"
 #include "model/timestamp.h"
 #include "segment_meta_cstore.h"
+#include "serde/envelope.h"
 #include "serde/serde.h"
 #include "utils/tracking_allocator.h"
 
+#include <seastar/core/iostream.hh>
 #include <seastar/core/shared_ptr.hh>
 
 #include <deque>
@@ -82,7 +84,11 @@ public:
 
     /// Compact representation of the segment_meta
     /// that can be used to generate a segment path in S3
-    struct lw_segment_meta {
+    struct lw_segment_meta
+      : serde::envelope<
+          lw_segment_meta,
+          serde::version<0>,
+          serde::compat_version<0>> {
         model::initial_revision_id ntp_revision;
         model::offset base_offset;
         model::offset committed_offset;
@@ -306,22 +312,6 @@ public:
     /// \return a future that completes after serialization is done
     ss::future<> serialize(ss::output_stream<char>& out) const;
 
-    /// Compare two manifests for equality. Don't compare the mem_tracker.
-    bool operator==(const partition_manifest& other) const {
-        return _ntp == other._ntp && _rev == other._rev
-               && _segments == other._segments
-               && _last_offset == other._last_offset
-               && _start_offset == other._start_offset
-               && _last_uploaded_compacted_offset
-                    == other._last_uploaded_compacted_offset
-               && _insync_offset == other._insync_offset
-               && _replaced == other._replaced
-               && _archive_clean_offset == other._archive_clean_offset
-               && _archive_start_offset == other._archive_start_offset
-               && _archive_start_offset_delta
-                    == other._archive_start_offset_delta;
-    }
-
     manifest_type get_manifest_type() const override {
         return manifest_type::partition;
     };
@@ -360,6 +350,50 @@ public:
       model::offset start_rp_offset, model::offset_delta start_delta);
     void set_archive_clean_offset(model::offset start_rp_offset);
     kafka::offset get_start_kafka_offset_override() const;
+
+    auto serde_fields() {
+        // this list excludes _mem_tracker, which is not serialized
+        return std::tie(
+          _ntp,
+          _rev,
+          _segments,
+          _replaced,
+          _last_offset,
+          _start_offset,
+          _last_uploaded_compacted_offset,
+          _insync_offset,
+          _cloud_log_size_bytes,
+          _archive_start_offset,
+          _archive_start_offset_delta,
+          _archive_clean_offset,
+          _start_kafka_offset);
+    }
+    auto serde_fields() const {
+        // this list excludes _mem_tracker, which is not serialized
+        return std::tie(
+          _ntp,
+          _rev,
+          _segments,
+          _replaced,
+          _last_offset,
+          _start_offset,
+          _last_uploaded_compacted_offset,
+          _insync_offset,
+          _cloud_log_size_bytes,
+          _archive_start_offset,
+          _archive_start_offset_delta,
+          _archive_clean_offset,
+          _start_kafka_offset);
+    }
+
+    /// Compare two manifests for equality. Don't compare the mem_tracker.
+    bool operator==(const partition_manifest& other) const {
+        return serde_fields() == other.serde_fields();
+    }
+
+    void from_iobuf(iobuf in);
+
+    iobuf to_iobuf() const;
 
 private:
     void subtract_from_cloud_log_size(size_t to_subtract);
