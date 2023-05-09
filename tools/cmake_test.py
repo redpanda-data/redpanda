@@ -318,6 +318,7 @@ class TestRunner():
         env["LSAN_OPTIONS"] = f"suppressions={lsan_suppressions}"
 
         # We only capture stderr because that's where backtraces go
+        # FIXME: avoid usage of the unsafe shell=True if possible, or sanitized the cmd input
         p = subprocess.Popen(cmd,
                              env=env,
                              shell=True,
