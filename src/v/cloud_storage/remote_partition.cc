@@ -658,9 +658,9 @@ uint64_t remote_partition::cloud_log_size() const {
     return _manifest.cloud_log_size();
 }
 
-ss::future<> remote_partition::serialize_manifest_to_output_stream(
+ss::future<> remote_partition::serialize_json_manifest_to_output_stream(
   ss::output_stream<char>& output) const {
-    return _manifest.serialize(output);
+    return _manifest.serialize_json(output);
 }
 
 // returns term last kafka offset
@@ -879,9 +879,9 @@ remote_partition::finalize(ss::abort_source& as) {
     partition_manifest remote_manifest(
       _manifest.get_ntp(), _manifest.get_revision_id());
 
-    auto manifest_path = remote_manifest.get_manifest_path();
-    auto manifest_get_result = co_await _api.maybe_download_manifest(
-      _bucket, manifest_path, remote_manifest, local_rtc);
+    auto [manifest_get_result, result_fmt]
+      = co_await _api.try_download_partition_manifest(
+        _bucket, remote_manifest, local_rtc);
 
     if (manifest_get_result != download_result::success) {
         vlog(
@@ -906,6 +906,8 @@ remote_partition::finalize(ss::abort_source& as) {
           .get_status = manifest_get_result};
     } else if (
       remote_manifest.get_insync_offset() < _manifest.get_insync_offset()) {
+        // TODO: should this be behind a feature table check?
+
         // The remote manifest is out of date, upload a fresh one
         vlog(
           _ctxlog.debug,
@@ -1067,15 +1069,15 @@ ss::future<> remote_partition::try_erase(ss::abort_source& as) {
     // manifest in finalize().
     partition_manifest manifest(
       _manifest.get_ntp(), _manifest.get_revision_id());
-    auto manifest_path = manifest.get_manifest_path();
-    auto manifest_get_result = co_await _api.maybe_download_manifest(
-      _bucket, manifest_path, manifest, local_rtc);
+    auto [manifest_get_result, result_fmt]
+      = co_await _api.try_download_partition_manifest(
+        _bucket, manifest, local_rtc, true);
 
     if (manifest_get_result != download_result::success) {
         vlog(
           _ctxlog.info,
           "Failed to fetch manifest {}, deferring cleanup on topic erase",
-          manifest_path);
+          manifest.get_manifest_path(result_fmt));
         co_return;
     }
 

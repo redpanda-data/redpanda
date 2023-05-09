@@ -91,7 +91,9 @@ static constexpr ss::lowres_clock::duration segment_lock_timeout{60s};
 
 SEASTAR_THREAD_TEST_CASE(test_segment_collection) {
     cloud_storage::partition_manifest m;
-    m.update(make_manifest_stream(manifest)).get();
+    m.update(
+       cloud_storage::manifest_format::json, make_manifest_stream(manifest))
+      .get();
 
     temporary_dir tmp_dir("concat_segment_read");
     auto data_path = tmp_dir.get_path();
@@ -124,7 +126,9 @@ SEASTAR_THREAD_TEST_CASE(test_segment_collection) {
 
 SEASTAR_THREAD_TEST_CASE(test_start_ahead_of_manifest) {
     cloud_storage::partition_manifest m;
-    m.update(make_manifest_stream(manifest)).get();
+    m.update(
+       cloud_storage::manifest_format::json, make_manifest_stream(manifest))
+      .get();
 
     temporary_dir tmp_dir("concat_segment_read");
     auto data_path = tmp_dir.get_path();
@@ -183,7 +187,9 @@ SEASTAR_THREAD_TEST_CASE(test_empty_manifest) {
 
 SEASTAR_THREAD_TEST_CASE(test_short_compacted_segment_inside_manifest_segment) {
     cloud_storage::partition_manifest m;
-    m.update(make_manifest_stream(manifest)).get();
+    m.update(
+       cloud_storage::manifest_format::json, make_manifest_stream(manifest))
+      .get();
 
     temporary_dir tmp_dir("concat_segment_read");
     auto data_path = tmp_dir.get_path();
@@ -216,7 +222,9 @@ SEASTAR_THREAD_TEST_CASE(test_short_compacted_segment_inside_manifest_segment) {
 
 SEASTAR_THREAD_TEST_CASE(test_compacted_segment_aligned_with_manifest_segment) {
     cloud_storage::partition_manifest m;
-    m.update(make_manifest_stream(manifest)).get();
+    m.update(
+       cloud_storage::manifest_format::json, make_manifest_stream(manifest))
+      .get();
 
     temporary_dir tmp_dir("concat_segment_read");
     auto data_path = tmp_dir.get_path();
@@ -250,7 +258,9 @@ SEASTAR_THREAD_TEST_CASE(test_compacted_segment_aligned_with_manifest_segment) {
 SEASTAR_THREAD_TEST_CASE(
   test_short_compacted_segment_aligned_with_manifest_segment) {
     cloud_storage::partition_manifest m;
-    m.update(make_manifest_stream(manifest)).get();
+    m.update(
+       cloud_storage::manifest_format::json, make_manifest_stream(manifest))
+      .get();
 
     temporary_dir tmp_dir("concat_segment_read");
     auto data_path = tmp_dir.get_path();
@@ -286,7 +296,9 @@ SEASTAR_THREAD_TEST_CASE(
 SEASTAR_THREAD_TEST_CASE(
   test_many_compacted_segments_make_up_to_manifest_segment) {
     cloud_storage::partition_manifest m;
-    m.update(make_manifest_stream(manifest)).get();
+    m.update(
+       cloud_storage::manifest_format::json, make_manifest_stream(manifest))
+      .get();
 
     temporary_dir tmp_dir("concat_segment_read");
     auto data_path = tmp_dir.get_path();
@@ -319,7 +331,9 @@ SEASTAR_THREAD_TEST_CASE(
 
 SEASTAR_THREAD_TEST_CASE(test_compacted_segment_larger_than_manifest_segment) {
     cloud_storage::partition_manifest m;
-    m.update(make_manifest_stream(manifest)).get();
+    m.update(
+       cloud_storage::manifest_format::json, make_manifest_stream(manifest))
+      .get();
 
     temporary_dir tmp_dir("concat_segment_read");
     auto data_path = tmp_dir.get_path();
@@ -355,7 +369,9 @@ SEASTAR_THREAD_TEST_CASE(test_compacted_segment_larger_than_manifest_segment) {
 
 SEASTAR_THREAD_TEST_CASE(test_collect_capped_by_size) {
     cloud_storage::partition_manifest m;
-    m.update(make_manifest_stream(manifest)).get();
+    m.update(
+       cloud_storage::manifest_format::json, make_manifest_stream(manifest))
+      .get();
 
     temporary_dir tmp_dir("concat_segment_read");
     auto data_path = tmp_dir.get_path();
@@ -402,7 +418,9 @@ SEASTAR_THREAD_TEST_CASE(test_collect_capped_by_size) {
 
 SEASTAR_THREAD_TEST_CASE(test_no_compacted_segments) {
     cloud_storage::partition_manifest m;
-    m.update(make_manifest_stream(manifest)).get();
+    m.update(
+       cloud_storage::manifest_format::json, make_manifest_stream(manifest))
+      .get();
 
     temporary_dir tmp_dir("concat_segment_read");
     auto data_path = tmp_dir.get_path();
@@ -430,7 +448,9 @@ SEASTAR_THREAD_TEST_CASE(test_no_compacted_segments) {
 
 SEASTAR_THREAD_TEST_CASE(test_segment_name_adjustment) {
     cloud_storage::partition_manifest m;
-    m.update(make_manifest_stream(manifest)).get();
+    m.update(
+       cloud_storage::manifest_format::json, make_manifest_stream(manifest))
+      .get();
 
     temporary_dir tmp_dir("concat_segment_read");
     auto data_path = tmp_dir.get_path();
@@ -457,7 +477,9 @@ SEASTAR_THREAD_TEST_CASE(test_segment_name_adjustment) {
 
 SEASTAR_THREAD_TEST_CASE(test_segment_name_no_adjustment) {
     cloud_storage::partition_manifest m;
-    m.update(make_manifest_stream(manifest)).get();
+    m.update(
+       cloud_storage::manifest_format::json, make_manifest_stream(manifest))
+      .get();
 
     temporary_dir tmp_dir("concat_segment_read");
     auto data_path = tmp_dir.get_path();
@@ -484,7 +506,10 @@ SEASTAR_THREAD_TEST_CASE(test_segment_name_no_adjustment) {
 
 SEASTAR_THREAD_TEST_CASE(test_collected_segments_completely_cover_gap) {
     cloud_storage::partition_manifest m;
-    m.update(make_manifest_stream(manifest_with_gaps)).get();
+    m.update(
+       cloud_storage::manifest_format::json,
+       make_manifest_stream(manifest_with_gaps))
+      .get();
 
     using namespace storage;
 
@@ -581,7 +606,10 @@ SEASTAR_THREAD_TEST_CASE(test_collected_segments_completely_cover_gap) {
 
 SEASTAR_THREAD_TEST_CASE(test_collection_starts_in_gap) {
     cloud_storage::partition_manifest m;
-    m.update(make_manifest_stream(manifest_with_gaps)).get();
+    m.update(
+       cloud_storage::manifest_format::json,
+       make_manifest_stream(manifest_with_gaps))
+      .get();
 
     using namespace storage;
 
@@ -613,7 +641,10 @@ SEASTAR_THREAD_TEST_CASE(test_collection_starts_in_gap) {
 
 SEASTAR_THREAD_TEST_CASE(test_collection_ends_in_gap) {
     cloud_storage::partition_manifest m;
-    m.update(make_manifest_stream(manifest_with_gaps)).get();
+    m.update(
+       cloud_storage::manifest_format::json,
+       make_manifest_stream(manifest_with_gaps))
+      .get();
 
     using namespace storage;
 
@@ -645,7 +676,9 @@ SEASTAR_THREAD_TEST_CASE(test_collection_ends_in_gap) {
 
 SEASTAR_THREAD_TEST_CASE(test_compacted_segment_after_manifest_start) {
     cloud_storage::partition_manifest m;
-    m.update(make_manifest_stream(manifest)).get();
+    m.update(
+       cloud_storage::manifest_format::json, make_manifest_stream(manifest))
+      .get();
 
     using namespace storage;
 
@@ -677,7 +710,9 @@ SEASTAR_THREAD_TEST_CASE(test_compacted_segment_after_manifest_start) {
 
 SEASTAR_THREAD_TEST_CASE(test_upload_candidate_generation) {
     cloud_storage::partition_manifest m;
-    m.update(make_manifest_stream(manifest)).get();
+    m.update(
+       cloud_storage::manifest_format::json, make_manifest_stream(manifest))
+      .get();
 
     temporary_dir tmp_dir("concat_segment_read");
     auto data_path = tmp_dir.get_path();
@@ -749,7 +784,9 @@ SEASTAR_THREAD_TEST_CASE(test_upload_candidate_generation) {
 
 SEASTAR_THREAD_TEST_CASE(test_upload_aligned_to_non_existent_offset) {
     cloud_storage::partition_manifest m;
-    m.update(make_manifest_stream(manifest)).get();
+    m.update(
+       cloud_storage::manifest_format::json, make_manifest_stream(manifest))
+      .get();
 
     temporary_dir tmp_dir("concat_segment_read");
     auto data_path = tmp_dir.get_path();

@@ -117,8 +117,8 @@ public:
     // Serialize the manifest to an ss::output_stream in JSON format.
     // Note that the caller must hold the archival_metadat_stm::_manifest_lock
     // and keep the stream alive until the future completes.
-    ss::future<>
-    serialize_manifest_to_output_stream(ss::output_stream<char>& output) const;
+    ss::future<> serialize_json_manifest_to_output_stream(
+      ss::output_stream<char>& output) const;
 
     // returns term last kafka offset
     std::optional<kafka::offset> get_term_last_offset(model::term_id) const;

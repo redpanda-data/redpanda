@@ -14,6 +14,7 @@
 #include "bytes/iobuf_istreambuf.h"
 #include "bytes/iobuf_ostreambuf.h"
 #include "bytes/iostream.h"
+#include "cloud_storage/base_manifest.h"
 #include "cloud_storage/logger.h"
 #include "cloud_storage/segment_meta_cstore.h"
 #include "cloud_storage/types.h"
@@ -139,7 +140,7 @@ get_partition_manifest_path_components(const std::filesystem::path& path) {
             }
             break;
         case ix_file_name:
-            if (p != "manifest.json") {
+            if (!(p == "manifest.json" || p == "manifest.bin")) {
                 return std::nullopt;
             }
             break;
@@ -255,7 +256,9 @@ partition_manifest::partition_manifest(
 // backend and other S3 API implementations might benefit from that.
 
 remote_manifest_path generate_partition_manifest_path(
-  const model::ntp& ntp, model::initial_revision_id rev) {
+  const model::ntp& ntp,
+  model::initial_revision_id rev,
+  manifest_format format) {
     // NOTE: the idea here is to split all possible hash values into
     // 16 bins. Every bin should have lowest 28-bits set to 0.
     // As result, for segment names all prefixes are possible, but
@@ -265,14 +268,30 @@ remote_manifest_path generate_partition_manifest_path(
     constexpr uint32_t bitmask = 0xF0000000;
     auto path = ssx::sformat("{}_{}", ntp.path(), rev());
     uint32_t hash = bitmask & xxhash_32(path.data(), path.size());
-    return remote_manifest_path(
-      fmt::format("{:08x}/meta/{}_{}/manifest.json", hash, ntp.path(), rev()));
+    return remote_manifest_path(fmt::format(
+      "{:08x}/meta/{}_{}/manifest.{}", hash, ntp.path(), rev(), [&] {
+          switch (format) {
+          case manifest_format::json:
+              return "json";
+          case manifest_format::serde:
+              return "bin";
+          }
+      }()));
 }
 
-remote_manifest_path partition_manifest::get_manifest_path() const {
-    return generate_partition_manifest_path(_ntp, _rev);
+std::pair<manifest_format, remote_manifest_path>
+partition_manifest::get_manifest_format_and_path() const {
+    return {
+      manifest_format::serde,
+      generate_partition_manifest_path(_ntp, _rev, manifest_format::serde)};
 }
 
+std::pair<manifest_format, remote_manifest_path>
+partition_manifest::get_legacy_manifest_format_and_path() const {
+    return {
+      manifest_format::json,
+      generate_partition_manifest_path(_ntp, _rev, manifest_format::json)};
+}
 const model::ntp& partition_manifest::get_ntp() const { return _ntp; }
 
 model::offset partition_manifest::get_last_offset() const {
@@ -1389,22 +1408,40 @@ ss::future<> partition_manifest::update_with_json(iobuf buf) {
         throw std::runtime_error(fmt_with_ctx(
           fmt::format,
           "Failed to parse partition manifest {}: {} at offset {}",
-          get_manifest_path(),
+          get_legacy_manifest_format_and_path().second,
           rapidjson::GetParseError_En(e),
           o));
     }
+
     co_return;
 }
 
-ss::future<> partition_manifest::update(ss::input_stream<char> is) {
+ss::future<> partition_manifest::update(
+  manifest_format serialization_format, ss::input_stream<char> is) {
     iobuf result;
     auto os = make_iobuf_ref_output_stream(result);
     co_await ss::copy(is, os);
-    co_return co_await update_with_json(std::move(result));
+
+    switch (serialization_format) {
+    case manifest_format::json:
+        co_await update_with_json(std::move(result));
+        break;
+    case manifest_format::serde:
+        from_iobuf(std::move(result));
+        break;
+    }
+}
+
+template<typename Enum>
+requires std::is_enum_v<Enum>
+constexpr auto to_underlying(Enum e) {
+    return static_cast<std::underlying_type_t<Enum>>(e);
 }
 
 void partition_manifest::do_update(partition_manifest_handler&& handler) {
-    if (handler._version != static_cast<int>(manifest_version::v1)) {
+    if (
+      handler._version != to_underlying(manifest_version::v1)
+      && handler._version != to_underlying(manifest_version::v2)) {
         throw std::runtime_error(fmt_with_ctx(
           fmt::format,
           "partition manifest version {} is not supported",
@@ -1490,39 +1527,14 @@ struct partition_manifest::serialization_cursor {
 };
 
 ss::future<serialized_data_stream> partition_manifest::serialize() const {
-    auto iso = _insync_offset;
-    iobuf serialized;
-    iobuf_ostreambuf obuf(serialized);
-    std::ostream os(&obuf);
-    serialization_cursor_ptr c = make_cursor(os);
-    serialize_begin(c);
-    while (!c->segments_done) {
-        serialize_segments(c);
-        co_await ss::maybe_yield();
-        if (iso != _insync_offset) {
-            throw std::runtime_error(fmt_with_ctx(
-              fmt::format,
-              "Manifest changed duing serialization, in sync offset moved from "
-              "{} to {}",
-              iso,
-              _insync_offset));
-        }
-    }
-    serialize_replaced(c);
-    serialize_end(c);
-    if (!os.good()) {
-        throw std::runtime_error(fmt_with_ctx(
-          fmt::format,
-          "could not serialize partition manifest {}",
-          get_manifest_path()));
-    }
+    auto serialized = to_iobuf();
     size_t size_bytes = serialized.size_bytes();
     co_return serialized_data_stream{
       .stream = make_iobuf_input_stream(std::move(serialized)),
       .size_bytes = size_bytes};
 }
 
-void partition_manifest::serialize(std::ostream& out) const {
+void partition_manifest::serialize_json(std::ostream& out) const {
     serialization_cursor_ptr c = make_cursor(out);
     serialize_begin(c);
     while (!c->segments_done) {
@@ -1533,7 +1545,7 @@ void partition_manifest::serialize(std::ostream& out) const {
 }
 
 ss::future<>
-partition_manifest::serialize(ss::output_stream<char>& output) const {
+partition_manifest::serialize_json(ss::output_stream<char>& output) const {
     iobuf serialized;
     iobuf_ostreambuf obuf(serialized);
     std::ostream os(&obuf);
@@ -1919,7 +1931,7 @@ partition_manifest::timequery(model::timestamp t) const {
 struct partition_manifest_serde
   : public serde::envelope<
       partition_manifest_serde,
-      serde::version<0>,
+      serde::version<to_underlying(manifest_version::v2)>,
       serde::compat_version<0>> {
     model::ntp _ntp;
     model::initial_revision_id _rev;

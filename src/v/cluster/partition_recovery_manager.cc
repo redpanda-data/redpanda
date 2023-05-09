@@ -310,7 +310,7 @@ ss::future<log_recovery_result> partition_downloader::download_log() {
     auto mat = co_await find_recovery_material();
     if (cst_log.is_enabled(ss::log_level::debug)) {
         std::stringstream ostr;
-        mat.partition_manifest.serialize(ostr);
+        mat.partition_manifest.serialize_json(ostr);
         vlog(
           _ctxlog.debug,
           "Partition manifest used for recovery: {}",
@@ -606,15 +606,15 @@ partition_downloader::find_recovery_material() {
       _ctxlog.info,
       "Downloading partition manifest {}",
       tmp.get_manifest_path());
-    auto res = co_await _remote->download_manifest(
-      _bucket, tmp.get_manifest_path(), tmp, _rtcnode);
+    auto [res, res_fmt] = co_await _remote->try_download_partition_manifest(
+      _bucket, tmp, _rtcnode);
     if (res == download_result::success) {
         recovery_mat.partition_manifest = std::move(tmp);
         co_return recovery_mat;
     }
     if (res == download_result::notfound) {
         // Manifest is not available in the cloud
-        throw missing_partition_exception(tmp.get_manifest_path());
+        throw missing_partition_exception(tmp.get_manifest_path(res_fmt));
     }
     // Some other, possibly transient error
     throw std::runtime_error(

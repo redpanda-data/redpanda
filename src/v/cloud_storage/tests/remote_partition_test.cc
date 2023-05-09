@@ -243,13 +243,17 @@ FIXTURE_TEST(test_overlapping_segments, cloud_storage_fixture) {
       manifest, segments, false, model::offset_delta(0));
 
     std::stringstream sstr;
-    manifest.serialize(sstr);
+    manifest.serialize_json(sstr);
 
     auto body = sstr.str();
     std::string_view to_replace = "\"committed_offset\":5";
     body.replace(
       body.find(to_replace), to_replace.size(), "\"committed_offset\":6");
-    expectations.back().body = body;
+    // overwrite uploaded manifest with a json version
+    expectations.back() = {
+      .url = "/"
+             + manifest.get_legacy_manifest_format_and_path().second().string(),
+      .body = body};
     set_expectations_and_listen(expectations);
     BOOST_REQUIRE(check_scan(*this, kafka::offset(0), 9));
 }
@@ -1598,7 +1602,7 @@ FIXTURE_TEST(test_remote_partition_scan_after_recovery, cloud_storage_fixture) {
     iobuf manifest_body;
     manifest_body.append(manifest_json, std::strlen(manifest_json));
     auto is = make_iobuf_input_stream(std::move(manifest_body));
-    manifest.update(std::move(is)).get();
+    manifest.update(manifest_format::json, std::move(is)).get();
 
     auto segments = setup_s3_imposter(*this, manifest);
 

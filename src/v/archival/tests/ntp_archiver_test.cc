@@ -49,7 +49,7 @@ static const auto manifest_ntp = model::ntp(                    // NOLINT
   manifest_partition);
 static const auto manifest_revision = model::initial_revision_id(0); // NOLINT
 static const ss::sstring manifest_url = ssx::sformat(                // NOLINT
-  "/10000000/meta/{}_{}/manifest.json",
+  "/10000000/meta/{}_{}/manifest.bin",
   manifest_ntp.path(),
   manifest_revision());
 

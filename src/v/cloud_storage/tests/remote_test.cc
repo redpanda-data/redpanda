@@ -11,7 +11,9 @@
 #include "bytes/iobuf.h"
 #include "bytes/iobuf_parser.h"
 #include "bytes/iostream.h"
+#include "cloud_storage/base_manifest.h"
 #include "cloud_storage/offset_translation_layer.h"
+#include "cloud_storage/partition_manifest.h"
 #include "cloud_storage/remote.h"
 #include "cloud_storage/remote_segment.h"
 #include "cloud_storage/tests/common_def.h"
@@ -77,7 +79,7 @@ static partition_manifest load_manifest_from_str(std::string_view v) {
     iobuf i;
     i.append(v.data(), v.size());
     auto s = make_iobuf_input_stream(std::move(i));
-    m.update(std::move(s)).get();
+    m.update(manifest_format::json, std::move(s)).get();
     return m;
 }
 
@@ -139,25 +141,59 @@ using remote_fixture = remote_fixture_base<noop_mixin_t>;
 using gcs_remote_fixture = remote_fixture_base<
   backend_override_mixin_t<model::cloud_storage_backend::google_s3_compat>>;
 
-FIXTURE_TEST(test_download_manifest, remote_fixture) { // NOLINT
+static auto run_manifest_download_and_check(
+  auto& remote,
+  partition_manifest expected_manifest,
+  manifest_format expected_download_format,
+  std::string_view test_context) {
+    partition_manifest actual(manifest_ntp, manifest_revision);
+    retry_chain_node fib(never_abort, 100ms, 20ms);
+    auto [res, fmt] = remote.local()
+                        .try_download_partition_manifest(
+                          cloud_storage_clients::bucket_name("bucket"),
+                          actual,
+                          fib)
+                        .get();
+    BOOST_TEST_INFO(test_context);
+    BOOST_CHECK(res == download_result::success);
+    BOOST_CHECK(fmt == expected_download_format);
+    BOOST_CHECK(expected_manifest == actual);
+}
+
+FIXTURE_TEST(test_download_manifest_json, remote_fixture) {
     set_expectations_and_listen({expectation{
       .url = "/" + manifest_url, .body = ss::sstring(manifest_payload)}});
     auto subscription = remote.local().subscribe(allow_all);
-    partition_manifest actual(manifest_ntp, manifest_revision);
-    retry_chain_node fib(never_abort, 100ms, 20ms);
-    auto res = remote.local()
-                 .download_manifest(
-                   cloud_storage_clients::bucket_name("bucket"),
-                   remote_manifest_path(std::filesystem::path(manifest_url)),
-                   actual,
-                   fib)
-                 .get();
-    BOOST_REQUIRE(res == download_result::success);
-    BOOST_REQUIRE(subscription.available());
-    BOOST_REQUIRE(
+    run_manifest_download_and_check(
+      remote,
+      load_manifest_from_str(manifest_payload),
+      manifest_format::json,
+      "manifest load from json");
+    BOOST_CHECK(subscription.available());
+    BOOST_CHECK(
       subscription.get() == api_activity_notification::manifest_download);
-    auto expected = load_manifest_from_str(manifest_payload);
-    BOOST_REQUIRE(expected == actual); // NOLINT
+}
+
+FIXTURE_TEST(test_download_manifest_serde, remote_fixture) {
+    auto translator = load_manifest_from_str(manifest_payload);
+    auto serialized = translator.serialize().get();
+    auto manifest_binary
+      = serialized.stream.read_exactly(serialized.size_bytes).get();
+
+    set_expectations_and_listen({expectation{
+      .url = "/" + manifest_serde_url,
+      .body = ss::sstring{manifest_binary.begin(), manifest_binary.end()}}});
+
+    auto subscription = remote.local().subscribe(allow_all);
+    run_manifest_download_and_check(
+      remote,
+      std::move(translator),
+      manifest_format::serde,
+      "manifest load from serde");
+
+    BOOST_CHECK(subscription.available());
+    BOOST_CHECK(
+      subscription.get() == api_activity_notification::manifest_download);
 }
 
 FIXTURE_TEST(test_download_manifest_timeout, remote_fixture) { // NOLINT
@@ -167,7 +203,7 @@ FIXTURE_TEST(test_download_manifest_timeout, remote_fixture) { // NOLINT
     auto res = remote.local()
                  .download_manifest(
                    cloud_storage_clients::bucket_name("bucket"),
-                   remote_manifest_path(std::filesystem::path(manifest_url)),
+                   json_manifest_format_path,
                    actual,
                    fib)
                  .get();
@@ -780,7 +816,7 @@ FIXTURE_TEST(test_filter_by_source, remote_fixture) { // NOLINT
     auto res = remote.local()
                  .download_manifest(
                    cloud_storage_clients::bucket_name("bucket"),
-                   remote_manifest_path(std::filesystem::path(manifest_url)),
+                   json_manifest_format_path,
                    actual,
                    child_rtc)
                  .get();
@@ -793,7 +829,7 @@ FIXTURE_TEST(test_filter_by_source, remote_fixture) { // NOLINT
     res = remote.local()
             .download_manifest(
               cloud_storage_clients::bucket_name("bucket"),
-              remote_manifest_path(std::filesystem::path(manifest_url)),
+              json_manifest_format_path,
               actual,
               other_rtc)
             .get();
@@ -807,7 +843,7 @@ FIXTURE_TEST(test_filter_by_source, remote_fixture) { // NOLINT
     res = remote.local()
             .download_manifest(
               cloud_storage_clients::bucket_name("bucket"),
-              remote_manifest_path(std::filesystem::path(manifest_url)),
+              json_manifest_format_path,
               actual,
               other_rtc)
             .get();
@@ -831,7 +867,7 @@ FIXTURE_TEST(test_filter_by_type, remote_fixture) { // NOLINT
     auto dl_res = remote.local()
                     .download_manifest(
                       cloud_storage_clients::bucket_name("bucket"),
-                      remote_manifest_path(std::filesystem::path(manifest_url)),
+                      json_manifest_format_path,
                       actual,
                       root_rtc)
                     .get();
@@ -867,7 +903,7 @@ FIXTURE_TEST(test_filter_lifetime_1, remote_fixture) { // NOLINT
     auto res = remote.local()
                  .download_manifest(
                    cloud_storage_clients::bucket_name("bucket"),
-                   remote_manifest_path(std::filesystem::path(manifest_url)),
+                   json_manifest_format_path,
                    actual,
                    child_rtc)
                  .get();
