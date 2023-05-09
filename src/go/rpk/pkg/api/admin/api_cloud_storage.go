@@ -17,8 +17,8 @@ import (
 // RecoveryRequestParams represents the request body schema for the automated recovery API endpoint.
 type RecoveryRequestParams struct {
 	TopicNamesPattern string `json:"topic_names_pattern"`
-	RetentionBytes    int    `json:"retention_bytes"`
-	RetentionMs       int    `json:"retention_ms"`
+	RetentionBytes    *int   `json:"retention_bytes,omitempty"`
+	RetentionMs       *int   `json:"retention_ms,omitempty"`
 }
 
 type RecoveryStartResponse struct {
