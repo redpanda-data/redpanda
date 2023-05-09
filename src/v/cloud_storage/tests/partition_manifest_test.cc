@@ -542,7 +542,7 @@ SEASTAR_THREAD_TEST_CASE(test_manifest_path) {
     partition_manifest m(manifest_ntp, model::initial_revision_id(0));
     auto path = m.get_manifest_path();
     BOOST_REQUIRE_EQUAL(
-      path, "20000000/meta/test-ns/test-topic/42_0/manifest.json");
+      path, "20000000/meta/test-ns/test-topic/42_0/manifest.bin");
 }
 
 SEASTAR_THREAD_TEST_CASE(test_empty_manifest_update) {
@@ -551,7 +551,7 @@ SEASTAR_THREAD_TEST_CASE(test_empty_manifest_update) {
       .get();
     auto path = m.get_manifest_path();
     BOOST_REQUIRE_EQUAL(
-      path, "20000000/meta/test-ns/test-topic/42_0/manifest.json");
+      path, "20000000/meta/test-ns/test-topic/42_0/manifest.bin");
 }
 
 void require_equal_segment_meta(
@@ -578,7 +578,7 @@ SEASTAR_THREAD_TEST_CASE(test_complete_manifest_update) {
       .get();
     auto path = m.get_manifest_path();
     BOOST_REQUIRE_EQUAL(
-      path, "60000000/meta/test-ns/test-topic/42_1/manifest.json");
+      path, "60000000/meta/test-ns/test-topic/42_1/manifest.bin");
     BOOST_REQUIRE_EQUAL(m.size(), 5);
     std::map<ss::sstring, partition_manifest::segment_meta> expected = {
       {"10-1-v1.log",
@@ -672,7 +672,7 @@ SEASTAR_THREAD_TEST_CASE(test_max_segment_meta_update) {
       .get();
     auto path = m.get_manifest_path();
     BOOST_REQUIRE_EQUAL(
-      path, "60000000/meta/test-ns/test-topic/42_1/manifest.json");
+      path, "60000000/meta/test-ns/test-topic/42_1/manifest.bin");
     BOOST_REQUIRE_EQUAL(m.size(), 1);
     std::map<ss::sstring, partition_manifest::segment_meta> expected = {
       {"10-1-v1.log",
@@ -741,7 +741,7 @@ SEASTAR_THREAD_TEST_CASE(test_metas_get_smaller) {
       .get();
     auto path = m.get_manifest_path();
     BOOST_REQUIRE_EQUAL(
-      path, "60000000/meta/test-ns/test-topic/42_1/manifest.json");
+      path, "60000000/meta/test-ns/test-topic/42_1/manifest.bin");
     BOOST_REQUIRE_EQUAL(m.size(), 2);
     std::map<ss::sstring, partition_manifest::segment_meta> expected = {
       {"10-1-v1.log",
@@ -803,7 +803,7 @@ SEASTAR_THREAD_TEST_CASE(test_fields_after_segments) {
       .get();
     auto path = m.get_manifest_path();
     BOOST_REQUIRE_EQUAL(
-      path, "60000000/meta/test-ns/test-topic/42_1/manifest.json");
+      path, "60000000/meta/test-ns/test-topic/42_1/manifest.bin");
     BOOST_REQUIRE_EQUAL(m.size(), 1);
     std::map<ss::sstring, partition_manifest::segment_meta> expected = {
       {"10-1-v1.log",

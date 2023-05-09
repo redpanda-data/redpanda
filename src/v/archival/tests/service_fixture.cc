@@ -13,6 +13,7 @@
 #include "archival/types.h"
 #include "bytes/iobuf.h"
 #include "bytes/iobuf_parser.h"
+#include "cloud_storage/base_manifest.h"
 #include "cloud_storage/remote_segment.h"
 #include "cloud_storage_clients/configuration.h"
 #include "cluster/archival_metadata_stm.h"
@@ -477,11 +478,11 @@ void segment_matcher<Fixture>::verify_manifest_content(
 template class segment_matcher<archiver_fixture>;
 
 cloud_storage::partition_manifest load_manifest(std::string_view v) {
-    cloud_storage::partition_manifest m;
     iobuf i;
     i.append(v.data(), v.size());
     auto s = make_iobuf_input_stream(std::move(i));
-    m.update(cloud_storage::manifest_format::json, std::move(s)).get();
+    cloud_storage::partition_manifest m;
+    m.update(cloud_storage::manifest_format::serde, std::move(s)).get();
     return m;
 }
 

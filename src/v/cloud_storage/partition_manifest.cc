@@ -14,6 +14,7 @@
 #include "bytes/iobuf_istreambuf.h"
 #include "bytes/iobuf_ostreambuf.h"
 #include "bytes/iostream.h"
+#include "cloud_storage/base_manifest.h"
 #include "cloud_storage/logger.h"
 #include "cloud_storage/segment_meta_cstore.h"
 #include "cloud_storage/types.h"
@@ -139,7 +140,7 @@ get_partition_manifest_path_components(const std::filesystem::path& path) {
             }
             break;
         case ix_file_name:
-            if (p != "manifest.json") {
+            if (!(p == "manifest.json" || p == "manifest.bin")) {
                 return std::nullopt;
             }
             break;
@@ -257,7 +258,7 @@ partition_manifest::partition_manifest(
 remote_manifest_path generate_partition_manifest_path(
   const model::ntp& ntp,
   model::initial_revision_id rev,
-  std::string_view suffix) {
+  manifest_format format) {
     // NOTE: the idea here is to split all possible hash values into
     // 16 bins. Every bin should have lowest 28-bits set to 0.
     // As result, for segment names all prefixes are possible, but
@@ -268,21 +269,28 @@ remote_manifest_path generate_partition_manifest_path(
     auto path = ssx::sformat("{}_{}", ntp.path(), rev());
     uint32_t hash = bitmask & xxhash_32(path.data(), path.size());
     return remote_manifest_path(fmt::format(
-      "{:08x}/meta/{}_{}/manifest.{}", hash, ntp.path(), rev(), suffix));
+      "{:08x}/meta/{}_{}/manifest.{}", hash, ntp.path(), rev(), [&] {
+          switch (format) {
+          case manifest_format::json:
+              return "json";
+          case manifest_format::serde:
+              return "bin";
+          }
+      }()));
 }
 
 std::pair<manifest_format, remote_manifest_path>
 partition_manifest::get_manifest_format_and_path() const {
     return {
       manifest_format::serde,
-      generate_partition_manifest_path(_ntp, _rev, "binary")};
+      generate_partition_manifest_path(_ntp, _rev, manifest_format::serde)};
 }
 
 std::pair<manifest_format, remote_manifest_path>
 partition_manifest::get_legacy_manifest_format_and_path() const {
     return {
       manifest_format::json,
-      generate_partition_manifest_path(_ntp, _rev, "json")};
+      generate_partition_manifest_path(_ntp, _rev, manifest_format::json)};
 }
 const model::ntp& partition_manifest::get_ntp() const { return _ntp; }
 
@@ -1405,7 +1413,7 @@ ss::future<> partition_manifest::update(
             throw std::runtime_error(fmt_with_ctx(
               fmt::format,
               "Failed to parse partition manifest {}: {} at offset {}",
-              get_manifest_path(),
+              get_legacy_manifest_format_and_path().second,
               rapidjson::GetParseError_En(e),
               o));
         }

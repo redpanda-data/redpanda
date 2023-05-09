@@ -68,8 +68,8 @@ remote_segment_path generate_remote_segment_path(
 /// Generate correct S3 segment name based on term and base offset
 segment_name generate_local_segment_name(model::offset o, model::term_id t);
 
-remote_manifest_path
-generate_partition_manifest_path(const model::ntp&, model::initial_revision_id);
+remote_manifest_path generate_partition_manifest_path(
+  const model::ntp&, model::initial_revision_id, manifest_format);
 
 // This structure can be impelenented
 // to allow access to private fields of the manifest.
@@ -192,7 +192,7 @@ public:
     get_manifest_format_and_path() const override;
 
     remote_manifest_path get_manifest_path() const override {
-        return get_legacy_manifest_format_and_path().second;
+        return get_manifest_format_and_path().second;
     }
 
     /// Manifest object name before feature::cloud_storage_manifest_format_v2

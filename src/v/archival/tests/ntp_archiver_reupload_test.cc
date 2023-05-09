@@ -28,7 +28,7 @@ static const auto manifest_ntp = model::ntp(
   manifest_namespace, manifest_topic, manifest_partition);
 static const auto manifest_revision = model::initial_revision_id(0);
 static const ss::sstring manifest_url = ssx::sformat(
-  "/10000000/meta/{}_{}/manifest.json",
+  "/10000000/meta/{}_{}/manifest.bin",
   manifest_ntp.path(),
   manifest_revision());
 
@@ -281,7 +281,10 @@ public:
         i.append(json.data(), json.size());
         cloud_storage::partition_manifest m;
 
-        m.update(make_iobuf_input_stream(std::move(i))).get();
+        m.update(
+           cloud_storage::manifest_format::json,
+           make_iobuf_input_stream(std::move(i)))
+          .get();
 
         stm._manifest = ss::make_shared<cloud_storage::partition_manifest>(
           std::move(m));

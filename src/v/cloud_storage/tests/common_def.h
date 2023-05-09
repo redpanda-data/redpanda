@@ -37,9 +37,7 @@ static const ss::sstring manifest_url = ssx::sformat( // NOLINT
   manifest_ntp.path(),
   manifest_revision());
 static const ss::sstring manifest_serde_url = ssx::sformat(
-  "20000000/meta/{}_{}/manifest.binary",
-  manifest_ntp.path(),
-  manifest_revision());
+  "20000000/meta/{}_{}/manifest.bin", manifest_ntp.path(), manifest_revision());
 
 static const auto json_manifest_format_path = std::pair{
   manifest_format::json,
