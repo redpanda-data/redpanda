@@ -47,6 +47,14 @@ remote_probe::remote_probe(
               [this] { return get_partition_manifest_downloads(); },
               sm::description("Number of partition manifest downloads")),
             sm::make_counter(
+              "cluster_metadata_manifest_uploads",
+              [this] { return get_cluster_metadata_manifest_uploads(); },
+              sm::description("Number of partition manifest uploads")),
+            sm::make_counter(
+              "cluster_metadata_manifest_downloads",
+              [this] { return get_cluster_metadata_manifest_downloads(); },
+              sm::description("Number of partition manifest downloads")),
+            sm::make_counter(
               "manifest_upload_backoff",
               [this] { return get_manifest_upload_backoffs(); },
               sm::description(

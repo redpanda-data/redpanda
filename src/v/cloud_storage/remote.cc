@@ -222,6 +222,9 @@ ss::future<download_result> remote::do_download_manifest(
                 case manifest_type::tx_range:
                     _probe.txrange_manifest_download();
                     break;
+                case manifest_type::cluster_metadata:
+                    _probe.cluster_metadata_manifest_download();
+                    break;
                 }
                 co_return download_result::success;
             } catch (...) {
@@ -313,6 +316,9 @@ ss::future<upload_result> remote::upload_manifest(
                 break;
             case manifest_type::tx_range:
                 _probe.txrange_manifest_upload();
+                break;
+            case manifest_type::cluster_metadata:
+                _probe.cluster_metadata_manifest_upload();
                 break;
             }
             _probe.register_upload_size(size);
