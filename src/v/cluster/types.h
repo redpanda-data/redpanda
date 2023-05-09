@@ -1805,6 +1805,9 @@ struct topic_table_delta {
     friend std::ostream& operator<<(std::ostream&, const op_type&);
 };
 
+using delta_range_t
+  = boost::iterator_range<fragmented_vector<topic_table_delta>::const_iterator>;
+
 struct create_acls_cmd_data
   : serde::envelope<create_acls_cmd_data, serde::version<0>> {
     static constexpr int8_t current_version = 1;
