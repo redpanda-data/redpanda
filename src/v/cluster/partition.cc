@@ -1024,7 +1024,7 @@ ss::future<> partition::unsafe_reset_remote_partition_manifest(iobuf buf) {
     // Deserialise provided manifest
     cloud_storage::partition_manifest req_m{
       _raft->ntp(), _raft->log_config().get_initial_revision()};
-    co_await req_m.update(std::move(buf));
+    co_await req_m.update_with_json(std::move(buf));
 
     // A generous timeout of 60 seconds is used as it applies
     // for the replication multiple batches.

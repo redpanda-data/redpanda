@@ -34,7 +34,7 @@ public:
     /// Serialize manifest object
     ///
     /// \return asynchronous input_stream with the serialized json
-    ss::future<serialized_json_stream> serialize() const override;
+    ss::future<serialized_data_stream> serialize() const override;
 
     /// Manifest object name in S3
     remote_manifest_path get_manifest_path() const override;
@@ -61,12 +61,15 @@ public:
         return _topic_config;
     }
 
-    bool operator==(const topic_manifest& other) const = default;
+    bool operator==(const topic_manifest& other) const {
+        return std::tie(_topic_config, _rev)
+               == std::tie(other._topic_config, other._rev);
+    };
 
 private:
     /// Update manifest content from json document that supposed to be generated
     /// from manifest.json file
-    void update(const topic_manifest_handler& handler);
+    void do_update(const topic_manifest_handler& handler);
 
     std::optional<manifest_topic_configuration> _topic_config;
     model::initial_revision_id _rev;

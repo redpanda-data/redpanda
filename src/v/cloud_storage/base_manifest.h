@@ -15,10 +15,10 @@
 #include "model/metadata.h"
 #include "seastarx.h"
 
-#include <compare>
+#include <seastar/core/iostream.hh>
 
 namespace cloud_storage {
-struct serialized_json_stream {
+struct serialized_data_stream {
     ss::input_stream<char> stream;
     size_t size_bytes;
 };
@@ -30,25 +30,39 @@ enum class manifest_type {
     cluster_metadata,
 };
 
+enum class manifest_format {
+    json,
+    serde,
+};
 class base_manifest {
 public:
-    virtual ~base_manifest() = default;
+    virtual ~base_manifest();
 
     /// Update manifest file from input_stream (remote set)
     virtual ss::future<> update(ss::input_stream<char> is) = 0;
 
+    /// default implementation for derived classes that don't support multiple
+    /// formats
+    virtual ss::future<> update(manifest_format, ss::input_stream<char> is) {
+        return update(std::move(is));
+    }
+
     /// Serialize manifest object
     ///
     /// \return asynchronous input_stream with the serialized json
-    virtual ss::future<serialized_json_stream> serialize() const = 0;
+    virtual ss::future<serialized_data_stream> serialize() const = 0;
 
-    /// Manifest object name in S3
+    /// Manifest object format and name in S3
     virtual remote_manifest_path get_manifest_path() const = 0;
+
+    /// default implementation for derived classed that don't support multiple
+    /// formats
+    virtual std::pair<manifest_format, remote_manifest_path>
+    get_manifest_format_and_path() const {
+        return {manifest_format::json, get_manifest_path()};
+    }
 
     /// Get manifest type
     virtual manifest_type get_manifest_type() const = 0;
-
-    /// Compare two manifests for equality
-    bool operator==(const base_manifest& other) const = default;
 };
 } // namespace cloud_storage
