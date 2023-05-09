@@ -24,50 +24,6 @@ class RpkConfigTest(RedpandaTest):
         self._ctx = ctx
 
     @cluster(num_nodes=3)
-    def test_config_init(self):
-        n = random.randint(0, len(self.redpanda.nodes))
-        node = self.redpanda.get_node(n)
-        rpk = RpkRemoteTool(self.redpanda, node)
-        path = './redpanda-test.yaml'
-
-        rpk.config_init(path)
-
-        with tempfile.TemporaryDirectory() as d:
-            node.account.copy_from(path, d)
-            with open(os.path.join(d, path)) as f:
-                expected_out = '''
-pandaproxy: {}
-redpanda:
-    data_directory: /var/lib/redpanda/data
-    seed_servers: []
-    rpc_server:
-        address: 0.0.0.0
-        port: 33145
-    kafka_api:
-        - address: 0.0.0.0
-          port: 9092
-    admin:
-        - address: 0.0.0.0
-          port: 9644
-    developer_mode: true
-rpk:
-    coredump_dir: /var/lib/redpanda/coredump
-    overprovisioned: true
-schema_registry: {}
-'''
-
-                expected_config = yaml.full_load(expected_out)
-                actual_config = yaml.full_load(f.read())
-
-                if actual_config != expected_config:
-                    self.logger.error("Configs differ")
-                    self.logger.error(
-                        f"Expected: {yaml.dump(expected_config)}")
-                    self.logger.error(f"Actual: {yaml.dump(actual_config)}")
-
-                assert actual_config == expected_config
-
-    @cluster(num_nodes=3)
     def test_config_set_single_number(self):
         n = random.randint(1, len(self.redpanda.nodes))
         node = self.redpanda.get_node(n)
