@@ -30,6 +30,7 @@
 #include "model/timeout_clock.h"
 #include "random/generators.h"
 #include "resource_mgmt/io_priority.h"
+#include "ssx/semaphore.h"
 #include "storage/parser_utils.h"
 #include "utils/to_string.h"
 
@@ -49,6 +50,7 @@
 
 namespace kafka {
 static constexpr std::chrono::milliseconds default_fetch_timeout = 5s;
+
 /**
  * Make a partition response error.
  */
@@ -142,15 +144,134 @@ static ss::future<read_result> read_from_partition(
 }
 
 /**
+ * Consume proper amounts of units from memory semaphores and return them as
+ * semaphore_units. Fetch semaphore units returned are the indication of
+ * available resources: if none, there is no memory for the operation;
+ * if less than \p max_bytes, the fetch should be capped to that size.
+ *
+ * \param max_bytes The limit of how much data is going to be fetched
+ * \param obligatory_batch_read Set to true for the first ntp in the fetch
+ *   fetch request, at least one batch must be fetched for that ntp. Also it
+ *   is assumed that a batch size has already been consumed from kafka
+ *   memory semaphore for it.
+ */
+read_result::memory_units_t reserve_memory_units(
+  const request_context& rctx,
+  const size_t max_bytes,
+  const bool obligatory_batch_read) {
+    read_result::memory_units_t memory_units;
+    const size_t memory_kafka_now = rctx.memory_sem().current();
+    const size_t memory_fetch = rctx.memory_fetch_sem().current();
+    const size_t batch_size_estimate
+      = config::shard_local_cfg().kafka_memory_batch_size_estimate_for_fetch();
+
+    if (obligatory_batch_read) {
+        // `batch_size_estimate` units has already been consumed from
+        // memory_sem in the very beginning of request handling
+        // (see \ref fetch_memory_estimator,
+        // \ref connection_context::reserve_request_units). Since
+        // `obligatory_batch_read` only appear once per \ref
+        // fetch_ntps_in_parallel call, it is used to avoid taking that
+        // amount from memory_sem twice.
+        // Note on changing `kafka_memory_batch_size_estimate_for_fetch`
+        // property at runtime: it is possible that when the property is
+        // changed, the value for `batch_size_estimate` will be different in
+        // `fetch_memory_estimator()` and here, and the `memory_kafka_before`
+        // value will be off. However this will be a one time event that should
+        // not cause dramatic consequences. An alternative would be to store a
+        // copy of the value in each request context which will not be necessary
+        // at least 99.99% of times.
+        const size_t memory_kafka_before = memory_kafka_now
+                                           + batch_size_estimate;
+        // don't reserve more than available, unless it's less than a batch
+        const size_t fetch_size = std::max(
+          batch_size_estimate,
+          std::min({max_bytes, memory_kafka_before, memory_fetch}));
+        memory_units.fetch = ss::consume_units(
+          rctx.memory_fetch_sem(), fetch_size);
+        // remember: a batch has been reserved upfront
+        memory_units.kafka = ss::consume_units(
+          rctx.memory_sem(), fetch_size - batch_size_estimate);
+    } else {
+        // don't try to reserve less than a batch
+        const size_t requested_fetch_size = std::max(
+          max_bytes, batch_size_estimate);
+        // but don't reserve more than available
+        const size_t fetch_size = std::min(
+          {requested_fetch_size, memory_kafka_now, memory_fetch});
+        // if not enough memory is available, nothing is reserved
+        if (fetch_size >= batch_size_estimate) {
+            memory_units.fetch = ss::consume_units(
+              rctx.memory_fetch_sem(), fetch_size);
+            memory_units.kafka = ss::consume_units(
+              rctx.memory_sem(), fetch_size);
+        }
+    }
+
+    return memory_units;
+}
+
+/**
+ * Make the \p units hold exactly \p target_bytes, by consuming more units
+ * from \p sem or by returning extra units back.
+ */
+static void adjust_semaphore_units(
+  ssx::semaphore& sem, ssx::semaphore_units& units, const size_t target_bytes) {
+    if (target_bytes < units.count()) {
+        units.return_units(units.count() - target_bytes);
+    }
+    if (target_bytes > units.count()) {
+        units.adopt(ss::consume_units(sem, target_bytes - units.count()));
+    }
+}
+
+/**
+ * Memory units have been reserved before the read op based on an estimation.
+ * Now when we know how much data has actually been read, return any extra
+ * amount.
+ */
+static void adjust_memory_units(
+  const request_context& rctx,
+  read_result::memory_units_t& memory_units,
+  const size_t read_bytes,
+  const bool obligatory_read) {
+    const size_t batch_size_estimate
+      = config::shard_local_cfg().kafka_memory_batch_size_estimate_for_fetch();
+    // for kafka memsemaphore, account for the pre-allocated amount that is not
+    // in the units counter
+    const size_t read_after_obligatory = obligatory_read
+                                           ? std::max(
+                                               read_bytes, batch_size_estimate)
+                                               - batch_size_estimate
+                                           : read_bytes;
+    adjust_semaphore_units(
+      rctx.memory_fetch_sem(), memory_units.fetch, read_bytes);
+    adjust_semaphore_units(
+      rctx.memory_sem(), memory_units.kafka, read_after_obligatory);
+}
+
+/**
  * Entry point for reading from an ntp. This is executed on NTP home core and
  * build error responses if anything goes wrong.
  */
 static ss::future<read_result> do_read_from_ntp(
   cluster::partition_manager& cluster_pm,
-  const replica_selector& replica_selector,
+  op_context& octx,
   ntp_fetch_config ntp_config,
   bool foreign_read,
-  std::optional<model::timeout_clock::time_point> deadline) {
+  const bool obligatory_batch_read) {
+    // control available memory
+    read_result::memory_units_t memory_units;
+    if (!ntp_config.cfg.skip_read) {
+        memory_units = reserve_memory_units(
+          octx.rctx, ntp_config.cfg.max_bytes, obligatory_batch_read);
+        if (!memory_units.fetch) {
+            ntp_config.cfg.skip_read = true;
+        } else if (ntp_config.cfg.max_bytes > memory_units.fetch.count()) {
+            ntp_config.cfg.max_bytes = memory_units.fetch.count();
+        }
+    }
+
     /*
      * lookup the ntp's partition
      */
@@ -216,7 +337,7 @@ static ss::future<read_result> do_read_from_ntp(
         if (unlikely(!lso)) {
             co_return read_result(lso.error());
         }
-        auto preferred_replica = replica_selector.select_replica(
+        auto preferred_replica = octx.rctx.replica_selector().select_replica(
           consumer_info{
             .fetch_offset = ntp_config.cfg.start_offset,
             .rack_id = ntp_config.cfg.consumer_rack_id},
@@ -234,8 +355,13 @@ static ss::future<read_result> do_read_from_ntp(
               preferred_replica);
         }
     }
-    co_return co_await read_from_partition(
-      std::move(*kafka_partition), ntp_config.cfg, foreign_read, deadline);
+    read_result result = co_await read_from_partition(
+      std::move(*kafka_partition), ntp_config.cfg, foreign_read, octx.deadline);
+
+    adjust_memory_units(
+      octx.rctx, memory_units, result.data_size_bytes(), obligatory_batch_read);
+    result.memory_units = std::move(memory_units);
+    co_return result;
 }
 
 static ntp_fetch_config
@@ -245,17 +371,17 @@ make_ntp_fetch_config(const model::ntp& ntp, const fetch_config& fetch_cfg) {
 
 ss::future<read_result> read_from_ntp(
   cluster::partition_manager& cluster_pm,
-  const replica_selector& replica_selector,
+  op_context& octx,
   const model::ntp& ntp,
   fetch_config config,
   bool foreign_read,
-  std::optional<model::timeout_clock::time_point> deadline) {
+  const bool obligatory_batch_read) {
     return do_read_from_ntp(
       cluster_pm,
-      replica_selector,
+      octx,
       make_ntp_fetch_config(ntp, config),
       foreign_read,
-      deadline);
+      obligatory_batch_read);
 }
 
 static void fill_fetch_responses(
@@ -338,17 +464,18 @@ static void fill_fetch_responses(
 
 static ss::future<std::vector<read_result>> fetch_ntps_in_parallel(
   cluster::partition_manager& cluster_pm,
-  const replica_selector& replica_selector,
+  op_context& octx,
   std::vector<ntp_fetch_config> ntp_fetch_configs,
-  bool foreign_read,
-  std::optional<model::timeout_clock::time_point> deadline) {
+  bool foreign_read) {
     size_t total_max_bytes = 0;
     for (const auto& c : ntp_fetch_configs) {
         total_max_bytes += c.cfg.max_bytes;
     }
 
-    auto max_bytes_per_fetch
-      = config::shard_local_cfg().kafka_max_bytes_per_fetch();
+    // bytes_left comes from the fetch plan and also accounts for the max_bytes
+    // field in the fetch request
+    const size_t max_bytes_per_fetch = std::min<size_t>(
+      config::shard_local_cfg().kafka_max_bytes_per_fetch(), octx.bytes_left);
     if (total_max_bytes > max_bytes_per_fetch) {
         auto per_partition = max_bytes_per_fetch / ntp_fetch_configs.size();
         vlog(
@@ -363,17 +490,14 @@ static ss::future<std::vector<read_result>> fetch_ntps_in_parallel(
         }
     }
 
+    const auto first_p_id = ntp_fetch_configs.front().ntp().tp.partition;
     auto results = co_await ssx::parallel_transform(
       std::move(ntp_fetch_configs),
-      [&cluster_pm, &replica_selector, deadline, foreign_read](
+      [&cluster_pm, &octx, foreign_read, first_p_id](
         const ntp_fetch_config& ntp_cfg) {
-          auto p_id = ntp_cfg.ntp().tp.partition;
+          const auto p_id = ntp_cfg.ntp().tp.partition;
           return do_read_from_ntp(
-                   cluster_pm,
-                   replica_selector,
-                   ntp_cfg,
-                   foreign_read,
-                   deadline)
+                   cluster_pm, octx, ntp_cfg, foreign_read, first_p_id == p_id)
             .then([p_id](read_result res) {
                 res.partition = p_id;
                 return res;
@@ -410,23 +534,17 @@ handle_shard_fetch(ss::shard_id shard, op_context& octx, shard_fetch fetch) {
         return ss::now();
     }
 
-    bool foreign_read = shard != ss::this_shard_id();
+    const bool foreign_read = shard != ss::this_shard_id();
 
     // dispatch to remote core
     return octx.rctx.partition_manager()
       .invoke_on(
         shard,
         octx.ssg,
-        [foreign_read,
-         deadline = octx.deadline,
-         configs = std::move(fetch.requests),
-         &octx](cluster::partition_manager& mgr) mutable {
+        [foreign_read, &octx, configs = std::move(fetch.requests)](
+          cluster::partition_manager& mgr) mutable {
             return fetch_ntps_in_parallel(
-              mgr,
-              octx.rctx.replica_selector(),
-              std::move(configs),
-              foreign_read,
-              deadline);
+              mgr, octx, std::move(configs), foreign_read);
         })
       .then([responses = std::move(fetch.responses),
              metrics = std::move(fetch.metrics),
@@ -905,4 +1023,14 @@ std::ostream& operator<<(std::ostream& o, const consumer_info& ci) {
     fmt::print(o, "rack_id: {}, fetch_offset: {}", ci);
     return o;
 }
+
+size_t fetch_memory_estimator(
+  const size_t request_size, connection_context& /*conn_ctx*/) {
+    return request_size
+             * 3 // appx memory for fetch plans, fetch configs, read results
+           + config::shard_local_cfg()
+               .kafka_memory_batch_size_estimate_for_fetch();
+    // at least one batch of the data will be read
+}
+
 } // namespace kafka
