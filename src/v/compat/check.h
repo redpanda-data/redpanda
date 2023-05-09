@@ -74,6 +74,16 @@ std::pair<T, T> compat_copy(T t) {
     return {t, t};
 }
 
+template<typename T>
+concept ExplicitCopyable = requires(T a) {
+    { a.copy() } -> std::same_as<T>;
+};
+
+template<ExplicitCopyable T>
+std::pair<T, T> compat_copy(T t) {
+    return {t.copy(), std::move(t)};
+}
+
 /*
  * Holder for binary serialization of a data structure along with the name of
  * the protocol used (e.g. adl, serde).
