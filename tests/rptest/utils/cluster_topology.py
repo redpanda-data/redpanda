@@ -8,10 +8,9 @@
 # by the Apache License, Version 2.0
 
 from collections import defaultdict
-from rptest.services.cluster import cluster
 from rptest.services.redpanda import RedpandaService
 
-from rptest.tests.redpanda_test import RedpandaTest
+import psutil
 
 
 class NetemSpec():
@@ -117,11 +116,32 @@ class Region():
 class ClusterTopology():
     UNASSIGNED_REGION = "__ducktape_unassigned"
 
-    def __init__(self, network_device='eth0'):
+    IGNORED_IF_PREFIXES = ["veth", "docker", "lo", "br"]
+
+    def __init__(self):
         self.regions = {}
         self.network_configuration = []
         self.node_qdisc = []
-        self.network_device = network_device
+        self.network_device = ClusterTopology._get_if_in_use()
+
+    @staticmethod
+    def _get_if_in_use():
+        """Picks the interface for tc traffic shaping."""
+        available_ifs = psutil.net_if_addrs().keys()
+
+        # Not all environments (container, VM etc) have the same interface naming
+        # convention (eg: eth0 vs ensX in EC2). Here we filter out all known patterns
+        # like virtual/bridge/loopback interfaces that can ignored and pick the first
+        # available interface that doesn't match the ignore filter. This may break
+        # as we run in newer environments that do not conform to these naming rules
+        # in which case we need to update the prefix filters.
+        def ignored(i):
+            return any(
+                [i.startswith(p) for p in ClusterTopology.IGNORED_IF_PREFIXES])
+
+        available = [i for i in available_ifs if not ignored(i)]
+        assert available, f"No suitable interface found in {available_ifs}"
+        return next(iter(available))
 
     def _unassigned_region(self):
         return Region(ClusterTopology.UNASSIGNED_REGION)
