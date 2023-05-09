@@ -37,6 +37,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"go.uber.org/zap"
 )
 
 // BodyError is returned on non-2xx status codes. For 4xx, you can optionally
@@ -299,7 +301,9 @@ func (cl *Client) do(ctx context.Context, method, path string, qps url.Values, b
 		for k, v := range cl.headers {
 			req.Header.Set(k, v)
 		}
+		zap.L().Sugar().Debugf("requesting %s", req.URL)
 		resp, err = cl.httpCl.Do(req)
+		zap.L().Sugar().Debugf("got response for %s", req.URL)
 
 		if isRetryable, err := backoff.maybeDo(ctx, resp, err); err != nil {
 			return err
