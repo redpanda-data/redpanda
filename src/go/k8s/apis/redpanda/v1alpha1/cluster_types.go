@@ -43,7 +43,7 @@ type RedpandaResourceRequirements struct {
 
 // RedpandaCPU returns a copy of the rounded value for Redpanda CPU
 //
-// If it's not explicitly set, the Request.Cpu is used. This allows
+// If it's not explicitly set, the Request.CPU is used. This allows
 // overprovisioning the CPU, which is not recommended, but --smp can't be
 // reduced on an update.
 //

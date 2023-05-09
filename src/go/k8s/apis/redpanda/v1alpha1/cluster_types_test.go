@@ -71,7 +71,7 @@ func TestRedpandaResourceRequirements(t *testing.T) {
 		}
 	})
 
-	t.Run("Cpu", func(t *testing.T) {
+	t.Run("CPU", func(t *testing.T) {
 		tests := []test{
 			{
 				name:                "RedpandaCPU is set from integer requests.cpu",

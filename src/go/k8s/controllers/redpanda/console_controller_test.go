@@ -17,10 +17,6 @@ import (
 
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
-	redpandav1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
-	consolepkg "github.com/redpanda-data/redpanda/src/go/k8s/pkg/console"
-	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/labels"
-	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources"
 	"github.com/twmb/franz-go/pkg/kadm"
 	"gopkg.in/yaml.v3"
 	appsv1 "k8s.io/api/apps/v1"
@@ -29,6 +25,11 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+
+	redpandav1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
+	consolepkg "github.com/redpanda-data/redpanda/src/go/k8s/pkg/console"
+	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/labels"
+	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources"
 )
 
 type mockKafkaAdmin struct{}

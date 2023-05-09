@@ -102,9 +102,7 @@ type ClusterReconciler struct {
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.7.0/pkg/reconcile
 //
 //nolint:funlen,gocyclo // todo break down
-func (r *ClusterReconciler) Reconcile(
-	ctx context.Context, req ctrl.Request,
-) (ctrl.Result, error) {
+func (r *ClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	log := r.Log.WithValues("redpandacluster", req.NamespacedName)
 
 	log.Info(fmt.Sprintf("Starting reconcile loop for %v", req.NamespacedName))

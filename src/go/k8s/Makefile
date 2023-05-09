@@ -128,11 +128,14 @@ KUSTOMIZE ?= $(LOCALBIN)/kustomize
 CONTROLLER_GEN ?= $(LOCALBIN)/controller-gen
 ENVTEST ?= $(LOCALBIN)/setup-envtest
 KUTTL ?= $(LOCALBIN)/kubectl-kuttl
+GOLANGCI_LINT ?= $(LOCALBIN)/golangci-lint
 
 ## Tool Versions
 KUSTOMIZE_VERSION ?= v4.5.7
 CONTROLLER_TOOLS_VERSION ?= v0.4.1
 KUTTL_VERSION ?= v0.15.0
+
+GOLANGCI_LINT_VERSION ?= v1.52.2
 
 .PHONY: controller-gen
 controller-gen: $(CONTROLLER_GEN) ## Download controller-gen locally if necessary.
@@ -167,3 +170,32 @@ GOBIN=$(PROJECT_DIR)/bin go install $(2) ;\
 rm -rf $$TMP_DIR ;\
 }
 endef
+
+.PHONY: gofumpt-install
+gofumpt-install:
+	go install mvdan.cc/gofumpt@latest
+
+.PHONY: goimports-install
+goimports-install:
+	go install golang.org/x/tools/cmd/goimports@latest
+
+.PHONY: gofumpt-lint
+gofumpt-lint: gofumpt-install
+	find . -type f -name '*.go' | xargs -n1 gofumpt -w -lang=1.20
+
+.PHONY: goimports
+goimports: goimports-install
+	goimports -w .
+
+
+.PHONY: golangci-lint-install
+golangci-lint-install:
+	mkdir -p $(GOLANGCI_LINT)
+	curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(GOLANGCI_LINT) v1.52.2
+
+.PHONY: golangci-lint
+golangci-lint:
+	$(GOLANGCI_LINT)/golangci-lint run --go=1.20
+
+.PHONY: lint
+lint: gofumpt-lint golangci-lint
