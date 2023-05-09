@@ -10,10 +10,12 @@
 
 #include "cloud_storage/partition_manifest.h"
 
+#include "bytes/iobuf.h"
 #include "bytes/iobuf_istreambuf.h"
 #include "bytes/iobuf_ostreambuf.h"
 #include "bytes/iostream.h"
 #include "cloud_storage/logger.h"
+#include "cloud_storage/segment_meta_cstore.h"
 #include "cloud_storage/types.h"
 #include "hashing/xx.h"
 #include "json/document.h"
@@ -22,6 +24,10 @@
 #include "json/writer.h"
 #include "model/fundamental.h"
 #include "model/timestamp.h"
+#include "reflection/to_tuple.h"
+#include "serde/envelope.h"
+#include "serde/envelope_for_each_field.h"
+#include "serde/serde.h"
 #include "ssx/sformat.h"
 #include "storage/fs_utils.h"
 #include "utils/to_string.h"
@@ -41,6 +47,7 @@
 #include <memory>
 #include <optional>
 #include <stdexcept>
+#include <tuple>
 #include <type_traits>
 #include <utility>
 
@@ -1904,6 +1911,97 @@ partition_manifest::timequery(model::timestamp t) const {
         }
         return *segment_iter;
     }
+}
+
+// this class is a serde-enabled version of partition_manifest. it's needed
+// because segment_meta_cstore is not copyable, and moving it would empty out
+// partition_manifest
+struct partition_manifest_serde
+  : public serde::envelope<
+      partition_manifest_serde,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    model::ntp _ntp;
+    model::initial_revision_id _rev;
+
+    // _segments_serialized is already serialized via serde into a iobuf
+    // this is done because segment_meta_cstore is not a serde::envelope
+    iobuf _segments_serialized;
+
+    partition_manifest::replaced_segments_list _replaced;
+    model::offset _last_offset;
+    model::offset _start_offset;
+    model::offset _last_uploaded_compacted_offset;
+    model::offset _insync_offset;
+    size_t _cloud_log_size_bytes;
+    model::offset _archive_start_offset;
+    model::offset_delta _archive_start_offset_delta;
+    model::offset _archive_clean_offset;
+    kafka::offset _start_kafka_offset;
+};
+
+static_assert(
+    std::tuple_size_v<decltype(std::declval<partition_manifest const&>().serde_fields())> == std::tuple_size_v<decltype(std::declval<partition_manifest&>().serde_fields())>,
+        "ensure that serde_fields() and serde_fields() const capture the same fields"
+    );
+static_assert(
+    std::tuple_size_v<decltype(serde::envelope_to_tuple(std::declval<partition_manifest_serde&>()))> == std::tuple_size_v<decltype(std::declval<partition_manifest&>().serde_fields())>,
+        "partition_manifest_serde and partition_manifest must have the same number of fields, for serialization purposes"
+    );
+
+// construct partition_manifest_serde while keeping
+// std::is_aggregate<partition_manifest_serde> true
+static auto
+partition_manifest_serde_from_partition_manifest(partition_manifest const& m)
+  -> partition_manifest_serde {
+    partition_manifest_serde tmp{};
+    // copy every field that is not segment_meta_cstore in
+    // partition_manifest_serde, and uses to_iobuf for segment_meta_cstore
+
+    []<typename DT, typename ST, size_t... Is>(
+      DT dest_tuple, ST src_tuple, std::index_sequence<Is...>) {
+        (([&]<typename Src>(auto& dest, Src const& src) {
+             if constexpr (std::is_same_v<Src, segment_meta_cstore>) {
+                 dest = src.to_iobuf();
+             } else {
+                 dest = src;
+             }
+         }(std::get<Is>(dest_tuple), std::get<Is>(src_tuple))),
+         ...);
+    }(serde::envelope_to_tuple(tmp),
+      m.serde_fields(),
+      std::make_index_sequence<
+        std::tuple_size_v<decltype(m.serde_fields())>>());
+    return tmp;
+}
+
+// almost the reverse of partition_manifest_serde_to_partition_manifest
+static void partition_manifest_serde_to_partition_manifest(
+  partition_manifest_serde src, partition_manifest& dest) {
+    []<typename DT, typename ST, size_t... Is>(
+      DT dest_tuple, ST src_tuple, std::index_sequence<Is...>) {
+        (([&]<typename Dest>(Dest& dest, auto& src) {
+             if constexpr (std::is_same_v<Dest, segment_meta_cstore>) {
+                 dest.from_iobuf(std::move(src));
+             } else {
+                 dest = std::move(src);
+             }
+         }(std::get<Is>(dest_tuple), std::get<Is>(src_tuple))),
+         ...);
+    }(dest.serde_fields(),
+      serde::envelope_to_tuple(src),
+      std::make_index_sequence<
+        std::tuple_size_v<decltype(dest.serde_fields())>>());
+}
+
+iobuf partition_manifest::to_iobuf() const {
+    return serde::to_iobuf(
+      partition_manifest_serde_from_partition_manifest(*this));
+}
+
+void partition_manifest::from_iobuf(iobuf in) {
+    partition_manifest_serde_to_partition_manifest(
+      serde::from_iobuf<partition_manifest_serde>(std::move(in)), *this);
 }
 
 } // namespace cloud_storage

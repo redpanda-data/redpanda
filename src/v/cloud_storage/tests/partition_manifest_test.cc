@@ -17,6 +17,7 @@
 #include "model/metadata.h"
 #include "model/timestamp.h"
 #include "seastarx.h"
+#include "serde/serde.h"
 #include "utils/tracking_allocator.h"
 
 #include <seastar/testing/test_case.hh>
@@ -841,6 +842,11 @@ SEASTAR_THREAD_TEST_CASE(test_manifest_serialization) {
     restored.update(std::move(rstr)).get();
 
     BOOST_REQUIRE(m == restored);
+
+    BOOST_REQUIRE(m.to_iobuf() == restored.to_iobuf());
+
+    m.from_iobuf(m.to_iobuf());
+    BOOST_REQUIRE(m == restored);
 }
 
 SEASTAR_THREAD_TEST_CASE(test_manifest_replaced) {
@@ -1175,32 +1181,50 @@ SEASTAR_THREAD_TEST_CASE(test_complete_manifest_serialization_roundtrip) {
         accessor::add_replaced_segment(
           &m, segment_name(segment.first), segment.second);
     }
-    auto [is, size] = m.serialize().get();
-    iobuf buf;
-    auto os = make_iobuf_ref_output_stream(buf);
-    ss::copy(is, os).get();
 
-    auto rstr = make_iobuf_input_stream(std::move(buf));
-    partition_manifest restored;
-    restored.update(std::move(rstr)).get();
+    auto run_checks = [&](auto restored, std::string test_info) {
+        BOOST_TEST_INFO(test_info);
+        BOOST_REQUIRE(restored == m);
 
-    BOOST_REQUIRE(restored == m);
+        for (const auto& expected : expected_segments) {
+            auto actual = restored.find(expected.second.base_offset);
+            require_equal_segment_meta(expected.second, *actual);
+        }
 
-    for (const auto& expected : expected_segments) {
-        auto actual = restored.find(expected.second.base_offset);
-        require_equal_segment_meta(expected.second, *actual);
-    }
+        for (const auto& expected : expected_replaced_segments) {
+            auto actual = accessor::find(
+              segment_name(expected.first), restored);
+            auto res = std::any_of(
+              actual.first, actual.second, [&expected](const auto& a) {
+                  return partition_manifest::lw_segment_meta::convert(
+                           expected.second)
+                         == a;
+              });
+            BOOST_REQUIRE(res);
+        }
+    };
 
-    for (const auto& expected : expected_replaced_segments) {
-        auto actual = accessor::find(segment_name(expected.first), restored);
-        auto res = std::any_of(
-          actual.first, actual.second, [&expected](const auto& a) {
-              return partition_manifest::lw_segment_meta::convert(
-                       expected.second)
-                     == a;
-          });
-        BOOST_REQUIRE(res);
-    }
+    run_checks(
+      [&] {
+          auto [is, size] = m.serialize().get();
+          iobuf buf;
+          auto os = make_iobuf_ref_output_stream(buf);
+          ss::copy(is, os).get();
+
+          auto rstr = make_iobuf_input_stream(std::move(buf));
+          partition_manifest restored;
+          restored.update(std::move(rstr)).get();
+          return restored;
+      }(),
+      "serialize/deserialize");
+
+    run_checks(
+      [&] {
+          partition_manifest restored{};
+          restored.from_iobuf(m.to_iobuf());
+          return restored;
+      }(),
+      "to_iobuf/from_iobuf");
 }
 
 SEASTAR_THREAD_TEST_CASE(test_partition_manifest_start_offset_advance) {
