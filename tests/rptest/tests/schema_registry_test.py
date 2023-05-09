@@ -67,12 +67,7 @@ message Test2 {
   Simple id =  1;
 }"""
 
-log_config = LoggingConfig('info',
-                           logger_levels={
-                               'security': 'trace',
-                               'pandaproxy': 'trace',
-                               'kafka/client': 'trace'
-                           })
+log_config = LoggingConfig('trace')
 
 
 class SchemaRegistryEndpoints(RedpandaTest):
