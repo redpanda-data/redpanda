@@ -12,6 +12,7 @@
 #include "cluster/metadata_dissemination_types.h"
 #include "cluster/tests/utils.h"
 #include "cluster/types.h"
+#include "compat/check.h"
 #include "model/compression.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
@@ -530,8 +531,9 @@ SEASTAR_THREAD_TEST_CASE(partition_status_serialization_old_version) {
 }
 
 template<typename T>
-void serde_roundtrip_test(const T original) {
-    auto serde_in = original;
+void serde_roundtrip_test(T a) {
+    using compat::compat_copy;
+    auto [serde_in, original] = compat_copy(std::move(a));
     auto serde_out = serde::to_iobuf(std::move(serde_in));
     auto from_serde = serde::from_iobuf<T>(std::move(serde_out));
 
@@ -539,8 +541,9 @@ void serde_roundtrip_test(const T original) {
 }
 
 template<typename T>
-void adl_roundtrip_test(const T original) {
-    auto adl_in = original;
+void adl_roundtrip_test(T a) {
+    using compat::compat_copy;
+    auto [adl_in, original] = compat_copy(std::move(a));
     auto adl_out = reflection::to_iobuf(std::move(adl_in));
     auto from_adl = reflection::from_iobuf<T>(std::move(adl_out));
 
@@ -548,9 +551,11 @@ void adl_roundtrip_test(const T original) {
 }
 
 template<typename T>
-void roundtrip_test(const T original) {
-    serde_roundtrip_test(original);
-    adl_roundtrip_test(original);
+void roundtrip_test(T a) {
+    using compat::compat_copy;
+    auto [original_a, original_b] = compat_copy(std::move(a));
+    serde_roundtrip_test(std::move(original_a));
+    adl_roundtrip_test(std::move(original_b));
 }
 
 template<typename T>
@@ -893,12 +898,12 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
 
     roundtrip_test(cluster::get_leadership_request());
 
-    roundtrip_test(cluster::get_leadership_reply({
-      cluster::ntp_leader(
-        model::random_ntp(),
-        tests::random_named_int<model::term_id>(),
-        tests::random_named_int<model::node_id>()),
-    }));
+    fragmented_vector<cluster::ntp_leader> leaders;
+    leaders.push_back(cluster::ntp_leader{
+      model::random_ntp(),
+      tests::random_named_int<model::term_id>(),
+      tests::random_named_int<model::node_id>()});
+    roundtrip_test(cluster::get_leadership_reply(std::move(leaders)));
 
     roundtrip_test(
       cluster::allocate_id_request(random_timeout_clock_duration()));
