@@ -255,7 +255,9 @@ partition_manifest::partition_manifest(
 // backend and other S3 API implementations might benefit from that.
 
 remote_manifest_path generate_partition_manifest_path(
-  const model::ntp& ntp, model::initial_revision_id rev) {
+  const model::ntp& ntp,
+  model::initial_revision_id rev,
+  std::string_view suffix) {
     // NOTE: the idea here is to split all possible hash values into
     // 16 bins. Every bin should have lowest 28-bits set to 0.
     // As result, for segment names all prefixes are possible, but
@@ -265,14 +267,23 @@ remote_manifest_path generate_partition_manifest_path(
     constexpr uint32_t bitmask = 0xF0000000;
     auto path = ssx::sformat("{}_{}", ntp.path(), rev());
     uint32_t hash = bitmask & xxhash_32(path.data(), path.size());
-    return remote_manifest_path(
-      fmt::format("{:08x}/meta/{}_{}/manifest.json", hash, ntp.path(), rev()));
+    return remote_manifest_path(fmt::format(
+      "{:08x}/meta/{}_{}/manifest.{}", hash, ntp.path(), rev(), suffix));
 }
 
-remote_manifest_path partition_manifest::get_manifest_path() const {
-    return generate_partition_manifest_path(_ntp, _rev);
+std::pair<manifest_format, remote_manifest_path>
+partition_manifest::get_manifest_format_and_path() const {
+    return {
+      manifest_format::serde,
+      generate_partition_manifest_path(_ntp, _rev, "binary")};
 }
 
+std::pair<manifest_format, remote_manifest_path>
+partition_manifest::get_legacy_manifest_format_and_path() const {
+    return {
+      manifest_format::json,
+      generate_partition_manifest_path(_ntp, _rev, "json")};
+}
 const model::ntp& partition_manifest::get_ntp() const { return _ntp; }
 
 model::offset partition_manifest::get_last_offset() const {
@@ -1369,31 +1380,45 @@ struct partition_manifest_handler
     }
 };
 
-ss::future<> partition_manifest::update(ss::input_stream<char> is) {
+ss::future<> partition_manifest::update(
+  manifest_format serialization_format, ss::input_stream<char> is) {
     iobuf result;
     auto os = make_iobuf_ref_output_stream(result);
     co_await ss::copy(is, os);
-    iobuf_istreambuf ibuf(result);
-    std::istream stream(&ibuf);
-    json::IStreamWrapper wrapper(stream);
-    rapidjson::Reader reader;
-    partition_manifest_handler handler(_mem_tracker);
 
-    if (reader.Parse(wrapper, handler)) {
-        partition_manifest::do_update(std::move(handler));
-    } else {
-        rapidjson::ParseErrorCode e = reader.GetParseErrorCode();
-        size_t o = reader.GetErrorOffset();
-        vlog(
-          cst_log.debug, "Failed to parse manifest: {}", result.hexdump(2048));
-        throw std::runtime_error(fmt_with_ctx(
-          fmt::format,
-          "Failed to parse partition manifest {}: {} at offset {}",
-          get_manifest_path(),
-          rapidjson::GetParseError_En(e),
-          o));
+    auto update_json = [&] {
+        iobuf_istreambuf ibuf(result);
+        std::istream stream(&ibuf);
+        json::IStreamWrapper wrapper(stream);
+        rapidjson::Reader reader;
+        partition_manifest_handler handler(_mem_tracker);
+
+        if (reader.Parse(wrapper, handler)) {
+            partition_manifest::do_update(std::move(handler));
+        } else {
+            rapidjson::ParseErrorCode e = reader.GetParseErrorCode();
+            size_t o = reader.GetErrorOffset();
+            vlog(
+              cst_log.debug,
+              "Failed to parse manifest: {}",
+              result.hexdump(2048));
+            throw std::runtime_error(fmt_with_ctx(
+              fmt::format,
+              "Failed to parse partition manifest {}: {} at offset {}",
+              get_manifest_path(),
+              rapidjson::GetParseError_En(e),
+              o));
+        }
+    };
+
+    switch (serialization_format) {
+    case manifest_format::json:
+        update_json();
+        break;
+    case manifest_format::serde:
+        from_iobuf(std::move(result));
+        break;
     }
-    co_return;
 }
 
 void partition_manifest::do_update(partition_manifest_handler&& handler) {
@@ -1483,39 +1508,14 @@ struct partition_manifest::serialization_cursor {
 };
 
 ss::future<serialized_data_stream> partition_manifest::serialize() const {
-    auto iso = _insync_offset;
-    iobuf serialized;
-    iobuf_ostreambuf obuf(serialized);
-    std::ostream os(&obuf);
-    serialization_cursor_ptr c = make_cursor(os);
-    serialize_begin(c);
-    while (!c->segments_done) {
-        serialize_segments(c);
-        co_await ss::maybe_yield();
-        if (iso != _insync_offset) {
-            throw std::runtime_error(fmt_with_ctx(
-              fmt::format,
-              "Manifest changed duing serialization, in sync offset moved from "
-              "{} to {}",
-              iso,
-              _insync_offset));
-        }
-    }
-    serialize_replaced(c);
-    serialize_end(c);
-    if (!os.good()) {
-        throw std::runtime_error(fmt_with_ctx(
-          fmt::format,
-          "could not serialize partition manifest {}",
-          get_manifest_path()));
-    }
+    auto serialized = to_iobuf();
     size_t size_bytes = serialized.size_bytes();
     co_return serialized_data_stream{
       .stream = make_iobuf_input_stream(std::move(serialized)),
       .size_bytes = size_bytes};
 }
 
-void partition_manifest::serialize(std::ostream& out) const {
+void partition_manifest::serialize_json(std::ostream& out) const {
     serialization_cursor_ptr c = make_cursor(out);
     serialize_begin(c);
     while (!c->segments_done) {
@@ -1526,7 +1526,7 @@ void partition_manifest::serialize(std::ostream& out) const {
 }
 
 ss::future<>
-partition_manifest::serialize(ss::output_stream<char>& output) const {
+partition_manifest::serialize_json(ss::output_stream<char>& output) const {
     iobuf serialized;
     iobuf_ostreambuf obuf(serialized);
     std::ostream os(&obuf);

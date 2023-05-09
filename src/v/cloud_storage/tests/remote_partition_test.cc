@@ -1598,7 +1598,7 @@ FIXTURE_TEST(test_remote_partition_scan_after_recovery, cloud_storage_fixture) {
     iobuf manifest_body;
     manifest_body.append(manifest_json, std::strlen(manifest_json));
     auto is = make_iobuf_input_stream(std::move(manifest_body));
-    manifest.update(std::move(is)).get();
+    manifest.update(manifest_format::json, std::move(is)).get();
 
     auto segments = setup_s3_imposter(*this, manifest);
 

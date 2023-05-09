@@ -447,7 +447,7 @@ FIXTURE_TEST(
     BOOST_REQUIRE_EQUAL(get_requests().size(), 3);
 
     std::stringstream st;
-    stm_manifest.serialize(st);
+    stm_manifest.serialize_json(st);
     vlog(test_log.debug, "manifest: {}", st.str());
     verify_segment_request("500-1-v1.log", stm_manifest);
 

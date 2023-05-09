@@ -480,7 +480,7 @@ std::vector<cloud_storage_fixture::expectation> make_imposter_expectations(
           .url = "/" + url().string(), .body = s.bytes});
     }
     std::stringstream ostr;
-    m.serialize(ostr);
+    m.serialize_json(ostr);
     results.push_back(cloud_storage_fixture::expectation{
       .url = "/" + m.get_manifest_path()().string(),
       .body = ss::sstring(ostr.str())});
@@ -536,7 +536,7 @@ std::vector<cloud_storage_fixture::expectation> make_imposter_expectations(
     }
     m.advance_insync_offset(m.get_last_offset());
     std::stringstream ostr;
-    m.serialize(ostr);
+    m.serialize_json(ostr);
     results.push_back(cloud_storage_fixture::expectation{
       .url = "/" + m.get_manifest_path()().string(),
       .body = ss::sstring(ostr.str())});
@@ -609,8 +609,8 @@ partition_manifest hydrate_manifest(
 
     partition_manifest m(manifest_ntp, manifest_revision);
     retry_chain_node rtc(never_abort, 30s, 200ms);
-    auto key = m.get_manifest_path();
-    auto res = api.download_manifest(bucket, key, m, rtc).get();
+    auto format_key = m.get_legacy_manifest_format_and_path();
+    auto res = api.download_manifest(bucket, format_key, m, rtc).get();
     BOOST_REQUIRE(res == cloud_storage::download_result::success);
     return m;
 }

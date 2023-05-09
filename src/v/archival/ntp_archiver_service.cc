@@ -674,12 +674,13 @@ ntp_archiver::download_manifest() {
       _conf->cloud_storage_initial_backoff,
       &_rtcnode);
     cloud_storage::partition_manifest tmp(_ntp, _rev);
-    auto path = tmp.get_manifest_path();
-    auto key = cloud_storage::remote_manifest_path(
-      std::filesystem::path(std::move(path)));
     vlog(_rtclog.debug, "Downloading manifest");
-    auto result = co_await _remote.download_manifest(
-      get_bucket_name(), key, tmp, fib);
+    auto [result, _] = co_await _remote.try_download_manifests(
+      get_bucket_name(),
+      {tmp.get_manifest_format_and_path(),
+       tmp.get_legacy_manifest_format_and_path()},
+      tmp,
+      fib);
 
     // It's OK if the manifest is not found for a newly created topic. The
     // condition in if statement is not guaranteed to cover all cases for new

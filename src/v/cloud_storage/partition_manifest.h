@@ -188,7 +188,16 @@ public:
     }
 
     /// Manifest object name in S3
-    remote_manifest_path get_manifest_path() const override;
+    std::pair<manifest_format, remote_manifest_path>
+    get_manifest_format_and_path() const override;
+
+    remote_manifest_path get_manifest_path() const override {
+        return get_legacy_manifest_format_and_path().second;
+    }
+
+    /// Manifest object name before feature::cloud_storage_manifest_format_v2
+    std::pair<manifest_format, remote_manifest_path>
+    get_legacy_manifest_format_and_path() const;
 
     /// Get NTP
     const model::ntp& get_ntp() const;
@@ -293,7 +302,12 @@ public:
     const_iterator find(model::offset o) const;
 
     /// Update manifest file from input_stream (remote set)
-    ss::future<> update(ss::input_stream<char> is) override;
+    ss::future<> update(
+      manifest_format serialization_format, ss::input_stream<char> is) override;
+
+    ss::future<> update(ss::input_stream<char> is) override {
+        return update(manifest_format::serde, std::move(is));
+    }
 
     /// Serialize manifest object
     ///
@@ -303,14 +317,14 @@ public:
     /// Serialize manifest object
     ///
     /// \param out output stream that should be used to output the json
-    void serialize(std::ostream& out) const;
+    void serialize_json(std::ostream& out) const;
 
     // Serialize the manifest to an ss::output_stream in JSON format
     /// \param out output stream to serialize into; must be kept alive
     /// by the caller until the returned future completes.
     ///
     /// \return a future that completes after serialization is done
-    ss::future<> serialize(ss::output_stream<char>& out) const;
+    ss::future<> serialize_json(ss::output_stream<char>& out) const;
 
     manifest_type get_manifest_type() const override {
         return manifest_type::partition;

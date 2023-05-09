@@ -94,16 +94,6 @@ archiver_fixture::~archiver_fixture() {
     pool.stop().get();
 }
 
-static cloud_storage::partition_manifest
-load_manifest_from_str(std::string_view v) {
-    cloud_storage::partition_manifest m;
-    iobuf i;
-    i.append(v.data(), v.size());
-    auto s = make_iobuf_input_stream(std::move(i));
-    m.update(std::move(s)).get();
-    return m;
-}
-
 static void write_batches(
   ss::lw_shared_ptr<storage::segment> seg,
   ss::circular_buffer<model::record_batch> batches) { // NOLINT
@@ -480,8 +470,7 @@ void segment_matcher<Fixture>::verify_manifest(
 template<class Fixture>
 void segment_matcher<Fixture>::verify_manifest_content(
   const ss::sstring& manifest_content) {
-    cloud_storage::partition_manifest m = load_manifest_from_str(
-      manifest_content);
+    cloud_storage::partition_manifest m = load_manifest(manifest_content);
     verify_manifest(m);
 }
 
@@ -492,7 +481,7 @@ cloud_storage::partition_manifest load_manifest(std::string_view v) {
     iobuf i;
     i.append(v.data(), v.size());
     auto s = make_iobuf_input_stream(std::move(i));
-    m.update(std::move(s)).get();
+    m.update(cloud_storage::manifest_format::json, std::move(s)).get();
     return m;
 }
 

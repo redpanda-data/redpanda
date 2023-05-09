@@ -345,7 +345,7 @@ public:
     // completes.
     static constexpr std::chrono::seconds manifest_serialization_timeout{3s};
     ss::future<>
-    serialize_manifest_to_output_stream(ss::output_stream<char>& output);
+    serialize_json_manifest_to_output_stream(ss::output_stream<char>& output);
 
     std::optional<std::reference_wrapper<cluster::topic_configuration>>
     get_topic_config() {

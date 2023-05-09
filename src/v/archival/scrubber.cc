@@ -78,22 +78,25 @@ ss::future<scrubber::purge_result> scrubber::purge_partition(
     // could have a "drop out on slowdown" flag?
 
     cloud_storage::partition_manifest manifest(ntp, remote_revision);
-    auto manifest_path = manifest.get_manifest_path();
-    auto manifest_get_result = co_await _api.maybe_download_manifest(
-      bucket, manifest_path, manifest, manifest_rtc);
+    auto manifest_paths = std::vector{
+      manifest.get_manifest_format_and_path(),
+      manifest.get_legacy_manifest_format_and_path()};
+    auto [manifest_get_result, manifest_idx]
+      = co_await _api.try_download_manifests(
+        bucket, manifest_paths, manifest, manifest_rtc, true);
 
     if (manifest_get_result == download_result::notfound) {
         vlog(
           archival_log.debug,
           "Partition manifest get {} not found",
-          manifest_path);
+          manifest.get_legacy_manifest_format_and_path().second);
         result.status = purge_status::permanent_failure;
         co_return result;
     } else if (manifest_get_result != download_result::success) {
         vlog(
           archival_log.debug,
           "Partition manifest get {} failed: {}",
-          manifest_path,
+          manifest_paths[manifest_idx].second,
           manifest_get_result);
         result.status = purge_status::retryable_failure;
         co_return result;
@@ -121,13 +124,16 @@ ss::future<scrubber::purge_result> scrubber::purge_partition(
     }
 
     // Erase the partition manifest
-    vlog(archival_log.debug, "Erasing partition manifest {}", manifest_path);
+    vlog(
+      archival_log.debug,
+      "Erasing partition manifest {}",
+      manifest_paths[manifest_idx].second);
     retry_chain_node manifest_delete_rtc(
       ss::lowres_clock::now() + 5s, 1s, &parent_rtc);
     result.ops += 1;
     auto manifest_delete_result = co_await _api.delete_object(
       bucket,
-      cloud_storage_clients::object_key(manifest_path),
+      cloud_storage_clients::object_key(manifest_paths[manifest_idx].second),
       manifest_delete_rtc);
     if (manifest_delete_result != upload_result::success) {
         result.status = purge_status::retryable_failure;

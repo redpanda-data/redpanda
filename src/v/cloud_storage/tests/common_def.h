@@ -10,7 +10,9 @@
 
 #pragma once
 #include "bytes/iobuf.h"
+#include "cloud_storage/base_manifest.h"
 #include "cloud_storage/tests/s3_imposter.h"
+#include "cloud_storage/types.h"
 #include "model/fundamental.h"
 #include "model/record_batch_types.h"
 #include "model/tests/random_batch.h"
@@ -34,6 +36,17 @@ static const ss::sstring manifest_url = ssx::sformat( // NOLINT
   "20000000/meta/{}_{}/manifest.json",
   manifest_ntp.path(),
   manifest_revision());
+static const ss::sstring manifest_serde_url = ssx::sformat(
+  "20000000/meta/{}_{}/manifest.binary",
+  manifest_ntp.path(),
+  manifest_revision());
+
+static const auto json_manifest_format_path = std::pair{
+  manifest_format::json,
+  remote_manifest_path(std::filesystem::path(manifest_url))};
+static const auto serde_manifest_format_path = std::pair{
+  manifest_format::serde,
+  remote_manifest_path(std::filesystem::path(manifest_serde_url))};
 
 inline iobuf iobuf_deep_copy(const iobuf& i) {
     iobuf res;
