@@ -113,6 +113,63 @@ struct allocate_id_reply
     auto serde_fields() { return std::tie(id, ec); }
 };
 
+struct reset_id_allocator_request
+  : serde::envelope<
+      reset_id_allocator_request,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    model::timeout_clock::duration timeout;
+    int64_t producer_id;
+
+    reset_id_allocator_request() noexcept = default;
+
+    explicit reset_id_allocator_request(
+      model::timeout_clock::duration timeout, int64_t producer_id)
+      : timeout(timeout)
+      , producer_id(producer_id) {}
+
+    friend bool operator==(
+      const reset_id_allocator_request&, const reset_id_allocator_request&)
+      = default;
+
+    friend std::ostream&
+    operator<<(std::ostream& o, const reset_id_allocator_request& req) {
+        fmt::print(
+          o,
+          "timeout: {}, producer_id: {}",
+          req.timeout.count(),
+          req.producer_id);
+        return o;
+    }
+
+    auto serde_fields() { return std::tie(timeout, producer_id); }
+};
+
+struct reset_id_allocator_reply
+  : serde::envelope<
+      reset_id_allocator_reply,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    errc ec;
+
+    reset_id_allocator_reply() noexcept = default;
+
+    explicit reset_id_allocator_reply(errc ec)
+      : ec(ec) {}
+
+    friend bool
+    operator==(const reset_id_allocator_reply&, const reset_id_allocator_reply&)
+      = default;
+
+    friend std::ostream&
+    operator<<(std::ostream& o, const reset_id_allocator_reply& rep) {
+        fmt::print(o, "ec: {}", rep.ec);
+        return o;
+    }
+
+    auto serde_fields() { return std::tie(ec); }
+};
+
 enum class tx_errc {
     none = 0,
     leader_not_found,
