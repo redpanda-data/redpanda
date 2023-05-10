@@ -71,6 +71,14 @@ public:
     ss::future<result<std::vector<partition_reconfiguration_state>>>
       get_partitions_reconfiguration_state(
         std::vector<model::ntp>, model::timeout_clock::time_point);
+    /**
+     * Returns state of controller backend from each node in the cluster for
+     * requested list of ntps. A global reconciliation status contains a state
+     * of reconciliation loop execution from every replica that is part of an
+     * ntp replica set.
+     */
+    ss::future<global_reconciliation_state> get_global_reconciliation_state(
+      std::vector<model::ntp>, model::timeout_clock::time_point);
 
     ss::future<result<node_decommission_progress>>
       get_node_decommission_progress(

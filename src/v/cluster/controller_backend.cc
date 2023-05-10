@@ -747,6 +747,11 @@ ss::future<> controller_backend::reconcile_ntp(deltas_t& deltas) {
                   it->delta.previous_replica_set);
 
                 it->retries++;
+                if (ec.category() == error_category()) {
+                    it->last_error = static_cast<errc>(ec.value());
+                } else {
+                    it->last_error = errc::partition_operation_failed;
+                }
                 stop = true;
                 continue;
             }
@@ -784,6 +789,7 @@ ss::future<> controller_backend::reconcile_ntp(deltas_t& deltas) {
               *it,
               std::current_exception());
             it->retries++;
+            it->last_error = errc::partition_operation_failed;
             stop = true;
             continue;
         }
@@ -1809,7 +1815,13 @@ controller_backend::list_ntp_deltas(const model::ntp& ntp) const {
 
 std::ostream&
 operator<<(std::ostream& o, const controller_backend::delta_metadata& m) {
-    fmt::print(o, "{{delta: {}, retries: {}}}", m.delta, m.retries);
+    fmt::print(
+      o,
+      "{{delta: {}, retries: {}, last_error: {}({})}}",
+      m.delta,
+      m.retries,
+      m.last_error,
+      error_category().message(static_cast<int>(m.last_error)));
     return o;
 }
 
