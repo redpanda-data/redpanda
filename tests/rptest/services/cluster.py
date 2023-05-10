@@ -91,6 +91,9 @@ def cluster(log_allow_list=None, check_allowed_error_logs=True, **kwargs):
                             raise
 
                     try:
+                        if self.redpanda.si_settings is not None:
+                            self.redpanda.wait_for_uploads_to_finish()
+
                         redpanda.raise_on_storage_usage_inconsistency()
                     except:
                         redpanda.cloud_storage_diagnostics()

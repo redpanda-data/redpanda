@@ -3118,6 +3118,21 @@ class RedpandaService(RedpandaServiceBase):
 
         return wait_until_result(check, timeout_sec=30, backoff_sec=1)
 
+    def wait_for_uploads_to_finish(self):
+        def uploads_finished():
+            records_to_upload = self.metric_sum(
+                "redpanda_cloud_storage_records_pending_upload",
+                MetricsEndpoint.PUBLIC_METRICS)
+            self.logger.info(
+                f"{records_to_upload} Kafka records waiting for upload")
+            return records_to_upload == 0
+
+        wait_until(
+            uploads_finished,
+            timeout_sec=30,
+            err_msg=
+            f"Some Kafka records have not been uploaded within the timeout")
+
     def stop_and_scrub_object_storage(self):
         # Before stopping, ensure that all tiered storage partitions
         # have uploaded at least a manifest: we do not require that they
