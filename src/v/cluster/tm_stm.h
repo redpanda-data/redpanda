@@ -13,6 +13,7 @@
 
 #include "cluster/persisted_stm.h"
 #include "cluster/tm_stm_cache.h"
+#include "cluster/tm_tx_hash_ranges.h"
 #include "config/configuration.h"
 #include "features/feature_table.h"
 #include "kafka/protocol/errors.h"
@@ -34,16 +35,12 @@
 #include <absl/container/flat_hash_map.h>
 
 #include <compare>
+#include <cstdint>
 
 namespace cluster {
 
 using use_tx_version_with_last_pid_bool
   = ss::bool_class<struct use_tx_version_with_last_pid_tag>;
-
-struct tm_snapshot {
-    model::offset offset;
-    fragmented_vector<tm_transaction> transactions;
-};
 
 /**
  * TM stands for transaction manager (2PC slang for a transaction
@@ -54,7 +51,6 @@ struct tm_snapshot {
 class tm_stm final : public persisted_stm {
 public:
     using clock_type = ss::lowres_system_clock;
-    static constexpr const int8_t supported_version = 0;
 
     enum op_status {
         success,
@@ -64,6 +60,21 @@ public:
         not_leader,
         partition_not_found,
         timeout
+    };
+
+    struct tm_snapshot_v0 {
+        static constexpr uint8_t version = 0;
+
+        model::offset offset;
+        fragmented_vector<tm_transaction> transactions;
+    };
+
+    struct tm_snapshot {
+        static constexpr uint8_t version = 1;
+
+        model::offset offset;
+        fragmented_vector<tm_transaction> transactions;
+        tm_tx_hosted_transactions hash_ranges;
     };
 
     explicit tm_stm(
@@ -113,6 +124,7 @@ public:
         }
         return r;
     }
+    bool hosts(const kafka::transactional_id& tx_id);
 
     ss::future<checked<model::term_id, tm_stm::op_status>> barrier();
     ss::future<checked<model::term_id, tm_stm::op_status>>
@@ -120,10 +132,18 @@ public:
     ss::future<checked<model::term_id, tm_stm::op_status>> sync() {
         return sync(_sync_timeout);
     }
+    bool hosted_transactions_inited() const;
+    ss::future<tm_stm::op_status> try_init_hosted_transactions(
+      model::term_id, int32_t tx_coordinator_partition_amount);
+    ss::future<tm_stm::op_status>
+      include_hosted_transaction(model::term_id, kafka::transactional_id);
+    ss::future<tm_stm::op_status>
+      exclude_hosted_transaction(model::term_id, kafka::transactional_id);
 
     ss::future<ss::basic_rwlock<>::holder> read_lock() {
         return _cache->read_lock();
     }
+    uint8_t active_snapshot_version();
 
     ss::future<> checkpoint_ongoing_txs();
 
@@ -200,14 +220,22 @@ private:
       _tx_locks;
     ss::sharded<features::feature_table>& _feature_table;
     ss::lw_shared_ptr<cluster::tm_stm_cache> _cache;
+    tm_tx_hosted_transactions _hosted_txes;
 
     ss::future<> apply(model::record_batch b) override;
+    ss::future<> apply_hosted_transactions(model::record_batch b);
+    ss::future<>
+    apply_tm_update(model::record_batch_header hdr, model::record_batch b);
 
     ss::future<checked<model::term_id, tm_stm::op_status>> do_barrier();
     ss::future<checked<model::term_id, tm_stm::op_status>>
       do_sync(model::timeout_clock::duration);
     ss::future<checked<tm_transaction, tm_stm::op_status>>
       do_update_tx(tm_transaction, model::term_id);
+    ss::future<tm_stm::op_status>
+      update_hosted_transactions(model::term_id, tm_tx_hosted_transactions);
+    ss::future<tm_stm::op_status>
+      do_update_hosted_transactions(model::term_id, tm_tx_hosted_transactions);
     ss::future<tm_stm::op_status> do_register_new_producer(
       model::term_id,
       kafka::transactional_id,
@@ -234,6 +262,8 @@ private:
     }
 
     model::record_batch serialize_tx(tm_transaction tx);
+    model::record_batch
+    serialize_hosted_transactions(tm_tx_hosted_transactions hr);
 };
 
 } // namespace cluster

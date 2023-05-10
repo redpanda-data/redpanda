@@ -3373,12 +3373,17 @@ admin_server::delete_partition_handler(std::unique_ptr<ss::http::request> req) {
     }
     auto transaction_id = req->param["transactional_id"];
     kafka::transactional_id tid(transaction_id);
-    auto tx_ntp = tx_frontend.local().get_ntp(tid);
+    auto tx_ntp = co_await tx_frontend.local().get_static_ntp(tid);
     if (!tx_ntp) {
         throw ss::httpd::bad_request_exception("Coordinator not available");
     }
     if (need_redirect_to_leader(*tx_ntp, _metadata_cache)) {
         throw co_await redirect_to_leader(*req, *tx_ntp);
+    }
+
+    tx_ntp = co_await tx_frontend.local().get_ntp(tid);
+    if (!tx_ntp) {
+        throw ss::httpd::bad_request_exception("Coordinator not available");
     }
 
     auto ntp = parse_ntp_from_query_param(req);

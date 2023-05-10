@@ -21,6 +21,7 @@
 #include "cluster/node_status_table.h"
 #include "cluster/self_test_backend.h"
 #include "cluster/self_test_frontend.h"
+#include "cluster/tx_coordinator_mapper.h"
 #include "config/node_config.h"
 #include "coproc/fwd.h"
 #include "features/fwd.h"
@@ -115,7 +116,7 @@ public:
     ss::sharded<cluster::self_test_backend> self_test_backend;
     ss::sharded<cluster::self_test_frontend> self_test_frontend;
     ss::sharded<cluster::shard_table> shard_table;
-    ss::sharded<kafka::coordinator_ntp_mapper> tx_coordinator_ntp_mapper;
+    ss::sharded<cluster::tx_coordinator_mapper> tx_coordinator_ntp_mapper;
     ss::sharded<cluster::tm_stm_cache_manager> tm_stm_cache_manager;
     ss::sharded<cluster::tx_gateway_frontend> tx_gateway_frontend;
 

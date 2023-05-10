@@ -13,9 +13,11 @@
 
 #include "cluster/fwd.h"
 #include "cluster/tm_stm.h"
+#include "cluster/tx_coordinator_mapper.h"
 #include "cluster/types.h"
 #include "features/feature_table.h"
-#include "kafka/server/coordinator_ntp_mapper.h"
+#include "kafka/protocol/types.h"
+#include "model/fundamental.h"
 #include "model/metadata.h"
 #include "rpc/fwd.h"
 #include "seastarx.h"
@@ -39,11 +41,14 @@ public:
       ss::sharded<cluster::rm_partition_frontend>&,
       ss::sharded<features::feature_table>&,
       ss::sharded<cluster::tm_stm_cache_manager>&,
-      ss::sharded<kafka::coordinator_ntp_mapper>& tx_coordinator_ntp_mapper);
+      ss::sharded<cluster::tx_coordinator_mapper>& tx_coordinator_ntp_mapper);
 
+    ss::future<std::optional<model::ntp>>
+      get_static_ntp(kafka::transactional_id);
     ss::future<std::optional<model::node_id>>
       find_coordinator(kafka::transactional_id);
-    std::optional<model::ntp> get_ntp(kafka::transactional_id);
+    ss::future<std::optional<model::ntp>> get_ntp(kafka::transactional_id);
+    ss::future<bool> hosts(model::partition_id, kafka::transactional_id);
     ss::future<fetch_tx_reply> fetch_tx_locally(
       kafka::transactional_id, model::term_id, model::partition_id);
     ss::future<try_abort_reply> try_abort(
@@ -96,7 +101,7 @@ private:
     ss::sharded<cluster::rm_partition_frontend>& _rm_partition_frontend;
     ss::sharded<features::feature_table>& _feature_table;
     ss::sharded<cluster::tm_stm_cache_manager>& _tm_stm_cache_manager;
-    ss::sharded<kafka::coordinator_ntp_mapper>& _tx_coordinator_ntp_mapper;
+    ss::sharded<cluster::tx_coordinator_mapper>& _tx_coordinator_ntp_mapper;
     int16_t _metadata_dissemination_retries;
     std::chrono::milliseconds _metadata_dissemination_retry_delay_ms;
     ss::timer<model::timeout_clock> _expire_timer;
@@ -199,6 +204,9 @@ private:
       model::producer_identity,
       model::tx_seq,
       model::timeout_clock::duration);
+    ss::future<bool> do_hosts(model::partition_id, kafka::transactional_id);
+    ss::future<tx_errc>
+      do_init_hosted_transactions(ss::shared_ptr<cluster::tm_stm>);
 
     ss::future<cluster::init_tm_tx_reply> dispatch_init_tm_tx(
       model::node_id,

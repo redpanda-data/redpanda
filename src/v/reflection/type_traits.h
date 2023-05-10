@@ -20,6 +20,8 @@
 #include <seastar/core/circular_buffer.hh>
 #include <seastar/util/bool_class.hh>
 
+#include <absl/container/btree_set.h>
+
 #include <array>
 #include <optional>
 #include <type_traits>
@@ -62,6 +64,10 @@ concept is_fragmented_vector
 template<typename T>
 concept is_ss_chunked_fifo
   = ::detail::is_specialization_of_sized_v<T, ss::chunked_fifo>;
+
+template<typename T>
+concept is_absl_btree_set
+  = ::detail::is_specialization_of_v<T, absl::btree_set>;
 
 template<typename T>
 concept is_std_array = ::detail::is_std_array_t<T>::value;
