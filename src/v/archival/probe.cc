@@ -171,8 +171,13 @@ void ntp_level_probe::setup_dynamic_public_metrics(const model::ntp& ntp) {
                           "not yet been uploaded"),
           labels)
           .aggregate(aggregate_labels),
+        sm::make_gauge(
+          "estimated_backlog_size_bytes",
+          [this] { return _parent.estimate_backlog_size(); },
+          sm::description("Estimated upload backlog size in bytes"),
+          labels)
+          .aggregate(aggregate_labels),
       });
-
 }
 
 upload_housekeeping_probe::upload_housekeeping_probe() {
