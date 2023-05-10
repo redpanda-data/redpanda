@@ -68,6 +68,35 @@ id_allocator_stm::sync(model::timeout_clock::duration timeout) {
     co_return is_synced;
 }
 
+ss::future<id_allocator_stm::stm_allocation_result>
+id_allocator_stm::reset_next_id(
+  int64_t id, model::timeout_clock::duration timeout) {
+    return _lock
+      .with(
+        timeout, [this, id, timeout]() { return advance_state(id, timeout); })
+      .handle_exception_type([](const ss::semaphore_timed_out&) {
+          return stm_allocation_result{-1, raft::errc::timeout};
+      });
+}
+
+ss::future<id_allocator_stm::stm_allocation_result>
+id_allocator_stm::advance_state(
+  int64_t value, model::timeout_clock::duration timeout) {
+    if (!co_await sync(timeout)) {
+        co_return stm_allocation_result{-1, raft::errc::timeout};
+    }
+    if (value < _curr_id) {
+        co_return stm_allocation_result{_curr_id, raft::errc::success};
+    }
+    _curr_id = value;
+    auto success = co_await set_state(_curr_id + _batch_size, timeout);
+    if (!success) {
+        co_return stm_allocation_result{-1, raft::errc::timeout};
+    }
+    _curr_batch = _batch_size;
+    co_return stm_allocation_result{_curr_id, raft::errc::success};
+}
+
 ss::future<bool> id_allocator_stm::set_state(
   int64_t value, model::timeout_clock::duration timeout) {
     auto batch = serialize_cmd(

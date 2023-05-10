@@ -50,6 +50,9 @@ public:
     std::string_view get_name() const final { return "id_allocator_stm"; }
     ss::future<iobuf> take_snapshot(model::offset) final { co_return iobuf{}; }
 
+    ss::future<stm_allocation_result>
+    reset_next_id(int64_t, model::timeout_clock::duration timeout);
+
 private:
     // legacy structs left for backward compatibility with the "old"
     // on-disk log format
@@ -100,6 +103,11 @@ private:
     ss::future<bool> set_state(int64_t, model::timeout_clock::duration);
 
     ss::future<> apply(const model::record_batch&) final;
+
+    // Moves the state forward to the given value if the curent id is lower
+    // than it.
+    ss::future<stm_allocation_result>
+      advance_state(int64_t, model::timeout_clock::duration);
 
     ss::future<> write_snapshot();
     ss::future<> apply_local_snapshot(stm_snapshot_header, iobuf&&) override;
