@@ -274,7 +274,7 @@ topic_table::apply(move_partition_replicas_cmd cmd, model::offset o) {
     }
 
     change_partition_replicas(
-      cmd.key, cmd.value, tp->second, *current_assignment_it, o);
+      cmd.key, cmd.value, tp->second, *current_assignment_it, o, false);
     notify_waiters();
 
     return ss::make_ready_future<std::error_code>(errc::success);
@@ -429,6 +429,7 @@ topic_table::apply(cancel_moving_partition_replicas_cmd cmd, model::offset o) {
             co_return errc::no_update_in_progress;
         }
         break;
+    case reconfiguration_state::force_update:
     case reconfiguration_state::force_cancelled:
         // partition reconfiguration already cancelled forcibly
         co_return errc::no_update_in_progress;
@@ -653,12 +654,46 @@ topic_table::apply(move_topic_replicas_cmd cmd, model::offset o) {
           new_replicas,
           tp->second,
           *assignment,
-          o);
+          o,
+          false);
     }
 
     notify_waiters();
 
     co_return errc::success;
+}
+
+ss::future<std::error_code>
+topic_table::apply(force_partition_reconfiguration_cmd cmd, model::offset o) {
+    _last_applied_revision_id = model::revision_id(o);
+    // Check the topic exists.
+    auto tp = _topics.find(model::topic_namespace_view(cmd.key));
+    if (tp == _topics.end()) {
+        return ss::make_ready_future<std::error_code>(errc::topic_not_exists);
+    }
+    if (!tp->second.is_topic_replicable()) {
+        return ss::make_ready_future<std::error_code>(
+          errc::topic_operation_error);
+    }
+
+    auto current_assignment_it = tp->second.get_assignments().find(
+      cmd.key.tp.partition);
+
+    if (current_assignment_it == tp->second.get_assignments().end()) {
+        return ss::make_ready_future<std::error_code>(
+          errc::partition_not_exists);
+    }
+
+    if (auto it = _updates_in_progress.find(cmd.key);
+        it != _updates_in_progress.end()) {
+        return ss::make_ready_future<std::error_code>(errc::update_in_progress);
+    }
+
+    change_partition_replicas(
+      cmd.key, cmd.value.replicas, tp->second, *current_assignment_it, o, true);
+    notify_waiters();
+
+    return ss::make_ready_future<std::error_code>(errc::success);
 }
 
 template<typename T>
@@ -1092,13 +1127,20 @@ public:
             update_it != topic.updates.end()) {
             const auto& update = update_it->second;
 
-            if (update.state == reconfiguration_state::in_progress) {
+            if (
+              update.state == reconfiguration_state::in_progress
+              || update.state == reconfiguration_state::force_update) {
                 cur_assignment.replicas = update_it->second.target_assignment;
             }
 
+            auto initial_state = update.state
+                                     == reconfiguration_state::force_update
+                                   ? update.state
+                                   : reconfiguration_state::in_progress;
             in_progress_update inp_update{
               partition.replicas,
               update.target_assignment,
+              initial_state,
               update.revision,
               _probe,
             };
@@ -1126,6 +1168,10 @@ public:
                     // cancellation because if later the "cancel revert" event
                     // happens, controller_backend has to execute the update
                     // delta to make progress.
+                    auto op_type = update.state
+                                       == reconfiguration_state::force_update
+                                     ? delta::op_type::force_update
+                                     : delta::op_type::update;
                     _pending_deltas.emplace_back(
                       ntp,
                       partition_assignment(
@@ -1133,7 +1179,7 @@ public:
                         p_id,
                         update_it->second.target_assignment),
                       model::offset{update.revision},
-                      delta::op_type::update,
+                      op_type,
                       partition.replicas,
                       update_replicas_revisions(
                         partition.replicas_revisions,
@@ -1153,6 +1199,7 @@ public:
 
                 switch (update.state) {
                 case reconfiguration_state::in_progress:
+                case reconfiguration_state::force_update:
                     break;
                 case reconfiguration_state::cancelled:
                     add_cancel_delta(topic_table_delta::op_type::cancel_update);
@@ -1595,7 +1642,8 @@ void topic_table::change_partition_replicas(
   const std::vector<model::broker_shard>& new_assignment,
   topic_metadata_item& metadata,
   partition_assignment& current_assignment,
-  model::offset o) {
+  model::offset o,
+  bool is_forced) {
     if (are_replica_sets_equal(current_assignment.replicas, new_assignment)) {
         return;
     }
@@ -1605,7 +1653,12 @@ void topic_table::change_partition_replicas(
     _updates_in_progress.emplace(
       ntp,
       in_progress_update(
-        current_assignment.replicas, new_assignment, update_revision, _probe));
+        current_assignment.replicas,
+        new_assignment,
+        is_forced ? reconfiguration_state::force_update
+                  : reconfiguration_state::in_progress,
+        update_revision,
+        _probe));
     auto previous_assignment = current_assignment.replicas;
     // replace partition replica set
     current_assignment.replicas = new_assignment;
@@ -1620,6 +1673,7 @@ void topic_table::change_partition_replicas(
               in_progress_update(
                 current_assignment.replicas,
                 new_assignment,
+                reconfiguration_state::in_progress,
                 update_revision,
                 _probe));
             vassert(
@@ -1655,11 +1709,14 @@ void topic_table::change_partition_replicas(
       "partition {} must exist in the partition map",
       ntp);
 
+    delta::op_type move_type = is_forced ? delta::op_type::force_update
+                                         : delta::op_type::update;
+
     _pending_deltas.emplace_back(
       std::move(ntp),
       current_assignment,
       o,
-      delta::op_type::update,
+      move_type,
       std::move(previous_assignment),
       update_replicas_revisions(
         partition_it->second.replicas_revisions,

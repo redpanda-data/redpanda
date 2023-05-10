@@ -325,6 +325,40 @@
                     ]
                 }
             ]
+        },
+        {
+            "path": "/v1/debug/partitions/{namespace}/{topic}/{partition}/force_replicas",
+            "operations": [
+                {
+                    "method": "POST",
+                    "summary": "Update a partitions replicas forcefully",
+                    "type": "void",
+                    "nickname": "force_update_partition_replicas",
+                    "produces": [
+                        "application/json"
+                    ],
+                    "parameters": [
+                        {
+                            "name": "namespace",
+                            "in": "path",
+                            "required": true,
+                            "type": "string"
+                        },
+                        {
+                            "name": "topic",
+                            "in": "path",
+                            "required": true,
+                            "type": "string"
+                        },
+                        {
+                            "name": "partition",
+                            "in": "path",
+                            "required": true,
+                            "type": "integer"
+                        }
+                    ]
+                }
+            ]
         }
     ],
     "models": {

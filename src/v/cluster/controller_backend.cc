@@ -421,8 +421,8 @@ bool is_interrupting_operation(
      * Find interrupting operation following the one that is currently
      * processed. Following rules apply:
      *
-     * - all operations i.e. update, cancel_update, and force abort must be
-     * interrupted by deletion
+     * - all operations i.e. update, force_update, cancel_update, and force
+     * abort must be interrupted by deletion.
      *
      * - update & cancel update operations may be interrupted by
      * force_abort_update operation
@@ -570,6 +570,7 @@ controller_backend::deltas_t calculate_bootstrap_deltas(
         case op_t::reset:
             return has_local_replicas(self, delta.new_assignment.replicas);
         case op_t::update:
+        case op_t::force_update:
         case op_t::cancel_update:
         case op_t::force_abort_update:
             vassert(
@@ -646,6 +647,38 @@ ss::future<> controller_backend::fetch_deltas() {
                 }
             });
       });
+}
+
+ss::future<std::error_code> controller_backend::force_replica_set_update(
+  const model::ntp& ntp,
+  const std::vector<model::broker_shard>& replicas,
+  const replicas_revision_map& replica_revisions,
+  model::revision_id rev) {
+    if (!has_local_replicas(_self, replicas)) {
+        // This node will no longer be a part of the raft group,
+        // will be cleaned up as a part of update_finished command.
+        co_return errc::success;
+    }
+
+    auto partition = _partition_manager.local().get(ntp);
+    if (!partition) {
+        co_return errc::partition_not_exists;
+    }
+
+    const auto current_cfg = partition->group_configuration();
+
+    // wait for configuration update, only declare success
+    // when configuration was actually updated
+    auto update_ec = check_configuration_update(
+      _self, partition, replicas, rev);
+
+    if (!update_ec) {
+        co_return errc::success;
+    }
+
+    // Configuration revision is lower, force update locally.
+    co_return co_await partition->force_update_replica_set(
+      create_vnode_set(replicas, replica_revisions), rev);
 }
 
 /**
@@ -996,6 +1029,7 @@ controller_backend::execute_partition_op(const delta_metadata& metadata) {
           *delta.replica_revisions,
           cmd_rev);
     case op_t::update:
+    case op_t::force_update:
     case op_t::force_abort_update:
     case op_t::cancel_update:
         vassert(
@@ -1092,6 +1126,7 @@ controller_backend::process_partition_reconfiguration(
           target_assignment.replicas);
         co_return std::error_code(errc::success);
     }
+
     /**
      * Check if target assignment has node and core local replicas
      */
@@ -1308,6 +1343,11 @@ bool controller_backend::can_finish_update(
     if (update_type == topic_table_delta::op_type::force_abort_update) {
         return true;
     }
+
+    if (update_type == topic_table_delta::op_type::force_update) {
+        // Wait for the leader to be elected in the new replica set.
+        return current_leader == _self;
+    }
     /**
      * If the revert feature is active we use current leader to dispatch
      * partition move
@@ -1452,6 +1492,9 @@ ss::future<std::error_code> controller_backend::execute_reconfiguration(
     switch (type) {
     case topic_table_delta::op_type::update:
         co_return co_await update_partition_replica_set(
+          ntp, replica_set, replica_revisions, revision);
+    case topic_table_delta::op_type::force_update:
+        co_return co_await force_replica_set_update(
           ntp, replica_set, replica_revisions, revision);
     case topic_table_delta::op_type::cancel_update:
         co_return co_await cancel_replica_set_update(

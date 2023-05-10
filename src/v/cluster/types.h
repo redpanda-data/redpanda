@@ -2041,6 +2041,7 @@ struct topic_table_delta {
         add,
         del,
         update,
+        force_update,
         update_finished,
         update_properties,
         add_non_replicable,
@@ -2070,7 +2071,8 @@ struct topic_table_delta {
     }
 
     bool is_reconfiguration_operation() const {
-        return type == op_type::update || type == op_type::cancel_update
+        return type == op_type::update || type == op_type::force_update
+               || type == op_type::cancel_update
                || type == op_type::force_abort_update;
     }
 
@@ -2439,6 +2441,29 @@ struct cancel_moving_partition_replicas_cmd_data
     force_abort_update force;
 
     auto serde_fields() { return std::tie(force); }
+};
+
+struct force_partition_reconfiguration_cmd_data
+  : serde::envelope<
+      force_partition_reconfiguration_cmd_data,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    force_partition_reconfiguration_cmd_data() noexcept = default;
+    explicit force_partition_reconfiguration_cmd_data(
+      std::vector<model::broker_shard> replicas)
+      : replicas(std::move(replicas)) {}
+
+    std::vector<model::broker_shard> replicas;
+
+    auto serde_fields() { return std::tie(replicas); }
+
+    friend bool operator==(
+      const force_partition_reconfiguration_cmd_data&,
+      const force_partition_reconfiguration_cmd_data&)
+      = default;
+
+    friend std::ostream&
+    operator<<(std::ostream&, const force_partition_reconfiguration_cmd_data&);
 };
 
 struct move_topic_replicas_data
@@ -3568,7 +3593,12 @@ std::ostream& operator<<(std::ostream&, const node_update_type&);
  * Reconfiguration state indicates if ongoing reconfiguration is a result of
  * partition movement, cancellation or forced cancellation
  */
-enum class reconfiguration_state { in_progress, cancelled, force_cancelled };
+enum class reconfiguration_state {
+    in_progress = 0,
+    force_update = 1,
+    cancelled = 2,
+    force_cancelled = 3
+};
 
 std::ostream& operator<<(std::ostream&, reconfiguration_state);
 

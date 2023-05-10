@@ -77,6 +77,8 @@ std::string_view to_string_view(feature f) {
         return "cloud_storage_manifest_format_v2";
     case feature::transaction_partitioning:
         return "transaction_partitioning";
+    case feature::force_partition_reconfiguration:
+        return "force_partition_reconfiguration";
 
     /*
      * testing features

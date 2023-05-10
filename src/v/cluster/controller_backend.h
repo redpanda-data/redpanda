@@ -367,6 +367,12 @@ private:
       const std::vector<model::broker_shard>&,
       model::revision_id);
 
+    ss::future<std::error_code> force_replica_set_update(
+      const model::ntp&,
+      const std::vector<model::broker_shard>& /*new replicas*/,
+      const replicas_revision_map&,
+      model::revision_id);
+
     ss::future<std::error_code>
       dispatch_update_finished(model::ntp, partition_assignment);
 

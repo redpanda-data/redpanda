@@ -376,6 +376,8 @@ operator<<(std::ostream& o, const topic_table_delta::op_type& tp) {
         return o << "reset";
     case topic_table_delta::op_type::update:
         return o << "update";
+    case topic_table_delta::op_type::force_update:
+        return o << "force_update";
     case topic_table_delta::op_type::update_finished:
         return o << "update_finished";
     case topic_table_delta::op_type::update_properties:
@@ -846,6 +848,12 @@ std::ostream& operator<<(std::ostream& o, const move_topic_replicas_data& r) {
     return o;
 }
 
+std::ostream&
+operator<<(std::ostream& o, const force_partition_reconfiguration_cmd_data& r) {
+    fmt::print(o, "{{target replicas: {}}}", r.replicas);
+    return o;
+}
+
 std::ostream& operator<<(
   std::ostream& o, const feature_update_license_update_cmd_data& fulu) {
     fmt::print(o, "{{redpanda_license {}}}", fulu.redpanda_license);
@@ -1021,6 +1029,8 @@ std::ostream& operator<<(std::ostream& o, reconfiguration_state update) {
     switch (update) {
     case reconfiguration_state::in_progress:
         return o << "in_progress";
+    case reconfiguration_state::force_update:
+        return o << "force_update";
     case reconfiguration_state::cancelled:
         return o << "cancelled";
     case reconfiguration_state::force_cancelled:

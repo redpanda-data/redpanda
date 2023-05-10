@@ -266,6 +266,7 @@ inline bool has_non_replicable_op_type(const topic_table_delta& d) {
     case op_t::del:
     case op_t::reset:
     case op_t::update:
+    case op_t::force_update:
     case op_t::update_finished:
     case op_t::update_properties:
     case op_t::cancel_update:
@@ -312,6 +313,18 @@ inline std::vector<model::broker_shard> union_replica_sets(
           return std::find(ret.begin(), ret.end(), bs) == ret.end();
       });
     return ret;
+}
+
+// Checks if lhs is a proper subset of rhs
+inline bool is_proper_subset(
+  const std::vector<model::broker_shard>& lhs,
+  const std::vector<model::broker_shard>& rhs) {
+    auto contains_all = std::all_of(
+      lhs.begin(), lhs.end(), [&rhs](const auto& current) {
+          return std::find(rhs.begin(), rhs.end(), current) != rhs.end();
+      });
+
+    return contains_all && rhs.size() > lhs.size();
 }
 
 /**

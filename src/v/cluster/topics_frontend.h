@@ -78,6 +78,12 @@ public:
       model::timeout_clock::time_point,
       std::optional<model::term_id> = std::nullopt);
 
+    ss::future<std::error_code> force_update_partition_replicas(
+      model::ntp,
+      std::vector<model::broker_shard>,
+      model::timeout_clock::time_point,
+      std::optional<model::term_id> = std::nullopt);
+
     /**
      * This overload of move_partition_replicas will use the partition allocator
      * to generate a new replica set (i.e., a vector<broker_shard>) based on the

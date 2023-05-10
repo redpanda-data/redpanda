@@ -356,6 +356,58 @@ apply_validator(json::validator& validator, json::Document const& doc) {
     }
 }
 
+static ss::future<std::vector<model::broker_shard>> validate_set_replicas(
+  const json::Document& doc, const cluster::topics_frontend& topic_fe) {
+    static thread_local json::validator set_replicas_validator(
+      make_set_replicas_validator());
+
+    apply_validator(set_replicas_validator, doc);
+
+    std::vector<model::broker_shard> replicas;
+    if (!doc.IsArray()) {
+        throw ss::httpd::bad_request_exception("Expected array");
+    }
+    for (auto& r : doc.GetArray()) {
+        const auto& node_id_json = r["node_id"];
+        const auto& core_json = r["core"];
+        if (!node_id_json.IsInt() || !core_json.IsInt()) {
+            throw ss::httpd::bad_request_exception(
+              "`node_id` and `core` must be integers");
+        }
+        const auto node_id = model::node_id(r["node_id"].GetInt());
+        const auto shard = static_cast<uint32_t>(r["core"].GetInt());
+
+        // Validate node ID and shard - subsequent code assumes
+        // they exist and may assert if not.
+        bool is_valid = co_await topic_fe.validate_shard(node_id, shard);
+        if (!is_valid) {
+            throw ss::httpd::bad_request_exception(fmt::format(
+              "Replica set refers to non-existent node/shard (node "
+              "{} "
+              "shard {})",
+              node_id,
+              shard));
+        }
+        auto contains_already = std::find_if(
+                                  replicas.begin(),
+                                  replicas.end(),
+                                  [node_id](const model::broker_shard& bs) {
+                                      return bs.node_id == node_id;
+                                  })
+                                != replicas.end();
+        if (contains_already) {
+            throw ss::httpd::bad_request_exception(fmt::format(
+              "All the replicas must be placed on separate nodes. "
+              "Requested replica set contains node: {} more than "
+              "once",
+              node_id));
+        }
+        replicas.push_back(
+          model::broker_shard{.node_id = node_id, .shard = shard});
+    }
+    co_return replicas;
+}
+
 /**
  * Helper for requests with boolean URL query parameters that should
  * be treated as false if absent, or true if "true" (case insensitive) or "1"
@@ -2756,6 +2808,82 @@ admin_server::unclean_abort_partition_reconfig_handler(
 }
 
 ss::future<ss::json::json_return_type>
+admin_server::force_set_partition_replicas_handler(
+  std::unique_ptr<ss::http::request> req) {
+    if (unlikely(!_controller->get_feature_table().local().is_active(
+          features::feature::force_partition_reconfiguration))) {
+        throw ss::httpd::bad_request_exception(
+          "Feature not active yet, upgrade in progress?");
+    }
+
+    auto ntp = parse_ntp_from_request(req->param);
+    if (ntp == model::controller_ntp) {
+        throw ss::httpd::bad_request_exception(
+          fmt::format("Can't reconfigure a controller"));
+    }
+
+    auto doc = parse_json_body(*req);
+    auto replicas = co_await validate_set_replicas(
+      doc, _controller->get_topics_frontend().local());
+
+    const auto& topics = _controller->get_topics_state().local();
+    const auto& in_progress = topics.updates_in_progress();
+    const auto in_progress_it = in_progress.find(ntp);
+
+    if (in_progress_it != in_progress.end()) {
+        throw ss::httpd::bad_request_exception(
+          fmt::format("A partition operation is in progress. Check "
+                      "reconfigurations and "
+                      "cancel in flight update before issuing force "
+                      "replica set update."));
+    }
+    const auto current_assignment = topics.get_partition_assignment(ntp);
+    if (current_assignment) {
+        const auto& current_replicas = current_assignment->replicas;
+        if (current_replicas == replicas) {
+            vlog(
+              logger.info,
+              "Request to change ntp {} replica set to {}, no change",
+              ntp,
+              replicas);
+            co_return ss::json::json_void();
+        }
+
+        if (!cluster::is_proper_subset(replicas, current_replicas)) {
+            throw ss::httpd::bad_request_exception(fmt::format(
+              "Target assignment {} is not a proper subset of current {}, "
+              "choose a proper subset of existing replicas.",
+              replicas,
+              current_replicas));
+        }
+    }
+
+    vlog(
+      logger.info,
+      "Request to force update ntp {} replica set to {}",
+      ntp,
+      replicas);
+
+    auto err = co_await _controller->get_topics_frontend()
+                 .local()
+                 .force_update_partition_replicas(
+                   ntp,
+                   replicas,
+                   model::timeout_clock::now()
+                     + 10s); // NOLINT(cppcoreguidelines-avoid-magic-numbers)
+
+    vlog(
+      logger.debug,
+      "Request to change ntp {} replica set to {}: err={}",
+      ntp,
+      replicas,
+      err);
+
+    co_await throw_on_error(*req, err, model::controller_ntp);
+    co_return ss::json::json_void();
+}
+
+ss::future<ss::json::json_return_type>
 admin_server::set_partition_replicas_handler(
   std::unique_ptr<ss::http::request> req) {
     auto ntp = parse_ntp_from_request(req->param);
@@ -2765,58 +2893,9 @@ admin_server::set_partition_replicas_handler(
           fmt::format("Can't reconfigure a controller"));
     }
 
-    // make sure to call reset() before each use
-    static thread_local json::validator set_replicas_validator(
-      make_set_replicas_validator());
-
     auto doc = parse_json_body(*req);
-    apply_validator(set_replicas_validator, doc);
-
-    std::vector<model::broker_shard> replicas;
-    if (!doc.IsArray()) {
-        throw ss::httpd::bad_request_exception("Expected array");
-    }
-    for (auto& r : doc.GetArray()) {
-        const auto& node_id_json = r["node_id"];
-        const auto& core_json = r["core"];
-        if (!node_id_json.IsInt() || !core_json.IsInt()) {
-            throw ss::httpd::bad_request_exception(
-              "`node_id` and `core` must be integers");
-        }
-        const auto node_id = model::node_id(r["node_id"].GetInt());
-        const auto shard = static_cast<uint32_t>(r["core"].GetInt());
-
-        // Validate node ID and shard - subsequent code assumes
-        // they exist and may assert if not.
-        bool is_valid
-          = co_await _controller->get_topics_frontend().local().validate_shard(
-            node_id, shard);
-        if (!is_valid) {
-            throw ss::httpd::bad_request_exception(fmt::format(
-              "Replica set refers to non-existent node/shard (node "
-              "{} "
-              "shard {})",
-              node_id,
-              shard));
-        }
-        auto contains_already = std::find_if(
-                                  replicas.begin(),
-                                  replicas.end(),
-                                  [node_id](const model::broker_shard& bs) {
-                                      return bs.node_id == node_id;
-                                  })
-                                != replicas.end();
-        if (contains_already) {
-            throw ss::httpd::bad_request_exception(fmt::format(
-              "All the replicas must be placed on separate nodes. "
-              "Requested replica set contains node: {} more than "
-              "once",
-              node_id));
-        }
-        replicas.push_back(
-          model::broker_shard{.node_id = node_id, .shard = shard});
-    }
-
+    auto replicas = co_await validate_set_replicas(
+      doc, _controller->get_topics_frontend().local());
     auto current_assignment
       = _controller->get_topics_state().local().get_partition_assignment(ntp);
 
@@ -2990,6 +3069,12 @@ void admin_server::register_partition_routes() {
       ss::httpd::partition_json::set_partition_replicas,
       [this](std::unique_ptr<ss::http::request> req) {
           return set_partition_replicas_handler(std::move(req));
+      });
+
+    register_route<superuser>(
+      ss::httpd::debug_json::force_update_partition_replicas,
+      [this](std::unique_ptr<ss::http::request> req) {
+          return force_set_partition_replicas_handler(std::move(req));
       });
 
     register_route<superuser>(

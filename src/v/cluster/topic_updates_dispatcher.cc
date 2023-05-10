@@ -428,6 +428,13 @@ ss::future<std::error_code> topic_updates_dispatcher::apply(
       });
 }
 
+ss::future<std::error_code> topic_updates_dispatcher::apply(
+  force_partition_reconfiguration_cmd cmd, model::offset base_offset) {
+    // Post dispatch, allocator updates are skipped because the target
+    // replica set is a subset of the original replica set.
+    return dispatch_updates_to_cores(std::move(cmd), base_offset);
+}
+
 topic_updates_dispatcher::in_progress_map
 topic_updates_dispatcher::collect_in_progress(
   const model::topic_namespace& tp_ns,
