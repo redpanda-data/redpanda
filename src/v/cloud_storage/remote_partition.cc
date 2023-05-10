@@ -905,10 +905,18 @@ ss::future<remote_partition::erase_result> remote_partition::erase(
     // and construct a special one.
     retry_chain_node local_rtc(as, erase_timeout, erase_backoff);
 
+    auto replaced_segments = manifest.replaced_segments();
+
     // Erase all segments
+    // Loop over normal segments and replaced (pending deletion) segments
+    // at the same time, to batch them together into as few DeleteObjects
+    // requests as possible
     const size_t batch_size = 1000;
     auto segment_i = manifest.begin();
-    while (segment_i != manifest.end()) {
+    auto replaced_i = replaced_segments.begin();
+
+    while (segment_i != manifest.end()
+           || replaced_i != replaced_segments.end()) {
         std::vector<cloud_storage_clients::object_key> batch_keys;
         batch_keys.reserve(batch_size);
 
@@ -918,9 +926,22 @@ ss::future<remote_partition::erase_result> remote_partition::erase(
         std::vector<cloud_storage_clients::object_key> index_keys;
         index_keys.reserve(batch_size);
 
-        for (size_t k = 0; k < batch_size && segment_i != manifest.end();
-             ++k, ++segment_i) {
-            auto segment_path = manifest.generate_segment_path(*segment_i);
+        for (
+          size_t k = 0;
+          k < batch_size
+          && (segment_i != manifest.end() || replaced_i != replaced_segments.end());
+          ++k) {
+            remote_segment_path segment_path;
+            if (segment_i != manifest.end()) {
+                segment_path = manifest.generate_segment_path(*segment_i);
+                ++segment_i;
+            } else {
+                vassert(
+                  replaced_i != replaced_segments.end(),
+                  "Loop condition should ensure one iterator is always valid");
+                segment_path = manifest.generate_segment_path(*replaced_i);
+                ++replaced_i;
+            }
             batch_keys.emplace_back(segment_path);
             tx_batch_keys.emplace_back(
               tx_range_manifest(segment_path).get_manifest_path());
