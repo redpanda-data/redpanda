@@ -871,6 +871,24 @@ ss::future<cloud_storage::upload_result> ntp_archiver::upload_manifest(
     co_return result;
 }
 
+int64_t ntp_archiver::records_pending_upload() const {
+    const auto hwm = _parent.high_watermark();
+
+    if (hwm == model::offset{}) {
+        return 0;
+    }
+
+    const auto ot_state = _parent.get_offset_translator_state();
+    const auto kafka_hwm = ot_state->from_log_offset(hwm);
+
+    auto last_uploaded_kafka_offset = manifest().get_last_kafka_offset();
+    if (!last_uploaded_kafka_offset) {
+        return kafka_hwm();
+    }
+
+    return kafka_hwm() - last_uploaded_kafka_offset.value()() - 1;
+}
+
 remote_segment_path
 ntp_archiver::segment_path_for_candidate(const upload_candidate& candidate) {
     vassert(

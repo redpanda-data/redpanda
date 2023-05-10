@@ -270,6 +270,9 @@ public:
       std::optional<std::reference_wrapper<retry_chain_node>> source_rtc
       = std::nullopt);
 
+    /// Returns the number of Kafka records that are pending upload.
+    int64_t records_pending_upload() const;
+
 private:
     // Labels for contexts in which manifest uploads occur. Used for logging.
     static constexpr const char* housekeeping_ctx_label = "housekeeping";
