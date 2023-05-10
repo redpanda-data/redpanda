@@ -159,7 +159,8 @@ private:
     /// until it meet a non-empty directory.
     ///
     /// \param key if a path to a file what should be deleted
-    ss::future<> delete_file_and_empty_parents(const std::string_view& key);
+    /// \return true if any parents were deleted
+    ss::future<bool> delete_file_and_empty_parents(const std::string_view& key);
 
     /// This method is called on shard 0 by other shards to report disk
     /// space changes.

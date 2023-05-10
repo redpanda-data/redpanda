@@ -83,12 +83,15 @@ cache::cache(
     }
 }
 
-ss::future<> cache::delete_file_and_empty_parents(const std::string_view& key) {
+ss::future<bool>
+cache::delete_file_and_empty_parents(const std::string_view& key) {
     gate_guard guard{_gate};
 
     std::filesystem::path normal_path
       = std::filesystem::path(key).lexically_normal();
     std::filesystem::path normal_cache_dir = _cache_dir.lexically_normal();
+
+    size_t deletions = 0;
 
     auto [p1, p2] = std::mismatch(
       normal_cache_dir.begin(), normal_cache_dir.end(), normal_path.begin());
@@ -107,16 +110,19 @@ ss::future<> cache::delete_file_and_empty_parents(const std::string_view& key) {
         try {
             vlog(cst_log.trace, "Removing {}", normal_path);
             co_await ss::remove_file(normal_path.native());
+            deletions++;
         } catch (std::filesystem::filesystem_error& e) {
             if (e.code() == std::errc::directory_not_empty) {
                 // we stop when we find a non-empty directory
-                co_return;
+                co_return deletions > 1;
             } else {
                 throw;
             }
         }
         normal_path = normal_path.parent_path();
     }
+
+    co_return deletions > 1;
 }
 
 uint64_t cache::get_total_cleaned() { return _total_cleaned; }
@@ -208,6 +214,7 @@ ss::future<> cache::trim_throttled() {
     auto now = ss::lowres_clock::now();
     auto interval
       = config::shard_local_cfg().cloud_storage_cache_check_interval_ms();
+
     if (now - _last_clean_up < interval) {
         auto delay = interval - (now - _last_clean_up);
         vlog(
@@ -248,8 +255,7 @@ ss::future<> cache::trim() {
     vlog(
       cst_log.debug,
       "trim: set target_size {}, size {}, walked size {} (max {}, "
-      "pending "
-      "{})",
+      "pending {})",
       target_size,
       _current_cache_size,
       walked_cache_size,
@@ -308,40 +314,68 @@ ss::future<> cache::trim() {
 
             try {
                 uint64_t this_segment_deleted_bytes{0};
-                auto tx_file = fmt::format("{}.tx", file_stat.path);
-                auto index_file = fmt::format("{}.index", file_stat.path);
 
-                try {
-                    auto sz = co_await ss::file_size(tx_file);
-                    co_await ss::remove_file(tx_file);
-                    deleted_size += sz;
-                    this_segment_deleted_bytes += sz;
-                    deleted_count += 1;
-                    _current_cache_size -= sz;
-                } catch (std::filesystem::filesystem_error& e) {
-                    if (e.code() != std::errc::no_such_file_or_directory) {
-                        throw;
-                    }
-                }
-
-                try {
-                    auto sz = co_await ss::file_size(index_file);
-                    co_await ss::remove_file(index_file);
-                    deleted_size += sz;
-                    this_segment_deleted_bytes += sz;
-                    deleted_count += 1;
-                    _current_cache_size -= sz;
-                } catch (std::filesystem::filesystem_error& e) {
-                    if (e.code() != std::errc::no_such_file_or_directory) {
-                        throw;
-                    }
-                }
-
-                co_await delete_file_and_empty_parents(file_stat.path);
+                auto deleted_parents = co_await delete_file_and_empty_parents(
+                  file_stat.path);
                 deleted_size += file_stat.size;
                 this_segment_deleted_bytes += file_stat.size;
                 _current_cache_size -= file_stat.size;
                 deleted_count += 1;
+
+                // Determine whether we should delete indices along with the
+                // object we have just deleted
+                std::optional<std::string> tx_file;
+                std::optional<std::string> index_file;
+
+                if (std::string_view(file_stat.path).ends_with(".log")) {
+                    // If this was a legacy whole-segment item, delete the index
+                    // and tx file along with the segment
+                    tx_file = fmt::format("{}.tx", file_stat.path);
+                    index_file = fmt::format("{}.index", file_stat.path);
+                } else if (deleted_parents) {
+                    auto immediate_parent = std::string(
+                      std::filesystem::path(file_stat.path).parent_path());
+                    static constexpr std::string_view chunks_suffix{"_chunks"};
+                    if (immediate_parent.ends_with(chunks_suffix)) {
+                        // We just deleted the last chunk from a _chunks segment
+                        // directory.  We may delete the index + tx state for
+                        // that segment.
+                        auto base_segment_path = immediate_parent.substr(
+                          0, immediate_parent.size() - chunks_suffix.size());
+                        tx_file = fmt::format("{}.tx", base_segment_path);
+                        index_file = fmt::format("{}.index", base_segment_path);
+                    }
+                }
+
+                if (tx_file.has_value()) {
+                    try {
+                        auto sz = co_await ss::file_size(tx_file.value());
+                        co_await ss::remove_file(tx_file.value());
+                        deleted_size += sz;
+                        this_segment_deleted_bytes += sz;
+                        deleted_count += 1;
+                        _current_cache_size -= sz;
+                    } catch (std::filesystem::filesystem_error& e) {
+                        if (e.code() != std::errc::no_such_file_or_directory) {
+                            throw;
+                        }
+                    }
+                }
+
+                if (index_file.has_value()) {
+                    try {
+                        auto sz = co_await ss::file_size(index_file.value());
+                        co_await ss::remove_file(index_file.value());
+                        deleted_size += sz;
+                        this_segment_deleted_bytes += sz;
+                        deleted_count += 1;
+                        _current_cache_size -= sz;
+                    } catch (std::filesystem::filesystem_error& e) {
+                        if (e.code() != std::errc::no_such_file_or_directory) {
+                            throw;
+                        }
+                    }
+                }
 
                 // Remove key if possible to make sure there is no resource
                 // leak
