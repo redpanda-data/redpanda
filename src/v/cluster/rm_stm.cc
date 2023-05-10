@@ -1850,8 +1850,8 @@ model::offset rm_stm::last_stable_offset() {
         // transactions.
         return std::min(first_tx_start, next_to_apply);
     }
-    // no inflight transactions.
-    return model::next_offset(last_visible_index);
+    // no inflight transactions until last_applied (incl.)
+    return next_to_apply;
 }
 
 static void filter_intersecting(
