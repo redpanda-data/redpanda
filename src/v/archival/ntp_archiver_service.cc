@@ -1696,7 +1696,7 @@ ss::future<ntp_archiver::batch_result> ntp_archiver::upload_next_candidates(
       .non_compacted_upload_result = {}, .compacted_upload_result = {}};
 }
 
-uint64_t ntp_archiver::estimate_backlog_size() {
+uint64_t ntp_archiver::estimate_backlog_size() const {
     auto last_offset = manifest().size() ? manifest().get_last_offset()
                                          : model::offset(0);
     auto log_generic = _parent.log();

@@ -142,7 +142,7 @@ public:
 
     ss::future<cloud_storage::download_result> sync_manifest();
 
-    uint64_t estimate_backlog_size();
+    uint64_t estimate_backlog_size() const;
 
     /// \brief Probe remote storage and truncate the manifest if needed
     ss::future<std::optional<cloud_storage::partition_manifest>>
