@@ -65,9 +65,10 @@ func Execute() {
 		zap.ReplaceGlobals(p.Logger())
 	})
 	root := &cobra.Command{
-		Use:   "rpk",
-		Short: "rpk is the Redpanda CLI & toolbox",
-		Long:  "",
+		Use:     "rpk",
+		Short:   "rpk is the Redpanda CLI & toolbox",
+		Long:    "",
+		Version: version.Pretty(),
 
 		CompletionOptions: cobra.CompletionOptions{DisableDefaultCmd: true},
 	}
