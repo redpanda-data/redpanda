@@ -2134,11 +2134,13 @@ class RedpandaService(RedpandaServiceBase):
             observed disk usage.
             """
             try:
+                observed = list(self.data_stat(node))
                 reported = self._admin.get_local_storage_usage(node)
+
+                observed_total = sum(s for _, s in filter(tracked, observed))
                 reported_total = reported["data"] + reported[
                     "index"] + reported["compaction"]
-                observed = list(self.data_stat(node))
-                observed_total = sum(s for _, s in filter(tracked, observed))
+
                 diff = observed_total - reported_total
                 return abs(
                     diff / reported_total
