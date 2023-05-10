@@ -109,6 +109,12 @@ class RandomNodeOperationsTest(PreallocNodesTest):
             self.rate_limit = 1024 * 1024
             self.total_data = 50 * 1024 * 1024
 
+        # Tip off the end-of-test controller log validation that we will
+        # create a large number of records, scaling with partition count
+        # and operation count.
+        self.redpanda.set_expected_controller_records(
+            self.max_partitions * self.node_operations * 10)
+
         self.consumers_count = int(self.max_partitions / 4)
         self.msg_count = int(self.total_data / self.msg_size)
 
@@ -224,6 +230,10 @@ class RandomNodeOperationsTest(PreallocNodesTest):
             enable_controller_snapshots=[True, False])
     def test_node_operations(self, enable_failures, num_to_upgrade,
                              enable_controller_snapshots):
+        if not enable_controller_snapshots:
+            # Without snapshots, there is not bound on how large
+            # the controller log may grow.
+            self.redpanda.set_expected_controller_records(None)
 
         lock = threading.Lock()
 

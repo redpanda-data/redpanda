@@ -280,7 +280,7 @@ class ControllerSnapshotTest(RedpandaTest):
 
         def wait_for_everything_snapshotted(nodes):
             controller_max_offset = max(
-                admin.get_controller_status(n)['commited_index']
+                admin.get_controller_status(n)['committed_index']
                 for n in nodes)
             self.logger.info(
                 f"controller max offset is {controller_max_offset}")

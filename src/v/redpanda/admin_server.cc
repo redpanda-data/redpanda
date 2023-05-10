@@ -3993,7 +3993,7 @@ void admin_server::register_debug_routes() {
                 result_t ans;
                 ans.last_applied_offset = offset;
                 ans.start_offset = _controller->get_start_offset();
-                ans.commited_index = _controller->get_commited_index();
+                ans.committed_index = _controller->get_commited_index();
                 return ss::make_ready_future<ss::json::json_return_type>(
                   ss::json::json_return_type(ans));
             });

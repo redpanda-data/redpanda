@@ -1851,6 +1851,10 @@ class BasicAuthScaleTest(PandaProxyEndpoints):
         super_username, super_password, super_algorithm = self.redpanda.SUPERUSER_CREDENTIALS
         rpk = RpkTool(self.redpanda)
 
+        # One user + one ACL record per user, plus the usual baseline
+        # allowance for controller log records
+        self.redpanda.set_expected_controller_records(num_users * 2 + 1000)
+
         # First create all users and their acls
         for idx in range(num_users):
             user = User(idx)

@@ -138,7 +138,7 @@
             "operations": [
                 {
                     "method": "GET",
-                    "summary": "Get last_applied_offset and commited_index for controller log",
+                    "summary": "Get last_applied_offset and committed_index for controller log",
                     "type": "controller_status",
                     "nickname": "get_controller_status",
                     "produces": [
@@ -422,9 +422,9 @@
                     "type": "long",
                     "description": "Last applied offset for controller stm"
                 },
-                "commited_index": {
+                "committed_index": {
                     "type": "long",
-                    "description": "Commited index for controller consensus"
+                    "description": "Committed index for controller consensus"
                 }
             }
         },

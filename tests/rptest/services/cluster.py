@@ -96,6 +96,8 @@ def cluster(log_allow_list=None, check_allowed_error_logs=True, **kwargs):
                         redpanda.cloud_storage_diagnostics()
                         raise
 
+                self.redpanda.validate_controller_log()
+
                 if self.redpanda.si_settings is not None:
                     try:
                         self.redpanda.stop_and_scrub_object_storage()
