@@ -230,6 +230,21 @@ static void fill_fetch_responses(
   std::vector<op_context::response_placeholder_ptr> responses,
   std::vector<std::unique_ptr<hdr_hist::measurement>> metrics) {
     auto range = boost::irange<size_t>(0, results.size());
+    if (unlikely(
+          results.size() != responses.size()
+          || results.size() != metrics.size())) {
+        // soft assert & recovery attempt
+        vlog(
+          klog.error,
+          "Results, responses, and metrics counts must be the same. "
+          "results: {}, responses: {}, metrics: {}. "
+          "Only the common subset will be processed",
+          results.size(),
+          responses.size(),
+          metrics.size());
+        range = boost::irange<size_t>(
+          0, std::min({results.size(), responses.size(), metrics.size()}));
+    }
     for (auto idx : range) {
         auto& res = results[idx];
         auto& resp_it = responses[idx];
