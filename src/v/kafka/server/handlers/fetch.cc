@@ -531,6 +531,21 @@ static ss::future<std::vector<read_result>> fetch_ntps_in_parallel(
     co_return results;
 }
 
+bool shard_fetch::empty() const {
+    if (unlikely(
+          requests.size() != responses.size()
+          || responses.size() != metrics.size())) {
+        vlog(
+          klog.error,
+          "there have to be equal number of fetch requests, responses, and "
+          "metrics for single shard. requests: {}, responses: {}, metrics: {}",
+          requests.size(),
+          responses.size(),
+          metrics.size());
+    }
+    return requests.empty();
+}
+
 /**
  * Top-level handler for fetching from single shard. The result is
  * unwrapped and any errors from the storage sub-system are translated
@@ -545,7 +560,7 @@ handle_shard_fetch(ss::shard_id shard, op_context& octx, shard_fetch fetch) {
         return ss::now();
     }
     // no requests for this shard, do nothing
-    if (fetch.requests.empty()) {
+    if (fetch.empty()) {
         return ss::now();
     }
 
