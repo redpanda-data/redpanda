@@ -48,11 +48,9 @@ func newDisableCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 
 			if b.Maintenance == nil {
 				out.Die("maintenance mode not supported or upgrade in progress?")
-			} else if !b.Maintenance.Draining {
-				out.Exit("Maintenance mode is already disabled for node %d. Check the status with 'rpk cluster maintenance status'.", nodeID)
 			}
 
-			err = client.DisableMaintenanceMode(cmd.Context(), nodeID)
+			err = client.DisableMaintenanceMode(cmd.Context(), nodeID, true)
 			if he := (*admin.HTTPResponseError)(nil); errors.As(err, &he) {
 				if he.Response.StatusCode == 404 {
 					body, bodyErr := he.DecodeGenericErrorBody()

@@ -138,14 +138,24 @@ func (a *AdminAPI) EnableMaintenanceMode(ctx context.Context, nodeID int) error 
 }
 
 // DisableMaintenanceMode disables maintenance mode for a node.
-func (a *AdminAPI) DisableMaintenanceMode(ctx context.Context, nodeID int) error {
-	return a.sendAny(
-		ctx,
-		http.MethodDelete,
-		fmt.Sprintf("%s/%d/maintenance", brokersEndpoint, nodeID),
-		nil,
-		nil,
-	)
+func (a *AdminAPI) DisableMaintenanceMode(ctx context.Context, nodeID int, useLeaderNode bool) error {
+	if useLeaderNode {
+		return a.sendToLeader(
+			ctx,
+			http.MethodDelete,
+			fmt.Sprintf("%s/%d/maintenance", brokersEndpoint, nodeID),
+			nil,
+			nil,
+		)
+	} else {
+		return a.sendAny(
+			ctx,
+			http.MethodDelete,
+			fmt.Sprintf("%s/%d/maintenance", brokersEndpoint, nodeID),
+			nil,
+			nil,
+		)
+	}
 }
 
 func (a *AdminAPI) CancelNodePartitionsMovement(ctx context.Context, node int) ([]PartitionsMovementResult, error) {
