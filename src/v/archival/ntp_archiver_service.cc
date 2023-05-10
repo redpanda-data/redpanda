@@ -1414,11 +1414,6 @@ ntp_archiver::schedule_uploads(std::vector<upload_context> loop_contexts) {
           ctx.upload_kind,
           uploads_remaining);
 
-        // this metric is only relevant for non compacted uploads.
-        if (ctx.upload_kind == segment_upload_kind::non_compacted) {
-            _probe->upload_lag(ctx.last_offset - ctx.start_offset);
-        }
-
         std::exception_ptr ep;
         try {
             while (uploads_remaining > 0 && may_begin_uploads()) {

@@ -91,8 +91,8 @@ void ntp_level_probe::setup_dynamic_metrics(const model::ntp& ntp) {
       {
         sm::make_gauge(
           "pending",
-          [this] { return _pending; },
-          sm::description("Pending offsets"),
+          [this] { return _parent.records_pending_upload(); },
+          sm::description("Pending Kafka offsets"),
           labels)
           .aggregate(aggregate_labels),
       });
@@ -166,7 +166,7 @@ void ntp_level_probe::setup_dynamic_public_metrics(const model::ntp& ntp) {
           .aggregate(aggregate_labels),
         sm::make_gauge(
           "records_pending_upload",
-          [this] { return _pending; },
+          [this] { return _parent.records_pending_upload(); },
           sm::description("The number of records in the local log that have "
                           "not yet been uploaded"),
           labels)

@@ -45,9 +45,6 @@ public:
     /// Register gap
     void gap_detected(model::offset offset_delta) { _missing += offset_delta; }
 
-    /// Register the offset the ought to be uploaded
-    void upload_lag(model::offset offset_delta) { _pending = offset_delta; }
-
     void segments_deleted(int64_t deleted_count) {
         _segments_deleted += deleted_count;
     };
@@ -72,7 +69,6 @@ public:
     void notify_lost_leadership() {
         _segments_to_delete = 0;
         _segments_in_manifest = 0;
-        _pending = 0;
 
         _dynamic_metrics.reset();
         _dynamic_public_metrics.reset();
@@ -92,8 +88,6 @@ private:
     uint64_t _uploaded_bytes = 0;
     /// Missing offsets due to gaps
     int64_t _missing = 0;
-    /// Width of the offset range yet to be uploaded
-    int64_t _pending = 0;
     /// Number of segments deleted by garbage collection
     int64_t _segments_deleted = 0;
 
