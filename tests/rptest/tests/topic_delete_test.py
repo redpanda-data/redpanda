@@ -374,7 +374,10 @@ class TopicDeleteCloudStorageTest(RedpandaTest):
                 # We rely on the scrubber to delete topic manifests, and to eventually
                 # delete data if cloud storage was unavailable during initial delete.  To
                 # control test runtimes, set a short interval.
-                'cloud_storage_housekeeping_interval_ms': 5000
+                'cloud_storage_housekeeping_interval_ms': 5000,
+
+                # Segment merging confuses these tests, because it looks like segments getting deleted
+                'cloud_storage_enable_segment_merging': False,
             },
             si_settings=self.si_settings)
 
