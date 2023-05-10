@@ -10,8 +10,8 @@ require (
 	github.com/cloudhut/common v0.7.0
 	github.com/fluxcd/helm-controller v0.30.0
 	github.com/fluxcd/helm-controller/api v0.30.0
-	github.com/fluxcd/pkg/apis/meta v1.0.0
-	github.com/fluxcd/pkg/runtime v0.35.0
+	github.com/fluxcd/pkg/apis/meta v0.19.1
+	github.com/fluxcd/pkg/runtime v0.32.0
 	github.com/fluxcd/source-controller v0.36.1
 	github.com/fluxcd/source-controller/api v0.36.1
 	github.com/go-logr/logr v1.2.4
@@ -32,10 +32,10 @@ require (
 	gopkg.in/yaml.v2 v2.4.0
 	gopkg.in/yaml.v3 v3.0.1
 	helm.sh/helm/v3 v3.11.3
-	k8s.io/api v0.27.1
-	k8s.io/apiextensions-apiserver v0.27.1
-	k8s.io/apimachinery v0.27.1
-	k8s.io/client-go v0.27.1
+	k8s.io/api v0.26.2
+	k8s.io/apiextensions-apiserver v0.26.2
+	k8s.io/apimachinery v0.26.2
+	k8s.io/client-go v0.26.2
 	k8s.io/utils v0.0.0-20230505201702-9f6742963106
 	sigs.k8s.io/controller-runtime v0.14.6
 )
@@ -177,8 +177,6 @@ require (
 	github.com/google/gnostic v0.6.9 // indirect
 	github.com/google/go-cmp v0.5.9 // indirect
 	github.com/google/go-containerregistry v0.15.1 // indirect
-	github.com/google/go-containerregistry/pkg/authn/k8schain v0.0.0-20230505165354-0b12f56b3752 // indirect
-	github.com/google/go-containerregistry/pkg/authn/kubernetes v0.0.0-20230505165354-0b12f56b3752 // indirect
 	github.com/google/go-github/v45 v45.2.0 // indirect
 	github.com/google/go-querystring v1.1.0 // indirect
 	github.com/google/gofuzz v1.2.0 // indirect
@@ -266,7 +264,7 @@ require (
 	github.com/shibumi/go-pathspec v1.3.0 // indirect
 	github.com/shopspring/decimal v1.3.1 // indirect
 	github.com/sigstore/cosign v1.13.1 // indirect
-	github.com/sigstore/fulcio v1.3.1 // indirect
+	github.com/sigstore/fulcio v1.3.0 // indirect
 	github.com/sigstore/rekor v1.1.1 // indirect
 	github.com/sigstore/sigstore v1.6.4 // indirect
 	github.com/sirupsen/logrus v1.9.0 // indirect
@@ -326,12 +324,12 @@ require (
 	gopkg.in/ini.v1 v1.67.0 // indirect
 	gopkg.in/tomb.v1 v1.0.0-20141024135613-dd632973f1e7 // indirect
 	gopkg.in/warnings.v0 v0.1.2 // indirect
-	k8s.io/apiserver v0.27.1 // indirect
-	k8s.io/cli-runtime v0.27.1 // indirect
-	k8s.io/component-base v0.27.1 // indirect
+	k8s.io/apiserver v0.26.2 // indirect
+	k8s.io/cli-runtime v0.26.2 // indirect
+	k8s.io/component-base v0.26.2 // indirect
 	k8s.io/klog/v2 v2.100.1 // indirect
 	k8s.io/kube-openapi v0.0.0-20230501164219-8b0f38b5fd1f // indirect
-	k8s.io/kubectl v0.27.1 // indirect
+	k8s.io/kubectl v0.26.2 // indirect
 	oras.land/oras-go v1.2.3 // indirect
 	sigs.k8s.io/cli-utils v0.34.0 // indirect
 	sigs.k8s.io/gateway-api v0.6.0 // indirect
