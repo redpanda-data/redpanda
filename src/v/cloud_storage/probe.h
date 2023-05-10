@@ -62,6 +62,20 @@ public:
         return _cnt_partition_manifest_downloads;
     }
 
+    void cluster_metadata_manifest_upload() {
+        ++_cnt_cluster_metadata_manifest_uploads;
+    }
+    uint64_t get_cluster_metadata_manifest_uploads() const {
+        return _cnt_cluster_metadata_manifest_uploads;
+    }
+
+    void cluster_metadata_manifest_download() {
+        ++_cnt_cluster_metadata_manifest_downloads;
+    }
+    uint64_t get_cluster_metadata_manifest_downloads() const {
+        return _cnt_cluster_metadata_manifest_downloads;
+    }
+
     /// Register manifest (re)upload
     void txrange_manifest_upload() { _cnt_tx_manifest_uploads++; }
 
@@ -181,6 +195,10 @@ private:
     uint64_t _cnt_topic_manifest_downloads{0};
     /// Number of manifest downloads
     uint64_t _cnt_partition_manifest_downloads{0};
+    /// Number of cluster metadata manifest uploads..
+    uint64_t _cnt_cluster_metadata_manifest_uploads{0};
+    /// Number of cluster metadata manifest downloads.
+    uint64_t _cnt_cluster_metadata_manifest_downloads{0};
     /// Number of times backoff was applied during manifest upload
     uint64_t _cnt_manifest_upload_backoff{0};
     /// Number of times backoff was applied during manifest download

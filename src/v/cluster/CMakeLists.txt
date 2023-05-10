@@ -172,6 +172,8 @@ v_cc_library(
     ../archival/upload_housekeeping_service.cc
     ../archival/adjacent_segment_merger.cc
     ../archival/scrubber.cc
+    cloud_metadata/cluster_manifest.cc
+    cloud_metadata/key_utils.cc
   DEPS
     Seastar::seastar
     bootstrap_rpc
@@ -192,4 +194,5 @@ v_cc_library(
     v::features
   )
 add_subdirectory(tests)
+add_subdirectory(cloud_metadata/tests)
 add_subdirectory(self_test/tests)

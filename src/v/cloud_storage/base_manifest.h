@@ -27,6 +27,7 @@ enum class manifest_type {
     topic,
     partition,
     tx_range,
+    cluster_metadata,
 };
 
 class base_manifest {
