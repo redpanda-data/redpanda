@@ -651,9 +651,6 @@ std::vector<model::record_batch_header> scan_remote_partition_incrementally(
         config::shard_local_cfg().cloud_storage_max_readers_per_shard(
           maybe_max_readers);
     }
-    auto m = ss::make_lw_shared<cloud_storage::partition_manifest>(
-      manifest_ntp, manifest_revision);
-
     auto manifest = hydrate_manifest(imposter.api.local(), bucket);
     auto partition = ss::make_shared<remote_partition>(
       manifest, imposter.api.local(), imposter.cache.local(), bucket);
@@ -727,8 +724,6 @@ std::vector<model::record_batch_header> scan_remote_partition(
         config::shard_local_cfg().cloud_storage_max_readers_per_shard(
           maybe_max_readers);
     }
-    auto m = ss::make_lw_shared<cloud_storage::partition_manifest>(
-      manifest_ntp, manifest_revision);
     storage::log_reader_config reader_config(
       base, max, ss::default_priority_class());
 
