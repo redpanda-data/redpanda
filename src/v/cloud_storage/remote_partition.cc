@@ -839,8 +839,8 @@ remote_partition::finalize(ss::abort_source& as) {
     if (manifest_get_result != download_result::success) {
         vlog(
           _ctxlog.debug,
-          "Failed to fetch manifest during finalize(), maybe another node"
-          "already completed deletino. Error: {}",
+          "Failed to fetch manifest during finalize(), maybe another node "
+          "already completed deletion. Error: {}",
           manifest_get_result);
         co_return finalize_result{.get_status = manifest_get_result};
     }
