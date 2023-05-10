@@ -10,6 +10,7 @@
 
 #pragma once
 
+#include "archival/fwd.h"
 #include "archival/types.h"
 #include "cloud_storage/probe.h"
 #include "model/fundamental.h"
@@ -31,11 +32,10 @@ namespace archival {
 /// The unit of measure is offset delta.
 class ntp_level_probe {
 public:
-    ntp_level_probe(per_ntp_metrics_disabled disabled, const model::ntp& ntp);
-
-    void setup_ntp_metrics(const model::ntp& ntp);
-
-    void setup_public_metrics(const model::ntp& ntp);
+    ntp_level_probe(
+      const ntp_archiver& archiver,
+      per_ntp_metrics_disabled disabled,
+      model::ntp ntp);
 
     /// Register log-segment upload
     void uploaded(model::offset offset_delta) { _uploaded += offset_delta; }
@@ -56,7 +56,36 @@ public:
 
     void segments_to_delete(int64_t count) { _segments_to_delete = count; };
 
+    void notify_gained_leadership() {
+        _dynamic_metrics.emplace();
+        _dynamic_public_metrics.emplace(ssx::metrics::public_metrics_handle);
+
+        if (!_private_metrics_disabled) {
+            setup_dynamic_metrics(_ntp);
+        }
+
+        if (!config::shard_local_cfg().disable_public_metrics()) {
+            setup_dynamic_public_metrics(_ntp);
+        }
+    }
+
+    void notify_lost_leadership() {
+        _segments_to_delete = 0;
+        _segments_in_manifest = 0;
+        _pending = 0;
+
+        _dynamic_metrics.reset();
+        _dynamic_public_metrics.reset();
+    }
+
 private:
+    void setup_static_metrics(const model::ntp& ntp);
+    void setup_static_public_metrics(const model::ntp& ntp);
+
+    void setup_dynamic_metrics(const model::ntp& ntp);
+    void setup_dynamic_public_metrics(const model::ntp& ntp);
+
+    // Static metric sources
     /// Uploaded offsets
     uint64_t _uploaded = 0;
     /// Total uploaded bytes
@@ -67,14 +96,25 @@ private:
     int64_t _pending = 0;
     /// Number of segments deleted by garbage collection
     int64_t _segments_deleted = 0;
-    /// Number of accounted segments in the cloud
-    int64_t _segments_in_manifest = 0;
+
+    // Dynamic metric sources
     /// Number of segments awaiting deletion
     int64_t _segments_to_delete = 0;
+    /// Number of accounted segments in the cloud
+    int64_t _segments_in_manifest = 0;
 
-    ss::metrics::metric_groups _metrics;
-    ss::metrics::metric_groups _public_metrics{
+    ss::metrics::metric_groups _static_metrics;
+    ss::metrics::metric_groups _static_public_metrics{
       ssx::metrics::public_metrics_handle};
+
+    std::optional<ss::metrics::metric_groups> _dynamic_metrics;
+    std::optional<ss::metrics::metric_groups> _dynamic_public_metrics{
+      ssx::metrics::public_metrics_handle};
+
+    const ntp_archiver& _parent;
+
+    model::ntp _ntp;
+    per_ntp_metrics_disabled _private_metrics_disabled;
 };
 
 /// Metrics probe for upload housekeeping service

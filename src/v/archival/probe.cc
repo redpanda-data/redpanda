@@ -10,6 +10,7 @@
 
 #include "archival/probe.h"
 
+#include "archival/ntp_archiver_service.h"
 #include "config/configuration.h"
 #include "prometheus/prometheus_sanitize.h"
 
@@ -19,17 +20,22 @@
 namespace archival {
 
 ntp_level_probe::ntp_level_probe(
-  per_ntp_metrics_disabled disabled, const model::ntp& ntp) {
-    if (!disabled) {
-        setup_ntp_metrics(ntp);
+  const ntp_archiver& archiver,
+  per_ntp_metrics_disabled disabled,
+  model::ntp ntp)
+  : _parent{archiver}
+  , _ntp{std::move(ntp)}
+  , _private_metrics_disabled{disabled} {
+    if (!_private_metrics_disabled) {
+        setup_static_metrics(_ntp);
     }
 
     if (!config::shard_local_cfg().disable_public_metrics()) {
-        setup_public_metrics(ntp);
+        setup_static_public_metrics(_ntp);
     }
 }
 
-void ntp_level_probe::setup_ntp_metrics(const model::ntp& ntp) {
+void ntp_level_probe::setup_static_metrics(const model::ntp& ntp) {
     namespace sm = ss::metrics;
 
     auto ns_label = sm::label("namespace");
@@ -44,27 +50,45 @@ void ntp_level_probe::setup_ntp_metrics(const model::ntp& ntp) {
                               ? std::vector<sm::label>{sm::shard_label}
                               : std::vector<sm::label>{};
 
-    _metrics.add_group(
+    _static_metrics.add_group(
+      prometheus_sanitize::metrics_name("ntp_archiver"),
+      {sm::make_counter(
+         "uploaded",
+         [this] { return _uploaded; },
+         sm::description("Uploaded offsets"),
+         labels)
+         .aggregate(aggregate_labels),
+       sm::make_total_bytes(
+         "uploaded_bytes",
+         [this] { return _uploaded_bytes; },
+         sm::description("Total number of uploaded bytes"),
+         labels)
+         .aggregate(aggregate_labels),
+       sm::make_counter(
+         "missing",
+         [this] { return _missing; },
+         sm::description("Missing offsets due to gaps"),
+         labels)
+         .aggregate(aggregate_labels)});
+}
+void ntp_level_probe::setup_dynamic_metrics(const model::ntp& ntp) {
+    namespace sm = ss::metrics;
+
+    auto ns_label = sm::label("namespace");
+    auto topic_label = sm::label("topic");
+    auto partition_label = sm::label("partition");
+    const std::vector<sm::label_instance> labels = {
+      ns_label(ntp.ns()),
+      topic_label(ntp.tp.topic()),
+      partition_label(ntp.tp.partition()),
+    };
+    auto aggregate_labels = config::shard_local_cfg().aggregate_metrics()
+                              ? std::vector<sm::label>{sm::shard_label}
+                              : std::vector<sm::label>{};
+
+    _dynamic_metrics->add_group(
       prometheus_sanitize::metrics_name("ntp_archiver"),
       {
-        sm::make_counter(
-          "uploaded",
-          [this] { return _uploaded; },
-          sm::description("Uploaded offsets"),
-          labels)
-          .aggregate(aggregate_labels),
-        sm::make_total_bytes(
-          "uploaded_bytes",
-          [this] { return _uploaded_bytes; },
-          sm::description("Total number of uploaded bytes"),
-          labels)
-          .aggregate(aggregate_labels),
-        sm::make_counter(
-          "missing",
-          [this] { return _missing; },
-          sm::description("Missing offsets due to gaps"),
-          labels)
-          .aggregate(aggregate_labels),
         sm::make_gauge(
           "pending",
           [this] { return _pending; },
@@ -74,7 +98,7 @@ void ntp_level_probe::setup_ntp_metrics(const model::ntp& ntp) {
       });
 }
 
-void ntp_level_probe::setup_public_metrics(const model::ntp& ntp) {
+void ntp_level_probe::setup_static_public_metrics(const model::ntp& ntp) {
     namespace sm = ss::metrics;
 
     auto ns_label = ssx::metrics::make_namespaced_label("namespace");
@@ -89,7 +113,7 @@ void ntp_level_probe::setup_public_metrics(const model::ntp& ntp) {
     auto aggregate_labels = std::vector<sm::label>{
       sm::shard_label, partition_label};
 
-    _public_metrics.add_group(
+    _static_public_metrics.add_group(
       prometheus_sanitize::metrics_name("cloud_storage"),
       {sm::make_total_bytes(
          "uploaded_bytes",
@@ -105,21 +129,50 @@ void ntp_level_probe::setup_public_metrics(const model::ntp& ntp) {
            "This may grow due to retention or non compacted segments being "
            "replaced with their compacted equivalent."),
          labels)
-         .aggregate(aggregate_labels),
-       sm::make_gauge(
-         "segments",
-         [this] { return _segments_in_manifest; },
-         sm::description(
-           "Total number of accounted segments in the cloud for the topic"),
-         labels)
-         .aggregate(aggregate_labels),
-       sm::make_gauge(
-         "segments_pending_deletion",
-         [this] { return _segments_to_delete; },
-         sm::description("Total number of segments pending deletion from the "
-                         "cloud for the topic"),
-         labels)
          .aggregate(aggregate_labels)});
+}
+
+void ntp_level_probe::setup_dynamic_public_metrics(const model::ntp& ntp) {
+    namespace sm = ss::metrics;
+
+    auto ns_label = ssx::metrics::make_namespaced_label("namespace");
+    auto topic_label = ssx::metrics::make_namespaced_label("topic");
+    auto partition_label = ssx::metrics::make_namespaced_label("partition");
+    const std::vector<sm::label_instance> labels = {
+      ns_label(ntp.ns()),
+      topic_label(ntp.tp.topic()),
+      partition_label(ntp.tp.partition()),
+    };
+
+    auto aggregate_labels = std::vector<sm::label>{
+      sm::shard_label, partition_label};
+
+    _dynamic_public_metrics->add_group(
+      prometheus_sanitize::metrics_name("cloud_storage"),
+      {
+        sm::make_gauge(
+          "segments",
+          [this] { return _segments_in_manifest; },
+          sm::description(
+            "Total number of accounted segments in the cloud for the topic"),
+          labels)
+          .aggregate(aggregate_labels),
+        sm::make_gauge(
+          "segments_pending_deletion",
+          [this] { return _segments_to_delete; },
+          sm::description("Total number of segments pending deletion from the "
+                          "cloud for the topic"),
+          labels)
+          .aggregate(aggregate_labels),
+        sm::make_gauge(
+          "records_pending_upload",
+          [this] { return _pending; },
+          sm::description("The number of records in the local log that have "
+                          "not yet been uploaded"),
+          labels)
+          .aggregate(aggregate_labels),
+      });
+
 }
 
 upload_housekeeping_probe::upload_housekeeping_probe() {

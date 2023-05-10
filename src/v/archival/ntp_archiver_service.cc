@@ -162,12 +162,14 @@ void ntp_archiver::notify_leadership(std::optional<model::node_id> leader_id) {
 
 ss::future<> ntp_archiver::upload_until_abort() {
     if (!_probe) {
-        _probe.emplace(_conf->ntp_metrics_disabled, _ntp);
+        _probe.emplace(*this, _conf->ntp_metrics_disabled, _ntp);
     }
 
     while (!_as.abort_requested()) {
         if (!_parent.is_leader() || _paused) {
             bool shutdown = false;
+            _probe->notify_lost_leadership();
+
             try {
                 vlog(
                   _rtclog.debug, "upload loop waiting for leadership/unpause");
@@ -200,6 +202,8 @@ ss::future<> ntp_archiver::upload_until_abort() {
         }
         vlog(_rtclog.debug, "upload loop synced in term {}", _start_term);
 
+        _probe->notify_gained_leadership();
+
         co_await ss::with_scheduling_group(
           _conf->upload_scheduling_group,
           [this] { return upload_until_term_change(); })
@@ -224,12 +228,14 @@ ss::future<> ntp_archiver::upload_until_abort() {
 
 ss::future<> ntp_archiver::sync_manifest_until_abort() {
     if (!_probe) {
-        _probe.emplace(_conf->ntp_metrics_disabled, _ntp);
+        _probe.emplace(*this, _conf->ntp_metrics_disabled, _ntp);
     }
 
     while (!_as.abort_requested()) {
         if (!_parent.is_leader() || _paused) {
             bool shutdown = false;
+            _probe->notify_lost_leadership();
+
             try {
                 vlog(
                   _rtclog.debug,
@@ -256,6 +262,8 @@ ss::future<> ntp_archiver::sync_manifest_until_abort() {
 
         vlog(
           _rtclog.debug, "sync manifest loop starting in term {}", _start_term);
+
+        _probe->notify_gained_leadership();
 
         try {
             co_await sync_manifest_until_term_change()
