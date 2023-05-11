@@ -1040,14 +1040,16 @@ remote_segment_batch_reader::read_some(
         if (
           _bytes_consumed != 0 && _bytes_consumed == new_bytes_consumed.value()
           && !_config.over_budget) {
-            throw std::runtime_error(fmt_with_ctx(
+            auto context = fmt_with_ctx(
               fmt::format,
               "segment_reader is stuck, segment ntp: {}, _cur_rp_offset: {}, "
               "_bytes_consumed: "
               "{}",
               _seg->get_ntp(),
               _cur_rp_offset,
-              _bytes_consumed));
+              _bytes_consumed);
+            throw stuck_reader_exception{
+              _cur_rp_offset, _bytes_consumed, context};
         }
         _bytes_consumed = new_bytes_consumed.value();
     }
