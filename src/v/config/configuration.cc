@@ -930,6 +930,20 @@ configuration::configuration()
        .example = "3600",
        .visibility = visibility::tunable},
       std::nullopt)
+  , storage_reserve_min_segments(
+      *this,
+      "storage_reserve_min_segments",
+      "The number of segments per partition that the system will attempt to "
+      "reserve disk capcity for. For example, if the maximum segment size is "
+      "configured to be 100 MB, and the value of this option is 2, then in a "
+      "system with 10 partitions Redpanda will attempt to reserve at least 2 "
+      "GB "
+      "of disk space.",
+      {.needs_restart = needs_restart::no,
+       .example = "4",
+       .visibility = visibility::tunable},
+      2,
+      {.min = 1})
   , id_allocator_log_capacity(
       *this,
       "id_allocator_log_capacity",

@@ -1909,6 +1909,19 @@ disk_log_impl::disk_usage_and_reclaim(gc_config cfg) {
     co_return std::make_pair(usage, reclaim);
 }
 
+/*
+ * assumes that the compaction gate is held.
+ */
+ss::future<usage_target> disk_log_impl::disk_usage_target(gc_config) {
+    usage_target target;
+
+    target.min_capacity
+      = config::shard_local_cfg().storage_reserve_min_segments()
+        * max_segment_size();
+
+    co_return target;
+}
+
 ss::future<usage_report> disk_log_impl::disk_usage(gc_config cfg) {
     // protect against concurrent log removal with housekeeping loop
     auto gate = _compaction_housekeeping_gate.hold();
@@ -1919,9 +1932,16 @@ ss::future<usage_report> disk_log_impl::disk_usage(gc_config cfg) {
      */
     auto [usage, reclaim] = co_await disk_usage_and_reclaim(cfg);
 
+    /*
+     * compute target capacities such as minimum required capacity as well as
+     * capacities needed to meet goals such as local retention.
+     */
+    auto target = co_await disk_usage_target(cfg);
+
     co_return usage_report{
       .usage = usage,
       .reclaim = reclaim,
+      .target = target,
     };
 }
 

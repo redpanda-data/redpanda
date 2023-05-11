@@ -469,18 +469,42 @@ struct usage {
 };
 
 /*
+ * disk usage targets
+ *
+ * min_capacity: minimum amount of storage capacity needed.
+ *
+ * The minimum capacity is intended to capture the minimum amount of disk space
+ * needed for the basic functionality. At a high-level this is expressed as a
+ * minimum number of segments per partition. Formally it is the sum of S *
+ * log.max_segment_size() for each managed log, where S is the value of the
+ * configuration option storage_reserve_min_segments specifying the minimum
+ * number of segments for which space should be reserved.
+ */
+struct usage_target {
+    size_t min_capacity{0};
+
+    friend usage_target operator+(usage_target lhs, const usage_target& rhs) {
+        lhs.min_capacity += rhs.min_capacity;
+        return lhs;
+    }
+};
+
+/*
  * disk usage report
  *
  * usage: disk usage summary for log.
  * reclaim: disk uage reclaim summary for log.
+ * targets: target disk usage statistics.
  */
 struct usage_report {
     usage usage;
     reclaim_size_limits reclaim;
+    usage_target target;
 
     friend usage_report operator+(usage_report lhs, const usage_report& rhs) {
         lhs.usage = lhs.usage + rhs.usage;
         lhs.reclaim = lhs.reclaim + rhs.reclaim;
+        lhs.target = lhs.target + rhs.target;
         return lhs;
     }
 };
