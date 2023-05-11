@@ -119,9 +119,9 @@ function install_rust_tools() {
 
   git clone https://github.com/jcsp/segment_toy.git
   pushd segment_toy
-  git reset --hard 3a4b8b37bf1fddd5ff767a13c13e3947476485a8
+  git reset --hard c863c1a
   cargo build --release
-  cp target/release/segments /usr/local/bin
+  cp target/release/rp-storage-tool /usr/local/bin
   popd
   rm -rf segment_toy
 
