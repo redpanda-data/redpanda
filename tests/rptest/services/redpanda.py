@@ -48,6 +48,7 @@ from rptest.clients.kubectl import KubectlTool
 from rptest.clients.rpk import RpkTool
 from rptest.clients.rpk_remote import RpkRemoteTool
 from rptest.clients.python_librdkafka import PythonLibrdkafka
+from rptest.clients.rp_storage_tool import RpStorageTool
 from rptest.services import tls
 from rptest.services.admin import Admin
 from rptest.services.redpanda_installer import RedpandaInstaller, VERSION_RE as RI_VERSION_RE, int_tuple as ri_int_tuple
@@ -760,8 +761,8 @@ class RedpandaServiceBase(Service):
         num_brokers,
         *,
         extra_rp_conf=None,
-        resource_settings=None,
-        si_settings=None,
+        resource_settings: Optional[ResourceSettings] = None,
+        si_settings: Optional[SISettings] = None,
         superuser: Optional[SaslCredentials] = None,
     ):
         super(RedpandaServiceBase, self).__init__(context,
@@ -2073,11 +2074,11 @@ class RedpandaService(RedpandaServiceBase):
                 self._si_settings.cloud_storage_bucket):
             key = o.key
             if key_dump_limit > 0:
-                self.logger.info(f"  {key}")
+                self.logger.info(f"  {key} {o.content_length}")
                 key_dump_limit -= 1
 
             # Gather manifest.json and topic_manifest.json files
-            if key.endswith('manifest.json') and manifest_dump_limit > 0:
+            if 'manifest.json' in key or 'manifest.bin' in key and manifest_dump_limit > 0:
                 manifests_to_dump.append(key)
                 manifest_dump_limit -= 1
 
@@ -2094,8 +2095,27 @@ class RedpandaService(RedpandaServiceBase):
                 body = self.cloud_storage_client.get_object_data(
                     self._si_settings.cloud_storage_bucket, m)
                 filename = m.replace("/", "_")
+
                 with archive.open(filename, "w") as outstr:
                     outstr.write(body)
+
+                # Decode binary manifests for convenience, but don't give up
+                # if we fail
+                if ".bin" in m:
+                    try:
+                        decoded = RpStorageTool(
+                            self.logger).decode_partition_manifest(
+                                body, self.logger)
+                    except Exception as e:
+                        self.logger.warn(f"Failed to decode {m}")
+                    else:
+                        json_filename = f"{filename}_decoded.json"
+                        json_bytes = json.dumps(decoded, indent=2)
+                        self.logger.info(
+                            f"Decoded manifest {m} to {len(json_bytes)} of JSON from {len(body)} bytes of serde"
+                        )
+                        with archive.open(json_filename, "w") as outstr:
+                            outstr.write(json_bytes.encode())
 
     def raise_on_storage_usage_inconsistency(self):
         def tracked(fstat):
@@ -3207,7 +3227,7 @@ class RedpandaService(RedpandaServiceBase):
         bucket = self.si_settings.cloud_storage_bucket
         environment = ' '.join(f'{k}=\"{v}\"' for k, v in vars.items())
         output = node.account.ssh_output(
-            f"{environment} segments --backend {backend} scan --source {bucket}",
+            f"{environment} rp-storage-tool --backend {backend} scan --source {bucket}",
             combine_stderr=False,
             allow_fail=True)
 
