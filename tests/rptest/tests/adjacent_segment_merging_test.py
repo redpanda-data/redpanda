@@ -15,13 +15,11 @@ from rptest.clients.rpk import RpkTool
 from rptest.clients.kafka_cli_tools import KafkaCliTools
 from rptest.util import (
     wait_until, )
+from rptest.utils.si_utils import BucketView
 
 from ducktape.mark import matrix
 
 import time
-import json
-
-from rptest.utils.si_utils import gen_segment_name_from_meta
 
 # Log errors expected when connectivity between redpanda and the S3
 # backend is disrupted
@@ -90,8 +88,8 @@ class AdjacentSegmentMergingTest(RedpandaTest):
         def manifest_has_one_segment():
             try:
                 num_good = 0
-                for path in self._find_partition_manifests():
-                    manifest = self._download_partition_manifest(path)
+                for ntp, manifest in BucketView(
+                        self.redpanda).partition_manifests.items():
                     target_lower_bound = 1024 * 1024 * 8
                     for name, meta in manifest["segments"].items():
                         self.logger.info(
@@ -110,18 +108,3 @@ class AdjacentSegmentMergingTest(RedpandaTest):
                 return False
 
         wait_until(manifest_has_one_segment, 60)
-
-    def _find_partition_manifests(self):
-        res = []
-        for obj in self.cloud_storage_client.list_objects(self.bucket_name):
-            if obj.key.endswith("manifest.json") and not obj.key.endswith(
-                    "topic_manifest.json"):
-                res.append(obj.key)
-        return res
-
-    def _download_partition_manifest(self, manifest_path):
-        """Find and download individual partition manifest"""
-        manifest = self.cloud_storage_client.get_object_data(
-            self.bucket_name, manifest_path)
-        self.logger.info(f"manifest found: {manifest}")
-        return json.loads(manifest)

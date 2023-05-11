@@ -37,9 +37,9 @@ from rptest.util import wait_until_result
 from rptest.utils.si_utils import (
     EMPTY_SEGMENT_SIZE, MISSING_DATA_ERRORS, NTP, TRANSIENT_ERRORS,
     PathMatcher, BucketView, SegmentReader, default_log_segment_size,
-    gen_manifest_path, get_expected_ntp_restored_size,
-    get_on_disk_size_per_ntp, is_close_size, parse_s3_manifest_path,
-    parse_s3_segment_path, verify_file_layout)
+    get_expected_ntp_restored_size, get_on_disk_size_per_ntp, is_close_size,
+    parse_s3_manifest_path, parse_s3_segment_path, verify_file_layout)
+from rptest.services.kgo_verifier_services import KgoVerifierProducer
 
 CLOUD_STORAGE_SEGMENT_MAX_UPLOAD_INTERVAL_SEC = 10
 
@@ -68,9 +68,10 @@ class BaseCase:
     """
     topics: Sequence[TopicSpec] = []
 
-    def __init__(self, s3_client: S3Client, kafka_tools: KafkaCliTools,
-                 rpk_client: RpkTool, s3_bucket, logger,
-                 rpk_producer_maker: Callable):
+    def __init__(self, redpanda: RedpandaService, s3_client: S3Client,
+                 kafka_tools: KafkaCliTools, rpk_client: RpkTool, s3_bucket,
+                 logger, rpk_producer_maker: Callable):
+        self._redpanda = redpanda
         self._kafka_tools = kafka_tools
         self._s3 = s3_client
         self._rpk = rpk_client
@@ -145,23 +146,20 @@ class BaseCase:
         redpanda removes the raft_configuration batch from the log.
         The log should have only one configuration batch.
         """
-        revisions = {}
-        for key in self._list_objects():
-            if key.endswith("/manifest.json"):
-                ntpr = parse_s3_manifest_path(key)
-                revisions[ntpr.to_ntp()] = ntpr.revision
+        view = BucketView(redpanda=self._redpanda)
+
+        # Prompt the view to scan the bucket and load all manifests, so that we
+        # don't have to calculate the revision ID
+        manifests = view.partition_manifests
 
         for topic in self.topics:
             for partition in self._rpk.describe_topic(topic.name):
                 hw = partition.high_watermark
                 ntp = NTP(ns='kafka', topic=topic.name, partition=partition.id)
-                ntpr = ntp.to_ntpr(revisions[ntp])
-                partition_uri = gen_manifest_path(ntpr)
-                data = self._s3.get_object_data(self._bucket, partition_uri)
-                obj = json.loads(data)
-                last_offset = obj['last_offset']
+                manifest = manifests[ntp]
+                last_offset = manifest['last_offset']
                 self.logger.info(
-                    f"validating partition: {ntp}, rev: {ntpr.revision}, last offset: {last_offset}"
+                    f"validating partition: {ntp}, rev: {manifest['revision']}, last offset: {last_offset}"
                 )
                 # Explanation: high watermark is a kafka offset equal to the last offset in the log + 1.
                 # last_offset in the manifest is the last uploaded redpanda offset. Difference between
@@ -278,10 +276,11 @@ class NoDataCase(BaseCase):
                         partition_count=1,
                         replication_factor=3), )
 
-    def __init__(self, s3_client, kafka_tools, rpk_client, s3_bucket, logger,
-                 rpk_producer_maker):
-        super(NoDataCase, self).__init__(s3_client, kafka_tools, rpk_client,
-                                         s3_bucket, logger, rpk_producer_maker)
+    def __init__(self, redpanda, s3_client, kafka_tools, rpk_client, s3_bucket,
+                 logger, rpk_producer_maker):
+        super(NoDataCase,
+              self).__init__(redpanda, s3_client, kafka_tools, rpk_client,
+                             s3_bucket, logger, rpk_producer_maker)
 
     def validate_node(self, host, baseline, restored):
         """Validate restored node data using two sets of checksums.
@@ -322,10 +321,9 @@ class EmptySegmentsCase(BaseCase):
 
     def __init__(self, s3_client, kafka_tools, rpk_client, s3_bucket, logger,
                  rpk_producer_maker, redpanda):
-        self._redpanda = redpanda
         super(EmptySegmentsCase,
-              self).__init__(s3_client, kafka_tools, rpk_client, s3_bucket,
-                             logger, rpk_producer_maker)
+              self).__init__(redpanda, s3_client, kafka_tools, rpk_client,
+                             s3_bucket, logger, rpk_producer_maker)
 
     def generate_baseline(self):
         """Restart redpanda several times to get segments with no
@@ -384,11 +382,11 @@ class MissingTopicManifest(BaseCase):
 
     topics = []
 
-    def __init__(self, s3_client, kafka_tools, rpk_client, s3_bucket, logger,
-                 rpk_producer_maker):
+    def __init__(self, redpanda, s3_client, kafka_tools, rpk_client, s3_bucket,
+                 logger, rpk_producer_maker):
         super(MissingTopicManifest,
-              self).__init__(s3_client, kafka_tools, rpk_client, s3_bucket,
-                             logger, rpk_producer_maker)
+              self).__init__(redpanda, s3_client, kafka_tools, rpk_client,
+                             s3_bucket, logger, rpk_producer_maker)
 
     def create_initial_topics(self):
         """Simulate missing topic manifest by not creating any topics"""
@@ -431,13 +429,13 @@ class MissingPartition(BaseCase):
                         partition_count=2,
                         replication_factor=3), )
 
-    def __init__(self, s3_client, kafka_tools, rpk_client, s3_bucket, logger,
-                 rpk_producer_maker):
+    def __init__(self, redpanda, s3_client, kafka_tools, rpk_client, s3_bucket,
+                 logger, rpk_producer_maker):
         self._part1_offset = 0
         self._part1_num_segments = 0
         super(MissingPartition,
-              self).__init__(s3_client, kafka_tools, rpk_client, s3_bucket,
-                             logger, rpk_producer_maker)
+              self).__init__(redpanda, s3_client, kafka_tools, rpk_client,
+                             s3_bucket, logger, rpk_producer_maker)
 
     def generate_baseline(self):
         """Produce enough data to trigger uploads to S3/minio"""
@@ -457,23 +455,23 @@ class MissingPartition(BaseCase):
         """Find and delete manifest for partition 0. This method have to poll the
         bucket to make sure that the data is deleted from Minio (deletes are eventually
         consistent in Minio S3 implementation)."""
-        manifest = None
-        for key in self._list_objects():
-            if key.endswith("/manifest.json") and self.topic_name in key:
-                ntpr = parse_s3_manifest_path(key)
-                assert ntpr.topic == self.topic_name
-                if ntpr.partition == 0:
-                    manifest = key
-                else:
-                    assert ntpr.partition == 1
-                    data = self._s3.get_object_data(self._bucket, key)
-                    obj = json.loads(data)
-                    self._part1_offset = obj['last_offset']
-                    self._part1_num_segments = len(obj['segments'])
-        assert manifest is not None
-        self._delete(manifest)
+
+        ntp_0 = NTP(ns='kafka', topic=self.topic_name, partition=0)
+        ntp_1 = NTP(ns='kafka', topic=self.topic_name, partition=1)
+
+        view = BucketView(self._redpanda)
+        manifests = view.partition_manifests
+
+        manifest_0 = manifests[ntp_0]
+        manifest_1 = manifests[ntp_1]
+        self._part1_offset = manifest_1['last_offset']
+        self._part1_num_segments = len(manifest_1['segments'])
+
+        manifest_0_path = view.gen_manifest_path(
+            ntp_0.to_ntpr(manifest_0['revision']))
+        self._delete(manifest_0_path)
         self.logger.info(
-            f"manifest {manifest} is removed, partition-1 last offset is {self._part1_offset}"
+            f"manifest {manifest_0_path} is removed, partition-1 last offset is {self._part1_offset}"
         )
 
     def restore_redpanda(self, baseline, controller_checksums):
@@ -528,14 +526,14 @@ class MissingSegment(BaseCase):
                         partition_count=2,
                         replication_factor=3), )
 
-    def __init__(self, s3_client, kafka_tools, rpk_client, s3_bucket, logger,
-                 rpk_producer_maker):
+    def __init__(self, redpanda, s3_client, kafka_tools, rpk_client, s3_bucket,
+                 logger, rpk_producer_maker):
         self._part1_offset = 0
         self._smaller_ntp = None
         self._deleted_segment_size = None
         super(MissingSegment,
-              self).__init__(s3_client, kafka_tools, rpk_client, s3_bucket,
-                             logger, rpk_producer_maker)
+              self).__init__(redpanda, s3_client, kafka_tools, rpk_client,
+                             s3_bucket, logger, rpk_producer_maker)
 
     def generate_baseline(self):
         """Produce enough data to trigger uploads to S3/minio"""
@@ -610,8 +608,9 @@ class FastCheck(BaseCase):
                  logger, rpk_producer_maker, topics):
         self.topics = topics
         self.redpanda = redpanda
-        super(FastCheck, self).__init__(s3_client, kafka_tools, rpk_client,
-                                        s3_bucket, logger, rpk_producer_maker)
+        super(FastCheck,
+              self).__init__(redpanda, s3_client, kafka_tools, rpk_client,
+                             s3_bucket, logger, rpk_producer_maker)
 
     def generate_baseline(self):
         """Produce enough data to trigger uploads to S3/minio"""
@@ -703,14 +702,14 @@ class SizeBasedRetention(BaseCase):
     the topic with size limit set to 10MB per ntp.
     The verification takes into account individual segment size. The recovery process
     should restore at not more than 10MB but not less than 10MB - oldest segment size."""
-    def __init__(self, s3_client, kafka_tools, rpk_client, s3_bucket, logger,
-                 rpk_producer_maker, topics):
+    def __init__(self, redpanda, s3_client, kafka_tools, rpk_client, s3_bucket,
+                 logger, rpk_producer_maker, topics):
         self.topics = topics
         self.max_size_bytes = 1024 * 1024 * 20
         self.restored_size_bytes = 1024 * 1024 * 10
         super(SizeBasedRetention,
-              self).__init__(s3_client, kafka_tools, rpk_client, s3_bucket,
-                             logger, rpk_producer_maker)
+              self).__init__(redpanda, s3_client, kafka_tools, rpk_client,
+                             s3_bucket, logger, rpk_producer_maker)
 
     def generate_baseline(self):
         """Produce enough data to trigger uploads to S3/minio.
@@ -756,10 +755,6 @@ class SizeBasedRetention(BaseCase):
         self.logger.info(
             f"SizeBasedRetention.validate_cluster - restored - {restored}")
 
-        expected_topics = [
-            topic.name for topic in self.expected_recovered_topics
-        ]
-
         size_bytes_per_ntp = get_on_disk_size_per_ntp(restored)
         expected_restored_size_per_ntp = get_expected_ntp_restored_size(
             baseline, self.restored_size_bytes)
@@ -788,94 +783,66 @@ class SizeBasedRetention(BaseCase):
 class TimeBasedRetention(BaseCase):
     """Check time-based restore process.
     The test runs as follows:
-    We generate 20MB of data (per partition). Than we're downloading the partition
-    manifests and patch them. For every partition we're changing the max_timestamp
-    of first 10MB of segments.
+    We generate 20MB of data (per partition). The first 10MB has timestamp far
+    in the past, the second 10MB has current timestamps.
     Then we're running the topic recovery with time-based retention policy and
     expect that only last 10MB will be downloaded.
-    The test can be configured to shift 'max_timestamp' fields to the past or
-    to remove them. The later case is needed to check the situation when we have
-    a legacy manifest that doesn't have 'max_timestamp' fields.
     """
-    def __init__(self, s3_client, kafka_tools, rpk_client, s3_bucket, logger,
-                 rpk_producer_maker, topics, remove_timestamps):
+    def __init__(self, redpanda: RedpandaService, s3_client, kafka_tools,
+                 rpk_client, s3_bucket, logger, rpk_producer_maker, topics):
+        assert isinstance(redpanda, RedpandaService)
         self.topics = topics
         self.max_size_bytes = 1024 * 1024 * 20
         self.restored_size_bytes = 1024 * 1024 * 10
-        self.remove_timestamps = remove_timestamps
         super(TimeBasedRetention,
-              self).__init__(s3_client, kafka_tools, rpk_client, s3_bucket,
-                             logger, rpk_producer_maker)
+              self).__init__(redpanda, s3_client, kafka_tools, rpk_client,
+                             s3_bucket, logger, rpk_producer_maker)
 
     def generate_baseline(self):
         """Produce enough data to trigger uploads to S3/minio"""
+
+        message_size = 1024
+
+        # A timestamp way in the past
+        base_ts = 1664453149000
+
         for topic in self.topics:
-            # Produce 20MB per partition
-            message_size = 1024
             num_messages = int(topic.partition_count * self.max_size_bytes /
                                message_size)
-            self._kafka_tools.produce(topic.name, num_messages, message_size)
 
-    def _patch_manifests(self):
-        """Patch manifests in such way that only last restored_size_bytes
-        will be added."""
-        SegmentAttributes = namedtuple(
-            "SegmentAttributes",
-            ['base_offset', 'max_timestamp', 'size_bytes', 'name_or_path'])
-        manifests = []
-        for entry in self._list_objects():
-            if entry.endswith("manifest.json"
-                              ) and not entry.endswith("topic_manifest.json"):
-                manifests.append(entry)
-        self.logger.info(f"manifests to patch {manifests}")
-        assert len(manifests) != 0, "No manifests found"
-        for id in manifests:
-            data = self._s3.get_object_data(self._bucket, id)
-            self.logger.info(f"patching manifest {id}, content: {data}")
-            obj = json.loads(data)
-            segments = obj.get('segments', {})
-            segment_attr = []
-            for name_or_path, attrs in segments.items():
-                max_timestamp = attrs['max_timestamp']
-                size_bytes = attrs['size_bytes']
-                base_offset = attrs['base_offset']
-                attr = SegmentAttributes(base_offset, max_timestamp,
-                                         size_bytes, name_or_path)
-                segment_attr.append(attr)
-            segment_attr = sorted(segment_attr, reverse=True)
-            update = []
-            total_size = 0
-            for attr in segment_attr:
-                if total_size < self.restored_size_bytes:
-                    total_size += attr.size_bytes
-                else:
-                    ts = datetime.datetime.fromtimestamp(attr.max_timestamp /
-                                                         1000)
-                    ts = ts - datetime.timedelta(days=10)
-                    timestamp = int(
-                        (ts - datetime.datetime(1970, 1, 1)).total_seconds() *
-                        1000)
-                    update.append(
-                        SegmentAttributes(base_offset=attr.base_offset,
-                                          max_timestamp=timestamp,
-                                          size_bytes=attr.size_bytes,
-                                          name_or_path=attr.name_or_path))
-            for upd in update:
-                if self.remove_timestamps:
-                    del segments[upd.name_or_path]['max_timestamp']
-                else:
-                    segments[
-                        upd.name_or_path]['max_timestamp'] = upd.max_timestamp
-            data = json.dumps(obj)
-            self.logger.info(f"updated manifest {id}, content {data}")
-            self._s3.put_object(self._bucket, id, data)
+            # Write half of data with timestamps way in the past, we expect
+            # this not to be recovered
+            # Produce a run of messages with CreateTime-style timestamps, each
+            # record having a timestamp 1ms greater than the last.
+            producer = KgoVerifierProducer(context=self._redpanda._context,
+                                           redpanda=self._redpanda,
+                                           topic=topic.name,
+                                           msg_size=message_size,
+                                           msg_count=num_messages // 2,
+                                           batch_max_bytes=message_size * 10,
+                                           fake_timestamp_ms=base_ts)
+            producer.start()
+            producer.wait()
+            producer.free()
+
+            # Force a segment roll to align the segment start/end timestamps
+            # with the records produced
+            self._redpanda.restart_nodes(self._redpanda.nodes)
+
+            # Write second half of data with up to date timestamps
+            producer = KgoVerifierProducer(context=self._redpanda._context,
+                                           redpanda=self._redpanda,
+                                           topic=topic.name,
+                                           msg_size=message_size,
+                                           msg_count=num_messages // 2,
+                                           batch_max_bytes=message_size * 10)
+            producer.start()
+            producer.wait()
+            producer.free()
 
     def restore_redpanda(self, baseline, controller_checksums):
         """Run restore procedure. Default implementation runs it for every topic
         that it can find in S3."""
-
-        # patch manifests
-        self._patch_manifests()
 
         topic_manifests = list(self._get_all_topic_manifests())
         self.logger.info(f"topic_manifests: {topic_manifests}")
@@ -892,10 +859,6 @@ class TimeBasedRetention(BaseCase):
             f"TimeBasedRetention.validate_cluster - baseline - {baseline}")
         self.logger.info(
             f"TimeBasedRetention.validate_cluster - restored - {restored}")
-
-        expected_topics = [
-            topic.name for topic in self.expected_recovered_topics
-        ]
 
         size_bytes_per_ntp = get_on_disk_size_per_ntp(restored)
 
@@ -997,10 +960,7 @@ class AdminApiBasedRestore(FastCheck):
 
 
 class TopicRecoveryTest(RedpandaTest):
-    def __init__(self,
-                 test_context: TestContext,
-                 num_brokers: Optional[int] = None,
-                 extra_rp_conf=dict()):
+    def __init__(self, test_context: TestContext, *args, **kwargs):
         si_settings = SISettings(test_context,
                                  cloud_storage_max_connections=5,
                                  cloud_storage_segment_max_upload_interval_sec=
@@ -1018,10 +978,10 @@ class TopicRecoveryTest(RedpandaTest):
 
         super(TopicRecoveryTest, self).__init__(
             test_context=test_context,
-            num_brokers=num_brokers,
+            *args,
             si_settings=si_settings,
-            extra_rp_conf=extra_rp_conf,
-            environment={'__REDPANDA_TOPIC_REC_DL_CHECK_MILLIS': 5000})
+            environment={'__REDPANDA_TOPIC_REC_DL_CHECK_MILLIS': 5000},
+            **kwargs)
 
         self.kafka_tools = KafkaCliTools(self.redpanda)
         self._started = True
@@ -1039,11 +999,6 @@ class TopicRecoveryTest(RedpandaTest):
                            msg_size=msg_size,
                            msg_count=msg_count,
                            acks=acks)
-
-    def tearDown(self):
-        assert self.cloud_storage_client
-        self.cloud_storage_client.empty_bucket(self.s3_bucket)
-        super().tearDown()
 
     def _collect_file_checksums(self) -> dict[str, FileToChecksumSize]:
         """Get checksums of all log segments (excl. controller log) on all nodes."""
@@ -1186,7 +1141,7 @@ class TopicRecoveryTest(RedpandaTest):
                     f"actual: {len(topic_manifests)}")
                 return False
             if total_partitions != len(manifests):
-                self.logger.info(f"can't find enough manifest.json objects, "
+                self.logger.info(f"can't find enough manifest objects, "
                                  f"manifest found: {len(manifests)}, "
                                  f"expected partitions: {total_partitions}, "
                                  f"{pprint.pformat(manifests, indent=2)}")
@@ -1337,9 +1292,9 @@ class TopicRecoveryTest(RedpandaTest):
         """If we're trying to recovery a topic which didn't have any data
         in old cluster the empty topic should be created. We should be able
         to produce to the topic."""
-        test_case = NoDataCase(self.cloud_storage_client, self.kafka_tools,
-                               self.rpk, self.s3_bucket, self.logger,
-                               self.rpk_producer_maker)
+        test_case = NoDataCase(self.redpanda, self.cloud_storage_client,
+                               self.kafka_tools, self.rpk, self.s3_bucket,
+                               self.logger, self.rpk_producer_maker)
         self.do_run(test_case)
 
     @ok_to_fail  # https://github.com/redpanda-data/redpanda/issues/10219
@@ -1362,7 +1317,8 @@ class TopicRecoveryTest(RedpandaTest):
         """If we're trying to recovery a topic which didn't have any data
         in old cluster the empty topic should be created. We should be able
         to produce to the topic."""
-        test_case = MissingTopicManifest(self.cloud_storage_client,
+        test_case = MissingTopicManifest(self.redpanda,
+                                         self.cloud_storage_client,
                                          self.kafka_tools, self.rpk,
                                          self.s3_bucket, self.logger,
                                          self.rpk_producer_maker)
@@ -1378,7 +1334,7 @@ class TopicRecoveryTest(RedpandaTest):
         locations that could be used if the partition was moved between the
         nodes.
         """
-        test_case = MissingPartition(self.cloud_storage_client,
+        test_case = MissingPartition(self.redpanda, self.cloud_storage_client,
                                      self.kafka_tools, self.rpk,
                                      self.s3_bucket, self.logger,
                                      self.rpk_producer_maker)
@@ -1393,9 +1349,9 @@ class TopicRecoveryTest(RedpandaTest):
         bucket."""
         self.redpanda.si_settings.set_expected_damage({"missing_segments"})
 
-        test_case = MissingSegment(self.cloud_storage_client, self.kafka_tools,
-                                   self.rpk, self.s3_bucket, self.logger,
-                                   self.rpk_producer_maker)
+        test_case = MissingSegment(self.redpanda, self.cloud_storage_client,
+                                   self.kafka_tools, self.rpk, self.s3_bucket,
+                                   self.logger, self.rpk_producer_maker)
         self.do_run(test_case)
 
     @cluster(num_nodes=4, log_allow_list=TRANSIENT_ERRORS)
@@ -1463,13 +1419,14 @@ class TopicRecoveryTest(RedpandaTest):
                       partition_count=1,
                       replication_factor=3)
         ]
-        test_case = SizeBasedRetention(self.cloud_storage_client,
+        test_case = SizeBasedRetention(self.redpanda,
+                                       self.cloud_storage_client,
                                        self.kafka_tools, self.rpk,
                                        self.s3_bucket, self.logger,
                                        self.rpk_producer_maker, topics)
         self.do_run(test_case)
 
-    @cluster(num_nodes=3, log_allow_list=TRANSIENT_ERRORS)
+    @cluster(num_nodes=4, log_allow_list=TRANSIENT_ERRORS)
     @matrix(cloud_storage_type=get_cloud_storage_type())
     def test_time_based_retention(self, cloud_storage_type):
         """Test topic recovery with time based retention policy.
@@ -1481,29 +1438,13 @@ class TopicRecoveryTest(RedpandaTest):
                       partition_count=1,
                       replication_factor=3)
         ]
-        test_case = TimeBasedRetention(self.cloud_storage_client,
-                                       self.kafka_tools, self.rpk,
-                                       self.s3_bucket, self.logger,
-                                       self.rpk_producer_maker, topics, False)
-        self.do_run(test_case)
 
-    @cluster(num_nodes=3, log_allow_list=TRANSIENT_ERRORS)
-    @matrix(cloud_storage_type=get_cloud_storage_type())
-    def test_time_based_retention_with_legacy_manifest(self,
-                                                       cloud_storage_type):
-        """Test topic recovery with time based retention policy.
-        It's tests handling of the situation when only subset of the data needs to
-        be recovered due to retention. This test uses manifests without max_timestamp
-        field."""
-        topics = [
-            TopicSpec(name='panda-topic',
-                      partition_count=1,
-                      replication_factor=3)
-        ]
-        test_case = TimeBasedRetention(self.cloud_storage_client,
+        assert isinstance(self.redpanda, RedpandaService)
+        test_case = TimeBasedRetention(self.redpanda,
+                                       self.cloud_storage_client,
                                        self.kafka_tools, self.rpk,
                                        self.s3_bucket, self.logger,
-                                       self.rpk_producer_maker, topics, True)
+                                       self.rpk_producer_maker, topics)
         self.do_run(test_case)
 
     @cluster(num_nodes=4, log_allow_list=TRANSIENT_ERRORS)
