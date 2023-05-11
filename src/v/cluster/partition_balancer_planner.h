@@ -56,7 +56,7 @@ public:
         partition_balancer_violations violations;
         std::vector<ntp_reassignment> reassignments;
         std::vector<model::ntp> cancellations;
-        size_t failed_reassignments_count = 0;
+        size_t failed_actions_count = 0;
         status status = status::empty;
     };
 
@@ -79,12 +79,9 @@ private:
     void init_ntp_sizes_from_health_report(
       const cluster_health_report& health_report, request_context&);
 
-    void get_unavailable_node_movement_cancellations(request_context&);
-    static void get_unavailable_nodes_reassignments(request_context&);
-
-    static void get_rack_constraint_repair_reassignments(request_context&);
-
-    static void get_full_node_reassignments(request_context&);
+    static void get_unavailable_nodes_actions(request_context&);
+    static void get_rack_constraint_repair_actions(request_context&);
+    static void get_full_node_actions(request_context&);
 
     planner_config _config;
     partition_balancer_state& _state;

@@ -175,7 +175,7 @@ ss::future<> partition_balancer_backend::do_tick() {
     } else if (plan_data.status == planner_status::waiting_for_reports) {
         _last_status = partition_balancer_status::starting;
     } else if (
-      plan_data.failed_reassignments_count > 0
+      plan_data.failed_actions_count > 0
       || plan_data.status == planner_status::waiting_for_maintenance_end) {
         _last_status = partition_balancer_status::stalled;
     } else {
@@ -188,14 +188,14 @@ ss::future<> partition_balancer_backend::do_tick() {
           "last status: {}; "
           "violations: unavailable nodes: {}, full nodes: {}; "
           "updates in progress: {}; "
-          "reassignments planned: {}, cancelled: {}, failed: {}",
+          "action counts: reassignments: {}, cancellations: {}, failed: {}",
           _last_status,
           _last_violations.unavailable_nodes.size(),
           _last_violations.full_nodes.size(),
           _state.topics().updates_in_progress().size(),
           plan_data.reassignments.size(),
           plan_data.cancellations.size(),
-          plan_data.failed_reassignments_count);
+          plan_data.failed_actions_count);
     }
 
     co_await ss::max_concurrent_for_each(

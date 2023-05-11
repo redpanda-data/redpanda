@@ -113,7 +113,7 @@ private:
       _moving_ntp2replica_sizes;
     absl::node_hash_map<model::ntp, allocated_partition> _reassignments;
     uint64_t _planned_moves_size_bytes = 0;
-    size_t _failed_reassignments_count = 0;
+    size_t _failed_actions_count = 0;
     absl::node_hash_set<model::ntp> _cancellations;
 };
 
@@ -467,7 +467,7 @@ public:
           _replicas,
           reason,
           change_reason);
-        ++_ctx._failed_reassignments_count;
+        ++_ctx._failed_actions_count;
     }
 
 private:
@@ -696,7 +696,7 @@ partition_balancer_planner::reassignable_partition::move_replica(
           replica,
           reason,
           moved.error().message());
-        _ctx._failed_reassignments_count += 1;
+        _ctx._failed_actions_count += 1;
         return moved;
     }
 
@@ -721,7 +721,7 @@ partition_balancer_planner::reassignable_partition::move_replica(
  * Function is trying to move ntp out of unavailable nodes
  * It can move to nodes that are violating soft_max_disk_usage_ratio constraint
  */
-void partition_balancer_planner::get_unavailable_nodes_reassignments(
+void partition_balancer_planner::get_unavailable_nodes_actions(
   request_context& ctx) {
     if (ctx.timed_out_unavailable_nodes.empty()) {
         return;
@@ -754,7 +754,34 @@ void partition_balancer_planner::get_unavailable_nodes_reassignments(
                     "unavailable nodes");
               }
           },
-          [](moving_partition&) {},
+          [&](moving_partition& part) {
+              if (part.cancel_requested()) {
+                  return;
+              }
+
+              absl::flat_hash_set<model::node_id> previous_replicas_set;
+              bool was_on_decommissioning_node = false;
+              for (const auto& r : part.orig_replicas()) {
+                  previous_replicas_set.insert(r.node_id);
+                  if (ctx.decommissioning_nodes.contains(r.node_id)) {
+                      was_on_decommissioning_node = true;
+                  }
+              }
+
+              for (const auto& r : to_move) {
+                  if (!previous_replicas_set.contains(r)) {
+                      if (!was_on_decommissioning_node) {
+                          // makes sense to cancel
+                          part.request_cancel("unavailable nodes");
+                      } else {
+                          part.report_failure(
+                            "move related to decommission",
+                            "unavailable nodes");
+                      }
+                      break;
+                  }
+              }
+          },
           [](immutable_partition& part) {
               part.report_failure("unavailable nodes");
           });
@@ -773,7 +800,7 @@ void partition_balancer_planner::get_unavailable_nodes_reassignments(
 /// the ntp is replicated to, we try to schedule a move. For each rack we
 /// arbitrarily choose the first appearing replica to remain there (note: this
 /// is probably not optimal choice).
-void partition_balancer_planner::get_rack_constraint_repair_reassignments(
+void partition_balancer_planner::get_rack_constraint_repair_actions(
   request_context& ctx) {
     if (ctx.state().ntps_with_broken_rack_constraint().empty()) {
         return;
@@ -848,8 +875,7 @@ void partition_balancer_planner::get_rack_constraint_repair_reassignments(
  * constraints, we try to reallocate all such replicas. Some of reallocation
  * requests can fail, we just move those replicas that we can.
  */
-void partition_balancer_planner::get_full_node_reassignments(
-  request_context& ctx) {
+void partition_balancer_planner::get_full_node_actions(request_context& ctx) {
     std::vector<const node_disk_space*> sorted_full_nodes;
     for (const auto& kv : ctx.node_disk_reports) {
         const auto* node_disk = &kv.second;
@@ -977,53 +1003,6 @@ void partition_balancer_planner::get_full_node_reassignments(
     }
 }
 
-/*
- * Cancel movement if new assignments contains unavailble node
- * and previous replica set doesn't contain this node
- */
-void partition_balancer_planner::get_unavailable_node_movement_cancellations(
-  request_context& ctx) {
-    for (const auto& update : _state.topics().updates_in_progress()) {
-        if (update.second.get_state() != reconfiguration_state::in_progress) {
-            continue;
-        }
-
-        absl::flat_hash_set<model::node_id> previous_replicas_set;
-        bool was_on_decommissioning_node = false;
-        for (const auto& r : update.second.get_previous_replicas()) {
-            previous_replicas_set.insert(r.node_id);
-            if (ctx.decommissioning_nodes.contains(r.node_id)) {
-                was_on_decommissioning_node = true;
-            }
-        }
-
-        auto current_assignments = _state.topics().get_partition_assignment(
-          update.first);
-        if (!current_assignments.has_value()) {
-            continue;
-        }
-        for (const auto& r : current_assignments->replicas) {
-            if (
-              ctx.timed_out_unavailable_nodes.contains(r.node_id)
-              && !previous_replicas_set.contains(r.node_id)) {
-                if (!was_on_decommissioning_node) {
-                    vlog(
-                      clusterlog.info,
-                      "ntp: {}, cancelling move {} -> {}",
-                      update.first,
-                      update.second.get_previous_replicas(),
-                      current_assignments->replicas);
-
-                    ctx._cancellations.emplace(update.first);
-                } else {
-                    ctx._failed_reassignments_count += 1;
-                }
-                break;
-            }
-        }
-    }
-}
-
 void partition_balancer_planner::request_context::collect_actions(
   partition_balancer_planner::plan_data& result) {
     result.reassignments.reserve(_reassignments.size());
@@ -1032,7 +1011,7 @@ void partition_balancer_planner::request_context::collect_actions(
           ntp_reassignment{.ntp = ntp, .allocated = std::move(reallocated)});
     }
 
-    result.failed_reassignments_count = _failed_reassignments_count;
+    result.failed_actions_count = _failed_actions_count;
 
     result.cancellations.reserve(_cancellations.size());
     std::move(
@@ -1060,13 +1039,6 @@ partition_balancer_planner::plan_data partition_balancer_planner::plan_actions(
         return result;
     }
 
-    if (_state.topics().has_updates_in_progress()) {
-        get_unavailable_node_movement_cancellations(ctx);
-
-        ctx.collect_actions(result);
-        return result;
-    }
-
     if (!ctx.all_reports_received()) {
         result.status = status::waiting_for_reports;
         return result;
@@ -1081,9 +1053,9 @@ partition_balancer_planner::plan_data partition_balancer_planner::plan_actions(
 
     init_ntp_sizes_from_health_report(health_report, ctx);
 
-    get_unavailable_nodes_reassignments(ctx);
-    get_rack_constraint_repair_reassignments(ctx);
-    get_full_node_reassignments(ctx);
+    get_unavailable_nodes_actions(ctx);
+    get_rack_constraint_repair_actions(ctx);
+    get_full_node_actions(ctx);
 
     ctx.collect_actions(result);
     return result;

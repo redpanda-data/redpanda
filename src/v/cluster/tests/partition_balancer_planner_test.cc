@@ -755,7 +755,7 @@ FIXTURE_TEST(
 
     check_violations(plan_data, unavailable_nodes, {});
     BOOST_REQUIRE_EQUAL(plan_data.reassignments.size(), 0);
-    BOOST_REQUIRE_EQUAL(plan_data.failed_reassignments_count, 1);
+    BOOST_REQUIRE_EQUAL(plan_data.failed_actions_count, 1);
 }
 
 /*
@@ -791,7 +791,7 @@ FIXTURE_TEST(
     check_violations(plan_data, unavailable_nodes, {});
     BOOST_REQUIRE_EQUAL(plan_data.reassignments.size(), 0);
     BOOST_REQUIRE_EQUAL(plan_data.cancellations.size(), 0);
-    BOOST_REQUIRE_EQUAL(plan_data.failed_reassignments_count, 1);
+    BOOST_REQUIRE_EQUAL(plan_data.failed_actions_count, 1);
 }
 
 FIXTURE_TEST(
@@ -867,5 +867,5 @@ FIXTURE_TEST(test_rack_awareness_repair, partition_balancer_planner_fixture) {
         BOOST_REQUIRE_EQUAL(racks.size(), 3);
     }
     BOOST_REQUIRE_EQUAL(plan_data.cancellations.size(), 0);
-    BOOST_REQUIRE_EQUAL(plan_data.failed_reassignments_count, 0);
+    BOOST_REQUIRE_EQUAL(plan_data.failed_actions_count, 0);
 }
