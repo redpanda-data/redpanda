@@ -1042,3 +1042,5 @@ iobuf segment_meta_cstore::to_iobuf() {
     return serde::to_iobuf(std::exchange(*_impl, {}));
 }
 } // namespace cloud_storage
+
+// end comment
