@@ -35,6 +35,25 @@
 
 namespace cloud_storage {
 
+<<<<<<< HEAD
+=======
+class stuck_reader_exception final : public std::runtime_error {
+public:
+    stuck_reader_exception(
+      model::offset cur_rp_offset,
+      size_t cur_bytes_consumed,
+      ss::sstring context)
+      : std::runtime_error{context}
+      , rp_offset(cur_rp_offset)
+      , bytes_consumed(cur_bytes_consumed) {}
+    const model::offset rp_offset;
+    const size_t bytes_consumed;
+};
+
+std::filesystem::path
+generate_remote_index_path(const cloud_storage::remote_segment_path& p);
+
+>>>>>>> 2712b02dd (cloud_storage: Handle overlapping segments)
 static constexpr size_t remote_segment_sampling_step_bytes = 64_KiB;
 
 class download_exception : public std::exception {
