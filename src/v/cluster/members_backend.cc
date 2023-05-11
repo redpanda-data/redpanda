@@ -66,17 +66,13 @@ void reassign_replicas(
   partition_allocator& allocator,
   partition_assignment current_assignment,
   members_backend::partition_reallocation& reallocation) {
-    // remove nodes that are going to be reassigned from current assignment.
-    std::erase_if(
-      current_assignment.replicas,
-      [&reallocation](const model::broker_shard& bs) {
-          return reallocation.replicas_to_remove.contains(bs.node_id);
-      });
-
     auto res = allocator.reallocate_partition(
       reallocation.constraints.value(),
       current_assignment,
-      get_allocation_domain(ntp));
+      get_allocation_domain(ntp),
+      std::vector(
+        reallocation.replicas_to_remove.begin(),
+        reallocation.replicas_to_remove.end()));
     if (res.has_value()) {
         reallocation.set_new_replicas(std::move(res.value()));
     } else {

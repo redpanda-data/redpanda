@@ -89,7 +89,7 @@ struct strategy_test_fixture {
         auto units = std::move(res.value());
 
         for (auto& p_as : units->get_assignments()) {
-            allocator.update_allocation_state(
+            allocator.add_allocations_for_new_partition(
               p_as.replicas,
               p_as.group,
               cluster::partition_allocation_domains::common);

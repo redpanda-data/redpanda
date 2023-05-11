@@ -26,6 +26,7 @@
 #include <seastar/core/sharded.hh>
 #include <seastar/core/shared_ptr.hh>
 #include <seastar/coroutine/maybe_yield.hh>
+#include <seastar/util/defer.hh>
 #include <seastar/util/later.hh>
 
 #include <absl/container/node_hash_set.h>
@@ -75,35 +76,31 @@ allocation_constraints partition_allocator::default_constraints(
     return req;
 }
 
-result<allocated_partition> partition_allocator::allocate_partition(
+result<allocated_partition> partition_allocator::allocate_new_partition(
   partition_constraints p_constraints,
-  const partition_allocation_domain domain,
-  const std::vector<model::broker_shard>& not_changed_replicas) {
+  const partition_allocation_domain domain) {
     vlog(
       clusterlog.trace,
-      "allocating partition with constraints: {}",
+      "allocating new partition with constraints: {}",
       p_constraints);
-    uint16_t replicas_to_allocate = p_constraints.replication_factor
-                                    - not_changed_replicas.size();
+
+    uint16_t replicas_to_allocate = p_constraints.replication_factor;
     if (
-      replicas_to_allocate <= 0
+      replicas_to_allocate == 0
       || _state->available_nodes() < replicas_to_allocate) {
         return errc::topic_invalid_replication_factor;
     }
 
-    allocated_partition ret{not_changed_replicas, domain};
+    auto effective_constraints = default_constraints(domain);
+    effective_constraints.add(p_constraints.constraints);
 
+    allocated_partition ret{{}, domain, *_state};
     for (auto r = 0; r < replicas_to_allocate; ++r) {
-        auto effective_constraints = default_constraints(domain);
-        effective_constraints.add(p_constraints.constraints);
-
-        auto replica = _allocation_strategy.allocate_replica(
-          ret.replicas(), effective_constraints, *_state, domain);
-
+        auto replica = do_allocate_replica(
+          ret, std::nullopt, effective_constraints);
         if (!replica) {
             return replica.error();
         }
-        ret.add_replica(replica.value(), *_state);
     }
     return ret;
 }
@@ -276,7 +273,7 @@ partition_allocator::allocate(allocation_request request) {
 
     for (auto& p_constraints : request.partitions) {
         auto const partition_id = p_constraints.partition_id;
-        auto allocated = allocate_partition(
+        auto allocated = allocate_new_partition(
           std::move(p_constraints), request.domain);
         if (!allocated) {
             co_return allocated.error();
@@ -293,59 +290,121 @@ partition_allocator::allocate(allocation_request request) {
 }
 
 result<allocated_partition> partition_allocator::reallocate_partition(
-  partition_constraints partition_constraints,
+  partition_constraints p_constraints,
   const partition_assignment& current_assignment,
-  const partition_allocation_domain domain) {
+  const partition_allocation_domain domain,
+  const std::vector<model::node_id>& replicas_to_reallocate) {
     vlog(
       clusterlog.debug,
-      "reallocating {}, replicas left: {}",
-      partition_constraints,
-      current_assignment.replicas);
+      "reallocating {}, current replicas: {}, to move: {}",
+      p_constraints,
+      current_assignment.replicas,
+      replicas_to_reallocate);
 
-    /**
-     * We do not have to reallocate any of the replicas, do nothing
-     */
+    int16_t num_new_replicas = p_constraints.replication_factor
+                               - current_assignment.replicas.size();
     if (
-      partition_constraints.replication_factor
-      == current_assignment.replicas.size()) {
-        return allocated_partition{current_assignment.replicas, domain};
+      _state->available_nodes() < p_constraints.replication_factor
+      || num_new_replicas < 0) {
+        return errc::topic_invalid_replication_factor;
     }
 
-    return allocate_partition(
-      std::move(partition_constraints), domain, current_assignment.replicas);
+    allocated_partition res{current_assignment.replicas, domain, *_state};
+
+    if (num_new_replicas == 0 && replicas_to_reallocate.empty()) {
+        // nothing to do
+        return res;
+    }
+
+    auto effective_constraints = default_constraints(domain);
+    effective_constraints.add(std::move(p_constraints.constraints));
+
+    // first, move existing replicas
+    for (model::node_id prev : replicas_to_reallocate) {
+        auto replica = do_allocate_replica(res, prev, effective_constraints);
+        if (!replica) {
+            return replica.error();
+        }
+    }
+
+    // next, allocate new ones
+    for (int i = 0; i < num_new_replicas; ++i) {
+        auto replica = do_allocate_replica(
+          res, std::nullopt, effective_constraints);
+        if (!replica) {
+            return replica.error();
+        }
+    }
+
+    return res;
 }
 
-void partition_allocator::deallocate(
-  const std::vector<model::broker_shard>& replicas,
-  const partition_allocation_domain domain) {
-    for (auto& r : replicas) {
-        // find in brokers
-        _state->deallocate(r, domain);
-    }
+allocated_partition partition_allocator::make_allocated_partition(
+  std::vector<model::broker_shard> replicas,
+  partition_allocation_domain domain) const {
+    return allocated_partition{std::move(replicas), domain, *_state};
 }
 
-void partition_allocator::update_allocation_state(
-  const std::vector<model::broker_shard>& shards,
-  raft::group_id gid,
-  const partition_allocation_domain domain) {
-    if (shards.empty()) {
-        return;
+result<model::broker_shard> partition_allocator::reallocate_replica(
+  allocated_partition& partition,
+  model::node_id prev_node,
+  allocation_constraints constraints) {
+    vlog(
+      clusterlog.trace,
+      "reallocating replica {} for partition (all replicas: {}) with "
+      "constraints: {}",
+      prev_node,
+      partition.replicas(),
+      constraints);
+
+    auto effective_constraints = default_constraints(partition._domain);
+    effective_constraints.add(std::move(constraints));
+
+    return do_allocate_replica(partition, prev_node, effective_constraints);
+}
+
+result<model::broker_shard> partition_allocator::do_allocate_replica(
+  allocated_partition& partition,
+  std::optional<model::node_id> prev_node,
+  const allocation_constraints& effective_constraints) {
+    std::optional<allocated_partition::previous_replica> prev;
+    if (prev_node) {
+        prev = partition.prepare_move(*prev_node);
+        if (!prev) {
+            return errc::node_does_not_exists;
+        }
+    }
+    auto revert = ss::defer([&] {
+        if (prev) {
+            partition.cancel_move(*prev);
+        }
+    });
+
+    auto replica = _allocation_strategy.allocate_replica(
+      partition._replicas, effective_constraints, *_state, partition._domain);
+    if (!replica) {
+        return replica;
     }
 
-    _state->apply_update(shards, gid, domain);
+    revert.cancel();
+    partition.add_replica(replica.value(), prev);
+
+    return replica;
 }
 
 void partition_allocator::add_allocations(
   const std::vector<model::broker_shard>& to_add,
   const partition_allocation_domain domain) {
-    _state->apply_update(to_add, raft::group_id{}, domain);
+    for (const auto& bs : to_add) {
+        _state->add_allocation(bs, domain);
+    }
 }
 
 void partition_allocator::remove_allocations(
   const std::vector<model::broker_shard>& to_remove,
   const partition_allocation_domain domain) {
     for (const auto& bs : to_remove) {
-        _state->deallocate(bs, domain);
+        _state->remove_allocation(bs, domain);
     }
 }
 
@@ -378,8 +437,9 @@ partition_allocator::apply_snapshot(const controller_snapshot& snap) {
     for (const auto& [ns_tp, topic] : topics_snap) {
         auto domain = get_allocation_domain(ns_tp);
         for (const auto& [p_id, partition] : topic.partitions) {
-            new_state->apply_update(
-              partition.replicas, partition.group, domain);
+            for (const auto& bs : partition.replicas) {
+                new_state->add_allocation(bs, domain);
+            }
 
             if (auto it = topic.updates.find(p_id); it != topic.updates.end()) {
                 const auto& update = it->second;
@@ -387,15 +447,16 @@ partition_allocator::apply_snapshot(const controller_snapshot& snap) {
                 // regardless of the update state.
                 auto additional_replicas = subtract_replica_sets(
                   update.target_assignment, partition.replicas);
-                new_state->apply_update(
-                  std::move(additional_replicas), partition.group, domain);
+                for (const auto& bs : additional_replicas) {
+                    new_state->add_allocation(bs, domain);
+                }
             }
 
             co_await ss::coroutine::maybe_yield();
         }
     }
 
-    new_state->set_last_group_id(snap.topics.highest_group_id);
+    new_state->update_highest_group_id(snap.topics.highest_group_id);
 
     // we substitute the state object for the new one so that in the unlikely
     // case there are in-flight allocation_units objects and they are destroyed,

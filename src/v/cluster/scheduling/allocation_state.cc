@@ -21,7 +21,7 @@ void allocation_state::rollback(
     verify_shard();
     for (auto& as : v) {
         for (auto& bs : as.replicas) {
-            deallocate(bs, domain);
+            remove_allocation(bs, domain);
         }
         // rollback for each assignment as the groups are distinct
         _highest_group = raft::group_id(_highest_group() - 1);
@@ -46,27 +46,6 @@ bool allocation_state::validate_shard(
 }
 
 raft::group_id allocation_state::next_group_id() { return ++_highest_group; }
-
-void allocation_state::apply_update(
-  const std::vector<model::broker_shard>& replicas,
-  raft::group_id group_id,
-  const partition_allocation_domain domain) {
-    verify_shard();
-    if (replicas.empty()) {
-        return;
-    }
-    _highest_group = std::max(_highest_group, group_id);
-
-    for (auto const& bs : replicas) {
-        auto it = _nodes.find(bs.node_id);
-        if (it == _nodes.end()) {
-            // do nothing, node was deleted
-            continue;
-        }
-
-        it->second->allocate_on(bs.shard, domain);
-    }
-}
 
 void allocation_state::register_node(allocation_state::node_ptr n) {
     const auto id = n->_id;
@@ -184,7 +163,16 @@ bool allocation_state::is_empty(model::node_id id) const {
     return it->second->empty();
 }
 
-void allocation_state::deallocate(
+void allocation_state::add_allocation(
+  const model::broker_shard& replica,
+  const partition_allocation_domain domain) {
+    verify_shard();
+    if (auto it = _nodes.find(replica.node_id); it != _nodes.end()) {
+        it->second->allocate_on(replica.shard, domain);
+    }
+}
+
+void allocation_state::remove_allocation(
   const model::broker_shard& replica,
   const partition_allocation_domain domain) {
     verify_shard();
