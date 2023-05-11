@@ -1,3 +1,12 @@
+v_cc_library(
+  NAME segment_meta_cstore
+  SRCS
+    segment_meta_cstore.cc
+  DEPS
+    v::bytes
+    v::model
+    absl::btree
+)
 
 v_cc_library(
   NAME cloud_storage
@@ -32,6 +41,7 @@ v_cc_library(
     v::model
     v::rphashing
     v::cloud_roles
+    v::segment_meta_cstore
     # NOTE: do not add v::cloud as a dependency
 )
 add_subdirectory(tests)
