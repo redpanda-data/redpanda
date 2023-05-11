@@ -1039,6 +1039,10 @@ void segment_meta_cstore::from_iobuf(iobuf in) {
 }
 
 iobuf segment_meta_cstore::to_iobuf() {
-    return serde::to_iobuf(std::exchange(*_impl, {}));
+    segment_meta_cstore buf{};
+    for (auto& seg : *this) {
+        buf.insert(seg);
+    }
+    return serde::to_iobuf(std::move(*buf._impl));
 }
 } // namespace cloud_storage

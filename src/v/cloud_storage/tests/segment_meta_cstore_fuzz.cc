@@ -19,12 +19,14 @@
  */
 
 #include "cloud_storage/segment_meta_cstore.h"
+#include "cloud_storage/tests/cloud_storage_fixture.h"
 #include "cloud_storage/types.h"
 #include "cloud_storage_clients/client_probe.h"
 #include "fmt/format.h"
 #include "model/fundamental.h"
 
 #include <absl/container/btree_map.h>
+#include <fmt/core.h>
 
 #include <algorithm>
 #include <cstddef>
@@ -41,6 +43,10 @@ class cstore_ops {
     cloud_storage::segment_meta_cstore cstore{};
     absl::btree_map<model::offset, cloud_storage::segment_meta> reference{};
 
+    cloud_storage::segment_meta_cstore::const_iterator reader_it = cstore.end();
+    cloud_storage::segment_meta_cstore::const_iterator reader_end
+      = cstore.end();
+
 public:
     void moves() {
         auto tmp = cloud_storage::segment_meta_cstore{
@@ -50,6 +56,19 @@ public:
 #pragma clang diagnostic ignored "-Wself-move"
         cstore = std::move(cstore); // self-move assignment
 #pragma clang diagnostic pop
+    }
+
+    void reset_reader(size_t index) {
+        reader_end = cstore.end();
+        reader_it = std::next(cstore.begin(), std::min(index, cstore.size()));
+    }
+
+    void consume_reader(size_t quantity) {
+        for (; quantity != 0 && reader_it != reader_end;
+             ++reader_it, --quantity) {
+            auto value = *reader_it;
+            (void)value;
+        }
     }
 
     void append_segment(cloud_storage::segment_meta smeta) {
@@ -229,7 +248,8 @@ public:
           .size_bytes = read<size_t>(),
           .base_offset = base_offset,
           .committed_offset
-          = base_offset + std::max(read<model::offset>(), model::offset{0})
+          = base_offset
+            + std::max(model::offset{read<uint16_t>()}, model::offset{0})
             + model::offset{1},
           .base_timestamp = read<model::timestamp>(),
           .max_timestamp = read<model::timestamp>(),
@@ -309,6 +329,20 @@ struct serialize_op {
     auto operator()(cstore_ops& ops) const { ops.serialize(); }
 };
 
+struct reset_reader_op {
+    size_t index;
+    reset_reader_op(Tape& tape)
+      : index(tape.read<size_t>()) {}
+    auto operator()(cstore_ops& ops) const { ops.reset_reader(index); }
+};
+
+struct consume_reader_op {
+    size_t quantity;
+    consume_reader_op(Tape& tape)
+      : quantity(tape.read<size_t>()) {}
+    auto operator()(cstore_ops& ops) const { ops.consume_reader(quantity); }
+};
+
 using cstore_operation = std::variant<
   noop,
   move_op,
@@ -318,7 +352,9 @@ using cstore_operation = std::variant<
   prepend_segment_op,
   clear_op,
   truncate_op,
-  serialize_op>;
+  serialize_op,
+  reset_reader_op,
+  consume_reader_op>;
 
 template<class... Ts>
 struct overloaded : Ts... {
@@ -407,6 +443,12 @@ struct fmt::formatter<cstore_operation>
                 [](truncate_op) -> std::string { return "truncate"; },
                 [](serialize_op) -> std::string { return "serialize"; },
                 [](noop) -> std::string { return "noop"; },
+                [](reset_reader_op const& r) {
+                    return fmt::format("reset_reader({})", r.index);
+                },
+                [](consume_reader_op const& c) {
+                    return fmt::format("consume_reader({})", c.quantity);
+                },
               },
               op);
         };
