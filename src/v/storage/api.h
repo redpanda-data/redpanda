@@ -115,6 +115,7 @@ public:
         return _kvstore->start().then([this] {
             _log_mgr = std::make_unique<log_manager>(
               _log_conf_cb(), kvs(), _resources, _feature_table);
+            return _log_mgr->start();
         });
     }
 
@@ -151,6 +152,14 @@ public:
      * returned is accumulated from all cores.
      */
     ss::future<usage_report> disk_usage();
+
+    /*
+     * Handle a disk notification (e.g. low space)
+     */
+    void handle_disk_notification(
+      uint64_t total_space,
+      uint64_t free_space,
+      storage::disk_space_alert alert);
 
 private:
     storage_resources _resources;

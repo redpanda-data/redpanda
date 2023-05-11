@@ -1676,10 +1676,10 @@ void application::wire_up_bootstrap_services() {
         [this](
           uint64_t total_space,
           uint64_t free_space,
-          storage::disk_space_alert) {
+          storage::disk_space_alert alert) {
             return storage.invoke_on_all(
-              [total_space, free_space](storage::api& api) {
-                  api.resources().update_allowance(total_space, free_space);
+              [total_space, free_space, alert](storage::api& api) {
+                  api.handle_disk_notification(total_space, free_space, alert);
               });
         });
     _deferred.emplace_back([this, storage_disk_notification] {

@@ -27,7 +27,7 @@ from rptest.services.redpanda import LoggingConfig
 from rptest.services.storage import Topic
 from rptest.tests.end_to_end import EndToEndTest
 from rptest.tests.redpanda_test import RedpandaTest
-from rptest.util import search_logs_with_timeout
+from rptest.util import search_logs_with_timeout, produce_total_bytes
 from rptest.utils.full_disk import FullDiskHelper
 from rptest.utils.partition_metrics import PartitionMetrics
 from rptest.utils.expect_rate import ExpectRate, RateTarget
@@ -248,6 +248,74 @@ class FullDiskTest(EndToEndTest):
             self.bytes_prod.expect_rate(not_producing)
 
             self.full_disk.clear_low_space()
+
+
+class FullDiskReclaimTest(RedpandaTest):
+    """
+    Test that full disk alert triggers eager gc to reclaim space
+    """
+    topics = (TopicSpec(partition_count=10,
+                        retention_bytes=1,
+                        retention_ms=1,
+                        cleanup_policy=TopicSpec.CLEANUP_DELETE), )
+
+    def __init__(self, test_ctx):
+        extra_rp_conf = dict(
+            log_compaction_interval_ms=24 * 60 * 60 * 1000,
+            log_segment_size=1048576,
+        )
+        super().__init__(test_context=test_ctx, extra_rp_conf=extra_rp_conf)
+
+    @cluster(num_nodes=3, log_allow_list=FDT_LOG_ALLOW_LIST)
+    def test_full_disk_triggers_gc(self):
+        """
+        Test that GC is run promptly when a full disk alert is raised.
+
+        The test works as follows:
+
+        1. Create a topic with lots of data eligible for reclaim
+        2. Configure Redpanda to not run compaction housekeeping
+        3. Verify that after some amount of time no data is reclaimed
+        4. Trigger a low disk space alert
+        5. Observe that data is reclaimed from disk
+        """
+        nbytes = lambda mb: mb * 2**20
+        node = self.redpanda.nodes[0]
+
+        def observed_data_size(pred):
+            observed = self.redpanda.data_stat(node)
+            observed_total = sum(s for _, s in observed)
+            return pred(observed_total)
+
+        # write around 30 megabytes into the topic
+        produce_total_bytes(self.redpanda, self.topic, nbytes(30))
+
+        # wait until all that data shows up. add some fuzz factor to avoid
+        # timeouts due to placement skew or other such issues.
+        wait_until(lambda: observed_data_size(lambda s: s > nbytes(25)),
+                   timeout_sec=30,
+                   backoff_sec=2)
+
+        # reclaim shouldn't be running. we can't wait indefinitely to prove that
+        # it isn't, but wait a little bit of time for stabilization.
+        sleep(30)
+
+        # wait until all that data shows up. add some fuzz factor to avoid
+        # timeouts due to placement skew or other such issues.
+        wait_until(lambda: observed_data_size(lambda s: s > nbytes(25)),
+                   timeout_sec=30,
+                   backoff_sec=2)
+
+        # now trigger the disk space alert on the same node. unlike the 30
+        # second delay above, we should almost immediately observe the data
+        # be reclaimed from disk.
+        full_disk = FullDiskHelper(self.logger, self.redpanda)
+        full_disk.trigger_low_space(node=node)
+
+        # now wait until the data drops below 1 mb
+        wait_until(lambda: observed_data_size(lambda s: s < nbytes(1)),
+                   timeout_sec=10,
+                   backoff_sec=2)
 
 
 class LocalDiskReportTest(RedpandaTest):
