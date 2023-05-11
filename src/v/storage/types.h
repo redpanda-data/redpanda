@@ -501,6 +501,14 @@ struct usage_report {
     reclaim_size_limits reclaim;
     usage_target target;
 
+    usage_report() = default;
+
+    usage_report(
+      struct usage usage, reclaim_size_limits reclaim, usage_target target)
+      : usage(usage)
+      , reclaim(reclaim)
+      , target(target) {}
+
     friend usage_report operator+(usage_report lhs, const usage_report& rhs) {
         lhs.usage = lhs.usage + rhs.usage;
         lhs.reclaim = lhs.reclaim + rhs.reclaim;

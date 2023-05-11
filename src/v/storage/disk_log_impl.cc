@@ -1938,11 +1938,7 @@ ss::future<usage_report> disk_log_impl::disk_usage(gc_config cfg) {
      */
     auto target = co_await disk_usage_target(cfg);
 
-    co_return usage_report{
-      .usage = usage,
-      .reclaim = reclaim,
-      .target = target,
-    };
+    co_return usage_report(usage, reclaim, target);
 }
 
 } // namespace storage
