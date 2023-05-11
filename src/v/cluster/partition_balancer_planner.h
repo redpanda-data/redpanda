@@ -66,6 +66,9 @@ public:
 private:
     class request_context;
     class partition;
+    class reassignable_partition;
+    class moving_partition;
+    class immutable_partition;
 
     void init_per_node_state(
       const cluster_health_report&,
