@@ -319,7 +319,7 @@ class FullDiskReclaimTest(RedpandaTest):
 
 
 class LocalDiskReportTest(RedpandaTest):
-    topics = (TopicSpec(), TopicSpec(partition_count=4))
+    topics = (TopicSpec(segment_bytes=2**30), TopicSpec(partition_count=4))
 
     def check(self, threshold):
         admin = Admin(self.redpanda)
@@ -334,6 +334,35 @@ class LocalDiskReportTest(RedpandaTest):
             if pct_diff > threshold:
                 return False
         return True
+
+    @cluster(num_nodes=3)
+    def test_target_min_capacity(self):
+        """
+        Test that the target min storage capcity reflects changes to reserved min
+        segments configuration option.
+        """
+        admin = Admin(self.redpanda)
+        default_segment_size = admin.get_cluster_config()["log_segment_size"]
+        node = self.redpanda.nodes[0]
+
+        for min_segments in (1, 2, 3):
+            self.redpanda.set_cluster_config(
+                dict(storage_reserve_min_segments=min_segments))
+            reported = admin.get_local_storage_usage(
+                node)["target_min_capacity"]
+
+            # 1 partition with 1gb segment size
+            # 4 partition with default segment size
+            # controller partition has default segment size
+            # reservation will be for min_segments
+            expected = min_segments * ((1 * 2**30) + \
+                       (4 * default_segment_size) + \
+                       (1 * default_segment_size))
+
+            diff = abs(reported - expected)
+            assert diff <= (
+                0.001 * reported
+            ), f"diff {diff} expected {expected} reported {reported}"
 
     @cluster(num_nodes=3)
     def test_basic_usage_report(self):
