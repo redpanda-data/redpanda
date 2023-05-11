@@ -390,6 +390,21 @@ static void fill_fetch_responses(
   std::vector<op_context::response_placeholder_ptr> responses,
   std::vector<std::unique_ptr<hdr_hist::measurement>> metrics) {
     auto range = boost::irange<size_t>(0, results.size());
+    if (unlikely(
+          results.size() != responses.size()
+          || results.size() != metrics.size())) {
+        // soft assert & recovery attempt
+        vlog(
+          klog.error,
+          "Results, responses, and metrics counts must be the same. "
+          "results: {}, responses: {}, metrics: {}. "
+          "Only the common subset will be processed",
+          results.size(),
+          responses.size(),
+          metrics.size());
+        range = boost::irange<size_t>(
+          0, std::min({results.size(), responses.size(), metrics.size()}));
+    }
     for (auto idx : range) {
         auto& res = results[idx];
         auto& resp_it = responses[idx];
@@ -516,6 +531,21 @@ static ss::future<std::vector<read_result>> fetch_ntps_in_parallel(
     co_return results;
 }
 
+bool shard_fetch::empty() const {
+    if (unlikely(
+          requests.size() != responses.size()
+          || responses.size() != metrics.size())) {
+        vlog(
+          klog.error,
+          "there have to be equal number of fetch requests, responses, and "
+          "metrics for single shard. requests: {}, responses: {}, metrics: {}",
+          requests.size(),
+          responses.size(),
+          metrics.size());
+    }
+    return requests.empty();
+}
+
 /**
  * Top-level handler for fetching from single shard. The result is
  * unwrapped and any errors from the storage sub-system are translated
@@ -530,7 +560,7 @@ handle_shard_fetch(ss::shard_id shard, op_context& octx, shard_fetch fetch) {
         return ss::now();
     }
     // no requests for this shard, do nothing
-    if (fetch.requests.empty()) {
+    if (fetch.empty()) {
         return ss::now();
     }
 

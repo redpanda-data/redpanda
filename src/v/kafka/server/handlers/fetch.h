@@ -324,17 +324,8 @@ struct shard_fetch {
         responses.push_back(r_ph);
         metrics.push_back(std::move(m));
     }
+    bool empty() const;
 
-    bool empty() const {
-        vassert(
-          requests.size() == responses.size(),
-          "there have to be equal number of fetch requests and responsens for "
-          "single shard. requests count: {}, response count {}",
-          requests.size(),
-          responses.size());
-
-        return requests.empty();
-    }
     ss::shard_id shard;
     std::vector<ntp_fetch_config> requests;
     std::vector<op_context::response_placeholder_ptr> responses;
