@@ -97,16 +97,11 @@ const s3_imposter_fixture::expectation recovery_state{
 std::vector<s3_imposter_fixture::expectation>
 generate_no_manifests_expectations(
   std::vector<s3_imposter_fixture::expectation> additional_expectations) {
-    std::vector<uint64_t> prefixes;
-    prefixes.reserve(16);
-    for (uint64_t i = 0x00000000; i <= 0xF0000000; i += 0x10000000) {
-        prefixes.emplace_back(i);
-    }
+    const char hex_chars[] = "0123456789abcdef";
     std::vector<s3_imposter_fixture::expectation> expectations;
-    expectations.reserve(prefixes.size());
-    for (const auto& prefix_bitmask : prefixes) {
+    for (int i = 0; i < 16; ++i) {
         expectations.emplace_back(s3_imposter_fixture::expectation{
-          .url = fmt::format("/?list-type=2&prefix={:08x}/", prefix_bitmask),
+          .url = fmt::format("/?list-type=2&prefix={}0000000/", hex_chars[i]),
           .body = no_manifests,
         });
     }
