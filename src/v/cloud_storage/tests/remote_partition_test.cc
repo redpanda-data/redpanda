@@ -817,23 +817,20 @@ FIXTURE_TEST(test_overlapping_segments, cloud_storage_fixture) {
 
     auto segments = make_segments(batch_types, model::offset(0));
     cloud_storage::partition_manifest manifest(manifest_ntp, manifest_revision);
+
     auto expectations = make_imposter_expectations(
       manifest, segments, false, model::offset_delta(0));
 
-    // Remove one data batch from the first segment, which also removes one
-    // record.
-    auto short_batches = batch_types[0];
-    short_batches.pop_back();
-    const auto short_segment = make_segment(model::offset{0}, short_batches);
+    std::stringstream sstr;
+    manifest.serialize(sstr);
 
-    expectations[0].body = short_segment.bytes;
-
+    auto body = sstr.str();
+    std::string_view to_replace = "\"committed_offset\":5";
+    body.replace(
+      body.find(to_replace), to_replace.size(), "\"committed_offset\":6");
+    expectations.back().body = body;
     set_expectations_and_listen(expectations);
-
-    print_segments(segments);
-
-    // Total offsets scanned are one less than what we initially set up
-    BOOST_REQUIRE(check_scan(*this, kafka::offset(0), 8));
+    BOOST_REQUIRE(check_scan(*this, kafka::offset(0), 9));
 }
 
 FIXTURE_TEST(test_scan_by_kafka_offset_truncated, cloud_storage_fixture) {

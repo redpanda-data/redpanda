@@ -345,8 +345,8 @@ public:
                     co_return storage_t{std::move(d)};
                 } catch (const stuck_reader_exception& ex) {
                     vlog(
-                      _ctxlog.error,
-                      "stuck reader: {}, {}",
+                      _ctxlog.warn,
+                      "stuck reader: current rp offset: {}, max rp offset: {}",
                       ex.rp_offset,
                       _reader->max_rp_offset());
 
@@ -362,8 +362,19 @@ public:
                     // reads to proceed.
                     if (
                       model::next_offset(ex.rp_offset)
-                        == _next_segment_base_offset
+                        >= _next_segment_base_offset
                       && !_reader->is_eof()) {
+                        vlog(
+                          _ctxlog.info,
+                          "mismatch between current segment end and manifest "
+                          "data: current rp offset {}, manifest max rp offset "
+                          "{}, next segment base offset {}, reader is EOF: {}. "
+                          "set EOF on reader and try to "
+                          "reset",
+                          ex.rp_offset,
+                          _reader->max_rp_offset(),
+                          _next_segment_base_offset,
+                          _reader->is_eof());
                         _reader->set_eof();
                         continue;
                     }
