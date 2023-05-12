@@ -520,7 +520,7 @@ private:
             _partition->evict_reader(std::move(_reader));
             vlog(
               _ctxlog.debug,
-              "initializing new segment reader {}, next offset",
+              "initializing new segment reader {}, next offset {}",
               config.start_offset,
               _next_segment_base_offset);
             if (_next_segment_base_offset != model::offset{}) {
