@@ -107,4 +107,10 @@ ss::future<abort_group_tx_reply> tx_gateway::abort_group_tx(
     return _rm_group_proxy->abort_group_tx_locally(std::move(request));
 }
 
+ss::future<find_coordinator_reply> tx_gateway::find_coordinator(
+  find_coordinator_request&&, rpc::streaming_context&) {
+    co_return find_coordinator_reply(
+      std::nullopt, tx_errc::unknown_server_error);
+}
+
 } // namespace cluster

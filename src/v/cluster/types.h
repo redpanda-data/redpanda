@@ -992,6 +992,8 @@ struct find_coordinator_request
       find_coordinator_request,
       serde::version<0>,
       serde::compat_version<0>> {
+    using rpc_adl_exempt = std::true_type;
+
     kafka::transactional_id tid;
 
     find_coordinator_request() noexcept = default;
@@ -1014,6 +1016,8 @@ struct find_coordinator_reply
       find_coordinator_reply,
       serde::version<0>,
       serde::compat_version<0>> {
+    using rpc_adl_exempt = std::true_type;
+
     std::optional<model::node_id> coordinator{std::nullopt};
     std::optional<model::ntp> ntp{std::nullopt};
     errc ec{errc::generic_tx_error};
