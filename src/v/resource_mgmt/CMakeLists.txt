@@ -3,6 +3,8 @@ v_cc_library(
   SRCS
     available_memory.cc
     memory_sampling.cc
+    cpu_profiler.cc
+    logger.cc
   DEPS
     Seastar::seastar
   )
@@ -11,7 +13,6 @@ v_cc_library(
   NAME storage_resource_mgmt
   SRCS
     storage.cc
-    logger.cc
   DEPS
     Seastar::seastar
     v::cloud_storage
