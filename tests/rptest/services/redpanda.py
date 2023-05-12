@@ -754,16 +754,15 @@ class RedpandaServiceBase(Service):
         }
     }
 
-    def __init__(
-        self,
-        context,
-        num_brokers,
-        *,
-        extra_rp_conf=None,
-        resource_settings=None,
-        si_settings=None,
-        superuser: Optional[SaslCredentials] = None,
-    ):
+    def __init__(self,
+                 context,
+                 num_brokers,
+                 *,
+                 extra_rp_conf=None,
+                 resource_settings=None,
+                 si_settings=None,
+                 superuser: Optional[SaslCredentials] = None,
+                 disable_cloud_storage_diagnostics=True):
         super(RedpandaServiceBase, self).__init__(context,
                                                   num_nodes=num_brokers)
         self._context = context
@@ -791,6 +790,11 @@ class RedpandaServiceBase(Service):
         if resource_settings is None:
             resource_settings = ResourceSettings()
         self._resource_settings = resource_settings
+
+        # Disable saving cloud storage diagnostics. This may be useful for
+        # tests that generate millions of objecst, as collecting diagnostics
+        # may take a significant amount of time.
+        self._disable_cloud_storage_diagnostics = disable_cloud_storage_diagnostics
 
         self._trim_logs = self._context.globals.get(self.TRIM_LOGS_KEY, True)
 
@@ -1029,6 +1033,9 @@ class RedpandaServiceBase(Service):
         self._node_id_by_idx[idx] = node_id
         return node_id
 
+    def cloud_storage_diagnostics(self):
+        pass
+
 
 class RedpandaServiceK8s(RedpandaServiceBase):
     def __init__(self, context, num_brokers):
@@ -1138,6 +1145,7 @@ class RedpandaService(RedpandaServiceBase):
             resource_settings=resource_settings,
             si_settings=si_settings,
             superuser=superuser,
+            disable_cloud_storage_diagnostics=disable_cloud_storage_diagnostics
         )
         self._security = security
         self._installer: RedpandaInstaller = RedpandaInstaller(self)
@@ -1177,11 +1185,6 @@ class RedpandaService(RedpandaServiceBase):
 
         self.logger.info(
             f"ResourceSettings: dedicated_nodes={self._dedicated_nodes}")
-
-        # Disable saving cloud storage diagnostics. This may be useful for
-        # tests that generate millions of objecst, as collecting diagnostics
-        # may take a significant amount of time.
-        self._disable_cloud_storage_diagnostics = disable_cloud_storage_diagnostics
 
         self.cloud_storage_client: Optional[S3Client] = None
 
