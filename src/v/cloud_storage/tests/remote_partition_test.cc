@@ -304,8 +304,8 @@ FIXTURE_TEST(test_scan_by_kafka_offset_repeats, cloud_storage_fixture) {
       *this, model::offset(0), model::offset_delta(0), batch_types);
     print_segments(segments);
     for (int i = 0; i <= 3; i++) {
-        BOOST_REQUIRE(check_scan(*this, kafka::offset(i), 4 - i));
-        BOOST_REQUIRE(check_fetch(*this, kafka::offset(i), true));
+        BOOST_CHECK(check_scan(*this, kafka::offset(i), 4 - i));
+        BOOST_CHECK(check_fetch(*this, kafka::offset(i), true));
     }
     BOOST_REQUIRE(check_scan(*this, kafka::offset(4), 0));
     BOOST_REQUIRE(check_fetch(*this, kafka::offset(4), false));
