@@ -83,8 +83,10 @@ inline tm_hash_range default_tm_hash_range(
 }
 
 struct tm_hash_ranges_set
-  : serde::
-      envelope<tm_hash_range, serde::version<0>, serde::compat_version<0>> {
+  : serde::envelope<
+      tm_hash_ranges_set,
+      serde::version<0>,
+      serde::compat_version<0>> {
     std::vector<tm_hash_range> ranges{};
 
     tm_hash_ranges_set() = default;
@@ -150,8 +152,10 @@ struct tm_hash_ranges_set
 };
 
 struct tm_tx_hosted_transactions
-  : serde::
-      envelope<tm_hash_range, serde::version<0>, serde::compat_version<0>> {
+  : serde::envelope<
+      tm_tx_hosted_transactions,
+      serde::version<0>,
+      serde::compat_version<0>> {
     bool inited{false};
     tm_hash_ranges_set hash_ranges{};
     absl::btree_set<kafka::transactional_id> excluded_transactions{};
