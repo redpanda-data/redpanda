@@ -854,7 +854,8 @@ void application::configure_admin_server() {
       std::ref(topic_recovery_status_frontend),
       std::ref(tx_registry_frontend),
       std::ref(storage_node),
-      std::ref(_memory_sampling))
+      std::ref(_memory_sampling),
+      std::ref(shadow_index_cache))
       .get();
 }
 

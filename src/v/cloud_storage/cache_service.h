@@ -148,6 +148,10 @@ public:
       uint64_t free_space,
       storage::disk_space_alert alert);
 
+    size_t get_usage_objects() { return _current_cache_objects; }
+
+    uint64_t get_usage_bytes() { return _current_cache_size; }
+
 private:
     /// Load access time tracker from file
     ss::future<> load_access_time_tracker();
