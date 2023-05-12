@@ -11,6 +11,7 @@ v_cc_library(
   NAME storage_resource_mgmt
   SRCS
     storage.cc
+    logger.cc
   DEPS
     Seastar::seastar
     v::cloud_storage
