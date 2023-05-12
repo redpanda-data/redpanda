@@ -472,9 +472,69 @@
               ]
             }
           ]
+        },
+        {
+            "path": "/v1/debug/cpu_profile",
+            "operations": [
+                {
+                    "method": "GET",
+                    "summary": "Gets the samples from the CPU profiler",
+                    "nickname": "cpu_profile",
+                    "produces": [
+                        "application/json"
+                    ],
+                    "type": "array",
+                    "items": {
+                        "type": "cpu_profile_shard_samples"
+                    },
+                    "parameters": [
+                        {
+                            "name": "shard",
+                            "in": "query",
+                            "required": false,
+                            "allowMultiple": false,
+                            "type": "long"
+                        }
+                    ]
+                }
+            ]
         }
     ],
     "models": {
+        "cpu_profile_shard_samples": {
+            "id": "cpu_profile_sample",
+            "description": "cpu profile sample",
+            "properties": {
+                "shard_id": {
+                    "type": "long",
+                    "description": "the shard the sample originated from"
+                },
+                "dropped_samples": {
+                    "type": "long",
+                    "description": "number of samples that had to be dropped due to space limitations"
+                },
+                "samples": {
+                    "type": "array",
+                    "items": {
+                        "type": "cpu_profile_sample"
+                    }
+                }
+            }
+        },
+        "cpu_profile_sample": {
+            "id": "cpu_profile_sample",
+            "description": "cpu profile sample",
+            "properties": {
+                "user_backtrace": {
+                    "type": "string",
+                    "description": "user backtrace"
+                },
+                "occurrences": {
+                    "type": "long",
+                    "description": "number of times this backtrace has occurred"
+                }
+            }
+        },
         "leader_info": {
             "id": "leader_info",
             "description": "Leader info",

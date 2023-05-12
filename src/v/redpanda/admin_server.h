@@ -19,6 +19,7 @@
 #include "model/metadata.h"
 #include "pandaproxy/rest/fwd.h"
 #include "pandaproxy/schema_registry/fwd.h"
+#include "resource_mgmt/cpu_profiler.h"
 #include "resource_mgmt/memory_sampling.h"
 #include "rpc/connection_cache.h"
 #include "seastarx.h"
@@ -79,7 +80,8 @@ public:
       ss::sharded<cluster::tx_registry_frontend>&,
       ss::sharded<storage::node>&,
       ss::sharded<memory_sampling>&,
-      ss::sharded<cloud_storage::cache>&);
+      ss::sharded<cloud_storage::cache>&,
+      ss::sharded<resources::cpu_profiler>&);
 
     ss::future<> start();
     ss::future<> stop();
@@ -468,6 +470,8 @@ private:
 
     // Debug routes
     ss::future<ss::json::json_return_type>
+      cpu_profile_handler(std::unique_ptr<ss::http::request>);
+    ss::future<ss::json::json_return_type>
       cloud_storage_usage_handler(std::unique_ptr<ss::http::request>);
     ss::future<ss::json::json_return_type>
       restart_service_handler(std::unique_ptr<ss::http::request>);
@@ -525,6 +529,8 @@ private:
     ss::sharded<storage::node>& _storage_node;
     ss::sharded<memory_sampling>& _memory_sampling_service;
     ss::sharded<cloud_storage::cache>& _cloud_storage_cache;
+    ss::sharded<resources::cpu_profiler>& _cpu_profiler;
+
     // Value before the temporary override
     std::chrono::milliseconds _default_blocked_reactor_notify;
     ss::timer<> _blocked_reactor_notify_reset_timer;
