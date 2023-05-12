@@ -180,9 +180,6 @@ public:
 
     /// \brief Download manifest from pre-defined S3 location
     ///
-    /// This is for generic base_manifest: use try_download_manifests
-    /// for partition manifests, to handle legacy paths properly.
-    ///
     /// Method downloads the manifest and handles backpressure and
     /// errors. It retries multiple times until timeout excedes.
     /// \param bucket is a bucket name
@@ -191,14 +188,18 @@ public:
     /// \return future that returns success code
     ss::future<download_result> download_manifest(
       const cloud_storage_clients::bucket_name& bucket,
+      const std::pair<manifest_format, remote_manifest_path>& format_key,
+      base_manifest& manifest,
+      retry_chain_node& parent);
+
+    /// compatibility version of download_manifest for json format
+    ss::future<download_result> download_manifest(
+      const cloud_storage_clients::bucket_name& bucket,
       const remote_manifest_path& key,
       base_manifest& manifest,
       retry_chain_node& parent);
 
     /// \brief Download manifest from pre-defined S3 location
-    ///
-    /// This is for generic base_manifest: use try_download_manifests
-    /// for partition manifests, to handle legacy paths properly.
     ///
     /// Method downloads the manifest and handles backpressure and
     /// errors. It retries multiple times until timeout excedes.
@@ -211,6 +212,13 @@ public:
     /// \param key is an object key of the manifest
     /// \param manifest is a manifest to download
     /// \return future that returns success code
+    ss::future<download_result> maybe_download_manifest(
+      const cloud_storage_clients::bucket_name& bucket,
+      const std::pair<manifest_format, remote_manifest_path>& format_key,
+      base_manifest& manifest,
+      retry_chain_node& parent);
+
+    /// compatibility version of maybe_download_manifest for json format
     ss::future<download_result> maybe_download_manifest(
       const cloud_storage_clients::bucket_name& bucket,
       const remote_manifest_path& key,

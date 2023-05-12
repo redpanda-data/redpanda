@@ -174,6 +174,22 @@ bool remote::is_batch_delete_supported() const {
 
 ss::future<download_result> remote::download_manifest(
   const cloud_storage_clients::bucket_name& bucket,
+  const std::pair<manifest_format, remote_manifest_path>& format_key,
+  base_manifest& manifest,
+  retry_chain_node& parent) {
+    return do_download_manifest(bucket, format_key, manifest, parent);
+}
+
+ss::future<download_result> remote::maybe_download_manifest(
+  const cloud_storage_clients::bucket_name& bucket,
+  const std::pair<manifest_format, remote_manifest_path>& format_key,
+  base_manifest& manifest,
+  retry_chain_node& parent) {
+    return do_download_manifest(bucket, format_key, manifest, parent, true);
+}
+
+ss::future<download_result> remote::download_manifest(
+  const cloud_storage_clients::bucket_name& bucket,
   const remote_manifest_path& key,
   base_manifest& manifest,
   retry_chain_node& parent) {
@@ -201,25 +217,27 @@ ss::future<std::pair<download_result, size_t>> remote::try_download_manifests(
         co_return std::pair{download_result::failed, 0};
     }
 
-    // Try each key, and return the first non-404 result, or the result
-    // of the last key if none of them returned non-404.
-    size_t idx = 0;
-    while (!keys.empty()) {
-        auto key = std::move(keys.front());
-        keys.erase(keys.begin());
-        auto last_key = keys.empty();
-        auto expect_missing = last_key ? expect_missing_fallback : true;
+    // last key is the fallback case and will be downloaded via
+    // download_manifest
+    auto last_key = std::move(keys.back());
+    keys.pop_back();
 
-        auto result = co_await do_download_manifest(
-          bucket, std::move(key), manifest, parent, expect_missing);
-        if (result != download_result::notfound || last_key) {
+    size_t idx = 0;
+    for (auto f_k = keys.begin(); f_k != keys.end(); ++f_k, ++idx) {
+        if (auto result = co_await maybe_download_manifest(
+              bucket, *f_k, manifest, parent);
+            result != download_result::notfound) {
+            // propagate success, timedout and failed to caller
             co_return std::pair{result, idx};
         }
-
-        ++idx;
+        // try next key
     }
 
-    __builtin_unreachable();
+    // lastly try the fallback key
+    co_return std::pair{
+      co_await do_download_manifest(
+        bucket, last_key, manifest, parent, expect_missing_fallback),
+      idx};
 }
 
 ss::future<download_result> remote::do_download_manifest(
