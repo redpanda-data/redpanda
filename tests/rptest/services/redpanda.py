@@ -1045,6 +1045,9 @@ class RedpandaServiceBase(Service):
     def raise_on_storage_usage_inconsistency(self):
         pass
 
+    def validate_controller_log(self):
+        pass
+
 
 class RedpandaServiceK8s(RedpandaServiceBase):
     def __init__(self, context, num_brokers):
