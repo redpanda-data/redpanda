@@ -27,7 +27,7 @@ for cl in $(kubectl -n $script_namespace get cluster --output=jsonpath='{.items.
     curl_arguments="-sk --cert /etc/tls/certs/admin/tls.crt --key /etc/tls/certs/admin/tls.key https"
   fi
 
-  kubectl -n $script_namespace get $cl -o yaml >$ARTIFACTS_PATH/$cl.yaml
+  kubectl -n $script_namespace get cluster $cl -o yaml >$ARTIFACTS_PATH/$cl.yaml
 
   i=0
   while [[ $i -lt $replication_factor ]]; do
