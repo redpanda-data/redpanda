@@ -18,12 +18,12 @@ for cl in $(kubectl -n $script_namespace get cluster --output=jsonpath='{.items.
 
   tls_enabled=$(kubectl -n $script_namespace get cluster $cl --output=jsonpath='{.spec.configuration.adminApi[0].tls.enabled}')
   curl_arguments="-s http"
-  if [ $tls_enabled = "true" ]; then
+  if [[ $tls_enabled = "true" ]]; then
     curl_arguments="-sk https"
   fi
 
   mtls_enabled=$(kubectl -n $script_namespace get cluster $cl --output=jsonpath='{.spec.configuration.adminApi[0].tls.requireClientAuth}')
-  if [ $mtls_enabled = "true" ]; then
+  if [[ $mtls_enabled = "true" ]]; then
     curl_arguments="-sk --cert /etc/tls/certs/admin/tls.crt --key /etc/tls/certs/admin/tls.key https"
   fi
 
