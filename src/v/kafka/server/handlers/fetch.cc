@@ -906,3 +906,5 @@ std::ostream& operator<<(std::ostream& o, const consumer_info& ci) {
     return o;
 }
 } // namespace kafka
+
+// hier und da
