@@ -9,7 +9,7 @@
 
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.services.cluster import cluster
-from rptest.services.kgo_verifier_services import KgoVerifierProducer
+from rptest.services.kgo_verifier_services import KgoVerifierProducer, KgoVerifierSeqConsumer
 from rptest.services.redpanda import SISettings, MetricsEndpoint
 from rptest.clients.types import TopicSpec
 from rptest.clients.rpk import RpkTool
@@ -79,6 +79,11 @@ class TieredStorageSinglePartitionTest(RedpandaTest):
         target_runtime = 300
         write_bytes = produce_byte_rate * target_runtime
 
+        # Set local retention to half the write quantity, so that when we eventually
+        # read data back, it'll be half remote storage and half local storage
+        rpk.alter_topic_config(self.topic, 'retention.local.target.bytes',
+                               str(write_bytes // 2))
+
         msg_count = write_bytes // msg_size
 
         # The producer should achieve throughput within this factor of what we asked for:
@@ -117,6 +122,7 @@ class TieredStorageSinglePartitionTest(RedpandaTest):
                                      backoff_sec=1)
 
         producer.wait(timeout_sec=expect_duration)
+        producer.free()
 
         produce_duration = time.time() - t1
         actual_byte_rate = (write_bytes / produce_duration)
@@ -211,3 +217,15 @@ class TieredStorageSinglePartitionTest(RedpandaTest):
             (int(produce_duration) // self.manifest_upload_interval) + 3)
 
         assert manifest_uploads <= expect_manifest_uploads
+
+        # No point writing data if we can't read it back!  Wrap up the test by
+        # validating all data.
+        consumer = KgoVerifierSeqConsumer.oneshot(
+            self.test_context,
+            self.redpanda,
+            self.topic,
+            loop=False,
+            timeout_sec=produce_duration * throughput_tolerance_factor)
+        assert consumer.consumer_status.validator.valid_reads == msg_count
+        assert consumer.consumer_status.validator.invalid_reads == 0
+        assert consumer.consumer_status.validator.out_of_scope_invalid_reads == 0
