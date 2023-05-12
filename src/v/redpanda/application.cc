@@ -424,6 +424,16 @@ void application::initialize(
 
     _abort_on_oom->watch(oom_config_watch);
 
+    construct_service(
+      _cpu_profiler,
+      ss::sharded_parameter(
+        [] { return config::shard_local_cfg().cpu_profiler_enabled.bind(); }),
+      ss::sharded_parameter([] {
+          return config::shard_local_cfg().cpu_profiler_sample_period_ms.bind();
+      }))
+      .get();
+    _cpu_profiler.invoke_on_all(&resources::cpu_profiler::start).get();
+
     /*
      * allocate per-core zstd decompression workspace and per-core
      * async_stream_zstd workspaces. it can be several megabytes in size, so do
