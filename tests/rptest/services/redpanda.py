@@ -358,6 +358,7 @@ class SISettings:
                  cloud_storage_api_endpoint: str = 'minio-s3',
                  cloud_storage_api_endpoint_port: int = 9000,
                  cloud_storage_cache_size: int = 160 * 1000000,
+                 cloud_storage_cache_max_objects: Optional[int] = None,
                  cloud_storage_enable_remote_read: bool = True,
                  cloud_storage_enable_remote_write: bool = True,
                  cloud_storage_max_connections: Optional[int] = None,
@@ -407,6 +408,7 @@ class SISettings:
 
         self.log_segment_size = log_segment_size
         self.cloud_storage_cache_size = cloud_storage_cache_size
+        self.cloud_storage_cache_max_objects = cloud_storage_cache_max_objects
         self.cloud_storage_enable_remote_read = cloud_storage_enable_remote_read
         self.cloud_storage_enable_remote_write = cloud_storage_enable_remote_write
         self.cloud_storage_max_connections = cloud_storage_max_connections
@@ -511,6 +513,10 @@ class SISettings:
         conf["log_segment_size"] = self.log_segment_size
         conf["cloud_storage_enabled"] = True
         conf["cloud_storage_cache_size"] = self.cloud_storage_cache_size
+        if self.cloud_storage_cache_max_objects is not None:
+            conf[
+                "cloud_storage_cache_max_objects"] = self.cloud_storage_cache_max_objects
+
         conf[
             'cloud_storage_enable_remote_read'] = self.cloud_storage_enable_remote_read
         conf[
