@@ -56,13 +56,23 @@ public:
         }
 
         size_t i = 0;
-        while (_container.size()) {
-            _container.erase(_container.begin());
+        auto it = _container.begin();
+        while (it != _container.end()) {
+            // Copy the iterator as erase invalidates it.
+            auto current = it++;
+            _container.erase(current);
 
             if (++i % threshold_size == 0) {
                 co_await ss::coroutine::maybe_yield();
+                // incase the iterator got invaliated between scheduling
+                // points.
+                it = _container.begin();
             }
         }
+        vassert(
+          _container.empty(),
+          "Container is non empty, size: {}",
+          _container.size());
     }
 
     absl::flat_hash_map<K, V>& _container;
