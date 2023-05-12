@@ -1042,6 +1042,9 @@ class RedpandaServiceBase(Service):
     def cloud_storage_diagnostics(self):
         pass
 
+    def raise_on_storage_usage_inconsistency(self):
+        pass
+
 
 class RedpandaServiceK8s(RedpandaServiceBase):
     def __init__(self, context, num_brokers):
