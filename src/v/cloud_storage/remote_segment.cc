@@ -422,7 +422,7 @@ ss::future<> remote_segment::do_hydrate_segment() {
 
     // RAII reservation object represents the disk space this put will consume
     auto reservation = co_await _cache.reserve_space(
-      _size + storage::segment_index::estimate_size(_size));
+      _size + storage::segment_index::estimate_size(_size), 1);
 
     auto res = co_await _api.download_segment(
       _bucket,
@@ -503,7 +503,7 @@ ss::future<> remote_segment::do_hydrate_txrange() {
         }
 
         auto [stream, size] = co_await manifest.serialize();
-        auto reservation = _cache.reserve_space(size);
+        auto reservation = _cache.reserve_space(size, 1);
         co_await _cache.put(manifest.get_manifest_path(), stream)
           .finally([&s = stream]() mutable { return s.close(); });
     }
@@ -877,7 +877,7 @@ ss::future<> remote_segment::hydrate_chunk(
     }
 
     const auto space_required = end.value_or(_size - 1) - start + 1;
-    const auto reserved = co_await _cache.reserve_space(space_required);
+    const auto reserved = co_await _cache.reserve_space(space_required, 1);
 
     auto res = co_await _api.download_segment(
       _bucket,

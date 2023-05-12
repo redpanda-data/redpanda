@@ -61,9 +61,12 @@ std::ostream& operator<<(std::ostream& o, cache_element_status s) {
 static constexpr std::string_view tmp_extension{".part"};
 
 cache::cache(
-  std::filesystem::path cache_dir, config::binding<uint64_t> max_bytes) noexcept
+  std::filesystem::path cache_dir,
+  config::binding<uint64_t> max_bytes,
+  config::binding<uint32_t> max_objects) noexcept
   : _cache_dir(std::move(cache_dir))
-  , _max_bytes(max_bytes)
+  , _max_bytes(std::move(max_bytes))
+  , _max_objects(std::move(max_objects))
   , _cnt(0)
   , _total_cleaned(0) {
     if (ss::this_shard_id() == ss::shard_id{0}) {
@@ -127,13 +130,22 @@ cache::delete_file_and_empty_parents(const std::string_view& key) {
 
 uint64_t cache::get_total_cleaned() { return _total_cleaned; }
 
-void cache::consume_cache_space(size_t sz) {
+void cache::consume_cache_space(uint64_t sz, uint64_t objects) {
     vassert(ss::this_shard_id() == 0, "This method can only run on shard 0");
     vlog(
-      cst_log.trace, "consume_cache_space: {} += {}", _current_cache_size, sz);
+      cst_log.trace,
+      "consume_cache_space: {} += {} ({} += {})",
+      _current_cache_size,
+      sz,
+      _current_cache_objects,
+      objects);
     _current_cache_size += sz;
+    _current_cache_objects += objects;
     probe.set_size(_current_cache_size);
-    if (_current_cache_size > _max_bytes()) {
+    probe.set_num_files(_current_cache_objects);
+    if (
+      _current_cache_size > _max_bytes()
+      || _current_cache_objects > _max_objects()) {
         // This should not happen, because callers to put() should have used
         // reserve_space() to ensure they stay within the cache size limit. This
         // is not a fatal error in itself, so we do not assert, but emitting as
@@ -141,11 +153,16 @@ void cache::consume_cache_space(size_t sz) {
         // tests.
         vlog(
           cst_log.warn,
-          "Exceeded cache size limit!  (size={} reserved={} pending={} max={})",
+          "Exceeded cache size limit!  (size={}/{} reserved={}/{} "
+          "pending={}/{} max={}/{})",
           _current_cache_size,
+          _current_cache_objects,
           _reserved_cache_size,
+          _reserved_cache_objects,
           _reservations_pending,
-          _max_bytes());
+          _reservations_pending_objects,
+          _max_bytes(),
+          _max_objects());
     }
 }
 
@@ -199,15 +216,19 @@ ss::future<> cache::clean_up_at_start() {
     }
 
     _total_cleaned = deleted_bytes;
-    _current_cache_size = walked_size;
+    _current_cache_size = walked_size - deleted_bytes;
+    _current_cache_objects = filtered_out_files + candidates_for_deletion.size()
+                             - deleted_count;
     probe.set_size(_current_cache_size - deleted_bytes);
-    probe.set_num_files(candidates_for_deletion.size() - deleted_count);
+    probe.set_num_files(_current_cache_objects);
 
     vlog(
       cst_log.debug,
-      "Clean up at start deleted {} files of total size {}.",
+      "Clean up at start deleted {} files of total size {}.  Size is now {}/{}",
       deleted_count,
-      deleted_bytes);
+      deleted_bytes,
+      _current_cache_size,
+      _current_cache_objects);
 }
 
 ss::future<> cache::trim_throttled() {
@@ -249,8 +270,22 @@ ss::future<> cache::trim() {
     // We aim to trim to within the upper size limit, and additionally
     // free enough space for anyone waiting in `reserve_space` to proceed
     auto target_size = uint64_t(
-      (_max_bytes() - std::min(_reservations_pending, _max_bytes()))
-      * _cache_size_low_watermark);
+      (_max_bytes() - std::min(_reservations_pending, _max_bytes())));
+
+    size_t target_objects = static_cast<size_t>(_max_objects())
+                            - std::min(
+                              _reservations_pending_objects,
+                              static_cast<size_t>(_max_objects()));
+
+    // Apply _cache_size_low_watermark to the size and/or the object count,
+    // depending on which is currently the limiting factor for the trim.
+    if (_current_cache_objects > target_objects) {
+        target_objects *= _cache_size_low_watermark;
+    }
+
+    if (_current_cache_size > target_size) {
+        target_size *= _cache_size_low_watermark;
+    }
 
     // Calculate total space used by tmp files: we will use this later
     // when updating current_cache_size.
@@ -263,18 +298,28 @@ ss::future<> cache::trim() {
 
     vlog(
       cst_log.debug,
-      "trim: set target_size {}, size {}, walked size {} (max {}, "
-      "pending {})",
+      "trim: set target_size {}/{}, size {}/{}, walked size {} (max {}/{}), "
+      "pending {}/{})",
       target_size,
+      target_objects,
       _current_cache_size,
+      _current_cache_objects,
       walked_cache_size,
       _max_bytes(),
-      _reservations_pending);
+      _max_objects(),
+      _reservations_pending,
+      _reservations_pending_objects);
 
     uint64_t deleted_size = 0;
     size_t deleted_count = 0;
-    if (_current_cache_size >= target_size) {
-        auto size_to_delete = _current_cache_size - target_size;
+    if (
+      _current_cache_size >= target_size
+      || _current_cache_objects >= target_objects) {
+        auto size_to_delete = _current_cache_size
+                              - std::min(target_size, _current_cache_size);
+        auto objects_to_delete = _current_cache_objects
+                                 - std::min(
+                                   target_objects, _current_cache_objects);
 
         vlog(
           cst_log.debug,
@@ -290,8 +335,9 @@ ss::future<> cache::trim() {
           [](auto& a, auto& b) { return a.access_time < b.access_time; });
 
         size_t candidate_i = 0;
-        while (candidate_i < candidates_for_deletion.size()
-               && deleted_size < size_to_delete) {
+        while (
+          candidate_i < candidates_for_deletion.size()
+          && (deleted_size < size_to_delete || deleted_count < objects_to_delete)) {
             auto& file_stat = candidates_for_deletion[candidate_i++];
 
             // Skip the accesstime file, we should never delete this.
@@ -329,6 +375,7 @@ ss::future<> cache::trim() {
                 deleted_size += file_stat.size;
                 this_segment_deleted_bytes += file_stat.size;
                 _current_cache_size -= file_stat.size;
+                _current_cache_objects -= 1;
                 deleted_count += 1;
 
                 // Determine whether we should delete indices along with the
@@ -364,6 +411,7 @@ ss::future<> cache::trim() {
                         this_segment_deleted_bytes += sz;
                         deleted_count += 1;
                         _current_cache_size -= sz;
+                        _current_cache_objects -= 1;
                     } catch (std::filesystem::filesystem_error& e) {
                         if (e.code() != std::errc::no_such_file_or_directory) {
                             throw;
@@ -379,6 +427,7 @@ ss::future<> cache::trim() {
                         this_segment_deleted_bytes += sz;
                         deleted_count += 1;
                         _current_cache_size -= sz;
+                        _current_cache_objects -= 1;
                     } catch (std::filesystem::filesystem_error& e) {
                         if (e.code() != std::errc::no_such_file_or_directory) {
                             throw;
@@ -424,6 +473,9 @@ ss::future<> cache::trim() {
               _current_cache_size,
               cache_size_lower_bound);
             _current_cache_size = cache_size_lower_bound;
+            _current_cache_objects = filtered_out_files
+                                     + candidates_for_deletion.size()
+                                     - deleted_count;
         }
 
         const auto cache_entries_before_trim = candidates_for_deletion.size()
@@ -694,11 +746,11 @@ ss::future<> cache::put(
     if (ss::this_shard_id() == 0) {
         _access_time_tracker.add_timestamp(
           dest, std::chrono::system_clock::now());
-        consume_cache_space(put_size);
+        consume_cache_space(put_size, 1);
     } else {
         ssx::spawn_with_gate(_gate, [this, dest, put_size] {
             return container().invoke_on(0, [dest, put_size](cache& c) {
-                c.consume_cache_space(put_size);
+                c.consume_cache_space(put_size, 1);
                 return c._access_time_tracker.add_timestamp(
                   dest, std::chrono::system_clock::now());
             });
@@ -734,7 +786,9 @@ ss::future<> cache::invalidate(const std::filesystem::path& key) {
         _access_time_tracker.remove_timestamp(key.native());
         co_await delete_file_and_empty_parents(path);
         _current_cache_size -= stat.size;
+        _current_cache_objects -= 1;
         probe.set_size(_current_cache_size);
+        probe.set_num_files(_current_cache_objects);
     } catch (std::filesystem::filesystem_error& e) {
         if (e.code() == std::errc::no_such_file_or_directory) {
             vlog(
@@ -749,7 +803,8 @@ ss::future<> cache::invalidate(const std::filesystem::path& key) {
     }
 };
 
-ss::future<space_reservation_guard> cache::reserve_space(size_t bytes) {
+ss::future<space_reservation_guard>
+cache::reserve_space(uint64_t bytes, size_t objects) {
     while (_block_puts) {
         vlog(
           cst_log.warn,
@@ -757,47 +812,61 @@ ss::future<space_reservation_guard> cache::reserve_space(size_t bytes) {
         co_await _block_puts_cond.wait();
     }
 
-    co_await container().invoke_on(
-      0, [bytes](cache& c) { return c.do_reserve_space(bytes); });
+    co_await container().invoke_on(0, [bytes, objects](cache& c) {
+        return c.do_reserve_space(bytes, objects);
+    });
 
-    vlog(cst_log.trace, "reserve_space: reserved {} bytes", bytes);
-
-    co_return space_reservation_guard(*this, bytes);
-}
-
-void cache::reserve_space_release(size_t bytes) {
     vlog(
       cst_log.trace,
-      "reserve_space_release: releasing {} reserved bytes",
-      bytes);
+      "reserve_space: reserved {}/{} bytes/objects",
+      bytes,
+      objects);
+
+    co_return space_reservation_guard(*this, bytes, objects);
+}
+
+void cache::reserve_space_release(uint64_t bytes, size_t objects) {
+    vlog(
+      cst_log.trace,
+      "reserve_space_release: releasing {}/{} reserved bytes/objects",
+      bytes,
+      objects);
 
     if (ss::this_shard_id() == ss::shard_id{0}) {
-        do_reserve_space_release(bytes);
+        do_reserve_space_release(bytes, objects);
     } else {
-        ssx::spawn_with_gate(_gate, [this, bytes]() {
-            return container().invoke_on(0, [bytes](cache& c) {
-                return c.do_reserve_space_release(bytes);
+        ssx::spawn_with_gate(_gate, [this, bytes, objects]() {
+            return container().invoke_on(0, [bytes, objects](cache& c) {
+                return c.do_reserve_space_release(bytes, objects);
             });
         });
     }
 }
 
-void cache::do_reserve_space_release(size_t bytes) {
+void cache::do_reserve_space_release(uint64_t bytes, size_t objects) {
     vassert(ss::this_shard_id() == ss::shard_id{0}, "Only call on shard 0");
     vassert(_reserved_cache_size >= bytes, "Double free of reserved bytes?");
     _reserved_cache_size -= bytes;
+    _reserved_cache_objects -= objects;
 }
 
-bool cache::may_reserve_space(size_t bytes) {
-    return _current_cache_size + _reserved_cache_size + bytes <= _max_bytes();
+bool cache::may_reserve_space(uint64_t bytes, size_t objects) {
+    auto bytes_available = _current_cache_size + _reserved_cache_size + bytes
+                           <= _max_bytes();
+    auto objects_available = _current_cache_objects + _reserved_cache_objects
+                               + objects
+                             <= _max_objects();
+
+    return bytes_available && objects_available;
 }
 
-ss::future<> cache::do_reserve_space(size_t bytes) {
+ss::future<> cache::do_reserve_space(uint64_t bytes, size_t objects) {
     vassert(ss::this_shard_id() == ss::shard_id{0}, "Only call on shard 0");
 
-    if (may_reserve_space(bytes)) {
+    if (may_reserve_space(bytes, objects)) {
         // Fast path: space was available.
         _reserved_cache_size += bytes;
+        _reserved_cache_objects += objects;
         co_return;
     }
 
@@ -805,25 +874,29 @@ ss::future<> cache::do_reserve_space(size_t bytes) {
     // clean_up_cache to make space available, and then proceed to cooperatively
     // call clean_up_cache along with anyone else who is waiting.
     _reservations_pending += bytes;
+    _reservations_pending_objects += objects;
 
     vlog(
       cst_log.trace,
-      "Out of space reserving {} bytes (size={} "
-      "reserved={} pending={}): proceeding to maybe trim",
+      "Out of space reserving {} bytes (size={}/{} "
+      "reserved={}/{} pending={}/{}): proceeding to maybe trim",
       bytes,
       _current_cache_size,
+      _current_cache_objects,
       _reserved_cache_size,
-      _reservations_pending);
+      _reserved_cache_objects,
+      _reservations_pending,
+      _reservations_pending_objects);
 
     try {
         auto units = co_await ss::get_units(_cleanup_sm, 1);
-        while (!may_reserve_space(bytes)) {
+        while (!may_reserve_space(bytes, objects)) {
             // After taking lock, there still isn't space: means someone else
             // didn't take it and free space for us already, so we will do
             // the trim.
             co_await trim_throttled();
 
-            if (!may_reserve_space(bytes)) {
+            if (!may_reserve_space(bytes, objects)) {
                 // Even after trimming, the reservation cannot be accommodated.
                 // This is unexpected: either something is wrong with the trim,
                 // or the requested bytes cannot fit into the max cache size.
@@ -874,11 +947,14 @@ ss::future<> cache::do_reserve_space(size_t bytes) {
         }
     } catch (...) {
         _reservations_pending -= bytes;
+        _reservations_pending_objects -= objects;
         throw;
     }
 
     _reservations_pending -= bytes;
+    _reservations_pending_objects -= objects;
     _reserved_cache_size += bytes;
+    _reserved_cache_objects += objects;
 }
 
 void cache::set_block_puts(bool block_puts) {
@@ -922,7 +998,7 @@ void cache::notify_disk_status(
 
 space_reservation_guard::~space_reservation_guard() {
     if (_bytes) {
-        _cache.reserve_space_release(_bytes);
+        _cache.reserve_space_release(_bytes, _objects);
     }
 }
 

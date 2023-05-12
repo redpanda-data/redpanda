@@ -50,25 +50,32 @@ std::ostream& operator<<(std::ostream& o, cache_element_status);
 
 class cache;
 
+/// RAII guard for bytes reserved in the cache: constructed prior to a call
+/// to cache::put, and may be destroyed afterwards.
 class space_reservation_guard {
 public:
-    space_reservation_guard(cache& cache, size_t bytes) noexcept
+    space_reservation_guard(
+      cache& cache, uint64_t bytes, size_t objects) noexcept
       : _cache(cache)
-      , _bytes(bytes) {}
+      , _bytes(bytes)
+      , _objects(objects) {}
 
     space_reservation_guard(const space_reservation_guard&) = delete;
     space_reservation_guard() = delete;
     space_reservation_guard(space_reservation_guard&& rhs) noexcept
       : _cache(rhs._cache)
-      , _bytes(rhs._bytes) {
+      , _bytes(rhs._bytes)
+      , _objects(rhs._objects) {
         rhs._bytes = 0;
+        rhs._objects = 0;
     }
 
     ~space_reservation_guard();
 
 private:
     cache& _cache;
-    size_t _bytes;
+    uint64_t _bytes;
+    size_t _objects;
 };
 
 class cache : public ss::peering_sharded_service<cache> {
@@ -76,7 +83,10 @@ public:
     /// C-tor.
     ///
     /// \param cache_dir is a directory where cached data is stored
-    cache(std::filesystem::path cache_dir, config::binding<uint64_t>) noexcept;
+    cache(
+      std::filesystem::path cache_dir,
+      config::binding<uint64_t>,
+      config::binding<uint32_t>) noexcept;
 
     cache(const cache&) = delete;
     cache(cache&& rhs) = delete;
@@ -123,11 +133,11 @@ public:
 
     // Call this before starting a download, to trim the cache if necessary
     // and wait until enough free space is available.
-    ss::future<space_reservation_guard> reserve_space(size_t);
+    ss::future<space_reservation_guard> reserve_space(uint64_t, size_t);
 
     // Release capacity acquired via `reserve_space`.  This spawns
     // a background fiber in order to be callable from the guard destructor.
-    void reserve_space_release(size_t);
+    void reserve_space_release(uint64_t, size_t);
 
     static ss::future<> initialize(std::filesystem::path);
 
@@ -169,21 +179,21 @@ private:
 
     /// This method is called on shard 0 by other shards to report disk
     /// space changes.
-    void consume_cache_space(size_t);
+    void consume_cache_space(uint64_t, size_t);
 
     /// Block until enough space is available to commit to a reservation
     /// (only runs on shard 0)
-    ss::future<> do_reserve_space(size_t bytes);
+    ss::future<> do_reserve_space(uint64_t, size_t);
 
     /// Return true if the sum of used space and reserved space is far enough
     /// below max size to accommodate a new reservation of `bytes`
     /// (only runs on shard 0)
-    bool may_reserve_space(size_t bytes);
+    bool may_reserve_space(uint64_t, size_t);
 
     /// Release units from _reserved_cache_size: the inner part of
     /// `reserve_space_release`
     /// (only runs on shard 0)
-    void do_reserve_space_release(size_t bytes);
+    void do_reserve_space_release(uint64_t, size_t);
 
     /// Update _block_puts and kick _block_puts_cond if necessary.  This is
     /// called on all shards by shard 0 when handling a disk space status
@@ -192,6 +202,7 @@ private:
 
     std::filesystem::path _cache_dir;
     config::binding<uint64_t> _max_bytes;
+    config::binding<uint32_t> _max_objects;
 
     ss::abort_source _as;
     ss::gate _gate;
@@ -206,13 +217,17 @@ private:
     /// Current size of the cache directory (only used on shard 0)
     uint64_t _current_cache_size{0};
 
+    size_t _current_cache_objects{0};
+
     /// Bytes reserved by downloads in progress, owned by instances of
     /// space_reservation_guard.
     uint64_t _reserved_cache_size{0};
+    size_t _reserved_cache_objects{0};
 
     /// Bytes waiting to be reserved when the next cache trim completes: a
     /// hint to clean_up_cache on how much extra space to try and free
     uint64_t _reservations_pending{0};
+    size_t _reservations_pending_objects{0};
 
     /// A _lazily updated_ record of physical space on the drive.  This is only
     /// for use in corner cases when we e.g. cannot trim the cache far enough

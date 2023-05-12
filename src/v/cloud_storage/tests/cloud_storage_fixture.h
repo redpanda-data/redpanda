@@ -38,7 +38,8 @@ struct cloud_storage_fixture : s3_imposter_fixture {
         cache
           .start(
             tmp_directory.get_path(),
-            config::mock_binding<uint64_t>(1024 * 1024 * 1024))
+            config::mock_binding<uint64_t>(1024 * 1024 * 1024),
+            config::mock_binding<uint32_t>(100000))
           .get();
 
         cache.invoke_on_all([](cloud_storage::cache& c) { return c.start(); })

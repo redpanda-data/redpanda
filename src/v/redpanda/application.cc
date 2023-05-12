@@ -1300,6 +1300,10 @@ void application::wire_up_redpanda_services(model::node_id node_id) {
           config::node().cloud_storage_cache_path(),
           ss::sharded_parameter([] {
               return config::shard_local_cfg().cloud_storage_cache_size.bind();
+          }),
+          ss::sharded_parameter([] {
+              return config::shard_local_cfg()
+                .cloud_storage_cache_max_objects.bind();
           }))
           .get();
 
