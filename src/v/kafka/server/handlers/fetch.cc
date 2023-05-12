@@ -405,6 +405,13 @@ static void fill_fetch_responses(
         range = boost::irange<size_t>(
           0, std::min({results.size(), responses.size(), metrics.size()}));
     }
+    vlog(
+      klog.trace,
+      "## #results: {}, #responses: {}, #metrics: {}, metrics: {}",
+      results.size(),
+      responses.size(),
+      metrics.size(),
+      metrics);
     for (auto idx : range) {
         auto& res = results[idx];
         auto& resp_it = responses[idx];

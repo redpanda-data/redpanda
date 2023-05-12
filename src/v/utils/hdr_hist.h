@@ -170,7 +170,7 @@ private:
 inline std::ostream&
 operator<<(std::ostream& o, const std::unique_ptr<hdr_hist::measurement>& m) {
     if (m) {
-        return o << *m;
+        return o << "(" << m.get() << ")" << *m;
     }
     return o << "{nullptr}";
 }
