@@ -720,8 +720,8 @@ ss::future<> archival_metadata_stm::handle_eviction() {
     retry_chain_node rc_node(_download_as, timeout, backoff);
     auto [res, res_idx] = co_await _cloud_storage_api.try_download_manifests(
       cloud_storage_clients::bucket_name{*bucket},
-      {manifest.get_manifest_format_and_path(),
-       manifest.get_legacy_manifest_format_and_path()},
+      {_manifest->get_manifest_format_and_path(),
+       _manifest->get_legacy_manifest_format_and_path()},
       manifest,
       rc_node);
 
