@@ -17,8 +17,9 @@ import (
 
 func NewCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "wasm",
-		Short: "Deploy and remove inline WASM engine scripts",
+		Use:    "wasm",
+		Short:  "Deploy and remove inline WASM engine scripts",
+		Hidden: true,
 	}
 	p.InstallKafkaFlags(cmd)
 	cmd.AddCommand(
