@@ -1011,7 +1011,8 @@ class UpgradeTransactionManagerMultiPartition(RedpandaTest):
             "Incompatible downgrade detected", "unknown fence record version",
             "unsupported tx_snapshot_header version",
             "unsupported seq_snapshot_header version",
-            "assert - Backtrace below:"
+            "assert - Backtrace below:",
+            "Version 5 is not supported. We only support versions up to 4"
         ])
     def fail_to_downgrade_full_cluster_test(self):
         unique_versions = wait_for_num_versions(self.redpanda, 1)
