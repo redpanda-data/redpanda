@@ -849,7 +849,8 @@ void application::configure_admin_server() {
       _proxy.get(),
       _schema_registry.get(),
       std::ref(topic_recovery_service),
-      std::ref(topic_recovery_status_frontend))
+      std::ref(topic_recovery_status_frontend),
+      std::ref(tx_registry_frontend))
       .get();
 }
 
@@ -1477,8 +1478,7 @@ void application::wire_up_redpanda_services(model::node_id node_id) {
       _rm_group_proxy.get(),
       std::ref(rm_partition_frontend),
       std::ref(feature_table),
-      std::ref(tm_stm_cache_manager),
-      std::ref(tx_coordinator_ntp_mapper))
+      std::ref(tm_stm_cache_manager))
       .get();
     _kafka_conn_quotas
       .start([]() {
@@ -1618,6 +1618,7 @@ void application::wire_up_redpanda_services(model::node_id node_id) {
         std::ref(controller->get_security_frontend()),
         std::ref(controller->get_api()),
         std::ref(tx_gateway_frontend),
+        std::ref(tx_registry_frontend),
         qdc_config,
         std::ref(*thread_worker))
       .get();

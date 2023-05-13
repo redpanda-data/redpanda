@@ -197,8 +197,7 @@ tx_gateway_frontend::tx_gateway_frontend(
   rm_group_proxy* group_proxy,
   ss::sharded<cluster::rm_partition_frontend>& rm_partition_frontend,
   ss::sharded<features::feature_table>& feature_table,
-  ss::sharded<cluster::tm_stm_cache_manager>& tm_stm_cache_manager,
-  ss::sharded<cluster::tx_coordinator_mapper>& tx_coordinator_ntp_mapper)
+  ss::sharded<cluster::tm_stm_cache_manager>& tm_stm_cache_manager)
   : _ssg(ssg)
   , _partition_manager(partition_manager)
   , _shard_table(shard_table)
@@ -211,7 +210,6 @@ tx_gateway_frontend::tx_gateway_frontend(
   , _rm_partition_frontend(rm_partition_frontend)
   , _feature_table(feature_table)
   , _tm_stm_cache_manager(tm_stm_cache_manager)
-  , _tx_coordinator_ntp_mapper(tx_coordinator_ntp_mapper)
   , _metadata_dissemination_retries(
       config::shard_local_cfg().metadata_dissemination_retries.value())
   , _metadata_dissemination_retry_delay_ms(
@@ -252,34 +250,10 @@ ss::future<> tx_gateway_frontend::stop() {
 }
 
 ss::future<std::optional<model::ntp>>
-tx_gateway_frontend::get_static_ntp(kafka::transactional_id id) {
-    co_return co_await _tx_coordinator_ntp_mapper.local().ntp_for(id);
-}
-
-ss::future<std::optional<model::node_id>>
-tx_gateway_frontend::find_coordinator(kafka::transactional_id id) {
-    if (!_metadata_cache.local().contains(model::tx_manager_nt)) {
-        if (!co_await try_create_tx_topic()) {
-            co_return std::nullopt;
-        }
-    }
-    auto tx_ntp_opt = co_await _tx_coordinator_ntp_mapper.local().ntp_for(id);
-    if (!tx_ntp_opt) {
-        vlog(
-          txlog.debug,
-          "Topic {} doesn't exist in metadata cache",
-          model::tx_manager_nt);
-    }
-    auto tx_ntp = tx_ntp_opt.value();
-    auto x = _metadata_cache.local().get_leader_id(tx_ntp);
-    co_return x;
-}
-
-ss::future<std::optional<model::ntp>>
 tx_gateway_frontend::get_ntp(kafka::transactional_id id) {
     if (!_feature_table.local().is_active(
           features::feature::transaction_partitioning)) {
-        co_return co_await _tx_coordinator_ntp_mapper.local().ntp_for(id);
+        co_return model::legacy_tm_ntp;
     }
     auto cfg = _metadata_cache.local().get_topic_cfg(model::tx_manager_nt);
     if (!cfg) {
@@ -3059,56 +3033,6 @@ tx_gateway_frontend::get_ongoing_tx(
         }
         co_return ongoing_tx.value();
     }
-}
-
-ss::future<bool> tx_gateway_frontend::try_create_tx_topic() {
-    int32_t partitions_amount = 1;
-    if (is_transaction_partitioning()) {
-        partitions_amount
-          = config::shard_local_cfg().transaction_coordinator_partitions();
-    }
-    cluster::topic_configuration topic{
-      model::kafka_internal_namespace,
-      model::tx_manager_topic,
-      partitions_amount,
-      _controller->internal_topic_replication()};
-
-    topic.properties.segment_size
-      = config::shard_local_cfg().transaction_coordinator_log_segment_size;
-    topic.properties.retention_duration = tristate<std::chrono::milliseconds>(
-      config::shard_local_cfg().transaction_coordinator_delete_retention_ms());
-    topic.properties.cleanup_policy_bitflags
-      = config::shard_local_cfg().transaction_coordinator_cleanup_policy();
-
-    return _controller->get_topics_frontend()
-      .local()
-      .autocreate_topics(
-        {std::move(topic)}, config::shard_local_cfg().create_topic_timeout_ms())
-      .then([](std::vector<cluster::topic_result> res) {
-          vassert(res.size() == 1, "expected exactly one result");
-          if (res[0].ec == cluster::errc::topic_already_exists) {
-              return true;
-          }
-          if (res[0].ec != cluster::errc::success) {
-              vlog(
-                clusterlog.warn,
-                "can not create {}/{} topic - error: {}",
-                model::kafka_internal_namespace,
-                model::tx_manager_topic,
-                cluster::make_error_code(res[0].ec).message());
-              return false;
-          }
-          return true;
-      })
-      .handle_exception([](std::exception_ptr e) {
-          vlog(
-            txlog.warn,
-            "can not create {}/{} topic - error: {}",
-            model::kafka_internal_namespace,
-            model::tx_manager_topic,
-            e);
-          return false;
-      });
 }
 
 void tx_gateway_frontend::expire_old_txs() {

@@ -70,5 +70,6 @@ private:
       find_coordinator_statically(kafka::transactional_id);
 
     ss::future<bool> try_create_tx_registry_topic();
+    ss::future<bool> try_create_tx_topic();
 };
 } // namespace cluster

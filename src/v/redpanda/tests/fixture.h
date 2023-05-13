@@ -138,6 +138,7 @@ public:
           app.controller->get_security_frontend(),
           app.controller->get_api(),
           app.tx_gateway_frontend,
+          app.tx_registry_frontend,
           std::nullopt,
           *app.thread_worker);
 

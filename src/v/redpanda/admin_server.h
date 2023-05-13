@@ -71,7 +71,8 @@ public:
       pandaproxy::rest::api*,
       pandaproxy::schema_registry::api*,
       ss::sharded<cloud_storage::topic_recovery_service>&,
-      ss::sharded<cluster::topic_recovery_status_frontend>&);
+      ss::sharded<cluster::topic_recovery_status_frontend>&,
+      ss::sharded<cluster::tx_registry_frontend>&);
 
     ss::future<> start();
     ss::future<> stop();
@@ -495,6 +496,7 @@ private:
     ss::sharded<cloud_storage::topic_recovery_service>& _topic_recovery_service;
     ss::sharded<cluster::topic_recovery_status_frontend>&
       _topic_recovery_status_frontend;
+    ss::sharded<cluster::tx_registry_frontend>& _tx_registry_frontend;
     // Value before the temporary override
     std::chrono::milliseconds _default_blocked_reactor_notify;
     ss::timer<> _blocked_reactor_notify_reset_timer;

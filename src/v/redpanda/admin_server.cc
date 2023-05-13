@@ -41,6 +41,7 @@
 #include "cluster/topic_recovery_status_rpc_handler.h"
 #include "cluster/topics_frontend.h"
 #include "cluster/tx_gateway_frontend.h"
+#include "cluster/tx_registry_frontend.h"
 #include "cluster/types.h"
 #include "cluster_config_schema_util.h"
 #include "config/configuration.h"
@@ -201,7 +202,8 @@ admin_server::admin_server(
   pandaproxy::schema_registry::api* schema_registry,
   ss::sharded<cloud_storage::topic_recovery_service>& topic_recovery_svc,
   ss::sharded<cluster::topic_recovery_status_frontend>&
-    topic_recovery_status_frontend)
+    topic_recovery_status_frontend,
+  ss::sharded<cluster::tx_registry_frontend>& tx_registry_frontend)
   : _log_level_timer([this] { log_level_timer_handler(); })
   , _server("admin")
   , _cfg(std::move(cfg))
@@ -222,6 +224,7 @@ admin_server::admin_server(
   , _schema_registry(schema_registry)
   , _topic_recovery_service(topic_recovery_svc)
   , _topic_recovery_status_frontend(topic_recovery_status_frontend)
+  , _tx_registry_frontend(tx_registry_frontend)
   , _default_blocked_reactor_notify(
       ss::engine().get_blocked_reactor_notify_ms()) {}
 
@@ -3458,15 +3461,17 @@ admin_server::delete_partition_handler(std::unique_ptr<ss::http::request> req) {
     }
     auto transaction_id = req->param["transactional_id"];
     kafka::transactional_id tid(transaction_id);
-    auto tx_ntp = co_await tx_frontend.local().get_static_ntp(tid);
-    if (!tx_ntp) {
+
+    auto r = co_await _tx_registry_frontend.local().find_coordinator(
+      tid, config::shard_local_cfg().find_coordinator_timeout_ms());
+    if (!r.ntp) {
         throw ss::httpd::bad_request_exception("Coordinator not available");
     }
-    if (need_redirect_to_leader(*tx_ntp, _metadata_cache)) {
-        throw co_await redirect_to_leader(*req, *tx_ntp);
+    if (need_redirect_to_leader(*r.ntp, _metadata_cache)) {
+        throw co_await redirect_to_leader(*req, *r.ntp);
     }
 
-    tx_ntp = co_await tx_frontend.local().get_ntp(tid);
+    auto tx_ntp = co_await tx_frontend.local().get_ntp(tid);
     if (!tx_ntp) {
         throw ss::httpd::bad_request_exception("Coordinator not available");
     }

@@ -63,6 +63,17 @@ tx_registry_frontend::tx_registry_frontend(
 
 ss::future<find_coordinator_reply> tx_registry_frontend::find_coordinator(
   kafka::transactional_id tid, model::timeout_clock::duration timeout) {
+    if (!_metadata_cache.local().contains(model::tx_manager_nt)) {
+        if (!co_await try_create_tx_topic()) {
+            vlog(
+              clusterlog.warn,
+              "can't find {} in the metadata cache",
+              model::tx_manager_nt);
+            co_return find_coordinator_reply(
+              std::nullopt, std::nullopt, errc::topic_not_exists);
+        }
+    }
+
     if (!_feature_table.local().is_active(
           features::feature::transaction_partitioning)) {
         co_return co_await find_coordinator_statically(tid);
@@ -276,6 +287,58 @@ ss::future<bool> tx_registry_frontend::try_create_tx_registry_topic() {
             "can not create {}/{} topic - error: {}",
             model::kafka_internal_namespace,
             model::tx_registry_topic,
+            e);
+          return false;
+      });
+}
+
+ss::future<bool> tx_registry_frontend::try_create_tx_topic() {
+    int32_t partitions_amount = 1;
+    if (_feature_table.local().is_active(
+          features::feature::transaction_partitioning)) {
+        partitions_amount
+          = config::shard_local_cfg().transaction_coordinator_partitions();
+    }
+
+    cluster::topic_configuration topic{
+      model::kafka_internal_namespace,
+      model::tx_manager_topic,
+      partitions_amount,
+      _controller->internal_topic_replication()};
+
+    topic.properties.segment_size
+      = config::shard_local_cfg().transaction_coordinator_log_segment_size;
+    topic.properties.retention_duration = tristate<std::chrono::milliseconds>(
+      config::shard_local_cfg().transaction_coordinator_delete_retention_ms());
+    topic.properties.cleanup_policy_bitflags
+      = config::shard_local_cfg().transaction_coordinator_cleanup_policy();
+
+    return _controller->get_topics_frontend()
+      .local()
+      .autocreate_topics(
+        {std::move(topic)}, config::shard_local_cfg().create_topic_timeout_ms())
+      .then([](std::vector<cluster::topic_result> res) {
+          vassert(res.size() == 1, "expected exactly one result");
+          if (res[0].ec == cluster::errc::topic_already_exists) {
+              return true;
+          }
+          if (res[0].ec != cluster::errc::success) {
+              vlog(
+                clusterlog.warn,
+                "can not create {}/{} topic - error: {}",
+                model::kafka_internal_namespace,
+                model::tx_manager_topic,
+                cluster::make_error_code(res[0].ec).message());
+              return false;
+          }
+          return true;
+      })
+      .handle_exception([](std::exception_ptr e) {
+          vlog(
+            txlog.warn,
+            "can not create {}/{} topic - error: {}",
+            model::kafka_internal_namespace,
+            model::tx_manager_topic,
             e);
           return false;
       });
