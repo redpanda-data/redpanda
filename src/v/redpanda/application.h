@@ -105,7 +105,9 @@ public:
       topic_recovery_status_frontend;
     ss::sharded<cloud_storage::topic_recovery_service> topic_recovery_service;
 
+    ss::sharded<cluster::tx_coordinator_mapper> tx_coordinator_ntp_mapper;
     ss::sharded<cluster::id_allocator_frontend> id_allocator_frontend;
+    ss::sharded<cluster::tx_registry_frontend> tx_registry_frontend;
     ss::sharded<cluster::metadata_cache> metadata_cache;
     ss::sharded<cluster::metadata_dissemination_service>
       md_dissemination_service;
@@ -116,7 +118,6 @@ public:
     ss::sharded<cluster::self_test_backend> self_test_backend;
     ss::sharded<cluster::self_test_frontend> self_test_frontend;
     ss::sharded<cluster::shard_table> shard_table;
-    ss::sharded<cluster::tx_coordinator_mapper> tx_coordinator_ntp_mapper;
     ss::sharded<cluster::tm_stm_cache_manager> tm_stm_cache_manager;
     ss::sharded<cluster::tx_gateway_frontend> tx_gateway_frontend;
 
