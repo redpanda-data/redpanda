@@ -3454,6 +3454,30 @@ admin_server::get_all_transactions_handler(
 }
 
 ss::future<ss::json::json_return_type>
+admin_server::find_tx_coordinator_handler(
+  std::unique_ptr<ss::http::request> req) {
+    auto transaction_id = req->param["transactional_id"];
+    kafka::transactional_id tid(transaction_id);
+    auto r = co_await _tx_registry_frontend.local().find_coordinator(
+      tid, config::shard_local_cfg().find_coordinator_timeout_ms());
+
+    ss::httpd::transaction_json::find_coordinator_reply reply;
+    if (r.coordinator) {
+        reply.coordinator = r.coordinator.value()();
+    }
+    if (r.ntp) {
+        ss::httpd::transaction_json::ntp ntp;
+        ntp.ns = r.ntp->ns();
+        ntp.topic = r.ntp->tp.topic();
+        ntp.partition = r.ntp->tp.partition();
+        reply.ntp = ntp;
+    }
+    reply.ec = static_cast<int>(r.ec);
+
+    co_return ss::json::json_return_type(std::move(reply));
+}
+
+ss::future<ss::json::json_return_type>
 admin_server::delete_partition_handler(std::unique_ptr<ss::http::request> req) {
     auto& tx_frontend = _partition_manager.local().get_tx_frontend();
     if (!tx_frontend.local_is_initialized()) {
@@ -3518,6 +3542,12 @@ void admin_server::register_transaction_routes() {
       ss::httpd::transaction_json::delete_partition,
       [this](std::unique_ptr<ss::http::request> req) {
           return delete_partition_handler(std::move(req));
+      });
+
+    register_route<user>(
+      ss::httpd::transaction_json::find_coordinator,
+      [this](std::unique_ptr<ss::http::request> req) {
+          return find_tx_coordinator_handler(std::move(req));
       });
 }
 
