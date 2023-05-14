@@ -14,6 +14,7 @@ from time import sleep, time
 from os.path import join
 
 import uuid
+import random
 
 from ducktape.utils.util import wait_until
 from rptest.tests.redpanda_test import RedpandaTest
@@ -25,6 +26,8 @@ import confluent_kafka as ck
 from rptest.services.admin import Admin
 from rptest.services.redpanda_installer import RedpandaInstaller, wait_for_num_versions
 from rptest.clients.rpk import RpkTool
+
+from rptest.tests.cluster_features_test import FeaturesTestBase
 
 
 class TransactionsTest(RedpandaTest):
@@ -75,6 +78,25 @@ class TransactionsTest(RedpandaTest):
                                  timeout_sec=30,
                                  backoff_sec=2,
                                  err_msg="Can not consume data")
+
+    @cluster(num_nodes=3)
+    def find_coordinator_creates_tx_topics_test(self):
+        for node in self.redpanda.started_nodes():
+            for tx_topic in ["tx", "tx_registry"]:
+                path = join(RedpandaService.DATA_DIR, "kafka_internal",
+                            tx_topic)
+                assert not node.account.exists(path)
+
+        self.admin.find_tx_coordinator("tx0",
+                                       node=random.choice(
+                                           self.redpanda.started_nodes()))
+
+        for node in self.redpanda.started_nodes():
+            for tx_topic in ["tx", "tx_registry"]:
+                path = join(RedpandaService.DATA_DIR, "kafka_internal",
+                            tx_topic)
+                assert node.account.exists(path)
+                assert node.account.isdir(path)
 
     @cluster(num_nodes=3)
     def init_transactions_creates_eos_topics_test(self):
@@ -656,7 +678,7 @@ class TransactionsTest(RedpandaTest):
         assert num_consumed == should_be_consumed
 
 
-class UpgradeTransactionTest(RedpandaTest):
+class GATransaction_MixedVersionsTest(RedpandaTest):
     def consume(self, consumer, max_records=10, timeout_s=2):
         def consume_records():
             records = consumer.consume(max_records, timeout_s)
@@ -747,7 +769,7 @@ class UpgradeTransactionTest(RedpandaTest):
         self.check_consume(topic_name, max_tx)
 
 
-class UpgradeWithMixedVeersionTransactionTest(RedpandaTest):
+class GATransaction_v22_1_UpgradeTest(RedpandaTest):
     topics = (TopicSpec(partition_count=1, replication_factor=3), )
 
     def __init__(self, test_context):
@@ -759,7 +781,7 @@ class UpgradeWithMixedVeersionTransactionTest(RedpandaTest):
             "enable_leader_balancer": False,
         }
 
-        super(UpgradeWithMixedVeersionTransactionTest,
+        super(GATransaction_v22_1_UpgradeTest,
               self).__init__(test_context=test_context,
                              num_brokers=3,
                              extra_rp_conf=extra_rp_conf)
@@ -798,7 +820,7 @@ class UpgradeWithMixedVeersionTransactionTest(RedpandaTest):
     def setUp(self):
         self.old_version, self.old_version_str = self.installer.install(
             self.redpanda.nodes, (22, 1))
-        super(UpgradeWithMixedVeersionTransactionTest, self).setUp()
+        super(GATransaction_v22_1_UpgradeTest, self).setUp()
 
     def do_upgrade_with_tx(self, selector):
         topic_name = self.topics[0].name
@@ -874,7 +896,108 @@ class UpgradeWithMixedVeersionTransactionTest(RedpandaTest):
         self.do_upgrade_with_tx(get_topic_leader)
 
 
-class UpgradeTransactionManagerMultiPartition(RedpandaTest):
+class StaticPartitioning_MixedVersionsTest(RedpandaTest):
+    def __init__(self, test_context):
+        extra_rp_conf = {
+            "enable_leader_balancer": False,
+            "partition_autobalancing_mode": "off",
+            "enable_auto_rebalance_on_node_add": False,
+        }
+
+        environment = {
+            "__REDPANDA_LATEST_LOGICAL_VERSION": 9,
+            "__REDPANDA_EARLIEST_LOGICAL_VERSION": 9
+        }
+
+        super(StaticPartitioning_MixedVersionsTest,
+              self).__init__(test_context=test_context,
+                             extra_rp_conf=extra_rp_conf,
+                             log_level="trace",
+                             environment=environment)
+
+        self.admin = Admin(self.redpanda)
+
+    @cluster(num_nodes=3, log_allow_list=RESTART_LOG_ALLOW_LIST)
+    def find_coordinator_on_old_node_doesnt_create_tx_registry_test(self):
+        self.redpanda.set_environment({
+            "__REDPANDA_LATEST_LOGICAL_VERSION": 10,
+            "__REDPANDA_EARLIEST_LOGICAL_VERSION": 9
+        })
+        old_node = self.redpanda.started_nodes()[0]
+        new_node = self.redpanda.started_nodes()[1]
+        self.redpanda.restart_nodes([new_node], stop_timeout=60)
+
+        for node in self.redpanda.started_nodes():
+            for tx_topic in ["tx", "tx_registry"]:
+                path = join(RedpandaService.DATA_DIR, "kafka_internal",
+                            tx_topic)
+                assert not node.account.exists(path)
+
+        self.admin.find_tx_coordinator("tx0", node=old_node)
+
+        for node in self.redpanda.started_nodes():
+            path = join(RedpandaService.DATA_DIR, "kafka_internal",
+                        "tx_registry")
+            assert not node.account.exists(path)
+            path = join(RedpandaService.DATA_DIR, "kafka_internal", "tx")
+            assert node.account.exists(path)
+            assert node.account.isdir(path)
+
+    @cluster(num_nodes=3, log_allow_list=RESTART_LOG_ALLOW_LIST)
+    def find_coordinator_on_new_node_doesnt_create_tx_registry_test(self):
+        self.redpanda.set_environment({
+            "__REDPANDA_LATEST_LOGICAL_VERSION": 10,
+            "__REDPANDA_EARLIEST_LOGICAL_VERSION": 9
+        })
+        new_node = self.redpanda.started_nodes()[1]
+        self.redpanda.restart_nodes([new_node], stop_timeout=60)
+
+        for node in self.redpanda.started_nodes():
+            for tx_topic in ["tx", "tx_registry"]:
+                path = join(RedpandaService.DATA_DIR, "kafka_internal",
+                            tx_topic)
+                assert not node.account.exists(path)
+
+        self.admin.find_tx_coordinator("tx0", node=new_node)
+
+        for node in self.redpanda.started_nodes():
+            path = join(RedpandaService.DATA_DIR, "kafka_internal",
+                        "tx_registry")
+            assert not node.account.exists(path)
+            path = join(RedpandaService.DATA_DIR, "kafka_internal", "tx")
+            assert node.account.exists(path)
+            assert node.account.isdir(path)
+
+    @cluster(num_nodes=3, log_allow_list=RESTART_LOG_ALLOW_LIST)
+    def find_coordinator_creates_tx_topics_after_upgrade_test(self):
+        self.redpanda.set_environment({
+            "__REDPANDA_LATEST_LOGICAL_VERSION": 10,
+            "__REDPANDA_EARLIEST_LOGICAL_VERSION": 9
+        })
+        nodes = list(self.redpanda.started_nodes())
+        self.redpanda.restart_nodes(nodes, stop_timeout=60)
+
+        FeaturesTestBase._wait_for_version_everywhere(self, 10)
+
+        for node in self.redpanda.started_nodes():
+            for tx_topic in ["tx", "tx_registry"]:
+                path = join(RedpandaService.DATA_DIR, "kafka_internal",
+                            tx_topic)
+                assert not node.account.exists(path)
+
+        self.admin.find_tx_coordinator("tx0",
+                                       node=random.choice(
+                                           self.redpanda.started_nodes()))
+
+        for node in self.redpanda.started_nodes():
+            for tx_topic in ["tx", "tx_registry"]:
+                path = join(RedpandaService.DATA_DIR, "kafka_internal",
+                            tx_topic)
+                assert node.account.exists(path)
+                assert node.account.isdir(path)
+
+
+class StaticPartitioning_v23_1_UpgradeTest(RedpandaTest):
     topics = (TopicSpec(partition_count=1, replication_factor=3), )
 
     def __init__(self, test_context):
@@ -888,7 +1011,7 @@ class UpgradeTransactionManagerMultiPartition(RedpandaTest):
             "transaction_coordinator_log_segment_size": 100,
         }
 
-        super(UpgradeTransactionManagerMultiPartition,
+        super(StaticPartitioning_v23_1_UpgradeTest,
               self).__init__(test_context=test_context,
                              num_brokers=3,
                              extra_rp_conf=extra_rp_conf)
@@ -928,7 +1051,7 @@ class UpgradeTransactionManagerMultiPartition(RedpandaTest):
     def setUp(self):
         self.old_version, self.old_version_str = self.installer.install(
             self.redpanda.nodes, (23, 1))
-        super(UpgradeTransactionManagerMultiPartition, self).setUp()
+        super(StaticPartitioning_v23_1_UpgradeTest, self).setUp()
 
     def produce_and_consume(self, tx_amount=1):
 
