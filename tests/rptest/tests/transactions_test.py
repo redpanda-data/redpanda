@@ -11,6 +11,7 @@ from rptest.services.cluster import cluster
 from rptest.util import wait_until_result
 from rptest.clients.types import TopicSpec
 from time import sleep, time
+from os.path import join
 
 import uuid
 
@@ -74,6 +75,29 @@ class TransactionsTest(RedpandaTest):
                                  timeout_sec=30,
                                  backoff_sec=2,
                                  err_msg="Can not consume data")
+
+    @cluster(num_nodes=3)
+    def init_transactions_creates_eos_topics_test(self):
+        for node in self.redpanda.started_nodes():
+            for tx_topic in ["id_allocator", "tx", "tx_registry"]:
+                path = join(RedpandaService.DATA_DIR, "kafka_internal",
+                            tx_topic)
+                assert not node.account.exists(path)
+
+        producer = ck.Producer({
+            'bootstrap.servers': self.redpanda.brokers(),
+            'transactional.id': '0',
+            'transaction.timeout.ms': 10000,
+        })
+
+        producer.init_transactions()
+
+        for node in self.redpanda.started_nodes():
+            for tx_topic in ["id_allocator", "tx", "tx_registry"]:
+                path = join(RedpandaService.DATA_DIR, "kafka_internal",
+                            tx_topic)
+                assert node.account.exists(path)
+                assert node.account.isdir(path)
 
     @cluster(num_nodes=3)
     def simple_test(self):
