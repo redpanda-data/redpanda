@@ -55,7 +55,7 @@ from rptest.services import tls
 from rptest.services.admin import Admin
 from rptest.services.redpanda_installer import RedpandaInstaller, VERSION_RE as RI_VERSION_RE, int_tuple as ri_int_tuple
 from rptest.services.rolling_restarter import RollingRestarter
-from rptest.services.storage import ClusterStorage, NodeStorage
+from rptest.services.storage import ClusterStorage, NodeStorage, NodeCacheStorage
 from rptest.services.utils import BadLogLines, NodeCrash
 from rptest.util import inject_remote_script, wait_until_result
 
@@ -3184,7 +3184,9 @@ class RedpandaService(RedpandaServiceBase):
 
         self.logger.debug(
             f"Starting storage checks for {node.name} sizes={sizes}")
-        store = NodeStorage(node.name, RedpandaService.DATA_DIR)
+        store = NodeStorage(
+            node.name, RedpandaService.DATA_DIR,
+            os.path.join(RedpandaService.DATA_DIR, "cloud_storage_cache"))
         script_path = inject_remote_script(node, "compute_storage.py")
         cmd = [
             "python3", script_path, f"--data-dir={RedpandaService.DATA_DIR}"
@@ -3207,8 +3209,24 @@ class RedpandaService(RedpandaServiceBase):
                         continue
                     for segment, data in segments.items():
                         partition.set_segment_size(segment, data["size"])
+
+        if self.si_settings is not None and node.account.exists(
+                store.cache_dir):
+            bytes = int(
+                node.account.ssh_output(
+                    f"du -s \"{store.cache_dir}\"").strip().split()[0])
+            objects = int(
+                node.account.ssh_output(
+                    f"find \"{store.cache_dir}\" -type f | wc -l").strip())
+            indices = int(
+                node.account.ssh_output(
+                    f"find \"{store.cache_dir}\" -type f -name \"*.index\" | wc -l"
+                ).strip())
+            store.set_cache_stats(NodeCacheStorage(bytes, objects, indices))
+
         self.logger.debug(
             f"Finished storage checks for {node.name} sizes={sizes}")
+
         return store
 
     def storage(self, all_nodes: bool = False, sizes: bool = False):
