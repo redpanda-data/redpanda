@@ -287,6 +287,21 @@ ss::future<> cache::trim() {
         target_size *= _cache_size_low_watermark;
     }
 
+    // In the extreme case where even trimming to the low watermark wouldn't
+    // free enough space to enable writing to the cache, go even further.
+    if (_free_space < config::shard_local_cfg().storage_min_free_bytes()) {
+        target_size = std::min(
+          target_size,
+          _current_cache_size
+            - std::min(
+              _current_cache_size,
+              config::shard_local_cfg().storage_min_free_bytes()));
+        vlog(
+          cst_log.warn,
+          "Critically low space, trimming to {} bytes",
+          target_size);
+    }
+
     // Calculate total space used by tmp files: we will use this later
     // when updating current_cache_size.
     uint64_t tmp_files_size{0};
@@ -730,9 +745,37 @@ ss::future<> cache::put(
     options.io_priority_class = io_priority;
     auto out = co_await ss::make_file_output_stream(tmp_cache_file, options);
 
-    co_await ss::copy(data, out)
-      .then([&out]() { return out.flush(); })
-      .finally([&out]() { return out.close(); });
+    std::exception_ptr disk_full_error;
+    try {
+        co_await ss::copy(data, out)
+          .then([&out]() { return out.flush(); })
+          .finally([&out]() { return out.close(); });
+    } catch (std::filesystem::filesystem_error& e) {
+        // For ENOSPC errors, delay handling so that we can do a trim
+        if (e.code() == std::errc::no_space_on_device) {
+            disk_full_error = std::current_exception();
+        } else {
+            throw;
+        }
+    }
+
+    if (disk_full_error) {
+        vlog(cst_log.error, "Out of space while writing to cache");
+
+        // Block further puts from being attempted until notify_disk_status
+        // reports that there is space available.
+        set_block_puts(true);
+
+        // Trim proactively: if many fibers hit this concurrently,
+        // they'll contend for cleanup_sm and the losers will skip
+        // trim due to throttling.
+        {
+            auto units = co_await ss::get_units(_cleanup_sm, 1);
+            co_await trim_throttled();
+        }
+
+        throw disk_full_error;
+    }
 
     // commit write transaction
     auto src = (dir_path / tmp_filename).native();
