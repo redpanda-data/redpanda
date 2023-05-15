@@ -627,6 +627,8 @@ bool partition_manifest::advance_start_kafka_offset(
     return true;
 }
 
+void partition_manifest::unsafe_reset() { *this = partition_manifest{}; }
+
 bool partition_manifest::advance_start_offset(model::offset new_start_offset) {
     const auto previous_start_offset = _start_offset;
 
