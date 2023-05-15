@@ -4364,6 +4364,53 @@ ss::future<ss::json::json_return_type> admin_server::sync_local_state_handler(
 }
 
 ss::future<std::unique_ptr<ss::http::reply>>
+admin_server::unsafe_reset_metadata(
+  std::unique_ptr<ss::http::request> request,
+  std::unique_ptr<ss::http::reply> reply) {
+    reply->set_content_type("json");
+
+    auto ntp = parse_ntp_from_request(request->param, model::kafka_namespace);
+    if (need_redirect_to_leader(ntp, _metadata_cache)) {
+        vlog(logger.info, "Need to redirect bucket syncup request");
+        throw co_await redirect_to_leader(*request, ntp);
+    }
+    if (request->content_length <= 0) {
+        throw ss::httpd::bad_request_exception("Empty request content");
+    }
+    // TODO: validate that the request is valid partition manifest.
+    auto* is = request->content_stream;
+    if (!is) {
+        throw ss::httpd::bad_request_exception(
+          "Missing input stream in request");
+    }
+    const auto shard = _shard_table.local().shard_for(ntp);
+    if (!shard) {
+        throw ss::httpd::not_found_exception(fmt::format(
+          "{} could not be found on the node. Perhaps it has been moved "
+          "during the redirect.",
+          ntp));
+    }
+    co_await _partition_manager.invoke_on(
+      *shard, [ntp = std::move(ntp), shard, is](auto& pm) mutable {
+          auto partition = pm.get(ntp);
+          if (!partition) {
+              throw ss::httpd::not_found_exception(
+                fmt::format("Could not find {} on shard {}", ntp, *shard));
+          }
+
+          if (!partition->archiver()) {
+              throw ss::httpd::bad_request_exception(
+                fmt::format("Cluster is not configured for cloud storage"));
+          }
+          auto archiver = partition->archiver();
+          return archiver->get().unsafe_reset_metadata(std::move(*is));
+      });
+
+    // TODO: implement me!
+    co_return reply;
+}
+
+ss::future<std::unique_ptr<ss::http::reply>>
 admin_server::initiate_topic_scan_and_recovery(
   std::unique_ptr<ss::http::request> request,
   std::unique_ptr<ss::http::reply> reply) {
@@ -4619,6 +4666,16 @@ void admin_server::register_shadow_indexing_routes() {
       [this](std::unique_ptr<ss::http::request> req) {
           return sync_local_state_handler(std::move(req));
       });
+
+    request_handler_fn unsafe_reset_metadata_handler = [this](
+                                                         auto req, auto reply) {
+        return initiate_topic_scan_and_recovery(
+          std::move(req), std::move(reply));
+    };
+
+    register_route<superuser>(
+      ss::httpd::shadow_indexing_json::unsafe_reset_metadata,
+      std::move(unsafe_reset_metadata_handler));
 
     request_handler_fn recovery_handler = [this](auto req, auto reply) {
         return initiate_topic_scan_and_recovery(

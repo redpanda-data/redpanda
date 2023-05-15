@@ -417,6 +417,8 @@ private:
     /// Shadow indexing routes
     ss::future<ss::json::json_return_type>
       sync_local_state_handler(std::unique_ptr<ss::http::request>);
+    ss::future<std::unique_ptr<ss::http::reply>> unsafe_reset_metadata(
+      std::unique_ptr<ss::http::request>, std::unique_ptr<ss::http::reply>);
     ss::future<std::unique_ptr<ss::http::reply>>
       initiate_topic_scan_and_recovery(
         std::unique_ptr<ss::http::request>, std::unique_ptr<ss::http::reply>);
