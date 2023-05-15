@@ -2142,22 +2142,23 @@ class RedpandaService(RedpandaServiceBase):
                     "index"] + reported["compaction"]
 
                 diff = observed_total - reported_total
-                return abs(
-                    diff / reported_total
-                ), reported, reported_total, observed, observed_total
+                return (abs(diff / reported_total),
+                        reported["reclaimable_by_retention"] / reported_total,
+                        reported, reported_total, observed, observed_total)
             except:
-                return 0.0, None, None, None, None
+                return 0.0, 0.0, None, None, None, None
 
-        # inspect the node and check that we fall below a 5% threshold
-        # difference. at this point the test is over, but we allow for a couple
+        # inspect the node and check that we fall below a 5% + reclaimabled_by_retention%
+        # threshold difference. at this point the test is over, but we allow for a couple
         # retries in case things need to settle.
         nodes = [(n, None) for n in self.nodes]
         for _ in range(3):
             retries = []
             for node, _ in nodes:
-                pct_diff, *deets = inspect_node(node)
-                if pct_diff > 0.05:
-                    retries.append((node, (pct_diff, *deets)))
+                pct_diff, reclaimable_diff, *deets = inspect_node(node)
+                if pct_diff > 0.05 + reclaimable_diff:
+                    retries.append(
+                        (node, (pct_diff, reclaimable_diff, *deets)))
             if not retries:
                 # all good
                 return
@@ -2171,7 +2172,7 @@ class RedpandaService(RedpandaServiceBase):
         for node, deets in retries:
             node_name = f"{self.idx(node)}:{node.account.hostname}"
             nodes.append(node_name)
-            pct_diff, reported, reported_total, observed, observed_total = deets
+            pct_diff, reclaimable_diff, reported, reported_total, observed, observed_total = deets
             if pct_diff > max_diff:
                 max_diff = pct_diff
                 max_node = node
@@ -2180,7 +2181,7 @@ class RedpandaService(RedpandaServiceBase):
                 self.logger.debug(
                     f"Observed file [{node_name}]: {size:7} {file}")
             self.logger.warn(
-                f"Storage usage [{node_name}]: obs {observed_total:7} rep {reported_total:7} diff {diff:7} pct {pct_diff}"
+                f"Storage usage [{node_name}]: obs {observed_total:7} rep {reported_total:7} diff {diff:7} pct {pct_diff} reclaimable_pct {reclaimable_diff}"
             )
 
         max_node = f"{self.idx(max_node)}:{max_node.account.hostname}"
