@@ -240,7 +240,13 @@ FIXTURE_TEST(test_overlapping_segments, cloud_storage_fixture) {
     cloud_storage::partition_manifest manifest(manifest_ntp, manifest_revision);
 
     auto expectations = make_imposter_expectations(
-      manifest, segments, false, model::offset_delta(0));
+      manifest,
+      segments,
+      false,
+      model::offset_delta(0),
+      // Use v1 format because it only includes the base offset, not the
+      // committed offset.  We will modify the committed offset.
+      segment_name_format::v1);
 
     std::stringstream sstr;
     manifest.serialize_json(sstr);
