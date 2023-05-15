@@ -49,7 +49,6 @@
 
 namespace kafka {
 static constexpr std::chrono::milliseconds default_fetch_timeout = 5s;
-
 /**
  * Make a partition response error.
  */
@@ -919,14 +918,4 @@ std::ostream& operator<<(std::ostream& o, const consumer_info& ci) {
     fmt::print(o, "rack_id: {}, fetch_offset: {}", ci);
     return o;
 }
-
-size_t fetch_memory_estimator(
-  const size_t request_size, connection_context& /*conn_ctx*/) {
-    return request_size
-             * 3 // appx memory for fetch plans, fetch configs, read results
-           + config::shard_local_cfg()
-               .kafka_memory_batch_size_estimate_for_fetch();
-    // at least one batch of the data will be read
-}
-
 } // namespace kafka
