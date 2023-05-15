@@ -11,7 +11,6 @@
 #include "kafka/server/handlers/fetch.h"
 #include "kafka/types.h"
 #include "model/fundamental.h"
-#include "model/timeout_clock.h"
 #include "redpanda/tests/fixture.h"
 #include "resource_mgmt/io_priority.h"
 #include "test_utils/async.h"
@@ -168,13 +167,18 @@ FIXTURE_TEST(read_from_ntp_max_bytes, redpanda_thread_fixture) {
         auto rctx = make_request_context();
         auto octx = kafka::op_context(
           std::move(rctx), ss::default_smp_service_group());
-        octx.deadline = model::no_timeout;
         auto shard = octx.rctx.shards().shard_for(ntp).value();
         return octx.rctx.partition_manager()
           .invoke_on(
             shard,
-            [&octx, ntp, config](cluster::partition_manager& pm) {
-                return kafka::read_from_ntp(pm, octx, ntp, config, true);
+            [ntp, config, &octx](cluster::partition_manager& pm) {
+                return kafka::read_from_ntp(
+                  pm,
+                  octx.rctx.replica_selector(),
+                  ntp,
+                  config,
+                  true,
+                  model::no_timeout);
             })
           .get0();
     };

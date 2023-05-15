@@ -347,9 +347,10 @@ struct fetch_plan {
 
 ss::future<read_result> read_from_ntp(
   cluster::partition_manager&,
-  op_context&,
+  const replica_selector&,
   const model::ntp&,
   fetch_config,
-  bool);
+  bool,
+  std::optional<model::timeout_clock::time_point>);
 
 } // namespace kafka
