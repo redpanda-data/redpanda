@@ -4,4 +4,4 @@ delete:
 - apiVersion: redpanda.vectorized.io/v1alpha1
   kind: Console
   name: console
-  namespace: console
+  namespace: console-finalizers

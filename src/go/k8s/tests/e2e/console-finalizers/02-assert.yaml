@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: console
-  namespace: console
+  namespace: console-finalizers
 status:
   readyReplicas: 1
 ---
@@ -10,7 +10,7 @@ apiVersion: redpanda.vectorized.io/v1alpha1
 kind: Console
 metadata:
   name: console
-  namespace: console
+  namespace: console-finalizers
   finalizers:
     - consoles.redpanda.vectorized.io/service-account
     - consoles.redpanda.vectorized.io/acl
@@ -21,4 +21,4 @@ collectors:
 - type: pod
   selector: app.kubernetes.io/name=redpanda-console
   tail: -1
-- command: ../../../hack/get-redpanda-info.sh
+- command: ../../../hack/get-redpanda-info.sh console-finalizers

@@ -4,7 +4,7 @@ delete:
 - apiVersion: redpanda.vectorized.io/v1alpha1
   kind: Cluster
   name: cluster
-  namespace: console
+  namespace: console-finalizers
 - apiVersion: v1
   kind: Namespace
-  name: console
+  name: console-finalizers
