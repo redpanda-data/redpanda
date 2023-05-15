@@ -42,10 +42,10 @@ HTTP_POST_HEADERS = {
     "Content-Type": "application/vnd.schemaregistry.v1+json"
 }
 
-schema1_def = '{"type":"record","name":"myrecord","fields":[{"type":"string","name":"f1"}]}'
-schema2_def = '{"type":"record","name":"myrecord","fields":[{"type":"string","name":"f1"},{"type":"string","name":"f2","default":"foo"}]}'
-schema3_def = '{"type":"record","name":"myrecord","fields":[{"type":"string","name":"f1"},{"type":"string","name":"f2"}]}'
-invalid_avro = '{"type":"notatype","name":"myrecord","fields":[{"type":"string","name":"f1"}]}'
+schema1_def = '{"type":"record","name":"myrecord","fields":[{"name":"f1","type":"string"}]}'
+schema2_def = '{"type":"record","name":"myrecord","fields":[{"name":"f1","type":"string"},{"name":"f2","type":"string","default":"foo"}]}'
+schema3_def = '{"type":"record","name":"myrecord","fields":[{"name":"f1","type":"string"},{"name":"f2","type":"string"}]}'
+invalid_avro = '{"type":"notatype","name":"myrecord","fields":[{"name":"f1","type":"string"}]}'
 
 simple_proto_def = """
 syntax = "proto3";
