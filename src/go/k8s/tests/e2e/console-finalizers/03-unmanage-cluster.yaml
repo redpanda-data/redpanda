@@ -2,6 +2,6 @@ apiVersion: redpanda.vectorized.io/v1alpha1
 kind: Cluster
 metadata:
   name: cluster
-  namespace: console
+  namespace: console-finalizers
   annotations:
     redpanda.vectorized.io/managed: "false"
