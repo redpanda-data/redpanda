@@ -211,7 +211,11 @@ func writeFileToZip(ps *stepParams, filename string, contents []byte) error {
 	ps.m.Lock()
 	defer ps.m.Unlock()
 
-	wr, err := ps.w.Create(filename)
+	wr, err := ps.w.CreateHeader(&zip.FileHeader{
+		Name:     filename,
+		Method:   zip.Deflate,
+		Modified: time.Now(),
+	})
 	if err != nil {
 		return err
 	}
@@ -267,7 +271,11 @@ func writeCommandOutputToZipLimit(
 	// Strip any non-default library path
 	cmd.Env = osutil.SystemLdPathEnv()
 
-	wr, err := ps.w.Create(filename)
+	wr, err := ps.w.CreateHeader(&zip.FileHeader{
+		Name:     filename,
+		Method:   zip.Deflate,
+		Modified: time.Now(),
+	})
 	if err != nil {
 		return err
 	}
