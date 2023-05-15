@@ -1242,8 +1242,7 @@ void auth_refresh_bg_op::do_start_auth_refresh_op(
                       return cloud_roles::aws_region_name{};
                   } else {
                       static_assert(
-                        cloud_storage_clients::always_false_v<cfg_type>,
-                        "Unknown client type");
+                        always_false_v<cfg_type>, "Unknown client type");
                       return cloud_roles::aws_region_name{};
                   }
               },
@@ -1293,9 +1292,7 @@ cloud_roles::credentials auth_refresh_bg_op::build_static_credentials() const {
               return cloud_roles::abs_credentials{
                 cfg.storage_account_name, cfg.shared_key.value()};
           } else {
-              static_assert(
-                cloud_storage_clients::always_false_v<cfg_type>,
-                "Unknown client type");
+              static_assert(always_false_v<cfg_type>, "Unknown client type");
               return cloud_roles::aws_credentials{};
           }
       },

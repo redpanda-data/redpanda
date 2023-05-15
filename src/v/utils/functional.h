@@ -14,6 +14,9 @@
 #include <functional>
 #include <optional>
 
+template<typename>
+inline constexpr bool always_false_v = false;
+
 template<typename T, typename U = typename T::value_type>
 concept SupportsPushBack = requires(T a, U b) {
     { a.push_back(b) } -> std::same_as<void>;
