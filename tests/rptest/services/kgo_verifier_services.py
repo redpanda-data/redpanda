@@ -278,7 +278,8 @@ class StatusThread(threading.Thread):
 
     def is_ready(self):
         try:
-            r = requests.get(self._parent._remote_url(self._node, "status"))
+            r = requests.get(self._parent._remote_url(self._node, "status"),
+                             timeout=10)
         except Exception as e:
             # Broad exception handling for any lower level connection errors etc
             # that might not be properly classed as `requests` exception.
