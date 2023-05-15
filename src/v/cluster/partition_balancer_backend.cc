@@ -64,17 +64,43 @@ partition_balancer_backend::partition_balancer_backend(
   , _timer([this] { tick(); }) {}
 
 void partition_balancer_backend::start() {
-    _timer.arm(_tick_interval());
+    _member_updates = _state.members().register_members_updated_notification(
+      [this](model::node_id n, model::membership_state state) {
+          on_members_update(n, state);
+      });
+    maybe_rearm_timer();
     vlog(clusterlog.info, "partition balancer started");
+}
+
+void partition_balancer_backend::maybe_rearm_timer(bool now) {
+    if (_gate.is_closed()) {
+        return;
+    }
+    auto schedule_at = now ? clock_t::now() : clock_t::now() + _tick_interval();
+    if (_timer.armed()) {
+        schedule_at = std::min(schedule_at, _timer.get_timeout());
+        _timer.rearm(schedule_at);
+    } else if (_lock.waiters() == 0) {
+        _timer.arm(schedule_at);
+    }
+}
+
+void partition_balancer_backend::on_members_update(
+  model::node_id, model::membership_state state) {
+    if (!is_leader()) {
+        return;
+    }
+    if (
+      state == model::membership_state::active
+      || state == model::membership_state::draining) {
+        maybe_rearm_timer(/*now = */ true);
+    }
 }
 
 void partition_balancer_backend::tick() {
     ssx::background = ssx::spawn_with_gate_then(_gate, [this] {
-                          return do_tick().finally([this] {
-                              if (!_gate.is_closed()) {
-                                  _timer.arm(_tick_interval());
-                              }
-                          });
+                          return do_tick().finally(
+                            [this] { maybe_rearm_timer(); });
                       }).handle_exception([](const std::exception_ptr& e) {
         vlog(clusterlog.warn, "tick error: {}", e);
     });
@@ -82,7 +108,9 @@ void partition_balancer_backend::tick() {
 
 ss::future<> partition_balancer_backend::stop() {
     vlog(clusterlog.info, "stopping...");
+    _state.members().unregister_members_updated_notification(_member_updates);
     _timer.cancel();
+    _lock.broken();
     return _gate.close();
 }
 
@@ -91,6 +119,8 @@ ss::future<> partition_balancer_backend::do_tick() {
         vlog(clusterlog.debug, "not leader, skipping tick");
         co_return;
     }
+
+    auto units = co_await _lock.get_units();
 
     vlog(clusterlog.debug, "tick");
 
@@ -150,7 +180,7 @@ ss::future<> partition_balancer_backend::do_tick() {
           .plan_actions(health_report.value(), follower_metrics);
 
     _last_leader_term = _raft0->term();
-    _last_tick_time = ss::lowres_clock::now();
+    _last_tick_time = clock_t::now();
     _last_violations = std::move(plan_data.violations);
     if (
       _state.topics().has_updates_in_progress()
@@ -247,7 +277,7 @@ partition_balancer_overview_reply partition_balancer_backend::overview() const {
     ret.status = _last_status;
     ret.violations = _last_violations;
 
-    auto now = ss::lowres_clock::now();
+    auto now = clock_t::now();
     auto time_since_last_tick = now - _last_tick_time;
     ret.last_tick_time = model::to_timestamp(
       model::timestamp_clock::now()
