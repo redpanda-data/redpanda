@@ -18,12 +18,10 @@
 
 #include <seastar/core/smp.hh>
 
-#include <boost/test/tools/interface.hpp>
 #include <fmt/ostream.h>
 
 #include <chrono>
 #include <limits>
-#include <ostream>
 
 using namespace std::chrono_literals;
 
@@ -657,141 +655,4 @@ FIXTURE_TEST(fetch_request_max_bytes, redpanda_thread_fixture) {
     BOOST_REQUIRE(fetch_one_byte.data.topics[0].partitions[0].records);
     BOOST_REQUIRE(
       fetch_one_byte.data.topics[0].partitions[0].records->size_bytes() > 0);
-}
-
-struct reserve_memory_units_fixture : redpanda_thread_fixture {
-    kafka::request_context rctx = make_request_context();
-
-    struct r {
-        size_t kafka, fetch;
-        r(size_t kafka_, size_t fetch_)
-          : kafka(kafka_)
-          , fetch(fetch_) {}
-        friend bool operator==(const r&, const r&) = default;
-        friend std::ostream& operator<<(std::ostream& s, const r& v) {
-            return s << "{kafka: " << v.kafka << ", fetch: " << v.fetch << "}";
-        }
-    };
-
-    // reserve memory units, return how many memory units have been reserved
-    // from each memory semaphore
-    r test_case(size_t max_bytes, bool obligatory_batch_read) const {
-        auto mu = kafka::reserve_memory_units(
-          rctx, max_bytes, obligatory_batch_read);
-        return {mu.kafka.count(), mu.fetch.count()};
-    }
-};
-
-FIXTURE_TEST(reserve_memory_units_test, reserve_memory_units_fixture) {
-    using namespace kafka;
-    using namespace std::chrono_literals;
-    // same as in fetch.cc
-    static constexpr size_t batch_size = 1_MiB;
-
-    // below are test prerequisites, tests are done based on these assumptions
-    // if these are not valid, the test needs a change
-    size_t kafka_mem = rctx.memory_sem().available_units();
-    size_t fetch_mem = rctx.memory_fetch_sem().available_units();
-    BOOST_TEST_REQUIRE(fetch_mem > batch_size * 3);
-    BOOST_TEST_REQUIRE(kafka_mem > fetch_mem);
-    BOOST_TEST_REQUIRE(batch_size > 100);
-
-    // *** plenty of memory cases
-    // kafka_mem > fetch_mem > batch_size
-    BOOST_TEST(test_case(batch_size / 100, false) == r(batch_size, batch_size));
-    BOOST_TEST(test_case(batch_size / 100, true) == r(0, batch_size));
-    BOOST_TEST(test_case(batch_size, false) == r(batch_size, batch_size));
-    BOOST_TEST(test_case(batch_size, true) == r(0, batch_size));
-    BOOST_TEST(
-      test_case(batch_size * 3, false) == r(batch_size * 3, batch_size * 3));
-    BOOST_TEST(
-      test_case(batch_size * 3, true) == r(batch_size * 2, batch_size * 3));
-    BOOST_TEST(test_case(fetch_mem, false) == r(fetch_mem, fetch_mem));
-    BOOST_TEST(
-      test_case(fetch_mem, true) == r(fetch_mem - batch_size, fetch_mem));
-    BOOST_TEST(test_case(fetch_mem + 1, false) == r(fetch_mem, fetch_mem));
-    BOOST_TEST(
-      test_case(fetch_mem + 1, true) == r(fetch_mem - batch_size, fetch_mem));
-    BOOST_TEST(test_case(kafka_mem, false) == r(fetch_mem, fetch_mem));
-    BOOST_TEST(
-      test_case(kafka_mem, true) == r(fetch_mem - batch_size, fetch_mem));
-
-    // *** still a lot of mem but kafka mem somewhat used:
-    // fetch_mem > kafka_mem > batch_size (fetch_mem - kafka_mem < batch_size)
-    auto memsemunits = ss::consume_units(
-      rctx.memory_sem(), kafka_mem - fetch_mem + 1000);
-    kafka_mem = rctx.memory_sem().available_units();
-    BOOST_TEST_REQUIRE(kafka_mem < fetch_mem);
-    BOOST_TEST_REQUIRE(kafka_mem > batch_size + 1000);
-
-    BOOST_TEST(test_case(batch_size, false) == r(batch_size, batch_size));
-    BOOST_TEST(test_case(batch_size, true) == r(0, batch_size));
-    BOOST_TEST(
-      test_case(kafka_mem - 100, false) == r(kafka_mem - 100, kafka_mem - 100));
-    BOOST_TEST(
-      test_case(kafka_mem - 100, true)
-      == r(kafka_mem - 100 - batch_size, kafka_mem - 100));
-    BOOST_TEST(test_case(kafka_mem + 100, false) == r(kafka_mem, kafka_mem));
-    // in this test, the reserved amount is bigger than kafka_mem because
-    // a part of it have been reseved from kafka memsemaphore before,
-    // and the actual amount used from kafka memsemaphore now is less than
-    // what is requested by batch_size
-    BOOST_TEST(
-      test_case(kafka_mem + 100, true)
-      == r(kafka_mem + 100 - batch_size, kafka_mem + 100));
-    BOOST_TEST(test_case(fetch_mem + 100, false) == r(kafka_mem, kafka_mem));
-    BOOST_TEST(
-      test_case(fetch_mem + 100, true) == r(fetch_mem - batch_size, fetch_mem));
-
-    memsemunits.return_all();
-    kafka_mem = rctx.memory_sem().available_units();
-
-    // *** low on fetch memory tests
-    // kafka_mem > batch_size > fetch_mem
-    // Under this condition, unless obligatory_batch_read, we cannot reserve
-    // memory as it's not enough for at least a single batch.
-    // If obligatory_batch_read, the reserved amount will always be a single
-    // batch.
-    memsemunits = ss::consume_units(
-      rctx.memory_fetch_sem(), fetch_mem - batch_size + 1000);
-    fetch_mem = rctx.memory_fetch_sem().available_units();
-    BOOST_TEST_REQUIRE(kafka_mem > batch_size);
-    BOOST_TEST_REQUIRE(fetch_mem < batch_size);
-
-    BOOST_TEST(test_case(fetch_mem - 100, false) == r(0, 0));
-    BOOST_TEST(test_case(fetch_mem - 100, true) == r(0, batch_size));
-    BOOST_TEST(test_case(batch_size - 100, false) == r(0, 0));
-    BOOST_TEST(test_case(batch_size - 100, true) == r(0, batch_size));
-    BOOST_TEST(test_case(kafka_mem - 100, false) == r(0, 0));
-    BOOST_TEST(test_case(kafka_mem - 100, true) == r(0, batch_size));
-    BOOST_TEST(test_case(kafka_mem + 100, false) == r(0, 0));
-    BOOST_TEST(test_case(kafka_mem + 100, true) == r(0, batch_size));
-
-    memsemunits.return_all();
-    fetch_mem = rctx.memory_fetch_sem().available_units();
-
-    // *** low on kafka memory tests
-    // fetch_mem > batch_size > kafka_mem
-    // Essentially the same behaviour as in low fetch memory cases
-    memsemunits = ss::consume_units(
-      rctx.memory_sem(), kafka_mem - batch_size + 1000);
-    kafka_mem = rctx.memory_sem().available_units();
-    BOOST_TEST_REQUIRE(kafka_mem < batch_size);
-    BOOST_TEST_REQUIRE(fetch_mem > batch_size);
-
-    BOOST_TEST(test_case(kafka_mem - 100, false) == r(0, 0));
-    BOOST_TEST(test_case(kafka_mem - 100, true) == r(0, batch_size));
-    BOOST_TEST(test_case(batch_size - 100, false) == r(0, 0));
-    BOOST_TEST(test_case(batch_size - 100, true) == r(0, batch_size));
-    BOOST_TEST(test_case(batch_size + 100, false) == r(0, 0));
-    BOOST_TEST(test_case(batch_size + 100, true) == r(100, batch_size + 100));
-    BOOST_TEST(test_case(fetch_mem - 100, false) == r(0, 0));
-    BOOST_TEST(
-      test_case(fetch_mem - 100, true) == r(kafka_mem, kafka_mem + batch_size));
-    BOOST_TEST(test_case(fetch_mem + 100, false) == r(0, 0));
-    BOOST_TEST(
-      test_case(fetch_mem + 100, true) == r(kafka_mem, kafka_mem + batch_size));
-
-    memsemunits.return_all();
-    kafka_mem = rctx.memory_sem().available_units();
 }
