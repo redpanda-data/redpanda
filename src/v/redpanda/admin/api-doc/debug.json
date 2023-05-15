@@ -245,6 +245,42 @@
                     ]
                 }
             ]
+        },
+        {
+          "path": "/v1/debug/unsafe_reset_metadata/{topic}/{partition}",
+          "operations": [
+            {
+              "method": "POST",
+              "summary": "Resets the manifest, updating all replicas with the given manifest. This is very unsafe, so be sure the provided manifest actually has valid contents. Formatting aside, very little validation will be done on the requested manifest.",
+              "operationId": "unsafe_reset_metadata",
+              "nickname": "unsafe_reset_metadata",
+              "parameters": [
+                {
+                  "name": "topic",
+                  "in": "path",
+                  "required": true,
+                  "type": "string"
+                },
+                {
+                  "name": "partition",
+                  "in": "path",
+                  "required": true,
+                  "type": "integer"
+                },
+                {
+                  "name": "body",
+                  "required": true,
+                  "paramType": "body"
+                }
+              ],
+              "responseMessages": [
+                {
+                  "code": 200,
+                  "message": "Partition metadata is reset"
+                }
+              ]
+            }
+          ]
         }
     ],
     "models": {
