@@ -101,20 +101,9 @@ public:
       std::optional<security::tls::mtls_state> mtls_state,
       config::binding<uint32_t> max_request_size,
       config::conversion_binding<std::vector<bool>, std::vector<ss::sstring>>
-        kafka_throughput_controlled_api_keys) noexcept
-      : _server(s)
-      , conn(conn)
-      , _sasl(std::move(sasl))
-      // tests may build a context without a live connection
-      , _client_addr(conn ? conn->addr.addr() : ss::net::inet_address{})
-      , _enable_authorizer(enable_authorizer)
-      , _authlog(_client_addr, client_port())
-      , _mtls_state(std::move(mtls_state))
-      , _max_request_size(std::move(max_request_size))
-      , _kafka_throughput_controlled_api_keys(
-          std::move(kafka_throughput_controlled_api_keys)) {}
+        kafka_throughput_controlled_api_keys) noexcept;
+    ~connection_context() noexcept;
 
-    ~connection_context() noexcept = default;
     connection_context(const connection_context&) = delete;
     connection_context(connection_context&&) = delete;
     connection_context& operator=(const connection_context&) = delete;
@@ -336,9 +325,9 @@ private:
     ctx_log _authlog;
     std::optional<security::tls::mtls_state> _mtls_state;
     config::binding<uint32_t> _max_request_size;
-    ss::lowres_clock::time_point _throttled_until;
     config::conversion_binding<std::vector<bool>, std::vector<ss::sstring>>
       _kafka_throughput_controlled_api_keys;
+    std::unique_ptr<snc_quota_context> _snc_quota_context;
 };
 
 } // namespace kafka
