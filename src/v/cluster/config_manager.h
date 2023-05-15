@@ -121,7 +121,7 @@ private:
     static std::filesystem::path bootstrap_path();
     static std::filesystem::path cache_path();
     ss::future<> wait_for_bootstrap();
-    void handle_cluster_members_update(const std::vector<model::node_id>&);
+    void handle_cluster_members_update(model::node_id, model::membership_state);
 
     config_status my_latest_status;
     status_map status;

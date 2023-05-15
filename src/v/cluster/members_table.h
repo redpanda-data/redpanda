@@ -74,7 +74,7 @@ public:
       model::node_id, model::maintenance_state)>;
 
     using members_updated_cb_t
-      = ss::noncopyable_function<void(std::vector<model::node_id>)>;
+      = ss::noncopyable_function<void(model::node_id, model::membership_state)>;
 
     notification_id_type
       register_maintenance_state_change_notification(maintenance_state_cb_t);
@@ -108,6 +108,6 @@ private:
     void
       notify_maintenance_state_change(model::node_id, model::maintenance_state);
 
-    void notify_members_updated();
+    void notify_member_updated(model::node_id, model::membership_state);
 };
 } // namespace cluster

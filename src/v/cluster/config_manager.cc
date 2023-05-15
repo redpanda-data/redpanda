@@ -212,8 +212,8 @@ ss::future<> config_manager::start() {
 
     _member_removed_notification
       = _members.local().register_members_updated_notification(
-        [this](auto current_members) {
-            handle_cluster_members_update(std::move(current_members));
+        [this](model::node_id id, model::membership_state new_state) {
+            handle_cluster_members_update(id, new_state);
         });
 
     _raft0_leader_changed_notification
@@ -226,13 +226,11 @@ ss::future<> config_manager::start() {
     return ss::now();
 }
 void config_manager::handle_cluster_members_update(
-  const std::vector<model::node_id>& member_ids) {
-    std::erase_if(status, [&member_ids](const auto& status_pair) {
-        // it is fine to look up every time as the members list is usually short
-        return std::find(
-                 member_ids.begin(), member_ids.end(), status_pair.first)
-               == member_ids.end();
-    });
+  model::node_id id, model::membership_state new_state) {
+    if (new_state != model::membership_state::removed) {
+        return;
+    }
+    status.erase(id);
 }
 
 ss::future<> config_manager::stop() {
