@@ -508,6 +508,48 @@ ss::future<> ntp_archiver::sync_manifest_until_term_change() {
     }
 }
 
+ss::future<> ntp_archiver::unsafe_reset_metadata(ss::input_stream<char> is) {
+    // Deserialize outside of lock.
+    cloud_storage::partition_manifest req_m{};
+    co_await req_m.update(std::move(is));
+
+    // We're about to blow away the manifest. Lock it so the upload loop et al
+    // don't try uploading while this is happening.
+    auto sync_timeout = config::shard_local_cfg()
+                          .cloud_storage_metadata_sync_timeout_ms.value();
+
+    auto deadline = ss::lowres_clock::now() + sync_timeout;
+    auto builder = _parent.archival_meta_stm()->batch_start(deadline, _as);
+    builder.reset_metadata();
+
+    // Add segments. Note that we only add, and omit the replaced segments.
+    // Presumably this is being done in the context of a last-ditch effort to
+    // restore functionality to a partition. Replaced segments are likely
+    // unimportant.
+    // TODO: think about archival section.
+    std::vector<cloud_storage::segment_meta> segments;
+    segments.reserve(manifest().size());
+    for (const auto& s : req_m) {
+        segments.emplace_back(s);
+    }
+    builder.add_segments(std::move(segments));
+
+    auto errc = co_await builder.replicate();
+    if (errc) {
+        if (errc == raft::errc::shutting_down) {
+            // During shutdown, act like we hit an abort source rather
+            // than trying to log+handle this like a write error.
+            throw ss::abort_requested_exception();
+        }
+
+        vlog(
+          _rtclog.warn,
+          "archival metadata STM update failed: {}",
+          errc.message());
+        throw std::system_error(errc);
+    }
+}
+
 ss::future<cloud_storage::download_result> ntp_archiver::sync_manifest() {
     vlog(_rtclog.debug, "Downloading manifest in read-replica mode");
     auto [m, res] = co_await download_manifest();

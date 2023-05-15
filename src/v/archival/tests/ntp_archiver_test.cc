@@ -187,6 +187,97 @@ FIXTURE_TEST(test_upload_segments, archiver_fixture) {
     }
 }
 
+FIXTURE_TEST(test_upload_segments_after_reset, archiver_fixture) {
+    std::vector<segment_desc> segments = {
+      {manifest_ntp, model::offset(0), model::term_id(1)},
+      {manifest_ntp, model::offset(1000), model::term_id(4)},
+    };
+    init_storage_api_local(segments);
+    wait_for_partition_leadership(manifest_ntp);
+    auto part = app.partition_manager.local().get(manifest_ntp);
+    tests::cooperative_spin_wait_with_timeout(10s, [part]() mutable {
+        return part->last_stable_offset() >= model::offset(1000);
+    }).get();
+
+    listen();
+    auto [arch_conf, remote_conf] = get_configurations();
+    archival::ntp_archiver archiver(
+      get_ntp_conf(), arch_conf, remote.local(), *part);
+    auto action = ss::defer([&archiver] { archiver.stop().get(); });
+
+    // Upload some segments so we have a manifest to reset.
+    retry_chain_node fib(never_abort);
+    {
+        auto res = upload_next_with_retries(archiver).get0();
+        auto non_compacted_result = res.non_compacted_upload_result;
+        auto compacted_result = res.compacted_upload_result;
+        BOOST_REQUIRE_EQUAL(non_compacted_result.num_succeeded, 2);
+        BOOST_REQUIRE_EQUAL(non_compacted_result.num_failed, 0);
+        BOOST_REQUIRE_EQUAL(compacted_result.num_succeeded, 0);
+        BOOST_REQUIRE_EQUAL(compacted_result.num_failed, 0);
+        BOOST_REQUIRE_EQUAL(2, part->archival_meta_stm()->manifest().size());
+    }
+
+    // Ensure we at least PUT one manifest.
+    BOOST_REQUIRE(get_targets().count(manifest_url) > 0);
+    auto req_opt = get_latest_request(manifest_url);
+    BOOST_REQUIRE(req_opt.has_value());
+    auto req = req_opt.value().get();
+    BOOST_REQUIRE_EQUAL(req.method, "PUT"); // NOLINT
+
+    // Reset the manifest with some completely fabricated metadata.
+    static constexpr std::string_view reset_manifest = R"json({
+    "version": 1,
+    "namespace": "test-ns",
+    "topic": "test-topic",
+    "partition": 42,
+    "revision": 1,
+    "last_offset": 39,
+    "segments": {
+        "10-1-v1.log": {
+            "is_compacted": false,
+            "size_bytes": 1024,
+            "base_offset": 10,
+            "committed_offset": 19,
+            "base_timestamp": 123000,
+            "max_timestamp": 123009,
+            "delta_offset": 4,
+            "delta_offset_end": 6
+        }
+    }
+})json";
+    iobuf reset_manifest_buf;
+    reset_manifest_buf.append(reset_manifest.data(), reset_manifest.size());
+    auto istream = make_iobuf_input_stream(std::move(reset_manifest_buf));
+    archiver.unsafe_reset_metadata(std::move(istream)).get();
+    BOOST_REQUIRE_EQUAL(1, part->archival_meta_stm()->manifest().size());
+    BOOST_REQUIRE_EQUAL(
+      6,
+      part->archival_meta_stm()->manifest().get_start_kafka_offset().value()());
+    BOOST_REQUIRE_EQUAL(
+      14,
+      part->archival_meta_stm()->manifest().get_next_kafka_offset().value()());
+
+    // We should still be able to upload, but the upload should add to the new
+    // end of the cloud partition.
+    {
+        auto res = upload_next_with_retries(archiver).get0();
+        auto non_compacted_result = res.non_compacted_upload_result;
+        auto compacted_result = res.compacted_upload_result;
+        BOOST_REQUIRE_EQUAL(non_compacted_result.num_succeeded, 1);
+        BOOST_REQUIRE_EQUAL(non_compacted_result.num_failed, 0);
+        BOOST_REQUIRE_EQUAL(compacted_result.num_succeeded, 0);
+        BOOST_REQUIRE_EQUAL(compacted_result.num_failed, 0);
+        BOOST_REQUIRE_EQUAL(2, part->archival_meta_stm()->manifest().size());
+    }
+    BOOST_REQUIRE_EQUAL(
+      6,
+      part->archival_meta_stm()->manifest().get_start_kafka_offset().value()());
+    BOOST_REQUIRE_EQUAL(
+      1001,
+      part->archival_meta_stm()->manifest().get_next_kafka_offset().value()());
+}
+
 FIXTURE_TEST(test_upload_after_failure, archiver_fixture) {
     // During a segment upload, the stream used to read from the segment and
     // upload it can be created in two ways, depending on the failures that
