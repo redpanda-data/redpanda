@@ -19,6 +19,7 @@ import (
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/out"
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
+	"github.com/twmb/types"
 )
 
 func newHealthOverviewCommand(fs afero.Fs, p *config.Params) *cobra.Command {
@@ -67,6 +68,7 @@ following conditions are met:
 }
 
 func printHealthOverview(hov *admin.ClusterHealthOverview) {
+	types.Sort(hov)
 	out.Section("CLUSTER HEALTH OVERVIEW")
 	overviewFormat := `Healthy:               %v
 Controller ID:               %v
