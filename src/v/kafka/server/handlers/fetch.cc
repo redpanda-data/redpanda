@@ -353,9 +353,10 @@ static void fill_fetch_responses(
 
 static ss::future<std::vector<read_result>> fetch_ntps_in_parallel(
   cluster::partition_manager& cluster_pm,
-  op_context& octx,
+  const replica_selector& replica_selector,
   std::vector<ntp_fetch_config> ntp_fetch_configs,
-  bool foreign_read) {
+  bool foreign_read,
+  std::optional<model::timeout_clock::time_point> deadline) {
     size_t total_max_bytes = 0;
     for (const auto& c : ntp_fetch_configs) {
         total_max_bytes += c.cfg.max_bytes;
@@ -379,14 +380,15 @@ static ss::future<std::vector<read_result>> fetch_ntps_in_parallel(
 
     auto results = co_await ssx::parallel_transform(
       std::move(ntp_fetch_configs),
-      [&cluster_pm, &octx, foreign_read](const ntp_fetch_config& ntp_cfg) {
+      [&cluster_pm, &replica_selector, deadline, foreign_read](
+        const ntp_fetch_config& ntp_cfg) {
           auto p_id = ntp_cfg.ntp().tp.partition;
           return do_read_from_ntp(
                    cluster_pm,
-                   octx.rctx.replica_selector(),
+                   replica_selector,
                    ntp_cfg,
                    foreign_read,
-                   octx.deadline)
+                   deadline)
             .then([p_id](read_result res) {
                 res.partition = p_id;
                 return res;
@@ -445,10 +447,16 @@ handle_shard_fetch(ss::shard_id shard, op_context& octx, shard_fetch fetch) {
       .invoke_on(
         shard,
         octx.ssg,
-        [foreign_read, &octx, configs = std::move(fetch.requests)](
-          cluster::partition_manager& mgr) mutable {
+        [foreign_read,
+         deadline = octx.deadline,
+         configs = std::move(fetch.requests),
+         &octx](cluster::partition_manager& mgr) mutable {
             return fetch_ntps_in_parallel(
-              mgr, octx, std::move(configs), foreign_read);
+              mgr,
+              octx.rctx.replica_selector(),
+              std::move(configs),
+              foreign_read,
+              deadline);
         })
       .then([responses = std::move(fetch.responses),
              metrics = std::move(fetch.metrics),
