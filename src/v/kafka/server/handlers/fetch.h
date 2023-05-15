@@ -229,11 +229,6 @@ struct read_result {
     using foreign_data_t = ss::foreign_ptr<std::unique_ptr<iobuf>>;
     using data_t = std::unique_ptr<iobuf>;
     using variant_t = std::variant<data_t, foreign_data_t>;
-    struct memory_units_t {
-        ssx::semaphore_units kafka;
-        ssx::semaphore_units fetch;
-    };
-
     explicit read_result(error_code e)
       : error(e) {}
 
@@ -311,7 +306,6 @@ struct read_result {
     error_code error;
     model::partition_id partition;
     std::vector<cluster::rm_stm::tx_range> aborted_transactions;
-    memory_units_t memory_units;
 };
 // struct aggregating fetch requests and corresponding response iterators for
 // the same shard
@@ -368,7 +362,6 @@ ss::future<read_result> read_from_ntp(
   op_context&,
   const model::ntp&,
   fetch_config,
-  bool,
-  bool obligatory_batch_read);
+  bool);
 
 } // namespace kafka
