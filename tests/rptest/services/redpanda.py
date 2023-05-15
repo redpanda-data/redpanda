@@ -2567,7 +2567,7 @@ class RedpandaService(Service):
         metrics_endpoint = ("/metrics" if metrics_endpoint
                             == MetricsEndpoint.METRICS else "/public_metrics")
         url = f"http://{node.account.hostname}:9644{metrics_endpoint}"
-        resp = requests.get(url)
+        resp = requests.get(url, timeout=10)
         assert resp.status_code == 200
         return text_string_to_metric_families(resp.text)
 
