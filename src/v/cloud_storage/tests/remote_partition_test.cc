@@ -243,7 +243,7 @@ FIXTURE_TEST(test_overlapping_segments, cloud_storage_fixture) {
       manifest, segments, false, model::offset_delta(0));
 
     std::stringstream sstr;
-    manifest.serialize(sstr);
+    manifest.serialize_json(sstr);
 
     auto body = sstr.str();
     std::string_view to_replace = "\"committed_offset\":5";
