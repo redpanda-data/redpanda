@@ -15,6 +15,7 @@ from time import sleep
 from rptest.clients.default import DefaultClient
 from rptest.services.admin import Admin
 from rptest.services.cluster import cluster
+from rptest.services.kgo_verifier_services import KgoVerifierProducer
 from rptest.clients.types import TopicSpec
 from rptest.clients.rpk import RpkTool
 from rptest.clients.kafka_cat import KafkaCat
@@ -489,7 +490,8 @@ class CreateTopicUpgradeTest(RedpandaTest):
 
         super(CreateTopicUpgradeTest, self).__init__(test_context=test_context,
                                                      num_brokers=3,
-                                                     si_settings=si_settings)
+                                                     si_settings=si_settings,
+                                                     log_level="trace")
         self.installer = self.redpanda._installer
         self.rpk = RpkTool(self.redpanda)
 
@@ -586,6 +588,88 @@ class CreateTopicUpgradeTest(RedpandaTest):
         assert described['redpanda.remote.write'] == ('false',
                                                       'DEFAULT_CONFIG')
         assert described['redpanda.remote.read'] == ('false', 'DEFAULT_CONFIG')
+
+    @cluster(num_nodes=4)
+    def test_retention_during_upgrade_to_v22_3(self):
+        """
+        This test checks that the retention transformations
+        (i.e retention.bytes|ms -> retention.local.target.bytes|ms) are respected during
+        the upgrade process.
+
+        1. In a v22.2 cluster, create a topic with retention.ms=-1 and cloud storage enabled
+        2. Produce some data with timestamps older than two weeks
+        3. Upgrade one node to v22.3
+        4. Ensure that no segments are deleted locally; retention.local.target.ms should be set to -1
+        """
+        self.install_and_start()
+
+        self.redpanda.set_cluster_config(
+            {
+                'cloud_storage_enable_remote_read': True,
+                'cloud_storage_enable_remote_write': True
+            },
+            # This shouldn't require a restart, but it does in Redpanda < 22.3
+            True)
+
+        topic = TopicSpec(name="test", partition_count=1, replication_factor=3)
+
+        self.logger.info(f"Creating topic {topic.name} ...")
+
+        client = DefaultClient(self.redpanda)
+        client.create_topic(topic)
+
+        self.client().alter_topic_config(topic.name, 'retention.ms', "-1")
+        self.client().alter_topic_config(topic.name, 'message.timestamp.type',
+                                         "CreateTime")
+        self.client().alter_topic_config(topic.name, 'segment.bytes',
+                                         1024 * 1024)
+        self.client().alter_topic_config(topic.name, 'redpanda.remote.read', "true")
+        self.client().alter_topic_config(topic.name, 'redpanda.remote.write', "true")
+
+        dataset_size = 1024 * 1024 * 16
+        base_ts = 1664453149000
+
+        # Produce a run of messages with CreateTime-style timestamps, each
+        # record having a timestamp 1ms greater than the last.
+        producer = KgoVerifierProducer(
+            context=self.test_context,
+            redpanda=self.redpanda,
+            topic=topic.name,
+            msg_size=1024,
+            msg_count=dataset_size // 1024,
+            # A totally arbitrary artificial timestamp base in milliseconds
+            fake_timestamp_ms=base_ts)
+
+        self.logger.info(f"Producing to topic {topic.name}...")
+        producer.start()
+        producer.wait()
+
+        # Allow segment uploads to proceed
+        sleep(5)
+
+        self.installer.install(self.redpanda.nodes, (22, 3))
+
+        segments_before = self.redpanda.node_storage(
+            self.redpanda.nodes[0]).segments(ns="kafka",
+                                             topic=topic.name,
+                                             partition_idx=0)
+        assert segments_before
+
+        self.logger.info(f"Restarting {self.redpanda.nodes[0]} with v22.3")
+        self.redpanda.restart_nodes(self.redpanda.nodes[0])
+
+        # Allow retention to kick in
+        sleep(30)
+
+        segments_after = self.redpanda.node_storage(
+            self.redpanda.nodes[0]).segments(ns="kafka",
+                                             topic=topic.name,
+                                             partition_idx=0)
+        assert segments_after
+
+        assert len(segments_before) == len(
+            segments_after
+        ), f"Retention kicked in before={segments_before} after={segments_after}"
 
     @cluster(num_nodes=3)
     @skip_azure_blob_storage
