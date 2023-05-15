@@ -726,6 +726,10 @@
                 "compaction": {
                     "type": "long",
                     "description": "Compaction index"
+                },
+                "reclaimable_by_retention": {
+                    "type": "long",
+                    "description": "Number of bytes currently reclaimable by retention"
                 }
             }
         }
