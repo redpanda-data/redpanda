@@ -315,6 +315,8 @@ private:
     /// Shadow indexing routes
     ss::future<ss::json::json_return_type>
       sync_local_state_handler(std::unique_ptr<ss::httpd::request>);
+    ss::future<std::unique_ptr<ss::httpd::reply>> unsafe_reset_metadata(
+      std::unique_ptr<ss::httpd::request>, std::unique_ptr<ss::httpd::reply>);
 
     ss::future<ss::json::json_return_type>
       redpanda_services_restart_handler(std::unique_ptr<ss::httpd::request>);
