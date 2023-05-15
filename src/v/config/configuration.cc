@@ -626,7 +626,7 @@ configuration::configuration()
       "transaction_coordinator_partitions",
       "Amount of partitions for transactions coordinator",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
-      16)
+      50)
   , transaction_coordinator_cleanup_policy(
       *this,
       "transaction_coordinator_cleanup_policy",
