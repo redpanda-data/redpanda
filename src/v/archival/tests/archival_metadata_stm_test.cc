@@ -37,6 +37,8 @@
 
 using namespace std::chrono_literals;
 
+static ss::abort_source never_abort;
+
 struct archival_metadata_stm_base_fixture
   : mux_state_machine_fixture
   , http_imposter_fixture {
@@ -507,6 +509,45 @@ FIXTURE_TEST(test_archival_stm_batching, archival_metadata_stm_fixture) {
     batcher.replicate().get();
     BOOST_REQUIRE(archival_stm->manifest().size() == 2);
     BOOST_REQUIRE(archival_stm->get_start_offset() == model::offset(0));
+    BOOST_REQUIRE(archival_stm->manifest().replaced_segments().size() == 0);
+    BOOST_REQUIRE(
+      archival_stm->manifest().begin()->second.archiver_term
+      == model::term_id(2));
+}
+
+FIXTURE_TEST(test_reset_metadata, archival_metadata_stm_fixture) {
+    wait_for_confirmed_leader();
+    std::vector<cloud_storage::segment_meta> m;
+    m.push_back(segment_meta{
+      .base_offset = model::offset(0),
+      .committed_offset = model::offset(99),
+      .archiver_term = model::term_id(1),
+      .segment_term = model::term_id(1)});
+    m.push_back(segment_meta{
+      .base_offset = model::offset(100),
+      .committed_offset = model::offset(199),
+      .archiver_term = model::term_id(1),
+      .segment_term = model::term_id(1)});
+
+    // Replicate add_segment_cmd command that adds segment with offset 0
+    archival_stm->add_segments(m, ss::lowres_clock::now() + 10s, never_abort)
+      .get();
+    BOOST_REQUIRE(archival_stm->manifest().size() == 2);
+
+    // Reset the manifest and update the start offset, term id, etc.
+    auto batcher = archival_stm->batch_start(
+      ss::lowres_clock::now() + 10s, never_abort);
+    m.clear();
+    m.push_back(segment_meta{
+      .base_offset = model::offset(100),
+      .committed_offset = model::offset(199),
+      .archiver_term = model::term_id(2),
+      .segment_term = model::term_id(2)});
+    batcher.reset_metadata();
+    batcher.add_segments(std::move(m));
+    batcher.replicate().get();
+    BOOST_REQUIRE(archival_stm->manifest().size() == 1);
+    BOOST_REQUIRE(archival_stm->get_start_offset() == model::offset(100));
     BOOST_REQUIRE(archival_stm->manifest().replaced_segments().size() == 0);
     BOOST_REQUIRE(
       archival_stm->manifest().begin()->second.archiver_term

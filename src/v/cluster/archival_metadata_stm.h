@@ -50,6 +50,8 @@ public:
     command_batch_builder& operator=(const command_batch_builder&) = delete;
     command_batch_builder& operator=(command_batch_builder&&) = default;
     ~command_batch_builder() = default;
+    /// Reset the manifest.
+    command_batch_builder& reset_metadata();
     /// Add segments to the batch
     command_batch_builder&
       add_segments(std::vector<cloud_storage::segment_meta>);
@@ -192,6 +194,7 @@ private:
     struct truncate_cmd;
     struct update_start_offset_cmd;
     struct cleanup_metadata_cmd;
+    struct reset_metadata_cmd;
     struct snapshot;
 
     friend segment segment_from_meta(const cloud_storage::segment_meta& meta);
@@ -206,6 +209,7 @@ private:
     void apply_truncate(const start_offset& so);
     void apply_cleanup_metadata();
     void apply_update_start_offset(const start_offset& so);
+    void apply_reset_metadata();
 
 private:
     prefix_logger _logger;
