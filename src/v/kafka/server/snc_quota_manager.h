@@ -11,6 +11,7 @@
 
 #pragma once
 #include "config/property.h"
+#include "config/throughput_control_group.h"
 #include "seastarx.h"
 #include "utils/bottomless_token_bucket.h"
 #include "utils/mutex.h"
@@ -171,6 +172,8 @@ private:
       _kafka_quota_balancer_node_period;
     config::binding<double> _kafka_quota_balancer_min_shard_throughput_ratio;
     config::binding<quota_t> _kafka_quota_balancer_min_shard_throughput_bps;
+    config::binding<std::vector<config::throughput_control_group>>
+      _kafka_throughput_control;
 
     // operational, only used in the balancer shard
     ss::timer<ss::lowres_clock> _balancer_timer;

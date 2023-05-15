@@ -146,6 +146,7 @@ snc_quota_manager::snc_quota_manager()
   , _kafka_quota_balancer_min_shard_throughput_bps(
       config::shard_local_cfg()
         .kafka_quota_balancer_min_shard_throughput_bps.bind())
+  , _kafka_throughput_control(config::shard_local_cfg().kafka_throughput_control.bind())
   , _node_quota_default{calc_node_quota_default()}
   , _shard_quota{
       .in {node_to_shard_quota(_node_quota_default.in),
