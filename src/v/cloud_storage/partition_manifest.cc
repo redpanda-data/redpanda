@@ -442,6 +442,10 @@ bool partition_manifest::contains(const segment_name& name) const {
 
 void partition_manifest::delete_replaced_segments() { _replaced.clear(); }
 
+void partition_manifest::unsafe_reset() {
+    *this = partition_manifest{_ntp, _rev};
+}
+
 bool partition_manifest::advance_start_offset(model::offset new_start_offset) {
     if (new_start_offset > _start_offset && !_segments.empty()) {
         auto it = _segments.upper_bound(new_start_offset);

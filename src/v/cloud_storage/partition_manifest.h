@@ -239,6 +239,17 @@ public:
     /// \returns true if start offset was moved
     bool advance_start_offset(model::offset start_offset);
 
+    /// \brief Resets the state of the manifest to the default constructed
+    /// state.
+    ///
+    /// Should only be used as a part of an escape hatch, not during the
+    /// regular operation of a partition.
+    ///
+    /// There may not be anything necessarily unsafe about this, but marking
+    /// "unsafe" to deter further authors from using with giving this a lot of
+    /// thought.
+    void unsafe_reset();
+
     /// Get segment if available or nullopt
     const segment_meta* get(const key& key) const;
     const segment_meta* get(const segment_name& name) const;
