@@ -2,6 +2,6 @@ apiVersion: apps/v1
 kind: StatefulSet
 metadata:
   name: cluster
-  namespace: console
+  namespace: console-finalizers
 spec:
   replicas: 0

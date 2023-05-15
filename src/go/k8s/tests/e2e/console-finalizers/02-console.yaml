@@ -2,7 +2,7 @@ apiVersion: redpanda.vectorized.io/v1alpha1
 kind: Console
 metadata:
   name: console
-  namespace: console
+  namespace: console-finalizers
   annotations:
     operator.redpanda.com/finalizers-timeout: 10s
 spec:
@@ -12,7 +12,7 @@ spec:
     enabled: true
   clusterRef:
     name: cluster
-    namespace: console
+    namespace: console-finalizers
   deployment:
     image: vectorized/console:v2.1.1
   connect:
