@@ -25,6 +25,7 @@
 #include <algorithm>
 #include <cstddef>
 #include <iterator>
+#include <string_view>
 
 namespace re2 {
 class RE2;
@@ -47,12 +48,12 @@ struct throughput_control_group {
     friend std::ostream&
     operator<<(std::ostream& os, const throughput_control_group& tcg);
 
-    bool match_client_id(const ss::sstring& client_id) const;
+    bool match_client_id(std::optional<std::string_view> client_id) const;
     bool is_noname() const noexcept;
     ss::sstring validate() const;
 
     ss::sstring name;
-    std::unique_ptr<re2::RE2> client_id_re;
+    std::unique_ptr<struct client_id_matcher_type> client_id_matcher;
     // nuillopt means unlimited:
     std::optional<int64_t> throughput_limit_node_in_bps;
     std::optional<int64_t> throughput_limit_node_out_bps;
@@ -66,7 +67,9 @@ detail::property_type_name<throughput_control_group>() {
 
 template<class InputIt>
 InputIt find_throughput_control_group(
-  const InputIt first, const InputIt last, const ss::sstring& client_id) {
+  const InputIt first,
+  const InputIt last,
+  const std::optional<std::string_view> client_id) {
     return std::find_if(
       first, last, [&client_id](const config::throughput_control_group& cg) {
           return cg.match_client_id(client_id);

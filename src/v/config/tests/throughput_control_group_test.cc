@@ -23,6 +23,7 @@
 
 #include <algorithm>
 #include <exception>
+#include <iterator>
 #include <locale>
 #include <vector>
 
@@ -46,6 +47,8 @@ cgroups:
     - client_id: another unnamed group indended to verify this passes validation
     - name: match-nothing-group
       client_id: ""
+    - name: unspecified client_id
+      client_id: +empty
     - name: cgroup-catchall because no clientid group given
 )");
     cfg_node.SetStyle(YAML::EmitterStyle::Flow);
@@ -55,7 +58,7 @@ cgroups:
     BOOST_TEST(
       YAML::Dump(config::to_yaml(cfg, config::redact_secrets{false}))
       == YAML::Dump(cfg_node));
-    BOOST_TEST(cfg.cgroups().size() == 5);
+    BOOST_TEST(cfg.cgroups().size() == 6);
     for (auto& cg : cfg.cgroups()) {
         BOOST_TEST(!cg.throughput_limit_node_in_bps);
         BOOST_TEST(!cg.throughput_limit_node_out_bps);
@@ -66,20 +69,25 @@ cgroups:
     BOOST_TEST(cfg.cgroups()[1].name != "");
     BOOST_TEST(cfg.cgroups()[1].is_noname());
     BOOST_TEST(cfg.cgroups()[3].name == "match-nothing-group");
-    BOOST_TEST(
-      (config::find_throughput_control_group(
-         cfg.cgroups().cbegin(), cfg.cgroups().cend(), "client_id-1")
-       == cfg.cgroups().cbegin()));
-    BOOST_TEST(
-      (config::find_throughput_control_group(
-         cfg.cgroups().cbegin(), cfg.cgroups().cend(), "clinet_id-2")
-       == cfg.cgroups().cbegin() + 1));
-    BOOST_TEST(
-      (config::find_throughput_control_group(
-         cfg.cgroups().cbegin(), cfg.cgroups().cend(), "nonclient_id")
-       == cfg.cgroups().cbegin() + 4));
     BOOST_TEST(!validate_throughput_control_groups(
       cfg.cgroups().cbegin(), cfg.cgroups().cend()));
+
+    // Matches
+    const auto get_match_index =
+      [&cfg](
+        std::optional<std::string_view> client_id) -> std::optional<size_t> {
+        if (const auto i = config::find_throughput_control_group(
+              cfg.cgroups().cbegin(), cfg.cgroups().cend(), client_id);
+            i != cfg.cgroups().cend()) {
+            return std::distance(cfg.cgroups().cbegin(), i);
+        }
+        return std::nullopt;
+    };
+    BOOST_TEST(get_match_index("client_id-1") == 0);
+    BOOST_TEST(get_match_index("clinet_id-2") == 1);
+    BOOST_TEST(get_match_index("") == 3);
+    BOOST_TEST(get_match_index(std::nullopt) == 4);
+    BOOST_TEST(get_match_index("nonclient_id") == 5);
 
     // Failure cases
 
