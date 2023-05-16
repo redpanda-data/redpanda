@@ -34,9 +34,7 @@ public:
 
     unresolved_address() = default;
     unresolved_address(
-      ss::sstring host,
-      uint16_t port,
-      inet_family family = ss::net::inet_address::family::INET)
+      ss::sstring host, uint16_t port, inet_family family = std::nullopt)
       : _host(std::move(host))
       , _port(port)
       , _family(family) {}
