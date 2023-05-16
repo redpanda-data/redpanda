@@ -32,7 +32,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
 
-	redpandav1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
+	vectorizedv1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/vectorized/v1alpha1"
 	adminutils "github.com/redpanda-data/redpanda/src/go/k8s/pkg/admin"
 	res "github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources"
 )
@@ -57,7 +57,7 @@ func TestMain(m *testing.M) {
 	if err != nil {
 		log.Fatal(err)
 	}
-	err = redpandav1alpha1.AddToScheme(scheme.Scheme)
+	err = vectorizedv1alpha1.AddToScheme(scheme.Scheme)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -327,7 +327,7 @@ func TestEnsure_NodePortService(t *testing.T) {
 	cluster := pandaCluster()
 	cluster = cluster.DeepCopy()
 	cluster.Spec.Configuration.KafkaAPI = append(cluster.Spec.Configuration.KafkaAPI,
-		redpandav1alpha1.KafkaAPI{External: redpandav1alpha1.ExternalConnectivityConfig{Enabled: true}})
+		vectorizedv1alpha1.KafkaAPI{External: vectorizedv1alpha1.ExternalConnectivityConfig{Enabled: true}})
 	cluster.Name = "ensure-integration-np-cluster"
 
 	npsvc := res.NewNodePortService(
@@ -390,14 +390,14 @@ func TestEnsure_LoadbalancerService(t *testing.T) {
 		cluster := pandaCluster()
 		cluster = cluster.DeepCopy()
 		cluster.Spec.Configuration.KafkaAPI = append(cluster.Spec.Configuration.KafkaAPI,
-			[]redpandav1alpha1.KafkaAPI{
+			[]vectorizedv1alpha1.KafkaAPI{
 				{
 					Port: 1111,
 				},
 				{
-					External: redpandav1alpha1.ExternalConnectivityConfig{
+					External: vectorizedv1alpha1.ExternalConnectivityConfig{
 						Enabled: true,
-						Bootstrap: &redpandav1alpha1.LoadBalancerConfig{
+						Bootstrap: &vectorizedv1alpha1.LoadBalancerConfig{
 							Annotations: map[string]string{"key1": "val1"},
 							Port:        2222,
 						},
@@ -448,7 +448,7 @@ func TestEnsure_Ingress(t *testing.T) {
 
 	cases := []struct {
 		name                string
-		configs             []*redpandav1alpha1.IngressConfig
+		configs             []*vectorizedv1alpha1.IngressConfig
 		internalAnnotations map[string]string
 		defaultEndpoint     string
 		customSubdomain     *string
@@ -458,17 +458,17 @@ func TestEnsure_Ingress(t *testing.T) {
 	}{
 		{
 			name:       "no user config",
-			configs:    []*redpandav1alpha1.IngressConfig{nil},
+			configs:    []*vectorizedv1alpha1.IngressConfig{nil},
 			expectHost: "external.domain",
 		},
 		{
 			name:       "empty user config",
-			configs:    []*redpandav1alpha1.IngressConfig{{}},
+			configs:    []*vectorizedv1alpha1.IngressConfig{{}},
 			expectHost: "external.domain",
 		},
 		{
 			name: "endpoint in user config",
-			configs: []*redpandav1alpha1.IngressConfig{
+			configs: []*vectorizedv1alpha1.IngressConfig{
 				{
 					Endpoint: "pp-rnd",
 				},
@@ -477,13 +477,13 @@ func TestEnsure_Ingress(t *testing.T) {
 		},
 		{
 			name:            "using default endpoint",
-			configs:         []*redpandav1alpha1.IngressConfig{nil},
+			configs:         []*vectorizedv1alpha1.IngressConfig{nil},
 			defaultEndpoint: "console",
 			expectHost:      "console.external.domain",
 		},
 		{
 			name: "user endpoint override default endpoint",
-			configs: []*redpandav1alpha1.IngressConfig{
+			configs: []*vectorizedv1alpha1.IngressConfig{
 				nil,
 				{
 					Endpoint: "override",
@@ -494,7 +494,7 @@ func TestEnsure_Ingress(t *testing.T) {
 		},
 		{
 			name: "ingress explicitly disabled",
-			configs: []*redpandav1alpha1.IngressConfig{
+			configs: []*vectorizedv1alpha1.IngressConfig{
 				{
 					Enabled: &falseVar,
 				},
@@ -503,7 +503,7 @@ func TestEnsure_Ingress(t *testing.T) {
 		},
 		{
 			name: "no subdomain on ingress",
-			configs: []*redpandav1alpha1.IngressConfig{
+			configs: []*vectorizedv1alpha1.IngressConfig{
 				{
 					Endpoint: "anything",
 				},
@@ -513,7 +513,7 @@ func TestEnsure_Ingress(t *testing.T) {
 		},
 		{
 			name: "annotations in user config",
-			configs: []*redpandav1alpha1.IngressConfig{
+			configs: []*vectorizedv1alpha1.IngressConfig{
 				{
 					Endpoint: "pp-rnd",
 					Annotations: map[string]string{
@@ -534,7 +534,7 @@ func TestEnsure_Ingress(t *testing.T) {
 				"a": "not-this",
 				"c": "d",
 			},
-			configs: []*redpandav1alpha1.IngressConfig{
+			configs: []*vectorizedv1alpha1.IngressConfig{
 				{
 					Endpoint: "pp-rnd",
 					Annotations: map[string]string{
@@ -552,7 +552,7 @@ func TestEnsure_Ingress(t *testing.T) {
 		},
 		{
 			name: "create then delete twice",
-			configs: []*redpandav1alpha1.IngressConfig{
+			configs: []*vectorizedv1alpha1.IngressConfig{
 				{
 					Endpoint: "pp-rnd",
 					Annotations: map[string]string{
@@ -571,7 +571,7 @@ func TestEnsure_Ingress(t *testing.T) {
 		},
 		{
 			name: "disable then enable and change",
-			configs: []*redpandav1alpha1.IngressConfig{
+			configs: []*vectorizedv1alpha1.IngressConfig{
 				{
 					Enabled: &falseVar,
 				},

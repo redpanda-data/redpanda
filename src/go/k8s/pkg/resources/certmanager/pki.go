@@ -19,7 +19,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	k8sclient "sigs.k8s.io/controller-runtime/pkg/client"
 
-	redpandav1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
+	vectorizedv1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/vectorized/v1alpha1"
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources"
 	resourcetypes "github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources/types"
 )
@@ -34,7 +34,7 @@ const RootCert = "rootcert"
 type PkiReconciler struct {
 	k8sclient.Client
 	scheme       *runtime.Scheme
-	pandaCluster *redpandav1alpha1.Cluster
+	pandaCluster *vectorizedv1alpha1.Cluster
 	internalFQDN string
 	clusterFQDN  string
 	logger       logr.Logger
@@ -46,7 +46,7 @@ type PkiReconciler struct {
 func NewPki(
 	ctx context.Context,
 	client k8sclient.Client,
-	pandaCluster *redpandav1alpha1.Cluster,
+	pandaCluster *vectorizedv1alpha1.Cluster,
 	fqdn string,
 	clusterFQDN string,
 	scheme *runtime.Scheme,
@@ -62,7 +62,7 @@ func NewPki(
 	}, nil
 }
 
-func keyStoreKey(pandaCluster *redpandav1alpha1.Cluster) types.NamespacedName {
+func keyStoreKey(pandaCluster *vectorizedv1alpha1.Cluster) types.NamespacedName {
 	return types.NamespacedName{Name: keystoreName(pandaCluster.Name), Namespace: pandaCluster.Namespace}
 }
 

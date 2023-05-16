@@ -19,7 +19,7 @@ import (
 
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/api/admin"
 
-	redpandav1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
+	vectorizedv1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/vectorized/v1alpha1"
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources/types"
 )
 
@@ -35,7 +35,7 @@ func (n *NoInternalAdminAPI) Error() string {
 func NewInternalAdminAPI(
 	ctx context.Context,
 	k8sClient client.Reader,
-	redpandaCluster *redpandav1alpha1.Cluster,
+	redpandaCluster *vectorizedv1alpha1.Cluster,
 	fqdn string,
 	adminTLSProvider types.AdminTLSConfigProvider,
 	ordinals ...int32,
@@ -115,7 +115,7 @@ var _ AdminAPIClient = &admin.AdminAPI{}
 type AdminAPIClientFactory func(
 	ctx context.Context,
 	k8sClient client.Reader,
-	redpandaCluster *redpandav1alpha1.Cluster,
+	redpandaCluster *vectorizedv1alpha1.Cluster,
 	fqdn string,
 	adminTLSProvider types.AdminTLSConfigProvider,
 	ordinals ...int32,

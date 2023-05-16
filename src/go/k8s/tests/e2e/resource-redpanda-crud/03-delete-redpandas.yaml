@@ -2,6 +2,6 @@
 apiVersion: kuttl.dev/v1beta1
 kind: TestStep
 delete:
-  - apiVersion: redpanda.vectorized.io/v1alpha1
+  - apiVersion: cluster.redpanda.com/v1alpha1
     kind: Redpanda
     name: redpanda

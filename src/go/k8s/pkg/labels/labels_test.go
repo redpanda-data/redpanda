@@ -15,12 +15,12 @@ import (
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	redpandav1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
+	vectorizedv1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/vectorized/v1alpha1"
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/labels"
 )
 
 func TestLabels(t *testing.T) {
-	testCluster := &redpandav1alpha1.Cluster{
+	testCluster := &vectorizedv1alpha1.Cluster{
 		TypeMeta: metav1.TypeMeta{
 			Kind:       "RedpandaCluster",
 			APIVersion: "core.vectorized.io/v1alpha1",
@@ -29,7 +29,7 @@ func TestLabels(t *testing.T) {
 			Name:      "testcluster",
 			Namespace: "default",
 		},
-		Spec: redpandav1alpha1.ClusterSpec{},
+		Spec: vectorizedv1alpha1.ClusterSpec{},
 	}
 	withPartOfDefined := testCluster.DeepCopy()
 	withPartOfDefined.Labels = make(map[string]string)
@@ -37,7 +37,7 @@ func TestLabels(t *testing.T) {
 
 	tests := []struct {
 		name         string
-		pandaCluster *redpandav1alpha1.Cluster
+		pandaCluster *vectorizedv1alpha1.Cluster
 		expected     map[string]string
 	}{
 		{

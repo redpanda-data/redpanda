@@ -16,20 +16,20 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	redpandav1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
+	vectorizedv1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/vectorized/v1alpha1"
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/admin"
 )
 
 type license struct {
 	client.Client
 	scheme         *runtime.Scheme
-	cluster        *redpandav1alpha1.Cluster
+	cluster        *vectorizedv1alpha1.Cluster
 	adminAPIClient admin.AdminAPIClient
 	hash           hash.Hash
 	logger         logr.Logger
 }
 
-func NewLicense(cl client.Client, scheme *runtime.Scheme, cluster *redpandav1alpha1.Cluster, aa admin.AdminAPIClient, l logr.Logger) *license {
+func NewLicense(cl client.Client, scheme *runtime.Scheme, cluster *vectorizedv1alpha1.Cluster, aa admin.AdminAPIClient, l logr.Logger) *license {
 	return &license{
 		Client:         cl,
 		scheme:         scheme,
@@ -51,7 +51,7 @@ func (l *license) Ensure(ctx context.Context) error {
 		return nil
 	}
 
-	cond := l.cluster.Status.GetCondition(redpandav1alpha1.ClusterConfiguredConditionType)
+	cond := l.cluster.Status.GetCondition(vectorizedv1alpha1.ClusterConfiguredConditionType)
 	if cond == nil || cond.Status != corev1.ConditionTrue {
 		return &RequeueAfterError{RequeueAfter: time.Minute * 1, Msg: "Requeue ensuring license, Cluster not yet configured"}
 	}
@@ -107,7 +107,7 @@ func (l *license) extract(ctx context.Context) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	return ref.GetValue(secret, redpandav1alpha1.DefaultLicenseSecretKey)
+	return ref.GetValue(secret, vectorizedv1alpha1.DefaultLicenseSecretKey)
 }
 
 func checksum(h hash.Hash, license []byte) string {

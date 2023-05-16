@@ -6,9 +6,9 @@ metadata:
   annotations:
     controller-gen.kubebuilder.io/version: v0.4.1
   creationTimestamp: null
-  name: redpandas.redpanda.vectorized.io
+  name: redpandas.cluster.redpanda.com
 spec:
-  group: redpanda.vectorized.io
+  group: cluster.redpanda.com
   names:
     kind: Redpanda
     listKind: RedpandaList

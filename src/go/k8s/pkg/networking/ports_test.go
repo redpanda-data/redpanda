@@ -14,7 +14,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
-	redpandav1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
+	vectorizedv1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/vectorized/v1alpha1"
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/networking"
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources"
 )
@@ -23,17 +23,17 @@ import (
 func TestRedpandaPorts(t *testing.T) {
 	tests := []struct {
 		name           string
-		inputCluster   *redpandav1alpha1.Cluster
+		inputCluster   *vectorizedv1alpha1.Cluster
 		expectedOutput *networking.RedpandaPorts
 	}{
-		{"all with both internal and external", &redpandav1alpha1.Cluster{
-			Spec: redpandav1alpha1.ClusterSpec{
-				Configuration: redpandav1alpha1.RedpandaConfig{
-					AdminAPI:      []redpandav1alpha1.AdminAPI{{Port: 345}, {External: redpandav1alpha1.ExternalConnectivityConfig{Enabled: true}}},
-					KafkaAPI:      []redpandav1alpha1.KafkaAPI{{Port: 123}, {External: redpandav1alpha1.ExternalConnectivityConfig{Enabled: true}}},
-					PandaproxyAPI: []redpandav1alpha1.PandaproxyAPI{{Port: 333}, {External: redpandav1alpha1.PandaproxyExternalConnectivityConfig{ExternalConnectivityConfig: redpandav1alpha1.ExternalConnectivityConfig{Enabled: true}}}},
-					SchemaRegistry: &redpandav1alpha1.SchemaRegistryAPI{Port: 444, External: &redpandav1alpha1.SchemaRegistryExternalConnectivityConfig{
-						ExternalConnectivityConfig: redpandav1alpha1.ExternalConnectivityConfig{Enabled: true},
+		{"all with both internal and external", &vectorizedv1alpha1.Cluster{
+			Spec: vectorizedv1alpha1.ClusterSpec{
+				Configuration: vectorizedv1alpha1.RedpandaConfig{
+					AdminAPI:      []vectorizedv1alpha1.AdminAPI{{Port: 345}, {External: vectorizedv1alpha1.ExternalConnectivityConfig{Enabled: true}}},
+					KafkaAPI:      []vectorizedv1alpha1.KafkaAPI{{Port: 123}, {External: vectorizedv1alpha1.ExternalConnectivityConfig{Enabled: true}}},
+					PandaproxyAPI: []vectorizedv1alpha1.PandaproxyAPI{{Port: 333}, {External: vectorizedv1alpha1.PandaproxyExternalConnectivityConfig{ExternalConnectivityConfig: vectorizedv1alpha1.ExternalConnectivityConfig{Enabled: true}}}},
+					SchemaRegistry: &vectorizedv1alpha1.SchemaRegistryAPI{Port: 444, External: &vectorizedv1alpha1.SchemaRegistryExternalConnectivityConfig{
+						ExternalConnectivityConfig: vectorizedv1alpha1.ExternalConnectivityConfig{Enabled: true},
 					}},
 				},
 			},
@@ -79,13 +79,13 @@ func TestRedpandaPorts(t *testing.T) {
 				ExternalPortIsGenerated: true,
 			},
 		}},
-		{"internal only", &redpandav1alpha1.Cluster{
-			Spec: redpandav1alpha1.ClusterSpec{
-				Configuration: redpandav1alpha1.RedpandaConfig{
-					AdminAPI:       []redpandav1alpha1.AdminAPI{{Port: 345}},
-					KafkaAPI:       []redpandav1alpha1.KafkaAPI{{Port: 123}},
-					PandaproxyAPI:  []redpandav1alpha1.PandaproxyAPI{{Port: 333}},
-					SchemaRegistry: &redpandav1alpha1.SchemaRegistryAPI{Port: 444},
+		{"internal only", &vectorizedv1alpha1.Cluster{
+			Spec: vectorizedv1alpha1.ClusterSpec{
+				Configuration: vectorizedv1alpha1.RedpandaConfig{
+					AdminAPI:       []vectorizedv1alpha1.AdminAPI{{Port: 345}},
+					KafkaAPI:       []vectorizedv1alpha1.KafkaAPI{{Port: 123}},
+					PandaproxyAPI:  []vectorizedv1alpha1.PandaproxyAPI{{Port: 333}},
+					SchemaRegistry: &vectorizedv1alpha1.SchemaRegistryAPI{Port: 444},
 				},
 			},
 		}, &networking.RedpandaPorts{
@@ -114,16 +114,16 @@ func TestRedpandaPorts(t *testing.T) {
 				},
 			},
 		}},
-		{"apis have nodeport explicitly specified", &redpandav1alpha1.Cluster{
-			Spec: redpandav1alpha1.ClusterSpec{
-				Configuration: redpandav1alpha1.RedpandaConfig{
-					KafkaAPI: []redpandav1alpha1.KafkaAPI{{Port: 123}, {Port: 30001, External: redpandav1alpha1.ExternalConnectivityConfig{Enabled: true}}},
-					AdminAPI: []redpandav1alpha1.AdminAPI{{Port: 234}, {Port: 30002, External: redpandav1alpha1.ExternalConnectivityConfig{Enabled: true}}},
-					PandaproxyAPI: []redpandav1alpha1.PandaproxyAPI{{Port: 345}, {Port: 30003, External: redpandav1alpha1.PandaproxyExternalConnectivityConfig{
-						ExternalConnectivityConfig: redpandav1alpha1.ExternalConnectivityConfig{Enabled: true},
+		{"apis have nodeport explicitly specified", &vectorizedv1alpha1.Cluster{
+			Spec: vectorizedv1alpha1.ClusterSpec{
+				Configuration: vectorizedv1alpha1.RedpandaConfig{
+					KafkaAPI: []vectorizedv1alpha1.KafkaAPI{{Port: 123}, {Port: 30001, External: vectorizedv1alpha1.ExternalConnectivityConfig{Enabled: true}}},
+					AdminAPI: []vectorizedv1alpha1.AdminAPI{{Port: 234}, {Port: 30002, External: vectorizedv1alpha1.ExternalConnectivityConfig{Enabled: true}}},
+					PandaproxyAPI: []vectorizedv1alpha1.PandaproxyAPI{{Port: 345}, {Port: 30003, External: vectorizedv1alpha1.PandaproxyExternalConnectivityConfig{
+						ExternalConnectivityConfig: vectorizedv1alpha1.ExternalConnectivityConfig{Enabled: true},
 					}}},
-					SchemaRegistry: &redpandav1alpha1.SchemaRegistryAPI{Port: 30004, External: &redpandav1alpha1.SchemaRegistryExternalConnectivityConfig{
-						ExternalConnectivityConfig: redpandav1alpha1.ExternalConnectivityConfig{Enabled: true},
+					SchemaRegistry: &vectorizedv1alpha1.SchemaRegistryAPI{Port: 30004, External: &vectorizedv1alpha1.SchemaRegistryExternalConnectivityConfig{
+						ExternalConnectivityConfig: vectorizedv1alpha1.ExternalConnectivityConfig{Enabled: true},
 						StaticNodePort:             true,
 					}},
 				},
@@ -168,17 +168,17 @@ func TestRedpandaPorts(t *testing.T) {
 		}},
 		{
 			"kafka api external has bootstrap loadbalancer",
-			&redpandav1alpha1.Cluster{
-				Spec: redpandav1alpha1.ClusterSpec{
-					Configuration: redpandav1alpha1.RedpandaConfig{
-						KafkaAPI: []redpandav1alpha1.KafkaAPI{
+			&vectorizedv1alpha1.Cluster{
+				Spec: vectorizedv1alpha1.ClusterSpec{
+					Configuration: vectorizedv1alpha1.RedpandaConfig{
+						KafkaAPI: []vectorizedv1alpha1.KafkaAPI{
 							{
 								Port: 123,
 							},
 							{
-								External: redpandav1alpha1.ExternalConnectivityConfig{
+								External: vectorizedv1alpha1.ExternalConnectivityConfig{
 									Enabled: true,
-									Bootstrap: &redpandav1alpha1.LoadBalancerConfig{
+									Bootstrap: &vectorizedv1alpha1.LoadBalancerConfig{
 										Port: 1234,
 									},
 								},

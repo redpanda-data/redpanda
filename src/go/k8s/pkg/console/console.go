@@ -16,7 +16,7 @@ import (
 	"github.com/cloudhut/common/rest"
 	"github.com/redpanda-data/console/backend/pkg/config"
 
-	redpandav1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
+	vectorizedv1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/vectorized/v1alpha1"
 )
 
 // ConsoleConfig is the config passed to the Redpanda Console app
@@ -56,10 +56,10 @@ type EnterpriseRBAC struct {
 
 // EnterpriseLogin is the Console Enterprise Login config
 type EnterpriseLogin struct {
-	Enabled       bool                                           `json:"enabled" yaml:"enabled"`
-	JWTSecret     string                                         `json:"jwtSecret,omitempty" yaml:"jwtSecret,omitempty"`
-	Google        *EnterpriseLoginGoogle                         `json:"google,omitempty" yaml:"google,omitempty"`
-	RedpandaCloud *redpandav1alpha1.EnterpriseLoginRedpandaCloud `json:"redpandaCloud,omitempty" yaml:"redpandaCloud,omitempty"`
+	Enabled       bool                                             `json:"enabled" yaml:"enabled"`
+	JWTSecret     string                                           `json:"jwtSecret,omitempty" yaml:"jwtSecret,omitempty"`
+	Google        *EnterpriseLoginGoogle                           `json:"google,omitempty" yaml:"google,omitempty"`
+	RedpandaCloud *vectorizedv1alpha1.EnterpriseLoginRedpandaCloud `json:"redpandaCloud,omitempty" yaml:"redpandaCloud,omitempty"`
 }
 
 // EnterpriseLoginGoogle is the Console Enterprise Google SSO config

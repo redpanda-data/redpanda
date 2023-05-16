@@ -15,7 +15,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	redpandav1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
+	vectorizedv1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/vectorized/v1alpha1"
 	adminutils "github.com/redpanda-data/redpanda/src/go/k8s/pkg/admin"
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources"
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources/certmanager"
@@ -26,7 +26,7 @@ func NewAdminAPI(
 	ctx context.Context,
 	cl client.Client,
 	scheme *runtime.Scheme,
-	cluster *redpandav1alpha1.Cluster,
+	cluster *vectorizedv1alpha1.Cluster,
 	clusterDomain string,
 	adminAPI adminutils.AdminAPIClientFactory,
 	log logr.Logger,
@@ -63,7 +63,7 @@ func NewAdminAPI(
 func NewKafkaAdmin(
 	ctx context.Context,
 	cl client.Client,
-	cluster *redpandav1alpha1.Cluster,
+	cluster *vectorizedv1alpha1.Cluster,
 	store *Store,
 ) (KafkaAdminClient, error) {
 	opts := []kgo.Opt{kgo.SeedBrokers(getBrokers(cluster)...)}
@@ -95,11 +95,11 @@ func NewKafkaAdmin(
 }
 
 func getSASLOpt(
-	ctx context.Context, cl client.Client, cluster *redpandav1alpha1.Cluster,
+	ctx context.Context, cl client.Client, cluster *vectorizedv1alpha1.Cluster,
 ) (kgo.Opt, error) {
 	// Use Cluster superuser to manage Kafka
 	// Console Kafka Service Account can't add ACLs to itself
-	su := redpandav1alpha1.SecretKeyRef{
+	su := vectorizedv1alpha1.SecretKeyRef{
 		Namespace: cluster.GetNamespace(),
 		Name:      fmt.Sprintf("%s-superuser", cluster.GetName()),
 	}
@@ -122,7 +122,7 @@ func getSASLOpt(
 }
 
 func getTLSConfigOpt(
-	cluster *redpandav1alpha1.Cluster, store *Store,
+	cluster *vectorizedv1alpha1.Cluster, store *Store,
 ) (kgo.Opt, error) {
 	keypair, err := clientCert(cluster, store)
 	if err != nil {
@@ -148,9 +148,9 @@ func getTLSConfigOpt(
 }
 
 func clientCert(
-	cluster *redpandav1alpha1.Cluster, store *Store,
+	cluster *vectorizedv1alpha1.Cluster, store *Store,
 ) ([]tls.Certificate, error) {
-	clientcert := redpandav1alpha1.SecretKeyRef{}
+	clientcert := vectorizedv1alpha1.SecretKeyRef{}
 	secret, exists := store.GetKafkaClientCert(cluster)
 	if !exists {
 		return nil, fmt.Errorf("not in store") //nolint:goerr113 // no need to declare new error type
@@ -173,9 +173,9 @@ func clientCert(
 }
 
 func caCert(
-	cluster *redpandav1alpha1.Cluster, store *Store,
+	cluster *vectorizedv1alpha1.Cluster, store *Store,
 ) (*x509.CertPool, error) {
-	rootca := redpandav1alpha1.SecretKeyRef{}
+	rootca := vectorizedv1alpha1.SecretKeyRef{}
 	secret, exists := store.GetKafkaNodeCert(cluster)
 	if !exists {
 		return nil, fmt.Errorf("not in store") //nolint:goerr113 // no need to declare new error type

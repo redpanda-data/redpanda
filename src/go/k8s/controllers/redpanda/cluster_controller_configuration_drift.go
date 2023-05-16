@@ -24,7 +24,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/event"
 
-	redpandav1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
+	vectorizedv1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/vectorized/v1alpha1"
 	adminutils "github.com/redpanda-data/redpanda/src/go/k8s/pkg/admin"
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/networking"
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources"
@@ -59,7 +59,7 @@ func (r *ClusterConfigurationDriftReconciler) Reconcile(
 	log.V(logger.DebugLevel).Info("Starting configuration drift reconcile loop")
 	defer log.V(logger.DebugLevel).Info("Finished configuration drift reconcile loop")
 
-	var redpandaCluster redpandav1alpha1.Cluster
+	var redpandaCluster vectorizedv1alpha1.Cluster
 	if err := r.Get(ctx, req.NamespacedName, &redpandaCluster); err != nil {
 		if apierrors.IsNotFound(err) {
 			return ctrl.Result{}, nil
@@ -82,7 +82,7 @@ func (r *ClusterConfigurationDriftReconciler) Reconcile(
 		return ctrl.Result{}, nil
 	}
 
-	condition := redpandaCluster.Status.GetCondition(redpandav1alpha1.ClusterConfiguredConditionType)
+	condition := redpandaCluster.Status.GetCondition(vectorizedv1alpha1.ClusterConfiguredConditionType)
 	if condition == nil || condition.Status != corev1.ConditionTrue {
 		// configuration drift already signaled
 		return ctrl.Result{RequeueAfter: r.getDriftCheckPeriod()}, nil
@@ -160,9 +160,9 @@ func (r *ClusterConfigurationDriftReconciler) Reconcile(
 
 	// Signal drift by setting the condition to False
 	redpandaCluster.Status.SetCondition(
-		redpandav1alpha1.ClusterConfiguredConditionType,
+		vectorizedv1alpha1.ClusterConfiguredConditionType,
 		corev1.ConditionFalse,
-		redpandav1alpha1.ClusterConfiguredReasonDrift,
+		vectorizedv1alpha1.ClusterConfiguredReasonDrift,
 		"Drift detected by periodic check",
 	)
 	if err := r.Status().Update(ctx, &redpandaCluster); err != nil {
@@ -177,7 +177,7 @@ func (r *ClusterConfigurationDriftReconciler) SetupWithManager(
 	mgr ctrl.Manager,
 ) error {
 	return ctrl.NewControllerManagedBy(mgr).
-		For(&redpandav1alpha1.Cluster{}).
+		For(&vectorizedv1alpha1.Cluster{}).
 		WithEventFilter(createOrDeleteEventFilter{}).
 		Complete(r)
 }

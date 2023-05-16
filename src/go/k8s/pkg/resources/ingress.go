@@ -22,7 +22,7 @@ import (
 	k8sclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
-	redpandav1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
+	vectorizedv1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/vectorized/v1alpha1"
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/labels"
 )
 
@@ -49,7 +49,7 @@ type IngressResource struct {
 	svcPortName     string
 	annotations     map[string]string
 	TLS             []netv1.IngressTLS
-	userConfig      *redpandav1alpha1.IngressConfig
+	userConfig      *vectorizedv1alpha1.IngressConfig
 	defaultEndpoint string
 	logger          logr.Logger
 }
@@ -129,7 +129,7 @@ func (r *IngressResource) GetAnnotations() map[string]string {
 
 // WithUserConfig injects the end-user configuration for the ingress
 func (r *IngressResource) WithUserConfig(
-	userConfig *redpandav1alpha1.IngressConfig,
+	userConfig *vectorizedv1alpha1.IngressConfig,
 ) *IngressResource {
 	r.userConfig = userConfig
 	return r
@@ -263,9 +263,9 @@ func ingressKind() string {
 func objectLabels(obj metav1.Object) (labels.CommonLabels, error) {
 	var objLabels labels.CommonLabels
 	switch o := obj.(type) {
-	case *redpandav1alpha1.Cluster:
+	case *vectorizedv1alpha1.Cluster:
 		objLabels = labels.ForCluster(o)
-	case *redpandav1alpha1.Console:
+	case *vectorizedv1alpha1.Console:
 		objLabels = labels.ForConsole(o)
 	default:
 		return nil, fmt.Errorf("expected object to be Cluster or Console") //nolint:goerr113 // no need to declare new error type

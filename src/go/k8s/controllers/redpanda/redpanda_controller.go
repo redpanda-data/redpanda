@@ -79,9 +79,9 @@ type RedpandaReconciler struct {
 // TO BE RE-ADDED WHEN CLUSTER CONTROLLER BE REMOVED + kubebuilder:rbac:groups=core,resources=secrets,verbs=get;list;watch;create;update;patch;delete
 
 // redpanda resources
-// +kubebuilder:rbac:groups=redpanda.vectorized.io,resources=redpandas,verbs=get;list;watch;create;update;patch;delete
-// +kubebuilder:rbac:groups=redpanda.vectorized.io,resources=redpandas/status,verbs=get;update;patch
-// +kubebuilder:rbac:groups=redpanda.vectorized.io,resources=redpandas/finalizers,verbs=update
+// +kubebuilder:rbac:groups=cluster.redpanda.com,resources=redpandas,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=cluster.redpanda.com,resources=redpandas/status,verbs=get;update;patch
+// +kubebuilder:rbac:groups=cluster.redpanda.com,resources=redpandas/finalizers,verbs=update
 // TO BE RE-ADDED WHEN CLUSTER CONTROLLER BE REMOVED + kubebuilder:rbac:groups=core,resources=events,verbs=create;patch
 
 // SetupWithManager sets up the controller with the Manager.

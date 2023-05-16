@@ -14,7 +14,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	k8slabels "k8s.io/apimachinery/pkg/labels"
 
-	redpandav1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
+	vectorizedv1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/vectorized/v1alpha1"
 )
 
 // https://kubernetes.io/docs/concepts/overview/working-with-objects/common-labels/
@@ -41,7 +41,7 @@ type CommonLabels map[string]string
 
 // ForCluster returns a set of labels that is a union of cluster labels as well as recommended default labels
 // recommended by the kubernetes documentation https://kubernetes.io/docs/concepts/overview/working-with-objects/common-labels/
-func ForCluster(cluster *redpandav1alpha1.Cluster) CommonLabels {
+func ForCluster(cluster *vectorizedv1alpha1.Cluster) CommonLabels {
 	dl := defaultClusterLabels(cluster)
 	labels := merge(cluster.Labels, dl)
 
@@ -50,7 +50,7 @@ func ForCluster(cluster *redpandav1alpha1.Cluster) CommonLabels {
 
 // ForConsole return a set of labels that is a union of console labels as well as recommended default labels
 // recommended by the kubernetes documentation https://kubernetes.io/docs/concepts/overview/working-with-objects/common-labels/
-func ForConsole(console *redpandav1alpha1.Console) CommonLabels {
+func ForConsole(console *vectorizedv1alpha1.Console) CommonLabels {
 	dl := defaultConsoleLabels(console)
 	labels := merge(console.Labels, dl)
 
@@ -101,7 +101,7 @@ func merge(
 	return mainLabels
 }
 
-func defaultClusterLabels(cluster *redpandav1alpha1.Cluster) map[string]string {
+func defaultClusterLabels(cluster *vectorizedv1alpha1.Cluster) map[string]string {
 	labels := make(map[string]string)
 	labels[NameKey] = nameKeyRedpandaVal
 	labels[InstanceKey] = cluster.Name
@@ -112,7 +112,7 @@ func defaultClusterLabels(cluster *redpandav1alpha1.Cluster) map[string]string {
 	return labels
 }
 
-func defaultConsoleLabels(console *redpandav1alpha1.Console) map[string]string {
+func defaultConsoleLabels(console *vectorizedv1alpha1.Console) map[string]string {
 	labels := make(map[string]string)
 	labels[NameKey] = nameKeyConsoleVal
 	labels[InstanceKey] = console.Name

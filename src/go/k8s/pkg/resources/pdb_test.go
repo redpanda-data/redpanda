@@ -22,7 +22,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
-	redpandav1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
+	vectorizedv1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/vectorized/v1alpha1"
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/labels"
 	res "github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources"
 )
@@ -31,7 +31,7 @@ func TestEnsure_PDB(t *testing.T) {
 	cluster := pandaCluster()
 	one := intstr.FromInt(1)
 	two := intstr.FromInt(1)
-	cluster.Spec.PodDisruptionBudget = &redpandav1alpha1.PDBConfig{
+	cluster.Spec.PodDisruptionBudget = &vectorizedv1alpha1.PDBConfig{
 		Enabled:      true,
 		MinAvailable: &one,
 	}
@@ -52,7 +52,7 @@ func TestEnsure_PDB(t *testing.T) {
 	tests := []struct {
 		name           string
 		existingObject client.Object
-		pandaCluster   *redpandav1alpha1.Cluster
+		pandaCluster   *vectorizedv1alpha1.Cluster
 		expectedObject *policyv1.PodDisruptionBudget
 	}{
 		{"none existing", nil, cluster, pdb},
@@ -63,7 +63,7 @@ func TestEnsure_PDB(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			c := fake.NewClientBuilder().Build()
 
-			err := redpandav1alpha1.AddToScheme(scheme.Scheme)
+			err := vectorizedv1alpha1.AddToScheme(scheme.Scheme)
 			assert.NoError(t, err, tt.name)
 
 			if tt.existingObject != nil {

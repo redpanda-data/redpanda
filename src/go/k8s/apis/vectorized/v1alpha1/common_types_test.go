@@ -9,7 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	redpandav1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
+	vectorizedv1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/vectorized/v1alpha1"
 )
 
 func TestFinalizerTimeout(t *testing.T) {
@@ -48,16 +48,16 @@ func TestFinalizerTimeout(t *testing.T) {
 	}
 	for idx, tc := range tcs {
 		t.Run(fmt.Sprintf("test-%d", idx), func(t *testing.T) {
-			c := redpandav1alpha1.Console{}
+			c := vectorizedv1alpha1.Console{}
 			if tc.annotation != nil {
 				c.ObjectMeta.Annotations = map[string]string{
-					redpandav1alpha1.FinalizersTimeoutAnnotation: *tc.annotation,
+					vectorizedv1alpha1.FinalizersTimeoutAnnotation: *tc.annotation,
 				}
 			}
 			if !tc.deletion.IsZero() {
 				c.DeletionTimestamp = &metav1.Time{Time: tc.deletion}
 			}
-			ex, err := redpandav1alpha1.FinalizersExpired(&c)
+			ex, err := vectorizedv1alpha1.FinalizersExpired(&c)
 			if tc.error {
 				require.Error(t, err)
 			} else {

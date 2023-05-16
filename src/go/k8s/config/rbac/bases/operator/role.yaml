@@ -81,6 +81,32 @@ rules:
   - update
   - watch
 - apiGroups:
+  - cluster.redpanda.com
+  resources:
+  - redpandas
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - cluster.redpanda.com
+  resources:
+  - redpandas/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - cluster.redpanda.com
+  resources:
+  - redpandas/status
+  verbs:
+  - get
+  - patch
+  - update
+- apiGroups:
   - ""
   resources:
   - configmaps
@@ -279,32 +305,6 @@ rules:
   - redpanda.vectorized.io
   resources:
   - consoles/status
-  verbs:
-  - get
-  - patch
-  - update
-- apiGroups:
-  - redpanda.vectorized.io
-  resources:
-  - redpandas
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - redpanda.vectorized.io
-  resources:
-  - redpandas/finalizers
-  verbs:
-  - update
-- apiGroups:
-  - redpanda.vectorized.io
-  resources:
-  - redpandas/status
   verbs:
   - get
   - patch

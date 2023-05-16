@@ -19,7 +19,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/metrics"
 
-	redpandav1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
+	vectorizedv1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/vectorized/v1alpha1"
 )
 
 var (
@@ -74,7 +74,7 @@ func NewClusterMetricsController(c client.Client) *ClusterMetricController {
 func (r *ClusterMetricController) Reconcile(
 	ctx context.Context, _ ctrl.Request,
 ) (ctrl.Result, error) {
-	cl := redpandav1alpha1.ClusterList{}
+	cl := vectorizedv1alpha1.ClusterList{}
 	err := r.List(ctx, &cl, &client.ListOptions{})
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("unable to list the clusters: %w", err)
@@ -110,7 +110,7 @@ func (r *ClusterMetricController) Reconcile(
 
 	misconfiguredClustersCount := make(map[string]int)
 	for i := range cl.Items {
-		if cond := cl.Items[i].Status.GetCondition(redpandav1alpha1.ClusterConfiguredConditionType); cond != nil && cond.Status != corev1.ConditionTrue {
+		if cond := cl.Items[i].Status.GetCondition(vectorizedv1alpha1.ClusterConfiguredConditionType); cond != nil && cond.Status != corev1.ConditionTrue {
 			cur := misconfiguredClustersCount[cond.Reason]
 			cur++
 			misconfiguredClustersCount[cond.Reason] = cur
@@ -136,7 +136,7 @@ func (r *ClusterMetricController) Reconcile(
 // SetupWithManager sets up the controller with the Manager.
 func (r *ClusterMetricController) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
-		For(&redpandav1alpha1.Cluster{}).
+		For(&vectorizedv1alpha1.Cluster{}).
 		Owns(&corev1.Pod{}).
 		Complete(r)
 }

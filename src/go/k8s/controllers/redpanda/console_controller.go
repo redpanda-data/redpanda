@@ -33,7 +33,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"sigs.k8s.io/controller-runtime/pkg/source"
 
-	redpandav1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
+	vectorizedv1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/vectorized/v1alpha1"
 	adminutils "github.com/redpanda-data/redpanda/src/go/k8s/pkg/admin"
 	consolepkg "github.com/redpanda-data/redpanda/src/go/k8s/pkg/console"
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources"
@@ -80,7 +80,7 @@ func (r *ConsoleReconciler) Reconcile(
 	log.Info("Starting reconcile loop")
 	defer log.Info("Finished reconcile loop")
 
-	console := &redpandav1alpha1.Console{}
+	console := &vectorizedv1alpha1.Console{}
 	if err := r.Get(ctx, req.NamespacedName, console); err != nil {
 		if apierrors.IsNotFound(err) {
 			return ctrl.Result{}, nil
@@ -116,9 +116,9 @@ func (r *ConsoleReconciler) Reconcile(
 				corev1.EventTypeWarning, ClusterNotFoundEvent,
 				"Unable to reconcile Console as the referenced Cluster %s is not found or is being deleted", console.GetClusterRef(),
 			)
-		case errors.Is(err, redpandav1alpha1.ErrClusterNotConfigured) && consoleIsDeleting:
+		case errors.Is(err, vectorizedv1alpha1.ErrClusterNotConfigured) && consoleIsDeleting:
 			r.Log.Info("cluster %s is not yet configured but console is deleting -> proceeding with the delete.", console.GetClusterRef())
-		case errors.Is(err, redpandav1alpha1.ErrClusterNotConfigured) && !consoleIsDeleting:
+		case errors.Is(err, vectorizedv1alpha1.ErrClusterNotConfigured):
 			r.EventRecorder.Eventf(
 				console,
 				corev1.EventTypeWarning, ClusterNotConfiguredEvent,
@@ -155,8 +155,8 @@ type Reconciling ConsoleState
 // Do handles reconciliation of Console
 func (r *Reconciling) Do(
 	ctx context.Context,
-	console *redpandav1alpha1.Console,
-	cluster *redpandav1alpha1.Cluster,
+	console *vectorizedv1alpha1.Console,
+	cluster *vectorizedv1alpha1.Cluster,
 	l logr.Logger,
 ) (ctrl.Result, error) {
 	log := l.WithName("Reconciling.Do")
@@ -239,8 +239,8 @@ type Deleting ConsoleState
 // Do handles deletion of Console
 func (r *Deleting) Do(
 	ctx context.Context,
-	console *redpandav1alpha1.Console,
-	cluster *redpandav1alpha1.Cluster,
+	console *vectorizedv1alpha1.Console,
+	cluster *vectorizedv1alpha1.Cluster,
 	l logr.Logger,
 ) (ctrl.Result, error) {
 	log := l.WithName("Deleting.Do")
@@ -260,7 +260,7 @@ func (r *Deleting) Do(
 
 // handleSpecChange is a hook to call before Reconciling
 func (r *ConsoleReconciler) handleSpecChange(
-	ctx context.Context, console *redpandav1alpha1.Console,
+	ctx context.Context, console *vectorizedv1alpha1.Console,
 ) error {
 	log := r.Log.WithName("handleSpecChange")
 	if console.Status.ConfigMapRef != nil {
@@ -279,7 +279,7 @@ func (r *ConsoleReconciler) handleSpecChange(
 // SetupWithManager sets up the controller with the Manager.
 func (r *ConsoleReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
-		For(&redpandav1alpha1.Console{}).
+		For(&vectorizedv1alpha1.Console{}).
 		Owns(&corev1.Secret{}).
 		Owns(&corev1.ServiceAccount{}).
 		Owns(&corev1.ConfigMap{}, builder.WithPredicates(utils.DeletePredicate{})).
@@ -287,7 +287,7 @@ func (r *ConsoleReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Owns(&corev1.Service{}).
 		Owns(&netv1.Ingress{}).
 		Watches(
-			&source.Kind{Type: &redpandav1alpha1.Cluster{}},
+			&source.Kind{Type: &vectorizedv1alpha1.Cluster{}},
 			handler.EnqueueRequestsFromMapFunc(r.reconcileConsoleForCluster),
 			builder.WithPredicates(predicate.ResourceVersionChangedPredicate{}),
 		).
@@ -309,7 +309,7 @@ func (r *ConsoleReconciler) reconcileConsoleForCluster(c client.Object) []reconc
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	cs := redpandav1alpha1.ConsoleList{}
+	cs := vectorizedv1alpha1.ConsoleList{}
 	err := r.Client.List(ctx, &cs) // all namespaces
 	if err != nil {
 		r.Log.Error(err, "unexpected: could not list consoles for propagating reconcile events")

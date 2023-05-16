@@ -10,7 +10,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/validation/field"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	redpandav1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
+	vectorizedv1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/vectorized/v1alpha1"
 	consolepkg "github.com/redpanda-data/redpanda/src/go/k8s/pkg/console"
 )
 
@@ -26,7 +26,7 @@ func (e *ErrKeyNotFound) Error() string {
 
 // ValidateEnterpriseRBAC validates the referenced RBAC ConfigMap
 func ValidateEnterpriseRBAC(
-	ctx context.Context, cl client.Client, console *redpandav1alpha1.Console,
+	ctx context.Context, cl client.Client, console *vectorizedv1alpha1.Console,
 ) error {
 	if enterprise := console.Spec.Enterprise; enterprise != nil {
 		configmap := &corev1.ConfigMap{}
@@ -42,7 +42,7 @@ func ValidateEnterpriseRBAC(
 
 // ValidateEnterpriseGoogleSA validates the referenced Google SA ConfigMap
 func ValidateEnterpriseGoogleSA(
-	ctx context.Context, cl client.Client, console *redpandav1alpha1.Console,
+	ctx context.Context, cl client.Client, console *vectorizedv1alpha1.Console,
 ) error {
 	if login := console.Spec.Login; console.IsGoogleLoginEnabled() && login.Google.Directory != nil {
 		configmap := &corev1.ConfigMap{}
@@ -58,11 +58,11 @@ func ValidateEnterpriseGoogleSA(
 
 // ValidateEnterpriseGoogleClientCredentials validates the referenced Google Client Credentials ConfigMap
 func ValidateEnterpriseGoogleClientCredentials(
-	ctx context.Context, cl client.Client, console *redpandav1alpha1.Console,
+	ctx context.Context, cl client.Client, console *vectorizedv1alpha1.Console,
 ) error {
 	if console.IsGoogleLoginEnabled() {
 		cc := console.Spec.Login.Google.ClientCredentialsRef
-		key := redpandav1alpha1.SecretKeyRef{Namespace: cc.Namespace, Name: cc.Name}
+		key := vectorizedv1alpha1.SecretKeyRef{Namespace: cc.Namespace, Name: cc.Name}
 		ccSecret, err := key.GetSecret(ctx, cl)
 		if err != nil {
 			return err
@@ -79,7 +79,7 @@ func ValidateEnterpriseGoogleClientCredentials(
 
 // ValidatePrometheus validates the prometheus endpoint config
 func ValidatePrometheus(
-	ctx context.Context, cl client.Client, console *redpandav1alpha1.Console,
+	ctx context.Context, cl client.Client, console *vectorizedv1alpha1.Console,
 ) (field.ErrorList, error) {
 	var allErrs field.ErrorList
 	if console.Spec.Cloud == nil || console.Spec.Cloud.PrometheusEndpoint == nil {

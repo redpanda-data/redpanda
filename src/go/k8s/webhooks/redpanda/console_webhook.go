@@ -15,7 +15,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
-	redpandav1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
+	vectorizedv1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/vectorized/v1alpha1"
 	consolepkg "github.com/redpanda-data/redpanda/src/go/k8s/pkg/console"
 )
 
@@ -35,7 +35,7 @@ func (v *ConsoleValidator) Handle(
 	ctx context.Context,
 	req admission.Request, //nolint:gocritic // interface not require pointer
 ) admission.Response {
-	console := &redpandav1alpha1.Console{}
+	console := &vectorizedv1alpha1.Console{}
 
 	err := v.decoder.Decode(req, console)
 	if err != nil {
@@ -62,7 +62,7 @@ func (v *ConsoleValidator) Handle(
 
 	// Admit console even if cluster is not yet configured, controller will do backoff retries
 	// No checks on referenced cluster if console is deleting so controller can remove finalizers
-	cluster := &redpandav1alpha1.Cluster{}
+	cluster := &vectorizedv1alpha1.Cluster{}
 	if err := v.Client.Get(ctx, console.GetClusterRef(), cluster); err != nil && console.GetDeletionTimestamp() == nil {
 		if apierrors.IsNotFound(err) {
 			return admission.Denied(fmt.Sprintf("cluster %s/%s not found", console.Spec.ClusterRef.Namespace, console.Spec.ClusterRef.Name))
@@ -119,7 +119,7 @@ func (m *ConsoleDefaulter) Handle(
 	ctx context.Context,
 	req admission.Request, //nolint:gocritic // interface not require pointer
 ) admission.Response {
-	console := &redpandav1alpha1.Console{}
+	console := &vectorizedv1alpha1.Console{}
 
 	err := m.decoder.Decode(req, console)
 	if err != nil {
@@ -135,7 +135,7 @@ func (m *ConsoleDefaulter) Handle(
 
 // Default implements admission defaulting
 func (m *ConsoleDefaulter) Default(
-	console *redpandav1alpha1.Console,
+	console *vectorizedv1alpha1.Console,
 ) (*admission.Response, error) {
 	original, err := json.Marshal(console.DeepCopy())
 	if err != nil {
@@ -146,7 +146,7 @@ func (m *ConsoleDefaulter) Default(
 		login.JWTSecretRef.Key = consolepkg.DefaultJWTSecretKey
 	}
 	if license := console.Spec.LicenseRef; license != nil && license.Key == "" {
-		license.Key = redpandav1alpha1.DefaultLicenseSecretKey
+		license.Key = vectorizedv1alpha1.DefaultLicenseSecretKey
 	}
 	if console.Spec.Cloud != nil &&
 		console.Spec.Cloud.PrometheusEndpoint != nil &&

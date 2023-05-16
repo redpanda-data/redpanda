@@ -1,5 +1,5 @@
 ---
-apiVersion: redpanda.vectorized.io/v1alpha1
+apiVersion: cluster.redpanda.com/v1alpha1
 kind: Redpanda
 metadata:
   finalizers:
@@ -21,7 +21,6 @@ status:
   helmReleaseReady: true
   helmRepository: redpanda-repository
   helmRepositoryReady: true
----
 ---
 apiVersion: apps/v1
 kind: StatefulSet

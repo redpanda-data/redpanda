@@ -11,7 +11,7 @@
 package networking
 
 import (
-	redpandav1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
+	vectorizedv1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/vectorized/v1alpha1"
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources"
 )
 
@@ -38,7 +38,7 @@ type RedpandaPorts struct {
 
 // NewRedpandaPorts intializes ports for all exposed services based on provided
 // configuration and internal conventions.
-func NewRedpandaPorts(rpCluster *redpandav1alpha1.Cluster) *RedpandaPorts {
+func NewRedpandaPorts(rpCluster *vectorizedv1alpha1.Cluster) *RedpandaPorts {
 	internalListener := rpCluster.InternalListener()
 	externalListener := rpCluster.ExternalListener()
 	adminAPIInternal := rpCluster.AdminAPIInternal()

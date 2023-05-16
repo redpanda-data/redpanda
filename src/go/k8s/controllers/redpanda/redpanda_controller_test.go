@@ -58,7 +58,7 @@ var _ = Describe("Redpanda Controller", func() {
 				}
 				RedpandaObj = &v1alpha1.Redpanda{
 					TypeMeta: metav1.TypeMeta{
-						APIVersion: "redpanda.vectorized.io/v1alpha1",
+						APIVersion: "cluster.redpanda.com/v1alpha1",
 						Kind:       "Redpanda",
 					},
 					ObjectMeta: metav1.ObjectMeta{

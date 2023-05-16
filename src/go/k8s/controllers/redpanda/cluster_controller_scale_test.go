@@ -25,7 +25,7 @@ import (
 
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/api/admin"
 
-	"github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
+	"github.com/redpanda-data/redpanda/src/go/k8s/apis/vectorized/v1alpha1"
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources/featuregates"
 )
 

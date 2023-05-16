@@ -21,7 +21,7 @@ import (
 	k8sclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
-	redpandav1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
+	vectorizedv1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/vectorized/v1alpha1"
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/labels"
 )
 
@@ -39,7 +39,7 @@ var _ Resource = &PreStartStopScriptResource{}
 type PreStartStopScriptResource struct {
 	k8sclient.Client
 	scheme       *runtime.Scheme
-	pandaCluster *redpandav1alpha1.Cluster
+	pandaCluster *vectorizedv1alpha1.Cluster
 
 	serviceFQDN            string
 	pandaproxySASLUser     types.NamespacedName
@@ -50,7 +50,7 @@ type PreStartStopScriptResource struct {
 // PreStartStopScriptSecret creates SecretResource
 func PreStartStopScriptSecret(
 	client k8sclient.Client,
-	pandaCluster *redpandav1alpha1.Cluster,
+	pandaCluster *vectorizedv1alpha1.Cluster,
 	scheme *runtime.Scheme,
 	serviceFQDN string,
 	pandaproxySASLUser types.NamespacedName,
@@ -139,7 +139,7 @@ func (r *PreStartStopScriptResource) Key() types.NamespacedName {
 }
 
 // SecretKey provides config map name that derived from redpanda.vectorized.io CR
-func SecretKey(pandaCluster *redpandav1alpha1.Cluster) types.NamespacedName {
+func SecretKey(pandaCluster *vectorizedv1alpha1.Cluster) types.NamespacedName {
 	return types.NamespacedName{Name: resourceNameTrim(pandaCluster.Name, lifecycleSuffix), Namespace: pandaCluster.Namespace}
 }
 

@@ -1,5 +1,5 @@
 ---
-apiVersion: redpanda.vectorized.io/v1alpha1
+apiVersion: cluster.redpanda.com/v1alpha1
 kind: Redpanda
 metadata:
   name: redpanda

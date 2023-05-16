@@ -27,7 +27,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/validation/field"
 	"k8s.io/utils/pointer"
 
-	"github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
+	"github.com/redpanda-data/redpanda/src/go/k8s/apis/vectorized/v1alpha1"
 
 	fake "sigs.k8s.io/controller-runtime/pkg/client/fake"
 )

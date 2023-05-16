@@ -22,7 +22,7 @@ import (
 	k8sclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
-	redpandav1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
+	vectorizedv1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/vectorized/v1alpha1"
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/labels"
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources"
 )
@@ -39,7 +39,7 @@ const (
 type KeystoreSecretResource struct {
 	k8sclient.Client
 	scheme       *runtime.Scheme
-	pandaCluster *redpandav1alpha1.Cluster
+	pandaCluster *vectorizedv1alpha1.Cluster
 	key          types.NamespacedName
 	logger       logr.Logger
 }
@@ -48,7 +48,7 @@ type KeystoreSecretResource struct {
 func NewKeystoreSecretResource(
 	client k8sclient.Client,
 	scheme *runtime.Scheme,
-	pandaCluster *redpandav1alpha1.Cluster,
+	pandaCluster *vectorizedv1alpha1.Cluster,
 	key types.NamespacedName,
 	logger logr.Logger,
 ) *KeystoreSecretResource {

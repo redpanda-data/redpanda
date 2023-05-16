@@ -2,7 +2,6 @@
 # This file is used to track the info used to scaffold your project
 # and allow the plugins properly work.
 # More info: https://book.kubebuilder.io/reference/project-config.html
-domain: vectorized.io
 layout:
 - go.kubebuilder.io/v3
 multigroup: true
@@ -33,8 +32,8 @@ resources:
     crdVersion: v1
     namespaced: true
   controller: true
-  domain: vectorized.io
-  group: redpanda
+  domain: redpanda.com
+  group: cluster
   kind: Redpanda
   path: github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1
   version: v1alpha1
