@@ -286,6 +286,9 @@ public:
     /// Find element of the manifest by offset
     const_iterator find(model::offset o) const;
 
+    /// Update manifest file from iobuf
+    ss::future<> update(iobuf buf);
+
     /// Update manifest file from input_stream (remote set)
     ss::future<> update(ss::input_stream<char> is) override;
 
