@@ -13,9 +13,10 @@ import (
 	"reflect"
 	"testing"
 
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
 	redpandav1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/labels"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 func TestLabels(t *testing.T) {

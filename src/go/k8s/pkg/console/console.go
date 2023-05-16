@@ -15,6 +15,7 @@ import (
 
 	"github.com/cloudhut/common/rest"
 	"github.com/redpanda-data/console/backend/pkg/config"
+
 	redpandav1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
 )
 

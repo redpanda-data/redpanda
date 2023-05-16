@@ -36,6 +36,9 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"sigs.k8s.io/controller-runtime/pkg/source"
 
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/api/admin"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
+
 	redpandav1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
 	adminutils "github.com/redpanda-data/redpanda/src/go/k8s/pkg/admin"
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/labels"
@@ -44,8 +47,6 @@ import (
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources/certmanager"
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources/featuregates"
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/utils"
-	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/api/admin"
-	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 )
 
 const (

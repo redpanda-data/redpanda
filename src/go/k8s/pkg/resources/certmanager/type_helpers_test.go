@@ -24,10 +24,11 @@ import (
 	"k8s.io/client-go/kubernetes/scheme"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
+
 	"github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources/certmanager"
 	resourcetypes "github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources/types"
-	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 )
 
 //nolint:funlen // the subtests might causes linter to complain

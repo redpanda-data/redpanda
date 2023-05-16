@@ -13,11 +13,12 @@ import (
 	"context"
 	"fmt"
 
+	corev1 "k8s.io/api/core/v1"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+
 	redpandav1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/labels"
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/utils"
-	corev1 "k8s.io/api/core/v1"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 // IsAvailableInPreFlight performs a lightweight check to verify if the admin API is available for a given cluster.

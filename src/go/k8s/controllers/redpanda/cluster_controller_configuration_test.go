@@ -27,10 +27,11 @@ import (
 	"k8s.io/utils/pointer"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/api/admin"
+
 	"github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
 	"github.com/redpanda-data/redpanda/src/go/k8s/internal/testutils"
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources/configuration"
-	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/api/admin"
 )
 
 const (
