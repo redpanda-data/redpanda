@@ -1,9 +1,43 @@
-apiVersion: apps/v1
-kind: StatefulSet
+apiVersion: redpanda.vectorized.io/v1alpha1
+kind: Cluster
 metadata:
   name: update-cluster
 status:
-  readyReplicas: 2
+  version: "dev"
+  readyReplicas: 3
+  replicas: 3
+  upgrading: false
+  restarting: false
+  conditions:
+    - type: ClusterConfigured
+      status: "True"
+
+---
+
+apiVersion: v1
+kind: Pod
+metadata:
+  name: update-cluster-0
+status:
+  phase: "Running"
+
+---
+
+apiVersion: v1
+kind: Pod
+metadata:
+  name: update-cluster-1
+status:
+  phase: "Running"
+
+---
+
+apiVersion: v1
+kind: Pod
+metadata:
+  name: update-cluster-2
+status:
+  phase: "Running"
 
 ---
 

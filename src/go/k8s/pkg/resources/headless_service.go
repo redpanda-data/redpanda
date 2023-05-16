@@ -57,7 +57,6 @@ func NewHeadlessService(
 		pandaCluster,
 		svcPorts,
 		logger.WithValues(
-			"Kind", serviceKind(),
 			"ServiceType", corev1.ServiceTypeClusterIP,
 			"ClusterIP", corev1.ClusterIPNone,
 		),
@@ -128,11 +127,6 @@ func (r *HeadlessServiceResource) obj() (k8sclient.Object, error) {
 // For reference please visit types.NamespacedName docs in k8s.io/apimachinery
 func (r *HeadlessServiceResource) Key() types.NamespacedName {
 	return types.NamespacedName{Name: r.pandaCluster.Name, Namespace: r.pandaCluster.Namespace}
-}
-
-func serviceKind() string {
-	var svc corev1.Service
-	return svc.Kind
 }
 
 // HeadlessServiceFQDN returns fully qualified domain name for headless service.

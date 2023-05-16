@@ -1,0 +1,23 @@
+apiVersion: kuttl.dev/v1beta1
+kind: TestStep
+delete:
+- apiVersion: redpanda.vectorized.io/v1alpha1
+  kind: Console
+  name: console-dedicated
+  namespace: redpanda-system
+- apiVersion: redpanda.vectorized.io/v1alpha1
+  kind: Cluster
+  name: cluster-for-console
+  namespace: redpanda-system
+- apiVersion: v1
+  kind: PersistentVolumeClaim
+  name: datadir-cluster-for-console-0
+  namespace: redpanda-system
+- apiVersion: v1
+  kind: PersistentVolumeClaim
+  name: datadir-cluster-for-console-1
+  namespace: redpanda-system
+- apiVersion: batch/v1
+  kind: Job
+  name: call-console
+  namespace: redpanda-system

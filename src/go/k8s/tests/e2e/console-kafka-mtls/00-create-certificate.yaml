@@ -1,0 +1,101 @@
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: cluster-tls-secret-selfsigned-issuer
+spec:
+  selfSigned: {}
+
+---
+
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: cluster-tls-secret-root-certificate
+spec:
+  isCA: true
+  # Needed because certs signed by this CA get the `issuer` field filed based on this.
+  # If issuer field is empty, curl will complain with `SSL: couldn't get X509-issuer name`
+  # To verify issuer of a cert use: `openssl x509 -noout -issuer`
+  subject:
+    organizations:
+      - vectorized-test.io
+  dnsNames:
+    - "cluster.local"
+  issuerRef:
+    kind: Issuer
+    name: cluster-tls-secret-selfsigned-issuer
+  secretName: cluster-tls-secret-root-certificate
+
+---
+
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: cluster-tls-secret-root-issuer
+spec:
+  ca:
+    secretName: cluster-tls-secret-root-certificate
+
+---
+
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: cluster-tls-secret-node-certificate
+spec:
+  dnsNames:
+    # Kakfa API
+    - "*.cluster-kafka-mtls.redpanda-system.svc.cluster.local"
+    # Schema Registry API
+    - "cluster-tls-cluster.redpanda-system.svc.cluster.local"
+  issuerRef:
+    kind: Issuer
+    name: cluster-tls-secret-root-issuer
+    namespace: redpanda-system
+  secretName: cluster-tls-secret-node-certificate
+
+---
+
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: cluster-kafka-mtls-schema-registry-client
+spec:
+  commonName: cluster-kafka-mtls-schema-registry-client
+  issuerRef:
+    kind: Issuer
+    name: cluster-tls-secret-root-issuer
+    namespace: redpanda-system
+  secretName: cluster-kafka-mtls-schema-registry-client
+
+---
+
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: cluster-kafka-mtls-operator-client
+spec:
+  commonName: cluster-kafka-mtls-operator-client
+  issuerRef:
+    kind: Issuer
+    name: cluster-tls-secret-root-issuer
+    namespace: redpanda-system
+  secretName: cluster-kafka-mtls-operator-client
+
+---
+
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: cluster-kafka-mtls-schema-registry-node
+spec:
+  dnsNames:
+    - cluster-kafka-mtls-cluster.redpanda-system.svc.cluster.local
+    - '*.cluster-kafka-mtls-cluster.redpanda-system.svc.cluster.local'
+    - cluster-kafka-mtls.redpanda-system.svc.cluster.local
+    - '*.cluster-kafka-mtls.redpanda-system.svc.cluster.local'
+  issuerRef:
+    kind: Issuer
+    name: cluster-tls-secret-root-issuer
+    namespace: redpanda-system
+  secretName: cluster-kafka-mtls-schema-registry-node

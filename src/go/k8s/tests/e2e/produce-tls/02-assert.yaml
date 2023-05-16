@@ -1,7 +1,7 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: create-test-topic-tls
+  name: create-test-topic-long-name
 status:
   conditions:
     - status: "True"

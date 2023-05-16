@@ -80,6 +80,10 @@ func init() {
 	//+kubebuilder:scaffold:scheme
 }
 
+// +kubebuilder:rbac:groups=coordination.k8s.io,namespace=default,resources=leases,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=core,namespace=default,resources=configmaps,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=core,namespace=default,resources=events,verbs=create;patch
+
 //nolint:funlen // length looks good
 func main() {
 	var (
@@ -95,6 +99,7 @@ func main() {
 		decommissionWaitInterval    time.Duration
 		metricsTimeout              time.Duration
 		restrictToRedpandaVersion   string
+		namespace                   string
 
 		// allowPVCDeletion controls the PVC deletion feature in the Cluster custom resource.
 		// PVCs will be deleted when its Pod has been deleted and the Node that Pod is assigned to
@@ -123,6 +128,7 @@ func main() {
 	flag.StringVar(&restrictToRedpandaVersion, "restrict-redpanda-version", "", "Restrict management of clusters to those with this version")
 	flag.StringVar(&vectorizedv1alpha1.SuperUsersPrefix, "superusers-prefix", "", "Prefix to add in username of superusers managed by operator. This will only affect new clusters, enabling this will not add prefix to existing clusters (alpha feature)")
 	flag.BoolVar(&debug, "debug", false, "Set to enable debugging")
+	flag.StringVar(&namespace, "namespace", "", "If namespace is set to not empty value, it changes scope of Redpanda operator to work in single namespace")
 
 	logOptions.BindFlags(flag.CommandLine)
 	clientOptions.BindFlags(flag.CommandLine)
@@ -150,12 +156,14 @@ func main() {
 	}
 
 	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
-		Scheme:                 scheme,
-		MetricsBindAddress:     metricsAddr,
-		Port:                   9443,
-		HealthProbeBindAddress: probeAddr,
-		LeaderElection:         enableLeaderElection,
-		LeaderElectionID:       "aa9fc693.vectorized.io",
+		Scheme:                  scheme,
+		MetricsBindAddress:      metricsAddr,
+		Port:                    9443,
+		HealthProbeBindAddress:  probeAddr,
+		LeaderElection:          enableLeaderElection,
+		LeaderElectionID:        "aa9fc693.vectorized.io",
+		Namespace:               namespace,
+		LeaderElectionNamespace: namespace,
 	})
 	if err != nil {
 		setupLog.Error(err, "Unable to start manager")

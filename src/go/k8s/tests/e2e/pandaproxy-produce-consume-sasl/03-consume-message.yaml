@@ -1,7 +1,7 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: consume-message
+  name: consume-message-with-pp-sasl
 spec:
   template:
     spec:
@@ -16,12 +16,12 @@ spec:
             - name: SCRAM_USERNAME
               valueFrom:
                 secretKeyRef:
-                  name: cluster-proxy-sasl
+                  name: proxy-sasl-sasl
                   key: username
             - name: SCRAM_PASSWORD
               valueFrom:
                 secretKeyRef:
-                  name: cluster-proxy-sasl
+                  name: proxy-sasl-sasl
                   key: password
           command:
             - /bin/bash
@@ -30,7 +30,7 @@ spec:
           args:
             - | 
               curl -v -s \
-              http://cluster-proxy-0.cluster-proxy.$POD_NAMESPACE.svc.cluster.local:8082/topics/test/partitions/0/records?offset=0\&timeout=1000\&max_bytes=100000 \
+              http://proxy-sasl-0.proxy-sasl.$POD_NAMESPACE.svc.cluster.local:8082/topics/test/partitions/0/records?offset=0\&timeout=1000\&max_bytes=100000 \
               -u "$SCRAM_USERNAME:$SCRAM_PASSWORD" -H "Accept: application/vnd.kafka.json.v2+json"
       restartPolicy: Never
   backoffLimit: 6

@@ -46,7 +46,7 @@ func NewClusterRole(
 		client,
 		scheme,
 		pandaCluster,
-		logger.WithValues("Kind", clusterRoleKind()),
+		logger,
 	}
 }
 
@@ -97,9 +97,4 @@ func (r *ClusterRoleResource) obj() k8sclient.Object {
 // Note that Namespace can not be set as this is cluster scoped resource
 func (r *ClusterRoleResource) Key() types.NamespacedName {
 	return types.NamespacedName{Name: "redpanda-init-configurator", Namespace: ""}
-}
-
-func clusterRoleKind() string {
-	var r v1.ClusterRole
-	return r.Kind
 }

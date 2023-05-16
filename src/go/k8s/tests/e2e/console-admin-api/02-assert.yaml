@@ -1,15 +1,19 @@
-apiVersion: apps/v1
-kind: Deployment
+apiVersion: batch/v1
+kind: Job
 metadata:
-  name: console
-  namespace: console-admin-api
+  name: call-console-admin-api
 status:
-  readyReplicas: 1
+  conditions:
+    - status: "True"
+      type: Complete
+  succeeded: 1
+
 ---
+
 apiVersion: kuttl.dev/v1beta1
 kind: TestAssert
 collectors:
 - type: pod
   selector: app.kubernetes.io/name=redpanda-console
   tail: -1
-- command: ../../../hack/get-redpanda-info.sh console-admin-api
+- command: ../../../hack/get-redpanda-info.sh

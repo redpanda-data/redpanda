@@ -1,7 +1,7 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: produce-message
+  name: produce-message-with-pp-mtls
 status:
   conditions:
     - status: "True"

@@ -1,14 +1,14 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: produce-message
+  name: produce-message-pp-ext-mtls
 spec:
   template:
     spec:
       volumes:
         - name: client-cert
           secret:
-            secretName: client-cert
+            secretName: pp-client-cert
       containers:
         - name: rpk
           image: localhost/redpanda:dev
@@ -32,6 +32,6 @@ spec:
               --cert /tmp/client/client.crt --key /tmp/client/client.key --sslv2 --http2
               -d '{"records":[{"value":"Vectorized"},{"value":"Pandaproxy"},{"value":"JSON Demo"}]}'
       restartPolicy: Never
-  backoffLimit: 6
+  backoffLimit: 20
   parallelism: 1
   completions: 1

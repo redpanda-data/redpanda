@@ -1,0 +1,31 @@
+apiVersion: kuttl.dev/v1beta1
+kind: TestStep
+delete:
+- apiVersion: redpanda.vectorized.io/v1alpha1
+  kind: Console
+  name: console-kafka-mtls
+  namespace: redpanda-system
+- apiVersion: redpanda.vectorized.io/v1alpha1
+  kind: Cluster
+  name: cluster-kafka-mtls
+  namespace: redpanda-system
+- apiVersion: v1
+  kind: PersistentVolumeClaim
+  name: datadir-cluster-kafka-mtls-0
+  namespace: redpanda-system
+- apiVersion: v1
+  kind: PersistentVolumeClaim
+  name: datadir-cluster-kafka-mtls-1
+  namespace: redpanda-system
+- apiVersion: batch/v1
+  kind: Job
+  name: call-console-kafka-mtls
+  namespace: redpanda-system
+- apiVersion: batch/v1
+  kind: Job
+  name: create-test-topic-kafka-mtls
+  namespace: redpanda-system
+- apiVersion: batch/v1
+  kind: Job
+  name: create-schema-with-tls
+  namespace: redpanda-system

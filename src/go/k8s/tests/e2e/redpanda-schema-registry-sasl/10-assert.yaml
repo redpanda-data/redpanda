@@ -1,7 +1,7 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: retrieve-schema-with-client-tls
+  name: retrieve-schema-with-client-tls-rp-sasl
 status:
   conditions:
     - status: "True"

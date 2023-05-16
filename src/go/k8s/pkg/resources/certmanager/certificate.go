@@ -77,7 +77,7 @@ func NewCACertificate(
 		commonName,
 		true,
 		keystoreSecret,
-		logger.WithValues("Kind", certificateKind()),
+		logger,
 	}
 }
 
@@ -129,7 +129,7 @@ func NewCertificate(
 		commonName,
 		isCA,
 		keystoreSecret,
-		logger.WithValues("Kind", certificateKind()),
+		logger,
 	}
 }
 

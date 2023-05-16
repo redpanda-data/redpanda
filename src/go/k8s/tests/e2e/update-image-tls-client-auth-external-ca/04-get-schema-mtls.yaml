@@ -39,6 +39,6 @@ spec:
             - mountPath: /etc/tls/certs/schema-registry/ca
               name: tlscacert
       restartPolicy: Never
-  backoffLimit: 6
+  backoffLimit: 20
   parallelism: 1
   completions: 1

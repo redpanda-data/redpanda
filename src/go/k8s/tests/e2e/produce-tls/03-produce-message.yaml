@@ -1,7 +1,7 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: produce-message-tls
+  name: produce-message-long-name
 spec:
   template:
     spec:
@@ -15,7 +15,7 @@ spec:
               path: ca.crt
         - name: rpkconfig
           configMap:
-            name: rpk-config
+            name: rpk-config-subdomain
       containers:
         - name: rpk
           image: localhost/redpanda:dev

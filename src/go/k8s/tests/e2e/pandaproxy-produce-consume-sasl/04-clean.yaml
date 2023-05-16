@@ -1,0 +1,23 @@
+apiVersion: kuttl.dev/v1beta1
+kind: TestStep
+delete:
+  - apiVersion: redpanda.vectorized.io/v1alpha1
+    kind: Cluster
+    name: proxy-sasl
+    namespace: redpanda-system
+  - apiVersion: v1
+    kind: PersistentVolumeClaim
+    name: datadir-proxy-sasl-0
+    namespace: redpanda-system
+  - apiVersion: batch/v1
+    kind: Job
+    name: create-test-topic-with-pp-sasl
+    namespace: redpanda-system
+  - apiVersion: batch/v1
+    kind: Job
+    name: produce-message-with-pp-sasl
+    namespace: redpanda-system
+  - apiVersion: batch/v1
+    kind: Job
+    name: consume-message-with-pp-sasl
+    namespace: redpanda-system

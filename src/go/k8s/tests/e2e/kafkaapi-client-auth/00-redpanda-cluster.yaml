@@ -1,7 +1,7 @@
 apiVersion: redpanda.vectorized.io/v1alpha1
 kind: Cluster
 metadata:
-  name: cluster-tls
+  name: kafkaapi-client-auth
 spec:
   image: "localhost/redpanda"
   version: "dev"
@@ -23,6 +23,9 @@ spec:
         requireClientAuth: true
     adminApi:
     - port: 9644
+      tls:
+        enabled: true
+        requireClientAuth: true
     pandaproxyApi:
     - port: 8082
     developerMode: true

@@ -210,7 +210,7 @@ var _ = Describe("Console controller", func() {
 			brokenCluster.Spec.Replicas = &replicas1
 			Expect(k8sClient.Create(ctx, ns)).Should(Succeed())
 			Expect(k8sClient.Create(ctx, brokenCluster)).Should(Succeed())
-			console := &redpandav1alpha1.Console{
+			console := &vectorizedv1alpha1.Console{
 				TypeMeta: metav1.TypeMeta{
 					APIVersion: "redpanda.vectorized.io/v1alpha1",
 					Kind:       "Console",
@@ -219,21 +219,21 @@ var _ = Describe("Console controller", func() {
 					Name:      "deleting-console",
 					Namespace: brokenKey.Namespace,
 				},
-				Spec: redpandav1alpha1.ConsoleSpec{
-					ClusterRef:     redpandav1alpha1.NamespaceNameRef{Namespace: brokenKey.Namespace, Name: brokenKey.Name},
-					SchemaRegistry: redpandav1alpha1.Schema{Enabled: enableSchemaRegistry},
-					Deployment:     redpandav1alpha1.Deployment{Image: deploymentImage},
-					Connect:        redpandav1alpha1.Connect{Enabled: enableConnect},
+				Spec: vectorizedv1alpha1.ConsoleSpec{
+					ClusterRef:     vectorizedv1alpha1.NamespaceNameRef{Namespace: brokenKey.Namespace, Name: brokenKey.Name},
+					SchemaRegistry: vectorizedv1alpha1.Schema{Enabled: enableSchemaRegistry},
+					Deployment:     vectorizedv1alpha1.Deployment{Image: deploymentImage},
+					Connect:        vectorizedv1alpha1.Connect{Enabled: enableConnect},
 				},
 			}
 			Expect(k8sClient.Create(ctx, console)).Should(Succeed())
 			consoleLookupKey := types.NamespacedName{Name: console.Name, Namespace: console.Namespace}
 			Eventually(func() bool {
-				return k8sClient.Get(ctx, consoleLookupKey, &redpandav1alpha1.Console{}) == nil
+				return k8sClient.Get(ctx, consoleLookupKey, &vectorizedv1alpha1.Console{}) == nil
 			}, timeout, interval).Should(BeTrue())
 			Expect(k8sClient.Delete(ctx, console)).Should(Succeed())
 			Eventually(func() bool {
-				return k8sClient.Get(ctx, consoleLookupKey, &redpandav1alpha1.Console{}) != nil
+				return k8sClient.Get(ctx, consoleLookupKey, &vectorizedv1alpha1.Console{}) != nil
 			}, timeout, interval).Should(BeTrue())
 		})
 	})

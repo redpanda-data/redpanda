@@ -32,6 +32,6 @@ spec:
               --cert /tmp/client/tls.crt --key /tmp/client/tls.key --sslv2 --http2 \
               -d '{"records":[{"value":"Vectorized"},{"value":"Pandaproxy"},{"value":"JSON Demo"}]}'
       restartPolicy: Never
-  backoffLimit: 6
+  backoffLimit: 20
   parallelism: 1
   completions: 1

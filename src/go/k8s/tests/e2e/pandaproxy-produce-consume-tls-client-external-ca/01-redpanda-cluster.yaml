@@ -28,6 +28,6 @@ spec:
         requireClientAuth: true
         clientCACertRef:
           kind: Secret
-          name: ca-cert
+          name: pp-ca-cert
           apiGroup: ""
     developerMode: true

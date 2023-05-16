@@ -46,7 +46,7 @@ func NewServiceAccount(
 		client,
 		scheme,
 		pandaCluster,
-		logger.WithValues("Kind", serviceAccountKind()),
+		logger,
 	}
 }
 
@@ -86,9 +86,4 @@ func (s *ServiceAccountResource) obj() (k8sclient.Object, error) {
 // For reference please visit types.NamespacedName docs in k8s.io/apimachinery
 func (s *ServiceAccountResource) Key() types.NamespacedName {
 	return types.NamespacedName{Name: s.pandaCluster.Name, Namespace: s.pandaCluster.Namespace}
-}
-
-func serviceAccountKind() string {
-	var sa corev1.ServiceAccount
-	return sa.Kind
 }

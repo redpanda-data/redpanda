@@ -77,9 +77,7 @@ func NewSuperUsers(
 		object,
 		prefixedUsername,
 		suffix,
-		l.WithValues(
-			"Kind", ingressKind(),
-		),
+		l,
 	}
 }
 

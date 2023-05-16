@@ -1,0 +1,16 @@
+apiVersion: redpanda.vectorized.io/v1alpha1
+kind: Console
+metadata:
+  name: console-dedicated
+spec:
+  server:
+    listenPort: 8080
+  schema:
+    enabled: true
+  clusterRef:
+    name: cluster-for-console
+    namespace: redpanda-system
+  deployment:
+    image: redpandadata/console:v2.2.4
+  connect:
+    enabled: false

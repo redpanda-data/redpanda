@@ -1,7 +1,7 @@
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
-  name: up-img
+  name: up-img-admin-mtls
 status:
   readyReplicas: 3
 
@@ -10,11 +10,11 @@ status:
 apiVersion: v1
 kind: Pod
 metadata:
-  name: up-img-0
+  name: up-img-admin-mtls-0
 spec:
   containers:
   - name: redpanda
-    image: "vectorized/redpanda:v22.2.10"
+    image: "vectorized/redpanda:v22.2.12"
     volumeMounts:
     - mountPath: /etc/redpanda
       name: config-dir
@@ -41,11 +41,11 @@ status:
 apiVersion: v1
 kind: Pod
 metadata:
-  name: up-img-1
+  name: up-img-admin-mtls-1
 spec:
   containers:
   - name: redpanda
-    image: "vectorized/redpanda:v22.2.10"
+    image: "vectorized/redpanda:v22.2.12"
     volumeMounts:
     - mountPath: /etc/redpanda
       name: config-dir
@@ -72,11 +72,11 @@ status:
 apiVersion: v1
 kind: Pod
 metadata:
-  name: up-img-2
+  name: up-img-admin-mtls-2
 spec:
   containers:
   - name: redpanda
-    image: "vectorized/redpanda:v22.2.10"
+    image: "vectorized/redpanda:v22.2.12"
     volumeMounts:
     - mountPath: /etc/redpanda
       name: config-dir
@@ -110,9 +110,9 @@ collectors:
 apiVersion: redpanda.vectorized.io/v1alpha1
 kind: Cluster
 metadata:
-  name: up-img
+  name: up-img-admin-mtls
 status:
-  version: "v22.2.10"
+  version: "v22.2.12"
   readyReplicas: 3
   replicas: 3
   upgrading: false

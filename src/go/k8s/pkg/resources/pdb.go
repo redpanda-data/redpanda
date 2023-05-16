@@ -47,9 +47,7 @@ func NewPDB(
 		client,
 		scheme,
 		pandaCluster,
-		logger.WithValues(
-			"Kind", pdbKind(),
-		),
+		logger,
 	}
 }
 
@@ -105,9 +103,4 @@ func (r *PDBResource) obj() (k8sclient.Object, error) {
 // Key returns namespace/name object that is used to identify object.
 func (r *PDBResource) Key() types.NamespacedName {
 	return types.NamespacedName{Name: r.pandaCluster.Name, Namespace: r.pandaCluster.Namespace}
-}
-
-func pdbKind() string {
-	var obj policyv1.PodDisruptionBudget
-	return obj.Kind
 }

@@ -51,6 +51,9 @@ func NewStore(cl client.Client, scheme *runtime.Scheme) *Store {
 func (s *Store) Sync(
 	ctx context.Context, cluster *vectorizedv1alpha1.Cluster,
 ) error {
+	if cluster == nil {
+		return nil
+	}
 	if err := s.syncSchemaRegistry(ctx, cluster); err != nil {
 		return err
 	}
@@ -66,6 +69,9 @@ func (s *Store) Sync(
 func (s *Store) syncSchemaRegistry(
 	ctx context.Context, cluster *vectorizedv1alpha1.Cluster,
 ) error {
+	if cluster == nil {
+		return nil
+	}
 	if !cluster.IsSchemaRegistryTLSEnabled() {
 		return nil
 	}
@@ -108,6 +114,9 @@ func (s *Store) syncSchemaRegistry(
 func (s *Store) syncKafka(
 	ctx context.Context, cluster *vectorizedv1alpha1.Cluster,
 ) error {
+	if cluster == nil {
+		return nil
+	}
 	listener := cluster.KafkaListener()
 	if !listener.IsMutualTLSEnabled() {
 		return nil
@@ -146,6 +155,9 @@ func (s *Store) syncKafka(
 func (s *Store) syncAdminAPI(
 	ctx context.Context, cluster *vectorizedv1alpha1.Cluster,
 ) error {
+	if cluster == nil {
+		return nil
+	}
 	listener := cluster.AdminAPIListener()
 	if !listener.TLS.Enabled {
 		return nil
@@ -238,6 +250,9 @@ func (s *Store) getAdminAPINodeCertKey(
 func (s *Store) GetSchemaRegistryClientCert(
 	cluster *vectorizedv1alpha1.Cluster,
 ) (*corev1.Secret, bool) {
+	if cluster == nil {
+		return nil, false
+	}
 	if secret, exists := s.Get(s.getSchemaRegistryClientCertKey(cluster)); exists {
 		return secret.(*corev1.Secret), true
 	}
@@ -248,6 +263,9 @@ func (s *Store) GetSchemaRegistryClientCert(
 func (s *Store) GetSchemaRegistryNodeCert(
 	cluster *vectorizedv1alpha1.Cluster,
 ) (*corev1.Secret, bool) {
+	if cluster == nil {
+		return nil, false
+	}
 	if secret, exists := s.Get(s.getSchemaRegistryNodeCertKey(cluster)); exists {
 		return secret.(*corev1.Secret), true
 	}
@@ -258,6 +276,9 @@ func (s *Store) GetSchemaRegistryNodeCert(
 func (s *Store) GetKafkaClientCert(
 	cluster *vectorizedv1alpha1.Cluster,
 ) (*corev1.Secret, bool) {
+	if cluster == nil {
+		return nil, false
+	}
 	if secret, exists := s.Get(s.getKafkaClientCertKey(cluster)); exists {
 		return secret.(*corev1.Secret), true
 	}
@@ -268,6 +289,9 @@ func (s *Store) GetKafkaClientCert(
 func (s *Store) GetKafkaNodeCert(
 	cluster *vectorizedv1alpha1.Cluster,
 ) (*corev1.Secret, bool) {
+	if cluster == nil {
+		return nil, false
+	}
 	if secret, exists := s.Get(s.getKafkaNodeCertKey(cluster)); exists {
 		return secret.(*corev1.Secret), true
 	}
@@ -278,6 +302,9 @@ func (s *Store) GetKafkaNodeCert(
 func (s *Store) GetAdminAPIClientCert(
 	cluster *vectorizedv1alpha1.Cluster,
 ) (*corev1.Secret, bool) {
+	if cluster == nil {
+		return nil, false
+	}
 	if secret, exists := s.Get(s.getAdminAPIClientCertKey(cluster)); exists {
 		return secret.(*corev1.Secret), true
 	}
@@ -288,6 +315,9 @@ func (s *Store) GetAdminAPIClientCert(
 func (s *Store) GetAdminAPINodeCert(
 	cluster *vectorizedv1alpha1.Cluster,
 ) (*corev1.Secret, bool) {
+	if cluster == nil {
+		return nil, false
+	}
 	if secret, exists := s.Get(s.getAdminAPINodeCertKey(cluster)); exists {
 		return secret.(*corev1.Secret), true
 	}
@@ -302,6 +332,9 @@ func (s *Store) CreateSyncedSecret(
 	secretNameSuffix string,
 	log logr.Logger,
 ) (string, error) {
+	if console == nil {
+		return "", nil
+	}
 	secret := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      fmt.Sprintf("%s-%s", console.GetName(), secretNameSuffix),

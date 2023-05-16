@@ -52,7 +52,6 @@ func NewClusterService(
 		pandaCluster,
 		svcPorts,
 		logger.WithValues(
-			"Kind", serviceKind(),
 			"ServiceType", corev1.ServiceTypeClusterIP,
 		),
 	}

@@ -1,24 +1,22 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: create-test-topic
+  name: create-test-topic-with-client-auth
 spec:
   template:
-    metadata:
-      namespace: tls-test
     spec:
       volumes:
         - name: tlscert
           secret:
             defaultMode: 420
-            secretName: cluster-tls-user-client
+            secretName: create-topic-with-client-auth-user-client
         - name: tlsca
           secret:
             defaultMode: 420
-            secretName: cluster-tls-redpanda
+            secretName: create-topic-with-client-auth-redpanda
         - name: rpkconfig
           configMap:
-            name: rpk-config
+            name: rpk-config-client-auth
       containers:
         - name: rpk
           image: localhost/redpanda:dev
@@ -31,7 +29,7 @@ spec:
             - /bin/bash
             - -c
           args:
-            - rpk topic create test --brokers cluster-tls-0.cluster-tls.$POD_NAMESPACE.svc.cluster.local:9092 -v
+            - rpk topic create test --brokers create-topic-with-client-auth-0.create-topic-with-client-auth.$POD_NAMESPACE.svc.cluster.local:9092 -v
           volumeMounts:
             - mountPath: /etc/tls/certs
               name: tlscert

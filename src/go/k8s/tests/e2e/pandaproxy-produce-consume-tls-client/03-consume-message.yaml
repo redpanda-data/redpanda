@@ -1,7 +1,7 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: consume-message
+  name: consume-message-with-pp-mtls
 spec:
   template:
     spec:
@@ -9,11 +9,11 @@ spec:
         - name: tlscert
           secret:
             defaultMode: 420
-            secretName: cluster-proxy-proxy-api-client
+            secretName: proxy-tls-client-auth-proxy-api-client
         - name: tlscertca
           secret:
             defaultMode: 420
-            secretName: cluster-proxy-proxy-api-node
+            secretName: proxy-tls-client-auth-proxy-api-node
       containers:
         - name: rpk
           image: localhost/redpanda:dev
@@ -28,7 +28,7 @@ spec:
             - -ex
           args:
             - | 
-              curl -s -v https://cluster-proxy-0.cluster-proxy.$POD_NAMESPACE.svc.cluster.local:8082/topics/test/partitions/0/records?offset=0\&timeout=1000\&max_bytes=100000 \
+              curl -s -v https://proxy-tls-client-auth-0.proxy-tls-client-auth.$POD_NAMESPACE.svc.cluster.local:8082/topics/test/partitions/0/records?offset=0\&timeout=1000\&max_bytes=100000 \
               -H "Accept: application/vnd.kafka.json.v2+json" \
               --cacert /etc/tls/certs/pandaproxy/ca/ca.crt \
               --cert /etc/tls/certs/pandaproxy/tls.crt \

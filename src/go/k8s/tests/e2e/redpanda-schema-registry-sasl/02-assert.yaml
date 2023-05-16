@@ -1,7 +1,7 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: retrive-schema
+  name: retrieve-schema-rp-sasl
 status:
   conditions:
     - status: "True"

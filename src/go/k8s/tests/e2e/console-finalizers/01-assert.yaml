@@ -1,18 +1,22 @@
-apiVersion: redpanda.vectorized.io/v1alpha1
-kind: Cluster
+apiVersion: apps/v1
+kind: Deployment
 metadata:
-  name: cluster
-  namespace: console-finalizers
+  name: console-finalizers
 status:
-  replicas: 1
-  restarting: false
-  conditions:
-    - type: ClusterConfigured
-      status: "True"
-
+  readyReplicas: 1
 ---
-
+apiVersion: redpanda.vectorized.io/v1alpha1
+kind: Console
+metadata:
+  name: console-finalizers
+  finalizers:
+    - consoles.redpanda.vectorized.io/service-account
+    - consoles.redpanda.vectorized.io/acl
+---
 apiVersion: kuttl.dev/v1beta1
 kind: TestAssert
 collectors:
-  - command: ../../../hack/get-redpanda-info.sh console-finalizers
+- type: pod
+  selector: app.kubernetes.io/name=redpanda-console
+  tail: -1
+- command: ../../../hack/get-redpanda-info.sh

@@ -1,0 +1,19 @@
+apiVersion: redpanda.vectorized.io/v1alpha1
+kind: Console
+metadata:
+  name: console-admin-api
+spec:
+  server:
+    listenPort: 8080
+  schema:
+    enabled: false
+  clusterRef:
+    name: cluster-for-console-with-admin
+    namespace: redpanda-system
+  deployment:
+    image: redpandadata/console:v2.2.4
+  connect:
+    enabled: false
+  redpanda:
+    adminApi:
+      enabled: true

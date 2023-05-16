@@ -1,7 +1,7 @@
 apiVersion: redpanda.vectorized.io/v1alpha1
 kind: Cluster
 metadata:
-  name: up-img
+  name: up-img-admin-tls
 spec:
   image: "vectorized/redpanda"
   version: "v22.1.11"
@@ -14,6 +14,9 @@ spec:
       cpu: 1
       memory: 1Gi
   configuration:
+    additionalCommandlineArguments:
+      default-log-level: trace
+      # logger-log-level: "exception=warn:io=warn"
     rpcServer:
       port: 33145
     kafkaApi:

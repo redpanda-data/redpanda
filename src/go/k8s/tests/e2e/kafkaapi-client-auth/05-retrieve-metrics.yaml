@@ -1,0 +1,44 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: retrieve-metrics-with-client-auth
+spec:
+  template:
+    spec:
+      volumes:
+        - name: tlsadmin
+          secret:
+            defaultMode: 420
+            secretName: kafkaapi-client-auth-admin-api-client
+        - name: tlsadminca
+          secret:
+            defaultMode: 420
+            secretName: kafkaapi-client-auth-admin-api-node
+      containers:
+        - name: curl
+          image: curlimages/curl:latest
+          env:
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+          command:
+            - /bin/sh
+            - -c
+            - -ex
+          args:
+            - >
+              curl -vv --silent
+              --cacert /etc/tls/certs/admin/ca/ca.crt
+              --cert /etc/tls/certs/admin/tls.crt 
+              --key /etc/tls/certs/admin/tls.key
+              https://kafkaapi-client-auth-0.kafkaapi-client-auth.$POD_NAMESPACE.svc.cluster.local:9644/metrics
+          volumeMounts:
+            - mountPath: /etc/tls/certs/admin
+              name: tlsadmin
+            - mountPath: /etc/tls/certs/admin/ca
+              name: tlsadminca
+      restartPolicy: Never
+  backoffLimit: 6
+  parallelism: 1
+  completions: 1

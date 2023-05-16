@@ -1,7 +1,7 @@
 apiVersion: redpanda.vectorized.io/v1alpha1
 kind: Cluster
 metadata:
-  name: cluster
+  name: cluster-sasl-no-calls
 spec:
   image: "localhost/redpanda"
   version: "dev"

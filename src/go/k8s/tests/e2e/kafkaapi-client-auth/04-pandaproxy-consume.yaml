@@ -1,7 +1,7 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: consume-message
+  name: consume-message-with-client-auth
 spec:
   template:
     spec:
@@ -19,7 +19,7 @@ spec:
             - -ex
           args:
             - | 
-              curl -s -v http://cluster-tls-0.cluster-tls.$POD_NAMESPACE.svc.cluster.local:8082/topics/test/partitions/0/records?offset=0\&timeout=1000\&max_bytes=100000 \
+              curl -s -v http://kafkaapi-client-auth-0.kafkaapi-client-auth.$POD_NAMESPACE.svc.cluster.local:8082/topics/test/partitions/0/records?offset=0\&timeout=1000\&max_bytes=100000 \
               -H "Accept: application/vnd.kafka.json.v2+json" | grep -v "error_code"
       restartPolicy: Never
   backoffLimit: 6

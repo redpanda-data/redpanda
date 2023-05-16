@@ -1,7 +1,7 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: create-schema-with-client-tls
+  name: create-schema-with-client-tls-rp
 status:
   conditions:
     - status: "True"

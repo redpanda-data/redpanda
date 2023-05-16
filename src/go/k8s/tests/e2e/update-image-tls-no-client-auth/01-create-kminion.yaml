@@ -1,7 +1,7 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: kminion
+  name: kminion-admin-tls
 spec:
   progressDeadlineSeconds: 600
   replicas: 1
@@ -60,7 +60,7 @@ spec:
       volumes:
         - configMap:
             defaultMode: 420
-            name: kminion
+            name: kminion-admin-tls
           name: config
 ---
 apiVersion: v1
@@ -72,9 +72,9 @@ data:
       port: 8080
     kafka:
       brokers:
-        - up-img-0.up-img:9092
-        - up-img-1.up-img:9092
-        - up-img-2.up-img:9092
+        - up-img-admin-tls-0.up-img-admin-tls:9092
+        - up-img-admin-tls-1.up-img-admin-tls:9092
+        - up-img-admin-tls-2.up-img-admin-tls:9092
       clientId: kminion
       rackId: ""
       sasl:
@@ -123,4 +123,4 @@ data:
             - cleanup.policy
 kind: ConfigMap
 metadata:
-  name: kminion
+  name: kminion-admin-tls

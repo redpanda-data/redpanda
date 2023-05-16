@@ -7,9 +7,9 @@ status:
     external:
     - kafka-0.cluster.com:30092
     externalPandaproxy:
-    - panda-proxy-0.cluster.com:30082
+    - panda-proxy-0.cluster.com:30088
     schemaRegistry:
-      external: schema-registry.cluster.com:30081
+      external: schema-registry.cluster.com:30087
   readyReplicas: 1
 
 ---
@@ -26,15 +26,15 @@ spec:
     protocol: TCP
     targetPort: 30092
   - name: proxy-external
-    nodePort: 30082
-    port: 30082
+    nodePort: 30088
+    port: 30088
     protocol: TCP
-    targetPort: 30082
+    targetPort: 30088
   - name: schema-registry
-    nodePort: 30081
-    port: 30081
+    nodePort: 30087
+    port: 30087
     protocol: TCP
-    targetPort: 30081
+    targetPort: 30087
 
 ---
 

@@ -2,7 +2,7 @@ apiVersion: v1
 kind: Pod
 metadata:
   labels:
-    job-name: get-centralized-config-1
+    job-name: get-centralized-config-1-drift
 status:
   containerStatuses:
     - name: curl

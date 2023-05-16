@@ -1,14 +1,14 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: consume-message
+  name: consume-message-pp-ext-mtls
 spec:
   template:
     spec:
       volumes:
         - name: client-cert
           secret:
-            secretName: client-cert
+            secretName: pp-client-cert
       containers:
         - name: rpk
           image: localhost/redpanda:dev
@@ -31,6 +31,6 @@ spec:
               name: client-cert
               readOnly: true
       restartPolicy: Never
-  backoffLimit: 6
+  backoffLimit: 20
   parallelism: 1
   completions: 1

@@ -96,7 +96,7 @@ func NewConfigMap(
 		pandaproxySASLUser,
 		schemaRegistrySASLUser,
 		tlsConfigProvider,
-		logger.WithValues("Kind", configMapKind()),
+		logger,
 	}
 }
 
@@ -670,11 +670,6 @@ func (r *ConfigMapResource) Key() types.NamespacedName {
 // ConfigMapKey provides config map name that derived from redpanda.vectorized.io CR
 func ConfigMapKey(pandaCluster *vectorizedv1alpha1.Cluster) types.NamespacedName {
 	return types.NamespacedName{Name: resourceNameTrim(pandaCluster.Name, baseSuffix), Namespace: pandaCluster.Namespace}
-}
-
-func configMapKind() string {
-	var cfg corev1.ConfigMap
-	return cfg.Kind
 }
 
 // TODO move to utilities

@@ -1,7 +1,8 @@
-apiVersion: apps/v1
-kind: StatefulSet
-metadata:
-  name: cluster
-  namespace: console-finalizers
-status:
-  availableReplicas: 0
+---
+apiVersion: kuttl.dev/v1beta1
+kind: TestAssert
+collectors:
+- type: pod
+  selector: app.kubernetes.io/name=redpanda-console
+  tail: -1
+- command: ../../../hack/get-redpanda-info.sh

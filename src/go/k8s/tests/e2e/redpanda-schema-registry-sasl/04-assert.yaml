@@ -1,7 +1,7 @@
 apiVersion: cert-manager.io/v1
 kind: Issuer
 metadata:
-  name: schema-registry-schema-registry-selfsigned-issuer
+  name: schema-registry-sasl-schema-registry-selfsigned-issuer
 status:
   conditions:
     - reason: IsReady
@@ -13,7 +13,7 @@ status:
 apiVersion: cert-manager.io/v1
 kind: Issuer
 metadata:
-  name: schema-registry-schema-registry-root-issuer
+  name: schema-registry-sasl-schema-registry-root-issuer
 status:
   conditions:
     - reason: KeyPairVerified
@@ -24,7 +24,7 @@ status:
 apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:
-  name: schema-registry-schema-registry-root-certificate
+  name: schema-registry-sasl-schema-registry-root-certificate
 status:
   conditions:
     - reason: Ready
@@ -36,7 +36,7 @@ status:
 apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:
-  name: schema-registry-schema-registry-node
+  name: schema-registry-sasl-schema-registry-node
 status:
   conditions:
     - reason: Ready

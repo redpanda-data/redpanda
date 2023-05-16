@@ -46,7 +46,7 @@ func NewClusterRoleBinding(
 		client,
 		scheme,
 		pandaCluster,
-		logger.WithValues("Kind", clusterRoleBindingKind()),
+		logger,
 	}
 }
 
@@ -177,9 +177,4 @@ func (r *ClusterRoleBindingResource) RemoveSubject(
 	}
 
 	return nil
-}
-
-func clusterRoleBindingKind() string {
-	var r v1.ClusterRoleBinding
-	return r.Kind
 }

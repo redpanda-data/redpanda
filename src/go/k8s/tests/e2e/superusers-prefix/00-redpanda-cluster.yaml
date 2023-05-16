@@ -1,0 +1,31 @@
+apiVersion: redpanda.vectorized.io/v1alpha1
+kind: Cluster
+metadata:
+  name: cluster-superusers-prefix
+spec:
+  image: "localhost/redpanda"
+  version: "dev"
+  replicas: 1
+  superUsers:
+    - username: sd23Kj2odi9
+  resources:
+    requests:
+      cpu: 100m
+      memory: 100Mi
+    limits:
+      cpu: 1
+      memory: 500Mi
+  kafkaEnableAuthorization: true
+  configuration:
+    rpcServer:
+      port: 33145
+    kafkaApi:
+    - port: 9092
+      authenticationMethod: sasl
+    adminApi:
+    - port: 9644
+    schemaRegistry:
+      port: 8081
+    pandaproxyApi:
+     - port: 8082
+    developerMode: true

@@ -15,12 +15,14 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/docker/distribution/reference"
 	"github.com/fluxcd/pkg/runtime/logger"
 	"github.com/go-logr/logr"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	netv1 "k8s.io/api/networking/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
@@ -63,13 +65,13 @@ const (
 	NoSubdomainEvent = "NoSubdomain"
 )
 
-//+kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;watch;create;update;patch;delete
-//+kubebuilder:rbac:groups=apps,resources=configmaps,verbs=get;list;watch;create;update;patch;delete
-//+kubebuilder:rbac:groups=core,resources=events,verbs=get;list;watch;create;update;patch
+//+kubebuilder:rbac:groups=apps,namespace=default,resources=deployments,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups=apps,namespace=default,resources=configmaps,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups=core,namespace=default,resources=events,verbs=get;list;watch;create;update;patch
 
-//+kubebuilder:rbac:groups=redpanda.vectorized.io,resources=consoles,verbs=get;list;watch;create;update;patch;delete
-//+kubebuilder:rbac:groups=redpanda.vectorized.io,resources=consoles/status,verbs=get;update;patch
-//+kubebuilder:rbac:groups=redpanda.vectorized.io,resources=consoles/finalizers,verbs=update
+//+kubebuilder:rbac:groups=redpanda.vectorized.io,namespace=default,resources=consoles,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups=redpanda.vectorized.io,namespace=default,resources=consoles/status,verbs=get;update;patch
+//+kubebuilder:rbac:groups=redpanda.vectorized.io,namespace=default,resources=consoles/finalizers,verbs=update
 
 // Reconcile handles Console reconcile requests
 func (r *ConsoleReconciler) Reconcile(
@@ -222,6 +224,14 @@ func (r *Reconciling) Do(
 		}
 	}
 
+	err := r.reportDeploymentStatus(ctx, console)
+	if err != nil {
+		return ctrl.Result{}, fmt.Errorf("reporting console status: %w", err)
+	}
+	if err := r.Status().Update(ctx, console); err != nil {
+		return ctrl.Result{}, err
+	}
+
 	if !console.GenerationMatchesObserved() {
 		r.Log.Info("observed generation updating", "observed generation", console.Status.ObservedGeneration, "generation", console.GetGeneration())
 		console.Status.ObservedGeneration = console.GetGeneration()
@@ -231,6 +241,34 @@ func (r *Reconciling) Do(
 	}
 
 	return ctrl.Result{}, nil
+}
+
+func (r *Reconciling) reportDeploymentStatus(ctx context.Context, console *vectorizedv1alpha1.Console) error {
+	d := &appsv1.Deployment{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      console.GetName(),
+			Namespace: console.GetNamespace(),
+		},
+	}
+	err := r.Get(ctx, types.NamespacedName{Name: console.GetName(), Namespace: console.GetNamespace()}, d)
+	if err != nil {
+		return fmt.Errorf("retrieving deployment status: %w", err)
+	}
+
+	version := ""
+	for i := range d.Spec.Template.Spec.Containers {
+		matches := reference.ReferenceRegexp.FindStringSubmatch(d.Spec.Template.Spec.Containers[i].Image)
+		if matches == nil || len(matches) >= 3 {
+			version = matches[2]
+		}
+	}
+	console.Status.Version = version
+	console.Status.Replicas = d.Status.Replicas
+	console.Status.UpdatedReplicas = d.Status.UpdatedReplicas
+	console.Status.ReadyReplicas = d.Status.ReadyReplicas
+	console.Status.AvailableReplicas = d.Status.AvailableReplicas
+	console.Status.UnavailableReplicas = d.Status.UnavailableReplicas
+	return nil
 }
 
 // Deleting is the state of the Console that handles deletion

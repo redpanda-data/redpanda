@@ -1,7 +1,7 @@
 apiVersion: redpanda.vectorized.io/v1alpha1
 kind: Cluster
 metadata:
-  name: cluster
+  name: cluster-admin-api
 spec:
   image: "localhost/redpanda"
   version: "dev"

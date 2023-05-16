@@ -50,7 +50,7 @@ func NewIssuer(
 	logger logr.Logger,
 ) *IssuerResource {
 	return &IssuerResource{
-		client, scheme, pandaCluster, key, secretName, logger.WithValues("Kind", issuerKind()),
+		client, scheme, pandaCluster, key, secretName, logger,
 	}
 }
 

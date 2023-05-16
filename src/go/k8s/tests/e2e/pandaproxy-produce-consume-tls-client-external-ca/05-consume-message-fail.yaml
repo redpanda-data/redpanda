@@ -1,7 +1,7 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: consume-message-fail
+  name: consume-message-fail-pp-ext-mtls
 spec:
   template:
     spec:

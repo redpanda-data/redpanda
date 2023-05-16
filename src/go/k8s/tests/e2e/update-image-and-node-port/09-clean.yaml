@@ -1,0 +1,31 @@
+apiVersion: kuttl.dev/v1beta1
+kind: TestStep
+delete:
+  - apiVersion: redpanda.vectorized.io/v1alpha1
+    kind: Cluster
+    name: update-image-cluster-and-node-port
+    namespace: redpanda-system
+  - apiVersion: v1
+    kind: PersistentVolumeClaim
+    name: datadir-update-image-cluster-and-node-port-0
+    namespace: redpanda-system
+  - apiVersion: v1
+    kind: PersistentVolumeClaim
+    name: datadir-update-image-cluster-and-node-port-1
+    namespace: redpanda-system
+  - apiVersion: v1
+    kind: PersistentVolumeClaim
+    name: datadir-update-image-cluster-and-node-port-2
+    namespace: redpanda-system
+  - apiVersion: apps/v1
+    kind: Deployment
+    name: kminion-image-and-node-port
+    namespace: redpanda-system
+  - apiVersion: batch/v1
+    kind: Job
+    name: wait-for-v23-1-11
+    namespace: redpanda-system
+  - apiVersion: batch/v1
+    kind: Job
+    name: wait-for-tip-of-the-dev
+    namespace: redpanda-system

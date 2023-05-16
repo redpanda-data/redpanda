@@ -143,7 +143,7 @@ func NewStatefulSet(
 		nodeConfigMapHashGetter,
 		adminAPIClientFactory,
 		decommissionWaitInterval,
-		logger.WithValues("Kind", statefulSetKind()),
+		logger,
 		defaultAdminAPITimeout,
 		nil,
 	}
@@ -195,13 +195,13 @@ func (r *StatefulSetResource) Ensure(ctx context.Context) error {
 		return err
 	}
 
-	r.logger.Info("Running update", "resource name", r.Key().Name)
+	r.logger.Info("Running update")
 	err = r.runUpdate(ctx, &sts, obj.(*appsv1.StatefulSet))
 	if err != nil {
 		return err
 	}
 
-	r.logger.Info("Running scale handler", "resource name", r.Key().Name)
+	r.logger.Info("Running scale handler")
 	return r.handleScaling(ctx)
 }
 
@@ -854,11 +854,6 @@ func (r *StatefulSetResource) getPorts() []corev1.ContainerPort {
 	}
 
 	return ports
-}
-
-func statefulSetKind() string {
-	var statefulSet appsv1.StatefulSet
-	return statefulSet.Kind
 }
 
 func (r *StatefulSetResource) fullConfiguratorImage() string {

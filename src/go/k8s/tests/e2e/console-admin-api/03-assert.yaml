@@ -1,8 +1,7 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: call-console
-  namespace: console-admin-api
+  name: check-version
 status:
   conditions:
     - status: "True"
@@ -17,4 +16,4 @@ collectors:
 - type: pod
   selector: app.kubernetes.io/name=redpanda-console
   tail: -1
-- command: ../../../hack/get-redpanda-info.sh console-admin-api
+- command: ../../../hack/get-redpanda-info.sh

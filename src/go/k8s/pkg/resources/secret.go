@@ -64,7 +64,7 @@ func PreStartStopScriptSecret(
 		serviceFQDN,
 		pandaproxySASLUser,
 		schemaRegistrySASLUser,
-		logger.WithValues("Kind", secretKind()),
+		logger,
 	}
 }
 
@@ -141,11 +141,6 @@ func (r *PreStartStopScriptResource) Key() types.NamespacedName {
 // SecretKey provides config map name that derived from redpanda.vectorized.io CR
 func SecretKey(pandaCluster *vectorizedv1alpha1.Cluster) types.NamespacedName {
 	return types.NamespacedName{Name: resourceNameTrim(pandaCluster.Name, lifecycleSuffix), Namespace: pandaCluster.Namespace}
-}
-
-func secretKind() string {
-	var cfg corev1.Secret
-	return cfg.Kind
 }
 
 // getPostStartScript creates a script that removes maintenance mode after startup.

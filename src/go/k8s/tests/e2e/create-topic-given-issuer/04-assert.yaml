@@ -2,7 +2,7 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: create-schema-with-tls
+  name: create-schema-given-issuer
 status:
   conditions:
     - status: "True"

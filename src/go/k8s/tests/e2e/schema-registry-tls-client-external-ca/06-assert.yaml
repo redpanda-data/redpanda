@@ -1,7 +1,7 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: delete-schema-client-external-ca-mtls
+  name: retrieve-schema-client-external-updated-ca-mtls
 status:
   conditions:
     - status: "True"
@@ -13,6 +13,4 @@ status:
 apiVersion: kuttl.dev/v1beta1
 kind: TestAssert
 collectors:
-- type: pod
-  selector: app.kubernetes.io/name=redpanda
-  tail: -1
+  - command: ../../../hack/get-redpanda-info.sh

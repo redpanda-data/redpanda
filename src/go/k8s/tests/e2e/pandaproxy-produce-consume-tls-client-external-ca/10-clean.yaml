@@ -1,0 +1,47 @@
+apiVersion: kuttl.dev/v1beta1
+kind: TestStep
+delete:
+  - apiVersion: redpanda.vectorized.io/v1alpha1
+    kind: Cluster
+    name: cluster-proxy
+    namespace: redpanda-system
+  - apiVersion: v1
+    kind: PersistentVolumeClaim
+    name: datadir-cluster-proxy-0
+    namespace: redpanda-system
+  - apiVersion: batch/v1
+    kind: Job
+    name: create-test-topic-pp-ext-mtls
+    namespace: redpanda-system
+  - apiVersion: batch/v1
+    kind: Job
+    name: produce-message-pp-ext-mtls
+    namespace: redpanda-system
+  - apiVersion: batch/v1
+    kind: Job
+    name: consume-message-pp-ext-mtls
+    namespace: redpanda-system
+  - apiVersion: batch/v1
+    kind: Job
+    name: get-topic-test-pp-ext-mtls
+    namespace: redpanda-system
+  - apiVersion: batch/v1
+    kind: Job
+    name: get-topic-test-updated-ca-pp-ext-mtls
+    namespace: redpanda-system
+  - apiVersion: batch/v1
+    kind: Job
+    name: get-topic-test-untrusted-ca-pp-ext-mtls
+    namespace: redpanda-system
+  - apiVersion: v1
+    kind: Secret
+    namespace: redpanda-system
+    name: pp-client-cert
+  - apiVersion: v1
+    kind: Secret
+    namespace: redpanda-system
+    name: pp-client-cert1
+  - apiVersion: v1
+    kind: Secret
+    namespace: redpanda-system
+    name: pp-ca-cert

@@ -1,7 +1,7 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: delete-schema-client-external-ca-mtls
+  name: retrieve-schema-client-external-updated-ca-mtls
 spec:
   template:
     spec:
@@ -10,11 +10,11 @@ spec:
           secret:
             defaultMode: 420
             # The cert issued by the updated CA at Step 05.
-            secretName: client-cert-key1
+            secretName: sr-client-cert-key1
         - name: tlscacert
           secret:
             defaultMode: 420
-            secretName: schema-registry-client-external-ca-mtls-schema-registry-node
+            secretName: sr-external-ca-mtls-schema-registry-node
       containers:
         - name: rpk
           image: localhost/redpanda:dev
@@ -33,13 +33,20 @@ spec:
               --cert /etc/tls/certs/schema-registry/tls.crt
               --key /etc/tls/certs/schema-registry/tls.key
               -X GET
-              https://schema-registry-client-external-ca-mtls-cluster.$POD_NAMESPACE.svc.cluster.local.:8081/subjects/Kafka-value/versions/1
+              https://sr-external-ca-mtls-cluster.$POD_NAMESPACE.svc.cluster.local.:8081/subjects/Kafka-value/versions/1
           volumeMounts:
             - mountPath: /etc/tls/certs/schema-registry
               name: tlscertkey
             - mountPath: /etc/tls/certs/schema-registry/ca
               name: tlscacert
       restartPolicy: Never
-  backoffLimit: 6
+  backoffLimit: 20
   parallelism: 1
   completions: 1
+
+---
+apiVersion: kuttl.dev/v1beta1
+kind: TestStep
+commands:
+  - command: kubectl delete pod -l app.kubernetes.io/component=redpanda,app.kubernetes.io/instance=sr-external-ca-mtls
+    namespaced: true

@@ -55,7 +55,6 @@ func NewLoadBalancerService(
 		svcPorts,
 		isBootstrap,
 		logger.WithValues(
-			"Kind", serviceKind(),
 			"ServiceType", corev1.ServiceTypeLoadBalancer,
 		),
 	}

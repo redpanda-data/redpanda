@@ -1,14 +1,16 @@
-apiVersion: apps/v1
-kind: StatefulSet
+apiVersion: redpanda.vectorized.io/v1alpha1
+kind: Cluster
 metadata:
   name: update-cluster
-  labels:
-    app.kubernetes.io/name: "redpanda"
-    app.kubernetes.io/instance: "update-cluster"
-    app.kubernetes.io/managed-by: redpanda-operator
-    app.kubernetes.io/part-of: redpanda
 status:
+  version: "dev"
   readyReplicas: 1
+  replicas: 1
+  upgrading: false
+  restarting: false
+  conditions:
+    - type: ClusterConfigured
+      status: "True"
 
 ---
 

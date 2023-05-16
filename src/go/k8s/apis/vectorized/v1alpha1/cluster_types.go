@@ -830,6 +830,9 @@ func init() {
 
 // FullImageName returns image name including version
 func (r *Cluster) FullImageName() string {
+	if r == nil {
+		return ""
+	}
 	return fmt.Sprintf("%s:%s", r.Spec.Image, r.Spec.Version)
 }
 
@@ -837,6 +840,9 @@ func (r *Cluster) FullImageName() string {
 // nil if no external listener is configured. Right now we support only one
 // external listener which is enforced by webhook
 func (r *Cluster) ExternalListener() *KafkaAPI {
+	if r == nil {
+		return nil
+	}
 	for _, el := range r.Spec.Configuration.KafkaAPI {
 		if el.External.Enabled {
 			return &el
@@ -847,6 +853,9 @@ func (r *Cluster) ExternalListener() *KafkaAPI {
 
 // InternalListener returns internal listener.
 func (r *Cluster) InternalListener() *KafkaAPI {
+	if r == nil {
+		return nil
+	}
 	for _, el := range r.Spec.Configuration.KafkaAPI {
 		if !el.External.Enabled {
 			return &el
@@ -864,6 +873,9 @@ type ListenerWithName struct {
 
 // KafkaTLSListeners returns kafka listeners that have tls enabled
 func (r *Cluster) KafkaTLSListeners() []ListenerWithName {
+	if r == nil {
+		return nil
+	}
 	res := []ListenerWithName{}
 	for i, el := range r.Spec.Configuration.KafkaAPI {
 		if el.TLS.Enabled {
@@ -883,6 +895,9 @@ func (r *Cluster) KafkaTLSListeners() []ListenerWithName {
 // KafkaListener returns a KafkaAPI listener
 // It returns internal listener if available
 func (r *Cluster) KafkaListener() *KafkaAPI {
+	if r == nil {
+		return nil
+	}
 	if l := r.InternalListener(); l != nil {
 		return l
 	}
@@ -891,6 +906,9 @@ func (r *Cluster) KafkaListener() *KafkaAPI {
 
 // AdminAPIInternal returns internal admin listener
 func (r *Cluster) AdminAPIInternal() *AdminAPI {
+	if r == nil {
+		return nil
+	}
 	for _, el := range r.Spec.Configuration.AdminAPI {
 		if !el.External.Enabled {
 			return &el
@@ -901,6 +919,9 @@ func (r *Cluster) AdminAPIInternal() *AdminAPI {
 
 // AdminAPIExternal returns external admin listener
 func (r *Cluster) AdminAPIExternal() *AdminAPI {
+	if r == nil {
+		return nil
+	}
 	for _, el := range r.Spec.Configuration.AdminAPI {
 		if el.External.Enabled {
 			return &el
@@ -912,6 +933,9 @@ func (r *Cluster) AdminAPIExternal() *AdminAPI {
 // AdminAPITLS returns admin api listener that has tls enabled or nil if there's
 // none
 func (r *Cluster) AdminAPITLS() *AdminAPI {
+	if r == nil {
+		return nil
+	}
 	for i, el := range r.Spec.Configuration.AdminAPI {
 		if el.TLS.Enabled {
 			return &r.Spec.Configuration.AdminAPI[i]
@@ -923,6 +947,9 @@ func (r *Cluster) AdminAPITLS() *AdminAPI {
 // AdminAPIListener returns a AdminAPI listener
 // It returns internal listener if available
 func (r *Cluster) AdminAPIListener() *AdminAPI {
+	if r == nil {
+		return nil
+	}
 	if l := r.AdminAPIInternal(); l != nil {
 		return l
 	}
@@ -931,6 +958,9 @@ func (r *Cluster) AdminAPIListener() *AdminAPI {
 
 // AdminAPIURLs returns a list of AdminAPI URLs.
 func (r *Cluster) AdminAPIURLs() []string {
+	if r == nil {
+		return nil
+	}
 	aa := r.AdminAPIListener()
 	if aa == nil {
 		return []string{}
@@ -958,6 +988,9 @@ func (r *Cluster) AdminAPIURLs() []string {
 
 // PandaproxyAPIInternal returns internal pandaproxy listener
 func (r *Cluster) PandaproxyAPIInternal() *PandaproxyAPI {
+	if r == nil {
+		return nil
+	}
 	proxies := r.Spec.Configuration.PandaproxyAPI
 	for i := range proxies {
 		if !proxies[i].External.Enabled {
@@ -969,6 +1002,9 @@ func (r *Cluster) PandaproxyAPIInternal() *PandaproxyAPI {
 
 // PandaproxyAPIExternal returns the external pandaproxy listener
 func (r *Cluster) PandaproxyAPIExternal() *PandaproxyAPI {
+	if r == nil {
+		return nil
+	}
 	proxies := r.Spec.Configuration.PandaproxyAPI
 	for i := range proxies {
 		if proxies[i].External.Enabled {
@@ -981,6 +1017,9 @@ func (r *Cluster) PandaproxyAPIExternal() *PandaproxyAPI {
 // PandaproxyAPITLS returns a Pandaproxy listener that has TLS enabled.
 // It returns nil if no TLS is configured.
 func (r *Cluster) PandaproxyAPITLS() *PandaproxyAPI {
+	if r == nil {
+		return nil
+	}
 	proxies := r.Spec.Configuration.PandaproxyAPI
 	for i := range proxies {
 		if proxies[i].TLS.Enabled {
@@ -993,6 +1032,9 @@ func (r *Cluster) PandaproxyAPITLS() *PandaproxyAPI {
 // SchemaRegistryAPIURL returns a SchemaRegistry URL string.
 // It returns internal URL unless externally available with TLS.
 func (r *Cluster) SchemaRegistryAPIURL() string {
+	if r == nil {
+		return ""
+	}
 	// Prefer to use internal URL
 	// But if it is externally available with TLS, we cannot call internal URL without TLS and the TLS certs are signed for external URL
 	host := r.Status.Nodes.SchemaRegistry.Internal
@@ -1009,6 +1051,9 @@ func (r *Cluster) SchemaRegistryAPIURL() string {
 // SchemaRegistryAPITLS returns a SchemaRegistry listener that has TLS enabled.
 // It returns nil if no TLS is configured.
 func (r *Cluster) SchemaRegistryAPITLS() *SchemaRegistryAPI {
+	if r == nil {
+		return nil
+	}
 	schemaRegistry := r.Spec.Configuration.SchemaRegistry
 	if schemaRegistry != nil && schemaRegistry.TLS != nil && schemaRegistry.TLS.Enabled {
 		return schemaRegistry
@@ -1019,7 +1064,8 @@ func (r *Cluster) SchemaRegistryAPITLS() *SchemaRegistryAPI {
 // IsSchemaRegistryExternallyAvailable returns true if schema registry
 // is enabled with external connectivity
 func (r *Cluster) IsSchemaRegistryExternallyAvailable() bool {
-	return r.Spec.Configuration.SchemaRegistry != nil &&
+	return r != nil &&
+		r.Spec.Configuration.SchemaRegistry != nil &&
 		r.Spec.Configuration.SchemaRegistry.External != nil &&
 		r.Spec.Configuration.SchemaRegistry.External.Enabled
 }
@@ -1027,7 +1073,8 @@ func (r *Cluster) IsSchemaRegistryExternallyAvailable() bool {
 // IsSchemaRegistryTLSEnabled returns true if schema registry
 // is enabled with TLS
 func (r *Cluster) IsSchemaRegistryTLSEnabled() bool {
-	return r.Spec.Configuration.SchemaRegistry != nil &&
+	return r != nil &&
+		r.Spec.Configuration.SchemaRegistry != nil &&
 		r.Spec.Configuration.SchemaRegistry.TLS != nil &&
 		r.Spec.Configuration.SchemaRegistry.TLS.Enabled
 }
@@ -1035,20 +1082,25 @@ func (r *Cluster) IsSchemaRegistryTLSEnabled() bool {
 // IsSchemaRegistryMutualTLSEnabled returns true if schema registry
 // is enabled with mutual TLS
 func (r *Cluster) IsSchemaRegistryMutualTLSEnabled() bool {
-	return r.IsSchemaRegistryTLSEnabled() &&
+	return r != nil &&
+		r.IsSchemaRegistryTLSEnabled() &&
 		r.Spec.Configuration.SchemaRegistry.TLS.RequireClientAuth
 }
 
 // IsSchemaRegistryAuthHTTPBasic returns true if schema registry authentication method
 // is enabled with HTTP Basic
 func (r *Cluster) IsSchemaRegistryAuthHTTPBasic() bool {
-	return r.Spec.Configuration.SchemaRegistry != nil &&
+	return r != nil &&
+		r.Spec.Configuration.SchemaRegistry != nil &&
 		r.Spec.Configuration.SchemaRegistry.AuthenticationMethod == httpBasicAuthorizationMechanism
 }
 
 // IsUsingMaintenanceModeHooks tells if the cluster is configured to use maintenance mode hooks on the pods.
 // Maintenance mode feature needs to be enabled for this to be relevant.
 func (r *Cluster) IsUsingMaintenanceModeHooks() bool {
+	if r == nil {
+		return true
+	}
 	// enabled unless explicitly stated
 	if r.Spec.RestartConfig != nil && r.Spec.RestartConfig.DisableMaintenanceModeHooks != nil {
 		return !*r.Spec.RestartConfig.DisableMaintenanceModeHooks
@@ -1074,6 +1126,9 @@ func (s *ClusterStatus) SetRestarting(restarting bool) {
 // GetCurrentReplicas returns the current number of replicas that the controller wants to run.
 // It returns 1 when not initialized (as fresh clusters start from 1 replica)
 func (r *Cluster) GetCurrentReplicas() int32 {
+	if r == nil {
+		return 0
+	}
 	if r.Status.CurrentReplicas <= 0 {
 		// Not initialized, let's give the computed value
 		return r.ComputeInitialCurrentReplicasField()
@@ -1088,6 +1143,9 @@ func (r *Cluster) GetCurrentReplicas() int32 {
 // - Fresh cluster: we start from 1 replicas, then upscale if needed (initialization to bypass https://github.com/redpanda-data/redpanda/issues/333)
 // - Existing clusters: we keep spec.replicas as starting point
 func (r *Cluster) ComputeInitialCurrentReplicasField() int32 {
+	if r == nil {
+		return 0
+	}
 	if r.Status.Replicas > 1 || r.Status.ReadyReplicas > 1 || len(r.Status.Nodes.Internal) > 1 || featuregates.EmptySeedStartCluster(r.Spec.Version) {
 		// A cluster seems to be already running, we start from the existing amount of replicas
 		return *r.Spec.Replicas
@@ -1260,6 +1318,6 @@ func defaultTLSConfig() *TLSConfig {
 // schema registry and console should use internal kafka listener even if we have
 // external enabled.
 func (r *Cluster) IsSASLOnInternalEnabled() bool {
-	return r.Spec.KafkaEnableAuthorization != nil && *r.Spec.KafkaEnableAuthorization ||
+	return r != nil && r.Spec.KafkaEnableAuthorization != nil && *r.Spec.KafkaEnableAuthorization ||
 		r.Spec.EnableSASL
 }

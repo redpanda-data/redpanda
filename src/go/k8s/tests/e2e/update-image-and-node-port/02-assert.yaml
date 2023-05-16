@@ -14,7 +14,7 @@ metadata:
 spec:
   containers:
   - name: redpanda
-    image: "vectorized/redpanda:v22.2.10"
+    image: "vectorized/redpanda:v22.2.12"
     volumeMounts:
     - mountPath: /etc/redpanda
       name: config-dir
@@ -41,7 +41,7 @@ metadata:
 spec:
   containers:
   - name: redpanda
-    image: "vectorized/redpanda:v22.2.10"
+    image: "vectorized/redpanda:v22.2.12"
     volumeMounts:
     - mountPath: /etc/redpanda
       name: config-dir
@@ -68,7 +68,7 @@ metadata:
 spec:
   containers:
   - name: redpanda
-    image: "vectorized/redpanda:v22.2.10"
+    image: "vectorized/redpanda:v22.2.12"
     volumeMounts:
     - mountPath: /etc/redpanda
       name: config-dir
@@ -121,7 +121,7 @@ kind: Cluster
 metadata:
   name: update-image-cluster-and-node-port
 status:
-  version: "v22.2.10"
+  version: "v22.2.12"
   readyReplicas: 3
   replicas: 3
   upgrading: false

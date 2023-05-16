@@ -1,7 +1,7 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: consume-message
+  name: consume-message-using-pp
 spec:
   template:
     spec:
@@ -19,7 +19,7 @@ spec:
             - -ex
           args:
             - | 
-              curl -s -v http://cluster-proxy-0.cluster-proxy.$POD_NAMESPACE.svc.cluster.local:8082/topics/test/partitions/0/records?offset=0\&timeout=1000\&max_bytes=100000 \
+              curl -s -v http://proxy-test-0.proxy-test.$POD_NAMESPACE.svc.cluster.local:8082/topics/test/partitions/0/records?offset=0\&timeout=1000\&max_bytes=100000 \
               -H "Accept: application/vnd.kafka.json.v2+json"
       restartPolicy: Never
   backoffLimit: 6

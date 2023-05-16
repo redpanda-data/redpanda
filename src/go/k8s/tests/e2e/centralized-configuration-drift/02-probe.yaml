@@ -1,7 +1,7 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: get-centralized-config-1
+  name: get-centralized-config-1-drift
 spec:
   backoffLimit: 10
   template:

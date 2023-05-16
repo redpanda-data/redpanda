@@ -75,9 +75,7 @@ func NewIngress(
 		nil,
 		nil,
 		"",
-		l.WithValues(
-			"Kind", ingressKind(),
-		),
+		l,
 	}
 }
 
@@ -253,11 +251,6 @@ func (r *IngressResource) obj() (k8sclient.Object, error) {
 // Key returns namespace/name object that is used to identify object.
 func (r *IngressResource) Key() types.NamespacedName {
 	return types.NamespacedName{Name: r.object.GetName(), Namespace: r.object.GetNamespace()}
-}
-
-func ingressKind() string {
-	var obj netv1.Ingress
-	return obj.Kind
 }
 
 func objectLabels(obj metav1.Object) (labels.CommonLabels, error) {

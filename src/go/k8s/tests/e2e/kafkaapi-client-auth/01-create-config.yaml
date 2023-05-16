@@ -1,7 +1,7 @@
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: rpk-config
+  name: rpk-config-kafka-api-client-auth
 data:
   redpanda.yaml: |
     redpanda:

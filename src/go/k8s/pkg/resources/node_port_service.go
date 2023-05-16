@@ -51,7 +51,7 @@ func NewNodePortService(
 		scheme,
 		pandaCluster,
 		svcPorts,
-		logger.WithValues("Kind", serviceKind(), "ServiceType", "NodePort"),
+		logger.WithValues("ServiceType", "NodePort"),
 	}
 }
 

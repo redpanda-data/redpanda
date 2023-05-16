@@ -1,41 +1,42 @@
+apiVersion: v1
+kind: Secret
+metadata:
+  name: console-superusers-prefix-console-sasl
+data:
+  username: X19yZWRwYW5kYV9zeXN0ZW1fX2NvbnNvbGUtc3VwZXJ1c2Vycy1wcmVmaXhfY29uc29sZV9jbGllbnQ= # __redpanda_system__console-superusers-prefix_console_client base64 encoded
+
+---
+
 apiVersion: redpanda.vectorized.io/v1alpha1
-kind: Cluster
+kind: Console
 metadata:
-  name: cluster
-  namespace: superusers-prefix
+  name: console-superusers-prefix
 status:
-  readyReplicas: 1
+  version: v2.2.4
   replicas: 1
-  upgrading: false
-  restarting: false
+  updatedReplicas: 1
+  readyReplicas: 1
+  availableReplicas: 1
+
+---
+
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: set-superuser-password
+status:
   conditions:
-    - type: ClusterConfigured
-      status: "True"
----
+    - status: "True"
+      type: Complete
+  succeeded: 1
 
-apiVersion: v1
-kind: Secret
-metadata:
-  name: cluster-schema-registry-sasl
-  namespace: superusers-prefix
-data:
-  username: X19yZWRwYW5kYV9zeXN0ZW1fX3NjaGVtYXJlZ2lzdHJ5X2NsaWVudA== # __redpanda_system__schemaregistry_client base64 encoded
----
-
-apiVersion: v1
-kind: Secret
-metadata:
-  name: cluster-sasl
-  namespace: superusers-prefix
-data:
-  username: X19yZWRwYW5kYV9zeXN0ZW1fX3BhbmRhcHJveHlfY2xpZW50 # __redpanda_system__pandaproxy_client base64 encoded
 ---
 
 apiVersion: kuttl.dev/v1beta1
 kind: TestAssert
 collectors:
-  - command: ../../../hack/get-redpanda-info.sh superusers-prefix
-  - type: command
-    command: kubectl get secret -n superusers-prefix -o jsonpath='{.data.username}' cluster-schema-registry-sasl
-  - type: command
-    command: kubectl get secret -n superusers-prefix -o jsonpath='{.data.username}' cluster-sasl
+  - type: pod
+    selector: app.kubernetes.io/name=redpanda-console
+    namespace: redpanda-system
+    tail: -1
+  - command: ../../../hack/get-redpanda-info.sh

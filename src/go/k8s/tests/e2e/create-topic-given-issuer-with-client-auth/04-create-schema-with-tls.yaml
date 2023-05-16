@@ -1,7 +1,7 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: create-schema-with-tls
+  name: create-schema-with-client-auth
 spec:
   template:
     spec:
@@ -9,11 +9,11 @@ spec:
       - name: tlscert
         secret:
           defaultMode: 420
-          secretName: cluster-tls-schema-registry-node
+          secretName: create-topic-with-client-auth-schema-registry-node
       - name: mtlscerts
         secret:
           defaultMode: 420
-          secretName: cluster-tls-schema-registry-client
+          secretName: create-topic-with-client-auth-schema-registry-client
       containers:
       - name: rpk
         image: localhost/redpanda:dev
@@ -33,7 +33,7 @@ spec:
           --key /etc/tls/certs/schema-registry-client/tls.key
           -X POST -H "Content-Type: application/vnd.schemaregistry.v1+json"
           --data '{"schema": "{\"type\": \"string\"}" }'
-          https://cluster-tls-cluster.$POD_NAMESPACE.svc.cluster.local.:8081/subjects/Kafka-value/versions
+          https://create-topic-with-client-auth-cluster.$POD_NAMESPACE.svc.cluster.local.:8081/subjects/Kafka-value/versions
         volumeMounts:
         - mountPath: /etc/tls/certs/schema-registry
           name: tlscert
