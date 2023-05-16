@@ -145,7 +145,6 @@ private:
     void reallocations_for_even_partition_count(
       update_meta&, partition_allocation_domain);
 
-    ss::future<> calculate_reallocations_after_decommissioned(update_meta&);
     ss::future<> calculate_reallocations_after_recommissioned(update_meta&);
     std::vector<model::ntp> ntps_moving_from_node_older_than(
       model::node_id, model::revision_id) const;

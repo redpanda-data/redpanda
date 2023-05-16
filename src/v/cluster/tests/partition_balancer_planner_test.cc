@@ -776,40 +776,40 @@ FIXTURE_TEST(
 }
 
 /*
- * 4 nodes; 1 topic; 1 node down; 1 decommissioning node
- * Planner should not cancel any movements from the decommissioning node.
+ * 5 nodes; 1 topic; 1 node down; 1 decommissioning node
+ * Planner should schedule a movement away from the decommissioning node,
+ * taking the unavailable node into account.
  *   node_0: partitions: 1; down: False; decommissioning: True
  *   node_1: partitions: 1; down: False;
  *   node_2: partitions: 1; down: False;
  *   node_3: partitions: 0; down: True;
- *   movement in progress: (0, 1, 2) -> (1, 2, 3)
+ *   node_4: partitions: 0; down: False;
  */
 FIXTURE_TEST(
   test_interaction_with_decommission_2, partition_balancer_planner_fixture) {
     allocator_register_nodes(3);
     create_topic("topic-1", 1, 3);
-    allocator_register_nodes(1);
+    allocator_register_nodes(2);
 
     std::set<size_t> unavailable_nodes{3};
     auto hr = create_health_report();
     auto fm = create_follower_metrics(unavailable_nodes);
 
     set_decommissioning(model::node_id{0});
-    move_partition_replicas(
-      model::ntp(test_ns, "topic-1", 0),
-      {
-        model::broker_shard{model::node_id{1}, 0},
-        model::broker_shard{model::node_id{2}, 0},
-        model::broker_shard{model::node_id{3}, 0},
-      });
 
     auto planner = make_planner();
     auto plan_data = planner.plan_actions(hr, fm);
 
     check_violations(plan_data, unavailable_nodes, {});
-    BOOST_REQUIRE_EQUAL(plan_data.reassignments.size(), 0);
+    BOOST_REQUIRE_EQUAL(plan_data.reassignments.size(), 1);
+
+    std::unordered_set<model::node_id> expected_nodes(
+      {model::node_id(1), model::node_id(2), model::node_id(4)});
+    auto new_replicas = plan_data.reassignments.front().allocated.replicas();
+    check_expected_assignments(new_replicas, expected_nodes);
+
     BOOST_REQUIRE_EQUAL(plan_data.cancellations.size(), 0);
-    BOOST_REQUIRE_EQUAL(plan_data.failed_actions_count, 1);
+    BOOST_REQUIRE_EQUAL(plan_data.failed_actions_count, 0);
 }
 
 FIXTURE_TEST(

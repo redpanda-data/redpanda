@@ -81,7 +81,10 @@ private:
     void init_ntp_sizes_from_health_report(
       const cluster_health_report& health_report, request_context&);
 
-    static void get_unavailable_nodes_actions(request_context&);
+    static void get_node_drain_actions(
+      request_context&,
+      const absl::flat_hash_set<model::node_id>&,
+      std::string_view reason);
     static void get_rack_constraint_repair_actions(request_context&);
     static void get_full_node_actions(request_context&);
 
