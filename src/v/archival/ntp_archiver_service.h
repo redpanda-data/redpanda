@@ -270,6 +270,12 @@ public:
       std::optional<std::reference_wrapper<retry_chain_node>> source_rtc
       = std::nullopt);
 
+    // Resets the underlying archival_metadata_stm's in-memory contents to
+    // match that of the input stream, which is expected to be a manifest.
+    //
+    // Throws if there is an issue with serialization.
+    ss::future<> unsafe_reset_metadata(ss::input_stream<char> is);
+
 private:
     // Labels for contexts in which manifest uploads occur. Used for logging.
     static constexpr const char* housekeeping_ctx_label = "housekeeping";

@@ -6,6 +6,7 @@
 # As of the Change Date specified in that file, in accordance with
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
+import json
 import random
 import re
 import time
@@ -30,6 +31,7 @@ from rptest.tests.prealloc_nodes import PreallocNodesTest
 from rptest.util import Scale, wait_until_segments
 from rptest.util import (
     produce_until_segments,
+    wait_until_result,
     wait_for_removal_of_n_segments,
     wait_for_local_storage_truncate,
 )
@@ -88,6 +90,43 @@ class EndToEndShadowIndexingBase(EndToEndTest):
 
 
 class EndToEndShadowIndexingTest(EndToEndShadowIndexingBase):
+    @cluster(num_nodes=5)
+    @matrix(cloud_storage_type=get_cloud_storage_type())
+    def test_reset(self, cloud_storage_type):
+        brokers = self.redpanda.started_nodes()
+
+        self.start_producer()
+        produce_until_segments(
+            redpanda=self.redpanda,
+            topic=self.topic,
+            partition_idx=0,
+            count=10,
+        )
+        original_snapshot = self.redpanda.storage(
+            all_nodes=True).segments_by_node("kafka", self.topic, 0)
+        self.kafka_tools.alter_topic_config(
+            self.topic,
+            {
+                TopicSpec.PROPERTY_RETENTION_LOCAL_TARGET_BYTES:
+                5 * self.segment_size,
+            },
+        )
+
+        wait_for_removal_of_n_segments(redpanda=self.redpanda,
+                                       topic=self.topic,
+                                       partition_idx=0,
+                                       n=6,
+                                       original_snapshot=original_snapshot)
+        # Wait for there to be some segments.
+        def manifest_has_segments():
+            s3_snapshot = BucketView(self.redpanda, topics=self.topics)
+            manifest = s3_snapshot.manifest_for_ntp(self.s3_topic_name,
+                                                    0)
+            return ("segments" in manifest, manifest)
+
+        manifest = wait_until_result(manifest_has_segments, timeout_sec=30, backoff_sec=1)
+        self.redpanda._admin.unsafe_reset_cloud_metadata(self.s3_topic_name, 0, json.dumps(manifest))
+
     @cluster(num_nodes=5)
     @matrix(cloud_storage_type=get_cloud_storage_type())
     def test_write(self, cloud_storage_type):

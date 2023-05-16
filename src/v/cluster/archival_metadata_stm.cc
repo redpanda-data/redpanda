@@ -120,6 +120,13 @@ struct archival_metadata_stm::update_start_kafka_offset_cmd {
     using value = kafka::offset;
 };
 
+struct archival_metadata_stm::reset_metadata_cmd {
+    static constexpr cmd_key key{8};
+
+    // Unused, left available in case it's useful to pass in further arguments.
+    using value = iobuf;
+};
+
 struct archival_metadata_stm::snapshot
   : public serde::
       envelope<snapshot, serde::version<3>, serde::compat_version<0>> {
@@ -174,6 +181,14 @@ command_batch_builder::command_batch_builder(
   , _deadline(deadline)
   , _as(as)
   , _holder(stm._gate) {}
+
+command_batch_builder& command_batch_builder::reset_metadata() {
+    iobuf key_buf = serde::to_iobuf(
+      archival_metadata_stm::reset_metadata_cmd::key);
+    iobuf empty_buf;
+    _builder.add_raw_kv(std::move(key_buf), std::move(empty_buf));
+    return *this;
+}
 
 command_batch_builder& command_batch_builder::add_segments(
   std::vector<cloud_storage::segment_meta> add_segments) {
@@ -697,6 +712,9 @@ ss::future<> archival_metadata_stm::apply(model::record_batch b) {
               serde::from_iobuf<update_start_kafka_offset_cmd::value>(
                 r.release_value()));
             break;
+        case reset_metadata_cmd::key:
+            apply_reset_metadata();
+            break;
         };
     });
 
@@ -990,6 +1008,11 @@ void archival_metadata_stm::apply_update_start_kafka_offset(kafka::offset so) {
           get_start_kafka_offset(),
           get_start_offset());
     }
+}
+
+void archival_metadata_stm::apply_reset_metadata() {
+    vlog(_logger.info, "Resetting manifest");
+    _manifest->unsafe_reset();
 }
 
 void archival_metadata_stm::apply_truncate_archive_init(
