@@ -17,9 +17,10 @@ import (
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/api/admin"
+
 	redpandav1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources/types"
-	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/api/admin"
 )
 
 // NoInternalAdminAPI signal absence of the internal admin API endpoint

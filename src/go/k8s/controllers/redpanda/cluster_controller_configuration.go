@@ -19,13 +19,14 @@ import (
 	"github.com/go-logr/logr"
 	corev1 "k8s.io/api/core/v1"
 
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/api/admin"
+
 	redpandav1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
 	adminutils "github.com/redpanda-data/redpanda/src/go/k8s/pkg/admin"
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources"
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources/certmanager"
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources/configuration"
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources/featuregates"
-	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/api/admin"
 )
 
 // reconcileConfiguration ensures that the cluster configuration is synchronized with expected data
