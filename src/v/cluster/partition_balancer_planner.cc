@@ -108,6 +108,9 @@ private:
 
     void collect_actions(plan_data&);
 
+    // returns true if the failure can be logged
+    bool increment_failure_count();
+
 private:
     partition_balancer_planner& _parent;
     absl::node_hash_map<model::ntp, size_t> _ntp2size;
@@ -290,6 +293,22 @@ bool partition_balancer_planner::request_context::all_reports_received() const {
     return true;
 }
 
+bool partition_balancer_planner::request_context::increment_failure_count() {
+    static constexpr size_t max_logged_failures = 50;
+
+    ++_failed_actions_count;
+    if (_failed_actions_count <= max_logged_failures) {
+        return true;
+    } else if (_failed_actions_count == max_logged_failures + 1) {
+        vlog(
+          clusterlog.info,
+          "too many balancing action failures, won't log anymore");
+        return false;
+    } else {
+        return false;
+    }
+}
+
 static bool has_quorum(
   const absl::flat_hash_set<model::node_id>& all_unavailable_nodes,
   const std::vector<model::broker_shard>& current_replicas) {
@@ -403,15 +422,16 @@ public:
 
     void
     report_failure(std::string_view reason, std::string_view change_reason) {
-        vlog(
-          clusterlog.info,
-          "[ntp {}, replicas: {}]: can't change replicas with cancellation: {} "
-          "(change reason: {})",
-          _ntp,
-          _replicas,
-          reason,
-          change_reason);
-        ++_ctx._failed_actions_count;
+        if (_ctx.increment_failure_count()) {
+            vlog(
+              clusterlog.info,
+              "[ntp {}, replicas: {}]: can't change replicas with "
+              "cancellation: {} (change reason: {})",
+              _ntp,
+              _replicas,
+              reason,
+              change_reason);
+        }
     }
 
 private:
@@ -469,15 +489,17 @@ public:
               "reconfiguration in progress, state: {}", _reconfiguration_state);
             break;
         }
-        vlog(
-          clusterlog.info,
-          "[ntp {}, replicas: {}]: can't change replicas: {} (change reason: "
-          "{})",
-          _ntp,
-          _replicas,
-          reason,
-          change_reason);
-        ++_ctx._failed_actions_count;
+
+        if (_ctx.increment_failure_count()) {
+            vlog(
+              clusterlog.info,
+              "[ntp {}, replicas: {}]: can't change replicas: {} (change "
+              "reason: {})",
+              _ntp,
+              _replicas,
+              reason,
+              change_reason);
+        }
     }
 
 private:
@@ -688,17 +710,18 @@ partition_balancer_planner::reassignable_partition::move_replica(
     auto moved = _ctx._parent._partition_allocator.reallocate_replica(
       *_reallocated, replica, std::move(constraints));
     if (!moved) {
-        vlog(
-          clusterlog.info,
-          "ntp {} (size: {}, current replicas: {}): attempt to move replica {} "
-          "(reason: {}) failed, error: {}",
-          _ntp,
-          _size_bytes,
-          replicas(),
-          replica,
-          reason,
-          moved.error().message());
-        _ctx._failed_actions_count += 1;
+        if (_ctx.increment_failure_count()) {
+            vlog(
+              clusterlog.info,
+              "ntp {} (size: {}, current replicas: {}): attempt to move "
+              "replica {} (reason: {}) failed, error: {}",
+              _ntp,
+              _size_bytes,
+              replicas(),
+              replica,
+              reason,
+              moved.error().message());
+        }
         return moved;
     }
 
