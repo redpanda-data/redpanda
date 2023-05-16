@@ -444,7 +444,7 @@ void write(iobuf& out, ss::chunked_fifo<T> t) {
     if (unlikely(t.size() > std::numeric_limits<serde_size_t>::max())) {
         throw serde_exception(fmt_with_ctx(
           ssx::sformat,
-          "serde: fragmented vector size {} exceeds serde_size_t",
+          "serde: chunked fifo size {} exceeds serde_size_t",
           t.size()));
     }
     write(out, static_cast<serde_size_t>(t.size()));

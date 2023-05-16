@@ -32,6 +32,7 @@
 #include "storage/types.h"
 #include "version.h"
 
+#include <seastar/core/chunked_fifo.hh>
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/lowres_clock.hh>
 #include <seastar/core/reactor.hh>
@@ -190,7 +191,7 @@ std::vector<topic_status> filter_topic_status(
     std::vector<topic_status> filtered;
 
     for (auto& tl : topics) {
-        topic_status filtered_topic_status{.tp_ns = tl.tp_ns};
+        topic_status filtered_topic_status(tl.tp_ns, {});
         for (auto& pl : tl.partitions) {
             if (filter.matches(tl.tp_ns, pl.id)) {
                 filtered_topic_status.partitions.push_back(pl);
@@ -680,9 +681,9 @@ partition_status to_partition_status(const ntp_report& ntpr) {
       .under_replicated_replicas = ntpr.under_replicated_replicas};
 }
 
-std::vector<ntp_report> collect_shard_local_reports(
+ss::chunked_fifo<ntp_report> collect_shard_local_reports(
   partition_manager& pm, const partitions_filter& filters) {
-    std::vector<ntp_report> reports;
+    ss::chunked_fifo<ntp_report> reports;
     // empty filter, collect all
     if (filters.namespaces.empty()) {
         reports.reserve(pm.partitions().size());
@@ -722,11 +723,11 @@ std::vector<ntp_report> collect_shard_local_reports(
     return reports;
 }
 
-using reports_acc_t
-  = absl::node_hash_map<model::topic_namespace, std::vector<partition_status>>;
+using reports_acc_t = absl::
+  node_hash_map<model::topic_namespace, ss::chunked_fifo<partition_status>>;
 
-reports_acc_t
-reduce_reports_map(reports_acc_t acc, std::vector<ntp_report> current_reports) {
+reports_acc_t reduce_reports_map(
+  reports_acc_t acc, ss::chunked_fifo<ntp_report> current_reports) {
     for (auto& ntpr : current_reports) {
         model::topic_namespace tp_ns(
           std::move(ntpr.ntp.ns), std::move(ntpr.ntp.tp.topic));
@@ -748,8 +749,7 @@ health_monitor_backend::collect_topic_status(partitions_filter filters) {
     std::vector<topic_status> topics;
     topics.reserve(reports_map.size());
     for (auto& [tp_ns, partitions] : reports_map) {
-        topics.push_back(
-          topic_status{.tp_ns = tp_ns, .partitions = std::move(partitions)});
+        topics.emplace_back(tp_ns, std::move(partitions));
     }
 
     co_return topics;

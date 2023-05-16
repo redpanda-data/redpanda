@@ -17,12 +17,14 @@
 #include "security/acl.h"
 #include "security/scram_credential.h"
 
+#include <seastar/core/chunked_fifo.hh>
 #include <seastar/net/inet_address.hh>
 #include <seastar/net/ip.hh>
 
 #include <absl/container/node_hash_map.h>
 #include <bits/stdint-uintn.h>
 
+#include <iterator>
 #include <limits>
 #include <optional>
 #include <vector>
@@ -91,6 +93,15 @@ inline auto random_circular_buffer(Fn&& gen, size_t size = 5)
     ss::circular_buffer<T> v;
     v.reserve(size);
     std::generate_n(v.begin(), size, gen);
+    return v;
+}
+
+template<typename Fn, typename T = std::invoke_result_t<Fn>>
+inline auto random_chunked_fifo(Fn&& gen, size_t size = 20)
+  -> ss::chunked_fifo<T> {
+    ss::chunked_fifo<T> v;
+    v.reserve(size);
+    std::generate_n(std::back_inserter(v), size, gen);
     return v;
 }
 

@@ -19,6 +19,8 @@
 #include "reflection/adl.h"
 #include "utils/named_type.h"
 
+#include <seastar/core/chunked_fifo.hh>
+
 #include <absl/container/node_hash_map.h>
 #include <absl/container/node_hash_set.h>
 
@@ -100,10 +102,18 @@ struct topic_status
   : serde::envelope<topic_status, serde::version<0>, serde::compat_version<0>> {
     static constexpr int8_t current_version = 0;
 
+    topic_status() = default;
+    topic_status(model::topic_namespace, ss::chunked_fifo<partition_status>);
+    topic_status& operator=(const topic_status&);
+    topic_status(const topic_status&);
+    topic_status& operator=(topic_status&&) = default;
+    topic_status(topic_status&&) = default;
+    ~topic_status() = default;
+
     model::topic_namespace tp_ns;
-    std::vector<partition_status> partitions;
+    ss::chunked_fifo<partition_status> partitions;
     friend std::ostream& operator<<(std::ostream&, const topic_status&);
-    friend bool operator==(const topic_status&, const topic_status&) = default;
+    friend bool operator==(const topic_status&, const topic_status&);
 
     auto serde_fields() { return std::tie(tp_ns, partitions); }
 };
