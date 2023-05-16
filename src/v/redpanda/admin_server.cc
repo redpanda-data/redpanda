@@ -2441,8 +2441,8 @@ void admin_server::register_broker_routes() {
 
 // Helpers for partition routes
 namespace {
-model::ntp parse_ntp_from_request(ss::httpd::parameters& param) {
-    auto ns = model::ns(param["namespace"]);
+
+model::ntp parse_ntp_from_request(ss::httpd::parameters& param, model::ns ns) {
     auto topic = model::topic(param["topic"]);
 
     model::partition_id partition;
@@ -2458,7 +2458,11 @@ model::ntp parse_ntp_from_request(ss::httpd::parameters& param) {
           fmt::format("Invalid partition id {}", partition));
     }
 
-    return model::ntp(std::move(ns), std::move(topic), partition);
+    return {std::move(ns), std::move(topic), partition};
+}
+
+model::ntp parse_ntp_from_request(ss::httpd::parameters& param) {
+    return parse_ntp_from_request(param, model::ns(param["namespace"]));
 }
 
 } // namespace
