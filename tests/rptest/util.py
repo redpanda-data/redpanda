@@ -423,6 +423,14 @@ def wait_for_recovery_throttle_rate(redpanda, new_rate: int):
                     f"Error getting throttle rate for {node}", exc_info=True)
                 return False
 
-        return all([check_throttle_rate(n) for n in redpanda.started_nodes()])
+        brokers = redpanda._admin.get_brokers(node=redpanda.controller())
+        active_brokers = set([b['node_id'] for b in brokers])
+        assert active_brokers
+        filtered = [
+            n for n in redpanda.started_nodes()
+            if redpanda.node_id(n) in active_brokers
+        ]
+        assert filtered
+        return all([check_throttle_rate(n) for n in filtered])
 
     wait_until(wait_for_throttle_update, timeout_sec=90, backoff_sec=1)
