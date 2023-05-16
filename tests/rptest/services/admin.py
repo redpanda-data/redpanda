@@ -415,6 +415,12 @@ class Admin:
                 return False
         return True
 
+    def unsafe_reset_cloud_metadata(self, topic, partition, manifest):
+        return self._request(
+            'POST',
+            f"debug/unsafe_reset_metadata/{topic}/{partition}",
+            json=manifest)
+
     def put_feature(self, feature_name, body):
         return self._request("PUT", f"features/{feature_name}", json=body)
 
