@@ -34,13 +34,14 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/api/admin"
+
 	redpandav1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
 	redpandacontrollers "github.com/redpanda-data/redpanda/src/go/k8s/controllers/redpanda"
 	adminutils "github.com/redpanda-data/redpanda/src/go/k8s/pkg/admin"
 	consolepkg "github.com/redpanda-data/redpanda/src/go/k8s/pkg/console"
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources"
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources/types"
-	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/api/admin"
 )
 
 // These tests use Ginkgo (BDD-style Go testing framework). Refer to

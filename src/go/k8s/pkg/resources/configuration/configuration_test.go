@@ -13,10 +13,11 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources/configuration"
 	rpkcfg "github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources/configuration"
 )
 
 func TestConfigMode(t *testing.T) {

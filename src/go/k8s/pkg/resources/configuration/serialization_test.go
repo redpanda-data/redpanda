@@ -12,11 +12,12 @@ package configuration_test
 import (
 	"testing"
 
-	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources/configuration"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"k8s.io/utils/pointer"
+
+	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources/configuration"
 )
 
 func TestSerde(t *testing.T) {

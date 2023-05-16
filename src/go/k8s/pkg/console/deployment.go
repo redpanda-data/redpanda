@@ -6,9 +6,6 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
-	redpandav1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
-	labels "github.com/redpanda-data/redpanda/src/go/k8s/pkg/labels"
-	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources"
 	v1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -17,6 +14,10 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+
+	redpandav1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
+	labels "github.com/redpanda-data/redpanda/src/go/k8s/pkg/labels"
+	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources"
 )
 
 // Deployment is a Console resource
