@@ -552,7 +552,7 @@ FIXTURE_TEST(
  * 5 nodes; 1 topic; 1000 partitions; 1 node down;
  * Partition size 10_KiB
  * Batch size 19_MiB
- * Can move 1900 partitions
+ * Can move 50 (max_concurrent_actions) partitions
  * Actual
  *   node_0: partitions: 2000; down: True; disk: unfilled;
  *   node_1: partitions: 2000; down: False; disk: unfilled;
@@ -560,11 +560,11 @@ FIXTURE_TEST(
  *   node_3: partitions: 0; down: False; disk: unfilled;
  *   node_4: partitions: 0; down: False; disk: unfilled;
  * Expected
- *   node_0: partitions: 100;
+ *   node_0: partitions: 1950;
  *   node_1: partitions: 2000;
  *   node_2: partitions: 2000;
- *   node_3: partitions: 950;
- *   node_4: partitions: 950;
+ *   node_3: partitions: 25;
+ *   node_4: partitions: 25;
  */
 FIXTURE_TEST(test_lot_of_partitions, partition_balancer_planner_fixture) {
     vlog(logger.debug, "test_lot_of_partitions");
@@ -573,10 +573,6 @@ FIXTURE_TEST(test_lot_of_partitions, partition_balancer_planner_fixture) {
     allocator_register_nodes(2);
 
     uint64_t local_partition_size = 10_KiB;
-    uint64_t movement_batch_partitions_amount = (reallocation_batch_size
-                                                 + local_partition_size - 1)
-                                                / local_partition_size;
-
     auto hr = create_health_report({}, {}, local_partition_size);
 
     std::set<size_t> unavailable_nodes = {0};
@@ -587,7 +583,7 @@ FIXTURE_TEST(test_lot_of_partitions, partition_balancer_planner_fixture) {
     check_violations(plan_data, unavailable_nodes, {});
 
     const auto& reassignments = plan_data.reassignments;
-    BOOST_REQUIRE_EQUAL(reassignments.size(), movement_batch_partitions_amount);
+    BOOST_REQUIRE_EQUAL(reassignments.size(), max_concurrent_actions);
 
     std::unordered_set<model::node_id> expected_nodes(
       {model::node_id(1),
@@ -613,7 +609,7 @@ FIXTURE_TEST(test_lot_of_partitions, partition_balancer_planner_fixture) {
     }
 
     BOOST_REQUIRE_EQUAL(node_3_counter, node_4_counter);
-    BOOST_REQUIRE_EQUAL(node_4_counter, movement_batch_partitions_amount / 2);
+    BOOST_REQUIRE_EQUAL(node_4_counter, max_concurrent_actions / 2);
 }
 
 /*

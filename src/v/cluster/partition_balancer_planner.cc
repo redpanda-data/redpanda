@@ -86,8 +86,10 @@ public:
     const planner_config& config() const { return _parent._config; }
 
     bool is_batch_full() const {
-        return _planned_moves_size_bytes
-               >= _parent._config.movement_disk_size_batch;
+        return _planned_moves_size_bytes >= config().movement_disk_size_batch
+               || (state().topics().updates_in_progress().size()
+                   + _reassignments.size() + _cancellations.size())
+                    >= config().max_concurrent_actions;
     }
 
 private:

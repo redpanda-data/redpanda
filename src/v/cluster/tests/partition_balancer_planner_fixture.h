@@ -34,6 +34,7 @@ constexpr uint64_t nearly_full_node_free_size = 41_MiB;
 constexpr uint64_t default_partition_size = 10_MiB;
 constexpr uint64_t not_full_node_free_size = 150_MiB;
 constexpr uint64_t reallocation_batch_size = default_partition_size * 2 - 1_MiB;
+constexpr uint64_t max_concurrent_actions = 50;
 constexpr std::chrono::seconds node_unavailable_timeout = std::chrono::minutes(
   5);
 
@@ -94,6 +95,7 @@ struct partition_balancer_planner_fixture {
             .soft_max_disk_usage_ratio = 0.8,
             .hard_max_disk_usage_ratio = 0.95,
             .movement_disk_size_batch = reallocation_batch_size,
+            .max_concurrent_actions = max_concurrent_actions,
             .node_availability_timeout_sec = std::chrono::minutes(1),
             .segment_fallocation_step = 16},
           workers.state.local(),
