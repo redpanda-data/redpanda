@@ -49,6 +49,7 @@
 #include "cluster/topics_frontend.h"
 #include "cluster/tx_gateway.h"
 #include "cluster/tx_gateway_frontend.h"
+#include "cluster/tx_registry_frontend.h"
 #include "cluster/types.h"
 #include "compression/async_stream_zstd.h"
 #include "compression/stream_zstd.h"
@@ -848,7 +849,8 @@ void application::configure_admin_server() {
       _proxy.get(),
       _schema_registry.get(),
       std::ref(topic_recovery_service),
-      std::ref(topic_recovery_status_frontend))
+      std::ref(topic_recovery_status_frontend),
+      std::ref(tx_registry_frontend))
       .get();
 }
 
@@ -1391,6 +1393,11 @@ void application::wire_up_redpanda_services(model::node_id node_id) {
         coprocessing->start().get();
     }
 
+    syschecks::systemd_message("Creating tx coordinator mapper").get();
+    construct_service(
+      tx_coordinator_ntp_mapper, std::ref(metadata_cache), model::tx_manager_nt)
+      .get();
+
     syschecks::systemd_message("Creating id allocator frontend").get();
     construct_service(
       id_allocator_frontend,
@@ -1401,6 +1408,20 @@ void application::wire_up_redpanda_services(model::node_id node_id) {
       std::ref(_connection_cache),
       std::ref(controller->get_partition_leaders()),
       std::ref(controller))
+      .get();
+
+    syschecks::systemd_message("Creating tx registry frontend").get();
+    construct_service(
+      tx_registry_frontend,
+      smp_service_groups.raft_smp_sg(),
+      std::ref(partition_manager),
+      std::ref(shard_table),
+      std::ref(metadata_cache),
+      std::ref(_connection_cache),
+      std::ref(controller->get_partition_leaders()),
+      std::ref(controller),
+      std::ref(tx_coordinator_ntp_mapper),
+      std::ref(feature_table))
       .get();
 
     syschecks::systemd_message("Creating group resource manager frontend")
@@ -1437,11 +1458,6 @@ void application::wire_up_redpanda_services(model::node_id node_id) {
       std::ref(storage))
       .get();
 
-    syschecks::systemd_message("Creating tx coordinator mapper").get();
-    construct_service(
-      tx_coordinator_ntp_mapper, std::ref(metadata_cache), model::tx_manager_nt)
-      .get();
-
     syschecks::systemd_message("Creating tx coordinator frontend").get();
     // usually it'a an anti-pattern to let the same object be accessed
     // from different cores without precautionary measures like foreign
@@ -1462,8 +1478,7 @@ void application::wire_up_redpanda_services(model::node_id node_id) {
       _rm_group_proxy.get(),
       std::ref(rm_partition_frontend),
       std::ref(feature_table),
-      std::ref(tm_stm_cache_manager),
-      std::ref(tx_coordinator_ntp_mapper))
+      std::ref(tm_stm_cache_manager))
       .get();
     _kafka_conn_quotas
       .start([]() {
@@ -1603,6 +1618,7 @@ void application::wire_up_redpanda_services(model::node_id node_id) {
         std::ref(controller->get_security_frontend()),
         std::ref(controller->get_api()),
         std::ref(tx_gateway_frontend),
+        std::ref(tx_registry_frontend),
         qdc_config,
         std::ref(*thread_worker))
       .get();
@@ -2050,7 +2066,8 @@ void application::start_runtime_services(
             smp_service_groups.raft_smp_sg(),
             std::ref(tx_gateway_frontend),
             _rm_group_proxy.get(),
-            std::ref(rm_partition_frontend)));
+            std::ref(rm_partition_frontend),
+            std::ref(tx_registry_frontend)));
 
           if (!start_raft_rpc_early) {
               runtime_services.push_back(std::make_unique<raft::service<

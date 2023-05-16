@@ -71,7 +71,8 @@ public:
       pandaproxy::rest::api*,
       pandaproxy::schema_registry::api*,
       ss::sharded<cloud_storage::topic_recovery_service>&,
-      ss::sharded<cluster::topic_recovery_status_frontend>&);
+      ss::sharded<cluster::topic_recovery_status_frontend>&,
+      ss::sharded<cluster::tx_registry_frontend>&);
 
     ss::future<> start();
     ss::future<> stop();
@@ -406,6 +407,8 @@ private:
       get_all_transactions_handler(std::unique_ptr<ss::http::request>);
     ss::future<ss::json::json_return_type>
       delete_partition_handler(std::unique_ptr<ss::http::request>);
+    ss::future<ss::json::json_return_type>
+      find_tx_coordinator_handler(std::unique_ptr<ss::http::request>);
 
     /// Cluster routes
     ss::future<ss::json::json_return_type>
@@ -495,6 +498,7 @@ private:
     ss::sharded<cloud_storage::topic_recovery_service>& _topic_recovery_service;
     ss::sharded<cluster::topic_recovery_status_frontend>&
       _topic_recovery_status_frontend;
+    ss::sharded<cluster::tx_registry_frontend>& _tx_registry_frontend;
     // Value before the temporary override
     std::chrono::milliseconds _default_blocked_reactor_notify;
     ss::timer<> _blocked_reactor_notify_reset_timer;

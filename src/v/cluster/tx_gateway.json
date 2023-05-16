@@ -59,6 +59,11 @@
             "name": "fetch_tx",
             "input_type": "fetch_tx_request",
             "output_type": "fetch_tx_reply"
+        },
+        {
+            "name": "find_coordinator",
+            "input_type": "find_coordinator_request",
+            "output_type": "find_coordinator_reply"
         }
     ]
 }

@@ -632,6 +632,13 @@ class Admin:
         path = f"transaction/{tid}/delete_partition/?{params}"
         return self._request('post', path, node=node)
 
+    def find_tx_coordinator(self, tid, node=None):
+        """
+        Find tx coordinator by tx.id
+        """
+        path = f"transaction/{tid}/find_coordinator"
+        return self._request('get', path, node=node)
+
     def set_partition_replicas(self,
                                topic,
                                partition,

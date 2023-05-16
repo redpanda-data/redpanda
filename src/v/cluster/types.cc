@@ -972,6 +972,17 @@ std::ostream& operator<<(std::ostream& o, const abort_group_tx_reply& r) {
     return o;
 }
 
+std::ostream& operator<<(std::ostream& o, const find_coordinator_request& r) {
+    fmt::print(o, "{{tid {}}}", r.tid);
+    return o;
+}
+
+std::ostream& operator<<(std::ostream& o, const find_coordinator_reply& r) {
+    fmt::print(
+      o, "{{coordinator {} ntp {} ec {}}}", r.coordinator, r.ntp, r.ec);
+    return o;
+}
+
 std::ostream&
 operator<<(std::ostream& o, const configuration_update_request& cr) {
     fmt::print(o, "{{broker: {} target_node: {}}}", cr.node, cr.target_node);

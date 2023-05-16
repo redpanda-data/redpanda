@@ -19,6 +19,8 @@ class controller_stm;
 class controller_stm_shard;
 class id_allocator_frontend;
 class rm_partition_frontend;
+class tx_registry_frontend;
+class tx_coordinator_mapper;
 class tm_stm_cache;
 class tm_stm_cache_manager;
 class tx_gateway_frontend;

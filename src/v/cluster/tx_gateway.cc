@@ -12,6 +12,7 @@
 #include "cluster/logger.h"
 #include "cluster/rm_partition_frontend.h"
 #include "cluster/tx_gateway_frontend.h"
+#include "cluster/tx_registry_frontend.h"
 #include "cluster/types.h"
 #include "model/namespace.h"
 #include "model/record.h"
@@ -27,11 +28,13 @@ tx_gateway::tx_gateway(
   ss::smp_service_group ssg,
   ss::sharded<cluster::tx_gateway_frontend>& tx_gateway_frontend,
   rm_group_proxy* group_proxy,
-  ss::sharded<cluster::rm_partition_frontend>& rm_partition_frontend)
+  ss::sharded<cluster::rm_partition_frontend>& rm_partition_frontend,
+  ss::sharded<cluster::tx_registry_frontend>& tx_registry_frontend)
   : tx_gateway_service(sg, ssg)
   , _tx_gateway_frontend(tx_gateway_frontend)
   , _rm_group_proxy(group_proxy)
-  , _rm_partition_frontend(rm_partition_frontend) {}
+  , _rm_partition_frontend(rm_partition_frontend)
+  , _tx_registry_frontend(tx_registry_frontend) {}
 
 ss::future<fetch_tx_reply>
 tx_gateway::fetch_tx(fetch_tx_request&& request, rpc::streaming_context&) {
@@ -105,6 +108,11 @@ ss::future<commit_group_tx_reply> tx_gateway::commit_group_tx(
 ss::future<abort_group_tx_reply> tx_gateway::abort_group_tx(
   abort_group_tx_request&& request, rpc::streaming_context&) {
     return _rm_group_proxy->abort_group_tx_locally(std::move(request));
+}
+
+ss::future<find_coordinator_reply> tx_gateway::find_coordinator(
+  find_coordinator_request&& r, rpc::streaming_context&) {
+    return _tx_registry_frontend.local().find_coordinator_locally(r.tid);
 }
 
 } // namespace cluster

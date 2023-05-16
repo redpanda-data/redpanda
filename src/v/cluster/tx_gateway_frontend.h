@@ -40,13 +40,8 @@ public:
       rm_group_proxy*,
       ss::sharded<cluster::rm_partition_frontend>&,
       ss::sharded<features::feature_table>&,
-      ss::sharded<cluster::tm_stm_cache_manager>&,
-      ss::sharded<cluster::tx_coordinator_mapper>& tx_coordinator_ntp_mapper);
+      ss::sharded<cluster::tm_stm_cache_manager>&);
 
-    ss::future<std::optional<model::ntp>>
-      get_static_ntp(kafka::transactional_id);
-    ss::future<std::optional<model::node_id>>
-      find_coordinator(kafka::transactional_id);
     ss::future<std::optional<model::ntp>> get_ntp(kafka::transactional_id);
     ss::future<bool> hosts(model::partition_id, kafka::transactional_id);
     ss::future<fetch_tx_reply> fetch_tx_locally(
@@ -101,19 +96,11 @@ private:
     ss::sharded<cluster::rm_partition_frontend>& _rm_partition_frontend;
     ss::sharded<features::feature_table>& _feature_table;
     ss::sharded<cluster::tm_stm_cache_manager>& _tm_stm_cache_manager;
-    ss::sharded<cluster::tx_coordinator_mapper>& _tx_coordinator_ntp_mapper;
     int16_t _metadata_dissemination_retries;
     std::chrono::milliseconds _metadata_dissemination_retry_delay_ms;
     ss::timer<model::timeout_clock> _expire_timer;
     std::chrono::milliseconds _transactional_id_expiration;
     bool _transactions_enabled;
-
-    // Transaction Partitioning is partitioning of
-    // transactional manager topic
-    bool is_transaction_partitioning() {
-        return _feature_table.local().is_active(
-          features::feature::transaction_partitioning);
-    }
 
     // Transaction GA includes: KIP_447, KIP-360, fix for compaction tx_group*
     // records, perf fix#1(Do not writing preparing state on disk in tm_stn),
@@ -140,8 +127,6 @@ private:
             _expire_timer.arm(model::timeout_clock::now() + delay);
         }
     }
-
-    ss::future<bool> try_create_tx_topic();
 
     ss::future<checked<tm_transaction, tx_errc>> get_tx(
       model::term_id,

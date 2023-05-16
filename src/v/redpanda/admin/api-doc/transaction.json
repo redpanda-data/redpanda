@@ -26,6 +26,28 @@
             ]
         },
         {
+            "path": "/v1/transaction/{transactional_id}/find_coordinator",
+            "operations": [
+                {
+                    "method": "GET",
+                    "summary": "Get tx coordinator by tx.id",
+                    "type": "find_coordinator_reply",
+                    "nickname": "find_coordinator",
+                    "produces": [
+                        "application/json"
+                    ],
+                    "parameters": [
+                        {
+                            "name": "transactional_id",
+                            "in": "path",
+                            "required": true,
+                            "type": "string"
+                        }
+                    ]
+                }
+            ]
+        },
+        {
             "path": "/v1/transaction/{transactional_id}/delete_partition",
             "operations": [
                 {
@@ -73,6 +95,42 @@
         }
     ],
     "models": {
+        "ntp": {
+            "id": "ntp",
+            "description": "NTP",
+            "properties": {
+                "ns": {
+                    "type": "string",
+                    "description": "Namespace"
+                },
+                "topic": {
+                    "type": "string",
+                    "description": "Topic"
+                },
+                "partition": {
+                    "type": "long",
+                    "description": "Partition id"
+                }
+            }
+        },
+        "find_coordinator_reply": {
+            "id": "find_coordinator_reply",
+            "description": "find_coordinator_reply",
+            "properties": {
+                "coordinator": {
+                    "type": "long",
+                    "description": "node id"
+                },
+                "ntp": {
+                    "type": "ntp",
+                    "description": "NTP"
+                },
+                "ec": {
+                    "type": "long",
+                    "description": "errc"
+                }
+            }
+        },
         "producer_identity": {
             "id": "producer_identity",
             "description": "Producer identity",

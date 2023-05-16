@@ -453,6 +453,12 @@ configuration::configuration()
       "Time to wait state catch up before rejecting a request",
       {.visibility = visibility::user},
       10s)
+  , find_coordinator_timeout_ms(
+      *this,
+      "find_coordinator_timeout_ms",
+      "Time to wait for a response from tx_registry",
+      {.visibility = visibility::user},
+      2000ms)
   , seq_table_min_size(
       *this,
       "seq_table_min_size",
@@ -620,7 +626,7 @@ configuration::configuration()
       "transaction_coordinator_partitions",
       "Amount of partitions for transactions coordinator",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
-      16)
+      50)
   , transaction_coordinator_cleanup_policy(
       *this,
       "transaction_coordinator_cleanup_policy",

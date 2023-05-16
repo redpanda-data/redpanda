@@ -987,6 +987,61 @@ struct abort_group_tx_reply
     auto serde_fields() { return std::tie(ec); }
 };
 
+struct find_coordinator_request
+  : serde::envelope<
+      find_coordinator_request,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    using rpc_adl_exempt = std::true_type;
+
+    kafka::transactional_id tid;
+
+    find_coordinator_request() noexcept = default;
+
+    find_coordinator_request(kafka::transactional_id tid)
+      : tid(std::move(tid)) {}
+
+    friend bool
+    operator==(const find_coordinator_request&, const find_coordinator_request&)
+      = default;
+
+    friend std::ostream&
+    operator<<(std::ostream& o, const find_coordinator_request& r);
+
+    auto serde_fields() { return std::tie(tid); }
+};
+
+struct find_coordinator_reply
+  : serde::envelope<
+      find_coordinator_reply,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    using rpc_adl_exempt = std::true_type;
+
+    std::optional<model::node_id> coordinator{std::nullopt};
+    std::optional<model::ntp> ntp{std::nullopt};
+    errc ec{errc::generic_tx_error};
+
+    find_coordinator_reply() noexcept = default;
+
+    find_coordinator_reply(
+      std::optional<model::node_id> coordinator,
+      std::optional<model::ntp> ntp,
+      errc ec)
+      : coordinator(coordinator)
+      , ntp(ntp)
+      , ec(ec) {}
+
+    friend bool
+    operator==(const find_coordinator_reply&, const find_coordinator_reply&)
+      = default;
+
+    friend std::ostream&
+    operator<<(std::ostream& o, const find_coordinator_reply& r);
+
+    auto serde_fields() { return std::tie(coordinator, ntp, ec); }
+};
+
 /// Old-style request sent by node to join raft-0
 /// - Does not specify logical version
 /// - Always specifies node_id
