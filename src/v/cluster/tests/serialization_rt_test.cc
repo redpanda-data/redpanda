@@ -782,7 +782,7 @@ cluster::drain_manager::drain_status random_drain_status() {
 }
 
 cluster::topic_status random_topic_status() {
-    std::vector<cluster::partition_status> partitions;
+    ss::chunked_fifo<cluster::partition_status> partitions;
     for (int i = 0, mi = random_generators::get_int(10); i < mi; i++) {
         partitions.push_back(cluster::partition_status{
           .id = tests::random_named_int<model::partition_id>(),
@@ -792,10 +792,8 @@ cluster::topic_status random_topic_status() {
           .size_bytes = random_generators::get_int<size_t>(),
         });
     }
-    cluster::topic_status data{
-      .tp_ns = model::random_topic_namespace(),
-      .partitions = partitions,
-    };
+    cluster::topic_status data(
+      model::random_topic_namespace(), std::move(partitions));
     return data;
 }
 

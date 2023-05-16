@@ -62,10 +62,9 @@ inline partition_status random_partition_status() {
 }
 
 inline topic_status random_topic_status() {
-    return topic_status{
-      {},
+    return topic_status(
       model::random_topic_namespace(),
-      tests::random_vector(random_partition_status)};
+      tests::random_chunked_fifo(random_partition_status));
 }
 
 inline drain_manager::drain_status random_drain_status() {

@@ -14,11 +14,16 @@
 #include "cluster/node/types.h"
 #include "features/feature_table.h"
 #include "model/adl_serde.h"
+#include "model/metadata.h"
 #include "utils/to_string.h"
+
+#include <seastar/core/chunked_fifo.hh>
 
 #include <fmt/ostream.h>
 
+#include <algorithm>
 #include <chrono>
+#include <iterator>
 
 namespace cluster {
 
@@ -97,6 +102,42 @@ std::ostream& operator<<(std::ostream& o, const partition_status& ps) {
       ps.size_bytes,
       ps.under_replicated_replicas);
     return o;
+}
+
+topic_status& topic_status::operator=(const topic_status& rhs) {
+    if (this == &rhs) {
+        return *this;
+    }
+
+    ss::chunked_fifo<partition_status> p;
+    p.reserve(rhs.partitions.size());
+    std::copy(
+      rhs.partitions.begin(), rhs.partitions.end(), std::back_inserter(p));
+
+    tp_ns = rhs.tp_ns;
+    partitions = std::move(p);
+    return *this;
+}
+
+topic_status::topic_status(
+  model::topic_namespace tp_ns, ss::chunked_fifo<partition_status> partitions)
+  : tp_ns(std::move(tp_ns))
+  , partitions(std::move(partitions)) {}
+
+topic_status::topic_status(const topic_status& o)
+  : tp_ns(o.tp_ns) {
+    std::copy(
+      o.partitions.cbegin(),
+      o.partitions.cend(),
+      std::back_inserter(partitions));
+}
+bool operator==(const topic_status& a, const topic_status& b) {
+    return a.tp_ns == b.tp_ns && a.partitions.size() == b.partitions.size()
+           && std::equal(
+             a.partitions.cbegin(),
+             a.partitions.cend(),
+             b.partitions.cbegin(),
+             b.partitions.cend());
 }
 
 std::ostream& operator<<(std::ostream& o, const topic_status& tl) {
@@ -269,12 +310,12 @@ cluster::topic_status adl<cluster::topic_status>::from(iobuf_parser& p) {
 
     auto ns = adl<model::ns>{}.from(p);
     auto topic = adl<model::topic>{}.from(p);
-    auto partitions = adl<std::vector<cluster::partition_status>>{}.from(p);
+    auto partitions = adl<ss::chunked_fifo<cluster::partition_status>>{}.from(
+      p);
 
-    return cluster::topic_status{
-      .tp_ns = model::topic_namespace(std::move(ns), std::move(topic)),
-      .partitions = std::move(partitions),
-    };
+    return cluster::topic_status(
+      model::topic_namespace(std::move(ns), std::move(topic)),
+      std::move(partitions));
 }
 
 void adl<cluster::node_health_report>::to(
