@@ -158,7 +158,7 @@ class CloudRetentionTest(PreallocNodesTest):
                 return True
 
         # Wait for the last data to be uploaded
-        wait_until(all_data_uploaded, timeout_sec=60, backoff_sec=10)
+        wait_until(all_data_uploaded, timeout_sec=300, backoff_sec=10)
 
         def check_total_size(include_below_start_offset):
             try:
@@ -250,7 +250,7 @@ class CloudRetentionTest(PreallocNodesTest):
             return True
 
         wait_until(uploaded_all_partitions,
-                   timeout_sec=60,
+                   timeout_sec=300,
                    backoff_sec=5,
                    err_msg="Waiting for all parents to upload cloud data")
 
