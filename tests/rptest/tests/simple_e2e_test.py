@@ -38,3 +38,33 @@ class SimpleEndToEndTest(EndToEndTest):
         self.run_validation(min_records=100000,
                             producer_timeout_sec=300,
                             consumer_timeout_sec=300)
+
+    @cluster(num_nodes=5)
+    def test_consumer_interruption(self):
+        '''
+        This test validates if verifiable consumer is exiting early when consumed from unexpected offset
+        '''
+        # use small segment size to enable log eviction
+        self.start_redpanda(num_nodes=3)
+
+        spec = TopicSpec(partition_count=1, replication_factor=3)
+        self.client().create_topic(spec)
+        self.topic = spec.name
+
+        self.start_producer(1, throughput=10000)
+        self.start_consumer(1)
+        self.await_startup()
+        #
+        self.client().delete_topic(spec.name)
+
+        self.client().create_topic(spec)
+        error = None
+        try:
+            self.run_validation(min_records=100000,
+                                producer_timeout_sec=300,
+                                consumer_timeout_sec=300)
+        except AssertionError as e:
+            error = e
+
+        assert error is not None
+        assert "Consumed from an unexpected" in str(error)
