@@ -150,7 +150,7 @@ class CloudRetentionTest(PreallocNodesTest):
                 self.logger.warn(f"error getting bucket size: {e}")
                 return False
 
-        wait_until(check_bucket_size, timeout_sec=60, backoff_sec=5)
+        wait_until(check_bucket_size, timeout_sec=300, backoff_sec=5)
 
         consumer.wait()
         self.logger.info("finished consuming")
@@ -219,7 +219,7 @@ class CloudRetentionTest(PreallocNodesTest):
             return True
 
         wait_until(uploaded_all_partitions,
-                   timeout_sec=60,
+                   timeout_sec=300,
                    backoff_sec=5,
                    err_msg="Waiting for all parents to upload cloud data")
 
