@@ -85,16 +85,20 @@ public:
 };
 
 struct partition_balancer_planner_fixture {
-    partition_balancer_planner_fixture()
-      : planner(
-        cluster::planner_config{
-          .soft_max_disk_usage_ratio = 0.8,
-          .hard_max_disk_usage_ratio = 0.95,
-          .movement_disk_size_batch = reallocation_batch_size,
-          .node_availability_timeout_sec = std::chrono::minutes(1),
-          .segment_fallocation_step = 16},
-        workers.state.local(),
-        workers.allocator.local()) {}
+    cluster::partition_balancer_planner make_planner(
+      model::partition_autobalancing_mode mode
+      = model::partition_autobalancing_mode::continuous) {
+        return cluster::partition_balancer_planner(
+          cluster::planner_config{
+            .mode = mode,
+            .soft_max_disk_usage_ratio = 0.8,
+            .hard_max_disk_usage_ratio = 0.95,
+            .movement_disk_size_batch = reallocation_batch_size,
+            .node_availability_timeout_sec = std::chrono::minutes(1),
+            .segment_fallocation_step = 16},
+          workers.state.local(),
+          workers.allocator.local());
+    }
 
     cluster::topic_configuration_assignment make_tp_configuration(
       const ss::sstring& topic, int partitions, int16_t replication_factor) {
@@ -341,6 +345,5 @@ struct partition_balancer_planner_fixture {
     }
 
     controller_workers workers;
-    cluster::partition_balancer_planner planner;
     int last_node_idx{};
 };

@@ -62,40 +62,20 @@ partition_balancer_backend::partition_balancer_backend(
   , _timer([this] { tick(); }) {}
 
 void partition_balancer_backend::start() {
-    if (is_enabled()) {
-        vlog(clusterlog.info, "partition autobalancing enabled");
-        _timer.arm(_tick_interval());
-    }
-
-    _mode.watch([this] { on_mode_changed(); });
+    _timer.arm(_tick_interval());
+    vlog(clusterlog.info, "partition balancer started");
 }
 
 void partition_balancer_backend::tick() {
     ssx::background = ssx::spawn_with_gate_then(_gate, [this] {
                           return do_tick().finally([this] {
-                              if (is_enabled() && !_gate.is_closed()) {
+                              if (!_gate.is_closed()) {
                                   _timer.arm(_tick_interval());
                               }
                           });
                       }).handle_exception([](const std::exception_ptr& e) {
         vlog(clusterlog.warn, "tick error: {}", e);
     });
-}
-
-void partition_balancer_backend::on_mode_changed() {
-    if (_gate.is_closed()) {
-        return;
-    }
-
-    if (is_enabled()) {
-        vlog(clusterlog.info, "partition autobalancing enabled");
-        if (!_timer.armed()) {
-            _timer.arm(0ms);
-        }
-    } else {
-        vlog(clusterlog.info, "partition autobalancing disabled");
-        _timer.cancel();
-    }
 }
 
 ss::future<> partition_balancer_backend::stop() {
@@ -156,6 +136,7 @@ ss::future<> partition_balancer_backend::do_tick() {
     auto plan_data
       = partition_balancer_planner(
           planner_config{
+            .mode = _mode(),
             .soft_max_disk_usage_ratio = soft_max_disk_usage_ratio,
             .hard_max_disk_usage_ratio = hard_max_disk_usage_ratio,
             .movement_disk_size_batch = _movement_batch_size_bytes(),

@@ -44,10 +44,6 @@ public:
     void start();
     ss::future<> stop();
 
-    bool is_enabled() const {
-        return _mode() == model::partition_autobalancing_mode::continuous;
-    }
-
     bool is_leader() const { return _raft0->is_leader(); }
 
     std::optional<model::node_id> leader_id() const {
@@ -63,8 +59,6 @@ public:
 private:
     void tick();
     ss::future<> do_tick();
-
-    void on_mode_changed();
 
 private:
     consensus_ptr _raft0;

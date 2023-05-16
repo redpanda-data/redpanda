@@ -14,6 +14,7 @@
 #include "cluster/partition_balancer_types.h"
 #include "cluster/scheduling/partition_allocator.h"
 #include "cluster/topic_table.h"
+#include "model/metadata.h"
 
 #include <absl/container/flat_hash_map.h>
 
@@ -25,6 +26,7 @@ struct ntp_reassignment {
 };
 
 struct planner_config {
+    model::partition_autobalancing_mode mode;
     // If node disk usage goes over this ratio planner will actively move
     // partitions away from the node.
     double soft_max_disk_usage_ratio;

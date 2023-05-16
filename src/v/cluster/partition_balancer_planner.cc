@@ -165,12 +165,17 @@ void partition_balancer_planner::init_per_node_state(
 
         if (unavailable_dur > _config.node_availability_timeout_sec) {
             ctx.timed_out_unavailable_nodes.insert(follower.id);
-            model::timestamp unavailable_since = model::to_timestamp(
-              model::timestamp_clock::now()
-              - std::chrono::duration_cast<model::timestamp_clock::duration>(
-                unavailable_dur));
-            result.violations.unavailable_nodes.emplace_back(
-              follower.id, unavailable_since);
+
+            if (
+              _config.mode == model::partition_autobalancing_mode::continuous) {
+                model::timestamp unavailable_since = model::to_timestamp(
+                  model::timestamp_clock::now()
+                  - std::chrono::duration_cast<
+                    model::timestamp_clock::duration>(unavailable_dur));
+
+                result.violations.unavailable_nodes.emplace_back(
+                  follower.id, unavailable_since);
+            }
         }
     }
 
@@ -191,7 +196,10 @@ void partition_balancer_planner::init_per_node_state(
           disk.used,
           disk.total,
           used_space_ratio);
-        if (used_space_ratio > _config.soft_max_disk_usage_ratio) {
+
+        if (
+          _config.mode == model::partition_autobalancing_mode::continuous
+          && used_space_ratio > _config.soft_max_disk_usage_ratio) {
             result.violations.full_nodes.emplace_back(
               id, uint32_t(used_space_ratio * 100.0));
         }
@@ -723,6 +731,10 @@ partition_balancer_planner::reassignable_partition::move_replica(
  */
 void partition_balancer_planner::get_unavailable_nodes_actions(
   request_context& ctx) {
+    if (ctx.config().mode < model::partition_autobalancing_mode::continuous) {
+        return;
+    }
+
     if (ctx.timed_out_unavailable_nodes.empty()) {
         return;
     }
@@ -802,6 +814,10 @@ void partition_balancer_planner::get_unavailable_nodes_actions(
 /// is probably not optimal choice).
 void partition_balancer_planner::get_rack_constraint_repair_actions(
   request_context& ctx) {
+    if (ctx.config().mode < model::partition_autobalancing_mode::continuous) {
+        return;
+    }
+
     if (ctx.state().ntps_with_broken_rack_constraint().empty()) {
         return;
     }
@@ -876,6 +892,10 @@ void partition_balancer_planner::get_rack_constraint_repair_actions(
  * requests can fail, we just move those replicas that we can.
  */
 void partition_balancer_planner::get_full_node_actions(request_context& ctx) {
+    if (ctx.config().mode < model::partition_autobalancing_mode::continuous) {
+        return;
+    }
+
     std::vector<const node_disk_space*> sorted_full_nodes;
     for (const auto& kv : ctx.node_disk_reports) {
         const auto* node_disk = &kv.second;
