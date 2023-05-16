@@ -1001,6 +1001,103 @@ partition::get_follower_metrics() const {
     return _raft->get_follower_metrics();
 }
 
+ss::future<> partition::unsafe_reset_remote_partition_manifest(iobuf buf) {
+    vlog(clusterlog.info, "[{}] Unsafe manifest reset requested", ntp());
+
+    if (!(config::shard_local_cfg().cloud_storage_enabled()
+          && _archival_meta_stm)) {
+        vlog(
+          clusterlog.warn,
+          "[{}] Archival STM not present. Skipping unsafe reset ...",
+          ntp());
+        throw std::runtime_error("Archival STM not present");
+    }
+
+    if (_archiver != nullptr) {
+        vlog(
+          clusterlog.warn,
+          "[{}] Remote write path in use. Skipping unsafe reset ...",
+          ntp());
+        throw std::runtime_error("Remote write path in use");
+    }
+
+    // Deserialise provided manifest
+    cloud_storage::partition_manifest req_m{
+      _raft->ntp(), _raft->log_config().get_initial_revision()};
+    co_await req_m.update(std::move(buf));
+
+    // A generous timeout of 60 seconds is used as it applies
+    // for the replication multiple batches.
+    auto deadline = ss::lowres_clock::now() + 60s;
+    std::vector<cluster::command_batch_builder> builders;
+
+    auto reset_builder = _archival_meta_stm->batch_start(deadline, _as);
+
+    // Add command to drop manifest. When applied, the current manifest
+    // will be replaced with a default constructed one.
+    reset_builder.reset_metadata();
+    builders.push_back(std::move(reset_builder));
+
+    // Add segments. Note that we only add, and omit the replaced segments.
+    // This should only be done in the context of a last-ditch effort to
+    // restore functionality to a partition. Replaced segments are likely
+    // unimportant.
+    constexpr size_t segments_per_batch = 256;
+    std::vector<cloud_storage::segment_meta> segments;
+    segments.reserve(segments_per_batch);
+
+    for (const auto& s : req_m) {
+        segments.emplace_back(s);
+        if (segments.size() == segments_per_batch) {
+            auto segments_builder = _archival_meta_stm->batch_start(
+              deadline, _as);
+            segments_builder.add_segments(std::move(segments));
+            builders.push_back(std::move(segments_builder));
+
+            segments.clear();
+        }
+    }
+
+    if (segments.size() > 0) {
+        auto segments_builder = _archival_meta_stm->batch_start(deadline, _as);
+        segments_builder.add_segments(std::move(segments));
+        builders.push_back(std::move(segments_builder));
+    }
+
+    size_t idx = 0;
+    for (auto& builder : builders) {
+        vlog(
+          clusterlog.info,
+          "Unsafe reset replicating batch {}/{}",
+          idx + 1,
+          builders.size());
+
+        auto errc = co_await builder.replicate();
+        if (errc) {
+            if (errc == raft::errc::shutting_down) {
+                // During shutdown, act like we hit an abort source rather
+                // than trying to log+handle this like a write error.
+                throw ss::abort_requested_exception();
+            }
+
+            vlog(
+              clusterlog.warn,
+              "[{}] Unsafe reset failed to update archival STM: {}",
+              ntp(),
+              errc.message());
+            throw std::runtime_error(
+              fmt::format("Failed to update archival STM: {}", errc.message()));
+        }
+
+        ++idx;
+    }
+
+    vlog(
+      clusterlog.info,
+      "[{}] Unsafe reset replicated STM commands successfully",
+      ntp());
+}
+
 std::ostream& operator<<(std::ostream& o, const partition& x) {
     return o << x._raft;
 }
