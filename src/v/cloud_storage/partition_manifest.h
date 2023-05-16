@@ -279,12 +279,26 @@ public:
     /// \returns true if start_offset was moved
     bool advance_start_kafka_offset(kafka::offset start_offset);
 
+    /// \brief Resets the state of the manifest to the default constructed
+    /// state.
+    ///
+    /// Should only be used as a part of an escape hatch, not during the
+    /// regular operation of a partition.
+    ///
+    /// There may not be anything necessarily unsafe about this, but marking
+    /// "unsafe" to deter further authors from using with giving this a lot of
+    /// thought.
+    void unsafe_reset();
+
     /// Get segment if available or nullopt
     std::optional<segment_meta> get(const key& key) const;
     std::optional<segment_meta> get(const segment_name& name) const;
 
     /// Find element of the manifest by offset
     const_iterator find(model::offset o) const;
+
+    /// Update manifest file from iobuf
+    ss::future<> update(iobuf buf);
 
     /// Update manifest file from input_stream (remote set)
     ss::future<> update(ss::input_stream<char> is) override;

@@ -51,6 +51,8 @@ public:
     command_batch_builder& operator=(const command_batch_builder&) = delete;
     // command_batch_builder& operator=(command_batch_builder&&) = default;
     ~command_batch_builder() = default;
+    /// Reset the manifest.
+    command_batch_builder& reset_metadata();
     /// Add segments to the batch
     command_batch_builder&
       add_segments(std::vector<cloud_storage::segment_meta>);
@@ -246,6 +248,7 @@ private:
     struct mark_clean_cmd;
     struct truncate_archive_init_cmd;
     struct truncate_archive_commit_cmd;
+    struct reset_metadata_cmd;
     struct snapshot;
 
     friend segment segment_from_meta(const cloud_storage::segment_meta& meta);
@@ -264,6 +267,7 @@ private:
     void apply_truncate_archive_init(const start_offset_with_delta& so);
     void apply_truncate_archive_commit(const start_offset& so);
     void apply_update_start_kafka_offset(kafka::offset so);
+    void apply_reset_metadata();
 
 private:
     prefix_logger _logger;
