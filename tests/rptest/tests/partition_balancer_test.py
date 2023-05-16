@@ -862,6 +862,7 @@ class PartitionBalancerTest(PartitionBalancerService):
         if decommission_first:
             self.logger.info(f"decommissioning node: {to_decom.name}")
             admin.decommission_broker(to_decom_id)
+            self.wait_until_status(lambda s: s["status"] == "in_progress")
 
         with self.NodeStopper(self) as ns:
             # kill the node and wait for the partition balancer to kick in
@@ -916,18 +917,18 @@ class PartitionBalancerTest(PartitionBalancerService):
 
             wait_until(config_applied, timeout_sec=60, backoff_sec=2)
 
-        # Check that the node has been successfully decommissioned.
-        # We have to bring back failed node because otherwise decommission won't finish.
-        def node_removed():
-            brokers = admin.get_brokers(node=survivor_node)
-            return not any(b['node_id'] == to_decom_id for b in brokers)
+            # Check that the node has been successfully decommissioned.
+            def node_removed():
+                brokers = admin.get_brokers(node=survivor_node)
+                return not any(b['node_id'] == to_decom_id for b in brokers)
 
-        wait_until(node_removed, timeout_sec=120, backoff_sec=2)
-        # stop the decommissioned node (this must be done manually) so that
-        # it doesn't respond to admin API requests.
-        self.redpanda.stop_node(to_decom)
+            wait_until(node_removed, timeout_sec=120, backoff_sec=2)
 
-        self.wait_until_ready()
+            # stop the decommissioned node (this must be done manually) so that
+            # it doesn't respond to admin API requests.
+            self.redpanda.stop_node(to_decom)
+
+            self.wait_until_ready()
 
         self.run_validation(enable_idempotence=False,
                             consumer_timeout_sec=CONSUMER_TIMEOUT)
