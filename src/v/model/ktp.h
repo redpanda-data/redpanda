@@ -14,6 +14,7 @@
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/namespace.h"
+#include "utils/move_canary.h"
 
 #include <seastar/core/sstring.hh>
 
@@ -52,6 +53,7 @@ class ktp {
     // in the ktp_with_hash variant. So we make it private and offer
     // accessors which return const referneces or copies.
     topic_partition tp;
+    [[no_unique_address]] debug_move_canary mc;
 
 public:
     /**
@@ -134,13 +136,25 @@ public:
 
     /**
      * @brief Returns a reference to the ktp's topic.
+     *
+     * The ktp must not be in a moved-from state and this is checked via assert
+     * in non-release builds.
      */
-    const model::topic& get_topic() const { return tp.topic; }
+    const model::topic& get_topic() const {
+        check();
+        return tp.topic;
+    }
 
     /**
      * @brief Returns the ktp's partition id.
+     *
+     * The ktp must not be in a moved-from state and this is checked via assert
+     * in non-release builds.
      */
-    model::partition_id get_partition() const { return tp.partition; }
+    model::partition_id get_partition() const {
+        check();
+        return tp.partition;
+    }
 
     /**
      * @brief Returns the ktp's namespace as a string_view.
@@ -174,6 +188,15 @@ public:
     friend std::ostream& operator<<(std::ostream& os, const ktp& t) {
         os << t.to_ntp();
         return os;
+    }
+
+protected:
+    /**
+     * @brief Check object consistency.
+     */
+    void check() const {
+        vassert(
+          !mc.is_moved_from(), "ktp object was used in a moved-from state");
     }
 
 private:
@@ -226,6 +249,12 @@ namespace model {
  * things this means that assignment of a ktp_with_hash from a ktp object does
  * not compile: for this to be safe we'd need to recalculate the hash after
  * assignment.
+ *
+ * Moved-from ktp_with_hash objects have an invalid cached hash code (i.e.,
+ * their cached hash code is not consistent with their topic partition values)
+ * and should be used only after being assigned from a valid ktp_with_hash
+ * object. Getting the hash code of a moved-from ktp object will assert in
+ * non-release builds.
  */
 struct ktp_with_hash : public ktp {
     /**
@@ -244,9 +273,8 @@ struct ktp_with_hash : public ktp {
      * construction and cached within the object.
      */
     ktp_with_hash(model::topic t, model::partition_id id)
-      : ktp{std::move(t), id} {
-        update_hash();
-    }
+      : ktp{std::move(t), id}
+      , _hash_code{hash_code()} {}
 
     /**
      * @brief Weakly typed ktp_with_hash constructor.
@@ -259,41 +287,14 @@ struct ktp_with_hash : public ktp {
         model::topic(std::move(topic_name)),
         model::partition_id(partition_id)} {}
 
-    ktp_with_hash(const ktp_with_hash& rhs) = default;
-
-    /**
-     * @brief Move-construct a new ktp_with_hash object.
-     *
-     * This needs a non-default implementation since we need to update
-     * the rhs' hash after it has been moved-from.
-     */
-    ktp_with_hash(ktp_with_hash&& rhs) noexcept
-      : ktp{std::move(rhs)}
-      , _hash_code{rhs._hash_code} {
-        rhs.update_hash();
-    }
-
-    ktp_with_hash& operator=(const ktp_with_hash&) = default;
-
-    ktp_with_hash& operator=(ktp_with_hash&& rhs) noexcept {
-        ktp::operator=(std::move(rhs));
-        // use the hash code from the rhs to avoid recalc
-        _hash_code = rhs._hash_code;
-        // need to recalc rhs hash_code since it is moved-from
-        rhs.update_hash();
-        return *this;
-    }
-
     template<typename T>
     friend class std::hash; // std::hash needs _hash_code
 
 private:
     /**
-     * Rehash this object and save the hash code. Should be called
-     * after on construction (unless constructed from an existing
-     * object with a valid hash) or any state change.
+     * Return the hash code for this object.
      */
-    void update_hash() { _hash_code = std::hash<ktp>{}(*this); }
+    size_t hash_code() const { return std::hash<ktp>{}(*this); }
 
     size_t _hash_code;
 };
@@ -348,6 +349,7 @@ namespace std {
 template<>
 struct hash<model::ktp_with_hash> {
     size_t operator()(const model::ktp_with_hash& ktp) const {
+        ktp.check();
         return ktp._hash_code;
     }
 };
