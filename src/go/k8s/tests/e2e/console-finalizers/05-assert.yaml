@@ -5,4 +5,4 @@ collectors:
 - type: pod
   selector: app.kubernetes.io/name=redpanda-console
   tail: -1
-- command: ../../../hack/get-redpanda-info.sh
+- command: ../../../hack/get-redpanda-info.sh console-finalizers

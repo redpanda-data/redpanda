@@ -1426,8 +1426,8 @@ github.com/qur/ar v0.0.0-20130629153254-282534b91770/go.mod h1:SjlYv2m9lpV0UW6K7
 github.com/rcrowley/go-metrics v0.0.0-20181016184325-3113b8401b8a/go.mod h1:bCqnVzQkZxMG4s8nGwiZ5l3QUCyqpo9Y+/ZMZ9VjZe4=
 github.com/redpanda-data/console/backend v0.0.0-20230222172326-354751cc7524 h1:luFDvYrRmfF5UoNcjBWNtTMQ8J9p27Hph4v57ULnzNk=
 github.com/redpanda-data/console/backend v0.0.0-20230222172326-354751cc7524/go.mod h1:eIkTpFJ4nRwkac3TNdJjTtZU0PsP2IRXkThfP8ALZ+E=
-github.com/redpanda-data/redpanda/src/go/rpk v0.0.0-20230404135914-a0df09112265 h1:AZrzMeTDChsaw4fNbZkcmm+p11ZnHFG6+UCiforC0yw=
-github.com/redpanda-data/redpanda/src/go/rpk v0.0.0-20230404135914-a0df09112265/go.mod h1:lS28/leL/Gd2GaeufIPi8t3sM1kd7LoD3VYMhTes2cY=
+github.com/redpanda-data/redpanda/src/go/rpk v0.0.0-20230511045643-19a90983809d h1:EVnzgfKf/8YkXzprbiKb9YyvODIvFps/RRsKyoTaBW8=
+github.com/redpanda-data/redpanda/src/go/rpk v0.0.0-20230511045643-19a90983809d/go.mod h1:O/q7p1+L1By8VmrDJLikjLaWjZ3WzTo99vH6tNjUbaQ=
 github.com/rhnvrm/simples3 v0.6.1/go.mod h1:Y+3vYm2V7Y4VijFoJHHTrja6OgPrJ2cBti8dPGkC3sA=
 github.com/rivo/uniseg v0.2.0/go.mod h1:J6wj4VEh+S6ZtnVlnTBMWIodfgj8LQOQFoIToxlJtxc=
 github.com/rivo/uniseg v0.4.3 h1:utMvzDsuh3suAEnhH0RdHmoPbU648o6CvXxTx4SBMOw=

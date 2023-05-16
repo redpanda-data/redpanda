@@ -76,13 +76,13 @@ type RedpandaReconciler struct {
 
 // additional k8s resources required by flux
 // +kubebuilder:rbac:groups=batch,resources=jobs,verbs=get;list;watch;create;update;patch;delete
-// +kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch;create;update;patch;delete
+// TO BE RE-ADDED WHEN CLUSTER CONTROLLER BE REMOVED + kubebuilder:rbac:groups=core,resources=secrets,verbs=get;list;watch;create;update;patch;delete
 
 // redpanda resources
 // +kubebuilder:rbac:groups=redpanda.vectorized.io,resources=redpandas,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=redpanda.vectorized.io,resources=redpandas/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=redpanda.vectorized.io,resources=redpandas/finalizers,verbs=update
-// +kubebuilder:rbac:groups="",resources=events,verbs=create;patch
+// TO BE RE-ADDED WHEN CLUSTER CONTROLLER BE REMOVED + kubebuilder:rbac:groups=core,resources=events,verbs=create;patch
 
 // SetupWithManager sets up the controller with the Manager.
 func (r *RedpandaReconciler) SetupWithManager(mgr ctrl.Manager) error {

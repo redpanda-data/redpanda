@@ -18,7 +18,7 @@ import (
 	"encoding/json"
 
 	metav1 "github.com/cert-manager/cert-manager/pkg/apis/meta/v1"
-	"k8s.io/api/core/v1"
+	v1 "k8s.io/api/core/v1"
 	apismetav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/intstr"
