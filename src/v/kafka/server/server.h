@@ -165,11 +165,7 @@ public:
         return *_replica_selector;
     }
 
-    ssx::semaphore& memory_fetch_sem() noexcept { return _memory_fetch_sem; }
-
 private:
-    void setup_metrics();
-
     ss::smp_service_group _smp_group;
     ss::scheduling_group _fetch_scheduling_group;
     ss::sharded<cluster::topics_frontend>& _topics_frontend;
@@ -196,10 +192,7 @@ private:
     security::tls::principal_mapper _mtls_principal_mapper;
     security::gssapi_principal_mapper _gssapi_principal_mapper;
     security::krb5::configurator _krb_configurator;
-    ssx::semaphore _memory_fetch_sem;
-
     class latency_probe _probe;
-    ss::metrics::metric_groups _metrics;
     ssx::thread_worker& _thread_worker;
     std::unique_ptr<replica_selector> _replica_selector;
 };

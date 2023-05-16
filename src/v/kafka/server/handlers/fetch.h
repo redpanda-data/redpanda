@@ -19,19 +19,7 @@
 
 namespace kafka {
 
-/**
- * Estimate the minimum size of memory required for a fetch request.
- *
- * Fetch request processing is adaptive to the amount of memory available,
- * controlled by kafka::server::memory_fetch_sem(). It can decide to read
- * from less partitions than requested. However it is required to read from
- * at least a single partition, and the amount of memory required for that
- * is accounted for upfront by this estimator.
- */
-memory_estimate_fn fetch_memory_estimator;
-
-using fetch_handler
-  = single_stage_handler<fetch_api, 4, 11, fetch_memory_estimator>;
+using fetch_handler = single_stage_handler<fetch_api, 4, 11>;
 
 /*
  * Fetch operation context
@@ -229,11 +217,6 @@ struct read_result {
     using foreign_data_t = ss::foreign_ptr<std::unique_ptr<iobuf>>;
     using data_t = std::unique_ptr<iobuf>;
     using variant_t = std::variant<data_t, foreign_data_t>;
-    struct memory_units_t {
-        ssx::semaphore_units kafka;
-        ssx::semaphore_units fetch;
-    };
-
     explicit read_result(error_code e)
       : error(e) {}
 
@@ -311,7 +294,6 @@ struct read_result {
     error_code error;
     model::partition_id partition;
     std::vector<cluster::rm_stm::tx_range> aborted_transactions;
-    memory_units_t memory_units;
 };
 // struct aggregating fetch requests and corresponding response iterators for
 // the same shard
@@ -363,19 +345,12 @@ struct fetch_plan {
     }
 };
 
-/*
- * Unit Tests Exposure
- */
-
 ss::future<read_result> read_from_ntp(
   cluster::partition_manager&,
-  op_context&,
+  const replica_selector&,
   const model::ntp&,
   fetch_config,
   bool,
-  bool obligatory_batch_read);
-
-read_result::memory_units_t reserve_memory_units(
-  const request_context& rctx, size_t max_bytes, bool obligatory_batch_read);
+  std::optional<model::timeout_clock::time_point>);
 
 } // namespace kafka
