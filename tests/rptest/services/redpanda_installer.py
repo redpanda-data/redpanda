@@ -13,6 +13,7 @@ import os
 import re
 import typing
 import threading
+from datetime import datetime, timezone, timedelta
 
 import requests
 
@@ -22,6 +23,9 @@ from ducktape.utils.util import wait_until
 # released version.
 # E.g. "v22.1.1-rc1-1373-g77f868..."
 VERSION_RE = re.compile(".*v(\\d+)\\.(\\d+)\\.(\\d+).*")
+
+RELEASES_CACHE_FILE = "/tmp/redpanda_releases.json"
+RELEASES_CACHE_FILE_TTL = timedelta(seconds=300)
 
 
 def wait_for_num_versions(redpanda, num_versions):
@@ -294,6 +298,70 @@ class RedpandaInstaller:
 
         self._started = True
 
+    def _released_versions_json(self):
+        def get_cached_data():
+            try:
+                st = os.stat(RELEASES_CACHE_FILE)
+                mtime = datetime.fromtimestamp(st.st_mtime, tz=timezone.utc)
+                if datetime.now(
+                        timezone.utc) - mtime < RELEASES_CACHE_FILE_TTL:
+                    try:
+                        self._redpanda.logger.info(
+                            "Using cached release metadata")
+                        return json.load(open(RELEASES_CACHE_FILE, 'rb'))
+                    except json.JSONDecodeError:
+                        # Malformed file
+                        return None
+            except OSError:
+                # Doesn't exist, fall through and populate
+                return None
+
+        releases = get_cached_data()
+        if releases is not None:
+            return releases
+
+        try:
+            self._acquire_install_lock()
+
+            # Check if someone else already acquired lock and populated
+            releases_json = get_cached_data()
+            if releases_json is not None:
+                return releases_json
+
+            self._redpanda.logger.info("Fetching release metadata from github")
+            releases = []
+            page = 1
+            per_page = 30
+            while True:
+                url = f"https://api.github.com/repos/redpanda-data/redpanda/releases?per_page={per_page}&page={page}"
+                self._redpanda.logger.debug(
+                    f"Fetching releases page {page}: {url}")
+                releases_resp = requests.get(url)
+                releases_resp.raise_for_status()
+                try:
+                    releases_json = releases_resp.json()
+                except:
+                    self._redpanda.logger.error(releases_resp.text)
+                    raise
+
+                assert isinstance(releases_json, list)
+                releases.extend(releases_json)
+
+                if len(releases_json) < per_page:
+                    self._redpanda.logger.debug(
+                        f"Last page ({len(releases_json)} entries)")
+                    break
+                else:
+                    page += 1
+                    self._redpanda.logger.debug(f"Reading next page {page}")
+
+            open(RELEASES_CACHE_FILE, 'w').write(json.dumps(releases))
+
+        finally:
+            self._release_install_lock()
+
+        return releases
+
     @property
     def released_versions(self):
         if len(self._released_versions) > 0:
@@ -306,19 +374,22 @@ class RedpandaInstaller:
             if len(self._released_versions) > 0:
                 return self._released_versions
 
-            # Initialize and order the releases so we can iterate to previous
-            # releases when requested.
-            releases_resp = requests.get(
-                "https://api.github.com/repos/redpanda-data/redpanda/releases")
-            releases_resp.raise_for_status()
-            try:
-                versions = [
-                    int_tuple(VERSION_RE.findall(f["tag_name"])[0])
-                    for f in releases_resp.json()
-                ]
-            except:
-                self._redpanda.logger.error(releases_resp.text)
-                raise
+            releases_json = self._released_versions_json()
+            versions = []
+            for release in releases_json:
+                match = VERSION_RE.findall(release["tag_name"])
+                if match:
+                    versions.append(int_tuple(match[0]))
+                else:
+                    if release["tag_name"].startswith("release-"):
+                        # Tags like 'release-20.12.4' predate the modern Redpanda versioning scheme
+                        self._redpanda.logger.info(
+                            f"Ignoring legacy release {release['tag_name']}")
+                    else:
+                        self._redpanda.logger.warn(
+                            f"Malformed release tag in repo: {release['tag_name']}"
+                        )
+
             self._released_versions = sorted(versions, reverse=True)
 
         return self._released_versions
@@ -367,6 +438,11 @@ class RedpandaInstaller:
 
                 result = v
                 break
+
+        if result is None:
+            raise RuntimeError(
+                f"Could not find feature version prior to {version} (available version: {self.released_versions})"
+            )
 
         self._redpanda.logger.info(
             f"Selected prior feature version {result}, from my version {version}, from available versions {self.released_versions}"
