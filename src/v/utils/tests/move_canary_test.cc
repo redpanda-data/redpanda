@@ -33,6 +33,7 @@ BOOST_AUTO_TEST_CASE_TEMPLATE(move_canary_move_ctor, T, all_canary_types) {
     T c0;
     T c1(std::move(c0));
 
+    // NOLINTNEXTLINE(bugprone-use-after-move)
     BOOST_CHECK_EQUAL(c0.is_moved_from(), true);
     BOOST_CHECK_EQUAL(c1.is_moved_from(), false);
 }
@@ -43,6 +44,7 @@ BOOST_AUTO_TEST_CASE_TEMPLATE(
     T c1;
     c1 = std::move(c0);
 
+    // NOLINTNEXTLINE(bugprone-use-after-move)
     BOOST_CHECK_EQUAL(c0.is_moved_from(), true);
     BOOST_CHECK_EQUAL(c1.is_moved_from(), false);
 }
@@ -61,8 +63,9 @@ BOOST_AUTO_TEST_CASE_TEMPLATE(
   move_canary_assignment_is_transitive, T, all_canary_types) {
     T c0, c1, c2;
     c1 = std::move(c0);
-    c2 = c0;
+    c2 = c0; // NOLINT(bugprone-use-after-move)
 
+    // NOLINTNEXTLINE(bugprone-use-after-move)
     BOOST_CHECK_EQUAL(c2.is_moved_from(), true);
 }
 
@@ -70,8 +73,9 @@ BOOST_AUTO_TEST_CASE_TEMPLATE(
   move_canary_moved_to_not_moved, T, all_canary_types) {
     T c0, c1, c2;
     c1 = std::move(c0);
-    // c0 is moved-from here
-    BOOST_CHECK_EQUAL(c0.is_moved_from(), true);
+
+    // NOLINTNEXTLINE(bugprone-use-after-move)
+    BOOST_CHECK_EQUAL(c0.is_moved_from(), true); // c0 is moved-from here
 
     // but assignment from a not moved-from object clears
     // that state
@@ -84,6 +88,7 @@ BOOST_AUTO_TEST_CASE_TEMPLATE(move_canary_copy_ctor, T, all_canary_types) {
     c1 = std::move(c0);
     // c0 is moved-from here, c1 is not
 
+    // NOLINTNEXTLINE(bugprone-use-after-move)
     T c2(c0);
     BOOST_CHECK_EQUAL(c2.is_moved_from(), true);
 
