@@ -271,6 +271,11 @@ public:
                     co_await set_end_of_stream();
                     co_return storage_t{};
                 }
+
+                if (model::timeout_clock::now() > deadline) {
+                    throw ss::timed_out_error();
+                }
+
                 auto reader_delta = _reader->current_delta();
                 if (
                   !_ot_state->empty()
