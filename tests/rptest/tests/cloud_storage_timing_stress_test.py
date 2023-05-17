@@ -17,6 +17,7 @@ from rptest.utils.si_utils import BucketView
 from rptest.clients.types import TopicSpec
 from rptest.tests.partition_movement import PartitionMovementMixin
 from ducktape.utils.util import wait_until
+from ducktape.mark import parametrize
 from rptest.utils.mode_checks import skip_debug_mode
 
 import concurrent.futures
@@ -213,13 +214,10 @@ class CloudStorageTimingStressTest(RedpandaTest, PartitionMovementMixin):
     check_interval = 10  # seconds
     allow_runtime_overshoot_by = 2
 
-    topics = [
-        TopicSpec(name="test-topic",
-                  partition_count=1,
-                  replication_factor=3,
-                  retention_bytes=60 * log_segment_size,
-                  cleanup_policy="compact,delete")
-    ]
+    topic_spec = TopicSpec(name="test-topic",
+                           partition_count=1,
+                           replication_factor=3,
+                           retention_bytes=60 * log_segment_size)
 
     def __init__(self, test_context):
         self.si_settings = SISettings(
@@ -308,7 +306,7 @@ class CloudStorageTimingStressTest(RedpandaTest, PartitionMovementMixin):
             if uploaded_kafka_offset < (hwm - 1):
                 return False
 
-            return True
+        return True
 
     def _check_completion(self):
         producer_complete = self.producer.is_complete()
@@ -360,7 +358,11 @@ class CloudStorageTimingStressTest(RedpandaTest, PartitionMovementMixin):
             err_msg="Initial revision not found before timeout",
             retry_on_exc=True)
 
-    def prologue(self):
+    def prologue(self, cleanup_policy):
+        self.topic_spec.cleanup_policy = cleanup_policy
+        self.topics = [self.topic_spec]
+        self._create_initial_topics()
+
         # Preserve the initial revision to be able to fetch the manifest
         # after the partition moves.
         self._initial_revision = self._get_initial_revision()
@@ -380,25 +382,28 @@ class CloudStorageTimingStressTest(RedpandaTest, PartitionMovementMixin):
 
         self.test_start_ts = datetime.now()
 
-    def epilogue(self):
+    def epilogue(self, cleanup_policy):
         self.producer.wait()
         self.consumer.wait()
 
-        self.redpanda.metric_sum(
-            "redpanda_cloud_storage_deleted_segments",
-            metrics_endpoint=MetricsEndpoint.PUBLIC_METRICS) > 0
-
-        self.redpanda.metric_sum(
-            "redpanda_cloud_storage_local_segment_reuploads",
-            metrics_endpoint=MetricsEndpoint.PUBLIC_METRICS) > 0
-
-        self.redpanda.metric_sum(
+        assert self.redpanda.metric_sum(
             "vectorized_cloud_storage_successful_downloads_total") > 0
 
-        # Assert that compacted segment re-upload operated during the test
-        bucket_view = BucketView(self.redpanda)
-        bucket_view.assert_at_least_n_uploaded_segments_compacted(
-            self.topic, partition=0, revision=self._initial_revision, n=1)
+        assert self.redpanda.metric_sum(
+            "redpanda_cloud_storage_deleted_segments_total",
+            metrics_endpoint=MetricsEndpoint.PUBLIC_METRICS) > 0
+
+        if "compact" in cleanup_policy:
+            # Assert that compacted segment re-upload operated during the test
+            bucket_view = BucketView(self.redpanda)
+            bucket_view.assert_at_least_n_uploaded_segments_compacted(
+                self.topic, partition=0, revision=self._initial_revision, n=1)
+        else:
+            # Adjacent segment merging is disabled on compacted topics, so
+            # check if it occurred only on non-compacted topics.
+            assert self.redpanda.metric_sum(
+                "redpanda_cloud_storage_jobs_local_segment_reuploads",
+                metrics_endpoint=MetricsEndpoint.PUBLIC_METRICS) > 0
 
     def register_check(self, name, check_fn):
         self.checks.append(CloudStorageCheck(name, check_fn))
@@ -449,19 +454,21 @@ class CloudStorageTimingStressTest(RedpandaTest, PartitionMovementMixin):
             r"failed to hydrate chunk.*NotFound",
             r"failed to hydrate chunk.*abort_requested"
         ])
+    @parametrize(cleanup_policy="delete")
+    @parametrize(cleanup_policy="compact,delete")
     @skip_debug_mode
-    def test_cloud_storage(self):
+    def test_cloud_storage(self, cleanup_policy):
         """
         This is the baseline test. It runs the workload and performs the checks
         periodically, without any external operations being performed.
         """
-        self.prologue()
+        self.prologue(cleanup_policy)
 
         while not self.is_complete():
             self.do_checks()
             time.sleep(self.check_interval)
 
-        self.epilogue()
+        self.epilogue(cleanup_policy)
 
     @cluster(
         num_nodes=5,
@@ -472,15 +479,17 @@ class CloudStorageTimingStressTest(RedpandaTest, PartitionMovementMixin):
             r"failed to hydrate chunk.*NotFound",
             r"failed to hydrate chunk.*abort_requested"
         ])
+    @parametrize(cleanup_policy="delete")
+    @parametrize(cleanup_policy="compact,delete")
     @skip_debug_mode
-    def test_cloud_storage_with_partition_moves(self):
+    def test_cloud_storage_with_partition_moves(self, cleanup_policy):
         """
         This test adds partition moves on top of the baseline cloud storage workload.
         The idea is to evolve this test into a more generic fuzzing test in the future
         (e.g. isolate/kill nodes, isolate leader from cloud storage, change cloud storage
         topic/cluster configs on the fly).
         """
-        self.prologue()
+        self.prologue(cleanup_policy)
 
         partitions = []
         for topic in self.topics:
@@ -495,4 +504,4 @@ class CloudStorageTimingStressTest(RedpandaTest, PartitionMovementMixin):
             self.do_checks()
             time.sleep(self.check_interval)
 
-        self.epilogue()
+        self.epilogue(cleanup_policy)
