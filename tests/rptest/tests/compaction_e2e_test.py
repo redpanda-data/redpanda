@@ -7,7 +7,6 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-import sys
 from ducktape.mark import matrix, ok_to_fail
 from ducktape.utils.util import wait_until
 from rptest.clients.rpk import RpkTool
@@ -16,6 +15,7 @@ from rptest.clients.types import TopicSpec
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.clients.default import DefaultClient
 from rptest.services.cluster import cluster
+from rptest.utils.mode_checks import skip_debug_mode
 
 from rptest.services.compacted_verifier import CompactedVerifier, Workload
 
@@ -24,7 +24,7 @@ class CompactionE2EIdempotencyTest(RedpandaTest):
     def __init__(self, test_context):
         extra_rp_conf = {}
 
-        self.segment_size = 5 * 1024 * 1024 if not self.debug_mode else 1024 * 1024
+        self.segment_size = 5 * 1024 * 1024
         self.partition_count = 3
 
         super(CompactionE2EIdempotencyTest,
@@ -39,6 +39,7 @@ class CompactionE2EIdempotencyTest(RedpandaTest):
             partitions.append([len(p.segments) for p in topic_partitions])
         return partitions
 
+    @skip_debug_mode
     @cluster(num_nodes=4)
     @matrix(
         initial_cleanup_policy=[
