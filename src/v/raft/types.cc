@@ -11,12 +11,14 @@
 
 #include "model/fundamental.h"
 #include "model/metadata.h"
+#include "model/record.h"
 #include "model/record_batch_reader.h"
 #include "model/timeout_clock.h"
 #include "raft/consensus_utils.h"
 #include "raft/errc.h"
 #include "raft/group_configuration.h"
 #include "reflection/adl.h"
+#include "reflection/async_adl.h"
 #include "utils/to_string.h"
 #include "vassert.h"
 #include "vlog.h"
@@ -598,7 +600,8 @@ ss::future<> append_entries_request::serde_async_write(iobuf& dst) {
     class streaming_writer {
     public:
         ss::future<ss::stop_iteration> operator()(model::record_batch b) {
-            reflection::serialize(_out, std::move(b));
+            co_await reflection::async_adl<model::record_batch>{}.to(
+              _out, std::move(b));
             ++_count;
             co_return ss::stop_iteration::no;
         }
