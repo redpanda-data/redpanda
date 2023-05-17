@@ -704,9 +704,12 @@ bool disk_log_impl::is_cloud_retention_active() const {
            && (config().is_archival_enabled());
 }
 
-gc_config disk_log_impl::apply_overrides(gc_config defaults) const {
+/*
+ * applies overrides for non-cloud storage settings
+ */
+gc_config disk_log_impl::apply_base_overrides(gc_config defaults) const {
     if (!config().has_overrides()) {
-        return override_retention_config(defaults);
+        return defaults;
     }
 
     auto ret = defaults;
@@ -734,6 +737,11 @@ gc_config disk_log_impl::apply_overrides(gc_config defaults) const {
           model::timestamp::now().value() - retention_time.value().count());
     }
 
+    return ret;
+}
+
+gc_config disk_log_impl::apply_overrides(gc_config defaults) const {
+    auto ret = apply_base_overrides(defaults);
     return override_retention_config(ret);
 }
 
