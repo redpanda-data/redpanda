@@ -31,7 +31,7 @@ if [[ -n $CREATE_ISSUE_ON_ERROR ]]; then
     --repo \"$TARGET_ORG/$TARGET_REPO\"
     --reviewer \"$ORIG_REVIEWERS\"
     --milestone \"$TARGET_MILESTONE\"
-    --body \"Backport of PR $ORIG_ISSUE_URL $backport_issue_urls\""
+    --body \"Backport of PR $ORIG_ISSUE_URL \""
 
   orig_assignees=$(gh issue view $PR_NUMBER --json author --jq .author.login)
 fi
