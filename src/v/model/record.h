@@ -17,6 +17,8 @@
 #include "model/record_batch_types.h"
 #include "model/record_utils.h"
 #include "model/timestamp.h"
+#include "serde/envelope.h"
+#include "serde/serde.h"
 #include "vassert.h"
 
 #include <seastar/core/smp.hh>
@@ -339,6 +341,16 @@ public:
                        & record_batch_attributes::timestamp_type_mask;
         return *this;
     }
+    friend inline void read_nested(
+      iobuf_parser& in,
+      record_batch_attributes& attrs,
+      size_t const bytes_left_limit) {
+        attrs._attributes = serde::read_nested<uint64_t>(in, bytes_left_limit);
+    }
+
+    friend inline void write(iobuf& out, record_batch_attributes el) {
+        serde::write(out, static_cast<uint64_t>(el._attributes.to_ullong()));
+    }
 
     friend std::ostream&
     operator<<(std::ostream&, const record_batch_attributes&);
@@ -353,8 +365,13 @@ private:
 };
 
 /** expect all fields to be serialized, except context fields */
-struct record_batch_header {
-    struct context {
+struct record_batch_header
+  : serde::envelope<
+      record_batch_header,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    struct context
+      : serde::envelope<context, serde::version<0>, serde::compat_version<0>> {
         context() noexcept = default;
         context(model::term_id t, ss::shard_id i)
           : term(t)
@@ -383,6 +400,24 @@ struct record_batch_header {
          */
         model::term_id term;
         std::optional<ss::shard_id> owner_shard;
+
+        void serde_write(iobuf& out) const {
+            // serialize with serde a serde-only type
+            using serde::write;
+            write(out, term);
+        }
+
+        void serde_read(iobuf_parser& in, const serde::header& h) {
+            // deserialize with serde a serde-only type
+            using serde::read_nested;
+            term = read_nested<model::term_id>(in, h._bytes_left_limit);
+            owner_shard = ss::this_shard_id();
+        }
+
+        friend bool operator==(
+          const record_batch_header::context&,
+          const record_batch_header::context&)
+          = default;
     };
 
     /// \brief every thing below this field gets CRC, except `context`
@@ -407,6 +442,24 @@ struct record_batch_header {
     int16_t producer_epoch{0};
     int32_t base_sequence{0};
     int32_t record_count{0};
+
+    auto serde_fields() {
+        return std::tie(
+          header_crc,
+          size_bytes,
+          base_offset,
+          type,
+          crc,
+          attrs,
+          last_offset_delta,
+          first_timestamp,
+          max_timestamp,
+          producer_id,
+          producer_epoch,
+          base_sequence,
+          record_count,
+          ctx);
+    }
 
     bool contains(model::offset offset) const {
         return base_offset <= offset && offset <= last_offset();
@@ -539,7 +592,11 @@ constexpr uint32_t packed_record_batch_header_size
     + sizeof(model::record_batch_header::base_sequence)     // 4
     + sizeof(model::record_batch_header::record_count);     // 4
 
-class record_batch {
+class record_batch
+  : public serde::envelope<
+      model::record_batch,
+      serde::version<0>,
+      serde::compat_version<0>> {
 public:
     /**
      * Compatability interface. Compression is based on the record type rather
@@ -725,6 +782,33 @@ public:
     const iobuf& data() const { return _records; }
     iobuf&& release_data() && { return std::move(_records); }
     void clear_data() { _records.clear(); }
+
+    auto serde_fields() { return std::tie(_header, _records); }
+
+    static model::record_batch
+    serde_direct_read(iobuf_parser& in, size_t const bytes_left_limit) {
+        using serde::read_nested;
+        auto header = read_nested<model::record_batch_header>(
+          in, bytes_left_limit);
+        auto data = read_nested<iobuf>(in, bytes_left_limit);
+
+        return {header, std::move(data), tag_ctor_ng()};
+    }
+
+    static ss::future<model::record_batch>
+    serde_async_direct_read(iobuf_parser& in, size_t const bytes_left_limit) {
+        using serde::read_async_nested;
+        // TODO: change to coroutine after we upgrade to clang-16
+        return read_async_nested<model::record_batch_header>(
+                 in, bytes_left_limit)
+          .then([&in, bytes_left_limit](model::record_batch_header header) {
+              return read_async_nested<iobuf>(in, bytes_left_limit)
+                .then([header](iobuf records) {
+                    return model::record_batch{
+                      header, std::move(records), tag_ctor_ng()};
+                });
+          });
+    }
 
 private:
     record_batch_header _header;
