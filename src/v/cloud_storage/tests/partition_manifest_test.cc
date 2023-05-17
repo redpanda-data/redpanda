@@ -1700,6 +1700,20 @@ SEASTAR_THREAD_TEST_CASE(test_timequery_out_of_order) {
       == std::nullopt);
 }
 
+SEASTAR_THREAD_TEST_CASE(test_reset_manifest) {
+    partition_manifest m;
+    m.update(make_manifest_stream(complete_manifest_json)).get();
+    auto path = m.get_manifest_path();
+    BOOST_REQUIRE_EQUAL(
+      path, "60000000/meta/test-ns/test-topic/42_1/manifest.json");
+    BOOST_REQUIRE_EQUAL(m.size(), 4);
+
+    partition_manifest expected{m.get_ntp(), m.get_revision_id()};
+
+    m.unsafe_reset();
+    BOOST_REQUIRE(m == expected);
+}
+
 SEASTAR_THREAD_TEST_CASE(test_generate_segment_name_format) {
     static constexpr std::string_view raw = R"json({
         "version": 1,

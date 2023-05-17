@@ -442,6 +442,10 @@ bool partition_manifest::contains(const segment_name& name) const {
 
 void partition_manifest::delete_replaced_segments() { _replaced.clear(); }
 
+void partition_manifest::unsafe_reset() {
+    *this = partition_manifest{_ntp, _rev};
+}
+
 bool partition_manifest::advance_start_offset(model::offset new_start_offset) {
     if (new_start_offset > _start_offset && !_segments.empty()) {
         auto it = _segments.upper_bound(new_start_offset);
@@ -1098,11 +1102,8 @@ struct partition_manifest_handler
     }
 };
 
-ss::future<> partition_manifest::update(ss::input_stream<char> is) {
-    iobuf result;
-    auto os = make_iobuf_ref_output_stream(result);
-    co_await ss::copy(is, os);
-    iobuf_istreambuf ibuf(result);
+ss::future<> partition_manifest::update(iobuf buf) {
+    iobuf_istreambuf ibuf(buf);
     std::istream stream(&ibuf);
     json::IStreamWrapper wrapper(stream);
     rapidjson::Reader reader;
@@ -1113,8 +1114,7 @@ ss::future<> partition_manifest::update(ss::input_stream<char> is) {
     } else {
         rapidjson::ParseErrorCode e = reader.GetParseErrorCode();
         size_t o = reader.GetErrorOffset();
-        vlog(
-          cst_log.debug, "Failed to parse manifest: {}", result.hexdump(2048));
+        vlog(cst_log.debug, "Failed to parse manifest: {}", buf.hexdump(2048));
         throw std::runtime_error(fmt_with_ctx(
           fmt::format,
           "Failed to parse topic manifest {}: {} at offset {}",
@@ -1123,6 +1123,13 @@ ss::future<> partition_manifest::update(ss::input_stream<char> is) {
           o));
     }
     co_return;
+}
+
+ss::future<> partition_manifest::update(ss::input_stream<char> is) {
+    iobuf result;
+    auto os = make_iobuf_ref_output_stream(result);
+    co_await ss::copy(is, os);
+    co_return co_await update(std::move(result));
 }
 
 void partition_manifest::update(partition_manifest_handler&& handler) {

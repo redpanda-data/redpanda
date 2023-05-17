@@ -274,6 +274,8 @@ public:
 
     consensus_ptr raft() const { return _raft; }
 
+    ss::future<> unsafe_reset_remote_partition_manifest(iobuf buf);
+
 private:
     ss::future<std::optional<storage::timequery_result>>
       cloud_storage_timequery(storage::timequery_config);
