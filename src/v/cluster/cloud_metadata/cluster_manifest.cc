@@ -88,7 +88,7 @@ void cluster_metadata_manifest::load_from_json(const rapidjson::Document& doc) {
     }
 }
 
-ss::future<cloud_storage::serialized_json_stream>
+ss::future<cloud_storage::serialized_data_stream>
 cluster_metadata_manifest::serialize() const {
     iobuf serialized;
     iobuf_ostreambuf obuf(serialized);
@@ -101,7 +101,7 @@ cluster_metadata_manifest::serialize() const {
           get_manifest_path()));
     }
     size_t size_bytes = serialized.size_bytes();
-    co_return cloud_storage::serialized_json_stream{
+    co_return cloud_storage::serialized_data_stream{
       .stream = make_iobuf_input_stream(std::move(serialized)),
       .size_bytes = size_bytes};
 }

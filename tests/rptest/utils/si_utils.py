@@ -12,6 +12,7 @@ import pprint
 import struct
 from collections import defaultdict, namedtuple
 from typing import Sequence, Optional, NewType, NamedTuple
+from enum import Enum
 
 import xxhash
 
@@ -19,6 +20,7 @@ from rptest.archival.s3_client import ObjectMetadata
 from rptest.clients.types import TopicSpec
 from rptest.services.admin import Admin
 from rptest.services.redpanda import MetricsEndpoint, RESTART_LOG_ALLOW_LIST
+from rptest.clients.rp_storage_tool import RpStorageTool
 
 EMPTY_SEGMENT_SIZE = 4096
 
@@ -241,15 +243,7 @@ def gen_topic_manifest_path(topic: NT):
     return f"{hash}/meta/{path}/topic_manifest.json"
 
 
-def gen_manifest_path(ntpr: NTPR):
-    x = xxhash.xxh32()
-    path = f"{ntpr.ns}/{ntpr.topic}/{ntpr.partition}_{ntpr.revision}"
-    x.update(path.encode('ascii'))
-    hash = x.hexdigest()[0] + '0000000'
-    return f"{hash}/meta/{path}/manifest.json"
-
-
-def gen_segment_name_from_meta(meta: dict, key: Optional[str]) -> str:
+def gen_segment_name_from_meta(meta: dict, key: str) -> str:
     """
     Generates segment name using the sname_format. If v2 is supplied,
     new segment name format is generated. If v1 is supplied, the key from
@@ -293,7 +287,7 @@ def get_on_disk_size_per_ntp(chk):
     return size_bytes_per_ntp
 
 
-NodeReport = NewType('NodeReport', dict[str, (str, int)])
+NodeReport = NewType('NodeReport', dict[str, tuple[str, int]])
 NodeSegmentsReport = NewType('NodeSegmentsReport', dict[str, NodeReport])
 
 
@@ -306,6 +300,10 @@ def get_expected_ntp_restored_size(nodes_segments_report: NodeSegmentsReport,
     """
     size_bytes_per_ntp = {}
     segments_sizes_per_ntp = {}
+
+    assert len(nodes_segments_report) > 0
+
+    expected_restored_sizes = None
     for _node, report in nodes_segments_report.items():
         tmp_partition_size = defaultdict(int)
         tmp_segments_sizes = defaultdict(dict)
@@ -328,6 +326,9 @@ def get_expected_ntp_restored_size(nodes_segments_report: NodeSegmentsReport,
                     break
                 expected_restored_sizes[ntp] += segments_sizes_per_ntp[ntp][
                     segment]
+
+    assert expected_restored_sizes is not None
+
     return expected_restored_sizes
 
 
@@ -389,8 +390,9 @@ class PathMatcher:
             return any(key.endswith(t) for t in self.topic_manifest_paths)
 
     def is_partition_manifest(self, o: ObjectMetadata) -> bool:
-        return o.key.endswith(
-            '/manifest.json') and self._match_partition_manifest(o.key)
+        return (o.key.endswith('/manifest.json')
+                or o.key.endswith("/manifest.bin")
+                ) and self._match_partition_manifest(o.key)
 
     def is_topic_manifest(self, o: ObjectMetadata) -> bool:
         return self._match_topic_manifest(o.key)
@@ -423,6 +425,11 @@ class BucketViewState:
         self.topic_manifests = {}
 
 
+class ManifestFormat(Enum):
+    JSON = 'json'
+    BINARY = 'binary'
+
+
 class BucketView:
     """
     A caching view onto an object storage bucket, that knows how to construct paths
@@ -435,6 +442,9 @@ class BucketView:
     """
     def __init__(self, redpanda, topics: Optional[Sequence[TopicSpec]] = None):
         """
+        Always construct this with a `redpanda` -- the explicit logger/bucket/client
+        arguments are only here to enable the structure of topic_recovery_test.py to work,
+        and an instance constructed that way will not work for all methods.
 
         :param redpanda: a RedpandaService, whose SISettings we will use
         :param topics: optional list of topics to filter result to
@@ -443,6 +453,7 @@ class BucketView:
         self.logger = redpanda.logger
         self.bucket = redpanda.si_settings.cloud_storage_bucket
         self.client = redpanda.cloud_storage_client
+
         self.path_matcher = PathMatcher(topics)
 
         # Cache built on demand from admin API
@@ -468,7 +479,14 @@ class BucketView:
                     ns=p['ns'], topic=p['topic'],
                     partition=p['partition_id'])] = p['partition_revision']
 
-        revision = self._ntp_to_revision[ntp]
+        try:
+            revision = self._ntp_to_revision[ntp]
+        except KeyError:
+            self.logger.warn(f"Missing ntp revision for {ntp}, have ntps:")
+            for k in self._ntp_to_revision.keys():
+                self.logger.warn(f"  {k}")
+            raise
+
         return ntp.to_ntpr(revision)
 
     @property
@@ -563,9 +581,8 @@ class BucketView:
         for o in self.client.list_objects(self.bucket):
             if self.path_matcher.is_partition_manifest(o):
                 ntpr = parse_s3_manifest_path(o.key)
-                ntp = ntpr.to_ntp()
-                manifest = self._load_manifest(ntp, o.key)
-                self.logger.debug(f'registered partition manifest for {ntp}: '
+                manifest = self._load_manifest(ntpr, o.key)
+                self.logger.debug(f'registered partition manifest for {ntpr}: '
                                   f'{pprint.pformat(manifest, indent=2)}')
             elif self.path_matcher.is_segment(o):
                 self._state.segment_objects += 1
@@ -574,28 +591,67 @@ class BucketView:
             else:
                 self._state.ignored_objects += 1
 
-    def _load_manifest(self, ntp, path):
+    def _load_manifest(self, ntpr: NTPR, path: Optional[str] = None) -> dict:
         """
         Having composed the path for a manifest, download it cache the result, and return the manifest dict
 
         Raises KeyError if the object is not found.
         """
-        try:
-            data = self.client.get_object_data(self.bucket, path)
-        except Exception as e:
-            # Very generic exception handling because the storage client
-            # may be one of several classes with their own exceptions
-            self.logger.debug(f"Exception loading {path}: {e}")
-            raise KeyError(f"Manifest for ntp {ntp} not found")
 
-        manifest = json.loads(data)
+        if path is None:
+            # implicit path, try .bin and fall back to .json
+            path = self.gen_manifest_path(ntpr, "bin")
+            format = ManifestFormat.BINARY
+            try:
+                data = self.client.get_object_data(self.bucket, path)
+            except Exception as e:
+                self.logger.debug(f"Exception loading {path}: {e}")
+                try:
+                    path = self.gen_manifest_path(ntpr, "json")
+                    format = ManifestFormat.JSON
+                    data = self.client.get_object_data(self.bucket, path)
+                except Exception as e:
+                    # Very generic exception handling because the storage client
+                    # may be one of several classes with their own exceptions
+                    self.logger.debug(f"Exception loading {path}: {e}")
+                    raise KeyError(f"Manifest for ntp {ntpr} not found")
+        else:
+            # explicit path, only try loading that and fail if it fails
+            if ".bin" in path:
+                format = ManifestFormat.BINARY
+            elif ".json" in path:
+                format = ManifestFormat.JSON
+            else:
+                raise RuntimeError(f"Unknown manifest key format: '{path}'")
 
-        self.logger.debug(f"Loaded manifest {ntp}: {pprint.pformat(manifest)}")
+            try:
+                data = self.client.get_object_data(self.bucket, path)
+            except Exception as e:
+                # Very generic exception handling because the storage client
+                # may be one of several classes with their own exceptions
+                self.logger.debug(f"Exception loading {path}: {e}")
+                raise KeyError(f"Manifest for ntp {ntpr} not found")
 
-        self._state.partition_manifests[ntp] = manifest
+        if format == ManifestFormat.BINARY:
+            manifest = RpStorageTool(self.logger).decode_partition_manifest(
+                data, self.logger)
+        else:
+            manifest = json.loads(data)
+
+        self.logger.debug(
+            f"Loaded manifest {ntpr}: {pprint.pformat(manifest)}")
+
+        self._state.partition_manifests[ntpr.to_ntp()] = manifest
         return manifest
 
-    def get_partition_manifest(self, ntp: NTP | NTPR):
+    def gen_manifest_path(self, ntpr: NTPR, extension: str = "bin"):
+        x = xxhash.xxh32()
+        path = f"{ntpr.ns}/{ntpr.topic}/{ntpr.partition}_{ntpr.revision}"
+        x.update(path.encode('ascii'))
+        hash = x.hexdigest()[0] + '0000000'
+        return f"{hash}/meta/{path}/manifest.{extension}"
+
+    def get_partition_manifest(self, ntp: NTP | NTPR) -> dict:
         """
         Fetch a manifest, looking up revision as needed.
         """
@@ -610,8 +666,7 @@ class BucketView:
         if not ntpr:
             ntpr = self.ntp_to_ntpr(ntp)
 
-        manifest_path = gen_manifest_path(ntpr)
-        return self._load_manifest(ntp, manifest_path)
+        return self._load_manifest(ntpr)
 
     def _load_topic_manifest(self, topic: NT, path: str):
         try:

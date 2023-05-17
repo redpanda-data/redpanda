@@ -19,8 +19,8 @@ from rptest.services.kgo_verifier_services import KgoVerifierProducer, KgoVerifi
 from rptest.utils.mode_checks import skip_debug_mode
 from ducktape.mark import ok_to_fail
 from ducktape.utils.util import wait_until
+from rptest.utils.si_utils import BucketView, NTP
 import time
-import json
 import re
 
 ALLOWED_ERROR_LOG_LINES = [re.compile("Can't prepare pid.* - unknown session")]
@@ -122,28 +122,11 @@ class EndToEndTopicRecovery(RedpandaTest):
         rpk.describe_topic_configs(topic)
 
     def _s3_has_all_data(self, num_messages):
-        objects = list(self.redpanda.get_objects_from_si())
-        for o in objects:
-            if o.key.endswith("/manifest.json") and self.topic in o.key:
-                data = self.redpanda.cloud_storage_client.get_object_data(
-                    self._bucket, o.key)
-                manifest = json.loads(data)
-                last_upl_offset = manifest['last_offset']
-                if 'segments' in manifest:
-                    segments = manifest['segments']
-                    last_segment = segments[list(segments)[-1]]
-                    last_delta_offset = last_segment['delta_offset_end']
-                    # We have one partition so this invariant holds it has to
-                    # be changed when the number of partitions will get larger.
-                    # This will also require different S3 check.
-                    self.logger.info(
-                        f"Found manifest at {o.key}, last_offset is {last_upl_offset}, last delta_offset is {last_delta_offset}"
-                    )
-                    return (last_upl_offset - last_delta_offset +
-                            1) >= num_messages
-                else:
-                    return False
-        return False
+        view = BucketView(self.redpanda)
+        manifest = view.get_partition_manifest(
+            NTP(ns='kafka', topic=self.topic, partition=0))
+        last_offset = BucketView.kafka_last_offset(manifest)
+        return last_offset is not None and last_offset + 1 >= num_messages
 
     @cluster(num_nodes=4)
     @matrix(num_messages=[2], cloud_storage_type=get_cloud_storage_type())

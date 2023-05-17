@@ -240,16 +240,26 @@ FIXTURE_TEST(test_overlapping_segments, cloud_storage_fixture) {
     cloud_storage::partition_manifest manifest(manifest_ntp, manifest_revision);
 
     auto expectations = make_imposter_expectations(
-      manifest, segments, false, model::offset_delta(0));
+      manifest,
+      segments,
+      false,
+      model::offset_delta(0),
+      // Use v1 format because it only includes the base offset, not the
+      // committed offset.  We will modify the committed offset.
+      segment_name_format::v1);
 
     std::stringstream sstr;
-    manifest.serialize(sstr);
+    manifest.serialize_json(sstr);
 
     auto body = sstr.str();
     std::string_view to_replace = "\"committed_offset\":5";
     body.replace(
       body.find(to_replace), to_replace.size(), "\"committed_offset\":6");
-    expectations.back().body = body;
+    // overwrite uploaded manifest with a json version
+    expectations.back() = {
+      .url = "/"
+             + manifest.get_legacy_manifest_format_and_path().second().string(),
+      .body = body};
     set_expectations_and_listen(expectations);
     BOOST_REQUIRE(check_scan(*this, kafka::offset(0), 9));
 }
@@ -300,8 +310,8 @@ FIXTURE_TEST(test_scan_by_kafka_offset_repeats, cloud_storage_fixture) {
       *this, model::offset(0), model::offset_delta(0), batch_types);
     print_segments(segments);
     for (int i = 0; i <= 3; i++) {
-        BOOST_REQUIRE(check_scan(*this, kafka::offset(i), 4 - i));
-        BOOST_REQUIRE(check_fetch(*this, kafka::offset(i), true));
+        BOOST_CHECK(check_scan(*this, kafka::offset(i), 4 - i));
+        BOOST_CHECK(check_fetch(*this, kafka::offset(i), true));
     }
     BOOST_REQUIRE(check_scan(*this, kafka::offset(4), 0));
     BOOST_REQUIRE(check_fetch(*this, kafka::offset(4), false));
@@ -1598,7 +1608,7 @@ FIXTURE_TEST(test_remote_partition_scan_after_recovery, cloud_storage_fixture) {
     iobuf manifest_body;
     manifest_body.append(manifest_json, std::strlen(manifest_json));
     auto is = make_iobuf_input_stream(std::move(manifest_body));
-    manifest.update(std::move(is)).get();
+    manifest.update(manifest_format::json, std::move(is)).get();
 
     auto segments = setup_s3_imposter(*this, manifest);
 

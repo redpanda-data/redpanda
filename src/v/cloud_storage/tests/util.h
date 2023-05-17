@@ -10,6 +10,7 @@
  */
 #pragma once
 
+#include "bytes/iobuf_istreambuf.h"
 #include "bytes/iostream.h"
 #include "cloud_storage/partition_manifest.h"
 #include "cloud_storage/remote.h"
@@ -24,6 +25,7 @@
 #include <boost/test/unit_test.hpp>
 
 #include <algorithm>
+#include <ostream>
 #include <random>
 #include <vector>
 
@@ -479,11 +481,15 @@ std::vector<cloud_storage_fixture::expectation> make_imposter_expectations(
         results.push_back(cloud_storage_fixture::expectation{
           .url = "/" + url().string(), .body = s.bytes});
     }
-    std::stringstream ostr;
-    m.serialize(ostr);
+    auto serialized = [&] {
+        auto s_data = m.serialize().get();
+        auto buf = s_data.stream.read_exactly(s_data.size_bytes).get();
+        return ss::sstring(buf.begin(), buf.end());
+    };
     results.push_back(cloud_storage_fixture::expectation{
-      .url = "/" + m.get_manifest_path()().string(),
-      .body = ss::sstring(ostr.str())});
+      .url = "/" + m.get_manifest_path()().string(), .body = serialized()});
+    std::stringstream ostr;
+    m.serialize_json(ostr);
     vlog(
       test_util_log.info,
       "Uploaded manifest at {}:\n{}",
@@ -496,7 +502,8 @@ std::vector<cloud_storage_fixture::expectation> make_imposter_expectations(
   cloud_storage::partition_manifest& m,
   const std::vector<in_memory_segment>& segments,
   bool truncate_segments = false,
-  model::offset_delta delta = model::offset_delta(0)) {
+  model::offset_delta delta = model::offset_delta(0),
+  segment_name_format sname_format = segment_name_format::v2) {
     std::vector<cloud_storage_fixture::expectation> results;
 
     for (const auto& s : segments) {
@@ -524,8 +531,7 @@ std::vector<cloud_storage_fixture::expectation> make_imposter_expectations(
           .delta_offset = segment_delta,
           .ntp_revision = m.get_revision_id(),
           .delta_offset_end = model::offset_delta(delta)
-                              + model::offset_delta(s.num_config_records),
-        };
+                              + model::offset_delta(s.num_config_records)};
 
         m.add(s.sname, meta);
         delta = delta
@@ -535,11 +541,16 @@ std::vector<cloud_storage_fixture::expectation> make_imposter_expectations(
           .url = "/" + url().string(), .body = body});
     }
     m.advance_insync_offset(m.get_last_offset());
-    std::stringstream ostr;
-    m.serialize(ostr);
+    auto serialized = [&] {
+        auto s_data = m.serialize().get();
+        auto buf = s_data.stream.read_exactly(s_data.size_bytes).get();
+        return ss::sstring(buf.begin(), buf.end());
+    };
     results.push_back(cloud_storage_fixture::expectation{
-      .url = "/" + m.get_manifest_path()().string(),
-      .body = ss::sstring(ostr.str())});
+      .url = "/" + m.get_manifest_path()().string(), .body = serialized()});
+    std::ostringstream ostr;
+    m.serialize_json(ostr);
+
     vlog(
       test_util_log.info,
       "Uploaded manifest at {}:\n{}",
@@ -609,8 +620,7 @@ partition_manifest hydrate_manifest(
 
     partition_manifest m(manifest_ntp, manifest_revision);
     retry_chain_node rtc(never_abort, 30s, 200ms);
-    auto key = m.get_manifest_path();
-    auto res = api.download_manifest(bucket, key, m, rtc).get();
+    auto [res, _] = api.try_download_partition_manifest(bucket, m, rtc).get();
     BOOST_REQUIRE(res == cloud_storage::download_result::success);
     return m;
 }
@@ -641,9 +651,6 @@ std::vector<model::record_batch_header> scan_remote_partition_incrementally(
         config::shard_local_cfg().cloud_storage_max_readers_per_shard(
           maybe_max_readers);
     }
-    auto m = ss::make_lw_shared<cloud_storage::partition_manifest>(
-      manifest_ntp, manifest_revision);
-
     auto manifest = hydrate_manifest(imposter.api.local(), bucket);
     auto partition = ss::make_shared<remote_partition>(
       manifest, imposter.api.local(), imposter.cache.local(), bucket);
@@ -717,8 +724,6 @@ std::vector<model::record_batch_header> scan_remote_partition(
         config::shard_local_cfg().cloud_storage_max_readers_per_shard(
           maybe_max_readers);
     }
-    auto m = ss::make_lw_shared<cloud_storage::partition_manifest>(
-      manifest_ntp, manifest_revision);
     storage::log_reader_config reader_config(
       base, max, ss::default_priority_class());
 

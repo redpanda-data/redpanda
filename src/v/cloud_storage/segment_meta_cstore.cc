@@ -360,23 +360,39 @@ public:
 
         // extract the end iterator for hints, to cover only the frames that
         // will be cloned
-        auto end_hints = [&] {
+        auto last_hint_tosave = [&] {
             auto frame_it = _base_offset.get_frame_iterator_by_element_index(
               first_replacement_index);
             if (frame_it == _base_offset._frames.begin()) {
                 // no hint will be saved
-                return _hints.begin();
+                return _hints.end();
             }
             --frame_it; // go back to last frame that will be cloned
-            auto frame_max_offset = frame_it->last_value();
-            return _hints.upper_bound(
-              frame_max_offset.value_or(model::offset::min()()));
+            for (; frame_it != _base_offset._frames.begin(); --frame_it) {
+                // go back until we have a non-empty frame. this should be just
+                // an iteration
+                if (auto frame_max_offset = frame_it->last_value()) {
+                    auto to_clone_hint = _hints.lower_bound(
+                      frame_max_offset.value());
+                    vassert(
+                      to_clone_hint == _hints.end()
+                        || to_clone_hint->first <= frame_max_offset.value(),
+                      "to_clone_hint out of range: hint-{} frame_max_offset-{}",
+                      to_clone_hint->first,
+                      frame_max_offset.value());
+                    return to_clone_hint;
+                }
+            }
+            return _hints.end();
         }();
 
         // this column_store is initialized with the run of segments that are
         // not changed
         auto replacement_store = column_store{
-          share_frame, std::move(to_clone_frames), _hints.begin(), end_hints};
+          share_frame,
+          std::move(to_clone_frames),
+          last_hint_tosave,
+          _hints.end()};
 
         auto unchanged_committed_offset
           = replacement_store.last_committed_offset().value_or(
@@ -1038,7 +1054,12 @@ void segment_meta_cstore::from_iobuf(iobuf in) {
     *_impl = serde::from_iobuf<segment_meta_cstore::impl>(std::move(in));
 }
 
-iobuf segment_meta_cstore::to_iobuf() {
-    return serde::to_iobuf(std::exchange(*_impl, {}));
+iobuf segment_meta_cstore::to_iobuf() const {
+    impl tmp;
+    for (auto s : *this) {
+        tmp.append(s);
+    }
+
+    return serde::to_iobuf(std::move(tmp));
 }
 } // namespace cloud_storage

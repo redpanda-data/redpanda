@@ -77,6 +77,7 @@ enum class upload_result : int32_t {
 
 enum class manifest_version : int32_t {
     v1 = 1,
+    v2 = 2,
 };
 
 enum class tx_range_manifest_version : int32_t {

@@ -863,9 +863,10 @@ BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_serde_roundtrip) {
     }
     {
         auto [inflated_sz, actual_sz] = store.inflated_actual_size();
+        auto pre_serde_size = store.size();
         auto iobuf = store.to_iobuf();
         auto serialized_sz = iobuf.size_bytes();
-        BOOST_REQUIRE(store.empty());
+        BOOST_REQUIRE_EQUAL(store.size(), pre_serde_size);
         store.from_iobuf(std::move(iobuf));
         vlog(
           test.info,

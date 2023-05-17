@@ -188,6 +188,13 @@ public:
     /// \return future that returns success code
     ss::future<download_result> download_manifest(
       const cloud_storage_clients::bucket_name& bucket,
+      const std::pair<manifest_format, remote_manifest_path>& format_key,
+      base_manifest& manifest,
+      retry_chain_node& parent);
+
+    /// compatibility version of download_manifest for json format
+    ss::future<download_result> download_manifest(
+      const cloud_storage_clients::bucket_name& bucket,
       const remote_manifest_path& key,
       base_manifest& manifest,
       retry_chain_node& parent);
@@ -207,9 +214,28 @@ public:
     /// \return future that returns success code
     ss::future<download_result> maybe_download_manifest(
       const cloud_storage_clients::bucket_name& bucket,
+      const std::pair<manifest_format, remote_manifest_path>& format_key,
+      base_manifest& manifest,
+      retry_chain_node& parent);
+
+    /// compatibility version of maybe_download_manifest for json format
+    ss::future<download_result> maybe_download_manifest(
+      const cloud_storage_clients::bucket_name& bucket,
       const remote_manifest_path& key,
       base_manifest& manifest,
       retry_chain_node& parent);
+
+    /// \brief Try downloading partition_manifest. the function tries first the
+    /// manifest_format::serde path, and then manifest_format::json path. it's
+    /// expected that manifest is constructed with the approprieate npt and
+    /// revision_id, as it will be used to generate the paths return type is
+    /// download_result and index of path that generated the result
+    ss::future<std::pair<download_result, manifest_format>>
+    try_download_partition_manifest(
+      const cloud_storage_clients::bucket_name& bucket,
+      partition_manifest& manifest,
+      retry_chain_node& parent,
+      bool expect_missing = false);
 
     /// \brief Upload manifest to the pre-defined S3 location
     ///
@@ -338,7 +364,7 @@ public:
 
     ss::future<download_result> do_download_manifest(
       const cloud_storage_clients::bucket_name& bucket,
-      const remote_manifest_path& key,
+      const std::pair<manifest_format, remote_manifest_path>& format_key,
       base_manifest& manifest,
       retry_chain_node& parent,
       bool expect_missing = false);
