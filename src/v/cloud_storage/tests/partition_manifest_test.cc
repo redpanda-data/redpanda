@@ -1993,7 +1993,7 @@ SEASTAR_THREAD_TEST_CASE(test_partition_manifest_v2_json) {
     partition_manifest m;
     auto buf = iobuf{};
     buf.append(v2_json.data(), v2_json.size());
-    m.update_with_json(std::move(buf)).get();
+    m.update_with_json(std::move(buf));
     BOOST_CHECK_EQUAL(m.size(), 0);
     BOOST_CHECK_EQUAL(m.replaced_segments_count(), 0);
 }
