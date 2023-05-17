@@ -155,13 +155,18 @@ inline void read_value(json::Value const& rd, model::record_attributes& out) {
 inline void rjson_serialize(
   json::Writer<json::StringBuffer>& wr, const model::record_batch_header& obj) {
     wr.StartObject();
+    json_write(header_crc);
     json_write(size_bytes);
     json_write(base_offset);
+    json_write(type);
     json_write(crc);
     json_write(attrs);
     json_write(last_offset_delta);
     json_write(first_timestamp);
     json_write(max_timestamp);
+    json_write(producer_id);
+    json_write(producer_epoch);
+    json_write(base_sequence);
     json_write(record_count);
     wr.EndObject();
 }
@@ -203,13 +208,18 @@ inline void rjson_serialize(
 
 inline void read_value(json::Value const& rd, model::record_batch_header& out) {
     model::record_batch_header obj;
+    json_read(header_crc);
     json_read(size_bytes);
     json_read(base_offset);
+    json_read(type);
     json_read(crc);
     json_read(attrs);
     json_read(last_offset_delta);
     json_read(first_timestamp);
     json_read(max_timestamp);
+    json_read(producer_id);
+    json_read(producer_epoch);
+    json_read(base_sequence);
     json_read(record_count);
     out = obj;
 }
