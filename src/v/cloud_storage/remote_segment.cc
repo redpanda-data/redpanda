@@ -201,6 +201,7 @@ remote_segment::remote_segment(
     }
 
     // run hydration loop in the background
+    _hydration_loop_running = true;
     ssx::background = run_hydrate_bg();
 }
 
@@ -828,9 +829,22 @@ ss::future<> remote_segment::run_hydrate_bg() {
         vlog(_ctxlog.error, "Error in hydraton loop: {}", err);
         set_waiter_errors(err);
     }
+
+    _hydration_loop_running = false;
 }
 
 ss::future<> remote_segment::hydrate() {
+    if (!_hydration_loop_running) {
+        vlog(
+          _ctxlog.error,
+          "Segment {} hydration requested, but the hydration loop is not "
+          "running",
+          _path);
+
+        return ss::make_exception_future<>(std::runtime_error(
+          fmt::format("Hydration loop is not running for segment: {}", _path)));
+    }
+
     gate_guard g{_gate};
     vlog(_ctxlog.debug, "segment {} hydration requested", _path);
     ss::promise<ss::file> p;
