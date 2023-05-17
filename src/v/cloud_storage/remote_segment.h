@@ -16,6 +16,7 @@
 #include "cloud_storage/partition_probe.h"
 #include "cloud_storage/remote.h"
 #include "cloud_storage/remote_segment_index.h"
+#include "cloud_storage/segment_chunk_api.h"
 #include "cloud_storage/types.h"
 #include "cloud_storage_clients/types.h"
 #include "model/fundamental.h"
@@ -49,7 +50,7 @@ public:
 };
 
 std::filesystem::path
-generate_remote_index_path(const cloud_storage::remote_segment_path& p);
+generate_index_path(const cloud_storage::remote_segment_path& p);
 
 static constexpr size_t remote_segment_sampling_step_bytes = 64_KiB;
 
@@ -117,16 +118,37 @@ public:
     /// create an input stream _sharing_ the underlying file handle
     /// starting at position @pos
     ss::future<input_stream_with_offsets> offset_data_stream(
-      kafka::offset kafka_offset,
+      kafka::offset start,
+      kafka::offset end,
       std::optional<model::timestamp>,
       ss::io_priority_class);
 
-    /// Hydrate the segment
+    /// Hydrate the segment for segment meta version v2 or lower. For v3 or
+    /// higher, only hydrate the index. If the index hydration fails, fall back
+    /// to old mode where the full segment is hydrated. For v3 or higher
+    /// versions, the actual segment data is hydrated by the data source
+    /// implementation, but the index is still required to be present first.
     ss::future<> hydrate();
+
+    /// Hydrate a part of a segment, identified by the given start and end
+    /// offsets. If the end offset is std::nullopt, the last offset in the file
+    /// is used as the end offset.
+    ss::future<> hydrate_chunk(
+      chunk_start_offset_t start, std::optional<chunk_start_offset_t> end);
+
+    /// Loads the segment chunk file from cache into an open file handle. If the
+    /// file is not present in cache, the returned file handle is unopened.
+    ss::future<ss::file> materialize_chunk(chunk_start_offset_t);
 
     retry_chain_node* get_retry_chain_node() { return &_rtc; }
 
-    bool download_in_progress() const noexcept { return !_wait_list.empty(); }
+    bool download_in_progress() const noexcept {
+        if (is_legacy_mode_engaged()) {
+            return !_wait_list.empty();
+        } else {
+            return _chunks_api->downloads_in_progress();
+        }
+    }
 
     /// Return aborted transactions metadata associated with the segment
     ///
@@ -140,6 +162,22 @@ public:
     }
 
     bool is_stopped() const { return _stopped; }
+
+    uint64_t max_hydrated_chunks() const;
+
+    /// Given a kafka offset, determines the starting offset of the chunk it
+    /// lies in. The precondition is that coarse index must have been hydrated.
+    /// The returned start offset is guaranteed to be the start of a batch. If
+    /// the coarse index is empty (which may happen when the remote segment is
+    /// smaller than chunk size), offset 0 is returned.
+    chunk_start_offset_t
+    get_chunk_start_for_kafka_offset(kafka::offset koff) const;
+
+    const offset_index::coarse_index_t& get_coarse_index() const;
+
+    bool is_fallback_engaged() const {
+        return _fallback_mode == fallback_mode::yes;
+    }
 
 private:
     /// get a file offset for the corresponding kafka offset
@@ -167,6 +205,11 @@ private:
 
     ss::future<uint64_t> put_segment_in_cache(uint64_t, ss::input_stream<char>);
 
+    /// Stores a segment chunk in cache. The chunk is stored in a path derived
+    /// from the segment path: <segment_path>_chunks/chunk_start_file_offset.
+    ss::future<uint64_t> put_chunk_in_cache(
+      uint64_t, ss::input_stream<char>, chunk_start_offset_t chunk_start);
+
     /// Hydrate tx manifest. Method downloads the manifest file to the cache
     /// dir.
     ss::future<> do_hydrate_txrange();
@@ -182,12 +225,31 @@ private:
     /// Load segment index from file (if available)
     ss::future<bool> maybe_materialize_index();
 
+    std::filesystem::path
+    get_path_to_chunk(chunk_start_offset_t chunk_start) const {
+        return _chunk_root / fmt::format("{}", chunk_start);
+    }
+
+    /// Decides if the remote segment should download the full segment as part
+    /// of the hydration process. This is true if we are working with a segment
+    /// format older than v3 or we are in fallback mode. In newer formats we
+    /// download chunks of the segment instead of the entire segment file.
+    bool is_legacy_mode_engaged() const;
+
+    /// Is the remote segment state materialized, IE do we need to hydrate or
+    /// not. For segment format v0, v1 and v2, the data file handle should be
+    /// opened. For newer formats, v3 or later, the index should be
+    /// materialized.
+    bool is_state_materialized() const;
+
     ss::gate _gate;
     remote& _api;
     cache& _cache;
     cloud_storage_clients::bucket_name _bucket;
     const model::ntp& _ntp;
     remote_segment_path _path;
+    std::filesystem::path _index_path;
+    std::filesystem::path _chunk_root;
 
     model::term_id _term;
     model::offset _base_rp_offset;
@@ -220,6 +282,16 @@ private:
     bool _stopped{false};
 
     segment_name_format _sname_format;
+
+    using fallback_mode = ss::bool_class<struct fallback_mode_tag>;
+    fallback_mode _fallback_mode{fallback_mode::no};
+
+    uint64_t _max_hydrated_chunks{0};
+    uint64_t _chunk_size{0};
+    uint64_t _chunks_in_segment{1};
+
+    std::optional<segment_chunks> _chunks_api;
+    std::optional<offset_index::coarse_index_t> _coarse_index;
 };
 
 class remote_segment_batch_consumer;
@@ -367,6 +439,8 @@ struct hydration_loop_state {
       hydrate_action_t h,
       materialize_action_t m,
       hydration_request::kind path_kind);
+
+    void remove_request(const std::filesystem::path& p);
 
     ss::future<> update_current_path_states();
 

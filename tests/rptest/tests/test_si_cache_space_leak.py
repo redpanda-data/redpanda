@@ -90,7 +90,8 @@ class ShadowIndexingCacheSpaceLeakTest(RedpandaTest):
                    backoff_sec=10)
         self.test_context.cluster.free_single(self._verifier_node)
 
-    @cluster(num_nodes=4)
+    @cluster(num_nodes=4,
+             log_allow_list=[r'failed to hydrate chunk.*NotFound'])
     @matrix(message_size=[10000], num_messages=[100000], concurrency=[2])
     def test_si_cache(self, message_size, num_messages, concurrency):
         if self.debug_mode:

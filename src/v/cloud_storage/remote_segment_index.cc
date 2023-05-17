@@ -10,10 +10,10 @@
 
 #include "cloud_storage/remote_segment_index.h"
 
+#include "cloud_storage/logger.h"
 #include "model/record_batch_types.h"
 #include "serde/envelope.h"
 #include "serde/serde.h"
-#include "vlog.h"
 
 namespace cloud_storage {
 
@@ -203,6 +203,13 @@ offset_index::build_coarse_index(uint64_t step_size) const {
             auto curr_fpos = *it;
             auto crossed_step_sz = curr_fpos % step_size;
             if (crossed_step_sz < curr_mod_step_sz) {
+                vlog(
+                  cst_log.trace,
+                  "adding entry to coarse index, current file pos: {}, step "
+                  "size: {}, curr mod step size: {}",
+                  curr_fpos,
+                  step_size,
+                  curr_mod_step_sz);
                 index[kafka::offset{*kit}] = curr_fpos;
             }
             curr_mod_step_sz = crossed_step_sz;

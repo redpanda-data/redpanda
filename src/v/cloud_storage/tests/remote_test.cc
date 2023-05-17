@@ -393,7 +393,11 @@ FIXTURE_TEST(test_download_segment_range, remote_fixture) {
     iobuf_parser p(std::move(downloaded));
     auto actual = p.read_string(p.bytes_left());
 
-    BOOST_REQUIRE_EQUAL(actual, manifest_payload);
+    BOOST_REQUIRE_EQUAL_COLLECTIONS(
+      actual.begin(),
+      actual.end(),
+      manifest_payload.begin(),
+      manifest_payload.begin() + 2);
     BOOST_REQUIRE(subscription.available());
     BOOST_REQUIRE(
       subscription.get() == api_activity_notification::segment_upload);
