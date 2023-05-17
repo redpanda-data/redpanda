@@ -59,6 +59,7 @@ enum class feature : std::uint64_t {
     transaction_partitioning = 1ULL << 25U,
     force_partition_reconfiguration = 1ULL << 26U,
     schema_id_validation = 1ULL << 27U,
+    raft_append_entries_serde = 1ULL << 28U,
 
     // Dummy features for testing only
     test_alpha = 1ULL << 61U,
@@ -269,6 +270,12 @@ constexpr static std::array feature_schema{
     cluster::cluster_version{10},
     "schema_id_validation",
     feature::schema_id_validation,
+    feature_spec::available_policy::always,
+    feature_spec::prepare_policy::always},
+  feature_spec{
+    cluster::cluster_version{10},
+    "raft_append_entries_serde",
+    feature::raft_append_entries_serde,
     feature_spec::available_policy::always,
     feature_spec::prepare_policy::always},
 };
