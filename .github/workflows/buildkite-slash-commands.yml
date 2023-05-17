@@ -4,6 +4,7 @@ on:
       - ci-repeat-command
       - test-codecov-command
       - cdt-command
+      - test-release-pipeline-command
 
 jobs:
   run-build:
