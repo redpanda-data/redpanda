@@ -1808,10 +1808,13 @@ log make_disk_backed_log(
     return log(ptr);
 }
 
-ss::future<usage_report> disk_log_impl::disk_usage(gc_config cfg) {
-    // protect against concurrent log removal with housekeeping loop
-    auto gate = _compaction_housekeeping_gate.hold();
-
+/*
+ * disk usage and amount reclaimable are best computed together.
+ *
+ * assumes that the compaction gate is held.
+ */
+ss::future<std::pair<usage, reclaim_size_limits>>
+disk_log_impl::disk_usage_and_reclaim(gc_config cfg) {
     std::optional<model::offset> max_offset;
     if (config().is_collectable()) {
         cfg = apply_overrides(cfg);
@@ -1902,6 +1905,19 @@ ss::future<usage_report> disk_log_impl::disk_usage(gc_config cfg) {
       .retention = retention.total(),
       .available = retention.total() + available.total(),
     };
+
+    co_return std::make_pair(usage, reclaim);
+}
+
+ss::future<usage_report> disk_log_impl::disk_usage(gc_config cfg) {
+    // protect against concurrent log removal with housekeeping loop
+    auto gate = _compaction_housekeeping_gate.hold();
+
+    /*
+     * compute the amount of current disk usage as well as the amount available
+     * for being reclaimed.
+     */
+    auto [usage, reclaim] = co_await disk_usage_and_reclaim(cfg);
 
     co_return usage_report{
       .usage = usage,

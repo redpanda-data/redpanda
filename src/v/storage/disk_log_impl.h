@@ -188,6 +188,9 @@ private:
 
     std::optional<model::offset> retention_offset(gc_config);
 
+    ss::future<std::pair<usage, reclaim_size_limits>>
+      disk_usage_and_reclaim(gc_config);
+
 private:
     size_t max_segment_size() const;
     // Computes the segment size based on the latest max_segment_size
