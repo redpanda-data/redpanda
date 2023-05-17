@@ -121,14 +121,15 @@ public:
       kafka::offset start,
       kafka::offset end,
       std::optional<model::timestamp>,
-      ss::io_priority_class);
+      ss::io_priority_class,
+      model::timeout_clock::time_point);
 
     /// Hydrate the segment for segment meta version v2 or lower. For v3 or
     /// higher, only hydrate the index. If the index hydration fails, fall back
     /// to old mode where the full segment is hydrated. For v3 or higher
     /// versions, the actual segment data is hydrated by the data source
     /// implementation, but the index is still required to be present first.
-    ss::future<> hydrate();
+    ss::future<> hydrate(std::optional<model::timeout_clock::time_point> deadline);
 
     /// Hydrate a part of a segment, identified by the given start and end
     /// offsets. If the end offset is std::nullopt, the last offset in the file
@@ -376,7 +377,8 @@ public:
 
 private:
     friend class single_record_consumer;
-    ss::future<std::unique_ptr<storage::continuous_batch_parser>> init_parser();
+    ss::future<std::unique_ptr<storage::continuous_batch_parser>>
+      init_parser(model::timeout_clock::time_point);
 
     size_t produce(model::record_batch batch);
 
