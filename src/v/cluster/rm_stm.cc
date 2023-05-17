@@ -598,11 +598,17 @@ ss::future<tx_errc> rm_stm::do_prepare_tx(
           "Error \"{}\" on replicating pid:{} prepare batch",
           r.error(),
           pid);
+        if (_c->is_leader() && _c->term() == synced_term) {
+            co_await _c->step_down("prepare_tx replication error");
+        }
         co_return tx_errc::unknown_server_error;
     }
 
     if (!co_await wait_no_throw(
           model::offset(r.value().last_offset()), timeout)) {
+        if (_c->is_leader() && _c->term() == synced_term) {
+            co_await _c->step_down("prepare_tx apply error");
+        }
         co_return tx_errc::unknown_server_error;
     }
 
@@ -2115,8 +2121,13 @@ ss::future<tx_errc> rm_stm::do_try_abort_old_tx(model::producer_identity pid) {
                       cr.error(),
                       pid,
                       tx_seq);
+                    if (_c->is_leader() && _c->term() == synced_term) {
+                        co_await _c->step_down(
+                          "try_abort(commit) replication error");
+                    }
                     co_return tx_errc::unknown_server_error;
                 }
+
                 if (_mem_state.last_end_tx < cr.value().last_offset) {
                     _mem_state.last_end_tx = cr.value().last_offset;
                 }
@@ -2128,6 +2139,9 @@ ss::future<tx_errc> rm_stm::do_try_abort_old_tx(model::producer_identity pid) {
                       "applied pid:{} tx_seq:{}",
                       pid,
                       tx_seq);
+                    if (_c->is_leader() && _c->term() == synced_term) {
+                        co_await _c->step_down("try_abort(commit) apply error");
+                    }
                     co_return tx_errc::timeout;
                 }
                 co_return tx_errc::none;
@@ -2151,8 +2165,13 @@ ss::future<tx_errc> rm_stm::do_try_abort_old_tx(model::producer_identity pid) {
                       cr.error(),
                       pid,
                       tx_seq);
+                    if (_c->is_leader() && _c->term() == synced_term) {
+                        co_await _c->step_down(
+                          "try_abort(abort) replication error");
+                    }
                     co_return tx_errc::unknown_server_error;
                 }
+
                 if (_mem_state.last_end_tx < cr.value().last_offset) {
                     _mem_state.last_end_tx = cr.value().last_offset;
                 }
@@ -2164,6 +2183,9 @@ ss::future<tx_errc> rm_stm::do_try_abort_old_tx(model::producer_identity pid) {
                       "pid:{} tx_seq:{}",
                       pid,
                       tx_seq);
+                    if (_c->is_leader() && _c->term() == synced_term) {
+                        co_await _c->step_down("try_abort(abort) apply error");
+                    }
                     co_return tx_errc::timeout;
                 }
                 co_return tx_errc::none;
@@ -2183,19 +2205,25 @@ ss::future<tx_errc> rm_stm::do_try_abort_old_tx(model::producer_identity pid) {
         vlog(_ctx_log.trace, "expiring pid:{}", pid);
         auto batch = make_tx_control_batch(
           pid, model::control_record_type::tx_abort);
+
         auto reader = model::make_memory_record_batch_reader(std::move(batch));
         auto cr = co_await _c->replicate(
           _insync_term,
           std::move(reader),
           raft::replicate_options(raft::consistency_level::quorum_ack));
+
         if (!cr) {
             vlog(
               _ctx_log.warn,
               "Error \"{}\" on replicating pid:{} autoabort/abort batch",
               cr.error(),
               pid);
+            if (_c->is_leader() && _c->term() == synced_term) {
+                co_await _c->step_down("try_abort(abort) replication error");
+            }
             co_return tx_errc::unknown_server_error;
         }
+
         if (_mem_state.last_end_tx < cr.value().last_offset) {
             _mem_state.last_end_tx = cr.value().last_offset;
         }
