@@ -423,7 +423,7 @@ struct record_batch_header {
         return h;
     }
     bool operator==(const record_batch_header& other) const {
-        return size_bytes == other.size_bytes
+        return header_crc == other.header_crc && size_bytes == other.size_bytes
                && base_offset == other.base_offset && crc == other.crc
                && attrs == other.attrs
                && last_offset_delta == other.last_offset_delta
