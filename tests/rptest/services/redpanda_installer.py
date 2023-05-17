@@ -11,6 +11,10 @@ import errno
 import json
 import os
 import re
+import typing
+import threading
+from datetime import datetime, timezone, timedelta
+
 import requests
 
 from ducktape.utils.util import wait_until
@@ -19,6 +23,9 @@ from ducktape.utils.util import wait_until
 # released version.
 # E.g. "v22.1.1-rc1-1373-g77f868..."
 VERSION_RE = re.compile(".*v(\\d+)\\.(\\d+)\\.(\\d+).*")
+
+RELEASES_CACHE_FILE = "/tmp/redpanda_releases.json"
+RELEASES_CACHE_FILE_TTL = timedelta(seconds=300)
 
 
 def wait_for_num_versions(redpanda, num_versions):
@@ -53,6 +60,14 @@ def int_tuple(str_tuple):
     ("x": string, "y": string, "z": string) => (x: int, y: int, z: int)
     """
     return (int(str_tuple[0]), int(str_tuple[1]), int(str_tuple[2]))
+
+
+def ver_string(int_tuple):
+    """
+    Converts (1,2,3) into "v1.2.3"
+    """
+    assert len(int_tuple) == 3, int_tuple
+    return f"v{'.'.join(str(i) for i in int_tuple)}"
 
 
 class InstallOptions:
@@ -104,6 +119,11 @@ class RedpandaInstaller:
     # from operating on the same volume mounts.
     INSTALLER_LOCK_PATH = f"{INSTALLER_ROOT}/install_lock"
 
+    # Class member for caching the results of a github query to fetch the released
+    # version list once per process lifetime of ducktape.
+    _released_versions: list[tuple] = []
+    _released_versions_lock = threading.Lock()
+
     @staticmethod
     def root_for_version(version):
         """
@@ -129,7 +149,6 @@ class RedpandaInstaller:
         Constructs an installer for the given RedpandaService.
         """
         self._started = False
-        self._released_versions: list[tuple] = []
         self._redpanda = redpanda
 
         # Keep track if the original install path is /opt/redpanda, as is the
@@ -152,6 +171,9 @@ class RedpandaInstaller:
         self._install_lock_fd = None
 
         self._installed_version = self.HEAD
+
+        # memoize result of self.arch()
+        self._arch = None
 
     @property
     def installed_version(self):
@@ -276,23 +298,112 @@ class RedpandaInstaller:
 
         self._started = True
 
-    def _initialize_released_versions(self):
-        if len(self._released_versions) > 0:
-            return
+    def _released_versions_json(self):
+        def get_cached_data():
+            try:
+                st = os.stat(RELEASES_CACHE_FILE)
+                mtime = datetime.fromtimestamp(st.st_mtime, tz=timezone.utc)
+                if datetime.now(
+                        timezone.utc) - mtime < RELEASES_CACHE_FILE_TTL:
+                    try:
+                        self._redpanda.logger.info(
+                            "Using cached release metadata")
+                        return json.load(open(RELEASES_CACHE_FILE, 'rb'))
+                    except json.JSONDecodeError:
+                        # Malformed file
+                        return None
+            except OSError:
+                # Doesn't exist, fall through and populate
+                return None
 
-        # Initialize and order the releases so we can iterate to previous
-        # releases when requested.
-        releases_resp = requests.get(
-            "https://api.github.com/repos/redpanda-data/redpanda/releases")
+        releases = get_cached_data()
+        if releases is not None:
+            return releases
+
         try:
-            self._released_versions = [
-                int_tuple(VERSION_RE.findall(f["tag_name"])[0])
-                for f in releases_resp.json()
-            ]
-        except:
-            self._redpanda.logger.error(releases_resp.text)
-            raise
-        self._released_versions.sort(reverse=True)
+            self._acquire_install_lock()
+
+            # Check if someone else already acquired lock and populated
+            releases_json = get_cached_data()
+            if releases_json is not None:
+                return releases_json
+
+            self._redpanda.logger.info("Fetching release metadata from github")
+            releases = []
+            page = 1
+            per_page = 30
+            while True:
+                url = f"https://api.github.com/repos/redpanda-data/redpanda/releases?per_page={per_page}&page={page}"
+                self._redpanda.logger.debug(
+                    f"Fetching releases page {page}: {url}")
+                releases_resp = requests.get(url)
+                releases_resp.raise_for_status()
+                try:
+                    releases_json = releases_resp.json()
+                except:
+                    self._redpanda.logger.error(releases_resp.text)
+                    raise
+
+                assert isinstance(releases_json, list)
+                releases.extend(releases_json)
+
+                if len(releases_json) < per_page:
+                    self._redpanda.logger.debug(
+                        f"Last page ({len(releases_json)} entries)")
+                    break
+                else:
+                    page += 1
+                    self._redpanda.logger.debug(f"Reading next page {page}")
+
+            open(RELEASES_CACHE_FILE, 'w').write(json.dumps(releases))
+
+        finally:
+            self._release_install_lock()
+
+        return releases
+
+    @property
+    def released_versions(self):
+        if len(self._released_versions) > 0:
+            return self._released_versions
+
+        # Take a mutex so that tests starting concurrently do not all enter
+        # the HTTP call redundantly.
+        with self._released_versions_lock:
+            # Maybe someone else got the lock first and initialized for us
+            if len(self._released_versions) > 0:
+                return self._released_versions
+
+            releases_json = self._released_versions_json()
+            versions = []
+            for release in releases_json:
+                match = VERSION_RE.findall(release["tag_name"])
+                if match:
+                    versions.append(int_tuple(match[0]))
+                else:
+                    if release["tag_name"].startswith("release-"):
+                        # Tags like 'release-20.12.4' predate the modern Redpanda versioning scheme
+                        self._redpanda.logger.info(
+                            f"Ignoring legacy release {release['tag_name']}")
+                    else:
+                        self._redpanda.logger.warn(
+                            f"Malformed release tag in repo: {release['tag_name']}"
+                        )
+
+            self._released_versions = sorted(versions, reverse=True)
+
+        return self._released_versions
+
+    def _avail_for_download(self, version: tuple[int, int, int]):
+        """
+        validate that it is really downloadable: this avoids tests being upset by ongoing releases
+        which might exist in github but not yet fave all their artifacts
+        """
+        r = requests.head(self._version_package_url(version))
+        if r.status_code not in (200, 404):
+            r.raise_for_status()
+
+        return r.status_code == 200
 
     def highest_from_prior_feature_version(self, version):
         """
@@ -301,21 +412,40 @@ class RedpandaInstaller:
         """
         if not self._started:
             self.start()
-        if len(self._released_versions) == 0:
-            self._initialize_released_versions()
 
         if version == RedpandaInstaller.HEAD:
             version = self._head_version
+
+        # Only allow skipping this many versions for not having packages.  The limit prevents
+        # us from naively ignoring systemic issues in package download, as the skipping is only
+        # meant to happen in transient situations during release.
+        skip_versions = 2
+
         # NOTE: the released versions are sorted highest first.
         result = None
-        for v in self._released_versions:
+        for v in self.released_versions:
             if (v[0] == version[0]
                     and v[1] < version[1]) or (v[0] < version[0]):
+
+                # Before selecting version, validate that it is really downloadable: this avoids
+                # tests being upset by ongoing releases which might exist in github but not yet
+                # have all their artifacts.
+                if not self._avail_for_download(v) and skip_versions > 0:
+                    self._redpanda.logger.warn(
+                        f"Skipping version {v}, no download available")
+                    skip_versions -= 1
+                    continue
+
                 result = v
                 break
 
+        if result is None:
+            raise RuntimeError(
+                f"Could not find feature version prior to {version} (available version: {self.released_versions})"
+            )
+
         self._redpanda.logger.info(
-            f"Selected prior feature version {result}, from my version {version}, from available versions {self._released_versions}"
+            f"Selected prior feature version {result}, from my version {version}, from available versions {self.released_versions}"
         )
         return result
 
@@ -386,6 +516,22 @@ class RedpandaInstaller:
         for node in nodes:
             node.account.ssh_output(relink_cmd)
 
+    def _version_package_url(self, version: tuple):
+        return self.TGZ_URL_TEMPLATE.format(
+            arch=self.arch, version=f"{version[0]}.{version[1]}.{version[2]}")
+
+    @property
+    def arch(self):
+        if self._arch is None:
+            node = self._redpanda.nodes[0]
+            self._arch = "amd64"
+            uname = str(node.account.ssh_output("uname -m"))
+            if "aarch" in uname or "arm" in uname:
+                self._arch = "arm64"
+            self._redpanda.logger.debug(
+                f"{node.account.hostname} uname output: {uname}")
+        return self._arch
+
     def _async_download_on_node_unlocked(self, node, version):
         """
         Asynchonously downloads Redpanda of the given version on the given
@@ -394,17 +540,9 @@ class RedpandaInstaller:
         Expects the install lock to have been taken before calling.
         """
         version_root = self.root_for_version(version)
-        arch = "amd64"
-        uname = str(node.account.ssh_output("uname -m"))
-        if "aarch" in uname or "arm" in uname:
-            arch = "arm64"
-        self._redpanda.logger.debug(
-            f"{node.account.hostname} uname output: {uname}")
 
-        url = RedpandaInstaller.TGZ_URL_TEMPLATE.format( \
-            arch=arch, version=f"{version[0]}.{version[1]}.{version[2]}")
         tgz = "redpanda.tar.gz"
-        cmd = f"curl -fsSL {url} --create-dir --output-dir {version_root} -o {tgz} && gunzip -c {version_root}/{tgz} | tar -xf - -C {version_root} && rm {version_root}/{tgz}"
+        cmd = f"curl -fsSL {self._version_package_url(version)} --create-dir --output-dir {version_root} -o {tgz} && gunzip -c {version_root}/{tgz} | tar -xf - -C {version_root} && rm {version_root}/{tgz}"
         return node.account.ssh_capture(cmd)
 
     def reset_current_install(self, nodes):
