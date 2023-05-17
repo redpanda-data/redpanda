@@ -194,6 +194,7 @@ struct follower_metrics {
     bool is_live;
     bool under_replicated;
 };
+using flush_after_append = ss::bool_class<struct flush_after_append_tag>;
 
 struct append_entries_request
   : serde::envelope<
@@ -201,7 +202,6 @@ struct append_entries_request
       serde::version<0>,
       serde::compat_version<0>> {
     using rpc_adl_exempt = std::true_type;
-    using flush_after_append = ss::bool_class<struct flush_after_append_tag>;
 
     /*
      * default initialize with no record batch reader. default construction

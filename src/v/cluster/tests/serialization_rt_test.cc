@@ -2046,8 +2046,7 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
             tests::random_named_int<model::revision_id>()},
           pmd,
           model::make_memory_record_batch_reader(std::move(batches_in)),
-          raft::append_entries_request::flush_after_append(
-            tests::random_bool()),
+          raft::flush_after_append(tests::random_bool()),
         };
 
         // append_entries_request -> iobuf

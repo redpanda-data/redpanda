@@ -79,7 +79,7 @@ public:
               m.meta,
               model::make_memory_record_batch_reader(
                 ss::circular_buffer<model::record_batch>{}),
-              append_entries_request::flush_after_append::no);
+              flush_after_append::no);
             reqs.push_back(std::move(append_req));
         };
 

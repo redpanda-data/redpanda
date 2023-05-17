@@ -563,7 +563,7 @@ struct compat_check<raft::append_entries_request> {
         raft::vnode node;
         raft::vnode target;
         raft::protocol_metadata meta;
-        raft::append_entries_request::flush_after_append flush;
+        raft::flush_after_append flush;
         model::record_batch_reader::data_t batches;
 
         json::read_member(rd, "node_id", node);

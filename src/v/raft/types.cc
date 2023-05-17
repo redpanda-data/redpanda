@@ -646,8 +646,7 @@ ss::future<> append_entries_request::serde_async_read(
     node_id = read_nested<raft::vnode>(in, 0U);
     target_node_id = read_nested<raft::vnode>(in, 0U);
     meta = read_nested<raft::protocol_metadata>(in, 0U);
-    flush = read_nested<raft::append_entries_request::flush_after_append>(
-      in, 0U);
+    flush = read_nested<raft::flush_after_append>(in, 0U);
 }
 
 } // namespace raft
