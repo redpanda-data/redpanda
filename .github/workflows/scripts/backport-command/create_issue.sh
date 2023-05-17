@@ -19,6 +19,20 @@ orig_assignees=$ORIG_ASSIGNEES
 
 if [[ -n $CREATE_ISSUE_ON_ERROR ]]; then
   additional_body="Note that this issue was created as a placeholder, since the original PR's commit(s) could not be automatically cherry-picked."
+
+  additional_body="$additional_body
+  Command I attempted to execute:
+  gh pr create
+    --title \"[$BACKPORT_BRANCH] $ORIG_TITLE\"
+    --base \"$BACKPORT_BRANCH\"
+    --label \"kind/backport\"
+    --head \"$GIT_USER:$HEAD_BRANCH\"
+    --draft
+    --repo \"$TARGET_ORG/$TARGET_REPO\"
+    --reviewer \"$ORIG_REVIEWERS\"
+    --milestone \"$TARGET_MILESTONE\"
+    --body \"Backport of PR $ORIG_ISSUE_URL $backport_issue_urls\""
+
   orig_assignees=$(gh issue view $PR_NUMBER --json author --jq .author.login)
 fi
 
