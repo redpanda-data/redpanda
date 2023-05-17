@@ -752,8 +752,8 @@ ss::future<> remote_segment::run_hydrate_bg() {
           hydration_request::kind::index);
     }
 
-    try {
-        while (!_gate.is_closed()) {
+    while (!_gate.is_closed()) {
+        try {
             co_await _bg_cvar.wait(
               [this] { return !_wait_list.empty() || _gate.is_closed(); });
 
@@ -814,20 +814,23 @@ ss::future<> remote_segment::run_hydrate_bg() {
                 }
                 _wait_list.pop_front();
             }
+        } catch (const ss::broken_condition_variable&) {
+            vlog(_ctxlog.debug, "Hydration loop shut down");
+            set_waiter_errors(std::current_exception());
+            break;
+        } catch (const ss::abort_requested_exception&) {
+            vlog(_ctxlog.debug, "Hydration loop shut down");
+            set_waiter_errors(std::current_exception());
+            break;
+        } catch (const ss::gate_closed_exception&) {
+            vlog(_ctxlog.debug, "Hydration loop shut down");
+            set_waiter_errors(std::current_exception());
+            break;
+        } catch (...) {
+            const auto err = std::current_exception();
+            vlog(_ctxlog.error, "Error in hydration loop: {}", err);
+            set_waiter_errors(err);
         }
-    } catch (const ss::broken_condition_variable&) {
-        vlog(_ctxlog.debug, "Hydration loop shut down");
-        set_waiter_errors(std::current_exception());
-    } catch (const ss::abort_requested_exception&) {
-        vlog(_ctxlog.debug, "Hydration loop shut down");
-        set_waiter_errors(std::current_exception());
-    } catch (const ss::gate_closed_exception&) {
-        vlog(_ctxlog.debug, "Hydration loop shut down");
-        set_waiter_errors(std::current_exception());
-    } catch (...) {
-        const auto err = std::current_exception();
-        vlog(_ctxlog.error, "Error in hydraton loop: {}", err);
-        set_waiter_errors(err);
     }
 
     _hydration_loop_running = false;
