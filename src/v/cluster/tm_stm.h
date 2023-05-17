@@ -139,6 +139,8 @@ public:
       include_hosted_transaction(model::term_id, kafka::transactional_id);
     ss::future<tm_stm::op_status>
       exclude_hosted_transaction(model::term_id, kafka::transactional_id);
+    ss::future<tm_stm::op_status>
+      set_draining_transactions(model::term_id, draining_txs);
 
     ss::future<ss::basic_rwlock<>::holder> read_lock() {
         return _cache->read_lock();
@@ -236,6 +238,7 @@ private:
       update_hosted_transactions(model::term_id, tm_tx_hosted_transactions);
     ss::future<tm_stm::op_status>
       do_update_hosted_transactions(model::term_id, tm_tx_hosted_transactions);
+    bool is_transaction_draining(const kafka::transactional_id&);
     ss::future<tm_stm::op_status> do_register_new_producer(
       model::term_id,
       kafka::transactional_id,

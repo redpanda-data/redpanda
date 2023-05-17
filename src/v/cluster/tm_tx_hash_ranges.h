@@ -170,6 +170,12 @@ struct draining_txs
       , transactions(std::move(txs)) {}
 
     auto serde_fields() { return std::tie(id, ranges, transactions); }
+
+    bool contains(kafka::transactional_id tx_id) {
+        return transactions.contains(tx_id);
+    }
+
+    bool contains(tm_tx_hash_type hash) { return ranges.contains(hash); }
 };
 
 struct tm_tx_hosted_transactions
@@ -266,6 +272,24 @@ struct tm_tx_hosted_transactions
         return tm_tx_hash_ranges_errc::success;
     }
 
+    tm_tx_hash_ranges_errc set_draining(draining_txs new_draining) {
+        for (const auto& range : new_draining.ranges.ranges) {
+            if (!hash_ranges.contains(range)) {
+                return tm_tx_hash_ranges_errc::not_hosted;
+            }
+        }
+        for (const auto& tx_id : new_draining.transactions) {
+            if (
+              (!included_transactions.contains(tx_id)
+               && !hash_ranges.contains(get_tx_id_hash(tx_id)))
+              || excluded_transactions.contains(tx_id)) {
+                return tm_tx_hash_ranges_errc::not_hosted;
+            }
+        }
+        draining = std::move(new_draining);
+        return tm_tx_hash_ranges_errc::success;
+    }
+
     bool contains(const kafka::transactional_id& tx_id) {
         if (excluded_transactions.contains(tx_id)) {
             return false;
@@ -275,6 +299,14 @@ struct tm_tx_hosted_transactions
         }
         auto tx_id_hash = get_tx_id_hash(tx_id);
         return hash_ranges.contains(tx_id_hash);
+    }
+
+    bool is_draining(const kafka::transactional_id& tx_id) {
+        if (draining.contains(tx_id)) {
+            return true;
+        }
+        auto tx_id_hash = get_tx_id_hash(tx_id);
+        return draining.contains(tx_id_hash);
     }
 };
 
