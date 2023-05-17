@@ -1242,6 +1242,15 @@ ss::future<cluster::init_tm_tx_reply> tx_gateway_frontend::do_init_tm_tx(
         co_return tx_errc::not_coordinator;
     }
 
+    if (stm->is_transaction_draining(tx_id)) {
+        vlog(
+          txlog.warn,
+          "Attempt to init draining tx. tx_id: {}, tm partition: {}",
+          tx_id,
+          stm->get_partition());
+        co_return tx_errc::not_coordinator;
+    }
+
     auto r0 = co_await get_tx(term, stm, tx_id, timeout);
     if (!r0.has_value()) {
         if (r0.error() != tx_errc::tx_not_found) {
@@ -1464,6 +1473,18 @@ ss::future<add_paritions_tx_reply> tx_gateway_frontend::do_add_partition_to_tx(
     }
     auto tx = r.value();
 
+    if (tx.partitions.empty() && tx.groups.empty()) {
+        if (stm->is_transaction_draining(request.transactional_id)) {
+            vlog(
+              txlog.warn,
+              "Attempt to init draining tx. tx_id: {}, tm partition: {}",
+              request.transactional_id,
+              stm->get_partition());
+            co_return make_add_partitions_error_response(
+              request, tx_errc::not_coordinator);
+        }
+    }
+
     add_paritions_tx_reply response;
 
     std::vector<model::ntp> new_partitions;
@@ -1681,6 +1702,17 @@ ss::future<add_offsets_tx_reply> tx_gateway_frontend::do_add_offsets_to_tx(
         co_return add_offsets_tx_reply{.error_code = r.error()};
     }
     auto tx = r.value();
+
+    if (tx.partitions.empty() && tx.groups.empty()) {
+        if (stm->is_transaction_draining(request.transactional_id)) {
+            vlog(
+              txlog.warn,
+              "Attempt to init draining tx. tx_id: {}, tm partition: {}",
+              request.transactional_id,
+              stm->get_partition());
+            co_return add_offsets_tx_reply{tx_errc::not_coordinator};
+        }
+    }
 
     auto group_info = co_await _rm_group_proxy->begin_group_tx(
       request.group_id, pid, tx.tx_seq, tx.timeout_ms, stm->get_partition());
@@ -3307,6 +3339,73 @@ ss::future<result<tm_transaction, tx_errc>> tx_gateway_frontend::describe_tx(
     // init_producer_id, add_offsets_to_txn etc
     auto timeout = config::shard_local_cfg().create_topic_timeout_ms();
     co_return co_await get_tx(term, stm, tid, timeout);
+}
+
+ss::future<tx_errc> tx_gateway_frontend::set_draining_tx(
+  cluster::draining_txs draining, model::ntp tx_ntp) {
+    auto shard = _shard_table.local().shard_for(tx_ntp);
+
+    if (!shard.has_value()) {
+        vlog(txlog.warn, "can't find a shard for {}", tx_ntp);
+        return ss::make_ready_future<tx_errc>(tx_errc::shard_not_found);
+    }
+
+    return container().invoke_on(
+      *shard,
+      _ssg,
+      [draining = std::move(draining), tm_ntp = std::move(tx_ntp)](
+        tx_gateway_frontend& self) -> ss::future<tx_errc> {
+          auto partition = self._partition_manager.local().get(tm_ntp);
+          if (!partition) {
+              vlog(
+                txlog.warn,
+                "transaction manager partition: {} not found",
+                tm_ntp);
+              return ss::make_ready_future<tx_errc>(
+                tx_errc::partition_not_found);
+          }
+
+          auto stm = partition->tm_stm();
+
+          if (!stm) {
+              vlog(
+                txlog.error, "can't get tm stm of the {}' partition", tm_ntp);
+              return ss::make_ready_future<tx_errc>(tx_errc::stm_not_found);
+          }
+
+          return ss::with_gate(
+            self._gate, [&stm, &self, draining = std::move(draining)] {
+                return stm->write_lock().then(
+                  [&self, stm, draining = std::move(draining)](
+                    ss::basic_rwlock<>::holder unit) {
+                      return self.do_set_draining_tx(stm, draining)
+                        .finally([u = std::move(unit)] {});
+                  });
+            });
+      });
+}
+
+ss::future<tx_errc> tx_gateway_frontend::do_set_draining_tx(
+  ss::shared_ptr<tm_stm> stm, cluster::draining_txs draining) {
+    auto term_opt = co_await stm->sync();
+    if (!term_opt.has_value()) {
+        if (term_opt.error() == tm_stm::op_status::not_leader) {
+            co_return tx_errc::not_coordinator;
+        }
+        co_return tx_errc::coordinator_not_available;
+    }
+    auto term = term_opt.value();
+    auto res = co_await stm->set_draining_transactions(term, draining);
+    if (res == tm_stm::op_status::unknown) {
+        co_return tx_errc::tx_hash_range_not_inited;
+    } else if (res == tm_stm::op_status::not_found) {
+        co_return tx_errc::tx_hash_range_not_hosted;
+    } else if (res == tm_stm::op_status::not_leader) {
+        co_return tx_errc::not_coordinator;
+    } else if (res != tm_stm::op_status::success) {
+        co_return tx_errc::unknown_server_error;
+    }
+    co_return tx_errc::none;
 }
 
 ss::future<tx_errc> tx_gateway_frontend::delete_partition_from_tx(

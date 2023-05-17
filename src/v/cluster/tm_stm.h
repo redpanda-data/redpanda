@@ -125,6 +125,7 @@ public:
         return r;
     }
     bool hosts(const kafka::transactional_id& tx_id);
+    bool is_transaction_draining(const kafka::transactional_id&);
 
     ss::future<checked<model::term_id, tm_stm::op_status>> barrier();
     ss::future<checked<model::term_id, tm_stm::op_status>>
@@ -144,6 +145,10 @@ public:
 
     ss::future<ss::basic_rwlock<>::holder> read_lock() {
         return _cache->read_lock();
+    }
+
+    ss::future<ss::basic_rwlock<>::holder> write_lock() {
+        return _cache->write_lock();
     }
     uint8_t active_snapshot_version();
 
@@ -238,7 +243,6 @@ private:
       update_hosted_transactions(model::term_id, tm_tx_hosted_transactions);
     ss::future<tm_stm::op_status>
       do_update_hosted_transactions(model::term_id, tm_tx_hosted_transactions);
-    bool is_transaction_draining(const kafka::transactional_id&);
     ss::future<tm_stm::op_status> do_register_new_producer(
       model::term_id,
       kafka::transactional_id,
