@@ -1848,16 +1848,28 @@ model::offset rm_stm::last_stable_offset() {
         }
     }
 
+    auto synced_leader = _c->is_leader() && _c->term() == _insync_term
+                         && _mem_state.term == _insync_term;
+
+    model::offset lso{-1};
     auto last_visible_index = _c->last_visible_index();
     auto next_to_apply = model::next_offset(last_applied);
     if (first_tx_start <= last_visible_index) {
         // There are in flight transactions < high water mark that may
         // not be applied yet. We still need to consider only applied
         // transactions.
-        return std::min(first_tx_start, next_to_apply);
+        lso = std::min(first_tx_start, next_to_apply);
+    } else if (synced_leader) {
+        // no inflight transactions in (last_applied, last_visible_index]
+        lso = model::next_offset(last_visible_index);
+    } else {
+        // a follower or hasn't synced yet leader doesn't know about the
+        // txes in the (last_applied, last_visible_index] range so we
+        // should not advance lso beyond last_applied
+        lso = next_to_apply;
     }
-    // no inflight transactions until last_applied (incl.)
-    return next_to_apply;
+    _mem_state.last_lso = std::max(_mem_state.last_lso, lso);
+    return _mem_state.last_lso;
 }
 
 static void filter_intersecting(
