@@ -1404,7 +1404,15 @@ void partition_manifest::update_with_json(iobuf buf) {
     } else {
         rapidjson::ParseErrorCode e = reader.GetParseErrorCode();
         size_t o = reader.GetErrorOffset();
-        vlog(cst_log.debug, "Failed to parse manifest: {}", buf.hexdump(2048));
+
+        // Hexdump 1kb region around the bad manifest
+        buf.trim_front(o - std::min(size_t{512}, o));
+        vlog(
+          cst_log.warn,
+          "Failed to parse manifest at 0x{:08x}: {}",
+          o,
+          buf.hexdump(1024));
+
         throw std::runtime_error(fmt_with_ctx(
           fmt::format,
           "Failed to parse partition manifest {}: {} at offset {}",
