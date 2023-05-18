@@ -39,7 +39,7 @@ following conditions are met:
 `,
 		Args: cobra.ExactArgs(0),
 		Run: func(cmd *cobra.Command, _ []string) {
-			p, err := p.LoadMaterializedProfile(fs)
+			p, err := p.LoadVirtualProfile(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)
 
 			cl, err := admin.NewClient(fs, p)

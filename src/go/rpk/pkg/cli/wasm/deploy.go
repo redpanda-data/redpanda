@@ -22,7 +22,7 @@ func newDeployCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 		Short: "Deploy inline WASM function",
 		Args:  cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
-			p, err := p.LoadMaterializedProfile(fs)
+			p, err := p.LoadVirtualProfile(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)
 
 			cl, err := kafka.NewFranzClient(fs, p)

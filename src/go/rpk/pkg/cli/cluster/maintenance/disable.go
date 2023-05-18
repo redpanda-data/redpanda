@@ -37,7 +37,7 @@ func newDisableCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 				out.Die("invalid node id: %d", nodeID)
 			}
 
-			p, err := p.LoadMaterializedProfile(fs)
+			p, err := p.LoadVirtualProfile(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)
 
 			client, err := admin.NewClient(fs, p)

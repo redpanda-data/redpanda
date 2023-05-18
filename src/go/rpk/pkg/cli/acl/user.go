@@ -73,7 +73,7 @@ acl help text for more info.
 
 		Args: cobra.MaximumNArgs(1), // when the deprecated user flag is removed, change this to cobra.ExactArgs(1)
 		Run: func(cmd *cobra.Command, args []string) {
-			p, err := p.LoadMaterializedProfile(fs)
+			p, err := p.LoadVirtualProfile(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)
 
 			cl, err := admin.NewClient(fs, p)
@@ -159,7 +159,7 @@ delete any ACLs that may exist for this user.
 `,
 		Args: cobra.MaximumNArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
-			p, err := p.LoadMaterializedProfile(fs)
+			p, err := p.LoadVirtualProfile(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)
 
 			cl, err := admin.NewClient(fs, p)
@@ -195,7 +195,7 @@ func newListUsersCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 		Aliases: []string{"ls"},
 		Short:   "List SASL users",
 		Run: func(cmd *cobra.Command, _ []string) {
-			p, err := p.LoadMaterializedProfile(fs)
+			p, err := p.LoadVirtualProfile(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)
 
 			cl, err := admin.NewClient(fs, p)

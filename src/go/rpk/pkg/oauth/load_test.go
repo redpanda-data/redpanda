@@ -98,7 +98,7 @@ func TestLoadFlow(t *testing.T) {
 			require.Equal(t, tt.exp, gotToken)
 
 			// Now check if it got written to disk.
-			y := cfg.MaterializedRpkYaml()
+			y := cfg.VirtualRpkYaml()
 			file, err := afero.ReadFile(fs, y.FileLocation())
 			require.NoError(t, err)
 			expFile := fmt.Sprintf(`version: 1

@@ -30,7 +30,7 @@ func NewCheckCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 		Use:   "check",
 		Short: "Check if system meets redpanda requirements",
 		Run: func(_ *cobra.Command, args []string) {
-			y, err := p.LoadMaterializedRedpandaYaml(fs)
+			y, err := p.LoadVirtualRedpandaYaml(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)
 			err = executeCheck(fs, y, timeout)
 			out.MaybeDie(err, "unable to check: %v", err)

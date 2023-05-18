@@ -36,7 +36,7 @@ func NewCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 		Short: "Measure filesystem performance and create IO configuration file",
 		Run: func(cmd *cobra.Command, args []string) {
 			timeout += duration
-			y, err := p.LoadMaterializedRedpandaYaml(fs)
+			y, err := p.LoadVirtualRedpandaYaml(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)
 
 			var evalDirectories []string

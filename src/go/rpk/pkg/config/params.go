@@ -562,7 +562,7 @@ func (p *Params) backcompatFlagsToOverrides() {
 //   - Processes env and flag overrides.
 //   - Sets unset default values.
 func (p *Params) Load(fs afero.Fs) (*Config, error) {
-	defRpk, err := defaultMaterializedRpkYaml()
+	defRpk, err := defaultVirtualRpkYaml()
 	if err != nil {
 		return nil, err
 	}
@@ -587,15 +587,15 @@ func (p *Params) Load(fs afero.Fs) (*Config, error) {
 	c.redpandaYaml.backcompat()
 	c.mergeRpkIntoRedpanda(true)     // merge actual rpk.yaml KafkaAPI,AdminAPI,Tuners into redpanda.yaml rpk section
 	c.addUnsetRedpandaDefaults(true) // merge from actual redpanda.yaml redpanda section to rpk section
-	c.ensureRpkProfile()             // ensure materialized rpk.yaml has a loaded profile
-	c.ensureRpkCloudAuth()           // ensure materialized rpk.yaml has a current auth
+	c.ensureRpkProfile()             // ensure Virtual rpk.yaml has a loaded profile
+	c.ensureRpkCloudAuth()           // ensure Virtual rpk.yaml has a current auth
 	c.mergeRedpandaIntoRpk()         // merge redpanda.yaml rpk section back into rpk.yaml KafkaAPI,AdminAPI,Tuners (picks up redpanda.yaml extras sections were empty)
 	p.backcompatFlagsToOverrides()
 	if err := p.processOverrides(c); err != nil { // override rpk.yaml profile from env&flags
 		return nil, err
 	}
-	c.mergeRpkIntoRedpanda(false)     // merge materialized rpk.yaml into redpanda.yaml rpk section (picks up env&flags)
-	c.addUnsetRedpandaDefaults(false) // merge from materialized redpanda.yaml redpanda section to rpk section (picks up original redpanda.yaml defaults)
+	c.mergeRpkIntoRedpanda(false)     // merge Virtual rpk.yaml into redpanda.yaml rpk section (picks up env&flags)
+	c.addUnsetRedpandaDefaults(false) // merge from Virtual redpanda.yaml redpanda section to rpk section (picks up original redpanda.yaml defaults)
 	c.mergeRedpandaIntoRpk()          // merge from redpanda.yaml rpk section back to rpk.yaml, picks up final redpanda.yaml defaults
 	c.fixSchemePorts()                // strip any scheme, default any missing ports
 	c.addConfigToProfiles()
@@ -751,7 +751,7 @@ func (p *Params) backcompatOldCloudYaml(fs afero.Fs) error {
 	}
 	var rpkYaml RpkYaml
 	if errors.Is(err, afero.ErrFileNotFound) {
-		rpkYaml = emptyMaterializedRpkYaml()
+		rpkYaml = emptyVirtualRpkYaml()
 	} else {
 		if err := yaml.Unmarshal(rawRpkYaml, &rpkYaml); err != nil {
 			return fmt.Errorf("unable to yaml decode %s: %v", def, err)
@@ -890,11 +890,11 @@ func (y *RedpandaYaml) backcompat() {
 	}
 }
 
-// We merge rpk.yaml files into our materialized redpanda.yaml rpk section,
+// We merge rpk.yaml files into our Virtual redpanda.yaml rpk section,
 // only if the rpk section contains relevant bits of information.
 //
 // We start with the actual file itself: if the file is populated, we use it.
-// Later, after doing a bunch of default setting to the materialized rpk.yaml,
+// Later, after doing a bunch of default setting to the Virtual rpk.yaml,
 // we call this again to migrate any final new additions.
 func (c *Config) mergeRpkIntoRedpanda(actual bool) {
 	src := &c.rpkYaml
@@ -915,7 +915,7 @@ func (c *Config) mergeRpkIntoRedpanda(actual bool) {
 	}
 }
 
-// This function ensures a current profile exists in the materialized rpk.yaml.
+// This function ensures a current profile exists in the Virtual rpk.yaml.
 func (c *Config) ensureRpkProfile() {
 	dst := &c.rpkYaml
 	p := dst.Profile(dst.CurrentProfile)
@@ -932,7 +932,7 @@ func (c *Config) ensureRpkProfile() {
 	dst.PushProfile(def)
 }
 
-// This function ensures a current auth exists in the materialized rpk.yaml.
+// This function ensures a current auth exists in the Virtual rpk.yaml.
 func (c *Config) ensureRpkCloudAuth() {
 	dst := &c.rpkYaml
 	auth := dst.Auth(dst.CurrentCloudAuth)

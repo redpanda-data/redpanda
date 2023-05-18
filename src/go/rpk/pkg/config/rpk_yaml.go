@@ -33,7 +33,7 @@ func DefaultRpkYamlPath() (string, error) {
 	return filepath.Join(configDir, "rpk", "rpk.yaml"), nil
 }
 
-func defaultMaterializedRpkYaml() (RpkYaml, error) {
+func defaultVirtualRpkYaml() (RpkYaml, error) {
 	path, err := DefaultRpkYamlPath()
 	if err != nil {
 		return RpkYaml{}, err
@@ -67,7 +67,7 @@ func DefaultRpkCloudAuth() RpkCloudAuth {
 	}
 }
 
-func emptyMaterializedRpkYaml() RpkYaml {
+func emptyVirtualRpkYaml() RpkYaml {
 	return RpkYaml{
 		Version: 1,
 	}

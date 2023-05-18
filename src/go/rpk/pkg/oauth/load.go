@@ -23,7 +23,7 @@ func LoadFlow(ctx context.Context, fs afero.Fs, cfg *config.Config, cl Client) (
 		return "", fmt.Errorf("detected rpk is running with sudo; please execute this command without sudo to avoid saving the cloud configuration as a root owned file")
 	}
 
-	yMat := cfg.MaterializedRpkYaml()
+	yMat := cfg.VirtualRpkYaml()
 	authMat := yMat.Auth(yMat.CurrentCloudAuth) // must exist
 
 	var resp Token

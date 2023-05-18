@@ -88,7 +88,7 @@ To learn more about a tuner, run 'rpk redpanda tune help <tuner name>'.
 			out.MaybeDieErr(err)
 
 			tunerParams.CPUMask = cpuMask
-			y, err := p.LoadMaterializedRedpandaYaml(fs)
+			y, err := p.LoadVirtualRedpandaYaml(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)
 			var tunerFactory factory.TunersFactory
 			if outTuneScriptFile != "" {

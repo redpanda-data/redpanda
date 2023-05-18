@@ -28,7 +28,7 @@ func newStatusCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 This command fetches the status of the process of restoring topics from the 
 archival bucket.`,
 		Run: func(cmd *cobra.Command, args []string) {
-			p, err := p.LoadMaterializedProfile(fs)
+			p, err := p.LoadVirtualProfile(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)
 
 			client, err := admin.NewClient(fs, p)

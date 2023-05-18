@@ -30,7 +30,7 @@ func newPrintCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 			cfg, err := p.Load(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)
 
-			y := cfg.MaterializedRpkYaml()
+			y := cfg.VirtualRpkYaml()
 			if raw {
 				var ok bool
 				y, ok = cfg.ActualRpkYaml()

@@ -126,7 +126,7 @@ func newProduceCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 			}
 
 			// We are now ready to produce.
-			p, err := p.LoadMaterializedProfile(fs)
+			p, err := p.LoadVirtualProfile(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)
 
 			cl, err := kafka.NewFranzClient(fs, p, opts...)

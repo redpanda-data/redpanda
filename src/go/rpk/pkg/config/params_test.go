@@ -187,7 +187,7 @@ rpk:
 				t.Errorf("unexpected error while loading config file: %s", err)
 				return
 			}
-			y := cfg.MaterializedRedpandaYaml()
+			y := cfg.VirtualRedpandaYaml()
 
 			if test.mutate != nil {
 				test.mutate(y)
@@ -672,7 +672,7 @@ func TestAddUnsetRedpandaDefaults(t *testing.T) {
 				redpandaYaml: *test.inCfg,
 			}
 			// We just want to check our field migrations work, so
-			// we do not try to differentiate materialized vs
+			// we do not try to differentiate Virtual vs
 			// actual here.
 			c.addUnsetRedpandaDefaults(false)
 			require.Equal(t, test.expCfg, &c.redpandaYaml)
@@ -691,15 +691,15 @@ func TestLoadRpkAndRedpanda(t *testing.T) {
 		redpandaYaml string
 		rpkYaml      string
 
-		expMaterializedRedpanda string
-		expMaterializedRpk      string
+		expVirtualRedpanda string
+		expVirtualRpk      string
 	}{
 		// If both are empty, we use the default rpk and redpanda
 		// configurations. Some aspects of the redpanda config are
-		// ported to the materialized rpk config.
+		// ported to the Virtual rpk config.
 		{
 			name: "both empty no config flag",
-			expMaterializedRedpanda: `redpanda:
+			expVirtualRedpanda: `redpanda:
     data_directory: /var/lib/redpanda/data
     seed_servers: []
     rpc_server:
@@ -724,7 +724,7 @@ rpk:
 pandaproxy: {}
 schema_registry: {}
 `,
-			expMaterializedRpk: `version: 1
+			expVirtualRpk: `version: 1
 current_profile: default
 current_cloud_auth: default
 profiles:
@@ -744,7 +744,7 @@ cloud_auth:
 
 		// If only redpanda.yaml exists, it is mostly similar to both
 		// being empty. Tuners and some other fields are ported to the
-		// materialized rpk.yaml.
+		// Virtual rpk.yaml.
 		//
 		// * developer_mode is not turned on since we do not use DevDefaults
 		// * rpk uses redpanda's kafka_api
@@ -773,7 +773,7 @@ rpk:
     tune_disk_irq: true
 `,
 
-			expMaterializedRedpanda: `redpanda:
+			expVirtualRedpanda: `redpanda:
     data_directory: /data
     seed_servers:
         - host:
@@ -799,7 +799,7 @@ rpk:
     tune_disk_write_cache: true
     tune_disk_irq: true
 `,
-			expMaterializedRpk: `version: 1
+			expVirtualRpk: `version: 1
 current_profile: default
 current_cloud_auth: default
 profiles:
@@ -838,7 +838,7 @@ cloud_auth:
       description: fizzy
 `,
 
-			expMaterializedRedpanda: `redpanda:
+			expVirtualRedpanda: `redpanda:
     data_directory: /var/lib/redpanda/data
     seed_servers: []
     rpc_server:
@@ -863,7 +863,7 @@ rpk:
 pandaproxy: {}
 schema_registry: {}
 `,
-			expMaterializedRpk: `version: 1
+			expVirtualRpk: `version: 1
 current_profile: foo
 current_cloud_auth: fizz
 profiles:
@@ -918,7 +918,7 @@ profiles:
             - 128.0.0.4
 `,
 
-			expMaterializedRedpanda: `redpanda:
+			expVirtualRedpanda: `redpanda:
     data_directory: /data
     seed_servers: []
     kafka_api:
@@ -942,7 +942,7 @@ rpk:
     tune_disk_irq: true
 `,
 
-			expMaterializedRpk: `version: 1
+			expVirtualRpk: `version: 1
 current_profile: foo
 current_cloud_auth: default
 profiles:
@@ -978,9 +978,9 @@ cloud_auth:
 			}
 
 			{
-				mat := cfg.MaterializedRedpandaYaml()
+				mat := cfg.VirtualRedpandaYaml()
 				mat.Write(fs)
-				m[DefaultRedpandaYamlPath] = testfs.RFile(test.expMaterializedRedpanda)
+				m[DefaultRedpandaYamlPath] = testfs.RFile(test.expVirtualRedpanda)
 			}
 			{
 				act, ok := cfg.ActualRedpandaYaml()
@@ -995,9 +995,9 @@ cloud_auth:
 				}
 			}
 			{
-				mat := cfg.MaterializedRpkYaml()
+				mat := cfg.VirtualRpkYaml()
 				mat.Write(fs)
-				m[defaultRpkPath] = testfs.RFile(test.expMaterializedRpk)
+				m[defaultRpkPath] = testfs.RFile(test.expVirtualRpk)
 			}
 			{
 				act, ok := cfg.ActualRpkYaml()
@@ -1062,7 +1062,7 @@ func TestXSetExamples(t *testing.T) {
 			delete(m, x)
 
 			xf := xflags[x]
-			y, _ := defaultMaterializedRpkYaml()
+			y, _ := defaultVirtualRpkYaml()
 			if err := xf.parse(xf.testExample, &y); err != nil {
 				t.Errorf("unable to parse test example for xflag %s: %v", x, err)
 			}

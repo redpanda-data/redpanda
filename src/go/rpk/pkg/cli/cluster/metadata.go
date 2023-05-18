@@ -54,7 +54,7 @@ flag.
 In the broker section, the controller node is suffixed with *.
 `,
 		Run: func(cmd *cobra.Command, args []string) {
-			p, err := p.LoadMaterializedProfile(fs)
+			p, err := p.LoadVirtualProfile(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)
 
 			adm, err := kafka.NewAdmin(fs, p)

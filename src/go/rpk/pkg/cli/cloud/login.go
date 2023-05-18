@@ -77,7 +77,7 @@ and then re-specify the client credentials next time you log in.`, err)
 			}
 
 			var (
-				yMat    = cfg.MaterializedRpkYaml()
+				yMat    = cfg.VirtualRpkYaml()
 				authMat = yMat.Auth(yMat.CurrentCloudAuth)
 				yAct, _ = cfg.ActualRpkYaml()              // must exist due to LoadFlow checking
 				authAct = yAct.Auth(yAct.CurrentCloudAuth) // must exist due to LoadFlow

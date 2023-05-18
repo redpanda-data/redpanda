@@ -448,7 +448,7 @@ tune_cpu: true`,
 			fs := afero.NewMemMapFs()
 			cfg, err := new(Params).Load(fs)
 			require.NoError(t, err)
-			y := cfg.MaterializedRedpandaYaml()
+			y := cfg.VirtualRedpandaYaml()
 			err = Set(y, tt.key, tt.value)
 			if tt.expectErr {
 				require.Error(t, err)

@@ -70,8 +70,8 @@ func NewCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 			out.MaybeDie(err, "unable to load config: %v", err)
 
 			var (
-				p           = cfg.MaterializedProfile()
-				y           = cfg.MaterializedRedpandaYaml()
+				p           = cfg.VirtualProfile()
+				y           = cfg.VirtualRedpandaYaml()
 				yActual, ok = cfg.ActualRedpandaYaml()
 			)
 			if !ok {

@@ -51,7 +51,7 @@ type DevOverrides struct {
 
 // Config encapsulates a redpanda.yaml and/or an rpk.yaml. This is the
 // entrypoint that params.Config returns, after which you can get either the
-// materialized or actual configurations.
+// Virtual or actual configurations.
 type Config struct {
 	p *Params
 
@@ -68,9 +68,9 @@ type Config struct {
 	devOverrides DevOverrides
 }
 
-// MaterializedRedpandaYaml returns a redpanda.yaml, starting with defaults,
+// VirtualRedpandaYaml returns a redpanda.yaml, starting with defaults,
 // then decoding a potential file, then applying env vars and then flags.
-func (c *Config) MaterializedRedpandaYaml() *RedpandaYaml {
+func (c *Config) VirtualRedpandaYaml() *RedpandaYaml {
 	return &c.redpandaYaml
 }
 
@@ -96,17 +96,17 @@ func (c *Config) ActualRedpandaYamlOrDefaults() *RedpandaYaml {
 	return &c.redpandaYamlActual
 }
 
-// MaterializedRpkYaml returns an rpk.yaml, starting with defaults, then
+// VirtualRpkYaml returns an rpk.yaml, starting with defaults, then
 // decoding a potential file, then applying env vars and then flags.
-func (c *Config) MaterializedRpkYaml() *RpkYaml {
+func (c *Config) VirtualRpkYaml() *RpkYaml {
 	return &c.rpkYaml
 }
 
-// MaterializedProfile returns an rpk.yaml's current materialized profile,
+// VirtualProfile returns an rpk.yaml's current Virtual profile,
 // starting with defaults, then decoding a potential file, then applying env
 // vars and then flags. This always returns non-nil due to a guaranee from
 // Params.Load.
-func (c *Config) MaterializedProfile() *RpkProfile {
+func (c *Config) VirtualProfile() *RpkProfile {
 	return c.rpkYaml.Profile(c.rpkYaml.CurrentProfile)
 }
 
@@ -124,7 +124,7 @@ func (c *Config) ActualRpkYamlOrEmpty() (y *RpkYaml, err error) {
 		return &c.rpkYamlActual, nil
 	}
 	defer func() { c.rpkYamlInitd = true }()
-	rpkYaml := emptyMaterializedRpkYaml()
+	rpkYaml := emptyVirtualRpkYaml()
 	if c.p.ConfigFlag != "" {
 		rpkYaml.fileLocation = c.p.ConfigFlag
 	} else {
@@ -143,14 +143,14 @@ func (c *Config) DevOverrides() DevOverrides {
 	return c.devOverrides
 }
 
-// LoadMaterializedRedpandaYaml is a shortcut for p.Load followed by
-// cfg.MaterializedRedpandaYaml.
-func (p *Params) LoadMaterializedRedpandaYaml(fs afero.Fs) (*RedpandaYaml, error) {
+// LoadVirtualRedpandaYaml is a shortcut for p.Load followed by
+// cfg.VirtualRedpandaYaml.
+func (p *Params) LoadVirtualRedpandaYaml(fs afero.Fs) (*RedpandaYaml, error) {
 	cfg, err := p.Load(fs)
 	if err != nil {
 		return nil, err
 	}
-	return cfg.MaterializedRedpandaYaml(), nil
+	return cfg.VirtualRedpandaYaml(), nil
 }
 
 // LoadActualRedpandaYaml is a shortcut for p.Load followed by
@@ -163,14 +163,14 @@ func (p *Params) LoadActualRedpandaYamlOrDefaults(fs afero.Fs) (*RedpandaYaml, e
 	return cfg.ActualRedpandaYamlOrDefaults(), nil
 }
 
-// LoadMaterializedProfile is a shortcut for p.Load followed by
-// cfg.MaterializedProfile.
-func (p *Params) LoadMaterializedProfile(fs afero.Fs) (*RpkProfile, error) {
+// LoadVirtualProfile is a shortcut for p.Load followed by
+// cfg.VirtualProfile.
+func (p *Params) LoadVirtualProfile(fs afero.Fs) (*RpkProfile, error) {
 	cfg, err := p.Load(fs)
 	if err != nil {
 		return nil, err
 	}
-	return cfg.MaterializedProfile(), nil
+	return cfg.VirtualProfile(), nil
 }
 
 ///////////

@@ -55,13 +55,13 @@ central configuration store (and via 'rpk cluster config edit').
 			cfg, err := p.Load(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)
 
-			client, err := admin.NewClient(fs, cfg.MaterializedProfile())
+			client, err := admin.NewClient(fs, cfg.VirtualProfile())
 			out.MaybeDie(err, "unable to initialize admin client: %v", err)
 
 			schema, err := client.ClusterConfigSchema(cmd.Context())
 			out.MaybeDie(err, "unable to query config schema: %v", err)
 
-			configFile := cfg.MaterializedRedpandaYaml().FileLocation()
+			configFile := cfg.VirtualRedpandaYaml().FileLocation()
 			configIn, err := afero.ReadFile(fs, configFile)
 			out.MaybeDie(err, "unable to read config file %q: %v", configFile, err)
 

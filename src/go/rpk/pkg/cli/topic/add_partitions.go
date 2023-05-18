@@ -39,7 +39,7 @@ func newAddPartitionsCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 					}
 				}
 			}
-			p, err := p.LoadMaterializedProfile(fs)
+			p, err := p.LoadVirtualProfile(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)
 
 			adm, err := kafka.NewAdmin(fs, p)

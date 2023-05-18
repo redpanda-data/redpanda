@@ -255,7 +255,7 @@ func TestStartCommand(t *testing.T) {
 			expYAML, err := yaml.Marshal(c)
 			require.NoError(st, err)
 
-			y, err := new(config.Params).LoadMaterializedRedpandaYaml(fs)
+			y, err := new(config.Params).LoadVirtualRedpandaYaml(fs)
 			require.NoError(st, err)
 
 			require.YAMLEq(st, string(expYAML), string(y.RawFile()))
@@ -272,7 +272,7 @@ func TestStartCommand(t *testing.T) {
 		postCheck: func(fs afero.Fs, _ *redpanda.RedpandaArgs, st *testing.T) {
 			path := testConfigFlag
 			p := &config.Params{ConfigFlag: "/arbitrary/path/redpanda.yaml"} // In command execution this will be done by with ParamsFromCommand
-			y, err := p.LoadMaterializedRedpandaYaml(fs)
+			y, err := p.LoadVirtualRedpandaYaml(fs)
 			require.NoError(st, err)
 			require.Exactly(st, path, y.FileLocation())
 			exists, err := afero.Exists(fs, testConfigFlag)
@@ -361,7 +361,7 @@ func TestStartCommand(t *testing.T) {
 		},
 		postCheck: func(fs afero.Fs, _ *redpanda.RedpandaArgs, st *testing.T) {
 			p := &config.Params{ConfigFlag: "/arbitrary/path/redpanda.yaml"}
-			y, err := p.LoadMaterializedRedpandaYaml(fs)
+			y, err := p.LoadVirtualRedpandaYaml(fs)
 			require.NoError(st, err)
 			expectedAdmin := []config.NamedSocketAddress{{
 				Address: "192.168.54.2",
@@ -427,7 +427,7 @@ func TestStartCommand(t *testing.T) {
 		},
 		postCheck: func(fs afero.Fs, _ *redpanda.RedpandaArgs, st *testing.T) {
 			p := &config.Params{ConfigFlag: "/arbitrary/path/redpanda.yaml"}
-			y, err := p.LoadMaterializedRedpandaYaml(fs)
+			y, err := p.LoadVirtualRedpandaYaml(fs)
 			require.NoError(st, err)
 			expectedAdmin := []config.NamedSocketAddress{{
 				Address: "192.168.54.2",
@@ -480,7 +480,7 @@ func TestStartCommand(t *testing.T) {
 		},
 		postCheck: func(fs afero.Fs, _ *redpanda.RedpandaArgs, st *testing.T) {
 			p := &config.Params{ConfigFlag: "/arbitrary/path/redpanda.yaml"}
-			y, err := p.LoadMaterializedRedpandaYaml(fs)
+			y, err := p.LoadVirtualRedpandaYaml(fs)
 			require.NoError(st, err)
 			// The value set through the --kafka-addr flag should
 			// have been picked.
@@ -499,7 +499,7 @@ func TestStartCommand(t *testing.T) {
 			"--install-dir", "/var/lib/redpanda",
 		},
 		postCheck: func(fs afero.Fs, _ *redpanda.RedpandaArgs, st *testing.T) {
-			y, err := new(config.Params).LoadMaterializedRedpandaYaml(fs)
+			y, err := new(config.Params).LoadVirtualRedpandaYaml(fs)
 			require.NoError(st, err)
 			require.Exactly(st, config.DefaultRedpandaYamlPath, y.FileLocation())
 		},
@@ -513,7 +513,7 @@ func TestStartCommand(t *testing.T) {
 			return y.Write(fs)
 		},
 		postCheck: func(fs afero.Fs, _ *redpanda.RedpandaArgs, st *testing.T) {
-			y, err := new(config.Params).LoadMaterializedRedpandaYaml(fs)
+			y, err := new(config.Params).LoadVirtualRedpandaYaml(fs)
 			require.NoError(st, err)
 			require.Exactly(st, config.DefaultRedpandaYamlPath, y.FileLocation())
 		},
@@ -525,7 +525,7 @@ func TestStartCommand(t *testing.T) {
 			"--install-dir", "/var/lib/redpanda",
 		},
 		postCheck: func(fs afero.Fs, _ *redpanda.RedpandaArgs, st *testing.T) {
-			y, err := new(config.Params).LoadMaterializedRedpandaYaml(fs)
+			y, err := new(config.Params).LoadVirtualRedpandaYaml(fs)
 			require.NoError(st, err)
 			require.Exactly(st, 34, *y.Redpanda.ID)
 		},
@@ -536,7 +536,7 @@ func TestStartCommand(t *testing.T) {
 			"--install-dir", "/var/lib/redpanda",
 		},
 		postCheck: func(fs afero.Fs, _ *redpanda.RedpandaArgs, st *testing.T) {
-			y, err := new(config.Params).LoadMaterializedRedpandaYaml(fs)
+			y, err := new(config.Params).LoadVirtualRedpandaYaml(fs)
 			require.NoError(st, err)
 			// Check that the generated config is as expected.
 			require.Exactly(st, config.DevDefault().Redpanda.ID, y.Redpanda.ID)
@@ -557,7 +557,7 @@ func TestStartCommand(t *testing.T) {
 			_ *redpanda.RedpandaArgs,
 			st *testing.T,
 		) {
-			y, err := new(config.Params).LoadMaterializedRedpandaYaml(fs)
+			y, err := new(config.Params).LoadVirtualRedpandaYaml(fs)
 			require.NoError(st, err)
 			// Check that the generated config is as expected.
 			require.Exactly(st, config.DevDefault().Redpanda.Directory, y.Redpanda.Directory)
@@ -568,13 +568,13 @@ func TestStartCommand(t *testing.T) {
 			"--install-dir", "/var/lib/redpanda",
 		},
 		before: func(fs afero.Fs) error {
-			y, _ := new(config.Params).LoadMaterializedRedpandaYaml(fs)
+			y, _ := new(config.Params).LoadVirtualRedpandaYaml(fs)
 			y.Redpanda.ID = new(int)
 			*y.Redpanda.ID = 98
 			return y.Write(fs)
 		},
 		postCheck: func(fs afero.Fs, _ *redpanda.RedpandaArgs, st *testing.T) {
-			y, err := new(config.Params).LoadMaterializedRedpandaYaml(fs)
+			y, err := new(config.Params).LoadVirtualRedpandaYaml(fs)
 			require.NoError(st, err)
 			require.Exactly(
 				st,
@@ -590,7 +590,7 @@ func TestStartCommand(t *testing.T) {
 			"--install-dir", "/var/lib/redpanda",
 		},
 		postCheck: func(fs afero.Fs, _ *redpanda.RedpandaArgs, st *testing.T) {
-			y, err := new(config.Params).LoadMaterializedRedpandaYaml(fs)
+			y, err := new(config.Params).LoadVirtualRedpandaYaml(fs)
 			require.NoError(st, err)
 			require.Exactly(st, "aws:i3xlarge:default", y.Rpk.Tuners.WellKnownIo)
 		},
@@ -601,12 +601,12 @@ func TestStartCommand(t *testing.T) {
 			"--install-dir", "/var/lib/redpanda",
 		},
 		before: func(fs afero.Fs) error {
-			y, _ := new(config.Params).LoadMaterializedRedpandaYaml(fs)
+			y, _ := new(config.Params).LoadVirtualRedpandaYaml(fs)
 			y.Rpk.Tuners.WellKnownIo = "gcp:n2standard:ssd"
 			return y.Write(fs)
 		},
 		postCheck: func(fs afero.Fs, _ *redpanda.RedpandaArgs, st *testing.T) {
-			y, err := new(config.Params).LoadMaterializedRedpandaYaml(fs)
+			y, err := new(config.Params).LoadVirtualRedpandaYaml(fs)
 			require.NoError(st, err)
 			require.Exactly(
 				st,
@@ -624,7 +624,7 @@ func TestStartCommand(t *testing.T) {
 			"--install-dir", "/var/lib/redpanda",
 		},
 		postCheck: func(fs afero.Fs, _ *redpanda.RedpandaArgs, st *testing.T) {
-			y, err := new(config.Params).LoadMaterializedRedpandaYaml(fs)
+			y, err := new(config.Params).LoadVirtualRedpandaYaml(fs)
 			require.NoError(st, err)
 			// Check that the generated config is as expected.
 			require.Exactly(st, false, y.Rpk.Overprovisioned)
@@ -639,7 +639,7 @@ func TestStartCommand(t *testing.T) {
 			return y.Write(fs)
 		},
 		postCheck: func(fs afero.Fs, _ *redpanda.RedpandaArgs, st *testing.T) {
-			y, err := new(config.Params).LoadMaterializedRedpandaYaml(fs)
+			y, err := new(config.Params).LoadVirtualRedpandaYaml(fs)
 			require.NoError(st, err)
 			// Check that the generated config is as expected.
 			require.Exactly(
@@ -656,7 +656,7 @@ func TestStartCommand(t *testing.T) {
 			"--install-dir", "/var/lib/redpanda",
 		},
 		postCheck: func(fs afero.Fs, _ *redpanda.RedpandaArgs, st *testing.T) {
-			y, err := new(config.Params).LoadMaterializedRedpandaYaml(fs)
+			y, err := new(config.Params).LoadVirtualRedpandaYaml(fs)
 			require.NoError(st, err)
 			// Check that the generated config is as expected.
 			require.Exactly(st, true, y.Rpk.EnableMemoryLocking)
@@ -668,12 +668,12 @@ func TestStartCommand(t *testing.T) {
 			"--install-dir", "/var/lib/redpanda",
 		},
 		before: func(fs afero.Fs) error {
-			y, _ := new(config.Params).LoadMaterializedRedpandaYaml(fs)
+			y, _ := new(config.Params).LoadVirtualRedpandaYaml(fs)
 			y.Rpk.EnableMemoryLocking = true
 			return y.Write(fs)
 		},
 		postCheck: func(fs afero.Fs, _ *redpanda.RedpandaArgs, st *testing.T) {
-			y, err := new(config.Params).LoadMaterializedRedpandaYaml(fs)
+			y, err := new(config.Params).LoadVirtualRedpandaYaml(fs)
 			require.NoError(st, err)
 			// Check that the generated config is as expected.
 			require.Exactly(
@@ -689,7 +689,7 @@ func TestStartCommand(t *testing.T) {
 			"--seeds", "192.168.34.32:33145,somehost:54321,justahostnoport",
 		},
 		postCheck: func(fs afero.Fs, _ *redpanda.RedpandaArgs, st *testing.T) {
-			y, err := new(config.Params).LoadMaterializedRedpandaYaml(fs)
+			y, err := new(config.Params).LoadVirtualRedpandaYaml(fs)
 			require.NoError(st, err)
 			expectedSeeds := []config.SeedServer{{
 				Host: config.SocketAddress{
@@ -722,7 +722,7 @@ func TestStartCommand(t *testing.T) {
 			"-s", "192.168.123.32:33146,host",
 		},
 		postCheck: func(fs afero.Fs, _ *redpanda.RedpandaArgs, st *testing.T) {
-			y, err := new(config.Params).LoadMaterializedRedpandaYaml(fs)
+			y, err := new(config.Params).LoadVirtualRedpandaYaml(fs)
 			require.NoError(st, err)
 			expectedSeeds := []config.SeedServer{{
 				Host: config.SocketAddress{
@@ -760,7 +760,7 @@ func TestStartCommand(t *testing.T) {
 			os.Unsetenv("REDPANDA_SEEDS")
 		},
 		postCheck: func(fs afero.Fs, _ *redpanda.RedpandaArgs, st *testing.T) {
-			y, err := new(config.Params).LoadMaterializedRedpandaYaml(fs)
+			y, err := new(config.Params).LoadVirtualRedpandaYaml(fs)
 			require.NoError(st, err)
 			expectedSeeds := []config.SeedServer{{
 				Host: config.SocketAddress{
@@ -786,7 +786,7 @@ func TestStartCommand(t *testing.T) {
 			"--install-dir", "/var/lib/redpanda",
 		},
 		before: func(fs afero.Fs) error {
-			y, _ := new(config.Params).LoadMaterializedRedpandaYaml(fs)
+			y, _ := new(config.Params).LoadVirtualRedpandaYaml(fs)
 			y.Redpanda.SeedServers = []config.SeedServer{{
 				Host: config.SocketAddress{
 					Address: "10.23.12.5",
@@ -796,7 +796,7 @@ func TestStartCommand(t *testing.T) {
 			return y.Write(fs)
 		},
 		postCheck: func(fs afero.Fs, _ *redpanda.RedpandaArgs, st *testing.T) {
-			y, err := new(config.Params).LoadMaterializedRedpandaYaml(fs)
+			y, err := new(config.Params).LoadVirtualRedpandaYaml(fs)
 			require.NoError(st, err)
 			expectedSeeds := []config.SeedServer{{
 				Host: config.SocketAddress{
@@ -830,7 +830,7 @@ func TestStartCommand(t *testing.T) {
 			"--rpc-addr", "192.168.34.32:33145",
 		},
 		postCheck: func(fs afero.Fs, _ *redpanda.RedpandaArgs, st *testing.T) {
-			y, err := new(config.Params).LoadMaterializedRedpandaYaml(fs)
+			y, err := new(config.Params).LoadVirtualRedpandaYaml(fs)
 			require.NoError(st, err)
 			expectedAddr := config.SocketAddress{
 				Address: "192.168.34.32",
@@ -850,7 +850,7 @@ func TestStartCommand(t *testing.T) {
 			"--rpc-addr", "192.168.34.32",
 		},
 		postCheck: func(fs afero.Fs, _ *redpanda.RedpandaArgs, st *testing.T) {
-			y, err := new(config.Params).LoadMaterializedRedpandaYaml(fs)
+			y, err := new(config.Params).LoadVirtualRedpandaYaml(fs)
 			require.NoError(st, err)
 			expectedAddr := config.SocketAddress{
 				Address: "192.168.34.32",
@@ -883,7 +883,7 @@ func TestStartCommand(t *testing.T) {
 			os.Unsetenv("REDPANDA_RPC_ADDRESS")
 		},
 		postCheck: func(fs afero.Fs, _ *redpanda.RedpandaArgs, st *testing.T) {
-			y, err := new(config.Params).LoadMaterializedRedpandaYaml(fs)
+			y, err := new(config.Params).LoadVirtualRedpandaYaml(fs)
 			require.NoError(st, err)
 			expectedAddr := config.SocketAddress{
 				Address: "host",
@@ -902,7 +902,7 @@ func TestStartCommand(t *testing.T) {
 			"--install-dir", "/var/lib/redpanda",
 		},
 		before: func(fs afero.Fs) error {
-			y, _ := new(config.Params).LoadMaterializedRedpandaYaml(fs)
+			y, _ := new(config.Params).LoadVirtualRedpandaYaml(fs)
 			y.Redpanda.RPCServer = config.SocketAddress{
 				Address: "192.168.33.33",
 				Port:    9892,
@@ -910,7 +910,7 @@ func TestStartCommand(t *testing.T) {
 			return y.Write(fs)
 		},
 		postCheck: func(fs afero.Fs, _ *redpanda.RedpandaArgs, st *testing.T) {
-			y, err := new(config.Params).LoadMaterializedRedpandaYaml(fs)
+			y, err := new(config.Params).LoadVirtualRedpandaYaml(fs)
 			require.NoError(st, err)
 			expectedAddr := config.SocketAddress{
 				Address: "192.168.33.33",
@@ -930,7 +930,7 @@ func TestStartCommand(t *testing.T) {
 			"--kafka-addr", "192.168.34.32:33145",
 		},
 		postCheck: func(fs afero.Fs, _ *redpanda.RedpandaArgs, st *testing.T) {
-			y, err := new(config.Params).LoadMaterializedRedpandaYaml(fs)
+			y, err := new(config.Params).LoadVirtualRedpandaYaml(fs)
 			require.NoError(st, err)
 			expectedAddr := []config.NamedAuthNSocketAddress{{
 				Address: "192.168.34.32",
@@ -950,7 +950,7 @@ func TestStartCommand(t *testing.T) {
 			"--kafka-addr", "192.168.34.32",
 		},
 		postCheck: func(fs afero.Fs, _ *redpanda.RedpandaArgs, st *testing.T) {
-			y, err := new(config.Params).LoadMaterializedRedpandaYaml(fs)
+			y, err := new(config.Params).LoadVirtualRedpandaYaml(fs)
 			require.NoError(st, err)
 			expectedAddr := []config.NamedAuthNSocketAddress{{
 				Address: "192.168.34.32",
@@ -970,7 +970,7 @@ func TestStartCommand(t *testing.T) {
 			"--kafka-addr", "nondefaultname://192.168.34.32",
 		},
 		postCheck: func(fs afero.Fs, _ *redpanda.RedpandaArgs, st *testing.T) {
-			y, err := new(config.Params).LoadMaterializedRedpandaYaml(fs)
+			y, err := new(config.Params).LoadVirtualRedpandaYaml(fs)
 			require.NoError(st, err)
 			expectedAddr := []config.NamedAuthNSocketAddress{{
 				Name:    "nondefaultname",
@@ -991,7 +991,7 @@ func TestStartCommand(t *testing.T) {
 			"--kafka-addr", "nondefaultname://192.168.34.32,host:9092,authn://host:9093|sasl",
 		},
 		postCheck: func(fs afero.Fs, _ *redpanda.RedpandaArgs, st *testing.T) {
-			y, err := new(config.Params).LoadMaterializedRedpandaYaml(fs)
+			y, err := new(config.Params).LoadVirtualRedpandaYaml(fs)
 			require.NoError(st, err)
 			expectedAddr := []config.NamedAuthNSocketAddress{{
 				Name:    "nondefaultname",
@@ -1033,7 +1033,7 @@ func TestStartCommand(t *testing.T) {
 			os.Unsetenv("REDPANDA_KAFKA_ADDRESS")
 		},
 		postCheck: func(fs afero.Fs, _ *redpanda.RedpandaArgs, st *testing.T) {
-			y, err := new(config.Params).LoadMaterializedRedpandaYaml(fs)
+			y, err := new(config.Params).LoadVirtualRedpandaYaml(fs)
 			require.NoError(st, err)
 			expectedAddr := []config.NamedAuthNSocketAddress{{
 				Address: "host",
@@ -1052,7 +1052,7 @@ func TestStartCommand(t *testing.T) {
 			"--install-dir", "/var/lib/redpanda",
 		},
 		before: func(fs afero.Fs) error {
-			y, _ := new(config.Params).LoadMaterializedRedpandaYaml(fs)
+			y, _ := new(config.Params).LoadVirtualRedpandaYaml(fs)
 			y.Redpanda.KafkaAPI = []config.NamedAuthNSocketAddress{{
 				Address: "192.168.33.33",
 				Port:    9892,
@@ -1060,7 +1060,7 @@ func TestStartCommand(t *testing.T) {
 			return y.Write(fs)
 		},
 		postCheck: func(fs afero.Fs, _ *redpanda.RedpandaArgs, st *testing.T) {
-			y, err := new(config.Params).LoadMaterializedRedpandaYaml(fs)
+			y, err := new(config.Params).LoadVirtualRedpandaYaml(fs)
 			require.NoError(st, err)
 			expectedAddr := []config.NamedAuthNSocketAddress{{
 				Address: "192.168.33.33",
@@ -1080,7 +1080,7 @@ func TestStartCommand(t *testing.T) {
 			"--advertise-kafka-addr", "192.168.34.32:33145",
 		},
 		postCheck: func(fs afero.Fs, _ *redpanda.RedpandaArgs, st *testing.T) {
-			y, err := new(config.Params).LoadMaterializedRedpandaYaml(fs)
+			y, err := new(config.Params).LoadVirtualRedpandaYaml(fs)
 			require.NoError(st, err)
 			expectedAddr := []config.NamedSocketAddress{{
 				Address: "192.168.34.32",
@@ -1100,7 +1100,7 @@ func TestStartCommand(t *testing.T) {
 			"--advertise-kafka-addr", "192.168.34.32",
 		},
 		postCheck: func(fs afero.Fs, _ *redpanda.RedpandaArgs, st *testing.T) {
-			y, err := new(config.Params).LoadMaterializedRedpandaYaml(fs)
+			y, err := new(config.Params).LoadVirtualRedpandaYaml(fs)
 			require.NoError(st, err)
 			expectedAddr := []config.NamedSocketAddress{{
 				Address: "192.168.34.32",
@@ -1133,7 +1133,7 @@ func TestStartCommand(t *testing.T) {
 			os.Unsetenv("REDPANDA_ADVERTISE_KAFKA_ADDRESS")
 		},
 		postCheck: func(fs afero.Fs, _ *redpanda.RedpandaArgs, st *testing.T) {
-			y, err := new(config.Params).LoadMaterializedRedpandaYaml(fs)
+			y, err := new(config.Params).LoadVirtualRedpandaYaml(fs)
 			require.NoError(st, err)
 			expectedAddr := []config.NamedSocketAddress{{
 				Address: "host",
@@ -1152,7 +1152,7 @@ func TestStartCommand(t *testing.T) {
 			"--install-dir", "/var/lib/redpanda",
 		},
 		before: func(fs afero.Fs) error {
-			y, _ := new(config.Params).LoadMaterializedRedpandaYaml(fs)
+			y, _ := new(config.Params).LoadVirtualRedpandaYaml(fs)
 			y.Redpanda.AdvertisedKafkaAPI = []config.NamedSocketAddress{{
 				Address: "192.168.33.33",
 				Port:    9892,
@@ -1160,7 +1160,7 @@ func TestStartCommand(t *testing.T) {
 			return y.Write(fs)
 		},
 		postCheck: func(fs afero.Fs, _ *redpanda.RedpandaArgs, st *testing.T) {
-			y, err := new(config.Params).LoadMaterializedRedpandaYaml(fs)
+			y, err := new(config.Params).LoadVirtualRedpandaYaml(fs)
 			require.NoError(st, err)
 			expectedAddr := []config.NamedSocketAddress{{
 				Address: "192.168.33.33",
@@ -1195,7 +1195,7 @@ func TestStartCommand(t *testing.T) {
 			return y.Write(fs)
 		},
 		postCheck: func(fs afero.Fs, _ *redpanda.RedpandaArgs, st *testing.T) {
-			y, err := new(config.Params).LoadMaterializedRedpandaYaml(fs)
+			y, err := new(config.Params).LoadVirtualRedpandaYaml(fs)
 			require.NoError(st, err)
 			expectedPandaProxy := &config.Pandaproxy{
 				PandaproxyAPI: []config.NamedAuthNSocketAddress{
@@ -1234,7 +1234,7 @@ func TestStartCommand(t *testing.T) {
 			return y.Write(fs)
 		},
 		postCheck: func(fs afero.Fs, _ *redpanda.RedpandaArgs, st *testing.T) {
-			y, err := new(config.Params).LoadMaterializedRedpandaYaml(fs)
+			y, err := new(config.Params).LoadVirtualRedpandaYaml(fs)
 			require.NoError(st, err)
 			// we compare the whole pandaproxy field to check we are not
 			// changing anything else.
@@ -1259,7 +1259,7 @@ func TestStartCommand(t *testing.T) {
 			"--advertise-pandaproxy-addr", "192.168.34.32:8083",
 		},
 		postCheck: func(fs afero.Fs, _ *redpanda.RedpandaArgs, st *testing.T) {
-			y, err := new(config.Params).LoadMaterializedRedpandaYaml(fs)
+			y, err := new(config.Params).LoadVirtualRedpandaYaml(fs)
 			require.NoError(st, err)
 			expectedAddr := []config.NamedSocketAddress{{
 				Address: "192.168.34.32",
@@ -1285,7 +1285,7 @@ func TestStartCommand(t *testing.T) {
 			os.Unsetenv("REDPANDA_ADVERTISE_PANDAPROXY_ADDRESS")
 		},
 		postCheck: func(fs afero.Fs, _ *redpanda.RedpandaArgs, st *testing.T) {
-			y, err := new(config.Params).LoadMaterializedRedpandaYaml(fs)
+			y, err := new(config.Params).LoadVirtualRedpandaYaml(fs)
 			require.NoError(st, err)
 			expectedAddr := []config.NamedSocketAddress{{
 				Address: "host",
@@ -1305,7 +1305,7 @@ func TestStartCommand(t *testing.T) {
 			"--advertise-rpc-addr", "192.168.34.32:33145",
 		},
 		postCheck: func(fs afero.Fs, _ *redpanda.RedpandaArgs, st *testing.T) {
-			y, err := new(config.Params).LoadMaterializedRedpandaYaml(fs)
+			y, err := new(config.Params).LoadVirtualRedpandaYaml(fs)
 			require.NoError(st, err)
 			expectedAddr := &config.SocketAddress{
 				Address: "192.168.34.32",
@@ -1325,7 +1325,7 @@ func TestStartCommand(t *testing.T) {
 			"--advertise-rpc-addr", "192.168.34.32",
 		},
 		postCheck: func(fs afero.Fs, _ *redpanda.RedpandaArgs, st *testing.T) {
-			y, err := new(config.Params).LoadMaterializedRedpandaYaml(fs)
+			y, err := new(config.Params).LoadVirtualRedpandaYaml(fs)
 			require.NoError(st, err)
 			expectedAddr := &config.SocketAddress{
 				Address: "192.168.34.32",
@@ -1358,7 +1358,7 @@ func TestStartCommand(t *testing.T) {
 			os.Unsetenv("REDPANDA_ADVERTISE_RPC_ADDRESS")
 		},
 		postCheck: func(fs afero.Fs, _ *redpanda.RedpandaArgs, st *testing.T) {
-			y, err := new(config.Params).LoadMaterializedRedpandaYaml(fs)
+			y, err := new(config.Params).LoadVirtualRedpandaYaml(fs)
 			require.NoError(st, err)
 			expectedAddr := &config.SocketAddress{
 				Address: "host",
@@ -1377,7 +1377,7 @@ func TestStartCommand(t *testing.T) {
 			"--install-dir", "/var/lib/redpanda",
 		},
 		before: func(fs afero.Fs) error {
-			y, _ := new(config.Params).LoadMaterializedRedpandaYaml(fs)
+			y, _ := new(config.Params).LoadVirtualRedpandaYaml(fs)
 			y.Redpanda.AdvertisedRPCAPI = &config.SocketAddress{
 				Address: "192.168.33.33",
 				Port:    9892,
@@ -1385,7 +1385,7 @@ func TestStartCommand(t *testing.T) {
 			return y.Write(fs)
 		},
 		postCheck: func(fs afero.Fs, _ *redpanda.RedpandaArgs, st *testing.T) {
-			y, err := new(config.Params).LoadMaterializedRedpandaYaml(fs)
+			y, err := new(config.Params).LoadVirtualRedpandaYaml(fs)
 			require.NoError(st, err)
 			expectedAddr := &config.SocketAddress{
 				Address: "192.168.33.33",
@@ -1404,7 +1404,7 @@ func TestStartCommand(t *testing.T) {
 			"--install-dir", "/var/lib/redpanda", "--overprovisioned",
 		},
 		before: func(fs afero.Fs) error {
-			y, _ := new(config.Params).LoadMaterializedRedpandaYaml(fs)
+			y, _ := new(config.Params).LoadVirtualRedpandaYaml(fs)
 			y.Rpk.AdditionalStartFlags = []string{"--overprovisioned"}
 			return y.Write(fs)
 		},
@@ -1415,7 +1415,7 @@ func TestStartCommand(t *testing.T) {
 			"--install-dir", "/var/lib/redpanda", "--smp", "1",
 		},
 		before: func(fs afero.Fs) error {
-			y, _ := new(config.Params).LoadMaterializedRedpandaYaml(fs)
+			y, _ := new(config.Params).LoadVirtualRedpandaYaml(fs)
 			y.Rpk.AdditionalStartFlags = []string{"--smp=1"}
 			return y.Write(fs)
 		},
@@ -1426,7 +1426,7 @@ func TestStartCommand(t *testing.T) {
 			"--install-dir", "/var/lib/redpanda", "--memory", "2G",
 		},
 		before: func(fs afero.Fs) error {
-			y, _ := new(config.Params).LoadMaterializedRedpandaYaml(fs)
+			y, _ := new(config.Params).LoadVirtualRedpandaYaml(fs)
 			y.Rpk.AdditionalStartFlags = []string{"--memory=1G"}
 			return y.Write(fs)
 		},
@@ -1437,7 +1437,7 @@ func TestStartCommand(t *testing.T) {
 			"--install-dir", "/var/lib/redpanda",
 		},
 		before: func(fs afero.Fs) error {
-			y, _ := new(config.Params).LoadMaterializedRedpandaYaml(fs)
+			y, _ := new(config.Params).LoadVirtualRedpandaYaml(fs)
 			y.Rpk.AdditionalStartFlags = []string{
 				"--smp=3", "--smp=55",
 			}
@@ -1456,7 +1456,7 @@ func TestStartCommand(t *testing.T) {
 			"--install-dir", "/var/lib/redpanda",
 		},
 		before: func(fs afero.Fs) error {
-			y, _ := new(config.Params).LoadMaterializedRedpandaYaml(fs)
+			y, _ := new(config.Params).LoadVirtualRedpandaYaml(fs)
 			y.Rpk.AdditionalStartFlags = []string{
 				"--logger-log-level=archival=debug:cloud_storage=debug",
 			}
@@ -1524,7 +1524,7 @@ func TestStartCommand(t *testing.T) {
 			require.Equal(st, "true", rpArgs.SeastarFlags["unsafe-bypass-fsync"])
 
 			// Config:
-			y, err := new(config.Params).LoadMaterializedRedpandaYaml(fs)
+			y, err := new(config.Params).LoadVirtualRedpandaYaml(fs)
 			require.NoError(st, err)
 			require.Nil(st, y.Redpanda.ID)
 			require.Equal(st, true, y.Redpanda.DeveloperMode)
@@ -1555,7 +1555,7 @@ func TestStartCommand(t *testing.T) {
 			// rest of --mode dev-container bundle
 			require.Equal(st, "true", rpArgs.SeastarFlags["overprovisioned"])
 			require.Equal(st, "true", rpArgs.SeastarFlags["unsafe-bypass-fsync"])
-			y, err := new(config.Params).LoadMaterializedRedpandaYaml(fs)
+			y, err := new(config.Params).LoadVirtualRedpandaYaml(fs)
 			require.NoError(st, err)
 			require.Nil(st, y.Redpanda.ID)
 			require.Equal(st, true, y.Redpanda.DeveloperMode)
@@ -1564,7 +1564,7 @@ func TestStartCommand(t *testing.T) {
 		name: "redpanda.developer_mode: true behaves like --mode dev-container",
 		args: []string{"--install-dir", "/var/lib/redpanda"},
 		before: func(fs afero.Fs) error {
-			y, _ := new(config.Params).LoadMaterializedRedpandaYaml(fs)
+			y, _ := new(config.Params).LoadVirtualRedpandaYaml(fs)
 			y.Redpanda.DeveloperMode = true
 			return y.Write(fs)
 		},
@@ -1576,7 +1576,7 @@ func TestStartCommand(t *testing.T) {
 			// Flags:
 			require.Equal(st, "true", rpArgs.SeastarFlags["overprovisioned"])
 			require.Equal(st, "0M", rpArgs.SeastarFlags["reserve-memory"])
-			y, err := new(config.Params).LoadMaterializedRedpandaYaml(fs)
+			y, err := new(config.Params).LoadVirtualRedpandaYaml(fs)
 			require.NoError(st, err)
 
 			// Config:
@@ -1620,7 +1620,7 @@ func TestStartCommand(t *testing.T) {
 			}
 		},
 		postCheck: func(fs afero.Fs, _ *redpanda.RedpandaArgs, st *testing.T) {
-			y, _ := new(config.Params).LoadMaterializedRedpandaYaml(fs)
+			y, _ := new(config.Params).LoadVirtualRedpandaYaml(fs)
 			expectedClusterFields := map[string]interface{}{
 				// set by --set flag
 				"auto_create_topics_enabled": false,

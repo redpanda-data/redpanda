@@ -38,7 +38,7 @@ cluster is unreachable), use the hidden --force flag.
 				out.Die("invalid negative broker id %v", broker)
 			}
 
-			p, err := p.LoadMaterializedProfile(fs)
+			p, err := p.LoadVirtualProfile(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)
 
 			cl, err := admin.NewClient(fs, p)

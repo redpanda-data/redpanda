@@ -71,7 +71,7 @@ func newConsumeCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 		Long:  helpConsume,
 		Args:  cobra.MinimumNArgs(1),
 		Run: func(cmd *cobra.Command, topics []string) {
-			p, err := p.LoadMaterializedProfile(fs)
+			p, err := p.LoadVirtualProfile(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)
 
 			adm, err := kafka.NewAdmin(fs, p)

@@ -118,7 +118,7 @@ func createCtx(
 		var nodeCfg config.RpkNodeConfig
 		switch {
 		case fromSimple == "loaded" || fromSimple == "current":
-			nodeCfg = cfg.MaterializedRedpandaYaml().Rpk
+			nodeCfg = cfg.VirtualRedpandaYaml().Rpk
 		default:
 			raw, err := afero.ReadFile(fs, fromSimple)
 			if err != nil {

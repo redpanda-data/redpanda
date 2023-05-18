@@ -73,7 +73,7 @@ If the node you want to scrape uses TLS, you can provide the TLS flags:
 --tls-key, --tls-cert, and --tls-truststore and rpk will generate the required
 tls_config section in the scrape configuration.`,
 		Run: func(cmd *cobra.Command, args []string) {
-			y, err := p.LoadMaterializedRedpandaYaml(fs)
+			y, err := p.LoadVirtualRedpandaYaml(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)
 
 			yml, err := executePrometheusConfig(

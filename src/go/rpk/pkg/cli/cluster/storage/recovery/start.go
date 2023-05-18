@@ -37,7 +37,7 @@ This command starts the process of restoring topics from the archival bucket.
 If the wait flag (--wait/-w) is set, the command will poll the status of the
 recovery process until it's finished.`,
 		Run: func(cmd *cobra.Command, args []string) {
-			p, err := p.LoadMaterializedProfile(fs)
+			p, err := p.LoadVirtualProfile(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)
 
 			client, err := admin.NewClient(fs, p)
