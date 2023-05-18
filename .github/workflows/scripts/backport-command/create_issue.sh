@@ -28,14 +28,14 @@ if [[ -n $CREATE_ISSUE_ON_ERROR ]]; then
   git cherry-pick -x $BACKPORT_COMMITS
 
   gh pr create
-    --title \"[$BACKPORT_BRANCH] $ORIG_TITLE\"
-    --base \"$BACKPORT_BRANCH\"
-    --label \"kind/backport\"
-    --head \"$GIT_USER:$HEAD_BRANCH\"
-    --draft
-    --repo \"$TARGET_ORG/$TARGET_REPO\"
-    --reviewer \"$ORIG_REVIEWERS\"
-    --milestone \"$TARGET_MILESTONE\"
+    --title \"[$BACKPORT_BRANCH] $ORIG_TITLE\" \\
+    --base \"$BACKPORT_BRANCH\" \\
+    --label \"kind/backport\" \\
+    --head \"$GIT_USER:$HEAD_BRANCH\" \\
+    --draft \\
+    --repo \"$TARGET_ORG/$TARGET_REPO\" \\
+    --reviewer \"$ORIG_REVIEWERS\" \\
+    --milestone \"$TARGET_MILESTONE\" \\
     --body \"Backport of PR $ORIG_ISSUE_URL \""
 
   orig_assignees=$(gh issue view $PR_NUMBER --json author --jq .author.login)
