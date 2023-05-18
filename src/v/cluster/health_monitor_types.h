@@ -119,9 +119,25 @@ struct node_health_report
       serde::compat_version<0>> {
     static constexpr int8_t current_version = 2;
 
+    node_health_report() = default;
+
+    node_health_report(
+      model::node_id,
+      node::local_state,
+      ss::chunked_fifo<topic_status>,
+      bool include_drain_status,
+      std::optional<drain_manager::drain_status>);
+
+    node_health_report(const node_health_report&);
+    node_health_report& operator=(const node_health_report&);
+
+    node_health_report(node_health_report&&) = default;
+    node_health_report& operator=(node_health_report&&) = default;
+    ~node_health_report() = default;
+
     model::node_id id;
     node::local_state local_state;
-    std::vector<topic_status> topics;
+    ss::chunked_fifo<topic_status> topics;
 
     /*
      * nodes running old versions of redpanda will assert that they can decode
@@ -159,13 +175,7 @@ struct node_health_report
     friend std::ostream& operator<<(std::ostream&, const node_health_report&);
 
     friend bool
-    operator==(const node_health_report& a, const node_health_report& b) {
-        // include_drain_status is not serialized and is a signal to adl
-        // encoding. once adl is fully deprecated, the field can be removed and
-        // this changed to defaulted operator==.
-        return a.id == b.id && a.local_state == b.local_state
-               && a.topics == b.topics && a.drain_status == b.drain_status;
-    }
+    operator==(const node_health_report& a, const node_health_report& b);
 };
 
 struct cluster_health_report
