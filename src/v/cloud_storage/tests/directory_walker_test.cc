@@ -156,6 +156,8 @@ SEASTAR_THREAD_TEST_CASE(total_size_correct) {
     const std::filesystem::path file_path2 = target_dir / "file2.txt";
     const std::filesystem::path file_path3 = target_dir / "b" / "c"
                                              / "file3.txt";
+    const std::filesystem::path file_path4 = target_dir / "b" / "file4.tx";
+    const std::filesystem::path file_path5 = target_dir / "b" / "file5.index";
 
     ss::recursive_touch_directory((target_dir / "a").native()).get();
     ss::recursive_touch_directory((target_dir / "b" / "c").native()).get();
@@ -165,14 +167,28 @@ SEASTAR_THREAD_TEST_CASE(total_size_correct) {
     auto file1 = ss::open_file_dma(file_path1.native(), flags).get();
     auto file2 = ss::open_file_dma(file_path2.native(), flags).get();
     auto file3 = ss::open_file_dma(file_path3.native(), flags).get();
+    auto file4 = ss::open_file_dma(file_path4.native(), flags).get();
+    auto file5 = ss::open_file_dma(file_path5.native(), flags).get();
 
     write_to_file(file1, 3412);
     write_to_file(file2, 8);
     write_to_file(file3, 342);
+    write_to_file(file4, 100);
+    write_to_file(file5, 100);
 
     access_time_tracker tracker;
-    auto result = _walker.walk(target_dir.native(), tracker).get();
+    auto result = _walker
+                    .walk(
+                      target_dir.native(),
+                      tracker,
+                      [](std::string_view path) {
+                          return !(
+                            std::string_view(path).ends_with(".tx")
+                            || std::string_view(path).ends_with(".index"));
+                      })
+                    .get();
 
-    BOOST_REQUIRE_EQUAL(result.cache_size, 3412 + 8 + 342);
+    BOOST_REQUIRE_EQUAL(result.cache_size, 3412 + 8 + 342 + 100 + 100);
+    BOOST_REQUIRE_EQUAL(result.filtered_out_files, 2);
     BOOST_REQUIRE_EQUAL(result.regular_files.size(), 3);
 }

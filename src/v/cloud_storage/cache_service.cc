@@ -151,8 +151,12 @@ void cache::consume_cache_space(size_t sz) {
 
 ss::future<> cache::clean_up_at_start() {
     gate_guard guard{_gate};
-    auto [walked_size, candidates_for_deletion, empty_dirs]
+    auto [walked_size, filtered_out_files, candidates_for_deletion, empty_dirs]
       = co_await _walker.walk(_cache_dir.native(), _access_time_tracker);
+
+    vassert(
+      filtered_out_files == 0,
+      "Start-up cache clean-up should not apply filtering");
 
     // The state of the _access_time_tracker and the actual content of the
     // cache directory might diverge over time (if the user removes segment
@@ -230,8 +234,13 @@ ss::future<> cache::trim_throttled() {
 ss::future<> cache::trim() {
     vassert(ss::this_shard_id() == 0, "Method can only be invoked on shard 0");
     gate_guard guard{_gate};
-    auto [walked_cache_size, candidates_for_deletion, _]
-      = co_await _walker.walk(_cache_dir.native(), _access_time_tracker);
+    auto [walked_cache_size, filtered_out_files, candidates_for_deletion, _]
+      = co_await _walker.walk(
+        _cache_dir.native(), _access_time_tracker, [](std::string_view path) {
+            return !(
+              std::string_view(path).ends_with(".tx")
+              || std::string_view(path).ends_with(".index"));
+        });
 
     // Updating the access time tracker in case if some files were removed
     // from cache directory by the user manually.
@@ -417,16 +426,19 @@ ss::future<> cache::trim() {
             _current_cache_size = cache_size_lower_bound;
         }
 
+        const auto cache_entries_before_trim = candidates_for_deletion.size()
+                                               + filtered_out_files;
+
         vlog(
           cst_log.debug,
           "trim: deleted {}/{} files of total size {}.",
           deleted_count,
-          candidates_for_deletion.size(),
+          cache_entries_before_trim,
           deleted_size);
 
         _total_cleaned += deleted_size;
         probe.set_size(_current_cache_size);
-        probe.set_num_files(candidates_for_deletion.size() - deleted_count);
+        probe.set_num_files(cache_entries_before_trim - deleted_count);
     }
 
     _last_clean_up = ss::lowres_clock::now();
