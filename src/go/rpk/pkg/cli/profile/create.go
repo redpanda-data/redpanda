@@ -12,7 +12,6 @@ package profile
 import (
 	"context"
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cloudapi"
@@ -63,26 +62,26 @@ func newCreateCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 				fmt.Println(`
 This cluster uses mTLS. Please ensure you have client certificates on your
 machine an then run
-    rpk profile set kafka_api.tls.ca_cert /path/to/ca.pem
-    rpk profile set kafka_api.tls.client_cert /path/to/client.pem
-    rpk profile set kafka_api.tls.client_key /path/to/key.pem`)
+    rpk profile set tls.ca /path/to/ca.pem
+    rpk profile set tls.cert /path/to/cert.pem
+    rpk profile set tls.key /path/to/key.pem`)
 			}
 			if cloudSASL {
 				fmt.Println(`
 If your cluster requires SASL, generate SASL credentials in the UI and then set
 them in rpk with
-    rpk profile set kafka_api.sasl.user {sasl_username}
-    rpk profile set kafka_api.sasl.password {sasl_password}`)
+    rpk profile set user {sasl_username}
+    rpk profile set pass {sasl_password}`)
 			}
 		},
 	}
 
-	cmd.Flags().StringSliceVarP(&set, "set", "s", nil, "Create and switch to a new profile, filling profile fields with key=value pairs")
+	cmd.Flags().StringSliceVarP(&set, "set", "s", nil, "Create and switch to a new profile, setting profile fields with key=value pairs")
 	cmd.Flags().StringVar(&fromSimple, "from-simple", "", "Create and switch to a new profile from a (simpler to define) redpanda.yaml file")
 	cmd.Flags().StringVar(&fromCloud, "from-cloud", "", "Create and switch to a new profile generated from a Redpanda Cloud cluster ID")
 	cmd.Flags().StringVarP(&description, "description", "d", "", "Optional description of the profile")
 
-	cmd.RegisterFlagCompletionFunc("set", createSetCompletion)
+	cmd.RegisterFlagCompletionFunc("set", validSetArgs)
 
 	return cmd
 }
@@ -103,14 +102,14 @@ func createCtx(
 		return false, false, fmt.Errorf("cannot use --from-cloud and --from-simple together")
 	}
 	if p := y.Profile(name); p != nil {
-		return false, false, fmt.Errorf("context %q already exists", name)
+		return false, false, fmt.Errorf("profile %q already exists", name)
 	}
 
 	var p config.RpkProfile
 	switch {
 	case fromCloud != "":
 		var err error
-		p, cloudMTLS, cloudSASL, err = createCloudContext(ctx, y, cfg, fromCloud)
+		p, cloudMTLS, cloudSASL, err = createCloudProfile(ctx, y, cfg, fromCloud)
 		if err != nil {
 			return false, false, err
 		}
@@ -136,16 +135,8 @@ func createCtx(
 			AdminAPI: nodeCfg.AdminAPI,
 		}
 	}
-
-	for _, kv := range set {
-		split := strings.SplitN(kv, "=", 2)
-		if len(split) != 2 {
-			return false, false, fmt.Errorf("invalid key=value pair %q", kv)
-		}
-		err := config.Set(&p, split[0], split[1])
-		if err != nil {
-			return false, false, err
-		}
+	if err := doSet(&p, set); err != nil {
+		return false, false, err
 	}
 	if cloudSASL && p.KafkaAPI.SASL != nil {
 		cloudSASL = false
@@ -161,17 +152,7 @@ func createCtx(
 	return
 }
 
-func createSetCompletion(_ *cobra.Command, _ []string, toComplete string) ([]string, cobra.ShellCompDirective) {
-	var possibilities []string
-	for _, p := range setPossibilities {
-		if strings.HasPrefix(p, toComplete) {
-			possibilities = append(possibilities, p+"=")
-		}
-	}
-	return possibilities, cobra.ShellCompDirectiveNoSpace
-}
-
-func createCloudContext(ctx context.Context, y *config.RpkYaml, cfg *config.Config, clusterID string) (p config.RpkProfile, cloudMTLS, cloudSASL bool, err error) {
+func createCloudProfile(ctx context.Context, y *config.RpkYaml, cfg *config.Config, clusterID string) (p config.RpkProfile, cloudMTLS, cloudSASL bool, err error) {
 	a := y.Auth(y.CurrentCloudAuth)
 	if a == nil {
 		return p, false, false, fmt.Errorf("missing auth for current_cloud_auth %q", y.CurrentCloudAuth)

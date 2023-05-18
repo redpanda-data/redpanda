@@ -21,9 +21,9 @@ import (
 func newUseCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:               "use [NAME]",
-		Short:             "Select the rpk context to use",
+		Short:             "Select the rpk profile to use",
 		Args:              cobra.ExactArgs(1),
-		ValidArgsFunction: validContexts(fs, p),
+		ValidArgsFunction: validProfiles(fs, p),
 		Run: func(_ *cobra.Command, args []string) {
 			cfg, err := p.Load(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)
@@ -36,14 +36,14 @@ func newUseCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 			name := args[0]
 			p := y.Profile(name)
 			if p == nil {
-				out.Die("context %q does not exist", name)
+				out.Die("profile %q does not exist", name)
 			}
 			y.CurrentProfile = name
 			y.MoveProfileToFront(p)
 
 			err = y.Write(fs)
 			out.MaybeDieErr(err)
-			fmt.Printf("Set current context to %q.\n", name)
+			fmt.Printf("Set current profile to %q.\n", name)
 		},
 	}
 

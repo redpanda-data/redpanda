@@ -19,15 +19,13 @@ import (
 
 func NewCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	cmd := &cobra.Command{
-		Use:     "context",
-		Aliases: []string{"p", "ctx"},
-		Short:   "Manage rpk contexts",
+		Use:   "profile",
+		Short: "Manage rpk profiles",
 	}
 
 	cmd.AddCommand(
 		newCreateCommand(fs, p),
 		newDeleteCommand(fs, p),
-		newDuplicateToCommand(fs, p),
 		newEditCommand(fs, p),
 		newListCommand(fs, p),
 		newPrintCommand(fs, p),
@@ -39,7 +37,7 @@ func NewCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	return cmd
 }
 
-func validContexts(fs afero.Fs, p *config.Params) func(*cobra.Command, []string, string) ([]string, cobra.ShellCompDirective) {
+func validProfiles(fs afero.Fs, p *config.Params) func(*cobra.Command, []string, string) ([]string, cobra.ShellCompDirective) {
 	return func(cmd *cobra.Command, _ []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 		cfg, err := p.Load(fs)
 		if err != nil {

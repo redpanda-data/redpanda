@@ -21,9 +21,9 @@ import (
 func newDeleteCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	return &cobra.Command{
 		Use:               "delete [NAME]",
-		Short:             "Delete an rpk context",
+		Short:             "Delete an rpk profile",
 		Args:              cobra.ExactArgs(1),
-		ValidArgsFunction: validContexts(fs, p),
+		ValidArgsFunction: validProfiles(fs, p),
 		Run: func(_ *cobra.Command, args []string) {
 			cfg, err := p.Load(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)
@@ -34,17 +34,17 @@ func newDeleteCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 			}
 
 			name := args[0]
-			cleared, err := deleteCtx(fs, y, name)
+			cleared, err := deleteProfile(fs, y, name)
 			out.MaybeDieErr(err)
-			fmt.Printf("Deleted context %q.\n", name)
+			fmt.Printf("Deleted profile %q.\n", name)
 			if cleared {
-				fmt.Println("This was the selected context; rpk will use defaults until a new context is selected.")
+				fmt.Println("This was the selected profile; rpk will use defaults until a new profile is selected.")
 			}
 		},
 	}
 }
 
-func deleteCtx(
+func deleteProfile(
 	fs afero.Fs,
 	y *config.RpkYaml,
 	name string,
@@ -57,7 +57,7 @@ func deleteCtx(
 		}
 	}
 	if idx == -1 {
-		return false, fmt.Errorf("context %q does not exist", name)
+		return false, fmt.Errorf("profile %q does not exist", name)
 	}
 	y.Profiles = append(y.Profiles[:idx], y.Profiles[idx+1:]...)
 	if y.CurrentProfile == name {

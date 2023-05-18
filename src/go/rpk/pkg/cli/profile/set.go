@@ -21,52 +21,82 @@ import (
 
 func newSetCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	return &cobra.Command{
-		Use:               "set [KEY] [VALUE]",
-		Short:             "Set a field in the current rpk context",
-		Args:              cobra.ExactArgs(2),
+		Use:               "set [KEY=VALUE]+",
+		Short:             "Set fields in the current rpk profile",
+		Args:              cobra.MinimumNArgs(1),
 		ValidArgsFunction: validSetArgs,
 		Run: func(_ *cobra.Command, args []string) {
 			cfg, err := p.Load(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)
+
+			// Other set commands are `set key value`, if people
+			// use that older form by force of habit, we support
+			// it.
+			if len(args) == 2 && !strings.Contains(args[0], "=") {
+				args = []string{args[0] + "=" + args[1]}
+			}
 
 			y, err := cfg.ActualRpkYamlOrEmpty()
 			out.MaybeDie(err, "unable to load rpk.yaml: %v", err)
 
 			p := y.Profile(y.CurrentProfile)
 			if p == nil {
-				out.Die("current context %q does not exist", y.CurrentProfile)
+				out.Die("current profile %q does not exist", y.CurrentProfile)
 			}
-			err = config.Set(&p, args[0], args[1])
+			err = doSet(p, args)
 			out.MaybeDieErr(err)
 			err = y.Write(fs)
 			out.MaybeDieErr(err)
-			fmt.Printf("Field %q updated successfully.\n", args[0])
+			fmt.Printf("Profile %q updated successfully.\n", y.CurrentProfile)
 		},
 	}
 }
 
-var setPossibilities = []string{
-	"kafka_api.brokers",
-	"kafka_api.tls.enabled",
-	"kafka_api.tls.ca_file",
-	"kafka_api.tls.cert_file",
-	"kafka_api.tls.key_file",
-	"kafka_api.sasl.user",
-	"kafka_api.sasl.password",
-	"kafka_api.sasl.type",
-	"admin_api.addresses",
-	"admin_api.tls.enabled",
-	"admin_api.tls.ca_file",
-	"admin_api.tls.cert_file",
-	"admin_api.tls.key_file",
+func doSet(p *config.RpkProfile, set []string) error {
+	for _, kv := range set {
+		split := strings.SplitN(kv, "=", 2)
+		if len(split) != 2 {
+			return fmt.Errorf("invalid key=value pair %q", kv)
+		}
+		k, v := split[0], split[1]
+		if y, ok := config.XFlagYamlPath(k); ok {
+			k = y
+		}
+		err := config.Set(&p, k, v)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
-func validSetArgs(_ *cobra.Command, _ []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+// By default, we show the yaml paths for autocompletion. If a person uses a -X
+// flag name, we then switch to displaying X flag completions.
+func validSetArgs(_ *cobra.Command, _ []string, toComplete string) (ps []string, d cobra.ShellCompDirective) {
+	defer func() {
+		for i, p := range ps {
+			ps[i] = p + "="
+		}
+	}()
+
+	xf, ypaths := config.XProfileFlags()
+	ypaths = append(ypaths, "description") // we have no xflag for the description field since this is purely informational
+	if len(toComplete) == 0 {
+		return ypaths, cobra.ShellCompDirectiveNoSpace
+	}
 	var possibilities []string
-	for _, p := range setPossibilities {
+	for _, p := range ypaths {
 		if strings.HasPrefix(p, toComplete) {
 			possibilities = append(possibilities, p)
 		}
 	}
-	return possibilities, cobra.ShellCompDirectiveDefault
+	if len(possibilities) > 0 {
+		return possibilities, cobra.ShellCompDirectiveNoSpace
+	}
+	for _, p := range xf {
+		if strings.HasPrefix(p, toComplete) {
+			possibilities = append(possibilities, p)
+		}
+	}
+	return possibilities, cobra.ShellCompDirectiveNoSpace
 }

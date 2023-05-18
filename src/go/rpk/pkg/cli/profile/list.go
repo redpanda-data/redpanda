@@ -21,7 +21,7 @@ import (
 func newListCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	return &cobra.Command{
 		Use:   "list",
-		Short: "List rpk contexts",
+		Short: "List rpk profiles",
 		Args:  cobra.ExactArgs(0),
 		Run: func(*cobra.Command, []string) {
 			cfg, err := p.Load(fs)

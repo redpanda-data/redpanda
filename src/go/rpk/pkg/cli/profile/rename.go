@@ -21,7 +21,7 @@ import (
 func newRenameToCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	return &cobra.Command{
 		Use:     "rename-to [NAME]",
-		Short:   "Rename the current rpk context",
+		Short:   "Rename the current rpk profile",
 		Aliases: []string{"rename"},
 		Args:    cobra.ExactArgs(1),
 		Run: func(_ *cobra.Command, args []string) {
@@ -35,19 +35,19 @@ func newRenameToCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 
 			p := y.Profile(y.CurrentProfile)
 			if p == nil {
-				out.Die("current context %q does not exist", y.CurrentProfile)
+				out.Die("current profile %q does not exist", y.CurrentProfile)
 				return
 			}
 			to := args[0]
 			if y.Profile(to) != nil {
-				out.Die("destination context %q already exists", to)
+				out.Die("destination profile %q already exists", to)
 			}
 			p.Name = to
 			y.CurrentProfile = to
 			y.MoveProfileToFront(p)
 			err = y.Write(fs)
 			out.MaybeDieErr(err)
-			fmt.Printf("Renamed current context to %q.\n", to)
+			fmt.Printf("Renamed current profile to %q.\n", to)
 		},
 	}
 }

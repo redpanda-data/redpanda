@@ -23,9 +23,9 @@ func newPrintCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	var raw bool
 	cmd := &cobra.Command{
 		Use:               "print [NAME]",
-		Short:             "Print rpk context configuration",
+		Short:             "Print rpk profile configuration",
 		Args:              cobra.MaximumNArgs(1),
-		ValidArgsFunction: validContexts(fs, p),
+		ValidArgsFunction: validProfiles(fs, p),
 		Run: func(_ *cobra.Command, args []string) {
 			cfg, err := p.Load(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)
@@ -44,11 +44,11 @@ func newPrintCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 			}
 			p := y.Profile(args[0])
 			if p == nil {
-				out.Die("context %s does not exist", args[0])
+				out.Die("profile %s does not exist", args[0])
 			}
 
 			m, err := yaml.Marshal(p)
-			out.MaybeDie(err, "unable to encode context: %v", err)
+			out.MaybeDie(err, "unable to encode profile: %v", err)
 			fmt.Println(string(m))
 		},
 	}

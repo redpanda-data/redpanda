@@ -23,9 +23,9 @@ func newEditCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	var raw bool
 	cmd := &cobra.Command{
 		Use:               "edit [NAME]",
-		Short:             "Edit an rpk cloud context",
+		Short:             "Edit an rpk profile",
 		Args:              cobra.MaximumNArgs(1),
-		ValidArgsFunction: validContexts(fs, p),
+		ValidArgsFunction: validProfiles(fs, p),
 		Run: func(_ *cobra.Command, args []string) {
 			cfg, err := p.Load(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)
@@ -45,7 +45,7 @@ func newEditCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 			name := args[0]
 			p := y.Profile(name)
 			if p == nil {
-				out.Die("context %s does not exist", name)
+				out.Die("profile %s does not exist", name)
 				return
 			}
 
@@ -66,16 +66,16 @@ func newEditCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 			out.MaybeDie(err, "unable to write rpk.yaml: %v", err)
 
 			if renamed {
-				fmt.Printf("Context %q updated successfully and renamed to %q.\n", name, p.Name)
+				fmt.Printf("Profile %q updated successfully and renamed to %q.\n", name, p.Name)
 				if updatedCurrent {
-					fmt.Printf("Current context has been updated to %q.\n", p.Name)
+					fmt.Printf("Current profile has been updated to %q.\n", p.Name)
 				}
 			} else {
-				fmt.Printf("Context %q updated successfully.\n", name)
+				fmt.Printf("Profile %q updated successfully.\n", name)
 			}
 		},
 	}
 
-	cmd.Flags().BoolVar(&raw, "raw", false, "Edit context directly as it exists in rpk.yaml without any environment variables nor flags applied")
+	cmd.Flags().BoolVar(&raw, "raw", false, "Edit profile directly as it exists in rpk.yaml without any environment variables nor flags applied")
 	return cmd
 }
