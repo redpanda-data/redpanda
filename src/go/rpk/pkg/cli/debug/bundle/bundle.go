@@ -28,7 +28,7 @@ import (
 
 type bundleParams struct {
 	fs                      afero.Fs
-	cx                      *config.RpkProfile
+	p                       *config.RpkProfile
 	y                       *config.RedpandaYaml
 	yActual                 *config.RedpandaYaml
 	cl                      *kgo.Client
@@ -70,7 +70,7 @@ func NewCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 			out.MaybeDie(err, "unable to load config: %v", err)
 
 			var (
-				cx          = cfg.MaterializedProfile()
+				p           = cfg.MaterializedProfile()
 				y           = cfg.MaterializedRedpandaYaml()
 				yActual, ok = cfg.ActualRedpandaYaml()
 			)
@@ -78,7 +78,7 @@ func NewCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 				yActual = y
 			}
 
-			cl, err := kafka.NewFranzClient(fs, cx)
+			cl, err := kafka.NewFranzClient(fs, p)
 			out.MaybeDie(err, "unable to initialize kafka client: %v", err)
 			defer cl.Close()
 
@@ -89,7 +89,7 @@ func NewCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 			out.MaybeDie(err, "unable to parse --controller-logs-size-limit: %v", err)
 			bp := bundleParams{
 				fs:                      fs,
-				cx:                      cx,
+				p:                       p,
 				y:                       y,
 				yActual:                 yActual,
 				cl:                      cl,

@@ -34,12 +34,12 @@ func newUseCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 			}
 
 			name := args[0]
-			cx := y.Profile(name)
-			if cx == nil {
+			p := y.Profile(name)
+			if p == nil {
 				out.Die("context %q does not exist", name)
 			}
 			y.CurrentProfile = name
-			y.MoveProfileToFront(cx)
+			y.MoveProfileToFront(p)
 
 			err = y.Write(fs)
 			out.MaybeDieErr(err)

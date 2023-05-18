@@ -33,8 +33,8 @@ func newRenameToCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 				out.Die("rpk.yaml file does not exist")
 			}
 
-			cx := y.Profile(y.CurrentProfile)
-			if cx == nil {
+			p := y.Profile(y.CurrentProfile)
+			if p == nil {
 				out.Die("current context %q does not exist", y.CurrentProfile)
 				return
 			}
@@ -42,9 +42,9 @@ func newRenameToCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 			if y.Profile(to) != nil {
 				out.Die("destination context %q already exists", to)
 			}
-			cx.Name = to
+			p.Name = to
 			y.CurrentProfile = to
-			y.MoveProfileToFront(cx)
+			y.MoveProfileToFront(p)
 			err = y.Write(fs)
 			out.MaybeDieErr(err)
 			fmt.Printf("Renamed current context to %q.\n", to)

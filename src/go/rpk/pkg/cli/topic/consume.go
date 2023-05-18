@@ -71,10 +71,10 @@ func newConsumeCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 		Long:  helpConsume,
 		Args:  cobra.MinimumNArgs(1),
 		Run: func(cmd *cobra.Command, topics []string) {
-			cx, err := p.LoadMaterializedProfile(fs)
+			p, err := p.LoadMaterializedProfile(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)
 
-			adm, err := kafka.NewAdmin(fs, cx)
+			adm, err := kafka.NewAdmin(fs, p)
 			out.MaybeDie(err, "unable to initialize admin kafka client: %v", err)
 
 			err = c.parseOffset(offset, topics, adm)
@@ -94,7 +94,7 @@ func newConsumeCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 			sigs := make(chan os.Signal, 2)
 			signal.Notify(sigs, os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
 
-			c.cl, err = kafka.NewFranzClient(fs, cx, opts...)
+			c.cl, err = kafka.NewFranzClient(fs, p, opts...)
 			out.MaybeDie(err, "unable to initialize kafka client: %v", err)
 
 			doneConsume := make(chan struct{})

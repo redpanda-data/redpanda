@@ -32,10 +32,10 @@ output, use the 'edit' and 'export' commands respectively.`,
 		Run: func(cmd *cobra.Command, args []string) {
 			key := args[0]
 
-			cx, err := p.LoadMaterializedProfile(fs)
+			p, err := p.LoadMaterializedProfile(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)
 
-			client, err := admin.NewClient(fs, cx)
+			client, err := admin.NewClient(fs, p)
 			out.MaybeDie(err, "unable to initialize admin client: %v", err)
 
 			currentConfig, err := client.Config(cmd.Context(), true)

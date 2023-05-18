@@ -32,11 +32,11 @@ func newSetCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 			y, err := cfg.ActualRpkYamlOrEmpty()
 			out.MaybeDie(err, "unable to load rpk.yaml: %v", err)
 
-			cx := y.Profile(y.CurrentProfile)
-			if cx == nil {
+			p := y.Profile(y.CurrentProfile)
+			if p == nil {
 				out.Die("current context %q does not exist", y.CurrentProfile)
 			}
-			err = config.Set(&cx, args[0], args[1])
+			err = config.Set(&p, args[0], args[1])
 			out.MaybeDieErr(err)
 			err = y.Write(fs)
 			out.MaybeDieErr(err)

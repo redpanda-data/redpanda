@@ -39,12 +39,12 @@ func newListCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 				return y.Profiles[i].Name < y.Profiles[j].Name
 			})
 
-			for _, cx := range y.Profiles {
-				name := cx.Name
+			for _, p := range y.Profiles {
+				name := p.Name
 				if name == y.CurrentProfile {
 					name += "*"
 				}
-				tw.Print(name, cx.Description)
+				tw.Print(name, p.Description)
 			}
 		},
 	}

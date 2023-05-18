@@ -27,10 +27,10 @@ func newInfoCommand(fs afero.Fs, p *config.Params) *cobra.Command {
     Version:         License schema version.
 `,
 		Run: func(cmd *cobra.Command, args []string) {
-			cx, err := p.LoadMaterializedProfile(fs)
+			p, err := p.LoadMaterializedProfile(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)
 
-			cl, err := admin.NewClient(fs, cx)
+			cl, err := admin.NewClient(fs, p)
 			out.MaybeDie(err, "unable to initialize admin client: %v", err)
 
 			info, err := cl.GetLicenseInfo(cmd.Context())

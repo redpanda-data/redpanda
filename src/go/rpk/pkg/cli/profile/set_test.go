@@ -16,7 +16,7 @@ import (
 )
 
 func TestSetPossibilities(t *testing.T) {
-	var cx config.RpkProfile
+	var p config.RpkProfile
 	toSet := map[string]string{
 		"kafka_api.brokers":       "127.0.0.1,127.0.0.1",
 		"kafka_api.tls.enabled":   "true",
@@ -32,15 +32,15 @@ func TestSetPossibilities(t *testing.T) {
 		"admin_api.tls.cert_file": "/foo/cert",
 		"admin_api.tls.key_file":  "/foo/key",
 	}
-	for _, p := range setPossibilities {
-		set, ok := toSet[p]
+	for _, possibility := range setPossibilities {
+		set, ok := toSet[possibility]
 		if !ok {
-			t.Errorf("test toSet is missing set possibility %q", p)
+			t.Errorf("test toSet is missing set possibility %q", possibility)
 			continue
 		}
-		err := config.Set(&cx, p, set)
+		err := config.Set(&p, possibility, set)
 		if err != nil {
-			t.Errorf("toSet %q value %q failed: %v", p, set, err)
+			t.Errorf("toSet %q value %q failed: %v", possibility, set, err)
 		}
 	}
 }

@@ -41,8 +41,8 @@ func newDuplicateToCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 			if from == "" {
 				from = y.CurrentProfile
 			}
-			cx := y.Profile(from)
-			if cx == nil {
+			p := y.Profile(from)
+			if p == nil {
 				out.Die("--from context %q does not exist", from)
 				return
 			}
@@ -50,7 +50,7 @@ func newDuplicateToCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 				out.Die("destination context %q already exists", to)
 			}
 
-			dup := *cx
+			dup := *p
 			dup.Name = to
 			if description != "" {
 				dup.Description = description

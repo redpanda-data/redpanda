@@ -102,15 +102,15 @@ func createCtx(
 	if fromCloud != "" && fromSimple != "" {
 		return false, false, fmt.Errorf("cannot use --from-cloud and --from-simple together")
 	}
-	if cx := y.Profile(name); cx != nil {
+	if p := y.Profile(name); p != nil {
 		return false, false, fmt.Errorf("context %q already exists", name)
 	}
 
-	var cx config.RpkProfile
+	var p config.RpkProfile
 	switch {
 	case fromCloud != "":
 		var err error
-		cx, cloudMTLS, cloudSASL, err = createCloudContext(ctx, y, cfg, fromCloud)
+		p, cloudMTLS, cloudSASL, err = createCloudContext(ctx, y, cfg, fromCloud)
 		if err != nil {
 			return false, false, err
 		}
@@ -131,7 +131,7 @@ func createCtx(
 			}
 			nodeCfg = rpyaml.Rpk
 		}
-		cx = config.RpkProfile{
+		p = config.RpkProfile{
 			KafkaAPI: nodeCfg.KafkaAPI,
 			AdminAPI: nodeCfg.AdminAPI,
 		}
@@ -142,19 +142,19 @@ func createCtx(
 		if len(split) != 2 {
 			return false, false, fmt.Errorf("invalid key=value pair %q", kv)
 		}
-		err := config.Set(&cx, split[0], split[1])
+		err := config.Set(&p, split[0], split[1])
 		if err != nil {
 			return false, false, err
 		}
 	}
-	if cloudSASL && cx.KafkaAPI.SASL != nil {
+	if cloudSASL && p.KafkaAPI.SASL != nil {
 		cloudSASL = false
 	}
 
-	cx.Name = name
-	cx.Description = description
+	p.Name = name
+	p.Description = description
 	y.CurrentProfile = name
-	y.Profiles = append([]config.RpkProfile{cx}, y.Profiles...)
+	y.Profiles = append([]config.RpkProfile{p}, y.Profiles...)
 	if err := y.Write(fs); err != nil {
 		return false, false, fmt.Errorf("unable to write rpk file: %v", err)
 	}
@@ -171,37 +171,37 @@ func createSetCompletion(_ *cobra.Command, _ []string, toComplete string) ([]str
 	return possibilities, cobra.ShellCompDirectiveNoSpace
 }
 
-func createCloudContext(ctx context.Context, y *config.RpkYaml, cfg *config.Config, clusterID string) (cx config.RpkProfile, cloudMTLS, cloudSASL bool, err error) {
+func createCloudContext(ctx context.Context, y *config.RpkYaml, cfg *config.Config, clusterID string) (p config.RpkProfile, cloudMTLS, cloudSASL bool, err error) {
 	a := y.Auth(y.CurrentCloudAuth)
 	if a == nil {
-		return cx, false, false, fmt.Errorf("missing auth for current_cloud_auth %q", y.CurrentCloudAuth)
+		return p, false, false, fmt.Errorf("missing auth for current_cloud_auth %q", y.CurrentCloudAuth)
 	}
 
 	overrides := cfg.DevOverrides()
 	auth0Cl := auth0.NewClient(overrides)
 	expired, err := oauth.ValidateToken(a.AuthToken, auth0Cl.Audience(), a.ClientID)
 	if err != nil {
-		return cx, false, false, err
+		return p, false, false, err
 	}
 	if expired {
-		return cx, false, false, fmt.Errorf("token for %q has expired, please login again", y.CurrentCloudAuth)
+		return p, false, false, fmt.Errorf("token for %q has expired, please login again", y.CurrentCloudAuth)
 	}
 	cl := cloudapi.NewClient(overrides.CloudAPIURL, a.AuthToken)
 
 	c, err := cl.Cluster(ctx, clusterID)
 	if err != nil {
-		return cx, false, false, fmt.Errorf("unable to request details for cluster %q: %w", clusterID, err)
+		return p, false, false, fmt.Errorf("unable to request details for cluster %q: %w", clusterID, err)
 	}
 	if len(c.Status.Listeners.Kafka.Default.URLs) == 0 {
-		return cx, false, false, fmt.Errorf("cluster %q has no kafka listeners", clusterID)
+		return p, false, false, fmt.Errorf("cluster %q has no kafka listeners", clusterID)
 	}
-	cx.KafkaAPI.Brokers = c.Status.Listeners.Kafka.Default.URLs
+	p.KafkaAPI.Brokers = c.Status.Listeners.Kafka.Default.URLs
 	if l := c.Spec.KafkaListeners.Listeners; len(l) > 0 {
 		if l[0].TLS != nil {
-			cx.KafkaAPI.TLS = new(config.TLS)
+			p.KafkaAPI.TLS = new(config.TLS)
 			cloudMTLS = l[0].TLS.RequireClientAuth
 		}
 		cloudSASL = l[0].SASL != nil
 	}
-	return cx, cloudMTLS, cloudSASL, nil
+	return p, cloudMTLS, cloudSASL, nil
 }

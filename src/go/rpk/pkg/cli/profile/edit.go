@@ -43,13 +43,13 @@ func newEditCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 				args = append(args, y.CurrentProfile)
 			}
 			name := args[0]
-			cx := y.Profile(name)
-			if cx == nil {
+			p := y.Profile(name)
+			if p == nil {
 				out.Die("context %s does not exist", name)
 				return
 			}
 
-			update, err := rpkos.EditTmpYAMLFile(fs, *cx)
+			update, err := rpkos.EditTmpYAMLFile(fs, *p)
 			out.MaybeDieErr(err)
 
 			var renamed, updatedCurrent bool
@@ -60,15 +60,15 @@ func newEditCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 					y.CurrentProfile = update.Name
 				}
 			}
-			*cx = update
+			*p = update
 
 			err = y.Write(fs)
 			out.MaybeDie(err, "unable to write rpk.yaml: %v", err)
 
 			if renamed {
-				fmt.Printf("Context %q updated successfully and renamed to %q.\n", name, cx.Name)
+				fmt.Printf("Context %q updated successfully and renamed to %q.\n", name, p.Name)
 				if updatedCurrent {
-					fmt.Printf("Current context has been updated to %q.\n", cx.Name)
+					fmt.Printf("Current context has been updated to %q.\n", p.Name)
 				}
 			} else {
 				fmt.Printf("Context %q updated successfully.\n", name)

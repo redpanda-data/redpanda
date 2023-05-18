@@ -32,11 +32,11 @@ success when all jobs have been stopped or reports errors if broker timeouts hav
 		Args: cobra.ExactArgs(0),
 		Run: func(cmd *cobra.Command, _ []string) {
 			// Load config settings
-			cx, err := p.LoadMaterializedProfile(fs)
+			p, err := p.LoadMaterializedProfile(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)
 
 			// Create new HTTP client for communication w/ admin server
-			cl, err := admin.NewClient(fs, cx)
+			cl, err := admin.NewClient(fs, p)
 			out.MaybeDie(err, "unable to initialize admin client: %v", err)
 
 			// Make HTTP POST request to leader that stops all self tests on all nodes

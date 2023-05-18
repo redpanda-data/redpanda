@@ -42,12 +42,12 @@ func newPrintCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 			if len(args) == 0 {
 				args = append(args, y.CurrentProfile)
 			}
-			cx := y.Profile(args[0])
-			if cx == nil {
+			p := y.Profile(args[0])
+			if p == nil {
 				out.Die("context %s does not exist", args[0])
 			}
 
-			m, err := yaml.Marshal(cx)
+			m, err := yaml.Marshal(p)
 			out.MaybeDie(err, "unable to encode context: %v", err)
 			fmt.Println(string(m))
 		},

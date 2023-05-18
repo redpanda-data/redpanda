@@ -33,8 +33,8 @@ func newRenameToCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 				out.Die("rpk.yaml file does not exist")
 			}
 
-			cx := y.Auth(y.CurrentCloudAuth)
-			if cx == nil {
+			p := y.Auth(y.CurrentCloudAuth)
+			if p == nil {
 				out.Die("current auth %q does not exist", y.CurrentCloudAuth)
 				return
 			}
@@ -42,9 +42,9 @@ func newRenameToCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 			if y.Auth(to) != nil {
 				out.Die("destination cloud auth %q already exists", to)
 			}
-			cx.Name = to
+			p.Name = to
 			y.CurrentCloudAuth = to
-			y.MoveAuthToFront(cx)
+			y.MoveAuthToFront(p)
 			err = y.Write(fs)
 			out.MaybeDieErr(err)
 			fmt.Printf("Renamed current cloud auth to %q.\n", to)

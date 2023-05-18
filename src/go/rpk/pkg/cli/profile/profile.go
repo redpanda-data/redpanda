@@ -20,7 +20,7 @@ import (
 func NewCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "context",
-		Aliases: []string{"cx", "ctx"},
+		Aliases: []string{"p", "ctx"},
 		Short:   "Manage rpk contexts",
 	}
 
@@ -51,9 +51,9 @@ func validContexts(fs afero.Fs, p *config.Params) func(*cobra.Command, []string,
 		}
 		var names []string
 		for i := range y.Profiles {
-			cx := &y.Profiles[i]
-			if strings.HasPrefix(cx.Name, toComplete) {
-				names = append(names, cx.Name)
+			p := &y.Profiles[i]
+			if strings.HasPrefix(p.Name, toComplete) {
+				names = append(names, p.Name)
 			}
 		}
 		return names, cobra.ShellCompDirectiveDefault

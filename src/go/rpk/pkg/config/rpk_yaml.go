@@ -120,8 +120,8 @@ type (
 
 // Profile returns the given profile, or nil if it does not exist.
 func (y *RpkYaml) Profile(name string) *RpkProfile {
-	for i, cx := range y.Profiles {
-		if cx.Name == name {
+	for i, p := range y.Profiles {
+		if p.Name == name {
 			return &y.Profiles[i]
 		}
 	}
@@ -129,16 +129,16 @@ func (y *RpkYaml) Profile(name string) *RpkProfile {
 }
 
 // PushProfile pushes a profile to the front and returns the profile's name.
-func (y *RpkYaml) PushProfile(cx RpkProfile) string {
-	y.Profiles = append([]RpkProfile{cx}, y.Profiles...)
-	return cx.Name
+func (y *RpkYaml) PushProfile(p RpkProfile) string {
+	y.Profiles = append([]RpkProfile{p}, y.Profiles...)
+	return p.Name
 }
 
 // MoveProfileToFront moves the given profile to the front of the list.
-func (y *RpkYaml) MoveProfileToFront(cx *RpkProfile) {
-	reordered := []RpkProfile{*cx}
+func (y *RpkYaml) MoveProfileToFront(p *RpkProfile) {
+	reordered := []RpkProfile{*p}
 	for i := range y.Profiles {
-		if &y.Profiles[i] == cx {
+		if &y.Profiles[i] == p {
 			continue
 		}
 		reordered = append(reordered, y.Profiles[i])
@@ -192,13 +192,13 @@ func (a *RpkCloudAuth) Kind() (string, bool) {
 
 // Logger returns the logger for the original configuration, or a nop logger if
 // it was invalid.
-func (cx *RpkProfile) Logger() *zap.Logger {
-	return cx.c.p.Logger()
+func (p *RpkProfile) Logger() *zap.Logger {
+	return p.c.p.Logger()
 }
 
 // SugarLogger returns Logger().Sugar().
-func (cx *RpkProfile) SugarLogger() *zap.SugaredLogger {
-	return cx.Logger().Sugar()
+func (p *RpkProfile) SugarLogger() *zap.SugaredLogger {
+	return p.Logger().Sugar()
 }
 
 // HasClientCredentials returns if both ClientID and ClientSecret are empty.

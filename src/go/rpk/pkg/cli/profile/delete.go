@@ -50,8 +50,8 @@ func deleteCtx(
 	name string,
 ) (cleared bool, err error) {
 	idx := -1
-	for i, cx := range y.Profiles {
-		if cx.Name == name {
+	for i, p := range y.Profiles {
+		if p.Name == name {
 			idx = i
 			break
 		}
