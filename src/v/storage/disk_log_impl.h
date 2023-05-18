@@ -191,7 +191,7 @@ private:
 
     ss::future<std::pair<usage, reclaim_size_limits>>
       disk_usage_and_reclaim(gc_config);
-    ss::future<usage_target> disk_usage_target(gc_config);
+    ss::future<usage_target> disk_usage_target(gc_config, usage);
 
 private:
     size_t max_segment_size() const;

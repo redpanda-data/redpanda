@@ -804,6 +804,10 @@
                 "target_min_capacity": {
                     "type": "long",
                     "description": "Target minimum capacity"
+                },
+                "target_min_capacity_wanted": {
+                    "type": "long",
+                    "description": "Target minimum capacity wanted"
                 }
             }
         }

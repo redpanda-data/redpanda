@@ -1920,12 +1920,73 @@ disk_log_impl::disk_usage_and_reclaim(gc_config cfg) {
 /*
  * assumes that the compaction gate is held.
  */
-ss::future<usage_target> disk_log_impl::disk_usage_target(gc_config) {
+ss::future<usage_target>
+disk_log_impl::disk_usage_target(gc_config cfg, usage usage) {
     usage_target target;
 
     target.min_capacity
       = config::shard_local_cfg().storage_reserve_min_segments()
         * max_segment_size();
+
+    cfg = apply_base_overrides(cfg);
+
+    /*
+     * compacted topics are always stored whole on local storage such that local
+     * retention settings do not come into play.
+     */
+    if (config().is_compacted()) {
+        /*
+         * if there is no delete policy enabled for a compacted topic then its
+         * local capacity requirement is limited only by compaction process and
+         * how much data is written. for this case we use a heuristic of to
+         * report space wanted as `factor * current capacity` to reflect that we
+         * want space for continued growth.
+         */
+        if (!config().is_collectable() || deletion_exempt(config().ntp())) {
+            target.min_capacity_wanted = usage.total() * 2;
+            co_return target;
+        }
+
+        /*
+         * otherwise, we fall through and evaluate the space wanted metric using
+         * any configured retention policies _without_ overriding based on cloud
+         * retention settings. the assumption here is that retention and not
+         * compaction is what will limit on disk space. this heuristic should be
+         * updated if we decide to also make "nice to have" estimates based on
+         * expected compaction ratios.
+         */
+    } else {
+        // applies local retention overrides for cloud storage
+        cfg = override_retention_config(cfg);
+    }
+
+    /*
+     * estimate how much space is needed to be meet size based retention policy.
+     *
+     * even though retention bytes has a built-in mechanism (ie -1 / nullopt) to
+     * represent infinite retention, it is concievable that a user sets a large
+     * value to achieve the same goal. in this case we cannot know precisely
+     * what the intention is, and so we preserve the large value.
+     *
+     * TODO: it is likely that we will want to clamp this value at some point,
+     * either here or at a higher level.
+     */
+    if (cfg.max_bytes.has_value()) {
+        target.min_capacity_wanted = cfg.max_bytes.value();
+        /*
+         * since prefix truncation / garbage collection only removes whole
+         * segments we can make the estimate a bit more conservative by rounding
+         * up to roughly the nearest segment size.
+         */
+        target.min_capacity_wanted
+          += max_segment_size() - (cfg.max_bytes.value() % max_segment_size());
+    } else {
+        /*
+         * without any target max bytes, use `factor * current capacity` to
+         * reflect that we want space for continued growth.
+         */
+        target.min_capacity_wanted = usage.total() * 2;
+    }
 
     co_return target;
 }
@@ -1944,7 +2005,14 @@ ss::future<usage_report> disk_log_impl::disk_usage(gc_config cfg) {
      * compute target capacities such as minimum required capacity as well as
      * capacities needed to meet goals such as local retention.
      */
-    auto target = co_await disk_usage_target(cfg);
+    auto target = co_await disk_usage_target(cfg, usage);
+
+    /*
+     * the intention here is to establish a needed <= wanted relationship which
+     * should generally provide a nicer set of numbers for consumers to use.
+     */
+    target.min_capacity_wanted = std::max(
+      target.min_capacity_wanted, target.min_capacity);
 
     co_return usage_report(usage, reclaim, target);
 }

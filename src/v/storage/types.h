@@ -472,6 +472,7 @@ struct usage {
  * disk usage targets
  *
  * min_capacity: minimum amount of storage capacity needed.
+ * min_capacity_wanted: minimum amount needed to meet policy requirements.
  *
  * The minimum capacity is intended to capture the minimum amount of disk space
  * needed for the basic functionality. At a high-level this is expressed as a
@@ -479,12 +480,27 @@ struct usage {
  * log.max_segment_size() for each managed log, where S is the value of the
  * configuration option storage_reserve_min_segments specifying the minimum
  * number of segments for which space should be reserved.
+ *
+ * The minimum capacity wanted is an estimate of the amount of storage capacity
+ * needed to meet various configurable targets. This value is derived from
+ * multiple sources and policies:
+ *
+ *    * size-based retention: the amount of space needed to meet size-based
+ *    local retention policy, rounded up to the nearest segment size.
+ *
+ *    * compaction: compacted topics are kept whole on local storage (ie not
+ *    subject to truncation due to local retention policies). for compact,delete
+ *    topic the retention policy (not local retention) is used to express how
+ *    much capacity is wanted. for a compact-only topic `2 * current size` is
+ *    reported.
  */
 struct usage_target {
     size_t min_capacity{0};
+    size_t min_capacity_wanted{0};
 
     friend usage_target operator+(usage_target lhs, const usage_target& rhs) {
         lhs.min_capacity += rhs.min_capacity;
+        lhs.min_capacity_wanted += rhs.min_capacity_wanted;
         return lhs;
     }
 };
