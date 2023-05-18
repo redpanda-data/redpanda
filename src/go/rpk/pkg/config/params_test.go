@@ -1074,3 +1074,40 @@ func TestParamsListComplete(t *testing.T) {
 		t.Errorf("ParamsList missing keys: %v", maps.Keys(m))
 	}
 }
+
+func TestXSetExamples(t *testing.T) {
+	m := maps.Clone(xflags)
+	for _, fn := range []func() (xs, yamlPaths []string){
+		XProfileFlags,
+		XCloudAuthFlags,
+	} {
+		xs, yamlPaths := fn()
+		for i, x := range xs {
+			delete(m, x)
+
+			xf := xflags[x]
+			y, _ := defaultMaterializedRpkYaml()
+			if err := xf.parse(xf.testExample, &y); err != nil {
+				t.Errorf("unable to parse test example for xflag %s: %v", x, err)
+			}
+			yamlPath := yamlPaths[i]
+			var err error
+			switch xf.kind {
+			case xkindProfile:
+				err = Set(new(RpkProfile), yamlPath, xf.testExample)
+			case xkindCloudAuth:
+				err = Set(new(RpkCloudAuth), yamlPath, xf.testExample)
+			default:
+				t.Errorf("unrecognized xflag kind %v", xf.kind)
+				continue
+			}
+			if err != nil {
+				t.Errorf("unable to Set test example for xflag yaml path %s: %v", yamlPath, err)
+			}
+		}
+	}
+
+	if len(m) > 0 {
+		t.Errorf("xflags still contains keys %v after checking all examples in this test", maps.Keys(m))
+	}
+}

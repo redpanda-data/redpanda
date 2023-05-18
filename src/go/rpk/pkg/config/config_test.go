@@ -341,11 +341,27 @@ tune_cpu: true`,
 			},
 		},
 		{
+			name:  "set tls.enabled=false leaves tls null",
+			key:   "rpk.kafka_api.tls.enabled",
+			value: "false",
+			check: func(st *testing.T, y *RedpandaYaml) {
+				require.Exactly(st, (*TLS)(nil), y.Rpk.KafkaAPI.TLS)
+			},
+		},
+		{
 			name:  "set tls={} initializes empty tls",
 			key:   "rpk.kafka_api.tls",
 			value: "{}",
 			check: func(st *testing.T, y *RedpandaYaml) {
 				require.Exactly(st, new(TLS), y.Rpk.KafkaAPI.TLS)
+			},
+		},
+		{
+			name:  "set tls=null leaves tls null",
+			key:   "rpk.kafka_api.tls",
+			value: "null",
+			check: func(st *testing.T, y *RedpandaYaml) {
+				require.Exactly(st, (*TLS)(nil), y.Rpk.KafkaAPI.TLS)
 			},
 		},
 		{

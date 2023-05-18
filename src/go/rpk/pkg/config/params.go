@@ -68,9 +68,16 @@ const (
 	xCloudClientSecret  = "cloud.client_secret"
 )
 
+const (
+	xkindProfile   = iota // configuration for the current profile
+	xkindCloudAuth        // configuration for the current cloud_auth
+)
+
 type xflag struct {
-	name  string
-	parse func(string, *RpkYaml) error
+	path        string
+	testExample string
+	kind        uint8
+	parse       func(string, *RpkYaml) error
 }
 
 func splitCommaIntoStrings(in string, dst *[]string) error {
@@ -107,82 +114,157 @@ func mkAdminTLS(a *RpkAdminAPI) *TLS {
 	return a.TLS
 }
 
-var xflags = map[string]func(string, *RpkYaml) error{
-	xKafkaBrokers: func(v string, y *RpkYaml) error {
-		p := y.Profile(y.CurrentProfile)
-		return splitCommaIntoStrings(v, &p.KafkaAPI.Brokers)
+var xflags = map[string]xflag{
+	xKafkaBrokers: {
+		"kafka_api.brokers",
+		"127.8.8.4,126.1.3.4:9093,localhost",
+		xkindProfile,
+		func(v string, y *RpkYaml) error {
+			p := y.Profile(y.CurrentProfile)
+			return splitCommaIntoStrings(v, &p.KafkaAPI.Brokers)
+		},
 	},
-	xKafkaTLSEnabled: func(v string, y *RpkYaml) error {
-		p := y.Profile(y.CurrentProfile)
-		mkKafkaTLS(&p.KafkaAPI)
-		return nil
+	xKafkaTLSEnabled: {
+		"kafka_api.tls.enabled",
+		"true",
+		xkindProfile,
+		func(v string, y *RpkYaml) error {
+			p := y.Profile(y.CurrentProfile)
+			mkKafkaTLS(&p.KafkaAPI)
+			return nil
+		},
 	},
-	xKafkaCACert: func(v string, y *RpkYaml) error {
-		p := y.Profile(y.CurrentProfile)
-		mkKafkaTLS(&p.KafkaAPI).TruststoreFile = v
-		return nil
+	xKafkaCACert: {
+		"kafka_api.tls.ca_file",
+		"/path.pem",
+		xkindProfile,
+		func(v string, y *RpkYaml) error {
+			p := y.Profile(y.CurrentProfile)
+			mkKafkaTLS(&p.KafkaAPI).TruststoreFile = v
+			return nil
+		},
 	},
-	xKafkaClientCert: func(v string, y *RpkYaml) error {
-		p := y.Profile(y.CurrentProfile)
-		mkKafkaTLS(&p.KafkaAPI).CertFile = v
-		return nil
+	xKafkaClientCert: {
+		"kafka_api.tls.cert_file",
+		"unrooted/path.pem",
+		xkindProfile,
+		func(v string, y *RpkYaml) error {
+			p := y.Profile(y.CurrentProfile)
+			mkKafkaTLS(&p.KafkaAPI).CertFile = v
+			return nil
+		},
 	},
-	xKafkaClientKey: func(v string, y *RpkYaml) error {
-		p := y.Profile(y.CurrentProfile)
-		mkKafkaTLS(&p.KafkaAPI).KeyFile = v
-		return nil
-	},
-
-	xKafkaSASLMechanism: func(v string, y *RpkYaml) error {
-		p := y.Profile(y.CurrentProfile)
-		mkSASL(&p.KafkaAPI).Mechanism = v
-		return nil
-	},
-	xKafkaSASLUser: func(v string, y *RpkYaml) error {
-		p := y.Profile(y.CurrentProfile)
-		mkSASL(&p.KafkaAPI).User = v
-		return nil
-	},
-	xKafkaSASLPass: func(v string, y *RpkYaml) error {
-		p := y.Profile(y.CurrentProfile)
-		mkSASL(&p.KafkaAPI).Password = v
-		return nil
-	},
-
-	xAdminHosts: func(v string, y *RpkYaml) error {
-		p := y.Profile(y.CurrentProfile)
-		return splitCommaIntoStrings(v, &p.AdminAPI.Addresses)
-	},
-	xAdminTLSEnabled: func(v string, y *RpkYaml) error {
-		p := y.Profile(y.CurrentProfile)
-		mkAdminTLS(&p.AdminAPI)
-		return nil
-	},
-	xAdminCACert: func(v string, y *RpkYaml) error {
-		p := y.Profile(y.CurrentProfile)
-		mkAdminTLS(&p.AdminAPI).TruststoreFile = v
-		return nil
-	},
-	xAdminClientCert: func(v string, y *RpkYaml) error {
-		p := y.Profile(y.CurrentProfile)
-		mkAdminTLS(&p.AdminAPI).CertFile = v
-		return nil
-	},
-	xAdminClientKey: func(v string, y *RpkYaml) error {
-		p := y.Profile(y.CurrentProfile)
-		mkAdminTLS(&p.AdminAPI).KeyFile = v
-		return nil
+	xKafkaClientKey: {
+		"kafka_api.tls.key_file",
+		"fileonly.pem",
+		xkindProfile,
+		func(v string, y *RpkYaml) error {
+			p := y.Profile(y.CurrentProfile)
+			mkKafkaTLS(&p.KafkaAPI).KeyFile = v
+			return nil
+		},
 	},
 
-	xCloudClientID: func(v string, y *RpkYaml) error {
-		auth := y.Auth(y.CurrentCloudAuth)
-		auth.ClientID = v
-		return nil
+	xKafkaSASLMechanism: {
+		"kafka_api.sasl.type",
+		"scram-sha-256",
+		xkindProfile,
+		func(v string, y *RpkYaml) error {
+			p := y.Profile(y.CurrentProfile)
+			mkSASL(&p.KafkaAPI).Mechanism = v
+			return nil
+		},
 	},
-	xCloudClientSecret: func(v string, y *RpkYaml) error {
-		auth := y.Auth(y.CurrentCloudAuth)
-		auth.ClientSecret = v
-		return nil
+	xKafkaSASLUser: {
+		"kafka_api.sasl.user",
+		"username",
+		xkindProfile,
+		func(v string, y *RpkYaml) error {
+			p := y.Profile(y.CurrentProfile)
+			mkSASL(&p.KafkaAPI).User = v
+			return nil
+		},
+	},
+	xKafkaSASLPass: {
+		"kafka_api.sasl.password",
+		"23oi4jdkslfnoi23j",
+		xkindProfile,
+		func(v string, y *RpkYaml) error {
+			p := y.Profile(y.CurrentProfile)
+			mkSASL(&p.KafkaAPI).Password = v
+			return nil
+		},
+	},
+
+	xAdminHosts: {
+		"admin_api.addresses",
+		"example.com",
+		xkindProfile,
+		func(v string, y *RpkYaml) error {
+			p := y.Profile(y.CurrentProfile)
+			return splitCommaIntoStrings(v, &p.AdminAPI.Addresses)
+		},
+	},
+	xAdminTLSEnabled: {
+		"admin_api.tls.enabled",
+		"false",
+		xkindProfile,
+		func(v string, y *RpkYaml) error {
+			p := y.Profile(y.CurrentProfile)
+			mkAdminTLS(&p.AdminAPI)
+			return nil
+		},
+	},
+	xAdminCACert: {
+		"admin_api.tls.ca_file",
+		"noextension",
+		xkindProfile,
+		func(v string, y *RpkYaml) error {
+			p := y.Profile(y.CurrentProfile)
+			mkAdminTLS(&p.AdminAPI).TruststoreFile = v
+			return nil
+		},
+	},
+	xAdminClientCert: {
+		"admin_api.tls.cert_file",
+		"cert.pem",
+		xkindProfile,
+		func(v string, y *RpkYaml) error {
+			p := y.Profile(y.CurrentProfile)
+			mkAdminTLS(&p.AdminAPI).CertFile = v
+			return nil
+		},
+	},
+	xAdminClientKey: {
+		"admin_api.tls.key_file",
+		"key.pem",
+		xkindProfile,
+		func(v string, y *RpkYaml) error {
+			p := y.Profile(y.CurrentProfile)
+			mkAdminTLS(&p.AdminAPI).KeyFile = v
+			return nil
+		},
+	},
+
+	xCloudClientID: {
+		"client_id",
+		"anystring",
+		xkindCloudAuth,
+		func(v string, y *RpkYaml) error {
+			auth := y.Auth(y.CurrentCloudAuth)
+			auth.ClientID = v
+			return nil
+		},
+	},
+	xCloudClientSecret: {
+		"client_secret",
+		"anysecret",
+		xkindCloudAuth,
+		func(v string, y *RpkYaml) error {
+			auth := y.Auth(y.CurrentCloudAuth)
+			auth.ClientSecret = v
+			return nil
+		},
 	},
 }
 
@@ -191,6 +273,30 @@ func XFlags() []string {
 	keys := maps.Keys(xflags)
 	sort.Strings(keys)
 	return keys
+}
+
+// XProfileFlags returns all X flags that modify rpk profile settings, and
+// their corresponding yaml paths.
+func XProfileFlags() (xs, yamlPaths []string) {
+	for k, v := range xflags {
+		if v.kind == xkindProfile {
+			xs = append(xs, k)
+			yamlPaths = append(yamlPaths, v.path)
+		}
+	}
+	return
+}
+
+// XCloudAuthFlags returns all X flags that modify rpk cloud auth settings, and
+// their corresponding yaml paths.
+func XCloudAuthFlags() (xs, yamlPaths []string) {
+	for k, v := range xflags {
+		if v.kind == xkindCloudAuth {
+			xs = append(xs, k)
+			yamlPaths = append(yamlPaths, v.path)
+		}
+	}
+	return
 }
 
 // Params contains rpk-wide configuration parameters.
@@ -908,11 +1014,11 @@ func (p *Params) processOverrides(c *Config) error {
 			}
 			k, v := kv[0], kv[1]
 
-			parse, exists := xflags[strings.ToLower(k)]
+			xf, exists := xflags[strings.ToLower(k)]
 			if !exists {
 				return fmt.Errorf("%s config: unknown key %q", from, k)
 			}
-			if err := parse(v, &c.rpkYaml); err != nil {
+			if err := xf.parse(v, &c.rpkYaml); err != nil {
 				return fmt.Errorf("%s config key %q: %s", from, k, err)
 			}
 		}
@@ -1153,8 +1259,11 @@ func Set[T any](p *T, key, value string) error {
 	if len(tags) > 1 && finalTag == "enabled" && tags[len(tags)-2] == "tls" {
 		switch value {
 		case "{}":
+		case "null":
 		case "true":
 			value = "{}"
+		case "false":
+			value = "null"
 		default:
 			return fmt.Errorf("%s must be true or {}", key)
 		}
