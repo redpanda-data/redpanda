@@ -725,11 +725,11 @@ pandaproxy: {}
 schema_registry: {}
 `,
 			expMaterializedRpk: `version: 1
-current_context: default
+current_profile: default
 current_cloud_auth: default
-contexts:
+profiles:
     - name: default
-      description: Default rpk context
+      description: Default rpk profile
       kafka_api:
         brokers:
             - 127.0.0.1:9092
@@ -802,11 +802,11 @@ rpk:
     tune_disk_irq: true
 `,
 			expMaterializedRpk: `version: 1
-current_context: default
+current_profile: default
 current_cloud_auth: default
-contexts:
+profiles:
     - name: default
-      description: Default rpk context
+      description: Default rpk profile
       kafka_api:
         brokers:
             - 0.0.0.3:9092
@@ -833,9 +833,9 @@ tuners:
 		{
 			name: "rpk.yaml exists",
 			rpkYaml: `version: 1
-current_context: foo
+current_profile: foo
 current_cloud_auth: fizz
-contexts:
+profiles:
     - name: foo
       description: descriptosphere
       kafka_api:
@@ -878,9 +878,9 @@ pandaproxy: {}
 schema_registry: {}
 `,
 			expMaterializedRpk: `version: 1
-current_context: foo
+current_profile: foo
 current_cloud_auth: fizz
-contexts:
+profiles:
     - name: foo
       description: descriptosphere
       kafka_api:
@@ -926,9 +926,9 @@ rpk:
     tune_disk_irq: true
 `,
 			rpkYaml: `version: 1
-current_context: foo
+current_profile: foo
 current_cloud_auth: default
-contexts:
+profiles:
     - name: foo
       description: descriptosphere
       kafka_api:
@@ -961,9 +961,9 @@ rpk:
 `,
 
 			expMaterializedRpk: `version: 1
-current_context: foo
+current_profile: foo
 current_cloud_auth: default
-contexts:
+profiles:
     - name: foo
       description: descriptosphere
       kafka_api:

@@ -86,7 +86,7 @@ Seek group G to the beginning of a topic it was not previously consuming:
 `,
 		Args: cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
-			cx, err := p.LoadMaterializedContext(fs)
+			cx, err := p.LoadMaterializedProfile(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)
 
 			adm, err := kafka.NewAdmin(fs, cx)

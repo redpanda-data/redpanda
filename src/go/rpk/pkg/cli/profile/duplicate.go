@@ -7,7 +7,7 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
-package context
+package profile
 
 import (
 	"fmt"
@@ -39,14 +39,14 @@ func newDuplicateToCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 
 			to := args[0]
 			if from == "" {
-				from = y.CurrentContext
+				from = y.CurrentProfile
 			}
-			cx := y.Context(from)
+			cx := y.Profile(from)
 			if cx == nil {
 				out.Die("--from context %q does not exist", from)
 				return
 			}
-			if y.Context(to) != nil {
+			if y.Profile(to) != nil {
 				out.Die("destination context %q already exists", to)
 			}
 
@@ -55,13 +55,13 @@ func newDuplicateToCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 			if description != "" {
 				dup.Description = description
 			}
-			if y.CurrentContext == from {
-				y.CurrentContext = to
+			if y.CurrentProfile == from {
+				y.CurrentProfile = to
 			}
 			err = y.Write(fs)
 			out.MaybeDieErr(err)
 
-			if y.CurrentContext == to {
+			if y.CurrentProfile == to {
 				fmt.Printf("Duplicated and set the current context to %q from %q.\n", to, from)
 			} else {
 				fmt.Printf("Duplicated to context %q from %q.\n", to, from)

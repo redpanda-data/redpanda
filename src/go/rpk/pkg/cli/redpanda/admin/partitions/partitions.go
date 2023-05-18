@@ -50,7 +50,7 @@ func newListCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 				out.Die("invalid negative broker id %v", brokerID)
 			}
 
-			cx, err := p.LoadMaterializedContext(fs)
+			cx, err := p.LoadMaterializedProfile(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)
 
 			adm, err := kafka.NewAdmin(fs, cx)

@@ -28,7 +28,7 @@ import (
 )
 
 // NewFranzClient returns a franz-go based kafka client.
-func NewFranzClient(fs afero.Fs, cx *config.RpkContext, extraOpts ...kgo.Opt) (*kgo.Client, error) {
+func NewFranzClient(fs afero.Fs, cx *config.RpkProfile, extraOpts ...kgo.Opt) (*kgo.Client, error) {
 	k := &cx.KafkaAPI
 
 	opts := []kgo.Opt{
@@ -98,7 +98,7 @@ func NewFranzClient(fs afero.Fs, cx *config.RpkContext, extraOpts ...kgo.Opt) (*
 
 // NewAdmin returns a franz-go admin client.
 func NewAdmin(
-	fs afero.Fs, cx *config.RpkContext, extraOpts ...kgo.Opt,
+	fs afero.Fs, cx *config.RpkProfile, extraOpts ...kgo.Opt,
 ) (*kadm.Client, error) {
 	cl, err := NewFranzClient(fs, cx, extraOpts...)
 	if err != nil {

@@ -28,7 +28,7 @@ import (
 
 type bundleParams struct {
 	fs                      afero.Fs
-	cx                      *config.RpkContext
+	cx                      *config.RpkProfile
 	y                       *config.RedpandaYaml
 	yActual                 *config.RedpandaYaml
 	cl                      *kgo.Client
@@ -70,7 +70,7 @@ func NewCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 			out.MaybeDie(err, "unable to load config: %v", err)
 
 			var (
-				cx          = cfg.MaterializedContext()
+				cx          = cfg.MaterializedProfile()
 				y           = cfg.MaterializedRedpandaYaml()
 				yActual, ok = cfg.ActualRedpandaYaml()
 			)

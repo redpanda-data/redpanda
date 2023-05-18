@@ -55,7 +55,7 @@ central configuration store (and via 'rpk cluster config edit').
 			cfg, err := p.Load(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)
 
-			client, err := admin.NewClient(fs, cfg.MaterializedContext())
+			client, err := admin.NewClient(fs, cfg.MaterializedProfile())
 			out.MaybeDie(err, "unable to initialize admin client: %v", err)
 
 			schema, err := client.ClusterConfigSchema(cmd.Context())

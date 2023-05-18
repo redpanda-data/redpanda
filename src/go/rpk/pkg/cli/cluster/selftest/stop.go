@@ -32,7 +32,7 @@ success when all jobs have been stopped or reports errors if broker timeouts hav
 		Args: cobra.ExactArgs(0),
 		Run: func(cmd *cobra.Command, _ []string) {
 			// Load config settings
-			cx, err := p.LoadMaterializedContext(fs)
+			cx, err := p.LoadMaterializedProfile(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)
 
 			// Create new HTTP client for communication w/ admin server

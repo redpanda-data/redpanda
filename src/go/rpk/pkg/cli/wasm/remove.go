@@ -18,7 +18,7 @@ func newRemoveCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 		Short: "Remove inline WASM function",
 		Args:  cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
-			cx, err := p.LoadMaterializedContext(fs)
+			cx, err := p.LoadMaterializedProfile(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)
 
 			cl, err := kafka.NewFranzClient(fs, cx)

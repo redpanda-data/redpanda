@@ -43,7 +43,7 @@ node exists that is already in maintenance mode then an error will be returned.
 				out.Die("invalid node id: %d", nodeID)
 			}
 
-			cx, err := p.LoadMaterializedContext(fs)
+			cx, err := p.LoadMaterializedProfile(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)
 
 			client, err := admin.NewClient(fs, cx)

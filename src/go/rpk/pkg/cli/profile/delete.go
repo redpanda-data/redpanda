@@ -7,7 +7,7 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
-package context
+package profile
 
 import (
 	"fmt"
@@ -50,7 +50,7 @@ func deleteCtx(
 	name string,
 ) (cleared bool, err error) {
 	idx := -1
-	for i, cx := range y.Contexts {
+	for i, cx := range y.Profiles {
 		if cx.Name == name {
 			idx = i
 			break
@@ -59,9 +59,9 @@ func deleteCtx(
 	if idx == -1 {
 		return false, fmt.Errorf("context %q does not exist", name)
 	}
-	y.Contexts = append(y.Contexts[:idx], y.Contexts[idx+1:]...)
-	if y.CurrentContext == name {
-		y.CurrentContext = ""
+	y.Profiles = append(y.Profiles[:idx], y.Profiles[idx+1:]...)
+	if y.CurrentProfile == name {
+		y.CurrentProfile = ""
 		cleared = true
 	}
 	if err := y.Write(fs); err != nil {

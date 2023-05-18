@@ -41,7 +41,7 @@ default location '/etc/redpanda/redpanda.license'.
 				licPath = "/etc/redpanda/redpanda.license"
 			}
 
-			cx, err := p.LoadMaterializedContext(fs)
+			cx, err := p.LoadMaterializedProfile(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)
 
 			cl, err := admin.NewClient(fs, cx)

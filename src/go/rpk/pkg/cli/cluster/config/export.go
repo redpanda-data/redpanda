@@ -143,7 +143,7 @@ By default, low level tunables are excluded: use the '--all' flag
 to include all properties including these low level tunables.
 `,
 		Run: func(cmd *cobra.Command, _ []string) {
-			cx, err := p.LoadMaterializedContext(fs)
+			cx, err := p.LoadMaterializedProfile(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)
 
 			client, err := admin.NewClient(fs, cx)

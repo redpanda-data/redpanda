@@ -47,7 +47,7 @@ partitions section. By default, the summary and configs sections are printed.
 
 		Args: cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, topicArg []string) {
-			cx, err := p.LoadMaterializedContext(fs)
+			cx, err := p.LoadMaterializedProfile(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)
 
 			cl, err := kafka.NewFranzClient(fs, cx)

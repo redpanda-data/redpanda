@@ -15,7 +15,7 @@ func newListCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 		Short:   "List the brokers in your cluster",
 		Args:    cobra.ExactArgs(0),
 		Run: func(cmd *cobra.Command, _ []string) {
-			cx, err := p.LoadMaterializedContext(fs)
+			cx, err := p.LoadMaterializedProfile(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)
 
 			cl, err := admin.NewClient(fs, cx)

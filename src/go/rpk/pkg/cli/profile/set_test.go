@@ -7,7 +7,7 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
-package context
+package profile
 
 import (
 	"testing"
@@ -16,7 +16,7 @@ import (
 )
 
 func TestSetPossibilities(t *testing.T) {
-	var cx config.RpkContext
+	var cx config.RpkProfile
 	toSet := map[string]string{
 		"kafka_api.brokers":       "127.0.0.1,127.0.0.1",
 		"kafka_api.tls.enabled":   "true",

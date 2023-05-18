@@ -7,7 +7,7 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
-package context
+package profile
 
 import (
 	"fmt"
@@ -40,10 +40,10 @@ func newEditCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 			}
 
 			if len(args) == 0 {
-				args = append(args, y.CurrentContext)
+				args = append(args, y.CurrentProfile)
 			}
 			name := args[0]
-			cx := y.Context(name)
+			cx := y.Profile(name)
 			if cx == nil {
 				out.Die("context %s does not exist", name)
 				return
@@ -55,9 +55,9 @@ func newEditCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 			var renamed, updatedCurrent bool
 			if update.Name != name {
 				renamed = true
-				if y.CurrentContext == name {
+				if y.CurrentProfile == name {
 					updatedCurrent = true
-					y.CurrentContext = update.Name
+					y.CurrentProfile = update.Name
 				}
 			}
 			*cx = update

@@ -7,7 +7,7 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
-package context
+package profile
 
 import (
 	"sort"
@@ -35,13 +35,13 @@ func newListCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 				return
 			}
 
-			sort.Slice(y.Contexts, func(i, j int) bool {
-				return y.Contexts[i].Name < y.Contexts[j].Name
+			sort.Slice(y.Profiles, func(i, j int) bool {
+				return y.Profiles[i].Name < y.Profiles[j].Name
 			})
 
-			for _, cx := range y.Contexts {
+			for _, cx := range y.Profiles {
 				name := cx.Name
-				if name == y.CurrentContext {
+				if name == y.CurrentProfile {
 					name += "*"
 				}
 				tw.Print(name, cx.Description)

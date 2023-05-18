@@ -7,7 +7,7 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
-package context
+package profile
 
 import (
 	"fmt"
@@ -33,18 +33,18 @@ func newRenameToCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 				out.Die("rpk.yaml file does not exist")
 			}
 
-			cx := y.Context(y.CurrentContext)
+			cx := y.Profile(y.CurrentProfile)
 			if cx == nil {
-				out.Die("current context %q does not exist", y.CurrentContext)
+				out.Die("current context %q does not exist", y.CurrentProfile)
 				return
 			}
 			to := args[0]
-			if y.Context(to) != nil {
+			if y.Profile(to) != nil {
 				out.Die("destination context %q already exists", to)
 			}
 			cx.Name = to
-			y.CurrentContext = to
-			y.MoveContextToFront(cx)
+			y.CurrentProfile = to
+			y.MoveProfileToFront(cx)
 			err = y.Write(fs)
 			out.MaybeDieErr(err)
 			fmt.Printf("Renamed current context to %q.\n", to)

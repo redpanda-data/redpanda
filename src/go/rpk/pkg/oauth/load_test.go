@@ -102,7 +102,7 @@ func TestLoadFlow(t *testing.T) {
 			file, err := afero.ReadFile(fs, y.FileLocation())
 			require.NoError(t, err)
 			expFile := fmt.Sprintf(`version: 1
-current_context: ""
+current_profile: ""
 current_cloud_auth: default
 cloud_auth:
     - name: default

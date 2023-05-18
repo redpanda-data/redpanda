@@ -32,7 +32,7 @@ has applied: under normal circumstances these should all be equal,
 a lower number shows that a node is out of sync, perhaps because it
 is offline.`,
 		Run: func(cmd *cobra.Command, args []string) {
-			cx, err := p.LoadMaterializedContext(fs)
+			cx, err := p.LoadMaterializedProfile(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)
 
 			client, err := admin.NewClient(fs, cx)

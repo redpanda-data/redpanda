@@ -109,68 +109,68 @@ func mkAdminTLS(a *RpkAdminAPI) *TLS {
 
 var xflags = map[string]func(string, *RpkYaml) error{
 	xKafkaBrokers: func(v string, y *RpkYaml) error {
-		cx := y.Context(y.CurrentContext)
-		return splitCommaIntoStrings(v, &cx.KafkaAPI.Brokers)
+		p := y.Profile(y.CurrentProfile)
+		return splitCommaIntoStrings(v, &p.KafkaAPI.Brokers)
 	},
 	xKafkaTLSEnabled: func(v string, y *RpkYaml) error {
-		cx := y.Context(y.CurrentContext)
-		mkKafkaTLS(&cx.KafkaAPI)
+		p := y.Profile(y.CurrentProfile)
+		mkKafkaTLS(&p.KafkaAPI)
 		return nil
 	},
 	xKafkaCACert: func(v string, y *RpkYaml) error {
-		cx := y.Context(y.CurrentContext)
-		mkKafkaTLS(&cx.KafkaAPI).TruststoreFile = v
+		p := y.Profile(y.CurrentProfile)
+		mkKafkaTLS(&p.KafkaAPI).TruststoreFile = v
 		return nil
 	},
 	xKafkaClientCert: func(v string, y *RpkYaml) error {
-		cx := y.Context(y.CurrentContext)
-		mkKafkaTLS(&cx.KafkaAPI).CertFile = v
+		p := y.Profile(y.CurrentProfile)
+		mkKafkaTLS(&p.KafkaAPI).CertFile = v
 		return nil
 	},
 	xKafkaClientKey: func(v string, y *RpkYaml) error {
-		cx := y.Context(y.CurrentContext)
-		mkKafkaTLS(&cx.KafkaAPI).KeyFile = v
+		p := y.Profile(y.CurrentProfile)
+		mkKafkaTLS(&p.KafkaAPI).KeyFile = v
 		return nil
 	},
 
 	xKafkaSASLMechanism: func(v string, y *RpkYaml) error {
-		cx := y.Context(y.CurrentContext)
-		mkSASL(&cx.KafkaAPI).Mechanism = v
+		p := y.Profile(y.CurrentProfile)
+		mkSASL(&p.KafkaAPI).Mechanism = v
 		return nil
 	},
 	xKafkaSASLUser: func(v string, y *RpkYaml) error {
-		cx := y.Context(y.CurrentContext)
-		mkSASL(&cx.KafkaAPI).User = v
+		p := y.Profile(y.CurrentProfile)
+		mkSASL(&p.KafkaAPI).User = v
 		return nil
 	},
 	xKafkaSASLPass: func(v string, y *RpkYaml) error {
-		cx := y.Context(y.CurrentContext)
-		mkSASL(&cx.KafkaAPI).Password = v
+		p := y.Profile(y.CurrentProfile)
+		mkSASL(&p.KafkaAPI).Password = v
 		return nil
 	},
 
 	xAdminHosts: func(v string, y *RpkYaml) error {
-		cx := y.Context(y.CurrentContext)
-		return splitCommaIntoStrings(v, &cx.AdminAPI.Addresses)
+		p := y.Profile(y.CurrentProfile)
+		return splitCommaIntoStrings(v, &p.AdminAPI.Addresses)
 	},
 	xAdminTLSEnabled: func(v string, y *RpkYaml) error {
-		cx := y.Context(y.CurrentContext)
-		mkAdminTLS(&cx.AdminAPI)
+		p := y.Profile(y.CurrentProfile)
+		mkAdminTLS(&p.AdminAPI)
 		return nil
 	},
 	xAdminCACert: func(v string, y *RpkYaml) error {
-		cx := y.Context(y.CurrentContext)
-		mkAdminTLS(&cx.AdminAPI).TruststoreFile = v
+		p := y.Profile(y.CurrentProfile)
+		mkAdminTLS(&p.AdminAPI).TruststoreFile = v
 		return nil
 	},
 	xAdminClientCert: func(v string, y *RpkYaml) error {
-		cx := y.Context(y.CurrentContext)
-		mkAdminTLS(&cx.AdminAPI).CertFile = v
+		p := y.Profile(y.CurrentProfile)
+		mkAdminTLS(&p.AdminAPI).CertFile = v
 		return nil
 	},
 	xAdminClientKey: func(v string, y *RpkYaml) error {
-		cx := y.Context(y.CurrentContext)
-		mkAdminTLS(&cx.AdminAPI).KeyFile = v
+		p := y.Profile(y.CurrentProfile)
+		mkAdminTLS(&p.AdminAPI).KeyFile = v
 		return nil
 	},
 
@@ -452,8 +452,8 @@ func (p *Params) Load(fs afero.Fs) (*Config, error) {
 		redpandaYaml: *DevDefault(),
 		rpkYaml:      defRpk,
 	}
-	c.rpkYaml.Contexts[0].KafkaAPI = c.redpandaYaml.Rpk.KafkaAPI
-	c.rpkYaml.Contexts[0].AdminAPI = c.redpandaYaml.Rpk.AdminAPI
+	c.rpkYaml.Profiles[0].KafkaAPI = c.redpandaYaml.Rpk.KafkaAPI
+	c.rpkYaml.Profiles[0].AdminAPI = c.redpandaYaml.Rpk.AdminAPI
 
 	if err := p.backcompatOldCloudYaml(fs); err != nil {
 		return nil, err
@@ -468,18 +468,18 @@ func (p *Params) Load(fs afero.Fs) (*Config, error) {
 	c.redpandaYaml.backcompat()
 	c.mergeRpkIntoRedpanda(true)     // merge actual rpk.yaml KafkaAPI,AdminAPI,Tuners into redpanda.yaml rpk section
 	c.addUnsetRedpandaDefaults(true) // merge from actual redpanda.yaml redpanda section to rpk section
-	c.ensureRpkContext()             // ensure materialized rpk.yaml has a loaded context
+	c.ensureRpkProfile()             // ensure materialized rpk.yaml has a loaded profile
 	c.ensureRpkCloudAuth()           // ensure materialized rpk.yaml has a current auth
 	c.mergeRedpandaIntoRpk()         // merge redpanda.yaml rpk section back into rpk.yaml KafkaAPI,AdminAPI,Tuners (picks up redpanda.yaml extras sections were empty)
 	p.backcompatFlagsToOverrides()
-	if err := p.processOverrides(c); err != nil { // override rpk.yaml context from env&flags
+	if err := p.processOverrides(c); err != nil { // override rpk.yaml profile from env&flags
 		return nil, err
 	}
 	c.mergeRpkIntoRedpanda(false)     // merge materialized rpk.yaml into redpanda.yaml rpk section (picks up env&flags)
 	c.addUnsetRedpandaDefaults(false) // merge from materialized redpanda.yaml redpanda section to rpk section (picks up original redpanda.yaml defaults)
 	c.mergeRedpandaIntoRpk()          // merge from redpanda.yaml rpk section back to rpk.yaml, picks up final redpanda.yaml defaults
 	c.fixSchemePorts()                // strip any scheme, default any missing ports
-	c.addConfigToContexts()
+	c.addConfigToProfiles()
 	c.parseDevOverrides()
 	return c, nil
 }
@@ -690,7 +690,7 @@ func (p *Params) readRpkConfig(fs afero.Fs, c *Config) error {
 		}
 		// The file does not exist. We might create it. The user could
 		// be trying to create either an rpk.yaml or a redpanda.yaml.
-		// All rpk.yaml creation commands are under rpk {auth,context},
+		// All rpk.yaml creation commands are under rpk {auth,profile},
 		// whereas there as only three redpanda.yaml creation commands.
 		// Since they do not overlap, it is ok to save this config flag
 		// as the file location for both of these.
@@ -788,33 +788,33 @@ func (c *Config) mergeRpkIntoRedpanda(actual bool) {
 		dst.Tuners = src.Tuners
 	}
 
-	cx := src.Context(src.CurrentContext)
-	if cx == nil {
+	p := src.Profile(src.CurrentProfile)
+	if p == nil {
 		return
 	}
-	if !reflect.DeepEqual(cx.KafkaAPI, RpkKafkaAPI{}) {
-		dst.KafkaAPI = cx.KafkaAPI
+	if !reflect.DeepEqual(p.KafkaAPI, RpkKafkaAPI{}) {
+		dst.KafkaAPI = p.KafkaAPI
 	}
-	if !reflect.DeepEqual(cx.AdminAPI, RpkAdminAPI{}) {
-		dst.AdminAPI = cx.AdminAPI
+	if !reflect.DeepEqual(p.AdminAPI, RpkAdminAPI{}) {
+		dst.AdminAPI = p.AdminAPI
 	}
 }
 
-// This function ensures a current context exists in the materialized rpk.yaml.
-func (c *Config) ensureRpkContext() {
+// This function ensures a current profile exists in the materialized rpk.yaml.
+func (c *Config) ensureRpkProfile() {
 	dst := &c.rpkYaml
-	cx := dst.Context(dst.CurrentContext)
-	if cx != nil {
+	p := dst.Profile(dst.CurrentProfile)
+	if p != nil {
 		return
 	}
 
-	def := DefaultRpkContext()
-	dst.CurrentContext = def.Name
-	cx = dst.Context(dst.CurrentContext)
-	if cx != nil {
+	def := DefaultRpkProfile()
+	dst.CurrentProfile = def.Name
+	p = dst.Profile(dst.CurrentProfile)
+	if p != nil {
 		return
 	}
-	dst.PushContext(def)
+	dst.PushProfile(def)
 }
 
 // This function ensures a current auth exists in the materialized rpk.yaml.
@@ -834,10 +834,10 @@ func (c *Config) ensureRpkCloudAuth() {
 	dst.PushAuth(def)
 }
 
-// We merge redpanda.yaml's rpk section back into rpk.yaml's context.  This
+// We merge redpanda.yaml's rpk section back into rpk.yaml's profile.  This
 // picks up any extras from addUnsetRedpandaDefaults that were not set in the
-// rpk file. We call this after ensureRpkContext, so we do not need to
-// nil-check the context.
+// rpk file. We call this after ensureRpkProfile, so we do not need to
+// nil-check the profile.
 func (c *Config) mergeRedpandaIntoRpk() {
 	src := &c.redpandaYaml.Rpk
 	dst := &c.rpkYaml
@@ -846,12 +846,12 @@ func (c *Config) mergeRedpandaIntoRpk() {
 		dst.Tuners = src.Tuners
 	}
 
-	cx := dst.Context(dst.CurrentContext)
-	if reflect.DeepEqual(cx.KafkaAPI, RpkKafkaAPI{}) {
-		cx.KafkaAPI = src.KafkaAPI
+	p := dst.Profile(dst.CurrentProfile)
+	if reflect.DeepEqual(p.KafkaAPI, RpkKafkaAPI{}) {
+		p.KafkaAPI = src.KafkaAPI
 	}
-	if reflect.DeepEqual(cx.AdminAPI, RpkAdminAPI{}) {
-		cx.AdminAPI = src.AdminAPI
+	if reflect.DeepEqual(p.AdminAPI, RpkAdminAPI{}) {
+		p.AdminAPI = src.AdminAPI
 	}
 }
 
@@ -991,8 +991,8 @@ func (c *Config) fixSchemePorts() error {
 		}
 		c.redpandaYaml.Rpk.AdminAPI.Addresses[i] = net.JoinHostPort(host, port)
 	}
-	cx := c.rpkYaml.Context(c.rpkYaml.CurrentContext)
-	for i, k := range cx.KafkaAPI.Brokers {
+	p := c.rpkYaml.Profile(c.rpkYaml.CurrentProfile)
+	for i, k := range p.KafkaAPI.Brokers {
 		_, host, port, err := rpknet.SplitSchemeHostPort(k)
 		if err != nil {
 			return fmt.Errorf("unable to fix broker address %v: %w", k, err)
@@ -1000,9 +1000,9 @@ func (c *Config) fixSchemePorts() error {
 		if port == "" {
 			port = strconv.Itoa(DefaultKafkaPort)
 		}
-		cx.KafkaAPI.Brokers[i] = net.JoinHostPort(host, port)
+		p.KafkaAPI.Brokers[i] = net.JoinHostPort(host, port)
 	}
-	for i, a := range cx.AdminAPI.Addresses {
+	for i, a := range p.AdminAPI.Addresses {
 		_, host, port, err := rpknet.SplitSchemeHostPort(a)
 		if err != nil {
 			return fmt.Errorf("unable to fix admin address %v: %w", a, err)
@@ -1010,17 +1010,17 @@ func (c *Config) fixSchemePorts() error {
 		if port == "" {
 			port = strconv.Itoa(DefaultAdminPort)
 		}
-		cx.AdminAPI.Addresses[i] = net.JoinHostPort(host, port)
+		p.AdminAPI.Addresses[i] = net.JoinHostPort(host, port)
 	}
 	return nil
 }
 
-func (c *Config) addConfigToContexts() {
-	for i := range c.rpkYaml.Contexts {
-		c.rpkYaml.Contexts[i].c = c
+func (c *Config) addConfigToProfiles() {
+	for i := range c.rpkYaml.Profiles {
+		c.rpkYaml.Profiles[i].c = c
 	}
-	for i := range c.rpkYamlActual.Contexts {
-		c.rpkYamlActual.Contexts[i].c = c
+	for i := range c.rpkYamlActual.Profiles {
+		c.rpkYamlActual.Profiles[i].c = c
 	}
 }
 

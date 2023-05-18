@@ -7,7 +7,7 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
-package context
+package profile
 
 import (
 	"strings"
@@ -50,8 +50,8 @@ func validContexts(fs afero.Fs, p *config.Params) func(*cobra.Command, []string,
 			return nil, cobra.ShellCompDirectiveDefault
 		}
 		var names []string
-		for i := range y.Contexts {
-			cx := &y.Contexts[i]
+		for i := range y.Profiles {
+			cx := &y.Profiles[i]
 			if strings.HasPrefix(cx.Name, toComplete) {
 				names = append(names, cx.Name)
 			}

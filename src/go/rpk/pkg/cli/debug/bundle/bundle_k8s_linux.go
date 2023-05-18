@@ -195,9 +195,9 @@ func getClusterDomain() string {
 //   - License Info: /v1/features/license
 //   - Cluster Config: /v1/cluster_config
 //   - Reconfigurations: /v1/partitions/reconfigurations
-func saveClusterAdminAPICalls(ctx context.Context, ps *stepParams, fs afero.Fs, cx *config.RpkContext, adminAddresses []string) step {
+func saveClusterAdminAPICalls(ctx context.Context, ps *stepParams, fs afero.Fs, cx *config.RpkProfile, adminAddresses []string) step {
 	return func() error {
-		cx = &config.RpkContext{
+		cx = &config.RpkProfile{
 			AdminAPI: config.RpkAdminAPI{
 				Addresses: adminAddresses,
 				TLS:       cx.AdminAPI.TLS,
@@ -234,13 +234,13 @@ func saveClusterAdminAPICalls(ctx context.Context, ps *stepParams, fs afero.Fs, 
 //   - Node Config: /v1/node_config
 //   - Prometheus Metrics: /metrics and /public_metrics
 //   - Cluster View: v1/cluster_view
-func saveSingleAdminAPICalls(ctx context.Context, ps *stepParams, fs afero.Fs, cx *config.RpkContext, adminAddresses []string, metricsInterval time.Duration) step {
+func saveSingleAdminAPICalls(ctx context.Context, ps *stepParams, fs afero.Fs, cx *config.RpkProfile, adminAddresses []string, metricsInterval time.Duration) step {
 	return func() error {
 		var rerrs *multierror.Error
 		var funcs []func() error
 		for _, a := range adminAddresses {
 			a := a
-			cx = &config.RpkContext{
+			cx = &config.RpkProfile{
 				AdminAPI: config.RpkAdminAPI{
 					Addresses: []string{a},
 					TLS:       cx.AdminAPI.TLS,

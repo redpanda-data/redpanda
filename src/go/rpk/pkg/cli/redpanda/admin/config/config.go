@@ -38,7 +38,7 @@ func newPrintCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 		Short:   "Display the current Redpanda configuration",
 		Args:    cobra.ExactArgs(0),
 		Run: func(cmd *cobra.Command, _ []string) {
-			cx, err := p.LoadMaterializedContext(fs)
+			cx, err := p.LoadMaterializedProfile(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)
 
 			cl, err := admin.NewHostClient(fs, cx, host)
@@ -102,7 +102,7 @@ failure of enabling each logger is individually printed.
 `,
 
 		Run: func(cmd *cobra.Command, loggers []string) {
-			cx, err := p.LoadMaterializedContext(fs)
+			cx, err := p.LoadMaterializedProfile(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)
 
 			cl, err := admin.NewHostClient(fs, cx, host)

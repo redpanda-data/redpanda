@@ -59,7 +59,7 @@ information.
 				out.Exit("cannot list with internal topics and list by regular expression")
 			}
 
-			cx, err := p.LoadMaterializedContext(fs)
+			cx, err := p.LoadMaterializedProfile(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)
 
 			adm, err := kafka.NewAdmin(fs, cx)

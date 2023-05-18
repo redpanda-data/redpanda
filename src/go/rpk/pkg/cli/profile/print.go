@@ -7,7 +7,7 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
-package context
+package profile
 
 import (
 	"fmt"
@@ -40,9 +40,9 @@ func newPrintCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 			}
 
 			if len(args) == 0 {
-				args = append(args, y.CurrentContext)
+				args = append(args, y.CurrentProfile)
 			}
-			cx := y.Context(args[0])
+			cx := y.Profile(args[0])
 			if cx == nil {
 				out.Die("context %s does not exist", args[0])
 			}

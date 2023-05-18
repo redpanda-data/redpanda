@@ -23,7 +23,7 @@ func newDecommissionBrokerStatus(fs afero.Fs, p *config.Params) *cobra.Command {
 		Args:  cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
 			broker, _ := strconv.Atoi(args[0])
-			cx, err := p.LoadMaterializedContext(fs)
+			cx, err := p.LoadMaterializedProfile(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)
 
 			cl, err := admin.NewClient(fs, cx)

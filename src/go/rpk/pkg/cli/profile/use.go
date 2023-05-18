@@ -7,7 +7,7 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
-package context
+package profile
 
 import (
 	"fmt"
@@ -34,12 +34,12 @@ func newUseCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 			}
 
 			name := args[0]
-			cx := y.Context(name)
+			cx := y.Profile(name)
 			if cx == nil {
 				out.Die("context %q does not exist", name)
 			}
-			y.CurrentContext = name
-			y.MoveContextToFront(cx)
+			y.CurrentProfile = name
+			y.MoveProfileToFront(cx)
 
 			err = y.Write(fs)
 			out.MaybeDieErr(err)

@@ -99,12 +99,12 @@ func (c *Config) MaterializedRpkYaml() *RpkYaml {
 	return &c.rpkYaml
 }
 
-// MaterializedContext returns an rpk.yaml's current materialized context,
+// MaterializedProfile returns an rpk.yaml's current materialized profile,
 // starting with defaults, then decoding a potential file, then applying env
 // vars and then flags. This always returns non-nil due to a guaranee from
 // Params.Load.
-func (c *Config) MaterializedContext() *RpkContext {
-	return c.rpkYaml.Context(c.rpkYaml.CurrentContext)
+func (c *Config) MaterializedProfile() *RpkProfile {
+	return c.rpkYaml.Profile(c.rpkYaml.CurrentProfile)
 }
 
 // ActualRpkYaml returns an actual rpk.yaml if it exists, with no other
@@ -160,12 +160,12 @@ func (p *Params) LoadActualRedpandaYamlOrDefaults(fs afero.Fs) (*RedpandaYaml, e
 	return cfg.ActualRedpandaYamlOrDefaults(), nil
 }
 
-// LoadMaterializedContext is a shortcut for p.Load followed by
-// cfg.MaterializedContext.
-func (p *Params) LoadMaterializedContext(fs afero.Fs) (*RpkContext, error) {
+// LoadMaterializedProfile is a shortcut for p.Load followed by
+// cfg.MaterializedProfile.
+func (p *Params) LoadMaterializedProfile(fs afero.Fs) (*RpkProfile, error) {
 	cfg, err := p.Load(fs)
 	if err != nil {
 		return nil, err
 	}
-	return cfg.MaterializedContext(), nil
+	return cfg.MaterializedProfile(), nil
 }

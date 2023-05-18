@@ -293,7 +293,7 @@ configuration, calculates the difference with the YAML file, and
 updates any properties that were changed.  If a property is removed
 from the YAML file, it is reset to its default value.  `,
 		Run: func(cmd *cobra.Command, args []string) {
-			cx, err := p.LoadMaterializedContext(fs)
+			cx, err := p.LoadMaterializedProfile(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)
 
 			client, err := admin.NewClient(fs, cx)

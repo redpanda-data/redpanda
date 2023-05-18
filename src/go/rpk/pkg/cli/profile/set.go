@@ -7,7 +7,7 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
-package context
+package profile
 
 import (
 	"fmt"
@@ -32,9 +32,9 @@ func newSetCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 			y, err := cfg.ActualRpkYamlOrEmpty()
 			out.MaybeDie(err, "unable to load rpk.yaml: %v", err)
 
-			cx := y.Context(y.CurrentContext)
+			cx := y.Profile(y.CurrentProfile)
 			if cx == nil {
-				out.Die("current context %q does not exist", y.CurrentContext)
+				out.Die("current context %q does not exist", y.CurrentProfile)
 			}
 			err = config.Set(&cx, args[0], args[1])
 			out.MaybeDieErr(err)
