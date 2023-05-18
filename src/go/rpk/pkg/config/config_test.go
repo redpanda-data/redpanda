@@ -850,13 +850,18 @@ func TestSetMode(t *testing.T) {
 			if tt.startingConf != nil {
 				y = tt.startingConf()
 			}
-			err := y.SetMode(tt.mode)
+			c := Config{
+				redpandaYamlActual: *y,
+				redpandaYamlExists: true,
+			}
+			fs := afero.NewMemMapFs()
+			err := c.SetMode(fs, tt.mode)
 			if tt.expectedErrMsg != "" {
 				require.EqualError(t, err, tt.expectedErrMsg)
 				return
 			}
 			require.NoError(t, err)
-			require.Exactly(t, tt.expectedConfig(), y)
+			require.Exactly(t, tt.expectedConfig(), &c.redpandaYamlActual)
 		})
 	}
 }

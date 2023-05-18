@@ -903,10 +903,6 @@ func (c *Config) mergeRpkIntoRedpanda(actual bool) {
 	}
 	dst := &c.redpandaYaml.Rpk
 
-	if src.Tuners != (RpkNodeTuners{}) {
-		dst.Tuners = src.Tuners
-	}
-
 	p := src.Profile(src.CurrentProfile)
 	if p == nil {
 		return
@@ -960,10 +956,6 @@ func (c *Config) ensureRpkCloudAuth() {
 func (c *Config) mergeRedpandaIntoRpk() {
 	src := &c.redpandaYaml.Rpk
 	dst := &c.rpkYaml
-
-	if src.Tuners != (RpkNodeTuners{}) {
-		dst.Tuners = src.Tuners
-	}
 
 	p := dst.Profile(dst.CurrentProfile)
 	if reflect.DeepEqual(p.KafkaAPI, RpkKafkaAPI{}) {

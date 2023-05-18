@@ -739,8 +739,6 @@ profiles:
 cloud_auth:
     - name: default
       description: Default rpk cloud auth
-tuners:
-    coredump_dir: /var/lib/redpanda/coredump
 `,
 		},
 
@@ -816,12 +814,6 @@ profiles:
 cloud_auth:
     - name: default
       description: Default rpk cloud auth
-tuners:
-    tune_network: true
-    tune_disk_scheduler: true
-    tune_disk_nomerges: true
-    tune_disk_write_cache: true
-    tune_disk_irq: true
 `,
 		},
 
@@ -844,10 +836,6 @@ profiles:
 cloud_auth:
     - name: fizz
       description: fizzy
-tuners:
-    tune_disk_nomerges: true
-    tune_disk_write_cache: true
-    tune_disk_irq: true
 `,
 
 			expMaterializedRedpanda: `redpanda:
@@ -871,9 +859,7 @@ rpk:
         addresses:
             - 0.0.0.3:9644
     overprovisioned: true
-    tune_disk_nomerges: true
-    tune_disk_write_cache: true
-    tune_disk_irq: true
+    coredump_dir: /var/lib/redpanda/coredump
 pandaproxy: {}
 schema_registry: {}
 `,
@@ -892,10 +878,6 @@ profiles:
 cloud_auth:
     - name: fizz
       description: fizzy
-tuners:
-    tune_disk_nomerges: true
-    tune_disk_write_cache: true
-    tune_disk_irq: true
 `,
 		},
 
@@ -975,12 +957,6 @@ profiles:
 cloud_auth:
     - name: default
       description: Default rpk cloud auth
-tuners:
-    tune_network: true
-    tune_disk_scheduler: true
-    tune_disk_nomerges: true
-    tune_disk_write_cache: true
-    tune_disk_irq: true
 `,
 		},
 

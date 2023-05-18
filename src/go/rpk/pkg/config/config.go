@@ -10,6 +10,9 @@
 package config
 
 import (
+	"fmt"
+	"strings"
+
 	"github.com/spf13/afero"
 )
 
@@ -168,4 +171,61 @@ func (p *Params) LoadMaterializedProfile(fs afero.Fs) (*RpkProfile, error) {
 		return nil, err
 	}
 	return cfg.MaterializedProfile(), nil
+}
+
+///////////
+// MODES //
+///////////
+
+const (
+	ModeDev  = "dev"
+	ModeProd = "prod"
+)
+
+func (c *Config) SetMode(fs afero.Fs, mode string) error {
+	yRedpanda := c.ActualRedpandaYamlOrDefaults()
+	switch {
+	case mode == "" || strings.HasPrefix("development", mode):
+		yRedpanda.setDevMode()
+	case strings.HasPrefix("production", mode):
+		yRedpanda.setProdMode()
+	default:
+		return fmt.Errorf("unknown mode %q", mode)
+	}
+	return yRedpanda.Write(fs)
+}
+
+func (y *RedpandaYaml) setDevMode() {
+	y.Redpanda.DeveloperMode = true
+	// Defaults to setting all tuners to false
+	y.Rpk = RpkNodeConfig{
+		TLS:                  y.Rpk.TLS,
+		SASL:                 y.Rpk.SASL,
+		KafkaAPI:             y.Rpk.KafkaAPI,
+		AdminAPI:             y.Rpk.AdminAPI,
+		AdditionalStartFlags: y.Rpk.AdditionalStartFlags,
+		SMP:                  DevDefault().Rpk.SMP,
+		Overprovisioned:      true,
+		Tuners: RpkNodeTuners{
+			CoredumpDir:     y.Rpk.Tuners.CoredumpDir,
+			BallastFilePath: y.Rpk.Tuners.BallastFilePath,
+			BallastFileSize: y.Rpk.Tuners.BallastFileSize,
+		},
+	}
+}
+
+func (y *RedpandaYaml) setProdMode() {
+	y.Redpanda.DeveloperMode = false
+	y.Rpk.Overprovisioned = false
+	y.Rpk.Tuners.TuneNetwork = true
+	y.Rpk.Tuners.TuneDiskScheduler = true
+	y.Rpk.Tuners.TuneNomerges = true
+	y.Rpk.Tuners.TuneDiskIrq = true
+	y.Rpk.Tuners.TuneFstrim = false
+	y.Rpk.Tuners.TuneCPU = true
+	y.Rpk.Tuners.TuneAioEvents = true
+	y.Rpk.Tuners.TuneClocksource = true
+	y.Rpk.Tuners.TuneSwappiness = true
+	y.Rpk.Tuners.TuneDiskWriteCache = true
+	y.Rpk.Tuners.TuneBallastFile = true
 }

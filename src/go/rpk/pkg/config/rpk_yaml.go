@@ -85,7 +85,6 @@ type (
 		CurrentCloudAuth string         `yaml:"current_cloud_auth"`
 		Profiles         []RpkProfile   `yaml:"profiles,omitempty"`
 		CloudAuths       []RpkCloudAuth `yaml:"cloud_auth,omitempty"`
-		Tuners           RpkNodeTuners  `yaml:"tuners,omitempty"`
 	}
 
 	// NOTE: if adding fields to this struct, check if

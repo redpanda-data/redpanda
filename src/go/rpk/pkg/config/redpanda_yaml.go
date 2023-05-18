@@ -342,66 +342,6 @@ func (y *RedpandaYaml) WriteAt(fs afero.Fs, path string) error {
 	return rpkos.ReplaceFile(fs, path, b, 0o644)
 }
 
-///////////
-// MODES //
-///////////
-
-const (
-	ModeDev  = "dev"
-	ModeProd = "prod"
-)
-
-func AvailableModes() []string {
-	return []string{ModeDev, "development", ModeProd, "production"}
-}
-
-func (y *RedpandaYaml) SetMode(mode string) error {
-	switch mode {
-	case "", "development", ModeDev:
-		y.setDevMode()
-		return nil
-	case "production", ModeProd:
-		y.setProdMode()
-		return nil
-	}
-	return fmt.Errorf("unknown mode %q", mode)
-}
-
-func (y *RedpandaYaml) setDevMode() {
-	y.Redpanda.DeveloperMode = true
-	// Defaults to setting all tuners to false
-	y.Rpk = RpkNodeConfig{
-		TLS:                  y.Rpk.TLS,
-		SASL:                 y.Rpk.SASL,
-		KafkaAPI:             y.Rpk.KafkaAPI,
-		AdminAPI:             y.Rpk.AdminAPI,
-		AdditionalStartFlags: y.Rpk.AdditionalStartFlags,
-		SMP:                  DevDefault().Rpk.SMP,
-		Overprovisioned:      true,
-		Tuners: RpkNodeTuners{
-			CoredumpDir:     y.Rpk.Tuners.CoredumpDir,
-			BallastFilePath: y.Rpk.Tuners.BallastFilePath,
-			BallastFileSize: y.Rpk.Tuners.BallastFileSize,
-		},
-	}
-}
-
-func (y *RedpandaYaml) setProdMode() {
-	y.Redpanda.DeveloperMode = false
-	y.Rpk.Overprovisioned = false
-	y.Rpk.Tuners.TuneNetwork = true
-	y.Rpk.Tuners.TuneDiskScheduler = true
-	y.Rpk.Tuners.TuneNomerges = true
-	y.Rpk.Tuners.TuneDiskIrq = true
-	y.Rpk.Tuners.TuneFstrim = false
-	y.Rpk.Tuners.TuneCPU = true
-	y.Rpk.Tuners.TuneAioEvents = true
-	y.Rpk.Tuners.TuneClocksource = true
-	y.Rpk.Tuners.TuneSwappiness = true
-	y.Rpk.Tuners.TuneDiskWriteCache = true
-	y.Rpk.Tuners.TuneBallastFile = true
-}
-
 ////////////////
 // VALIDATION // -- this is only used in redpanda_checkers, and could be stronger -- this is essentially just a config validation
 ////////////////
