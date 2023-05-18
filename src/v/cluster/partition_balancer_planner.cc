@@ -109,6 +109,8 @@ private:
 private:
     partition_balancer_planner& _parent;
     absl::node_hash_map<model::ntp, size_t> _ntp2size;
+    absl::node_hash_map<model::ntp, absl::flat_hash_map<model::node_id, size_t>>
+      _moving_ntp2replica_sizes;
     absl::node_hash_map<model::ntp, allocated_partition> _reassignments;
     uint64_t _planned_moves_size_bytes = 0;
     size_t _failed_reassignments_count = 0;
@@ -201,10 +203,67 @@ void partition_balancer_planner::init_ntp_sizes_from_health_report(
     for (const auto& node_report : health_report.node_reports) {
         for (const auto& tp_ns : node_report.topics) {
             for (const auto& partition : tp_ns.partitions) {
-                ctx._ntp2size[model::ntp(
-                  tp_ns.tp_ns.ns, tp_ns.tp_ns.tp, partition.id)]
-                  = partition.size_bytes;
+                model::ntp ntp{tp_ns.tp_ns.ns, tp_ns.tp_ns.tp, partition.id};
+                auto& ntp_size = ctx._ntp2size[ntp];
+                ntp_size = std::max(ntp_size, partition.size_bytes);
+
+                if (_state.topics().is_update_in_progress(ntp)) {
+                    ctx._moving_ntp2replica_sizes[ntp][node_report.id]
+                      = partition.size_bytes;
+                }
             }
+        }
+    }
+
+    // Add moving partitions contribution to batch size and node disk sizes.
+    for (const auto& [ntp, replica2size] : ctx._moving_ntp2replica_sizes) {
+        const auto& update = _state.topics().updates_in_progress().at(ntp);
+
+        auto moving_from = subtract_replica_sets(
+          update.get_previous_replicas(), update.get_target_replicas());
+        auto moving_to = subtract_replica_sets(
+          update.get_target_replicas(), update.get_previous_replicas());
+
+        size_t max_size = ctx._ntp2size.at(ntp);
+
+        switch (update.get_state()) {
+        case reconfiguration_state::in_progress:
+        case reconfiguration_state::force_update:
+            ctx._planned_moves_size_bytes += max_size;
+
+            for (const auto& bs : moving_from) {
+                auto node_it = ctx.node_disk_reports.find(bs.node_id);
+                if (node_it != ctx.node_disk_reports.end()) {
+                    auto size_it = replica2size.find(bs.node_id);
+                    size_t replica_size
+                      = (size_it != replica2size.end() ? size_it->second : max_size);
+                    node_it->second.released += replica_size;
+                }
+            }
+
+            for (const auto& bs : moving_to) {
+                auto node_it = ctx.node_disk_reports.find(bs.node_id);
+                if (node_it != ctx.node_disk_reports.end()) {
+                    auto size_it = replica2size.find(bs.node_id);
+                    size_t replica_size
+                      = (size_it != replica2size.end() ? size_it->second : 0);
+                    node_it->second.assigned += (max_size - replica_size);
+                }
+            }
+
+            break;
+        case reconfiguration_state::cancelled:
+        case reconfiguration_state::force_cancelled:
+            for (const auto& bs : moving_to) {
+                auto node_it = ctx.node_disk_reports.find(bs.node_id);
+                if (node_it != ctx.node_disk_reports.end()) {
+                    auto size_it = replica2size.find(bs.node_id);
+                    if (size_it != replica2size.end()) {
+                        node_it->second.released += size_it->second;
+                    }
+                }
+            }
+            break;
         }
     }
 }
