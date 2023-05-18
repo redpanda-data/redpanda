@@ -52,18 +52,18 @@ const (
 	// This block contains names X flags that are used for backcompat.
 	// All new X flags are defined directly into the xflags slice.
 	xKafkaBrokers       = "brokers"
-	xKafkaTLSEnabled    = "brokers.tls.enabled"
-	xKafkaCACert        = "brokers.tls.ca_cert_path"
-	xKafkaClientCert    = "brokers.tls.client_cert_path"
-	xKafkaClientKey     = "brokers.tls.client_key_path"
-	xKafkaSASLMechanism = "brokers.sasl.mechanism"
-	xKafkaSASLUser      = "brokers.sasl.user"
-	xKafkaSASLPass      = "brokers.sasl.pass"
+	xKafkaTLSEnabled    = "tls.enabled"
+	xKafkaCACert        = "tls.ca"
+	xKafkaClientCert    = "tls.cert"
+	xKafkaClientKey     = "tls.key"
+	xKafkaSASLMechanism = "sasl.type"
+	xKafkaSASLUser      = "user"
+	xKafkaSASLPass      = "pass"
 	xAdminHosts         = "admin.hosts"
 	xAdminTLSEnabled    = "admin.tls.enabled"
-	xAdminCACert        = "admin.tls.ca_cert_path"
-	xAdminClientCert    = "admin.tls.client_cert_path"
-	xAdminClientKey     = "admin.tls.client_key_path"
+	xAdminCACert        = "admin.tls.ca"
+	xAdminClientCert    = "admin.tls.cert"
+	xAdminClientKey     = "admin.tls.key"
 	xCloudClientID      = "cloud.client_id"
 	xCloudClientSecret  = "cloud.client_secret"
 )
@@ -299,6 +299,16 @@ func XCloudAuthFlags() (xs, yamlPaths []string) {
 	return
 }
 
+// XFlagYamlPath returns the yaml path for the given x flag, if the
+// flag exists.
+func XFlagYamlPath(x string) (string, bool) {
+	v, ok := xflags[x]
+	if !ok {
+		return "", false
+	}
+	return v.path, true
+}
+
 // Params contains rpk-wide configuration parameters.
 type Params struct {
 	// ConfigFlag is any flag-specified config path.
@@ -350,36 +360,39 @@ brokers=127.0.0.1:9092,localhost:9094
   A comma separated list of host:ports that rpk talks to for the Kafka API.
   By default, this is 127.0.0.1:9092.
 
-brokers.tls.enabled=true
+tls.enabled=true
   A boolean that enableenables rpk to speak TLS to your broker's Kafka API listeners.
   You can use this if you have well known certificates setup on your Kafka API.
   If you use mTLS, specifying mTLS certificate filepaths automatically opts
   into TLS enabled.
 
-brokers.tls.ca_cert_path=/path/to/ca.pem
+tls.ca=/path/to/ca.pem
   A filepath to a PEM encoded CA certificate file to talk to your broker's
   Kafka API listeners with mTLS. You may also need this if your listeners are
   using a certificate by a well known authority that is not yet bundled on your
   operating system.
 
-brokers.tls.client_cert_path=/path/to/cert.pem
+tls.cert=/path/to/cert.pem
   A filepath to a PEM encoded client certificate file to talk to your broker's
   Kafka API listeners with mTLS.
 
-brokers.tls.client_key_path=/path/to/key.pem
+tls.key=/path/to/key.pem
   A filepath to a PEM encoded client key file to talk to your broker's Kafka
   API listeners with mTLS.
 
-brokers.sasl.mechanism=SCRAM-SHA-256
+sasl.type=SCRAM-SHA-256
   The SASL mechanism to use for authentication. This can be either SCRAM-SHA-256
   or SCRAM-SHA-512. Note that with Redpanda, the Admin API can be configured to
-  require basic authentication with your Kafka API SASL credentials.
+  require basic authentication with your Kafka API SASL credentials. This
+  defaults to SCRAM-SHA-256 if no mechanism is specified.
 
-brokers.sasl.user=username
-  The SASL username to use for authentication.
+user=username
+  The SASL username to use for authentication. This is also used for the admin
+  API if you have configured it to require basic authentication.
 
-brokers.sasl.pass=password
-  The SASL password to use for authentication.
+pass=password
+  The SASL password to use for authentication. This is also used for the admin
+  API if you have configured it to require basic authentication.
 
 admin.hosts=localhost:9644,rp.example.com:9644
   A comma separated list of host:ports that rpk talks to for the Admin API.
@@ -391,17 +404,17 @@ admin.tls.enabled=false
   If you use mTLS, specifying mTLS certificate filepaths automatically opts
   into TLS enabled.
 
-admin.tls.ca_cert_path=/path/to/ca.pem
+admin.tls.ca=/path/to/ca.pem
   A filepath to a PEM encoded CA certificate file to talk to your broker's
   Admin API listeners with mTLS. You may also need this if your listeners are
   using a certificate by a well known authority that is not yet bundled on your
   operating system.
 
-admin.tls.client_cert_path=/path/to/cert.pem
+admin.tls.cert=/path/to/cert.pem
   A filepath to a PEM encoded client certificate file to talk to your broker's
   Admin API listeners with mTLS.
 
-admin.tls.client_key_path=/path/to/key.pem
+admin.tls.key=/path/to/key.pem
   A filepath to a PEM encoded client key file to talk to your broker's Admin
   API listeners with mTLS.
 
@@ -416,18 +429,18 @@ cloud.client_secret=somelongerstring
 // ParamsList returns the short help text for -X list.
 func ParamsList() string {
 	return `brokers=comma,delimited,host:ports
-brokers.tls.enabled=boolean
-brokers.tls.ca_cert_path=/path/to/ca.pem
-brokers.tls.client_cert_path=/path/to/cert.pem
-brokers.tls.client_key_path=/path/to/key.pem
-brokers.sasl.mechanism=SCRAM-SHA-256 or SCRAM-SHA-512
-brokers.sasl.user=username
-brokers.sasl.pass=password
+tls.enabled=boolean
+tls.ca=/path/to/ca.pem
+tls.cert=/path/to/cert.pem
+tls.key=/path/to/key.pem
+sasl.type=SCRAM-SHA-256 or SCRAM-SHA-512
+user=username
+pass=password
 admin.hosts=comma,delimited,host:ports
 admin.tls.enabled=boolean
-admin.tls.ca_cert_path=/path/to/ca.pem
-admin.tls.client_cert_path=/path/to/cert.pem
-admin.tls.client_key_path=/path/to/key.pem
+admin.tls.ca=/path/to/ca.pem
+admin.tls.cert=/path/to/cert.pem
+admin.tls.key=/path/to/key.pem
 cloud.client_id=somestring
 cloud.client_secret=somelongerstring
 `
@@ -1256,7 +1269,7 @@ func Set[T any](p *T, key, value string) error {
 		}
 	}
 	finalTag := tags[len(tags)-1]
-	if len(tags) > 1 && finalTag == "enabled" && tags[len(tags)-2] == "tls" {
+	if len(tags) > 1 && (finalTag == "enabled" && tags[len(tags)-2] == "tls" || finalTag == "tls") {
 		switch value {
 		case "{}":
 		case "null":
@@ -1267,8 +1280,10 @@ func Set[T any](p *T, key, value string) error {
 		default:
 			return fmt.Errorf("%s must be true or {}", key)
 		}
-		tags = tags[:len(tags)-1]
-		finalTag = tags[len(tags)-1]
+		if finalTag == "enabled" {
+			tags = tags[:len(tags)-1]
+			finalTag = tags[len(tags)-1]
+		}
 	}
 
 	field, other, err := getField(tags, "", reflect.ValueOf(p).Elem())
