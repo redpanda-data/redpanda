@@ -8,6 +8,7 @@ import (
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/testfs"
 	"github.com/spf13/afero"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/exp/maps"
 )
 
 func TestParams_RedpandaYamlWrite(t *testing.T) {
@@ -1048,4 +1049,28 @@ func TestConfig_parseDevOverrides(t *testing.T) {
 		}
 	}()
 	c.parseDevOverrides()
+}
+
+func TestParamsHelpComplete(t *testing.T) {
+	h := ParamsHelp()
+	m := maps.Clone(xflags)
+	for _, line := range strings.Split(h, "\n") {
+		key := strings.Split(line, "=")[0]
+		delete(m, key)
+	}
+	if len(m) > 0 {
+		t.Errorf("ParamsHelp missing keys: %v", maps.Keys(m))
+	}
+}
+
+func TestParamsListComplete(t *testing.T) {
+	h := ParamsList()
+	m := maps.Clone(xflags)
+	for _, line := range strings.Split(h, "\n") {
+		key := strings.Split(line, "=")[0]
+		delete(m, key)
+	}
+	if len(m) > 0 {
+		t.Errorf("ParamsList missing keys: %v", maps.Keys(m))
+	}
 }

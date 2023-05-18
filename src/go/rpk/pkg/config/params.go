@@ -17,6 +17,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -24,6 +25,7 @@ import (
 
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
+	"golang.org/x/exp/maps"
 	"golang.org/x/term"
 
 	"github.com/spf13/afero"
@@ -34,18 +36,6 @@ import (
 )
 
 const (
-	// The following flags exist for backcompat purposes and should not be
-	// used elsewhere within rpk.
-	flagBrokers        = "brokers"
-	flagSASLMechanism  = "sasl-mechanism"
-	flagSASLPass       = "password"
-	flagAdminHosts1    = "hosts"
-	flagAdminHosts2    = "api-urls"
-	flagEnableAdminTLS = "admin-api-tls-enabled"
-	flagAdminTLSCA     = "admin-api-tls-truststore"
-	flagAdminTLSCert   = "admin-api-tls-cert"
-	flagAdminTLSKey    = "admin-api-tls-key"
-
 	// The following flags are currently used in some areas of rpk
 	// (and ideally will be deprecated / removed in the future).
 	FlagEnableTLS = "tls-enabled"
@@ -54,53 +44,154 @@ const (
 	FlagTLSKey    = "tls-key"
 	FlagSASLUser  = "user"
 
-	envBrokers            = "REDPANDA_BROKERS"
-	envTLSTruststore      = "REDPANDA_TLS_TRUSTSTORE" // backcompat, deprecated
-	envTLSCA              = "REDPANDA_TLS_CA"
-	envTLSCert            = "REDPANDA_TLS_CERT"
-	envTLSKey             = "REDPANDA_TLS_KEY"
-	envSASLMechanism      = "REDPANDA_SASL_MECHANISM"
-	envSASLUser           = "REDPANDA_SASL_USERNAME"
-	envSASLPass           = "REDPANDA_SASL_PASSWORD"
-	envAdminHosts         = "REDPANDA_API_ADMIN_ADDRS"
-	envAdminTLSTruststore = "REDPANDA_ADMIN_TLS_TRUSTSTORE" // backcompat, deprecated
-	envAdminTLSCA         = "REDPANDA_ADMIN_TLS_CA"
-	envAdminTLSCert       = "REDPANDA_ADMIN_TLS_CERT"
-	envAdminTLSKey        = "REDPANDA_ADMIN_TLS_KEY"
-
 	// The following flags and env vars are used in `rpk cloud`. We will
 	// always support them, but they are also duplicated by -X auth.*.
 	FlagClientID     = "client-id"
 	FlagClientSecret = "client-secret"
 
-	envClientID     = "RPK_CLOUD_CLIENT_ID"
-	envClientSecret = "RPK_CLOUD_CLIENT_SECRET"
-)
-
-// This block contains what will eventually be used as keys in the global
-// config-setting -X flag, as well as upper-cased, dot-to-underscore replaced
-// env variables.
-const (
-	xKafkaBrokers = "brokers"
-
-	xKafkaTLSEnabled = "brokers.tls.enabled"
-	xKafkaCACert     = "brokers.tls.ca_cert_path"
-	xKafkaClientCert = "brokers.tls.client_cert_path"
-	xKafkaClientKey  = "brokers.tls.client_key_path"
-
+	// This block contains names X flags that are used for backcompat.
+	// All new X flags are defined directly into the xflags slice.
+	xKafkaBrokers       = "brokers"
+	xKafkaTLSEnabled    = "brokers.tls.enabled"
+	xKafkaCACert        = "brokers.tls.ca_cert_path"
+	xKafkaClientCert    = "brokers.tls.client_cert_path"
+	xKafkaClientKey     = "brokers.tls.client_key_path"
 	xKafkaSASLMechanism = "brokers.sasl.mechanism"
 	xKafkaSASLUser      = "brokers.sasl.user"
 	xKafkaSASLPass      = "brokers.sasl.pass"
-
-	xAdminHosts      = "admin.hosts"
-	xAdminTLSEnabled = "admin.tls.enabled"
-	xAdminCACert     = "admin.tls.ca_cert_path"
-	xAdminClientCert = "admin.tls.client_cert_path"
-	xAdminClientKey  = "admin.tls.client_key_path"
-
-	xCloudClientID     = "cloud.client_id"
-	xCloudClientSecret = "cloud.client_secret"
+	xAdminHosts         = "admin.hosts"
+	xAdminTLSEnabled    = "admin.tls.enabled"
+	xAdminCACert        = "admin.tls.ca_cert_path"
+	xAdminClientCert    = "admin.tls.client_cert_path"
+	xAdminClientKey     = "admin.tls.client_key_path"
+	xCloudClientID      = "cloud.client_id"
+	xCloudClientSecret  = "cloud.client_secret"
 )
+
+type xflag struct {
+	name  string
+	parse func(string, *RpkYaml) error
+}
+
+func splitCommaIntoStrings(in string, dst *[]string) error {
+	*dst = nil
+	split := strings.Split(in, ",")
+	for _, on := range split {
+		on = strings.TrimSpace(on)
+		if len(on) == 0 {
+			return fmt.Errorf("invalid empty value in %q", in)
+		}
+		*dst = append(*dst, on)
+	}
+	return nil
+}
+
+func mkKafkaTLS(k *RpkKafkaAPI) *TLS {
+	if k.TLS == nil {
+		k.TLS = new(TLS)
+	}
+	return k.TLS
+}
+
+func mkSASL(k *RpkKafkaAPI) *SASL {
+	if k.SASL == nil {
+		k.SASL = new(SASL)
+	}
+	return k.SASL
+}
+
+func mkAdminTLS(a *RpkAdminAPI) *TLS {
+	if a.TLS == nil {
+		a.TLS = new(TLS)
+	}
+	return a.TLS
+}
+
+var xflags = map[string]func(string, *RpkYaml) error{
+	xKafkaBrokers: func(v string, y *RpkYaml) error {
+		cx := y.Context(y.CurrentContext)
+		return splitCommaIntoStrings(v, &cx.KafkaAPI.Brokers)
+	},
+	xKafkaTLSEnabled: func(v string, y *RpkYaml) error {
+		cx := y.Context(y.CurrentContext)
+		mkKafkaTLS(&cx.KafkaAPI)
+		return nil
+	},
+	xKafkaCACert: func(v string, y *RpkYaml) error {
+		cx := y.Context(y.CurrentContext)
+		mkKafkaTLS(&cx.KafkaAPI).TruststoreFile = v
+		return nil
+	},
+	xKafkaClientCert: func(v string, y *RpkYaml) error {
+		cx := y.Context(y.CurrentContext)
+		mkKafkaTLS(&cx.KafkaAPI).CertFile = v
+		return nil
+	},
+	xKafkaClientKey: func(v string, y *RpkYaml) error {
+		cx := y.Context(y.CurrentContext)
+		mkKafkaTLS(&cx.KafkaAPI).KeyFile = v
+		return nil
+	},
+
+	xKafkaSASLMechanism: func(v string, y *RpkYaml) error {
+		cx := y.Context(y.CurrentContext)
+		mkSASL(&cx.KafkaAPI).Mechanism = v
+		return nil
+	},
+	xKafkaSASLUser: func(v string, y *RpkYaml) error {
+		cx := y.Context(y.CurrentContext)
+		mkSASL(&cx.KafkaAPI).User = v
+		return nil
+	},
+	xKafkaSASLPass: func(v string, y *RpkYaml) error {
+		cx := y.Context(y.CurrentContext)
+		mkSASL(&cx.KafkaAPI).Password = v
+		return nil
+	},
+
+	xAdminHosts: func(v string, y *RpkYaml) error {
+		cx := y.Context(y.CurrentContext)
+		return splitCommaIntoStrings(v, &cx.AdminAPI.Addresses)
+	},
+	xAdminTLSEnabled: func(v string, y *RpkYaml) error {
+		cx := y.Context(y.CurrentContext)
+		mkAdminTLS(&cx.AdminAPI)
+		return nil
+	},
+	xAdminCACert: func(v string, y *RpkYaml) error {
+		cx := y.Context(y.CurrentContext)
+		mkAdminTLS(&cx.AdminAPI).TruststoreFile = v
+		return nil
+	},
+	xAdminClientCert: func(v string, y *RpkYaml) error {
+		cx := y.Context(y.CurrentContext)
+		mkAdminTLS(&cx.AdminAPI).CertFile = v
+		return nil
+	},
+	xAdminClientKey: func(v string, y *RpkYaml) error {
+		cx := y.Context(y.CurrentContext)
+		mkAdminTLS(&cx.AdminAPI).KeyFile = v
+		return nil
+	},
+
+	xCloudClientID: func(v string, y *RpkYaml) error {
+		auth := y.Auth(y.CurrentCloudAuth)
+		auth.ClientID = v
+		return nil
+	},
+	xCloudClientSecret: func(v string, y *RpkYaml) error {
+		auth := y.Auth(y.CurrentCloudAuth)
+		auth.ClientSecret = v
+		return nil
+	},
+}
+
+// XFlags returns the list of -X flags that are supported by rpk.
+func XFlags() []string {
+	keys := maps.Keys(xflags)
+	sort.Strings(keys)
+	return keys
+}
 
 // Params contains rpk-wide configuration parameters.
 type Params struct {
@@ -125,26 +216,19 @@ type Params struct {
 	logger     *zap.Logger
 
 	// BACKCOMPAT FLAGS
-	//
-	// Note that some of these will move to standard persistent flags,
-	// but are backcompat flags for the -X transition.
-
-	brokers       []string
-	user          string
-	password      string
-	saslMechanism string
-
-	enableKafkaTLS bool
-	kafkaCAFile    string
-	kafkaCertFile  string
-	kafkaKeyFile   string
-
-	adminURLs      []string
-	enableAdminTLS bool
-	adminCAFile    string
-	adminCertFile  string
-	adminKeyFile   string
-
+	brokers           []string
+	user              string
+	password          string
+	saslMechanism     string
+	enableKafkaTLS    bool
+	kafkaCAFile       string
+	kafkaCertFile     string
+	kafkaKeyFile      string
+	adminURLs         []string
+	enableAdminTLS    bool
+	adminCAFile       string
+	adminCertFile     string
+	adminKeyFile      string
 	cloudClientID     string
 	cloudClientSecret string
 }
@@ -252,10 +336,10 @@ cloud.client_secret=somelongerstring
 func (p *Params) InstallKafkaFlags(cmd *cobra.Command) {
 	pf := cmd.PersistentFlags()
 
-	pf.StringSliceVar(&p.brokers, flagBrokers, nil, "Comma separated list of broker host:ports")
+	pf.StringSliceVar(&p.brokers, "brokers", nil, "Comma separated list of broker host:ports")
 	pf.StringVar(&p.user, FlagSASLUser, "", "SASL user to be used for authentication")
-	pf.StringVar(&p.password, flagSASLPass, "", "SASL password to be used for authentication")
-	pf.StringVar(&p.saslMechanism, flagSASLMechanism, "", "The authentication mechanism to use (SCRAM-SHA-256, SCRAM-SHA-512)")
+	pf.StringVar(&p.password, "password", "", "SASL password to be used for authentication")
+	pf.StringVar(&p.saslMechanism, "sasl-mechanism", "", "The authentication mechanism to use (SCRAM-SHA-256, SCRAM-SHA-512)")
 
 	p.InstallTLSFlags(cmd)
 }
@@ -278,14 +362,14 @@ func (p *Params) InstallTLSFlags(cmd *cobra.Command) {
 func (p *Params) InstallAdminFlags(cmd *cobra.Command) {
 	pf := cmd.PersistentFlags()
 
-	pf.StringSliceVar(&p.adminURLs, flagAdminHosts2, nil, "Comma separated list of admin API host:ports")
-	pf.StringSliceVar(&p.adminURLs, flagAdminHosts1, nil, "")
+	pf.StringSliceVar(&p.adminURLs, "api-urls", nil, "Comma separated list of admin API host:ports")
+	pf.StringSliceVar(&p.adminURLs, "hosts", nil, "")
 	pf.StringSliceVar(&p.adminURLs, "admin-url", nil, "")
 
-	pf.BoolVar(&p.enableAdminTLS, flagEnableAdminTLS, false, "Enable TLS for the Admin API (not necessary if specifying custom certs)")
-	pf.StringVar(&p.adminCAFile, flagAdminTLSCA, "", "The CA certificate  to be used for TLS communication with the admin API")
-	pf.StringVar(&p.adminCertFile, flagAdminTLSCert, "", "The certificate to be used for TLS authentication with the admin API")
-	pf.StringVar(&p.adminKeyFile, flagAdminTLSKey, "", "The certificate key to be used for TLS authentication with the admin API")
+	pf.BoolVar(&p.enableAdminTLS, "admin-api-tls-enabled", false, "Enable TLS for the Admin API (not necessary if specifying custom certs)")
+	pf.StringVar(&p.adminCAFile, "admin-api-tls-truststore", "", "The CA certificate  to be used for TLS communication with the admin API")
+	pf.StringVar(&p.adminCertFile, "admin-api-tls-cert", "", "The certificate to be used for TLS authentication with the admin API")
+	pf.StringVar(&p.adminKeyFile, "admin-api-tls-key", "", "The certificate key to be used for TLS authentication with the admin API")
 }
 
 // InstallCloudFlags adds the --client-id and --client-secret flags that
@@ -771,75 +855,47 @@ func (c *Config) mergeRedpandaIntoRpk() {
 	}
 }
 
-func splitCommaIntoStrings(in string, dst *[]string) error {
-	*dst = nil
-	split := strings.Split(in, ",")
-	for _, on := range split {
-		on = strings.TrimSpace(on)
-		if len(on) == 0 {
-			return fmt.Errorf("invalid empty value in %q", in)
+// Similar to backcompat flags, we first capture old env vars and then new
+// ones. New env vars are the same as -X, uppercased, s/./_/.
+func envOverrides() []string {
+	var envOverrides []string
+	for _, envMapping := range []struct {
+		old       string
+		targetKey string
+	}{
+		{"REDPANDA_BROKERS", xKafkaBrokers},
+		{"REDPANDA_TLS_TRUSTSTORE", xKafkaCACert},
+		{"REDPANDA_TLS_CA", xKafkaCACert},
+		{"REDPANDA_TLS_CERT", xKafkaClientCert},
+		{"REDPANDA_TLS_KEY", xKafkaClientKey},
+		{"REDPANDA_SASL_MECHANISM", xKafkaSASLMechanism},
+		{"REDPANDA_SASL_USERNAME", xKafkaSASLUser},
+		{"REDPANDA_SASL_PASSWORD", xKafkaSASLPass},
+		{"REDPANDA_API_ADMIN_ADDRS", xAdminHosts},
+		{"REDPANDA_ADMIN_TLS_TRUSTSTORE", xAdminCACert},
+		{"REDPANDA_ADMIN_TLS_CA", xAdminCACert},
+		{"REDPANDA_ADMIN_TLS_CERT", xAdminClientCert},
+		{"REDPANDA_ADMIN_TLS_KEY", xAdminClientKey},
+		{"RPK_CLOUD_CLIENT_ID", xCloudClientID},
+		{"RPK_CLOUD_CLIENT_SECRET", xCloudClientSecret},
+	} {
+		if v, exists := os.LookupEnv(envMapping.old); exists {
+			envOverrides = append(envOverrides, envMapping.targetKey+"="+v)
 		}
-		*dst = append(*dst, on)
 	}
-	return nil
+	for _, k := range XFlags() {
+		targetKey := k
+		k = strings.ReplaceAll(k, ".", "_")
+		k = strings.ToUpper(k)
+		if v, exists := os.LookupEnv("RPK_" + k); exists {
+			envOverrides = append(envOverrides, targetKey+"="+v)
+		}
+	}
+	return envOverrides
 }
 
-// Process overrides processes env and flag overrides into a config file (so
-// that we result in our priority order: flag, env, file).
+// processes first env and then flag overrides into our virtual rpk yaml.
 func (p *Params) processOverrides(c *Config) error {
-	r := &c.rpkYaml
-	cx := r.Context(r.CurrentContext) // must exist by this point
-	k := &cx.KafkaAPI
-	a := &cx.AdminAPI
-	auth := r.Auth(r.CurrentCloudAuth)
-
-	// We have three "make" functions that initialize pointer values if
-	// necessary.
-	var (
-		mkKafkaTLS = func() {
-			if k.TLS == nil {
-				k.TLS = new(TLS)
-			}
-		}
-		mkSASL = func() {
-			if k.SASL == nil {
-				k.SASL = new(SASL)
-			}
-		}
-		mkAdminTLS = func() {
-			if a.TLS == nil {
-				a.TLS = new(TLS)
-			}
-		}
-	)
-
-	// To override, we lookup any override key (e.g., brokers.tls.enabled
-	// or admin_api.hosts) into this map. If the key exists, we processes
-	// the value as appropriate (per the value function in the map).
-	fns := map[string]func(string) error{
-		xKafkaBrokers: func(v string) error { return splitCommaIntoStrings(v, &k.Brokers) },
-
-		xKafkaTLSEnabled: func(string) error { mkKafkaTLS(); return nil },
-		xKafkaCACert:     func(v string) error { mkKafkaTLS(); k.TLS.TruststoreFile = v; return nil },
-		xKafkaClientCert: func(v string) error { mkKafkaTLS(); k.TLS.CertFile = v; return nil },
-		xKafkaClientKey:  func(v string) error { mkKafkaTLS(); k.TLS.KeyFile = v; return nil },
-
-		xKafkaSASLMechanism: func(v string) error { mkSASL(); k.SASL.Mechanism = v; return nil },
-		xKafkaSASLUser:      func(v string) error { mkSASL(); k.SASL.User = v; return nil },
-		xKafkaSASLPass:      func(v string) error { mkSASL(); k.SASL.Password = v; return nil },
-
-		xAdminHosts:      func(v string) error { return splitCommaIntoStrings(v, &a.Addresses) },
-		xAdminTLSEnabled: func(string) error { mkAdminTLS(); return nil },
-		xAdminCACert:     func(v string) error { mkAdminTLS(); a.TLS.TruststoreFile = v; return nil },
-		xAdminClientCert: func(v string) error { mkAdminTLS(); a.TLS.CertFile = v; return nil },
-		xAdminClientKey:  func(v string) error { mkAdminTLS(); a.TLS.KeyFile = v; return nil },
-
-		xCloudClientID:     func(v string) error { auth.ClientID = v; return nil },
-		xCloudClientSecret: func(v string) error { auth.ClientSecret = v; return nil },
-	}
-
-	// The parse function accepts the given overrides (key=value pairs) and
-	// processes each. This is run first for env vars then for flags.
 	parse := func(isEnv bool, kvs []string) error {
 		from := "flag"
 		if isEnv {
@@ -852,64 +908,17 @@ func (p *Params) processOverrides(c *Config) error {
 			}
 			k, v := kv[0], kv[1]
 
-			fn, exists := fns[strings.ToLower(k)]
+			parse, exists := xflags[strings.ToLower(k)]
 			if !exists {
 				return fmt.Errorf("%s config: unknown key %q", from, k)
 			}
-			if err := fn(v); err != nil {
+			if err := parse(v, &c.rpkYaml); err != nil {
 				return fmt.Errorf("%s config key %q: %s", from, k, err)
 			}
 		}
 		return nil
 	}
-
-	var envOverrides []string
-
-	// Similar to our flag mapping in ParamsFromCommand, we want to
-	// continue supporting older environment variables. This section maps
-	// old env vars to what key we should use in this new format.
-	for _, envMapping := range []struct {
-		old       string
-		targetKey string
-	}{
-		{envBrokers, xKafkaBrokers},
-		{envTLSTruststore, xKafkaCACert},
-		{envTLSCA, xKafkaCACert},
-		{envTLSCert, xKafkaClientCert},
-		{envTLSKey, xKafkaClientKey},
-		{envSASLMechanism, xKafkaSASLMechanism},
-		{envSASLUser, xKafkaSASLUser},
-		{envSASLPass, xKafkaSASLPass},
-		{envAdminHosts, xAdminHosts},
-		{envAdminTLSTruststore, xAdminCACert},
-		{envAdminTLSCA, xAdminCACert},
-		{envAdminTLSCert, xAdminClientCert},
-		{envAdminTLSKey, xAdminClientKey},
-		{envClientID, xCloudClientID},
-		{envClientSecret, xCloudClientSecret},
-	} {
-		if v, exists := os.LookupEnv(envMapping.old); exists {
-			envOverrides = append(envOverrides, envMapping.targetKey+"="+v)
-		}
-	}
-
-	// Now we lookup any new format environment variables. These are named
-	// exactly the same as our -X flag keys, but with dots replaced with
-	// underscores, and the words uppercased. The new format takes
-	// precedence over the old, and we ensure that by adding these
-	// overrides last in the list of env overrides.
-	for k := range fns {
-		targetKey := k
-		k = strings.ReplaceAll(k, ".", "_")
-		k = strings.ToUpper(k)
-		if v, exists := os.LookupEnv("RPK_" + k); exists {
-			envOverrides = append(envOverrides, targetKey+"="+v)
-		}
-	}
-
-	// Finally, we process overrides: first environment variables, and then
-	// flags.
-	if err := parse(true, envOverrides); err != nil {
+	if err := parse(true, envOverrides()); err != nil {
 		return err
 	}
 	return parse(false, p.FlagOverrides)
