@@ -45,6 +45,7 @@
 #include <fmt/format.h>
 #include <fmt/ranges.h>
 
+#include <algorithm>
 #include <iterator>
 
 namespace cluster {
@@ -180,14 +181,18 @@ void health_monitor_backend::refresh_nodes_status() {
     }
 }
 
-std::vector<topic_status> filter_topic_status(
-  const std::vector<topic_status>& topics, const partitions_filter& filter) {
+ss::chunked_fifo<topic_status> filter_topic_status(
+  const ss::chunked_fifo<topic_status>& topics,
+  const partitions_filter& filter) {
     // empty filter matches all
     if (filter.namespaces.empty()) {
-        return topics;
+        ss::chunked_fifo<topic_status> copy;
+        copy.reserve(topics.size());
+        std::copy(topics.cbegin(), topics.cend(), std::back_inserter(copy));
+        return copy;
     }
 
-    std::vector<topic_status> filtered;
+    ss::chunked_fifo<topic_status> filtered;
 
     for (auto& tl : topics) {
         topic_status filtered_topic_status{.tp_ns = tl.tp_ns};
@@ -737,7 +742,7 @@ reduce_reports_map(reports_acc_t acc, std::vector<ntp_report> current_reports) {
     return acc;
 }
 } // namespace
-ss::future<std::vector<topic_status>>
+ss::future<ss::chunked_fifo<topic_status>>
 health_monitor_backend::collect_topic_status(partitions_filter filters) {
     auto reports_map = co_await _partition_manager.map_reduce0(
       [&filters](partition_manager& pm) {
@@ -746,7 +751,7 @@ health_monitor_backend::collect_topic_status(partitions_filter filters) {
       reports_acc_t{},
       &reduce_reports_map);
 
-    std::vector<topic_status> topics;
+    ss::chunked_fifo<topic_status> topics;
     topics.reserve(reports_map.size());
     for (auto& [tp_ns, partitions] : reports_map) {
         topics.push_back(
