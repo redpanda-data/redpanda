@@ -322,7 +322,7 @@ public:
     const_iterator find(model::offset o) const;
 
     /// Update manifest file from iobuf
-    ss::future<> update_with_json(iobuf buf);
+    void update_with_json(iobuf buf);
 
     /// Update manifest file from input_stream (remote set)
     ss::future<> update(

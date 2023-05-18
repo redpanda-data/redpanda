@@ -1392,7 +1392,7 @@ struct partition_manifest_handler
     }
 };
 
-ss::future<> partition_manifest::update_with_json(iobuf buf) {
+void partition_manifest::update_with_json(iobuf buf) {
     iobuf_istreambuf ibuf(buf);
     std::istream stream(&ibuf);
     json::IStreamWrapper wrapper(stream);
@@ -1412,8 +1412,6 @@ ss::future<> partition_manifest::update_with_json(iobuf buf) {
           rapidjson::GetParseError_En(e),
           o));
     }
-
-    co_return;
 }
 
 ss::future<> partition_manifest::update(
@@ -1424,7 +1422,7 @@ ss::future<> partition_manifest::update(
 
     switch (serialization_format) {
     case manifest_format::json:
-        co_await update_with_json(std::move(result));
+        update_with_json(std::move(result));
         break;
     case manifest_format::serde:
         from_iobuf(std::move(result));
