@@ -17,8 +17,8 @@ import (
 	"runtime"
 	"strings"
 
-	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cloud/cloudcfg"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cloudapi"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/oauth"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/oauth/providers/auth0"
 	rpkos "github.com/redpanda-data/redpanda/src/go/rpk/pkg/os"
@@ -28,8 +28,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func newInstallCommand(fs afero.Fs) *cobra.Command {
-	var params cloudcfg.Params
+func newInstallCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	var redpandaID string
 	cmd := &cobra.Command{
 		Use:   "install",
@@ -42,7 +41,7 @@ exists if you want to download the plugin ahead of time.
 `,
 		Args: cobra.ExactArgs(0),
 		Run: func(cmd *cobra.Command, _ []string) {
-			cfg, err := params.Load(fs)
+			cfg, err := p.Load(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)
 			_, _, installed, err := loginAndEnsurePluginVersion(cmd.Context(), fs, cfg, redpandaID)
 			out.MaybeDie(err, "unable to install byoc plugin: %v", err)
@@ -60,28 +59,28 @@ autocompletion, start a new terminal and tab complete through it!
 `)
 		},
 	}
-	cmd.Flags().StringVar(&redpandaID, "redpanda-id", "", "The redpanda ID of the cluster you are creating")
-	cmd.MarkFlagRequired("redpanda-id")
-
-	cmd.Flags().StringVar(&params.ClientID, cloudcfg.FlagClientID, "", "The client ID of the organization in Redpanda Cloud")
-	cmd.Flags().StringVar(&params.ClientSecret, cloudcfg.FlagClientSecret, "", "The client secret of the organization in Redpanda Cloud")
-	cmd.MarkFlagsRequiredTogether(cloudcfg.FlagClientID, cloudcfg.FlagClientSecret)
+	cmd.Flags().StringVar(&redpandaID, flagRedpandaID, "", flagRedpandaIDDesc)
 	return cmd
 }
 
-func loginAndEnsurePluginVersion(ctx context.Context, fs afero.Fs, cfg *cloudcfg.Config, redpandaID string) (binPath string, token string, installed bool, rerr error) {
+func loginAndEnsurePluginVersion(ctx context.Context, fs afero.Fs, cfg *config.Config, redpandaID string) (binPath string, token string, installed bool, rerr error) {
 	// First load our configuration and token.
 	pluginDir, err := plugin.DefaultBinPath()
 	if err != nil {
 		return "", "", false, fmt.Errorf("unable to determine managed plugin path: %w", err)
 	}
-	token, err = oauth.LoadFlow(ctx, fs, cfg, auth0.NewClient(cfg))
+	overrides := cfg.DevOverrides()
+	token, err = oauth.LoadFlow(ctx, fs, cfg, auth0.NewClient(overrides))
 	if err != nil {
 		return "", "", false, fmt.Errorf("unable to load the cloud token: %w", err)
 	}
 
+	cloudURL := cloudapi.ProdURL
+	if u := overrides.CloudAPIURL; u != "" {
+		cloudURL = u
+	}
 	// Check our current version of the plugin.
-	cl := cloudapi.NewClient(cfg.CloudURL, token)
+	cl := cloudapi.NewClient(cloudURL, token)
 	cluster, err := cl.Cluster(ctx, redpandaID)
 	if err != nil {
 		return "", "", false, fmt.Errorf("unable to request cluster details for %q: %w", redpandaID, err)
@@ -115,7 +114,7 @@ func loginAndEnsurePluginVersion(ctx context.Context, fs afero.Fs, cfg *cloudcfg
 		if !byoc.Managed {
 			return "", "", false, fmt.Errorf("found external plugin at %s, the old plugin must be removed first", byoc.Path)
 		}
-		if c := cfg.SkipVersionCheck; c == "1" || c == "true" {
+		if c := overrides.BYOCSkipVersionCheck; c == "1" || c == "true" {
 			return byoc.Path, token, false, nil
 		}
 		currentSha, err := plugin.Sha256Path(fs, byoc.Path)

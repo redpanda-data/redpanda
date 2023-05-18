@@ -95,7 +95,7 @@ func Execute() {
 
 	root.AddCommand(
 		acl.NewCommand(fs, p),
-		cloud.NewCommand(fs, osExec),
+		cloud.NewCommand(fs, p, osExec),
 		cluster.NewCommand(fs, p),
 		container.NewCommand(),
 		debug.NewCommand(fs, p),
@@ -121,15 +121,15 @@ func Execute() {
 	// unless the plugin is specifically rpk managed.
 	//
 	// Managed plugins are slightly weirder and are documented below.
-	for _, p := range plugin.ListPlugins(fs, plugin.UserPaths()) {
-		if p.Managed {
-			mp, managedHook := plugin.LookupManaged(p)
+	for _, pl := range plugin.ListPlugins(fs, plugin.UserPaths()) {
+		if pl.Managed {
+			mp, managedHook := plugin.LookupManaged(pl)
 			if managedHook != nil {
-				addPluginWithExec(root, mp.Name, mp.Arguments, mp.Path, managedHook, fs)
+				addPluginWithExec(root, mp.Name, mp.Arguments, mp.Path, managedHook, fs, p)
 				continue
 			}
 		}
-		addPluginWithExec(root, p.Name, p.Arguments, p.Path, nil, nil)
+		addPluginWithExec(root, pl.Name, pl.Arguments, pl.Path, nil, nil, p)
 	}
 
 	// Cobra creates help flag as: help for <command> if you want to override

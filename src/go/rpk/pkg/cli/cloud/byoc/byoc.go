@@ -10,96 +10,87 @@
 package byoc
 
 import (
+	"context"
 	"errors"
 	"strings"
 
-	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cloud/cloudcfg"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cobraext"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/out"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/plugin"
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
 )
 
+const (
+	flagCloudAPIToken  = "cloud-api-token"
+	flagRedpandaID     = "redpanda-id"
+	flagRedpandaIDDesc = "The redpanda ID of the cluster you are creating"
+)
+
+type ctxKeyRedpandaID struct{}
+
 func init() {
 	// We manage the byoc plugin, and we install it under "rpk cloud byoc".
 	// Whenever we run a byoc subcommand, we want to load our token and
 	// pass it to the subcommand as an extra flag.
-	plugin.RegisterManaged("byoc", []string{"cloud", "byoc"}, func(cmd *cobra.Command, fs afero.Fs) *cobra.Command {
-		var params cloudcfg.Params
-		run := cmd.Run
-
+	plugin.RegisterManaged("byoc", []string{"cloud", "byoc"}, func(cmd *cobra.Command, fs afero.Fs, p *config.Params) *cobra.Command {
 		// Plugin commands disable flag parsing because we want to pass
 		// raw flags directly to the plugin. We are hijacking the exec
 		// and want to parse a few flags ourselves.
+		run := cmd.Run
+		addBYOCFlags(cmd, p)
 		cmd.Run = func(cmd *cobra.Command, args []string) {
-			var redpandaID string
-			err := parseExecFlags(args, &params.ClientID, &params.ClientSecret, &redpandaID, true)
+			cfg, redpandaID, pluginArgs, err := parseBYOCFlags(fs, p, cmd, args)
 			out.MaybeDieErr(err)
 
 			// We require our plugin to always be the exact version
 			// pinned in the control plane.
-			cfg, err := params.Load(fs)
-			out.MaybeDie(err, "unable to load config: %v", err)
 			_, token, _, err := loginAndEnsurePluginVersion(cmd.Context(), fs, cfg, redpandaID)
 			out.MaybeDie(err, "unable to ensure byoc plugin version: %v", err)
 
 			// Finally, exec.
-			run(cmd, append(args, "--cloud-api-token", token))
+			run(cmd, append(pluginArgs, "--"+flagCloudAPIToken, token))
 		}
 		return cmd
 	})
 }
 
-func findFlag(args []string, flag string) string {
-	for i, arg := range args {
-		// "--foo bar"
-		if arg == flag && len(args) > i {
-			return args[i+1]
-		}
-		// "--foo=bar"
-		if strings.HasPrefix(arg, flag+"=") {
-			return strings.TrimPrefix(arg, flag+"=")
-		}
+func addBYOCFlags(cmd *cobra.Command, p *config.Params) {
+	f := cmd.Flags()
+	ctx := cmd.Context()
+	if ctx == nil {
+		ctx = context.Background()
 	}
-	return ""
+	ctx = context.WithValue(ctx, ctxKeyRedpandaID{}, f.String(flagRedpandaID, "", flagRedpandaIDDesc))
+	cmd.SetContext(ctx)
+	f.String(flagCloudAPIToken, "", "")
+	f.MarkHidden(flagCloudAPIToken)
+	cmd.MarkFlagRequired(flagRedpandaID)
+	p.InstallCloudFlags(cmd)
 }
 
-// For our byoc command, and for plugin shadow commands, we disable flag
-// parsing so that we can pass raw flags to the plugin itself. However, we want
-// to hijack a few of these flags within byoc.
-//
-// --client-id and --client-secret can override our auth flow, and
-// --redpanda-id is potentially required.
-func parseExecFlags(args []string, clientID, clientSecret, redpandaID *string, requireRedpandaID bool) error {
-	flagClientID := findFlag(args, "--"+cloudcfg.FlagClientID)
-	flagClientSecret := findFlag(args, "--"+cloudcfg.FlagClientSecret)
-	if flagClientID != "" || flagClientSecret != "" {
-		if flagClientID == "" || flagClientSecret == "" {
-			return errors.New("--client-id and --client-secret are required together if either are used")
-		}
-		*clientID = flagClientID
-		*clientSecret = flagClientSecret
+func parseBYOCFlags(fs afero.Fs, p *config.Params, cmd *cobra.Command, args []string) (*config.Config, string, []string, error) {
+	if cmd.Flags().Lookup(flagCloudAPIToken).Changed {
+		return nil, "", nil, errors.New("--cloud-api-token cannot be manually specified")
 	}
 
-	// We require --redpanda-id when execing the plugin.
-	flagRedpandaID := findFlag(args, "--redpanda-id")
-	if flagRedpandaID == "" && requireRedpandaID {
-		return errors.New("missing required --redpanda-id flag")
+	f := cmd.Flags()
+	keepForPlugin, stripForRpk := cobraext.StripFlagset(args, f)
+	if err := f.Parse(stripForRpk); err != nil {
+		return nil, "", nil, err
 	}
-	*redpandaID = flagRedpandaID
 
-	// We disallow manually specifying --cloud-api-token,
-	// which we load ourselves.
-	if token := findFlag(args, "--cloud-api-token"); token != "" {
-		return errors.New("--cloud-api-token cannot be manually specified")
+	redpandaID := *(cmd.Context().Value(ctxKeyRedpandaID{}).(*string))
+	cfg, err := p.Load(fs)
+	if err != nil {
+		return nil, "", nil, err
 	}
-	return nil
+	return cfg, redpandaID, keepForPlugin, nil
 }
 
 // NewCommand returns a new byoc plugin command.
-func NewCommand(fs afero.Fs, execFn func(string, []string) error) *cobra.Command {
-	var params cloudcfg.Params
+func NewCommand(fs afero.Fs, p *config.Params, execFn func(string, []string) error) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "byoc",
 		Short: "Manage a Redpanda cloud BYOC agent",
@@ -116,18 +107,8 @@ and then come back to this command to complete the process.
 `,
 		DisableFlagParsing: true,
 		Run: func(cmd *cobra.Command, args []string) {
-			var redpandaID string
-			err := parseExecFlags(args, &params.ClientID, &params.ClientSecret, &redpandaID, false)
+			cfg, redpandaID, pluginArgs, err := parseBYOCFlags(fs, p, cmd, args)
 			out.MaybeDieErr(err)
-
-			// Now that we have parsed our required flags, we
-			// strip every rpk specific flag from this command.
-			// Every remaining flag is passed through to the
-			// plugin.
-			args = cobraext.StripFlagset(args, cmd.Flags())
-
-			cfg, err := params.Load(fs)
-			out.MaybeDie(err, "unable to load config: %v", err)
 
 			// We bind rpk to the plugin implementation a little
 			// bit: we only want to download and exec the plugin if
@@ -144,8 +125,8 @@ and then come back to this command to complete the process.
 			// this is mostly best effort, but we do not expect
 			// the plugin to be complicated.
 			var isKnown bool
-			for i := 0; i < len(args); i++ {
-				arg := args[i]
+			for i := 0; i < len(pluginArgs); i++ {
+				arg := pluginArgs[i]
 				switch {
 				case strings.HasPrefix(arg, "--") && !strings.Contains(arg, "="):
 					i++
@@ -164,19 +145,15 @@ and then come back to this command to complete the process.
 			path, token, _, err := loginAndEnsurePluginVersion(cmd.Context(), fs, cfg, redpandaID)
 			out.MaybeDie(err, "unable to ensure byoc plugin version: %v", err)
 
-			err = execFn(path, append(args, "--cloud-api-token", token))
+			err = execFn(path, append(pluginArgs, "--"+flagCloudAPIToken, token))
 			out.MaybeDie(err, "unable to execute plugin: %v", err)
 		},
 	}
 
-	// We add these flags, but they will not be parsed because of
-	// DisableFlagParsing. We manually parse them.
-	cmd.Flags().StringVar(&params.ClientID, cloudcfg.FlagClientID, "", "The client ID of the organization in Redpanda Cloud")
-	cmd.Flags().StringVar(&params.ClientSecret, cloudcfg.FlagClientSecret, "", "The client secret of the organization in Redpanda Cloud")
-	cmd.MarkFlagsRequiredTogether(cloudcfg.FlagClientID, cloudcfg.FlagClientSecret)
+	addBYOCFlags(cmd, p)
 
 	cmd.AddCommand(
-		newInstallCommand(fs),
+		newInstallCommand(fs, p),
 		newUninstallCommand(fs),
 	)
 

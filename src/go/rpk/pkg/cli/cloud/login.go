@@ -13,7 +13,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cloud/cloudcfg"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/oauth"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/oauth/providers/auth0"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/out"
@@ -21,8 +21,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func newLoginCommand(fs afero.Fs) *cobra.Command {
-	var params cloudcfg.Params
+func newLoginCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	var save bool
 	cmd := &cobra.Command{
 		Use:   "login",
@@ -59,10 +58,10 @@ __cloud.yaml file unless the --save flag is passed. The cloud authorization
 token and client ID is always synced.
 `,
 		Run: func(cmd *cobra.Command, _ []string) {
-			cfg, err := params.Load(fs)
+			cfg, err := p.Load(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)
 
-			_, err = oauth.LoadFlow(cmd.Context(), fs, cfg, auth0.NewClient(cfg))
+			_, err = oauth.LoadFlow(cmd.Context(), fs, cfg, auth0.NewClient(cfg.DevOverrides()))
 			if e := (*oauth.BadClientTokenError)(nil); errors.As(err, &e) {
 				out.Die(`
 Unable to login into Redpanda Cloud: %v.
@@ -71,17 +70,26 @@ You may need to clear your client ID and secret with 'rpk cloud logout --clear-c
 and then re-specify the client credentials next time you log in.`, err)
 			}
 			out.MaybeDie(err, "unable to login into Redpanda Cloud: %v", err)
-			if save {
-				err = cfg.SaveAll(fs)
-				out.MaybeDie(err, "unable to save client ID and client secret: %v", err)
+
+			if !save {
+				fmt.Println("Successfully logged in.")
+				return // we saved the token in LoadFlow, just not the client secret
 			}
+
+			var (
+				yMat    = cfg.MaterializedRpkYaml()
+				authMat = yMat.Auth(yMat.CurrentCloudAuth)
+				yAct, _ = cfg.ActualRpkYaml()              // must exist due to LoadFlow checking
+				authAct = yAct.Auth(yAct.CurrentCloudAuth) // must exist due to LoadFlow
+			)
+			authAct.ClientSecret = authMat.ClientSecret
+			err = yAct.Write(fs)
+			out.MaybeDie(err, "unable to save client ID and client secret: %v", err)
 			fmt.Println("Successfully logged in.")
 		},
 	}
 
+	p.InstallCloudFlags(cmd)
 	cmd.Flags().BoolVar(&save, "save", false, "Save environment or flag specified client ID and client secret to the configuration file")
-	cmd.Flags().StringVar(&params.ClientID, cloudcfg.FlagClientID, "", "The client ID of the organization in Redpanda Cloud")
-	cmd.Flags().StringVar(&params.ClientSecret, cloudcfg.FlagClientSecret, "", "The client secret of the organization in Redpanda Cloud")
-	cmd.MarkFlagsRequiredTogether(cloudcfg.FlagClientID, cloudcfg.FlagClientSecret)
 	return cmd
 }
