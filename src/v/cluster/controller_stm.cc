@@ -25,6 +25,9 @@ ss::future<> controller_stm::on_batch_applied() {
     if (!_feature_table.is_active(features::feature::controller_snapshots)) {
         co_return;
     }
+    if (!_snapshot_enabled()) {
+        co_return;
+    }
     if (_gate.is_closed()) {
         co_return;
     }
@@ -62,6 +65,10 @@ controller_stm::maybe_make_snapshot(ssx::semaphore_units apply_mtx_holder) {
 
     if (!_feature_table.is_active(features::feature::controller_snapshots)) {
         vlog(clusterlog.warn, "skipping snapshotting, feature not enabled");
+        co_return std::nullopt;
+    }
+    if (!_snapshot_enabled()) {
+        vlog(clusterlog.warn, "skipping snapshotting, disabled in config");
         co_return std::nullopt;
     }
 

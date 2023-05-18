@@ -1995,6 +1995,13 @@ configuration::configuration()
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       3000,
       {.min = 100, .max = 10000})
+  , controller_snapshot_enabled(
+      *this,
+      "controller_snapshot_enabled",
+      "If true, redpanda will snapshot the controller state after controller "
+      "commands are applied",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      true)
   , controller_snapshot_max_age_sec(
       *this,
       "controller_snapshot_max_age_sec",
