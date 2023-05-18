@@ -15,11 +15,13 @@
 #include "cluster/scheduling/allocation_node.h"
 #include "model/metadata.h"
 
+#include <seastar/core/weak_ptr.hh>
+
 namespace cluster {
 /**
  * Partition allocator state
  */
-class allocation_state {
+class allocation_state : public ss::weakly_referencable<allocation_state> {
 public:
     using node_t = allocation_node;
     using node_ptr = std::unique_ptr<node_t>;
@@ -45,15 +47,23 @@ public:
     // Operations on state
     void deallocate(const model::broker_shard&, partition_allocation_domain);
     void apply_update(
-      std::vector<model::broker_shard>,
+      const std::vector<model::broker_shard>&,
       raft::group_id,
       partition_allocation_domain);
     result<uint32_t> allocate(model::node_id id, partition_allocation_domain);
 
     void rollback(
-      const std::vector<partition_assignment>& pa, partition_allocation_domain);
-    void rollback(
-      const std::vector<model::broker_shard>& v, partition_allocation_domain);
+      const ss::chunked_fifo<partition_assignment>& pa,
+      partition_allocation_domain);
+
+    template<typename Replicas>
+    void
+    rollback(const Replicas& replicas, partition_allocation_domain domain) {
+        verify_shard();
+        for (auto& bs : replicas) {
+            deallocate(bs, domain);
+        }
+    }
 
     bool validate_shard(model::node_id node, uint32_t shard) const;
 

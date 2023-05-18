@@ -11,11 +11,34 @@
 
 #include "cluster/scheduling/types.h"
 
+#include "cluster/logger.h"
 #include "cluster/scheduling/allocation_state.h"
+#include "utils/to_string.h"
 
 #include <fmt/ostream.h>
 
 namespace cluster {
+
+hard_constraint_evaluator
+hard_constraint::make_evaluator(const replicas_t& current_replicas) const {
+    auto ev = _impl->make_evaluator(current_replicas);
+    return [this, ev = std::move(ev)](const allocation_node& node) {
+        auto res = ev(node);
+        vlog(clusterlog.trace, "{}({}) = {}", name(), node.id(), res);
+        return res;
+    };
+}
+
+soft_constraint_evaluator
+soft_constraint::make_evaluator(const replicas_t& current_replicas) const {
+    auto ev = _impl->make_evaluator(current_replicas);
+    return [this, ev = std::move(ev)](const allocation_node& node) {
+        auto res = ev(node);
+        vlog(clusterlog.trace, "{}({}) = {}", name(), node.id(), res);
+        return res;
+    };
+};
+
 std::ostream& operator<<(std::ostream& o, const allocation_constraints& a) {
     fmt::print(
       o,
@@ -38,20 +61,20 @@ void allocation_constraints::add(allocation_constraints other) {
 }
 
 allocation_units::allocation_units(
-  std::vector<partition_assignment> assignments,
-  allocation_state* state,
+  ss::chunked_fifo<partition_assignment> assignments,
+  allocation_state& state,
   const partition_allocation_domain domain)
   : _assignments(std::move(assignments))
-  , _state(state)
+  , _state(state.weak_from_this())
   , _domain(domain) {}
 
 allocation_units::allocation_units(
-  std::vector<partition_assignment> assignments,
+  ss::chunked_fifo<partition_assignment> assignments,
   std::vector<model::broker_shard> previous_allocations,
-  allocation_state* state,
+  allocation_state& state,
   const partition_allocation_domain domain)
   : _assignments(std::move(assignments))
-  , _state(state)
+  , _state(state.weak_from_this())
   , _domain(domain) {
     _previous.reserve(previous_allocations.size());
     for (auto& prev : previous_allocations) {
@@ -63,7 +86,7 @@ allocation_units::~allocation_units() {
     oncore_debug_verify(_oncore);
     for (auto& pas : _assignments) {
         for (auto& replica : pas.replicas) {
-            if (!_previous.contains(replica)) {
+            if (!_previous.contains(replica) && _state) {
                 _state->deallocate(replica, _domain);
             }
         }

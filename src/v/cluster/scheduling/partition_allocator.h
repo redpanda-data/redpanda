@@ -57,15 +57,7 @@ public:
      * Return an allocation_units object wrapping the result of the allocating
      * the given allocation request, or an error if it was not possible.
      */
-    result<allocation_units::pointer> allocate(allocation_request);
-
-    /// Reallocates partition replicas, moving them away from decommissioned
-    /// nodes. Replicas on nodes that were left untouched are not changed.
-    /// Allocation domain must match the one used to allocate the partition.
-    ///
-    /// Returns an error it reallocation is impossible
-    result<allocation_units> reassign_decommissioned_replicas(
-      const partition_assignment&, partition_allocation_domain);
+    ss::future<result<allocation_units::pointer>> allocate(allocation_request);
 
     result<allocation_units> reallocate_partition(
       partition_constraints,
@@ -103,7 +95,7 @@ private:
           allocation_state& state,
           size_t res,
           const partition_allocation_domain domain)
-          : _state(state)
+          : _state(state.weak_from_this())
           , _domain(domain) {
             _partial.reserve(res);
         }
@@ -114,8 +106,8 @@ private:
             _partial.emplace_back(std::forward<Args>(args)...);
         }
 
-        const std::vector<T>& get() const { return _partial; }
-        std::vector<T> finish() && { return std::exchange(_partial, {}); }
+        const ss::chunked_fifo<T>& get() const { return _partial; }
+        ss::chunked_fifo<T> finish() && { return std::exchange(_partial, {}); }
         intermediate_allocation(intermediate_allocation&&) noexcept = default;
 
         intermediate_allocation(
@@ -125,11 +117,15 @@ private:
         intermediate_allocation&
         operator=(const intermediate_allocation&) noexcept = delete;
 
-        ~intermediate_allocation() { _state.rollback(_partial, _domain); }
+        ~intermediate_allocation() {
+            if (_state) {
+                _state->rollback(_partial, _domain);
+            }
+        }
 
     private:
-        std::vector<T> _partial;
-        allocation_state& _state;
+        ss::chunked_fifo<T> _partial;
+        ss::weak_ptr<allocation_state> _state;
         partition_allocation_domain _domain;
     };
 
@@ -145,6 +141,9 @@ private:
       partition_constraints,
       partition_allocation_domain,
       const std::vector<model::broker_shard>&);
+
+    allocation_constraints
+    default_constraints(const partition_allocation_domain);
 
     std::unique_ptr<allocation_state> _state;
     allocation_strategy _allocation_strategy;

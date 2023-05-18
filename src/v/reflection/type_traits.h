@@ -16,6 +16,7 @@
 #include "utils/fragmented_vector.h"
 #include "utils/named_type.h"
 
+#include <seastar/core/chunked_fifo.hh>
 #include <seastar/core/circular_buffer.hh>
 #include <seastar/util/bool_class.hh>
 
@@ -51,6 +52,10 @@ concept is_std_vector = ::detail::is_specialization_of_v<T, std::vector>;
 template<typename T>
 concept is_fragmented_vector
   = ::detail::is_specialization_of_sized_v<T, fragmented_vector>;
+
+template<typename T>
+concept is_ss_chunked_fifo
+  = ::detail::is_specialization_of_sized_v<T, ss::chunked_fifo>;
 
 template<typename T>
 concept is_ss_circular_buffer

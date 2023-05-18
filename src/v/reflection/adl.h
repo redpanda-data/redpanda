@@ -35,6 +35,8 @@ struct adl {
     static constexpr bool is_vector = is_std_vector<type>;
     static constexpr bool is_fragmented_vector
       = reflection::is_fragmented_vector<type>;
+    static constexpr bool is_chunked_fifo
+      = reflection::is_ss_chunked_fifo<type>;
     static constexpr bool is_named_type = is_rp_named_type<type>;
     static constexpr bool is_iobuf = std::is_same_v<type, iobuf>;
     static constexpr bool is_standard_layout = std::is_standard_layout_v<type>;
@@ -89,10 +91,10 @@ struct adl {
                 ret.push_back(adl<value_type>{}.from(in));
             }
             return ret;
-        } else if constexpr (is_fragmented_vector) {
+        } else if constexpr (is_fragmented_vector || is_chunked_fifo) {
             using value_type = typename type::value_type;
             int32_t n = in.template consume_type<int32_t>();
-            fragmented_vector<value_type> ret;
+            type ret;
             while (n-- > 0) {
                 ret.push_back(adl<value_type>{}.from(in));
             }
@@ -156,7 +158,8 @@ struct adl {
             adl<int32_t>{}.to(out, int32_t(t.size()));
             out.append(t.data(), t.size());
             return;
-        } else if constexpr (is_vector || is_fragmented_vector) {
+        } else if constexpr (
+          is_vector || is_fragmented_vector || is_chunked_fifo) {
             using value_type = typename type::value_type;
             if (unlikely(t.size() > std::numeric_limits<int32_t>::max())) {
                 throw std::invalid_argument(fmt::format(

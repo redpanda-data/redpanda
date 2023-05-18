@@ -20,8 +20,11 @@
 #include "units.h"
 #include "utils/human.h"
 
+#include <seastar/core/chunked_fifo.hh>
 #include <seastar/core/sharded.hh>
 #include <seastar/core/shared_ptr.hh>
+#include <seastar/coroutine/maybe_yield.hh>
+#include <seastar/util/later.hh>
 
 #include <absl/container/node_hash_set.h>
 #include <sys/resource.h>
@@ -51,20 +54,21 @@ partition_allocator::partition_allocator(
   , _partitions_reserve_shard0(partitions_reserve_shard0)
   , _enable_rack_awareness(enable_rack_awareness) {}
 
-allocation_constraints
-default_constraints(const partition_allocation_domain domain) {
+allocation_constraints partition_allocator::default_constraints(
+  const partition_allocation_domain domain) {
     allocation_constraints req;
-    req.hard_constraints.push_back(
-      ss::make_lw_shared<hard_constraint_evaluator>(not_fully_allocated()));
-    req.hard_constraints.push_back(
-      ss::make_lw_shared<hard_constraint_evaluator>(is_active()));
+
+    req.add(distinct_nodes());
+    req.add(not_fully_allocated());
+    req.add(is_active());
+
     if (domain == partition_allocation_domains::common) {
-        req.soft_constraints.push_back(
-          ss::make_lw_shared<soft_constraint_evaluator>(least_allocated()));
+        req.add(least_allocated());
     } else {
-        req.soft_constraints.push_back(
-          ss::make_lw_shared<soft_constraint_evaluator>(
-            least_allocated_in_domain(domain)));
+        req.add(least_allocated_in_domain(domain));
+    }
+    if (_enable_rack_awareness()) {
+        req.add(distinct_rack_preferred(*_state));
     }
     return req;
 }
@@ -78,45 +82,39 @@ partition_allocator::allocate_partition(
       clusterlog.trace,
       "allocating partition with constraints: {}",
       p_constraints);
+    uint16_t replicas_to_allocate = p_constraints.replication_factor
+                                    - not_changed_replicas.size();
     if (
-      p_constraints.replication_factor <= 0
-      || _state->available_nodes() < p_constraints.replication_factor) {
+      replicas_to_allocate <= 0
+      || _state->available_nodes() < replicas_to_allocate) {
         return errc::topic_invalid_replication_factor;
     }
 
     intermediate_allocation<model::broker_shard> replicas(
-      *_state, p_constraints.replication_factor, domain);
+      *_state, replicas_to_allocate, domain);
 
-    for (auto r = 0; r < p_constraints.replication_factor; ++r) {
+    std::vector<model::broker_shard> all_replicas = not_changed_replicas;
+
+    for (auto r = 0; r < replicas_to_allocate; ++r) {
         auto effective_constraints = default_constraints(domain);
-        effective_constraints.hard_constraints.push_back(
-          ss::make_lw_shared<hard_constraint_evaluator>(
-            distinct_from(replicas.get())));
-
-        std::vector<model::broker_shard> current_replicas;
-        // rack-placement contraint
-        if (_enable_rack_awareness()) {
-            current_replicas = replicas.get();
-            current_replicas.insert(
-              current_replicas.end(),
-              not_changed_replicas.begin(),
-              not_changed_replicas.end());
-            effective_constraints.soft_constraints.push_back(
-              ss::make_lw_shared<soft_constraint_evaluator>(
-                distinct_rack_preferred(current_replicas, *_state)));
-        }
-
         effective_constraints.add(p_constraints.constraints);
+
         auto replica = _allocation_strategy.allocate_replica(
-          effective_constraints, *_state, domain);
+          all_replicas, effective_constraints, *_state, domain);
 
         if (!replica) {
             return replica.error();
         }
+        // update intermediate allocation and all_replicas vector
         replicas.push_back(replica.value());
+        all_replicas.push_back(replica.value());
     }
-
-    return std::move(replicas).finish();
+    auto replicas_fifo = std::move(replicas).finish();
+    std::vector<model::broker_shard> ret;
+    ret.reserve(replicas_fifo.size());
+    std::move(
+      replicas_fifo.begin(), replicas_fifo.end(), std::back_inserter(ret));
+    return ret;
 }
 
 /**
@@ -270,7 +268,7 @@ std::error_code partition_allocator::check_cluster_limits(
     return errc::success;
 }
 
-result<allocation_units::pointer>
+ss::future<result<allocation_units::pointer>>
 partition_allocator::allocate(allocation_request request) {
     vlog(
       clusterlog.trace,
@@ -279,7 +277,7 @@ partition_allocator::allocate(allocation_request request) {
 
     auto cluster_errc = check_cluster_limits(request);
     if (cluster_errc) {
-        return cluster_errc;
+        co_return cluster_errc;
     }
 
     intermediate_allocation<partition_assignment> assignments(
@@ -290,14 +288,15 @@ partition_allocator::allocate(allocation_request request) {
         auto replicas = allocate_partition(
           std::move(p_constraints), request.domain);
         if (!replicas) {
-            return replicas.error();
+            co_return replicas.error();
         }
         assignments.emplace_back(
           _state->next_group_id(), partition_id, std::move(replicas.value()));
+        co_await ss::coroutine::maybe_yield();
     }
 
-    return ss::make_foreign(std::make_unique<allocation_units>(
-      std::move(assignments).finish(), _state.get(), request.domain));
+    co_return ss::make_foreign(std::make_unique<allocation_units>(
+      std::move(assignments).finish(), *_state, request.domain));
 }
 
 result<std::vector<model::broker_shard>>
@@ -316,10 +315,7 @@ partition_allocator::do_reallocate_partition(
     if (p_constraints.replication_factor == not_changed_replicas.size()) {
         return not_changed_replicas;
     }
-    p_constraints.constraints.hard_constraints.push_back(
-      ss::make_lw_shared<hard_constraint_evaluator>(
-        distinct_from(not_changed_replicas)));
-    p_constraints.replication_factor -= not_changed_replicas.size();
+
     auto result = allocate_partition(
       std::move(p_constraints), domain, not_changed_replicas);
     if (!result) {
@@ -350,47 +346,10 @@ result<allocation_units> partition_allocator::reallocate_partition(
       current_assignment.id,
       std::move(replicas.value()),
     };
-
+    ss::chunked_fifo<partition_assignment> p_as;
+    p_as.push_back(std::move(assignment));
     return allocation_units(
-      {std::move(assignment)},
-      current_assignment.replicas,
-      _state.get(),
-      domain);
-}
-
-result<allocation_units> partition_allocator::reassign_decommissioned_replicas(
-  const partition_assignment& current_assignment,
-  const partition_allocation_domain domain) {
-    uint16_t replication_factor = current_assignment.replicas.size();
-    auto current_replicas = current_assignment.replicas;
-    std::erase_if(current_replicas, [this](const model::broker_shard& bs) {
-        auto it = _state->allocation_nodes().find(bs.node_id);
-        return it == _state->allocation_nodes().end()
-               || it->second->is_decommissioned();
-    });
-
-    auto req = default_constraints(domain);
-    req.hard_constraints.push_back(
-      ss::make_lw_shared<hard_constraint_evaluator>(
-        distinct_from(current_replicas)));
-
-    auto replicas = do_reallocate_partition(
-      partition_constraints(current_assignment.id, replication_factor),
-      domain,
-      current_replicas);
-
-    if (!replicas) {
-        return replicas.error();
-    }
-
-    partition_assignment assignment{
-      current_assignment.group,
-      current_assignment.id,
-      std::move(replicas.value()),
-    };
-
-    return allocation_units(
-      {std::move(assignment)}, current_replicas, _state.get(), domain);
+      std::move(p_as), current_assignment.replicas, *_state, domain);
 }
 
 void partition_allocator::deallocate(

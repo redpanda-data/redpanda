@@ -21,6 +21,8 @@
 #include "random/generators.h"
 #include "units.h"
 
+#include <seastar/core/chunked_fifo.hh>
+
 struct partition_allocator_fixture {
     static constexpr uint32_t partitions_per_shard = 1000;
     static constexpr uint32_t partitions_reserve_shard0 = 2;
@@ -62,8 +64,9 @@ struct partition_allocator_fixture {
     }
 
     void saturate_all_machines() {
-        auto units = allocator.allocate(
-          make_allocation_request(max_capacity(), 1));
+        auto units = allocator
+                       .allocate(make_allocation_request(max_capacity(), 1))
+                       .get();
 
         for (auto& pas : units.value()->get_assignments()) {
             allocator.state().apply_update(
@@ -74,7 +77,7 @@ struct partition_allocator_fixture {
     }
 
     uint allocated_nodes_count(
-      const std::vector<cluster::partition_assignment>& allocs) {
+      const ss::chunked_fifo<cluster::partition_assignment>& allocs) {
         return std::accumulate(
           allocs.begin(),
           allocs.end(),

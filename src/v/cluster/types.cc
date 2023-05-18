@@ -20,6 +20,7 @@
 #include "tristate.h"
 #include "utils/to_string.h"
 
+#include <seastar/core/chunked_fifo.hh>
 #include <seastar/core/sstring.hh>
 
 #include <fmt/ostream.h>
@@ -195,20 +196,6 @@ storage::ntp_config topic_configuration::make_ntp_config(
       std::move(overrides),
       rev,
       init_rev};
-}
-
-model::topic_metadata topic_configuration_assignment::get_metadata() const {
-    model::topic_metadata ret(cfg.tp_ns);
-    ret.partitions.reserve(assignments.size());
-    std::transform(
-      std::cbegin(assignments),
-      std::cend(assignments),
-      std::back_inserter(ret.partitions),
-      [](const partition_assignment& pd) {
-          return pd.create_partition_metadata();
-      });
-
-    return ret;
 }
 
 topic_table_delta::topic_table_delta(
@@ -607,7 +594,7 @@ operator<<(std::ostream& o, const incremental_topic_custom_updates& i) {
 
 namespace {
 cluster::assignments_set to_assignments_map(
-  std::vector<cluster::partition_assignment> assignment_vector) {
+  ss::chunked_fifo<cluster::partition_assignment> assignment_vector) {
     cluster::assignments_set ret;
     for (auto& p_as : assignment_vector) {
         ret.emplace(std::move(p_as));
@@ -723,13 +710,6 @@ operator<<(std::ostream& o, const create_partitions_configuration& cfg) {
       cfg.tp_ns,
       cfg.new_total_partition_count,
       cfg.custom_assignments);
-    return o;
-}
-
-std::ostream& operator<<(
-  std::ostream& o, const create_partitions_configuration_assignment& cpca) {
-    fmt::print(
-      o, "{{configuration: {}, assignments: {}}}", cpca.cfg, cpca.assignments);
     return o;
 }
 
@@ -1220,21 +1200,6 @@ adl<cluster::create_topics_reply>::from(iobuf_parser& in) {
       std::move(results), std::move(md), std::move(cfg)};
 }
 
-void adl<cluster::topic_configuration_assignment>::to(
-  iobuf& b, cluster::topic_configuration_assignment&& assigned_cfg) {
-    reflection::serialize(
-      b, std::move(assigned_cfg.cfg), std::move(assigned_cfg.assignments));
-}
-
-cluster::topic_configuration_assignment
-adl<cluster::topic_configuration_assignment>::from(iobuf_parser& in) {
-    auto cfg = adl<cluster::topic_configuration>{}.from(in);
-    auto assignments = adl<std::vector<cluster::partition_assignment>>{}.from(
-      in);
-    return cluster::topic_configuration_assignment(
-      std::move(cfg), std::move(assignments));
-}
-
 void adl<cluster::configuration_invariants>::to(
   iobuf& out, cluster::configuration_invariants&& r) {
     reflection::serialize(out, r.version, r.node_id, r.core_count);
@@ -1595,21 +1560,6 @@ adl<cluster::create_partitions_configuration>::from(iobuf_parser& in) {
     ret.custom_assignments = std::move(custom_assignment);
     return ret;
 }
-
-void adl<cluster::create_partitions_configuration_assignment>::to(
-  iobuf& out, cluster::create_partitions_configuration_assignment&& ca) {
-    return serialize(out, std::move(ca.cfg), std::move(ca.assignments));
-}
-
-cluster::create_partitions_configuration_assignment
-adl<cluster::create_partitions_configuration_assignment>::from(
-  iobuf_parser& in) {
-    auto cfg = adl<cluster::create_partitions_configuration>{}.from(in);
-    auto p_as = adl<std::vector<cluster::partition_assignment>>{}.from(in);
-
-    return cluster::create_partitions_configuration_assignment(
-      std::move(cfg), std::move(p_as));
-};
 
 void adl<cluster::create_data_policy_cmd_data>::to(
   iobuf& out, cluster::create_data_policy_cmd_data&& dp_cmd_data) {

@@ -14,3 +14,11 @@ rp_test(
   LIBRARIES v::seastar_testing_main absl::flat_hash_map v::reflection v::bytes v::model v::rprandom
   LABELS reflection
 )
+
+rp_test(
+  UNIT_TEST
+  BINARY_NAME adl_collections_interop
+  SOURCES collections_interop.cc
+  LIBRARIES v::seastar_testing_main absl::flat_hash_map v::reflection v::rprandom
+  LABELS reflection
+)

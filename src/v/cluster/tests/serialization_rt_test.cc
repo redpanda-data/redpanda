@@ -30,6 +30,7 @@
 #include "units.h"
 #include "v8_engine/data_policy.h"
 
+#include <seastar/core/chunked_fifo.hh>
 #include <seastar/core/sstring.hh>
 #include <seastar/testing/thread_test_case.hh>
 
@@ -623,8 +624,8 @@ cluster::topic_properties random_topic_properties() {
     return properties;
 }
 
-std::vector<cluster::partition_assignment> random_partition_assignments() {
-    std::vector<cluster::partition_assignment> ret;
+ss::chunked_fifo<cluster::partition_assignment> random_partition_assignments() {
+    ss::chunked_fifo<cluster::partition_assignment> ret;
 
     for (auto a = 0, ma = random_generators::get_int(1, 10); a < ma; a++) {
         cluster::partition_assignment p_as;

@@ -20,6 +20,7 @@
 #include "units.h"
 
 #include <seastar/core/abort_source.hh>
+#include <seastar/core/chunked_fifo.hh>
 #include <seastar/core/sharded.hh>
 #include <seastar/core/shared_ptr.hh>
 #include <seastar/core/sstring.hh>
@@ -100,7 +101,7 @@ struct cmd_test_fixture {
         return model::topic_namespace(test_ns, model::topic(tp));
     }
 
-    std::vector<cluster::partition_assignment>
+    ss::chunked_fifo<cluster::partition_assignment>
     allocate(const cluster::topic_configuration& cfg) {
         std::vector<cluster::partition_assignment> ret;
         ret.reserve(cfg.partition_count);
