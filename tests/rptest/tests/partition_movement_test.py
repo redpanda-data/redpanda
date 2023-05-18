@@ -774,9 +774,12 @@ class PartitionMovementTest(PartitionMovementMixin, EndToEndTest):
         admin = Admin(self.redpanda)
 
         if enable_controller_snapshots:
-            self.redpanda.set_cluster_config(
-                {"controller_snapshot_max_age_sec": 1})
-            admin.put_feature("controller_snapshots", {"state": "active"})
+            self.redpanda.set_cluster_config({
+                "controller_snapshot_enabled":
+                True,
+                "controller_snapshot_max_age_sec":
+                1,
+            })
 
         spec = TopicSpec(partition_count=partition_count, replication_factor=3)
         self.client().create_topic(spec)

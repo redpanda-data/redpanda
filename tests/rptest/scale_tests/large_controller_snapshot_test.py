@@ -66,7 +66,7 @@ class LargeControllerSnapshotTest(RedpandaTest):
         admin = Admin(self.redpanda, default_node=seed_nodes[0])
         rpk = RpkTool(self.redpanda)
 
-        admin.put_feature("controller_snapshots", {"state": "active"})
+        admin.patch_cluster_config({"controller_snapshot_enabled": True})
 
         if self.redpanda.dedicated_nodes:
             # approx. 5k partition replicas per shard

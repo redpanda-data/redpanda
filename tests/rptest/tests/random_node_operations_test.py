@@ -247,12 +247,12 @@ class RandomNodeOperationsTest(PreallocNodesTest):
         self._start_redpanda(num_to_upgrade, enable_controller_snapshots)
 
         if enable_controller_snapshots:
-            admin = Admin(self.redpanda)
-            admin.put_feature("controller_snapshots", {"state": "active"})
-            self.redpanda.await_feature_active("controller_snapshots",
-                                               timeout_sec=30)
-            self.redpanda.set_cluster_config(
-                {"controller_snapshot_max_age_sec": 1})
+            self.redpanda.set_cluster_config({
+                "controller_snapshot_enabled":
+                True,
+                "controller_snapshot_max_age_sec":
+                1,
+            })
 
         # create some initial topics
         self._create_topics(10)

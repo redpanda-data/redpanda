@@ -44,9 +44,9 @@ class ControllerSnapshotPolicyTest(RedpandaTest):
             controller_status = admin.get_controller_status(n)
             assert controller_status['start_offset'] == 0
 
-        admin.put_feature("controller_snapshots", {"state": "active"})
+        admin.patch_cluster_config({"controller_snapshot_enabled": True})
 
-        # first snapshot will be triggered by the feature_update command
+        # first snapshot will be triggered by the config update command
         # check that snapshot is created both on the leader and on followers
         node_idx2snapshot_info = {}
         for n in self.redpanda.nodes:
@@ -181,7 +181,7 @@ class ControllerSnapshotTest(RedpandaTest):
                             auto_assign_node_id=auto_assign_node_ids,
                             omit_seeds_on_idx_one=False)
         admin = Admin(self.redpanda, default_node=seed_nodes[0])
-        admin.put_feature("controller_snapshots", {"state": "active"})
+        admin.patch_cluster_config({"controller_snapshot_enabled": True})
 
         for n in seed_nodes:
             self.redpanda.wait_for_controller_snapshot(n)
@@ -291,7 +291,7 @@ class ControllerSnapshotTest(RedpandaTest):
 
             return controller_max_offset
 
-        admin.put_feature("controller_snapshots", {"state": "active"})
+        admin.patch_cluster_config({"controller_snapshot_enabled": True})
         wait_for_everything_snapshotted(seed_nodes)
 
         # check initial state

@@ -169,8 +169,8 @@ class PartitionMoveInterruption(PartitionMovementMixin, EndToEndTest):
 
         if enable_controller_snapshots:
             if recovery == RESTART_RECOVERY:
-                Admin(self.redpanda).put_feature("controller_snapshots",
-                                                 {"state": "active"})
+                Admin(self.redpanda).patch_cluster_config(
+                    {"controller_snapshot_enabled": True})
             else:
                 # doesn't make sense to test controller snapshots if nodes don't get
                 # restarted

@@ -2001,7 +2001,7 @@ configuration::configuration()
       "If true, redpanda will snapshot the controller state after controller "
       "commands are applied",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
-      true)
+      false)
   , controller_snapshot_max_age_sec(
       *this,
       "controller_snapshot_max_age_sec",
