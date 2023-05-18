@@ -612,7 +612,7 @@ public:
         }
         auto [ongoing_it, _] = _tx_data.try_emplace(
           id.get_id(), tx_data{txseq, tm_partition});
-        if (ongoing_it->second.tx_seq < txseq) {
+        if (ongoing_it->second.tx_seq <= txseq) {
             ongoing_it->second.tx_seq = txseq;
             ongoing_it->second.tm_partition = tm_partition;
         }
