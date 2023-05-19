@@ -37,15 +37,33 @@ func Confirm(msg string, args ...interface{}) (bool, error) {
 // Pick prompts the user to pick one of many options, returning the selected
 // option or an error.
 func Pick(options []string, msg string, args ...interface{}) (string, error) {
+	idx, err := PickIndex(options, msg, args...)
+	if err != nil {
+		return "", err
+	}
+	return options[idx], nil
+}
+
+// PickIndex is like Pick, but returns the index of the selected option.
+func PickIndex(options []string, msg string, args ...interface{}) (int, error) {
 	var selected int
 	err := survey.AskOne(&survey.Select{
 		Message: fmt.Sprintf(msg, args...),
 		Options: options,
 	}, &selected)
 	if err != nil {
-		return "", err
+		return 0, err
 	}
-	return options[selected], nil
+	return selected, nil
+}
+
+// Prompt prompts the user for input, returning the input or an error.
+func Prompt(msg string, args ...interface{}) (string, error) {
+	var input string
+	err := survey.AskOne(&survey.Input{
+		Message: fmt.Sprintf(msg, args...),
+	}, &input)
+	return input, err
 }
 
 // Die formats the message with a suffixed newline to stderr and exits the
