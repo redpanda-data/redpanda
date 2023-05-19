@@ -128,8 +128,11 @@ remote_partition::borrow_result_t remote_partition::borrow_next_reader(
             if (mit->second.delta_offset_end == model::offset_delta{}) {
                 break;
             }
+
+            // If a segment contains kafka data batches, its next offset will
+            // be greater than its base offset.
             auto b = mit->second.base_kafka_offset();
-            auto end = mit->second.next_kafka_offset() - kafka::offset(1);
+            auto end = mit->second.next_kafka_offset();
             if (b != end) {
                 break;
             }
