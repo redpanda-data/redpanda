@@ -1244,7 +1244,10 @@ ss::future<> consensus::do_start() {
                 return _offset_translator.start(
                   must_reset, std::move(bootstrap));
             })
-            .then([this] { return hydrate_snapshot(); })
+            .then([this] {
+                return _snapshot_lock.with(
+                  [this] { return hydrate_snapshot(); });
+            })
             .then([this] {
                 vlog(
                   _ctxlog.debug,
@@ -1910,7 +1913,9 @@ consensus::install_snapshot(install_snapshot_request&& r) {
     return with_gate(_bg, [this, r = std::move(r)]() mutable {
         return _op_lock
           .with([this, r = std::move(r)]() mutable {
-              return do_install_snapshot(std::move(r));
+              return _snapshot_lock.with([this, r = std::move(r)]() mutable {
+                  return do_install_snapshot(std::move(r));
+              });
           })
           .handle_exception_type([this](const ss::broken_semaphore&) {
               return install_snapshot_reply{.term = _term, .success = false};
@@ -2111,7 +2116,7 @@ ss::future<install_snapshot_reply> consensus::finish_snapshot(
 
 ss::future<> consensus::write_snapshot(write_snapshot_cfg cfg) {
     model::offset last_included_index = cfg.last_included_index;
-    bool updated = co_await _op_lock
+    bool updated = co_await _snapshot_lock
                      .with([this, cfg = std::move(cfg)]() mutable {
                          // do nothing, we already have snapshot for this offset
                          // MUST be checked under the _op_lock
