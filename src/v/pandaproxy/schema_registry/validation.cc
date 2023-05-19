@@ -28,11 +28,13 @@
 #include "pandaproxy/schema_registry/sharded_store.h"
 #include "pandaproxy/schema_registry/subject_name_strategy.h"
 #include "pandaproxy/schema_registry/types.h"
+#include "pandaproxy/schema_registry/validation_metrics.h"
 #include "storage/parser_utils.h"
 #include "utils/vint.h"
 
 #include <seastar/core/future.hh>
 #include <seastar/core/loop.hh>
+#include <seastar/core/sharded.hh>
 #include <seastar/core/sstring.hh>
 #include <seastar/coroutine/exception.hh>
 
@@ -210,6 +212,7 @@ public:
               "validating: topic: {}, field: {}, cache hit",
               topic(),
               to_string_view(field));
+            _api->_schema_id_validation_probe.local().hit();
             co_return true;
         }
 
@@ -246,6 +249,7 @@ public:
                   "validating: topic: {}, field: {}, cache hit",
                   topic(),
                   to_string_view(field));
+                _api->_schema_id_validation_probe.local().hit();
                 co_return true;
             }
 
@@ -279,6 +283,7 @@ public:
 
         _api->_schema_id_cache.local().put(
           topic, field, sns, id, std::move(proto_offsets));
+        _api->_schema_id_validation_probe.local().miss();
         co_return true;
     };
 
