@@ -6,7 +6,6 @@ apt-get install -qq \
   bind9-dnsutils \
   bsdmainutils \
   dmidecode \
-  cmake \
   krb5-admin-server \
   krb5-kdc \
   krb5-user \
@@ -26,4 +25,6 @@ apt-get install -qq \
   netcat-openbsd \
   sudo \
   llvm \
-  python3-pip
+  python3-pip \
+  libzstd-dev \
+  pkg-config
