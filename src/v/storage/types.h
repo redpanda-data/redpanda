@@ -488,6 +488,10 @@ struct usage {
  *    * size-based retention: the amount of space needed to meet size-based
  *    local retention policy, rounded up to the nearest segment size.
  *
+ *    * time-based retention: attempts to extrapolate the capacity requirements
+ *    by examining recently written data and the apparent rate at which it has
+ *    been written.
+ *
  *    * compaction: compacted topics are kept whole on local storage (ie not
  *    subject to truncation due to local retention policies). for compact,delete
  *    topic the retention policy (not local retention) is used to express how

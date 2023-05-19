@@ -1971,24 +1971,138 @@ disk_log_impl::disk_usage_target(gc_config cfg, usage usage) {
      * TODO: it is likely that we will want to clamp this value at some point,
      * either here or at a higher level.
      */
+    std::optional<size_t> want_size;
     if (cfg.max_bytes.has_value()) {
-        target.min_capacity_wanted = cfg.max_bytes.value();
+        want_size = cfg.max_bytes.value();
         /*
          * since prefix truncation / garbage collection only removes whole
          * segments we can make the estimate a bit more conservative by rounding
          * up to roughly the nearest segment size.
          */
-        target.min_capacity_wanted
-          += max_segment_size() - (cfg.max_bytes.value() % max_segment_size());
-    } else {
-        /*
-         * without any target max bytes, use `factor * current capacity` to
-         * reflect that we want space for continued growth.
-         */
+        want_size.value() += max_segment_size()
+                             - (cfg.max_bytes.value() % max_segment_size());
+    }
+
+    /*
+     * grab the time based retention estimate and combine. if only time or size
+     * is available, use that. if neither is available, use the `factor *
+     * current size` heuristic to express that we want to allow for growth.
+     * when both are available the minimum is taken. the reason for this is that
+     * when retention rules are eventually applied, garbage collection will
+     * select the rule that results in the most data being collected.
+     */
+    auto want_time = co_await disk_usage_target_time_retention(cfg);
+
+    if (!want_time.has_value() && !want_size.has_value()) {
         target.min_capacity_wanted = usage.total() * 2;
+    } else if (want_time.has_value() && want_size.has_value()) {
+        target.min_capacity_wanted = std::min(
+          want_time.value(), want_size.value());
+    } else if (want_time.has_value()) {
+        target.min_capacity_wanted = want_time.value();
+    } else {
+        target.min_capacity_wanted = want_size.value();
     }
 
     co_return target;
+}
+
+ss::future<std::optional<size_t>>
+disk_log_impl::disk_usage_target_time_retention(gc_config cfg) {
+    /*
+     * take the opportunity to maybe fixup janky weird timestamps. also done in
+     * normal garbage collection path and should be idempotent.
+     */
+    if (auto ignore_timestamps_in_future
+        = config::shard_local_cfg().storage_ignore_timestamps_in_future_sec();
+        ignore_timestamps_in_future.has_value()) {
+        co_await retention_adjust_timestamps(
+          ignore_timestamps_in_future.value());
+    }
+
+    /*
+     * we are going to use whole segments for the data we'll use to extrapolate
+     * the time-based retention capacity needs to avoid complexity of index
+     * lookups (for now); if there isn't an entire segment worth of data, we
+     * might not have a good sample size either. first we'll find the oldest
+     * segment whose starting offset is greater than the eviction time. this and
+     * subsequent segments will be fully contained within the time range.
+     */
+    auto it = std::find_if(
+      std::cbegin(_segs),
+      std::cend(_segs),
+      [time = cfg.eviction_time](const ss::lw_shared_ptr<segment>& s) {
+          return s->index().base_timestamp() >= time;
+      });
+
+    // collect segments for reducing
+    fragmented_vector<segment_set::type> segments;
+    for (; it != std::cend(_segs); ++it) {
+        segments.push_back(*it);
+    }
+
+    /*
+     * not enough data. caller will substitute in a reasonable value.
+     */
+    if (segments.size() < 2) {
+        vlog(
+          stlog.trace,
+          "time-based-usage: skipping log without too few segments ({}) ntp {}",
+          segments.size(),
+          config().ntp());
+        co_return std::nullopt;
+    }
+
+    auto start_timestamp = segments.front()->index().base_timestamp();
+    auto end_timestamp = segments.back()->index().max_timestamp();
+    auto duration = end_timestamp - start_timestamp;
+    auto missing = start_timestamp - cfg.eviction_time;
+
+    /*
+     * timestamps are weird or there isn't a lot of data. be careful with "not a
+     * lot of data" when considering time because throughput may be large. so we
+     * go with something like 10 seconds just as a sanity check.
+     */
+    constexpr auto min_time_needed = model::timestamp(10'000);
+    if (missing <= model::timestamp(0) || duration <= min_time_needed) {
+        vlog(
+          stlog.trace,
+          "time-based-usage: skipping with time params start {} end {} etime "
+          "{} dur {} miss {} ntp {}",
+          start_timestamp,
+          end_timestamp,
+          cfg.eviction_time,
+          duration,
+          missing,
+          config().ntp());
+        co_return std::nullopt;
+    }
+
+    // roll up the amount of disk space taken by these segments
+    auto usage = co_await ss::map_reduce(
+      segments,
+      [](const segment_set::type& seg) { return seg->persistent_size(); },
+      storage::usage{},
+      [](storage::usage acc, storage::usage u) { return acc + u; });
+
+    // extrapolate out for the missing period of time in the retention period
+    auto missing_bytes = (usage.total() * missing.value()) / duration.value();
+    auto total = usage.total() + missing_bytes;
+
+    vlog(
+      stlog.trace,
+      "time-based-usage: reporting total {} usage {} start {} end {} etime {} "
+      "dur {} miss {} ntp {}",
+      total,
+      usage.total(),
+      start_timestamp,
+      end_timestamp,
+      cfg.eviction_time,
+      duration,
+      missing,
+      config().ntp());
+
+    co_return total;
 }
 
 ss::future<usage_report> disk_log_impl::disk_usage(gc_config cfg) {
