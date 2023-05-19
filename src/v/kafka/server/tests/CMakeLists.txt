@@ -55,3 +55,14 @@ rp_test(
   ARGS "-- -c 1"
   LABELS kafka
 )
+
+
+rp_test(
+  BENCHMARK_TEST
+  BINARY_NAME kafka_fetch_plan
+  SOURCES fetch_plan_bench.cc
+  LIBRARIES Seastar::seastar_perf_testing Boost::unit_test_framework v::application
+  # the args below are just to keep it fast
+  ARGS "-c 1 --duration=1 --runs=1 --memory=1G"
+  LABELS kafka
+)

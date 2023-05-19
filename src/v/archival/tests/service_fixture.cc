@@ -13,6 +13,7 @@
 #include "archival/types.h"
 #include "bytes/iobuf.h"
 #include "bytes/iobuf_parser.h"
+#include "cloud_storage/base_manifest.h"
 #include "cloud_storage/remote_segment.h"
 #include "cloud_storage_clients/configuration.h"
 #include "cluster/archival_metadata_stm.h"
@@ -92,16 +93,6 @@ archiver_fixture::~archiver_fixture() {
     pool.local().shutdown_connections();
     remote.stop().get();
     pool.stop().get();
-}
-
-static cloud_storage::partition_manifest
-load_manifest_from_str(std::string_view v) {
-    cloud_storage::partition_manifest m;
-    iobuf i;
-    i.append(v.data(), v.size());
-    auto s = make_iobuf_input_stream(std::move(i));
-    m.update(std::move(s)).get();
-    return m;
 }
 
 static void write_batches(
@@ -480,19 +471,18 @@ void segment_matcher<Fixture>::verify_manifest(
 template<class Fixture>
 void segment_matcher<Fixture>::verify_manifest_content(
   const ss::sstring& manifest_content) {
-    cloud_storage::partition_manifest m = load_manifest_from_str(
-      manifest_content);
+    cloud_storage::partition_manifest m = load_manifest(manifest_content);
     verify_manifest(m);
 }
 
 template class segment_matcher<archiver_fixture>;
 
 cloud_storage::partition_manifest load_manifest(std::string_view v) {
-    cloud_storage::partition_manifest m;
     iobuf i;
     i.append(v.data(), v.size());
     auto s = make_iobuf_input_stream(std::move(i));
-    m.update(std::move(s)).get();
+    cloud_storage::partition_manifest m;
+    m.update(cloud_storage::manifest_format::serde, std::move(s)).get();
     return m;
 }
 

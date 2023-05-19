@@ -41,12 +41,11 @@ public:
 
     /// Update manifest file from input_stream (remote set)
     ss::future<> update(ss::input_stream<char> is) override;
-    void update(const rapidjson::Document& is);
 
     /// Serialize manifest object
     ///
     /// \return asynchronous input_stream with the serialized json
-    ss::future<serialized_json_stream> serialize() const override;
+    ss::future<serialized_data_stream> serialize() const override;
 
     /// Manifest object name in S3
     remote_manifest_path get_manifest_path() const override;
@@ -65,6 +64,8 @@ public:
     }
 
 private:
+    void do_update(const rapidjson::Document& is);
+
     remote_segment_path _path;
     fragmented_vector<model::tx_range> _ranges;
 };

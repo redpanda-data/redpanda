@@ -57,6 +57,8 @@ inline ss::logger test_log("test"); // NOLINT
 
 static ss::abort_source never_abort;
 
+static const cloud_storage_clients::bucket_name bucket("bucket");
+
 static cloud_storage::lazy_abort_source always_continue([]() {
     return std::nullopt;
 });
@@ -77,7 +79,6 @@ remote::reset_input_stream make_reset_fn(iobuf& segment_bytes) {
 FIXTURE_TEST(
   test_remote_segment_successful_download, cloud_storage_fixture) { // NOLINT
     auto conf = get_configuration();
-    auto bucket = cloud_storage_clients::bucket_name("bucket");
     partition_manifest m(manifest_ntp, manifest_revision);
     model::initial_revision_id segment_ntp_revision{777};
     iobuf segment_bytes = generate_segment(model::offset(1), 20);
@@ -93,14 +94,9 @@ FIXTURE_TEST(
       .max_timestamp = {},
       .delta_offset = model::offset_delta(0),
       .ntp_revision = segment_ntp_revision,
-      .sname_format = segment_name_format::v3};
+      .sname_format = segment_name_format::v2};
     auto path = m.generate_segment_path(meta);
-    offset_index ix{model::offset{0}, kafka::offset{0}, 0, 120};
-    iobuf_parser p{ix.to_iobuf()};
-    auto body = p.read_bytes(p.bytes_left());
-    ss::sstring s{body.begin(), body.end()};
-    auto index_path = "/" + path().native() + ".index";
-    set_expectations_and_listen({{.url = index_path, .body = std::move(s)}});
+    set_expectations_and_listen({});
     auto upl_res = api.local()
                      .upload_segment(
                        bucket, path, clen, reset_stream, fib, always_continue)
@@ -122,15 +118,10 @@ FIXTURE_TEST(
 
     BOOST_REQUIRE_EQUAL(downloaded.size_bytes(), segment_bytes.size_bytes());
     BOOST_REQUIRE(downloaded == segment_bytes);
-
-    BOOST_REQUIRE(get_targets().contains(index_path));
-    const auto& req = get_targets().find(index_path);
-    BOOST_REQUIRE_EQUAL(req->second.method, "GET");
 }
 
 FIXTURE_TEST(test_remote_segment_timeout, cloud_storage_fixture) { // NOLINT
     auto conf = get_configuration();
-    auto bucket = cloud_storage_clients::bucket_name("bucket");
     partition_manifest m(manifest_ntp, manifest_revision);
     auto name = segment_name("7-8-v1.log");
     auto key = parse_segment_name(name).value();
@@ -155,12 +146,44 @@ FIXTURE_TEST(test_remote_segment_timeout, cloud_storage_fixture) { // NOLINT
     segment.stop().get();
 }
 
+void upload_index(
+  cloud_storage_fixture& f,
+  const partition_manifest::segment_meta& meta,
+  const iobuf& segment_bytes,
+  const remote_segment_path& path,
+  retry_chain_node& fib) {
+    offset_index ix{
+      meta.base_offset,
+      meta.base_kafka_offset(),
+      0,
+      remote_segment_sampling_step_bytes};
+
+    auto builder = make_remote_segment_index_builder(
+      make_iobuf_input_stream(segment_bytes.copy()),
+      ix,
+      meta.delta_offset,
+      remote_segment_sampling_step_bytes);
+
+    builder->consume().get();
+    builder->close().get();
+    auto ixbuf = ix.to_iobuf();
+    auto upload_res = f.api.local()
+                        .upload_object(
+                          bucket,
+                          cloud_storage_clients::object_key{
+                            path().native() + ".index"},
+                          std::move(ixbuf),
+                          fib,
+                          remote::default_index_tags)
+                        .get();
+    BOOST_REQUIRE(upload_res == upload_result::success);
+}
+
 FIXTURE_TEST(
   test_remote_segment_batch_reader_single_batch,
   cloud_storage_fixture) { // NOLINT
     set_expectations_and_listen({});
     auto conf = get_configuration();
-    auto bucket = cloud_storage_clients::bucket_name("bucket");
     partition_manifest m(manifest_ntp, manifest_revision);
     iobuf segment_bytes = generate_segment(model::offset(1), 100);
     partition_manifest::segment_meta meta{
@@ -171,11 +194,15 @@ FIXTURE_TEST(
       .base_timestamp = {},
       .max_timestamp = {},
       .delta_offset = model::offset_delta(0),
-      .ntp_revision = manifest_revision};
+      .ntp_revision = manifest_revision,
+      .sname_format = segment_name_format::v3};
     auto path = m.generate_segment_path(meta);
     uint64_t clen = segment_bytes.size_bytes();
     auto reset_stream = make_reset_fn(segment_bytes);
-    retry_chain_node fib(never_abort, 1000ms, 200ms);
+    retry_chain_node fib(never_abort, 10000ms, 200ms);
+
+    upload_index(*this, meta, segment_bytes, path, fib);
+
     auto upl_res = api.local()
                      .upload_segment(
                        bucket, path, clen, reset_stream, fib, always_continue)
@@ -243,7 +270,6 @@ void test_remote_segment_batch_reader(
 
     fixture.set_expectations_and_listen({});
     auto conf = fixture.get_configuration();
-    auto bucket = cloud_storage_clients::bucket_name("bucket");
 
     partition_manifest m(manifest_ntp, manifest_revision);
     uint64_t clen = segment_bytes.size_bytes();
@@ -255,10 +281,15 @@ void test_remote_segment_batch_reader(
       .base_timestamp = {},
       .max_timestamp = {},
       .delta_offset = model::offset_delta(0),
-      .ntp_revision = manifest_revision};
+      .ntp_revision = manifest_revision,
+      .sname_format = segment_name_format::v3};
+
     auto path = m.generate_segment_path(meta);
+    retry_chain_node fib(never_abort, 10000ms, 200ms);
+
+    upload_index(fixture, meta, segment_bytes, path, fib);
+
     auto reset_stream = make_reset_fn(segment_bytes);
-    retry_chain_node fib(never_abort, 1000ms, 200ms);
     auto upl_res = fixture.api.local()
                      .upload_segment(
                        bucket, path, clen, reset_stream, fib, always_continue)
@@ -357,7 +388,6 @@ FIXTURE_TEST(
 
     set_expectations_and_listen({});
     auto conf = get_configuration();
-    auto bucket = cloud_storage_clients::bucket_name("bucket");
 
     partition_manifest m(manifest_ntp, manifest_revision);
     uint64_t clen = segment_bytes.size_bytes();
@@ -421,4 +451,378 @@ FIXTURE_TEST(
 
     reader.stop().get();
     segment->stop().get();
+}
+
+using upload_index_t = ss::bool_class<struct upload_index_tag>;
+
+static partition_manifest chunk_read_baseline(
+  cloud_storage_fixture& f,
+  model::offset key,
+  retry_chain_node& fib,
+  iobuf segment_bytes,
+  upload_index_t index_upload = upload_index_t::yes) {
+    auto conf = f.get_configuration();
+    partition_manifest m(manifest_ntp, manifest_revision);
+    model::initial_revision_id segment_ntp_revision{777};
+    uint64_t clen = segment_bytes.size_bytes();
+    auto reset_stream = make_reset_fn(segment_bytes);
+
+    partition_manifest::segment_meta meta{
+      .is_compacted = false,
+      .size_bytes = segment_bytes.size_bytes(),
+      .base_offset = model::offset(1),
+      .committed_offset = model::offset(20),
+      .base_timestamp = {},
+      .max_timestamp = {},
+      .delta_offset = model::offset_delta(0),
+      .ntp_revision = segment_ntp_revision,
+      .sname_format = segment_name_format::v3};
+
+    auto path = m.generate_segment_path(meta);
+    f.set_expectations_and_listen({}, {{"Range"}});
+
+    if (index_upload) {
+        upload_index(f, meta, segment_bytes, path, fib);
+    }
+
+    BOOST_REQUIRE(
+      f.api.local()
+        .upload_segment(bucket, path, clen, reset_stream, fib, always_continue)
+        .get()
+      == upload_result::success);
+    m.add(meta);
+
+    return m;
+}
+
+FIXTURE_TEST(test_remote_segment_chunk_read, cloud_storage_fixture) {
+    /**
+     * This test creates a segment large enough to be split into multiple
+     * chunks, and then creates a data stream which will read through all of
+     * them.
+     */
+
+    // Use a small chunk size to exercise switching across chunk files during
+    // read
+    config::shard_local_cfg().cloud_storage_cache_chunk_size.set_value(
+      static_cast<uint64_t>(128_KiB));
+
+    auto key = model::offset(1);
+    retry_chain_node fib(never_abort, 300s, 200ms);
+    iobuf segment_bytes = generate_segment(model::offset(1), 300);
+
+    auto m = chunk_read_baseline(*this, key, fib, segment_bytes.copy());
+    remote_segment segment(api.local(), cache.local(), bucket, m, key, fib);
+
+    // The offset data stream uses an implementation which will iterate over all
+    // chunks in the segment.
+    auto stream = segment
+                    .offset_data_stream(
+                      m.get(key)->base_kafka_offset(),
+                      // using a very large kafka offset makes sure we iterate
+                      // over the entire segment in chunks.
+                      kafka::offset{100000000},
+                      std::nullopt,
+                      ss::default_priority_class())
+                    .get()
+                    .stream;
+
+    iobuf downloaded;
+    auto rds = make_iobuf_ref_output_stream(downloaded);
+    ss::copy(stream, rds).get();
+    stream.close().get();
+
+    BOOST_REQUIRE(!segment.is_fallback_engaged());
+    segment.stop().get();
+
+    BOOST_REQUIRE_EQUAL(downloaded.size_bytes(), segment_bytes.size_bytes());
+    BOOST_REQUIRE(downloaded == segment_bytes);
+}
+
+FIXTURE_TEST(test_remote_segment_chunk_read_fallback, cloud_storage_fixture) {
+    /**
+     * The index for the segment is not uploaded. This should result in
+     * failure to download the index, which will engage fallback mode. The full
+     * segment will then be downloaded, and reads will not be done through
+     * chunks but through the log segment file.
+     */
+
+    auto key = model::offset(1);
+    retry_chain_node fib(never_abort, 300s, 200ms);
+    iobuf segment_bytes = generate_segment(model::offset(1), 300);
+
+    auto m = chunk_read_baseline(
+      *this, key, fib, segment_bytes.copy(), upload_index_t::no);
+    remote_segment segment(api.local(), cache.local(), bucket, m, key, fib);
+
+    auto stream = segment
+                    .offset_data_stream(
+                      m.get(key)->base_kafka_offset(),
+                      kafka::offset{100000000},
+                      std::nullopt,
+                      ss::default_priority_class())
+                    .get()
+                    .stream;
+
+    iobuf downloaded;
+    auto rds = make_iobuf_ref_output_stream(downloaded);
+    ss::copy(stream, rds).get();
+
+    stream.close().get();
+
+    BOOST_REQUIRE(segment.is_fallback_engaged());
+
+    std::regex log_file_expr{".*-.*log(\\.\\d+)?$"};
+
+    for (const auto& req : get_requests()) {
+        if (
+          req.method != "GET"
+          || !std::regex_match(req.url.begin(), req.url.end(), log_file_expr)) {
+            continue;
+        }
+
+        BOOST_REQUIRE(req.header("Range") == "");
+    }
+
+    auto is_chunk_path = [](std::string_view v) {
+        return v.find("_chunks") != v.npos;
+    };
+
+    bool log_found = false;
+    for (const auto& entry : std::filesystem::recursive_directory_iterator{
+           tmp_directory.get_path()}) {
+        const auto path = entry.path().native();
+        BOOST_REQUIRE(!is_chunk_path(path));
+        if (std::regex_match(path.begin(), path.end(), log_file_expr)) {
+            log_found = true;
+        }
+    }
+
+    BOOST_REQUIRE(log_found);
+
+    segment.stop().get();
+
+    BOOST_REQUIRE_EQUAL(downloaded.size_bytes(), segment_bytes.size_bytes());
+    BOOST_REQUIRE(downloaded == segment_bytes);
+}
+
+FIXTURE_TEST(test_chunks_initialization, cloud_storage_fixture) {
+    config::shard_local_cfg().cloud_storage_cache_chunk_size.set_value(
+      static_cast<uint64_t>(128_KiB));
+
+    auto key = model::offset(1);
+    retry_chain_node fib(never_abort, 300s, 200ms);
+    iobuf segment_bytes = generate_segment(model::offset(1), 300);
+
+    auto m = chunk_read_baseline(*this, key, fib, segment_bytes.copy());
+    remote_segment segment(api.local(), cache.local(), bucket, m, key, fib);
+
+    segment_chunks chunk_api{segment, segment.max_hydrated_chunks()};
+
+    auto close_segment = ss::defer([&segment] { segment.stop().get(); });
+
+    // Download index
+    segment.hydrate().get();
+    chunk_api.start().get();
+
+    const auto& coarse_index = segment.get_coarse_index();
+    vlog(test_log.info, "coarse index of {} items", coarse_index.size());
+
+    const auto& first = chunk_api.get(0);
+    BOOST_REQUIRE(first.current_state == chunk_state::not_available);
+    BOOST_REQUIRE_EQUAL(first.required_after_n_chunks, 0);
+    BOOST_REQUIRE_EQUAL(first.required_by_readers_in_future, 0);
+    BOOST_REQUIRE(!first.handle.has_value());
+
+    auto last_offset_in_chunks = 0;
+    for (auto [kafka_offset, file_offset] : coarse_index) {
+        const auto& chunk = chunk_api.get(file_offset);
+        BOOST_REQUIRE(chunk.current_state == chunk_state::not_available);
+        BOOST_REQUIRE_EQUAL(chunk.required_after_n_chunks, 0);
+        BOOST_REQUIRE_EQUAL(chunk.required_by_readers_in_future, 0);
+        BOOST_REQUIRE(!chunk.handle.has_value());
+        last_offset_in_chunks = file_offset;
+    }
+
+    auto current_offset = 0;
+    auto it = coarse_index.begin();
+    while (current_offset < last_offset_in_chunks) {
+        current_offset = chunk_api.get_next_chunk_start(current_offset);
+        BOOST_REQUIRE_EQUAL(current_offset, it->second);
+        ++it;
+    }
+
+    BOOST_REQUIRE_EQUAL(current_offset, last_offset_in_chunks);
+}
+
+FIXTURE_TEST(test_chunk_hydration, cloud_storage_fixture) {
+    config::shard_local_cfg().cloud_storage_cache_chunk_size.set_value(
+      static_cast<uint64_t>(128_KiB));
+
+    auto key = model::offset(1);
+    retry_chain_node fib(never_abort, 300s, 200ms);
+    iobuf segment_bytes = generate_segment(model::offset(1), 300);
+
+    auto m = chunk_read_baseline(*this, key, fib, segment_bytes.copy());
+    remote_segment segment(api.local(), cache.local(), bucket, m, key, fib);
+
+    segment_chunks chunk_api{segment, segment.max_hydrated_chunks()};
+
+    auto close_segment = ss::defer([&segment] { segment.stop().get(); });
+
+    segment.hydrate().get();
+    chunk_api.start().get();
+
+    const auto& coarse_index = segment.get_coarse_index();
+
+    chunk_api.hydrate_chunk(0).get();
+    const auto& chunk = chunk_api.get(0);
+    BOOST_REQUIRE(chunk.current_state == chunk_state::hydrated);
+    BOOST_REQUIRE(chunk.handle.has_value());
+
+    for (auto [kafka_offset, file_offset] : coarse_index) {
+        auto handle = chunk_api.hydrate_chunk(file_offset).get();
+        // The file handle is open
+        BOOST_REQUIRE(*handle);
+
+        const auto& chunk = chunk_api.get(file_offset);
+        BOOST_REQUIRE(chunk.current_state == chunk_state::hydrated);
+        BOOST_REQUIRE(chunk.handle.has_value());
+    }
+
+    auto begin_expected = 0;
+    auto it = coarse_index.begin();
+    auto end_expected = it->second - 1;
+    std::regex log_file_expr{".*-.*log(\\.\\d+)?$"};
+    for (const auto& req : get_requests()) {
+        if (
+          req.method != "GET"
+          || !std::regex_match(req.url.begin(), req.url.end(), log_file_expr)) {
+            continue;
+        }
+
+        auto header = req.header("Range");
+
+        // All log GET requests have range header
+        BOOST_REQUIRE(header.has_value());
+        vlog(
+          test_log.info,
+          "comparing range {} with expected range {}-{}",
+          header.value(),
+          begin_expected,
+          end_expected);
+        auto byte_range = parse_byte_header(header.value());
+        BOOST_REQUIRE_EQUAL(begin_expected, byte_range.first);
+        BOOST_REQUIRE_EQUAL(end_expected, byte_range.second);
+
+        begin_expected = byte_range.second + 1;
+        if (it != coarse_index.end()) {
+            BOOST_REQUIRE_EQUAL(it->second, begin_expected);
+            it++;
+            end_expected = it == coarse_index.end()
+                             ? segment_bytes.size_bytes() - 1
+                             : it->second - 1;
+        }
+    }
+}
+
+FIXTURE_TEST(test_chunk_future_reader_stats, cloud_storage_fixture) {
+    config::shard_local_cfg().cloud_storage_cache_chunk_size.set_value(
+      static_cast<uint64_t>(128_KiB));
+
+    auto key = model::offset(1);
+    retry_chain_node fib(never_abort, 10s, 200ms);
+    iobuf segment_bytes = generate_segment(model::offset(1), 300);
+
+    auto m = chunk_read_baseline(*this, key, fib, segment_bytes.copy());
+    remote_segment segment(api.local(), cache.local(), bucket, m, key, fib);
+    segment_chunks chunk_api{segment, segment.max_hydrated_chunks()};
+    auto close_segment = ss::defer([&segment] { segment.stop().get(); });
+    segment.hydrate().get();
+    chunk_api.start().get();
+
+    chunk_start_offset_t end = std::prev(chunk_api.end())->first;
+    chunk_api.register_readers(0, end);
+
+    auto required_after = 1;
+    for (const auto& [_, chunk] : chunk_api) {
+        BOOST_REQUIRE_EQUAL(chunk.required_by_readers_in_future, 1);
+        BOOST_REQUIRE_EQUAL(chunk.required_after_n_chunks, required_after++);
+    }
+
+    for (const auto& [chunk_start, chunk] : chunk_api) {
+        BOOST_REQUIRE_EQUAL(chunk.required_by_readers_in_future, 1);
+        BOOST_REQUIRE_EQUAL(chunk.required_after_n_chunks, 1);
+        chunk_api.mark_acquired_and_update_stats(chunk_start, end);
+        BOOST_REQUIRE_EQUAL(chunk.required_by_readers_in_future, 0);
+        BOOST_REQUIRE_EQUAL(chunk.required_after_n_chunks, 0);
+    }
+}
+
+FIXTURE_TEST(test_chunk_multiple_readers, cloud_storage_fixture) {
+    /**
+     * This test exercises using many readers against a remote segment while
+     * using chunks. The idea is to exercise the waitlist per chunk but there
+     * are no deterministic assertions for this in the test, we simply wait for
+     * all reads to finish for all readers.
+     */
+    config::shard_local_cfg().cloud_storage_cache_chunk_size.set_value(
+      static_cast<uint64_t>(128_KiB));
+
+    auto key = model::offset(1);
+    retry_chain_node fib(never_abort, 300s, 200ms);
+    iobuf segment_bytes = generate_segment(model::offset(1), 300);
+
+    auto m = chunk_read_baseline(*this, key, fib, segment_bytes.copy());
+    auto segment = ss::make_lw_shared<remote_segment>(
+      api.local(), cache.local(), bucket, m, key, fib);
+
+    segment_chunks chunk_api{*segment, segment->max_hydrated_chunks()};
+    auto close_segment = ss::defer([&segment] { segment->stop().get(); });
+
+    segment->hydrate().get();
+    chunk_api.start().get();
+
+    storage::offset_translator_state ot_state(m.get_ntp());
+
+    storage::log_reader_config reader_config(
+      model::offset{1}, model::offset{1000000}, ss::default_priority_class());
+    reader_config.max_bytes = std::numeric_limits<size_t>::max();
+
+    partition_probe probe(manifest_ntp);
+
+    std::vector<std::unique_ptr<remote_segment_batch_reader>> readers{};
+    readers.reserve(10);
+
+    for (auto i = 0; i < 1000; ++i) {
+        readers.push_back(std::make_unique<remote_segment_batch_reader>(
+          segment, reader_config, probe, ssx::semaphore_units()));
+    }
+
+    auto all_readers_done = [&readers] {
+        return std::all_of(
+          readers.cbegin(), readers.cend(), [](const auto& reader) {
+              return reader->is_eof();
+          });
+    };
+
+    while (!all_readers_done()) {
+        std::vector<
+          ss::future<result<ss::circular_buffer<model::record_batch>>>>
+          reads;
+        reads.reserve(readers.size());
+        for (auto& reader : readers) {
+            reads.push_back(reader->read_some(model::no_timeout, ot_state));
+        }
+
+        auto results = ss::when_all_succeed(reads.begin(), reads.end()).get();
+        BOOST_REQUIRE(
+          std::all_of(results.begin(), results.end(), [](const auto& result) {
+              return !result.has_error();
+          }));
+    }
+
+    for (auto& reader : readers) {
+        reader->stop().get();
+    }
 }

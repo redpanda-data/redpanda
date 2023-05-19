@@ -189,6 +189,7 @@ jobs:
           ORIG_LABELS: ${{ toJson(github.event.client_payload.github.payload.issue.labels) }}
           ORIG_ASSIGNEES: ${{ steps.assignees.outputs.assignees }}
           CREATE_ISSUE_ON_ERROR: "true"
+          ORIG_REVIEWERS: ${{ steps.reviewers.outputs.reviewers }}
           HEAD_BRANCH: ${{ steps.pr_details.outputs.head_branch }}
           GIT_USER: ${{ steps.user.outputs.username }}
         id: create_issue_on_backport_error

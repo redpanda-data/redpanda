@@ -1533,6 +1533,46 @@ configuration::configuration()
       "value of `topic_partitions_per_shard` multiplied by 2 is used.",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       std::nullopt)
+  , cloud_storage_cache_chunk_size(
+      *this,
+      "cloud_storage_cache_chunk_size",
+      "Size of chunks of segments downloaded into cloud storage cache. Reduces "
+      "space usage by only downloading the necessary chunk from a segment.",
+      {.needs_restart = needs_restart::yes, .visibility = visibility::tunable},
+      16_MiB)
+  , cloud_storage_hydrated_chunks_per_segment_ratio(
+      *this,
+      "cloud_storage_hydrated_chunks_per_segment_ratio",
+      "The maximum number of chunks per segment that can be hydrated at a "
+      "time. Above this number, unused chunks will be trimmed.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      0.7)
+  , cloud_storage_min_chunks_per_segment_threshold(
+      *this,
+      "cloud_storage_min_chunks_per_segment_threshold",
+      "The minimum number of chunks per segment for trimming to be enabled. If "
+      "the number of chunks in a segment is below this threshold, the segment "
+      "is small enough that all chunks in it can be hydrated at any given time",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      5)
+  , cloud_storage_disable_chunk_reads(
+      *this,
+      "cloud_storage_disable_chunk_reads",
+      "Disable chunk reads and switch back to legacy mode where full segments "
+      "are downloaded.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      false)
+  , cloud_storage_chunk_eviction_strategy(
+      *this,
+      "cloud_storage_chunk_eviction_strategy",
+      "Selects a strategy for evicting unused cache chunks.",
+      {.needs_restart = needs_restart::no,
+       .example = "eager",
+       .visibility = visibility::tunable},
+      model::cloud_storage_chunk_eviction_strategy::eager,
+      {model::cloud_storage_chunk_eviction_strategy::eager,
+       model::cloud_storage_chunk_eviction_strategy::capped,
+       model::cloud_storage_chunk_eviction_strategy::predictive})
   , superusers(
       *this,
       "superusers",

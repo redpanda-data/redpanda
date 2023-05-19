@@ -1,7 +1,17 @@
+v_cc_library(
+  NAME segment_meta_cstore
+  SRCS
+    segment_meta_cstore.cc
+  DEPS
+    v::bytes
+    v::model
+    absl::btree
+)
 
 v_cc_library(
   NAME cloud_storage
   SRCS
+    base_manifest.cc
     cache_service.cc
     access_time_tracker.cc
     cache_probe.cc
@@ -23,6 +33,9 @@ v_cc_library(
     recovery_request.cc
     recovery_utils.cc
     segment_meta_cstore.cc
+    segment_chunk.cc
+    segment_chunk_api.cc
+    segment_chunk_data_source.cc
   DEPS
     Seastar::seastar
     v::bytes
@@ -32,6 +45,7 @@ v_cc_library(
     v::model
     v::rphashing
     v::cloud_roles
+    v::segment_meta_cstore
     # NOTE: do not add v::cloud as a dependency
 )
 add_subdirectory(tests)

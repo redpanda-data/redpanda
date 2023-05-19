@@ -613,6 +613,10 @@ consteval std::string_view property_type_name() {
         return "string";
     } else if constexpr (std::is_same_v<type, std::filesystem::path>) {
         return "string";
+    } else if constexpr (std::is_same_v<
+                           type,
+                           model::cloud_storage_chunk_eviction_strategy>) {
+        return "string";
     } else {
         static_assert(dependent_false<T>::value, "Type name not defined");
     }

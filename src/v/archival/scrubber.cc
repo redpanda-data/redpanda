@@ -78,15 +78,18 @@ ss::future<scrubber::purge_result> scrubber::purge_partition(
     // could have a "drop out on slowdown" flag?
 
     cloud_storage::partition_manifest manifest(ntp, remote_revision);
-    auto manifest_path = manifest.get_manifest_path();
-    auto manifest_get_result = co_await _api.maybe_download_manifest(
-      bucket, manifest_path, manifest, manifest_rtc);
+    auto [manifest_get_result, manifest_fmt]
+      = co_await _api.try_download_partition_manifest(
+        bucket, manifest, manifest_rtc, true);
+
+    // save path here since manifest will get moved out
+    auto manifest_path = manifest.get_manifest_path(manifest_fmt);
 
     if (manifest_get_result == download_result::notfound) {
         vlog(
           archival_log.debug,
           "Partition manifest get {} not found",
-          manifest_path);
+          manifest.get_legacy_manifest_format_and_path().second);
         result.status = purge_status::permanent_failure;
         co_return result;
     } else if (manifest_get_result != download_result::success) {

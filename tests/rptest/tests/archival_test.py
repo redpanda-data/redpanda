@@ -30,19 +30,18 @@ from rptest.util import (
     wait_for_local_storage_truncate,
     firewall_blocked,
 )
-from rptest.utils.si_utils import BucketView
+from rptest.utils.si_utils import BucketView, NTPR
 from rptest.utils.si_utils import gen_segment_name_from_meta, gen_local_path_from_remote
 
 # First capture group is the log name. The last (optional) group is the archiver term to be removed.
 LOG_EXPRESSION = re.compile(r'(.*\.log)(\.\d+)?$')
 
 MANIFEST_EXTENSION = ".json"
+MANIFEST_BIN_EXTENSION = ".bin"
 
 LOG_EXTENSION = ".log"
 
 CONTROLLER_LOG_PREFIX = os.path.join(RedpandaService.DATA_DIR, "redpanda")
-
-NTP = namedtuple("NTP", ['ns', 'topic', 'partition', 'revision'])
 
 # Log errors expected when connectivity between redpanda and the S3
 # backend is disrupted
@@ -114,7 +113,7 @@ def _parse_normalized_segment_path_v1(path, md5, segment_size):
     fname = items[3].split('-')
     base_offset = int(fname[0])
     term = int(fname[1])
-    ntp = NTP(ns=ns, topic=topic, partition=partition, revision=revision)
+    ntp = NTPR(ns=ns, topic=topic, partition=partition, revision=revision)
     return SegmentMetadata(ntp=ntp,
                            base_offset=base_offset,
                            term=term,
@@ -137,7 +136,7 @@ def _parse_normalized_segment_path_v2_v3(path, md5, segment_size):
     fname = items[3].split('-')
     base_offset = int(fname[0])
     term = int(fname[1])
-    ntp = NTP(ns=ns, topic=topic, partition=partition, revision=revision)
+    ntp = NTPR(ns=ns, topic=topic, partition=partition, revision=revision)
     return SegmentMetadata(ntp=ntp,
                            base_offset=base_offset,
                            term=term,
@@ -434,7 +433,8 @@ class ArchivalTest(RedpandaTest):
 
             # Download manifest for partitions
             for ntp in ntps:
-                manifest = self._download_partition_manifest(ntp)
+                manifest = BucketView(self.redpanda).get_partition_manifest(
+                    ntp.to_ntp())
                 self.logger.info(f"downloaded manifest {manifest}")
                 segments = []
                 for _, segment in manifest.get('segments', {}).items():
@@ -499,13 +499,6 @@ class ArchivalTest(RedpandaTest):
                                         topic=self.topic,
                                         target_bytes=local_retention)
 
-    def _check_bucket_is_emtpy(self):
-        allobj = self._list_objects()
-        for obj in allobj:
-            self.logger.debug(
-                f"found object {obj} in bucket {self.s3_bucket_name}")
-        assert len(allobj) == 0
-
     def _get_partition_leaders(self):
         kcat = KafkaCat(self.redpanda)
         m = kcat.metadata()
@@ -532,27 +525,6 @@ class ArchivalTest(RedpandaTest):
                     leader = brokers[leader_id]
                     leaders[partition_id] = leader
         return leaders
-
-    def _download_partition_manifest(self, ntp):
-        """Find and download individual partition manifest"""
-        expected = f"{ntp.ns}/{ntp.topic}/{ntp.partition}_{ntp.revision}/manifest.json"
-        id = None
-        objects = []
-        for loc in self._list_objects():
-            objects.append(loc)
-            if expected in loc:
-                id = loc
-                break
-        if id is None:
-            objlist = "\n".join(objects)
-            self.logger.debug(
-                f"expected path {expected} is not found in the bucket, bucket content: \n{objlist}"
-            )
-            assert not id is None
-        manifest = self.cloud_storage_client.get_object_data(
-            self.s3_bucket_name, id)
-        self.logger.info(f"manifest found: {manifest}")
-        return json.loads(manifest)
 
     def _verify_manifest(self, ntp, manifest, remote):
         """Check that all segments that present in manifest are available
@@ -610,7 +582,7 @@ class ArchivalTest(RedpandaTest):
         # Download manifest for partitions
         manifests = {}
         for ntp in ntps:
-            manifest = self._download_partition_manifest(ntp)
+            manifest = BucketView(self.redpanda).get_partition_manifest(ntp)
             manifests[ntp] = manifest
             self._verify_manifest(ntp, manifest, remote)
 
@@ -724,26 +696,6 @@ class ArchivalTest(RedpandaTest):
         lst = sorted(lst, key=lambda x: x.base_offset)
         return lst
 
-    def _list_objects(self):
-        """Emulate ListObjects call by fetching the topic manifests and
-        iterating through its content"""
-        try:
-            topic_manifest_id = "d0000000/meta/kafka/panda-topic/topic_manifest.json"
-            partition_manifest_id = "d0000000/meta/kafka/panda-topic/0_9/manifest.json"
-            manifest = self.cloud_storage_client.get_object_data(
-                self.s3_bucket_name, partition_manifest_id)
-            results = [topic_manifest_id, partition_manifest_id]
-            for id in manifest['segments'].keys():
-                results.append(id)
-            self.logger.debug(f"ListObjects(source: manifest): {results}")
-        except:
-            results = [
-                loc.key for loc in self.cloud_storage_client.list_objects(
-                    self.s3_bucket_name)
-            ]
-            self.logger.debug(f"ListObjects: {results}")
-        return results
-
     def _quick_verify(self):
         """Verification algorithm that works only if no leadership
         transfer happened during the run. It works by looking up all
@@ -806,8 +758,8 @@ class ArchivalTest(RedpandaTest):
         # Validate partitions
         # for every partition the segment with the largest base offset shouldn't be
         # available in remote storage
-        local_partitions: DefaultDict[NTP, list] = defaultdict(list)
-        remote_partitions: DefaultDict[NTP, list] = defaultdict(list)
+        local_partitions: DefaultDict[NTPR, list] = defaultdict(list)
+        remote_partitions: DefaultDict[NTPR, list] = defaultdict(list)
         for path, items in local.items():
             meta = _parse_normalized_segment_path(path, '', 0)
             local_partitions[meta.ntp].append((meta, items))
@@ -822,7 +774,7 @@ class ArchivalTest(RedpandaTest):
         # Download manifest for partitions
         manifests = {}
         for ntp in local_partitions.keys():
-            manifest = self._download_partition_manifest(ntp)
+            manifest = BucketView(self.redpanda).get_partition_manifest(ntp)
             manifests[ntp] = manifest
             self._verify_manifest(ntp, manifest, remote)
 
@@ -867,7 +819,8 @@ class ArchivalTest(RedpandaTest):
             return path
 
         def included(path):
-            return not path.endswith(MANIFEST_EXTENSION)
+            return not (path.endswith(MANIFEST_EXTENSION)
+                        or path.endswith(MANIFEST_BIN_EXTENSION))
 
         objects = list(
             self.cloud_storage_client.list_objects(self.s3_bucket_name))

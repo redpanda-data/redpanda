@@ -51,10 +51,10 @@ ss::future<> tx_range_manifest::update(ss::input_stream<char> is) {
     Document m;
     IStreamWrapper wrapper(stream);
     m.ParseStream(wrapper);
-    update(m);
+    do_update(m);
 }
 
-void tx_range_manifest::update(const rapidjson::Document& doc) {
+void tx_range_manifest::do_update(const rapidjson::Document& doc) {
     _ranges = fragmented_vector<model::tx_range>();
     auto version = doc["version"].GetInt();
     auto compat_version = doc["compat_version"].GetInt();
@@ -83,7 +83,7 @@ void tx_range_manifest::update(const rapidjson::Document& doc) {
     _ranges.shrink_to_fit();
 }
 
-ss::future<serialized_json_stream> tx_range_manifest::serialize() const {
+ss::future<serialized_data_stream> tx_range_manifest::serialize() const {
     iobuf serialized;
     iobuf_ostreambuf obuf(serialized);
     std::ostream os(&obuf);
@@ -95,7 +95,7 @@ ss::future<serialized_json_stream> tx_range_manifest::serialize() const {
           get_manifest_path()));
     }
     size_t size_bytes = serialized.size_bytes();
-    co_return serialized_json_stream{
+    co_return serialized_data_stream{
       .stream = make_iobuf_input_stream(std::move(serialized)),
       .size_bytes = size_bytes};
 }

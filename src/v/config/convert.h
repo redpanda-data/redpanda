@@ -407,4 +407,35 @@ struct convert<std::filesystem::path> {
     }
 };
 
+template<>
+struct convert<model::cloud_storage_chunk_eviction_strategy> {
+    using type = model::cloud_storage_chunk_eviction_strategy;
+
+    static constexpr auto acceptable_values = std::to_array(
+      {"eager", "capped", "predictive"});
+
+    static Node encode(const type& rhs) { return Node(fmt::format("{}", rhs)); }
+
+    static bool decode(const Node& node, type& rhs) {
+        auto value = node.as<std::string>();
+
+        if (
+          std::find(acceptable_values.begin(), acceptable_values.end(), value)
+          == acceptable_values.end()) {
+            return false;
+        }
+
+        rhs = string_switch<type>(std::string_view{value})
+                .match(
+                  "eager", model::cloud_storage_chunk_eviction_strategy::eager)
+                .match(
+                  "capped",
+                  model::cloud_storage_chunk_eviction_strategy::capped)
+                .match(
+                  "predictive",
+                  model::cloud_storage_chunk_eviction_strategy::predictive);
+        return true;
+    }
+};
+
 } // namespace YAML

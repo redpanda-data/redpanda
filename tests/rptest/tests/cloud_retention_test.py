@@ -40,7 +40,8 @@ class CloudRetentionTest(PreallocNodesTest):
         # test run.
         pass
 
-    @cluster(num_nodes=4)
+    @cluster(num_nodes=4,
+             log_allow_list=[r"failed to hydrate chunk.*NotFound"])
     @matrix(max_consume_rate_mb=[20, None],
             cloud_storage_type=get_cloud_storage_type())
     @skip_debug_mode
@@ -126,7 +127,8 @@ class CloudRetentionTest(PreallocNodesTest):
             s3_snapshot = BucketView(self.redpanda, topics=topics)
             try:
                 manifest = s3_snapshot.manifest_for_ntp(self.topic_name, 0)
-            except:
+            except Exception as e:
+                self.logger.debug(f"Failed to get manifest: {e}")
                 return False
 
             if "segments" not in manifest:
@@ -142,7 +144,8 @@ class CloudRetentionTest(PreallocNodesTest):
             for p in range(0, num_partitions):
                 try:
                     manifest = s3_snapshot.manifest_for_ntp(self.topic_name, p)
-                except:
+                except Exception as e:
+                    self.logger.debug(f"Failed to get manifest: {e}")
                     return False
 
                 kafka_last_offset = BucketView.kafka_last_offset(manifest)
@@ -273,7 +276,7 @@ class CloudRetentionTest(PreallocNodesTest):
                         f"Partition {partition} doesn't have last_offset")
                     return False
 
-                if not "segments" not in manifest:
+                if "segments" in manifest and len(manifest['segments']):
                     self.logger.info(
                         f"Partition {partition} still has segments")
                     return False

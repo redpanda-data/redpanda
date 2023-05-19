@@ -10,7 +10,8 @@ rp_test(
     tx_range_manifest_test.cc
     remote_segment_index_test.cc
     recovery_request_test.cc
-    segment_meta_cstore_test.cc 
+    segment_meta_cstore_test.cc
+    segment_chunk_test.cc
   DEFINITIONS BOOST_TEST_DYN_LINK
   LIBRARIES v::seastar_testing_main Boost::unit_test_framework v::cloud_storage v::storage_test_utils v::cloud_roles
   ARGS "-- -c 1"
@@ -78,3 +79,16 @@ rp_test(
   LIBRARIES Seastar::seastar_perf_testing v::cloud_storage v::storage
   LABELS cloud_storage
 )
+
+# Fuzz test for segment_meta_cstore
+if ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "Clang")
+if ("${CMAKE_BUILD_TYPE}" STREQUAL "Debug")
+  add_executable(segment_meta_cstore_fuzz_rpfixture segment_meta_cstore_fuzz.cc)
+  target_compile_options(segment_meta_cstore_fuzz_rpfixture PRIVATE -Og -fsanitize=address,fuzzer)
+  target_link_libraries(segment_meta_cstore_fuzz_rpfixture v::segment_meta_cstore fmt::fmt -fsanitize=address,undefined,fuzzer)
+  add_test (
+    NAME segment_meta_cstore_fuzz_rpfixture
+    COMMAND $<TARGET_FILE:segment_meta_cstore_fuzz_rpfixture> -max_total_time=30 -rss_limit_mb=8192
+  )
+endif()
+endif()

@@ -11,6 +11,7 @@
 #include "cloud_storage/remote.h"
 
 #include "bytes/iostream.h"
+#include "cloud_storage/base_manifest.h"
 #include "cloud_storage/logger.h"
 #include "cloud_storage/materialized_segments.h"
 #include "cloud_storage/types.h"
@@ -25,6 +26,7 @@
 #include <seastar/core/sleep.hh>
 #include <seastar/core/timed_out_error.hh>
 #include <seastar/core/weak_ptr.hh>
+#include <seastar/coroutine/maybe_yield.hh>
 
 #include <boost/beast/http/error.hpp>
 #include <boost/beast/http/field.hpp>
@@ -172,34 +174,79 @@ bool remote::is_batch_delete_supported() const {
 
 ss::future<download_result> remote::download_manifest(
   const cloud_storage_clients::bucket_name& bucket,
+  const std::pair<manifest_format, remote_manifest_path>& format_key,
+  base_manifest& manifest,
+  retry_chain_node& parent) {
+    return do_download_manifest(bucket, format_key, manifest, parent);
+}
+
+ss::future<download_result> remote::maybe_download_manifest(
+  const cloud_storage_clients::bucket_name& bucket,
+  const std::pair<manifest_format, remote_manifest_path>& format_key,
+  base_manifest& manifest,
+  retry_chain_node& parent) {
+    return do_download_manifest(bucket, format_key, manifest, parent, true);
+}
+
+ss::future<download_result> remote::download_manifest(
+  const cloud_storage_clients::bucket_name& bucket,
   const remote_manifest_path& key,
   base_manifest& manifest,
   retry_chain_node& parent) {
-    return do_download_manifest(bucket, key, manifest, parent);
+    auto fk = std::pair{manifest_format::json, key};
+    co_return co_await do_download_manifest(
+      bucket, fk, manifest, parent, false);
 }
-
 ss::future<download_result> remote::maybe_download_manifest(
   const cloud_storage_clients::bucket_name& bucket,
   const remote_manifest_path& key,
   base_manifest& manifest,
   retry_chain_node& parent) {
-    return do_download_manifest(bucket, key, manifest, parent, true);
+    auto fk = std::pair{manifest_format::json, key};
+    co_return co_await do_download_manifest(bucket, fk, manifest, parent, true);
+}
+
+ss::future<std::pair<download_result, manifest_format>>
+remote::try_download_partition_manifest(
+  const cloud_storage_clients::bucket_name& bucket,
+  partition_manifest& manifest,
+  retry_chain_node& parent,
+  bool expect_missing) {
+    vassert(
+      manifest.get_ntp() != model::ntp{}
+        && manifest.get_revision_id() != model::initial_revision_id{},
+      "partition manifest must have ntp");
+
+    // first try to download the serde format
+    auto format_path = manifest.get_manifest_format_and_path();
+    auto serde_result = co_await do_download_manifest(
+      bucket, format_path, manifest, parent, expect_missing);
+    if (serde_result != download_result::notfound) {
+        // propagate success, timedout and failed to caller
+        co_return std::pair{serde_result, manifest_format::serde};
+    }
+    // fallback to json format
+    format_path = manifest.get_legacy_manifest_format_and_path();
+    co_return std::pair{
+      co_await do_download_manifest(
+        bucket, format_path, manifest, parent, expect_missing),
+      manifest_format::json};
 }
 
 ss::future<download_result> remote::do_download_manifest(
   const cloud_storage_clients::bucket_name& bucket,
-  const remote_manifest_path& key,
+  const std::pair<manifest_format, remote_manifest_path>& format_key,
   base_manifest& manifest,
   retry_chain_node& parent,
   bool expect_missing) {
     gate_guard guard{_gate};
     retry_chain_node fib(&parent);
     retry_chain_logger ctxlog(cst_log, fib);
-    auto path = cloud_storage_clients::object_key(key().native());
+    auto path = cloud_storage_clients::object_key(format_key.second().native());
     auto lease = co_await _pool.local().acquire(fib.root_abort_source());
     auto retry_permit = fib.retry();
     std::optional<download_result> result;
-    vlog(ctxlog.debug, "Download manifest {}", key());
+    vlog(ctxlog.debug, "Download manifest {}", format_key.second());
     while (!_gate.is_closed() && retry_permit.is_allowed
            && !result.has_value()) {
         notify_external_subscribers(
@@ -210,7 +257,8 @@ ss::future<download_result> remote::do_download_manifest(
         if (resp) {
             vlog(ctxlog.debug, "Receive OK response from {}", path);
             try {
-                co_await manifest.update(resp.value()->as_input_stream());
+                co_await manifest.update(
+                  format_key.first, resp.value()->as_input_stream());
 
                 switch (manifest.get_manifest_type()) {
                 case manifest_type::partition:

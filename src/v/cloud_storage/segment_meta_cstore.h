@@ -921,7 +921,7 @@ public:
 
     void from_iobuf(iobuf in);
 
-    iobuf to_iobuf();
+    iobuf to_iobuf() const;
 
 private:
     std::unique_ptr<impl> _impl;

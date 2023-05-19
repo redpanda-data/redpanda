@@ -13,6 +13,7 @@
 
 #include "cluster/logger.h"
 #include "model/fundamental.h"
+#include "model/ktp.h"
 #include "raft/types.h"
 #include "seastarx.h"
 
@@ -26,9 +27,9 @@ namespace cluster {
 class shard_table final {
     struct shard_revision {
         ss::shard_id shard;
-        model::revision_id revision;
         /// Only used for additional sanity checks
         bool non_replicable;
+        model::revision_id revision;
     };
 
 public:
@@ -49,7 +50,8 @@ public:
     /**
      * \brief Lookup the owning shard for an ntp.
      */
-    std::optional<ss::shard_id> shard_for(const model::ntp& ntp) {
+    template<model::any_ntp T>
+    std::optional<ss::shard_id> shard_for(const T& ntp) {
         if (auto it = _ntp_idx.find(ntp); it != _ntp_idx.end()) {
             return it->second.shard;
         }
@@ -73,7 +75,7 @@ public:
           ntp,
           i,
           rev);
-        _ntp_idx.insert_or_assign(ntp, shard_revision{i, rev, true});
+        _ntp_idx.insert_or_assign(ntp, shard_revision{i, true, rev});
         return true;
     }
 
@@ -107,8 +109,8 @@ public:
           ntp,
           shard,
           rev);
-        _ntp_idx.insert_or_assign(ntp, shard_revision{shard, rev, false});
-        _group_idx.insert_or_assign(g, shard_revision{shard, rev, false});
+        _ntp_idx.insert_or_assign(ntp, shard_revision{shard, false, rev});
+        _group_idx.insert_or_assign(g, shard_revision{shard, false, rev});
     }
 
     void
@@ -205,7 +207,12 @@ private:
      */
 
     // kafka index
-    absl::node_hash_map<model::ntp, shard_revision> _ntp_idx;
+    absl::node_hash_map<
+      model::ntp,
+      shard_revision,
+      model::ktp_hash_eq,
+      model::ktp_hash_eq>
+      _ntp_idx;
     // raft index
     absl::node_hash_map<raft::group_id, shard_revision> _group_idx;
 };

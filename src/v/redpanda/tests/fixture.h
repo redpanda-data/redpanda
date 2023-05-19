@@ -15,6 +15,7 @@
 #include "cloud_storage_clients/configuration.h"
 #include "cluster/cluster_utils.h"
 #include "cluster/controller.h"
+#include "cluster/errc.h"
 #include "cluster/members_table.h"
 #include "cluster/metadata_cache.h"
 #include "cluster/partition_leaders_table.h"
@@ -28,6 +29,10 @@
 #include "coproc/api.h"
 #include "kafka/client/transport.h"
 #include "kafka/protocol/fetch.h"
+#include "kafka/protocol/schemata/fetch_request.h"
+#include "kafka/protocol/types.h"
+#include "kafka/server/connection_context.h"
+#include "kafka/server/handlers/fetch.h"
 #include "kafka/server/handlers/topics/topic_utils.h"
 #include "kafka/server/server.h"
 #include "model/fundamental.h"
@@ -46,13 +51,17 @@
 #include "test_utils/fixture.h"
 #include "test_utils/logs.h"
 
+#include <seastar/core/future.hh>
+#include <seastar/core/shared_ptr.hh>
 #include <seastar/core/sstring.hh>
 #include <seastar/util/log.hh>
 
 #include <fmt/format.h>
 
 #include <chrono>
+#include <cstddef>
 #include <filesystem>
+#include <stdexcept>
 #include <unordered_set>
 #include <vector>
 
@@ -480,7 +489,7 @@ public:
 
     ss::future<> wait_for_topics(std::vector<cluster::topic_result> results) {
         return tests::cooperative_spin_wait_with_timeout(
-          2s, [this, results = std::move(results)] {
+          10s, [this, results = std::move(results)] {
               return std::all_of(
                 results.begin(),
                 results.end(),
@@ -515,6 +524,17 @@ public:
             cluster::without_custom_assignments(std::move(cfgs)),
             model::no_timeout)
           .then([this](std::vector<cluster::topic_result> results) {
+              vassert(
+                results.size() == 1,
+                "expected exactly 1 result but got {}",
+                results.size());
+              const auto& result = results.at(0);
+              if (result.ec != cluster::errc::success) {
+                  throw std::runtime_error(fmt::format(
+                    "error creating topic {}: {}",
+                    result.tp_ns,
+                    cluster::make_error_code(result.ec).message()));
+              }
               return wait_for_topics(std::move(results));
           });
     }
@@ -586,17 +606,17 @@ public:
           });
     }
 
-    model::ntp make_data(
+    model::ktp make_data(
       model::revision_id rev,
       std::optional<model::timestamp> base_ts = std::nullopt) {
         auto topic_name = ssx::sformat("my_topic_{}", 0);
-        model::ntp ntp(
-          model::kafka_namespace,
-          model::topic(topic_name),
-          model::partition_id(0));
+        model::ktp ktp(model::topic(topic_name), model::partition_id(0));
 
         storage::ntp_config ntp_cfg(
-          ntp, config::node().data_directory().as_sstring(), nullptr, rev);
+          ktp.to_ntp(),
+          config::node().data_directory().as_sstring(),
+          nullptr,
+          rev);
 
         storage::disk_log_builder builder(make_default_config());
         using namespace storage; // NOLINT
@@ -614,14 +634,16 @@ public:
             base_ts)
           | stop();
 
-        add_topic(model::topic_namespace_view(ntp)).get();
+        add_topic(ktp.as_tn_view()).get();
 
-        return ntp;
+        return ktp;
     }
 
-    kafka::request_context make_request_context() {
+    using conn_ptr = ss::lw_shared_ptr<kafka::connection_context>;
+
+    conn_ptr make_connection_context() {
         security::sasl_server sasl(security::sasl_server::sasl_state::complete);
-        auto conn = ss::make_lw_shared<kafka::connection_context>(
+        return ss::make_lw_shared<kafka::connection_context>(
           *proto,
           nullptr,
           std::move(sasl),
@@ -631,23 +653,34 @@ public:
           config::mock_property<std::vector<ss::sstring>>({"produce", "fetch"})
             .bind<std::vector<bool>>(
               &kafka::server::convert_api_names_to_key_bitmap));
+    }
 
-        kafka::request_header header;
-        auto encoder_context = kafka::request_context(
-          conn, std::move(header), iobuf(), std::chrono::milliseconds(0));
+    kafka::request_context
+    make_request_context(kafka::fetch_request& request, conn_ptr conn = {}) {
+        if (!conn) {
+            conn = make_connection_context();
+        }
+
+        kafka::request_header header{
+          .version = kafka::fetch_handler::max_supported};
 
         iobuf buf;
-        kafka::fetch_request request;
-        // do not use incremental fetch requests
-        request.data.max_wait_ms = std::chrono::milliseconds::zero();
         kafka::protocol::encoder writer(buf);
-        request.encode(writer, encoder_context.header().version);
+        request.encode(writer, header.version);
 
         return kafka::request_context(
           conn,
           std::move(header),
           std::move(buf),
           std::chrono::milliseconds(0));
+    }
+
+    kafka::request_context make_request_context() {
+        kafka::fetch_request request;
+        // do not use incremental fetch requests
+        request.data.max_wait_ms = std::chrono::milliseconds::zero();
+
+        return make_request_context(request);
     }
 
     application app;

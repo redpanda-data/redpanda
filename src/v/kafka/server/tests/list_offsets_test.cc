@@ -54,9 +54,9 @@ FIXTURE_TEST(list_offsets, redpanda_thread_fixture) {
 
     kafka::list_offsets_request req;
     req.data.topics = {{
-      .name = ntp.tp.topic,
+      .name = ntp.get_topic(),
       .partitions = {{
-        .partition_index = ntp.tp.partition,
+        .partition_index = ntp.get_partition(),
         .timestamp = base_ts,
       }},
     }};
@@ -88,9 +88,9 @@ FIXTURE_TEST(list_offsets_earliest, redpanda_thread_fixture) {
 
     kafka::list_offsets_request req;
     req.data.topics = {{
-      .name = ntp.tp.topic,
+      .name = ntp.get_topic(),
       .partitions = {{
-        .partition_index = ntp.tp.partition,
+        .partition_index = ntp.get_partition(),
         .timestamp = kafka::list_offsets_request::earliest_timestamp,
       }},
     }};
@@ -123,9 +123,9 @@ FIXTURE_TEST(list_offsets_latest, redpanda_thread_fixture) {
 
     kafka::list_offsets_request req;
     req.data.topics = {{
-      .name = ntp.tp.topic,
+      .name = ntp.get_topic(),
       .partitions = {{
-        .partition_index = ntp.tp.partition,
+        .partition_index = ntp.get_partition(),
         .timestamp = kafka::list_offsets_request::latest_timestamp,
       }},
     }};
@@ -162,9 +162,9 @@ FIXTURE_TEST(list_offsets_not_found, redpanda_thread_fixture) {
 
     kafka::list_offsets_request req;
     req.data.topics = {{
-      .name = ntp.tp.topic,
+      .name = ntp.get_topic(),
       .partitions = {{
-        .partition_index = ntp.tp.partition,
+        .partition_index = ntp.get_partition(),
         .timestamp = future_ts,
       }},
     }};

@@ -16,6 +16,7 @@
 #include "cluster/tm_stm_cache_manager.h"
 #include "cluster/types.h"
 #include "config/configuration.h"
+#include "features/feature_table.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/namespace.h"
@@ -600,9 +601,9 @@ partition::local_timequery(storage::timequery_config cfg) {
             // Query raced with prefix truncation
             vlog(
               clusterlog.debug,
-              "timequery (raft) ts={} raced with truncation (start_timestamp "
-              "{}, "
-              "result {})",
+              "timequery (raft) {} ts={} raced with truncation "
+              "(start_timestamp {}, result {})",
+              _raft->ntp(),
               cfg.time,
               _raft->log().start_timestamp(),
               result->time);
@@ -621,8 +622,9 @@ partition::local_timequery(storage::timequery_config cfg) {
             // Ref https://github.com/redpanda-data/redpanda/issues/9669
             vlog(
               clusterlog.debug,
-              "Timequery (raft) ts={} miss on local log (start_timestamp {}, "
-              "result {})",
+              "Timequery (raft) {} ts={} miss on local log (start_timestamp "
+              "{}, result {})",
+              _raft->ntp(),
               cfg.time,
               _raft->log().start_timestamp(),
               result->time);
@@ -635,8 +637,9 @@ partition::local_timequery(storage::timequery_config cfg) {
             // have the same timestamp and are present in cloud storage.
             vlog(
               clusterlog.debug,
-              "Timequery (raft) ts={} hit start_offset in local log "
+              "Timequery (raft) {} ts={} hit start_offset in local log "
               "(start_offset {} start_timestamp {}, result {})",
+              _raft->ntp(),
               _raft->log().offsets().start_offset,
               cfg.time,
               _raft->log().start_timestamp(),
@@ -850,6 +853,16 @@ static ss::future<bool> should_finalize(
 }
 
 ss::future<> partition::remove_remote_persistent_state(ss::abort_source& as) {
+    if (!_feature_table.local().is_active(
+          features::feature::cloud_storage_manifest_format_v2)) {
+        // this is meant to prevent uploading manifests with new format while
+        // the cluster is in a mixed state
+        vlog(
+          clusterlog.info,
+          "skipping erasing tiered storage objects for partition {}",
+          ntp());
+        co_return;
+    }
     // Backward compatibility: even if remote.delete is true, only do
     // deletion if the partition is in full tiered storage mode (this
     // excludes read replica clusters from deleting data in S3)
@@ -920,7 +933,7 @@ void partition::set_topic_config(
     }
 }
 
-ss::future<> partition::serialize_manifest_to_output_stream(
+ss::future<> partition::serialize_json_manifest_to_output_stream(
   ss::output_stream<char>& output) {
     if (!_archival_meta_stm || !_cloud_storage_partition) {
         throw std::runtime_error(fmt::format(
@@ -933,7 +946,8 @@ ss::future<> partition::serialize_manifest_to_output_stream(
     // of time the manifest lock is held for.
     co_await ss::with_timeout(
       model::timeout_clock::now() + manifest_serialization_timeout,
-      _cloud_storage_partition->serialize_manifest_to_output_stream(output));
+      _cloud_storage_partition->serialize_json_manifest_to_output_stream(
+        output));
 }
 
 ss::future<std::error_code>
@@ -1024,7 +1038,7 @@ ss::future<> partition::unsafe_reset_remote_partition_manifest(iobuf buf) {
     // Deserialise provided manifest
     cloud_storage::partition_manifest req_m{
       _raft->ntp(), _raft->log_config().get_initial_revision()};
-    co_await req_m.update(std::move(buf));
+    req_m.update_with_json(std::move(buf));
 
     // A generous timeout of 60 seconds is used as it applies
     // for the replication multiple batches.

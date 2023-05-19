@@ -723,7 +723,8 @@ ss::future<> archival_metadata_stm::apply(model::record_batch b) {
 }
 
 ss::future<> archival_metadata_stm::handle_eviction() {
-    cloud_storage::partition_manifest manifest;
+    cloud_storage::partition_manifest new_manifest{
+      _manifest->get_ntp(), _manifest->get_revision_id()};
 
     const auto& bucket_config
       = cloud_storage::configuration::get_bucket_config();
@@ -736,11 +737,9 @@ ss::future<> archival_metadata_stm::handle_eviction() {
     auto backoff = config::shard_local_cfg().cloud_storage_initial_backoff_ms();
 
     retry_chain_node rc_node(_download_as, timeout, backoff);
-    auto res = co_await _cloud_storage_api.download_manifest(
-      cloud_storage_clients::bucket_name{*bucket},
-      _manifest->get_manifest_path(),
-      manifest,
-      rc_node);
+    auto [res, res_fmt]
+      = co_await _cloud_storage_api.try_download_partition_manifest(
+        cloud_storage_clients::bucket_name{*bucket}, new_manifest, rc_node);
 
     if (res == cloud_storage::download_result::notfound) {
         _insync_offset = model::prev_offset(_raft->start_offset());
@@ -753,11 +752,11 @@ ss::future<> archival_metadata_stm::handle_eviction() {
         co_await ss::sleep_abortable(rc_node.get_timeout(), _download_as);
         throw std::runtime_error{fmt::format(
           "couldn't download manifest {}: {}",
-          _manifest->get_manifest_path(),
+          new_manifest.get_manifest_path(res_fmt),
           res)};
     }
 
-    *_manifest = std::move(manifest);
+    *_manifest = std::move(new_manifest);
     auto start_offset = get_start_offset();
 
     auto iso = _manifest->get_insync_offset();

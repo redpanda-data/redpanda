@@ -16,9 +16,11 @@
 #include "model/metadata.h"
 #include "model/timestamp.h"
 #include "segment_meta_cstore.h"
+#include "serde/envelope.h"
 #include "serde/serde.h"
 #include "utils/tracking_allocator.h"
 
+#include <seastar/core/iostream.hh>
 #include <seastar/core/shared_ptr.hh>
 
 #include <deque>
@@ -66,8 +68,8 @@ remote_segment_path generate_remote_segment_path(
 /// Generate correct S3 segment name based on term and base offset
 segment_name generate_local_segment_name(model::offset o, model::term_id t);
 
-remote_manifest_path
-generate_partition_manifest_path(const model::ntp&, model::initial_revision_id);
+remote_manifest_path generate_partition_manifest_path(
+  const model::ntp&, model::initial_revision_id, manifest_format);
 
 // This structure can be impelenented
 // to allow access to private fields of the manifest.
@@ -82,7 +84,11 @@ public:
 
     /// Compact representation of the segment_meta
     /// that can be used to generate a segment path in S3
-    struct lw_segment_meta {
+    struct lw_segment_meta
+      : serde::envelope<
+          lw_segment_meta,
+          serde::version<0>,
+          serde::compat_version<0>> {
         model::initial_revision_id ntp_revision;
         model::offset base_offset;
         model::offset committed_offset;
@@ -182,7 +188,25 @@ public:
     }
 
     /// Manifest object name in S3
-    remote_manifest_path get_manifest_path() const override;
+    std::pair<manifest_format, remote_manifest_path>
+    get_manifest_format_and_path() const override;
+
+    remote_manifest_path get_manifest_path(manifest_format fmt) const {
+        switch (fmt) {
+        case manifest_format::json:
+            return get_legacy_manifest_format_and_path().second;
+        case manifest_format::serde:
+            return get_manifest_format_and_path().second;
+        }
+    }
+
+    remote_manifest_path get_manifest_path() const override {
+        return get_manifest_format_and_path().second;
+    }
+
+    /// Manifest object name before feature::cloud_storage_manifest_format_v2
+    std::pair<manifest_format, remote_manifest_path>
+    get_legacy_manifest_format_and_path() const;
 
     /// Get NTP
     const model::ntp& get_ntp() const;
@@ -298,43 +322,32 @@ public:
     const_iterator find(model::offset o) const;
 
     /// Update manifest file from iobuf
-    ss::future<> update(iobuf buf);
+    void update_with_json(iobuf buf);
 
     /// Update manifest file from input_stream (remote set)
-    ss::future<> update(ss::input_stream<char> is) override;
+    ss::future<> update(
+      manifest_format serialization_format, ss::input_stream<char> is) override;
+
+    ss::future<> update(ss::input_stream<char> is) override {
+        return update(manifest_format::serde, std::move(is));
+    }
 
     /// Serialize manifest object
     ///
     /// \return asynchronous input_stream with the serialized json
-    ss::future<serialized_json_stream> serialize() const override;
+    ss::future<serialized_data_stream> serialize() const override;
 
     /// Serialize manifest object
     ///
     /// \param out output stream that should be used to output the json
-    void serialize(std::ostream& out) const;
+    void serialize_json(std::ostream& out) const;
 
     // Serialize the manifest to an ss::output_stream in JSON format
     /// \param out output stream to serialize into; must be kept alive
     /// by the caller until the returned future completes.
     ///
     /// \return a future that completes after serialization is done
-    ss::future<> serialize(ss::output_stream<char>& out) const;
-
-    /// Compare two manifests for equality. Don't compare the mem_tracker.
-    bool operator==(const partition_manifest& other) const {
-        return _ntp == other._ntp && _rev == other._rev
-               && _segments == other._segments
-               && _last_offset == other._last_offset
-               && _start_offset == other._start_offset
-               && _last_uploaded_compacted_offset
-                    == other._last_uploaded_compacted_offset
-               && _insync_offset == other._insync_offset
-               && _replaced == other._replaced
-               && _archive_clean_offset == other._archive_clean_offset
-               && _archive_start_offset == other._archive_start_offset
-               && _archive_start_offset_delta
-                    == other._archive_start_offset_delta;
-    }
+    ss::future<> serialize_json(ss::output_stream<char>& out) const;
 
     manifest_type get_manifest_type() const override {
         return manifest_type::partition;
@@ -375,6 +388,50 @@ public:
     void set_archive_clean_offset(model::offset start_rp_offset);
     kafka::offset get_start_kafka_offset_override() const;
 
+    auto serde_fields() {
+        // this list excludes _mem_tracker, which is not serialized
+        return std::tie(
+          _ntp,
+          _rev,
+          _segments,
+          _replaced,
+          _last_offset,
+          _start_offset,
+          _last_uploaded_compacted_offset,
+          _insync_offset,
+          _cloud_log_size_bytes,
+          _archive_start_offset,
+          _archive_start_offset_delta,
+          _archive_clean_offset,
+          _start_kafka_offset);
+    }
+    auto serde_fields() const {
+        // this list excludes _mem_tracker, which is not serialized
+        return std::tie(
+          _ntp,
+          _rev,
+          _segments,
+          _replaced,
+          _last_offset,
+          _start_offset,
+          _last_uploaded_compacted_offset,
+          _insync_offset,
+          _cloud_log_size_bytes,
+          _archive_start_offset,
+          _archive_start_offset_delta,
+          _archive_clean_offset,
+          _start_kafka_offset);
+    }
+
+    /// Compare two manifests for equality. Don't compare the mem_tracker.
+    bool operator==(const partition_manifest& other) const {
+        return serde_fields() == other.serde_fields();
+    }
+
+    void from_iobuf(iobuf in);
+
+    iobuf to_iobuf() const;
+
 private:
     void subtract_from_cloud_log_size(size_t to_subtract);
 
@@ -385,7 +442,7 @@ private:
 
     /// Update manifest content from json document that supposed to be generated
     /// from manifest.json file
-    void update(partition_manifest_handler&& handler);
+    void do_update(partition_manifest_handler&& handler);
 
     /// Copy segments from _segments to _replaced
     /// Returns the total size in bytes of the replaced segments, or nullopt if
