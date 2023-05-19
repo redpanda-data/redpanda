@@ -109,6 +109,7 @@ public:
     connection_context& operator=(const connection_context&) = delete;
     connection_context& operator=(connection_context&&) = delete;
 
+    /// The instance of \ref kafka::server on the shard serving the connection
     server& server() { return _server; }
     const ss::sstring& listener() const { return conn->name(); }
     std::optional<security::sasl_server>& sasl() { return _sasl; }

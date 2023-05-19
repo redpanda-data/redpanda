@@ -34,7 +34,9 @@
 
 namespace kafka {
 
-class server final : public net::server {
+class server final
+  : public net::server
+  , public ss::peering_sharded_service<server> {
 public:
     server(
       ss::sharded<net::server_configuration>*,
