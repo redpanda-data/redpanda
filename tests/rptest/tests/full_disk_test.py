@@ -318,6 +318,52 @@ class FullDiskReclaimTest(RedpandaTest):
                    backoff_sec=2)
 
 
+class LocalDiskReportTimeTest(RedpandaTest):
+    topics = (TopicSpec(segment_bytes=2**20,
+                        partition_count=1,
+                        retention_bytes=-1,
+                        retention_ms=60 * 60 * 1000,
+                        cleanup_policy=TopicSpec.CLEANUP_DELETE), )
+
+    def __init__(self, test_ctx):
+        extra_rp_conf = dict(log_compaction_interval_ms=3600 * 1000)
+        super().__init__(test_context=test_ctx, extra_rp_conf=extra_rp_conf)
+
+    @cluster(num_nodes=3)
+    def test_target_min_capacity_wanted_time_based(self):
+        admin = Admin(self.redpanda)
+        default_segment_size = admin.get_cluster_config()["log_segment_size"]
+
+        # produce roughly 30mb at 0.5mb/sec
+        kafka_tools = KafkaCliTools(self.redpanda)
+        kafka_tools.produce(self.topic,
+                            30 * 1024,
+                            1024,
+                            throughput=500,
+                            acks=-1)
+
+        node = self.redpanda.nodes[0]
+        reported = admin.get_local_storage_usage(
+            node)["target_min_capacity_wanted"]
+
+        # params. the size is about 900k larger than what was written,
+        # attributable to per record overheads etc... and determined emperically
+        # by looking at trace log stats.
+        size = 32441102
+        time = 61
+        retention = 3600
+        expected = retention * (size / time)
+
+        # factor in the 2 segments worth of space for controller log
+        diff = abs(reported - expected - 2 * default_segment_size)
+
+        # there is definitely going to be some fuzz factor needed here and may
+        # need updated, but after many runs 50mb was a good amount of slack.
+        assert diff <= (
+            100 * 2**20
+        ), f"diff {diff} reported {reported} expected {expected} default seg size {default_segment_size}"
+
+
 class LocalDiskReportTest(RedpandaTest):
     topics = (
         TopicSpec(segment_bytes=2**30,
