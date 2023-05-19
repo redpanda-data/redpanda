@@ -80,6 +80,7 @@ public:
             return ss::do_with(
               ss::tls::credentials_builder{},
               [this](ss::tls::credentials_builder& builder) {
+                  builder.set_priority_string("PERFORMANCE:%SERVER_PRECEDENCE");
                   builder.set_dh_level(ss::tls::dh_params::level::MEDIUM);
                   if (_require_client_auth) {
                       builder.set_client_auth(ss::tls::client_auth::REQUIRE);
