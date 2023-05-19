@@ -138,7 +138,7 @@ func (c *Config) ActualRpkYamlOrEmpty() (y *RpkYaml, err error) {
 	return &c.rpkYamlActual, nil
 }
 
-// DevEnvOverrides returns any currently set dev overrides.
+// DevOverrides returns any currently set dev overrides.
 func (c *Config) DevOverrides() DevOverrides {
 	return c.devOverrides
 }

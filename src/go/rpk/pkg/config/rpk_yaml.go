@@ -87,11 +87,10 @@ type (
 		CloudAuths       []RpkCloudAuth `yaml:"cloud_auth,omitempty"`
 	}
 
-	// NOTE: if adding fields to this struct, check if
-	// setPossibilities in `rpk profile` needs to be updated.
 	RpkProfile struct {
 		Name         string           `yaml:"name,omitempty"`
 		Description  string           `yaml:"description,omitempty"`
+		FromCloud    bool             `yaml:"from_cloud,omitempty"`
 		CloudCluster *RpkCloudCluster `yaml:"cloud_cluster,omitempty"`
 		KafkaAPI     RpkKafkaAPI      `yaml:"kafka_api,omitempty"`
 		AdminAPI     RpkAdminAPI      `yaml:"admin_api,omitempty"`
@@ -173,15 +172,23 @@ func (y *RpkYaml) MoveAuthToFront(a *RpkCloudAuth) {
 	y.CloudAuths = reordered
 }
 
+type CloudAuthKind string
+
+const (
+	CloudAuthUninitialized     CloudAuthKind = "uninitialized"
+	CloudAuthSSO               CloudAuthKind = "sso"
+	CloudAuthClientCredentials CloudAuthKind = "client-credentials"
+)
+
 // Kind returns either a known auth kind or "uninitialized".
-func (a *RpkCloudAuth) Kind() (string, bool) {
+func (a *RpkCloudAuth) Kind() (CloudAuthKind, bool) {
 	switch {
 	case a.ClientID != "" && a.ClientSecret != "":
-		return "client-credentials", true
+		return CloudAuthClientCredentials, true
 	case a.ClientID != "":
-		return "sso", true
+		return CloudAuthSSO, true
 	default:
-		return "uninitialized", false
+		return CloudAuthUninitialized, false
 	}
 }
 
@@ -201,7 +208,10 @@ func (p *RpkProfile) SugarLogger() *zap.SugaredLogger {
 }
 
 // HasClientCredentials returns if both ClientID and ClientSecret are empty.
-func (a *RpkCloudAuth) HasClientCredentials() bool { return a.ClientID != "" && a.ClientSecret != "" }
+func (a *RpkCloudAuth) HasClientCredentials() bool {
+	k, _ := a.Kind()
+	return k == CloudAuthClientCredentials
+}
 
 // Returns if the raw config is the same as the one in memory.
 func (y *RpkYaml) isTheSameAsRawFile() bool {
