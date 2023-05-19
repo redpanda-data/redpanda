@@ -37,6 +37,14 @@ type deviceInfo struct {
 	fs       afero.Fs
 }
 
+type EmptyMSIRQError struct {
+	device string
+}
+
+func (e EmptyMSIRQError) Error() string {
+	return fmt.Sprintf("device %q uses MSI IRQs but the list of msi_irqs in sysfs is empty; see https://github.com/redpanda-data/redpanda/issues/10838", e.device)
+}
+
 func (deviceInfo *deviceInfo) GetIRQs(
 	irqConfigDir string, xenDeviceName string,
 ) ([]int, error) {
@@ -52,6 +60,9 @@ func (deviceInfo *deviceInfo) GetIRQs(
 				return nil, err
 			}
 			irqs = append(irqs, irq)
+		}
+		if len(irqs) == 0 {
+			return nil, &EmptyMSIRQError{irqConfigDir}
 		}
 	} else {
 		irqFileName := path.Join(irqConfigDir, "irq")
