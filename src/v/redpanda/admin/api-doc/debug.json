@@ -395,6 +395,165 @@
               ]
             }
           ]
+        },
+        {
+            "path": "/v1/debug/bundle/actions/create",
+            "operations": [
+                {
+                    "method": "POST",
+                    "summary": "Start creating a debug bundle",
+                    "type": "void",
+                    "nickname": "start_debug_bundle",
+                    "produces": [
+                        "application/json"
+                    ],
+                    "parameters": [
+                        {
+                            "name": "logs-since",
+                            "in": "query",
+                            "required": false,
+                            "type": "string"
+                        },
+                        {
+                            "name": "logs-until",
+                            "in": "query",
+                            "required": false,
+                            "type": "string"
+                        },
+                        {
+                            "name": "logs-size-limit",
+                            "in": "query",
+                            "required": false,
+                            "type": "string"
+                        },
+                        {
+                            "name": "metrics-interval",
+                            "in": "query",
+                            "required": false,
+                            "type": "string"
+                        }
+                    ],
+                    "responses": {
+                        "202": {
+                            "description": "Successfully started debug bundle"
+                        },
+                        "429": {
+                            "description": "A bundle is already running"
+                        },
+                        "500": {
+                            "description": "Internal Server error"
+                        }
+                    }
+                }
+            ]
+        },
+        {
+            "path": "/v1/debug/bundle/files/{filename}",
+            "operations": [
+                {
+                    "method": "HEAD",
+                    "summary": "Returns the status of the debug bundle",
+                    "type": "string",
+                    "nickname": "check_debug_bundle_status",
+                    "produces": [
+                        "application/json"
+                    ],
+                    "parameters": [
+                        {
+                            "name": "filename",
+                            "in": "path",
+                            "required": true,
+                            "type": "string"
+                        }
+                    ],
+                    "responses": {
+                        "200": {
+                            "description": "The debug bundle is completed and ready for download"
+                        },
+                        "404": {
+                            "description": "The debug bundle is running but not yet ready"
+                        },
+                        "410": {
+                            "description": "The debug bundle is not running or it is not on disk"
+                        },
+                        "500": {
+                            "description": "Internal Server error"
+                        }
+                    }
+                }
+            ]
+        },
+        {
+            "path": "/v1/debug/bundle/files/{filename}",
+            "operations": [
+                {
+                    "method": "GET",
+                    "summary": "Fetch the debug bundle archive",
+                    "type": "string",
+                    "nickname": "get_debug_bundle",
+                    "produces": [
+                        "application/zip"
+                    ],
+                    "parameters": [
+                        {
+                            "name": "filename",
+                            "in": "path",
+                            "required": true,
+                            "type": "string"
+                        }
+                    ],
+                    "responses": {
+                        "200": {
+                            "description": "Successfully fetched the debug bundle"
+                        },
+                        "404": {
+                            "description": "The debug bundle is running but not yet ready"
+                        },
+                        "410": {
+                            "description": "The debug bundle is not running or it is not on disk"
+                        },
+                        "500": {
+                            "description": "Internal Server error"
+                        }
+                    }
+                }
+            ]
+        },
+        {
+            "path": "/v1/debug/bundle/files/{filename}",
+            "operations": [
+                {
+                    "method": "DELETE",
+                    "summary": "Deletes from disk the zip file containing the bundle",
+                    "type": "string",
+                    "nickname": "delete_debug_bundle",
+                    "produces": [
+                        "application/json"
+                    ],
+                    "parameters": [
+                        {
+                            "name": "filename",
+                            "in": "path",
+                            "required": true,
+                            "type": "string"
+                        }
+                    ],
+                    "responses": {
+                        "200": {
+                            "description": "Successfully deleted the debug bundle"
+                        },
+                        "404": {
+                            "description": "The debug bundle is running but not yet ready"
+                        },
+                        "410": {
+                            "description": "The debug bundle is not running or it is not on disk"
+                        },
+                        "500": {
+                            "description": "Internal Server error"
+                        }
+                    }
+                }
+            ]
         }
     ],
     "models": {

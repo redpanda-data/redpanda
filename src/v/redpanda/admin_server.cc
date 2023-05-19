@@ -78,6 +78,7 @@
 #include "redpanda/admin/api-doc/status.json.h"
 #include "redpanda/admin/api-doc/transaction.json.h"
 #include "redpanda/admin/api-doc/usage.json.h"
+#include "redpanda/debug_bundle.h"
 #include "rpc/errc.h"
 #include "security/acl.h"
 #include "security/credential_store.h"
@@ -120,6 +121,7 @@
 #include <charconv>
 #include <chrono>
 #include <limits>
+#include <regex>
 #include <stdexcept>
 #include <system_error>
 #include <type_traits>
@@ -203,7 +205,8 @@ admin_server::admin_server(
   ss::sharded<cloud_storage::topic_recovery_service>& topic_recovery_svc,
   ss::sharded<cluster::topic_recovery_status_frontend>&
     topic_recovery_status_frontend,
-  ss::sharded<cluster::tx_registry_frontend>& tx_registry_frontend)
+  ss::sharded<cluster::tx_registry_frontend>& tx_registry_frontend,
+  ss::sharded<debug_bundle>& debug_bundle)
   : _log_level_timer([this] { log_level_timer_handler(); })
   , _server("admin")
   , _cfg(std::move(cfg))
@@ -226,7 +229,8 @@ admin_server::admin_server(
   , _topic_recovery_status_frontend(topic_recovery_status_frontend)
   , _tx_registry_frontend(tx_registry_frontend)
   , _default_blocked_reactor_notify(
-      ss::engine().get_blocked_reactor_notify_ms()) {}
+      ss::engine().get_blocked_reactor_notify_ms())
+  , _debug_bundle{debug_bundle} {}
 
 ss::future<> admin_server::start() {
     _blocked_reactor_notify_reset_timer.set_callback([this] {
@@ -4147,6 +4151,39 @@ void admin_server::register_debug_routes() {
     register_route<superuser>(
       ss::httpd::debug_json::unsafe_reset_metadata,
       std::move(unsafe_reset_metadata_handler));
+
+    register_route_raw_async<user, true>(
+      seastar::httpd::debug_json::start_debug_bundle,
+      [this](
+        std::unique_ptr<ss::http::request> req,
+        std::unique_ptr<ss::http::reply> rep,
+        const request_auth_result& auth_state) {
+          return start_debug_bundle_handler(
+            std::move(req), std::move(rep), auth_state);
+      });
+
+    register_route<user>(
+      seastar::httpd::debug_json::check_debug_bundle_status,
+      [this](std::unique_ptr<ss::http::request> req)
+        -> ss::future<ss::json::json_return_type> {
+          return check_debug_bundle_status_handler(std::move(req));
+      });
+
+    register_route_raw_async<user>(
+      seastar::httpd::debug_json::get_debug_bundle,
+      [this](
+        std::unique_ptr<ss::http::request> req,
+        std::unique_ptr<ss::http::reply> rep) {
+          return get_debug_bundle_handler(std::move(req), std::move(rep));
+      },
+      "zip");
+
+    register_route<user>(
+      seastar::httpd::debug_json::delete_debug_bundle,
+      [this](std::unique_ptr<ss::http::request> req)
+        -> ss::future<ss::json::json_return_type> {
+          return delete_debug_bundle_handler(std::move(req));
+      });
 }
 
 ss::future<ss::json::json_return_type>
@@ -4817,5 +4854,78 @@ admin_server::restart_service_handler(std::unique_ptr<ss::http::request> req) {
 
     vlog(logger.info, "Restart redpanda service: {}", to_string_view(*service));
     co_await restart_redpanda_service(*service);
+    co_return ss::json::json_return_type(ss::json::json_void());
+}
+
+debug_bundle_params make_debug_bundle_params(const ss::http::request& req) {
+    // NOTE: Here, we sanitize for ss::experimental::process (i.e., posix_spawn)
+    // instead of RPK
+    const std::regex bundle_regex("[a-zA-Z0-9\\-\\.]+");
+    auto maybe_sanitize_debug_bundle_param =
+      [&bundle_regex](ss::sstring p) -> std::optional<ss::sstring> {
+        if (p.empty()) {
+            return std::nullopt;
+        }
+
+        validate_utf8(p);
+        if (!std::regex_match(p.c_str(), bundle_regex)) {
+            throw ss::httpd::server_error_exception(fmt::format(
+              "Query param contains invalid characters: param {}", p));
+        }
+
+        return std::make_optional(p);
+    };
+
+    debug_bundle_params bundle_params;
+    bundle_params.logs_since = maybe_sanitize_debug_bundle_param(
+      req.get_query_param("logs-since"));
+    bundle_params.logs_until = maybe_sanitize_debug_bundle_param(
+      req.get_query_param("logs-until"));
+    bundle_params.logs_size_limit = maybe_sanitize_debug_bundle_param(
+      req.get_query_param("logs-size-limit"));
+    bundle_params.metrics_interval = maybe_sanitize_debug_bundle_param(
+      req.get_query_param("metrics-interval"));
+    return bundle_params;
+}
+
+ss::future<std::unique_ptr<ss::http::reply>>
+admin_server::start_debug_bundle_handler(
+  std::unique_ptr<ss::http::request> req,
+  std::unique_ptr<ss::http::reply> rep,
+  const request_auth_result& auth_state) {
+    vlog(logger.info, "Start creating a debug bundle");
+    auto bundle_params = make_debug_bundle_params(*req);
+    co_await _debug_bundle.local().start_creating_bundle(
+      auth_state, std::move(bundle_params));
+    rep->set_status(ss::http::reply::status_type::accepted);
+    co_return std::move(rep);
+}
+
+ss::future<ss::json::json_return_type>
+admin_server::check_debug_bundle_status_handler(
+  std::unique_ptr<ss::http::request> req) {
+    vlog(logger.info, "Getting debug bundle status...");
+    auto bundle_status = co_await _debug_bundle.local().get_status();
+    auto bundle_name = req->param["filename"];
+    detail::throw_if_bundle_dne(
+      bundle_status, _debug_bundle.local().get_write_dir(), bundle_name);
+    co_return ss::json::json_return_type(ss::json::json_void());
+}
+
+ss::future<std::unique_ptr<ss::http::reply>>
+admin_server::get_debug_bundle_handler(
+  std::unique_ptr<ss::http::request> req,
+  std::unique_ptr<ss::http::reply> rep) {
+    vlog(logger.info, "Fetching recent debug bundle...");
+    co_return co_await _debug_bundle.local().fetch_bundle(
+      std::move(req), std::move(rep));
+}
+
+ss::future<ss::json::json_return_type>
+admin_server::delete_debug_bundle_handler(
+  std::unique_ptr<ss::http::request> req) {
+    vlog(logger.info, "Removing debug bundle...");
+    auto bundle_name = req->param["filename"];
+    co_await _debug_bundle.local().remove_bundle(bundle_name);
     co_return ss::json::json_return_type(ss::json::json_void());
 }
