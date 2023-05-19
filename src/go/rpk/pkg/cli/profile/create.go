@@ -59,19 +59,10 @@ func newCreateCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 			fmt.Printf("Created and switched to new profile %q.\n", name)
 
 			if cloudMTLS {
-				fmt.Println(`
-This cluster uses mTLS. Please ensure you have client certificates on your
-machine an then run
-    rpk profile set tls.ca /path/to/ca.pem
-    rpk profile set tls.cert /path/to/cert.pem
-    rpk profile set tls.key /path/to/key.pem`)
+				fmt.Println(RequiresMTLSMessage())
 			}
 			if cloudSASL {
-				fmt.Println(`
-If your cluster requires SASL, generate SASL credentials in the UI and then set
-them in rpk with
-    rpk profile set user {sasl_username}
-    rpk profile set pass {sasl_password}`)
+				fmt.Println(RequiresSASLMessage())
 			}
 		},
 	}
@@ -176,13 +167,45 @@ func createCloudProfile(ctx context.Context, y *config.RpkYaml, cfg *config.Conf
 	if len(c.Status.Listeners.Kafka.Default.URLs) == 0 {
 		return p, false, false, fmt.Errorf("cluster %q has no kafka listeners", clusterID)
 	}
+	p, cloudMTLS, cloudSASL = FromCloudCluster(c)
+	return p, cloudMTLS, cloudSASL, nil
+}
+
+// FromCloudCluster returns an rpk profile from a cloud cluster, as well
+// as if the cluster requires mtls or sasl.
+func FromCloudCluster(c cloudapi.Cluster) (p config.RpkProfile, isMTLS, isSASL bool) {
+	p = config.RpkProfile{
+		Name:      c.Name,
+		FromCloud: true,
+	}
 	p.KafkaAPI.Brokers = c.Status.Listeners.Kafka.Default.URLs
 	if l := c.Spec.KafkaListeners.Listeners; len(l) > 0 {
 		if l[0].TLS != nil {
 			p.KafkaAPI.TLS = new(config.TLS)
-			cloudMTLS = l[0].TLS.RequireClientAuth
+			isMTLS = l[0].TLS.RequireClientAuth
 		}
-		cloudSASL = l[0].SASL != nil
+		isSASL = l[0].SASL != nil
 	}
-	return p, cloudMTLS, cloudSASL, nil
+	return p, isMTLS, isSASL
+}
+
+// RequiresMTLSMessage returns the message to print if the cluster requires
+// mTLS.
+func RequiresMTLSMessage() string {
+	return `
+This cluster uses mTLS. Please ensure you have client certificates on your
+machine an then run
+    rpk profile set tls.ca /path/to/ca.pem
+    rpk profile set tls.cert /path/to/cert.pem
+    rpk profile set tls.key /path/to/key.pem`
+}
+
+// RequiresSASLMessage returns the message to print if the cluster requires
+// SASL.
+func RequiresSASLMessage() string {
+	return `
+If your cluster requires SASL, generate SASL credentials in the UI and then set
+them in rpk with
+    rpk profile set user {sasl_username}
+    rpk profile set pass {sasl_password}`
 }
