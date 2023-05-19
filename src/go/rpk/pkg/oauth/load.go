@@ -23,14 +23,14 @@ func LoadFlow(ctx context.Context, fs afero.Fs, cfg *config.Config, cl Client) (
 		return "", fmt.Errorf("detected rpk is running with sudo; please execute this command without sudo to avoid saving the cloud configuration as a root owned file")
 	}
 
-	yMat := cfg.VirtualRpkYaml()
-	authMat := yMat.Auth(yMat.CurrentCloudAuth) // must exist
+	yVir := cfg.VirtualRpkYaml()
+	authVir := yVir.Auth(yVir.CurrentCloudAuth) // must exist
 
 	var resp Token
-	if authMat.HasClientCredentials() {
-		resp, err = ClientCredentialFlow(ctx, cl, authMat)
+	if authVir.HasClientCredentials() {
+		resp, err = ClientCredentialFlow(ctx, cl, authVir)
 	} else {
-		resp, err = DeviceFlow(ctx, cl, authMat)
+		resp, err = DeviceFlow(ctx, cl, authVir)
 	}
 	if err != nil {
 		return "", fmt.Errorf("unable to retrieve a cloud token: %w", err)
@@ -46,7 +46,7 @@ func LoadFlow(ctx context.Context, fs afero.Fs, cfg *config.Config, cl Client) (
 		yAct.CurrentCloudAuth = yAct.PushAuth(config.DefaultRpkCloudAuth())
 		authAct = yAct.Auth(yAct.CurrentCloudAuth)
 	}
-	authAct.ClientID = authMat.ClientID
+	authAct.ClientID = authVir.ClientID
 	authAct.AuthToken = resp.AccessToken
 	return resp.AccessToken, yAct.Write(fs)
 }
