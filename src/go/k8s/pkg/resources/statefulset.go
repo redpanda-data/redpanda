@@ -26,6 +26,7 @@ import (
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/labels"
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources/featuregates"
 	resourcetypes "github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources/types"
+	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/utils"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -863,26 +864,61 @@ func (r *StatefulSetResource) fullConfiguratorImage() string {
 	return fmt.Sprintf("%s:%s", r.configuratorSettings.ConfiguratorBaseImage, r.configuratorSettings.ConfiguratorTag)
 }
 
-// Version returns the cluster version specified in the image tag.
+// Version returns the cluster version specified in the image tag of the
+// statefulset spec. Depending on the rollout status it might not be the same as
+// version of the pods.
 func (r *StatefulSetResource) Version() string {
 	lastObservedSts := r.LastObservedState
 	if lastObservedSts != nil {
-		cc := lastObservedSts.Spec.Template.Spec.Containers
-		for i := range cc {
-			c := cc[i]
-			if c.Name != redpandaContainerName {
-				continue
+		return redpandaContainerVersion(lastObservedSts.Spec.Template.Spec.Containers)
+	}
+	return ""
+}
+
+func redpandaContainerVersion(containers []corev1.Container) string {
+	for i := range containers {
+		c := containers[i]
+		if c.Name != redpandaContainerName {
+			continue
+		}
+		// Will always have tag even for latest because of pandaCluster.FullImageName().
+		if s := strings.Split(c.Image, ":"); len(s) > 1 {
+			version := s[len(s)-1]
+			// Image uses registry with port and no tag (e.g. localhost:5000/redpanda)
+			if strings.Contains(version, "/") {
+				version = ""
 			}
-			// Will always have tag even for latest because of pandaCluster.FullImageName().
-			if s := strings.Split(c.Image, ":"); len(s) > 1 {
-				version := s[len(s)-1]
-				// Image uses registry with port and no tag (e.g. localhost:5000/redpanda)
-				if strings.Contains(version, "/") {
-					version = ""
-				}
-				return version
-			}
+			return version
 		}
 	}
 	return ""
+}
+
+// CurrentVersion is the version that's rolled out to all nodes (pods) of the cluster
+func (r *StatefulSetResource) CurrentVersion(ctx context.Context) (string, error) {
+	stsVersion := r.Version()
+	if stsVersion == "" {
+		return "", nil
+	}
+	replicas := *r.LastObservedState.Spec.Replicas
+	pods, err := r.getPodList(ctx)
+	if err != nil {
+		return "", err
+	}
+	if int32(len(pods.Items)) != replicas {
+		//nolint:goerr113 // not going to use wrapped static error here this time
+		return stsVersion, fmt.Errorf("rollout incomplete: pods count %d does not match expected replicas %d", len(pods.Items), replicas)
+	}
+	for i := range pods.Items {
+		if !utils.IsPodReady(&pods.Items[i]) {
+			//nolint:goerr113 // no need for static error
+			return stsVersion, fmt.Errorf("rollout incomplete: at least one pod (%s) is not READY", pods.Items[i].Name)
+		}
+		podVersion := redpandaContainerVersion(pods.Items[i].Spec.Containers)
+		if podVersion != stsVersion {
+			//nolint:goerr113 // no need for static error
+			return stsVersion, fmt.Errorf("rollout incomplete: at least one pod has version %s not %s", podVersion, stsVersion)
+		}
+	}
+	return stsVersion, nil
 }

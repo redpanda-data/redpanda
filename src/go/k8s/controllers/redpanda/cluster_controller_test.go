@@ -30,6 +30,7 @@ import (
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/utils/pointer"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
 
@@ -851,7 +852,12 @@ var _ = Describe("RedPandaCluster controller", func() {
 		})
 		It("Should not throw error; redpanda version allowed", func() {
 			key, redpandaCluster := getVersionedRedpanda("restricted-redpanda-positive", allowedVersion)
-			fc := fake.NewClientBuilder().WithObjects(redpandaCluster).Build()
+			pods := readyPodsForCluster(redpandaCluster)
+			objects := []client.Object{redpandaCluster}
+			for i := range pods {
+				objects = append(objects, pods[i])
+			}
+			fc := fake.NewClientBuilder().WithObjects(objects...).Build()
 			r := &redpanda.ClusterReconciler{
 				Client:                    fc,
 				Log:                       ctrl.Log,
@@ -896,6 +902,33 @@ var _ = Describe("RedPandaCluster controller", func() {
 		Entry("Empty image pull policy", "", Not(Succeed())),
 		Entry("Random image pull policy", "asdvasd", Not(Succeed())))
 })
+
+func readyPodsForCluster(cluster *v1alpha1.Cluster) []*corev1.Pod {
+	var result []*corev1.Pod
+	for i := 0; i < int(*cluster.Spec.Replicas); i++ {
+		pod := &corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      fmt.Sprintf("pod-%d", i),
+				Namespace: cluster.Namespace,
+				Labels: map[string]string{
+					"app.kubernetes.io/component": "redpanda",
+					"app.kubernetes.io/instance":  cluster.Name,
+					"app.kubernetes.io/name":      "redpanda",
+				},
+			},
+			Spec: corev1.PodSpec{
+				NodeName: "test-node",
+				Containers: []corev1.Container{{
+					Name:  "redpanda",
+					Image: fmt.Sprintf("redpanda:%s", cluster.Spec.Version),
+				}},
+			},
+			Status: corev1.PodStatus{Conditions: []corev1.PodCondition{{Type: corev1.PodReady, Status: corev1.ConditionTrue}}},
+		}
+		result = append(result, pod)
+	}
+	return result
+}
 
 func getVersionedRedpanda(
 	name string, version string,

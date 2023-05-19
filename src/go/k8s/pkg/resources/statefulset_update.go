@@ -135,21 +135,29 @@ func (r *StatefulSetResource) isClusterHealthy(ctx context.Context) error {
 	return nil
 }
 
-func (r *StatefulSetResource) rollingUpdate(
-	ctx context.Context, template *corev1.PodTemplateSpec,
-) error {
+func (r *StatefulSetResource) getPodList(ctx context.Context) (*corev1.PodList, error) {
 	var podList corev1.PodList
 	err := r.List(ctx, &podList, &k8sclient.ListOptions{
 		Namespace:     r.pandaCluster.Namespace,
 		LabelSelector: labels.ForCluster(r.pandaCluster).AsClientSelector(),
 	})
 	if err != nil {
-		return fmt.Errorf("unable to list panda pods: %w", err)
+		return nil, fmt.Errorf("unable to list panda pods: %w", err)
 	}
 
 	sort.Slice(podList.Items, func(i, j int) bool {
 		return podList.Items[i].Name < podList.Items[j].Name
 	})
+	return &podList, nil
+}
+
+func (r *StatefulSetResource) rollingUpdate(
+	ctx context.Context, template *corev1.PodTemplateSpec,
+) error {
+	podList, err := r.getPodList(ctx)
+	if err != nil {
+		return fmt.Errorf("error getting pods %w", err)
+	}
 
 	var artificialPod corev1.Pod
 	artificialPod.Annotations = template.Annotations
