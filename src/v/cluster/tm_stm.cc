@@ -136,6 +136,9 @@ ss::future<tm_stm::op_status> tm_stm::try_init_hosted_transactions(
     }
 
     auto units = co_await _cache->write_lock();
+    if (_hosted_txes.inited) {
+        co_return op_status::success;
+    }
 
     model::partition_id partition = get_partition();
     auto initial_hash_range = default_tm_hash_range(
