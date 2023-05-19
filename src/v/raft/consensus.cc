@@ -2149,16 +2149,18 @@ ss::future<> consensus::write_snapshot(write_snapshot_cfg cfg) {
     co_await _log.truncate_prefix(storage::truncate_prefix_config(
       model::next_offset(last_included_index), _scheduling.default_iopc));
 
-    co_await _op_lock.with([this, last_included_index] {
-        return _configuration_manager.prefix_truncate(last_included_index)
-          .then([this, last_included_index] {
-              return _offset_translator.prefix_truncate(last_included_index);
-          })
-          .then([this, last_included_index] {
-              // when log was prefix truncate flushed offset should be
-              // equal to at least last snapshot index
-              _flushed_offset = std::max(last_included_index, _flushed_offset);
-          });
+    /*
+     * We do not need to keep an oplock when updating the flushed offset here as
+     * it is only moved forward so there is no risk of moving the flushed offset
+     * back, also there is no risk incorrectly marking dirty batches flushed as
+     * the offset will be at most equal to log start offset
+     */
+    _flushed_offset = std::max(last_included_index, _flushed_offset);
+
+    co_await _snapshot_lock.with([this, last_included_index]() mutable {
+        return ss::when_all_succeed(
+          _configuration_manager.prefix_truncate(last_included_index),
+          _offset_translator.prefix_truncate(last_included_index));
     });
 }
 
