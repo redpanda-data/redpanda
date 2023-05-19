@@ -1398,7 +1398,7 @@ configuration::configuration()
       *this,
       "cloud_storage_segment_size_min",
       "Smallest acceptable segment size in the cloud storage. Default: "
-      "cloud_storage_segment_size_target/2",
+      "cloud_storage_cache_chunk_size",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       std::nullopt)
   , cloud_storage_graceful_transfer_timeout_ms(

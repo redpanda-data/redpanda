@@ -21,11 +21,12 @@
 namespace archival {
 
 static std::pair<size_t, size_t> get_low_high_segment_size(
+  size_t chunk_size,
   size_t segment_size,
   config::binding<std::optional<size_t>>& low_wm,
   config::binding<std::optional<size_t>>& high_wm) {
     auto high_watermark = high_wm().value_or(segment_size);
-    auto low_watermark = low_wm().value_or(high_watermark / 2);
+    auto low_watermark = low_wm().value_or(chunk_size);
     if (low_watermark >= high_watermark) {
         // Low watermark can't be equal to high watermark
         // otherwise the merger want be able to find upload
@@ -62,6 +63,7 @@ std::optional<adjacent_segment_run> adjacent_segment_merger::scan_manifest(
   model::offset local_start_offset,
   const cloud_storage::partition_manifest& manifest) {
     auto [min_segment_size, max_segment_size] = get_low_high_segment_size(
+      config::shard_local_cfg().cloud_storage_cache_chunk_size(),
       _archiver.get_local_segment_size(),
       _min_segment_size,
       _target_segment_size);
