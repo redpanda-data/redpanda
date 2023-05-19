@@ -38,6 +38,7 @@ func Test_DeviceInfo_GetIRQs(t *testing.T) {
 		irqConfigDir  string
 		xenDeviceName string
 		want          []int
+		wantErr       bool
 	}{
 		{
 			name: "Shall return the IRQs when device is using MSI IRQs",
@@ -49,6 +50,14 @@ func Test_DeviceInfo_GetIRQs(t *testing.T) {
 			},
 			irqConfigDir: "/irq_config/dev1",
 			want:         []int{1, 2, 5, 8},
+		},
+		{
+			name: "Err when is using MSI IRQs but the list is empty",
+			before: func(fs afero.Fs) {
+				_ = afero.WriteFile(fs, "/irq_config/dev1/msi_irqs/", []byte{}, os.ModePerm)
+			},
+			irqConfigDir: "/irq_config/dev1",
+			wantErr:      true,
 		},
 		{
 			name: "Shall return the IRQs when device is using INT#x IRQs",
@@ -112,6 +121,10 @@ func Test_DeviceInfo_GetIRQs(t *testing.T) {
 			tt.before(fs)
 			deviceInfo := NewDeviceInfo(fs, tt.procFile)
 			got, err := deviceInfo.GetIRQs(tt.irqConfigDir, tt.xenDeviceName)
+			if tt.wantErr {
+				require.Error(t, err)
+				return
+			}
 			require.NoError(t, err)
 			require.Exactly(t, tt.want, got)
 		})
