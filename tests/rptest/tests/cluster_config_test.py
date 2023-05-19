@@ -1549,3 +1549,66 @@ class ClusterConfigAzureSharedKey(RedpandaTest):
         with expect_http_error(400):
             self.redpanda.set_cluster_config(
                 {"cloud_storage_azure_shared_key": None}, expect_restart=False)
+
+
+class ClusterConfigNodeAddTest(RedpandaTest):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, num_brokers=4, **kwargs)
+        self.admin = Admin(self.redpanda)
+
+    def setUp(self):
+        # Skip starting redpanda, so that test can explicitly start
+        # it with some override_cfg_params
+        pass
+
+    @cluster(num_nodes=4)
+    def test_node_add_with_snapshot(self):
+        """
+        Validate that when we add a node to the cluster, it picks up configuration
+        properties early enough in the process that 'needs restart' properties are
+        not in their restart-required state once the node comes up.
+
+        This indirectly confirms that the snapshots included in node join RPCs
+        are working as intended.  This functionality is added in Redpanda v23.2.x
+        """
+        def assert_restart_status(expect: bool):
+            status = self.admin.get_cluster_config_status()
+            for n in status:
+                assert n['restart'] is expect
+
+        original_nodes = self.redpanda.nodes[0:3]
+        add_node = self.redpanda.nodes[3]
+        self.redpanda.start(nodes=original_nodes)
+
+        # Wait for config status to populate
+        wait_until(lambda: len(self.admin.get_cluster_config_status()) == 3,
+                   timeout_sec=30,
+                   backoff_sec=1)
+
+        assert_restart_status(False)
+
+        # An arbitrary restart-requiring setting with a non-default value
+        new_setting = ('kafka_qdc_idle_depth', 77)
+        patch_result = self.admin.patch_cluster_config(
+            upsert=dict([new_setting]))
+        new_version = patch_result['config_version']
+        wait_for_version_status_sync(self.admin,
+                                     self.redpanda,
+                                     new_version,
+                                     nodes=original_nodes)
+        assert_restart_status(True)
+
+        # Restart existing nodes to get them into a clean state
+        check_restart_clears(self.admin, self.redpanda, nodes=original_nodes)
+
+        # Add a new node
+        self.redpanda.start_node(add_node)
+
+        # Wait for config status to include new node
+        wait_until(lambda: len(self.admin.get_cluster_config_status()) == 4,
+                   timeout_sec=30,
+                   backoff_sec=1)
+
+        status = self.admin.get_cluster_config_status()
+        for n in status:
+            assert n['restart'] is False
