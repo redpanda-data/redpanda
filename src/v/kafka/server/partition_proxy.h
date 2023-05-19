@@ -16,6 +16,7 @@
 #include "kafka/protocol/errors.h"
 #include "kafka/types.h"
 #include "model/fundamental.h"
+#include "model/ktp.h"
 #include "storage/translating_reader.h"
 #include "storage/types.h"
 
@@ -126,12 +127,7 @@ private:
     std::unique_ptr<impl> _impl;
 };
 
-template<typename Impl, typename... Args>
-partition_proxy make_partition_proxy(Args&&... args) {
-    return partition_proxy(std::make_unique<Impl>(std::forward<Args>(args)...));
-}
-
 std::optional<partition_proxy>
-make_partition_proxy(const model::ntp&, cluster::partition_manager&);
+make_partition_proxy(const model::ktp&, cluster::partition_manager&);
 
 } // namespace kafka

@@ -80,8 +80,9 @@ public:
     std::unique_ptr<hdr_hist::measurement> auto_produce_measurement() {
         return _produce_latency.auto_measure();
     }
-    std::unique_ptr<hdr_hist::measurement> auto_fetch_measurement() {
-        return _fetch_latency.auto_measure();
+
+    void record_fetch_latency(std::chrono::microseconds micros) {
+        _fetch_latency.record(micros.count());
     }
 
 private:

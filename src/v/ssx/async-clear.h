@@ -27,10 +27,11 @@ namespace ssx {
  * Once we are on a version with the fix for #46989 backported,
  * this can be reduced to just a function.
  */
-template<typename K, typename V>
+template<typename K, typename V, typename Hash, typename Eq, typename Alloc>
 class async_clear {
 public:
-    explicit async_clear(absl::flat_hash_map<K, V>& c)
+    using map_type = absl::flat_hash_map<K, V, Hash, Eq, Alloc>;
+    explicit async_clear(map_type& c)
       : _container(c) {}
 
     /**
@@ -75,7 +76,7 @@ public:
           _container.size());
     }
 
-    absl::flat_hash_map<K, V>& _container;
+    map_type& _container;
 };
 
 } // namespace ssx

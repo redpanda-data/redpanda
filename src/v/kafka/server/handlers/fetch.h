@@ -14,8 +14,15 @@
 #include "kafka/server/handlers/fetch/replica_selector.h"
 #include "kafka/server/handlers/handler.h"
 #include "kafka/types.h"
+#include "model/fundamental.h"
+#include "model/ktp.h"
 #include "model/metadata.h"
+#include "utils/hdr_hist.h"
 #include "utils/intrusive_list_helpers.h"
+
+#include <seastar/core/smp.hh>
+
+#include <memory>
 
 namespace kafka {
 
@@ -25,6 +32,9 @@ using fetch_handler = single_stage_handler<fetch_api, 4, 11>;
  * Fetch operation context
  */
 struct op_context {
+    using latency_clock = hdr_hist::clock_type;
+    using latency_point = latency_clock::time_point;
+
     class response_placeholder {
     public:
         response_placeholder(fetch_response::iterator, op_context* ctx);
@@ -111,37 +121,17 @@ struct op_context {
     response_iterator response_begin() { return iteration_order.begin(); }
 
     response_iterator response_end() { return iteration_order.end(); }
+
+    /**
+     * @brief Get an estimate of the number of partitions in the fetch.
+     *
+     * This is only an estimate, perhaps useful to pre-size some structures
+     * and currently returns 0 for sessionless fetches.
+     */
+    size_t fetch_partition_count() const;
+
     template<typename Func>
-    void for_each_fetch_partition(Func&& f) const {
-        /**
-         * Iterate over original request only if it is sessionless or initial
-         * full fetch request. For not initial full fetch requests we may
-         * leverage the fetch session stored partitions as session was populated
-         * during initial pass. Using session stored partitions will account for
-         * the partitions already read and move to the end of iteration order
-         */
-        if (
-          session_ctx.is_sessionless()
-          || (session_ctx.is_full_fetch() && initial_fetch)) {
-            std::for_each(
-              request.cbegin(),
-              request.cend(),
-              [f = std::forward<Func>(f)](
-                const fetch_request::const_iterator::value_type& p) {
-                  f(fetch_session_partition{
-                    .topic = p.topic->name,
-                    .partition = p.partition->partition_index,
-                    .max_bytes = p.partition->max_bytes,
-                    .fetch_offset = p.partition->fetch_offset,
-                  });
-              });
-        } else {
-            std::for_each(
-              session_ctx.session()->partitions().cbegin_insertion_order(),
-              session_ctx.session()->partitions().cend_insertion_order(),
-              std::forward<Func>(f));
-        }
-    }
+    void for_each_fetch_partition(Func&& f) const;
 
     request_context rctx;
     ss::smp_service_group ssg;
@@ -168,12 +158,12 @@ struct op_context {
 struct fetch_config {
     model::offset start_offset;
     model::offset max_offset;
-    model::isolation_level isolation_level;
     size_t max_bytes;
     model::timeout_clock::time_point timeout;
+    kafka::leader_epoch current_leader_epoch;
+    model::isolation_level isolation_level;
     bool strict_max_bytes{false};
     bool skip_read{false};
-    kafka::leader_epoch current_leader_epoch;
     bool read_from_follower{false};
     std::optional<model::rack_id> consumer_rack_id;
 
@@ -195,17 +185,17 @@ struct fetch_config {
 };
 
 struct ntp_fetch_config {
-    ntp_fetch_config(model::ntp n, fetch_config cfg)
-      : _ntp(std::move(n))
+    ntp_fetch_config(model::ktp ktp, fetch_config cfg)
+      : _ktp(std::move(ktp))
       , cfg(cfg) {}
-    model::ntp _ntp;
+    model::ktp _ktp;
     fetch_config cfg;
 
-    const model::ntp& ntp() const { return _ntp; }
+    const model::ktp& ktp() const { return _ktp; }
 
     friend std::ostream&
     operator<<(std::ostream& o, const ntp_fetch_config& ntp_fetch) {
-        fmt::print(o, R"({{"{}": {}}})", ntp_fetch.ntp(), ntp_fetch.cfg);
+        fmt::print(o, R"({{"{}": {}}})", ntp_fetch.ktp(), ntp_fetch.cfg);
         return o;
     }
 };
@@ -298,20 +288,25 @@ struct read_result {
 // struct aggregating fetch requests and corresponding response iterators for
 // the same shard
 struct shard_fetch {
+    explicit shard_fetch(op_context::latency_point start_time)
+      : start_time{start_time} {}
+
     void push_back(
-      ntp_fetch_config config,
-      op_context::response_placeholder_ptr r_ph,
-      std::unique_ptr<hdr_hist::measurement> m) {
+      ntp_fetch_config config, op_context::response_placeholder_ptr r_ph) {
         requests.push_back(std::move(config));
         responses.push_back(r_ph);
-        metrics.push_back(std::move(m));
     }
     bool empty() const;
+
+    void reserve(size_t n) {
+        requests.reserve(n);
+        responses.reserve(n);
+    }
 
     ss::shard_id shard;
     std::vector<ntp_fetch_config> requests;
     std::vector<op_context::response_placeholder_ptr> responses;
-    std::vector<std::unique_ptr<hdr_hist::measurement>> metrics;
+    op_context::latency_point start_time;
 
     friend std::ostream& operator<<(std::ostream& o, const shard_fetch& sf) {
         fmt::print(o, "{}", sf.requests);
@@ -320,10 +315,19 @@ struct shard_fetch {
 };
 
 struct fetch_plan {
-    explicit fetch_plan(size_t shards)
-      : fetches_per_shard(shards) {}
+    explicit fetch_plan(
+      size_t shards,
+      op_context::latency_point start_time = op_context::latency_clock::now())
+      : fetches_per_shard(shards, shard_fetch(start_time)) {}
 
     std::vector<shard_fetch> fetches_per_shard;
+
+    void reserve_from_partition_count(size_t count) {
+        size_t per_partition = count * 3 / (fetches_per_shard.size() * 2);
+        for (auto& f : fetches_per_shard) {
+            f.reserve(per_partition);
+        }
+    }
 
     friend std::ostream& operator<<(std::ostream& o, const fetch_plan& plan) {
         fmt::print(o, "{{[");
@@ -348,9 +352,18 @@ struct fetch_plan {
 ss::future<read_result> read_from_ntp(
   cluster::partition_manager&,
   const replica_selector&,
-  const model::ntp&,
+  const model::ktp&,
   fetch_config,
   bool,
   std::optional<model::timeout_clock::time_point>);
+
+namespace testing {
+/**
+ * Create a fetch plan with the simple fetch planner.
+ *
+ * Exposed for testing/benchmarking only.
+ */
+kafka::fetch_plan make_simple_fetch_plan(op_context& octx);
+} // namespace testing
 
 } // namespace kafka

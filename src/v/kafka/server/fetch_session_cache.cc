@@ -17,8 +17,7 @@ namespace kafka {
 static fetch_session_partition make_fetch_partition(
   const model::topic& tp, const fetch_request::partition& p) {
     return fetch_session_partition{
-      .topic = tp,
-      .partition = p.partition_index,
+      .topic_partition = {tp, p.partition_index},
       .max_bytes = p.max_bytes,
       .fetch_offset = p.fetch_offset,
       .high_watermark = model::offset(-1),

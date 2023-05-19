@@ -36,7 +36,7 @@ namespace kafka {
 using response_t = offset_for_leader_epoch_response;
 
 struct ntp_last_offset_request {
-    model::ntp ntp;
+    model::ktp ktp;
     kafka::leader_epoch requested_epoch;
     kafka::leader_epoch current_epoch;
 };
@@ -64,12 +64,12 @@ static ss::future<std::vector<epoch_end_offset>> fetch_offsets_from_shard(
         ret.reserve(requests.size());
         for (auto& r : requests) {
             auto p = make_partition_proxy(
-              r.ntp, ctx.partition_manager().local());
+              r.ktp, ctx.partition_manager().local());
             // offsets_for_leader_epoch request should only be answered by
             // leader
             if (!p || !p->is_leader()) {
                 ret.push_back(response_t::make_epoch_end_offset(
-                  r.ntp.tp.partition, error_code::not_leader_for_partition));
+                  r.ktp.get_partition(), error_code::not_leader_for_partition));
                 continue;
             }
 
@@ -77,12 +77,12 @@ static ss::future<std::vector<epoch_end_offset>> fetch_offsets_from_shard(
               r.current_epoch, *p);
             if (l_epoch_error != error_code::none) {
                 ret.push_back(response_t::make_epoch_end_offset(
-                  r.ntp.tp.partition, l_epoch_error));
+                  r.ktp.get_partition(), l_epoch_error));
                 continue;
             }
 
             ret.push_back(response_t::make_epoch_end_offset(
-              r.ntp.tp.partition,
+              r.ktp.get_partition(),
               get_epoch_end_offset(r.requested_epoch, *p),
               p->leader_epoch()));
         }
@@ -135,19 +135,18 @@ get_offsets_for_leader_epochs(
             // response is stable and we can capture it
             auto& partition_response = result.back().partitions.back();
 
-            auto ntp = model::ntp(
-              model::kafka_namespace,
-              request_topic.topic,
-              request_partition.partition);
+            auto ktp = model::ktp(
+              request_topic.topic, request_partition.partition);
 
-            if (!ctx.metadata_cache().contains(ntp)) {
+            if (!ctx.metadata_cache().contains(
+                  ktp.as_tn_view(), ktp.get_partition())) {
                 partition_response = response_t::make_epoch_end_offset(
                   request_partition.partition,
                   error_code::unknown_topic_or_partition);
                 continue;
             }
 
-            auto shard = ctx.shards().shard_for(ntp);
+            auto shard = ctx.shards().shard_for(ktp);
             // no shard found, we may be in the middle of partition move, return
             // not leader for partition error
             if (!shard) {
@@ -158,7 +157,7 @@ get_offsets_for_leader_epochs(
             }
 
             ntp_last_offset_request req{
-              .ntp = std::move(ntp),
+              .ktp = std::move(ktp),
               .requested_epoch = request_partition.leader_epoch,
               .current_epoch = request_partition.current_leader_epoch,
             };

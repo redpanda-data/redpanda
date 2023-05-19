@@ -14,6 +14,7 @@
 #include "cluster/ntp_callbacks.h"
 #include "cluster/partition.h"
 #include "coproc/partition.h"
+#include "model/ktp.h"
 #include "storage/fwd.h"
 
 #include <seastar/core/gate.hh>
@@ -25,7 +26,7 @@ namespace coproc {
 class partition_manager {
 public:
     using ntp_table_container
-      = absl::flat_hash_map<model::ntp, ss::lw_shared_ptr<partition>>;
+      = model::ntp_flat_map_type<ss::lw_shared_ptr<partition>>;
     using manage_cb_t
       = ss::noncopyable_function<void(ss::lw_shared_ptr<partition>)>;
     using unmanage_cb_t = ss::noncopyable_function<void(model::partition_id)>;
@@ -35,7 +36,13 @@ public:
     ss::future<> start() { return ss::now(); }
     ss::future<> stop_partitions();
 
-    ss::lw_shared_ptr<partition> get(const model::ntp& ntp) const;
+    ss::lw_shared_ptr<partition> get(const model::any_ntp auto& ntp) const {
+        if (auto it = _ntp_table.find(ntp); it != _ntp_table.end()) {
+            return it->second;
+        }
+        return nullptr;
+    }
+
     ss::future<>
       manage(storage::ntp_config, ss::lw_shared_ptr<cluster::partition>);
 
