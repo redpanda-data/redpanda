@@ -20,17 +20,23 @@ orig_assignees=$ORIG_ASSIGNEES
 if [[ -n $CREATE_ISSUE_ON_ERROR ]]; then
   additional_body="Note that this issue was created as a placeholder, since the original PR's commit(s) could not be automatically cherry-picked."
 
+  local_user=$(gh api user --jq .login)
   additional_body="$additional_body
-  Command I attempted to execute:
+  Here are the commands to execute:
+  \`\`\`
+  git checkout $BACKPORT_BRANCH
+  git checkout -b $local_user/backport-$PR_NUMBER-$BACKPORT_BRANCH-$((RANDOM % 1000))
+  git cherry-pick -x $BACKPORT_COMMITS
+
   gh pr create
-    --title \"[$BACKPORT_BRANCH] $ORIG_TITLE\"
-    --base \"$BACKPORT_BRANCH\"
-    --label \"kind/backport\"
-    --head \"$GIT_USER:$HEAD_BRANCH\"
-    --draft
-    --repo \"$TARGET_ORG/$TARGET_REPO\"
-    --reviewer \"$ORIG_REVIEWERS\"
-    --milestone \"$TARGET_MILESTONE\"
+    --title \"[$BACKPORT_BRANCH] $ORIG_TITLE\" \\
+    --base \"$BACKPORT_BRANCH\" \\
+    --label \"kind/backport\" \\
+    --head \"$local_user:$HEAD_BRANCH\" \\
+    --draft \\
+    --repo \"$TARGET_ORG/$TARGET_REPO\" \\
+    --reviewer \"$ORIG_REVIEWERS\" \\
+    --milestone \"$TARGET_MILESTONE\" \\
     --body \"Backport of PR $ORIG_ISSUE_URL \""
 
   orig_assignees=$(gh issue view $PR_NUMBER --json author --jq .author.login)
