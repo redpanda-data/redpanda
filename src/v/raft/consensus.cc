@@ -1776,9 +1776,10 @@ ss::future<append_entries_reply>
 consensus::do_append_entries(append_entries_request&& r) {
     auto lstats = _log.offsets();
     append_entries_reply reply;
+    const auto request_metadata = r.metadata();
     reply.node_id = _self;
-    reply.target_node_id = r.node_id;
-    reply.group = r.meta.group;
+    reply.target_node_id = r.source_node();
+    reply.group = request_metadata.group;
     reply.term = _term;
     reply.last_dirty_log_index = lstats.dirty_offset;
     reply.last_flushed_log_index = _flushed_offset;
@@ -1789,10 +1790,10 @@ consensus::do_append_entries(append_entries_request&& r) {
         return ss::make_ready_future<append_entries_reply>(reply);
     }
     // no need to trigger timeout
-    vlog(_ctxlog.trace, "Append entries request: {}", r.meta);
+    vlog(_ctxlog.trace, "Append entries request: {}", request_metadata);
 
     // raft.pdf: Reply false if term < currentTerm (§5.1)
-    if (r.meta.term < _term) {
+    if (request_metadata.term < _term) {
         reply.result = append_entries_reply::status::failure;
         return ss::make_ready_future<append_entries_reply>(std::move(reply));
     }
@@ -1802,15 +1803,15 @@ consensus::do_append_entries(append_entries_request&& r) {
      */
     _target_priority = voter_priority::max();
     do_step_down("append_entries_term_greater");
-    if (r.meta.term > _term) {
+    if (request_metadata.term > _term) {
         vlog(
           _ctxlog.debug,
           "Append entries request term:{} is greater than current: {}. "
           "Setting "
           "new term",
-          r.meta.term,
+          request_metadata.term,
           _term);
-        _term = r.meta.term;
+        _term = request_metadata.term;
         _voted_for = {};
         return do_append_entries(std::move(r));
     }
@@ -1818,8 +1819,8 @@ consensus::do_append_entries(append_entries_request&& r) {
     // raft.pdf:If AppendEntries RPC received from new leader: convert to
     // follower (§5.2)
     _vstate = vote_state::follower;
-    if (unlikely(_leader_id != r.node_id)) {
-        _leader_id = r.node_id;
+    if (unlikely(_leader_id != r.source_node())) {
+        _leader_id = r.source_node();
         _follower_reply.broadcast();
         trigger_leadership_notification();
     }
@@ -1831,14 +1832,14 @@ consensus::do_append_entries(append_entries_request&& r) {
     auto last_log_offset = lstats.dirty_offset;
     // section 1
     // For an entry to fit into our log, it must not leave a gap.
-    if (r.meta.prev_log_index > last_log_offset) {
+    if (request_metadata.prev_log_index > last_log_offset) {
         if (!r.batches().is_end_of_stream()) {
             vlog(
               _ctxlog.debug,
               "Rejecting append entries. Would leave gap in log, last log "
               "offset: {} request previous log offset: {}",
               last_log_offset,
-              r.meta.prev_log_index);
+              request_metadata.prev_log_index);
         }
         return ss::make_ready_future<append_entries_reply>(std::move(reply));
     }
@@ -1848,23 +1849,23 @@ consensus::do_append_entries(append_entries_request&& r) {
     // if prev log index from request is the same as current we can use
     // prev_log_term as an optimization
     auto last_log_term
-      = lstats.dirty_offset == r.meta.prev_log_index
+      = lstats.dirty_offset == request_metadata.prev_log_index
           ? lstats.dirty_offset_term // use term from lstats
           : get_term(model::offset(
-            r.meta.prev_log_index)); // lookup for request term in log
+            request_metadata.prev_log_index)); // lookup for request term in log
     // We can only check prev_log_term for entries that are present in the
     // log. When leader installed snapshot on the follower we may require to
     // skip the term check as term of prev_log_idx may not be available.
     if (
-      r.meta.prev_log_index >= lstats.start_offset
-      && r.meta.prev_log_term != last_log_term) {
+      request_metadata.prev_log_index >= lstats.start_offset
+      && request_metadata.prev_log_term != last_log_term) {
         vlog(
           _ctxlog.debug,
           "Rejecting append entries. mismatching entry term at offset: "
           "{}, current term: {} request term: {}",
-          r.meta.prev_log_index,
+          request_metadata.prev_log_index,
           last_log_term,
-          r.meta.prev_log_term);
+          request_metadata.prev_log_term);
         reply.result = append_entries_reply::status::failure;
         return ss::make_ready_future<append_entries_reply>(std::move(reply));
     }
@@ -1873,20 +1874,20 @@ consensus::do_append_entries(append_entries_request&& r) {
     // we need to handle it early (before executing truncation)
     // as timeouts are asynchronous to append calls and can have stall data
     if (r.batches().is_end_of_stream()) {
-        if (r.meta.prev_log_index < last_log_offset) {
+        if (request_metadata.prev_log_index < last_log_offset) {
             // do not tuncate on heartbeat just response with false
             reply.result = append_entries_reply::status::failure;
             return ss::make_ready_future<append_entries_reply>(
               std::move(reply));
         }
         auto last_visible = std::min(
-          lstats.dirty_offset, r.meta.last_visible_index);
+          lstats.dirty_offset, request_metadata.last_visible_index);
         // on the follower leader control visibility of entries in the log
         maybe_update_last_visible_index(last_visible);
         _last_leader_visible_offset = std::max(
-          r.meta.last_visible_index, _last_leader_visible_offset);
+          request_metadata.last_visible_index, _last_leader_visible_offset);
         return maybe_update_follower_commit_idx(
-                 model::offset(r.meta.commit_index))
+                 model::offset(request_metadata.commit_index))
           .then([reply = std::move(reply)]() mutable {
               reply.result = append_entries_reply::status::success;
               return ss::make_ready_future<append_entries_reply>(
@@ -1895,26 +1896,26 @@ consensus::do_append_entries(append_entries_request&& r) {
     }
 
     // section 3
-    if (r.meta.prev_log_index < last_log_offset) {
-        if (unlikely(r.meta.prev_log_index < _commit_index)) {
+    if (request_metadata.prev_log_index < last_log_offset) {
+        if (unlikely(request_metadata.prev_log_index < _commit_index)) {
             reply.result = append_entries_reply::status::success;
             vlog(
               _ctxlog.info,
               "Stale append entries request processed, entry is already "
               "present, request: {}, current state: {}",
-              r.meta,
+              request_metadata,
               meta());
             return ss::make_ready_future<append_entries_reply>(
               std::move(reply));
         }
         auto truncate_at = model::next_offset(
-          model::offset(r.meta.prev_log_index));
+          model::offset(request_metadata.prev_log_index));
         vlog(
           _ctxlog.info,
           "Truncating log in term: {}, Request previous log index: {} is "
           "earlier than log end offset: {}. Truncating to: {}",
-          r.meta.term,
-          r.meta.prev_log_index,
+          request_metadata.term,
+          request_metadata.prev_log_index,
           lstats.dirty_offset,
           truncate_at);
         _probe.log_truncated();
@@ -1944,13 +1945,14 @@ consensus::do_append_entries(append_entries_request&& r) {
           })
           .then([this, r = std::move(r), truncate_at]() mutable {
               auto lstats = _log.offsets();
-              if (unlikely(lstats.dirty_offset != r.meta.prev_log_index)) {
+              if (unlikely(
+                    lstats.dirty_offset != r.metadata().prev_log_index)) {
                   vlog(
                     _ctxlog.warn,
                     "Log truncation error, expected offset: {}, log "
                     "offsets: "
                     "{}, requested truncation at {}",
-                    r.meta.prev_log_index,
+                    r.metadata().prev_log_index,
                     lstats,
                     truncate_at);
                   _flushed_offset = std::min(
@@ -1969,8 +1971,10 @@ consensus::do_append_entries(append_entries_request&& r) {
 
     // success. copy entries for each subsystem
     using offsets_ret = storage::append_result;
-    return disk_append(std::move(r.batches()), update_last_quorum_index::no)
-      .then([this, m = r.meta, target = r.node_id](offsets_ret ofs) {
+    return disk_append(
+             std::move(r).release_batches(), update_last_quorum_index::no)
+      .then([this, m = request_metadata, target = reply.target_node_id](
+              offsets_ret ofs) {
           auto f = ss::make_ready_future<>();
           auto last_visible = std::min(ofs.last_offset, m.last_visible_index);
           maybe_update_last_visible_index(last_visible);

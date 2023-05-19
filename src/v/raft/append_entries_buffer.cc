@@ -97,7 +97,7 @@ ss::future<> append_entries_buffer::do_flush(
         ssx::semaphore_units op_lock_units = std::move(u);
         replies.reserve(requests.size());
         for (auto& req : requests) {
-            if (req.flush) {
+            if (req.is_flush_required()) {
                 needs_flush = true;
             }
             try {

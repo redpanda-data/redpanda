@@ -196,18 +196,14 @@ struct follower_metrics {
 };
 using flush_after_append = ss::bool_class<struct flush_after_append_tag>;
 
+using flush_after_append = ss::bool_class<struct flush_after_append_tag>;
+
 struct append_entries_request
   : serde::envelope<
       append_entries_request,
       serde::version<0>,
       serde::compat_version<0>> {
     using rpc_adl_exempt = std::true_type;
-
-    /*
-     * default initialize with no record batch reader. default construction
-     * should only be used by serialization frameworks.
-     */
-    append_entries_request() noexcept = default;
 
     // required for the cases where we will set the target node id before
     // sending request to the node
@@ -216,9 +212,9 @@ struct append_entries_request
       protocol_metadata m,
       model::record_batch_reader r,
       flush_after_append f = flush_after_append::yes) noexcept
-      : node_id(src)
-      , meta(m)
-      , flush(f)
+      : _source_node(src)
+      , _meta(m)
+      , _flush(f)
       , _batches(std::move(r)) {}
 
     append_entries_request(
@@ -227,11 +223,12 @@ struct append_entries_request
       protocol_metadata m,
       model::record_batch_reader r,
       flush_after_append f = flush_after_append::yes) noexcept
-      : node_id(src)
-      , target_node_id(target)
-      , meta(m)
-      , flush(f)
+      : _source_node(src)
+      , _target_node_id(target)
+      , _meta(m)
+      , _flush(f)
       , _batches(std::move(r)) {}
+
     ~append_entries_request() noexcept = default;
     append_entries_request(const append_entries_request&) = delete;
     append_entries_request& operator=(const append_entries_request&) = delete;
@@ -239,56 +236,36 @@ struct append_entries_request
     append_entries_request& operator=(append_entries_request&&) noexcept
       = default;
 
-    raft::group_id target_group() const { return meta.group; }
-    vnode source_node() const { return node_id; }
-    vnode target_node() const { return target_node_id; }
-    vnode node_id;
-    vnode target_node_id;
-    protocol_metadata meta;
-    model::record_batch_reader& batches() {
-        /*
-         * note that some call sites do:
-         *
-         *   auto b = std::move(req.batches())
-         *
-         * which does not reset the std::optional value. so this assertion is
-         * merely here to protect against use of a default constructed request.
-         */
-        vassert(_batches.has_value(), "request contains no batches");
-        return _batches.value();
+    raft::group_id target_group() const { return _meta.group; }
+    vnode source_node() const { return _source_node; }
+    vnode target_node() const { return _target_node_id; }
+    void set_target_node(vnode target) { _target_node_id = target; }
+
+    const protocol_metadata& metadata() const { return _meta; }
+    flush_after_append is_flush_required() const { return _flush; }
+
+    model::record_batch_reader release_batches() && {
+        return std::move(_batches);
     }
-    flush_after_append flush;
-    static append_entries_request make_foreign(append_entries_request&& req) {
-        return append_entries_request(
-          req.node_id,
-          req.target_node_id,
-          std::move(req.meta),
-          model::make_foreign_record_batch_reader(std::move(req.batches())),
-          req.flush);
-    }
+
+    const model::record_batch_reader& batches() const { return _batches; }
+
+    static append_entries_request make_foreign(append_entries_request&& req);
 
     friend std::ostream&
-    operator<<(std::ostream& o, const append_entries_request& r) {
-        fmt::print(
-          o,
-          "node_id {} target_node_id {} meta {} batches {}",
-          r.node_id,
-          r.target_node_id,
-          r.meta,
-          r._batches);
-        return o;
-    }
+    operator<<(std::ostream& o, const append_entries_request& r);
 
     ss::future<> serde_async_write(iobuf& out);
-    ss::future<> serde_async_read(iobuf_parser&, const serde::header);
+
+    static ss::future<append_entries_request>
+    serde_async_direct_read(iobuf_parser&, size_t bytes_left_limit);
 
 private:
-    /*
-     * batches is optional to allow append_entries_request to have a default
-     * constructor and integrate with serde until serde provides a more powerful
-     * interface for dealing with this.
-     */
-    std::optional<model::record_batch_reader> _batches;
+    vnode _source_node;
+    vnode _target_node_id;
+    protocol_metadata _meta;
+    flush_after_append _flush;
+    model::record_batch_reader _batches;
 };
 
 /*

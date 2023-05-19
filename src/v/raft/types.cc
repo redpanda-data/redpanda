@@ -19,6 +19,7 @@
 #include "raft/group_configuration.h"
 #include "reflection/adl.h"
 #include "reflection/async_adl.h"
+#include "serde/serde.h"
 #include "utils/to_string.h"
 #include "vassert.h"
 #include "vlog.h"
@@ -617,36 +618,72 @@ ss::future<> append_entries_request::serde_async_write(iobuf& dst) {
         iobuf _out;
     };
 
-    iobuf out = co_await batches().consume(
+    iobuf out = co_await _batches.consume(
       streaming_writer{}, model::no_timeout);
 
-    write(out, node_id);
-    write(out, target_node_id);
-    write(out, meta);
-    write(out, flush);
+    write(out, _source_node);
+    write(out, _target_node_id);
+    write(out, _meta);
+    write(out, _flush);
 
     write(dst, std::move(out));
 }
 
-ss::future<> append_entries_request::serde_async_read(
-  iobuf_parser& src, const serde::header hdr) {
+ss::future<append_entries_request>
+append_entries_request::serde_async_direct_read(
+  iobuf_parser& src, size_t bytes_left_limit) {
+    using serde::read_async_nested;
     using serde::read_nested;
-    auto tmp = read_nested<iobuf>(src, hdr._bytes_left_limit);
+
+    auto tmp = co_await read_async_nested<iobuf>(src, bytes_left_limit);
     iobuf_parser in(std::move(tmp));
 
     auto batch_count = read_nested<uint32_t>(in, 0U);
-    auto batches = fragmented_vector<model::record_batch>{};
+    // use chunked fifo as usually batches size is small
+    fragmented_vector<model::record_batch> batches{};
+
     for (uint32_t i = 0; i < batch_count; ++i) {
-        batches.push_back(reflection::adl<model::record_batch>{}.from(in));
+        auto b = co_await reflection::async_adl<model::record_batch>{}.from(in);
+        batches.push_back(std::move(b));
         co_await ss::coroutine::maybe_yield();
     }
 
-    _batches = model::make_foreign_fragmented_memory_record_batch_reader(
-      std::move(batches));
-    node_id = read_nested<raft::vnode>(in, 0U);
-    target_node_id = read_nested<raft::vnode>(in, 0U);
-    meta = read_nested<raft::protocol_metadata>(in, 0U);
-    flush = read_nested<raft::flush_after_append>(in, 0U);
+    auto node_id = read_nested<raft::vnode>(in, 0U);
+    auto target_node_id = read_nested<raft::vnode>(in, 0U);
+    auto meta = read_nested<raft::protocol_metadata>(in, 0U);
+    auto flush = read_nested<raft::flush_after_append>(in, 0U);
+
+    co_return append_entries_request(
+      node_id,
+      target_node_id,
+      meta,
+      model::make_foreign_fragmented_memory_record_batch_reader(
+        std::move(batches)),
+      flush);
+}
+
+append_entries_request
+append_entries_request::make_foreign(append_entries_request&& req) {
+    auto src_node = req._source_node;
+    auto target_node = req._target_node_id;
+    auto metadata = req._meta;
+    auto flush = req._flush;
+    return {
+      src_node,
+      target_node,
+      metadata,
+      model::make_foreign_record_batch_reader(std::move(req).release_batches()),
+      flush};
+}
+std::ostream& operator<<(std::ostream& o, const append_entries_request& r) {
+    fmt::print(
+      o,
+      "node_id {} target_node_id {} meta {} batches {}",
+      r._node_id,
+      r._target_node_id,
+      r._meta,
+      r._batches);
+    return o;
 }
 
 } // namespace raft

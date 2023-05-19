@@ -86,7 +86,7 @@ SEASTAR_THREAD_TEST_CASE(append_entries_requests) {
       std::move(readers.back()));
 
     readers.pop_back();
-    const auto target_node_id = req.target_node_id;
+    const auto target_node_id = req.target_node();
 
     iobuf buf;
     serde::write_async(buf, std::move(req)).get();
@@ -94,19 +94,21 @@ SEASTAR_THREAD_TEST_CASE(append_entries_requests) {
     auto d = serde::read_async<raft::append_entries_request>(p).get();
 
     BOOST_REQUIRE_EQUAL(
-      d.node_id, raft::vnode(model::node_id(1), model::revision_id(10)));
-    BOOST_REQUIRE_EQUAL(d.target_node_id, target_node_id);
-    BOOST_REQUIRE_EQUAL(d.meta.group, meta.group);
-    BOOST_REQUIRE_EQUAL(d.meta.commit_index, meta.commit_index);
-    BOOST_REQUIRE_EQUAL(d.meta.term, meta.term);
-    BOOST_REQUIRE_EQUAL(d.meta.prev_log_index, meta.prev_log_index);
-    BOOST_REQUIRE_EQUAL(d.meta.prev_log_term, meta.prev_log_term);
-    BOOST_REQUIRE_EQUAL(d.meta.last_visible_index, meta.last_visible_index);
+      d.source_node(), raft::vnode(model::node_id(1), model::revision_id(10)));
+    BOOST_REQUIRE_EQUAL(d.target_node(), target_node_id);
+    BOOST_REQUIRE_EQUAL(d.metadata().group, meta.group);
+    BOOST_REQUIRE_EQUAL(d.metadata().commit_index, meta.commit_index);
+    BOOST_REQUIRE_EQUAL(d.metadata().term, meta.term);
+    BOOST_REQUIRE_EQUAL(d.metadata().prev_log_index, meta.prev_log_index);
+    BOOST_REQUIRE_EQUAL(d.metadata().prev_log_term, meta.prev_log_term);
+    BOOST_REQUIRE_EQUAL(
+      d.metadata().last_visible_index, meta.last_visible_index);
 
     auto batches_result = model::consume_reader_to_memory(
                             std::move(readers.back()), model::no_timeout)
                             .get0();
-    d.batches()
+    std::move(d)
+      .release_batches()
       .consume(checking_consumer(std::move(batches_result)), model::no_timeout)
       .get0();
 }
