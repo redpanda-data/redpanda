@@ -28,7 +28,7 @@ if [[ -n $CREATE_ISSUE_ON_ERROR ]]; then
   git checkout -b $local_user/backport-$PR_NUMBER-$BACKPORT_BRANCH-$((RANDOM % 1000))
   git cherry-pick -x $BACKPORT_COMMITS
 
-  gh pr create
+  gh pr create \\
     --title \"[$BACKPORT_BRANCH] $ORIG_TITLE\" \\
     --base \"$BACKPORT_BRANCH\" \\
     --label \"kind/backport\" \\
