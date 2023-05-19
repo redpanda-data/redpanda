@@ -142,7 +142,9 @@ public:
 
     ss::future<cloud_storage::download_result> sync_manifest();
 
-    uint64_t estimate_backlog_size() const;
+    uint64_t estimate_backlog_size();
+    uint64_t last_estimated_backlog_size() const;
+    int64_t last_records_pending_upload() const;
 
     /// \brief Probe remote storage and truncate the manifest if needed
     ss::future<std::optional<cloud_storage::partition_manifest>>
@@ -574,6 +576,9 @@ private:
       _manifest_upload_interval;
 
     ss::sharded<features::feature_table>& _feature_table;
+
+    uint64_t _last_estimated_backlog_size{0};
+    int64_t _last_records_pending_upload{0};
 
     friend class archival_fixture;
 };

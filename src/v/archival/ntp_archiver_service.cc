@@ -1709,7 +1709,7 @@ ss::future<ntp_archiver::batch_result> ntp_archiver::upload_next_candidates(
       .non_compacted_upload_result = {}, .compacted_upload_result = {}};
 }
 
-uint64_t ntp_archiver::estimate_backlog_size() const {
+uint64_t ntp_archiver::estimate_backlog_size() {
     auto last_offset = manifest().size() ? manifest().get_last_offset()
                                          : model::offset(0);
     auto log_generic = _parent.log();
@@ -1725,10 +1725,23 @@ uint64_t ntp_archiver::estimate_backlog_size() const {
           }
           return acc;
       });
+
+    // Cache backlog status locally for consumption by the probe
+    _last_estimated_backlog_size = total_size;
+    _last_records_pending_upload = records_pending_upload();
+
     // Note: we can safely ignore the fact that the last segment is not uploaded
     // before it's sealed because the size of the individual segment is small
     // compared to the capacity of the data volume.
     return total_size;
+}
+
+uint64_t ntp_archiver::last_estimated_backlog_size() const {
+    return _last_estimated_backlog_size;
+}
+
+int64_t ntp_archiver::last_records_pending_upload() const {
+    return _last_records_pending_upload;
 }
 
 ss::future<std::optional<cloud_storage::partition_manifest>>
