@@ -134,7 +134,7 @@ func GetState(c Client, nodeID uint) (*NodeState, error) {
 	if exists && network.IPAMConfig != nil {
 		ipAddress = network.IPAMConfig.IPv4Address
 	} else {
-		return nil, fmt.Errorf("unable to inspect network settings for the container %v", Name(nodeID))
+		return nil, fmt.Errorf("unable to inspect network settings for the container %v, you may have a conflicting 'redpanda' Docker network", Name(nodeID))
 	}
 
 	hostRPCPort, err := getHostPort(
