@@ -21,18 +21,21 @@ if [[ -n $CREATE_ISSUE_ON_ERROR ]]; then
   additional_body="Note that this issue was created as a placeholder, since the original PR's commit(s) could not be automatically cherry-picked."
 
   local_user=$(gh api user --jq .login)
+  local_branch="$local_user/backport-$PR_NUMBER-$BACKPORT_BRANCH-$((RANDOM % 1000))"
+
   additional_body="$additional_body
   Here are the commands to execute:
   \`\`\`
   git checkout $BACKPORT_BRANCH
-  git checkout -b $local_user/backport-$PR_NUMBER-$BACKPORT_BRANCH-$((RANDOM % 1000))
+  git checkout -b $local_branch
+  git push origin $local_branch
   git cherry-pick -x $BACKPORT_COMMITS
 
-  gh pr create
+  gh pr create \\
     --title \"[$BACKPORT_BRANCH] $ORIG_TITLE\" \\
     --base \"$BACKPORT_BRANCH\" \\
     --label \"kind/backport\" \\
-    --head \"$local_user:$HEAD_BRANCH\" \\
+    --head \"$local_branch\" \\
     --draft \\
     --repo \"$TARGET_ORG/$TARGET_REPO\" \\
     --reviewer \"$ORIG_REVIEWERS\" \\
