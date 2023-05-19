@@ -25,6 +25,7 @@ import (
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/out"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/tuners/factory"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/tuners/hwloc"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/tuners/irq"
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
 	"go.uber.org/zap"
@@ -166,6 +167,14 @@ func tune(
 		if res.IsFailed() {
 			errMsg = res.Error().Error()
 			exit1 = true
+			// A warning is given (instead of error) when the list of MSI IRQs
+			// in sysfs is empty due to a known upstream problem introduced in
+			// kernel 5.17.
+			// See: https://github.com/redpanda-data/redpanda/issues/10838
+			if ee := (*irq.EmptyMSIRQError)(nil); errors.As(res.Error(), &ee) {
+				exit1 = false
+				supported = false
+			}
 		}
 		results = append(results, result{tunerName, !res.IsFailed(), enabled, supported, errMsg})
 	}
