@@ -21,5 +21,7 @@ namespace security {
 using credential_user = named_type<ss::sstring, struct credential_user_type>;
 using credential_password
   = named_type<ss::sstring, struct credential_password_type>;
+using credential_mechanism
+  = named_type<ss::sstring, struct credential_mechanism_type>;
 
 } // namespace security

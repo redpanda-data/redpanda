@@ -99,6 +99,7 @@ request_auth_result request_authenticator::do_authenticate(
         }
         username = security::credential_user{decoded_bytes.substr(0, colon)};
         security::credential_password password{decoded_bytes.substr(colon + 1)};
+        security::credential_mechanism mechanism;
 
         const auto cred_opt = cred_store.get<security::scram_credential>(
           username);
@@ -112,12 +113,21 @@ request_auth_result request_authenticator::do_authenticate(
               "Unauthorized", ss::http::reply::status_type::unauthorized);
         } else {
             const auto& cred = cred_opt.value();
-            bool is_valid = (
-              security::scram_sha256::validate_password(
-                password, cred.stored_key(), cred.salt(), cred.iterations())
-              || security::scram_sha512::validate_password(
-                password, cred.stored_key(), cred.salt(), cred.iterations()));
-            if (!is_valid) {
+            if (security::scram_sha256::validate_password(
+                  password,
+                  cred.stored_key(),
+                  cred.salt(),
+                  cred.iterations())) {
+                mechanism = security::credential_mechanism{"SCRAM-SHA-256"};
+            }
+            if (security::scram_sha512::validate_password(
+                  password,
+                  cred.stored_key(),
+                  cred.salt(),
+                  cred.iterations())) {
+                mechanism = security::credential_mechanism{"SCRAM-SHA-512"};
+            }
+            if (mechanism().empty()) {
                 // User found, password doesn't match
                 vlog(
                   logger.warn,
@@ -134,6 +144,7 @@ request_auth_result request_authenticator::do_authenticate(
                 return request_auth_result(
                   std::move(username),
                   std::move(password),
+                  std::move(mechanism),
                   request_auth_result::superuser(superuser));
             }
         }
