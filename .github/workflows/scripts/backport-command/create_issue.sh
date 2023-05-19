@@ -28,9 +28,9 @@ if [[ -n $CREATE_ISSUE_ON_ERROR ]]; then
   \`\`\`
   git checkout $BACKPORT_BRANCH
   git checkout -b $local_branch
-  git push origin $local_branch
   git cherry-pick -x $BACKPORT_COMMITS
 
+  git push origin $local_branch
   gh pr create \\
     --title \"[$BACKPORT_BRANCH] $ORIG_TITLE\" \\
     --base \"$BACKPORT_BRANCH\" \\
