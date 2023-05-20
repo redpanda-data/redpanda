@@ -14,7 +14,7 @@
 #include "cluster/logger.h"
 #include "cluster/persisted_stm.h"
 #include "cluster/tm_stm_cache.h"
-#include "cluster/tm_tx_hash_ranges.h"
+#include "cluster/tx_hash_ranges.h"
 #include "config/configuration.h"
 #include "features/feature_table.h"
 #include "kafka/protocol/errors.h"
@@ -127,6 +127,64 @@ public:
         timeout
     };
 
+    struct draining_txs
+      : serde::
+          envelope<draining_txs, serde::version<0>, serde::compat_version<0>> {
+        repartitioning_id id;
+        tx_hash_ranges_set ranges{};
+        absl::btree_set<kafka::transactional_id> transactions{};
+
+        draining_txs() = default;
+
+        draining_txs(
+          repartitioning_id id,
+          tx_hash_ranges_set ranges,
+          absl::btree_set<kafka::transactional_id> txs)
+          : id(id)
+          , ranges(std::move(ranges))
+          , transactions(std::move(txs)) {}
+
+        friend bool operator==(const draining_txs&, const draining_txs&)
+          = default;
+
+        auto serde_fields() { return std::tie(id, ranges, transactions); }
+    };
+
+    struct hosted_txs
+      : serde::
+          envelope<hosted_txs, serde::version<0>, serde::compat_version<0>> {
+        bool inited{false};
+        tx_hash_ranges_set hash_ranges{};
+        absl::btree_set<kafka::transactional_id> excluded_transactions{};
+        absl::btree_set<kafka::transactional_id> included_transactions{};
+        draining_txs draining{};
+
+        hosted_txs() = default;
+
+        hosted_txs(
+          bool inited,
+          tx_hash_ranges_set hr,
+          absl::btree_set<kafka::transactional_id> et,
+          absl::btree_set<kafka::transactional_id> it,
+          draining_txs dr)
+          : inited(inited)
+          , hash_ranges(std::move(hr))
+          , excluded_transactions(std::move(et))
+          , included_transactions(std::move(it))
+          , draining(std::move(dr)) {}
+
+        friend bool operator==(const hosted_txs&, const hosted_txs&) = default;
+
+        auto serde_fields() {
+            return std::tie(
+              inited,
+              hash_ranges,
+              excluded_transactions,
+              included_transactions,
+              draining);
+        }
+    };
+
     struct tm_snapshot_v0 {
         static constexpr uint8_t version = 0;
 
@@ -139,7 +197,7 @@ public:
 
         model::offset offset;
         fragmented_vector<tm_transaction> transactions;
-        tm_tx_hosted_transactions hash_ranges;
+        hosted_txs hash_ranges;
     };
 
     explicit tm_stm(
@@ -290,7 +348,7 @@ private:
       _tx_locks;
     ss::sharded<features::feature_table>& _feature_table;
     ss::lw_shared_ptr<cluster::tm_stm_cache> _cache;
-    tm_tx_hosted_transactions _hosted_txes;
+    hosted_txs _hosted_txes;
     mutex _tx_thrashing_lock;
 
     ss::future<> apply(const model::record_batch& b) final;
@@ -304,9 +362,9 @@ private:
     ss::future<checked<tm_transaction, tm_stm::op_status>>
       do_update_tx(tm_transaction, model::term_id);
     ss::future<tm_stm::op_status>
-      update_hosted_transactions(model::term_id, tm_tx_hosted_transactions);
+      update_hosted_transactions(model::term_id, hosted_txs);
     ss::future<tm_stm::op_status>
-      do_update_hosted_transactions(model::term_id, tm_tx_hosted_transactions);
+      do_update_hosted_transactions(model::term_id, hosted_txs);
     ss::future<tm_stm::op_status> do_register_new_producer(
       model::term_id,
       kafka::transactional_id,
@@ -335,8 +393,7 @@ private:
     }
 
     model::record_batch serialize_tx(tm_transaction tx);
-    model::record_batch
-    serialize_hosted_transactions(tm_tx_hosted_transactions hr);
+    model::record_batch serialize_hosted_transactions(hosted_txs hr);
 };
 
 inline txlock_unit::~txlock_unit() noexcept {
@@ -348,3 +405,54 @@ inline txlock_unit::~txlock_unit() noexcept {
 }
 
 } // namespace cluster
+
+namespace reflection {
+template<>
+struct adl<cluster::tm_stm::draining_txs> {
+    void to(iobuf& out, cluster::tm_stm::draining_txs&& dr) {
+        reflection::serialize(out, dr.id, dr.ranges, dr.transactions);
+    }
+    cluster::tm_stm::draining_txs from(iobuf_parser& in) {
+        auto id = reflection::adl<cluster::repartitioning_id>{}.from(in);
+        auto ranges
+          = reflection::adl<std::vector<cluster::tx_hash_range>>{}.from(in);
+        auto txs = reflection::adl<absl::btree_set<kafka::transactional_id>>{}
+                     .from(in);
+        return {id, std::move(ranges), std::move(txs)};
+    }
+};
+
+template<>
+struct adl<cluster::tm_stm::hosted_txs> {
+    void to(iobuf& out, cluster::tm_stm::hosted_txs&& hr) {
+        reflection::serialize(
+          out,
+          hr.inited,
+          hr.hash_ranges,
+          hr.excluded_transactions,
+          hr.included_transactions,
+          hr.draining);
+    }
+    cluster::tm_stm::hosted_txs from(iobuf_parser& in) {
+        auto inited = reflection::adl<bool>{}.from(in);
+
+        auto hash_ranges_set
+          = reflection::adl<cluster::tx_hash_ranges_set>{}.from(in);
+        auto included_transactions
+          = reflection::adl<absl::btree_set<kafka::transactional_id>>{}.from(
+            in);
+        auto excluded_transactions
+          = reflection::adl<absl::btree_set<kafka::transactional_id>>{}.from(
+            in);
+        auto draining = reflection::adl<cluster::tm_stm::draining_txs>{}.from(
+          in);
+        return {
+          inited,
+          std::move(hash_ranges_set),
+          std::move(included_transactions),
+          std::move(excluded_transactions),
+          std::move(draining)};
+    };
+};
+
+} // namespace reflection

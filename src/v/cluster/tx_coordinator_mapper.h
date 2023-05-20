@@ -12,7 +12,7 @@
 #pragma once
 #include "cluster/metadata_cache.h"
 #include "cluster/partition_manager.h"
-#include "cluster/tm_tx_hash_ranges.h"
+#include "cluster/tx_hash_ranges.h"
 #include "hashing/murmur.h"
 #include "kafka/protocol/types.h"
 #include "kafka/types.h"
