@@ -8,8 +8,8 @@
 // by the Apache License, Version 2.0
 
 #include "cluster/tm_stm.h"
-#include "cluster/tm_tx_hash_ranges.h"
 #include "cluster/tx_coordinator_mapper.h"
+#include "cluster/tx_hash_ranges.h"
 
 #include <seastar/testing/thread_test_case.hh>
 
