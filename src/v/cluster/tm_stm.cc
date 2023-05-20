@@ -144,7 +144,8 @@ ss::future<tm_stm::op_status> tm_stm::try_init_hosted_transactions(
     auto initial_hash_range = default_hash_range(
       partition, tx_coordinator_partition_amount);
     tm_tx_hosted_transactions initial_hosted_transactions{};
-    auto res = initial_hosted_transactions.add_range(initial_hash_range);
+    auto res = hosted_transactions::add_range(
+      initial_hosted_transactions, initial_hash_range);
     if (res == tx_hash_ranges_errc::success) {
         initial_hosted_transactions.inited = true;
         co_return co_await update_hosted_transactions(
@@ -160,7 +161,7 @@ ss::future<tm_stm::op_status> tm_stm::include_hosted_transaction(
         co_return op_status::unknown;
     }
     auto new_hosted_tx = _hosted_txes;
-    auto res = new_hosted_tx.include_transaction(tx_id);
+    auto res = hosted_transactions::include_transaction(new_hosted_tx, tx_id);
     if (res == tx_hash_ranges_errc::success) {
         co_return co_await update_hosted_transactions(
           term, std::move(new_hosted_tx));
@@ -175,7 +176,7 @@ ss::future<tm_stm::op_status> tm_stm::exclude_hosted_transaction(
         co_return op_status::unknown;
     }
     auto new_hosted_tx = _hosted_txes;
-    auto res = new_hosted_tx.exclude_transaction(tx_id);
+    auto res = hosted_transactions::exclude_transaction(new_hosted_tx, tx_id);
     if (res == tx_hash_ranges_errc::success) {
         co_return co_await update_hosted_transactions(
           term, std::move(new_hosted_tx));
@@ -813,7 +814,7 @@ bool tm_stm::hosts(const kafka::transactional_id& tx_id) {
           features::feature::transaction_partitioning)) {
         return true;
     }
-    return _hosted_txes.contains(tx_id);
+    return hosted_transactions::contains(_hosted_txes, tx_id);
 }
 
 ss::future<>

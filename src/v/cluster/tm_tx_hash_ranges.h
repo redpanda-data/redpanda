@@ -172,6 +172,83 @@ struct draining_txs
     auto serde_fields() { return std::tie(id, ranges, transactions); }
 };
 
+namespace hosted_transactions {
+template<class T>
+tx_hash_ranges_errc
+exclude_transaction(T& self, const kafka::transactional_id& tx_id) {
+    if (self.excluded_transactions.contains(tx_id)) {
+        return tx_hash_ranges_errc::success;
+    }
+    if (self.included_transactions.contains(tx_id)) {
+        self.included_transactions.erase(tx_id);
+        vassert(
+          !self.hash_ranges.contains(get_tx_id_hash(tx_id)),
+          "hash_ranges must not contain included txes");
+        return tx_hash_ranges_errc::success;
+    }
+    tx_hash_type hash = get_tx_id_hash(tx_id);
+    if (!self.hash_ranges.contains(hash)) {
+        return tx_hash_ranges_errc::not_hosted;
+    }
+    self.excluded_transactions.insert(tx_id);
+    return tx_hash_ranges_errc::success;
+}
+
+template<class T>
+tx_hash_ranges_errc
+include_transaction(T& self, const kafka::transactional_id& tx_id) {
+    if (self.included_transactions.contains(tx_id)) {
+        return tx_hash_ranges_errc::success;
+    }
+    if (self.excluded_transactions.contains(tx_id)) {
+        self.excluded_transactions.erase(tx_id);
+        vassert(
+          self.hash_ranges.contains(get_tx_id_hash(tx_id)),
+          "hash_ranges must not contain excluded txes");
+        return tx_hash_ranges_errc::success;
+    }
+    tx_hash_type hash = get_tx_id_hash(tx_id);
+    if (self.hash_ranges.contains(hash)) {
+        return tx_hash_ranges_errc::intersection;
+    }
+    self.included_transactions.insert(tx_id);
+    return tx_hash_ranges_errc::success;
+}
+
+template<class T>
+tx_hash_ranges_errc add_range(T& self, const tx_hash_range& range) {
+    if (self.hash_ranges.intersects(range)) {
+        return tx_hash_ranges_errc::intersection;
+    }
+    for (const auto& tx_id : self.excluded_transactions) {
+        tx_hash_type hash = get_tx_id_hash(tx_id);
+        if (range.contains(hash)) {
+            self.excluded_transactions.erase(tx_id);
+        }
+    }
+    for (const auto& tx_id : self.included_transactions) {
+        tx_hash_type hash = get_tx_id_hash(tx_id);
+        if (range.contains(hash)) {
+            self.included_transactions.erase(tx_id);
+        }
+    }
+    self.hash_ranges.add_range(range);
+    return tx_hash_ranges_errc::success;
+}
+
+template<class T>
+bool contains(T& self, const kafka::transactional_id& tx_id) {
+    if (self.excluded_transactions.contains(tx_id)) {
+        return false;
+    }
+    if (self.included_transactions.contains(tx_id)) {
+        return true;
+    }
+    auto tx_id_hash = get_tx_id_hash(tx_id);
+    return self.hash_ranges.contains(tx_id_hash);
+}
+} // namespace hosted_transactions
+
 struct tm_tx_hosted_transactions
   : serde::envelope<
       tm_tx_hosted_transactions,
@@ -204,77 +281,6 @@ struct tm_tx_hosted_transactions
           excluded_transactions,
           included_transactions,
           draining);
-    }
-
-    tx_hash_ranges_errc
-    exclude_transaction(const kafka::transactional_id& tx_id) {
-        if (excluded_transactions.contains(tx_id)) {
-            return tx_hash_ranges_errc::success;
-        }
-        if (included_transactions.contains(tx_id)) {
-            included_transactions.erase(tx_id);
-            vassert(
-              !hash_ranges.contains(get_tx_id_hash(tx_id)),
-              "hash_ranges must not contain included txes");
-            return tx_hash_ranges_errc::success;
-        }
-        tx_hash_type hash = get_tx_id_hash(tx_id);
-        if (!hash_ranges.contains(hash)) {
-            return tx_hash_ranges_errc::not_hosted;
-        }
-        excluded_transactions.insert(tx_id);
-        return tx_hash_ranges_errc::success;
-    }
-
-    tx_hash_ranges_errc
-    include_transaction(const kafka::transactional_id& tx_id) {
-        if (included_transactions.contains(tx_id)) {
-            return tx_hash_ranges_errc::success;
-        }
-        if (excluded_transactions.contains(tx_id)) {
-            excluded_transactions.erase(tx_id);
-            vassert(
-              hash_ranges.contains(get_tx_id_hash(tx_id)),
-              "hash_ranges must not contain excluded txes");
-            return tx_hash_ranges_errc::success;
-        }
-        tx_hash_type hash = get_tx_id_hash(tx_id);
-        if (hash_ranges.contains(hash)) {
-            return tx_hash_ranges_errc::intersection;
-        }
-        included_transactions.insert(tx_id);
-        return tx_hash_ranges_errc::success;
-    }
-
-    tx_hash_ranges_errc add_range(tx_hash_range range) {
-        if (hash_ranges.intersects(range)) {
-            return tx_hash_ranges_errc::intersection;
-        }
-        for (const auto& tx_id : excluded_transactions) {
-            tx_hash_type hash = get_tx_id_hash(tx_id);
-            if (range.contains(hash)) {
-                excluded_transactions.erase(tx_id);
-            }
-        }
-        for (const auto& tx_id : included_transactions) {
-            tx_hash_type hash = get_tx_id_hash(tx_id);
-            if (range.contains(hash)) {
-                included_transactions.erase(tx_id);
-            }
-        }
-        hash_ranges.add_range(range);
-        return tx_hash_ranges_errc::success;
-    }
-
-    bool contains(const kafka::transactional_id& tx_id) {
-        if (excluded_transactions.contains(tx_id)) {
-            return false;
-        }
-        if (included_transactions.contains(tx_id)) {
-            return true;
-        }
-        auto tx_id_hash = get_tx_id_hash(tx_id);
-        return hash_ranges.contains(tx_id_hash);
     }
 };
 
