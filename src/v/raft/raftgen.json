@@ -34,6 +34,11 @@
             "name": "transfer_leadership",
             "input_type": "transfer_leadership_request",
             "output_type": "transfer_leadership_reply"
+        },
+        {
+            "name": "append_entries_full_serde",
+            "input_type": "append_entries_request_serde_wrapper",
+            "output_type": "append_entries_reply"
         }
     ]
 }

@@ -637,7 +637,8 @@ ss::future<result<model::offset>> consensus::linearizable_barrier() {
                    .append_entries(
                      target.id(),
                      std::move(req),
-                     rpc::client_opts(_replicate_append_timeout))
+                     rpc::client_opts(_replicate_append_timeout),
+                     use_all_serde_append_entries())
                    .then([this, id = target.id(), seq, dirty_offset](
                            result<append_entries_reply> reply) {
                        process_append_entries_reply(

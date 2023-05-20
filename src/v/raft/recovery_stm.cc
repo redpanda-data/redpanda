@@ -513,7 +513,11 @@ ss::future<result<append_entries_reply>> recovery_stm::dispatch_append_entries(
       ss::make_lw_shared<std::vector<ssx::semaphore_units>>(std::move(units)));
 
     return _ptr->_client_protocol
-      .append_entries(_node_id.id(), std::move(r), std::move(opts))
+      .append_entries(
+        _node_id.id(),
+        std::move(r),
+        std::move(opts),
+        _ptr->use_all_serde_append_entries())
       .then([this](result<append_entries_reply> reply) {
           return _ptr->validate_reply_target_node(
             "append_entries_recovery", reply, _node_id.id());

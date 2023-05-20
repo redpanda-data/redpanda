@@ -123,7 +123,8 @@ replicate_entries_stm::send_append_entries_request(
               n.id(),
               append_entries_request(
                 _ptr->self(), n, _meta, std::move(batches), _is_flush_required),
-              std::move(opts))
+              std::move(opts),
+              _ptr->use_all_serde_append_entries())
             .then([this, target_node_id = n.id()](
                     result<append_entries_reply> reply) {
                 return _ptr->validate_reply_target_node(

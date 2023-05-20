@@ -673,6 +673,12 @@ private:
     void maybe_upgrade_configuration_to_v4(group_configuration&);
 
     void update_confirmed_term();
+
+    bool use_all_serde_append_entries() const {
+        return _features.is_active(
+          features::feature::raft_append_entries_serde);
+    }
+
     // args
     vnode _self;
     raft::group_id _group;

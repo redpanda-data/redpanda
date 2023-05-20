@@ -22,6 +22,7 @@
 #include "raft/fwd.h"
 #include "raft/group_configuration.h"
 #include "reflection/async_adl.h"
+#include "serde/envelope.h"
 #include "utils/named_type.h"
 
 #include <seastar/core/condition-variable.hh>
@@ -266,6 +267,27 @@ private:
     protocol_metadata _meta;
     flush_after_append _flush;
     model::record_batch_reader _batches;
+};
+
+class append_entries_request_serde_wrapper
+  : public serde::envelope<
+      append_entries_request_serde_wrapper,
+      serde::version<0>,
+      serde::compat_version<0>> {
+public:
+    using rpc_adl_exempt = std::true_type;
+    explicit append_entries_request_serde_wrapper(append_entries_request req)
+      : _request(std::move(req)) {}
+
+    append_entries_request release() && { return std::move(_request); }
+
+    ss::future<> serde_async_write(iobuf& out);
+
+    static ss::future<append_entries_request_serde_wrapper>
+    serde_async_direct_read(iobuf_parser&, size_t bytes_left_limit);
+
+private:
+    append_entries_request _request;
 };
 
 /*

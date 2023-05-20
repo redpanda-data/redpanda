@@ -144,6 +144,20 @@ public:
               });
         });
     }
+    [[gnu::always_inline]] ss::future<append_entries_reply>
+    append_entries_full_serde(
+      append_entries_request_serde_wrapper&& r, rpc::streaming_context&) final {
+        return _probe.append_entries().then([this, r = std::move(r)]() mutable {
+            auto request = std::move(r).release();
+            const raft::group_id gr = request.target_group();
+            return dispatch_request(
+              append_entries_request::make_foreign(std::move(request)),
+              [gr]() { return make_missing_group_reply(gr); },
+              [](append_entries_request&& req, consensus_ptr c) {
+                  return c->append_entries(std::move(req));
+              });
+        });
+    }
 
     [[gnu::always_inline]] ss::future<install_snapshot_reply> install_snapshot(
       install_snapshot_request&& r, rpc::streaming_context&) final {
