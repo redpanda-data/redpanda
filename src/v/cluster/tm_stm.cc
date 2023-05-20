@@ -141,11 +141,11 @@ ss::future<tm_stm::op_status> tm_stm::try_init_hosted_transactions(
     }
 
     model::partition_id partition = get_partition();
-    auto initial_hash_range = default_tm_hash_range(
+    auto initial_hash_range = default_hash_range(
       partition, tx_coordinator_partition_amount);
     tm_tx_hosted_transactions initial_hosted_transactions{};
     auto res = initial_hosted_transactions.add_range(initial_hash_range);
-    if (res == tm_tx_hash_ranges_errc::success) {
+    if (res == tx_hash_ranges_errc::success) {
         initial_hosted_transactions.inited = true;
         co_return co_await update_hosted_transactions(
           term, std::move(initial_hosted_transactions));
@@ -161,7 +161,7 @@ ss::future<tm_stm::op_status> tm_stm::include_hosted_transaction(
     }
     auto new_hosted_tx = _hosted_txes;
     auto res = new_hosted_tx.include_transaction(tx_id);
-    if (res == tm_tx_hash_ranges_errc::success) {
+    if (res == tx_hash_ranges_errc::success) {
         co_return co_await update_hosted_transactions(
           term, std::move(new_hosted_tx));
     } else {
@@ -176,7 +176,7 @@ ss::future<tm_stm::op_status> tm_stm::exclude_hosted_transaction(
     }
     auto new_hosted_tx = _hosted_txes;
     auto res = new_hosted_tx.exclude_transaction(tx_id);
-    if (res == tm_tx_hash_ranges_errc::success) {
+    if (res == tx_hash_ranges_errc::success) {
         co_return co_await update_hosted_transactions(
           term, std::move(new_hosted_tx));
     } else {
