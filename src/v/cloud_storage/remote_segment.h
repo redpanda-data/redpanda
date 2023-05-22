@@ -207,6 +207,7 @@ private:
 
     bool _compacted{false};
     bool _stopped{false};
+    bool _hydration_loop_running{false};
 };
 
 class remote_segment_batch_consumer;
