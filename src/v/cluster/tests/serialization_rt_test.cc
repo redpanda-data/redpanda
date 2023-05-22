@@ -879,14 +879,13 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
       tests::random_named_int<model::term_id>(),
       tests::random_named_int<model::node_id>(),
       tests::random_named_int<model::revision_id>()));
-
-    roundtrip_test(cluster::update_leadership_request_v2({
-      cluster::ntp_leader_revision(
-        model::random_ntp(),
-        tests::random_named_int<model::term_id>(),
-        tests::random_named_int<model::node_id>(),
-        tests::random_named_int<model::revision_id>()),
-    }));
+    ss::chunked_fifo<cluster::ntp_leader_revision> l_revs;
+    l_revs.emplace_back(
+      model::random_ntp(),
+      tests::random_named_int<model::term_id>(),
+      tests::random_named_int<model::node_id>(),
+      tests::random_named_int<model::revision_id>());
+    roundtrip_test(cluster::update_leadership_request_v2(std::move(l_revs)));
 
     roundtrip_test(cluster::update_leadership_reply());
 

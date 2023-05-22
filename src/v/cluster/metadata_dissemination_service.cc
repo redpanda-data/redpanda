@@ -34,6 +34,7 @@
 #include "vlog.h"
 
 #include <seastar/core/abort_source.hh>
+#include <seastar/core/chunked_fifo.hh>
 #include <seastar/core/future-util.hh>
 #include <seastar/core/future.hh>
 #include <seastar/core/gate.hh>
@@ -310,7 +311,8 @@ void metadata_dissemination_service::collect_pending_updates() {
             }
             if (!_pending_updates.contains(id)) {
                 _pending_updates.emplace(
-                  id, update_retry_meta{std::vector<ntp_leader_revision>{}});
+                  id,
+                  update_retry_meta{ss::chunked_fifo<ntp_leader_revision>{}});
             }
             vlog(
               clusterlog.trace,
@@ -416,7 +418,7 @@ ss::future<> metadata_dissemination_service::dispatch_one_update(
         ss::this_shard_id(),
         target_id,
         _dissemination_interval,
-        [this, updates = meta.updates, target_id](
+        [this, updates = std::move(meta.updates), target_id](
           metadata_dissemination_rpc_client_protocol proto) mutable {
             vlog(
               clusterlog.trace,

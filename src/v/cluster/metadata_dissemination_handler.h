@@ -15,6 +15,7 @@
 #include "cluster/metadata_dissemination_rpc_service.h"
 #include "raft/types.h"
 
+#include <seastar/core/chunked_fifo.hh>
 #include <seastar/core/scheduling.hh>
 #include <seastar/core/sharded.hh>
 
@@ -46,7 +47,7 @@ public:
 
 private:
     ss::future<update_leadership_reply>
-      do_update_leadership(std::vector<ntp_leader_revision>);
+      do_update_leadership(ss::chunked_fifo<ntp_leader_revision>);
 
     ss::sharded<partition_leaders_table>& _leaders;
 }; // namespace cluster
