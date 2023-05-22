@@ -170,9 +170,6 @@ void write(iobuf& out, ::detail::base_named_type<T, Tag, IsConstexpr> t);
 template<typename T>
 void write(iobuf& out, std::optional<T> t);
 
-template<typename T, size_t fragment_size>
-void write(iobuf& out, fragmented_vector<T, fragment_size> t);
-
 template<typename T>
 void write(iobuf& out, tristate<T> t);
 
@@ -188,9 +185,6 @@ requires is_absl_node_hash_map<std::decay_t<T>>
          || is_std_unordered_map<std::decay_t<T>>
          || is_absl_btree_map<std::decay_t<T>>
 void write(iobuf& out, T t);
-
-template<typename T>
-void write(iobuf& out, std::vector<T> t);
 
 template<typename T>
 requires is_envelope<std::decay_t<T>>
@@ -220,34 +214,6 @@ void write(iobuf& out, std::optional<T> t) {
         write(out, std::move(t.value()));
     } else {
         write(out, false);
-    }
-}
-
-template<typename T, size_t fragment_size>
-void write(iobuf& out, fragmented_vector<T, fragment_size> t) {
-    if (unlikely(t.size() > std::numeric_limits<serde_size_t>::max())) {
-        throw serde_exception(fmt_with_ctx(
-          ssx::sformat,
-          "serde: fragmented vector size {} exceeds serde_size_t",
-          t.size()));
-    }
-    write(out, static_cast<serde_size_t>(t.size()));
-    for (auto& el : t) {
-        write(out, std::move(el));
-    }
-}
-
-template<typename T>
-void write(iobuf& out, ss::chunked_fifo<T> t) {
-    if (unlikely(t.size() > std::numeric_limits<serde_size_t>::max())) {
-        throw serde_exception(fmt_with_ctx(
-          ssx::sformat,
-          "serde: chunked fifo size {} exceeds serde_size_t",
-          t.size()));
-    }
-    write(out, static_cast<serde_size_t>(t.size()));
-    for (auto& el : t) {
-        write(out, std::move(el));
     }
 }
 
@@ -298,20 +264,6 @@ void write(iobuf& out, T t) {
     for (auto& v : t) {
         write(out, v.first);
         write(out, std::move(v.second));
-    }
-}
-
-template<typename T>
-void write(iobuf& out, std::vector<T> t) {
-    if (unlikely(t.size() > std::numeric_limits<serde_size_t>::max())) {
-        throw serde_exception(fmt_with_ctx(
-          ssx::sformat,
-          "serde: vector size {} exceeds serde_size_t",
-          t.size()));
-    }
-    write(out, static_cast<serde_size_t>(t.size()));
-    for (auto& el : t) {
-        write(out, std::move(el));
     }
 }
 
@@ -439,13 +391,6 @@ void read_nested(iobuf_parser& in, T& t, std::size_t const bytes_left_limit) {
         if (in.bytes_left() > h._bytes_left_limit) {
             in.skip(in.bytes_left() - h._bytes_left_limit);
         }
-    } else if constexpr (reflection::is_std_vector<Type>) {
-        using value_type = typename Type::value_type;
-        const auto size = read_nested<serde_size_t>(in, bytes_left_limit);
-        t.reserve(size);
-        for (auto i = 0U; i < size; ++i) {
-            t.push_back(read_nested<value_type>(in, bytes_left_limit));
-        }
     } else if constexpr (reflection::is_rp_named_type<Type>) {
         t = Type{read_nested<typename Type::type>(in, bytes_left_limit)};
     } else if constexpr (std::is_same_v<Type, iobuf>) {
@@ -492,13 +437,6 @@ void read_nested(iobuf_parser& in, T& t, std::size_t const bytes_left_limit) {
               in, bytes_left_limit);
             t.emplace(std::move(key), std::move(value));
         }
-    } else if constexpr (is_fragmented_vector<Type> || is_chunked_fifo<Type>) {
-        using value_type = typename Type::value_type;
-        const auto size = read_nested<serde_size_t>(in, bytes_left_limit);
-        for (auto i = 0U; i < size; ++i) {
-            t.push_back(read_nested<value_type>(in, bytes_left_limit));
-        }
-        t.shrink_to_fit();
     } else if constexpr (reflection::is_tristate<T>) {
         int8_t flag = read_nested<int8_t>(in, bytes_left_limit);
         if (flag == -1) {
@@ -756,3 +694,4 @@ inline serde::serde_size_t peek_body_size(iobuf_parser& in) {
 #include "serde/rw/scalar.h"
 #include "serde/rw/sstring.h"
 #include "serde/rw/uuid.h"
+#include "serde/rw/vector.h"
