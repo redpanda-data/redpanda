@@ -17,8 +17,11 @@
 #include "reflection/adl.h"
 #include "serde/serde.h"
 
+#include <seastar/core/chunked_fifo.hh>
+
 #include <fmt/ostream.h>
 
+#include <algorithm>
 #include <ostream>
 
 namespace cluster {
@@ -95,8 +98,6 @@ struct ntp_leader_revision
     auto serde_fields() { return std::tie(ntp, term, leader_id, revision); }
 };
 
-
-
 struct update_leadership_request_v2
   : serde::envelope<
       update_leadership_request_v2,
@@ -104,13 +105,28 @@ struct update_leadership_request_v2
       serde::compat_version<0>> {
     using rpc_adl_exempt = std::true_type;
     static constexpr int8_t version = 0;
-    std::vector<ntp_leader_revision> leaders;
+    ss::chunked_fifo<ntp_leader_revision> leaders;
 
     update_leadership_request_v2() noexcept = default;
 
     friend bool operator==(
-      const update_leadership_request_v2&, const update_leadership_request_v2&)
-      = default;
+      const update_leadership_request_v2& lhs,
+      const update_leadership_request_v2& rhs) {
+        return std::equal(
+          lhs.leaders.begin(),
+          lhs.leaders.end(),
+          rhs.leaders.begin(),
+          rhs.leaders.end());
+    };
+
+    update_leadership_request_v2 copy() const {
+        ss::chunked_fifo<ntp_leader_revision> leaders_cp;
+        leaders_cp.reserve(leaders.size());
+        std::copy(
+          leaders.begin(), leaders.end(), std::back_inserter(leaders_cp));
+
+        return update_leadership_request_v2(std::move(leaders_cp));
+    }
 
     friend std::ostream&
     operator<<(std::ostream& o, const update_leadership_request_v2& r) {
@@ -119,7 +135,7 @@ struct update_leadership_request_v2
     }
 
     explicit update_leadership_request_v2(
-      std::vector<ntp_leader_revision> leaders)
+      ss::chunked_fifo<ntp_leader_revision> leaders)
       : leaders(std::move(leaders)) {}
 
     auto serde_fields() { return std::tie(leaders); }

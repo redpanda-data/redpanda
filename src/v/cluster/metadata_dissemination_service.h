@@ -99,7 +99,7 @@ private:
     // When update was delivered successfully the finished flag is set to true
     // and object is removed from pending updates map
     struct update_retry_meta {
-        std::vector<ntp_leader_revision> updates;
+        ss::chunked_fifo<ntp_leader_revision> updates;
         bool finished = false;
     };
     // Used to track the process of requesting update when redpanda starts
