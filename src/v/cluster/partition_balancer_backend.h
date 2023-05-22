@@ -41,6 +41,7 @@ public:
       config::binding<std::chrono::milliseconds>&& tick_interval,
       config::binding<size_t>&& movement_batch_size_bytes,
       config::binding<size_t>&& max_concurrent_actions,
+      config::binding<double>&& moves_drop_threshold,
       config::binding<size_t>&& segment_fallocation_step);
 
     void start();
@@ -66,6 +67,7 @@ private:
     /// current timeout whichever is minimum.
     void maybe_rearm_timer(bool now = false);
     void on_members_update(model::node_id, model::membership_state);
+    void on_topic_table_update();
 
 private:
     using clock_t = ss::lowres_clock;
@@ -84,16 +86,19 @@ private:
     config::binding<std::chrono::milliseconds> _tick_interval;
     config::binding<size_t> _movement_batch_size_bytes;
     config::binding<size_t> _max_concurrent_actions;
+    config::binding<double> _concurrent_moves_drop_threshold;
     config::binding<size_t> _segment_fallocation_step;
 
     model::term_id _last_leader_term;
     clock_t::time_point _last_tick_time;
     partition_balancer_violations _last_violations;
     partition_balancer_status _last_status;
+    size_t _last_tick_in_progress_updates = 0;
 
     mutex _lock{};
     ss::gate _gate;
     ss::timer<clock_t> _timer;
+    notification_id_type _topic_table_updates;
     notification_id_type _member_updates;
 };
 

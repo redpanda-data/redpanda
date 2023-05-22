@@ -30,7 +30,7 @@ public:
       ss::sharded<members_table>&,
       ss::sharded<partition_allocator>&);
 
-    const topic_table& topics() const { return _topic_table; }
+    topic_table& topics() const { return _topic_table; }
 
     members_table& members() const { return _members_table; }
 

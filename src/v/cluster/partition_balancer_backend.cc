@@ -45,6 +45,7 @@ partition_balancer_backend::partition_balancer_backend(
   config::binding<std::chrono::milliseconds>&& tick_interval,
   config::binding<size_t>&& movement_batch_size_bytes,
   config::binding<size_t>&& max_concurrent_actions,
+  config::binding<double>&& moves_drop_threshold,
   config::binding<size_t>&& segment_fallocation_step)
   : _raft0(std::move(raft0))
   , _controller_stm(controller_stm.local())
@@ -60,10 +61,13 @@ partition_balancer_backend::partition_balancer_backend(
   , _tick_interval(std::move(tick_interval))
   , _movement_batch_size_bytes(std::move(movement_batch_size_bytes))
   , _max_concurrent_actions(std::move(max_concurrent_actions))
+  , _concurrent_moves_drop_threshold(std::move(moves_drop_threshold))
   , _segment_fallocation_step(std::move(segment_fallocation_step))
   , _timer([this] { tick(); }) {}
 
 void partition_balancer_backend::start() {
+    _topic_table_updates = _state.topics().register_lw_notification(
+      [this]() { on_topic_table_update(); });
     _member_updates = _state.members().register_members_updated_notification(
       [this](model::node_id n, model::membership_state state) {
           on_members_update(n, state);
@@ -97,6 +101,20 @@ void partition_balancer_backend::on_members_update(
     }
 }
 
+void partition_balancer_backend::on_topic_table_update() {
+    if (!is_leader()) {
+        return;
+    }
+    auto current_in_progress_updates
+      = _state.topics().updates_in_progress().size();
+    auto schedule_now = double(current_in_progress_updates)
+                        < (1 - _concurrent_moves_drop_threshold())
+                            * double(_last_tick_in_progress_updates);
+    if (schedule_now) {
+        maybe_rearm_timer(/*now=*/true);
+    }
+}
+
 void partition_balancer_backend::tick() {
     ssx::background = ssx::spawn_with_gate_then(_gate, [this] {
                           return do_tick().finally(
@@ -108,6 +126,7 @@ void partition_balancer_backend::tick() {
 
 ss::future<> partition_balancer_backend::stop() {
     vlog(clusterlog.info, "stopping...");
+    _state.topics().unregister_lw_notification(_topic_table_updates);
     _state.members().unregister_members_updated_notification(_member_updates);
     _timer.cancel();
     _lock.broken();
@@ -212,6 +231,8 @@ ss::future<> partition_balancer_backend::do_tick() {
           plan_data.failed_actions_count);
     }
 
+    auto moves_before = _state.topics().updates_in_progress().size();
+
     co_await ss::max_concurrent_for_each(
       plan_data.cancellations, 32, [this, current_term](model::ntp& ntp) {
           auto f = _topics_frontend.cancel_moving_partition_replicas(
@@ -249,6 +270,10 @@ ss::future<> partition_balancer_backend::do_tick() {
               }
           });
       });
+
+    _last_tick_in_progress_updates = moves_before
+                                     + plan_data.cancellations.size()
+                                     + plan_data.reassignments.size();
 }
 
 partition_balancer_overview_reply partition_balancer_backend::overview() const {

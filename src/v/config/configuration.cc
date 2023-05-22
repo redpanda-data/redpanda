@@ -1741,6 +1741,16 @@ configuration::configuration()
       "Number of partitions that can be reassigned at once",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       50)
+  , partition_autobalancing_tick_moves_drop_threshold(
+      *this,
+      "partition_autobalancing_tick_moves_drop_threshold",
+      "If the number of scheduled tick moves drops by this ratio, a new tick "
+      "is scheduled immediately. Valid values are (0, 1]. For example, with a "
+      "value of 0.2 and 100 scheduled moves in a tick, a new tick is scheduled "
+      "when the inprogress moves are < 80.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      0.2,
+      &validate_0_to_1_ratio)
   , enable_leader_balancer(
       *this,
       "enable_leader_balancer",
