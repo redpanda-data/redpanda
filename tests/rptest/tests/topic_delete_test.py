@@ -371,6 +371,10 @@ class TopicDeleteCloudStorageTest(RedpandaTest):
             # and get a cluster of that size
             num_brokers=test_context.cluster.available().size(),
             extra_rp_conf={
+                # Tests validating deletion _not_ happening can be failed if
+                # segments are deleted in the background by adjacent segment
+                # merging
+                'cloud_storage_enable_segment_merging': False,
                 # We rely on the scrubber to delete topic manifests, and to eventually
                 # delete data if cloud storage was unavailable during initial delete.  To
                 # control test runtimes, set a short interval.
