@@ -23,6 +23,7 @@
 #include "rpc/types.h"
 #include "vlog.h"
 
+#include <seastar/core/chunked_fifo.hh>
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/future-util.hh>
 #include <seastar/core/timed_out_error.hh>
@@ -74,7 +75,7 @@ static heartbeat_requests requests_for_range(
   const consensus_set& c, clock_type::duration heartbeat_interval) {
     absl::btree_map<
       model::node_id,
-      std::vector<std::pair<
+      ss::chunked_fifo<std::pair<
         heartbeat_metadata,
         heartbeat_manager::follower_request_meta>>>
       pending_beats;
