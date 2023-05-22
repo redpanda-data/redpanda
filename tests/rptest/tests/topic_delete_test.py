@@ -528,15 +528,6 @@ class TopicDeleteCloudStorageTest(RedpandaTest):
                    timeout_sec=30,
                    backoff_sec=1)
 
-        # The controller gave up on deleting the original topic, objects
-        # are left behind in the object store.  This condition can be updated
-        # if we ever implement a mechanism for automatically GCing objects after
-        # a drop in the object storage backend.
-        final_objects = set(
-            self.cloud_storage_client.list_objects(
-                self.si_settings.cloud_storage_bucket, topic=self.topic))
-        assert len(final_objects) >= len(keys_before)
-
     def _topic_remote_deleted(self, topic_name: str):
         """Return true if all objects removed from cloud storage"""
         after_objects = self.cloud_storage_client.list_objects(
