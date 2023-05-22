@@ -45,7 +45,10 @@ static partition_data describe_partition(cluster::partition& p) {
       }};
 
     auto cloud_space = p.cloud_log_size();
-    if (cloud_space.has_value()) {
+    if (
+      cloud_space.has_value()
+      && config::shard_local_cfg()
+           .kafka_enable_describe_log_dirs_remote_storage()) {
         result.remote = describe_log_dirs_partition{
           .partition_index = p.ntp().tp.partition(),
           .partition_size = static_cast<int64_t>(cloud_space.value()),

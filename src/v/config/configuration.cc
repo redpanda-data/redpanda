@@ -1170,6 +1170,15 @@ configuration::configuration()
       // permit setting a max below the min).  The maximum is set to forbid
       // contiguous allocations beyond that size.
       {.min = 512, .max = 512_KiB, .align = 4_KiB})
+  , kafka_enable_describe_log_dirs_remote_storage(
+      *this,
+      "kafka_enable_describe_log_dirs_remote_storage",
+      "Whether to include tiered storage as a special remote:// directory in "
+      "DescribeLogDirs Kafka API requests.",
+      {.needs_restart = needs_restart::no,
+       .example = "false",
+       .visibility = visibility::user},
+      true)
   , cloud_storage_enabled(
       *this,
       "cloud_storage_enabled",
