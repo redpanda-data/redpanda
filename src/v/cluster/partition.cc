@@ -712,6 +712,15 @@ uint64_t partition::non_log_disk_size_bytes() const {
         idalloc_size = _id_allocator_stm->get_snapshot_size();
     }
 
+    vlog(
+      clusterlog.trace,
+      "non-log disk size: raft {} rm {} tm {} archival {} idalloc {}",
+      raft_size,
+      rm_size,
+      tm_size,
+      archival_size,
+      idalloc_size);
+
     return raft_size + rm_size.value_or(0) + tm_size.value_or(0)
            + archival_size.value_or(0) + idalloc_size.value_or(0);
 }
