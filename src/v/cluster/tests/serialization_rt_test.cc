@@ -880,13 +880,6 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
       tests::random_named_int<model::node_id>(),
       tests::random_named_int<model::revision_id>()));
 
-    roundtrip_test(cluster::update_leadership_request({
-      cluster::ntp_leader(
-        model::random_ntp(),
-        tests::random_named_int<model::term_id>(),
-        tests::random_named_int<model::node_id>()),
-    }));
-
     roundtrip_test(cluster::update_leadership_request_v2({
       cluster::ntp_leader_revision(
         model::random_ntp(),

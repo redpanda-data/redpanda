@@ -95,30 +95,7 @@ struct ntp_leader_revision
     auto serde_fields() { return std::tie(ntp, term, leader_id, revision); }
 };
 
-struct update_leadership_request
-  : serde::envelope<
-      update_leadership_request,
-      serde::version<0>,
-      serde::compat_version<0>> {
-    std::vector<ntp_leader> leaders;
 
-    update_leadership_request() noexcept = default;
-
-    explicit update_leadership_request(std::vector<ntp_leader> leaders)
-      : leaders(std::move(leaders)) {}
-
-    friend bool operator==(
-      const update_leadership_request&, const update_leadership_request&)
-      = default;
-
-    auto serde_fields() { return std::tie(leaders); }
-
-    friend std::ostream&
-    operator<<(std::ostream& o, const update_leadership_request& r) {
-        fmt::print(o, "leaders {}", r.leaders);
-        return o;
-    }
-};
 
 struct update_leadership_request_v2
   : serde::envelope<
@@ -238,17 +215,6 @@ struct adl<cluster::update_leadership_reply> {
 };
 
 template<>
-struct adl<cluster::update_leadership_request> {
-    void to(iobuf& out, cluster::update_leadership_request&& r) {
-        serialize(out, std::move(r.leaders));
-    }
-    cluster::update_leadership_request from(iobuf_parser& in) {
-        auto leaders = adl<std::vector<cluster::ntp_leader>>{}.from(in);
-        return cluster::update_leadership_request(std::move(leaders));
-    }
-};
-
-template<>
 struct adl<cluster::ntp_leader_revision> {
     void to(iobuf& out, cluster::ntp_leader_revision&& l) {
         serialize(out, std::move(l.ntp), l.term, l.leader_id, l.revision);
@@ -283,8 +249,8 @@ struct adl<cluster::update_leadership_request_v2> {
     cluster::update_leadership_request_v2 from(iobuf_parser& in) {
         // decode version
         adl<int8_t>{}.from(in);
-        auto leaders = adl<std::vector<cluster::ntp_leader_revision>>{}.from(
-          in);
+        auto leaders
+          = adl<ss::chunked_fifo<cluster::ntp_leader_revision>>{}.from(in);
         return cluster::update_leadership_request_v2(std::move(leaders));
     }
 };
