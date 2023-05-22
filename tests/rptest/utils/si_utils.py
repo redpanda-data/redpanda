@@ -13,11 +13,13 @@ import struct
 from collections import defaultdict, namedtuple
 from typing import Sequence, Optional, NewType, NamedTuple
 from enum import Enum
+import time
 
 import xxhash
 
 from rptest.archival.s3_client import ObjectMetadata
 from rptest.clients.types import TopicSpec
+from rptest.clients.rpk import RpkTool
 from rptest.services.admin import Admin
 from rptest.services.redpanda import MetricsEndpoint, RESTART_LOG_ALLOW_LIST
 from rptest.clients.rp_storage_tool import RpStorageTool
@@ -41,6 +43,9 @@ class NTP(NamedTuple):
 
     def to_ntpr(self, revision: int) -> 'NTPR':
         return NTPR(self.ns, self.topic, self.partition, revision)
+
+    def to_nt(self):
+        return NT(self.ns, self.topic)
 
 
 class NTPR(NamedTuple):
@@ -412,6 +417,57 @@ class PathMatcher:
         return self._match_partition_manifest(path)
 
 
+def quiesce_uploads(redpanda, topic_names: list[str], timeout_sec):
+    """
+    Wait until all local data for all topics in `topic_names` has been uploaded
+    to remote storage.  This function expects that no new data is being produced:
+    if new data is being produced, this function will only guarantee that remote
+    HWM has caught up with local HWM at the time we entered the function.
+
+    **Important**: you must have interval uploads enabled, or this function
+    will fail: it expects all data to be uploaded eventually.
+    """
+    def remote_has_reached_hwm(ntp: NTP, hwm: int):
+        view = BucketView(redpanda)
+        try:
+            manifest = view.get_partition_manifest(ntp)
+        except Exception as e:
+            redpanda.logger.debug(
+                f"Partition {ntp} doesn't have a manifest yet ({e})")
+            return False
+
+        remote_committed_offset = BucketView.kafka_last_offset(manifest)
+        if remote_committed_offset is None:
+            redpanda.logger.debug(
+                f"Partition {ntp} does not have committed offset yet")
+            return False
+        else:
+            ready = remote_committed_offset >= hwm - 1
+            if not ready:
+                redpanda.logger.debug(
+                    f"Partition {ntp} not yet ready ({remote_committed_offset} < {hwm-1})"
+                )
+            return ready
+
+    t_initial = time.time()
+
+    rpk = RpkTool(redpanda)
+    for topic_name in topic_names:
+        described = rpk.describe_topic(topic_name)
+        for p in described:
+            ntp = NTP(ns='kafka', topic=topic_name, partition=p.id)
+            hwm = p.high_watermark
+
+            # After timeout_sec has elapsed, expect each partition to
+            # be ready immediately.
+            timeout = max(1, timeout_sec - (time.time() - t_initial))
+
+            redpanda.wait_until(lambda: remote_has_reached_hwm(ntp, hwm),
+                                timeout_sec=timeout,
+                                backoff_sec=1)
+            redpanda.logger.debug(f"Partition {ntp} ready (reached HWM {hwm})")
+
+
 class BucketViewState:
     """
     Results of a full listing of the bucket, if listed is True, or
@@ -456,8 +512,8 @@ class BucketView:
 
         self.path_matcher = PathMatcher(topics)
 
-        # Cache built on demand from admin API
-        self._ntp_to_revision = None
+        # Cache built on demand by loading revision ID from topic manifest
+        self._ntp_to_revision = {}
 
         self._state = BucketViewState()
 
@@ -471,21 +527,13 @@ class BucketView:
         """
         Raises KeyError if the NTP is not found
         """
-        if self._ntp_to_revision is None:
-            self._ntp_to_revision = {}
-            admin = Admin(self.redpanda)
-            for p in admin.get_leaders_info():
-                self._ntp_to_revision[NTP(
-                    ns=p['ns'], topic=p['topic'],
-                    partition=p['partition_id'])] = p['partition_revision']
-
         try:
             revision = self._ntp_to_revision[ntp]
         except KeyError:
-            self.logger.warn(f"Missing ntp revision for {ntp}, have ntps:")
-            for k in self._ntp_to_revision.keys():
-                self.logger.warn(f"  {k}")
-            raise
+            # Load topic manifest to resolve revision
+            topic_manifest = self.get_topic_manifest(ntp.to_nt())
+            revision = topic_manifest['revision_id']
+            self._ntp_to_revision[ntp] = revision
 
         return ntp.to_ntpr(revision)
 
