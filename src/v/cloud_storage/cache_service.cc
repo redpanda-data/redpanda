@@ -179,11 +179,14 @@ ss::future<> cache::clean_up_at_start() {
 ss::future<> cache::clean_up_cache() {
     vassert(ss::this_shard_id() == 0, "Method can only be invoked on shard 0");
     gate_guard guard{_gate};
+
+    vlog(cst_log.info, "Scanning cache prior to trim...");
     auto [current_cache_size, candidates_for_deletion, _]
       = co_await _walker.walk(_cache_dir.native(), _access_time_tracker);
     _current_cache_size = current_cache_size;
     probe.set_size(_current_cache_size);
-    probe.set_num_files(candidates_for_deletion.size());
+    auto initial_object_count = candidates_for_deletion.size();
+    probe.set_num_files(initial_object_count);
 
     // Updating the access time tracker in case if some files were removed
     // from cache directory by the user manually.
@@ -196,6 +199,12 @@ ss::future<> cache::clean_up_cache() {
 
     uint64_t deleted_size = 0;
     if (_current_cache_size >= _max_cache_size) {
+        vlog(
+          cst_log.info,
+          "Trimming cache ({} >= {})",
+          _current_cache_size,
+          _max_cache_size);
+
         auto size_to_delete
           = _current_cache_size
             - (_max_cache_size * (long double)_cache_size_low_watermark);
@@ -271,9 +280,11 @@ ss::future<> cache::clean_up_cache() {
         }
         _total_cleaned += deleted_size;
         _current_cache_size -= deleted_size;
+        probe.set_size(_current_cache_size);
+        probe.set_num_files(initial_object_count - i_to_delete);
         vlog(
-          cst_log.debug,
-          "Cache eviction deleted {} files of total size {}.",
+          cst_log.info,
+          "Trimmed cache: deleted {} files of total size {}.",
           i_to_delete,
           deleted_size);
 
