@@ -690,20 +690,30 @@ void partition::maybe_construct_archiver() {
 }
 
 uint64_t partition::non_log_disk_size_bytes() const {
-    uint64_t non_log_disk_size = _raft->get_snapshot_size();
+    uint64_t raft_size = _raft->get_snapshot_size();
+
+    std::optional<uint64_t> rm_size;
     if (_rm_stm) {
-        non_log_disk_size += _rm_stm->get_snapshot_size();
+        rm_size = _rm_stm->get_snapshot_size();
     }
+
+    std::optional<uint64_t> tm_size;
     if (_tm_stm) {
-        non_log_disk_size += _tm_stm->get_snapshot_size();
+        tm_size = _tm_stm->get_snapshot_size();
     }
+
+    std::optional<uint64_t> archival_size;
     if (_archival_meta_stm) {
-        non_log_disk_size += _archival_meta_stm->get_snapshot_size();
+        archival_size = _archival_meta_stm->get_snapshot_size();
     }
+
+    std::optional<uint64_t> idalloc_size;
     if (_id_allocator_stm) {
-        non_log_disk_size += _id_allocator_stm->get_snapshot_size();
+        idalloc_size = _id_allocator_stm->get_snapshot_size();
     }
-    return non_log_disk_size;
+
+    return raft_size + rm_size.value_or(0) + tm_size.value_or(0)
+           + archival_size.value_or(0) + idalloc_size.value_or(0);
 }
 
 ss::future<> partition::update_configuration(topic_properties properties) {
