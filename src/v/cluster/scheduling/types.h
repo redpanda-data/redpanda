@@ -218,6 +218,8 @@ public:
     }
 
     bool has_changes() const;
+    // true if the set of nodes differs from the original
+    bool has_node_changes() const;
 
     bool is_original(const model::broker_shard&) const;
 

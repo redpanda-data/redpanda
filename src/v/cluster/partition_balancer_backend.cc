@@ -163,20 +163,19 @@ ss::future<> partition_balancer_backend::do_tick() {
             .segment_fallocation_step = _segment_fallocation_step()},
           _state,
           _partition_allocator)
-          .plan_reassignments(health_report.value(), follower_metrics);
+          .plan_actions(health_report.value(), follower_metrics);
 
     _last_leader_term = _raft0->term();
     _last_tick_time = ss::lowres_clock::now();
     _last_violations = std::move(plan_data.violations);
     if (
       _state.topics().has_updates_in_progress()
-      || plan_data.status == planner_status::cancellations_planned
-      || plan_data.status == planner_status::movement_planned) {
+      || plan_data.status == planner_status::actions_planned) {
         _last_status = partition_balancer_status::in_progress;
     } else if (plan_data.status == planner_status::waiting_for_reports) {
         _last_status = partition_balancer_status::starting;
     } else if (
-      plan_data.failed_reassignments_count > 0
+      plan_data.failed_actions_count > 0
       || plan_data.status == planner_status::waiting_for_maintenance_end) {
         _last_status = partition_balancer_status::stalled;
     } else {
@@ -189,14 +188,14 @@ ss::future<> partition_balancer_backend::do_tick() {
           "last status: {}; "
           "violations: unavailable nodes: {}, full nodes: {}; "
           "updates in progress: {}; "
-          "reassignments planned: {}, cancelled: {}, failed: {}",
+          "action counts: reassignments: {}, cancellations: {}, failed: {}",
           _last_status,
           _last_violations.unavailable_nodes.size(),
           _last_violations.full_nodes.size(),
           _state.topics().updates_in_progress().size(),
           plan_data.reassignments.size(),
           plan_data.cancellations.size(),
-          plan_data.failed_reassignments_count);
+          plan_data.failed_actions_count);
     }
 
     co_await ss::max_concurrent_for_each(

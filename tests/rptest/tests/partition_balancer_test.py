@@ -347,6 +347,7 @@ class PartitionBalancerTest(PartitionBalancerService):
         self.run_validation(min_records=100,
                             consumer_timeout_sec=CONSUMER_TIMEOUT)
 
+    @skip_debug_mode
     @cluster(num_nodes=7, log_allow_list=CHAOS_LOG_ALLOW_LIST)
     def test_unavailable_nodes(self):
         self.start_redpanda(num_nodes=5)
@@ -396,6 +397,7 @@ class PartitionBalancerTest(PartitionBalancerService):
         self.redpanda.set_cluster_config(
             {"raft_learner_recovery_rate": str(new_value)})
 
+    @skip_debug_mode
     @cluster(num_nodes=6, log_allow_list=CHAOS_LOG_ALLOW_LIST)
     def test_movement_cancellations(self):
         self.start_redpanda(num_nodes=4)
@@ -486,6 +488,7 @@ class PartitionBalancerTest(PartitionBalancerService):
             ns.make_available()
             self.run_validation(consumer_timeout_sec=CONSUMER_TIMEOUT)
 
+    @skip_debug_mode
     @cluster(num_nodes=7, log_allow_list=CHAOS_LOG_ALLOW_LIST)
     def test_rack_constraint_repair(self):
         """
@@ -555,6 +558,7 @@ class PartitionBalancerTest(PartitionBalancerService):
         self.run_validation(consumer_timeout_sec=CONSUMER_TIMEOUT)
         assert num_with_broken_rack_constraint() == 0
 
+    @skip_debug_mode
     @cluster(num_nodes=7,
              log_allow_list=CHAOS_LOG_ALLOW_LIST +
              RACE_BETWEEN_DELETION_AND_ADDING_PARTITION)
@@ -731,6 +735,7 @@ class PartitionBalancerTest(PartitionBalancerService):
             # and partition balancing is not invoked yet
             assert used_ratio < 0.81
 
+    @skip_debug_mode
     @cluster(num_nodes=7, log_allow_list=CHAOS_LOG_ALLOW_LIST)
     @matrix(kill_same_node=[True, False])
     def test_maintenance_mode(self, kill_same_node):
@@ -810,6 +815,7 @@ class PartitionBalancerTest(PartitionBalancerService):
         self.run_validation(enable_idempotence=False,
                             consumer_timeout_sec=CONSUMER_TIMEOUT)
 
+    @skip_debug_mode
     @cluster(num_nodes=7,
              log_allow_list=CHAOS_LOG_ALLOW_LIST + STARTUP_SEQUENCE_ABORTED)
     @matrix(kill_same_node=[True, False], decommission_first=[True, False])
@@ -926,6 +932,7 @@ class PartitionBalancerTest(PartitionBalancerService):
         self.run_validation(enable_idempotence=False,
                             consumer_timeout_sec=CONSUMER_TIMEOUT)
 
+    @skip_debug_mode
     @cluster(num_nodes=4, log_allow_list=CHAOS_LOG_ALLOW_LIST)
     def test_transfer_controller_leadership(self):
         """

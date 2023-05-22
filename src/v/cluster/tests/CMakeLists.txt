@@ -110,3 +110,11 @@ rp_test(
   LIBRARIES Boost::unit_test_framework v::cluster
   LABELS cluster
 )
+
+rp_test(
+  BENCHMARK_TEST
+  BINARY_NAME partition_balancer
+  SOURCES partition_balancer_bench.cc
+  LIBRARIES Seastar::seastar_perf_testing v::seastar_testing_main v::cluster
+  LABELS cluster
+)
