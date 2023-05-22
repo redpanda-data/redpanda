@@ -280,6 +280,7 @@ private:
 
     bool _compacted{false};
     bool _stopped{false};
+    bool _hydration_loop_running{false};
 
     segment_name_format _sname_format;
 
