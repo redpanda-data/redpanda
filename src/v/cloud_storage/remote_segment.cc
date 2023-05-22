@@ -518,8 +518,8 @@ combine_statuses(cache_element_status segment, cache_element_status tx_range) {
 
 ss::future<> remote_segment::run_hydrate_bg() {
     ss::gate::holder guard(_gate);
-    try {
-        while (!_gate.is_closed()) {
+    while (!_gate.is_closed()) {
+        try {
             co_await _bg_cvar.wait(
               [this] { return !_wait_list.empty() || _gate.is_closed(); });
             vlog(
@@ -611,14 +611,15 @@ ss::future<> remote_segment::run_hydrate_bg() {
                 }
                 _wait_list.pop_front();
             }
+        } catch (const ss::broken_condition_variable&) {
+            vlog(_ctxlog.debug, "Hydration loop is stopped");
+            break;
+        } catch (...) {
+            vlog(
+              _ctxlog.error,
+              "Error in hydration loop: {}",
+              std::current_exception());
         }
-    } catch (const ss::broken_condition_variable&) {
-        vlog(_ctxlog.debug, "Hydraton loop is stopped");
-    } catch (...) {
-        vlog(
-          _ctxlog.error,
-          "Error in hydraton loop: {}",
-          std::current_exception());
     }
 
     _hydration_loop_running = false;
