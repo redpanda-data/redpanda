@@ -508,7 +508,7 @@ class BucketView:
     def cloud_log_size_from_ntp_manifest(manifest,
                                          include_below_start_offset=True
                                          ) -> int:
-        if 'segments' not in manifest:
+        if 'segments' not in manifest or len(manifest['segments']) == 0:
             return 0
 
         start_offset = 0
