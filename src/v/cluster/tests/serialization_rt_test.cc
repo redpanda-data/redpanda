@@ -8,6 +8,7 @@
 // by the Apache License, Version 2.0
 
 #include "cluster/commands.h"
+#include "cluster/controller_snapshot.h"
 #include "cluster/health_monitor_types.h"
 #include "cluster/metadata_dissemination_types.h"
 #include "cluster/tests/utils.h"
@@ -2324,4 +2325,46 @@ SEASTAR_THREAD_TEST_CASE(commands_serialization_test) {
           cluster::cancel_moving_partition_replicas_cmd_data(
             cluster::force_abort_update(tests::random_bool())));
     }
+}
+
+template<typename T>
+static void check_async_serde_no_forgotten_fields() {
+    // Check that there are no forgotten fields in the manual async serde
+    // serialization code of a type by comparing async and sync (generated
+    // automatically by reflection) serializations of a default-constructed
+    // object. We don't compare non-default values because it is just as easy
+    // to forget to add a field to the test as it is to the serialization
+    // code.
+    auto iobuf_to_bytes = [](iobuf buf) {
+        size_t len = buf.size_bytes();
+        iobuf_parser p{std::move(buf)};
+        return p.read_bytes(len);
+    };
+
+    iobuf sync_buf = serde::to_iobuf(T{});
+    iobuf async_buf;
+    serde::write_async(async_buf, T{}).get();
+
+    // This is rather tricky because a forgotten field at the end is
+    // indistinguishable from serialization by an older version and serde is
+    // designed to tolerate that. So we compare byte-by-byte. This is
+    // problematic for hash tables but hopefully they are all empty.
+
+    bytes sync_bytes = iobuf_to_bytes(std::move(sync_buf));
+    bytes async_bytes = iobuf_to_bytes(std::move(async_buf));
+    BOOST_CHECK_MESSAGE(
+      sync_bytes == async_bytes,
+      "Sync and async serializations differ for empty object of type "
+        << ss::pretty_type_name(typeid(T)));
+};
+
+SEASTAR_THREAD_TEST_CASE(test_controller_snapshot_serde_no_forgotten_fields) {
+    // Check for every controller snapshot part with manual async serialization
+    check_async_serde_no_forgotten_fields<cluster::controller_snapshot>();
+    check_async_serde_no_forgotten_fields<
+      cluster::controller_snapshot_parts::topics_t>();
+    check_async_serde_no_forgotten_fields<
+      cluster::controller_snapshot_parts::topics_t::topic_t>();
+    check_async_serde_no_forgotten_fields<
+      cluster::controller_snapshot_parts::security_t>();
 }
