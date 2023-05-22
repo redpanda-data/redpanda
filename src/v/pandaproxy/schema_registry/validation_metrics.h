@@ -47,16 +47,25 @@ public:
                              "schema ID validation cache (see cluster config: "
                              "kafka_schema_id_validation_cache_capacity)"),
              {})
+             .aggregate(aggregate_labels),
+           sm::make_counter(
+             "batches_decompressed",
+             [this]() { return _batches_decompressed; },
+             sm::description("Total number of batches decompressed for "
+                             "server-side schema ID validation"),
+             {})
              .aggregate(aggregate_labels)});
     }
 
     void hit() { ++_hits; }
     void miss() { ++_misses; }
+    void decompressed() { ++_batches_decompressed; }
 
 private:
     ss::metrics::metric_groups _metrics;
     int64_t _hits;
     int64_t _misses;
+    int64_t _batches_decompressed;
 };
 
 } // namespace pandaproxy::schema_registry

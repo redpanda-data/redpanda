@@ -324,6 +324,7 @@ public:
         if (compressed) {
             u.emplace(
               co_await storage::internal::decompress_batch(batch.copy()));
+            _api->_schema_id_validation_probe.local().decompressed();
         }
 
         bool valid{true};
