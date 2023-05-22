@@ -4422,12 +4422,7 @@ admin_server::unsafe_reset_metadata(
         throw ss::httpd::bad_request_exception("Empty request content");
     }
 
-    ss::sstring content = request->content;
-
-    iobuf buf;
-    buf.append(request->content.data(), request->content.size());
-
-    content = {};
+    ss::sstring content = std::move(request->content);
 
     const auto shard = _shard_table.local().shard_for(ntp);
     if (!shard) {
@@ -4440,13 +4435,17 @@ admin_server::unsafe_reset_metadata(
     try {
         co_await _partition_manager.invoke_on(
           *shard,
-          [ntp = std::move(ntp), buf = std::move(buf), shard](
+          [ntp = std::move(ntp), content = std::move(content), shard](
             auto& pm) mutable {
               auto partition = pm.get(ntp);
               if (!partition) {
                   throw ss::httpd::not_found_exception(
                     fmt::format("Could not find {} on shard {}", ntp, *shard));
               }
+
+              iobuf buf;
+              buf.append(content.data(), content.size());
+              content = {};
 
               return partition->unsafe_reset_remote_partition_manifest(
                 std::move(buf));
