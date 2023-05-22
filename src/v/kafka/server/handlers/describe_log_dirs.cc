@@ -26,17 +26,24 @@
 
 namespace kafka {
 
-using partition_dir_set
-  = absl::flat_hash_map<model::topic, std::vector<describe_log_dirs_partition>>;
+struct partition_data {
+    describe_log_dirs_partition local;
+    std::optional<describe_log_dirs_partition> remote;
+};
 
-static describe_log_dirs_partition describe_partition(cluster::partition& p) {
-    return describe_log_dirs_partition{
+using partition_dir_set
+  = absl::flat_hash_map<model::topic, std::vector<partition_data>>;
+
+static partition_data describe_partition(cluster::partition& p) {
+    auto local = describe_log_dirs_partition{
       .partition_index = p.ntp().tp.partition(),
       .partition_size = static_cast<int64_t>(p.size_bytes()),
       .offset_lag = std::max(
         p.high_watermark()() - p.dirty_offset()(), int64_t(0)),
       .is_future_key = false,
     };
+
+    return partition_data{.local = local};
 }
 
 static partition_dir_set collect_mapper(
@@ -108,19 +115,35 @@ ss::future<response_ptr> describe_log_dirs_handler::handle(
       .log_dir = config::node().data_directory().as_sstring(),
     });
 
+    // We don't know until we iterate over topics whether any of them are
+    // using cloud storage, so create the result structure speculatively.
+    response.data.results.push_back(describe_log_dirs_result{
+      .error_code = error_code::none,
+      .log_dir = fmt::format(
+        "remote://{}", config::shard_local_cfg().cloud_storage_bucket()),
+    });
+
     if (!ctx.authorized(
           security::acl_operation::describe, security::default_cluster_name)) {
         // in this case kafka returns no authorization error
         co_return co_await ctx.respond(std::move(response));
     }
 
-    auto partitions = co_await collect(ctx, std::move(request.data.topics));
+    auto& local_results = response.data.results.at(0);
+    auto& remote_results = response.data.results.at(1);
 
+    auto partitions = co_await collect(ctx, std::move(request.data.topics));
     while (!partitions.empty()) {
         auto node = partitions.extract(partitions.begin());
-        response.data.results.back().topics.push_back(describe_log_dirs_topic{
+
+        std::vector<describe_log_dirs_partition> local_partitions;
+        for (const auto& i : node.mapped()) {
+            local_partitions.push_back(i.local);
+        }
+
+        local_results.topics.push_back(describe_log_dirs_topic{
           .name = std::move(node.key()),
-          .partitions = std::move(node.mapped()),
+          .partitions = std::move(local_partitions),
         });
     }
 
