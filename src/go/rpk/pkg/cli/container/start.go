@@ -416,29 +416,38 @@ func renderClusterInfo(c common.Client) ([]*common.NodeState, error) {
 }
 
 func renderClusterInteract(nodes []*common.NodeState) {
-	var brokers []string
+	var (
+		brokers    []string
+		adminAddrs []string
+	)
 	for _, node := range nodes {
 		if node.Running {
 			brokers = append(brokers, nodeAddr(node.HostKafkaPort))
+			adminAddrs = append(adminAddrs, nodeAddr(node.HostAdminPort))
 		}
 	}
-	if len(brokers) == 0 {
+	if len(brokers) == 0 || len(adminAddrs) == 0 {
 		return
 	}
 
 	m := `
 You can use rpk to interact with this cluster. E.g:
 
-	rpk cluster info --brokers %s
+    rpk cluster info --brokers %s
+    rpk cluster health --api-urls %s
 
 You may also set an environment variable with the comma-separated list of
-broker addresses:
+broker and admin API addresses:
 
-	export REDPANDA_BROKERS="%s"
-	rpk cluster info
+    export REDPANDA_BROKERS="%s"
+    export REDPANDA_API_ADMIN_ADDRS="%s"
+    rpk cluster info
+    rpk cluster health
+
 `
 	b := strings.Join(brokers, ",")
-	fmt.Printf(m, b, b)
+	a := strings.Join(adminAddrs, ",")
+	fmt.Printf(m, b, a, b, a)
 }
 
 func nodeAddr(port uint) string {
