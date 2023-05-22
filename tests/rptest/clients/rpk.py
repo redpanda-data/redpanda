@@ -13,6 +13,7 @@ import re
 import typing
 import time
 import itertools
+from collections import namedtuple
 from typing import Optional
 from ducktape.cluster.cluster import ClusterNode
 from rptest.util import wait_until_result
@@ -1145,3 +1146,36 @@ class RpkTool:
         ]
 
         return self._execute(cmd)
+
+    def describe_log_dirs(self):
+        cmd = [
+            self._rpk_binary(), "--brokers",
+            self._redpanda.brokers(), "cluster", "logdirs", "describe"
+        ]
+        output = self._execute(cmd)
+        lines = output.split("\n")
+
+        DescribeLogDirItem = namedtuple(
+            'DescribeLogDirItem',
+            ['broker', 'dir', 'topic', 'partition', 'size'])
+
+        result = []
+        for l in lines[1:]:
+            l = l.strip()
+            if not l:
+                continue
+
+            tokens = l.split()
+            # The line format depends on --aggregate-into: we are just using
+            # the default non-aggregated output
+            try:
+                broker, dir, topic, partition, size = tokens[0:5]
+            except:
+                self._redpanda.logger.warn(f"Unexpected line format: '{l}'")
+                raise
+
+            result.append(
+                DescribeLogDirItem(broker, dir, topic, int(partition),
+                                   int(size)))
+
+        return result
