@@ -16,6 +16,7 @@
 #include "json/writer.h"
 #include "model/metadata.h"
 #include "net/unresolved_address.h"
+#include "utils/fragmented_vector.h"
 #include "utils/named_type.h"
 
 #include <seastar/net/inet_address.hh>

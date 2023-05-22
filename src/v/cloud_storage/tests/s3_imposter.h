@@ -20,6 +20,8 @@
 #include <seastar/core/sstring.hh>
 #include <seastar/http/httpd.hh>
 
+#include <absl/container/flat_hash_set.h>
+
 #include <chrono>
 #include <exception>
 #include <map>

@@ -20,6 +20,7 @@
 #include "storage/file_sanitizer_types.h"
 #include "storage/fwd.h"
 #include "tristate.h"
+#include "utils/fragmented_vector.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/file.hh> //io_priority

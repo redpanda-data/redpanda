@@ -20,6 +20,8 @@
 
 #include <seastar/util/log.hh>
 
+#include <absl/container/btree_map.h>
+
 #include <variant>
 
 namespace cloud_storage {

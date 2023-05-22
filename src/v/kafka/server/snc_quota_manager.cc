@@ -19,6 +19,8 @@
 #include <fmt/core.h>
 #include <fmt/ranges.h>
 
+#include <numeric>
+
 using namespace std::chrono_literals;
 
 namespace kafka {

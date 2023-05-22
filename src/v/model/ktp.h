@@ -18,6 +18,9 @@
 
 #include <seastar/core/sstring.hh>
 
+#include <absl/container/flat_hash_map.h>
+#include <absl/container/node_hash_map.h>
+
 #include <concepts>
 #include <functional>
 #include <string_view>

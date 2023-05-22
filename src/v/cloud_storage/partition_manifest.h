@@ -18,6 +18,7 @@
 #include "segment_meta_cstore.h"
 #include "serde/envelope.h"
 #include "serde/serde.h"
+#include "utils/fragmented_vector.h"
 #include "utils/tracking_allocator.h"
 
 #include <seastar/core/iostream.hh>
