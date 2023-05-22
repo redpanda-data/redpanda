@@ -285,9 +285,9 @@ bool partition::cloud_data_available() const {
            && _cloud_storage_partition->is_data_available();
 }
 
-uint64_t partition::cloud_log_size() const {
-    if (!cloud_data_available() || is_read_replica_mode_enabled()) {
-        return 0;
+std::optional<uint64_t> partition::cloud_log_size() const {
+    if (_cloud_storage_partition == nullptr) {
+        return std::nullopt;
     }
 
     return _cloud_storage_partition->cloud_log_size();
