@@ -234,6 +234,7 @@ public:
     using delta_range_t
       = boost::iterator_range<fragmented_vector<delta>::const_iterator>;
     using delta_cb_t = ss::noncopyable_function<void(delta_range_t)>;
+    using lw_cb_t = ss::noncopyable_function<void()>;
 
     explicit topic_table()
       : _probe(*this){};
@@ -248,6 +249,22 @@ public:
         std::erase_if(
           _notifications,
           [id](const std::pair<cluster::notification_id_type, delta_cb_t>& n) {
+              return n.first == id;
+          });
+    }
+
+    /// similar to delta notifications but lightweight because a copy of delta
+    /// is not included in the notification.
+    cluster::notification_id_type register_lw_notification(lw_cb_t cb) {
+        auto id = _lw_notification_id++;
+        _lw_notifications.emplace_back(id, std::move(cb));
+        return id;
+    }
+
+    void unregister_lw_notification(cluster::notification_id_type id) {
+        std::erase_if(
+          _lw_notifications,
+          [id](const std::pair<cluster::notification_id_type, lw_cb_t>& n) {
               return n.first == id;
           });
     }
@@ -502,8 +519,11 @@ private:
     fragmented_vector<delta> _pending_deltas;
     std::vector<std::unique_ptr<waiter>> _waiters;
     cluster::notification_id_type _notification_id{0};
+    cluster::notification_id_type _lw_notification_id{0};
     std::vector<std::pair<cluster::notification_id_type, delta_cb_t>>
       _notifications;
+    std::vector<std::pair<cluster::notification_id_type, lw_cb_t>>
+      _lw_notifications;
     uint64_t _waiter_id{0};
     std::vector<delta>::difference_type _last_consumed_by_notifier_offset{0};
     topic_table_probe _probe;

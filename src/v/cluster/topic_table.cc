@@ -1398,6 +1398,10 @@ void topic_table::notify_waiters() {
         std::exchange(_pending_deltas, {});
         _last_consumed_by_notifier_offset = 0;
     }
+
+    for (auto& cb : _lw_notifications) {
+        cb.second();
+    }
 }
 
 ss::future<fragmented_vector<topic_table::delta>>
