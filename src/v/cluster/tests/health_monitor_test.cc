@@ -55,7 +55,11 @@ void check_reports_the_same(
         auto& rr = rhs[i];
         BOOST_TEST_REQUIRE(
           lr.local_state.redpanda_version == rr.local_state.redpanda_version);
-        BOOST_TEST_REQUIRE(lr.topics == rr.topics);
+        BOOST_TEST_REQUIRE(std::equal(
+          lr.topics.cbegin(),
+          lr.topics.cend(),
+          rr.topics.cbegin(),
+          rr.topics.cend()));
         BOOST_TEST_REQUIRE(lr.local_state.disks() == rr.local_state.disks());
         BOOST_TEST_REQUIRE(
           lr.local_state.get_disk_alert() == rr.local_state.get_disk_alert());
@@ -149,7 +153,7 @@ cluster::topic_configuration topic_cfg(
 bool contains_exactly_ntp_leaders(
   ss::logger& logger,
   const std::unordered_set<model::ntp>& expected,
-  const std::vector<cluster::topic_status>& topics) {
+  const ss::chunked_fifo<cluster::topic_status>& topics) {
     auto left = expected;
     for (const auto& t_l : topics) {
         for (const auto& p_l : t_l.partitions) {

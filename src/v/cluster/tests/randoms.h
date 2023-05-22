@@ -84,11 +84,10 @@ inline node_health_report random_node_health_report() {
     auto random_ds = tests::random_optional(
       [] { return random_drain_status(); });
 
-    return node_health_report{
-      {},
+    return {
       tests::random_named_int<model::node_id>(),
       node::random_local_state(),
-      tests::random_vector(random_topic_status),
+      tests::random_chunked_fifo(random_topic_status),
       random_ds.has_value(),
       random_ds};
 }

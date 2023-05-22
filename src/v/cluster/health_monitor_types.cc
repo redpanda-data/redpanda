@@ -10,6 +10,7 @@
  */
 #include "cluster/health_monitor_types.h"
 
+#include "cluster/drain_manager.h"
 #include "cluster/errc.h"
 #include "cluster/node/types.h"
 #include "features/feature_table.h"
@@ -63,6 +64,45 @@ std::ostream& operator<<(std::ostream& o, const node_state& s) {
     return o;
 }
 
+node_health_report::node_health_report(
+  model::node_id id,
+  node::local_state local_state,
+  ss::chunked_fifo<topic_status> topics,
+  bool include_drain_status,
+  std::optional<drain_manager::drain_status> drain_status)
+  : id(id)
+  , local_state(std::move(local_state))
+  , topics(std::move(topics))
+  , include_drain_status(include_drain_status)
+  , drain_status(drain_status) {}
+
+node_health_report::node_health_report(const node_health_report& other)
+  : id(other.id)
+  , local_state(other.local_state)
+  , topics()
+  , include_drain_status(other.include_drain_status)
+  , drain_status(other.drain_status) {
+    std::copy(
+      other.topics.cbegin(), other.topics.cend(), std::back_inserter(topics));
+}
+
+node_health_report&
+node_health_report::operator=(const node_health_report& other) {
+    if (this == &other) {
+        return *this;
+    }
+    id = other.id;
+    local_state = other.local_state;
+    include_drain_status = other.include_drain_status;
+    drain_status = other.drain_status;
+    ss::chunked_fifo<topic_status> t;
+    t.reserve(other.topics.size());
+    std::copy(
+      other.topics.cbegin(), other.topics.cend(), std::back_inserter(t));
+    topics = std::move(t);
+    return *this;
+}
+
 std::ostream& operator<<(std::ostream& o, const node_health_report& r) {
     fmt::print(
       o,
@@ -78,6 +118,16 @@ std::ostream& operator<<(std::ostream& o, const node_health_report& r) {
       r.local_state.logical_version,
       r.drain_status);
     return o;
+}
+bool operator==(const node_health_report& a, const node_health_report& b) {
+    return a.id == b.id && a.local_state == b.local_state
+           && a.drain_status == b.drain_status
+           && a.topics.size() == b.topics.size()
+           && std::equal(
+             a.topics.cbegin(),
+             a.topics.cend(),
+             b.topics.cbegin(),
+             b.topics.cend());
 }
 
 std::ostream& operator<<(std::ostream& o, const cluster_health_report& r) {

@@ -19,6 +19,7 @@
 #include "rpc/fwd.h"
 #include "ssx/semaphore.h"
 
+#include <seastar/core/chunked_fifo.hh>
 #include <seastar/core/sharded.hh>
 #include <seastar/core/shared_ptr.hh>
 
@@ -131,7 +132,7 @@ private:
     std::optional<node_health_report>
     build_node_report(model::node_id, const node_report_filter&);
 
-    ss::future<std::vector<topic_status>>
+    ss::future<ss::chunked_fifo<topic_status>>
       collect_topic_status(partitions_filter);
 
     void refresh_nodes_status();
