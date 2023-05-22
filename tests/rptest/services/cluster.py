@@ -16,7 +16,10 @@ from ducktape.mark.resource import ClusterUseMetadata
 from ducktape.mark._mark import Mark
 
 
-def cluster(log_allow_list=None, check_allowed_error_logs=True, **kwargs):
+def cluster(log_allow_list=None,
+            check_allowed_error_logs=True,
+            check_cpu_idle=True,
+            **kwargs):
     """
     Drop-in replacement for Ducktape `cluster` that imposes additional
     redpanda-specific checks and defaults.
@@ -72,6 +75,7 @@ def cluster(log_allow_list=None, check_allowed_error_logs=True, **kwargs):
             # This decorator will only work on test classes that have a RedpandaService,
             # such as RedpandaTest subclasses
             assert hasattr(self, 'redpanda')
+            assert hasattr(self, 'debug_mode')
 
             t_initial = time.time()
             disk_stats_initial = psutil.disk_io_counters()
@@ -141,6 +145,10 @@ def cluster(log_allow_list=None, check_allowed_error_logs=True, **kwargs):
                         except:
                             redpanda.cloud_storage_diagnostics()
                             raise
+
+                    # Don't check CPU in debug mode, as it's consistently very high.
+                    if check_cpu_idle and not self.debug_mode:
+                        redpanda.assert_cpu_not_busy()
 
                     try:
                         redpanda.raise_on_storage_usage_inconsistency()

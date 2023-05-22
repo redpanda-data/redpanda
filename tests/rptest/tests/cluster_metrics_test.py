@@ -225,7 +225,7 @@ class ClusterMetricsTest(RedpandaTest):
              lambda a, b: a == b == 0)
         ])
 
-    @cluster(num_nodes=3)
+    @cluster(num_nodes=3, check_cpu_idle=False)
     def cluster_metrics_disabled_by_config_test(self):
         """
         Test that the cluster level metrics have the expected values

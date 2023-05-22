@@ -885,7 +885,10 @@ class GATransaction_v22_1_UpgradeTest(RedpandaTest):
 
         self.check_consume(2)
 
-    @cluster(num_nodes=3, log_allow_list=RESTART_LOG_ALLOW_LIST)
+    # Don't check CPU idle as that uses public metrics that aren't available on v22
+    @cluster(num_nodes=3,
+             log_allow_list=RESTART_LOG_ALLOW_LIST,
+             check_cpu_idle=False)
     def upgrade_coordinator_test(self):
         def get_tx_coordinator():
             admin = Admin(self.redpanda)
@@ -896,7 +899,10 @@ class GATransaction_v22_1_UpgradeTest(RedpandaTest):
 
         self.do_upgrade_with_tx(get_tx_coordinator)
 
-    @cluster(num_nodes=3, log_allow_list=RESTART_LOG_ALLOW_LIST)
+    # Don't check CPU idle as that uses public metrics that aren't available on v22
+    @cluster(num_nodes=3,
+             log_allow_list=RESTART_LOG_ALLOW_LIST,
+             check_cpu_idle=False)
     def upgrade_topic_test(self):
         topic_name = self.topics[0].name
 
