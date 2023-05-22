@@ -13,7 +13,7 @@ from rptest.services.kgo_verifier_services import KgoVerifierProducer
 from rptest.services.redpanda import SISettings, MetricsEndpoint
 from rptest.clients.types import TopicSpec
 from rptest.clients.rpk import RpkTool
-from rptest.utils.si_utils import BucketView
+from rptest.utils.si_utils import BucketView, quiesce_uploads
 from ducktape.mark import parametrize
 import time
 
@@ -161,26 +161,9 @@ class TieredStorageSinglePartitionTest(RedpandaTest):
 
         # Wait for all uploads to complete: this should take roughly segment_max_upload_interval_sec
         # plus manifest_max_upload_interval_sec
-        def all_uploads_done():
-            bucket.reset()
-            manifest = bucket.manifest_for_ntp(self.topic, 0)
-            top_segment = list(manifest['segments'].values())[-1]
-            uploaded_ts = top_segment['max_timestamp']
-            self.logger.info(f"Remote ts {uploaded_ts}, local ts {local_ts}")
-            uploaded_raft_offset = top_segment['committed_offset']
-            uploaded_kafka_offset = uploaded_raft_offset - top_segment[
-                'delta_offset_end']
-            self.logger.info(
-                f"Remote HWM {uploaded_kafka_offset} (raft {uploaded_raft_offset}), local hwm {hwm}"
-            )
-
-            # -1 because uploaded offset is inclusive, hwm is exclusive
-            return uploaded_kafka_offset >= (hwm - 1)
-
-        self.redpanda.wait_until(all_uploads_done,
-                                 timeout_sec=self.manifest_upload_interval +
-                                 self.segment_upload_interval,
-                                 backoff_sec=5)
+        quiesce_uploads(self.redpanda, [self.topic],
+                        timeout_sec=self.manifest_upload_interval +
+                        self.segment_upload_interval)
 
         # Check manifest upload metrics:
         #  - we should not have uploaded the manifest more times
