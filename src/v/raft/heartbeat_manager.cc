@@ -30,6 +30,7 @@
 #include <seastar/core/with_timeout.hh>
 
 #include <absl/container/flat_hash_set.h>
+#include <absl/container/node_hash_map.h>
 #include <bits/stdint-uintn.h>
 #include <boost/range/iterator_range.hpp>
 
@@ -73,7 +74,7 @@ heartbeat_manager::follower_request_meta::~follower_request_meta() noexcept {
 
 static heartbeat_requests requests_for_range(
   const consensus_set& c, clock_type::duration heartbeat_interval) {
-    absl::btree_map<
+    absl::node_hash_map<
       model::node_id,
       ss::chunked_fifo<std::pair<
         heartbeat_metadata,
@@ -155,9 +156,10 @@ static heartbeat_requests requests_for_range(
     reqs.reserve(pending_beats.size());
     for (auto& p : pending_beats) {
         std::vector<heartbeat_metadata> requests;
-        absl::
-          btree_map<raft::group_id, heartbeat_manager::follower_request_meta>
-            meta_map;
+        absl::node_hash_map<
+          raft::group_id,
+          heartbeat_manager::follower_request_meta>
+          meta_map;
         requests.reserve(p.second.size());
         for (auto& [hb, follower_meta] : p.second) {
             meta_map.emplace(hb.meta.group, std::move(follower_meta));
@@ -229,7 +231,7 @@ ss::future<> heartbeat_manager::do_self_heartbeat(node_heartbeat&& r) {
             .group = hb.meta.group,
             .result = append_entries_reply::status::success};
       });
-    process_reply(r.target, std::move(r.meta_map), std::move(reply));
+    process_reply(r.target, r.meta_map, std::move(reply));
     return ss::now();
 }
 
@@ -255,7 +257,7 @@ ss::future<> heartbeat_manager::do_heartbeat(node_heartbeat&& r) {
                       this](result<heartbeat_reply> ret) mutable {
                    // this will happen after RPC client will return and resume
                    // sending heartbeats to follower
-                   process_reply(node, std::move(groups), std::move(ret));
+                   process_reply(node, groups, std::move(ret));
                });
     // fail fast to make sure that not lagging nodes will be able to receive
     // hearteats
@@ -273,7 +275,7 @@ ss::future<> heartbeat_manager::do_heartbeat(node_heartbeat&& r) {
 
 void heartbeat_manager::process_reply(
   model::node_id n,
-  absl::btree_map<raft::group_id, follower_request_meta> groups,
+  const absl::node_hash_map<raft::group_id, follower_request_meta>& groups,
   result<heartbeat_reply> r) {
     if (!r) {
         vlog(
