@@ -150,7 +150,8 @@ class TieredStorageSinglePartitionTest(RedpandaTest):
         # produced data
         bucket = BucketView(self.redpanda)
         manifest = bucket.manifest_for_ntp(self.topic, 0)
-        uploaded_ts = list(manifest['segments'].values())[-1]['max_timestamp']
+        uploaded_ts = max(s['max_timestamp']
+                          for s in manifest['segments'].values())
         self.logger.info(f"Max uploaded ts = {uploaded_ts}")
 
         lag_seconds = (local_ts - uploaded_ts) / 1000.0
