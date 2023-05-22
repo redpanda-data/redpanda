@@ -1055,10 +1055,11 @@ size_t disk_log_impl::max_segment_size() const {
     return result;
 }
 
-size_t disk_log_impl::size_bytes_until_offset(model::offset o) const {
-    size_t size = 0;
-    for (const auto& seg : _segs) {
-        if (seg->offsets().base_offset >= o) {
+uint64_t disk_log_impl::size_bytes_after_offset(model::offset o) const {
+    uint64_t size = 0;
+    for (size_t i = _segs.size() - 1; i-- > 0;) {
+        auto& seg = _segs[i];
+        if (seg->offsets().base_offset < o) {
             break;
         }
 

@@ -211,7 +211,6 @@ partition_cloud_storage_status partition::get_cloud_storage_status() const {
 
     const auto& local_log = _raft->log();
     status.local_log_size_bytes = local_log.size_bytes();
-    status.total_log_size_bytes = status.local_log_size_bytes;
     status.local_log_segment_count = local_log.segment_count();
 
     const auto local_log_offsets = local_log.offsets();
@@ -233,12 +232,16 @@ partition_cloud_storage_status partition::get_cloud_storage_status() const {
             status.cloud_log_last_offset = manifest.get_last_kafka_offset();
         }
 
-        const auto log_overlap = status.cloud_log_last_offset
-                                   ? _raft->log().size_bytes_until_offset(
-                                     manifest.get_last_offset())
-                                   : 0;
-        status.total_log_size_bytes += status.cloud_log_size_bytes
-                                       - log_overlap;
+        // Calculate local space usage that does not overlap with cloud space
+        const auto local_space_excl = status.cloud_log_last_offset
+                                        ? _raft->log().size_bytes_after_offset(
+                                          manifest.get_last_offset())
+                                        : status.local_log_size_bytes;
+
+        status.total_log_size_bytes = status.cloud_log_size_bytes
+                                      + local_space_excl;
+    } else {
+        status.total_log_size_bytes = status.local_log_size_bytes;
     }
 
     if (is_leader() && _archiver) {
