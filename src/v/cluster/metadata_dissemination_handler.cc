@@ -22,26 +22,6 @@
 #include <algorithm>
 #include <iterator>
 
-namespace {
-std::vector<cluster::ntp_leader_revision>
-from_ntp_leaders(std::vector<cluster::ntp_leader> old_leaders) {
-    std::vector<cluster::ntp_leader_revision> leaders;
-    leaders.reserve(old_leaders.size());
-    std::transform(
-      old_leaders.begin(),
-      old_leaders.end(),
-      std::back_inserter(leaders),
-      [](cluster::ntp_leader& leader) {
-          return cluster::ntp_leader_revision(
-            std::move(leader.ntp),
-            leader.term,
-            leader.leader_id,
-            model::revision_id{} /* explicitly default */
-          );
-      });
-    return leaders;
-}
-} // namespace
 namespace cluster {
 metadata_dissemination_handler::metadata_dissemination_handler(
   ss::scheduling_group sg,
@@ -49,15 +29,6 @@ metadata_dissemination_handler::metadata_dissemination_handler(
   ss::sharded<partition_leaders_table>& leaders)
   : metadata_dissemination_rpc_service(sg, ssg)
   , _leaders(leaders) {}
-
-ss::future<update_leadership_reply>
-metadata_dissemination_handler::update_leadership(
-  update_leadership_request&& req, rpc::streaming_context&) {
-    return ss::with_scheduling_group(
-      get_scheduling_group(), [this, req = std::move(req)]() mutable {
-          return do_update_leadership(from_ntp_leaders(std::move(req.leaders)));
-      });
-}
 
 ss::future<update_leadership_reply>
 metadata_dissemination_handler::update_leadership_v2(

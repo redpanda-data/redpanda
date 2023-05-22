@@ -19,22 +19,6 @@
 namespace compat {
 
 template<>
-struct instance_generator<cluster::update_leadership_request> {
-    static cluster::update_leadership_request random() {
-        return cluster::update_leadership_request({
-          cluster::ntp_leader(
-            model::random_ntp(),
-            tests::random_named_int<model::term_id>(),
-            tests::random_named_int<model::node_id>()),
-        });
-    }
-
-    static std::vector<cluster::update_leadership_request> limits() {
-        return {};
-    }
-};
-
-template<>
 struct instance_generator<cluster::update_leadership_request_v2> {
     static cluster::update_leadership_request_v2 random() {
         return cluster::update_leadership_request_v2({

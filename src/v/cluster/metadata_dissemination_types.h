@@ -95,31 +95,7 @@ struct ntp_leader_revision
     auto serde_fields() { return std::tie(ntp, term, leader_id, revision); }
 };
 
-struct update_leadership_request
-  : serde::envelope<
-      update_leadership_request,
-      serde::version<0>,
-      serde::compat_version<0>> {
-    using rpc_adl_exempt = std::true_type;
-    std::vector<ntp_leader> leaders;
 
-    update_leadership_request() noexcept = default;
-
-    explicit update_leadership_request(std::vector<ntp_leader> leaders)
-      : leaders(std::move(leaders)) {}
-
-    friend bool operator==(
-      const update_leadership_request&, const update_leadership_request&)
-      = default;
-
-    auto serde_fields() { return std::tie(leaders); }
-
-    friend std::ostream&
-    operator<<(std::ostream& o, const update_leadership_request& r) {
-        fmt::print(o, "leaders {}", r.leaders);
-        return o;
-    }
-};
 
 struct update_leadership_request_v2
   : serde::envelope<

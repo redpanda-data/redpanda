@@ -38,9 +38,6 @@ public:
       ss::smp_service_group,
       ss::sharded<partition_leaders_table>&);
 
-    ss::future<update_leadership_reply> update_leadership(
-      update_leadership_request&&, rpc::streaming_context&) final;
-
     ss::future<get_leadership_reply>
     get_leadership(get_leadership_request&&, rpc::streaming_context&) final;
 
