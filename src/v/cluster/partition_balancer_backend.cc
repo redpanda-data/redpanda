@@ -17,11 +17,14 @@
 #include "cluster/partition_balancer_planner.h"
 #include "cluster/partition_balancer_state.h"
 #include "cluster/topics_frontend.h"
+#include "config/configuration.h"
+#include "config/property.h"
 #include "random/generators.h"
 
 #include <seastar/core/coroutine.hh>
 
 #include <chrono>
+#include <optional>
 
 using namespace std::chrono_literals;
 using planner_status = cluster::partition_balancer_planner::status;
@@ -46,7 +49,9 @@ partition_balancer_backend::partition_balancer_backend(
   config::binding<size_t>&& movement_batch_size_bytes,
   config::binding<size_t>&& max_concurrent_actions,
   config::binding<double>&& moves_drop_threshold,
-  config::binding<size_t>&& segment_fallocation_step)
+  config::binding<size_t>&& segment_fallocation_step,
+  config::binding<std::optional<size_t>> min_partition_size_threshold,
+  config::binding<size_t> raft_learner_recovery_rate)
   : _raft0(std::move(raft0))
   , _controller_stm(controller_stm.local())
   , _state(state.local())
@@ -63,6 +68,8 @@ partition_balancer_backend::partition_balancer_backend(
   , _max_concurrent_actions(std::move(max_concurrent_actions))
   , _concurrent_moves_drop_threshold(std::move(moves_drop_threshold))
   , _segment_fallocation_step(std::move(segment_fallocation_step))
+  , _min_partition_size_threshold(std::move(min_partition_size_threshold))
+  , _raft_learner_recovery_rate(std::move(raft_learner_recovery_rate))
   , _timer([this] { tick(); }) {}
 
 void partition_balancer_backend::start() {
@@ -206,7 +213,8 @@ ss::future<> partition_balancer_backend::do_tick() {
             .movement_disk_size_batch = _movement_batch_size_bytes(),
             .max_concurrent_actions = _max_concurrent_actions(),
             .node_availability_timeout_sec = _availability_timeout(),
-            .segment_fallocation_step = _segment_fallocation_step()},
+            .segment_fallocation_step = _segment_fallocation_step(),
+            .min_partition_size_threshold = get_min_partition_size_threshold()},
           _state,
           _partition_allocator)
           .plan_actions(health_report.value(), follower_metrics);
@@ -324,6 +332,26 @@ partition_balancer_overview_reply partition_balancer_backend::overview() const {
 
     ret.error = errc::success;
     return ret;
+}
+
+size_t partition_balancer_backend::get_min_partition_size_threshold() const {
+    // if there is an override coming from cluster config use it
+    if (_min_partition_size_threshold()) {
+        return _min_partition_size_threshold().value();
+    }
+
+    // TODO: replace partition_autobalancing_concurrent_moves after we have it
+    // as a field in balancer backend
+    const auto min_rate
+      = _raft_learner_recovery_rate()
+        / config::shard_local_cfg().partition_autobalancing_concurrent_moves();
+
+    /**
+     * We use a heuristic to calculate the minimum size of of partition, we
+     * want that the partition with the threshold size to have enough data that
+     * it will move for at least ten seconds.
+     */
+    return min_rate * 10;
 }
 
 } // namespace cluster

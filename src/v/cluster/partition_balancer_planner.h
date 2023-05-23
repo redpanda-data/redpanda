@@ -40,6 +40,10 @@ struct planner_config {
     std::chrono::seconds node_availability_timeout_sec;
     // Fallocation step used to calculate upperbound for partition size
     size_t segment_fallocation_step;
+    // Threshold for minimum size of partition that is going to be prioritized
+    // for movement, partitions with size smaller than threshold will have the
+    // lowest priority
+    size_t min_partition_size_threshold;
 };
 
 class partition_balancer_planner {

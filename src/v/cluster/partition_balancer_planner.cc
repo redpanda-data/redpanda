@@ -16,6 +16,7 @@
 #include "cluster/partition_balancer_types.h"
 #include "cluster/scheduling/constraints.h"
 #include "cluster/scheduling/types.h"
+#include "model/namespace.h"
 #include "ssx/sformat.h"
 
 #include <seastar/core/sstring.hh>
@@ -938,17 +939,72 @@ size_t partition_balancer_planner::calculate_full_disk_partition_move_priority(
   model::node_id node_id,
   const reassignable_partition& p,
   const request_context& ctx) {
-    static constexpr size_t min_priority = 0;
-    static constexpr size_t max_priority = 1000000;
+    /**
+     * Definition of priority tiers:
+     *
+     *  - default (not internal one and not the ono that is bellow the size
+     *    threshold) partition
+     *      [max_priority,min_default_priority]
+     *
+     *  - internal partition
+     *      (min_default_priority, min_internal_partition_priority]
+     *
+     *  - small partition (which size is bellow the size threshold)
+     *        (min_internal_partition_priority, min_small_partition_priority]
+     */
+    enum priority_tiers : size_t {
+        max_priority = 1000000,
+        min_default_priority = 500000,
+        min_internal_partition_priority = 300000,
+        min_small_partition_priority = 100000,
+        min_priority = 0
+    };
 
     auto it = ctx.node_disk_reports.find(node_id);
     if (it == ctx.node_disk_reports.end()) {
         return min_priority;
     }
-    // normalize to range between [0,1000000], where max value would represent a
-    // partition that is of the full disk capacity size. We subtract it from the
-    // max priority to prioritize smallest partitions.
-    return max_priority - (max_priority * p.size_bytes()) / it->second.total;
+
+    static constexpr size_t default_range
+      = priority_tiers::max_priority - priority_tiers::min_default_priority;
+
+    // clamp partition size with the total disk space to have well defined
+    // behavior in case the size is incorrectly reported, this is required as we
+    // normalize the size with disk capacity and we do not want the ration of
+    // p_size/disk_capacity to be larger than 1.0.
+    const auto partition_size = std::min(p.size_bytes(), it->second.total);
+
+    if (partition_size < ctx.config().min_partition_size_threshold) {
+        static constexpr size_t range
+          = priority_tiers::min_internal_partition_priority - 1
+            - priority_tiers::min_small_partition_priority;
+
+        // prioritize from largest to smallest one
+        return (range * partition_size)
+                 / ctx.config().min_partition_size_threshold
+               + min_small_partition_priority;
+    }
+    /**
+     * Assign internal partitions to its priority tier, order from smallest to
+     * largest one (the same as all other partitions)
+     */
+    if (
+      p.ntp().ns == model::kafka_internal_namespace
+      || p.ntp().tp.topic == model::kafka_consumer_offsets_topic) {
+        static constexpr size_t range
+          = priority_tiers::min_default_priority - 1
+            - priority_tiers::min_internal_partition_priority;
+
+        return (range - (range * partition_size) / it->second.total)
+               + priority_tiers::min_internal_partition_priority;
+    }
+
+    // normalize and offset to match the default partition priority tier, where
+    // max value would represent a partition that is of the full disk capacity
+    // size. We subtract it from the max priority to prioritize smallest
+    // partitions.
+    return (default_range - (default_range * partition_size) / it->second.total)
+           + priority_tiers::min_default_priority;
 }
 
 /*
