@@ -21,6 +21,7 @@
 #include <seastar/core/sstring.hh>
 #include <seastar/util/defer.hh>
 
+#include <functional>
 #include <optional>
 
 namespace cluster {
@@ -934,8 +935,20 @@ void partition_balancer_planner::get_rack_constraint_repair_actions(
  * moved in the case when node disk is being full.
  */
 size_t partition_balancer_planner::calculate_full_disk_partition_move_priority(
-  const reassignable_partition& p) {
-    return p.size_bytes();
+  model::node_id node_id,
+  const reassignable_partition& p,
+  const request_context& ctx) {
+    static constexpr size_t min_priority = 0;
+    static constexpr size_t max_priority = 1000000;
+
+    auto it = ctx.node_disk_reports.find(node_id);
+    if (it == ctx.node_disk_reports.end()) {
+        return min_priority;
+    }
+    // normalize to range between [0,1000000], where max value would represent a
+    // partition that is of the full disk capacity size. We subtract it from the
+    // max priority to prioritize smallest partitions.
+    return max_priority - (max_priority * p.size_bytes()) / it->second.total;
 }
 
 /*
@@ -983,9 +996,10 @@ void partition_balancer_planner::get_full_node_actions(request_context& ctx) {
     };
 
     // build an index of move candidates: full node -> movement priority -> ntp
-    absl::
-      flat_hash_map<model::node_id, absl::btree_multimap<size_t, model::ntp>>
-        full_node2priority2ntp;
+    absl::flat_hash_map<
+      model::node_id,
+      absl::btree_multimap<size_t, model::ntp, std::greater<>>>
+      full_node2priority2ntp;
     ctx.for_each_partition([&](partition& part) {
         part.match_variant(
           [&](reassignable_partition& part) {
@@ -999,7 +1013,8 @@ void partition_balancer_planner::get_full_node_actions(request_context& ctx) {
 
               for (model::node_id node_id : replicas_on_full_nodes) {
                   full_node2priority2ntp[node_id].emplace(
-                    calculate_full_disk_partition_move_priority(part),
+                    calculate_full_disk_partition_move_priority(
+                      node_id, part, ctx),
                     part.ntp());
               }
           },
