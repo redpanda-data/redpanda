@@ -107,8 +107,25 @@ private:
      */
     void set_node_to_latest_version(model::node_id);
 
+    /// Background loop body: calls the functions that may update the
+    /// active version and/or activate features.
+    ss::future<> maybe_update_feature_table();
+
+    /// Consume _updates and evaluate whether the cluster version may advance
     ss::future<> do_maybe_update_active_version();
-    ss::future<> maybe_update_active_version();
+
+    /// Check _feature_table for any features that are elegible to auto
+    /// activate but not yet active.
+    ss::future<> do_maybe_activate_features();
+
+    /// Whether there is work to do in maybe_update_feature_table
+    bool updates_pending() {
+        return (!_updates.empty()
+                || !auto_activate_features(
+                      _feature_table.local().get_active_version())
+                      .empty())
+               && _am_controller_leader;
+    }
 
     ss::future<> maybe_log_license_check_info();
 

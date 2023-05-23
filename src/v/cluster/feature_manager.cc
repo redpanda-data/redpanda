@@ -155,7 +155,7 @@ feature_manager::start(std::vector<model::node_id>&& cluster_founder_nodes) {
     ssx::background = ssx::spawn_with_gate_then(_gate, [this] {
                           return ss::do_until(
                             [this] { return _as.local().abort_requested(); },
-                            [this] { return maybe_update_active_version(); });
+                            [this] { return maybe_update_feature_table(); });
                       }).handle_exception([](std::exception_ptr const& e) {
         vlog(clusterlog.warn, "Exception from updater: {}", e);
     });
@@ -233,7 +233,7 @@ ss::future<> feature_manager::maybe_log_license_check_info() {
     }
 }
 
-ss::future<> feature_manager::maybe_update_active_version() {
+ss::future<> feature_manager::maybe_update_feature_table() {
     vlog(clusterlog.debug, "Checking for active version update...");
     bool failed = false;
     try {
@@ -244,33 +244,22 @@ ss::future<> feature_manager::maybe_update_active_version() {
         // data for one of the nodes.
         vlog(
           clusterlog.debug,
-          "Exception from updater, will retry ({})",
+          "Exception updating cluster version, will retry ({})",
           std::current_exception());
         failed = true;
     }
 
-    // Even if we didn't advance our logical version, we might have some
-    // features to activate due to policy changes across different redpanda
-    // binaries with the same logical version
-    auto activate_features = auto_activate_features(
-      _feature_table.local().get_active_version());
-    if (!activate_features.empty() && _am_controller_leader) {
-        vlog(clusterlog.info, "Activating features after upgrade...");
-
-        auto data = feature_update_cmd_data{
-          .logical_version = _feature_table.local().get_active_version()};
-        for (const auto spec : activate_features) {
-            vlog(
-              clusterlog.info,
-              "Activating feature {} (logical version {})",
-              spec.get().name,
-              _feature_table.local().get_active_version());
-            data.actions.push_back(cluster::feature_update_action{
-              .feature_name = ss::sstring(spec.get().name),
-              .action = feature_update_action::action_t::activate});
-        }
-
-        co_await replicate_feature_update_cmd(std::move(data));
+    try {
+        // Even if we didn't advance our logical version, we might have some
+        // features to activate due to policy changes across different redpanda
+        // binaries with the same logical version
+        co_await do_maybe_activate_features();
+    } catch (...) {
+        vlog(
+          clusterlog.debug,
+          "Exception activating features, will retry ({})",
+          std::current_exception());
+        failed = true;
     }
 
     try {
@@ -280,13 +269,7 @@ ss::future<> feature_manager::maybe_update_active_version() {
         } else {
             // Sleep until we have some node version updates to process, or
             // some feature activations to do.
-            co_await _update_wait.wait([this]() {
-                return (!_updates.empty()
-                        || !auto_activate_features(
-                              _feature_table.local().get_active_version())
-                              .empty())
-                       && _am_controller_leader;
-            });
+            co_await _update_wait.wait([this]() { return updates_pending(); });
         }
     } catch (ss::condition_variable_timed_out&) {
         // Wait complete - proceed around next loop of do_until
@@ -492,6 +475,33 @@ ss::future<> feature_manager::do_maybe_update_active_version() {
     co_await replicate_feature_update_cmd(std::move(data));
 
     vlog(clusterlog.info, "Updated cluster (logical version {})", max_version);
+}
+
+ss::future<> feature_manager::do_maybe_activate_features() {
+    if (!_am_controller_leader) {
+        co_return;
+    }
+
+    auto activate_features = auto_activate_features(
+      _feature_table.local().get_active_version());
+    if (!activate_features.empty()) {
+        vlog(clusterlog.info, "Activating features after upgrade...");
+
+        auto data = feature_update_cmd_data{
+          .logical_version = _feature_table.local().get_active_version()};
+        for (const auto spec : activate_features) {
+            vlog(
+              clusterlog.info,
+              "Activating feature {} (logical version {})",
+              spec.get().name,
+              _feature_table.local().get_active_version());
+            data.actions.push_back(cluster::feature_update_action{
+              .feature_name = ss::sstring(spec.get().name),
+              .action = feature_update_action::action_t::activate});
+        }
+
+        co_await replicate_feature_update_cmd(std::move(data));
+    }
 }
 
 ss::future<std::error_code>
