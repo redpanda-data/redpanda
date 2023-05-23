@@ -147,7 +147,7 @@ private:
 namespace YAML {
 
 inline ss::sstring to_absolute(const ss::sstring& path) {
-    namespace fs = boost::filesystem;
+    namespace fs = std::filesystem;
     if (path.empty()) {
         return path;
     }
