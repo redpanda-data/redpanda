@@ -1682,6 +1682,12 @@ configuration::configuration()
       {model::cloud_storage_chunk_eviction_strategy::eager,
        model::cloud_storage_chunk_eviction_strategy::capped,
        model::cloud_storage_chunk_eviction_strategy::predictive})
+  , cloud_storage_chunk_prefetch(
+      *this,
+      "cloud_storage_chunk_prefetch",
+      "Number of chunks to prefetch ahead of every downloaded chunk",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      0)
   , superusers(
       *this,
       "superusers",
