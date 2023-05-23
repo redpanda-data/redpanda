@@ -1446,8 +1446,7 @@ void application::wire_up_redpanda_services(
       .get();
 
     syschecks::systemd_message("Creating tx coordinator mapper").get();
-    construct_service(
-      tx_coordinator_ntp_mapper, std::ref(metadata_cache), model::tx_manager_nt)
+    construct_service(tx_coordinator_ntp_mapper, std::ref(metadata_cache))
       .get();
 
     syschecks::systemd_message("Creating id allocator frontend").get();
