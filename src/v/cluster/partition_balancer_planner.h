@@ -89,6 +89,8 @@ private:
       std::string_view reason);
     static void get_rack_constraint_repair_actions(request_context&);
     static void get_full_node_actions(request_context&);
+    static size_t
+    calculate_full_disk_partition_move_priority(const reassignable_partition&);
 
     planner_config _config;
     partition_balancer_state& _state;

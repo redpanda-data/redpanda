@@ -929,6 +929,15 @@ void partition_balancer_planner::get_rack_constraint_repair_actions(
     }
 }
 
+/**
+ * This is the place where we decide about the order in which partitions will be
+ * moved in the case when node disk is being full.
+ */
+size_t partition_balancer_planner::calculate_full_disk_partition_move_priority(
+  const reassignable_partition& p) {
+    return p.size_bytes();
+}
+
 /*
  * Function is trying to move ntps out of node that are violating
  * soft_max_disk_usage_ratio. It takes nodes in reverse used space ratio order.
@@ -990,7 +999,8 @@ void partition_balancer_planner::get_full_node_actions(request_context& ctx) {
 
               for (model::node_id node_id : replicas_on_full_nodes) {
                   full_node2priority2ntp[node_id].emplace(
-                    part.size_bytes(), part.ntp());
+                    calculate_full_disk_partition_move_priority(part),
+                    part.ntp());
               }
           },
           [](auto&) {});
