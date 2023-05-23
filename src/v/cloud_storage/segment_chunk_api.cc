@@ -121,7 +121,10 @@ segment_chunks::do_hydrate_and_materialize(chunk_start_offset_t chunk_start) {
         chunk_end = next->first - 1;
     }
 
-    co_await _segment.hydrate_chunk(chunk_start, chunk_end);
+    co_await _segment.hydrate_chunk(segment_chunk_range{
+      _chunks,
+      config::shard_local_cfg().cloud_storage_chunk_prefetch,
+      chunk_start});
     co_return co_await _segment.materialize_chunk(chunk_start);
 }
 

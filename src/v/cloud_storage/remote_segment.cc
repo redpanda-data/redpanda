@@ -902,27 +902,58 @@ ss::future<> remote_segment::hydrate() {
       .discard_result();
 }
 
-ss::future<> remote_segment::hydrate_chunk(
-  chunk_start_offset_t start, std::optional<chunk_start_offset_t> end) {
-    retry_chain_node rtc{
-      cache_hydration_timeout, cache_hydration_backoff, &_rtc};
+remote_segment::consume_stream::consume_stream(
+  remote_segment& remote_segment, segment_chunk_range range)
+  : _segment{remote_segment}
+  , _range{std::move(range)} {}
 
-    auto cache_status = co_await _cache.is_cached(get_path_to_chunk(start));
-    if (cache_status == cache_element_status::available) {
+ss::future<uint64_t> remote_segment::consume_stream::operator()(
+  uint64_t size, ss::input_stream<char> stream) {
+    for (const auto [start, end] : _range) {
+        const auto space_required = end.value_or(_segment._size - 1) - start
+                                    + 1;
+        auto reservation = co_await _segment._cache.reserve_space(
+          space_required, 1);
+        auto dsi = std::make_unique<bounded_stream>(
+          stream, end.value_or(_segment._size));
+        auto stream_upto = ss::input_stream<char>{
+          ss::data_source{std::move(dsi)}};
+        co_await _segment.put_chunk_in_cache(
+          size, reservation, std::move(stream_upto), start);
+    }
+    co_return size;
+}
+
+ss::future<> remote_segment::hydrate_chunk(segment_chunk_range range) {
+    const auto start = range.first_offset();
+    const auto path_to_start = get_path_to_chunk(start);
+
+    // It is possible that the chunk has already been downloaded during a
+    // prefetch operation. In this case we skip hydration and try to materialize
+    // the chunk. This also skips the prefetch of the successive chunks. So
+    // given a series of chunks A, B, C, D, E and a prefetch of 2, when A is
+    // fetched B,C are also fetched. Then hydration of B,C are no-ops and no
+    // prefetch is done during those no-ops. When D is fetched, hydration
+    // makes an HTTP GET call and E is also prefetched. So a total of two calls
+    // are made for the five chunks (ignoring any cache evictions during the
+    // process).
+    if (const auto status = co_await _cache.is_cached(path_to_start);
+        status == cache_element_status::available) {
+        vlog(
+          _ctxlog.debug,
+          "skipping chunk hydration for chunk path {}, it is already in "
+          "cache",
+          path_to_start);
         co_return;
     }
 
-    const auto space_required = end.value_or(_size - 1) - start + 1;
-    auto reserved = co_await _cache.reserve_space(space_required, 1);
+    retry_chain_node rtc{
+      cache_hydration_timeout, cache_hydration_backoff, &_rtc};
 
+    const auto end = range.last_offset().value_or(_size - 1);
+    auto consumer = consume_stream{*this, std::move(range)};
     auto res = co_await _api.download_segment(
-      _bucket,
-      _path,
-      [this, start, &reserved](auto size, auto stream) {
-          return put_chunk_in_cache(size, reserved, std::move(stream), start);
-      },
-      rtc,
-      std::make_pair(start, end.value_or(_size - 1)));
+      _bucket, _path, std::move(consumer), rtc, std::make_pair(start, end));
     if (res != download_result::success) {
         throw download_exception{res, _path};
     }
