@@ -324,7 +324,14 @@ void materialized_manifest_cache::rollback(model::offset so) {
     }
     auto ptr = it->shared_from_this();
     ptr->_hook.unlink();
-    _cache.insert(std::make_pair(so, ptr));
+    auto [_, ok] = _cache.insert(std::make_pair(so, ptr));
+    if (!ok) {
+        vlog(
+          _ctxlog.error,
+          "Manifest with base offset {} has a duplicate in the log",
+          so);
+        return;
+    }
     ptr->evicted = false;
     _access_order.push_front(*ptr);
     vlog(

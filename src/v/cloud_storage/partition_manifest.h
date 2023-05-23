@@ -438,7 +438,8 @@ public:
           _archive_start_offset,
           _archive_start_offset_delta,
           _archive_clean_offset,
-          _start_kafka_offset);
+          _start_kafka_offset,
+          _archive_size_bytes);
     }
     auto serde_fields() const {
         // this list excludes _mem_tracker, which is not serialized
@@ -455,7 +456,8 @@ public:
           _archive_start_offset,
           _archive_start_offset_delta,
           _archive_clean_offset,
-          _start_kafka_offset);
+          _start_kafka_offset,
+          _archive_size_bytes);
     }
 
     /// Compare two manifests for equality. Don't compare the mem_tracker.

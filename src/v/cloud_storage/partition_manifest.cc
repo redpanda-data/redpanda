@@ -2013,6 +2013,7 @@ struct partition_manifest_serde
     model::offset_delta _archive_start_offset_delta;
     model::offset _archive_clean_offset;
     kafka::offset _start_kafka_offset;
+    size_t archive_size_bytes;
 };
 
 static_assert(

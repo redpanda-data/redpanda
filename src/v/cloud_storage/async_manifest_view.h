@@ -160,7 +160,7 @@ public:
       size_t new_size,
       std::optional<ss::lowres_clock::duration> timeout = std::nullopt);
 
-public:
+private:
     using map_t
       = std::map<model::offset, ss::shared_ptr<materialized_manifest>>;
 
@@ -181,13 +181,25 @@ public:
     /// Remove manifest from the _eviction_rollback list.
     void discard_rollback_manifest(model::offset so);
 
+    /// Current capacity of the cache in bytes
     size_t _capacity_bytes;
     retry_chain_logger& _ctxlog;
+    /// Storage for manifests
     map_t _cache;
     ss::gate _gate;
     ss::semaphore _sem;
+    /// LRU order list (least recently used elements are in the back of the
+    /// list)
     access_list_t _access_order;
+    /// Eviction list that contains all manifests which are being evicted (there
+    /// is an ongoing call to prepare that tries to evict these elements)
     access_list_t _eviction_rollback;
+    /// Pool of unused semaphore units. Initially, the semaphore count is set to
+    /// some predefined large value minus '_capacity_bytes'. Then, when the
+    /// capacity changes the units are returned back to '_reserved' or split
+    /// from '_reserved'. This solves the problem of static semaphore count
+    /// which can't be changed without recreating the semaphore and makes
+    /// difficult cache resizing.
     ss::semaphore_units<> _reserved;
 };
 
