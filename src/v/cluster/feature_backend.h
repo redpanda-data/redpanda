@@ -47,6 +47,9 @@ public:
     bool has_local_snapshot();
     ss::future<> save_local_snapshot();
 
+    static ss::future<> do_save_local_snapshot(
+      storage::api&, const features::feature_table_snapshot&);
+
     bool is_batch_applicable(const model::record_batch& b) {
         return b.header().type == model::record_batch_type::feature_update;
     }

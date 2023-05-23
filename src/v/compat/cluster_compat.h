@@ -136,12 +136,6 @@ GEN_COMPAT_CHECK_SERDE_ONLY(
       json_read(complete);
   });
 
-GEN_COMPAT_CHECK(
-  cluster::join_request, { json_write(node); }, { json_read(node); });
-
-GEN_COMPAT_CHECK(
-  cluster::join_reply, { json_write(success); }, { json_read(success); });
-
 GEN_COMPAT_CHECK_SERDE_ONLY(
   cluster::join_node_request,
   {
@@ -162,10 +156,12 @@ GEN_COMPAT_CHECK_SERDE_ONLY(
   {
       json_write(success);
       json_write(id);
+      json_write(raw_status);
   },
   {
       json_read(success);
       json_read(id);
+      json_read(raw_status);
   })
 
 GEN_COMPAT_CHECK(

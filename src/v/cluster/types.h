@@ -1044,57 +1044,10 @@ struct find_coordinator_reply
     auto serde_fields() { return std::tie(coordinator, ntp, ec); }
 };
 
-/// Old-style request sent by node to join raft-0
-/// - Does not specify logical version
-/// - Always specifies node_id
-/// (remove this RPC two versions after join_node_request was
-///  added to replace it)
-struct join_request
-  : serde::envelope<join_request, serde::version<0>, serde::compat_version<0>> {
-    join_request() noexcept = default;
-
-    explicit join_request(model::broker b)
-      : node(std::move(b)) {}
-
-    model::broker node;
-
-    friend bool operator==(const join_request&, const join_request&) = default;
-
-    friend std::ostream& operator<<(std::ostream& o, const join_request& r) {
-        fmt::print(o, "node {}", r.node);
-        return o;
-    }
-
-    auto serde_fields() { return std::tie(node); }
-};
-
-struct join_reply
-  : serde::envelope<join_reply, serde::version<0>, serde::compat_version<0>> {
-    bool success;
-
-    join_reply() noexcept = default;
-
-    explicit join_reply(bool success)
-      : success(success) {}
-
-    friend bool operator==(const join_reply&, const join_reply&) = default;
-
-    friend std::ostream& operator<<(std::ostream& o, const join_reply& r) {
-        fmt::print(o, "success {}", r.success);
-        return o;
-    }
-
-    auto serde_fields() { return std::tie(success); }
-};
-
-/// Successor to join_request:
-/// - Include version metadata for joining node
-/// - Has fields for implementing auto-selection of
-///   node_id (https://github.com/redpanda-data/redpanda/issues/2793)
-///   in future.
 struct join_node_request
   : serde::
       envelope<join_node_request, serde::version<1>, serde::compat_version<0>> {
+    using rpc_adl_exempt = std::true_type;
     join_node_request() noexcept = default;
 
     explicit join_node_request(
@@ -1151,25 +1104,144 @@ struct join_node_request
 
 struct join_node_reply
   : serde::
-      envelope<join_node_reply, serde::version<0>, serde::compat_version<0>> {
+      envelope<join_node_reply, serde::version<1>, serde::compat_version<0>> {
+    using rpc_adl_exempt = std::true_type;
+
+    enum class status_code : uint8_t {
+        success = 0,
+        // Non-specific error
+        error = 1,
+        // Newly-founded cluster is not yet ready to accept node joins
+        not_ready = 2,
+        // Cluster is busy adding another node, cannot add more until that is
+        // done
+        busy = 3,
+        // Rejected because cluster version violates the bounds in the request
+        incompatible = 4,
+        // Rejected because node's address conflicted with an existing node
+        conflict = 5,
+        // Rejected because node claimed a node_id that differs from the
+        // id it previously registered.
+        id_changed = 6,
+        // Rejected because a node is trying to claim the same node_id with
+        // the same UUID as a node previously removed
+        bad_rejoin = 7,
+    };
+
     bool success{false};
     model::node_id id{model::unassigned_node_id};
 
+    std::optional<iobuf> controller_snapshot;
+
+    // Optional because old Redpandas just set the success boolean.
+    // See status() for reading the status, do not read this directly.
+    std::optional<status_code> raw_status;
+
+    status_code status() const {
+        return raw_status.value_or(
+          success ? status_code::success : status_code::error);
+    }
+
+    const char* status_msg() const {
+        switch (status()) {
+        case status_code::success:
+            return "success";
+        case status_code::error:
+            return "error";
+        case status_code::not_ready:
+            return "not_ready: cluster is still forming";
+        case status_code::busy:
+            return "busy: cluster currently adding another node";
+        case status_code::incompatible:
+            return "incompatible: cluster is too new or old for this Redpanda "
+                   "version";
+        case status_code::conflict:
+            return "conflict: adding this node would conflict with another "
+                   "node's address";
+        case status_code::id_changed:
+            return "id_changed: this node previously registered with a "
+                   "different node ID";
+        case status_code::bad_rejoin:
+            return "bad_rejoin: trying to rejoin with same ID and UUID as a "
+                   "decommissioned node";
+        default:
+            // Status codes are sent over the wire, so accomodate the
+            // possibility that we were sent a status code from a newer version
+            // that we don't understand.
+            return "[unknown]";
+        }
+    }
+
+    /**
+     * Does the status code indicate that the caller should retry (i.e.
+     * a non-permanent status like not_ready or busy?)
+     */
+    bool retryable() {
+        return status() == status_code::not_ready
+               || status() == status_code::busy;
+    }
+
     join_node_reply() noexcept = default;
 
-    join_node_reply(bool success, model::node_id id)
-      : success(success)
-      , id(id) {}
+    join_node_reply(status_code status, model::node_id id)
+      : success(status == status_code::success)
+      , id(id)
+      , raw_status(status) {}
 
-    friend bool operator==(const join_node_reply&, const join_node_reply&)
+    join_node_reply(join_node_reply&& rhs) noexcept = default;
+
+    join_node_reply(
+      status_code status, model::node_id id, std::optional<iobuf> snap)
+      : success(status == status_code::success)
+      , id(id)
+      , controller_snapshot(std::move(snap))
+      , raw_status(status) {}
+
+    /// Copy constructor for use in encoding unit tests: general use should
+    /// always move this object as the embedded controller offset may be large.
+    join_node_reply(const join_node_reply& rhs)
+      : success(rhs.success)
+      , id(rhs.id)
+      , raw_status(rhs.raw_status) {
+        if (rhs.controller_snapshot.has_value()) {
+            controller_snapshot = rhs.controller_snapshot.value().copy();
+        }
+    }
+
+    join_node_reply& operator=(const join_node_reply& rhs) {
+        success = rhs.success;
+        id = rhs.id;
+        raw_status = rhs.raw_status;
+        if (rhs.controller_snapshot.has_value()) {
+            controller_snapshot = rhs.controller_snapshot.value().copy();
+        } else {
+            controller_snapshot = std::nullopt;
+        }
+
+        return *this;
+    }
+
+    friend bool
+    operator==(const join_node_reply& lhs, const join_node_reply& rhs)
       = default;
 
     friend std::ostream& operator<<(std::ostream& o, const join_node_reply& r) {
-        fmt::print(o, "success {} id {}", r.success, r.id);
+        fmt::print(
+          o,
+          "status {} ({:02x}, success={}) id {} snap {}",
+          r.status_msg(),
+          static_cast<uint8_t>(r.raw_status.value_or(status_code{0xff})),
+          r.success,
+          r.id,
+          r.controller_snapshot.has_value()
+            ? r.controller_snapshot.value().size_bytes()
+            : 0);
         return o;
     }
 
-    auto serde_fields() { return std::tie(success, id); }
+    auto serde_fields() {
+        return std::tie(success, id, controller_snapshot, raw_status);
+    }
 };
 
 struct configuration_update_request
@@ -3778,41 +3850,6 @@ template<>
 struct adl<cluster::topic_configuration> {
     void to(iobuf&, cluster::topic_configuration&&);
     cluster::topic_configuration from(iobuf_parser&);
-};
-
-template<>
-struct adl<cluster::join_request> {
-    void to(iobuf&, cluster::join_request&&);
-    cluster::join_request from(iobuf);
-    cluster::join_request from(iobuf_parser&);
-};
-
-template<>
-struct adl<cluster::join_reply> {
-    void to(iobuf& out, cluster::join_reply&& r) { serialize(out, r.success); }
-    cluster::join_reply from(iobuf_parser& in) {
-        auto success = adl<bool>{}.from(in);
-        return cluster::join_reply{success};
-    }
-};
-
-template<>
-struct adl<cluster::join_node_request> {
-    void to(iobuf&, cluster::join_node_request&&);
-    cluster::join_node_request from(iobuf);
-    cluster::join_node_request from(iobuf_parser&);
-};
-
-template<>
-struct adl<cluster::join_node_reply> {
-    void to(iobuf& out, cluster::join_node_reply&& r) {
-        serialize(out, r.success, r.id);
-    }
-    cluster::join_node_reply from(iobuf_parser& in) {
-        auto success = adl<bool>{}.from(in);
-        auto id = adl<model::node_id>{}.from(in);
-        return {success, id};
-    }
 };
 
 template<>

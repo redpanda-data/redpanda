@@ -152,6 +152,11 @@ public:
         return last_applied_offset();
     }
 
+    /// Compose a snapshot without persisting it: this is not for snapshotting
+    /// the raft log, but rather for snapshots we will send over the network,
+    /// for example to new joining nodes.
+    ss::future<std::optional<iobuf>> maybe_compose_snapshot();
+
 private:
     using promise_t = expiring_promise<std::error_code>;
 
@@ -210,6 +215,7 @@ private:
     ss::condition_variable _new_result;
     absl::flat_hash_set<model::record_batch_type> _not_handled_batch_types;
 
+protected:
     // Mutexes must be locked in the same order as declared
 
     // Locked for the whole duration of writing a snapshot to ensure that there
@@ -219,7 +225,6 @@ private:
     // to ensure that the state machine state does not change.
     mutex _apply_mtx;
 
-protected:
     // we keep states in a tuple to automatically dispatch updates to correct
     // state
     std::tuple<T&...> _state;

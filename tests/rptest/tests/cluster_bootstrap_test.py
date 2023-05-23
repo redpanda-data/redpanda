@@ -11,11 +11,11 @@ import ducktape.errors
 from ducktape.mark import matrix
 from ducktape.utils.util import wait_until
 from requests.exceptions import ConnectionError
-from rptest.services.admin import Admin
 from rptest.services.cluster import cluster
 from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST
 from rptest.services.redpanda_installer import (RedpandaInstaller,
                                                 wait_for_num_versions)
+from rptest.util import expect_exception
 from rptest.tests.redpanda_test import RedpandaTest
 
 
@@ -55,12 +55,13 @@ class ClusterBootstrapNew(RedpandaTest):
 
         for node in self.redpanda.nodes:
             idx = self.redpanda.idx(node)
-            try:
-                cluster_uuid = self.redpanda._admin.get_cluster_uuid(node)
-                assert idx != 1, "Expected failure on idx 1"
-                assert cluster_uuid == None, f"Unexpected cluster UUID: {cluster_uuid}"
-            except ConnectionError:
-                assert 1 == idx, f"Should have failed on idx 1, failed on {idx}"
+
+            # None of the nodes was configured in a way that could get past attempting
+            # to join a cluster: node 1 has no seed servers, and nodes 2,3 are not in
+            # their seed servers so do not self-identify as founders
+            with expect_exception(ConnectionError, lambda _: True):
+                # Try connecting to the admin API
+                self.redpanda._admin.get_cluster_uuid(node)
 
     @cluster(num_nodes=3)
     @matrix(num_seeds=[1, 2, 3],

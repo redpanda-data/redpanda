@@ -229,7 +229,19 @@ private:
     void setup_public_metrics();
     void setup_internal_metrics();
     std::unique_ptr<ss::app_template> _app;
+
+    // Early in startup, we load config from disk or from the response to
+    // a cluster join request: this is used to prime config_manager's state
+    // so that the config doesn't walk through all intermediate states
+    // in the log during startup.
     cluster::config_manager::preload_result _config_preload;
+
+    // When joining a cluster, we are tipped off as to the last applied offset
+    // of the controller stm from another node.  We will wait for this offset
+    // to be replicated to our controller log before listening for Kafka
+    // requests.
+    std::optional<model::offset> _await_controller_last_applied;
+
     std::optional<pandaproxy::rest::configuration> _proxy_config;
     std::optional<kafka::client::configuration> _proxy_client_config;
     std::optional<pandaproxy::schema_registry::configuration>

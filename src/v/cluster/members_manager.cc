@@ -937,6 +937,23 @@ wait_for_next_join_retry(std::chrono::milliseconds tout, ss::abort_source& as) {
       });
 }
 
+ss::future<join_node_reply>
+members_manager::make_join_node_success_reply(model::node_id id) {
+    // Provide the joining node with a controller snapshot, so
+    // that it may load correct configuration + feature table
+    // before applying the controller log.
+    return _controller_stm.local().maybe_make_join_snapshot().then(
+      [id](std::optional<iobuf> snapshot) {
+          vlog(
+            clusterlog.debug,
+            "Responding to node {} join with {} byte snapshot",
+            id,
+            snapshot.has_value() ? snapshot.value().size_bytes() : 0);
+          return join_node_reply(
+            join_node_reply::status_code::success, id, std::move(snapshot));
+      });
+}
+
 ss::future<result<join_node_reply>> members_manager::dispatch_join_to_remote(
   const config::seed_server& target, join_node_request&& req) {
     vlog(
@@ -1072,14 +1089,34 @@ members_manager::dispatch_join_to_seed_server(
     return f.then_wrapped([it, this, req](ss::future<ret_t> fut) {
         try {
             auto r = fut.get0();
-            if (r.has_error() || !r.value().success) {
+            if (r.has_error()) {
                 vlog(
                   clusterlog.warn,
                   "Error joining cluster using {} seed server - {}",
                   it->addr,
-                  r.has_error() ? r.error().message() : "not allowed to join");
+                  r.error().message());
+            } else if (
+              r.value().status() != join_node_reply::status_code::success) {
+                if (r.value().retryable()) {
+                    // This is normal: when many nodes try to join during
+                    // cluster creation, some of them will get `busy` responses
+                    // because the seed server is already in the middle of
+                    // a raft0 config change.
+                    vlog(
+                      clusterlog.info,
+                      "Can't joining cluster yet via {} seed server ({})",
+                      it->addr,
+                      r.value().status_msg());
+                } else {
+                    vlog(
+                      clusterlog.warn,
+                      "Error joining cluster using {} seed server ({})",
+                      it->addr,
+                      r.value().status_msg());
+                }
+
             } else {
-                return ss::make_ready_future<ret_t>(r);
+                return ss::make_ready_future<ret_t>(std::move(r));
             }
         } catch (...) {
             // just log an exception, we will retry joining cluster in next loop
@@ -1163,7 +1200,8 @@ ss::future<result<join_node_reply>> members_manager::replicate_new_node_uuid(
     }
 
     // On success, return the node ID.
-    co_return ret_t(join_node_reply{true, get_node_id(node_uuid)});
+    co_return ret_t(
+      co_await make_join_node_success_reply(get_node_id(node_uuid)));
 }
 
 static bool contains_address(
@@ -1181,6 +1219,7 @@ static bool contains_address(
 ss::future<result<join_node_reply>>
 members_manager::handle_join_request(join_node_request const req) {
     using ret_t = result<join_node_reply>;
+    using status_t = join_node_reply::status_code;
 
     bool node_id_assignment_supported = _feature_table.local().is_active(
       features::feature::node_id_assignment);
@@ -1253,6 +1292,18 @@ members_manager::handle_join_request(join_node_request const req) {
           });
     }
 
+    if (!_controller_stm.local().ready_to_snapshot()) {
+        vlog(
+          clusterlog.info,
+          "Rejecting node '{} ({})' join request, cluster is not yet ready to "
+          "add nodes",
+          req.node.id(),
+          node_uuid_str);
+
+        co_return ret_t(
+          join_node_reply{status_t::not_ready, model::unassigned_node_id});
+    }
+
     if (likely(node_id_assignment_supported && req_has_node_uuid)) {
         const auto it = _id_by_uuid.find(node_uuid);
         if (!req_node_id) {
@@ -1265,7 +1316,7 @@ members_manager::handle_join_request(join_node_request const req) {
             }
             // The requested UUID already exists; this is a duplicate request
             // to assign a node ID. Just return the registered node ID.
-            co_return ret_t(join_node_reply{true, it->second});
+            co_return ret_t(co_await make_join_node_success_reply(it->second));
         }
         // We've been passed a node ID. The caller expects to be added to the
         // Raft group by the end of this function.
@@ -1279,8 +1330,8 @@ members_manager::handle_join_request(join_node_request const req) {
         } else {
             // Validate that the node ID matches the one in our table.
             if (*req_node_id != it->second) {
-                co_return ret_t(
-                  join_node_reply{false, model::unassigned_node_id});
+                co_return ret_t(join_node_reply{
+                  status_t::id_changed, model::unassigned_node_id});
             }
             // if node was removed from the cluster doesn't allow it to rejoin
             // with the same UUID
@@ -1293,8 +1344,8 @@ members_manager::handle_join_request(join_node_request const req) {
                   "the cluster",
                   it->second,
                   it->first);
-                co_return ret_t(
-                  join_node_reply{false, model::unassigned_node_id});
+                co_return ret_t(join_node_reply{
+                  status_t::bad_rejoin, model::unassigned_node_id});
             }
         }
 
@@ -1316,14 +1367,20 @@ members_manager::handle_join_request(join_node_request const req) {
         auto update_req = configuration_update_request(req.node, _self.id());
         co_return co_await handle_configuration_update_request(
           std::move(update_req))
-          .then([node_id](result<configuration_update_reply> r) {
-              if (r) {
-                  auto success = r.value().success;
-                  return ret_t(join_node_reply{
-                    success, success ? node_id : model::unassigned_node_id});
-              }
-              return ret_t(r.error());
-          });
+          .then(
+            [this, node_id](
+              result<configuration_update_reply> r) -> ss::future<ret_t> {
+                if (r) {
+                    if (r.value().success) {
+                        return make_join_node_success_reply(node_id).then(
+                          [](join_node_reply r) { return ret_t(r); });
+                    } else {
+                        return ss::make_ready_future<ret_t>(join_node_reply{
+                          status_t::error, model::unassigned_node_id});
+                    }
+                }
+                return ss::make_ready_future<ret_t>(r.error());
+            });
     }
 
     // Older versions of Redpanda don't support having multiple servers pointed
@@ -1338,7 +1395,8 @@ members_manager::handle_join_request(join_node_request const req) {
           "node",
           req.node.id(),
           req.node.rpc_address());
-        co_return ret_t(join_node_reply{false, model::unassigned_node_id});
+        co_return ret_t(
+          join_node_reply{status_t::conflict, model::unassigned_node_id});
     }
 
     if (req.node.id() != _self.id()) {
@@ -1351,10 +1409,15 @@ members_manager::handle_join_request(join_node_request const req) {
     }
 
     co_return co_await add_node(req.node).then(
-      [node = req.node](std::error_code ec) {
+      [this, node = req.node](std::error_code ec) {
           if (!ec) {
-              vlog(clusterlog.info, "Added node {} to cluster", node.id());
-              return ret_t(join_node_reply{true, node.id()});
+              vlog(
+                clusterlog.info,
+                "Added node {} to cluster, preparing response",
+                node.id());
+
+              return make_join_node_success_reply(node.id()).then(
+                [](join_node_reply r) { return ret_t(r); });
           }
           vlog(
             clusterlog.warn,
@@ -1362,7 +1425,7 @@ members_manager::handle_join_request(join_node_request const req) {
             node,
             node.id(),
             ec.message());
-          return ret_t(ec);
+          return ss::make_ready_future<ret_t>(ret_t(ec));
       });
 }
 

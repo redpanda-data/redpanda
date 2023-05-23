@@ -23,6 +23,7 @@
 #include "cluster/cluster_utils.h"
 #include "cluster/cluster_uuid.h"
 #include "cluster/controller.h"
+#include "cluster/controller_snapshot.h"
 #include "cluster/ephemeral_credential_frontend.h"
 #include "cluster/ephemeral_credential_service.h"
 #include "cluster/fwd.h"
@@ -1831,10 +1832,10 @@ void application::start_bootstrap_services() {
           .get0();
     }
 
-    static const bytes invariants_key("configuration_invariants");
     auto configured_node_id = config::node().node_id();
     if (auto invariants_buf = storage.local().kvs().get(
-          storage::kvstore::key_space::controller, invariants_key);
+          storage::kvstore::key_space::controller,
+          cluster::controller::invariants_key);
         invariants_buf) {
         auto invariants
           = reflection::from_iobuf<cluster::configuration_invariants>(
@@ -1917,7 +1918,69 @@ void application::wire_up_and_start(::stop_signal& app_signal, bool test_mode) {
     const auto& node_uuid = storage.local().node_uuid();
     cluster::cluster_discovery cd(
       node_uuid, storage.local(), app_signal.abort_source());
-    auto node_id = cd.determine_node_id().get();
+
+    bool ever_ran_controller = storage.local()
+                                 .kvs()
+                                 .get(
+                                   storage::kvstore::key_space::controller,
+                                   cluster::controller::invariants_key)
+                                 .has_value();
+
+    model::node_id node_id;
+    if (config::node().node_id().has_value() && ever_ran_controller) {
+        vlog(
+          _log.debug,
+          "Running with already-established node ID {}",
+          config::node().node_id());
+        node_id = config::node().node_id().value();
+    } else {
+        auto registration_result = cd.register_with_cluster().get();
+        node_id = registration_result.assigned_node_id;
+
+        if (registration_result.newly_registered) {
+            vlog(
+              _log.info,
+              "Registered with cluster as node ID {}",
+              registration_result.assigned_node_id);
+            if (registration_result.controller_snapshot.has_value()) {
+                // Do something with the controller snapshot
+                auto snap
+                  = serde::from_iobuf<cluster::controller_join_snapshot>(
+                    std::move(registration_result.controller_snapshot.value()));
+
+                // The controller is not started yet, so write state directly
+                // into the feature table and configuration object.  We do not
+                // currently use the rest of the snapshot, but reserve the right
+                // to do so in future (e.g. to prime all the controller stms
+                // from the snapshot)
+                auto ftsnap = std::move(snap.features.snap);
+                ss::smp::invoke_on_all([ftsnap, &ft = feature_table] {
+                    ftsnap.apply(ft.local());
+                }).get();
+                cluster::feature_backend::do_save_local_snapshot(
+                  storage.local(), ftsnap)
+                  .get();
+
+                // The preload object is usually generated from loading a local
+                // cache or from the bootstrap file.  The configuration received
+                // from the cluster during join takes precedence over either of
+                // these, and we replace it.
+                _config_preload
+                  = cluster::config_manager::preload_join(snap).get();
+                cluster::config_manager::write_local_cache(
+                  _config_preload.version, _config_preload.raw_values)
+                  .get();
+
+                // During controller::start, we wait to reach an applied offset.
+                // By priming this from the join snapshot, we may ensure that
+                // we wait until this node has replicated all the controller
+                // metadata since it joined, before we proceed with e.g.
+                // listening for Kafka API requests.
+                _await_controller_last_applied = snap.last_applied;
+            }
+        }
+    }
+
     if (config::node().node_id() == std::nullopt) {
         // If we previously didn't have a node ID, set it in the config. We
         // will persist it in the kvstore when the controller starts up.
@@ -2153,6 +2216,16 @@ void application::start_runtime_services(
     quota_mgr.invoke_on_all(&kafka::quota_manager::start).get();
     snc_quota_mgr.invoke_on_all(&kafka::snc_quota_manager::start).get();
     usage_manager.invoke_on_all(&kafka::usage_manager::start).get();
+
+    if (_await_controller_last_applied.has_value()) {
+        syschecks::systemd_message(
+          "Waiting for controller to replicate (joining cluster)")
+          .get();
+        controller
+          ->wait_for_offset(
+            _await_controller_last_applied.value(), app_signal.abort_source())
+          .get();
+    }
 
     if (!config::node().admin().empty()) {
         _admin.invoke_on_all(&admin_server::start).get0();

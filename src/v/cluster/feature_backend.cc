@@ -132,6 +132,13 @@ bool feature_backend::has_local_snapshot() {
 }
 
 ss::future<> feature_backend::save_local_snapshot() {
+    auto snapshot = features::feature_table_snapshot::from(
+      _feature_table.local());
+    return do_save_local_snapshot(_storage.local(), std::move(snapshot));
+}
+
+ss::future<> feature_backend::do_save_local_snapshot(
+  storage::api& storage, const features::feature_table_snapshot& snapshot) {
     // kvstore is shard-local: must be on a consistent shard every
     // time for snapshot storage to work.
     vassert(ss::this_shard_id() == ss::shard_id{0}, "wrong shard");
@@ -139,14 +146,10 @@ ss::future<> feature_backend::save_local_snapshot() {
     vlog(
       clusterlog.info,
       "Saving feature_table_snapshot at version {}...",
-      _feature_table.local().get_active_version());
-
-    auto snapshot = features::feature_table_snapshot::from(
-      _feature_table.local());
-
+      snapshot.version);
     auto val_bytes = serde::to_iobuf(snapshot);
 
-    co_await _storage.local().kvs().put(
+    co_await storage.kvs().put(
       storage::kvstore::key_space::controller,
       features::feature_table_snapshot::kvstore_key(),
       std::move(val_bytes));

@@ -158,20 +158,22 @@ async def main():
     elif extra_args:
         # Re-do with strict parse: this will surface unknown argument errors
         args = parser.parse_args()
-    seed_servers = [
+
+    # Use the first 3 nodes as seed servers
+    rpc_addresses = [
         NetworkAddress(args.listen_address, args.base_rpc_port + i)
         for i in range(args.nodes)
     ]
 
     def make_node_config(i, data_dir, config_path, rack):
         make_address = lambda p: NetworkAddress(args.listen_address, p + i)
-        rpc_address = seed_servers[i]
+        rpc_address = rpc_addresses[i]
         redpanda = RedpandaConfig(data_directory=data_dir,
                                   rpc_server=rpc_address,
                                   advertised_rpc_api=rpc_address,
                                   kafka_api=make_address(args.base_kafka_port),
                                   admin=make_address(args.base_admin_port),
-                                  seed_servers=seed_servers,
+                                  seed_servers=rpc_addresses[:3],
                                   empty_seed_starts_cluster=False,
                                   rack=rack)
         return NodeConfig(redpanda=redpanda,

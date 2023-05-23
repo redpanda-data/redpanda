@@ -242,6 +242,8 @@ private:
     ss::future<std::error_code> add_node(model::broker);
     ss::future<std::error_code> update_node(model::broker);
 
+    ss::future<join_node_reply> make_join_node_success_reply(model::node_id id);
+
     bool command_based_membership_active() const {
         return _feature_table.local().is_active(
           features::feature::membership_change_controller_cmds);

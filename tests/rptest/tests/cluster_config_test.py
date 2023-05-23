@@ -39,6 +39,76 @@ SECRET_CONFIG_NAMES = frozenset(
     ["cloud_storage_secret_key", "cloud_storage_azure_shared_key"])
 
 
+def check_restart_clears(admin, redpanda, nodes=None):
+    """
+    After changing a setting with needs_restart=true, check that
+    nodes clear the flag after being restarted.
+    """
+    if nodes is None:
+        nodes = redpanda.nodes
+
+    status = admin.get_cluster_config_status()
+    for n in status:
+        assert n['restart'] is True
+
+    first_node = nodes[0]
+    other_nodes = nodes[1:]
+    redpanda.restart_nodes(first_node)
+    wait_until(
+        lambda: admin.get_cluster_config_status()[0]['restart'] == False,
+        timeout_sec=10,
+        backoff_sec=0.5,
+        err_msg=f"Restart flag did not clear after restart")
+
+    redpanda.restart_nodes(other_nodes)
+    wait_until(
+        lambda: set([n['restart']
+                     for n in admin.get_cluster_config_status()]) == {False},
+        timeout_sec=10,
+        backoff_sec=0.5,
+        err_msg=f"Not all nodes cleared restart flag")
+
+
+def wait_for_version_sync(admin, redpanda, version):
+    """
+    Waits for the controller to see up to date status at `version` from
+    all nodes.  Does _not_ guarantee that this status result has also
+    propagated to all other node: use _wait_for_version_status_sync
+    if you need to query status from an arbitrary node and get consistent
+    result.
+    """
+    wait_until(lambda: set([
+        n['config_version']
+        for n in admin.get_cluster_config_status(node=redpanda.controller())
+    ]) == {version},
+               timeout_sec=10,
+               backoff_sec=0.5,
+               err_msg=f"Config status versions did not converge on {version}")
+
+
+def wait_for_version_status_sync(admin, redpanda, version, nodes=None):
+    """
+    Stricter than _wait_for_version_sync: this requires not only that
+    the config version has propagated to all nodes, but also that the
+    consequent config status (of all the peers) has propagated to all nodes.
+    """
+
+    if nodes is None:
+        nodes = redpanda.nodes
+
+    def is_complete(node):
+        node_status = admin.get_cluster_config_status(node=node)
+        return set(n['config_version'] for n in node_status) == {
+            version
+        } and len(node_status) == len(nodes)
+
+    for node in nodes:
+        wait_until(lambda: is_complete(node),
+                   timeout_sec=10,
+                   backoff_sec=0.5,
+                   err_msg=f"Config status did not converge on {version}")
+
+
 class ClusterConfigUpgradeTest(RedpandaTest):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, extra_rp_conf={}, **kwargs)
@@ -147,7 +217,8 @@ class ClusterConfigTest(RedpandaTest):
         # After setting something to non-default is should appear
         patch_result = self.admin.patch_cluster_config(
             upsert={'kafka_qdc_enable': True})
-        self._wait_for_version_sync(patch_result['config_version'])
+        wait_for_version_sync(self.admin, self.redpanda,
+                              patch_result['config_version'])
         short_config = admin.get_cluster_config(include_defaults=False)
         assert 'kafka_qdc_enable' in short_config
         assert len(short_config) == len(initial_short_config) + 1
@@ -155,7 +226,8 @@ class ClusterConfigTest(RedpandaTest):
         # After resetting to default it should disappear
         patch_result = self.admin.patch_cluster_config(
             remove=['kafka_qdc_enable'])
-        self._wait_for_version_sync(patch_result['config_version'])
+        wait_for_version_sync(self.admin, self.redpanda,
+                              patch_result['config_version'])
         short_config = admin.get_cluster_config(include_defaults=False)
         assert 'kafka_qdc_enable' not in short_config
         assert len(short_config) == len(initial_short_config)
@@ -186,41 +258,6 @@ class ClusterConfigTest(RedpandaTest):
         for k, v in BOOTSTRAP_CONFIG.items():
             assert config[k] == v
 
-    def _wait_for_version_sync(self, version):
-        """
-        Waits for the controller to see up to date status at `version` from
-        all nodes.  Does _not_ guarantee that this status result has also
-        propagated to all other node: use _wait_for_version_status_sync
-        if you need to query status from an arbitrary node and get consistent
-        result.
-        """
-        wait_until(
-            lambda: set([
-                n['config_version'] for n in self.admin.
-                get_cluster_config_status(node=self.redpanda.controller())
-            ]) == {version},
-            timeout_sec=10,
-            backoff_sec=0.5,
-            err_msg=f"Config status versions did not converge on {version}")
-
-    def _wait_for_version_status_sync(self, version):
-        """
-        Stricter than _wait_for_version_sync: this requires not only that
-        the config version has propagated to all nodes, but also that the
-        consequent config status (of all the peers) has propagated to all nodes.
-        """
-        def is_complete(node):
-            node_status = self.admin.get_cluster_config_status(node=node)
-            return set(n['config_version'] for n in node_status) == {
-                version
-            } and len(node_status) == len(self.redpanda.nodes)
-
-        for node in self.redpanda.nodes:
-            wait_until(lambda: is_complete(node),
-                       timeout_sec=10,
-                       backoff_sec=0.5,
-                       err_msg=f"Config status did not converge on {version}")
-
     def _quiesce_status(self):
         """
         Query the cluster version from the controller leader, then wait til all
@@ -235,33 +272,7 @@ class ClusterConfigTest(RedpandaTest):
             for n in self.admin.get_cluster_config_status(node=leader))
 
         # Wait for all nodes to report all other nodes status' up to date
-        self._wait_for_version_status_sync(version)
-
-    def _check_restart_clears(self):
-        """
-        After changing a setting with needs_restart=true, check that
-        nodes clear the flag after being restarted.
-        """
-        status = self.admin.get_cluster_config_status()
-        for n in status:
-            assert n['restart'] is True
-
-        first_node = self.redpanda.nodes[0]
-        other_nodes = self.redpanda.nodes[1:]
-        self.redpanda.restart_nodes(first_node)
-        wait_until(lambda: self.admin.get_cluster_config_status()[0]['restart']
-                   == False,
-                   timeout_sec=10,
-                   backoff_sec=0.5,
-                   err_msg=f"Restart flag did not clear after restart")
-
-        self.redpanda.restart_nodes(other_nodes)
-        wait_until(lambda: set(
-            [n['restart']
-             for n in self.admin.get_cluster_config_status()]) == {False},
-                   timeout_sec=10,
-                   backoff_sec=0.5,
-                   err_msg=f"Not all nodes cleared restart flag")
+        wait_for_version_status_sync(self.admin, self.redpanda, version)
 
     @cluster(num_nodes=3)
     def test_restart(self):
@@ -275,21 +286,21 @@ class ClusterConfigTest(RedpandaTest):
         patch_result = self.admin.patch_cluster_config(
             upsert=dict([new_setting]))
         new_version = patch_result['config_version']
-        self._wait_for_version_status_sync(new_version)
+        wait_for_version_status_sync(self.admin, self.redpanda, new_version)
 
         assert self.admin.get_cluster_config()[
             new_setting[0]] == new_setting[1]
         # Update of cluster status is not synchronous
-        self._check_restart_clears()
+        check_restart_clears(self.admin, self.redpanda)
 
         # Test that a reset to default triggers the restart flag the same way as
         # an upsert does
         patch_result = self.admin.patch_cluster_config(remove=[new_setting[0]])
         new_version = patch_result['config_version']
-        self._wait_for_version_status_sync(new_version)
+        wait_for_version_status_sync(self.admin, self.redpanda, new_version)
         assert self.admin.get_cluster_config()[
             new_setting[0]] != new_setting[1]
-        self._check_restart_clears()
+        check_restart_clears(self.admin, self.redpanda)
 
     @cluster(num_nodes=3)
     def test_multistring_restart(self):
@@ -304,7 +315,8 @@ class ClusterConfigTest(RedpandaTest):
                 "cloud_storage_access_key": "user",
                 "cloud_storage_secret_key": "pass"
             })
-        self._wait_for_version_sync(patch_result['config_version'])
+        wait_for_version_sync(self.admin, self.redpanda,
+                              patch_result['config_version'])
         self._check_value_everywhere("cloud_storage_access_key", "user")
         self._check_value_everywhere("cloud_storage_secret_key", "[secret]")
 
@@ -316,7 +328,8 @@ class ClusterConfigTest(RedpandaTest):
         # Set just one of the values
         patch_result = self.admin.patch_cluster_config(
             upsert={"cloud_storage_access_key": "user2"})
-        self._wait_for_version_sync(patch_result['config_version'])
+        wait_for_version_sync(self.admin, self.redpanda,
+                              patch_result['config_version'])
         self._check_value_everywhere("cloud_storage_access_key", "user2")
         self._check_value_everywhere("cloud_storage_secret_key", "[secret]")
 
@@ -353,13 +366,13 @@ class ClusterConfigTest(RedpandaTest):
         patch_result = self.admin.patch_cluster_config(
             upsert=dict([norestart_new_setting]))
         new_version = patch_result['config_version']
-        self._wait_for_version_sync(new_version)
+        wait_for_version_sync(self.admin, self.redpanda, new_version)
 
         assert self.admin.get_cluster_config()[
             norestart_new_setting[0]] == norestart_new_setting[1]
 
         # Status should not indicate restart needed
-        self._wait_for_version_status_sync(new_version)
+        wait_for_version_status_sync(self.admin, self.redpanda, new_version)
         status = self.admin.get_cluster_config_status()
         for n in status:
             assert n['restart'] is False
@@ -436,7 +449,7 @@ class ClusterConfigTest(RedpandaTest):
             [invalid_setting]),
                                                        force=True)
         new_version = patch_result['config_version']
-        self._wait_for_version_status_sync(new_version)
+        wait_for_version_status_sync(self.admin, self.redpanda, new_version)
 
         assert self.admin.get_cluster_config()[
             invalid_setting[0]] == default_value
@@ -463,11 +476,13 @@ class ClusterConfigTest(RedpandaTest):
         # Reset the properties, check that it disappears from the list of invalid settings
         patch_result = self.admin.patch_cluster_config(
             remove=[invalid_setting[0]], force=True)
-        self._wait_for_version_sync(patch_result['config_version'])
+        wait_for_version_sync(self.admin, self.redpanda,
+                              patch_result['config_version'])
         assert self.admin.get_cluster_config()[
             invalid_setting[0]] == default_value
 
-        self._wait_for_version_status_sync(patch_result['config_version'])
+        wait_for_version_status_sync(self.admin, self.redpanda,
+                                     patch_result['config_version'])
         status = self.admin.get_cluster_config_status()
         for n in status:
             assert n['restart'] is False
@@ -597,7 +612,8 @@ class ClusterConfigTest(RedpandaTest):
 
         patch_result = self.admin.patch_cluster_config(upsert=updates,
                                                        remove=[])
-        self._wait_for_version_status_sync(patch_result['config_version'])
+        wait_for_version_status_sync(self.admin, self.redpanda,
+                                     patch_result['config_version'])
 
         def check_status(expect_restart):
             # Use one node's status, they should be symmetric
@@ -727,7 +743,7 @@ class ClusterConfigTest(RedpandaTest):
         version_a, text = self._export_import_modify_one(
             "kafka_qdc_enable: false", "kafka_qdc_enable: true")
         assert version_a is not None
-        self._wait_for_version_sync(version_a)
+        wait_for_version_sync(self.admin, self.redpanda, version_a)
 
         # Default should not have included tunables
         assert tunable_property not in text
@@ -741,7 +757,7 @@ class ClusterConfigTest(RedpandaTest):
         assert version_b is not None
 
         assert version_b > version_a
-        self._wait_for_version_sync(version_b)
+        wait_for_version_sync(self.admin, self.redpanda, version_b)
         self._check_value_everywhere("kafka_qdc_enable", False)
 
         # Check that an --all export includes tunables
@@ -756,7 +772,7 @@ class ClusterConfigTest(RedpandaTest):
         assert version_c is not None
 
         assert version_c > version_b
-        self._wait_for_version_sync(version_c)
+        wait_for_version_sync(self.admin, self.redpanda, version_c)
         self._check_value_everywhere("kafka_qdc_depth_alpha", 1.5)
 
         # Check that clearing a tunable with --all works
@@ -765,7 +781,7 @@ class ClusterConfigTest(RedpandaTest):
         assert version_d is not None
 
         assert version_d > version_c
-        self._wait_for_version_sync(version_d)
+        wait_for_version_sync(self.admin, self.redpanda, version_d)
         self._check_value_everywhere("kafka_qdc_depth_alpha", 0.8)
 
         # Check that an import/export with no edits does nothing.
@@ -825,7 +841,7 @@ class ClusterConfigTest(RedpandaTest):
         """
 
         new_version, _ = self._import(text, all, allow_noop=True)
-        self._wait_for_version_sync(new_version)
+        wait_for_version_sync(self.admin, self.redpanda, new_version)
 
         schema_properties = self.admin.get_cluster_config_schema(
         )['properties']
@@ -880,13 +896,13 @@ class ClusterConfigTest(RedpandaTest):
         version_a, _ = self._export_import_modify_one(
             "cloud_storage_access_key:\n",
             "cloud_storage_access_key: foobar\n")
-        self._wait_for_version_sync(version_a)
+        wait_for_version_sync(self.admin, self.redpanda, version_a)
         self._check_value_everywhere("cloud_storage_access_key", "foobar")
 
         version_b, _ = self._export_import_modify_one(
             "cloud_storage_access_key: foobar\n",
             "cloud_storage_access_key: \"foobaz\"")
-        self._wait_for_version_sync(version_b)
+        wait_for_version_sync(self.admin, self.redpanda, version_b)
         self._check_value_everywhere("cloud_storage_access_key", "foobaz")
 
     @cluster(num_nodes=3)
@@ -932,7 +948,7 @@ class ClusterConfigTest(RedpandaTest):
             'kafka_qdc_enable': True,
             'append_chunk_size': 65536
         })
-        self._wait_for_version_sync(pr['config_version'])
+        wait_for_version_sync(self.admin, self.redpanda, pr['config_version'])
         self._check_value_everywhere("kafka_qdc_enable", True)
 
         # Reset the property on all nodes
@@ -1063,7 +1079,8 @@ class ClusterConfigTest(RedpandaTest):
     def test_secret_redaction(self):
         def set_and_search(key, value, expect_log):
             patch_result = self.admin.patch_cluster_config(upsert={key: value})
-            self._wait_for_version_sync(patch_result['config_version'])
+            wait_for_version_sync(self.admin, self.redpanda,
+                                  patch_result['config_version'])
 
             # Check value was/was not printed to log while applying
             assert self.redpanda.search_log_any(value) is expect_log
@@ -1230,7 +1247,8 @@ class ClusterConfigTest(RedpandaTest):
             )
             patch_result = self.admin.patch_cluster_config(upsert=payload,
                                                            remove=removed)
-            self._wait_for_version_sync(patch_result['config_version'])
+            wait_for_version_sync(self.admin, self.redpanda,
+                                  patch_result['config_version'])
 
             # Check we really set it properly, and Redpanda can restart without
             # hitting a validation issue on startup (this is what would happen
@@ -1247,7 +1265,8 @@ class ClusterConfigTest(RedpandaTest):
         }
         patch_result = self.admin.patch_cluster_config(upsert=static_config,
                                                        remove=[])
-        self._wait_for_version_sync(patch_result['config_version'])
+        wait_for_version_sync(self.admin, self.redpanda,
+                              patch_result['config_version'])
         self.redpanda.restart_nodes(self.redpanda.nodes)
 
         # It is invalid to clear any required cloud storage properties while
@@ -1264,7 +1283,8 @@ class ClusterConfigTest(RedpandaTest):
         # properties set
         patch_result = self.admin.patch_cluster_config(
             upsert={'cloud_storage_enabled': False}, remove=[])
-        self._wait_for_version_sync(patch_result['config_version'])
+        wait_for_version_sync(self.admin, self.redpanda,
+                              patch_result['config_version'])
 
         # Clearing related properties is valid now that cloud storage is
         # disabled
@@ -1296,7 +1316,7 @@ class ClusterConfigTest(RedpandaTest):
         r = admin.patch_cluster_config(
             upsert={'enable_leader_balancer': False})
         config_version = r['config_version']
-        self._wait_for_version_sync(config_version)
+        wait_for_version_sync(self.admin, self.redpanda, config_version)
 
         controller_node = self.redpanda.controller()
         for i in range(0, 50):
@@ -1529,3 +1549,66 @@ class ClusterConfigAzureSharedKey(RedpandaTest):
         with expect_http_error(400):
             self.redpanda.set_cluster_config(
                 {"cloud_storage_azure_shared_key": None}, expect_restart=False)
+
+
+class ClusterConfigNodeAddTest(RedpandaTest):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, num_brokers=4, **kwargs)
+        self.admin = Admin(self.redpanda)
+
+    def setUp(self):
+        # Skip starting redpanda, so that test can explicitly start
+        # it with some override_cfg_params
+        pass
+
+    @cluster(num_nodes=4)
+    def test_node_add_with_snapshot(self):
+        """
+        Validate that when we add a node to the cluster, it picks up configuration
+        properties early enough in the process that 'needs restart' properties are
+        not in their restart-required state once the node comes up.
+
+        This indirectly confirms that the snapshots included in node join RPCs
+        are working as intended.  This functionality is added in Redpanda v23.2.x
+        """
+        def assert_restart_status(expect: bool):
+            status = self.admin.get_cluster_config_status()
+            for n in status:
+                assert n['restart'] is expect
+
+        original_nodes = self.redpanda.nodes[0:3]
+        add_node = self.redpanda.nodes[3]
+        self.redpanda.start(nodes=original_nodes)
+
+        # Wait for config status to populate
+        wait_until(lambda: len(self.admin.get_cluster_config_status()) == 3,
+                   timeout_sec=30,
+                   backoff_sec=1)
+
+        assert_restart_status(False)
+
+        # An arbitrary restart-requiring setting with a non-default value
+        new_setting = ('kafka_qdc_idle_depth', 77)
+        patch_result = self.admin.patch_cluster_config(
+            upsert=dict([new_setting]))
+        new_version = patch_result['config_version']
+        wait_for_version_status_sync(self.admin,
+                                     self.redpanda,
+                                     new_version,
+                                     nodes=original_nodes)
+        assert_restart_status(True)
+
+        # Restart existing nodes to get them into a clean state
+        check_restart_clears(self.admin, self.redpanda, nodes=original_nodes)
+
+        # Add a new node
+        self.redpanda.start_node(add_node)
+
+        # Wait for config status to include new node
+        wait_until(lambda: len(self.admin.get_cluster_config_status()) == 4,
+                   timeout_sec=30,
+                   backoff_sec=1)
+
+        status = self.admin.get_cluster_config_status()
+        for n in status:
+            assert n['restart'] is False

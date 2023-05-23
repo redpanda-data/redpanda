@@ -41,7 +41,8 @@ cluster_discovery::cluster_discovery(
   , _storage(storage)
   , _as(as) {}
 
-ss::future<node_id> cluster_discovery::determine_node_id() {
+ss::future<cluster_discovery::registration_result>
+cluster_discovery::register_with_cluster() {
     // Initialize cluster founder state, in case we are starting a new cluster.
     // This will validate our configured node ID if we are a cluster founder.
     bool is_founder = co_await is_cluster_founder();
@@ -49,23 +50,23 @@ ss::future<node_id> cluster_discovery::determine_node_id() {
         vassert(
           config::node().node_id().has_value(),
           "initializing founder state should have set the local node ID");
-        co_return *config::node().node_id();
+        co_return registration_result{
+          .assigned_node_id = *config::node().node_id()};
     }
-    if (config::node().node_id() != std::nullopt) {
-        // If we're not a founder but we already have a node ID, just return.
-        // We will send it to the controller when we join the cluster.
-        co_return *config::node().node_id();
-    }
-    model::node_id assigned_node_id;
+
+    // All non-founder nodes must register before their first start of
+    // the controller.
+
     while (!_as.abort_requested()) {
-        auto assigned = co_await dispatch_node_uuid_registration_to_seeds(
-          assigned_node_id);
-        if (assigned) {
-            break;
+        auto reg_result = co_await dispatch_node_uuid_registration_to_seeds();
+        if (reg_result.has_value()) {
+            co_return std::move(reg_result.value());
         }
         co_await ss::sleep_abortable(_join_retry_jitter.next_duration(), _as);
     }
-    co_return assigned_node_id;
+
+    // We only drop out of loop if we shut down before successfully registering
+    throw ss::abort_requested_exception();
 }
 
 cluster_discovery::brokers cluster_discovery::founding_brokers() const {
@@ -131,14 +132,17 @@ cluster_discovery::node_ids_by_uuid& cluster_discovery::get_node_ids_by_uuid() {
     return _node_ids_by_uuid;
 }
 
-ss::future<bool> cluster_discovery::dispatch_node_uuid_registration_to_seeds(
-  model::node_id& assigned_node_id) {
+ss::future<std::optional<cluster_discovery::registration_result>>
+cluster_discovery::dispatch_node_uuid_registration_to_seeds() {
     const auto& seed_servers = config::node().seed_servers();
     auto self = make_self_broker(config::node());
     for (const auto& s : seed_servers) {
         vlog(
           clusterlog.info,
-          "Requesting node ID for node UUID {} from {}",
+          "Requesting node ID {} for node UUID {} from {}",
+          config::node().node_id().has_value()
+            ? fmt::format("{}", config::node().node_id().value())
+            : "",
           _node_uuid,
           s.addr);
         result<join_node_reply> r(join_node_reply{});
@@ -182,16 +186,18 @@ ss::future<bool> cluster_discovery::dispatch_node_uuid_registration_to_seeds(
               _node_uuid);
             continue;
         }
-        const auto& reply = r.value();
+        auto& reply = r.value();
         if (reply.id < 0) {
             // Something else went wrong. Maybe duplicate UUID?
             vlog(clusterlog.debug, "Negative node ID {}", reply.id);
             continue;
         }
-        assigned_node_id = reply.id;
-        co_return true;
+        co_return registration_result{
+          .newly_registered = true,
+          .assigned_node_id = reply.id,
+          .controller_snapshot = std::move(reply.controller_snapshot)};
     }
-    co_return false;
+    co_return std::nullopt;
 }
 
 ss::future<cluster_bootstrap_info_reply>

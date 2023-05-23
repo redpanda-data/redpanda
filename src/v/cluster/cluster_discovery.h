@@ -69,21 +69,34 @@ public:
     using node_ids_by_uuid
       = absl::flat_hash_map<model::node_uuid, model::node_id>;
 
+    // After a successful join by a non-founder node to an existing cluster,
+    // this is what we know about the cluster
+    struct registration_result {
+        // True if this is the result of registering the node with the
+        // cluster, false if it is populated based on local state (i.e.
+        // we are a founder or an already-registered node).
+        bool newly_registered{false};
+
+        model::node_id assigned_node_id;
+        std::optional<iobuf> controller_snapshot;
+    };
+
     cluster_discovery(
       const model::node_uuid& node_uuid, storage::api&, ss::abort_source&);
 
-    // Determines what the node ID for this node should be. Once called, we can
-    // proceed with initializing anything that depends on node ID (Raft
-    // subsystem, etc).
+    // Register with the cluster:
+    // - If we are a fresh cluster founder, broadcast to other founders
+    //   to ensure we agree on the seed servers, then proceed.
+    // - For non-founders, call out to a seed server to register, which
+    //   will issue us with a node ID if we don't already have one, and
+    //   provide a controller snapshot.
     //
-    // On a non-seed server with no node ID specified via config or on disk,
-    // this sends a request to the controllers to register this node's UUID and
-    // assign it a node ID.
-    //
-    // On a seed server with no data on it (i.e. a fresh node), this sends
-    // requests to all other seed servers to determine if there is a valid
-    // assignment of node IDs for the seeds.
-    ss::future<model::node_id> determine_node_id();
+    // This method is to be used before starting the controller for
+    // the first time: after this method returns success, we have a node ID set,
+    // the cluster has accepted our request to join, and we have a controller
+    // snapshot that we can use to prime configuration/features state before
+    // starting up the controller.
+    ss::future<registration_result> register_with_cluster();
 
     // Returns brokers to be used to form a Raft group for a new cluster.
     //
@@ -115,9 +128,9 @@ public:
 
 private:
     // Sends requests to each seed server to register the local node UUID
-    // until one succeeds. Upon success, sets `node_id` to the assigned node
-    // ID and returns true.
-    ss::future<bool> dispatch_node_uuid_registration_to_seeds(model::node_id&);
+    // until one succeeds. Returns nullopt if registration did not succeed.
+    ss::future<std::optional<registration_result>>
+    dispatch_node_uuid_registration_to_seeds();
 
     // Requests `cluster_bootstrap_info` from the given address, returning
     // early with a bogus result if it's already been determined if this node
