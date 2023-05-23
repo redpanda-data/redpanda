@@ -435,7 +435,7 @@ class LocalDiskReportTest(RedpandaTest):
             # 4 partition with default segment size
             # controller partition has default segment size
             # reservation will be for min_segments
-            expected = min_segments * ((1 * 2**30) + \
+            expected = min_segments * ((1 * self.topics[0].segment_bytes) + \
                        (4 * default_segment_size) + \
                        (1 * default_segment_size))
 
