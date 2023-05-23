@@ -51,6 +51,26 @@
 
 #include <exception>
 
+namespace {
+class bounded_stream final : public ss::data_source_impl {
+public:
+    bounded_stream(ss::input_stream<char>& stream, size_t upto)
+      : _stream{stream}
+      , _upto{upto} {}
+
+    ss::future<ss::temporary_buffer<char>> get() override {
+        auto buf = co_await _stream.read_up_to(_upto);
+        _upto -= buf.size();
+        co_return buf;
+    }
+
+private:
+    ss::input_stream<char>& _stream;
+    size_t _upto;
+};
+
+} // namespace
+
 namespace cloud_storage {
 
 std::filesystem::path
