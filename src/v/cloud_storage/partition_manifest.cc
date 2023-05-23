@@ -879,6 +879,18 @@ partition_manifest partition_manifest::truncate() {
         _start_offset = model::offset{};
         // NOTE: _last_offset should not be reset
     }
+    return removed;
+}
+
+partition_manifest partition_manifest::spillover(model::offset start_offset) {
+    if (!advance_start_offset(start_offset)) {
+        throw std::runtime_error(fmt_with_ctx(
+          fmt::format,
+          "{} can't apply spillover to manifest, offset: {}",
+          _ntp,
+          start_offset));
+    }
+    auto removed = truncate();
     // Update size of the archived part of the log.
     // It doesn't include segments which are remaining in the
     // manifest.

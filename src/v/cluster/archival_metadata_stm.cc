@@ -131,6 +131,12 @@ struct archival_metadata_stm::reset_metadata_cmd {
     using value = iobuf;
 };
 
+struct archival_metadata_stm::spillover_cmd {
+    static constexpr cmd_key key{9};
+
+    using value = start_offset;
+};
+
 struct archival_metadata_stm::snapshot
   : public serde::
       envelope<snapshot, serde::version<3>, serde::compat_version<0>> {
@@ -257,7 +263,7 @@ command_batch_builder::truncate(kafka::offset start_kafka_offset) {
 command_batch_builder&
 command_batch_builder::spillover(model::offset start_rp_offset) {
     iobuf key_buf = serde::to_iobuf(archival_metadata_stm::truncate_cmd::key);
-    auto record_val = archival_metadata_stm::truncate_cmd::value{
+    auto record_val = archival_metadata_stm::spillover_cmd::value{
       .start_offset = start_rp_offset};
     iobuf val_buf = serde::to_iobuf(record_val);
     _builder.add_raw_kv(std::move(key_buf), std::move(val_buf));
@@ -724,6 +730,10 @@ ss::future<> archival_metadata_stm::apply(model::record_batch b) {
         case reset_metadata_cmd::key:
             apply_reset_metadata();
             break;
+        case spillover_cmd::key:
+            apply_spillover(
+              serde::from_iobuf<truncate_cmd::value>(r.release_value()));
+            break;
         };
     });
 
@@ -1042,6 +1052,15 @@ void archival_metadata_stm::apply_truncate_archive_commit(
       get_archive_clean_offset(),
       co);
     _manifest->set_archive_clean_offset(co, bytes_removed);
+}
+
+void archival_metadata_stm::apply_spillover(const start_offset& so) {
+    auto removed = _manifest->spillover(so.start_offset);
+    vlog(
+      _logger.debug,
+      "Spillover command applied, new start offset: {}, new last offset: {}",
+      get_start_offset(),
+      get_last_offset());
 }
 
 std::vector<cloud_storage::partition_manifest::lw_segment_meta>

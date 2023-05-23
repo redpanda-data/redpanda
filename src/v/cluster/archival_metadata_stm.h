@@ -251,6 +251,7 @@ private:
     struct truncate_archive_init_cmd;
     struct truncate_archive_commit_cmd;
     struct reset_metadata_cmd;
+    struct spillover_cmd;
     struct snapshot;
 
     friend segment segment_from_meta(const cloud_storage::segment_meta& meta);
@@ -271,6 +272,7 @@ private:
     apply_truncate_archive_commit(model::offset co, uint64_t bytes_removed);
     void apply_update_start_kafka_offset(kafka::offset so);
     void apply_reset_metadata();
+    void apply_spillover(const start_offset& so);
 
 private:
     prefix_logger _logger;

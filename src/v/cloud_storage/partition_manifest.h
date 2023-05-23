@@ -297,6 +297,14 @@ public:
     partition_manifest truncate(model::offset starting_rp_offset);
     partition_manifest truncate();
 
+    /// \brief Truncate the manifest (remove entries from the manifest)
+    ///
+    /// \note this works the same way as 'truncate' but the 'archive' size
+    ///       gets correctly updated.
+    /// \param starting_rp_offset is a new starting offset of the manifest
+    /// \return manifest that contains only removed segments
+    partition_manifest spillover(model::offset starting_rp_offset);
+
     /// \brief Set start offset without removing any data from the
     /// manifest.
     ///
