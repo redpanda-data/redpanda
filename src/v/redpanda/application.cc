@@ -1934,7 +1934,7 @@ void application::wire_up_and_start(::stop_signal& app_signal, bool test_mode) {
           config::node().node_id());
         node_id = config::node().node_id().value();
     } else {
-        auto registration_result = cd.determine_node_id().get();
+        auto registration_result = cd.register_with_cluster().get();
         node_id = registration_result.assigned_node_id;
 
         if (registration_result.newly_registered) {

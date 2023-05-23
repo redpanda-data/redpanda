@@ -42,7 +42,7 @@ cluster_discovery::cluster_discovery(
   , _as(as) {}
 
 ss::future<cluster_discovery::registration_result>
-cluster_discovery::determine_node_id() {
+cluster_discovery::register_with_cluster() {
     // Initialize cluster founder state, in case we are starting a new cluster.
     // This will validate our configured node ID if we are a cluster founder.
     bool is_founder = co_await is_cluster_founder();

@@ -84,18 +84,19 @@ public:
     cluster_discovery(
       const model::node_uuid& node_uuid, storage::api&, ss::abort_source&);
 
-    // Determines what the node ID for this node should be. Once called, we can
-    // proceed with initializing anything that depends on node ID (Raft
-    // subsystem, etc).
+    // Register with the cluster:
+    // - If we are a fresh cluster founder, broadcast to other founders
+    //   to ensure we agree on the seed servers, then proceed.
+    // - For non-founders, call out to a seed server to register, which
+    //   will issue us with a node ID if we don't already have one, and
+    //   provide a controller snapshot.
     //
-    // On a non-seed server with no node ID specified via config or on disk,
-    // this sends a request to the controllers to register this node's UUID and
-    // assign it a node ID.
-    //
-    // On a seed server with no data on it (i.e. a fresh node), this sends
-    // requests to all other seed servers to determine if there is a valid
-    // assignment of node IDs for the seeds.
-    ss::future<registration_result> determine_node_id();
+    // This method is to be used before starting the controller for
+    // the first time: after this method returns success, we have a node ID set,
+    // the cluster has accepted our request to join, and we have a controller
+    // snapshot that we can use to prime configuration/features state before
+    // starting up the controller.
+    ss::future<registration_result> register_with_cluster();
 
     // Returns brokers to be used to form a Raft group for a new cluster.
     //
