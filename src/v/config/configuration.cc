@@ -1403,7 +1403,7 @@ configuration::configuration()
       std::nullopt)
   , cloud_storage_graceful_transfer_timeout_ms(
       *this,
-      "cloud_storage_graceful_transfer_timeout",
+      "cloud_storage_graceful_transfer_timeout_ms",
       "Time limit on waiting for uploads to complete before a leadership "
       "transfer.  If this is null, leadership transfers will proceed without "
       "waiting.",
