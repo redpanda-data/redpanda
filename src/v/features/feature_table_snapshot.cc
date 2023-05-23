@@ -43,6 +43,7 @@ void feature_table_snapshot::apply(feature_table& ft) const {
 
     ft.set_active_version(version);
     ft._license = license;
+
     for (auto& cur_state : ft._feature_state) {
         const auto& spec = cur_state.spec;
         auto snap_state_iter = std::find_if(

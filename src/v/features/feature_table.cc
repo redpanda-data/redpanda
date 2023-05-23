@@ -340,7 +340,11 @@ void feature_table::on_update() {
 void feature_table::apply_action(const feature_update_action& fua) {
     auto feature_id_opt = resolve_name(fua.feature_name);
     if (!feature_id_opt.has_value()) {
-        vlog(featureslog.warn, "Ignoring action {}, unknown feature", fua);
+        if (features::retired_features.contains(fua.feature_name)) {
+            vlog(featureslog.debug, "Ignoring action {}, retired feature", fua);
+        } else {
+            vlog(featureslog.warn, "Ignoring action {}, unknown feature", fua);
+        }
         return;
     } else {
         if (ss::this_shard_id() == 0) {

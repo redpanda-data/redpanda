@@ -65,6 +65,14 @@ enum class feature : std::uint64_t {
     test_bravo = 1ULL << 63U,
 };
 
+
+// Eventually, once a feature has been in use for a while, it is no longer
+// behind a feature flag, and the flag itself is retired.  We remember a list
+// of all retired features, because this enables us to distinguish between
+// controller messages for unknown features (unexpected), and controller messages
+// that refer to features that have been retired.
+inline const std::set<std::string_view> retired_features;
+
 /**
  * The definition of a feature specifies rules for when it should
  * be activated,
