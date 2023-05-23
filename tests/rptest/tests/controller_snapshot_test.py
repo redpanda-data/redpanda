@@ -37,14 +37,19 @@ class ControllerSnapshotPolicyTest(RedpandaTest):
         """
         Test that Redpanda creates a controller snapshot some time after controller commands appear.
         """
-        self.redpanda.start()
         admin = Admin(self.redpanda)
+        self.redpanda.start()
+        self.redpanda.set_feature_active('controller_snapshots',
+                                         False,
+                                         timeout_sec=10)
 
         for n in self.redpanda.nodes:
             controller_status = admin.get_controller_status(n)
             assert controller_status['start_offset'] == 0
 
-        admin.put_feature("controller_snapshots", {"state": "active"})
+        self.redpanda.set_feature_active('controller_snapshots',
+                                         True,
+                                         timeout_sec=10)
 
         # first snapshot will be triggered by the feature_update command
         # check that snapshot is created both on the leader and on followers
@@ -181,7 +186,6 @@ class ControllerSnapshotTest(RedpandaTest):
                             auto_assign_node_id=auto_assign_node_ids,
                             omit_seeds_on_idx_one=False)
         admin = Admin(self.redpanda, default_node=seed_nodes[0])
-        admin.put_feature("controller_snapshots", {"state": "active"})
 
         for n in seed_nodes:
             self.redpanda.wait_for_controller_snapshot(n)
@@ -257,6 +261,9 @@ class ControllerSnapshotTest(RedpandaTest):
 
         admin = Admin(self.redpanda, default_node=seed_nodes[0])
         rpk = RpkTool(self.redpanda)
+
+        # Start without snapshots, to build up some data
+        admin.put_feature("controller_snapshots", {"state": "disabled"})
 
         # change controller state
 

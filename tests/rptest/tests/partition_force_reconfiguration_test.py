@@ -100,8 +100,9 @@ class PartitionForceReconfigurationTest(EndToEndTest, PartitionMovementMixin):
         if controller_snapshots:
             self.redpanda.set_cluster_config(
                 {"controller_snapshot_max_age_sec": 1})
+        else:
             self.redpanda._admin.put_feature("controller_snapshots",
-                                             {"state": "active"})
+                                             {"state": "disabled"})
 
         # Kill a majority of nodes
         (killed, alive) = self._stop_majority_nodes()
@@ -147,8 +148,9 @@ class PartitionForceReconfigurationTest(EndToEndTest, PartitionMovementMixin):
         if controller_snapshots:
             self.redpanda.set_cluster_config(
                 {"controller_snapshot_max_age_sec": 1})
+        else:
             self.redpanda._admin.put_feature("controller_snapshots",
-                                             {"state": "active"})
+                                             {"state": "disabled"})
 
         self.topic = "topic"
         self.client().create_topic(
