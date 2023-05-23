@@ -63,7 +63,7 @@ upload_housekeeping_service::upload_housekeeping_service(
   , _rtc(_as)
   , _ctxlog(archival_log, _rtc)
   , _filter(_rtc)
-  , _workflow(_rtc, sg)
+  , _workflow(_rtc, sg, _probe)
   , _api_utilization(
       std::make_unique<sliding_window_t>(0.0, _idle_timeout(), ma_resolution)) {
     _idle_timer.set_callback([this] { return idle_timer_callback(); });
