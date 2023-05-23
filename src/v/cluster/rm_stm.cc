@@ -3001,6 +3001,10 @@ uint64_t rm_stm::get_snapshot_size() const {
     for (const auto& snapshot_size : _abort_snapshot_sizes) {
         abort_snapshots_size += snapshot_size.second;
     }
+    vlog(
+      clusterlog.trace,
+      "rm_stm: aborted snapshots size {}",
+      abort_snapshots_size);
     return persisted_stm::get_snapshot_size() + abort_snapshots_size;
 }
 
