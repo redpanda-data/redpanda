@@ -233,6 +233,10 @@ ss::future<> rpc_server::dispatch_method_once(
                           "Timing out request on abort_requested_exception "
                           "(shutting down)");
                         reply_buf.set_status(rpc::status::request_timeout);
+                    } catch (const ss::broken_semaphore& e) {
+                        rpclog.debug("Timing out request on broken_semaphore "
+                                     "(shutting down)");
+                        reply_buf.set_status(rpc::status::request_timeout);
                     } catch (...) {
                         rpclog.error(
                           "Service handler threw an exception: {}",
