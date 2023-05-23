@@ -22,8 +22,13 @@ base_property::base_property(
   base_property::metadata meta)
   : _name(name)
   , _desc(desc)
-  , _meta(meta) {
+  , _meta(std::move(meta)) {
     conf._properties.emplace(name, this);
+    for (const auto& alias : _meta.aliases) {
+        auto [_, inserted] = conf._aliases.emplace(alias, this);
+
+        vassert(inserted, "Two properties tried to register the same alias");
+    }
 }
 
 std::ostream& operator<<(std::ostream& o, const base_property& p) {

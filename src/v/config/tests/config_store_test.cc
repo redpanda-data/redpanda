@@ -43,6 +43,7 @@ struct test_config : public config::config_store {
     config::property<std::chrono::milliseconds> milliseconds;
     config::property<ss::sstring> default_secret_string;
     config::property<ss::sstring> secret_string;
+    config::property<bool> aliased_bool;
 
     test_config()
       : optional_int(
@@ -106,7 +107,13 @@ struct test_config : public config::config_store {
           *this,
           "secret_string",
           "Secret string value",
-          {.secret = config::is_secret::yes}) {}
+          {.secret = config::is_secret::yes})
+      , aliased_bool(
+          *this,
+          "aliased_bool",
+          "Property with a compat alias",
+          {.aliases = {"aliased_bool_legacy"}},
+          true) {}
 };
 
 YAML::Node minimal_valid_configuration() {
@@ -490,4 +497,32 @@ SEASTAR_THREAD_TEST_CASE(property_conversion_bind) {
     BOOST_TEST(bind2() == "4eulavwen");
     BOOST_TEST(bind3() == "4eulavwen");
     BOOST_TEST(watch_count == 6);
+}
+
+SEASTAR_THREAD_TEST_CASE(property_aliasing) {
+    auto cfg = test_config();
+
+    // Aliases should work when retrieving a property with get()
+    BOOST_TEST(cfg.get("aliased_bool").name() == "aliased_bool");
+    BOOST_TEST(cfg.get("aliased_bool_legacy").name() == "aliased_bool");
+
+    // Aliases should pass a contains() check
+
+    // Aliases should not show up when iterating through properties
+    bool seen_primary = false;
+    bool seen_secondary = false;
+    cfg.for_each([&](config::base_property& p) {
+        if (p.name() == "aliased_bool") {
+            seen_primary = true;
+        } else if (p.name() == "aliased_bool_legacy") {
+            seen_secondary = true;
+        }
+    });
+    BOOST_TEST(seen_primary == true);
+    BOOST_TEST(seen_secondary == false);
+
+    // Aliases should not show up when getting the list of all properties
+    auto property_names = cfg.property_names();
+    BOOST_TEST(property_names.contains("aliased_bool") == true);
+    BOOST_TEST(property_names.contains("aliased_bool_legacy") == false);
 }
