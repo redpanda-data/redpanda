@@ -189,8 +189,13 @@ private:
 
     std::optional<model::offset> retention_offset(gc_config);
 
+    /*
+     * total disk usage and the amount of reclaimable space are most efficiently
+     * computed together given that use cases often use both together.
+     */
     ss::future<std::pair<usage, reclaim_size_limits>>
-      disk_usage_and_reclaim(gc_config);
+      disk_usage_and_reclaimable_space(gc_config);
+
     ss::future<usage_target> disk_usage_target(gc_config, usage);
     ss::future<std::optional<size_t>>
       disk_usage_target_time_retention(gc_config);

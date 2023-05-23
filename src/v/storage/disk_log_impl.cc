@@ -1817,12 +1817,10 @@ log make_disk_backed_log(
 }
 
 /*
- * disk usage and amount reclaimable are best computed together.
- *
  * assumes that the compaction gate is held.
  */
 ss::future<std::pair<usage, reclaim_size_limits>>
-disk_log_impl::disk_usage_and_reclaim(gc_config cfg) {
+disk_log_impl::disk_usage_and_reclaimable_space(gc_config cfg) {
     std::optional<model::offset> max_offset;
     if (config().is_collectable()) {
         cfg = apply_overrides(cfg);
@@ -2113,7 +2111,7 @@ ss::future<usage_report> disk_log_impl::disk_usage(gc_config cfg) {
      * compute the amount of current disk usage as well as the amount available
      * for being reclaimed.
      */
-    auto [usage, reclaim] = co_await disk_usage_and_reclaim(cfg);
+    auto [usage, reclaim] = co_await disk_usage_and_reclaimable_space(cfg);
 
     /*
      * compute target capacities such as minimum required capacity as well as
