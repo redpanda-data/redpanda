@@ -4176,6 +4176,7 @@ admin_server::get_local_storage_usage_handler(
     ret.data = disk.usage.data + other;
     ret.index = disk.usage.index;
     ret.compaction = disk.usage.compaction;
+    ret.reclaimable_by_retention = disk.reclaim.retention;
 
     co_return ret;
 }
