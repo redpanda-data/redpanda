@@ -167,4 +167,24 @@ std::unique_ptr<chunk_eviction_strategy> make_eviction_strategy(
   uint64_t max_chunks,
   uint64_t hydrated_chunks);
 
+class segment_chunk_range {
+public:
+    using map_t = absl::
+      btree_map<chunk_start_offset_t, std::optional<chunk_start_offset_t>>;
+
+    segment_chunk_range(
+      const segment_chunks::chunk_map_t& chunks,
+      size_t prefetch,
+      chunk_start_offset_t start);
+
+    std::optional<chunk_start_offset_t> last_offset() const;
+    chunk_start_offset_t first_offset() const;
+
+    map_t::iterator begin();
+    map_t::iterator end();
+
+private:
+    map_t _chunks;
+};
+
 } // namespace cloud_storage

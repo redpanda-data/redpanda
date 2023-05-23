@@ -425,4 +425,59 @@ std::unique_ptr<chunk_eviction_strategy> make_eviction_strategy(
     }
 }
 
+segment_chunk_range::segment_chunk_range(
+  const segment_chunks::chunk_map_t& chunks,
+  size_t prefetch,
+  chunk_start_offset_t start) {
+    auto it = chunks.find(start);
+    auto n_it = std::next(it);
+
+    // We need one chunk which will be downloaded for the current read, plus the
+    // prefetch count
+    size_t num_chunks_required = prefetch + 1;
+
+    // Collects start and end file offsets to be hydrated for the given
+    // prefetch by iterating over adjacent chunk start offsets. The chunk map
+    // does not contain end offsets, so for a given chunk start offset in the
+    // map, the corresponding end of chunk is the next entry in the map minus
+    // one.
+    for (size_t i = 0; i < num_chunks_required && it != chunks.end(); ++i) {
+        auto start = it->first;
+
+        // The last entry in the chunk map always represents data upto the
+        // end of segment. A nullopt here is a signal to
+        // split_segment_into_chunk_range_consumer (which does have access to
+        // the segment size) to use the segment size as the end of the byte
+        // range.
+        std::optional<chunk_start_offset_t> end = std::nullopt;
+        if (n_it != chunks.end()) {
+            end = n_it->first - 1;
+        }
+
+        _chunks[start] = end;
+        if (n_it == chunks.end()) {
+            break;
+        }
+        it++;
+        n_it++;
+    }
+}
+
+std::optional<chunk_start_offset_t> segment_chunk_range::last_offset() const {
+    auto it = _chunks.end();
+    return std::prev(it)->second;
+}
+
+chunk_start_offset_t segment_chunk_range::first_offset() const {
+    return _chunks.begin()->first;
+}
+
+segment_chunk_range::map_t::iterator segment_chunk_range::begin() {
+    return _chunks.begin();
+}
+
+segment_chunk_range::map_t::iterator segment_chunk_range::end() {
+    return _chunks.end();
+}
+
 } // namespace cloud_storage
