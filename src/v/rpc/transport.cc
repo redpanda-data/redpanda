@@ -276,6 +276,13 @@ void transport::dispatch_send() {
       = ssx::spawn_with_gate_then(_dispatch_gate, [this]() mutable {
             return ss::do_until(
               [this] {
+                  vlog(
+                    rpclog.info,
+                    "_requests_queue size: {}, first: {}",
+                    _requests_queue.size(),
+                    _requests_queue.empty()
+                      ? "{}"
+                      : fmt::format("{}", _requests_queue.begin()->first));
                   return _requests_queue.empty()
                          || _requests_queue.begin()->first
                               > (_last_seq + sequence_t(1));
@@ -294,6 +301,7 @@ void transport::dispatch_send() {
               [this] {
                   auto it = _requests_queue.begin();
                   _last_seq = it->first;
+                  vlog(rpclog.info, "last_seq: {}", _last_seq);
                   auto v = std::move(*it->second->scattered_message);
                   auto corr = it->second->correlation_id;
                   _requests_queue.erase(it);

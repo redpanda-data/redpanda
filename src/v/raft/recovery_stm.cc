@@ -512,7 +512,7 @@ ss::future<result<append_entries_reply>> recovery_stm::dispatch_append_entries(
     rpc::client_opts opts(append_entries_timeout());
     opts.resource_units = ss::make_foreign(
       ss::make_lw_shared<std::vector<ssx::semaphore_units>>(std::move(units)));
-
+    vlog(_ctxlog.info, "dispatching append_entries");
     return _ptr->_client_protocol
       .append_entries(_node_id.id(), std::move(r), std::move(opts))
       .then([this](result<append_entries_reply> reply) {
