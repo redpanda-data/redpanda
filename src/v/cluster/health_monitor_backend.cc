@@ -229,8 +229,7 @@ std::optional<node_health_report> health_monitor_backend::build_node_report(
     }
 
     report.drain_status = it->second.drain_status;
-    report.include_drain_status = _feature_table.local().is_active(
-      features::feature::maintenance_mode);
+    report.include_drain_status = true;
 
     return report;
 }
@@ -651,8 +650,7 @@ health_monitor_backend::collect_current_node_health(node_report_filter filter) {
       = features::feature_table::get_latest_logical_version();
 
     ret.drain_status = co_await _drain_manager.local().status();
-    ret.include_drain_status = _feature_table.local().is_active(
-      features::feature::maintenance_mode);
+    ret.include_drain_status = true;
 
     if (filter.include_partitions) {
         ret.topics = co_await collect_topic_status(

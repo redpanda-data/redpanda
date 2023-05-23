@@ -135,14 +135,6 @@ members_frontend::recommission_node(model::node_id id) {
 
 ss::future<std::error_code>
 members_frontend::set_maintenance_mode(model::node_id id, bool enabled) {
-    if (!_feature_table.local().is_active(
-          features::feature::maintenance_mode)) {
-        vlog(
-          clusterlog.info,
-          "Maintenance mode feature is not active (upgrade in progress?)");
-        co_return errc::invalid_node_operation;
-    }
-
     auto leader = _leaders.local().get_leader(model::controller_ntp);
     if (!leader) {
         co_return errc::no_leader_controller;

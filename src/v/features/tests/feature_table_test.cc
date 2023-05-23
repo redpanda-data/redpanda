@@ -79,11 +79,10 @@ SEASTAR_THREAD_TEST_CASE(feature_table_test_hook_off) {
 SEASTAR_THREAD_TEST_CASE(feature_table_strings) {
     BOOST_REQUIRE_EQUAL(to_string_view(feature::test_alpha), mock_feature);
     BOOST_REQUIRE_EQUAL(
-      to_string_view(feature::consumer_offsets), "consumer_offsets");
+      to_string_view(feature::rpc_v2_by_default), "rpc_v2_by_default");
+    BOOST_REQUIRE_EQUAL(to_string_view(feature::kafka_gssapi), "kafka_gssapi");
     BOOST_REQUIRE_EQUAL(
-      to_string_view(feature::central_config), "central_config");
-    BOOST_REQUIRE_EQUAL(
-      to_string_view(feature::maintenance_mode), "maintenance_mode");
+      to_string_view(feature::node_isolation), "node_isolation");
 }
 
 /**
@@ -314,11 +313,11 @@ FIXTURE_TEST(feature_table_old_snapshot, feature_table_fixture) {
     snapshot.version = features::feature_table::get_earliest_logical_version();
     snapshot.states = {
       features::feature_state_snapshot{
-        .name = "central_config",
+        .name = "serde_raft_0",
         .state = feature_state::state::available,
       },
       features::feature_state_snapshot{
-        .name = "mtls_authentication",
+        .name = "__test_alpha",
         .state = feature_state::state::active,
       },
     };
@@ -327,11 +326,11 @@ FIXTURE_TEST(feature_table_old_snapshot, feature_table_fixture) {
 
     // Fast-forwarded feature should still be active.
     BOOST_CHECK(
-      ft.get_state(feature::central_config).get_state()
+      ft.get_state(feature::serde_raft_0).get_state()
       == feature_state::state::active);
     // A feature with explicit available_policy should be activated by the
     // snapshot.
     BOOST_CHECK(
-      ft.get_state(feature::mtls_authentication).get_state()
+      ft.get_state(feature::test_alpha).get_state()
       == feature_state::state::active);
 }

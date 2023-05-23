@@ -25,16 +25,6 @@ namespace features {
 
 std::string_view to_string_view(feature f) {
     switch (f) {
-    case feature::central_config:
-        return "central_config";
-    case feature::consumer_offsets:
-        return "consumer_offsets";
-    case feature::maintenance_mode:
-        return "maintenance_mode";
-    case feature::mtls_authentication:
-        return "mtls_authentication";
-    case feature::rm_stm_kafka_cache:
-        return "rm_stm_kafka_cache";
     case feature::serde_raft_0:
         return "serde_raft_0";
     case feature::license:

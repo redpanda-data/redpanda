@@ -122,14 +122,6 @@ ss::future<> config_manager::wait_for_bootstrap() {
         if (leader == _self) {
             // We are the leader.  Proceed to bootstrap cluster
             // configuration from our local configuration.
-            if (!_feature_table.local().is_active(
-                  features::feature::central_config)) {
-                vlog(
-                  clusterlog.trace,
-                  "Central config feature not active, waiting");
-                co_await _feature_table.local().await_feature(
-                  features::feature::central_config, _as.local());
-            }
             co_await do_bootstrap();
             vlog(clusterlog.info, "Completed bootstrap as leader");
         } else {

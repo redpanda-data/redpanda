@@ -1399,13 +1399,6 @@ admin_server::patch_cluster_config_handler(
   request_auth_result const& auth_state) {
     static thread_local auto cluster_config_validator(
       make_cluster_config_validator());
-
-    if (!_controller->get_feature_table().local().is_active(
-          features::feature::central_config)) {
-        throw ss::httpd::bad_request_exception(
-          "Central config feature not active (upgrade in progress?)");
-    }
-
     auto doc = parse_json_body(*req);
     apply_validator(cluster_config_validator, doc);
 
@@ -2332,13 +2325,6 @@ ss::future<ss::json::json_return_type> admin_server::recomission_broker_handler(
 ss::future<ss::json::json_return_type>
 admin_server::start_broker_maintenance_handler(
   std::unique_ptr<ss::http::request> req) {
-    if (!_controller->get_feature_table().local().is_active(
-          features::feature::maintenance_mode)) {
-        throw ss::httpd::bad_request_exception(
-          "Maintenance mode feature not active (upgrade in "
-          "progress?)");
-    }
-
     if (_controller->get_members_table().local().node_count() < 2) {
         throw ss::httpd::bad_request_exception(
           "Maintenance mode may not be used on a single node "
@@ -2356,12 +2342,6 @@ admin_server::start_broker_maintenance_handler(
 ss::future<ss::json::json_return_type>
 admin_server::stop_broker_maintenance_handler(
   std::unique_ptr<ss::http::request> req) {
-    if (!_controller->get_feature_table().local().is_active(
-          features::feature::maintenance_mode)) {
-        throw ss::httpd::bad_request_exception(
-          "Maintenance mode feature not active (upgrade in "
-          "progress?)");
-    }
     model::node_id id = parse_broker_id(*req);
     auto ec = co_await _controller->get_members_frontend()
                 .local()

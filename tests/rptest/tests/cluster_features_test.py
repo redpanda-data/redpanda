@@ -79,7 +79,7 @@ class FeaturesTestBase(RedpandaTest):
             f"Version mismatch: {initial_version} vs {self.head_latest_logical_version}"
 
         assert self._get_features_map(
-            features_response)['central_config']['state'] == 'active'
+            features_response)['license']['state'] == 'active'
 
         return features_response
 
