@@ -25,7 +25,10 @@ namespace archival {
 class adjacent_segment_merger : public housekeeping_job {
 public:
     explicit adjacent_segment_merger(
-      ntp_archiver& parent, retry_chain_logger& ctxlog, bool is_local);
+      ntp_archiver& parent,
+      retry_chain_logger& ctxlog,
+      bool,
+      config::binding<bool>);
 
     ss::future<run_result>
     run(retry_chain_node& rtc, run_quota_t quota) override;
@@ -47,7 +50,17 @@ private:
       const cloud_storage::partition_manifest& manifest);
 
     const bool _is_local;
-    bool _enabled{true};
+
+    bool enabled() { return _config_enabled() && _job_enabled; }
+
+    // Whether segment merging is enabled in the cluster config (i.e. by
+    // the administrator)
+    config::binding<bool> _config_enabled;
+
+    // Whether segment merging is enabled at the housekeeping job level (e.g.
+    // may be disabled when not leader)
+    bool _job_enabled{true};
+
     model::offset _last;
     ntp_archiver& _archiver;
     retry_chain_logger& _ctxlog;
