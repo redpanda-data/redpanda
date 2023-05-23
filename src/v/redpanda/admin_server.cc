@@ -2152,6 +2152,21 @@ void admin_server::register_features_routes() {
               res.features.push(item);
           }
 
+          // Report all retired features as active (the code they previously
+          // guarded is now on by default).  This enables external programs
+          // to check the state of a particular feature flag in perpetuity
+          // without having to deal with the ambiguous case of the feature
+          // being missing (i.e. unsure if redpanda is too old to have
+          // the feature flag, or too new to have it).
+          for (const auto& retired_name : features::retired_features) {
+              ss::httpd::features_json::feature_state item;
+              item.name = ss::sstring(retired_name);
+              item.state = ss::httpd::features_json::feature_state::
+                feature_state_state::active;
+              item.was_active = true;
+              res.features.push(item);
+          }
+
           return ss::make_ready_future<ss::json::json_return_type>(
             std::move(res));
       });
