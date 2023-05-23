@@ -112,6 +112,17 @@ private:
 
     ss::future<> maybe_log_license_check_info();
 
+    // Compose a command struct, replicate it via raft and wait for apply.
+    // Silently swallow not_leader errors, raise on other errors;
+    ss::future<> replicate_feature_update_cmd(feature_update_cmd_data data);
+
+    // Discover features that may now be auto-activated: usually this happens
+    // when we activate a new logical version, but it may also happen if we
+    // upgraded Redpanda to a binary in the same logical version with a
+    // different activation policy for the feature.
+    std::vector<std::reference_wrapper<const features::feature_spec>>
+      auto_activate_features(cluster_version);
+
     ss::sharded<controller_stm>& _stm;
     ss::sharded<ss::abort_source>& _as;
     ss::gate _gate;
