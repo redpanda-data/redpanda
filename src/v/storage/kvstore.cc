@@ -465,7 +465,7 @@ ss::future<> kvstore::load_snapshot_from_reader(snapshot_reader& reader) {
           batch.header().header_crc));
     }
 
-    _db.reserve(batch.header().last_offset() - batch.header().base_offset);
+    _db.reserve(batch.header().record_count);
     batch.for_each_record([this](model::record r) {
         auto key = iobuf_to_bytes(r.release_key());
         _probe.add_cached_bytes(key.size() + r.value().size_bytes());
