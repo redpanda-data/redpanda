@@ -78,6 +78,10 @@ struct feature_spec {
         // The feature only becomes available once all cluster nodes
         // are recent enough *and* an administrator explicitly enables it.
         explicit_only,
+
+        // The feature proceeds to activate only if the cluster's original
+        // version is >= the feature's require_version
+        new_clusters_only,
     };
 
     // Policy defining whether the feature passes through 'preparing'

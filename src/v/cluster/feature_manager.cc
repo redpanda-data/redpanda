@@ -281,24 +281,32 @@ ss::future<> feature_manager::maybe_update_feature_table() {
 }
 
 std::vector<std::reference_wrapper<const features::feature_spec>>
-feature_manager::auto_activate_features(cluster_version effective_version) {
+feature_manager::auto_activate_features(
+  cluster_version original_version, cluster_version effective_version) {
     std::vector<std::reference_wrapper<const features::feature_spec>> result;
 
     if (config::shard_local_cfg().features_auto_enable()) {
         /*
          * We auto-enable features if:
-         * - They are not disabled
-         * - Their required version is satisfied
-         * - Their policy is not explicit_only
          * - The global features_auto_enable setting is true.
+         * - They are not disabled
+         * - One of:
+         *   * Their policy is set to `always` and required_version is satisfied
+         *     by cluster's current version
+         *   * Their policy is set to `new_clusters_only` and required_version
+         *     is satisfied by cluster's original version.
          */
         for (const auto& fs : _feature_table.local().get_feature_state()) {
             if (
               (fs.get_state() == features::feature_state::state::unavailable
                || fs.get_state() == features::feature_state::state::available)
-              && fs.spec.available_rule
+              && ((fs.spec.available_rule
                    == features::feature_spec::available_policy::always
-              && effective_version >= fs.spec.require_version) {
+              && effective_version >= fs.spec.require_version) || (
+                    fs.spec.available_rule == features::feature_spec::available_policy::new_clusters_only
+                    &&
+                    original_version >= fs.spec.require_version
+                    ))) {
                 result.push_back(fs.spec);
             }
         }
@@ -461,7 +469,8 @@ ss::future<> feature_manager::do_maybe_update_active_version() {
     auto data = feature_update_cmd_data{.logical_version = max_version};
 
     // Identify any features which should auto-activate in this version
-    for (const auto spec : auto_activate_features(max_version)) {
+    for (const auto spec : auto_activate_features(
+           _feature_table.local().get_original_version(), max_version)) {
         vlog(
           clusterlog.info,
           "Auto-activating feature {} (logical version {})",
@@ -483,6 +492,7 @@ ss::future<> feature_manager::do_maybe_activate_features() {
     }
 
     auto activate_features = auto_activate_features(
+      _feature_table.local().get_original_version(),
       _feature_table.local().get_active_version());
     if (!activate_features.empty()) {
         vlog(clusterlog.info, "Activating features after upgrade...");

@@ -122,6 +122,7 @@ private:
     bool updates_pending() {
         return (!_updates.empty()
                 || !auto_activate_features(
+                      _feature_table.local().get_original_version(),
                       _feature_table.local().get_active_version())
                       .empty())
                && _am_controller_leader;
@@ -138,7 +139,7 @@ private:
     // upgraded Redpanda to a binary in the same logical version with a
     // different activation policy for the feature.
     std::vector<std::reference_wrapper<const features::feature_spec>>
-      auto_activate_features(cluster_version);
+      auto_activate_features(cluster_version, cluster_version);
 
     ss::sharded<controller_stm>& _stm;
     ss::sharded<ss::abort_source>& _as;
