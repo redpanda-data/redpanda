@@ -71,6 +71,12 @@ util::generate_json_schema(const config::configuration& conf) {
         if (units.has_value()) {
             pm.units = ss::sstring(units.value());
         }
+
+        std::vector<ss::sstring> aliases;
+        for (const auto& alias : p.aliases()) {
+            aliases.emplace_back(alias);
+        }
+        pm.aliases = aliases;
     });
 
     std::map<ss::sstring, property_map> response = {
