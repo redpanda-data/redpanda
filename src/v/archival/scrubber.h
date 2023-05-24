@@ -9,6 +9,7 @@
  */
 
 #include "archival/types.h"
+#include "cloud_storage/base_manifest.h"
 #include "cloud_storage/fwd.h"
 #include "cloud_storage/lifecycle_marker.h"
 #include "cluster/fwd.h"
@@ -69,6 +70,32 @@ private:
       model::ntp,
       model::initial_revision_id,
       retry_chain_node& rtc);
+
+    struct collected_manifests {
+        using flat_t
+          = std::pair<std::vector<ss::sstring>, std::optional<ss::sstring>>;
+
+        std::optional<ss::sstring> current_serde;
+        std::optional<ss::sstring> current_json;
+        std::vector<ss::sstring> spillover;
+
+        bool empty() const;
+        [[nodiscard]] flat_t flatten();
+    };
+
+    ss::future<std::optional<collected_manifests>> collect_manifest_paths(
+      const cloud_storage_clients::bucket_name&,
+      model::ntp,
+      model::initial_revision_id,
+      retry_chain_node&);
+
+    ss::future<purge_result> purge_manifest(
+      const cloud_storage_clients::bucket_name&,
+      model::ntp,
+      model::initial_revision_id,
+      remote_manifest_path,
+      cloud_storage::manifest_format,
+      retry_chain_node&);
 
     struct global_position {
         uint32_t self;

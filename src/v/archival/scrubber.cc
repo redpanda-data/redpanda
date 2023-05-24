@@ -25,6 +25,11 @@
 #include "hashing/xx.h"
 #include "vlog.h"
 
+namespace {
+static constexpr std::string_view serde_extension = ".bin";
+static constexpr std::string_view json_extension = ".json";
+} // namespace
+
 namespace archival {
 
 using cloud_storage::download_result;
@@ -49,8 +54,6 @@ ss::future<scrubber::purge_result> scrubber::purge_partition(
     retry_chain_node manifest_rtc(
       ss::lowres_clock::now() + 5s, 1s, &parent_rtc);
 
-    purge_result result{.status = purge_status::success, .ops = 0};
-
     if (lifecycle_marker.config.is_read_replica()) {
         // Paranoia check: should never happen.
         // It never makes sense to have written a lifecycle marker that
@@ -60,7 +63,7 @@ ss::future<scrubber::purge_result> scrubber::purge_partition(
           archival_log.error,
           "Read replica mode set in tombstone on {}, refusing to purge",
           ntp);
-        co_return result;
+        co_return purge_result{.status = purge_status::success, .ops = 0};
     }
 
     if (!lifecycle_marker.config.properties.remote_delete) {
@@ -71,33 +74,196 @@ ss::future<scrubber::purge_result> scrubber::purge_partition(
           archival_log.error,
           "Remote delete disabled in tombstone on {}, refusing to purge",
           ntp);
-        co_return result;
+        co_return purge_result{.status = purge_status::success, .ops = 0};
     }
 
-    // TODO: tip off remote() to not retry on SlowDown responses: if we hit
-    // one during housekeeping we should drop out.  Maybe retry_chain_node
-    // could have a "drop out on slowdown" flag?
+    auto collected = co_await collect_manifest_paths(
+      bucket, ntp, remote_revision, parent_rtc);
+    if (!collected) {
+        co_return purge_result{
+          .status = purge_status::retryable_failure, .ops = 0};
+    } else if (collected->empty()) {
+        vlog(
+          archival_log.info,
+          "Inline deletion already cleaned-up everything. Nothing to purge",
+          ntp);
+        co_return purge_result{.status = purge_status::success, .ops = 0};
+    }
+
+    const auto [manifests_to_purge, legacy_manifest_path]
+      = collected->flatten();
+
+    size_t ops_performed = 0;
+    size_t retryable_failure = 0;
+    size_t permanent_failure = 0;
+    for (auto rit = manifests_to_purge.rbegin();
+         rit != manifests_to_purge.rend();
+         ++rit) {
+        auto format = cloud_storage::manifest_format::serde;
+        if (std::string_view{*rit}.ends_with(json_extension)) {
+            format = cloud_storage::manifest_format::json;
+        }
+
+        const auto local_res = co_await purge_manifest(
+          bucket,
+          ntp,
+          remote_revision,
+          remote_manifest_path{*rit},
+          format,
+          manifest_rtc);
+
+        ops_performed += local_res.ops;
+        switch (local_res.status) {
+        case purge_status::retryable_failure:
+            ++retryable_failure;
+            break;
+        case purge_status::permanent_failure:
+            ++permanent_failure;
+            break;
+        case purge_status::success:
+            break;
+        }
+    }
+
+    if (legacy_manifest_path) {
+        vlog(
+          archival_log.debug,
+          "Erasing legacy partition manifest {}",
+          *legacy_manifest_path);
+        retry_chain_node legacy_manifest_delete_rtc(
+          ss::lowres_clock::now() + 5s, 1s, &parent_rtc);
+        ops_performed += 1;
+        const auto manifest_delete_result = co_await _api.delete_object(
+          bucket,
+          cloud_storage_clients::object_key(*legacy_manifest_path),
+          legacy_manifest_delete_rtc);
+        if (manifest_delete_result != upload_result::success) {
+            ++retryable_failure;
+        }
+    }
+
+    // If any of the purges resulted in a retryable failure, map the entire
+    // operation to a retryable failure. Otherwise, if there were any permanent
+    // failures map to permanent failure.
+    if (retryable_failure > 0) {
+        vlog(
+          archival_log.info,
+          "Retryable failures encountered while purging partition {}. Will "
+          "retry ...",
+          ntp);
+
+        co_return purge_result{
+          .status = purge_status::retryable_failure, .ops = ops_performed};
+    } else if (permanent_failure > 0) {
+        vlog(
+          archival_log.error,
+          "Permanent failures encountered while purging partition {}. Giving "
+          "up ...",
+          ntp);
+
+        co_return purge_result{
+          .status = purge_status::permanent_failure, .ops = ops_performed};
+    } else {
+        vlog(
+          archival_log.info,
+          "Finished erasing partition {} from object storage in {} requests",
+          ntp,
+          ops_performed);
+
+        co_return purge_result{
+          .status = purge_status::success, .ops = ops_performed};
+    }
+}
+
+ss::future<std::optional<scrubber::collected_manifests>>
+scrubber::collect_manifest_paths(
+  const cloud_storage_clients::bucket_name& bucket,
+  model::ntp ntp,
+  model::initial_revision_id remote_revision,
+  retry_chain_node& parent_rtc) {
+    retry_chain_node collection_rtc(
+      ss::lowres_clock::now() + 5s, 1s, &parent_rtc);
 
     cloud_storage::partition_manifest manifest(ntp, remote_revision);
-    auto [manifest_get_result, manifest_fmt]
-      = co_await _api.try_download_partition_manifest(
-        bucket, manifest, manifest_rtc, true);
+    auto path = manifest.get_manifest_path(
+      cloud_storage::manifest_format::serde);
 
-    // save path here since manifest will get moved out
-    auto manifest_path = manifest.get_manifest_path(manifest_fmt);
+    std::string_view base_path{path().native()};
+
+    vassert(
+      base_path.ends_with(serde_extension)
+        && base_path.length() > serde_extension.length(),
+      "Generated manifest path should end in .bin");
+
+    base_path.remove_suffix(serde_extension.length());
+    auto list_result = co_await _api.list_objects(
+      bucket,
+      collection_rtc,
+      cloud_storage_clients::object_key{std::filesystem::path{base_path}});
+
+    if (list_result.has_error()) {
+        vlog(
+          archival_log.warn,
+          "Failed to collect manifests to scrub partition {}",
+          ntp);
+
+        co_return std::nullopt;
+    }
+
+    collected_manifests collected{};
+    collected.spillover.reserve(list_result.value().contents.size());
+    for (auto& item : list_result.value().contents) {
+        std::string_view path{item.key};
+        if (path.ends_with(".bin")) {
+            collected.current_serde = std::move(item.key);
+            continue;
+        }
+
+        if (path.ends_with(".json")) {
+            collected.current_json = std::move(item.key);
+            continue;
+        }
+
+        collected.spillover.push_back(std::move(item.key));
+    }
+
+    co_return collected;
+}
+
+ss::future<scrubber::purge_result> scrubber::purge_manifest(
+  const cloud_storage_clients::bucket_name& bucket,
+  model::ntp ntp,
+  model::initial_revision_id remote_revision,
+  remote_manifest_path manifest_key,
+  cloud_storage::manifest_format format,
+  retry_chain_node& parent_rtc) {
+    retry_chain_node manifest_purge_rtc(
+      ss::lowres_clock::now() + 5s, 1s, &parent_rtc);
+
+    purge_result result{.status = purge_status::success, .ops = 0};
+
+    vlog(
+      archival_log.info,
+      "Purging manifest at {} and its contents for partition {}",
+      manifest_key(),
+      ntp);
+
+    cloud_storage::partition_manifest manifest(ntp, remote_revision);
+    auto manifest_get_result = co_await _api.download_manifest(
+      bucket, {format, manifest_key}, manifest, manifest_purge_rtc);
 
     if (manifest_get_result == download_result::notfound) {
         vlog(
           archival_log.debug,
           "Partition manifest get {} not found",
-          manifest.get_legacy_manifest_format_and_path().second);
+          manifest_key);
         result.status = purge_status::permanent_failure;
         co_return result;
     } else if (manifest_get_result != download_result::success) {
         vlog(
           archival_log.debug,
           "Partition manifest get {} failed: {}",
-          manifest_path,
+          manifest_key(),
           manifest_get_result);
         result.status = purge_status::retryable_failure;
         co_return result;
@@ -108,27 +274,27 @@ ss::future<scrubber::purge_result> scrubber::purge_partition(
     // clients' implementations of plural object delete (different
     // implementations may do bigger/smaller batches).  This 1000 number
     // reflects the number of objects per S3 DeleteObjects.
-    auto estimate_delete_ops = manifest.size() / 1000;
+    const auto estimate_delete_ops = std::max(
+      static_cast<size_t>(manifest.size() / 1000), size_t{1});
 
-    auto partition_r = co_await cloud_storage::remote_partition::erase(
-      _api, bucket, std::move(manifest), manifest_path, _as);
+    // TODO: tip off remote() to not retry on SlowDown responses: if we hit
+    // one during housekeeping we should drop out.  Maybe retry_chain_node
+    // could have a "drop out on slowdown" flag?
+    const auto erase_result = co_await cloud_storage::remote_partition::erase(
+      _api, bucket, std::move(manifest), manifest_key, _as);
 
     result.ops += estimate_delete_ops;
 
-    if (partition_r != cloud_storage::remote_partition::erase_result::erased) {
+    if (erase_result != cloud_storage::remote_partition::erase_result::erased) {
         vlog(
           archival_log.debug,
-          "One or more objects deletions failed for {}",
+          "One or more objects deletions failed for manifest {} of {}",
+          manifest_key(),
           ntp);
         result.status = purge_status::retryable_failure;
         co_return result;
     }
 
-    vlog(
-      archival_log.info,
-      "Finished erasing partition {} from object storage in {} requests",
-      ntp,
-      result.ops);
     co_return result;
 }
 
@@ -392,5 +558,24 @@ void scrubber::set_enabled(bool e) { _enabled = e; }
 void scrubber::acquire() { _holder = ss::gate::holder(_gate); }
 
 void scrubber::release() { _holder.release(); }
+
+bool scrubber::collected_manifests::empty() const {
+    return !current_serde.has_value() && !current_json.has_value()
+           && spillover.empty();
+}
+
+scrubber::collected_manifests::flat_t scrubber::collected_manifests::flatten() {
+    std::optional<ss::sstring> legacy_manifest_path;
+    auto manifests_to_purge = std::move(spillover);
+
+    if (current_serde.has_value()) {
+        manifests_to_purge.push_back(std::move(current_serde.value()));
+        legacy_manifest_path = std::move(current_json);
+    } else if (current_json.has_value()) {
+        manifests_to_purge.push_back(std::move(current_json.value()));
+    }
+
+    return {std::move(manifests_to_purge), std::move(legacy_manifest_path)};
+}
 
 } // namespace archival
