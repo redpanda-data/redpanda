@@ -5,6 +5,7 @@ from reader import Reader
 from storage import Segment
 from storage import BatchType
 import datetime
+import json
 
 logger = logging.getLogger('controller')
 
@@ -241,6 +242,9 @@ def decode_topic_command_serde(k_rdr: Reader, rdr: Reader):
         cmd['topic'] = k_rdr.read_string()
         cmd['update'] = read_incremental_topic_update_serde(rdr)
     elif cmd['type'] == 5:
+        # consume k_rdr to prevent error messages
+        k_rdr.read_string()  # ns
+        k_rdr.read_string()  # topic
         cmd['type_string'] = 'create_partitions'
         cmd |= read_create_partitions_serde(rdr)
     elif cmd['type'] == 6:
@@ -277,6 +281,9 @@ def decode_topic_command_adl(k_rdr: Reader, rdr: Reader):
     cmd = {}
     cmd['type'] = rdr.read_int8()
     if cmd['type'] == 0:
+        # consume k_rdr to prevent error messages
+        k_rdr.read_string()  # ns
+        k_rdr.read_string()  # topic
         cmd['type_string'] = 'create_topic'
         version = Reader(BytesIO(rdr.peek(4))).read_int32()
         if version < 0:
@@ -301,6 +308,9 @@ def decode_topic_command_adl(k_rdr: Reader, rdr: Reader):
             cmd["shadow_indexing"] = rdr.read_optional(lambda r: r.read_int8())
         cmd['assignments'] = rdr.read_vector(read_partition_assignment)
     elif cmd['type'] == 1:
+        # consume k_rdr to prevent error messages
+        k_rdr.read_string()  # ns
+        k_rdr.read_string()  # topic
         cmd['type_string'] = 'delete_topic'
         cmd['namespace'] = rdr.read_string()
         cmd['topic'] = rdr.read_string()
@@ -329,6 +339,25 @@ def decode_topic_command_adl(k_rdr: Reader, rdr: Reader):
         cmd['new_total_partitions'] = rdr.read_int32()
         cmd['custom_assignments'] = rdr.read_vector(lambda r: r.read_int32())
         cmd['assignments'] = rdr.read_vector(read_partition_assignment)
+    elif cmd['type'] == 6:
+        cmd['type_string'] = 'create_non_replicable_topic'
+        cmd['topic'] = {
+            'version': k_rdr.read_int8(),
+            'source': {
+                'namespace': k_rdr.read_string(),
+                'topic': k_rdr.read_string(),
+            },
+            'name': {
+                'namespace': k_rdr.read_string(),
+                'topic': k_rdr.read_string(),
+            },
+        }
+    elif cmd['type'] == 7:
+        cmd['type_string'] = 'cancel_moving_partition_replicas'
+        cmd['namespace'] = k_rdr.read_string()
+        cmd['topic'] = k_rdr.read_string()
+        cmd['partition'] = k_rdr.read_int32()
+        cmd['force'] = rdr.read_bool()
 
     return cmd
 
@@ -588,6 +617,20 @@ def decode_action_t(v):
     return v
 
 
+def decode_license_t(k_rdr: Reader, version: int):
+    cmd = {
+        'format_version': k_rdr.read_uint8(),
+        'type': k_rdr.read_serde_enum(),
+        'organization': k_rdr.read_string(),
+        'expiry': k_rdr.read_int64(),
+    }
+
+    if version >= 1:
+        cmd |= {'checksum': k_rdr.read_string()}
+
+    return cmd
+
+
 def decode_feature_command_serde(k_rdr: Reader, rdr: Reader):
     cmd = {'type': rdr.read_int8()}
     rdr.read_int8()
@@ -609,13 +652,7 @@ def decode_feature_command_serde(k_rdr: Reader, rdr: Reader):
         cmd |= k_rdr.read_envelope(
             lambda k_rdr, _: {
                 'redpanda_license':
-                k_rdr.read_envelope(
-                    lambda k_rdr, _: {
-                        'format_version': k_rdr.read_uint8(),
-                        'type': k_rdr.read_serde_enum(),
-                        'organization': k_rdr.read_string(),
-                        'expiry': k_rdr.read_int64(),
-                    })
+                k_rdr.read_envelope(decode_license_t, max_version=1)
             })
     return cmd
 
@@ -767,7 +804,9 @@ def decode_record(batch, record, bin_dump: bool):
     v_unread = rdr.remaining()
     if k_unread != 0 or v_unread != 0:
         ret['unread'] = {'key': k_unread, 'value': v_unread}
-        logger.error(f"@{ret['type']} unread bytes. k:{k_unread} v:{v_unread}")
+        logger.error(
+            f"@{ret['type']} unread bytes. k:{k_unread} v:{v_unread} {json.dumps(ret)}"
+        )
 
     return ret
 
