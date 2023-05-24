@@ -215,6 +215,45 @@ struct cleanup_policy_validator_details {
     static constexpr const auto config_name = topic_property_cleanup_policy;
 };
 
+struct subject_name_strategy_validator {
+    static constexpr const char* error_message
+      = "Unsupported subject name strategy ";
+    static constexpr error_code ec = error_code::invalid_config;
+
+    static bool is_valid(const creatable_topic& c) {
+        return std::all_of(
+          c.configs.begin(),
+          c.configs.end(),
+          [](createable_topic_config const& v) {
+              return !is_sns_config(v) || !v.value.has_value()
+                     || is_valid_sns(v.value.value());
+          });
+    }
+
+private:
+    static bool is_sns_config(createable_topic_config const& c) {
+        static constexpr const auto config_names = {
+          topic_property_record_key_subject_name_strategy,
+          topic_property_record_key_subject_name_strategy_compat,
+          topic_property_record_value_subject_name_strategy,
+          topic_property_record_value_subject_name_strategy_compat};
+        return std::any_of(
+          config_names.begin(), config_names.end(), [&c](auto const& v) {
+              return c.name == v;
+          });
+    }
+
+    static bool is_valid_sns(std::string_view sv) {
+        try {
+            boost::lexical_cast<
+              pandaproxy::schema_registry::subject_name_strategy>(sv);
+            return true;
+        } catch (...) {
+            return false;
+        }
+    }
+};
+
 template<typename T>
 struct configuration_value_validator {
     static constexpr const char* error_message = T::error_message;
