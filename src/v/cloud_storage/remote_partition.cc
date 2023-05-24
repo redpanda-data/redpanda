@@ -1108,6 +1108,7 @@ ss::future<remote_partition::erase_result> remote_partition::erase(
   cloud_storage::remote& api,
   cloud_storage_clients::bucket_name bucket,
   partition_manifest manifest,
+  remote_manifest_path manifest_path,
   ss::abort_source& as) {
     // This function is called after ::stop, so we may not use our
     // main retry_chain_node which is bound to our abort source,
@@ -1183,7 +1184,6 @@ ss::future<remote_partition::erase_result> remote_partition::erase(
 
     // If we got this far, we succeeded deleting all objects referenced by
     // the manifest, so many delete the manifest itself.
-    auto manifest_path = manifest.get_manifest_path();
     vlog(
       cst_log.debug,
       "[{}] Erasing partition manifest {}",
@@ -1245,7 +1245,9 @@ ss::future<> remote_partition::try_erase(ss::abort_source& as) {
         co_return;
     }
 
-    co_await erase(_api, _bucket, std::move(manifest), as);
+    auto path = manifest.get_manifest_path(
+      cloud_storage::manifest_format::serde);
+    co_await erase(_api, _bucket, std::move(manifest), std::move(path), as);
 }
 
 void remote_partition::offload_segment(model::offset o) {

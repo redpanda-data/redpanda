@@ -111,7 +111,7 @@ ss::future<scrubber::purge_result> scrubber::purge_partition(
     auto estimate_delete_ops = manifest.size() / 1000;
 
     auto partition_r = co_await cloud_storage::remote_partition::erase(
-      _api, bucket, std::move(manifest), _as);
+      _api, bucket, std::move(manifest), manifest_path, _as);
 
     result.ops += estimate_delete_ops;
 
@@ -120,20 +120,6 @@ ss::future<scrubber::purge_result> scrubber::purge_partition(
           archival_log.debug,
           "One or more objects deletions failed for {}",
           ntp);
-        result.status = purge_status::retryable_failure;
-        co_return result;
-    }
-
-    // Erase the partition manifest
-    vlog(archival_log.debug, "Erasing partition manifest {}", manifest_path);
-    retry_chain_node manifest_delete_rtc(
-      ss::lowres_clock::now() + 5s, 1s, &parent_rtc);
-    result.ops += 1;
-    auto manifest_delete_result = co_await _api.delete_object(
-      bucket,
-      cloud_storage_clients::object_key(manifest_path),
-      manifest_delete_rtc);
-    if (manifest_delete_result != upload_result::success) {
         result.status = purge_status::retryable_failure;
         co_return result;
     }

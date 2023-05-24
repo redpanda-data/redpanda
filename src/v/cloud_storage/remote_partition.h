@@ -153,6 +153,7 @@ public:
       cloud_storage::remote&,
       cloud_storage_clients::bucket_name,
       partition_manifest,
+      remote_manifest_path,
       ss::abort_source&);
 
     /// Hook for materialized_segment to notify us when a segment is evicted
