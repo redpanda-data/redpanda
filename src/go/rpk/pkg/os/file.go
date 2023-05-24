@@ -16,6 +16,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"time"
 
 	"github.com/spf13/afero"
@@ -102,11 +103,15 @@ func EditTmpFile(fs afero.Fs, f []byte) ([]byte, error) {
 	// Launch editor
 	editor := os.Getenv("EDITOR")
 	if editor == "" {
-		const fallbackEditor = "/usr/bin/nano"
-		if _, err := os.Stat(fallbackEditor); err != nil {
-			return nil, errors.New("please set $EDITOR to use this command")
+		if runtime.GOARCH == "windows" {
+			editor = "notepad.exe"
 		} else {
-			editor = fallbackEditor
+			const fallbackEditor = "/usr/bin/nano"
+			if _, err := os.Stat(fallbackEditor); err != nil {
+				return nil, errors.New("please set $EDITOR to use this command")
+			} else {
+				editor = fallbackEditor
+			}
 		}
 	}
 
