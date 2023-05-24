@@ -856,3 +856,11 @@ class BucketView:
         assert len(manifest_data.get(
             'replaced',
             [])) > 0, f"No replaced segments after compacted segments uploaded"
+
+    def assert_segments_deleted(self, topic: str, partition: int):
+        manifest = self.manifest_for_ntp(topic, partition)
+        assert manifest.get('start_offset', 0) > 0
+
+        first_segment = min(manifest['segments'].values(),
+                            key=lambda seg: seg['base_offset'])
+        assert first_segment['base_offset'] > 0
