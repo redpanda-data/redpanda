@@ -3328,6 +3328,15 @@ class RedpandaService(RedpandaServiceBase):
                     f"Oversized controller log detected!  {max_length} records"
                 )
 
+    def estimate_bytes_written(self):
+        samples = self.metrics_sample(
+            "vectorized_io_queue_total_write_bytes_total",
+            nodes=self.started_nodes()).samples
+        if samples:
+            return sum(s.value for s in samples)
+        else:
+            return None
+
 
 def make_redpanda_service(environment):
     """Factory function for instatiating the appropriate RedpandaServiceBase subclass."""

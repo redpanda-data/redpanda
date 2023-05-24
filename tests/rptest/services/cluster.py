@@ -72,6 +72,20 @@ def cluster(log_allow_list=None, check_allowed_error_logs=True, **kwargs):
                     # in a skipped test
                     return r
 
+                # In debug mode, any test writing too much traffic will impose too much
+                # load on the system and destabilize other tests.  Detect this with a
+                # post-test check for total bytes written.
+                debug_mode_data_limit = 64 * 1024 * 1024
+                if hasattr(self, 'debug_mode') and self.debug_mode is True:
+                    bytes_written = self.redpanda.estimate_bytes_written()
+                    if bytes_written is not None:
+                        self.redpanda.logger.info(
+                            f"Estimated bytes written: {bytes_written}")
+                        if bytes_written > debug_mode_data_limit:
+                            raise RuntimeError(
+                                f"Debug-mode test wrote too much data ({int(bytes_written) // (1024 * 1024)}MiB)"
+                            )
+
                 for redpanda in all_redpandas(self):
                     redpanda.logger.info(
                         f"Test passed, doing log checks on {redpanda.who_am_i()}..."
