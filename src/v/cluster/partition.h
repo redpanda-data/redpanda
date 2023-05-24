@@ -19,6 +19,7 @@
 #include "cluster/partition_probe.h"
 #include "cluster/rm_stm.h"
 #include "cluster/tm_stm.h"
+#include "cluster/tx_registry_stm.h"
 #include "cluster/types.h"
 #include "config/configuration.h"
 #include "config/property.h"
@@ -262,6 +263,10 @@ public:
         return _raft->get_latest_configuration_offset();
     }
 
+    ss::shared_ptr<cluster::tx_registry_stm> tx_registry_stm() {
+        return _tx_registry_stm;
+    }
+
     ss::shared_ptr<cluster::id_allocator_stm> id_allocator_stm() {
         return _id_allocator_stm;
     }
@@ -448,6 +453,7 @@ private:
     consensus_ptr _raft;
     ss::shared_ptr<util::mem_tracker> _partition_mem_tracker;
     ss::shared_ptr<cluster::log_eviction_stm> _log_eviction_stm;
+    ss::shared_ptr<cluster::tx_registry_stm> _tx_registry_stm;
     ss::shared_ptr<cluster::id_allocator_stm> _id_allocator_stm;
     ss::shared_ptr<cluster::rm_stm> _rm_stm;
     ss::shared_ptr<cluster::tm_stm> _tm_stm;

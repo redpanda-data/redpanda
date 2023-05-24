@@ -113,6 +113,7 @@ struct configuration final : public config_store {
     property<std::chrono::milliseconds> metadata_dissemination_retry_delay_ms;
     property<int16_t> metadata_dissemination_retries;
     property<std::chrono::milliseconds> tm_sync_timeout_ms;
+    property<std::chrono::milliseconds> tx_registry_sync_timeout_ms;
     deprecated_property tm_violation_recovery_policy;
     property<std::chrono::milliseconds> rm_sync_timeout_ms;
     property<std::chrono::milliseconds> find_coordinator_timeout_ms;
@@ -208,6 +209,7 @@ struct configuration final : public config_store {
     property<bool> storage_ignore_cstore_hints;
     bounded_property<int16_t> storage_reserve_min_segments;
 
+    property<int16_t> tx_registry_log_capacity;
     property<int16_t> id_allocator_log_capacity;
     property<int16_t> id_allocator_batch_size;
     property<bool> enable_sasl;

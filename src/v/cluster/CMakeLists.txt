@@ -106,6 +106,7 @@ v_cc_library(
     controller.cc
     partition.cc
     partition_probe.cc
+    tx_registry_stm.cc
     id_allocator_stm.cc
     persisted_stm.cc
     tm_stm_cache.cc
