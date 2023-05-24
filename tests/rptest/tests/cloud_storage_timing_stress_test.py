@@ -452,7 +452,6 @@ class CloudStorageTimingStressTest(RedpandaTest, PartitionMovementMixin):
             r"Error in hydraton loop: .*Connection reset by peer",
             r"failed to hydrate chunk.*Connection reset by peer",
             r"failed to hydrate chunk.*NotFound",
-            r"failed to hydrate chunk.*abort_requested"
         ])
     @parametrize(cleanup_policy="delete")
     @parametrize(cleanup_policy="compact,delete")
@@ -477,7 +476,6 @@ class CloudStorageTimingStressTest(RedpandaTest, PartitionMovementMixin):
             r"Error in hydraton loop: .*Connection reset by peer",
             r"failed to hydrate chunk.*Connection reset by peer",
             r"failed to hydrate chunk.*NotFound",
-            r"failed to hydrate chunk.*abort_requested"
         ])
     @parametrize(cleanup_policy="delete")
     @parametrize(cleanup_policy="compact,delete")

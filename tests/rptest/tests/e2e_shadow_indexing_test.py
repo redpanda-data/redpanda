@@ -712,7 +712,11 @@ class ShadowIndexingWhileBusyTest(PreallocNodesTest):
         # Topic creation happens here
         super().setUp()
 
-    @cluster(num_nodes=8)
+    @cluster(num_nodes=8,
+             log_allow_list=[
+                 r"failed to hydrate chunk.*Connection reset by peer",
+                 r"failed to hydrate chunk.*NotFound"
+             ])
     @matrix(short_retention=[False, True],
             cloud_storage_type=get_cloud_storage_type())
     @skip_debug_mode
