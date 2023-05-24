@@ -85,7 +85,12 @@ func NewKafkaAdmin(
 	if err != nil {
 		return nil, fmt.Errorf("creating kafka client: %w", err)
 	}
-	return kadm.NewClient(kclient), nil
+	admClient := kadm.NewClient(kclient)
+	go func() {
+		<-ctx.Done()
+		admClient.Close()
+	}()
+	return admClient, nil
 }
 
 func getSASLOpt(
