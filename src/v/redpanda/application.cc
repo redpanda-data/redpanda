@@ -188,6 +188,7 @@ application::application(ss::sstring logger_name)
 application::~application() = default;
 
 void application::shutdown() {
+    storage.invoke_on_all(&storage::api::stop_cluster_uuid_waiters).get();
     // Stop accepting new requests.
     if (_kafka_server.local_is_initialized()) {
         _kafka_server.invoke_on_all(&net::server::shutdown_input).get();

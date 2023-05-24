@@ -16,9 +16,13 @@
 #include "seastarx.h"
 #include "storage/kvstore.h"
 #include "storage/log_manager.h"
+#include "storage/logger.h"
 #include "storage/probe.h"
 #include "storage/storage_resources.h"
 #include "utils/notification_list.h"
+#include "vlog.h"
+
+#include <seastar/core/condition-variable.hh>
 
 namespace storage {
 
@@ -43,7 +47,10 @@ public:
         });
     }
 
+    void stop_cluster_uuid_waiters() { _has_cluster_uuid_cond.broken(); }
+
     ss::future<> stop() {
+        stop_cluster_uuid_waiters();
         auto f = ss::now();
         if (_log_mgr) {
             f = _log_mgr->stop();
@@ -62,9 +69,25 @@ public:
 
     void set_cluster_uuid(const model::cluster_uuid& cluster_uuid) {
         _cluster_uuid = cluster_uuid;
+        _has_cluster_uuid_cond.signal();
     }
     const std::optional<model::cluster_uuid>& get_cluster_uuid() const {
         return _cluster_uuid;
+    }
+
+    ss::future<bool> wait_for_cluster_uuid() {
+        if (_cluster_uuid.has_value()) {
+            co_return true;
+        }
+        try {
+            co_await _has_cluster_uuid_cond.wait();
+            vassert(
+              _cluster_uuid.has_value(), "Expected cluster UUID after waiting");
+            co_return true;
+        } catch (ss::broken_condition_variable&) {
+            vlog(stlog.info, "Stopped waiting for cluster UUID");
+        }
+        co_return false;
     }
 
     kvstore& kvs() { return *_kvstore; }
@@ -106,6 +129,7 @@ private:
     model::node_uuid _node_uuid;
 
     std::optional<model::cluster_uuid> _cluster_uuid;
+    ss::condition_variable _has_cluster_uuid_cond;
 };
 
 } // namespace storage
