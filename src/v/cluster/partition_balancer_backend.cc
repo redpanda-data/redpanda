@@ -200,12 +200,13 @@ ss::future<> partition_balancer_backend::do_tick() {
 
     co_await ss::max_concurrent_for_each(
       plan_data.cancellations, 32, [this, current_term](model::ntp& ntp) {
-          return _topics_frontend
+          auto f = _topics_frontend
             .cancel_moving_partition_replicas(
               ntp,
               model::timeout_clock::now() + add_move_cmd_timeout,
-              current_term)
-            .then([ntp = std::move(ntp)](auto errc) {
+              current_term);
+
+          return f.then([ntp = std::move(ntp)](auto errc) {
                 if (errc) {
                     vlog(
                       clusterlog.warn,
@@ -220,13 +221,13 @@ ss::future<> partition_balancer_backend::do_tick() {
       plan_data.reassignments,
       32,
       [this, current_term](ntp_reassignment& reassignment) {
-          return _topics_frontend
+          auto f = _topics_frontend
             .move_partition_replicas(
               reassignment.ntp,
               reassignment.allocated.replicas(),
               model::timeout_clock::now() + add_move_cmd_timeout,
-              current_term)
-            .then([reassignment = std::move(reassignment)](auto errc) {
+              current_term);
+          return f.then([reassignment = std::move(reassignment)](auto errc) {
                 if (errc) {
                     vlog(
                       clusterlog.warn,
