@@ -138,15 +138,16 @@ func (k *KafkaSA) Key() (nsn types.NamespacedName) {
 
 // Cleanup implements ManagedResource interface
 func (k *KafkaSA) Cleanup(ctx context.Context) error {
+	log := k.log.WithName("KafkaSACleanup")
 	if !controllerutil.ContainsFinalizer(k.consoleobj, ConsoleSAFinalizer) {
 		return nil
 	}
 
 	if exp, err := redpandav1alpha1.FinalizersExpired(k.consoleobj); err != nil {
-		k.log.Error(err, "invalid configuration for finalizers timeout")
+		log.Error(err, "invalid configuration for finalizers timeout")
 	} else if exp {
 		// Just delete the finalizers and forget
-		k.log.Info("finalizers timed out for console: removing SA finalizer")
+		log.Info("finalizers timed out for console: removing SA finalizer")
 		controllerutil.RemoveFinalizer(k.consoleobj, ConsoleSAFinalizer)
 		return k.Update(ctx, k.consoleobj)
 	}
@@ -238,15 +239,16 @@ func (k *KafkaACL) Key() (nsn types.NamespacedName) {
 
 // Cleanup implements ManagedResource interface
 func (k *KafkaACL) Cleanup(ctx context.Context) error {
+	log := k.log.WithName("KafkaACL.Cleanup")
 	if !controllerutil.ContainsFinalizer(k.consoleobj, ConsoleACLFinalizer) {
 		return nil
 	}
 
 	if exp, err := redpandav1alpha1.FinalizersExpired(k.consoleobj); err != nil {
-		k.log.Error(err, "invalid configuration for finalizers timeout")
+		log.Error(err, "invalid configuration for finalizers timeout")
 	} else if exp {
 		// Just delete the finalizers and forget
-		k.log.Info("finalizers timed out for console: removing ACL finalizer")
+		log.Info("finalizers timed out for console: removing ACL finalizer")
 		controllerutil.RemoveFinalizer(k.consoleobj, ConsoleACLFinalizer)
 		return k.Update(ctx, k.consoleobj)
 	}

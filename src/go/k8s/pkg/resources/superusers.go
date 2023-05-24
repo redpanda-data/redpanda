@@ -13,6 +13,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/fluxcd/pkg/runtime/logger"
 	"github.com/go-logr/logr"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -67,7 +68,7 @@ func NewSuperUsers(
 	scheme *runtime.Scheme,
 	username string,
 	suffix string,
-	logger logr.Logger,
+	l logr.Logger,
 ) *SuperUsersResource {
 	prefixedUsername := redpandav1alpha1.SuperUsersPrefix + username
 	return &SuperUsersResource{
@@ -76,7 +77,7 @@ func NewSuperUsers(
 		object,
 		prefixedUsername,
 		suffix,
-		logger.WithValues(
+		l.WithValues(
 			"Kind", ingressKind(),
 		),
 	}
@@ -94,7 +95,7 @@ func (r *SuperUsersResource) Ensure(ctx context.Context) error {
 	}
 	created, err := CreateIfNotExists(ctx, r, obj, r.logger)
 	if !created && redpandav1alpha1.SuperUsersPrefix != "" {
-		r.logger.V(debugLogLevel).Info(
+		r.logger.V(logger.DebugLevel).Info(
 			"Ignoring --superusers-prefix because SuperUser Secret is already created",
 			"prefix", redpandav1alpha1.SuperUsersPrefix,
 			"superUserSecret", r.Key(),

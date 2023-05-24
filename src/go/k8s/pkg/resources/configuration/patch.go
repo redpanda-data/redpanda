@@ -142,8 +142,9 @@ func convertStringToStringArray(value string) ([]string, error) {
 //
 //nolint:gocritic // code more readable
 func PropertiesEqual(
-	log logr.Logger, v1, v2 interface{}, metadata admin.ConfigPropertyMetadata,
+	l logr.Logger, v1, v2 interface{}, metadata admin.ConfigPropertyMetadata,
 ) bool {
+	log := l.WithName("PropertiesEqual")
 	switch metadata.Type {
 	case "number":
 		if f1, f2, ok := bothFloat64(v1, v2); ok {

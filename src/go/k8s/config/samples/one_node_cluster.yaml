@@ -3,7 +3,7 @@ kind: Cluster
 metadata:
   name: one-node-cluster
 spec:
-  image: "vectorized/redpanda"
+  image: "redpandadata/redpanda"
   version: "latest"
   replicas: 1
   resources:
