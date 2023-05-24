@@ -657,7 +657,6 @@ func (r *ClusterReconciler) reportStatus(
 	nodeList.Internal = observedNodesInternal
 	nodeList.SchemaRegistry.Internal = fmt.Sprintf("%s:%d", clusterFQDN, schemaRegistryPort)
 
-	//nolint:nestif // the code won't get clearer if it's splitted out in my opinion
 	version, versionErr := sts.CurrentVersion(ctx)
 	if versionErr != nil {
 		// this is non-fatal error, it will return error even if e.g.
