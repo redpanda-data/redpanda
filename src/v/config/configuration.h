@@ -282,6 +282,8 @@ struct configuration final : public config_store {
       cloud_storage_graceful_transfer_timeout_ms;
     enum_property<model::cloud_storage_backend> cloud_storage_backend;
     property<std::optional<ss::sstring>> cloud_storage_credentials_host;
+    bounded_property<std::optional<size_t>>
+      cloud_storage_spillover_manifest_size;
 
     // Azure Blob Storage
     property<std::optional<ss::sstring>> cloud_storage_azure_storage_account;

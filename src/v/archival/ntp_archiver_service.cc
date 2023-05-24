@@ -20,9 +20,11 @@
 #include "cloud_storage/remote.h"
 #include "cloud_storage/remote_segment.h"
 #include "cloud_storage/remote_segment_index.h"
+#include "cloud_storage/spillover_manifest.h"
 #include "cloud_storage/topic_manifest.h"
 #include "cloud_storage/tx_range_manifest.h"
 #include "cloud_storage/types.h"
+#include "cluster/archival_metadata_stm.h"
 #include "cluster/partition_manager.h"
 #include "config/configuration.h"
 #include "model/fundamental.h"
@@ -33,6 +35,7 @@
 #include "storage/fs_utils.h"
 #include "storage/ntp_config.h"
 #include "storage/parser.h"
+#include "utils/fragmented_vector.h"
 #include "utils/human.h"
 #include "utils/retry_chain_node.h"
 #include "utils/stream_utils.h"
@@ -78,10 +81,12 @@ ntp_archiver::ntp_archiver(
   const storage::ntp_config& ntp,
   ss::lw_shared_ptr<const configuration> conf,
   cloud_storage::remote& remote,
+  cloud_storage::cache& c,
   cluster::partition& parent)
   : _ntp(ntp.ntp())
   , _rev(ntp.get_initial_revision())
   , _remote(remote)
+  , _cache(c)
   , _parent(parent)
   , _policy(_ntp, conf->time_limit, conf->upload_io_priority)
   , _gate()
@@ -1802,6 +1807,7 @@ ss::future<> ntp_archiver::housekeeping() {
             auto units = co_await ss::get_units(_mutex, 1, _as);
             co_await apply_retention();
             co_await garbage_collect();
+            co_await apply_spillover();
         }
     } catch (const ss::abort_requested_exception&) {
     } catch (const ss::sleep_aborted&) {
@@ -1815,6 +1821,112 @@ ss::future<> ntp_archiver::housekeeping() {
         // Unexpected exceptions are logged, and suppressed: we do not
         // want to stop who upload loop because of issues in housekeeping
         vlog(_rtclog.warn, "Error occurred during housekeeping: {}", e.what());
+    }
+}
+
+ss::future<> ntp_archiver::apply_spillover() {
+    const auto manifest_size_limit
+      = config::shard_local_cfg().cloud_storage_spillover_manifest_size.value();
+    if (manifest_size_limit.has_value() == false) {
+        co_return;
+    }
+
+    if (!may_begin_uploads()) {
+        co_return;
+    }
+
+    const auto manifest_upload_timeout
+      = config::shard_local_cfg()
+          .cloud_storage_manifest_upload_timeout_ms.value();
+    const auto manifest_upload_backoff
+      = config::shard_local_cfg().cloud_storage_initial_backoff_ms.value();
+    vlog(
+      _rtclog.debug,
+      "Manifest size: {}, manifest size limit (x2): {}",
+      manifest().segments_metadata_bytes(),
+      manifest_size_limit.value() * 2);
+    while (manifest().segments_metadata_bytes()
+           > manifest_size_limit.value() * 2) {
+        auto tail = [&]() {
+            cloud_storage::spillover_manifest tail(_ntp, _rev);
+            for (const auto& meta : manifest()) {
+                tail.add(meta);
+                // No performance impact since all writes here are
+                // sequential.
+                tail.flush_write_buffer();
+                if (
+                  tail.segments_metadata_bytes() >= manifest_size_limit
+                  && tail.size() > 0) {
+                    // Don't allow empty spillover manifests even if the limit
+                    // is too low.
+                    break;
+                }
+            }
+            return tail;
+        }();
+        vlog(
+          _rtclog.info,
+          "Preparing spillover: manifest has {} segments and {} bytes, "
+          "spillover manifest num elements: {}, size: {} bytes, base: {}, "
+          "last: {}",
+          manifest().size(),
+          manifest().segments_metadata_bytes(),
+          tail.size(),
+          tail.segments_metadata_bytes(),
+          tail.get_start_offset().value_or(model::offset{}),
+          tail.get_last_offset());
+
+        const auto first = *tail.begin();
+        const auto last = tail.last_segment();
+        vassert(last.has_value(), "Spillover manifest can't be empty");
+        vlog(
+          _rtclog.info,
+          "First batch of the spillover manifest: {}, Last batch of the "
+          "spillover manifest: {}",
+          first,
+          last);
+
+        retry_chain_node upload_rtc(
+          manifest_upload_timeout, manifest_upload_backoff, &_rtcnode);
+        auto res = co_await _remote.upload_manifest(
+          get_bucket_name(), tail, upload_rtc);
+        if (res != cloud_storage::upload_result::success) {
+            vlog(_rtclog.error, "Failed to upload spillover manifest {}", res);
+            co_return;
+        }
+        auto [str, len] = co_await tail.serialize();
+        // Put manifest into cache to avoid roundtrip to the cloud storage
+        co_await _cache.put(
+          tail.get_manifest_path()(), str, _conf->upload_io_priority);
+
+        // Spillover manifests were uploaded to S3
+        // Replicate metadata
+        auto sync_timeout = config::shard_local_cfg()
+                              .cloud_storage_metadata_sync_timeout_ms.value();
+        auto deadline = ss::lowres_clock::now() + sync_timeout;
+
+        auto batch = _parent.archival_meta_stm()->batch_start(deadline, _as);
+        batch.spillover(model::next_offset(last->committed_offset));
+        if (manifest().get_archive_start_offset() == model::offset{}) {
+            // Enable archive if this is the first spillover manifest. In this
+            // case we need to set initial values for
+            // archive_start_offset/archive_clean_offset which will be advanced
+            // by housekeeping further on.
+            batch.truncate_archive_init(first.base_offset, first.delta_offset);
+            batch.cleanup_archive(first.base_offset, 0);
+        }
+        auto error = co_await batch.replicate();
+        if (error != cluster::errc::success) {
+            vlog(
+              _rtclog.error,
+              "Failed to replicate spillover command: {}",
+              error.message());
+        } else {
+            vlog(
+              _rtclog.info,
+              "Uploaded spillover manifest: {}",
+              tail.get_manifest_path());
+        }
     }
 }
 

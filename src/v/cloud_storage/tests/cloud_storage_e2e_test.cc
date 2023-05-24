@@ -9,6 +9,7 @@
  */
 
 #include "archival/ntp_archiver_service.h"
+#include "cloud_storage/spillover_manifest.h"
 #include "cloud_storage/tests/s3_imposter.h"
 #include "config/configuration.h"
 #include "kafka/server/tests/produce_consume_utils.h"
@@ -18,9 +19,13 @@
 
 #include <seastar/core/io_priority_class.hh>
 
+#include <boost/algorithm/string/predicate.hpp>
+
 using tests::kafka_consume_transport;
 using tests::kafka_produce_transport;
 using tests::kv_t;
+
+static ss::logger e2e_test_log("e2e_test");
 
 class e2e_fixture
   : public s3_imposter_fixture
@@ -108,4 +113,162 @@ FIXTURE_TEST(test_produce_consume_from_cloud, e2e_fixture) {
         BOOST_CHECK_EQUAL(records[i].first, consumed_records[i].first);
         BOOST_CHECK_EQUAL(records[i].second, consumed_records[i].second);
     }
+}
+
+FIXTURE_TEST(test_produce_consume_from_cloud_with_spillover, e2e_fixture) {
+#ifndef _NDEBUG
+    config::shard_local_cfg().cloud_storage_spillover_manifest_size.set_value(
+      std::make_optional((size_t)0x1000));
+
+    config::shard_local_cfg().cloud_storage_enable_segment_merging.set_value(
+      false);
+
+    config::shard_local_cfg().enable_metrics_reporter.set_value(false);
+
+    const model::topic topic_name("tapioca");
+    model::ntp ntp(model::kafka_namespace, topic_name, 0);
+    cluster::topic_properties props;
+    BOOST_REQUIRE(props.is_compacted() == false);
+    props.shadow_indexing = model::shadow_indexing_mode::full;
+    props.retention_local_target_bytes = tristate<size_t>(1);
+    add_topic({model::kafka_namespace, topic_name}, 1, props).get();
+    wait_for_leader(ntp).get();
+
+    // Do some sanity checks that our partition looks the way we expect (has a
+    // log, archiver, etc).
+    auto partition = app.partition_manager.local().get(ntp);
+    auto* log = dynamic_cast<storage::disk_log_impl*>(
+      partition->log().get_impl());
+    auto archiver_ref = partition->archiver();
+    BOOST_REQUIRE(archiver_ref.has_value());
+    auto& archiver = archiver_ref.value().get();
+
+    kafka_produce_transport producer(make_kafka_client().get());
+    producer.start().get();
+
+    // Produce to partition until the manifest is large enough to trigger
+    // spillover
+    while (partition->archival_meta_stm()->manifest().segments_metadata_bytes()
+           < 12000) {
+        std::vector<kv_t> records{
+          {"key0", "val0"},
+          {"key1", "val1"},
+          {"key2", "val2"},
+        };
+        vlog(
+          e2e_test_log.info,
+          "manifest size: {}, producing to partition",
+          partition->archival_meta_stm()->manifest().segments_metadata_bytes());
+        producer
+          .produce_to_partition(topic_name, model::partition_id(0), records)
+          .get();
+        log->flush().get();
+        log->force_roll(ss::default_priority_class()).get();
+
+        archiver.upload_next_candidates().get();
+    }
+
+    // Create a new segment so we have data to upload.
+    vlog(e2e_test_log.info, "Test log has {} segments", log->segments().size());
+    vlog(
+      e2e_test_log.info,
+      "Test manifest size is {} bytes",
+      partition->archival_meta_stm()->manifest().segments_metadata_bytes());
+
+    // Wait for storage GC to remove local segments
+    tests::cooperative_spin_wait_with_timeout(30s, [log] {
+        return log->segments().size() == 1;
+    }).get();
+
+    // This should upload several spillover manifests and apply changes to the
+    // archival metadata STM.
+    archiver.apply_spillover().get();
+
+    const auto& local_manifest = partition->archival_meta_stm()->manifest();
+    auto so = local_manifest.get_start_offset();
+    auto ko = local_manifest.get_start_kafka_offset();
+    auto archive_so = local_manifest.get_archive_start_offset();
+    auto archive_ko = local_manifest.get_archive_start_kafka_offset();
+    auto archive_clean = local_manifest.get_archive_clean_offset();
+
+    vlog(
+      e2e_test_log.info,
+      "new start offset: {}, new start kafka offset: {}, archive start offset: "
+      "{}, archive start kafka offset: {}, "
+      "archive clean offset: {}",
+      so,
+      ko,
+      archive_so,
+      archive_ko,
+      archive_clean);
+
+    // Validate uploaded spillover manifest
+    vlog(e2e_test_log.info, "Reconciling storage bucket");
+    std::map<model::offset, cloud_storage::partition_manifest>
+      spillover_manifests;
+    for (const auto& [key, req] : get_targets()) {
+        if (boost::algorithm::contains(key, "manifest") == false) {
+            // Skip segments
+            continue;
+        }
+        if (boost::algorithm::ends_with(key, ".bin")) {
+            // Skip regular manifest
+            continue;
+        }
+        if (boost::algorithm::ends_with(key, "topic_manifest.json")) {
+            // Skip topic manifests manifest
+            continue;
+        }
+        BOOST_REQUIRE_EQUAL(req.method, "PUT");
+        cloud_storage::partition_manifest spm(
+          partition->get_ntp_config().ntp(),
+          partition->get_ntp_config().get_initial_revision());
+        iobuf sbuf;
+        sbuf.append(req.content.data(), req.content_length);
+        vlog(
+          e2e_test_log.debug,
+          "Loading manifest {}, {}",
+          req.url,
+          sbuf.hexdump(100));
+        auto sstr = make_iobuf_input_stream(std::move(sbuf));
+        spm.update(std::move(sstr)).get();
+        auto spm_so = spm.get_start_offset().value_or(model::offset{});
+        vlog(
+          e2e_test_log.info,
+          "Loaded {}, size bytes: {}, num elements: {}",
+          key,
+          spm.segments_metadata_bytes(),
+          spm.size());
+        spillover_manifests.insert(std::make_pair(spm_so, std::move(spm)));
+    }
+
+    BOOST_REQUIRE(spillover_manifests.size() != 0);
+    const auto& last = spillover_manifests.rbegin()->second;
+    const auto& first = spillover_manifests.begin()->second;
+
+    BOOST_REQUIRE(model::next_offset(last.get_last_offset()) == so);
+    BOOST_REQUIRE(first.get_start_offset().has_value());
+    BOOST_REQUIRE(first.get_start_offset().value() == archive_so);
+    BOOST_REQUIRE(first.get_start_kafka_offset().has_value());
+    BOOST_REQUIRE(first.get_start_kafka_offset().value() == archive_ko);
+
+    model::offset expected_so = archive_so;
+    for (const auto& [key, m] : spillover_manifests) {
+        std::ignore = key;
+        BOOST_REQUIRE(m.get_start_offset().value() == expected_so);
+        expected_so = model::next_offset(m.get_last_offset());
+    }
+
+    // Consume from start offset of the partition (data available in the STM).
+    // TODO: consume from archive_start_offset
+    vlog(e2e_test_log.info, "Consuming from the partition");
+    kafka_consume_transport consumer(make_kafka_client().get());
+    consumer.start().get();
+    auto consumed_records = consumer
+                              .consume_from_partition(
+                                topic_name,
+                                model::partition_id(0),
+                                kafka::offset_cast(ko.value()))
+                              .get();
+#endif
 }

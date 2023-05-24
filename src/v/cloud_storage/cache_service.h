@@ -36,12 +36,13 @@ static constexpr unsigned default_writebehind = 10;
 
 class cache_test_fixture;
 
-struct cache_item {
+struct [[nodiscard]] cache_item {
     ss::file body;
     size_t size;
 };
 
-enum class cache_element_status { available, not_available, in_progress };
+enum class [[nodiscard]] cache_element_status{
+  available, not_available, in_progress};
 std::ostream& operator<<(std::ostream& o, cache_element_status);
 
 class cache;

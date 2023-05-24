@@ -232,7 +232,12 @@ struct reupload_fixture : public archiver_fixture {
     void init_archiver() {
         auto [arch_conf, remote_conf] = get_configurations();
         auto part = app.partition_manager.local().get(manifest_ntp);
-        archiver.emplace(get_ntp_conf(), arch_conf, remote.local(), *part);
+        archiver.emplace(
+          get_ntp_conf(),
+          arch_conf,
+          remote.local(),
+          app.shadow_index_cache.local(),
+          *part);
     }
 
     ss::lw_shared_ptr<storage::segment> self_compact_next_segment() {

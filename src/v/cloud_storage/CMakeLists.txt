@@ -36,6 +36,7 @@ v_cc_library(
     segment_chunk.cc
     segment_chunk_api.cc
     segment_chunk_data_source.cc
+    async_manifest_view.cc
   DEPS
     Seastar::seastar
     v::bytes

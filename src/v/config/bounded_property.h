@@ -147,9 +147,24 @@ public:
       , _bounds(bounds)
       , _example(generate_example()) {}
 
+    void set_value(std::any v) override {
+        property<T>::update_value(std::any_cast<T>(std::move(v)));
+    }
     bool set_value(YAML::Node n) override {
         auto val = std::move(n.as<T>());
+        return clamp_and_update(val);
+    }
 
+    std::optional<std::string_view> example() const override {
+        if (!_example.empty()) {
+            return _example;
+        } else {
+            return property<T>::example();
+        }
+    }
+
+private:
+    bool clamp_and_update(T val) {
         using outer_type = std::decay_t<T>;
 
         // If we somehow are applying an invalid value, clamp it
@@ -170,17 +185,8 @@ public:
         } else {
             return property<T>::update_value(std::move(_bounds.clamp(val)));
         }
-    };
-
-    std::optional<std::string_view> example() const override {
-        if (!_example.empty()) {
-            return _example;
-        } else {
-            return property<T>::example();
-        }
     }
 
-private:
     /*
      * Pre-generate an example for docs/api, if the explicit property
      * metadata does not provide one.

@@ -2287,7 +2287,7 @@ SEASTAR_THREAD_TEST_CASE(test_archive_offsets_serialization) {
       });
     BOOST_REQUIRE(m.get_start_offset() == model::offset(1000));
     m.set_archive_start_offset(model::offset(100), model::offset_delta(0));
-    m.set_archive_clean_offset(model::offset(50));
+    m.set_archive_clean_offset(model::offset(50), 0);
 
     BOOST_REQUIRE(m.get_archive_start_offset() == model::offset(100));
     BOOST_REQUIRE(m.get_archive_clean_offset() == model::offset(50));

@@ -389,6 +389,7 @@ private:
     bool _is_idempotence_enabled{false};
     ss::lw_shared_ptr<const archival::configuration> _archival_conf;
     ss::sharded<cloud_storage::remote>& _cloud_storage_api;
+    ss::sharded<cloud_storage::cache>& _cloud_storage_cache;
 
     ss::shared_ptr<cloud_storage::remote_partition> _cloud_storage_partition;
     std::unique_ptr<archival::ntp_archiver> _archiver;

@@ -60,6 +60,7 @@ partition::partition(
       config::shard_local_cfg().enable_idempotence.value())
   , _archival_conf(archival_conf)
   , _cloud_storage_api(cloud_storage_api)
+  , _cloud_storage_cache(cloud_storage_cache)
   , _upload_housekeeping(upload_hks) {
     auto stm_manager = _raft->log().stm_manager();
 
@@ -681,7 +682,11 @@ void partition::maybe_construct_archiver() {
       && _raft->ntp().ns == model::kafka_namespace
       && (ntp_config.is_archival_enabled() || ntp_config.is_read_replica_mode_enabled())) {
         _archiver = std::make_unique<archival::ntp_archiver>(
-          ntp_config, _archival_conf, _cloud_storage_api.local(), *this);
+          ntp_config,
+          _archival_conf,
+          _cloud_storage_api.local(),
+          _cloud_storage_cache.local(),
+          *this);
         if (!ntp_config.is_read_replica_mode_enabled()) {
             _upload_housekeeping.local().register_jobs(
               _archiver->get_housekeeping_jobs());

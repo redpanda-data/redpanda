@@ -12,6 +12,7 @@
 #include "archival/archival_policy.h"
 #include "archival/probe.h"
 #include "archival/types.h"
+#include "cloud_storage/cache_service.h"
 #include "cloud_storage/partition_manifest.h"
 #include "cloud_storage/remote.h"
 #include "cloud_storage/remote_segment_index.h"
@@ -74,6 +75,7 @@ public:
       const storage::ntp_config& ntp,
       ss::lw_shared_ptr<const configuration> conf,
       cloud_storage::remote& remote,
+      cloud_storage::cache& c,
       cluster::partition& parent);
 
     /// Spawn background fibers, which depending on the mode (read replica or
@@ -155,6 +157,13 @@ public:
     /// according to the retention policy specified by the partition
     /// configuration. This function does *not* delete any data.
     ss::future<> apply_retention();
+
+    /// \brief If the size of the manifest exceeds the limit
+    /// move some segments into a separate immutable manifest and
+    /// upload it to the cloud. After that the archive_start_offset
+    /// has to be advanced and segments could be removed from the
+    /// STM manifest.
+    ss::future<> apply_spillover();
 
     /// \brief Remove segments that are no longer queriable by:
     /// segments that are below the current start offset and segments
@@ -485,6 +494,7 @@ private:
     model::ntp _ntp;
     model::initial_revision_id _rev;
     cloud_storage::remote& _remote;
+    cloud_storage::cache& _cache;
     cluster::partition& _parent;
     model::term_id _start_term;
     archival_policy _policy;
