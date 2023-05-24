@@ -26,16 +26,16 @@ type Client struct {
 
 // NewClient initializes and returns a client for talking to the cloud API.
 // If the host is empty, this defaults to the prod API host.
-func NewClient(host, authToken string) *Client {
+func NewClient(host, authToken string, hopts ...httpapi.Opt) *Client {
 	if host == "" {
 		host = ProdURL
 	}
-	return &Client{
-		cl: httpapi.NewClient(
-			httpapi.Host(host),
-			httpapi.BearerAuth(authToken),
-		),
+	opts := []httpapi.Opt{
+		httpapi.Host(host),
+		httpapi.BearerAuth(authToken),
 	}
+	opts = append(opts, hopts...)
+	return &Client{cl: httpapi.NewClient(opts...)}
 }
 
 // NameID is a common type used in may endpoints / many structs.
