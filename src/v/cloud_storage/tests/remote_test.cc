@@ -483,8 +483,7 @@ FIXTURE_TEST(test_list_bucket, s3_imposter_fixture) {
         cloud_storage_clients::object_key prefix("/");
         auto result = r.list_objects(bucket, fib, prefix, '/').get();
         BOOST_REQUIRE(result.has_value());
-        BOOST_REQUIRE_EQUAL(
-          result.value().contents.size(), first * second * third);
+        BOOST_REQUIRE(result.value().contents.empty());
         BOOST_REQUIRE_EQUAL(result.value().common_prefixes.size(), first);
     }
     {
@@ -498,7 +497,7 @@ FIXTURE_TEST(test_list_bucket, s3_imposter_fixture) {
         cloud_storage_clients::object_key prefix("/1/");
         auto result = r.list_objects(bucket, fib, prefix, '/').get();
         BOOST_REQUIRE(result.has_value());
-        BOOST_REQUIRE_EQUAL(result.value().contents.size(), second * third);
+        BOOST_REQUIRE(result.value().contents.empty());
         BOOST_REQUIRE_EQUAL(result.value().common_prefixes.size(), second);
     }
 }

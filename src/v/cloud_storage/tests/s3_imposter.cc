@@ -58,11 +58,13 @@ ss::sstring list_objects_resp(
             continue;
         }
         vlog(fixt_log.trace, "{} matches prefix {}", key, prefix);
-        content_key_to_size.emplace(
-          key,
-          expectation.body.has_value() ? expectation.body.value().size() : 0);
         if (delimiter.empty()) {
-            // No delimiter, no need to find prefixes.
+            // No delimiter, we just need to return the content and not
+            // prefixes.
+            content_key_to_size.emplace(
+              key,
+              expectation.body.has_value() ? expectation.body.value().size()
+                                           : 0);
             continue;
         }
         auto delimiter_pos = key.find(delimiter, prefix.size());
