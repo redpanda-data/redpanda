@@ -1,0 +1,8 @@
+#!/bin/bash
+
+if [[ -f vtools/.buildkite/hooks/pre-exit ]]; then
+  echo "~~~ Executing vtools pre-exit hook"
+  vtools/.buildkite/hooks/pre-exit
+else
+  echo "No pre-exit hook found in vtools/.buildkite/hooks/"
+fi
