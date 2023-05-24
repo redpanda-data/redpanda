@@ -443,22 +443,19 @@ client::get_consumer(const group_id& g_id, const member_id& name) {
 }
 
 ss::future<>
-client::remove_consumer(const group_id& g_id, const member_id& name) {
-    return get_consumer(g_id, name).then([this, g_id](shared_consumer_t c) {
-        auto& group = _consumers[g_id];
-        group.erase(c);
-        if (group.empty()) {
-            _consumers.erase(g_id);
-        }
+client::remove_consumer(group_id g_id, const member_id& name) {
+    auto c = co_await get_consumer(g_id, name);
+    auto& group = _consumers[g_id];
+    group.erase(c);
+    if (group.empty()) {
+        _consumers.erase(g_id);
+    }
 
-        return c->leave().then([c{std::move(c)}](leave_group_response res) {
-            if (res.data.error_code != error_code::none) {
-                return ss::make_exception_future<>(consumer_error(
-                  c->group_id(), c->member_id(), res.data.error_code));
-            }
-            return ss::now();
-        });
-    });
+    auto res = co_await c->leave();
+    if (res.data.error_code != error_code::none) {
+        throw consumer_error(
+          c->group_id(), c->member_id(), res.data.error_code);
+    }
 }
 
 ss::future<> client::subscribe_consumer(
