@@ -86,20 +86,22 @@ rpc_server::send_reply(ss::lw_shared_ptr<server_context_impl> ctx, netbuf buf) {
           "Skipping write of {} bytes, connection is closed", view.size());
         co_return;
     }
-    co_await ctx->conn->write(std::move(view))
-      .handle_exception([ctx = std::move(ctx)](std::exception_ptr e) {
-          auto disconnect = net::is_disconnect_exception(e);
-          if (disconnect) {
-              vlog(
-                rpclog.info,
-                "Disconnected {} ({})",
-                ctx->conn->addr,
-                disconnect.value());
-          } else {
-              vlog(rpclog.warn, "Error dispatching method: {}", e);
-          }
-          ctx->conn->shutdown_input();
-      });
+    try {
+        co_await ctx->conn->write(std::move(view));
+    } catch(...) {
+        auto e = std::current_exception();
+        auto disconnect = net::is_disconnect_exception(e);
+        if (disconnect) {
+            vlog(
+              rpclog.info,
+              "Disconnected {} ({})",
+              ctx->conn->addr,
+              disconnect.value());
+        } else {
+            vlog(rpclog.warn, "Error dispatching method: {}", e);
+        }
+        ctx->conn->shutdown_input();
+    }
 }
 
 ss::future<> rpc_server::send_reply_skip_payload(
