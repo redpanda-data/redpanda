@@ -25,6 +25,9 @@
 
 #include <absl/container/flat_hash_map.h>
 
+#include <memory>
+#include <vector>
+
 namespace raft {
 // clang-format off
 template<typename ConsensusManager>
@@ -297,15 +300,17 @@ private:
             }
 
             auto shard = _shard_table.shard_for(r.meta.group);
-            if (!ret.shard_requests.contains(shard)) {
-                auto hbeats = ss::make_foreign(
-                  std::make_unique<std::vector<append_entries_request>>());
-                hbeats->push_back(std::move(r));
-                ret.shard_requests.emplace(shard, std::move(hbeats));
-                continue;
+            auto it = ret.shard_requests.find(shard);
+            if (it == ret.shard_requests.end()) {
+                auto result = ret.shard_requests.try_emplace(
+                  it,
+                  shard,
+                  ss::make_foreign(
+                    std::make_unique<std::vector<append_entries_request>>()));
+                it = result;
             }
 
-            ret.shard_requests.find(shard)->second->push_back(std::move(r));
+            it->second->push_back(std::move(r));
         }
         return ret;
     }
