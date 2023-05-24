@@ -60,8 +60,9 @@ enum class feature : std::uint64_t {
     force_partition_reconfiguration = 1ULL << 26U,
 
     // Dummy features for testing only
-    test_alpha = 1ULL << 62U,
-    test_bravo = 1ULL << 63U,
+    test_alpha = 1ULL << 61U,
+    test_bravo = 1ULL << 62U,
+    test_charlie = 1ULL << 63U,
 };
 
 // Eventually, once a feature has been in use for a while, it is no longer
@@ -261,22 +262,6 @@ constexpr static std::array feature_schema{
     cluster::cluster_version{10},
     "force_partition_reconfiguration",
     feature::force_partition_reconfiguration,
-    feature_spec::available_policy::always,
-    feature_spec::prepare_policy::always},
-
-  // For testing, a feature that does not auto-activate
-  feature_spec{
-    cluster::cluster_version{2001},
-    "__test_alpha",
-    feature::test_alpha,
-    feature_spec::available_policy::explicit_only,
-    feature_spec::prepare_policy::always},
-
-  // For testing, a feature that auto-activates
-  feature_spec{
-    cluster::cluster_version{2001},
-    "__test_bravo",
-    feature::test_bravo,
     feature_spec::available_policy::always,
     feature_spec::prepare_policy::always},
 };
