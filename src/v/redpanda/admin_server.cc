@@ -1998,6 +1998,39 @@ static json::validator make_feature_put_validator() {
     return json::validator(schema);
 }
 
+/// Features are state machines, with multiple 'disabled' states.  Simplify
+/// this into the higher level states the the admin API reports to users.
+/// (see state machine diagram in feature_state.h)
+ss::httpd::features_json::feature_state::feature_state_state
+feature_state_to_high_level(features::feature_state::state state) {
+    switch (state) {
+    case features::feature_state::state::active:
+        return ss::httpd::features_json::feature_state::feature_state_state::
+          active;
+        break;
+    case features::feature_state::state::unavailable:
+        return ss::httpd::features_json::feature_state::feature_state_state::
+          unavailable;
+        break;
+    case features::feature_state::state::available:
+        return ss::httpd::features_json::feature_state::feature_state_state::
+          available;
+        break;
+    case features::feature_state::state::preparing:
+        return ss::httpd::features_json::feature_state::feature_state_state::
+          preparing;
+        break;
+    case features::feature_state::state::disabled_clean:
+    case features::feature_state::state::disabled_active:
+    case features::feature_state::state::disabled_preparing:
+        return ss::httpd::features_json::feature_state::feature_state_state::
+          disabled;
+        break;
+
+        // Exhaustive match
+    }
+}
+
 ss::future<ss::json::json_return_type>
 admin_server::put_feature_handler(std::unique_ptr<ss::http::request> req) {
     static thread_local auto feature_put_validator(
@@ -2008,18 +2041,42 @@ admin_server::put_feature_handler(std::unique_ptr<ss::http::request> req) {
 
     auto feature_name = req->param["feature_name"];
 
-    if (!_controller->get_feature_table()
-           .local()
-           .resolve_name(feature_name)
-           .has_value()) {
+    auto feature_id = _controller->get_feature_table().local().resolve_name(
+      feature_name);
+    if (!feature_id.has_value()) {
         throw ss::httpd::bad_request_exception("Unknown feature name");
     }
+
+    // Retrieve the current state and map to high level disabled/enabled value
+    auto& feature_state = _controller->get_feature_table().local().get_state(
+      feature_id.value());
+    auto current_state = feature_state_to_high_level(feature_state.get_state());
 
     cluster::feature_update_action action{.feature_name = feature_name};
     auto& new_state_str = doc["state"];
     if (new_state_str == "active") {
+        if (
+          current_state
+          == ss::httpd::features_json::feature_state::feature_state_state::
+            active) {
+            vlog(
+              logger.info,
+              "Ignoring request to activate feature '{}', already active",
+              feature_name);
+            co_return ss::json::json_void();
+        }
         action.action = cluster::feature_update_action::action_t::activate;
     } else if (new_state_str == "disabled") {
+        if (
+          current_state
+          == ss::httpd::features_json::feature_state::feature_state_state::
+            disabled) {
+            vlog(
+              logger.info,
+              "Ignoring request to disable feature '{}', already disabled",
+              feature_name);
+            co_return ss::json::json_void();
+        }
         action.action = cluster::feature_update_action::action_t::deactivate;
     } else {
         throw ss::httpd::bad_request_exception("Invalid state");
@@ -2112,31 +2169,7 @@ void admin_server::register_features_routes() {
                 fs.spec.name,
                 fs.get_state());
               item.name = ss::sstring(fs.spec.name);
-
-              switch (fs.get_state()) {
-              case features::feature_state::state::active:
-                  item.state = ss::httpd::features_json::feature_state::
-                    feature_state_state::active;
-                  break;
-              case features::feature_state::state::unavailable:
-                  item.state = ss::httpd::features_json::feature_state::
-                    feature_state_state::unavailable;
-                  break;
-              case features::feature_state::state::available:
-                  item.state = ss::httpd::features_json::feature_state::
-                    feature_state_state::available;
-                  break;
-              case features::feature_state::state::preparing:
-                  item.state = ss::httpd::features_json::feature_state::
-                    feature_state_state::preparing;
-                  break;
-              case features::feature_state::state::disabled_clean:
-              case features::feature_state::state::disabled_active:
-              case features::feature_state::state::disabled_preparing:
-                  item.state = ss::httpd::features_json::feature_state::
-                    feature_state_state::disabled;
-                  break;
-              }
+              item.state = feature_state_to_high_level(fs.get_state());
 
               switch (fs.get_state()) {
               case features::feature_state::state::active:
