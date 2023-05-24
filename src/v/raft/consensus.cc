@@ -1734,7 +1734,8 @@ ss::future<vote_reply> consensus::do_vote(vote_request&& r) {
     }
 
     if (_voted_for.id()() < 0) {
-        return write_voted_for({r.node_id, _term})
+        auto node_id = r.node_id;
+        return write_voted_for({node_id, _term})
           .then_wrapped([this, reply = std::move(reply), r = std::move(r)](
                           ss::future<> f) mutable {
               bool granted = false;
