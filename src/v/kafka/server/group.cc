@@ -1458,8 +1458,10 @@ group::sync_group_stages group::sync_group_completing_rebalance(
     auto assignments = std::move(r).member_assignments();
     add_missing_assignments(assignments);
 
-    auto f = store_group(checkpoint(assignments))
-               .then([this,
+    // clang-tidy 16.0.4 is reporting an erroneous 'use-after-move' error when
+    // calling `then` after `store_group`.
+    auto replicate_result = store_group(checkpoint(assignments));
+    auto f = replicate_result.then([this,
                       response = std::move(response),
                       expected_generation = generation(),
                       assignments = std::move(assignments)](
