@@ -36,8 +36,12 @@ static std::pair<size_t, size_t> get_low_high_segment_size(
 }
 
 adjacent_segment_merger::adjacent_segment_merger(
-  ntp_archiver& parent, retry_chain_logger& ctxlog, bool is_local)
+  ntp_archiver& parent,
+  retry_chain_logger& ctxlog,
+  bool is_local,
+  config::binding<bool> config_enabled)
   : _is_local(is_local)
+  , _config_enabled(std::move(config_enabled))
   , _archiver(parent)
   , _ctxlog(ctxlog)
   , _target_segment_size(
@@ -52,7 +56,9 @@ adjacent_segment_merger::adjacent_segment_merger(
 
 ss::future<> adjacent_segment_merger::stop() { return _gate.close(); }
 
-void adjacent_segment_merger::set_enabled(bool enabled) { _enabled = enabled; }
+void adjacent_segment_merger::set_enabled(bool enabled) {
+    _job_enabled = enabled;
+}
 
 void adjacent_segment_merger::acquire() { _holder = ss::gate::holder(_gate); }
 
@@ -138,13 +144,37 @@ adjacent_segment_merger::run(retry_chain_node& rtc, run_quota_t quota) {
       .consumed = run_quota_t(0),
       .remaining = quota,
     };
+
+    if (!enabled()) {
+        co_return result;
+    }
+
+    if (_archiver.ntp_config().is_read_replica_mode_enabled()) {
+        // This should never happen because we should not have been constructed
+        // for a read replica topic: this is a double-check for safety.
+        vlog(
+          _ctxlog.error,
+          "Adjacent segment merging refusing to run on read replica topic");
+        co_return result;
+    }
+
+    if (!_archiver.ntp_config().is_archival_enabled()) {
+        // This should never happen because we should not have been constructed
+        // for a read replica topic: this is a double-check for safety.
+        vlog(
+          _ctxlog.error,
+          "Adjacent segment merging refusing to run on topic with remote.write "
+          "disabled");
+        co_return result;
+    }
+
     vlog(
       _ctxlog.debug,
       "Adjacent segment merger run begin, last offset is {}",
       _last);
     for (int i = 0; i < max_reuploads_per_run; i++) {
         if (
-          !_enabled || _as.abort_requested()
+          !enabled() || _as.abort_requested()
           || _archiver.manifest().get_last_offset() == model::offset::max()) {
             // Avoid reuploading anything if last offset is max. This can only
             // happen if the recovery was incomplete and by reuploading any data

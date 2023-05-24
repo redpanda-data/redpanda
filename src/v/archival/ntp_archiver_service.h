@@ -565,7 +565,6 @@ private:
 
     // NTP level adjacent segment merging job
     std::unique_ptr<housekeeping_job> _local_segment_merger;
-    config::binding<bool> _segment_merging_enabled;
 
     // The archival metadata stm has its own clean/dirty mechanism, but it
     // is expensive to persistently mark it clean after each segment upload,

@@ -65,14 +65,21 @@ namespace archival {
 
 static std::unique_ptr<adjacent_segment_merger>
 maybe_make_adjacent_segment_merger(
-  ntp_archiver& self, retry_chain_logger& log, const storage::ntp_config& cfg) {
+  ntp_archiver& self,
+  retry_chain_logger& log,
+  const storage::ntp_config& cfg,
+  bool am_leader) {
     std::unique_ptr<adjacent_segment_merger> result = nullptr;
     if (
       cfg.is_archival_enabled() && !cfg.is_compacted()
       && !cfg.is_read_replica_mode_enabled()) {
-        result = std::make_unique<adjacent_segment_merger>(self, log, true);
-        result->set_enabled(config::shard_local_cfg()
-                              .cloud_storage_enable_segment_merging.value());
+        result = std::make_unique<adjacent_segment_merger>(
+          self,
+          log,
+          true,
+          config::shard_local_cfg()
+            .cloud_storage_enable_segment_merging.bind());
+        result->set_enabled(am_leader);
     }
     return result;
 }
@@ -109,10 +116,8 @@ ntp_archiver::ntp_archiver(
   , _tx_tags(cloud_storage::remote::make_tx_manifest_tags(_ntp, _rev))
   , _segment_index_tags(
       cloud_storage::remote::make_segment_index_tags(_ntp, _rev))
-  , _local_segment_merger(
-      maybe_make_adjacent_segment_merger(*this, _rtclog, parent.log().config()))
-  , _segment_merging_enabled(
-      config::shard_local_cfg().cloud_storage_enable_segment_merging.bind())
+  , _local_segment_merger(maybe_make_adjacent_segment_merger(
+      *this, _rtclog, parent.log().config(), parent.is_leader()))
   , _manifest_upload_interval(
       config::shard_local_cfg()
         .cloud_storage_manifest_max_upload_interval_sec.bind())
@@ -121,12 +126,6 @@ ntp_archiver::ntp_archiver(
     // Override bucket for read-replica
     if (_parent.is_read_replica_mode_enabled()) {
         _bucket_override = _parent.get_read_replica_bucket();
-    } else if (
-      parent.log().config().is_archival_enabled()
-      && !parent.log().config().is_compacted()) {
-        _segment_merging_enabled.watch([this] {
-            _local_segment_merger->set_enabled(_segment_merging_enabled());
-        });
     }
 
     vlog(
