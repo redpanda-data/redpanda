@@ -97,6 +97,39 @@ class TransactionsTest(RedpandaTest, TransactionsMixin):
                                  err_msg="Can not consume data")
 
     @cluster(num_nodes=3)
+    def find_coordinator_inits_tx_registry_test(self):
+        def find_tx_coordinator_passes():
+            r = self.admin.find_tx_coordinator(
+                "tx0", node=random.choice(self.redpanda.started_nodes()))
+            return r["ec"] == 0
+
+        def tx_registry_is_initted():
+            info = self.admin.get_tx_registry_state()
+            return info["version"] != -1, info
+
+        wait_until(find_tx_coordinator_passes, timeout_sec=10, backoff_sec=1)
+
+        info = wait_until_result(tx_registry_is_initted,
+                                 timeout_sec=10,
+                                 backoff_sec=1)
+        assert info["version"] >= 0
+        partitions = set()
+        ranges = list()
+        for entry in info["tx_mapping"]:
+            partitions.add(entry["partition_id"])
+            for hash_range in entry["hash_ranges"]:
+                ranges.append(hash_range)
+        assert len(partitions) > 0
+        assert max(partitions) + 1 == len(partitions)
+        assert min(partitions) == 0
+        assert len(ranges) > 0
+        ranges = sorted(ranges, key=lambda x: x["from"])
+        assert ranges[0]["from"] == 0
+        assert ranges[-1]["to"] == 4294967295
+        for i in range(1, len(ranges)):
+            assert ranges[i - 1]["to"] + 1 == ranges[i]["from"]
+
+    @cluster(num_nodes=3)
     def find_coordinator_creates_tx_topics_test(self):
         for node in self.redpanda.started_nodes():
             for tx_topic in ["tx", "tx_registry"]:

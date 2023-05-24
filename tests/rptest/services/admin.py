@@ -672,6 +672,13 @@ class Admin:
         path = f"transaction/{tid}/find_coordinator"
         return self._request('get', path, node=node).json()
 
+    def get_tx_registry_state(self, node=None):
+        """
+        Get tx_registry state
+        """
+        path = f"tx_registry"
+        return self._request('get', path, node=node).json()
+
     def set_partition_replicas(self,
                                topic,
                                partition,
