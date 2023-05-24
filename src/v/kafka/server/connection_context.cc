@@ -322,7 +322,10 @@ connection_context::reserve_request_units(api_key key, size_t size) {
 
 ss::future<>
 connection_context::dispatch_method_once(request_header hdr, size_t size) {
-    return throttle_request(hdr, size)
+    // clang-tidy 16.0.4 is reporting an erroneous 'use-after-move' error when
+    // calling `then` after `throttle_request`.
+    auto sres_in = throttle_request(hdr, size);
+    return sres_in
       .then([this, hdr = std::move(hdr), size](
               session_resources sres_in) mutable {
           if (_server.abort_requested()) {
