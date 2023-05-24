@@ -491,9 +491,9 @@ partition::local_timequery(storage::timequery_config cfg) {
             // Query raced with prefix truncation
             vlog(
               clusterlog.debug,
-              "timequery (raft) ts={} raced with truncation (start_timestamp "
-              "{}, "
-              "result {})",
+              "timequery (raft) {} ts={} raced with truncation "
+              "(start_timestamp {}, result {})",
+              _raft->ntp(),
               cfg.time,
               _raft->log().start_timestamp(),
               result->time);
@@ -512,8 +512,9 @@ partition::local_timequery(storage::timequery_config cfg) {
             // Ref https://github.com/redpanda-data/redpanda/issues/9669
             vlog(
               clusterlog.debug,
-              "Timequery (raft) ts={} miss on local log (start_timestamp {}, "
-              "result {})",
+              "Timequery (raft) {} ts={} miss on local log (start_timestamp "
+              "{}, result {})",
+              _raft->ntp(),
               cfg.time,
               _raft->log().start_timestamp(),
               result->time);
@@ -526,8 +527,9 @@ partition::local_timequery(storage::timequery_config cfg) {
             // have the same timestamp and are present in cloud storage.
             vlog(
               clusterlog.debug,
-              "Timequery (raft) ts={} hit start_offset in local log "
+              "Timequery (raft) {} ts={} hit start_offset in local log "
               "(start_offset {} start_timestamp {}, result {})",
+              _raft->ntp(),
               _raft->log().offsets().start_offset,
               cfg.time,
               _raft->log().start_timestamp(),
