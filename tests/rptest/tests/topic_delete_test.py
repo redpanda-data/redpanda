@@ -12,7 +12,6 @@ import json
 from typing import Optional
 
 from ducktape.utils.util import wait_until
-from ducktape.mark import ok_to_fail
 
 from ducktape.mark import matrix, parametrize
 from requests.exceptions import HTTPError
@@ -371,6 +370,10 @@ class TopicDeleteCloudStorageTest(RedpandaTest):
             # and get a cluster of that size
             num_brokers=test_context.cluster.available().size(),
             extra_rp_conf={
+                # Tests validating deletion _not_ happening can be failed if
+                # segments are deleted in the background by adjacent segment
+                # merging
+                'cloud_storage_enable_segment_merging': False,
                 # We rely on the scrubber to delete topic manifests, and to eventually
                 # delete data if cloud storage was unavailable during initial delete.  To
                 # control test runtimes, set a short interval.
@@ -414,7 +417,6 @@ class TopicDeleteCloudStorageTest(RedpandaTest):
             self.si_settings.cloud_storage_bucket, topic=topic_name)
         assert sum(1 for _ in objects) > 0
 
-    @ok_to_fail  # https://github.com/redpanda-data/redpanda/issues/8496
     @skip_debug_mode  # Rely on timely uploads during leader transfers
     @cluster(num_nodes=3)
     def topic_delete_installed_snapshots_test(self):
@@ -456,7 +458,6 @@ class TopicDeleteCloudStorageTest(RedpandaTest):
                    timeout_sec=30,
                    backoff_sec=1)
 
-    @ok_to_fail  # https://github.com/redpanda-data/redpanda/issues/9629
     @skip_debug_mode  # Rely on timely uploads during leader transfers
     @cluster(
         num_nodes=3,
@@ -520,18 +521,11 @@ class TopicDeleteCloudStorageTest(RedpandaTest):
                    timeout_sec=30,
                    backoff_sec=1)
 
+        # Eventually, the original topic should be deleted: this is the tiered
+        # storage scrubber doing its thing.
         wait_until(lambda: self._topic_remote_deleted(self.topic),
                    timeout_sec=30,
                    backoff_sec=1)
-
-        # The controller gave up on deleting the original topic, objects
-        # are left behind in the object store.  This condition can be updated
-        # if we ever implement a mechanism for automatically GCing objects after
-        # a drop in the object storage backend.
-        final_objects = set(
-            self.cloud_storage_client.list_objects(
-                self.si_settings.cloud_storage_bucket, topic=self.topic))
-        assert len(final_objects) >= len(keys_before)
 
     def _topic_remote_deleted(self, topic_name: str):
         """Return true if all objects removed from cloud storage"""

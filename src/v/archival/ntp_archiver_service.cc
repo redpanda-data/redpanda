@@ -156,7 +156,9 @@ void ntp_archiver::notify_leadership(std::optional<model::node_id> leader_id) {
         _leader_cond.signal();
     }
     if (_local_segment_merger) {
-        _local_segment_merger->set_enabled(is_leader);
+        _local_segment_merger->set_enabled(
+          is_leader
+          && config::shard_local_cfg().cloud_storage_enable_segment_merging());
     }
 }
 
