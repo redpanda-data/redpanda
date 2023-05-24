@@ -71,6 +71,20 @@ util::generate_json_schema(const config::configuration& conf) {
         if (units.has_value()) {
             pm.units = ss::sstring(units.value());
         }
+
+        if (p.max_value().has_value()) {
+            pm.max = p.max_value().value();
+        }
+        if (p.min_value().has_value()) {
+            pm.min = p.min_value().value();
+        }
+        if (p.align_value().has_value()) {
+            pm.align = p.align_value().value();
+        }
+        if (p.oddeven_value().has_value()) {
+            pm.oddeven = ss::sstring{
+              config::to_string_view(p.oddeven_value().value())};
+        }
     });
 
     std::map<ss::sstring, property_map> response = {

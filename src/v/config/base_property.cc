@@ -44,6 +44,17 @@ std::string_view to_string_view(visibility v) {
     return "{invalid}";
 }
 
+std::string_view to_string_view(odd_even_constraint v) {
+    switch (v) {
+    case odd_even_constraint::even:
+        return "even";
+    case odd_even_constraint::odd:
+        return "odd";
+    }
+
+    return "{invalid}";
+}
+
 /**
  * Helper for property methods that should only be used
  * on live-settable properties.
