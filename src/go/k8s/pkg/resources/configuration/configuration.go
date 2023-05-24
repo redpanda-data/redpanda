@@ -16,9 +16,10 @@ import (
 	"reflect"
 	"strings"
 
-	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources/featuregates"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/api/admin"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
+
+	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources/featuregates"
 )
 
 const (

@@ -12,8 +12,9 @@ package featuregates_test
 import (
 	"testing"
 
-	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources/featuregates"
 	"github.com/stretchr/testify/assert"
+
+	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources/featuregates"
 )
 
 func TestFeatureGates(t *testing.T) { //nolint:funlen // table tests can be longer

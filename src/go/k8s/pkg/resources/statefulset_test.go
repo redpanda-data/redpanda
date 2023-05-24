@@ -15,10 +15,6 @@ import (
 	"testing"
 	"time"
 
-	redpandav1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
-	adminutils "github.com/redpanda-data/redpanda/src/go/k8s/pkg/admin"
-	res "github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources"
-	resourcetypes "github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources/types"
 	"github.com/stretchr/testify/assert"
 	v1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -30,6 +26,11 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+
+	redpandav1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
+	adminutils "github.com/redpanda-data/redpanda/src/go/k8s/pkg/admin"
+	res "github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources"
+	resourcetypes "github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources/types"
 )
 
 //nolint:funlen // Test function can have more than 100 lines

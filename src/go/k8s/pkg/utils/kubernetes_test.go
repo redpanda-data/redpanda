@@ -13,8 +13,9 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/utils"
 	"github.com/stretchr/testify/require"
+
+	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/utils"
 )
 
 func TestGetPodOrdinal(t *testing.T) {

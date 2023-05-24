@@ -19,9 +19,6 @@ import (
 	"os"
 	"testing"
 
-	redpandav1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
-	adminutils "github.com/redpanda-data/redpanda/src/go/k8s/pkg/admin"
-	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources/types"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/api/admin"
 	"github.com/stretchr/testify/require"
 	appsv1 "k8s.io/api/apps/v1"
@@ -29,6 +26,10 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+
+	redpandav1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
+	adminutils "github.com/redpanda-data/redpanda/src/go/k8s/pkg/admin"
+	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources/types"
 )
 
 func TestShouldUpdate_AnnotationChange(t *testing.T) {

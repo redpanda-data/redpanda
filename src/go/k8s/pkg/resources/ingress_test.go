@@ -5,9 +5,10 @@ import (
 	"testing"
 
 	"github.com/go-logr/logr"
-	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources"
 )
 
 func TestIngressWithTLS(t *testing.T) {

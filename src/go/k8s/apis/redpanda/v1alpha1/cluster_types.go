@@ -16,11 +16,12 @@ import (
 	"time"
 
 	cmmeta "github.com/cert-manager/cert-manager/pkg/apis/meta/v1"
-	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources/featuregates"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
+
+	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources/featuregates"
 )
 
 const (

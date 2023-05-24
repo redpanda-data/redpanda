@@ -13,12 +13,13 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/utils"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
+	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/utils"
 )
 
 func TestPatchComputation(t *testing.T) {

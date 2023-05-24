@@ -6,9 +6,6 @@ import (
 	"strings"
 
 	"github.com/go-logr/logr"
-	redpandav1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
-	adminutils "github.com/redpanda-data/redpanda/src/go/k8s/pkg/admin"
-	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/api/admin"
 	"github.com/twmb/franz-go/pkg/kadm"
 	corev1 "k8s.io/api/core/v1"
@@ -18,6 +15,10 @@ import (
 	kerrors "k8s.io/apimachinery/pkg/util/errors"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+
+	redpandav1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
+	adminutils "github.com/redpanda-data/redpanda/src/go/k8s/pkg/admin"
+	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources"
 )
 
 // KafkaSA is a Console resource
