@@ -128,6 +128,7 @@ remote_segment::remote_segment(
       meta->delta_offset, model::offset_delta(0), model::offset_delta::max());
 
     // run hydration loop in the background
+    _hydration_loop_running = true;
     ssx::background = run_hydrate_bg();
 }
 
@@ -559,8 +560,8 @@ ss::future<> remote_segment::run_hydrate_bg() {
     bool segment_was_cached = false;
     bool txrange_was_cached = false;
 
-    try {
-        while (!_gate.is_closed()) {
+    while (!_gate.is_closed()) {
+        try {
             co_await _bg_cvar.wait(
               [this] { return !_wait_list.empty() || _gate.is_closed(); });
             vlog(
@@ -669,24 +670,40 @@ ss::future<> remote_segment::run_hydrate_bg() {
                 }
                 _wait_list.pop_front();
             }
+        } catch (const ss::broken_condition_variable&) {
+            vlog(_ctxlog.debug, "Hydration loop shut down");
+            set_waiter_errors(std::current_exception());
+            break;
+        } catch (const ss::abort_requested_exception&) {
+            vlog(_ctxlog.debug, "Hydration loop shut down");
+            set_waiter_errors(std::current_exception());
+            break;
+        } catch (const ss::gate_closed_exception&) {
+            vlog(_ctxlog.debug, "Hydration loop shut down");
+            set_waiter_errors(std::current_exception());
+            break;
+        } catch (...) {
+            const auto err = std::current_exception();
+            vlog(_ctxlog.error, "Error in hydration loop: {}", err);
+            set_waiter_errors(err);
         }
-    } catch (const ss::broken_condition_variable&) {
-        vlog(_ctxlog.debug, "Hydration loop shut down");
-        set_waiter_errors(std::current_exception());
-    } catch (const ss::abort_requested_exception&) {
-        vlog(_ctxlog.debug, "Hydration loop shut down");
-        set_waiter_errors(std::current_exception());
-    } catch (const ss::gate_closed_exception&) {
-        vlog(_ctxlog.debug, "Hydration loop shut down");
-        set_waiter_errors(std::current_exception());
-    } catch (...) {
-        const auto err = std::current_exception();
-        vlog(_ctxlog.error, "Error in hydraton loop: {}", err);
-        set_waiter_errors(err);
     }
+
+    _hydration_loop_running = false;
 }
 
 ss::future<> remote_segment::hydrate() {
+    if (!_hydration_loop_running) {
+        vlog(
+          _ctxlog.error,
+          "Segment {} hydration requested, but the hydration loop is not "
+          "running",
+          _path);
+
+        return ss::make_exception_future<>(std::runtime_error(
+          fmt::format("Hydration loop is not running for segment: {}", _path)));
+    }
+
     return ss::with_gate(_gate, [this] {
         vlog(_ctxlog.debug, "segment {} hydration requested", _path);
         ss::promise<ss::file> p;
