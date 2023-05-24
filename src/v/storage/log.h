@@ -89,8 +89,8 @@ public:
         }
 
         virtual size_t size_bytes() const = 0;
-        // Byte size of the log for all segments before offset 'o'
-        virtual size_t size_bytes_until_offset(model::offset o) const = 0;
+        // Byte size of the log for all segments after offset 'o'
+        virtual uint64_t size_bytes_after_offset(model::offset o) const = 0;
         virtual ss::future<>
           update_configuration(ntp_config::default_overrides) = 0;
 
@@ -208,8 +208,8 @@ public:
 
     size_t size_bytes() const { return _impl->size_bytes(); }
 
-    size_t size_bytes_until_offset(model::offset o) const {
-        return _impl->size_bytes_until_offset(o);
+    uint64_t size_bytes_after_offset(model::offset o) const {
+        return _impl->size_bytes_after_offset(o);
     }
 
     impl* get_impl() const { return _impl.get(); }

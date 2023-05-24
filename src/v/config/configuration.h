@@ -233,6 +233,7 @@ struct configuration final : public config_store {
     bounded_property<std::optional<int>> kafka_rpc_server_tcp_recv_buf;
     bounded_property<std::optional<int>> kafka_rpc_server_tcp_send_buf;
     bounded_property<std::optional<size_t>> kafka_rpc_server_stream_recv_buf;
+    property<bool> kafka_enable_describe_log_dirs_remote_storage;
 
     // Archival storage
     property<bool> cloud_storage_enabled;

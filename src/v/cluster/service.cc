@@ -728,7 +728,7 @@ service::do_cloud_storage_usage(cloud_storage_usage_request req) {
               if (!partition) {
                   missing_partitions_on_shard.push_back(ntp);
               } else {
-                  size_on_shard += partition->cloud_log_size();
+                  size_on_shard += partition->cloud_log_size().value_or(0);
               }
           }
           return res_type{

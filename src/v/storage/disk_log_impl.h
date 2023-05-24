@@ -106,7 +106,7 @@ public:
     size_t bytes_left_before_roll() const;
 
     size_t size_bytes() const override { return _probe.partition_size(); }
-    size_t size_bytes_until_offset(model::offset o) const override;
+    uint64_t size_bytes_after_offset(model::offset o) const override;
     ss::future<> update_configuration(ntp_config::default_overrides) final;
 
     int64_t compaction_backlog() const final;
