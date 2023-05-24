@@ -1220,6 +1220,13 @@ class RedpandaService(RedpandaServiceBase):
     def set_environment(self, environment: dict[str, str]):
         self._environment.update(environment)
 
+    def unset_environment(self, keys: list):
+        for k in keys:
+            try:
+                del self._environment[k]
+            except KeyError:
+                pass
+
     def set_extra_node_conf(self, node, conf):
         assert node in self.nodes, f"where node is {node.name}"
         self._extra_node_conf[node] = conf
