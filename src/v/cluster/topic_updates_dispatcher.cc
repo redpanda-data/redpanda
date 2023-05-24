@@ -161,10 +161,8 @@ ss::future<std::error_code> topic_updates_dispatcher::apply(
 ss::future<std::error_code> topic_updates_dispatcher::apply(
   move_partition_replicas_cmd cmd, model::offset offset) {
     auto p_as = _topic_table.local().get_partition_assignment(cmd.key);
-    return dispatch_updates_to_cores(cmd, offset)
-      .then([this, p_as = std::move(p_as), cmd = std::move(cmd)](
-              std::error_code ec) {
-          if (!ec) {
+    auto ec = co_await dispatch_updates_to_cores(cmd, offset);
+    if (!ec) {
               const auto& ntp = cmd.key;
               vassert(
                 p_as.has_value(),
@@ -182,8 +180,7 @@ ss::future<std::error_code> topic_updates_dispatcher::apply(
                 p_as->replicas,
                 cmd.value);
           }
-          return ec;
-      });
+    co_return ec;
 }
 ss::future<std::error_code> topic_updates_dispatcher::apply(
   cancel_moving_partition_replicas_cmd cmd, model::offset offset) {
@@ -340,33 +337,30 @@ ss::future<std::error_code> topic_updates_dispatcher::apply(
 ss::future<std::error_code> topic_updates_dispatcher::apply(
   move_topic_replicas_cmd cmd, model::offset offset) {
     auto assignments = _topic_table.local().get_topic_assignments(cmd.key);
-    return dispatch_updates_to_cores(cmd, offset)
-      .then([this, assignments = std::move(assignments), cmd = std::move(cmd)](
-              std::error_code ec) {
-          if (!assignments.has_value()) {
-              return std::error_code(errc::topic_not_exists);
-          }
-          if (ec == errc::success) {
-              for (const auto& [partition_id, replicas] : cmd.value) {
-                  auto assigment_it = assignments.value().find(partition_id);
-                  auto ntp = model::ntp(cmd.key.ns, cmd.key.tp, partition_id);
-                  if (assigment_it == assignments.value().end()) {
-                      return std::error_code(errc::partition_not_exists);
-                  }
-                  auto to_add = subtract_replica_sets(
-                    replicas, assigment_it->replicas);
-                  _partition_allocator.local().add_allocations(
-                    to_add, get_allocation_domain(ntp));
-                  _partition_balancer_state.local().handle_ntp_update(
-                    ntp.ns,
-                    ntp.tp.topic,
-                    ntp.tp.partition,
-                    assigment_it->replicas,
-                    replicas);
-              }
-          }
-          return ec;
-      });
+    auto ec = co_await dispatch_updates_to_cores(cmd, offset);
+    if (!assignments.has_value()) {
+        co_return std::error_code(errc::topic_not_exists);
+    }
+    if (ec == errc::success) {
+        for (const auto& [partition_id, replicas] : cmd.value) {
+            auto assigment_it = assignments.value().find(partition_id);
+            auto ntp = model::ntp(cmd.key.ns, cmd.key.tp, partition_id);
+            if (assigment_it == assignments.value().end()) {
+                co_return std::error_code(errc::partition_not_exists);
+            }
+            auto to_add = subtract_replica_sets(
+              replicas, assigment_it->replicas);
+            _partition_allocator.local().add_allocations(
+              to_add, get_allocation_domain(ntp));
+            _partition_balancer_state.local().handle_ntp_update(
+              ntp.ns,
+              ntp.tp.topic,
+              ntp.tp.partition,
+              assigment_it->replicas,
+              replicas);
+        }
+    }
+    co_return ec;
 }
 ss::future<std::error_code> topic_updates_dispatcher::apply(
   revert_cancel_partition_move_cmd cmd, model::offset offset) {
