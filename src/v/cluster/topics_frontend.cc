@@ -352,26 +352,23 @@ topics_frontend::dispatch_create_non_replicable_to_leader(
   std::vector<non_replicable_topic> topics,
   model::timeout_clock::duration timeout) {
     vlog(clusterlog.trace, "Dispatching create topics to {}", leader);
-    return _connections.local()
-      .with_node_client<cluster::controller_client_protocol>(
-        _self,
-        ss::this_shard_id(),
-        leader,
-        timeout,
-        [topics, timeout](controller_client_protocol cp) mutable {
-            return cp.create_non_replicable_topics(
-              create_non_replicable_topics_request{
-                .topics = std::move(topics), .timeout = timeout},
-              rpc::client_opts(timeout));
-        })
-      .then(&rpc::get_ctx_data<create_non_replicable_topics_reply>)
-      .then([topics = std::move(topics)](
-              result<create_non_replicable_topics_reply> r) {
-          if (r.has_error()) {
-              return create_topic_results(topics, map_errc(r.error()));
-          }
-          return std::move(r.value().results);
-      });
+    auto r = co_await _connections.local()
+                    .with_node_client<cluster::controller_client_protocol>(
+                      _self,
+                      ss::this_shard_id(),
+                      leader,
+                      timeout,
+                      [topics, timeout](controller_client_protocol cp) mutable {
+                          return cp.create_non_replicable_topics(
+                            create_non_replicable_topics_request{
+                              .topics = std::move(topics), .timeout = timeout},
+                            rpc::client_opts(timeout));
+                      })
+                    .then(&rpc::get_ctx_data<create_non_replicable_topics_reply>);
+    if (r.has_error()) {
+        co_return create_topic_results(topics, map_errc(r.error()));
+    }
+    co_return std::move(r.value().results);
 }
 
 ss::future<std::vector<topic_result>>
@@ -781,7 +778,7 @@ topics_frontend::dispatch_create_to_leader(
   std::vector<topic_configuration> topics,
   model::timeout_clock::duration timeout) {
     vlog(clusterlog.trace, "Dispatching create topics to {}", leader);
-    return _connections.local()
+    auto r = co_await _connections.local()
       .with_node_client<cluster::controller_client_protocol>(
         _self,
         ss::this_shard_id(),
@@ -793,14 +790,11 @@ topics_frontend::dispatch_create_to_leader(
                 .topics = std::move(topics), .timeout = timeout},
               rpc::client_opts(model::timeout_clock::now() + timeout));
         })
-      .then(&rpc::get_ctx_data<create_topics_reply>)
-      .then(
-        [topics = std::move(topics)](result<create_topics_reply> r) mutable {
+      .then(&rpc::get_ctx_data<create_topics_reply>);
             if (r.has_error()) {
-                return create_topic_results(topics, map_errc(r.error()));
+                co_return create_topic_results(topics, map_errc(r.error()));
             }
-            return std::move(r.value().results);
-        });
+            co_return std::move(r.value().results);
 }
 
 ss::future<topic_result> topics_frontend::dispatch_purged_topic_to_leader(
@@ -813,7 +807,7 @@ ss::future<topic_result> topics_frontend::dispatch_purged_topic_to_leader(
       topic.nt,
       leader);
 
-    return _connections.local()
+    auto r = co_await _connections.local()
       .with_node_client<cluster::controller_client_protocol>(
         _self,
         ss::this_shard_id(),
@@ -825,13 +819,11 @@ ss::future<topic_result> topics_frontend::dispatch_purged_topic_to_leader(
                 .topic = std::move(topic), .timeout = timeout},
               rpc::client_opts(model::timeout_clock::now() + timeout));
         })
-      .then(&rpc::get_ctx_data<purged_topic_reply>)
-      .then([topic = std::move(topic)](result<purged_topic_reply> r) mutable {
+      .then(&rpc::get_ctx_data<purged_topic_reply>);
           if (r.has_error()) {
-              return topic_result(topic.nt, map_errc(r.error()));
+              co_return topic_result(topic.nt, map_errc(r.error()));
           }
-          return std::move(r.value().result);
-      });
+          co_return std::move(r.value().result);
 }
 
 bool topics_frontend::validate_topic_name(const model::topic_namespace& topic) {
@@ -1198,7 +1190,8 @@ topics_frontend::do_cancel_moving_partition_replicas(
     results.reserve(ntps.size());
     co_await ss::max_concurrent_for_each(
       ntps, 32, [this, &results, timeout](model::ntp& ntp) {
-          return cancel_moving_partition_replicas(ntp, timeout)
+          auto f = cancel_moving_partition_replicas(ntp, timeout);
+          return f
             .then([ntp = std::move(ntp), &results](std::error_code ec) mutable {
                 results.emplace_back(
                   std::move(ntp), map_update_interruption_error_code(ec));
