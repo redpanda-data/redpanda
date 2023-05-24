@@ -655,7 +655,15 @@ func (r *ClusterReconciler) reportStatus(
 	nodeList.Internal = observedNodesInternal
 	nodeList.SchemaRegistry.Internal = fmt.Sprintf("%s:%d", clusterFQDN, schemaRegistryPort)
 
-	if statusShouldBeUpdated(&redpandaCluster.Status, nodeList, sts) {
+	//nolint:nestif // the code won't get clearer if it's splitted out in my opinion
+	version, versionErr := sts.CurrentVersion(ctx)
+	if versionErr != nil {
+		// this is non-fatal error, it will return error even if e.g.
+		// the rollout is not finished because then the currentversion
+		// of the cluster cannot be determined
+		r.Log.Info(fmt.Sprintf("cannot get CurrentVersion of statefulset, %s", err))
+	}
+	if statusShouldBeUpdated(&redpandaCluster.Status, nodeList, sts, version, versionErr) {
 		err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
 			var cluster redpandav1alpha1.Cluster
 			err := r.Get(ctx, types.NamespacedName{
@@ -669,7 +677,9 @@ func (r *ClusterReconciler) reportStatus(
 			cluster.Status.Nodes = *nodeList
 			cluster.Status.ReadyReplicas = sts.LastObservedState.Status.ReadyReplicas
 			cluster.Status.Replicas = sts.LastObservedState.Status.Replicas
-			cluster.Status.Version = sts.Version()
+			if versionErr == nil {
+				cluster.Status.Version = version
+			}
 
 			err = r.Status().Update(ctx, &cluster)
 			if err == nil {
@@ -689,6 +699,8 @@ func statusShouldBeUpdated(
 	status *redpandav1alpha1.ClusterStatus,
 	nodeList *redpandav1alpha1.NodesList,
 	sts *resources.StatefulSetResource,
+	newVersion string,
+	versionErr error,
 ) bool {
 	return nodeList != nil &&
 		(!reflect.DeepEqual(nodeList.Internal, status.Nodes.Internal) ||
@@ -699,7 +711,7 @@ func statusShouldBeUpdated(
 			!reflect.DeepEqual(nodeList.ExternalBootstrap, status.Nodes.ExternalBootstrap)) ||
 		status.Replicas != sts.LastObservedState.Status.Replicas ||
 		status.ReadyReplicas != sts.LastObservedState.Status.ReadyReplicas ||
-		status.Version != sts.Version()
+		(versionErr == nil && status.Version != newVersion)
 }
 
 func (r *ClusterReconciler) podList(ctx context.Context, redpandaCluster *redpandav1alpha1.Cluster) (corev1.PodList, error) {
