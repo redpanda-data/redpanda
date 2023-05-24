@@ -419,11 +419,11 @@ inline void read_value(json::Value const& rd, cluster::partition_status& obj) {
 
 inline void read_value(json::Value const& rd, cluster::topic_status& obj) {
     model::topic_namespace tp_ns;
-    std::vector<cluster::partition_status> partitions;
+    ss::chunked_fifo<cluster::partition_status> partitions;
 
     read_member(rd, "tp_ns", tp_ns);
     read_member(rd, "partitions", partitions);
-    obj = cluster::topic_status{{}, tp_ns, partitions};
+    obj = cluster::topic_status(tp_ns, std::move(partitions));
 }
 
 inline void read_value(json::Value const& rd, cluster::node::local_state& obj) {

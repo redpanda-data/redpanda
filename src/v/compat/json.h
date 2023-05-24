@@ -110,6 +110,15 @@ void read_value(json::Value const& v, std::vector<T>& target) {
 }
 
 template<typename T>
+void read_value(json::Value const& v, ss::chunked_fifo<T>& target) {
+    for (auto const& e : v.GetArray()) {
+        auto t = T{};
+        read_value(e, t);
+        target.push_back(std::move(t));
+    }
+}
+
+template<typename T>
 void read_value(json::Value const& v, fragmented_vector<T>& target) {
     for (auto const& e : v.GetArray()) {
         auto t = T{};
