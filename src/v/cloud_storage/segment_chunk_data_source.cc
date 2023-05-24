@@ -76,20 +76,38 @@ ss::future<> chunk_data_source_impl::load_stream_for_chunk(
 
     _current_data_file
       = co_await _chunks.hydrate_chunk(chunk_start)
-          .handle_exception([this, chunk_start](const std::exception_ptr& ex) {
+          .handle_exception_type([this, chunk_start](
+                                   const ss::abort_requested_exception& ex) {
+              vlog(
+                _ctxlog.debug,
+                "abort requested during hydration of chunk starting at {}: {}",
+                chunk_start,
+                ex);
+
+              return maybe_close_stream().then([&ex] {
+                  return ss::make_exception_future<segment_chunk::handle_t>(ex);
+              });
+          })
+          .handle_exception_type([this, chunk_start](
+                                   const ss::gate_closed_exception& ex) {
+              vlog(
+                _ctxlog.debug,
+                "gate closed during hydration of chunk starting at {}: {}",
+                chunk_start,
+                ex);
+
+              return maybe_close_stream().then([&ex] {
+                  return ss::make_exception_future<segment_chunk::handle_t>(ex);
+              });
+          })
+          .handle_exception_type([this, chunk_start](const std::exception& ex) {
               vlog(
                 _ctxlog.error,
                 "failed to hydrate chunk starting at {}, error: {}",
                 chunk_start,
                 ex);
 
-              auto maybe_close_stream = ss::now();
-              if (_current_stream) {
-                  maybe_close_stream = _current_stream->close().then(
-                    [this] { _current_stream = std::nullopt; });
-              }
-
-              return maybe_close_stream.then([ex] {
+              return maybe_close_stream().then([&ex] {
                   return ss::make_exception_future<segment_chunk::handle_t>(ex);
               });
           });
@@ -126,6 +144,10 @@ ss::future<> chunk_data_source_impl::load_stream_for_chunk(
 
 ss::future<> chunk_data_source_impl::close() {
     co_await _gate.close();
+    co_await maybe_close_stream();
+}
+
+ss::future<> chunk_data_source_impl::maybe_close_stream() {
     if (_current_stream) {
         co_await _current_stream->close();
         _current_stream = std::nullopt;
