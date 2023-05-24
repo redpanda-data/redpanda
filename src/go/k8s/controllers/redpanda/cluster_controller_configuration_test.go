@@ -13,12 +13,14 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"reflect"
 	"strings"
 	"time"
 
 	"github.com/moby/moby/pkg/namesgenerator"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/api/admin"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -26,8 +28,6 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/utils/pointer"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-
-	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/api/admin"
 
 	"github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
 	"github.com/redpanda-data/redpanda/src/go/k8s/internal/testutils"
@@ -242,6 +242,33 @@ var _ = Describe("RedPandaCluster configuration controller", func() {
 			By("Never restarting the cluster")
 			Consistently(annotationGetter(key, &appsv1.StatefulSet{}, configMapHashKey), timeoutShort, intervalShort).Should(Equal(hash))
 			Consistently(annotationGetter(key, &appsv1.StatefulSet{}, centralizedConfigurationHashKey), timeoutShort, intervalShort).Should(BeEmpty())
+
+			By("Adding configuration of array type")
+			Expect(k8sClient.Get(context.Background(), key, &cluster)).To(Succeed())
+
+			testAdminAPI.RegisterPropertySchema("kafka_nodelete_topics", admin.ConfigPropertyMetadata{NeedsRestart: false, Type: "array", Items: admin.ConfigPropertyItems{Type: "string"}})
+			cluster.Spec.AdditionalConfiguration["redpanda.kafka_nodelete_topics"] = "[_internal_connectors_configs _internal_connectors_offsets _internal_connectors_status _audit __consumer_offsets _redpanda_e2e_probe _schemas]"
+			Expect(k8sClient.Update(context.Background(), &cluster)).To(Succeed())
+
+			Eventually(testAdminAPI.PropertyGetter("kafka_nodelete_topics")).Should(Equal([]string{
+				"__consumer_offsets",
+				"_audit",
+				"_internal_connectors_configs",
+				"_internal_connectors_offsets",
+				"_internal_connectors_status",
+				"_redpanda_e2e_probe",
+				"_schemas",
+			}))
+
+			patches = testAdminAPI.PatchesGetter()()
+			Expect(patches).NotTo(BeEmpty())
+			expectedPatch := patches[len(patches)-1]
+			Expect(expectedPatch).NotTo(BeNil())
+			arrayInterface := expectedPatch.Upsert["kafka_nodelete_topics"]
+			Expect(arrayInterface).NotTo(BeNil())
+			Expect(reflect.TypeOf(arrayInterface).String()).To(Equal("[]interface {}"))
+			Expect(len(arrayInterface.([]interface{})) == 7).To(BeTrue())
+			Eventually(clusterConfiguredConditionStatusGetter(key), timeout, interval).Should(BeTrue())
 
 			By("Deleting the cluster")
 			Expect(k8sClient.Delete(context.Background(), redpandaCluster, deleteOptions)).Should(Succeed())
