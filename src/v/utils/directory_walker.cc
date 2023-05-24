@@ -23,7 +23,7 @@ directory_walker::walk(std::string_view dirname, walker_type walker_func) {
       [walker_func = std::move(walker_func)](ss::file f) mutable {
           auto s = f.list_directory(std::move(walker_func));
           return s.done().finally([f = std::move(f)]() mutable {
-              return f.close().finally([f = std::move(f)] {});
+              return f.close().finally([f] {});
           });
       });
 }
