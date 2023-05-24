@@ -515,7 +515,10 @@ ss::future<http::client::response_stream_ref> s3_client::do_get_object(
           // here we didn't receive any bytes from the socket and
           // ref->is_header_done() is 'false', we need to prefetch
           // the header first
-          return ref->prefetch_headers().then(
+          // clang-tidy 16.0.4 is reporting an erroneous 'use-after-move' error
+          // when calling `then` after `prefetch_headers`.
+          auto f = ref->prefetch_headers();
+          return f.then(
             [ref = std::move(ref),
              expect_no_such_key,
              is_byte_range_requested]() mutable {
