@@ -85,11 +85,22 @@ public:
 
     const planner_config& config() const { return _parent._config; }
 
-    bool is_batch_full() const {
-        return _planned_moves_size_bytes >= config().movement_disk_size_batch
-               || (state().topics().updates_in_progress().size()
-                   + _reassignments.size() + _cancellations.size())
-                    >= config().max_concurrent_actions;
+    bool can_add_cancellation() const {
+        return _reassignments.size() + _cancellations.size()
+               < config().max_concurrent_actions;
+    }
+
+    bool can_add_reassignment() const {
+        if (_planned_moves_size_bytes >= config().movement_disk_size_batch) {
+            return false;
+        } else if (
+          state().topics().updates_in_progress().size() + _reassignments.size()
+          >= config().max_concurrent_actions) {
+            return false;
+        } else {
+            return _reassignments.size() + _cancellations.size()
+                   < config().max_concurrent_actions;
+        }
     }
 
 private:
@@ -471,11 +482,18 @@ public:
         no_size_info,
         // partition reconfiguration
         reconfiguration_state,
+        // can't add more actions
+        batch_full,
     };
 
     immutability_reason reason() const { return _reason; }
 
     void report_failure(std::string_view change_reason) {
+        bool can_log = _ctx.increment_failure_count();
+        if (!can_log) {
+            return;
+        }
+
         ss::sstring reason;
         switch (_reason) {
         case immutability_reason::no_quorum:
@@ -488,18 +506,20 @@ public:
             reason = ssx::sformat(
               "reconfiguration in progress, state: {}", _reconfiguration_state);
             break;
+        case immutability_reason::batch_full:
+            // don't log full batch failures (if the batch is full, we are
+            // not stalling)
+            return;
         }
 
-        if (_ctx.increment_failure_count()) {
-            vlog(
-              clusterlog.info,
-              "[ntp {}, replicas: {}]: can't change replicas: {} (change "
-              "reason: {})",
-              _ntp,
-              _replicas,
-              reason,
-              change_reason);
-        }
+        vlog(
+          clusterlog.info,
+          "[ntp {}, replicas: {}]: can't change replicas: {} (change "
+          "reason: {})",
+          _ntp,
+          _replicas,
+          reason,
+          change_reason);
     }
 
 private:
@@ -570,9 +590,19 @@ auto partition_balancer_planner::request_context::do_with_partition(
         auto state = in_progress_it->second.get_state();
 
         if (state == reconfiguration_state::in_progress) {
-            partition part{
-              moving_partition{ntp, replicas, orig_replicas, *this}};
-            return visitor(part);
+            if (can_add_cancellation()) {
+                partition part{
+                  moving_partition{ntp, replicas, orig_replicas, *this}};
+                return visitor(part);
+            } else {
+                partition part{immutable_partition{
+                  ntp,
+                  replicas,
+                  immutable_partition::immutability_reason::batch_full,
+                  state,
+                  *this}};
+                return visitor(part);
+            }
         } else {
             partition part{immutable_partition{
               ntp,
@@ -582,6 +612,18 @@ auto partition_balancer_planner::request_context::do_with_partition(
               *this}};
             return visitor(part);
         }
+    }
+
+    auto reassignment_it = _reassignments.find(ntp);
+
+    if (reassignment_it == _reassignments.end() && !can_add_reassignment()) {
+        partition part{immutable_partition{
+          ntp,
+          orig_replicas,
+          immutable_partition::immutability_reason::batch_full,
+          std::nullopt,
+          *this}};
+        return visitor(part);
     }
 
     size_t size_bytes = 0;
@@ -609,7 +651,6 @@ auto partition_balancer_planner::request_context::do_with_partition(
     }
 
     std::optional<allocated_partition> reallocated;
-    auto reassignment_it = _reassignments.find(ntp);
     if (reassignment_it != _reassignments.end()) {
         // borrow the allocated_partition object
         reallocated = std::move(reassignment_it->second);
@@ -766,11 +807,6 @@ void partition_balancer_planner::get_node_drain_actions(
     }
 
     ctx.for_each_partition([&](partition& part) {
-        // End adding movements if batch is collected
-        if (ctx.is_batch_full()) {
-            return ss::stop_iteration::yes;
-        }
-
         std::vector<model::broker_shard> to_move;
         for (const auto& bs : part.replicas()) {
             if (nodes.contains(bs.node_id)) {
@@ -845,7 +881,7 @@ void partition_balancer_planner::get_rack_constraint_repair_actions(
     }
 
     for (const auto& ntp : ctx.state().ntps_with_broken_rack_constraint()) {
-        if (ctx.is_batch_full()) {
+        if (!ctx.can_add_reassignment()) {
             return;
         }
 
@@ -964,7 +1000,7 @@ void partition_balancer_planner::get_full_node_actions(request_context& ctx) {
     // move partitions, starting from partitions with replicas on the most full
     // node
     for (const auto* node_disk : sorted_full_nodes) {
-        if (ctx.is_batch_full()) {
+        if (!ctx.can_add_reassignment()) {
             return;
         }
 
@@ -975,7 +1011,7 @@ void partition_balancer_planner::get_full_node_actions(request_context& ctx) {
         }
 
         for (const auto& [score, ntp_to_move] : ntp_index_it->second) {
-            if (ctx.is_batch_full()) {
+            if (!ctx.can_add_reassignment()) {
                 return;
             }
             if (
