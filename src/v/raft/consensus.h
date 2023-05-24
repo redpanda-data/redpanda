@@ -684,6 +684,12 @@ private:
     /// all raft operations must happen exclusively since the common case
     /// is for the operation to touch the disk
     mutex _op_lock;
+    /// since snapshot state is orthogonal to raft state when writing snapshot
+    /// it is enough to grab the snapshot mutex, there is no need to keep
+    /// oplock, if the two locks are expected to be acquired at the same time
+    /// the snapshot lock should always be an internal (taken after the
+    /// _op_lock)
+    mutex _snapshot_lock;
     /// used for notifying when commits happened to log
     event_manager _event_manager;
     probe _probe;
