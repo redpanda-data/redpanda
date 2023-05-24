@@ -927,3 +927,161 @@ FIXTURE_TEST(test_chunk_multiple_readers, cloud_storage_fixture) {
         reader->stop().get();
     }
 }
+
+FIXTURE_TEST(test_chunk_prefetch, cloud_storage_fixture) {
+    config::shard_local_cfg().cloud_storage_cache_chunk_size.set_value(
+      static_cast<uint64_t>(128_KiB));
+
+    const uint16_t prefetch = 1;
+    config::shard_local_cfg().cloud_storage_chunk_prefetch.set_value(
+      static_cast<uint16_t>(prefetch));
+
+    const auto key = model::offset(1);
+    retry_chain_node fib(never_abort, 300s, 200ms);
+    const iobuf segment_bytes = generate_segment(model::offset(1), 300);
+
+    const auto m = chunk_read_baseline(*this, key, fib, segment_bytes.copy());
+    const auto meta = *m.get(key);
+    remote_segment segment(
+      api.local(),
+      cache.local(),
+      bucket,
+      m.generate_segment_path(meta),
+      m.get_ntp(),
+      meta,
+      fib);
+
+    segment_chunks chunk_api{segment, segment.max_hydrated_chunks()};
+
+    auto close_segment = ss::defer([&segment] { segment.stop().get(); });
+
+    segment.hydrate().get();
+    chunk_api.start().get();
+
+    const auto& coarse_index = segment.get_coarse_index();
+
+    // hydrate one chunk, it should trigger prefetch of the next chunk
+    chunk_api.hydrate_chunk(0).get();
+    const auto& chunk = chunk_api.get(0);
+    BOOST_REQUIRE(chunk.current_state == chunk_state::hydrated);
+    BOOST_REQUIRE(chunk.handle.has_value());
+
+    auto it = coarse_index.begin();
+    using dit = std::filesystem::recursive_directory_iterator;
+    for (auto i = 0; i < prefetch; ++i, ++it) {
+        const auto& chunk = chunk_api.get(it->second);
+
+        // The prefetched chunk is not hydrated yet
+        BOOST_REQUIRE(chunk.current_state == chunk_state::not_available);
+        BOOST_REQUIRE(!chunk.handle.has_value());
+
+        // The file is present in cache dir
+        auto found = std::find_if(
+          dit{tmp_directory.get_path()}, dit{}, [&it](const auto& entry) {
+              vlog(test_log.info, "looking at {}", entry.path());
+              return entry.path().native().ends_with(
+                fmt::format("_chunks/{}", it->second));
+          });
+
+        BOOST_REQUIRE(found != dit{});
+    }
+
+    const auto& requests_made = get_requests();
+    const std::regex log_file_expr{".*-.*log(\\.\\d+)?$"};
+
+    // Assert the byte range is valid
+    {
+        const auto begin_expected = 0;
+        const auto end_expected = it->second - 1;
+
+        const auto is_matching_url = [&log_file_expr](const auto& req) {
+            return req.method == "GET"
+                   && std::regex_match(
+                     req.url.begin(), req.url.end(), log_file_expr);
+        };
+        const auto segment_get_request = std::find_if(
+          requests_made.cbegin(), requests_made.cend(), is_matching_url);
+        BOOST_REQUIRE(segment_get_request != requests_made.cend());
+
+        // There is only one request to get the byte range
+        BOOST_REQUIRE(
+          std::find_if(
+            std::next(segment_get_request),
+            requests_made.cend(),
+            is_matching_url)
+          == requests_made.cend());
+
+        const auto header = segment_get_request->header("Range");
+        BOOST_REQUIRE(header.has_value());
+
+        // The byte range covers both the original chunk + the prefetch
+        const auto [fst, snd] = parse_byte_header(header.value());
+        BOOST_REQUIRE_EQUAL(begin_expected, fst);
+        BOOST_REQUIRE_EQUAL(end_expected, snd);
+    }
+
+    // Assert prefetch hydration does not make any http calls
+    {
+        const auto next_offset = coarse_index.begin()->second;
+
+        const auto count = std::count_if(
+          requests_made.cbegin(),
+          requests_made.cend(),
+          [&log_file_expr](const auto& req) {
+              return req.method == "GET"
+                     && std::regex_match(
+                       req.url.begin(), req.url.end(), log_file_expr);
+          });
+
+        chunk_api.hydrate_chunk(next_offset).get();
+
+        // No calls made to hydrate the prefetched chunk
+        BOOST_REQUIRE_EQUAL(
+          count,
+          std::count_if(
+            requests_made.cbegin(),
+            requests_made.cend(),
+            [&log_file_expr](const auto& req) {
+                return req.method == "GET"
+                       && std::regex_match(
+                         req.url.begin(), req.url.end(), log_file_expr);
+            }));
+
+        // Its status is now updated
+        const auto& prefetched_chunk = chunk_api.get(next_offset);
+        BOOST_REQUIRE(prefetched_chunk.current_state == chunk_state::hydrated);
+        BOOST_REQUIRE(prefetched_chunk.handle.has_value());
+    }
+
+    // The next chunk after prefetch needs to be downloaded
+    {
+        const auto next_offset = std::next(coarse_index.begin())->second;
+
+        const auto count = std::count_if(
+          requests_made.cbegin(),
+          requests_made.cend(),
+          [&log_file_expr](const auto& req) {
+              return req.method == "GET"
+                     && std::regex_match(
+                       req.url.begin(), req.url.end(), log_file_expr);
+          });
+
+        chunk_api.hydrate_chunk(next_offset).get();
+
+        // A call is made for the offset which was not prefetched
+        BOOST_REQUIRE_EQUAL(
+          count + 1,
+          std::count_if(
+            requests_made.cbegin(),
+            requests_made.cend(),
+            [&log_file_expr](const auto& req) {
+                return req.method == "GET"
+                       && std::regex_match(
+                         req.url.begin(), req.url.end(), log_file_expr);
+            }));
+
+        const auto& prefetched_chunk = chunk_api.get(next_offset);
+        BOOST_REQUIRE(prefetched_chunk.current_state == chunk_state::hydrated);
+        BOOST_REQUIRE(prefetched_chunk.handle.has_value());
+    }
+}
