@@ -19,29 +19,15 @@
 #include "model/metadata.h"
 #include "model/timeout_clock.h"
 
+#include <seastar/core/chunked_fifo.hh>
+#include <seastar/core/loop.hh>
+#include <seastar/core/smp.hh>
+
+#include <boost/range/irange.hpp>
+
 #include <algorithm>
 #include <iterator>
 
-namespace {
-std::vector<cluster::ntp_leader_revision>
-from_ntp_leaders(std::vector<cluster::ntp_leader> old_leaders) {
-    std::vector<cluster::ntp_leader_revision> leaders;
-    leaders.reserve(old_leaders.size());
-    std::transform(
-      old_leaders.begin(),
-      old_leaders.end(),
-      std::back_inserter(leaders),
-      [](cluster::ntp_leader& leader) {
-          return cluster::ntp_leader_revision(
-            std::move(leader.ntp),
-            leader.term,
-            leader.leader_id,
-            model::revision_id{} /* explicitly default */
-          );
-      });
-    return leaders;
-}
-} // namespace
 namespace cluster {
 metadata_dissemination_handler::metadata_dissemination_handler(
   ss::scheduling_group sg,
@@ -49,15 +35,6 @@ metadata_dissemination_handler::metadata_dissemination_handler(
   ss::sharded<partition_leaders_table>& leaders)
   : metadata_dissemination_rpc_service(sg, ssg)
   , _leaders(leaders) {}
-
-ss::future<update_leadership_reply>
-metadata_dissemination_handler::update_leadership(
-  update_leadership_request&& req, rpc::streaming_context&) {
-    return ss::with_scheduling_group(
-      get_scheduling_group(), [this, req = std::move(req)]() mutable {
-          return do_update_leadership(from_ntp_leaders(std::move(req.leaders)));
-      });
-}
 
 ss::future<update_leadership_reply>
 metadata_dissemination_handler::update_leadership_v2(
@@ -70,17 +47,29 @@ metadata_dissemination_handler::update_leadership_v2(
 
 ss::future<update_leadership_reply>
 metadata_dissemination_handler::do_update_leadership(
-  std::vector<ntp_leader_revision> leaders) {
+  ss::chunked_fifo<ntp_leader_revision> leaders) {
     vlog(clusterlog.trace, "Received a metadata update");
-    return _leaders
-      .invoke_on_all(
-        [leaders = std::move(leaders)](partition_leaders_table& pl) mutable {
-            for (auto& leader : leaders) {
-                pl.update_partition_leader(
-                  leader.ntp, leader.revision, leader.term, leader.leader_id);
-            }
-        })
-      .then([] { return ss::make_ready_future<update_leadership_reply>(); });
+    co_await ss::parallel_for_each(
+      boost::irange<ss::shard_id>(0, ss::smp::count),
+      [this, leaders = std::move(leaders)](ss::shard_id shard) {
+          ss::chunked_fifo<ntp_leader_revision> local_leaders;
+          local_leaders.reserve(leaders.size());
+          std::copy(
+            leaders.begin(), leaders.end(), std::back_inserter(local_leaders));
+
+          return ss::smp::submit_to(
+            shard, [this, leaders = std::move(local_leaders)] {
+                for (auto& leader : leaders) {
+                    _leaders.local().update_partition_leader(
+                      leader.ntp,
+                      leader.revision,
+                      leader.term,
+                      leader.leader_id);
+                }
+            });
+      });
+
+    co_return update_leadership_reply{};
 }
 
 static get_leadership_reply
