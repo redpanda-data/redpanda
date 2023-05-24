@@ -41,6 +41,11 @@ static bool is_tx_manager_topic(const model::ntp& ntp) {
            && ntp.tp.topic == model::tx_manager_topic;
 }
 
+static bool is_tx_registry_topic(const model::ntp& ntp) {
+    return ntp.ns == model::kafka_internal_namespace
+           && ntp.tp.topic == model::tx_registry_topic;
+}
+
 partition::partition(
   consensus_ptr r,
   ss::sharded<cluster::tx_gateway_frontend>& tx_gateway_frontend,
@@ -74,6 +79,9 @@ partition::partition(
 
     if (is_id_allocator_topic(_raft->ntp())) {
         _id_allocator_stm = ss::make_shared<cluster::id_allocator_stm>(
+          clusterlog, _raft.get());
+    } else if (is_tx_registry_topic(_raft->ntp())) {
+        _tx_registry_stm = ss::make_shared<cluster::tx_registry_stm>(
           clusterlog, _raft.get());
     } else if (is_tx_manager_topic(_raft->ntp())) {
         if (
@@ -495,8 +503,10 @@ ss::future<> partition::start() {
 
     auto f = _raft->start();
 
-    if (is_id_allocator_topic(ntp)) {
+    if (_id_allocator_stm) {
         return f.then([this] { return _id_allocator_stm->start(); });
+    } else if (_tx_registry_stm) {
+        return f.then([this] { return _tx_registry_stm->start(); });
     } else if (_log_eviction_stm) {
         f = f.then([this] { return _log_eviction_stm->start(); });
     }
@@ -565,6 +575,14 @@ ss::future<> partition::stop() {
           "Stopping cloud_storage_manifest_view on partition: {}",
           partition_ntp);
         co_await _cloud_storage_manifest_view->stop();
+    }
+
+    if (_tx_registry_stm) {
+        vlog(
+          clusterlog.debug,
+          "Stopping tx_registry_stm on partition: {}",
+          partition_ntp);
+        co_await _tx_registry_stm->stop();
     }
 
     if (_id_allocator_stm) {
@@ -808,17 +826,25 @@ uint64_t partition::non_log_disk_size_bytes() const {
         idalloc_size = _id_allocator_stm->get_snapshot_size();
     }
 
+    std::optional<uint64_t> tx_registry_size;
+    if (_tx_registry_stm) {
+        tx_registry_size = _tx_registry_stm->get_snapshot_size();
+    }
+
     vlog(
       clusterlog.trace,
-      "non-log disk size: raft {} rm {} tm {} archival {} idalloc {}",
+      "non-log disk size: raft {} rm {} tm {} archival {} idalloc {} tx "
+      "registry {}",
       raft_size,
       rm_size,
       tm_size,
       archival_size,
-      idalloc_size);
+      idalloc_size,
+      tx_registry_size);
 
     return raft_size + rm_size.value_or(0) + tm_size.value_or(0)
-           + archival_size.value_or(0) + idalloc_size.value_or(0);
+           + archival_size.value_or(0) + idalloc_size.value_or(0)
+           + tx_registry_size.value_or(0);
 }
 
 ss::future<> partition::update_configuration(topic_properties properties) {
@@ -922,6 +948,9 @@ ss::future<> partition::remove_persistent_state() {
     }
     if (_archival_meta_stm) {
         co_await _archival_meta_stm->remove_persistent_state();
+    }
+    if (_tx_registry_stm) {
+        co_await _tx_registry_stm->remove_persistent_state();
     }
     if (_id_allocator_stm) {
         co_await _id_allocator_stm->remove_persistent_state();
