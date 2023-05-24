@@ -101,7 +101,7 @@ class KgoVerifierService(Service):
         trace = '--trace' if self._trace_logs else ''
         wrapped_cmd = f"nohup {cmd} --remote --remote-port {self._remote_port} {debug} {trace}> {self.log_path} 2>&1 & echo $!"
         self.logger.debug(f"spawn {self.who_am_i()}: {wrapped_cmd}")
-        pid_str = node.account.ssh_output(wrapped_cmd)
+        pid_str = node.account.ssh_output(wrapped_cmd, timeout_sec=10)
         self.logger.debug(
             f"spawned {self.who_am_i()} node={node.name} pid={pid_str} port={self._remote_port}"
         )

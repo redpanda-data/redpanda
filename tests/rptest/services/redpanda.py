@@ -1279,7 +1279,8 @@ class RedpandaService(RedpandaServiceBase):
             # Assume nodes are symmetric, so we can just ask one
             # how much memory it has.
             node = self.nodes[0]
-            line = node.account.ssh_output("cat /proc/meminfo | grep MemTotal")
+            line = node.account.ssh_output("cat /proc/meminfo | grep MemTotal",
+                                           timeout_sec=10)
             # Output line is like "MemTotal:       32552236 kB"
             memory_kb = int(line.strip().split()[1])
             return memory_kb / 1024
@@ -1298,7 +1299,7 @@ class RedpandaService(RedpandaServiceBase):
             # Assume nodes are symmetric, so we can just ask one
             node = self.nodes[0]
             core_count_str = node.account.ssh_output(
-                "cat /proc/cpuinfo | grep ^processor | wc -l")
+                "cat /proc/cpuinfo | grep ^processor | wc -l", timeout_sec=10)
             return int(core_count_str.strip())
 
     def get_node_disk_free(self):
@@ -1311,7 +1312,8 @@ class RedpandaService(RedpandaServiceBase):
             # If dir doesn't exist yet, use the parent.
             df_path = os.path.dirname(self.PERSISTENT_ROOT)
 
-        df_out = node.account.ssh_output(f"df --output=avail {df_path}")
+        df_out = node.account.ssh_output(f"df --output=avail {df_path}",
+                                         timeout_sec=10)
 
         avail_kb = int(df_out.strip().split(b"\n")[1].strip())
 
@@ -1330,7 +1332,7 @@ class RedpandaService(RedpandaServiceBase):
         """
 
         for line in node.account.ssh_capture(
-                f"df --block-size 1 {self.PERSISTENT_ROOT}"):
+                f"df --block-size 1 {self.PERSISTENT_ROOT}", timeout_sec=10):
             self.logger.debug(line.strip())
             if self.PERSISTENT_ROOT in line:
                 return int(line.split()[2])
@@ -1658,7 +1660,7 @@ class RedpandaService(RedpandaServiceBase):
         seen "Address in use" errors:
         https://github.com/redpanda-data/redpanda/pull/3754
         """
-        for line in node.account.ssh_capture("netstat -ant"):
+        for line in node.account.ssh_capture("netstat -ant", timeout_sec=10):
             self.logger.debug(f"node={node.name} {line.strip()}")
 
             # Parse output line
@@ -1689,7 +1691,7 @@ class RedpandaService(RedpandaServiceBase):
         cmd = f"lsof -nP -p {self.redpanda_pid(node)}"
         if filter is not None:
             cmd += f" | grep {filter}"
-        for line in node.account.ssh_capture(cmd):
+        for line in node.account.ssh_capture(cmd, timeout_sec=60):
             if first and not filter:
                 # First line is a header, skip it
                 first = False
@@ -1758,7 +1760,8 @@ class RedpandaService(RedpandaServiceBase):
             # aren't, it's probably an accident that can easily cause spurious failures
             # and confusion, so be helpful and fail out early.
             fs = node.account.ssh_output(
-                f"stat -f -c %T {self.PERSISTENT_ROOT}").strip()
+                f"stat -f -c %T {self.PERSISTENT_ROOT}",
+                timeout_sec=10).strip()
             if fs != b'xfs':
                 raise RuntimeError(
                     f"Non-XFS filesystem {fs} at {self.PERSISTENT_ROOT} on {node.name}"
@@ -1845,9 +1848,10 @@ class RedpandaService(RedpandaServiceBase):
         which processes are running and which ports are in use.
         """
 
-        for line in node.account.ssh_capture("ps aux"):
+        for line in node.account.ssh_capture("ps aux", timeout_sec=30):
             self.logger.debug(line.strip())
-        for line in node.account.ssh_capture("netstat -panelot"):
+        for line in node.account.ssh_capture("netstat -panelot",
+                                             timeout_sec=30):
             self.logger.debug(line.strip())
 
     def start_service(self, node, start):
@@ -2010,8 +2014,8 @@ class RedpandaService(RedpandaServiceBase):
 
             crash_log = None
             for line in node.account.ssh_capture(
-                    f"grep -e SEGV -e Segmentation\ fault -e [Aa]ssert {RedpandaService.STDOUT_STDERR_CAPTURE} || true"
-            ):
+                    f"grep -e SEGV -e Segmentation\ fault -e [Aa]ssert {RedpandaService.STDOUT_STDERR_CAPTURE} || true",
+                    timeout_sec=30):
                 if 'SEGV' in line and ('x-amz-id' in line
                                        or 'x-amz-request' in line):
                     # We log long encoded AWS headers that occasionally have 'SEGV' in them by chance
@@ -2258,8 +2262,8 @@ class RedpandaService(RedpandaServiceBase):
             match_expr = " ".join(f"-e \"{t}\"" for t in match_terms)
 
             for line in node.account.ssh_capture(
-                    f"grep {match_expr} {RedpandaService.STDOUT_STDERR_CAPTURE} || true"
-            ):
+                    f"grep {match_expr} {RedpandaService.STDOUT_STDERR_CAPTURE} || true",
+                    timeout_sec=60):
                 line = line.strip()
 
                 allowed = False
@@ -2275,8 +2279,8 @@ class RedpandaService(RedpandaServiceBase):
                     # are permitted, as they can occur during Seastar shutdown.
                     # See https://github.com/redpanda-data/redpanda/issues/3626
                     for summary_line in node.account.ssh_capture(
-                            f"grep -e \"SUMMARY: AddressSanitizer:\" {RedpandaService.STDOUT_STDERR_CAPTURE} || true"
-                    ):
+                            f"grep -e \"SUMMARY: AddressSanitizer:\" {RedpandaService.STDOUT_STDERR_CAPTURE} || true",
+                            timeout_sec=60):
                         m = re.match(
                             "SUMMARY: AddressSanitizer: (\d+) byte\(s\) leaked in (\d+) allocation\(s\).",
                             summary_line.strip())
@@ -2350,7 +2354,7 @@ class RedpandaService(RedpandaServiceBase):
         # NOTE: not all versions of Redpanda support the --version field, even
         # though they print out the version.
         version_lines = [
-            l for l in node.account.ssh_capture(version_cmd, allow_fail=True) \
+            l for l in node.account.ssh_capture(version_cmd, allow_fail=True, timeout_sec=10) \
                 if VERSION_LINE_RE.match(l)
         ]
         assert len(version_lines) == 1, version_lines
@@ -2495,7 +2499,8 @@ class RedpandaService(RedpandaServiceBase):
             cmd = "ps ax | grep -i 'redpanda' | grep -v grep | grep -v 'version'| grep -v \"\[redpanda\]\" | awk '{print $1}'"
             for p in node.account.ssh_capture(cmd,
                                               allow_fail=True,
-                                              callback=int):
+                                              callback=int,
+                                              timeout_sec=10):
                 return p
 
         except (RemoteCommandError, ValueError):
@@ -2511,10 +2516,12 @@ class RedpandaService(RedpandaServiceBase):
     @staticmethod
     def get_node_fqdn(node):
         ip = socket.gethostbyname(node.account.hostname)
-        hostname = node.account.ssh_output(cmd=f"dig -x {ip} +short").decode(
-            'utf-8').split('\n')[0].removesuffix(".")
+        hostname = node.account.ssh_output(
+            cmd=f"dig -x {ip} +short",
+            timeout_sec=10).decode('utf-8').split('\n')[0].removesuffix(".")
         fqdn = node.account.ssh_output(
-            cmd=f"host {hostname}").decode('utf-8').split(' ')[0]
+            cmd=f"host {hostname}",
+            timeout_sec=10).decode('utf-8').split(' ')[0]
         return fqdn
 
     def write_node_conf_file(self,
@@ -2853,7 +2860,7 @@ class RedpandaService(RedpandaServiceBase):
         directory. The results of the command are turned into a map from path
         to hash-size tuples."""
         cmd = f"find {RedpandaService.DATA_DIR} -type f -exec md5sum -z '{{}}' \; -exec stat -c ' %s' '{{}}' \;"
-        lines = node.account.ssh_output(cmd)
+        lines = node.account.ssh_output(cmd, timeout_sec=120)
         lines = lines.decode().split("\n")
 
         # there is a race between `find` iterating over file names and passing
@@ -2884,7 +2891,7 @@ class RedpandaService(RedpandaServiceBase):
         to the data directory.
         """
         cmd = f"find {RedpandaService.DATA_DIR} -type f -exec stat -c '%n %s' '{{}}' \;"
-        lines = node.account.ssh_output(cmd)
+        lines = node.account.ssh_output(cmd, timeout_sec=120)
         lines = lines.decode().split("\n")
 
         # 1. find and stat race. skip any files that were deleted.
@@ -3063,8 +3070,8 @@ class RedpandaService(RedpandaServiceBase):
 
     def search_log_node(self, node: ClusterNode, pattern: str):
         for line in node.account.ssh_capture(
-                f"grep \"{pattern}\" {RedpandaService.STDOUT_STDERR_CAPTURE} || true"
-        ):
+                f"grep \"{pattern}\" {RedpandaService.STDOUT_STDERR_CAPTURE} || true",
+                timeout_sec=60):
             # We got a match
             self.logger.debug(f"Found {pattern} on node {node.name}: {line}")
             return True
@@ -3232,7 +3239,8 @@ class RedpandaService(RedpandaServiceBase):
         output = node.account.ssh_output(
             f"{environment} rp-storage-tool --backend {backend} scan --source {bucket}",
             combine_stderr=False,
-            allow_fail=True)
+            allow_fail=True,
+            timeout_sec=30)
 
         try:
             report = json.loads(output)
