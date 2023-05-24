@@ -106,8 +106,11 @@ ss::future<> non_replicable_topics_frontend::create_non_replicable_topics(
         }
     }
     if (!todos.empty()) {
-        auto f = _topics_frontend.local()
-                   .autocreate_non_replicable_topics(todos, timeout)
+        // clang-tidy 16.0.4 is reporting an erroneous 'use-after-move' error
+        // when calling `then` after `autocreate_non_replicable_topics`.
+        auto result = _topics_frontend.local()
+                      .autocreate_non_replicable_topics(todos, timeout);
+        auto f = result
                    .then(
                      [this](const std::vector<cluster::topic_result>& result) {
                          topic_creation_resolved(result);
