@@ -77,6 +77,55 @@ public:
           .get();
     }
 
+    template<typename Cmd>
+    void dispatch_topic_command(Cmd cmd) {
+        auto res
+          = dispatcher.apply_update(serialize_cmd(std::move(cmd)).get()).get();
+        BOOST_REQUIRE_EQUAL(res, cluster::errc::success);
+    }
+
+    cluster::topic_configuration_assignment make_tp_configuration(
+      const ss::sstring& topic, int partitions, int16_t replication_factor) {
+        cluster::topic_configuration cfg(
+          test_ns, model::topic(topic), partitions, replication_factor);
+
+        cluster::allocation_request req(
+          cluster::partition_allocation_domains::common);
+        req.partitions.reserve(partitions);
+        for (auto p = 0; p < partitions; ++p) {
+            req.partitions.emplace_back(
+              model::partition_id(p), replication_factor);
+        }
+
+        auto pas = allocator.local()
+                     .allocate(std::move(req))
+                     .get()
+                     .value()
+                     ->copy_assignments();
+
+        return {cfg, std::move(pas)};
+    }
+
+    void set_maintenance_mode(model::node_id id) {
+        members.local().apply(
+          model::offset{}, cluster::maintenance_mode_cmd(id, true));
+        auto broker = members.local().get_node_metadata_ref(id);
+        BOOST_REQUIRE(broker);
+        BOOST_REQUIRE(
+          broker.value().get().state.get_maintenance_state()
+          == model::maintenance_state::active);
+    }
+
+    void set_decommissioning(model::node_id id) {
+        members.local().apply(
+          model::offset{}, cluster::decommission_node_cmd(id, 0));
+        auto broker = members.local().get_node_metadata_ref(id);
+        BOOST_REQUIRE(broker);
+        BOOST_REQUIRE(
+          broker.value().get().state.get_membership_state()
+          == model::membership_state::draining);
+    }
+
     ~controller_workers() {
         state.stop().get();
         node_status_table.stop().get();
@@ -112,46 +161,16 @@ struct partition_balancer_planner_fixture {
           workers.allocator.local());
     }
 
-    cluster::topic_configuration_assignment make_tp_configuration(
-      const ss::sstring& topic, int partitions, int16_t replication_factor) {
-        cluster::topic_configuration cfg(
-          test_ns, model::topic(topic), partitions, replication_factor);
-
-        cluster::allocation_request req(
-          cluster::partition_allocation_domains::common);
-        req.partitions.reserve(partitions);
-        for (auto p = 0; p < partitions; ++p) {
-            req.partitions.emplace_back(
-              model::partition_id(p), replication_factor);
-        }
-
-        auto pas = workers.allocator.local()
-                     .allocate(std::move(req))
-                     .get()
-                     .value()
-                     ->copy_assignments();
-
-        return {cfg, std::move(pas)};
-    }
-
     model::topic_namespace make_tp_ns(const ss::sstring& tp) {
         return {test_ns, model::topic(tp)};
-    }
-
-    template<typename Cmd>
-    void dispatch_command(Cmd cmd) {
-        auto res = workers.dispatcher
-                     .apply_update(serialize_cmd(std::move(cmd)).get())
-                     .get();
-        BOOST_REQUIRE_EQUAL(res, cluster::errc::success);
     }
 
     void create_topic(
       const ss::sstring& name, int partitions, int16_t replication_factor) {
         cluster::create_topic_cmd cmd{
           make_tp_ns(name),
-          make_tp_configuration(name, partitions, replication_factor)};
-        dispatch_command(std::move(cmd));
+          workers.make_tp_configuration(name, partitions, replication_factor)};
+        workers.dispatch_topic_command(std::move(cmd));
     }
 
     void create_topic(
@@ -181,7 +200,7 @@ struct partition_balancer_planner_fixture {
           make_tp_ns(name),
           cluster::topic_configuration_assignment(cfg, std::move(assignments))};
 
-        dispatch_command(std::move(cmd));
+        workers.dispatch_topic_command(std::move(cmd));
     }
 
     void allocator_register_nodes(
@@ -235,7 +254,8 @@ struct partition_balancer_planner_fixture {
     void move_partition_replicas(
       const model::ntp& ntp,
       const std::vector<model::broker_shard>& new_replicas) {
-        dispatch_command(make_move_partition_replicas_cmd(ntp, new_replicas));
+        workers.dispatch_topic_command(
+          make_move_partition_replicas_cmd(ntp, new_replicas));
     }
 
     void move_partition_replicas(
@@ -258,7 +278,7 @@ struct partition_balancer_planner_fixture {
           std::move(ntp),
           cluster::cancel_moving_partition_replicas_cmd_data{
             cluster::force_abort_update{false}}};
-        dispatch_command(std::move(cmd));
+        workers.dispatch_topic_command(std::move(cmd));
     }
 
     void finish_partition_move(model::ntp ntp) {
@@ -269,12 +289,12 @@ struct partition_balancer_planner_fixture {
         cluster::finish_moving_partition_replicas_cmd cmd{
           std::move(ntp), cur_assignment->replicas};
 
-        dispatch_command(std::move(cmd));
+        workers.dispatch_topic_command(std::move(cmd));
     }
 
     void delete_topic(const model::topic& topic) {
         cluster::delete_topic_cmd cmd{make_tp_ns(topic()), make_tp_ns(topic())};
-        dispatch_command(std::move(cmd));
+        workers.dispatch_topic_command(std::move(cmd));
     }
 
     ss::future<>
@@ -335,23 +355,11 @@ struct partition_balancer_planner_fixture {
     }
 
     void set_maintenance_mode(model::node_id id) {
-        workers.members.local().apply(
-          model::offset{}, cluster::maintenance_mode_cmd(id, true));
-        auto broker = workers.members.local().get_node_metadata_ref(id);
-        BOOST_REQUIRE(broker);
-        BOOST_REQUIRE(
-          broker.value().get().state.get_maintenance_state()
-          == model::maintenance_state::active);
+        workers.set_maintenance_mode(id);
     }
 
     void set_decommissioning(model::node_id id) {
-        workers.members.local().apply(
-          model::offset{}, cluster::decommission_node_cmd(id, 0));
-        auto broker = workers.members.local().get_node_metadata_ref(id);
-        BOOST_REQUIRE(broker);
-        BOOST_REQUIRE(
-          broker.value().get().state.get_membership_state()
-          == model::membership_state::draining);
+        workers.set_decommissioning(id);
     }
 
     controller_workers workers;
