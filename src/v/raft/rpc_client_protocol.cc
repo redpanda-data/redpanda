@@ -22,11 +22,12 @@ namespace raft {
 
 ss::future<result<vote_reply>> rpc_client_protocol::vote(
   model::node_id n, vote_request&& r, rpc::client_opts opts) {
+    auto timeout = opts.timeout;
     return _connection_cache.local().with_node_client<raftgen_client_protocol>(
       _self,
       ss::this_shard_id(),
       n,
-      opts.timeout,
+      timeout,
       [r = std::move(r),
        opts = std::move(opts)](raftgen_client_protocol client) mutable {
           return client.vote(std::move(r), std::move(opts))
@@ -36,11 +37,12 @@ ss::future<result<vote_reply>> rpc_client_protocol::vote(
 
 ss::future<result<append_entries_reply>> rpc_client_protocol::append_entries(
   model::node_id n, append_entries_request&& r, rpc::client_opts opts) {
+    auto timeout = opts.timeout;
     return _connection_cache.local().with_node_client<raftgen_client_protocol>(
       _self,
       ss::this_shard_id(),
       n,
-      opts.timeout,
+      timeout,
       [r = std::move(r),
        opts = std::move(opts)](raftgen_client_protocol client) mutable {
           return client.append_entries(std::move(r), std::move(opts))
@@ -50,11 +52,12 @@ ss::future<result<append_entries_reply>> rpc_client_protocol::append_entries(
 
 ss::future<result<heartbeat_reply>> rpc_client_protocol::heartbeat(
   model::node_id n, heartbeat_request&& r, rpc::client_opts opts) {
+    auto timeout = opts.timeout;
     return _connection_cache.local().with_node_client<raftgen_client_protocol>(
       _self,
       ss::this_shard_id(),
       n,
-      opts.timeout,
+      timeout,
       [r = std::move(r),
        opts = std::move(opts)](raftgen_client_protocol client) mutable {
           return client.heartbeat(std::move(r), std::move(opts))
@@ -65,11 +68,12 @@ ss::future<result<heartbeat_reply>> rpc_client_protocol::heartbeat(
 ss::future<result<install_snapshot_reply>>
 rpc_client_protocol::install_snapshot(
   model::node_id n, install_snapshot_request&& r, rpc::client_opts opts) {
+    auto timeout = opts.timeout;
     return _connection_cache.local().with_node_client<raftgen_client_protocol>(
       _self,
       ss::this_shard_id(),
       n,
-      opts.timeout,
+      timeout,
       [r = std::move(r),
        opts = std::move(opts)](raftgen_client_protocol client) mutable {
           return client.install_snapshot(std::move(r), std::move(opts))
@@ -79,11 +83,12 @@ rpc_client_protocol::install_snapshot(
 
 ss::future<result<timeout_now_reply>> rpc_client_protocol::timeout_now(
   model::node_id n, timeout_now_request&& r, rpc::client_opts opts) {
+    auto timeout = opts.timeout;
     return _connection_cache.local().with_node_client<raftgen_client_protocol>(
       _self,
       ss::this_shard_id(),
       n,
-      opts.timeout,
+      timeout,
       [r = std::move(r),
        opts = std::move(opts)](raftgen_client_protocol client) mutable {
           return client.timeout_now(std::move(r), std::move(opts))
@@ -127,11 +132,12 @@ ss::future<bool> rpc_client_protocol::ensure_disconnect(model::node_id n) {
 ss::future<result<transfer_leadership_reply>>
 rpc_client_protocol::transfer_leadership(
   model::node_id n, transfer_leadership_request&& r, rpc::client_opts opts) {
+    auto timeout = opts.timeout;
     return _connection_cache.local().with_node_client<raftgen_client_protocol>(
       _self,
       ss::this_shard_id(),
       n,
-      opts.timeout,
+      timeout,
       [r = std::move(r),
        opts = std::move(opts)](raftgen_client_protocol client) mutable {
           return client.transfer_leadership(std::move(r), std::move(opts))
