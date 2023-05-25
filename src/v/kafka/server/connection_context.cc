@@ -443,7 +443,6 @@ connection_context::dispatch_method_once(request_header hdr, size_t size) {
                             })
                             .finally([self, d = std::move(d), sres]() mutable {
                                 sres->tracker->mark_errored();
-                                self->_server.probe().service_error();
                                 return std::move(d);
                             });
                       }
@@ -496,7 +495,6 @@ connection_context::dispatch_method_once(request_header hdr, size_t size) {
                                   }
 
                                   sres->tracker->mark_errored();
-                                  self->_server.probe().service_error();
                                   self->conn->shutdown_input();
                               });
                       return d;
