@@ -80,7 +80,14 @@ type (
 		fileLocation string
 		fileRaw      []byte
 
-		Version          int            `yaml:"version"`
+		// Version is used for forwards and backwards compatibility.
+		// If Version is <= 1, the file is not a valid rpk.yaml file.
+		// If we read a config with an older version, we can parse it.
+		// If we read a config with a newer version, we exit with a
+		// message saying "we don't know how to parse this, please
+		// upgrade rpk".
+		Version int `yaml:"version"`
+
 		CurrentProfile   string         `yaml:"current_profile"`
 		CurrentCloudAuth string         `yaml:"current_cloud_auth"`
 		Profiles         []RpkProfile   `yaml:"profiles,omitempty"`
