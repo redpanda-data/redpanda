@@ -69,26 +69,20 @@ producer::produce(model::topic_partition tp, model::record_batch&& batch) {
 }
 
 ss::future<produce_response::partition>
-producer::do_send(model::topic_partition tp, model::record_batch&& batch) {
-    return _topic_cache.leader(tp)
-      .then([this](model::node_id leader) { return _brokers.find(leader); })
-      .then([tp{std::move(tp)},
-             batch{std::move(batch)}](shared_broker_t broker) mutable {
-          return broker->dispatch(
-            make_produce_request(std::move(tp), std::move(batch)));
-      })
-      .then([](produce_response res) mutable {
-          auto topic = std::move(res.data.responses[0]);
-          auto partition = std::move(topic.partitions[0]);
-          if (partition.error_code != error_code::none) {
-              return ss::make_exception_future<produce_response::partition>(
-                partition_error(
-                  model::topic_partition(topic.name, partition.partition_index),
-                  partition.error_code));
-          }
-          return ss::make_ready_future<produce_response::partition>(
-            std::move(partition));
-      });
+producer::do_send(model::topic_partition tp, model::record_batch batch) {
+    auto leader = co_await _topic_cache.leader(tp);
+    auto broker = co_await _brokers.find(leader);
+    auto res = co_await broker->dispatch(
+      make_produce_request(std::move(tp), std::move(batch)));
+    auto topic = std::move(res.data.responses[0]);
+    auto partition = std::move(topic.partitions[0]);
+    if (partition.error_code != error_code::none) {
+        throw partition_error(
+          model::topic_partition(topic.name, partition.partition_index),
+          partition.error_code);
+    }
+
+    co_return partition;
 }
 
 ss::future<>

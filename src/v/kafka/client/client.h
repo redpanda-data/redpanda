@@ -132,7 +132,7 @@ public:
     ss::future<shared_consumer_t>
     get_consumer(const group_id& g_id, const member_id& m_id);
 
-    ss::future<> remove_consumer(const group_id& g_id, const member_id& m_id);
+    ss::future<> remove_consumer(group_id g_id, const member_id& m_id);
 
     ss::future<> subscribe_consumer(
       const group_id& group_id,

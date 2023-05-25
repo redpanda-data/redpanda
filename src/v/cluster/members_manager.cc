@@ -851,7 +851,7 @@ ss::future<> members_manager::set_initial_state(
     _id_by_uuid = std::move(id_by_uuid);
 
     co_await _members_table.invoke_on_all(
-      [initial_brokers = std::move(initial_brokers)](members_table& table) {
+      [initial_brokers](members_table& table) {
           table.set_initial_brokers(initial_brokers);
       });
 

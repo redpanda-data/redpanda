@@ -269,7 +269,10 @@ create_consumer(server::request_t rq, server::reply_t rp) {
             req_data.auto_offset_reset,
             req_data.auto_commit_enable);
 
-          return client.get_consumer(group_id, req_data.name)
+          // clang-tidy 16.0.4 is reporting an erroneous 'use-after-move' error
+          // when calling `then` after `get_consumer`.
+          auto f = client.get_consumer(group_id, req_data.name);
+          return f
             .then([group_id](const kafka::client::shared_consumer_t&) mutable {
                 auto ec = make_error_condition(
                   reply_error_code::consumer_already_exists);
