@@ -494,8 +494,8 @@ public:
                     return false;
                 }()
                  || ...);
-            }
-            (std::make_index_sequence<std::variant_size_v<cstore_operation>>{});
+            }(std::make_index_sequence<
+              std::variant_size_v<cstore_operation>>{});
         } catch (const Tape::end_of_program&) {
             return false;
         }

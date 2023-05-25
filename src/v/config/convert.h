@@ -298,7 +298,7 @@ concept has_hashable_key_type = requires(T x) {
     x.key_name();
     {
         std::hash<typename T::key_type>{}(x.key())
-        } -> std::convertible_to<std::size_t>;
+    } -> std::convertible_to<std::size_t>;
 };
 
 template<has_hashable_key_type T>

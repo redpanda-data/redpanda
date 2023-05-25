@@ -127,8 +127,8 @@ public:
      */
     template<typename T>
     requires(KafkaApi<typename T::api_type>)
-      ss::future<typename T::api_type::response_type> dispatch(
-        T r, api_version request_version, api_version response_version) {
+    ss::future<typename T::api_type::response_type>
+    dispatch(T r, api_version request_version, api_version response_version) {
         using type = std::remove_reference_t<std::decay_t<T>>;
         using response_type = typename T::api_type::response_type;
         if constexpr (std::is_same_v<type, produce_request>) {
@@ -158,8 +158,8 @@ public:
 
     template<typename T>
     requires(KafkaApi<typename T::api_type>)
-      ss::future<typename T::api_type::response_type> dispatch(
-        T r, api_version ver) {
+    ss::future<typename T::api_type::response_type>
+    dispatch(T r, api_version ver) {
         return dispatch(std::move(r), ver, ver);
     }
 
@@ -173,7 +173,7 @@ public:
      */
     template<typename T>
     requires(KafkaApi<typename T::api_type>)
-      ss::future<typename T::api_type::response_type> dispatch(T r) {
+    ss::future<typename T::api_type::response_type> dispatch(T r) {
         using type = std::remove_reference_t<std::decay_t<T>>;
         if constexpr (std::is_same_v<type, offset_fetch_request>) {
             return dispatch(std::move(r), api_version(4));

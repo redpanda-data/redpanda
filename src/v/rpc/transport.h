@@ -375,7 +375,8 @@ concept RpcClientProtocol
   = std::constructible_from<Protocol, ss::lw_shared_ptr<rpc::transport>>;
 
 template<typename... Protocol>
-requires(RpcClientProtocol<Protocol>&&...) class client : public Protocol... {
+requires(RpcClientProtocol<Protocol> && ...)
+class client : public Protocol... {
 public:
     explicit client(ss::lw_shared_ptr<rpc::transport> transport)
       : Protocol(transport)...

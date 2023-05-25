@@ -218,15 +218,15 @@ class deltafor_encoder
     static constexpr uint32_t row_width = details::FOR_buffer_depth;
 
 public:
-    explicit deltafor_encoder(
-      TVal initial_value, DeltaStep delta = {}) requires(!use_nttp_deltastep)
+    explicit deltafor_encoder(TVal initial_value, DeltaStep delta = {})
+    requires(!use_nttp_deltastep)
       : _initial(initial_value)
       , _last(initial_value)
       , _cnt{0}
       , _delta(delta) {}
 
-    constexpr explicit deltafor_encoder(TVal initial_value) requires
-      use_nttp_deltastep
+    constexpr explicit deltafor_encoder(TVal initial_value)
+    requires use_nttp_deltastep
       : _initial(initial_value)
       , _last(initial_value)
       , _cnt{0}
@@ -239,7 +239,8 @@ public:
       uint32_t cnt,
       TVal last_value,
       iobuf data,
-      DeltaStep delta = {}) requires(!use_nttp_deltastep)
+      DeltaStep delta = {})
+    requires(!use_nttp_deltastep)
       : _initial(initial_value)
       , _last(last_value)
       , _data(std::move(data))
@@ -247,10 +248,8 @@ public:
       , _delta(delta) {}
 
     deltafor_encoder(
-      TVal initial_value,
-      uint32_t cnt,
-      TVal last_value,
-      iobuf data) requires use_nttp_deltastep
+      TVal initial_value, uint32_t cnt, TVal last_value, iobuf data)
+    requires use_nttp_deltastep
       : _initial(initial_value)
       , _last(last_value)
       , _data(std::move(data))

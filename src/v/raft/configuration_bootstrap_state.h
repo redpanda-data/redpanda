@@ -22,10 +22,11 @@ namespace raft {
 class configuration_bootstrap_state {
 public:
     configuration_bootstrap_state() = default;
-    configuration_bootstrap_state(
-      configuration_bootstrap_state&&) noexcept = default;
+    configuration_bootstrap_state(configuration_bootstrap_state&&) noexcept
+      = default;
     configuration_bootstrap_state&
-    operator=(configuration_bootstrap_state&&) noexcept = default;
+    operator=(configuration_bootstrap_state&&) noexcept
+      = default;
 
     void process_batch(model::record_batch);
     void process_configuration(model::record_batch);

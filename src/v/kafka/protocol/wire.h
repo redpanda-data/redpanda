@@ -316,9 +316,8 @@ class encoder {
     // clang-format off
     requires std::is_integral<ExplicitIntegerType>::value
              && std::is_integral<IntegerType>::value
-      // clang-format on
-      uint32_t
-      serialize_int(IntegerType val) {
+    // clang-format on
+    uint32_t serialize_int(IntegerType val) {
         auto nval = ss::cpu_to_be(ExplicitIntegerType(val));
         _out->append(reinterpret_cast<const char*>(&nval), sizeof(nval));
         return sizeof(nval);

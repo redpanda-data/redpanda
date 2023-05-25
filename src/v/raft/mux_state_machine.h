@@ -95,7 +95,8 @@ using persistent_last_applied
 //      |<------------------------|               |          |
 //      |                         |               |          |
 template<typename... T>
-requires(State<T>, ...) class mux_state_machine : public state_machine {
+requires(State<T>, ...)
+class mux_state_machine : public state_machine {
 public:
     using base_t = mux_state_machine<T...>;
 
@@ -231,7 +232,8 @@ protected:
 };
 
 template<typename... T>
-requires(State<T>, ...) mux_state_machine<T...>::mux_state_machine(
+requires(State<T>, ...)
+mux_state_machine<T...>::mux_state_machine(
   ss::logger& logger,
   consensus* c,
   persistent_last_applied persist,
@@ -245,8 +247,8 @@ requires(State<T>, ...) mux_state_machine<T...>::mux_state_machine(
 
 template<typename... T>
 requires(State<T>, ...)
-  ss::future<result<raft::replicate_result>> mux_state_machine<T...>::replicate(
-    model::record_batch&& batch, std::optional<model::term_id> term) {
+ss::future<result<raft::replicate_result>> mux_state_machine<T...>::replicate(
+  model::record_batch&& batch, std::optional<model::term_id> term) {
     return ss::with_gate(
       _gate, [this, batch = std::move(batch), term]() mutable {
           if (term) {
@@ -264,11 +266,11 @@ requires(State<T>, ...)
 
 template<typename... T>
 requires(State<T>, ...)
-  ss::future<std::error_code> mux_state_machine<T...>::replicate_and_wait(
-    model::record_batch&& b,
-    model::timeout_clock::time_point timeout,
-    ss::abort_source& as,
-    std::optional<model::term_id> term) {
+ss::future<std::error_code> mux_state_machine<T...>::replicate_and_wait(
+  model::record_batch&& b,
+  model::timeout_clock::time_point timeout,
+  ss::abort_source& as,
+  std::optional<model::term_id> term) {
     if (_gate.is_closed()) {
         return ss::make_ready_future<std::error_code>(errc::shutting_down);
     }
@@ -363,8 +365,8 @@ is_batch_applicable(State& s, const model::record_batch& batch) {
 }
 
 template<typename... T>
-requires(State<T>, ...) ss::future<> mux_state_machine<T...>::apply(
-  model::record_batch b) {
+requires(State<T>, ...)
+ss::future<> mux_state_machine<T...>::apply(model::record_batch b) {
     return ss::with_gate(_gate, [this, b = std::move(b)]() mutable {
         return _apply_mtx
           .with([this, b = std::move(b)]() mutable {
@@ -375,8 +377,8 @@ requires(State<T>, ...) ss::future<> mux_state_machine<T...>::apply(
 }
 
 template<typename... T>
-requires(State<T>, ...) ss::future<> mux_state_machine<T...>::do_apply(
-  model::record_batch b) {
+requires(State<T>, ...)
+ss::future<> mux_state_machine<T...>::do_apply(model::record_batch b) {
     // lookup for the state to apply the update
     auto state = std::apply(
       [&b](T&... st) {
@@ -421,8 +423,8 @@ requires(State<T>, ...) ss::future<> mux_state_machine<T...>::do_apply(
 }
 
 template<typename... T>
-requires(
-  State<T>, ...) ss::future<> mux_state_machine<T...>::handle_eviction() {
+requires(State<T>, ...)
+ss::future<> mux_state_machine<T...>::handle_eviction() {
     // We end up here if the last applied offset of the state machine is less
     // than the raft log start offset (this can happen during startup or when an
     // out-of-date node re-joins the cluster). To continue making progress the
@@ -472,7 +474,7 @@ requires(
 
 template<typename... T>
 requires(State<T>, ...)
-  ss::future<bool> mux_state_machine<T...>::maybe_write_snapshot() {
+ss::future<bool> mux_state_machine<T...>::maybe_write_snapshot() {
     auto gate_holder = _gate.hold();
     auto write_snapshot_mtx_holder = co_await _write_snapshot_mtx.get_units();
 

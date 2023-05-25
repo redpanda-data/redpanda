@@ -359,9 +359,8 @@ template<typename... Commands>
 struct commands_type_list {};
 
 template<typename... Commands>
-requires(
-  ControllerCommand<Commands>,
-  ...) using make_commands_list = commands_type_list<Commands...>;
+requires(ControllerCommand<Commands>, ...)
+using make_commands_list = commands_type_list<Commands...>;
 
 /// Commands are serialized as a batch with single record. Command key is
 /// serialized as a record key. Key is independent from command type so it can
@@ -374,8 +373,8 @@ requires(
 ///                  +--------------+-------+
 ///
 template<typename Cmd>
-requires ControllerCommand<Cmd> ss::future<model::record_batch>
-serialize_cmd(Cmd cmd) {
+requires ControllerCommand<Cmd>
+ss::future<model::record_batch> serialize_cmd(Cmd cmd) {
     return ss::do_with(
       iobuf{},
       iobuf{},
@@ -402,8 +401,8 @@ serialize_cmd(Cmd cmd) {
 static constexpr int8_t serde_serialized_cmd_flag = -1;
 
 template<typename Cmd>
-requires ControllerCommand<Cmd> model::record_batch
-serde_serialize_cmd(Cmd cmd) {
+requires ControllerCommand<Cmd>
+model::record_batch serde_serialize_cmd(Cmd cmd) {
     iobuf key_buf;
     iobuf value_buf;
     /**
@@ -450,8 +449,8 @@ struct deserializer {
 };
 
 template<typename Cmd>
-requires ControllerCommand<Cmd> std::optional<deserializer<Cmd>>
-make_deserializer(command_type tp) {
+requires ControllerCommand<Cmd>
+std::optional<deserializer<Cmd>> make_deserializer(command_type tp) {
     if (tp != Cmd::type) {
         return std::nullopt;
     }

@@ -42,8 +42,8 @@ struct process_dispatch { // clang-format on
 
 template<typename Request>
 requires(KafkaApiHandler<Request> || KafkaApiTwoPhaseHandler<Request>)
-  process_result_stages
-  do_process(request_context&& ctx, ss::smp_service_group g) {
+process_result_stages
+do_process(request_context&& ctx, ss::smp_service_group g) {
     vlog(
       klog.trace,
       "[{}:{}] processing name:{}, key:{}, version:{} for {}",

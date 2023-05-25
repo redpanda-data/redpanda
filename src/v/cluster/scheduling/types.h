@@ -44,7 +44,8 @@ class hard_constraint {
 public:
     struct impl {
         virtual hard_constraint_evaluator
-        make_evaluator(const replicas_t& current_replicas) const = 0;
+        make_evaluator(const replicas_t& current_replicas) const
+          = 0;
 
         virtual ss::sstring name() const = 0;
         virtual ~impl() = default;
@@ -79,7 +80,8 @@ public:
     static constexpr uint64_t max_score = 10'000'000;
     struct impl {
         virtual soft_constraint_evaluator
-        make_evaluator(const replicas_t& current_replicas) const = 0;
+        make_evaluator(const replicas_t& current_replicas) const
+          = 0;
         virtual ss::sstring name() const = 0;
         virtual ~impl() = default;
     };

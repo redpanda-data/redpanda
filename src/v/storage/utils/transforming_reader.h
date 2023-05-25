@@ -24,12 +24,12 @@ template<typename T>
 concept batch_transformation = requires(T t, model::record_batch batch) {
     {
         t(std::move(batch))
-        } -> std::same_as<ss::future<std::optional<model::record_batch>>>;
+    } -> std::same_as<ss::future<std::optional<model::record_batch>>>;
 };
 
 template<typename Transformation>
-requires batch_transformation<Transformation> model::record_batch_reader
-make_transforming_reader(
+requires batch_transformation<Transformation>
+model::record_batch_reader make_transforming_reader(
   model::record_batch_reader&& source, Transformation&& t) {
     using storage_t = model::record_batch_reader::storage_t;
     using data_t = model::record_batch_reader::data_t;

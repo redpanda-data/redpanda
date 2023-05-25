@@ -23,7 +23,7 @@ namespace reduce {
 struct push_back {
     template<typename VecLike>
     requires SupportsPushBack<VecLike>
-      VecLike operator()(VecLike acc, typename VecLike::value_type t) const {
+    VecLike operator()(VecLike acc, typename VecLike::value_type t) const {
         acc.push_back(std::move(t));
         return acc;
     }
@@ -31,7 +31,8 @@ struct push_back {
 
 struct push_back_opt {
     template<typename VecLike>
-    requires SupportsPushBack<VecLike> VecLike operator()(
+    requires SupportsPushBack<VecLike>
+    VecLike operator()(
       VecLike acc, std::optional<typename VecLike::value_type> ot) const {
         if (ot) {
             acc.push_back(std::move(*ot));

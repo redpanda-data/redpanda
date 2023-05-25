@@ -22,8 +22,8 @@
 namespace storage {
 
 template<typename Consumer>
-concept CompactedIndexEntryConsumer
-  = requires(Consumer c, compacted_index::entry&& b) {
+concept CompactedIndexEntryConsumer = requires(
+  Consumer c, compacted_index::entry&& b) {
     { c(std::move(b)) } -> std::same_as<ss::future<ss::stop_iteration>>;
     c.end_of_stream();
 };

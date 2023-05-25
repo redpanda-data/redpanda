@@ -25,7 +25,7 @@ namespace detail {
  */
 template<typename T>
 concept numeric = requires(const T& x) {
-    {x % x};
+    { x % x };
     { x < x } -> std::same_as<bool>;
     { x > x } -> std::same_as<bool>;
 };
@@ -35,9 +35,7 @@ concept numeric = requires(const T& x) {
  * inner contained type as ::value_type
  */
 template<typename T>
-concept has_value_type = requires(T x) {
-    typename T::value_type;
-};
+concept has_value_type = requires(T x) { typename T::value_type; };
 
 /**
  * inner_type is a struct whose ::inner member reflects

@@ -35,8 +35,8 @@ std::ostream& operator<<(std::ostream& os, const std::optional<T>& opt) {
 }
 
 template<typename... T>
-requires(sizeof...(T) > 0) std::ostream&
-operator<<(std::ostream& os, const std::variant<T...>& v) {
+requires(sizeof...(T) > 0)
+std::ostream& operator<<(std::ostream& os, const std::variant<T...>& v) {
     std::visit([&os](auto& arg) { fmt::print(os, "{{{}}}", arg); }, v);
     return os;
 }

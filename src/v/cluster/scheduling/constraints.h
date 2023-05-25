@@ -79,17 +79,18 @@ soft_constraint least_disk_filled(
 
 template<
   typename Mapper,
-  typename LabelType
-  = typename std::invoke_result_t<Mapper, model::node_id>::value_type>
+  typename LabelType =
+    typename std::invoke_result_t<Mapper, model::node_id>::value_type>
 concept LabelMapper = requires(Mapper mapper, model::node_id id) {
     { mapper(id) } -> std::convertible_to<std::optional<LabelType>>;
 };
 
 template<
   typename Mapper,
-  typename T =
-    typename std::invoke_result_t<Mapper, model::node_id>::value_type>
-requires LabelMapper<Mapper, T> soft_constraint
+  typename T
+  = typename std::invoke_result_t<Mapper, model::node_id>::value_type>
+requires LabelMapper<Mapper, T>
+soft_constraint
 distinct_labels_preferred(const char* label_name, Mapper&& mapper) {
     class impl : public soft_constraint::impl {
     public:

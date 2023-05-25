@@ -37,8 +37,8 @@ concept BatchReaderConsumer = requires(Consumer c, record_batch&& b) {
 };
 
 template<typename ReferenceConsumer>
-concept ReferenceBatchReaderConsumer
-  = requires(ReferenceConsumer c, record_batch& b) {
+concept ReferenceBatchReaderConsumer = requires(
+  ReferenceConsumer c, record_batch& b) {
     { c(b) } -> std::same_as<ss::future<ss::stop_iteration>>;
     c.end_of_stream();
 };

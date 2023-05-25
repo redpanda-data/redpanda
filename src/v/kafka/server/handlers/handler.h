@@ -106,19 +106,25 @@ using two_phase_handler = handler_template<
   MemEstimator>;
 
 template<typename T>
-concept KafkaApiHandler = KafkaApi<typename T::api> && requires(
-  T h, request_context&& ctx, ss::smp_service_group g) {
-    { T::min_supported } -> std::convertible_to<const api_version&>;
-    { T::max_supported } -> std::convertible_to<const api_version&>;
-    { T::handle(std::move(ctx), g) } -> std::same_as<ss::future<response_ptr>>;
-};
+concept KafkaApiHandler
+  = KafkaApi<typename T::api>
+    && requires(T h, request_context&& ctx, ss::smp_service_group g) {
+           { T::min_supported } -> std::convertible_to<const api_version&>;
+           { T::max_supported } -> std::convertible_to<const api_version&>;
+           {
+               T::handle(std::move(ctx), g)
+           } -> std::same_as<ss::future<response_ptr>>;
+       };
 template<typename T>
-concept KafkaApiTwoPhaseHandler = KafkaApi<typename T::api> && requires(
-  T h, request_context&& ctx, ss::smp_service_group g) {
-    { T::min_supported } -> std::convertible_to<const api_version&>;
-    { T::max_supported } -> std::convertible_to<const api_version&>;
-    { T::handle(std::move(ctx), g) } -> std::same_as<process_result_stages>;
-};
+concept KafkaApiTwoPhaseHandler
+  = KafkaApi<typename T::api>
+    && requires(T h, request_context&& ctx, ss::smp_service_group g) {
+           { T::min_supported } -> std::convertible_to<const api_version&>;
+           { T::max_supported } -> std::convertible_to<const api_version&>;
+           {
+               T::handle(std::move(ctx), g)
+           } -> std::same_as<process_result_stages>;
+       };
 
 template<typename T>
 concept KafkaApiHandlerAny = KafkaApiHandler<T> || KafkaApiTwoPhaseHandler<T>;

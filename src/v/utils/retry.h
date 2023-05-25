@@ -40,9 +40,9 @@ template<typename Func, typename DurationType = std::chrono::seconds, typename P
       { f() } -> std::same_as<ss::futurize_t<std::invoke_result_t<Func>>>;
   }
   && BackoffPolicy<Policy>
-  // clang-format on
-  ss::futurize_t<std::invoke_result_t<Func>> retry_with_backoff(
-    int max_retries, Func&& f, DurationType base_backoff = DurationType{1}) {
+// clang-format on
+ss::futurize_t<std::invoke_result_t<Func>> retry_with_backoff(
+  int max_retries, Func&& f, DurationType base_backoff = DurationType{1}) {
     using ss::stop_iteration;
     using ret = ss::futurize<std::invoke_result_t<Func>>;
     return ss::do_with(

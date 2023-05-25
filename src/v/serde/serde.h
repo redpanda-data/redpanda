@@ -83,9 +83,7 @@ concept has_serde_read = requires(T t, iobuf_parser& in, const header& h) {
 };
 
 template<typename T>
-concept has_serde_write = requires(T t, iobuf& out) {
-    t.serde_write(out);
-};
+concept has_serde_write = requires(T t, iobuf& out) { t.serde_write(out); };
 
 template<typename T>
 concept has_serde_async_read = requires(T t, iobuf_parser& in, header h) {
@@ -98,14 +96,14 @@ concept has_serde_async_write = requires(T t, iobuf& out) {
 };
 
 template<typename T>
-concept has_serde_direct_read
-  = requires(iobuf_parser& in, size_t bytes_left_limit) {
-    {T::serde_direct_read(in, bytes_left_limit)};
+concept has_serde_direct_read = requires(
+  iobuf_parser& in, size_t bytes_left_limit) {
+    { T::serde_direct_read(in, bytes_left_limit) };
 };
 
 template<typename T>
-concept has_serde_async_direct_read
-  = requires(iobuf_parser& in, size_t bytes_left_limit) {
+concept has_serde_async_direct_read = requires(
+  iobuf_parser& in, size_t bytes_left_limit) {
     { T::serde_async_direct_read(in, bytes_left_limit) } -> seastar::Future;
 };
 
@@ -222,9 +220,8 @@ int64_t checked_duration_cast_to_nanoseconds(
     // Extra check to ensure the output type is same as the underlying type
     // supported in lib[std]c++.
     static_assert(
-      std::is_same_v<
-        output_type,
-        int64_t> || std::is_same_v<output_type, long long>,
+      std::is_same_v<output_type, int64_t>
+        || std::is_same_v<output_type, long long>,
       "Output type not in supported integer types.");
 
     constexpr auto ratio_num = static_cast<output_type>(ratio::num);
@@ -257,12 +254,12 @@ int64_t checked_duration_cast_to_nanoseconds(
 inline void write(iobuf& out, uuid_t t);
 
 template<typename T>
-requires(
-  std::is_scalar_v<std::decay_t<
-    T>> && !serde_is_enum_v<std::decay_t<T>>) void write(iobuf& out, T t);
+requires(std::is_scalar_v<std::decay_t<T>> && !serde_is_enum_v<std::decay_t<T>>)
+void write(iobuf& out, T t);
 
 template<typename T>
-requires(serde_is_enum_v<std::decay_t<T>>) void write(iobuf& out, T t);
+requires(serde_is_enum_v<std::decay_t<T>>)
+void write(iobuf& out, T t);
 
 template<typename Rep, typename Period>
 void write(iobuf& out, std::chrono::duration<Rep, Period> t);
@@ -291,16 +288,16 @@ template<typename T>
 void write(iobuf& out, tristate<T> t);
 
 template<typename T>
-requires is_absl_node_hash_set<std::decay_t<T>> || is_absl_flat_hash_set<
-  std::decay_t<T>> || is_absl_btree_set<std::decay_t<T>>
+requires is_absl_node_hash_set<std::decay_t<T>>
+         || is_absl_flat_hash_set<std::decay_t<T>>
+         || is_absl_btree_set<std::decay_t<T>>
 void write(iobuf& out, T t);
 
 template<typename T>
-requires is_absl_node_hash_map<std::decay_t<T>> || is_absl_flat_hash_map<
-  std::decay_t<
-    T>> || is_std_unordered_map<std::decay_t<T>> || is_absl_btree_map<std::
-                                                                        decay_t<
-                                                                          T>>
+requires is_absl_node_hash_map<std::decay_t<T>>
+         || is_absl_flat_hash_map<std::decay_t<T>>
+         || is_std_unordered_map<std::decay_t<T>>
+         || is_absl_btree_map<std::decay_t<T>>
 void write(iobuf& out, T t);
 
 template<typename T>
@@ -320,9 +317,8 @@ inline void write(iobuf& out, uuid_t t) {
 }
 
 template<typename T>
-requires(
-  std::is_scalar_v<std::decay_t<
-    T>> && !serde_is_enum_v<std::decay_t<T>>) void write(iobuf& out, T t) {
+requires(std::is_scalar_v<std::decay_t<T>> && !serde_is_enum_v<std::decay_t<T>>)
+void write(iobuf& out, T t) {
     using Type = std::decay_t<T>;
     if constexpr (sizeof(Type) == 1) {
         out.append(reinterpret_cast<char const*>(&t), sizeof(t));
@@ -342,7 +338,8 @@ requires(
 }
 
 template<typename T>
-requires(serde_is_enum_v<std::decay_t<T>>) void write(iobuf& out, T t) {
+requires(serde_is_enum_v<std::decay_t<T>>)
+void write(iobuf& out, T t) {
     using Type = std::decay_t<T>;
     auto const val = static_cast<std::underlying_type_t<Type>>(t);
     if (unlikely(
@@ -466,8 +463,9 @@ void write(iobuf& out, tristate<T> t) {
 }
 
 template<typename T>
-requires is_absl_node_hash_set<std::decay_t<T>> || is_absl_flat_hash_set<
-  std::decay_t<T>> || is_absl_btree_set<std::decay_t<T>>
+requires is_absl_node_hash_set<std::decay_t<T>>
+         || is_absl_flat_hash_set<std::decay_t<T>>
+         || is_absl_btree_set<std::decay_t<T>>
 void write(iobuf& out, T t) {
     if (unlikely(t.size() > std::numeric_limits<serde_size_t>::max())) {
         throw serde_exception(fmt_with_ctx(
@@ -483,11 +481,10 @@ void write(iobuf& out, T t) {
 }
 
 template<typename T>
-requires is_absl_node_hash_map<std::decay_t<T>> || is_absl_flat_hash_map<
-  std::decay_t<
-    T>> || is_std_unordered_map<std::decay_t<T>> || is_absl_btree_map<std::
-                                                                        decay_t<
-                                                                          T>>
+requires is_absl_node_hash_map<std::decay_t<T>>
+         || is_absl_flat_hash_map<std::decay_t<T>>
+         || is_std_unordered_map<std::decay_t<T>>
+         || is_absl_btree_map<std::decay_t<T>>
 void write(iobuf& out, T t) {
     if (unlikely(t.size() > std::numeric_limits<serde_size_t>::max())) {
         throw serde_exception(fmt_with_ctx(
@@ -818,8 +815,8 @@ void read_nested(iobuf_parser& in, T& t, std::size_t const bytes_left_limit) {
             t.emplace(std::move(elem));
         }
     } else if constexpr (
-      is_absl_node_hash_map<
-        Type> || is_absl_flat_hash_map<Type> || is_std_unordered_map<Type>) {
+      is_absl_node_hash_map<Type> || is_absl_flat_hash_map<Type>
+      || is_std_unordered_map<Type>) {
         const auto size = read_nested<serde_size_t>(in, bytes_left_limit);
         t.reserve(size);
         for (auto i = 0U; i < size; ++i) {
