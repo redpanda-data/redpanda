@@ -36,7 +36,8 @@ private:
 };
 
 template<typename Consumer>
-requires model::BatchReaderConsumer<Consumer> assigning_consumer<Consumer>
+requires model::BatchReaderConsumer<Consumer>
+assigning_consumer<Consumer>
 wrap_with_offset_assignment(Consumer&& consumer, model::offset offset) {
     return assigning_consumer<Consumer>(
       std::forward<Consumer>(consumer), offset);

@@ -26,9 +26,8 @@ template<typename Request, typename... Ts>
 struct validator_type_list {};
 
 template<typename Request, typename... Validators>
-requires(
-  RequestValidator<Request, Validators>,
-  ...) using make_validator_types = validator_type_list<Request, Validators...>;
+requires(RequestValidator<Request, Validators>, ...)
+using make_validator_types = validator_type_list<Request, Validators...>;
 
 struct custom_partition_assignment_negative_partition_count {
     static constexpr error_code ec = error_code::invalid_request;

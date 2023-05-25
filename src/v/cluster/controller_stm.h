@@ -59,7 +59,9 @@ public:
 
     template<typename Cmd>
     requires ControllerCommand<Cmd>
-    bool throttle() { return _limiter.throttle<Cmd>(); }
+    bool throttle() {
+        return _limiter.throttle<Cmd>();
+    }
 
     ss::future<> shutdown();
 

@@ -64,9 +64,7 @@ inline std::string replace_control_chars_in_string(std::string_view s) {
 }
 
 template<typename T>
-concept ExceptionThrower = requires(T obj) {
-    obj.conversion_error();
-};
+concept ExceptionThrower = requires(T obj) { obj.conversion_error(); };
 
 struct default_utf8_thrower {
     [[noreturn]] [[gnu::cold]] void conversion_error() {

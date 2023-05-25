@@ -36,9 +36,7 @@ struct async_adl {
 namespace detail {
 
 template<typename T>
-concept Reservable = requires(T t, int32_t i) {
-    t.reserve(i);
-};
+concept Reservable = requires(T t, int32_t i) { t.reserve(i); };
 
 template<typename List>
 struct async_adl_list {

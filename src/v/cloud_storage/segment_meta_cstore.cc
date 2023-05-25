@@ -977,10 +977,11 @@ segment_meta_cstore::segment_meta_cstore()
 
 segment_meta_cstore::~segment_meta_cstore() = default;
 
-segment_meta_cstore::segment_meta_cstore(
-  segment_meta_cstore&&) noexcept = default;
+segment_meta_cstore::segment_meta_cstore(segment_meta_cstore&&) noexcept
+  = default;
 segment_meta_cstore&
-segment_meta_cstore::operator=(segment_meta_cstore&&) noexcept = default;
+segment_meta_cstore::operator=(segment_meta_cstore&&) noexcept
+  = default;
 
 bool segment_meta_cstore::operator==(segment_meta_cstore const& oth) const {
     // this overload of std::equal in clang stdlib works with const_iterator

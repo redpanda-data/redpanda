@@ -145,12 +145,13 @@ private:
         }
         intermediate_allocation(intermediate_allocation&&) noexcept = default;
 
-        intermediate_allocation(
-          const intermediate_allocation&) noexcept = delete;
+        intermediate_allocation(const intermediate_allocation&) noexcept
+          = delete;
+        intermediate_allocation& operator=(intermediate_allocation&&) noexcept
+          = default;
         intermediate_allocation&
-        operator=(intermediate_allocation&&) noexcept = default;
-        intermediate_allocation&
-        operator=(const intermediate_allocation&) noexcept = delete;
+        operator=(const intermediate_allocation&) noexcept
+          = delete;
 
         ~intermediate_allocation() {
             if (_state) {

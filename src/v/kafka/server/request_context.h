@@ -63,7 +63,7 @@ struct request_header {
 
 template<typename T>
 concept has_throttle_time_ms = requires(T a) {
-    {a.data.throttle_time_ms};
+    { a.data.throttle_time_ms };
 };
 
 class request_context {

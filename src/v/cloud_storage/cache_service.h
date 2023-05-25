@@ -41,8 +41,11 @@ struct [[nodiscard]] cache_item {
     size_t size;
 };
 
-enum class [[nodiscard]] cache_element_status{
-  available, not_available, in_progress};
+enum class [[nodiscard]] cache_element_status {
+    available,
+    not_available,
+    in_progress
+};
 std::ostream& operator<<(std::ostream& o, cache_element_status);
 
 class cache;

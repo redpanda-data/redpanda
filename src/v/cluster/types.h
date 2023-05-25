@@ -1813,10 +1813,11 @@ struct configuration_with_assignment
       : cfg(std::move(value))
       , assignments(std::move(pas)) {}
 
-    configuration_with_assignment(
-      configuration_with_assignment&&) noexcept = default;
+    configuration_with_assignment(configuration_with_assignment&&) noexcept
+      = default;
     configuration_with_assignment&
-    operator=(configuration_with_assignment&&) noexcept = default;
+    operator=(configuration_with_assignment&&) noexcept
+      = default;
     configuration_with_assignment&
     operator=(const configuration_with_assignment&)
       = delete;

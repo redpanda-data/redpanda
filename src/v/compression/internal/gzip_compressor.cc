@@ -45,8 +45,8 @@ public:
     gzip_compression_codec(const gzip_compression_codec&) = delete;
     gzip_compression_codec& operator=(const gzip_compression_codec&) = delete;
     gzip_compression_codec(gzip_compression_codec&&) noexcept = delete;
-    gzip_compression_codec&
-    operator=(gzip_compression_codec&&) noexcept = delete;
+    gzip_compression_codec& operator=(gzip_compression_codec&&) noexcept
+      = delete;
 
     void reset() {
         vassert(!_init, "Double initialized gzip decompression codec");
@@ -83,8 +83,8 @@ public:
     gzip_decompression_codec& operator=(const gzip_decompression_codec&)
       = delete;
     gzip_decompression_codec(gzip_decompression_codec&&) noexcept = delete;
-    gzip_decompression_codec&
-    operator=(gzip_decompression_codec&&) noexcept = delete;
+    gzip_decompression_codec& operator=(gzip_decompression_codec&&) noexcept
+      = delete;
 
     void reset() {
         vassert(!_init, "Double initialized gzip decompression codec");

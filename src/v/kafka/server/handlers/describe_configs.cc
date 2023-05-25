@@ -88,15 +88,15 @@ template<typename T>
 constexpr auto num_bits = CHAR_BIT * sizeof(T);
 
 template<typename T>
-constexpr bool is_short
-  = std::is_integral_v<T> && !std::is_same_v<T, bool> && num_bits<T> <= 16;
+constexpr bool is_short = std::is_integral_v<T> && !std::is_same_v<T, bool>
+                          && num_bits<T> <= 16;
 
 template<typename T>
-constexpr bool is_int = std::is_integral_v<T>&& num_bits<T> > 16
+constexpr bool is_int = std::is_integral_v<T> && num_bits<T> > 16
                         && num_bits<T> <= 32;
 
 template<typename T>
-constexpr bool is_long = std::is_integral_v<T>&& num_bits<T> > 32
+constexpr bool is_long = std::is_integral_v<T> && num_bits<T> > 32
                          && num_bits<T> <= 64;
 
 // property_config_type maps the datatype for a config property to

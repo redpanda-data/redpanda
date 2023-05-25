@@ -61,8 +61,9 @@ struct handler_interface {
      * connection_context for the associated connection is passed to give access
      * to global state which may be useful in making the estimate.
      */
-    virtual size_t memory_estimate(
-      size_t request_size, connection_context& conn_ctx) const = 0;
+    virtual size_t
+    memory_estimate(size_t request_size, connection_context& conn_ctx) const
+      = 0;
 
     /**
      * @brief Handles the request.
@@ -79,7 +80,8 @@ struct handler_interface {
      * the handler.
      */
     virtual process_result_stages
-    handle(request_context&&, ss::smp_service_group) const = 0;
+    handle(request_context&&, ss::smp_service_group) const
+      = 0;
 
     virtual ~handler_interface() = default;
 };

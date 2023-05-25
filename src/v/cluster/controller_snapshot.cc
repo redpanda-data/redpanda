@@ -47,9 +47,7 @@ ss::future<> write_map_async(iobuf& out, Map t) {
 }
 
 template<typename T>
-concept Reservable = requires(T t) {
-    t.reserve(0U);
-};
+concept Reservable = requires(T t) { t.reserve(0U); };
 
 template<typename Vec>
 ss::future<Vec>

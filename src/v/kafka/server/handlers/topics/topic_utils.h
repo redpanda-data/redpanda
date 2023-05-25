@@ -34,15 +34,15 @@ concept TopicRequestItem = requires(T item) {
     { item.name } -> std::convertible_to<model::topic_view>;
 };
 template<typename Iterator>
-concept TopicResultIterator = requires(Iterator it) {
-    it = creatable_topic_result{};
-}
-&&std::
-  is_same_v<typename Iterator::iterator_category, std::output_iterator_tag>;
+concept TopicResultIterator
+  = requires(Iterator it) { it = creatable_topic_result{}; }
+    && std::
+      is_same_v<typename Iterator::iterator_category, std::output_iterator_tag>;
 
 /// Generates failed creatable_topic_result for single topic request item
 template<typename T>
-requires TopicRequestItem<T> creatable_topic_result
+requires TopicRequestItem<T>
+creatable_topic_result
 generate_error(T item, error_code code, const ss::sstring& msg) {
     return creatable_topic_result{
       .name = item.name,
@@ -54,7 +54,7 @@ generate_error(T item, error_code code, const ss::sstring& msg) {
 /// Generates successfull creatable_topic_result for single topic request item
 template<typename T>
 requires TopicRequestItem<T>
-  creatable_topic_result generate_successfull_result(T item) {
+creatable_topic_result generate_successfull_result(T item) {
     return creatable_topic_result{
       .name = item.name, .error_code = error_code::none};
 }
@@ -67,14 +67,14 @@ template<typename Iter, typename ErrIter, typename Predicate>
     requires TopicRequestItem<typename Iter::value_type> &&
     TopicResultIterator<ErrIter> &&
     std::predicate<Predicate, std::iter_reference_t<Iter>>
-  // clang-format on
-  Iter validate_requests_range(
-    Iter begin,
-    Iter end,
-    ErrIter out_it,
-    error_code code,
-    const ss::sstring& error_msg,
-    Predicate&& p) {
+// clang-format on
+Iter validate_requests_range(
+  Iter begin,
+  Iter end,
+  ErrIter out_it,
+  error_code code,
+  const ss::sstring& error_msg,
+  Predicate&& p) {
     auto valid_range_end = std::partition(begin, end, p);
     std::transform(
       valid_range_end,
@@ -90,11 +90,11 @@ template<typename Iter, typename ErrIter, typename Predicate>
 /// type list
 template<typename Iter, typename ErrIter, typename... ValidatorTypes>
 requires TopicRequestItem<typename Iter::value_type>
-  Iter validate_requests_range(
-    Iter begin,
-    Iter end,
-    ErrIter err_it,
-    validator_type_list<typename Iter::value_type, ValidatorTypes...>) {
+Iter validate_requests_range(
+  Iter begin,
+  Iter end,
+  ErrIter err_it,
+  validator_type_list<typename Iter::value_type, ValidatorTypes...>) {
     ((end = validate_requests_range(
         begin,
         end,
@@ -142,8 +142,8 @@ auto to_cluster_type(KafkaApiTypeIter begin, KafkaApiTypeIter end)
 template<typename Iter, typename ErrIter>
 requires TopicRequestItem<typename Iter::value_type> &&
          TopicResultIterator<ErrIter>
-  // clang-format on
-  Iter validate_range_duplicates(Iter begin, Iter end, ErrIter out_it) {
+// clang-format on
+Iter validate_range_duplicates(Iter begin, Iter end, ErrIter out_it) {
     using type = typename Iter::value_type;
     boost::container::flat_map<model::topic_view, uint32_t> freq;
     freq.reserve(std::distance(begin, end));

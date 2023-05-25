@@ -531,17 +531,15 @@ public:
 namespace detail {
 
 template<typename T>
-concept has_type_name = requires(T x) {
-    x.type_name();
-};
+concept has_type_name = requires(T x) { x.type_name(); };
 
 template<typename T>
 concept is_collection = requires(T x) {
     typename T::value_type;
     !std::is_same_v<typename T::value_type, char>;
-    {x.size()};
-    {x.begin()};
-    {x.end()};
+    { x.size() };
+    { x.begin() };
+    { x.end() };
 };
 
 template<typename T>

@@ -159,24 +159,24 @@ inline auto read_enum_ut(json::Value const& v, char const* key, Enum)
 }
 
 template<typename Enum>
-requires(std::is_enum_v<Enum>) inline void read_value(
-  json::Value const& v, Enum& e) {
+requires(std::is_enum_v<Enum>)
+inline void read_value(json::Value const& v, Enum& e) {
     std::underlying_type_t<Enum> value;
     read_value(v, value);
     e = Enum(value);
 }
 
 template<typename Enum>
-requires(std::is_enum_v<Enum>) inline void read_member(
-  json::Value const& v, char const* key, Enum& e) {
+requires(std::is_enum_v<Enum>)
+inline void read_member(json::Value const& v, char const* key, Enum& e) {
     std::underlying_type_t<Enum> value;
     read_member(v, key, value);
     e = Enum(value);
 }
 
 template<typename T>
-requires(!std::is_enum_v<T>) void read_member(
-  json::Value const& v, char const* key, T& target) {
+requires(!std::is_enum_v<T>)
+void read_member(json::Value const& v, char const* key, T& target) {
     auto const it = v.FindMember(key);
     if (it != v.MemberEnd()) {
         read_value(it->value, target);

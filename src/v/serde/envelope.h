@@ -79,8 +79,8 @@ concept is_envelope = requires {
 };
 
 template<typename T>
-concept is_checksum_envelope
-  = is_envelope<T> && T::redpanda_serde_build_checksum;
+concept is_checksum_envelope = is_envelope<T>
+                               && T::redpanda_serde_build_checksum;
 
 template<typename T>
 concept inherits_from_envelope = T::redpanda_inherits_from_envelope;

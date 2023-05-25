@@ -107,14 +107,10 @@ inline void validate_payload_and_header(const iobuf& io, const header& h) {
  * then use the `is_rpc_adl_exempt` or `is_rpc_serde_exempt` concept to test.
  */
 template<typename T>
-concept is_rpc_adl_exempt = requires {
-    typename T::rpc_adl_exempt;
-};
+concept is_rpc_adl_exempt = requires { typename T::rpc_adl_exempt; };
 
 template<typename T>
-concept is_rpc_serde_exempt = requires {
-    typename T::rpc_serde_exempt;
-};
+concept is_rpc_serde_exempt = requires { typename T::rpc_serde_exempt; };
 
 /*
  * Encode a client request for the given transport version.

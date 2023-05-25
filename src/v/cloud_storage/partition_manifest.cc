@@ -2018,13 +2018,19 @@ struct partition_manifest_serde
 };
 
 static_assert(
-    std::tuple_size_v<decltype(std::declval<partition_manifest const&>().serde_fields())> == std::tuple_size_v<decltype(std::declval<partition_manifest&>().serde_fields())>,
-        "ensure that serde_fields() and serde_fields() const capture the same fields"
-    );
+  std::tuple_size_v<
+    decltype(std::declval<partition_manifest const&>().serde_fields())>
+    == std::tuple_size_v<
+      decltype(std::declval<partition_manifest&>().serde_fields())>,
+  "ensure that serde_fields() and serde_fields() const capture the same "
+  "fields");
 static_assert(
-    std::tuple_size_v<decltype(serde::envelope_to_tuple(std::declval<partition_manifest_serde&>()))> == std::tuple_size_v<decltype(std::declval<partition_manifest&>().serde_fields())>,
-        "partition_manifest_serde and partition_manifest must have the same number of fields, for serialization purposes"
-    );
+  std::tuple_size_v<decltype(serde::envelope_to_tuple(
+      std::declval<partition_manifest_serde&>()))>
+    == std::tuple_size_v<
+      decltype(std::declval<partition_manifest&>().serde_fields())>,
+  "partition_manifest_serde and partition_manifest must have the same number "
+  "of fields, for serialization purposes");
 
 // construct partition_manifest_serde while keeping
 // std::is_aggregate<partition_manifest_serde> true

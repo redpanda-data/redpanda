@@ -246,8 +246,8 @@ readers_cache::entry::make_cached_reader(readers_cache* cache) {
         cached_reader_impl& operator=(cached_reader_impl&&) noexcept = default;
 
         cached_reader_impl(const cached_reader_impl&) noexcept = delete;
-        cached_reader_impl&
-        operator=(const cached_reader_impl&) noexcept = delete;
+        cached_reader_impl& operator=(const cached_reader_impl&) noexcept
+          = delete;
 
         bool is_end_of_stream() const final {
             return _underlying->is_end_of_stream();

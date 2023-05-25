@@ -20,9 +20,7 @@ namespace serde {
 namespace detail {
 
 template<typename T>
-concept has_serde_fields = requires(T t) {
-    t.serde_fields();
-};
+concept has_serde_fields = requires(T t) { t.serde_fields(); };
 
 } // namespace detail
 
@@ -32,8 +30,8 @@ constexpr inline auto envelope_to_tuple(T&& t) {
 }
 
 template<typename T>
-requires(!detail::has_serde_fields<T>) constexpr inline auto envelope_to_tuple(
-  T& t) {
+requires(!detail::has_serde_fields<T>)
+constexpr inline auto envelope_to_tuple(T& t) {
     static_assert(std::is_aggregate_v<T>);
     static_assert(std::is_standard_layout_v<T>);
     static_assert(!std::is_polymorphic_v<T>);
