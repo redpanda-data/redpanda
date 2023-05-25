@@ -38,10 +38,10 @@ func newPrintCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 		Short:   "Display the current Redpanda configuration",
 		Args:    cobra.ExactArgs(0),
 		Run: func(cmd *cobra.Command, _ []string) {
-			cfg, err := p.Load(fs)
+			p, err := p.LoadVirtualProfile(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)
 
-			cl, err := admin.NewHostClient(fs, cfg, host)
+			cl, err := admin.NewHostClient(fs, p, host)
 			out.MaybeDie(err, "unable to initialize admin client: %v", err)
 
 			conf, err := cl.Config(cmd.Context(), true)
@@ -102,10 +102,10 @@ failure of enabling each logger is individually printed.
 `,
 
 		Run: func(cmd *cobra.Command, loggers []string) {
-			cfg, err := p.Load(fs)
+			p, err := p.LoadVirtualProfile(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)
 
-			cl, err := admin.NewHostClient(fs, cfg, host)
+			cl, err := admin.NewHostClient(fs, p, host)
 			out.MaybeDie(err, "unable to initialize admin client: %v", err)
 
 			switch len(loggers) {

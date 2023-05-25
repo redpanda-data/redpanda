@@ -65,7 +65,7 @@ type TunersFactory interface {
 
 type tunersFactory struct {
 	fs                afero.Fs
-	conf              config.RpkNodeTuners
+	t                 config.RpkNodeTuners
 	irqDeviceInfo     irq.DeviceInfo
 	cpuMasks          irq.CPUMasks
 	irqBalanceService irq.BalanceService
@@ -76,25 +76,25 @@ type tunersFactory struct {
 	executor          executors.Executor
 }
 
-func NewDirectExecutorTunersFactory(fs afero.Fs, conf config.RpkNodeTuners, timeout time.Duration) TunersFactory {
+func NewDirectExecutorTunersFactory(fs afero.Fs, t config.RpkNodeTuners, timeout time.Duration) TunersFactory {
 	irqProcFile := irq.NewProcFile(fs)
 	proc := os.NewProc()
 	irqDeviceInfo := irq.NewDeviceInfo(fs, irqProcFile)
 	executor := executors.NewDirectExecutor()
-	return newTunersFactory(fs, conf, irqProcFile, proc, irqDeviceInfo, executor, timeout)
+	return newTunersFactory(fs, t, irqProcFile, proc, irqDeviceInfo, executor, timeout)
 }
 
-func NewScriptRenderingTunersFactory(fs afero.Fs, conf config.RpkNodeTuners, out string, timeout time.Duration) TunersFactory {
+func NewScriptRenderingTunersFactory(fs afero.Fs, t config.RpkNodeTuners, out string, timeout time.Duration) TunersFactory {
 	irqProcFile := irq.NewProcFile(fs)
 	proc := os.NewProc()
 	irqDeviceInfo := irq.NewDeviceInfo(fs, irqProcFile)
 	executor := executors.NewScriptRenderingExecutor(fs, out)
-	return newTunersFactory(fs, conf, irqProcFile, proc, irqDeviceInfo, executor, timeout)
+	return newTunersFactory(fs, t, irqProcFile, proc, irqDeviceInfo, executor, timeout)
 }
 
 func newTunersFactory(
 	fs afero.Fs,
-	conf config.RpkNodeTuners,
+	t config.RpkNodeTuners,
 	irqProcFile irq.ProcFile,
 	proc os.Proc,
 	irqDeviceInfo irq.DeviceInfo,
@@ -103,7 +103,7 @@ func newTunersFactory(
 ) TunersFactory {
 	return &tunersFactory{
 		fs:                fs,
-		conf:              conf,
+		t:                 t,
 		irqProcFile:       irqProcFile,
 		irqDeviceInfo:     irqDeviceInfo,
 		cpuMasks:          irq.NewCPUMasks(fs, hwloc.NewHwLocCmd(proc, timeout), executor),
@@ -279,20 +279,20 @@ func (factory *tunersFactory) newTHPTuner(_ *TunerParams) tuners.Tunable {
 }
 
 func (factory *tunersFactory) newCoredumpTuner(_ *TunerParams) tuners.Tunable {
-	return coredump.NewCoredumpTuner(factory.fs, factory.conf.CoredumpDir, factory.executor)
+	return coredump.NewCoredumpTuner(factory.fs, factory.t.CoredumpDir, factory.executor)
 }
 
 func (factory *tunersFactory) newBallastFileTuner(
 	_ *TunerParams,
 ) tuners.Tunable {
-	return ballast.NewBallastFileTuner(factory.conf.BallastFilePath, factory.conf.BallastFileSize, factory.executor)
+	return ballast.NewBallastFileTuner(factory.t.BallastFilePath, factory.t.BallastFileSize, factory.executor)
 }
 
-func MergeTunerParamsConfig(params *TunerParams, conf *config.Config) (*TunerParams, error) {
+func MergeTunerParamsConfig(params *TunerParams, y *config.RedpandaYaml) (*TunerParams, error) {
 	if len(params.Nics) == 0 {
-		addrs := []string{conf.Redpanda.RPCServer.Address}
-		if len(conf.Redpanda.KafkaAPI) > 0 {
-			addrs = append(addrs, conf.Redpanda.KafkaAPI[0].Address)
+		addrs := []string{y.Redpanda.RPCServer.Address}
+		if len(y.Redpanda.KafkaAPI) > 0 {
+			addrs = append(addrs, y.Redpanda.KafkaAPI[0].Address)
 		}
 		nics, err := net.GetInterfacesByIps(
 			addrs...,
@@ -303,15 +303,15 @@ func MergeTunerParamsConfig(params *TunerParams, conf *config.Config) (*TunerPar
 		params.Nics = nics
 	}
 	if len(params.Directories) == 0 {
-		params.Directories = []string{conf.Redpanda.Directory}
+		params.Directories = []string{y.Redpanda.Directory}
 	}
 	return params, nil
 }
 
-func FillTunerParamsWithValuesFromConfig(params *TunerParams, conf *config.Config) error {
-	addrs := []string{conf.Redpanda.RPCServer.Address}
-	if len(conf.Redpanda.KafkaAPI) > 0 {
-		addrs = append(addrs, conf.Redpanda.KafkaAPI[0].Address)
+func FillTunerParamsWithValuesFromConfig(params *TunerParams, y *config.RedpandaYaml) error {
+	addrs := []string{y.Redpanda.RPCServer.Address}
+	if len(y.Redpanda.KafkaAPI) > 0 {
+		addrs = append(addrs, y.Redpanda.KafkaAPI[0].Address)
 	}
 	nics, err := net.GetInterfacesByIps(
 		addrs...,
@@ -321,7 +321,7 @@ func FillTunerParamsWithValuesFromConfig(params *TunerParams, conf *config.Confi
 	}
 	params.Nics = nics
 	zap.L().Sugar().Debugf("Redpanda uses '%v' NICs", params.Nics)
-	zap.L().Sugar().Debugf("Redpanda data directory '%s'", conf.Redpanda.Directory)
-	params.Directories = []string{conf.Redpanda.Directory}
+	zap.L().Sugar().Debugf("Redpanda data directory '%s'", y.Redpanda.Directory)
+	params.Directories = []string{y.Redpanda.Directory}
 	return nil
 }

@@ -60,14 +60,14 @@ func executeK8SBundle(ctx context.Context, bp bundleParams) error {
 
 	steps := []step{
 		saveKafkaMetadata(ctx, ps, bp.cl),
-		saveDataDirStructure(ps, bp.cfg),
-		saveConfig(ps, bp.cfg),
+		saveDataDirStructure(ps, bp.y),
+		saveConfig(ps, bp.yActual),
 		saveCPUInfo(ps),
 		saveInterrupts(ps),
-		saveResourceUsageData(ps, bp.cfg),
+		saveResourceUsageData(ps, bp.y),
 		saveNTPDrift(ps),
-		saveDiskUsage(ctx, ps, bp.cfg),
-		saveControllerLogDir(ps, bp.cfg, bp.controllerLogLimitBytes),
+		saveDiskUsage(ctx, ps, bp.y),
+		saveControllerLogDir(ps, bp.y, bp.controllerLogLimitBytes),
 		saveK8SResources(ctx, ps, bp.namespace),
 		saveK8SLogs(ctx, ps, bp.namespace, bp.logsSince, bp.logsLimitBytes),
 	}
@@ -77,8 +77,8 @@ func executeK8SBundle(ctx context.Context, bp bundleParams) error {
 		errs = multierror.Append(errs, fmt.Errorf("skipping admin API calls, unable to get admin API addresses: %v", err))
 	} else {
 		steps = append(steps, []step{
-			saveClusterAdminAPICalls(ctx, ps, bp.fs, bp.cfg, adminAddresses),
-			saveSingleAdminAPICalls(ctx, ps, bp.fs, bp.cfg, adminAddresses, bp.metricsInterval),
+			saveClusterAdminAPICalls(ctx, ps, bp.fs, bp.p, adminAddresses),
+			saveSingleAdminAPICalls(ctx, ps, bp.fs, bp.p, adminAddresses, bp.metricsInterval),
 		}...)
 	}
 	for _, s := range steps {
@@ -195,17 +195,15 @@ func getClusterDomain() string {
 //   - License Info: /v1/features/license
 //   - Cluster Config: /v1/cluster_config
 //   - Reconfigurations: /v1/partitions/reconfigurations
-func saveClusterAdminAPICalls(ctx context.Context, ps *stepParams, fs afero.Fs, cfg *config.Config, adminAddresses []string) step {
+func saveClusterAdminAPICalls(ctx context.Context, ps *stepParams, fs afero.Fs, p *config.RpkProfile, adminAddresses []string) step {
 	return func() error {
-		allCfg := &config.Config{
-			Rpk: config.RpkNodeConfig{
-				AdminAPI: config.RpkAdminAPI{
-					Addresses: adminAddresses,
-					TLS:       cfg.Rpk.AdminAPI.TLS,
-				},
+		p = &config.RpkProfile{
+			AdminAPI: config.RpkAdminAPI{
+				Addresses: adminAddresses,
+				TLS:       p.AdminAPI.TLS,
 			},
 		}
-		cl, err := admin.NewClient(fs, allCfg)
+		cl, err := admin.NewClient(fs, p)
 		if err != nil {
 			return fmt.Errorf("unable to initialize admin client: %v", err)
 		}
@@ -236,21 +234,19 @@ func saveClusterAdminAPICalls(ctx context.Context, ps *stepParams, fs afero.Fs, 
 //   - Node Config: /v1/node_config
 //   - Prometheus Metrics: /metrics and /public_metrics
 //   - Cluster View: v1/cluster_view
-func saveSingleAdminAPICalls(ctx context.Context, ps *stepParams, fs afero.Fs, cfg *config.Config, adminAddresses []string, metricsInterval time.Duration) step {
+func saveSingleAdminAPICalls(ctx context.Context, ps *stepParams, fs afero.Fs, p *config.RpkProfile, adminAddresses []string, metricsInterval time.Duration) step {
 	return func() error {
 		var rerrs *multierror.Error
 		var funcs []func() error
 		for _, a := range adminAddresses {
 			a := a
-			c := &config.Config{
-				Rpk: config.RpkNodeConfig{
-					AdminAPI: config.RpkAdminAPI{
-						Addresses: []string{a},
-						TLS:       cfg.Rpk.AdminAPI.TLS,
-					},
+			p = &config.RpkProfile{
+				AdminAPI: config.RpkAdminAPI{
+					Addresses: []string{a},
+					TLS:       p.AdminAPI.TLS,
 				},
 			}
-			cl, err := admin.NewClient(fs, c)
+			cl, err := admin.NewClient(fs, p)
 			if err != nil {
 				rerrs = multierror.Append(rerrs, fmt.Errorf("unable to initialize admin client for %q: %v", a, err))
 				continue

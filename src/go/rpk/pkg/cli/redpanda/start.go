@@ -80,19 +80,19 @@ const (
 	checkFlag             = "check"
 )
 
-func updateConfigWithFlags(conf *config.Config, flags *pflag.FlagSet) {
+func updateConfigWithFlags(y *config.RedpandaYaml, flags *pflag.FlagSet) {
 	if flags.Changed(lockMemoryFlag) {
-		conf.Rpk.Tuners.EnableMemoryLocking, _ = flags.GetBool(lockMemoryFlag)
+		y.Rpk.EnableMemoryLocking, _ = flags.GetBool(lockMemoryFlag)
 	}
 	if flags.Changed(wellKnownIOFlag) {
-		conf.Rpk.Tuners.WellKnownIo, _ = flags.GetString(wellKnownIOFlag)
+		y.Rpk.Tuners.WellKnownIo, _ = flags.GetString(wellKnownIOFlag)
 	}
 	if flags.Changed(overprovisionedFlag) {
-		conf.Rpk.Tuners.Overprovisioned, _ = flags.GetBool(overprovisionedFlag)
+		y.Rpk.Overprovisioned, _ = flags.GetBool(overprovisionedFlag)
 	}
 	if flags.Changed(nodeIDFlag) {
-		conf.Redpanda.ID = new(int)
-		*conf.Redpanda.ID, _ = flags.GetInt(nodeIDFlag)
+		y.Redpanda.ID = new(int)
+		*y.Redpanda.ID, _ = flags.GetInt(nodeIDFlag)
 	}
 }
 
@@ -155,15 +155,15 @@ func NewStartCommand(fs afero.Fs, p *config.Params, launcher rp.Launcher) *cobra
 			// The magic `--set` flag is what modifies any redpanda.yaml fields.
 			// Thus, we can ignore any env / flags that would come from rpk
 			// configuration itself.
-			cfg = cfg.FileOrDefaults()
-			if cfg.Redpanda.DeveloperMode && len(mode) == 0 {
+			y := cfg.ActualRedpandaYamlOrDefaults()
+			if y.Redpanda.DeveloperMode && len(mode) == 0 {
 				mode = "dev-container"
 			}
 			switch mode {
 			case "dev-container":
 				fmt.Fprintln(os.Stderr, "WARNING: This is a setup for development purposes only; in this mode your clusters may run unrealistically fast and data can be corrupted any time your computer shuts down uncleanly.")
 				setContainerModeFlags(cmd)
-				setContainerModeCfgFields(cfg)
+				setContainerModeCfgFields(y)
 			case "help":
 				fmt.Println(helpMode)
 				return nil
@@ -174,12 +174,12 @@ func NewStartCommand(fs afero.Fs, p *config.Params, launcher rp.Launcher) *cobra
 			}
 
 			if len(configKvs) > 0 {
-				if err = setConfig(cfg, configKvs); err != nil {
+				if err = setConfig(y, configKvs); err != nil {
 					return err
 				}
 			}
 
-			updateConfigWithFlags(cfg, cmd.Flags())
+			updateConfigWithFlags(y, cmd.Flags())
 
 			if len(seeds) == 0 {
 				// If --seeds wasn't passed, fall back to the
@@ -197,7 +197,7 @@ func NewStartCommand(fs afero.Fs, p *config.Params, launcher rp.Launcher) *cobra
 				return err
 			}
 			if len(seedServers) != 0 {
-				cfg.Redpanda.SeedServers = seedServers
+				y.Redpanda.SeedServers = seedServers
 			}
 
 			kafkaAddr = stringSliceOr(
@@ -215,7 +215,7 @@ func NewStartCommand(fs afero.Fs, p *config.Params, launcher rp.Launcher) *cobra
 				return err
 			}
 			if len(kafkaAPI) > 0 {
-				cfg.Redpanda.KafkaAPI = kafkaAPI
+				y.Redpanda.KafkaAPI = kafkaAPI
 			}
 
 			proxyAddr = stringSliceOr(
@@ -233,10 +233,10 @@ func NewStartCommand(fs afero.Fs, p *config.Params, launcher rp.Launcher) *cobra
 				return err
 			}
 			if len(proxyAPI) > 0 {
-				if cfg.Pandaproxy == nil {
-					cfg.Pandaproxy = config.DevDefault().Pandaproxy
+				if y.Pandaproxy == nil {
+					y.Pandaproxy = config.DevDefault().Pandaproxy
 				}
-				cfg.Pandaproxy.PandaproxyAPI = proxyAPI
+				y.Pandaproxy.PandaproxyAPI = proxyAPI
 			}
 
 			schemaRegAddr = stringSliceOr(
@@ -254,10 +254,10 @@ func NewStartCommand(fs afero.Fs, p *config.Params, launcher rp.Launcher) *cobra
 				return err
 			}
 			if len(schemaRegAPI) > 0 {
-				if cfg.SchemaRegistry == nil {
-					cfg.SchemaRegistry = config.DevDefault().SchemaRegistry
+				if y.SchemaRegistry == nil {
+					y.SchemaRegistry = config.DevDefault().SchemaRegistry
 				}
-				cfg.SchemaRegistry.SchemaRegistryAPI = schemaRegAPI
+				y.SchemaRegistry.SchemaRegistryAPI = schemaRegAPI
 			}
 
 			rpcAddr = stringOr(
@@ -272,7 +272,7 @@ func NewStartCommand(fs afero.Fs, p *config.Params, launcher rp.Launcher) *cobra
 				return err
 			}
 			if rpcServer != nil {
-				cfg.Redpanda.RPCServer = *rpcServer
+				y.Redpanda.RPCServer = *rpcServer
 			}
 
 			advertisedKafka = stringSliceOr(
@@ -291,7 +291,7 @@ func NewStartCommand(fs afero.Fs, p *config.Params, launcher rp.Launcher) *cobra
 			}
 
 			if len(advKafkaAPI) > 0 {
-				cfg.Redpanda.AdvertisedKafkaAPI = advKafkaAPI
+				y.Redpanda.AdvertisedKafkaAPI = advKafkaAPI
 			}
 
 			advertisedProxy = stringSliceOr(
@@ -309,10 +309,10 @@ func NewStartCommand(fs afero.Fs, p *config.Params, launcher rp.Launcher) *cobra
 				return err
 			}
 			if len(advProxyAPI) > 0 {
-				if cfg.Pandaproxy == nil {
-					cfg.Pandaproxy = config.DevDefault().Pandaproxy
+				if y.Pandaproxy == nil {
+					y.Pandaproxy = config.DevDefault().Pandaproxy
 				}
-				cfg.Pandaproxy.AdvertisedPandaproxyAPI = advProxyAPI
+				y.Pandaproxy.AdvertisedPandaproxyAPI = advProxyAPI
 			}
 
 			advertisedRPC = stringOr(
@@ -327,7 +327,7 @@ func NewStartCommand(fs afero.Fs, p *config.Params, launcher rp.Launcher) *cobra
 				return err
 			}
 			if advRPCApi != nil {
-				cfg.Redpanda.AdvertisedRPCAPI = advRPCApi
+				y.Redpanda.AdvertisedRPCAPI = advRPCApi
 			}
 			installDirectory, err := getOrFindInstallDir(fs, installDirFlag)
 			if err != nil {
@@ -335,7 +335,7 @@ func NewStartCommand(fs afero.Fs, p *config.Params, launcher rp.Launcher) *cobra
 			}
 			rpArgs, err := buildRedpandaFlags(
 				fs,
-				cfg,
+				y,
 				filteredArgs,
 				sFlags,
 				cmd.Flags(),
@@ -346,16 +346,16 @@ func NewStartCommand(fs afero.Fs, p *config.Params, launcher rp.Launcher) *cobra
 				return err
 			}
 
-			if cfg.Redpanda.Directory == "" {
-				cfg.Redpanda.Directory = config.DevDefault().Redpanda.Directory
+			if y.Redpanda.Directory == "" {
+				y.Redpanda.Directory = config.DevDefault().Redpanda.Directory
 			}
 
-			err = prestart(fs, rpArgs, cfg, prestartCfg, timeout)
+			err = prestart(fs, rpArgs, y, prestartCfg, timeout)
 			if err != nil {
 				return err
 			}
 
-			err = cfg.Write(fs)
+			err = y.Write(fs)
 			if err != nil {
 				return err
 			}
@@ -429,13 +429,13 @@ func flagsMap(sFlags seastarFlags) map[string]interface{} {
 func prestart(
 	fs afero.Fs,
 	args *rp.RedpandaArgs,
-	conf *config.Config,
+	y *config.RedpandaYaml,
 	prestartCfg prestartConfig,
 	timeout time.Duration,
 ) error {
 	if prestartCfg.checkEnabled {
 		fmt.Println("System check - STARTED")
-		err := check(fs, conf, timeout, checkFailedActions(args))
+		err := check(fs, y, timeout, checkFailedActions(args))
 		if err != nil {
 			return fmt.Errorf("unable to check if system meets redpanda requirements: %v; to override this check you can use --check=false", err)
 		}
@@ -444,7 +444,7 @@ func prestart(
 	if prestartCfg.tuneEnabled {
 		fmt.Println("System tune - STARTED")
 		cpuset := fmt.Sprint(args.SeastarFlags[cpuSetFlag])
-		err := tuneAll(fs, cpuset, conf, timeout)
+		err := tuneAll(fs, cpuset, y, timeout)
 		if err != nil {
 			return fmt.Errorf("unable to tune your system: %v; to avoid tuning your machine you can use --tune=false", err)
 		}
@@ -455,14 +455,14 @@ func prestart(
 
 func buildRedpandaFlags(
 	fs afero.Fs,
-	conf *config.Config,
+	y *config.RedpandaYaml,
 	args []string,
 	sFlags seastarFlags,
 	flags *pflag.FlagSet,
 	skipChecks bool,
-	ioResolver func(*config.Config, bool) (*iotune.IoProperties, error),
+	ioResolver func(*config.RedpandaYaml, bool) (*iotune.IoProperties, error),
 ) (*rp.RedpandaArgs, error) {
-	wellKnownIOSet := conf.Rpk.Tuners.WellKnownIo != ""
+	wellKnownIOSet := y.Rpk.Tuners.WellKnownIo != ""
 	ioPropsSet := flags.Changed(ioPropertiesFileFlag) || flags.Changed(ioPropertiesFlag)
 	if wellKnownIOSet && ioPropsSet {
 		return nil, errors.New(
@@ -479,7 +479,7 @@ func buildRedpandaFlags(
 	if !ioPropsSet {
 		// If --io-properties-file and --io-properties weren't set, try
 		// finding an IO props file in the default location.
-		sFlags.ioPropertiesFile = rp.GetIOConfigPath(filepath.Dir(conf.FileLocation()))
+		sFlags.ioPropertiesFile = rp.GetIOConfigPath(filepath.Dir(y.FileLocation()))
 		preserve[ioPropertiesFileFlag] = true
 
 		if exists, _ := afero.Exists(fs, sFlags.ioPropertiesFile); !exists {
@@ -488,7 +488,7 @@ func buildRedpandaFlags(
 
 			// If the file is not located in the default location either, we try
 			// to deduce the IO props.
-			ioProps, err := ioResolver(conf, skipChecks)
+			ioProps, err := ioResolver(y, skipChecks)
 			if err != nil {
 				zap.L().Sugar().Warn(err)
 			} else if ioProps != nil {
@@ -507,9 +507,9 @@ func buildRedpandaFlags(
 			delete(flagsMap, flag)
 		}
 	}
-	flagsMap = flagsFromConf(conf, flagsMap, flags)
+	flagsMap = flagsFromConf(y, flagsMap, flags)
 	finalFlags := mergeMaps(
-		parseFlags(conf.Rpk.AdditionalStartFlags),
+		parseFlags(y.Rpk.AdditionalStartFlags),
 		extraFlags(flags, args),
 	)
 	for n, v := range flagsMap {
@@ -522,26 +522,26 @@ func buildRedpandaFlags(
 					" remove it and pass '--%s' directly"+
 					" to `rpk start`",
 				n,
-				conf.FileLocation(),
+				y.FileLocation(),
 				n,
 			)
 		}
 		finalFlags[n] = fmt.Sprint(v)
 	}
 	return &rp.RedpandaArgs{
-		ConfigFilePath: conf.FileLocation(),
+		ConfigFilePath: y.FileLocation(),
 		SeastarFlags:   finalFlags,
 	}, nil
 }
 
 func flagsFromConf(
-	conf *config.Config, flagsMap map[string]interface{}, flags *pflag.FlagSet,
+	y *config.RedpandaYaml, flagsMap map[string]interface{}, flags *pflag.FlagSet,
 ) map[string]interface{} {
-	flagsMap[overprovisionedFlag] = conf.Rpk.Tuners.Overprovisioned
-	flagsMap[lockMemoryFlag] = conf.Rpk.Tuners.EnableMemoryLocking
+	flagsMap[overprovisionedFlag] = y.Rpk.Overprovisioned
+	flagsMap[lockMemoryFlag] = y.Rpk.EnableMemoryLocking
 	// Setting SMP to 0 doesn't make sense.
-	if !flags.Changed(smpFlag) && conf.Rpk.Tuners.SMP != nil && *conf.Rpk.Tuners.SMP != 0 {
-		flagsMap[smpFlag] = *conf.Rpk.Tuners.SMP
+	if !flags.Changed(smpFlag) && y.Rpk.SMP != nil && *y.Rpk.SMP != 0 {
+		flagsMap[smpFlag] = *y.Rpk.SMP
 	}
 	return flagsMap
 }
@@ -566,7 +566,7 @@ func mergeFlags(
 	return current
 }
 
-func setConfig(cfg *config.Config, configKvs []string) error {
+func setConfig(y *config.RedpandaYaml, configKvs []string) error {
 	for _, rawKv := range configKvs {
 		parts := strings.SplitN(rawKv, "=", 2)
 		if len(parts) < 2 {
@@ -575,7 +575,7 @@ func setConfig(cfg *config.Config, configKvs []string) error {
 				rawKv,
 			)
 		}
-		err := cfg.Set(parts[0], parts[1], "")
+		err := config.Set(y, parts[0], parts[1])
 		if err != nil {
 			return err
 		}
@@ -584,11 +584,11 @@ func setConfig(cfg *config.Config, configKvs []string) error {
 }
 
 func resolveWellKnownIo(
-	conf *config.Config, skipChecks bool,
+	y *config.RedpandaYaml, skipChecks bool,
 ) (*iotune.IoProperties, error) {
 	var ioProps *iotune.IoProperties
-	if conf.Rpk.Tuners.WellKnownIo != "" {
-		wellKnownIoTokens := strings.Split(conf.Rpk.Tuners.WellKnownIo, ":")
+	if y.Rpk.Tuners.WellKnownIo != "" {
+		wellKnownIoTokens := strings.Split(y.Rpk.Tuners.WellKnownIo, ":")
 		if len(wellKnownIoTokens) != 3 {
 			err := errors.New(
 				"--well-known-io should have the format '<vendor>:<vm type>:<storage type>'",
@@ -596,7 +596,7 @@ func resolveWellKnownIo(
 			return nil, err
 		}
 		ioProps, err := iotune.DataFor(
-			conf.Redpanda.Directory,
+			y.Redpanda.Directory,
 			wellKnownIoTokens[0],
 			wellKnownIoTokens[1],
 			wellKnownIoTokens[2],
@@ -616,7 +616,7 @@ func resolveWellKnownIo(
 	if err != nil {
 		return nil, errors.New("Could not detect the current cloud vendor")
 	}
-	ioProps, err = iotune.DataForVendor(conf.Redpanda.Directory, vendor)
+	ioProps, err = iotune.DataForVendor(y.Redpanda.Directory, vendor)
 	if err != nil {
 		// Log the error to let the user know that the data wasn't found
 		return nil, err
@@ -625,10 +625,10 @@ func resolveWellKnownIo(
 }
 
 func tuneAll(
-	fs afero.Fs, cpuSet string, conf *config.Config, timeout time.Duration,
+	fs afero.Fs, cpuSet string, y *config.RedpandaYaml, timeout time.Duration,
 ) error {
 	params := &factory.TunerParams{}
-	tunerFactory := factory.NewDirectExecutorTunersFactory(fs, conf.Rpk.Tuners, timeout)
+	tunerFactory := factory.NewDirectExecutorTunersFactory(fs, y.Rpk.Tuners, timeout)
 	hw := hwloc.NewHwLocCmd(vos.NewProc(), timeout)
 	if cpuSet == "" {
 		cpuMask, err := hw.All()
@@ -644,7 +644,7 @@ func tuneAll(
 		params.CPUMask = cpuMask
 	}
 
-	err := factory.FillTunerParamsWithValuesFromConfig(params, conf)
+	err := factory.FillTunerParamsWithValuesFromConfig(params, y)
 	if err != nil {
 		return err
 	}
@@ -652,7 +652,7 @@ func tuneAll(
 	availableTuners := factory.AvailableTuners()
 
 	for _, tunerName := range availableTuners {
-		enabled := factory.IsTunerEnabled(tunerName, conf.Rpk.Tuners)
+		enabled := factory.IsTunerEnabled(tunerName, y.Rpk.Tuners)
 		tuner := tunerFactory.CreateTuner(tunerName, params)
 		supported, reason := tuner.CheckIfSupported()
 		if !enabled {
@@ -687,11 +687,11 @@ func checkFailedActions(
 
 func check(
 	fs afero.Fs,
-	conf *config.Config,
+	y *config.RedpandaYaml,
 	timeout time.Duration,
 	checkFailedActions map[tuners.CheckerID]checkFailedAction,
 ) error {
-	results, err := tuners.Check(fs, conf, timeout)
+	results, err := tuners.Check(fs, y, timeout)
 	if err != nil {
 		return err
 	}
@@ -947,20 +947,20 @@ func setContainerModeFlags(cmd *cobra.Command) {
 	}
 }
 
-func setContainerModeCfgFields(cfg *config.Config) {
-	cfg.Redpanda.DeveloperMode = true
+func setContainerModeCfgFields(y *config.RedpandaYaml) {
+	y.Redpanda.DeveloperMode = true
 
 	// cluster properties:
-	if cfg.Redpanda.Other == nil {
-		cfg.Redpanda.Other = make(map[string]interface{})
+	if y.Redpanda.Other == nil {
+		y.Redpanda.Other = make(map[string]interface{})
 	}
-	cfg.Redpanda.Other["auto_create_topics_enabled"] = true
-	cfg.Redpanda.Other["group_topic_partitions"] = 3
-	cfg.Redpanda.Other["storage_min_free_bytes"] = 10485760
-	cfg.Redpanda.Other["topic_partitions_per_shard"] = 1000
-	cfg.Redpanda.Other["fetch_reads_debounce_timeout"] = 10
-	cfg.Redpanda.Other["group_initial_rebalance_delay"] = 0
-	cfg.Redpanda.Other["log_segment_size_min"] = 1
+	y.Redpanda.Other["auto_create_topics_enabled"] = true
+	y.Redpanda.Other["group_topic_partitions"] = 3
+	y.Redpanda.Other["storage_min_free_bytes"] = 10485760
+	y.Redpanda.Other["topic_partitions_per_shard"] = 1000
+	y.Redpanda.Other["fetch_reads_debounce_timeout"] = 10
+	y.Redpanda.Other["group_initial_rebalance_delay"] = 0
+	y.Redpanda.Other["log_segment_size_min"] = 1
 }
 
 func getOrFindInstallDir(fs afero.Fs, installDir string) (string, error) {

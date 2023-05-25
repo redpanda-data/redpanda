@@ -16,10 +16,6 @@ class RpkRemoteTool:
         self._redpanda = redpanda
         self._node = node
 
-    def config_init(self, path=None, timeout=30):
-        cmd = ['init']
-        return self._run_config(cmd, path, timeout)
-
     def config_set(self, key, value, format=None, path=None, timeout=30):
         cmd = [
             'set',

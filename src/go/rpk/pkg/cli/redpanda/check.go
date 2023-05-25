@@ -30,9 +30,9 @@ func NewCheckCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 		Use:   "check",
 		Short: "Check if system meets redpanda requirements",
 		Run: func(_ *cobra.Command, args []string) {
-			cfg, err := p.Load(fs)
+			y, err := p.LoadVirtualRedpandaYaml(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)
-			err = executeCheck(fs, cfg, timeout)
+			err = executeCheck(fs, y, timeout)
 			out.MaybeDie(err, "unable to check: %v", err)
 		},
 	}
@@ -41,9 +41,9 @@ func NewCheckCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 }
 
 func executeCheck(
-	fs afero.Fs, cfg *config.Config, timeout time.Duration,
+	fs afero.Fs, y *config.RedpandaYaml, timeout time.Duration,
 ) error {
-	results, err := tuners.Check(fs, cfg, timeout)
+	results, err := tuners.Check(fs, y, timeout)
 	if err != nil {
 		return err
 	}

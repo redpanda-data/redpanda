@@ -49,22 +49,22 @@ You may use 'rpk redpanda config set' to enable or disable a tuner.
 `,
 		Args: cobra.ExactArgs(0),
 		Run: func(*cobra.Command, []string) {
-			cfg, err := p.Load(fs)
+			y, err := p.LoadVirtualRedpandaYaml(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)
 
 			// Using cpu mask and timeout defaults since we are not executing
 			// any tuner.
 			tunerParams.CPUMask = "all"
-			tunerFactory := factory.NewDirectExecutorTunersFactory(fs, cfg.Rpk.Tuners, 10000*time.Millisecond)
+			tunerFactory := factory.NewDirectExecutorTunersFactory(fs, y.Rpk.Tuners, 10000*time.Millisecond)
 
-			params, err := factory.MergeTunerParamsConfig(&tunerParams, cfg)
+			params, err := factory.MergeTunerParamsConfig(&tunerParams, y)
 			out.MaybeDieErr(err)
 
 			var list []tunerInfo
 
 			for _, name := range factory.AvailableTuners() {
 				tuner := tunerFactory.CreateTuner(name, params)
-				enabled := factory.IsTunerEnabled(name, cfg.Rpk.Tuners)
+				enabled := factory.IsTunerEnabled(name, y.Rpk.Tuners)
 				supported, reason := tuner.CheckIfSupported()
 				list = append(list, tunerInfo{name, enabled, supported, reason})
 			}

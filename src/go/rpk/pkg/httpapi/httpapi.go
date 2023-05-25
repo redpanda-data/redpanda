@@ -37,6 +37,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"go.uber.org/zap"
 )
 
 // BodyError is returned on non-2xx status codes. For 4xx, you can optionally
@@ -61,6 +63,7 @@ type Client struct {
 	retries    int
 	maxBackoff time.Duration
 	err4xxFn   func(int) error
+	reqTimeout time.Duration
 }
 
 // Close closes the underlying http client's idle connections, freeing any idle
@@ -120,6 +123,9 @@ func BearerAuth(token string) Opt {
 // HTTPClient sets the http client to use for requests, overriding the default
 // that has a 15s timeout.
 func HTTPClient(httpCl *http.Client) Opt { return func(cl *Client) { cl.httpCl = httpCl } }
+
+// ReqTimeout sets the timeout for requests, overriding the default of 15s.
+func ReqTimeout(timeout time.Duration) Opt { return func(cl *Client) { cl.reqTimeout = timeout } }
 
 // Headers sets the headers to use for requests. This is an additive function
 // and does not override default headers unless the default headers are
@@ -272,6 +278,11 @@ func (cl *Client) Delete(ctx context.Context, path string, qps url.Values, into 
 }
 
 func (cl *Client) do(ctx context.Context, method, path string, qps url.Values, body, into interface{}) error {
+	if cl.reqTimeout != 0 {
+		var cancel func()
+		ctx, cancel = context.WithTimeout(ctx, cl.reqTimeout)
+		defer cancel()
+	}
 	fullURL, err := cl.prepareURL(path, qps)
 	if err != nil {
 		return err
@@ -299,7 +310,9 @@ func (cl *Client) do(ctx context.Context, method, path string, qps url.Values, b
 		for k, v := range cl.headers {
 			req.Header.Set(k, v)
 		}
+		zap.L().Sugar().Debugf("requesting %s", req.URL)
 		resp, err = cl.httpCl.Do(req)
+		zap.L().Sugar().Debugf("got response for %s", req.URL)
 
 		if isRetryable, err := backoff.maybeDo(ctx, resp, err); err != nil {
 			return err

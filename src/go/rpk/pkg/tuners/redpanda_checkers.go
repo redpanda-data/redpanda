@@ -66,14 +66,14 @@ const (
 	BallastFileChecker
 )
 
-func NewConfigChecker(conf *config.Config) Checker {
+func NewConfigChecker(y *config.RedpandaYaml) Checker {
 	return NewEqualityChecker(
 		ConfigFileChecker,
 		"Config file valid",
 		Fatal,
 		true,
 		func() (interface{}, error) {
-			ok, errs := conf.Check()
+			ok, errs := y.Check()
 			var err error
 			if len(errs) > 0 {
 				s := multierror.ListFormatFunc(errs)
@@ -169,10 +169,10 @@ func NewIOConfigFileExistanceChecker(fs afero.Fs, filePath string) Checker {
 		filePath)
 }
 
-func NewBallastFileChecker(fs afero.Fs, conf *config.Config) Checker {
+func NewBallastFileChecker(fs afero.Fs, y *config.RedpandaYaml) Checker {
 	path := config.DefaultBallastFilePath
-	if conf.Rpk.Tuners.BallastFilePath != "" {
-		path = conf.Rpk.Tuners.BallastFilePath
+	if y.Rpk.Tuners.BallastFilePath != "" {
+		path = y.Rpk.Tuners.BallastFilePath
 	}
 	return NewFileExistanceChecker(
 		fs,
@@ -198,7 +198,7 @@ func NewNTPSyncChecker(timeout time.Duration, fs afero.Fs) Checker {
 func RedpandaCheckers(
 	fs afero.Fs,
 	ioConfigFile string,
-	config *config.Config,
+	y *config.RedpandaYaml,
 	timeout time.Duration,
 ) (map[CheckerID][]Checker, error) {
 	proc := os.NewProc()
@@ -211,18 +211,18 @@ func RedpandaCheckers(
 	irqDeviceInfo := irq.NewDeviceInfo(fs, irqProcFile)
 	blockDevices := disk.NewBlockDevices(fs, irqDeviceInfo, irqProcFile, proc, timeout)
 	deviceFeatures := disk.NewDeviceFeatures(fs, blockDevices)
-	schedulerChecker := NewDirectorySchedulerChecker(config.Redpanda.Directory, deviceFeatures, blockDevices)
-	nomergesChecker := NewDirectoryNomergesChecker(config.Redpanda.Directory, deviceFeatures, blockDevices)
+	schedulerChecker := NewDirectorySchedulerChecker(y.Redpanda.Directory, deviceFeatures, blockDevices)
+	nomergesChecker := NewDirectoryNomergesChecker(y.Redpanda.Directory, deviceFeatures, blockDevices)
 	balanceService := irq.NewBalanceService(fs, proc, executor, timeout)
 	cpuMasks := irq.NewCPUMasks(fs, hwloc.NewHwLocCmd(proc, timeout), executor)
-	dirIRQAffinityChecker := NewDirectoryIRQAffinityChecker(config.Redpanda.Directory, "all", irq.Default, blockDevices, cpuMasks)
-	dirIRQAffinityStaticChecker := NewDirectoryIRQsAffinityStaticChecker(config.Redpanda.Directory, blockDevices, balanceService)
-	if len(config.Redpanda.KafkaAPI) == 0 {
+	dirIRQAffinityChecker := NewDirectoryIRQAffinityChecker(y.Redpanda.Directory, "all", irq.Default, blockDevices, cpuMasks)
+	dirIRQAffinityStaticChecker := NewDirectoryIRQsAffinityStaticChecker(y.Redpanda.Directory, blockDevices, balanceService)
+	if len(y.Redpanda.KafkaAPI) == 0 {
 		return nil, errors.New("'redpanda.kafka_api' is empty")
 	}
 	interfaces, err := net.GetInterfacesByIps(
-		config.Redpanda.KafkaAPI[0].Address,
-		config.Redpanda.RPCServer.Address,
+		y.Redpanda.KafkaAPI[0].Address,
+		y.Redpanda.RPCServer.Address,
 	)
 	if err != nil {
 		return nil, err
@@ -230,13 +230,13 @@ func RedpandaCheckers(
 	netCheckersFactory := NewNetCheckersFactory(
 		fs, irqProcFile, irqDeviceInfo, ethtool, balanceService, cpuMasks)
 	checkers := map[CheckerID][]Checker{
-		ConfigFileChecker:             {NewConfigChecker(config)},
+		ConfigFileChecker:             {NewConfigChecker(y)},
 		IoConfigFileChecker:           {NewIOConfigFileExistanceChecker(fs, ioConfigFile)},
 		FreeMemChecker:                {NewMemoryChecker(fs)},
 		SwapChecker:                   {NewSwapChecker(fs)},
-		DataDirAccessChecker:          {NewDataDirWritableChecker(fs, config.Redpanda.Directory)},
-		DiskSpaceChecker:              {NewFreeDiskSpaceChecker(config.Redpanda.Directory)},
-		FsTypeChecker:                 {NewFilesystemTypeChecker(config.Redpanda.Directory)},
+		DataDirAccessChecker:          {NewDataDirWritableChecker(fs, y.Redpanda.Directory)},
+		DiskSpaceChecker:              {NewFreeDiskSpaceChecker(y.Redpanda.Directory)},
+		FsTypeChecker:                 {NewFilesystemTypeChecker(y.Redpanda.Directory)},
 		TransparentHugePagesChecker:   {NewTransparentHugePagesChecker(fs)},
 		NtpChecker:                    {NewNTPSyncChecker(timeout, fs)},
 		SchedulerChecker:              {schedulerChecker},
@@ -256,7 +256,7 @@ func RedpandaCheckers(
 		ClockSource:                   {NewClockSourceChecker(fs)},
 		Swappiness:                    {NewSwappinessChecker(fs)},
 		KernelVersion:                 {NewKernelVersionChecker(GetKernelVersion)},
-		BallastFileChecker:            {NewBallastFileChecker(fs, config)},
+		BallastFileChecker:            {NewBallastFileChecker(fs, y)},
 	}
 
 	v, err := cloud.AvailableVendor()
@@ -264,7 +264,7 @@ func RedpandaCheckers(
 	//       GCP when using local SSD's
 	gcpVendor := gcp.GcpVendor{}
 	if err == nil && v.Name() == gcpVendor.Name() {
-		checkers[WriteCachePolicyChecker] = []Checker{NewDirectoryWriteCacheChecker(config.Redpanda.Directory, deviceFeatures, blockDevices)}
+		checkers[WriteCachePolicyChecker] = []Checker{NewDirectoryWriteCacheChecker(y.Redpanda.Directory, deviceFeatures, blockDevices)}
 	}
 
 	return checkers, nil

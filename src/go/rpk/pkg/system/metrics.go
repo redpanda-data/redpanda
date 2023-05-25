@@ -51,17 +51,17 @@ type stat struct {
 var errRedpandaDown = errors.New("the local redpanda process isn't running")
 
 func GatherMetrics(
-	fs afero.Fs, timeout time.Duration, conf config.Config,
+	fs afero.Fs, timeout time.Duration, y *config.RedpandaYaml,
 ) (*Metrics, error) {
 	var err, errs error
 	metrics := &Metrics{}
 
-	metrics.FreeSpaceMB, err = getFreeDiskSpaceMB(conf)
+	metrics.FreeSpaceMB, err = getFreeDiskSpaceMB(y)
 	if err != nil {
 		errs = multierror.Append(errs, err)
 	}
 
-	pidStr, err := utils.ReadEnsureSingleLine(fs, conf.PIDFile())
+	pidStr, err := utils.ReadEnsureSingleLine(fs, y.PIDFile())
 	if err != nil {
 		if os.IsNotExist(err) {
 			return metrics, errRedpandaDown
@@ -147,9 +147,9 @@ func readStat(fs afero.Fs, pid int) (*stat, error) {
 	}, nil
 }
 
-func getFreeDiskSpaceMB(conf config.Config) (float64, error) {
+func getFreeDiskSpaceMB(y *config.RedpandaYaml) (float64, error) {
 	var stat syscall.Statfs_t
-	err := syscall.Statfs(conf.Redpanda.Directory, &stat)
+	err := syscall.Statfs(y.Redpanda.Directory, &stat)
 	if err != nil {
 		return 0, err
 	}

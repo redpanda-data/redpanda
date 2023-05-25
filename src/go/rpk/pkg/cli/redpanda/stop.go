@@ -37,10 +37,10 @@ first sends SIGINT, and waits for the specified timeout. Then, if redpanda
 hasn't stopped, it sends SIGTERM. Lastly, it sends SIGKILL if it's still
 running.`,
 		Run: func(_ *cobra.Command, args []string) {
-			cfg, err := p.Load(fs)
+			y, err := p.LoadVirtualRedpandaYaml(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)
 
-			err = executeStop(fs, cfg, timeout)
+			err = executeStop(fs, y, timeout)
 			out.MaybeDieErr(err)
 		},
 	}
@@ -48,8 +48,8 @@ running.`,
 	return cmd
 }
 
-func executeStop(fs afero.Fs, cfg *config.Config, timeout time.Duration) error {
-	pidFile := cfg.PIDFile()
+func executeStop(fs afero.Fs, y *config.RedpandaYaml, timeout time.Duration) error {
+	pidFile := y.PIDFile()
 	isLocked, err := os.CheckLocked(pidFile)
 	if err != nil {
 		zap.L().Sugar().Debugf("error checking if the PID file is locked: %v", err)

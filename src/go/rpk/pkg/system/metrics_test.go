@@ -23,7 +23,6 @@ func TestGatherMetrics(t *testing.T) {
 	tests := []struct {
 		name           string
 		before         func(fs afero.Fs) error
-		conf           func() *config.Config
 		expectedErrMsg string
 	}{{
 		name: "it should fail if the process's stat file doesn't exist",
@@ -89,14 +88,11 @@ func TestGatherMetrics(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(st *testing.T) {
 			fs := afero.NewMemMapFs()
-			conf := config.DevDefault()
-			if tt.conf != nil {
-				conf = tt.conf()
-			}
+			y := config.DevDefault()
 			if tt.before != nil {
 				require.NoError(st, tt.before(fs))
 			}
-			_, err := system.GatherMetrics(fs, 50*time.Millisecond, *conf)
+			_, err := system.GatherMetrics(fs, 50*time.Millisecond, y)
 			if tt.expectedErrMsg != "" {
 				require.Error(st, err)
 				require.Contains(st, err.Error(), tt.expectedErrMsg)

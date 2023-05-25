@@ -64,9 +64,9 @@ type AdminAPI struct {
 	tlsConfig           *tls.Config
 }
 
-func getBasicCredentials(cfg *config.Config) BasicCredentials {
-	if cfg.Rpk.KafkaAPI.SASL != nil {
-		return BasicCredentials{Username: cfg.Rpk.KafkaAPI.SASL.User, Password: cfg.Rpk.KafkaAPI.SASL.Password}
+func getBasicCredentials(p *config.RpkProfile) BasicCredentials {
+	if p.KafkaAPI.SASL != nil {
+		return BasicCredentials{Username: p.KafkaAPI.SASL.User, Password: p.KafkaAPI.SASL.Password}
 	} else {
 		return BasicCredentials{Username: "", Password: ""}
 	}
@@ -74,27 +74,27 @@ func getBasicCredentials(cfg *config.Config) BasicCredentials {
 
 // NewClient returns an AdminAPI client that talks to each of the addresses in
 // the rpk.admin_api section of the config.
-func NewClient(fs afero.Fs, cfg *config.Config) (*AdminAPI, error) {
-	a := &cfg.Rpk.AdminAPI
+func NewClient(fs afero.Fs, p *config.RpkProfile) (*AdminAPI, error) {
+	a := &p.AdminAPI
 	addrs := a.Addresses
 	tc, err := a.TLS.Config(fs)
 	if err != nil {
 		return nil, fmt.Errorf("unable to create admin api tls config: %v", err)
 	}
-	return NewAdminAPI(addrs, getBasicCredentials(cfg), tc)
+	return NewAdminAPI(addrs, getBasicCredentials(p), tc)
 }
 
 // NewHostClient returns an AdminAPI that talks to the given host, which is
 // either an int index into the rpk.admin_api section of the config, or a
 // hostname.
 func NewHostClient(
-	fs afero.Fs, cfg *config.Config, host string,
+	fs afero.Fs, p *config.RpkProfile, host string,
 ) (*AdminAPI, error) {
 	if host == "" {
 		return nil, errors.New("invalid empty admin host")
 	}
 
-	a := &cfg.Rpk.AdminAPI
+	a := &p.AdminAPI
 	addrs := a.Addresses
 	tc, err := a.TLS.Config(fs)
 	if err != nil {
@@ -111,7 +111,7 @@ func NewHostClient(
 		addrs = []string{host} // trust input is hostname (validate below)
 	}
 
-	return NewAdminAPI(addrs, getBasicCredentials(cfg), tc)
+	return NewAdminAPI(addrs, getBasicCredentials(p), tc)
 }
 
 func NewAdminAPI(

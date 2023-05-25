@@ -17,6 +17,7 @@ import (
 	"fmt"
 	"net"
 
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cobraext"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	vnet "github.com/redpanda-data/redpanda/src/go/rpk/pkg/net"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/out"
@@ -32,13 +33,12 @@ func NewConfigCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	cmd.AddCommand(
 		set(fs, p),
 		bootstrap(fs, p),
-		initNode(fs, p),
+		cobraext.DeprecatedCmd("init", 0),
 	)
 	return cmd
 }
 
 func set(fs afero.Fs, p *config.Params) *cobra.Command {
-	var format string
 	c := &cobra.Command{
 		Use:   "set [KEY] [VALUE]",
 		Short: "Set configuration values, such as the redpanda node ID or the list of seed servers",
@@ -50,8 +50,9 @@ would like to set. Nested fields can be accessed through a dot:
 
   rpk redpanda config set redpanda.developer_mode true
 
-The default format is to parse the value as yaml. Individual specific fields
-can be set, or full structs:
+All values are parsed as yaml and, since yaml is a superset of json, you can
+also format your input as json. Individual specific fields or full structs can
+be set:
 
   rpk redpanda config set rpk.tune_disk_irq true
   rpk redpanda config set redpanda.rpc_server '{address: 3.250.158.1, port: 9092}'
@@ -66,29 +67,20 @@ Indexing can be used to set specific items in an array. You can index one past
 the end of an array to extend it:
 
   rpk redpanda config set redpanda.advertised_kafka_api[1] '{address: 0.0.0.0, port: 9092}'
-
-The json format can be used to set values as json:
-
-  rpk redpanda config set redpanda.rpc_server '{"address":"0.0.0.0","port":33145}' --format json
-
 `,
 		Args: cobra.ExactArgs(2),
 		Run: func(cmd *cobra.Command, args []string) {
 			cfg, err := p.Load(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)
-			cfg = cfg.FileOrDefaults() // we set fields in the raw file without writing env / flag overrides
-
-			if format == "single" {
-				fmt.Println("'--format single' is deprecated, either remove it or use yaml/json")
-			}
-			err = cfg.Set(args[0], args[1], format)
+			y := cfg.ActualRedpandaYamlOrDefaults() // we set fields in the raw file without writing env / flag overrides
+			err = config.Set(y, args[0], args[1])
 			out.MaybeDie(err, "unable to set %q:%v", args[0], err)
-
-			err = cfg.Write(fs)
+			err = y.Write(fs)
 			out.MaybeDieErr(err)
 		},
 	}
-	c.Flags().StringVar(&format, "format", "yaml", "Format of the value (yaml/json)")
+	c.Flags().StringVar(new(string), "format", "yaml", "")
+	c.Flags().MarkHidden("format")
 	return c
 }
 
@@ -120,7 +112,7 @@ you must use the --self flag to specify which ip redpanda should listen on.
 		Run: func(cmd *cobra.Command, args []string) {
 			cfg, err := p.Load(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)
-			cfg = cfg.FileOrDefaults() // we modify fields in the raw file without writing env / flag overrides
+			y := cfg.ActualRedpandaYamlOrDefaults() // we modify fields in the raw file without writing env / flag overrides
 
 			seeds, err := parseSeedIPs(ips)
 			out.MaybeDieErr(err)
@@ -129,7 +121,7 @@ you must use the --self flag to specify which ip redpanda should listen on.
 			out.MaybeDieErr(err)
 
 			if id >= 0 {
-				cfg.Redpanda.ID = &id
+				y.Redpanda.ID = &id
 			}
 
 			// Defaults returns one RPC, one KafkaAPI, and one
@@ -153,10 +145,10 @@ you must use the --self flag to specify which ip redpanda should listen on.
 				panic("defaults now have more than one kafka / admin api address, bug!")
 			}
 
-			if a := &cfg.Redpanda.RPCServer.Address; *a == config.DefaultListenAddress {
+			if a := &y.Redpanda.RPCServer.Address; *a == config.DefaultListenAddress {
 				*a = selfIP
 			}
-			if a := &cfg.Redpanda.KafkaAPI; len(*a) == 1 {
+			if a := &y.Redpanda.KafkaAPI; len(*a) == 1 {
 				if first := &((*a)[0].Address); *first == config.DefaultListenAddress {
 					*first = selfIP
 				}
@@ -166,7 +158,7 @@ you must use the --self flag to specify which ip redpanda should listen on.
 					Port:    config.DefaultKafkaPort,
 				}}
 			}
-			if a := &cfg.Redpanda.AdminAPI; len(*a) == 1 {
+			if a := &y.Redpanda.AdminAPI; len(*a) == 1 {
 				if first := &((*a)[0]).Address; *first == config.DefaultListenAddress {
 					*first = selfIP
 				}
@@ -176,9 +168,9 @@ you must use the --self flag to specify which ip redpanda should listen on.
 					Port:    config.DefaultAdminPort,
 				}}
 			}
-			cfg.Redpanda.SeedServers = seeds
+			y.Redpanda.SeedServers = seeds
 
-			err = cfg.Write(fs)
+			err = y.Write(fs)
 			out.MaybeDie(err, "error writing config file: %v", err)
 		},
 	}
@@ -186,23 +178,6 @@ you must use the --self flag to specify which ip redpanda should listen on.
 	c.Flags().StringVar(&self, "self", "", "Optional IP address for redpanda to listen on; if empty, defaults to a private address")
 	c.Flags().IntVar(&id, "id", -1, "This node's ID. If unset, redpanda will assign one automatically")
 	c.Flags().MarkHidden("id")
-	return c
-}
-
-func initNode(fs afero.Fs, p *config.Params) *cobra.Command {
-	c := &cobra.Command{
-		Use:   "init",
-		Short: "Init the node after install, by setting the node's UUID",
-		Args:  cobra.ExactArgs(0),
-		Run: func(cmd *cobra.Command, args []string) {
-			cfg, err := p.Load(fs)
-			out.MaybeDie(err, "unable to load config: %v", err)
-			cfg = cfg.FileOrDefaults() // we modify fields in the raw file without writing env / flag overrides
-
-			err = cfg.Write(fs)
-			out.MaybeDie(err, "error writing config file: %v", err)
-		},
-	}
 	return c
 }
 

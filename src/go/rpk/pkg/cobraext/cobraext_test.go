@@ -37,23 +37,28 @@ func TestStripFlagset(t *testing.T) {
 	subcmd.Flags().StringP("foo", "f", "", "foo")
 
 	for _, test := range []struct {
-		args []string
-		exp  []string
+		args        []string
+		expKept     []string
+		expStripped []string
 	}{
 		{
-			args: []string{"--config", "foo", "--config-opt", "bar", "--config-opt=biz", "-v", "-v=debug", "subcmd", "-f", "foo", "finalarg", "finalarg2"},
-			exp:  []string{"-f", "foo", "finalarg", "finalarg2"},
+			args:        []string{"--config", "foo", "--config-opt", "bar", "--config-opt=biz", "-v", "-v=debug", "subcmd", "-f", "foo", "finalarg", "finalarg2"},
+			expKept:     []string{"-f", "foo", "finalarg", "finalarg2"},
+			expStripped: []string{"--config", "foo", "--config-opt", "bar", "--config-opt=biz", "-v", "-v=debug"},
 		},
 	} {
 		t.Run("", func(t *testing.T) {
 			root.SetArgs(test.args)
-			var got []string
+			var kept, stripped []string
 			subcmd.Run = func(cmd *cobra.Command, args []string) {
-				got = StripFlagset(args, cmd.InheritedFlags())
+				kept, stripped = StripFlagset(args, cmd.InheritedFlags())
 			}
 			root.Execute()
-			if !reflect.DeepEqual(got, test.exp) {
-				t.Errorf("expected %v, got %v", test.exp, got)
+			if !reflect.DeepEqual(kept, test.expKept) {
+				t.Errorf("kept %v != exp %v", kept, test.expKept)
+			}
+			if !reflect.DeepEqual(stripped, test.expStripped) {
+				t.Errorf("stripped %v != exp %v", stripped, test.expStripped)
 			}
 		})
 	}
@@ -78,14 +83,16 @@ func TestStripFlags(t *testing.T) {
 		long  []string
 		short []string
 
-		exp []string
+		expKept     []string
+		expStripped []string
 	}{
 		{
-			name:  "easy stripping",
-			args:  []string{"cmd", "--foo", "foo", "--slice", "str1", "-hv=3"},
-			long:  []string{"foo"},
-			short: []string{"h"},
-			exp:   []string{"cmd", "--slice", "str1", "-v=3"},
+			name:        "easy stripping",
+			args:        []string{"cmd", "--foo", "foo", "--slice", "str1", "-hv=3"},
+			long:        []string{"foo"},
+			short:       []string{"h"},
+			expKept:     []string{"cmd", "--slice", "str1", "-v=3"},
+			expStripped: []string{"--foo", "foo", "-h"},
 		},
 
 		{
@@ -102,18 +109,64 @@ func TestStripFlags(t *testing.T) {
 			// -s str    strip
 			// --        keep
 			// -hvs=3    keep
-			name:  "args in the middle and comprehensive",
-			args:  []string{"cmd", "--foo", "-i", "-i", "keep", "-i=keep", "subcmd", "-hvi", "3", "-hiv", "3", "-ivs", "3", "--int", "4", "-v=4", "-s", "str", "--", "-hvs=3"},
-			long:  []string{"foo", "int"},
-			short: []string{"h", "v", "s"},
-			exp:   []string{"cmd", "-i", "keep", "-i=keep", "subcmd", "-i", "3", "-i", "3", "-i", "--", "-hvs=3"},
+			name:        "args in the middle and comprehensive",
+			args:        []string{"cmd", "--foo", "-i", "-i", "keep", "-i=keep", "subcmd", "-hvi", "3", "-hiv", "3", "-ivs", "3", "--int", "4", "-v=4", "-s", "str", "--", "-hvs=3"},
+			long:        []string{"foo", "int"},
+			short:       []string{"h", "v", "s"},
+			expKept:     []string{"cmd", "-i", "keep", "-i=keep", "subcmd", "-i", "3", "-i", "3", "-i", "--", "-hvs=3"},
+			expStripped: []string{"--foo", "-i", "-hv", "-hv", "-vs", "3", "--int", "4", "-v=4", "-s", "str"},
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			got := StripFlags(test.args, fs, test.long, test.short)
-			if !reflect.DeepEqual(got, test.exp) {
-				t.Errorf("got (%v) != exp (%v)", got, test.exp)
+			kept, stripped := StripFlags(test.args, fs, test.long, test.short)
+			if !reflect.DeepEqual(kept, test.expKept) {
+				t.Errorf("kept (%v) != expKept (%v)", kept, test.expKept)
+			}
+			if !reflect.DeepEqual(stripped, test.expStripped) {
+				t.Errorf("stripped (%v) != expStripped (%v)", stripped, test.expStripped)
 			}
 		})
+	}
+}
+
+func TestLongFlagValue(t *testing.T) {
+	fs := pflag.NewFlagSet("", pflag.ContinueOnError)
+	fs.BoolP("help", "h", false, "Help")
+	fs.String("config", "", "Config file")
+	fs.StringArrayP("config-opt", "X", nil, "Override")
+	fs.StringP("verbose", "v", "none", "Log level")
+	fs.Lookup("verbose").NoOptDefVal = "info"
+
+	args := []string{"--config", "foo", "--config-opt", "bar", "--config-opt=biz", "-v", "-v=debug", "subcmd", "-f", "foo", "finalarg", "finalarg2", "--unknown", "handled", "--unknown2=handled2"}
+
+	for _, test := range []struct {
+		f   string
+		exp string
+	}{
+		{
+			f:   "config",
+			exp: "foo",
+		},
+		{
+			f:   "config-opt",
+			exp: "biz", // we take the last value
+		},
+		{
+			f:   "noexist",
+			exp: "",
+		},
+		{
+			f:   "unknown",
+			exp: "handled",
+		},
+		{
+			f:   "unknown2",
+			exp: "handled2",
+		},
+	} {
+		got := LongFlagValue(args, fs, test.f)
+		if got != test.exp {
+			t.Errorf("got %v != exp %v", got, test.exp)
+		}
 	}
 }

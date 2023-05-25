@@ -73,10 +73,10 @@ acl help text for more info.
 
 		Args: cobra.MaximumNArgs(1), // when the deprecated user flag is removed, change this to cobra.ExactArgs(1)
 		Run: func(cmd *cobra.Command, args []string) {
-			cfg, err := p.Load(fs)
+			p, err := p.LoadVirtualProfile(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)
 
-			cl, err := admin.NewClient(fs, cfg)
+			cl, err := admin.NewClient(fs, p)
 			out.MaybeDie(err, "unable to initialize admin client: %v", err)
 
 			// Backwards compatibility: we favor the new user
@@ -159,10 +159,10 @@ delete any ACLs that may exist for this user.
 `,
 		Args: cobra.MaximumNArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
-			cfg, err := p.Load(fs)
+			p, err := p.LoadVirtualProfile(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)
 
-			cl, err := admin.NewClient(fs, cfg)
+			cl, err := admin.NewClient(fs, p)
 			out.MaybeDie(err, "unable to initialize admin client: %v", err)
 
 			// Backwards compat: we favor the new format (an
@@ -195,10 +195,10 @@ func newListUsersCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 		Aliases: []string{"ls"},
 		Short:   "List SASL users",
 		Run: func(cmd *cobra.Command, _ []string) {
-			cfg, err := p.Load(fs)
+			p, err := p.LoadVirtualProfile(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)
 
-			cl, err := admin.NewClient(fs, cfg)
+			cl, err := admin.NewClient(fs, p)
 			out.MaybeDie(err, "unable to initialize admin client: %v", err)
 
 			users, err := cl.ListUsers(cmd.Context())

@@ -24,15 +24,15 @@ func TestAddPluginWithExec(t *testing.T) {
 		return child
 	}
 
-	addPluginWithExec(root, "foo", []string{"foo", "bar"}, "", nil, nil) // we cannot test exec path, so we leave empty
+	addPluginWithExec(root, "foo", []string{"foo", "bar"}, "", nil, nil, nil) // we cannot test exec path, so we leave empty
 	assert.Equal(t, []string{"foo"}, subcommands(root), "expected one subcommand of root to be [foo]")
 	assert.Equal(t, []string{"bar"}, subcommands(find(root, []string{"foo"})), "expected one subcommand of root foo to be [bar]")
 
-	addPluginWithExec(root, "foo", []string{"foo", "baz"}, "", nil, nil)
+	addPluginWithExec(root, "foo", []string{"foo", "baz"}, "", nil, nil, nil)
 	assert.Equal(t, []string{"foo"}, subcommands(root), "expected one subcommand of root to still be [foo]")
 	assert.Equal(t, []string{"bar", "baz"}, subcommands(find(root, []string{"foo"})), "expected two subcommands of root foo to be [bar, baz]")
 
-	addPluginWithExec(root, "fizz", []string{"fizz"}, "", nil, nil)
+	addPluginWithExec(root, "fizz", []string{"fizz"}, "", nil, nil, nil)
 	assert.Equal(t, []string{"fizz", "foo"}, subcommands(root), "expected one subcommand of root to be [fizz, foo]")
 	assert.Equal(t, []string{"bar", "baz"}, subcommands(find(root, []string{"foo"})), "expected two subcommands of root foo to still be [bar, baz]")
 	assert.Equal(t, []string(nil), subcommands(find(root, []string{"fizz"})), "expected no subcommands under fizz")

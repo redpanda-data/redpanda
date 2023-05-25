@@ -19,7 +19,6 @@ import (
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/spf13/afero"
 	"github.com/stretchr/testify/require"
-	"gopkg.in/yaml.v3"
 )
 
 func TestBootstrap(t *testing.T) {
@@ -53,8 +52,8 @@ func TestBootstrap(t *testing.T) {
           port: 9644
     developer_mode: true
 rpk:
-    coredump_dir: /var/lib/redpanda/coredump
     overprovisioned: true
+    coredump_dir: /var/lib/redpanda/coredump
 pandaproxy: {}
 schema_registry: {}
 `,
@@ -96,8 +95,8 @@ schema_registry: {}
           port: 9644
     developer_mode: true
 rpk:
-    coredump_dir: /var/lib/redpanda/coredump
     overprovisioned: true
+    coredump_dir: /var/lib/redpanda/coredump
 pandaproxy: {}
 schema_registry: {}
 `,
@@ -200,7 +199,7 @@ schema_registry: {}
 			fs := afero.NewMemMapFs()
 
 			if test.cfgFile != "" {
-				err := afero.WriteFile(fs, config.DefaultPath, []byte(test.cfgFile), 0o644)
+				err := afero.WriteFile(fs, config.DefaultRedpandaYamlPath, []byte(test.cfgFile), 0o644)
 				if err != nil {
 					t.Errorf("unexpected failure writing passed config file: %v", err)
 					return
@@ -226,7 +225,7 @@ schema_registry: {}
 				return
 			}
 
-			file, err := afero.ReadFile(fs, config.DefaultPath)
+			file, err := afero.ReadFile(fs, config.DefaultRedpandaYamlPath)
 			if err != nil {
 				t.Errorf("unexpected failure reading config file: %v", err)
 				return
@@ -236,22 +235,6 @@ schema_registry: {}
 			}
 		})
 	}
-}
-
-func TestInitNode(t *testing.T) {
-	fs := afero.NewMemMapFs()
-	c := config.DevDefault()
-	bs, err := yaml.Marshal(c)
-	require.NoError(t, err)
-	err = afero.WriteFile(fs, config.DefaultPath, bs, 0o644)
-	require.NoError(t, err)
-
-	cmd := initNode(fs, new(config.Params))
-	err = cmd.Execute()
-	require.NoError(t, err)
-
-	_, err = new(config.Params).Load(fs)
-	require.NoError(t, err)
 }
 
 // This is a top level command test, individual cases for set are
@@ -280,8 +263,8 @@ func TestSetCommand(t *testing.T) {
           port: 9644
     developer_mode: true
 rpk:
-    coredump_dir: /var/lib/redpanda/coredump
     overprovisioned: true
+    coredump_dir: /var/lib/redpanda/coredump
 pandaproxy: {}
 schema_registry: {}
 `,

@@ -78,7 +78,7 @@ func TestStopCommand(t *testing.T) {
 
 			p := new(config.Params)
 			c := redpanda.NewStopCommand(fs, p)
-			c.Flags().StringVar(&p.ConfigPath, "config", "", "this is done in root.go, but we need it here for the tests setting args")
+			c.Flags().StringVar(&p.ConfigFlag, "config", "", "this is done in root.go, but we need it here for the tests setting args")
 			args := append([]string{"--config", conf.FileLocation()}, tt.args...)
 			c.SetArgs(args)
 

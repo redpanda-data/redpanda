@@ -43,10 +43,10 @@ node exists that is already in maintenance mode then an error will be returned.
 				out.Die("invalid node id: %d", nodeID)
 			}
 
-			cfg, err := p.Load(fs)
+			p, err := p.LoadVirtualProfile(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)
 
-			client, err := admin.NewClient(fs, cfg)
+			client, err := admin.NewClient(fs, p)
 			out.MaybeDie(err, "unable to initialize admin client: %v", err)
 
 			b, err := client.Broker(cmd.Context(), nodeID)

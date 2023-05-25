@@ -34,10 +34,10 @@ the cluster leader handles the request.
 				out.Die("invalid negative broker id %v", broker)
 			}
 
-			cfg, err := p.Load(fs)
+			p, err := p.LoadVirtualProfile(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)
 
-			cl, err := admin.NewClient(fs, cfg)
+			cl, err := admin.NewClient(fs, p)
 			out.MaybeDie(err, "unable to initialize admin client: %v", err)
 
 			err = cl.RecommissionBroker(cmd.Context(), broker)

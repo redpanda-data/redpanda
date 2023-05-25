@@ -36,7 +36,7 @@ func NewCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 		Short: "Measure filesystem performance and create IO configuration file",
 		Run: func(cmd *cobra.Command, args []string) {
 			timeout += duration
-			cfg, err := p.Load(fs)
+			y, err := p.LoadVirtualRedpandaYaml(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)
 
 			var evalDirectories []string
@@ -45,7 +45,7 @@ func NewCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 					directories)
 				evalDirectories = directories
 			} else {
-				evalDirectories = []string{cfg.Redpanda.Directory}
+				evalDirectories = []string{y.Redpanda.Directory}
 			}
 
 			if exists, _ := afero.Exists(fs, outputFile); exists && !noConfirm {
@@ -69,7 +69,7 @@ func NewCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 			fmt.Printf("IO configuration file stored as %q\n", outputFile)
 		},
 	}
-	cmd.Flags().StringVar(&outputFile, "out", filepath.Join(filepath.Dir(config.DefaultPath), "io-config.yaml"), "The file path where the IO config will be written")
+	cmd.Flags().StringVar(&outputFile, "out", filepath.Join(filepath.Dir(config.DefaultRedpandaYamlPath), "io-config.yaml"), "The file path where the IO config will be written")
 	cmd.Flags().StringSliceVar(&directories, "directories", []string{}, "List of directories to evaluate")
 	cmd.Flags().DurationVar(&duration, "duration", 10*time.Minute, "Duration of tests (e.g. 300ms, 1.5s, 2h45m)")
 	cmd.Flags().DurationVar(&timeout, "timeout", 1*time.Hour, "The maximum time after --duration to wait for iotune to complete (e.g. 300ms, 1.5s, 2h45m)")

@@ -17,34 +17,25 @@ import (
 	"path/filepath"
 	"reflect"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 
-	rpkos "github.com/redpanda-data/redpanda/src/go/rpk/pkg/os"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
+	"golang.org/x/exp/maps"
 	"golang.org/x/term"
 
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
+
+	rpknet "github.com/redpanda-data/redpanda/src/go/rpk/pkg/net"
 )
 
 const (
-	// The following flags exist for backcompat purposes and should not be
-	// used elsewhere within rpk.
-	flagBrokers        = "brokers"
-	flagSASLMechanism  = "sasl-mechanism"
-	flagSASLPass       = "password"
-	flagAdminHosts1    = "hosts"
-	flagAdminHosts2    = "api-urls"
-	flagEnableAdminTLS = "admin-api-tls-enabled"
-	flagAdminTLSCA     = "admin-api-tls-truststore"
-	flagAdminTLSCert   = "admin-api-tls-cert"
-	flagAdminTLSKey    = "admin-api-tls-key"
-
 	// The following flags are currently used in some areas of rpk
 	// (and ideally will be deprecated / removed in the future).
 	FlagEnableTLS = "tls-enabled"
@@ -53,50 +44,277 @@ const (
 	FlagTLSKey    = "tls-key"
 	FlagSASLUser  = "user"
 
-	envBrokers       = "REDPANDA_BROKERS"
-	envTLSCA         = "REDPANDA_TLS_TRUSTSTORE"
-	envTLSCert       = "REDPANDA_TLS_CERT"
-	envTLSKey        = "REDPANDA_TLS_KEY"
-	envSASLMechanism = "REDPANDA_SASL_MECHANISM"
-	envSASLUser      = "REDPANDA_SASL_USERNAME"
-	envSASLPass      = "REDPANDA_SASL_PASSWORD"
-	envAdminHosts    = "REDPANDA_API_ADMIN_ADDRS"
-	envAdminTLSCA    = "REDPANDA_ADMIN_TLS_TRUSTSTORE"
-	envAdminTLSCert  = "REDPANDA_ADMIN_TLS_CERT"
-	envAdminTLSKey   = "REDPANDA_ADMIN_TLS_KEY"
+	// The following flags and env vars are used in `rpk cloud`. We will
+	// always support them, but they are also duplicated by -X auth.*.
+	FlagClientID     = "client-id"
+	FlagClientSecret = "client-secret"
+
+	// This block contains names X flags that are used for backcompat.
+	// All new X flags are defined directly into the xflags slice.
+	xKafkaBrokers       = "brokers"
+	xKafkaTLSEnabled    = "tls.enabled"
+	xKafkaCACert        = "tls.ca"
+	xKafkaClientCert    = "tls.cert"
+	xKafkaClientKey     = "tls.key"
+	xKafkaSASLMechanism = "sasl.mechanism"
+	xKafkaSASLUser      = "user"
+	xKafkaSASLPass      = "pass"
+	xAdminHosts         = "admin.hosts"
+	xAdminTLSEnabled    = "admin.tls.enabled"
+	xAdminCACert        = "admin.tls.ca"
+	xAdminClientCert    = "admin.tls.cert"
+	xAdminClientKey     = "admin.tls.key"
+	xCloudClientID      = "cloud.client_id"
+	xCloudClientSecret  = "cloud.client_secret"
 )
 
-// This block contains what will eventually be used as keys in the global
-// config-setting -X flag, as well as upper-cased, dot-to-underscore replaced
-// env variables.
 const (
-	xKafkaBrokers = "brokers"
-
-	xKafkaTLSEnabled = "brokers.tls.enabled"
-	xKafkaCACert     = "brokers.tls.ca_cert_path"
-	xKafkaClientCert = "brokers.tls.client_cert_path"
-	xKafkaClientKey  = "brokers.tls.client_key_path"
-
-	xKafkaSASLMechanism = "brokers.sasl.mechanism"
-	xKafkaSASLUser      = "brokers.sasl.user"
-	xKafkaSASLPass      = "brokers.sasl.pass"
-
-	xAdminHosts      = "admin.hosts"
-	xAdminTLSEnabled = "admin.tls.enabled"
-	xAdminCACert     = "admin.tls.ca_cert_path"
-	xAdminClientCert = "admin.tls.client_cert_path"
-	xAdminClientKey  = "admin.tls.client_key_path"
+	xkindProfile   = iota // configuration for the current profile
+	xkindCloudAuth        // configuration for the current cloud_auth
 )
 
-// DefaultPath is where redpanda's configuration is located by default.
-const DefaultPath = "/etc/redpanda/redpanda.yaml"
+type xflag struct {
+	path        string
+	testExample string
+	kind        uint8
+	parse       func(string, *RpkYaml) error
+}
+
+func splitCommaIntoStrings(in string, dst *[]string) error {
+	*dst = nil
+	split := strings.Split(in, ",")
+	for _, on := range split {
+		on = strings.TrimSpace(on)
+		if len(on) == 0 {
+			return fmt.Errorf("invalid empty value in %q", in)
+		}
+		*dst = append(*dst, on)
+	}
+	return nil
+}
+
+func mkKafkaTLS(k *RpkKafkaAPI) *TLS {
+	if k.TLS == nil {
+		k.TLS = new(TLS)
+	}
+	return k.TLS
+}
+
+func mkSASL(k *RpkKafkaAPI) *SASL {
+	if k.SASL == nil {
+		k.SASL = new(SASL)
+	}
+	return k.SASL
+}
+
+func mkAdminTLS(a *RpkAdminAPI) *TLS {
+	if a.TLS == nil {
+		a.TLS = new(TLS)
+	}
+	return a.TLS
+}
+
+var xflags = map[string]xflag{
+	xKafkaBrokers: {
+		"kafka_api.brokers",
+		"127.8.8.4,126.1.3.4:9093,localhost",
+		xkindProfile,
+		func(v string, y *RpkYaml) error {
+			p := y.Profile(y.CurrentProfile)
+			return splitCommaIntoStrings(v, &p.KafkaAPI.Brokers)
+		},
+	},
+	xKafkaTLSEnabled: {
+		"kafka_api.tls.enabled",
+		"true",
+		xkindProfile,
+		func(v string, y *RpkYaml) error {
+			p := y.Profile(y.CurrentProfile)
+			mkKafkaTLS(&p.KafkaAPI)
+			return nil
+		},
+	},
+	xKafkaCACert: {
+		"kafka_api.tls.ca_file",
+		"/path.pem",
+		xkindProfile,
+		func(v string, y *RpkYaml) error {
+			p := y.Profile(y.CurrentProfile)
+			mkKafkaTLS(&p.KafkaAPI).TruststoreFile = v
+			return nil
+		},
+	},
+	xKafkaClientCert: {
+		"kafka_api.tls.cert_file",
+		"unrooted/path.pem",
+		xkindProfile,
+		func(v string, y *RpkYaml) error {
+			p := y.Profile(y.CurrentProfile)
+			mkKafkaTLS(&p.KafkaAPI).CertFile = v
+			return nil
+		},
+	},
+	xKafkaClientKey: {
+		"kafka_api.tls.key_file",
+		"fileonly.pem",
+		xkindProfile,
+		func(v string, y *RpkYaml) error {
+			p := y.Profile(y.CurrentProfile)
+			mkKafkaTLS(&p.KafkaAPI).KeyFile = v
+			return nil
+		},
+	},
+
+	xKafkaSASLMechanism: {
+		"kafka_api.sasl.mechanism",
+		"scram-sha-256",
+		xkindProfile,
+		func(v string, y *RpkYaml) error {
+			p := y.Profile(y.CurrentProfile)
+			mkSASL(&p.KafkaAPI).Mechanism = v
+			return nil
+		},
+	},
+	xKafkaSASLUser: {
+		"kafka_api.sasl.user",
+		"username",
+		xkindProfile,
+		func(v string, y *RpkYaml) error {
+			p := y.Profile(y.CurrentProfile)
+			mkSASL(&p.KafkaAPI).User = v
+			return nil
+		},
+	},
+	xKafkaSASLPass: {
+		"kafka_api.sasl.password",
+		"23oi4jdkslfnoi23j",
+		xkindProfile,
+		func(v string, y *RpkYaml) error {
+			p := y.Profile(y.CurrentProfile)
+			mkSASL(&p.KafkaAPI).Password = v
+			return nil
+		},
+	},
+
+	xAdminHosts: {
+		"admin_api.addresses",
+		"example.com",
+		xkindProfile,
+		func(v string, y *RpkYaml) error {
+			p := y.Profile(y.CurrentProfile)
+			return splitCommaIntoStrings(v, &p.AdminAPI.Addresses)
+		},
+	},
+	xAdminTLSEnabled: {
+		"admin_api.tls.enabled",
+		"false",
+		xkindProfile,
+		func(v string, y *RpkYaml) error {
+			p := y.Profile(y.CurrentProfile)
+			mkAdminTLS(&p.AdminAPI)
+			return nil
+		},
+	},
+	xAdminCACert: {
+		"admin_api.tls.ca_file",
+		"noextension",
+		xkindProfile,
+		func(v string, y *RpkYaml) error {
+			p := y.Profile(y.CurrentProfile)
+			mkAdminTLS(&p.AdminAPI).TruststoreFile = v
+			return nil
+		},
+	},
+	xAdminClientCert: {
+		"admin_api.tls.cert_file",
+		"cert.pem",
+		xkindProfile,
+		func(v string, y *RpkYaml) error {
+			p := y.Profile(y.CurrentProfile)
+			mkAdminTLS(&p.AdminAPI).CertFile = v
+			return nil
+		},
+	},
+	xAdminClientKey: {
+		"admin_api.tls.key_file",
+		"key.pem",
+		xkindProfile,
+		func(v string, y *RpkYaml) error {
+			p := y.Profile(y.CurrentProfile)
+			mkAdminTLS(&p.AdminAPI).KeyFile = v
+			return nil
+		},
+	},
+
+	xCloudClientID: {
+		"client_id",
+		"anystring",
+		xkindCloudAuth,
+		func(v string, y *RpkYaml) error {
+			auth := y.Auth(y.CurrentCloudAuth)
+			auth.ClientID = v
+			return nil
+		},
+	},
+	xCloudClientSecret: {
+		"client_secret",
+		"anysecret",
+		xkindCloudAuth,
+		func(v string, y *RpkYaml) error {
+			auth := y.Auth(y.CurrentCloudAuth)
+			auth.ClientSecret = v
+			return nil
+		},
+	},
+}
+
+// XFlags returns the list of -X flags that are supported by rpk.
+func XFlags() []string {
+	keys := maps.Keys(xflags)
+	sort.Strings(keys)
+	return keys
+}
+
+// XProfileFlags returns all X flags that modify rpk profile settings, and
+// their corresponding yaml paths.
+func XProfileFlags() (xs, yamlPaths []string) {
+	for k, v := range xflags {
+		if v.kind == xkindProfile {
+			xs = append(xs, k)
+			yamlPaths = append(yamlPaths, v.path)
+		}
+	}
+	return
+}
+
+// XCloudAuthFlags returns all X flags that modify rpk cloud auth settings, and
+// their corresponding yaml paths.
+func XCloudAuthFlags() (xs, yamlPaths []string) {
+	for k, v := range xflags {
+		if v.kind == xkindCloudAuth {
+			xs = append(xs, k)
+			yamlPaths = append(yamlPaths, v.path)
+		}
+	}
+	return
+}
+
+// XFlagYamlPath returns the yaml path for the given x flag, if the
+// flag exists.
+func XFlagYamlPath(x string) (string, bool) {
+	v, ok := xflags[x]
+	if !ok {
+		return "", false
+	}
+	return v.path, true
+}
 
 // Params contains rpk-wide configuration parameters.
 type Params struct {
-	// ConfigPath is any flag-specified config path.
+	// ConfigFlag is any flag-specified config path.
 	//
 	// This is unused until step (2) in the refactoring process.
-	ConfigPath string
+	ConfigFlag string
 
 	// LogLevel can be either none (default), error, warn, info, or debug,
 	// or any prefix of those strings, upper or lower case.
@@ -114,25 +332,21 @@ type Params struct {
 	logger     *zap.Logger
 
 	// BACKCOMPAT FLAGS
-	//
-	// Note that some of these will move to standard persistent flags,
-	// but are backcompat flags for the -X transition.
-
-	brokers       []string
-	user          string
-	password      string
-	saslMechanism string
-
-	enableKafkaTLS bool
-	kafkaCAFile    string
-	kafkaCertFile  string
-	kafkaKeyFile   string
-
-	adminURLs      []string
-	enableAdminTLS bool
-	adminCAFile    string
-	adminCertFile  string
-	adminKeyFile   string
+	brokers           []string
+	user              string
+	password          string
+	saslMechanism     string
+	enableKafkaTLS    bool
+	kafkaCAFile       string
+	kafkaCertFile     string
+	kafkaKeyFile      string
+	adminURLs         []string
+	enableAdminTLS    bool
+	adminCAFile       string
+	adminCertFile     string
+	adminKeyFile      string
+	cloudClientID     string
+	cloudClientSecret string
 }
 
 // ParamsHelp returns the long help text for -X help.
@@ -146,36 +360,39 @@ brokers=127.0.0.1:9092,localhost:9094
   A comma separated list of host:ports that rpk talks to for the Kafka API.
   By default, this is 127.0.0.1:9092.
 
-brokers.tls.enabled=true
+tls.enabled=true
   A boolean that enableenables rpk to speak TLS to your broker's Kafka API listeners.
   You can use this if you have well known certificates setup on your Kafka API.
   If you use mTLS, specifying mTLS certificate filepaths automatically opts
   into TLS enabled.
 
-brokers.tls.ca_cert_path=/path/to/ca.pem
+tls.ca=/path/to/ca.pem
   A filepath to a PEM encoded CA certificate file to talk to your broker's
   Kafka API listeners with mTLS. You may also need this if your listeners are
   using a certificate by a well known authority that is not yet bundled on your
   operating system.
 
-brokers.tls.client_cert_path=/path/to/cert.pem
+tls.cert=/path/to/cert.pem
   A filepath to a PEM encoded client certificate file to talk to your broker's
   Kafka API listeners with mTLS.
 
-brokers.tls.client_key_path=/path/to/key.pem
+tls.key=/path/to/key.pem
   A filepath to a PEM encoded client key file to talk to your broker's Kafka
   API listeners with mTLS.
 
-brokers.sasl.mechanism=SCRAM-SHA-256
+sasl.mechanism=SCRAM-SHA-256
   The SASL mechanism to use for authentication. This can be either SCRAM-SHA-256
   or SCRAM-SHA-512. Note that with Redpanda, the Admin API can be configured to
-  require basic authentication with your Kafka API SASL credentials.
+  require basic authentication with your Kafka API SASL credentials. This
+  defaults to SCRAM-SHA-256 if no mechanism is specified.
 
-brokers.sasl.user=username
-  The SASL username to use for authentication.
+user=username
+  The SASL username to use for authentication. This is also used for the admin
+  API if you have configured it to require basic authentication.
 
-brokers.sasl.pass=password
-  The SASL password to use for authentication.
+pass=password
+  The SASL password to use for authentication. This is also used for the admin
+  API if you have configured it to require basic authentication.
 
 admin.hosts=localhost:9644,rp.example.com:9644
   A comma separated list of host:ports that rpk talks to for the Admin API.
@@ -187,37 +404,45 @@ admin.tls.enabled=false
   If you use mTLS, specifying mTLS certificate filepaths automatically opts
   into TLS enabled.
 
-admin.tls.ca_cert_path=/path/to/ca.pem
+admin.tls.ca=/path/to/ca.pem
   A filepath to a PEM encoded CA certificate file to talk to your broker's
   Admin API listeners with mTLS. You may also need this if your listeners are
   using a certificate by a well known authority that is not yet bundled on your
   operating system.
 
-admin.tls.client_cert_path=/path/to/cert.pem
+admin.tls.cert=/path/to/cert.pem
   A filepath to a PEM encoded client certificate file to talk to your broker's
   Admin API listeners with mTLS.
 
-admin.tls.client_key_path=/path/to/key.pem
+admin.tls.key=/path/to/key.pem
   A filepath to a PEM encoded client key file to talk to your broker's Admin
   API listeners with mTLS.
+
+cloud.client_id=somestring
+  An oauth client ID to use for authenticating with the Redpanda Cloud API.
+
+cloud.client_secret=somelongerstring
+  An oauth client secret to use for authenticating with the Redpanda Cloud API.
 `
 }
 
 // ParamsList returns the short help text for -X list.
 func ParamsList() string {
 	return `brokers=comma,delimited,host:ports
-brokers.tls.enabled=boolean
-brokers.tls.ca_cert_path=/path/to/ca.pem
-brokers.tls.client_cert_path=/path/to/cert.pem
-brokers.tls.client_key_path=/path/to/key.pem
-brokers.sasl.mechanism=SCRAM-SHA-256 or SCRAM-SHA-512
-brokers.sasl.user=username
-brokers.sasl.pass=password
+tls.enabled=boolean
+tls.ca=/path/to/ca.pem
+tls.cert=/path/to/cert.pem
+tls.key=/path/to/key.pem
+sasl.mechanism=SCRAM-SHA-256 or SCRAM-SHA-512
+user=username
+pass=password
 admin.hosts=comma,delimited,host:ports
 admin.tls.enabled=boolean
-admin.tls.ca_cert_path=/path/to/ca.pem
-admin.tls.client_cert_path=/path/to/cert.pem
-admin.tls.client_key_path=/path/to/key.pem
+admin.tls.ca=/path/to/ca.pem
+admin.tls.cert=/path/to/cert.pem
+admin.tls.key=/path/to/key.pem
+cloud.client_id=somestring
+cloud.client_secret=somelongerstring
 `
 }
 
@@ -230,10 +455,10 @@ admin.tls.client_key_path=/path/to/key.pem
 func (p *Params) InstallKafkaFlags(cmd *cobra.Command) {
 	pf := cmd.PersistentFlags()
 
-	pf.StringSliceVar(&p.brokers, flagBrokers, nil, "Comma separated list of broker host:ports")
+	pf.StringSliceVar(&p.brokers, "brokers", nil, "Comma separated list of broker host:ports")
 	pf.StringVar(&p.user, FlagSASLUser, "", "SASL user to be used for authentication")
-	pf.StringVar(&p.password, flagSASLPass, "", "SASL password to be used for authentication")
-	pf.StringVar(&p.saslMechanism, flagSASLMechanism, "", "The authentication mechanism to use (SCRAM-SHA-256, SCRAM-SHA-512)")
+	pf.StringVar(&p.password, "password", "", "SASL password to be used for authentication")
+	pf.StringVar(&p.saslMechanism, "sasl-mechanism", "", "The authentication mechanism to use (SCRAM-SHA-256, SCRAM-SHA-512)")
 
 	p.InstallTLSFlags(cmd)
 }
@@ -256,14 +481,22 @@ func (p *Params) InstallTLSFlags(cmd *cobra.Command) {
 func (p *Params) InstallAdminFlags(cmd *cobra.Command) {
 	pf := cmd.PersistentFlags()
 
-	pf.StringSliceVar(&p.adminURLs, flagAdminHosts2, nil, "Comma separated list of admin API host:ports")
-	pf.StringSliceVar(&p.adminURLs, flagAdminHosts1, nil, "")
+	pf.StringSliceVar(&p.adminURLs, "api-urls", nil, "Comma separated list of admin API host:ports")
+	pf.StringSliceVar(&p.adminURLs, "hosts", nil, "")
 	pf.StringSliceVar(&p.adminURLs, "admin-url", nil, "")
 
-	pf.BoolVar(&p.enableAdminTLS, flagEnableAdminTLS, false, "Enable TLS for the Admin API (not necessary if specifying custom certs)")
-	pf.StringVar(&p.adminCAFile, flagAdminTLSCA, "", "The CA certificate  to be used for TLS communication with the admin API")
-	pf.StringVar(&p.adminCertFile, flagAdminTLSCert, "", "The certificate to be used for TLS authentication with the admin API")
-	pf.StringVar(&p.adminKeyFile, flagAdminTLSKey, "", "The certificate key to be used for TLS authentication with the admin API")
+	pf.BoolVar(&p.enableAdminTLS, "admin-api-tls-enabled", false, "Enable TLS for the Admin API (not necessary if specifying custom certs)")
+	pf.StringVar(&p.adminCAFile, "admin-api-tls-truststore", "", "The CA certificate  to be used for TLS communication with the admin API")
+	pf.StringVar(&p.adminCertFile, "admin-api-tls-cert", "", "The certificate to be used for TLS authentication with the admin API")
+	pf.StringVar(&p.adminKeyFile, "admin-api-tls-key", "", "The certificate key to be used for TLS authentication with the admin API")
+}
+
+// InstallCloudFlags adds the --client-id and --client-secret flags that
+// existed in the `rpk cloud` subcommands.
+func (p *Params) InstallCloudFlags(cmd *cobra.Command) {
+	cmd.Flags().StringVar(&p.cloudClientID, FlagClientID, "", "The client ID of the organization in Redpanda Cloud")
+	cmd.Flags().StringVar(&p.cloudClientSecret, FlagClientSecret, "", "The client secret of the organization in Redpanda Cloud")
+	cmd.MarkFlagsRequiredTogether(FlagClientID, FlagClientSecret)
 }
 
 func (p *Params) backcompatFlagsToOverrides() {
@@ -308,6 +541,13 @@ func (p *Params) backcompatFlagsToOverrides() {
 	if p.adminKeyFile != "" {
 		p.FlagOverrides = append(p.FlagOverrides, fmt.Sprintf("%s=%s", xAdminClientKey, p.adminKeyFile))
 	}
+
+	if p.cloudClientID != "" {
+		p.FlagOverrides = append(p.FlagOverrides, fmt.Sprintf("%s=%s", xCloudClientID, p.cloudClientID))
+	}
+	if p.cloudClientSecret != "" {
+		p.FlagOverrides = append(p.FlagOverrides, fmt.Sprintf("%s=%s", xCloudClientSecret, p.cloudClientSecret))
+	}
 }
 
 ///////////////////////
@@ -322,40 +562,44 @@ func (p *Params) backcompatFlagsToOverrides() {
 //   - Processes env and flag overrides.
 //   - Sets unset default values.
 func (p *Params) Load(fs afero.Fs) (*Config, error) {
-	p.backcompatFlagsToOverrides()
-
-	// If we have a config path loaded (through --config flag) the user
-	// expect to load or create the file from this directory.
-	if p.ConfigPath != "" {
-		if exist, _ := afero.Exists(fs, p.ConfigPath); !exist {
-			err := fs.MkdirAll(filepath.Dir(p.ConfigPath), 0o755)
-			if err != nil {
-				return nil, err
-			}
-		}
-	}
-	c := DevDefault()
-
-	if err := p.readConfig(fs, c); err != nil {
-		// Sometimes a config file will not exist (e.g. rpk running on MacOS),
-		// which is OK. In those cases, just return the default config.
-		if !errors.Is(err, afero.ErrFileNotFound) {
-			return nil, err
-		}
-		// If there is no file, we set the file location to the passed
-		// --config value, otherwise we use the default.
-		if p.ConfigPath != "" {
-			c.fileLocation = p.ConfigPath
-		} else {
-			c.fileLocation = DefaultPath
-		}
-	}
-	c.backcompat()
-	if err := p.processOverrides(c); err != nil {
+	defRpk, err := defaultVirtualRpkYaml()
+	if err != nil {
 		return nil, err
 	}
-	c.addUnsetDefaults()
+	c := &Config{
+		p:            p,
+		redpandaYaml: *DevDefault(),
+		rpkYaml:      defRpk,
+	}
+	c.rpkYaml.Profiles[0].KafkaAPI = c.redpandaYaml.Rpk.KafkaAPI
+	c.rpkYaml.Profiles[0].AdminAPI = c.redpandaYaml.Rpk.AdminAPI
 
+	if err := p.backcompatOldCloudYaml(fs); err != nil {
+		return nil, err
+	}
+	if err := p.readRpkConfig(fs, c); err != nil {
+		return nil, err
+	}
+	if err := p.readRedpandaConfig(fs, c); err != nil {
+		return nil, err
+	}
+
+	c.redpandaYaml.backcompat()
+	c.mergeRpkIntoRedpanda(true)     // merge actual rpk.yaml KafkaAPI,AdminAPI,Tuners into redpanda.yaml rpk section
+	c.addUnsetRedpandaDefaults(true) // merge from actual redpanda.yaml redpanda section to rpk section
+	c.ensureRpkProfile()             // ensure Virtual rpk.yaml has a loaded profile
+	c.ensureRpkCloudAuth()           // ensure Virtual rpk.yaml has a current auth
+	c.mergeRedpandaIntoRpk()         // merge redpanda.yaml rpk section back into rpk.yaml KafkaAPI,AdminAPI,Tuners (picks up redpanda.yaml extras sections were empty)
+	p.backcompatFlagsToOverrides()
+	if err := p.processOverrides(c); err != nil { // override rpk.yaml profile from env&flags
+		return nil, err
+	}
+	c.mergeRpkIntoRedpanda(false)     // merge Virtual rpk.yaml into redpanda.yaml rpk section (picks up env&flags)
+	c.addUnsetRedpandaDefaults(false) // merge from Virtual redpanda.yaml redpanda section to rpk section (picks up original redpanda.yaml defaults)
+	c.mergeRedpandaIntoRpk()          // merge from redpanda.yaml rpk section back to rpk.yaml, picks up final redpanda.yaml defaults
+	c.fixSchemePorts()                // strip any scheme, default any missing ports
+	c.addConfigToProfiles()
+	c.parseDevOverrides()
 	return c, nil
 }
 
@@ -457,120 +701,184 @@ func (p *Params) Logger() *zap.Logger {
 	return p.logger
 }
 
-// isSameLoaded checks if the config object content is the same as the one
-// loaded. The function returns a boolean indicating if the two config objects
-// are equal.
-func (c *Config) isSameLoaded() bool {
-	var init, final *Config
-	if err := yaml.Unmarshal(c.RawFile(), &init); err != nil {
-		return false
-	}
-
-	// We marshal to later unmarshal the passed cfg to avoid comparing a
-	// configuration with loaded unexported values such as
-	// (file, fileLocation or rawFile)
-	finalRaw, err := yaml.Marshal(c)
+func readFile(fs afero.Fs, path string) (string, []byte, error) {
+	abs, err := filepath.Abs(path)
 	if err != nil {
-		return false
+		return abs, nil, err
 	}
-
-	if err := yaml.Unmarshal(finalRaw, &final); err != nil {
-		return false
+	file, err := afero.ReadFile(fs, abs)
+	if err != nil {
+		return abs, nil, err
 	}
-
-	// If we have a file with an older version of the SeedServer, we should
-	// write the file to disk even if the contents are the same. This is
-	// necessary because Redpanda no longer parses older SeedServer versions.
-	//
-	// For more information, see github.com/redpanda-data/redpanda/issues/8915.
-	if init != nil {
-		for _, s := range init.Redpanda.SeedServers {
-			if s.untabbed {
-				return false
-			}
-		}
-	}
-
-	return reflect.DeepEqual(init, final)
+	return abs, file, err
 }
 
-// Write writes loaded configuration parameters to redpanda.yaml.
-func (c *Config) Write(fs afero.Fs) (rerr error) {
-	// We return early if the config is the same as the one loaded in the first
-	// place and avoid writing the file.
-	if c.isSameLoaded() {
+func (p *Params) backcompatOldCloudYaml(fs afero.Fs) error {
+	def, err := DefaultRpkYamlPath()
+	if err != nil {
+		// If the user has deliberately unset HOME and is using a --config
+		// flag, we will just avoid backcompatting the __cloud.yaml file.
+		if p.ConfigFlag != "" {
+			return nil
+		}
+		return err
+	}
+
+	// Read and parse the old file. If it does not exist, that's great.
+	oldPath := filepath.Join(filepath.Dir(def), "__cloud.yaml")
+	_, raw, err := readFile(fs, oldPath)
+	if err != nil {
+		if errors.Is(err, afero.ErrFileNotFound) {
+			return nil
+		}
+		return fmt.Errorf("unable to backcompat __cloud.yaml file: %v", err)
+	}
+	var old struct {
+		ClientID     string `yaml:"client_id"`
+		ClientSecret string `yaml:"client_secret"`
+		AuthToken    string `yaml:"auth_token"`
+	}
+	if err := yaml.Unmarshal(raw, &old); err != nil {
+		return fmt.Errorf("unable to yaml decode %s: %v", oldPath, err)
+	}
+
+	// For the rpk.yaml, if it does not exist, we will create it.
+	// We only support the default path, not any --config override.
+	// We do not want to migrate into some custom path.
+	_, rawRpkYaml, err := readFile(fs, def)
+	if err != nil && !errors.Is(err, afero.ErrFileNotFound) {
+		return fmt.Errorf("unable to read %s: %v", def, err)
+	}
+	var rpkYaml RpkYaml
+	if errors.Is(err, afero.ErrFileNotFound) {
+		rpkYaml = emptyVirtualRpkYaml()
+	} else {
+		if err := yaml.Unmarshal(rawRpkYaml, &rpkYaml); err != nil {
+			return fmt.Errorf("unable to yaml decode %s: %v", def, err)
+		}
+		if rpkYaml.Version < 1 {
+			return fmt.Errorf("%s is not in the expected rpk.yaml format", def)
+		} else if rpkYaml.Version > 1 {
+			return fmt.Errorf("%s is using a newer rpk.yaml format than we understand, please upgrade rpk", def)
+		}
+	}
+	rpkYaml.fileLocation = def
+
+	var exists bool
+	for _, a := range rpkYaml.CloudAuths {
+		if a.ClientID == old.ClientID && a.ClientSecret == old.ClientSecret {
+			exists = true
+			break
+		}
+	}
+	if !exists {
+		a := RpkCloudAuth{
+			Name:         "for_byoc",
+			Description:  "Client ID and Secret for BYOC",
+			ClientID:     old.ClientID,
+			ClientSecret: old.ClientSecret,
+			AuthToken:    old.AuthToken,
+		}
+		rpkYaml.PushAuth(a)
+		if rpkYaml.CurrentCloudAuth == "" {
+			rpkYaml.CurrentCloudAuth = a.Name
+		}
+		if err := rpkYaml.Write(fs); err != nil {
+			return fmt.Errorf("unable to migrate %s to %s: %v", oldPath, def, err)
+		}
+	}
+	// If we fail at removing the old file, that's ok. We will try again
+	// the next time this command runs.
+	fs.Remove(oldPath)
+
+	return nil
+}
+
+func (p *Params) readRpkConfig(fs afero.Fs, c *Config) error {
+	def, err := DefaultRpkYamlPath()
+	path := def
+	if p.ConfigFlag != "" {
+		path = p.ConfigFlag
+	} else if err != nil {
+		return err
+	}
+	abs, file, err := readFile(fs, path)
+	if err != nil {
+		if !errors.Is(err, afero.ErrFileNotFound) {
+			return err
+		}
+		// The file does not exist. We might create it. The user could
+		// be trying to create either an rpk.yaml or a redpanda.yaml.
+		// All rpk.yaml creation commands are under rpk {auth,profile},
+		// whereas there as only three redpanda.yaml creation commands.
+		// Since they do not overlap, it is ok to save this config flag
+		// as the file location for both of these.
+		c.rpkYaml.fileLocation = abs
+		c.rpkYamlActual.fileLocation = abs
 		return nil
 	}
-	location := c.fileLocation
-	if location == "" {
-		location = DefaultPath
+	before := c.rpkYaml
+	if err := yaml.Unmarshal(file, &c.rpkYaml); err != nil {
+		return fmt.Errorf("unable to yaml decode %s: %v", path, err)
 	}
-	b, err := yaml.Marshal(c)
-	if err != nil {
-		return fmt.Errorf("marshal error in loaded config, err: %s", err)
+	if c.rpkYaml.Version < 1 {
+		if p.ConfigFlag == "" {
+			return fmt.Errorf("%s is not in the expected rpk.yaml format", def)
+		}
+		c.rpkYaml = before // this config is not an rpk.yaml; preserve our defaults
+		return nil
+	} else if c.rpkYaml.Version > 1 {
+		return fmt.Errorf("%s is using a newer rpk.yaml format than we understand, please upgrade rpk", def)
 	}
+	yaml.Unmarshal(file, &c.rpkYamlActual)
 
-	return rpkos.ReplaceFile(fs, location, b, 0o644)
+	c.rpkYamlExists = true
+	c.rpkYaml.fileLocation = abs
+	c.rpkYamlActual.fileLocation = abs
+	c.rpkYaml.fileRaw = file
+	c.rpkYamlActual.fileRaw = file
+	return nil
 }
 
-func (p *Params) LocateConfig(fs afero.Fs) (string, error) {
-	paths := []string{p.ConfigPath}
-	if p.ConfigPath == "" {
-		paths = nil
-		if configDir, _ := os.UserConfigDir(); configDir != "" {
-			paths = append(paths, filepath.Join(configDir, "rpk", "rpk.yaml"))
-		}
-		paths = append(paths, filepath.FromSlash(DefaultPath))
+func (p *Params) readRedpandaConfig(fs afero.Fs, c *Config) error {
+	paths := []string{p.ConfigFlag}
+	if p.ConfigFlag == "" {
+		paths = paths[:0]
 		if cd, _ := os.Getwd(); cd != "" {
 			paths = append(paths, filepath.Join(cd, "redpanda.yaml"))
 		}
-		if home, _ := os.UserHomeDir(); home != "" {
-			paths = append(paths, filepath.Join(home, "redpanda.yaml"))
-		}
+		paths = append(paths, filepath.FromSlash(DefaultRedpandaYamlPath))
 	}
-
 	for _, path := range paths {
-		// Ignore error: we only care whether it exists, other
-		// stat() errors are not interesting.
-		exists, _ := afero.Exists(fs, path)
-		if exists {
-			return path, nil
+		abs, file, err := readFile(fs, path)
+		if err != nil {
+			if errors.Is(err, afero.ErrFileNotFound) {
+				continue
+			}
 		}
-	}
 
-	return "", fmt.Errorf("%w: unable to find config in searched paths %v", afero.ErrFileNotFound, paths)
-}
+		if err := yaml.Unmarshal(file, &c.redpandaYaml); err != nil {
+			return fmt.Errorf("unable to yaml decode %s: %v", path, err)
+		}
+		yaml.Unmarshal(file, &c.redpandaYamlActual)
 
-func (p *Params) readConfig(fs afero.Fs, c *Config) error {
-	path, err := p.LocateConfig(fs)
-	if err != nil {
-		return err
+		c.redpandaYamlExists = true
+		c.redpandaYaml.fileLocation = abs
+		c.redpandaYamlActual.fileLocation = abs
+		c.redpandaYaml.fileRaw = file
+		c.redpandaYamlActual.fileRaw = file
+		return nil
 	}
-
-	file, err := afero.ReadFile(fs, path)
-	if err != nil {
-		return err
-	}
-
-	if err := yaml.Unmarshal(file, c); err != nil {
-		return fmt.Errorf("unable to yaml decode %s: %v", path, err)
-	}
-	yaml.Unmarshal(file, &c.file) // cannot error since previous did not
-	abs, err := filepath.Abs(path)
-	if err != nil {
-		return err
-	}
-	c.fileLocation = abs
-	c.file.fileLocation = abs
-	c.rawFile = file
-	c.file.rawFile = file
+	location := paths[len(paths)-1]
+	c.redpandaYaml.fileLocation = location
+	c.redpandaYamlActual.fileLocation = location
 	return nil
 }
 
 // Before we process overrides, we process any backwards compatibility from the
 // loaded file.
-func (c *Config) backcompat() {
-	r := &c.Rpk
+func (y *RedpandaYaml) backcompat() {
+	r := &y.Rpk
 	if r.KafkaAPI.TLS == nil {
 		r.KafkaAPI.TLS = r.TLS
 	}
@@ -582,70 +890,123 @@ func (c *Config) backcompat() {
 	}
 }
 
-func splitCommaIntoStrings(in string, dst *[]string) error {
-	*dst = nil
-	split := strings.Split(in, ",")
-	for _, on := range split {
-		on = strings.TrimSpace(on)
-		if len(on) == 0 {
-			return fmt.Errorf("invalid empty value in %q", in)
-		}
-		*dst = append(*dst, on)
+// We merge rpk.yaml files into our Virtual redpanda.yaml rpk section,
+// only if the rpk section contains relevant bits of information.
+//
+// We start with the actual file itself: if the file is populated, we use it.
+// Later, after doing a bunch of default setting to the Virtual rpk.yaml,
+// we call this again to migrate any final new additions.
+func (c *Config) mergeRpkIntoRedpanda(actual bool) {
+	src := &c.rpkYaml
+	if actual {
+		src = &c.rpkYamlActual
 	}
-	return nil
+	dst := &c.redpandaYaml.Rpk
+
+	p := src.Profile(src.CurrentProfile)
+	if p == nil {
+		return
+	}
+	if !reflect.DeepEqual(p.KafkaAPI, RpkKafkaAPI{}) {
+		dst.KafkaAPI = p.KafkaAPI
+	}
+	if !reflect.DeepEqual(p.AdminAPI, RpkAdminAPI{}) {
+		dst.AdminAPI = p.AdminAPI
+	}
 }
 
-// Process overrides processes env and flag overrides into a config file (so
-// that we result in our priority order: flag, env, file).
-func (p *Params) processOverrides(c *Config) error {
-	r := &c.Rpk
-	k := &r.KafkaAPI
-	a := &r.AdminAPI
-
-	// We have three "make" functions that initialize pointer values if
-	// necessary.
-	var (
-		mkKafkaTLS = func() {
-			if k.TLS == nil {
-				k.TLS = new(TLS)
-			}
-		}
-		mkSASL = func() {
-			if k.SASL == nil {
-				k.SASL = new(SASL)
-			}
-		}
-		mkAdminTLS = func() {
-			if a.TLS == nil {
-				a.TLS = new(TLS)
-			}
-		}
-	)
-
-	// To override, we lookup any override key (e.g., brokers.tls.enabled
-	// or admin_api.hosts) into this map. If the key exists, we processes
-	// the value as appropriate (per the value function in the map).
-	fns := map[string]func(string) error{
-		xKafkaBrokers: func(v string) error { return splitCommaIntoStrings(v, &k.Brokers) },
-
-		xKafkaTLSEnabled: func(string) error { mkKafkaTLS(); return nil },
-		xKafkaCACert:     func(v string) error { mkKafkaTLS(); k.TLS.TruststoreFile = v; return nil },
-		xKafkaClientCert: func(v string) error { mkKafkaTLS(); k.TLS.CertFile = v; return nil },
-		xKafkaClientKey:  func(v string) error { mkKafkaTLS(); k.TLS.KeyFile = v; return nil },
-
-		xKafkaSASLMechanism: func(v string) error { mkSASL(); k.SASL.Mechanism = v; return nil },
-		xKafkaSASLUser:      func(v string) error { mkSASL(); k.SASL.User = v; return nil },
-		xKafkaSASLPass:      func(v string) error { mkSASL(); k.SASL.Password = v; return nil },
-
-		xAdminHosts:      func(v string) error { return splitCommaIntoStrings(v, &a.Addresses) },
-		xAdminTLSEnabled: func(string) error { mkAdminTLS(); return nil },
-		xAdminCACert:     func(v string) error { mkAdminTLS(); a.TLS.TruststoreFile = v; return nil },
-		xAdminClientCert: func(v string) error { mkAdminTLS(); a.TLS.CertFile = v; return nil },
-		xAdminClientKey:  func(v string) error { mkAdminTLS(); a.TLS.KeyFile = v; return nil },
+// This function ensures a current profile exists in the Virtual rpk.yaml.
+func (c *Config) ensureRpkProfile() {
+	dst := &c.rpkYaml
+	p := dst.Profile(dst.CurrentProfile)
+	if p != nil {
+		return
 	}
 
-	// The parse function accepts the given overrides (key=value pairs) and
-	// processes each. This is run first for env vars then for flags.
+	def := DefaultRpkProfile()
+	dst.CurrentProfile = def.Name
+	p = dst.Profile(dst.CurrentProfile)
+	if p != nil {
+		return
+	}
+	dst.PushProfile(def)
+}
+
+// This function ensures a current auth exists in the Virtual rpk.yaml.
+func (c *Config) ensureRpkCloudAuth() {
+	dst := &c.rpkYaml
+	auth := dst.Auth(dst.CurrentCloudAuth)
+	if auth != nil {
+		return
+	}
+
+	def := DefaultRpkCloudAuth()
+	dst.CurrentCloudAuth = def.Name
+	auth = dst.Auth(dst.CurrentCloudAuth)
+	if auth != nil {
+		return
+	}
+	dst.PushAuth(def)
+}
+
+// We merge redpanda.yaml's rpk section back into rpk.yaml's profile.  This
+// picks up any extras from addUnsetRedpandaDefaults that were not set in the
+// rpk file. We call this after ensureRpkProfile, so we do not need to
+// nil-check the profile.
+func (c *Config) mergeRedpandaIntoRpk() {
+	src := &c.redpandaYaml.Rpk
+	dst := &c.rpkYaml
+
+	p := dst.Profile(dst.CurrentProfile)
+	if reflect.DeepEqual(p.KafkaAPI, RpkKafkaAPI{}) {
+		p.KafkaAPI = src.KafkaAPI
+	}
+	if reflect.DeepEqual(p.AdminAPI, RpkAdminAPI{}) {
+		p.AdminAPI = src.AdminAPI
+	}
+}
+
+// Similar to backcompat flags, we first capture old env vars and then new
+// ones. New env vars are the same as -X, uppercased, s/./_/.
+func envOverrides() []string {
+	var envOverrides []string
+	for _, envMapping := range []struct {
+		old       string
+		targetKey string
+	}{
+		{"REDPANDA_BROKERS", xKafkaBrokers},
+		{"REDPANDA_TLS_TRUSTSTORE", xKafkaCACert},
+		{"REDPANDA_TLS_CA", xKafkaCACert},
+		{"REDPANDA_TLS_CERT", xKafkaClientCert},
+		{"REDPANDA_TLS_KEY", xKafkaClientKey},
+		{"REDPANDA_SASL_MECHANISM", xKafkaSASLMechanism},
+		{"REDPANDA_SASL_USERNAME", xKafkaSASLUser},
+		{"REDPANDA_SASL_PASSWORD", xKafkaSASLPass},
+		{"REDPANDA_API_ADMIN_ADDRS", xAdminHosts},
+		{"REDPANDA_ADMIN_TLS_TRUSTSTORE", xAdminCACert},
+		{"REDPANDA_ADMIN_TLS_CA", xAdminCACert},
+		{"REDPANDA_ADMIN_TLS_CERT", xAdminClientCert},
+		{"REDPANDA_ADMIN_TLS_KEY", xAdminClientKey},
+		{"RPK_CLOUD_CLIENT_ID", xCloudClientID},
+		{"RPK_CLOUD_CLIENT_SECRET", xCloudClientSecret},
+	} {
+		if v, exists := os.LookupEnv(envMapping.old); exists {
+			envOverrides = append(envOverrides, envMapping.targetKey+"="+v)
+		}
+	}
+	for _, k := range XFlags() {
+		targetKey := k
+		k = strings.ReplaceAll(k, ".", "_")
+		k = strings.ToUpper(k)
+		if v, exists := os.LookupEnv("RPK_" + k); exists {
+			envOverrides = append(envOverrides, targetKey+"="+v)
+		}
+	}
+	return envOverrides
+}
+
+// processes first env and then flag overrides into our virtual rpk yaml.
+func (p *Params) processOverrides(c *Config) error {
 	parse := func(isEnv bool, kvs []string) error {
 		from := "flag"
 		if isEnv {
@@ -658,60 +1019,17 @@ func (p *Params) processOverrides(c *Config) error {
 			}
 			k, v := kv[0], kv[1]
 
-			fn, exists := fns[strings.ToLower(k)]
+			xf, exists := xflags[strings.ToLower(k)]
 			if !exists {
 				return fmt.Errorf("%s config: unknown key %q", from, k)
 			}
-			if err := fn(v); err != nil {
+			if err := xf.parse(v, &c.rpkYaml); err != nil {
 				return fmt.Errorf("%s config key %q: %s", from, k, err)
 			}
 		}
 		return nil
 	}
-
-	var envOverrides []string
-
-	// Similar to our flag mapping in ParamsFromCommand, we want to
-	// continue supporting older environment variables. This section maps
-	// old env vars to what key we should use in this new format.
-	for _, envMapping := range []struct {
-		old       string
-		targetKey string
-	}{
-		{envBrokers, xKafkaBrokers},
-		{envTLSCA, xKafkaCACert},
-		{envTLSCert, xKafkaClientCert},
-		{envTLSKey, xKafkaClientKey},
-		{envSASLMechanism, xKafkaSASLMechanism},
-		{envSASLUser, xKafkaSASLUser},
-		{envSASLPass, xKafkaSASLPass},
-		{envAdminHosts, xAdminHosts},
-		{envAdminTLSCA, xAdminCACert},
-		{envAdminTLSCert, xAdminClientCert},
-		{envAdminTLSKey, xAdminClientKey},
-	} {
-		if v, exists := os.LookupEnv(envMapping.old); exists {
-			envOverrides = append(envOverrides, envMapping.targetKey+"="+v)
-		}
-	}
-
-	// Now we lookup any new format environment variables. These are named
-	// exactly the same as our -X flag keys, but with dots replaced with
-	// underscores, and the words uppercased. The new format takes
-	// precedence over the old, and we ensure that by adding these
-	// overrides last in the list of env overrides.
-	for k := range fns {
-		targetKey := k
-		k = strings.ReplaceAll(k, ".", "_")
-		k = strings.ToUpper(k)
-		if v, exists := os.LookupEnv("RPK_" + k); exists {
-			envOverrides = append(envOverrides, targetKey+"="+v)
-		}
-	}
-
-	// Finally, we process overrides: first environment variables, and then
-	// flags.
-	if err := parse(true, envOverrides); err != nil {
+	if err := parse(true, envOverrides()); err != nil {
 		return err
 	}
 	return parse(false, p.FlagOverrides)
@@ -719,42 +1037,114 @@ func (p *Params) processOverrides(c *Config) error {
 
 // As a final step in initializing a config, we add a few defaults to some
 // specific unset values.
-func (c *Config) addUnsetDefaults() {
+func (c *Config) addUnsetRedpandaDefaults(actual bool) {
+	src := c.redpandaYaml
+	if actual {
+		src = c.redpandaYamlActual
+	}
+	dst := &c.redpandaYaml
 	defaultFromRedpanda(
-		namedAuthnToNamed(c.Redpanda.KafkaAPI),
-		c.Redpanda.KafkaAPITLS,
-		&c.Rpk.KafkaAPI.Brokers,
+		namedAuthnToNamed(src.Redpanda.KafkaAPI),
+		src.Redpanda.KafkaAPITLS,
+		&dst.Rpk.KafkaAPI.Brokers,
 	)
 	defaultFromRedpanda(
-		c.Redpanda.AdminAPI,
-		c.Redpanda.AdminAPITLS,
-		&c.Rpk.AdminAPI.Addresses,
+		src.Redpanda.AdminAPI,
+		src.Redpanda.AdminAPITLS,
+		&dst.Rpk.AdminAPI.Addresses,
 	)
 
-	if len(c.Rpk.KafkaAPI.Brokers) == 0 && len(c.Rpk.AdminAPI.Addresses) > 0 {
-		host, _, err := net.SplitHostPort(c.Rpk.AdminAPI.Addresses[0])
+	if len(dst.Rpk.KafkaAPI.Brokers) == 0 && len(dst.Rpk.AdminAPI.Addresses) > 0 {
+		_, host, _, err := rpknet.SplitSchemeHostPort(dst.Rpk.AdminAPI.Addresses[0])
 		if err == nil {
 			host = net.JoinHostPort(host, strconv.Itoa(DefaultKafkaPort))
-			c.Rpk.KafkaAPI.Brokers = []string{host}
-			c.Rpk.KafkaAPI.TLS = c.Rpk.AdminAPI.TLS
+			dst.Rpk.KafkaAPI.Brokers = []string{host}
+			dst.Rpk.KafkaAPI.TLS = dst.Rpk.AdminAPI.TLS
 		}
 	}
 
-	if len(c.Rpk.AdminAPI.Addresses) == 0 && len(c.Rpk.KafkaAPI.Brokers) > 0 {
-		host, _, err := net.SplitHostPort(c.Rpk.KafkaAPI.Brokers[0])
+	if len(dst.Rpk.AdminAPI.Addresses) == 0 && len(dst.Rpk.KafkaAPI.Brokers) > 0 {
+		_, host, _, err := rpknet.SplitSchemeHostPort(dst.Rpk.KafkaAPI.Brokers[0])
 		if err == nil {
 			host = net.JoinHostPort(host, strconv.Itoa(DefaultAdminPort))
-			c.Rpk.AdminAPI.Addresses = []string{host}
-			c.Rpk.AdminAPI.TLS = c.Rpk.KafkaAPI.TLS
+			dst.Rpk.AdminAPI.Addresses = []string{host}
+			dst.Rpk.AdminAPI.TLS = dst.Rpk.KafkaAPI.TLS
 		}
 	}
 
-	if len(c.Rpk.KafkaAPI.Brokers) == 0 {
-		c.Rpk.KafkaAPI.Brokers = []string{net.JoinHostPort("127.0.0.1", strconv.Itoa(DefaultKafkaPort))}
+	if len(dst.Rpk.KafkaAPI.Brokers) == 0 {
+		dst.Rpk.KafkaAPI.Brokers = []string{net.JoinHostPort("127.0.0.1", strconv.Itoa(DefaultKafkaPort))}
 	}
 
-	if len(c.Rpk.AdminAPI.Addresses) == 0 {
-		c.Rpk.AdminAPI.Addresses = []string{net.JoinHostPort("127.0.0.1", strconv.Itoa(DefaultAdminPort))}
+	if len(dst.Rpk.AdminAPI.Addresses) == 0 {
+		dst.Rpk.AdminAPI.Addresses = []string{net.JoinHostPort("127.0.0.1", strconv.Itoa(DefaultAdminPort))}
+	}
+}
+
+func (c *Config) fixSchemePorts() error {
+	for i, k := range c.redpandaYaml.Rpk.KafkaAPI.Brokers {
+		_, host, port, err := rpknet.SplitSchemeHostPort(k)
+		if err != nil {
+			return fmt.Errorf("unable to fix broker address %v: %w", k, err)
+		}
+		if port == "" {
+			port = strconv.Itoa(DefaultKafkaPort)
+		}
+		c.redpandaYaml.Rpk.KafkaAPI.Brokers[i] = net.JoinHostPort(host, port)
+	}
+	for i, a := range c.redpandaYaml.Rpk.AdminAPI.Addresses {
+		_, host, port, err := rpknet.SplitSchemeHostPort(a)
+		if err != nil {
+			return fmt.Errorf("unable to fix admin address %v: %w", a, err)
+		}
+		if port == "" {
+			port = strconv.Itoa(DefaultKafkaPort)
+		}
+		c.redpandaYaml.Rpk.AdminAPI.Addresses[i] = net.JoinHostPort(host, port)
+	}
+	p := c.rpkYaml.Profile(c.rpkYaml.CurrentProfile)
+	for i, k := range p.KafkaAPI.Brokers {
+		_, host, port, err := rpknet.SplitSchemeHostPort(k)
+		if err != nil {
+			return fmt.Errorf("unable to fix broker address %v: %w", k, err)
+		}
+		if port == "" {
+			port = strconv.Itoa(DefaultKafkaPort)
+		}
+		p.KafkaAPI.Brokers[i] = net.JoinHostPort(host, port)
+	}
+	for i, a := range p.AdminAPI.Addresses {
+		_, host, port, err := rpknet.SplitSchemeHostPort(a)
+		if err != nil {
+			return fmt.Errorf("unable to fix admin address %v: %w", a, err)
+		}
+		if port == "" {
+			port = strconv.Itoa(DefaultAdminPort)
+		}
+		p.AdminAPI.Addresses[i] = net.JoinHostPort(host, port)
+	}
+	return nil
+}
+
+func (c *Config) addConfigToProfiles() {
+	for i := range c.rpkYaml.Profiles {
+		c.rpkYaml.Profiles[i].c = c
+	}
+	for i := range c.rpkYamlActual.Profiles {
+		c.rpkYamlActual.Profiles[i].c = c
+	}
+}
+
+func (c *Config) parseDevOverrides() {
+	v := reflect.ValueOf(&c.devOverrides)
+	v = reflect.Indirect(v)
+	t := v.Type()
+	for i := 0; i < v.NumField(); i++ {
+		envKey, ok := t.Field(i).Tag.Lookup("env")
+		if !ok {
+			panic(fmt.Sprintf("missing env tag on DevOverride.%s", t.Field(i).Name))
+		}
+		v.Field(i).SetString(os.Getenv(envKey))
 	}
 }
 
@@ -856,13 +1246,11 @@ func defaultFromRedpanda(src []NamedSocketAddress, srcTLS []ServerTLS, dst *[]st
 // FIELD SETTING //
 ///////////////////
 
-// Set allow to set a single configuration field by passing a key value pair
+// Set sets a field in pointer-to-struct p to a value, following yaml tags.
 //
 //	Key:    string containing the yaml field tags, e.g: 'rpk.admin_api'.
-//	Value:  string representation of the value, either single value or partial
-//	        representation.
-//	Format: either json or yaml (default: yaml).
-func (c *Config) Set(key, value, format string) error {
+//	Value:  string representation of the value
+func Set[T any](p *T, key, value string) error {
 	if key == "" {
 		return fmt.Errorf("key field must not be empty")
 	}
@@ -872,8 +1260,25 @@ func (c *Config) Set(key, value, format string) error {
 			return err
 		}
 	}
+	finalTag := tags[len(tags)-1]
+	if len(tags) > 1 && (finalTag == "enabled" && tags[len(tags)-2] == "tls" || finalTag == "tls") {
+		switch value {
+		case "{}":
+		case "null":
+		case "true":
+			value = "{}"
+		case "false":
+			value = "null"
+		default:
+			return fmt.Errorf("%s must be true or {}", key)
+		}
+		if finalTag == "enabled" {
+			tags = tags[:len(tags)-1]
+			finalTag = tags[len(tags)-1]
+		}
+	}
 
-	field, other, err := getField(tags, "", reflect.ValueOf(c).Elem())
+	field, other, err := getField(tags, "", reflect.ValueOf(p).Elem())
 	if err != nil {
 		return err
 	}
@@ -881,9 +1286,7 @@ func (c *Config) Set(key, value, format string) error {
 
 	// For Other fields, we need to wrap the value in key:value format when
 	// unmarshaling, and we forbid indexing.
-	var finalTag string
 	if isOther {
-		finalTag = tags[len(tags)-1]
 		if _, index, _ := splitTagIndex(finalTag); index >= 0 {
 			return fmt.Errorf("cannot index into unknown field %q", finalTag)
 		}
@@ -894,23 +1297,25 @@ func (c *Config) Set(key, value, format string) error {
 		return errors.New("rpk bug, please describe how you encountered this at https://github.com/redpanda-data/redpanda/issues/new?assignees=&labels=kind%2Fbug&template=01_bug_report.md")
 	}
 
-	var unmarshal func([]byte, interface{}) error
-	switch strings.ToLower(format) {
-	case "yaml", "single", "", "json": // single is deprecated and kept for backcompat; json is a subset of yaml
-		if isOther {
-			value = fmt.Sprintf("%s: %s", finalTag, value)
-		}
-		unmarshal = yaml.Unmarshal
-	default:
-		return fmt.Errorf("unsupported format %s", format)
+	if isOther {
+		value = fmt.Sprintf("%s: %s", finalTag, value)
 	}
 
 	// If we cannot unmarshal, but our error looks like we are trying to
 	// unmarshal a single element into a slice, we index[0] into the slice
 	// and try unmarshaling again.
-	if err := unmarshal([]byte(value), field.Addr().Interface()); err != nil {
-		if elem0, ok := tryValueAsSlice0(field, format, err); ok {
-			return unmarshal([]byte(value), elem0.Addr().Interface())
+	rawv := []byte(value)
+	if err := yaml.Unmarshal(rawv, field.Addr().Interface()); err != nil {
+		// First we try wrapped with [ and ].
+		if wrapped, ok := tryValueAsUnwrappedArray(field, value, err); ok {
+			if err := yaml.Unmarshal([]byte(wrapped), field.Addr().Interface()); err == nil {
+				return nil
+			}
+		}
+		// If that still fails, we try setting a slice value if the
+		// target is a slice.
+		if elem0, ok := tryValueAsSlice0(field, err); ok {
+			return yaml.Unmarshal(rawv, elem0.Addr().Interface())
 		}
 		return err
 	}
@@ -1070,22 +1475,39 @@ func splitTagIndex(tag string) (string, int, error) {
 	return field, -1, nil
 }
 
+// If a person tries to set an array field with a comma-separated string that
+// is not wrapped in [], then we try wrapping. This makes setting brokers
+// easier. We keep our parsing a bit simple; if a person is trying to set
+// {"foo":"bar"},{"biz":"baz"}, we will not try to wrap. This supports the most
+// common / only expected use case.
+func tryValueAsUnwrappedArray(v reflect.Value, setValue string, err error) (string, bool) {
+	if v.Kind() != reflect.Slice || !strings.Contains(err.Error(), "cannot unmarshal !!") {
+		return "", false // if our destination is not a slice, or the error is not a destination-type-mismatch error, we do not wrap
+	}
+	if setValue == "" {
+		return "", false // we do not try wrapping empty strings in brackets
+	}
+	if setValue[0] == '[' || setValue[len(setValue)-1] == ']' {
+		return "", false // if this is already array-ish, we do not wrap
+	}
+	if setValue[0] == '{' || setValue[len(setValue)-1] == '}' {
+		return "", false // if this is a yaml object, we do not wrap
+	}
+	if comma := strings.IndexByte(setValue, ','); comma < 1 || comma > len(setValue)-1 {
+		return "", false // if there is no comma in the middle, we do not assume this is a comma-separated list
+	}
+	return "[" + setValue + "]", true
+}
+
 // If a value is a slice and our error indicates we are decoding a single
 // element into the slice, we create index 0 and return that to be unmarshaled
 // into.
 //
 // For json this is nice, the error is explicit. For yaml, we have to string
 // match and it is a bit rough.
-func tryValueAsSlice0(v reflect.Value, format string, err error) (reflect.Value, bool) {
-	if v.Kind() != reflect.Slice {
+func tryValueAsSlice0(v reflect.Value, err error) (reflect.Value, bool) {
+	if v.Kind() != reflect.Slice || !strings.Contains(err.Error(), "cannot unmarshal !!") {
 		return v, false
-	}
-
-	switch format {
-	case "json", "yaml":
-		if !strings.Contains(err.Error(), "cannot unmarshal !!") {
-			return v, false
-		}
 	}
 	if v.Len() == 0 {
 		v.Set(reflect.Append(v, reflect.Indirect(reflect.New(v.Type().Elem()))))

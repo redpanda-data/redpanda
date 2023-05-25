@@ -100,7 +100,7 @@ func importConfig(
 	remove := make([]string, 0)
 	for k, v := range readbackConfig {
 		oldVal, haveOldVal := oldConfig[k]
-		oldValMaterialized, haveOldValMaterialized := oldConfigFull[k]
+		oldValVirtual, haveOldValVirtual := oldConfigFull[k]
 
 		if meta, ok := schema[k]; ok {
 			// For numeric types need special handling because
@@ -115,8 +115,8 @@ func importConfig(
 				if oldVal != nil {
 					oldVal = int(oldVal.(float64))
 				}
-				if oldValMaterialized != nil {
-					oldValMaterialized = int(oldValMaterialized.(float64))
+				if oldValVirtual != nil {
+					oldValVirtual = int(oldValVirtual.(float64))
 				}
 			} else if meta.Type == "number" {
 				if vInt, ok := v.(int); ok {
@@ -133,8 +133,8 @@ func importConfig(
 				if oldVal != nil {
 					oldVal = loadStringArray(oldVal.([]interface{}))
 				}
-				if oldValMaterialized != nil {
-					oldValMaterialized = loadStringArray(oldValMaterialized.([]interface{}))
+				if oldValVirtual != nil {
+					oldValVirtual = loadStringArray(oldValVirtual.([]interface{}))
 				}
 			}
 
@@ -175,9 +175,9 @@ func importConfig(
 			}
 		} else {
 			// Present in input but not original config, insert if it differs
-			// from the materialized current value (which may be a default)
-			if !haveOldValMaterialized || !reflect.DeepEqual(oldValMaterialized, v) {
-				addProperty(oldValMaterialized)
+			// from the Virtual current value (which may be a default)
+			if !haveOldValVirtual || !reflect.DeepEqual(oldValVirtual, v) {
+				addProperty(oldValVirtual)
 			}
 		}
 	}
@@ -293,10 +293,10 @@ configuration, calculates the difference with the YAML file, and
 updates any properties that were changed.  If a property is removed
 from the YAML file, it is reset to its default value.  `,
 		Run: func(cmd *cobra.Command, args []string) {
-			cfg, err := p.Load(fs)
+			p, err := p.LoadVirtualProfile(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)
 
-			client, err := admin.NewClient(fs, cfg)
+			client, err := admin.NewClient(fs, p)
 			out.MaybeDie(err, "unable to initialize admin client: %v", err)
 
 			// GET the schema

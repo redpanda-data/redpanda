@@ -27,16 +27,30 @@ func NewModeCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 		Use:   "mode [MODE]",
 		Short: "Enable a default configuration mode",
 		Long:  "",
-		Args: func(_ *cobra.Command, args []string) error {
-			if len(args) < 1 {
-				return fmt.Errorf("requires a mode [%s]", strings.Join(config.AvailableModes(), ", "))
+		Args:  cobra.ExactArgs(1),
+		ValidArgsFunction: func(_ *cobra.Command, _ []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+			// We complete "dev" and "prod", but if the user is typing
+			// the full word, we switch to completing that.
+			var complete []string
+			for _, s := range []string{config.ModeDev, config.ModeProd} {
+				if strings.HasPrefix(s, toComplete) {
+					complete = append(complete, s)
+				}
 			}
-			return nil
+			if len(complete) > 0 {
+				return complete, cobra.ShellCompDirectiveDefault
+			}
+			for _, s := range []string{"development", "production"} {
+				if strings.HasPrefix(s, toComplete) {
+					complete = append(complete, s)
+				}
+			}
+			return complete, cobra.ShellCompDirectiveDefault
 		},
 		Run: func(_ *cobra.Command, args []string) {
-			// Safe to access args[0] because it was validated in Args
 			err := executeMode(fs, p, args[0])
 			out.MaybeDieErr(err)
+			fmt.Printf("Successfully set mode to %q.", args[0])
 		},
 	}
 	return cmd
@@ -47,16 +61,5 @@ func executeMode(fs afero.Fs, p *config.Params, mode string) error {
 	if err != nil {
 		return fmt.Errorf("unable to load config: %v", err)
 	}
-	cfg = cfg.FileOrDefaults() // we modify fields in the raw file without writing env / flag overrides
-	cfg, err = config.SetMode(mode, cfg)
-	if err != nil {
-		return err
-	}
-
-	fmt.Printf("Writing %q mode defaults to %q\n", mode, cfg.FileLocation())
-	err = cfg.Write(fs)
-	if err != nil {
-		return err
-	}
-	return nil
+	return cfg.SetMode(fs, mode)
 }

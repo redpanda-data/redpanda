@@ -295,7 +295,7 @@ func (ss *seedServers) UnmarshalYAML(n *yaml.Node) error {
 
 // Custom unmarshallers for all the config related types.
 
-func (c *Config) UnmarshalYAML(n *yaml.Node) error {
+func (y *RedpandaYaml) UnmarshalYAML(n *yaml.Node) error {
 	var internal struct {
 		Redpanda             RedpandaNodeConfig `yaml:"redpanda"`
 		Rpk                  RpkNodeConfig      `yaml:"rpk"`
@@ -309,13 +309,13 @@ func (c *Config) UnmarshalYAML(n *yaml.Node) error {
 	if err := n.Decode(&internal); err != nil {
 		return err
 	}
-	c.Redpanda = internal.Redpanda
-	c.Rpk = internal.Rpk
-	c.Pandaproxy = internal.Pandaproxy
-	c.PandaproxyClient = internal.PandaproxyClient
-	c.SchemaRegistry = internal.SchemaRegistry
-	c.SchemaRegistryClient = internal.SchemaRegistryClient
-	c.Other = internal.Other
+	y.Redpanda = internal.Redpanda
+	y.Rpk = internal.Rpk
+	y.Pandaproxy = internal.Pandaproxy
+	y.PandaproxyClient = internal.PandaproxyClient
+	y.SchemaRegistry = internal.SchemaRegistry
+	y.SchemaRegistryClient = internal.SchemaRegistryClient
+	y.Other = internal.Other
 
 	return nil
 }
@@ -442,6 +442,9 @@ func (rpkc *RpkNodeConfig) UnmarshalYAML(n *yaml.Node) error {
 	rpkc.KafkaAPI = internal.KafkaAPI
 	rpkc.AdminAPI = internal.AdminAPI
 	rpkc.AdditionalStartFlags = internal.AdditionalStartFlags
+	rpkc.EnableMemoryLocking = bool(internal.EnableMemoryLocking)
+	rpkc.Overprovisioned = bool(internal.Overprovisioned)
+	rpkc.SMP = (*int)(internal.SMP)
 	rpkc.Tuners.TuneNetwork = bool(internal.TuneNetwork)
 	rpkc.Tuners.TuneDiskScheduler = bool(internal.TuneDiskScheduler)
 	rpkc.Tuners.TuneNomerges = bool(internal.TuneNomerges)
@@ -453,15 +456,12 @@ func (rpkc *RpkNodeConfig) UnmarshalYAML(n *yaml.Node) error {
 	rpkc.Tuners.TuneClocksource = bool(internal.TuneClocksource)
 	rpkc.Tuners.TuneSwappiness = bool(internal.TuneSwappiness)
 	rpkc.Tuners.TuneTransparentHugePages = bool(internal.TuneTransparentHugePages)
-	rpkc.Tuners.EnableMemoryLocking = bool(internal.EnableMemoryLocking)
 	rpkc.Tuners.TuneCoredump = bool(internal.TuneCoredump)
 	rpkc.Tuners.CoredumpDir = string(internal.CoredumpDir)
 	rpkc.Tuners.TuneBallastFile = bool(internal.TuneBallastFile)
 	rpkc.Tuners.BallastFilePath = string(internal.BallastFilePath)
 	rpkc.Tuners.BallastFileSize = string(internal.BallastFileSize)
 	rpkc.Tuners.WellKnownIo = string(internal.WellKnownIo)
-	rpkc.Tuners.Overprovisioned = bool(internal.Overprovisioned)
-	rpkc.Tuners.SMP = (*int)(internal.SMP)
 	return nil
 }
 
@@ -664,7 +664,8 @@ func (t *TLS) UnmarshalYAML(n *yaml.Node) error {
 	var internal struct {
 		KeyFile        weakString `yaml:"key_file"`
 		CertFile       weakString `yaml:"cert_file"`
-		TruststoreFile weakString `yaml:"truststore_file"`
+		CAFile         weakString `yaml:"ca_file"`
+		TruststoreFile weakString `yaml:"truststore_file"` // BACKCOMPAT 23-05-01 we deserialize truststore_file into ca_file
 	}
 
 	if err := n.Decode(&internal); err != nil {
@@ -673,6 +674,9 @@ func (t *TLS) UnmarshalYAML(n *yaml.Node) error {
 	t.KeyFile = string(internal.KeyFile)
 	t.CertFile = string(internal.CertFile)
 	t.TruststoreFile = string(internal.TruststoreFile)
+	if internal.CAFile != "" {
+		t.TruststoreFile = string(internal.CAFile)
+	}
 	return nil
 }
 
@@ -680,14 +684,18 @@ func (s *SASL) UnmarshalYAML(n *yaml.Node) error {
 	var internal struct {
 		User      weakString `yaml:"user"`
 		Password  weakString `yaml:"password"`
-		Mechanism weakString `yaml:"type"`
+		Mechanism weakString `yaml:"mechanism"`
+		Type      weakString `yaml:"type"` // BACKCOMPAT 23-05-24 we deserialize type into mechanism
 	}
 	if err := n.Decode(&internal); err != nil {
 		return err
 	}
 	s.User = string(internal.User)
 	s.Password = string(internal.Password)
-	s.Mechanism = string(internal.Mechanism)
+	s.Mechanism = string(internal.Type)
+	if internal.Mechanism != "" {
+		s.Mechanism = string(internal.Mechanism)
+	}
 
 	return nil
 }

@@ -23,11 +23,12 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-func fillRpkNodeConfig(path, mode string) *config.Config {
-	conf := config.DevDefault()
+func fillRpkNodeConfig(path, mode string) *config.RedpandaYaml {
+	y := config.DevDefault()
 	val := mode == config.ModeProd
-	conf.Redpanda.DeveloperMode = !val
-	conf.Rpk = config.RpkNodeConfig{
+	y.Redpanda.DeveloperMode = !val
+	y.Rpk = config.RpkNodeConfig{
+		Overprovisioned: !val,
 		Tuners: config.RpkNodeTuners{
 			TuneNetwork:        val,
 			TuneDiskScheduler:  val,
@@ -40,11 +41,10 @@ func fillRpkNodeConfig(path, mode string) *config.Config {
 			TuneClocksource:    val,
 			TuneSwappiness:     val,
 			CoredumpDir:        path,
-			Overprovisioned:    !val,
 			TuneBallastFile:    val,
 		},
 	}
-	return conf
+	return y
 }
 
 func TestModeCommand(t *testing.T) {
@@ -53,7 +53,7 @@ func TestModeCommand(t *testing.T) {
 		name   string
 		args   []string
 		before func(afero.Fs) (string, error)
-		exp    *config.Config
+		exp    *config.RedpandaYaml
 		expErr bool
 	}{
 		{
@@ -149,12 +149,13 @@ func TestModeCommand(t *testing.T) {
 			}
 			require.NoError(t, err)
 
-			conf, err := new(config.Params).Load(fs)
+			cfg, err := new(config.Params).Load(fs)
 			require.NoError(t, err)
+			y, _ := cfg.ActualRedpandaYaml()
 
 			expRaw, err := yaml.Marshal(tt.exp)
 			require.NoError(t, err)
-			require.YAMLEq(t, string(expRaw), string(conf.RawFile()))
+			require.YAMLEq(t, string(expRaw), string(y.RawFile()))
 		})
 	}
 }

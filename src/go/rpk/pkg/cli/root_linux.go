@@ -13,6 +13,7 @@ import (
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/iotune"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/redpanda"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/redpanda/tune"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cobraext"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	rp "github.com/redpanda-data/redpanda/src/go/rpk/pkg/redpanda"
 	"github.com/spf13/afero"
@@ -37,25 +38,25 @@ func addPlatformDependentCmds(fs afero.Fs, p *config.Params, cmd *cobra.Command)
 }
 
 func newCheckCommand(fs afero.Fs, p *config.Params) *cobra.Command {
-	return deprecateCmd(redpanda.NewCheckCommand(fs, p), "rpk redpanda check")
+	return cobraext.DeprecateCmd(redpanda.NewCheckCommand(fs, p), "rpk redpanda check")
 }
 
 func newConfigCommand(fs afero.Fs, p *config.Params) *cobra.Command {
-	return deprecateCmd(redpanda.NewConfigCommand(fs, p), "rpk redpanda config")
+	return cobraext.DeprecateCmd(redpanda.NewConfigCommand(fs, p), "rpk redpanda config")
 }
 
 func newModeCommand(fs afero.Fs, p *config.Params) *cobra.Command {
-	return deprecateCmd(redpanda.NewModeCommand(fs, p), "rpk redpanda mode")
+	return cobraext.DeprecateCmd(redpanda.NewModeCommand(fs, p), "rpk redpanda mode")
 }
 
 func newStartCommand(fs afero.Fs, p *config.Params, launcher rp.Launcher) *cobra.Command {
-	return deprecateCmd(redpanda.NewStartCommand(fs, p, launcher), "rpk redpanda start")
+	return cobraext.DeprecateCmd(redpanda.NewStartCommand(fs, p, launcher), "rpk redpanda start")
 }
 
 func newStopCommand(fs afero.Fs, p *config.Params) *cobra.Command {
-	return deprecateCmd(redpanda.NewStopCommand(fs, p), "rpk redpanda stop")
+	return cobraext.DeprecateCmd(redpanda.NewStopCommand(fs, p), "rpk redpanda stop")
 }
 
 func newTuneCommand(fs afero.Fs, p *config.Params) *cobra.Command {
-	return deprecateCmd(tune.NewCommand(fs, p), "rpk redpanda tune")
+	return cobraext.DeprecateCmd(tune.NewCommand(fs, p), "rpk redpanda tune")
 }

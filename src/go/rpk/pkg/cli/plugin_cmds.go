@@ -19,6 +19,7 @@ import (
 	"strings"
 
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cobraext"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/out"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/plugin"
 	"github.com/spf13/afero"
@@ -49,6 +50,7 @@ func addPluginWithExec(
 	execPath string,
 	managedHook plugin.ManagedHook,
 	fs afero.Fs,
+	p *config.Params,
 ) {
 	// Step 1: we install the plugin into our existing command space.
 	//
@@ -87,8 +89,8 @@ func addPluginWithExec(
 			Short:              p0 + pluginShortSuffix,
 			DisableFlagParsing: true,
 			Run: func(cmd *cobra.Command, args []string) {
-				args = cobraext.StripFlagset(args, cmd.InheritedFlags()) // strip all rpk specific flags before execing the plugin
-				err := osExec(execPath, args)
+				keepForPlugin, _ := cobraext.StripFlagset(args, cmd.InheritedFlags()) // strip all rpk specific flags before execing the plugin
+				err := osExec(execPath, keepForPlugin)
 				out.MaybeDie(err, "unable to execute plugin: %v", err)
 			},
 		}
@@ -97,7 +99,7 @@ func addPluginWithExec(
 
 	if len(pieces) > 1 { // recursive: we are not done yet adding our nested command
 		args := pieces[1:]
-		addPluginWithExec(childCmd, name, args, execPath, managedHook, fs)
+		addPluginWithExec(childCmd, name, args, execPath, managedHook, fs, p)
 		return
 	}
 
@@ -131,7 +133,7 @@ func addPluginWithExec(
 		return
 	}
 
-	addPluginHelp(childCmd, name, helps, execPath, managedHook, fs)
+	addPluginHelp(childCmd, name, helps, execPath, managedHook, fs, p)
 }
 
 type pluginHelp struct {
@@ -162,6 +164,7 @@ func addPluginHelp(
 	execPath string,
 	managedHook plugin.ManagedHook,
 	fs afero.Fs,
+	p *config.Params,
 ) {
 	childPrefix := pluginName + "_"
 	uniques := make(map[string]pluginHelp, len(helps))
@@ -217,7 +220,7 @@ func addPluginHelp(
 	if strings.HasSuffix(cmd.Short, pluginShortSuffix) {
 		addPluginHelpToCmd(cmd, pluginName, us.help)
 	}
-	addPluginSubcommands(cmd, us, nil, execPath, managedHook, fs)
+	addPluginSubcommands(cmd, us, nil, execPath, managedHook, fs, p)
 }
 
 type useHelp struct {
@@ -254,14 +257,15 @@ func addPluginSubcommands(
 	execPath string,
 	managedHook plugin.ManagedHook,
 	fs afero.Fs,
+	p *config.Params,
 ) {
 	for childUse, childHelp := range parentHelp.inner {
 		childCmd := &cobra.Command{
 			Short:              fmt.Sprintf("%s external plugin", childUse),
 			DisableFlagParsing: true,
 			Run: func(cmd *cobra.Command, args []string) {
-				args = cobraext.StripFlagset(args, cmd.InheritedFlags()) // strip all rpk specific flags before execing the plugin
-				osExec(execPath, append(append(leadingPieces, cmd.Use), args...))
+				keepForPlugin, _ := cobraext.StripFlagset(args, cmd.InheritedFlags()) // strip all rpk specific flags before execing the plugin
+				osExec(execPath, append(append(leadingPieces, cmd.Use), keepForPlugin...))
 			},
 		}
 		addPluginHelpToCmd(childCmd, childUse, childHelp.help)
@@ -270,10 +274,10 @@ func addPluginSubcommands(
 		// (finally) need to hook this fake command's run through the
 		// managed hook.
 		if managedHook != nil {
-			childCmd = managedHook(childCmd, fs)
+			childCmd = managedHook(childCmd, fs, p)
 		}
 		if childHelp.inner != nil {
-			addPluginSubcommands(childCmd, childHelp, append(leadingPieces, childCmd.Use), execPath, managedHook, fs)
+			addPluginSubcommands(childCmd, childHelp, append(leadingPieces, childCmd.Use), execPath, managedHook, fs, p)
 		}
 
 		parentCmd.AddCommand(childCmd)

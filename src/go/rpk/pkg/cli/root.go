@@ -27,6 +27,7 @@ import (
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/generate"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/group"
 	plugincmd "github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/plugin"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/profile"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/topic"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/version"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/wasm"
@@ -73,7 +74,7 @@ func Execute() {
 		CompletionOptions: cobra.CompletionOptions{DisableDefaultCmd: true},
 	}
 	pf := root.PersistentFlags()
-	pf.StringVar(&p.ConfigPath, "config", "", "Redpanda or rpk config file; default search paths are ~/.config/rpk/rpk.yaml, $PWD, and /etc/redpanda/redpanda.yaml")
+	pf.StringVar(&p.ConfigFlag, "config", "", "Redpanda or rpk config file; default search paths are ~/.config/rpk/rpk.yaml, $PWD, and /etc/redpanda/redpanda.yaml")
 	pf.StringArrayVarP(&p.FlagOverrides, "config-opt", "X", nil, "Override rpk configuration settings; '-X help' for detail or '-X list' for terser detail")
 	pf.StringVarP(&p.LogLevel, "verbose", "v", "none", "Log level (none, error, warn, info, debug)")
 	pf.Lookup("verbose").NoOptDefVal = "info"
@@ -95,9 +96,10 @@ func Execute() {
 
 	root.AddCommand(
 		acl.NewCommand(fs, p),
-		cloud.NewCommand(fs, osExec),
+		cloud.NewCommand(fs, p, osExec),
 		cluster.NewCommand(fs, p),
 		container.NewCommand(),
+		profile.NewCommand(fs, p),
 		debug.NewCommand(fs, p),
 		generate.NewCommand(fs, p),
 		group.NewCommand(fs, p),
@@ -121,15 +123,15 @@ func Execute() {
 	// unless the plugin is specifically rpk managed.
 	//
 	// Managed plugins are slightly weirder and are documented below.
-	for _, p := range plugin.ListPlugins(fs, plugin.UserPaths()) {
-		if p.Managed {
-			mp, managedHook := plugin.LookupManaged(p)
+	for _, pl := range plugin.ListPlugins(fs, plugin.UserPaths()) {
+		if pl.Managed {
+			mp, managedHook := plugin.LookupManaged(pl)
 			if managedHook != nil {
-				addPluginWithExec(root, mp.Name, mp.Arguments, mp.Path, managedHook, fs)
+				addPluginWithExec(root, mp.Name, mp.Arguments, mp.Path, managedHook, fs, p)
 				continue
 			}
 		}
-		addPluginWithExec(root, p.Name, p.Arguments, p.Path, nil, nil)
+		addPluginWithExec(root, pl.Name, pl.Arguments, pl.Path, nil, nil, p)
 	}
 
 	// Cobra creates help flag as: help for <command> if you want to override

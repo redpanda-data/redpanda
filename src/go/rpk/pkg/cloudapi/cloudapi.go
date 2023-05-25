@@ -16,6 +16,9 @@ import (
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/httpapi"
 )
 
+// ProdURL is the hostname of the Redpanda API.
+const ProdURL = "https://cloud-api.prd.cloud.redpanda.com"
+
 // Client talks to the cloud API.
 type Client struct {
 	cl *httpapi.Client
@@ -23,16 +26,16 @@ type Client struct {
 
 // NewClient initializes and returns a client for talking to the cloud API.
 // If the host is empty, this defaults to the prod API host.
-func NewClient(host, authToken string) *Client {
+func NewClient(host, authToken string, hopts ...httpapi.Opt) *Client {
 	if host == "" {
-		host = "https://cloud-api.prd.cloud.redpanda.com"
+		host = ProdURL
 	}
-	return &Client{
-		cl: httpapi.NewClient(
-			httpapi.Host(host),
-			httpapi.BearerAuth(authToken),
-		),
+	opts := []httpapi.Opt{
+		httpapi.Host(host),
+		httpapi.BearerAuth(authToken),
 	}
+	opts = append(opts, hopts...)
+	return &Client{cl: httpapi.NewClient(opts...)}
 }
 
 // NameID is a common type used in may endpoints / many structs.
