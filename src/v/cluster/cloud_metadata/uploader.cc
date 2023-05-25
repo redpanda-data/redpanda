@@ -81,12 +81,31 @@ uploader::download_highest_manifest_or_create(retry_chain_node& retry_node) {
     }
     if (manifest_res.error() == error_outcome::no_matching_metadata) {
         cluster_metadata_manifest manifest{};
-        vlog(
-          clusterlog.debug,
-          "No manifest found for cluster {}, creating a new one",
-          _cluster_uuid);
         manifest.cluster_uuid = _cluster_uuid;
-        co_return manifest;
+        auto highest_manifest_res
+          = co_await download_highest_manifest_in_bucket(
+            _remote, _bucket, retry_node);
+        if (highest_manifest_res.has_value()) {
+            auto& highest_manifest = highest_manifest_res.value();
+            vlog(
+              clusterlog.debug,
+              "No manifest found for cluster {}, starting metadata ID at {} "
+              "following "
+              "latest manifest from cluster {}",
+              _cluster_uuid,
+              highest_manifest.metadata_id,
+              highest_manifest.cluster_uuid);
+            manifest.metadata_id = highest_manifest.metadata_id;
+            co_return manifest;
+        }
+        if (
+          highest_manifest_res.error() == error_outcome::no_matching_metadata) {
+            vlog(
+              clusterlog.debug,
+              "No manifest found for cluster {}, creating a new one",
+              _cluster_uuid);
+            co_return manifest;
+        }
     }
     // Pass through any other errors.
     co_return manifest_res;
