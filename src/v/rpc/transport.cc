@@ -284,9 +284,21 @@ void transport::dispatch_send() {
       = ssx::spawn_with_gate_then(_dispatch_gate, [this]() mutable {
             return ss::do_until(
               [this] {
-                  return _requests_queue.empty()
-                         || _requests_queue.begin()->first
-                              > (_last_seq + sequence_t(1));
+                  if (_requests_queue.empty()) {
+                      return true;
+                  }
+                  auto queue_begin_sequence = _requests_queue.begin()->first;
+                  auto out_of_order = queue_begin_sequence
+                                      > (_last_seq + sequence_t(1));
+                  if (unlikely(out_of_order)) {
+                      vlog(
+                        rpclog.debug,
+                        "Dispatch request queue out of order. Last seq: {}, "
+                        "queue begin seq: {}",
+                        _last_seq,
+                        queue_begin_sequence);
+                  }
+                  return out_of_order;
               },
               // Be careful adding any scheduling points in the lambda below.
               //
@@ -325,6 +337,15 @@ void transport::dispatch_send() {
 
                   auto f = _out.write(std::move(v));
                   resp_entry->timing.dispatched_at = clock_type::now();
+                  vlog(
+                    rpclog.trace,
+                    "Dispatched request with sequence: {}, "
+                    "correlation_idx: {}, "
+                    "pending queue_size: {}, target_address: {}",
+                    _last_seq,
+                    corr,
+                    _requests_queue.size(),
+                    server_address());
                   return std::move(f)
                     .then([this, corr](bool flushed) {
                         if (auto maybe_timing = get_timing(corr)) {
