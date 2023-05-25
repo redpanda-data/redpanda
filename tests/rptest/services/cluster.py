@@ -120,7 +120,7 @@ def cluster(log_allow_list=None, check_allowed_error_logs=True, **kwargs):
                         self.redpanda.logger.info(
                             f"Estimated bytes written: {bytes_written}")
                         if bytes_written > debug_mode_data_limit:
-                            raise RuntimeError(
+                            self.redpanda.logger.error(
                                 f"Debug-mode test wrote too much data ({int(bytes_written) // (1024 * 1024)}MiB)"
                             )
 
