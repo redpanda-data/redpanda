@@ -16,6 +16,8 @@
 #include "model/fundamental.h"
 #include "reflection/adl.h"
 
+#include <absl/container/node_hash_set.h>
+
 #include <algorithm>
 #include <cstdint>
 #include <utility>
@@ -36,7 +38,8 @@ static tx_hash_type get_default_range_size(int32_t tm_partitions_amount) {
 
 // Return hash of tx_id in range [0, tx_tm_hash_max]
 inline tx_hash_type get_tx_id_hash(const kafka::transactional_id& tx_id) {
-    return murmur2(ss::sstring(tx_id).data(), ss::sstring(tx_id).size());
+    auto copy = ss::sstring(tx_id);
+    return murmur2(copy.data(), copy.size());
 }
 
 enum class tx_hash_ranges_errc {
@@ -57,6 +60,9 @@ struct tx_hash_range
     tx_hash_range(tx_hash_type f, tx_hash_type l)
       : first(f)
       , last(l) {}
+
+    friend bool operator==(const tx_hash_range&, const tx_hash_range&)
+      = default;
 
     auto serde_fields() { return std::tie(first, last); }
 
@@ -92,6 +98,9 @@ struct tx_hash_ranges_set
     tx_hash_ranges_set() = default;
     tx_hash_ranges_set(std::vector<tx_hash_range>&& hr)
       : ranges(hr) {}
+
+    friend bool operator==(const tx_hash_ranges_set&, const tx_hash_ranges_set&)
+      = default;
 
     auto serde_fields() { return std::tie(ranges); }
 
@@ -152,6 +161,30 @@ struct tx_hash_ranges_set
 };
 
 using repartitioning_id = named_type<int64_t, struct repartitioning_id_type>;
+
+struct hosted_txs
+  : serde::envelope<hosted_txs, serde::version<0>, serde::compat_version<0>> {
+    tx_hash_ranges_set hash_ranges{};
+    absl::node_hash_set<kafka::transactional_id> excluded_transactions{};
+    absl::node_hash_set<kafka::transactional_id> included_transactions{};
+
+    hosted_txs() = default;
+
+    friend bool operator==(const hosted_txs&, const hosted_txs&) = default;
+
+    hosted_txs(
+      tx_hash_ranges_set ranges,
+      absl::node_hash_set<kafka::transactional_id> excluded_txs,
+      absl::node_hash_set<kafka::transactional_id> included_txs)
+      : hash_ranges(std::move(ranges))
+      , excluded_transactions(std::move(excluded_txs))
+      , included_transactions(std::move(included_txs)) {}
+
+    auto serde_fields() {
+        return std::tie(
+          hash_ranges, excluded_transactions, included_transactions);
+    }
+};
 
 namespace hosted_transactions {
 template<class T>

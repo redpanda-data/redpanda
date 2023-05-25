@@ -22,6 +22,16 @@
 
 namespace cluster {
 
+template<typename T>
+static model::record_batch
+serialize(T obj, tx_registry_stm::batch_subtype subtype) {
+    storage::record_batch_builder b(
+      model::record_batch_type::tx_registry, model::offset(0));
+    b.add_raw_kv(
+      serde::to_iobuf(static_cast<int32_t>(subtype)), serde::to_iobuf(obj));
+    return std::move(b).build();
+}
+
 tx_registry_stm::tx_registry_stm(ss::logger& logger, raft::consensus* c)
   : tx_registry_stm(logger, c, config::shard_local_cfg()) {}
 
@@ -49,12 +59,107 @@ tx_registry_stm::do_sync(model::timeout_clock::duration timeout) {
 }
 
 ss::future<> tx_registry_stm::apply(const model::record_batch& b) {
+    const auto& hdr = b.header();
+
+    if (hdr.type == model::record_batch_type::tx_registry) {
+        vlog(
+          txlog.trace, "processing tx_registry batch at {}", hdr.base_offset);
+
+        vassert(
+          b.record_count() == 1,
+          "tx_registry batch must contain a single record");
+        auto r = b.copy_records();
+        auto& record = *r.begin();
+        auto key = record.release_key();
+
+        auto subtype = serde::from_iobuf<int32_t>(std::move(key));
+        if (subtype == static_cast<int32_t>(batch_subtype::tx_mapping)) {
+            vlog(
+              txlog.trace,
+              "processing tx_registry/tx_mapping cmd at {}",
+              hdr.base_offset);
+            auto value = record.release_value();
+            _mapping = serde::from_iobuf<tx_mapping>(std::move(value));
+            _initialized = true;
+        } else {
+            vlog(
+              txlog.trace,
+              "unknown tx_registry/{} cmd at {}",
+              subtype,
+              hdr.base_offset);
+            _seen_unknown_batch_subtype = true;
+        }
+    }
+
     _processed++;
     if (_processed > _log_capacity()) {
         ssx::spawn_with_gate(_gate, [this] { return truncate_log_prefix(); });
     }
 
     return ss::now();
+}
+
+ss::future<bool> tx_registry_stm::try_init_mapping(
+  model::term_id term, int32_t partitions_count) {
+    if (_initialized) {
+        co_return true;
+    }
+
+    tx_mapping mapping;
+    mapping.id = repartitioning_id(0);
+
+    for (int pid = 0; pid < partitions_count; pid++) {
+        model::partition_id partition = model::partition_id(pid);
+        auto initial_hash_range = default_hash_range(
+          partition, partitions_count);
+        hosted_txs initial_hosted_transactions{};
+        auto res = hosted_transactions::add_range(
+          initial_hosted_transactions, initial_hash_range);
+        vassert(
+          res == tx_hash_ranges_errc::success,
+          "default txn hash space must be complete");
+        mapping.mapping[partition] = initial_hosted_transactions;
+    }
+
+    co_return co_await do_write_mapping(term, mapping);
+}
+
+ss::future<bool>
+tx_registry_stm::do_write_mapping(model::term_id term, tx_mapping mapping) {
+    auto batch = serialize(
+      std::move(mapping), tx_registry_stm::batch_subtype::tx_mapping);
+    auto r = co_await replicate_quorum_ack(term, std::move(batch));
+    if (!r) {
+        vlog(
+          txlog.info, "got error {} on initing default hash_ranges", r.error());
+        if (_raft->is_leader() && _raft->term() == term) {
+            co_await _raft->step_down(
+              "tx register try_init_mapping repliation error");
+        }
+        co_return false;
+    }
+    auto offset = r.value().last_offset;
+    if (!co_await wait_no_throw(
+          offset, model::timeout_clock::now() + _sync_timeout())) {
+        vlog(
+          txlog.info,
+          "timeout on waiting until {} is applied on updating hash_ranges",
+          offset);
+        if (_raft->is_leader() && _raft->term() == term) {
+            co_await _raft->step_down("tx registry apply timeout");
+        }
+        co_return false;
+    }
+    if (_raft->term() != term) {
+        vlog(
+          txlog.info,
+          "lost leadership while waiting until {} is applied on updating hash "
+          "ranges",
+          offset);
+        co_return false;
+    }
+
+    co_return true;
 }
 
 ss::future<> tx_registry_stm::truncate_log_prefix() {
