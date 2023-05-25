@@ -78,13 +78,13 @@ def cluster(log_allow_list=None, check_allowed_error_logs=True, **kwargs):
             try:
                 r = f(self, *args, **kwargs)
             except:
-                log_local_load(self.test_context.test_name,
-                               self.redpanda.logger, t_initial,
-                               disk_stats_initial)
-
                 if not hasattr(self, 'redpanda') or self.redpanda is None:
                     # We failed so early there isn't even a RedpandaService instantiated
                     raise
+
+                log_local_load(self.test_context.test_name,
+                               self.redpanda.logger, t_initial,
+                               disk_stats_initial)
 
                 for redpanda in all_redpandas(self):
                     redpanda.logger.exception(
@@ -101,14 +101,14 @@ def cluster(log_allow_list=None, check_allowed_error_logs=True, **kwargs):
 
                 raise
             else:
-                log_local_load(self.test_context.test_name,
-                               self.redpanda.logger, t_initial,
-                               disk_stats_initial)
-
                 if not hasattr(self, 'redpanda') or self.redpanda is None:
                     # We passed without instantiating a RedpandaService, for example
                     # in a skipped test
                     return r
+
+                log_local_load(self.test_context.test_name,
+                               self.redpanda.logger, t_initial,
+                               disk_stats_initial)
 
                 # In debug mode, any test writing too much traffic will impose too much
                 # load on the system and destabilize other tests.  Detect this with a
