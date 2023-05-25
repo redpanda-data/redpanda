@@ -239,10 +239,14 @@ transport::do_send(sequence_t seq, netbuf b, rpc::client_opts opts) {
                     timing.memory_reserved_at = clock_type::now();
                 }
                 return std::move(b).as_scattered().then(
-                  [u = std::move(units)](
+                  [u = std::move(units), corr](
                     ss::scattered_message<char> scattered_message) mutable {
-                      return std::make_tuple(
-                        std::move(u), std::move(scattered_message));
+                      auto f = corr == 6 ? ss::sleep(2s) : ss::now();
+                      return std::move(f).then(
+                        [u = std::move(u),
+                         m = std::move(scattered_message)] () mutable {
+                            return std::make_tuple(std::move(u), std::move(m));
+                        });
                   });
             })
             .then_unpack(
