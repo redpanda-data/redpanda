@@ -3331,9 +3331,16 @@ class RedpandaService(RedpandaServiceBase):
                 )
 
     def estimate_bytes_written(self):
-        samples = self.metrics_sample(
-            "vectorized_io_queue_total_write_bytes_total",
-            nodes=self.started_nodes())
+        try:
+            samples = self.metrics_sample(
+                "vectorized_io_queue_total_write_bytes_total",
+                nodes=self.started_nodes())
+        except Exception as e:
+            self.logger.warn(
+                f"Cannot check metrics, did a test finish with all nodes down? ({e})"
+            )
+            return None
+
         if samples is not None and samples.samples:
             return sum(s.value for s in samples.samples)
         else:
