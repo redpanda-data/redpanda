@@ -224,6 +224,21 @@ class SchemaRegistryEndpoints(RedpandaTest):
 
         return topic
 
+    def _alter_topic_config(self, topic, set_key, set_value):
+        rpk = self._get_rpk_tools()
+        rpk.alter_topic_config(topic=topic,
+                               set_key=set_key,
+                               set_value=set_value)
+
+        def has_config():
+            configs = rpk.describe_topic_configs(topic=topic)
+            self.logger.warn(f"CONFIGS: {configs}")
+            config = configs.get(set_key, None)
+            self.logger.warn(f"CONFIG: {config[0]}")
+            return config[0] == set_value
+
+        wait_until(has_config, 5)
+
     def _get_config(self, headers=HTTP_GET_HEADERS, **kwargs):
         return self._request("GET", "config", headers=headers, **kwargs)
 
