@@ -15,6 +15,7 @@
 #include "cluster/errc.h"
 #include "cluster/fwd.h"
 #include "cluster/logger.h"
+#include "cluster/topic_validators.h"
 #include "cluster/types.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
@@ -53,6 +54,11 @@ topic_table::apply(create_topic_cmd cmd, model::offset offset) {
         // topic already exists
         return ss::make_ready_future<std::error_code>(
           errc::topic_already_exists);
+    }
+
+    if (!schema_id_validation_validator::is_valid(cmd.value.cfg.properties)) {
+        return ss::make_ready_future<std::error_code>(
+          schema_id_validation_validator::ec);
     }
 
     std::optional<model::initial_revision_id> remote_revision
@@ -847,6 +853,11 @@ topic_table::apply(update_topic_properties_cmd cmd, model::offset o) {
     if (properties == properties_snapshot) {
         co_return errc::success;
     }
+
+    if (!schema_id_validation_validator::is_valid(properties)) {
+        co_return schema_id_validation_validator::ec;
+    }
+
     // generate deltas for controller backend
     const auto& assignments = tp->second.get_assignments();
     for (auto& p_as : assignments) {

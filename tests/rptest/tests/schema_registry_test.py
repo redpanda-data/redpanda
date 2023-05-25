@@ -22,7 +22,7 @@ from ducktape.services.background_thread import BackgroundThreadService
 from ducktape.utils.util import wait_until
 
 from rptest.clients.kafka_cli_tools import KafkaCliTools
-from rptest.clients.rpk import RpkTool
+from rptest.clients.rpk import RpkException, RpkTool
 from rptest.clients.serde_client_utils import SchemaType, SerdeClientType
 from rptest.clients.types import TopicSpec
 from rptest.services import tls
@@ -2204,3 +2204,53 @@ class SchemaValidationTopicPropertiesTest(RedpandaTest):
             TopicSpec.PROPERTY_RECORD_VALUE_SUBJECT_NAME_STRATEGY_COMPAT] == (
                 TopicSpec.SubjectNameStrategyCompat.RECORD_NAME.value,
                 'DYNAMIC_TOPIC_CONFIG')
+
+    @cluster(num_nodes=1)
+    def test_schema_id_validation_create_collision(self):
+        '''
+        Test creating a topic where Redpanda and compat modes are incompatible
+        '''
+
+        self.admin.put_feature("schema_id_validation", {"state": "active"})
+        self.redpanda.await_feature("schema_id_validation",
+                                    True,
+                                    timeout_sec=10)
+        topic = "default-topic"
+        try:
+            self.rpk.create_topic(
+                topic,
+                config={
+                    TopicSpec.PROPERTY_RECORD_KEY_SCHEMA_ID_VALIDATION:
+                    'true',
+                    TopicSpec.PROPERTY_RECORD_KEY_SCHEMA_ID_VALIDATION_COMPAT:
+                    'false',
+                })
+            assert False, "Expected failure"
+        except RpkException:
+            pass
+
+    @cluster(num_nodes=1)
+    def test_schema_id_validation_alter_collision(self):
+        '''
+        Test altering a topic where Redpanda and compat modes are incompatible
+        '''
+
+        self.admin.put_feature("schema_id_validation", {"state": "active"})
+        self.redpanda.await_feature("schema_id_validation",
+                                    True,
+                                    timeout_sec=10)
+        topic = "default-topic"
+        self.rpk.create_topic(
+            topic,
+            config={
+                TopicSpec.PROPERTY_RECORD_KEY_SCHEMA_ID_VALIDATION: 'true',
+            })
+        try:
+            self.rpk.alter_topic_config(
+                topic=topic,
+                set_key=TopicSpec.
+                PROPERTY_RECORD_KEY_SCHEMA_ID_VALIDATION_COMPAT,
+                set_value='false')
+            assert False, "Expected failure"
+        except RpkException:
+            pass
