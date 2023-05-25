@@ -85,9 +85,22 @@ public:
 
     const planner_config& config() const { return _parent._config; }
 
-    bool is_batch_full() const {
-        return _planned_moves_size_bytes
-               >= _parent._config.movement_disk_size_batch;
+    bool can_add_cancellation() const {
+        return _reassignments.size() + _cancellations.size()
+               < config().max_concurrent_actions;
+    }
+
+    bool can_add_reassignment() const {
+        if (_planned_moves_size_bytes >= config().movement_disk_size_batch) {
+            return false;
+        } else if (
+          state().topics().updates_in_progress().size() + _reassignments.size()
+          >= config().max_concurrent_actions) {
+            return false;
+        } else {
+            return _reassignments.size() + _cancellations.size()
+                   < config().max_concurrent_actions;
+        }
     }
 
 private:
@@ -105,6 +118,9 @@ private:
       Visitor&);
 
     void collect_actions(plan_data&);
+
+    // returns true if the failure can be logged
+    bool increment_failure_count();
 
 private:
     partition_balancer_planner& _parent;
@@ -165,12 +181,17 @@ void partition_balancer_planner::init_per_node_state(
 
         if (unavailable_dur > _config.node_availability_timeout_sec) {
             ctx.timed_out_unavailable_nodes.insert(follower.id);
-            model::timestamp unavailable_since = model::to_timestamp(
-              model::timestamp_clock::now()
-              - std::chrono::duration_cast<model::timestamp_clock::duration>(
-                unavailable_dur));
-            result.violations.unavailable_nodes.emplace_back(
-              follower.id, unavailable_since);
+
+            if (
+              _config.mode == model::partition_autobalancing_mode::continuous) {
+                model::timestamp unavailable_since = model::to_timestamp(
+                  model::timestamp_clock::now()
+                  - std::chrono::duration_cast<
+                    model::timestamp_clock::duration>(unavailable_dur));
+
+                result.violations.unavailable_nodes.emplace_back(
+                  follower.id, unavailable_since);
+            }
         }
     }
 
@@ -191,7 +212,10 @@ void partition_balancer_planner::init_per_node_state(
           disk.used,
           disk.total,
           used_space_ratio);
-        if (used_space_ratio > _config.soft_max_disk_usage_ratio) {
+
+        if (
+          _config.mode == model::partition_autobalancing_mode::continuous
+          && used_space_ratio > _config.soft_max_disk_usage_ratio) {
             result.violations.full_nodes.emplace_back(
               id, uint32_t(used_space_ratio * 100.0));
         }
@@ -278,6 +302,22 @@ bool partition_balancer_planner::request_context::all_reports_received() const {
         }
     }
     return true;
+}
+
+bool partition_balancer_planner::request_context::increment_failure_count() {
+    static constexpr size_t max_logged_failures = 50;
+
+    ++_failed_actions_count;
+    if (_failed_actions_count <= max_logged_failures) {
+        return true;
+    } else if (_failed_actions_count == max_logged_failures + 1) {
+        vlog(
+          clusterlog.info,
+          "too many balancing action failures, won't log anymore");
+        return false;
+    } else {
+        return false;
+    }
 }
 
 static bool has_quorum(
@@ -393,15 +433,16 @@ public:
 
     void
     report_failure(std::string_view reason, std::string_view change_reason) {
-        vlog(
-          clusterlog.info,
-          "[ntp {}, replicas: {}]: can't change replicas with cancellation: {} "
-          "(change reason: {})",
-          _ntp,
-          _replicas,
-          reason,
-          change_reason);
-        ++_ctx._failed_actions_count;
+        if (_ctx.increment_failure_count()) {
+            vlog(
+              clusterlog.info,
+              "[ntp {}, replicas: {}]: can't change replicas with "
+              "cancellation: {} (change reason: {})",
+              _ntp,
+              _replicas,
+              reason,
+              change_reason);
+        }
     }
 
 private:
@@ -441,11 +482,18 @@ public:
         no_size_info,
         // partition reconfiguration
         reconfiguration_state,
+        // can't add more actions
+        batch_full,
     };
 
     immutability_reason reason() const { return _reason; }
 
     void report_failure(std::string_view change_reason) {
+        bool can_log = _ctx.increment_failure_count();
+        if (!can_log) {
+            return;
+        }
+
         ss::sstring reason;
         switch (_reason) {
         case immutability_reason::no_quorum:
@@ -458,16 +506,20 @@ public:
             reason = ssx::sformat(
               "reconfiguration in progress, state: {}", _reconfiguration_state);
             break;
+        case immutability_reason::batch_full:
+            // don't log full batch failures (if the batch is full, we are
+            // not stalling)
+            return;
         }
+
         vlog(
           clusterlog.info,
-          "[ntp {}, replicas: {}]: can't change replicas: {} (change reason: "
-          "{})",
+          "[ntp {}, replicas: {}]: can't change replicas: {} (change "
+          "reason: {})",
           _ntp,
           _replicas,
           reason,
           change_reason);
-        ++_ctx._failed_actions_count;
     }
 
 private:
@@ -538,9 +590,19 @@ auto partition_balancer_planner::request_context::do_with_partition(
         auto state = in_progress_it->second.get_state();
 
         if (state == reconfiguration_state::in_progress) {
-            partition part{
-              moving_partition{ntp, replicas, orig_replicas, *this}};
-            return visitor(part);
+            if (can_add_cancellation()) {
+                partition part{
+                  moving_partition{ntp, replicas, orig_replicas, *this}};
+                return visitor(part);
+            } else {
+                partition part{immutable_partition{
+                  ntp,
+                  replicas,
+                  immutable_partition::immutability_reason::batch_full,
+                  state,
+                  *this}};
+                return visitor(part);
+            }
         } else {
             partition part{immutable_partition{
               ntp,
@@ -550,6 +612,18 @@ auto partition_balancer_planner::request_context::do_with_partition(
               *this}};
             return visitor(part);
         }
+    }
+
+    auto reassignment_it = _reassignments.find(ntp);
+
+    if (reassignment_it == _reassignments.end() && !can_add_reassignment()) {
+        partition part{immutable_partition{
+          ntp,
+          orig_replicas,
+          immutable_partition::immutability_reason::batch_full,
+          std::nullopt,
+          *this}};
+        return visitor(part);
     }
 
     size_t size_bytes = 0;
@@ -577,7 +651,6 @@ auto partition_balancer_planner::request_context::do_with_partition(
     }
 
     std::optional<allocated_partition> reallocated;
-    auto reassignment_it = _reassignments.find(ntp);
     if (reassignment_it != _reassignments.end()) {
         // borrow the allocated_partition object
         reallocated = std::move(reassignment_it->second);
@@ -668,16 +741,6 @@ partition_balancer_planner::reassignable_partition::move_replica(
   model::node_id replica,
   double max_disk_usage_ratio,
   std::string_view reason) {
-    vlog(
-      clusterlog.debug,
-      "ntp {} (size: {}, current replicas: {}): trying to move replica on "
-      "node: {}, reason: {}",
-      _ntp,
-      _size_bytes,
-      replicas(),
-      replica,
-      reason);
-
     if (!_reallocated) {
         _reallocated
           = _ctx._parent._partition_allocator.make_allocated_partition(
@@ -688,19 +751,33 @@ partition_balancer_planner::reassignable_partition::move_replica(
     auto moved = _ctx._parent._partition_allocator.reallocate_replica(
       *_reallocated, replica, std::move(constraints));
     if (!moved) {
-        vlog(
-          clusterlog.info,
-          "ntp {}: attempt to move replica {} (reason: {}) failed, error: "
-          "{}",
-          _ntp,
-          replica,
-          reason,
-          moved.error().message());
-        _ctx._failed_actions_count += 1;
+        if (_ctx.increment_failure_count()) {
+            vlog(
+              clusterlog.info,
+              "ntp {} (size: {}, current replicas: {}): attempt to move "
+              "replica {} (reason: {}) failed, error: {}",
+              _ntp,
+              _size_bytes,
+              replicas(),
+              replica,
+              reason,
+              moved.error().message());
+        }
         return moved;
     }
 
     if (moved.value().node_id != replica) {
+        vlog(
+          clusterlog.info,
+          "ntp {} (size: {}, orig replicas: {}): scheduling replica move "
+          "{} -> {}, reason: {}",
+          _ntp,
+          _size_bytes,
+          _orig_replicas,
+          replica,
+          moved.value(),
+          reason);
+
         auto from_it = _ctx.node_disk_reports.find(replica);
         if (from_it != _ctx.node_disk_reports.end()) {
             from_it->second.released += _size_bytes;
@@ -721,22 +798,19 @@ partition_balancer_planner::reassignable_partition::move_replica(
  * Function is trying to move ntp out of unavailable nodes
  * It can move to nodes that are violating soft_max_disk_usage_ratio constraint
  */
-void partition_balancer_planner::get_unavailable_nodes_actions(
-  request_context& ctx) {
-    if (ctx.timed_out_unavailable_nodes.empty()) {
+void partition_balancer_planner::get_node_drain_actions(
+  request_context& ctx,
+  const absl::flat_hash_set<model::node_id>& nodes,
+  std::string_view reason) {
+    if (nodes.empty()) {
         return;
     }
 
     ctx.for_each_partition([&](partition& part) {
-        // End adding movements if batch is collected
-        if (ctx.is_batch_full()) {
-            return ss::stop_iteration::yes;
-        }
-
-        std::vector<model::node_id> to_move;
+        std::vector<model::broker_shard> to_move;
         for (const auto& bs : part.replicas()) {
-            if (ctx.timed_out_unavailable_nodes.contains(bs.node_id)) {
-                to_move.push_back(bs.node_id);
+            if (nodes.contains(bs.node_id)) {
+                to_move.push_back(bs);
             }
         }
 
@@ -746,12 +820,14 @@ void partition_balancer_planner::get_unavailable_nodes_actions(
 
         part.match_variant(
           [&](reassignable_partition& part) {
-              for (const auto& replica : to_move) {
-                  // ignore result
-                  (void)part.move_replica(
-                    replica,
-                    ctx.config().hard_max_disk_usage_ratio,
-                    "unavailable nodes");
+              for (const auto& bs : to_move) {
+                  if (part.is_original(bs)) {
+                      // ignore result
+                      (void)part.move_replica(
+                        bs.node_id,
+                        ctx.config().hard_max_disk_usage_ratio,
+                        reason);
+                  }
               }
           },
           [&](moving_partition& part) {
@@ -760,31 +836,19 @@ void partition_balancer_planner::get_unavailable_nodes_actions(
               }
 
               absl::flat_hash_set<model::node_id> previous_replicas_set;
-              bool was_on_decommissioning_node = false;
               for (const auto& r : part.orig_replicas()) {
                   previous_replicas_set.insert(r.node_id);
-                  if (ctx.decommissioning_nodes.contains(r.node_id)) {
-                      was_on_decommissioning_node = true;
-                  }
               }
 
               for (const auto& r : to_move) {
-                  if (!previous_replicas_set.contains(r)) {
-                      if (!was_on_decommissioning_node) {
-                          // makes sense to cancel
-                          part.request_cancel("unavailable nodes");
-                      } else {
-                          part.report_failure(
-                            "move related to decommission",
-                            "unavailable nodes");
-                      }
+                  if (!previous_replicas_set.contains(r.node_id)) {
+                      // makes sense to cancel
+                      part.request_cancel(reason);
                       break;
                   }
               }
           },
-          [](immutable_partition& part) {
-              part.report_failure("unavailable nodes");
-          });
+          [&](immutable_partition& part) { part.report_failure(reason); });
 
         return ss::stop_iteration::no;
     });
@@ -817,7 +881,7 @@ void partition_balancer_planner::get_rack_constraint_repair_actions(
     }
 
     for (const auto& ntp : ctx.state().ntps_with_broken_rack_constraint()) {
-        if (ctx.is_batch_full()) {
+        if (!ctx.can_add_reassignment()) {
             return;
         }
 
@@ -936,7 +1000,7 @@ void partition_balancer_planner::get_full_node_actions(request_context& ctx) {
     // move partitions, starting from partitions with replicas on the most full
     // node
     for (const auto* node_disk : sorted_full_nodes) {
-        if (ctx.is_batch_full()) {
+        if (!ctx.can_add_reassignment()) {
             return;
         }
 
@@ -947,7 +1011,7 @@ void partition_balancer_planner::get_full_node_actions(request_context& ctx) {
         }
 
         for (const auto& [score, ntp_to_move] : ntp_index_it->second) {
-            if (ctx.is_batch_full()) {
+            if (!ctx.can_add_reassignment()) {
                 return;
             }
             if (
@@ -1032,20 +1096,13 @@ partition_balancer_planner::plan_data partition_balancer_planner::plan_actions(
 
     init_per_node_state(health_report, follower_metrics, ctx, result);
 
-    if (ctx.num_nodes_in_maintenance > 0) {
-        if (!result.violations.is_empty()) {
-            result.status = status::waiting_for_maintenance_end;
-        }
-        return result;
-    }
-
     if (!ctx.all_reports_received()) {
         result.status = status::waiting_for_reports;
         return result;
     }
 
     if (
-      result.violations.is_empty()
+      result.violations.is_empty() && ctx.decommissioning_nodes.empty()
       && _state.ntps_with_broken_rack_constraint().empty()) {
         result.status = status::empty;
         return result;
@@ -1053,9 +1110,18 @@ partition_balancer_planner::plan_data partition_balancer_planner::plan_actions(
 
     init_ntp_sizes_from_health_report(health_report, ctx);
 
-    get_unavailable_nodes_actions(ctx);
-    get_rack_constraint_repair_actions(ctx);
-    get_full_node_actions(ctx);
+    get_node_drain_actions(ctx, ctx.decommissioning_nodes, "decommission");
+
+    if (ctx.config().mode == model::partition_autobalancing_mode::continuous) {
+        if (ctx.num_nodes_in_maintenance == 0) {
+            get_node_drain_actions(
+              ctx, ctx.timed_out_unavailable_nodes, "unavailable nodes");
+            get_rack_constraint_repair_actions(ctx);
+            get_full_node_actions(ctx);
+        } else if (!result.violations.is_empty()) {
+            result.status = status::waiting_for_maintenance_end;
+        }
+    }
 
     ctx.collect_actions(result);
     return result;

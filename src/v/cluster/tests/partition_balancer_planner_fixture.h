@@ -34,6 +34,7 @@ constexpr uint64_t nearly_full_node_free_size = 41_MiB;
 constexpr uint64_t default_partition_size = 10_MiB;
 constexpr uint64_t not_full_node_free_size = 150_MiB;
 constexpr uint64_t reallocation_batch_size = default_partition_size * 2 - 1_MiB;
+constexpr uint64_t max_concurrent_actions = 50;
 constexpr std::chrono::seconds node_unavailable_timeout = std::chrono::minutes(
   5);
 
@@ -85,16 +86,21 @@ public:
 };
 
 struct partition_balancer_planner_fixture {
-    partition_balancer_planner_fixture()
-      : planner(
-        cluster::planner_config{
-          .soft_max_disk_usage_ratio = 0.8,
-          .hard_max_disk_usage_ratio = 0.95,
-          .movement_disk_size_batch = reallocation_batch_size,
-          .node_availability_timeout_sec = std::chrono::minutes(1),
-          .segment_fallocation_step = 16},
-        workers.state.local(),
-        workers.allocator.local()) {}
+    cluster::partition_balancer_planner make_planner(
+      model::partition_autobalancing_mode mode
+      = model::partition_autobalancing_mode::continuous) {
+        return cluster::partition_balancer_planner(
+          cluster::planner_config{
+            .mode = mode,
+            .soft_max_disk_usage_ratio = 0.8,
+            .hard_max_disk_usage_ratio = 0.95,
+            .movement_disk_size_batch = reallocation_batch_size,
+            .max_concurrent_actions = max_concurrent_actions,
+            .node_availability_timeout_sec = std::chrono::minutes(1),
+            .segment_fallocation_step = 16},
+          workers.state.local(),
+          workers.allocator.local());
+    }
 
     cluster::topic_configuration_assignment make_tp_configuration(
       const ss::sstring& topic, int partitions, int16_t replication_factor) {
@@ -341,6 +347,5 @@ struct partition_balancer_planner_fixture {
     }
 
     controller_workers workers;
-    cluster::partition_balancer_planner planner;
     int last_node_idx{};
 };

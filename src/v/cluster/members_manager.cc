@@ -281,10 +281,10 @@ members_manager::apply_update(model::record_batch b) {
       [this, update_offset](decommission_node_cmd cmd) mutable {
           auto id = cmd.key;
           vlog(
-            clusterlog.trace,
+            clusterlog.info,
             "applying decommission_node_cmd, offset: {}, node id: {}",
-            id,
-            update_offset);
+            update_offset,
+            id);
 
           return dispatch_updates_to_cores(update_offset, cmd)
             .then([this, id, update_offset](std::error_code error) {
@@ -305,10 +305,10 @@ members_manager::apply_update(model::record_batch b) {
       [this, update_offset](recommission_node_cmd cmd) mutable {
           auto id = cmd.key;
           vlog(
-            clusterlog.trace,
+            clusterlog.info,
             "applying recommission_node_cmd, offset: {}, node id: {}",
-            id,
-            update_offset);
+            update_offset,
+            id);
 
           // TODO: remove this part after we introduce simplified raft
           // configuration handling as this will be commands driven
@@ -364,10 +364,10 @@ members_manager::apply_update(model::record_batch b) {
 
           model::node_id id = cmd.key;
           vlog(
-            clusterlog.trace,
+            clusterlog.info,
             "applying finish_reallocations_cmd, offset: {}, node id: {}",
-            id,
-            update_offset);
+            update_offset,
+            id);
 
           if (auto it = _in_progress_updates.find(id);
               it != _in_progress_updates.end()) {
@@ -395,11 +395,11 @@ members_manager::apply_update(model::record_batch b) {
       },
       [this, update_offset](maintenance_mode_cmd cmd) {
           vlog(
-            clusterlog.trace,
+            clusterlog.info,
             "applying maintenance_mode_cmd, offset: {}, node id: {}, enabled: "
             "{}",
-            cmd.key,
             update_offset,
+            cmd.key,
             cmd.value);
 
           return dispatch_updates_to_cores(update_offset, cmd)

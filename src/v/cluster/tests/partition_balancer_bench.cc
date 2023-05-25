@@ -17,7 +17,7 @@ PERF_TEST_C(partition_balancer_planner_fixture, unavailable_nodes) {
         ss::thread_attributes thread_attr;
         co_await ss::async(thread_attr, [this] {
             allocator_register_nodes(3);
-            create_topic("topic-1", 2000, 3);
+            create_topic("topic-1", 20000, 3);
             allocator_register_nodes(2);
         });
 
@@ -25,19 +25,20 @@ PERF_TEST_C(partition_balancer_planner_fixture, unavailable_nodes) {
     }
 
     uint64_t local_partition_size = 10_KiB;
-    uint64_t movement_batch_partitions_amount = (reallocation_batch_size
-                                                 + local_partition_size - 1)
-                                                / local_partition_size;
-
     auto hr = create_health_report({}, {}, local_partition_size);
 
     std::set<size_t> unavailable_nodes = {0};
     auto fm = create_follower_metrics(unavailable_nodes);
+
+    auto planner = make_planner();
 
     perf_tests::start_measuring_time();
     auto plan_data = planner.plan_actions(hr, fm);
     perf_tests::stop_measuring_time();
 
     const auto& reassignments = plan_data.reassignments;
-    BOOST_REQUIRE_EQUAL(reassignments.size(), movement_batch_partitions_amount);
+    vassert(
+      reassignments.size() == max_concurrent_actions,
+      "unexpected reassignments size: {}",
+      reassignments.size());
 }

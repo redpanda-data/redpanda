@@ -14,6 +14,7 @@
 #include "cluster/partition_balancer_types.h"
 #include "cluster/scheduling/partition_allocator.h"
 #include "cluster/topic_table.h"
+#include "model/metadata.h"
 
 #include <absl/container/flat_hash_map.h>
 
@@ -25,6 +26,7 @@ struct ntp_reassignment {
 };
 
 struct planner_config {
+    model::partition_autobalancing_mode mode;
     // If node disk usage goes over this ratio planner will actively move
     // partitions away from the node.
     double soft_max_disk_usage_ratio;
@@ -33,6 +35,8 @@ struct planner_config {
     double hard_max_disk_usage_ratio;
     // Size of partitions that can be planned to move in one request
     size_t movement_disk_size_batch;
+    // Max number of actions that can be scheduled in one planning iteration
+    size_t max_concurrent_actions;
     std::chrono::seconds node_availability_timeout_sec;
     // Fallocation step used to calculate upperbound for partition size
     size_t segment_fallocation_step;
@@ -79,7 +83,10 @@ private:
     void init_ntp_sizes_from_health_report(
       const cluster_health_report& health_report, request_context&);
 
-    static void get_unavailable_nodes_actions(request_context&);
+    static void get_node_drain_actions(
+      request_context&,
+      const absl::flat_hash_set<model::node_id>&,
+      std::string_view reason);
     static void get_rack_constraint_repair_actions(request_context&);
     static void get_full_node_actions(request_context&);
 

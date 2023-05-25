@@ -39,14 +39,11 @@ public:
       config::binding<unsigned>&& storage_space_alert_free_threshold_percent,
       config::binding<std::chrono::milliseconds>&& tick_interval,
       config::binding<size_t>&& movement_batch_size_bytes,
+      config::binding<size_t>&& max_concurrent_actions,
       config::binding<size_t>&& segment_fallocation_step);
 
     void start();
     ss::future<> stop();
-
-    bool is_enabled() const {
-        return _mode() == model::partition_autobalancing_mode::continuous;
-    }
 
     bool is_leader() const { return _raft0->is_leader(); }
 
@@ -64,8 +61,6 @@ private:
     void tick();
     ss::future<> do_tick();
 
-    void on_mode_changed();
-
 private:
     consensus_ptr _raft0;
 
@@ -81,6 +76,7 @@ private:
     config::binding<unsigned> _storage_space_alert_free_threshold_percent;
     config::binding<std::chrono::milliseconds> _tick_interval;
     config::binding<size_t> _movement_batch_size_bytes;
+    config::binding<size_t> _max_concurrent_actions;
     config::binding<size_t> _segment_fallocation_step;
 
     model::term_id _last_leader_term;
