@@ -201,6 +201,43 @@ var _ = Describe("Console controller", func() {
 		})
 	})
 
+	Context("When deleting Console", func() {
+		It("Should delete console if cluster is not configured", func() {
+			ctx := context.Background()
+			brokenKey, _, brokenCluster, ns := getInitialTestCluster(ClusterName)
+			brokenCluster.Spec.Image = "nonexistentimage"
+			var replicas1 int32 = 1
+			brokenCluster.Spec.Replicas = &replicas1
+			Expect(k8sClient.Create(ctx, ns)).Should(Succeed())
+			Expect(k8sClient.Create(ctx, brokenCluster)).Should(Succeed())
+			console := &redpandav1alpha1.Console{
+				TypeMeta: metav1.TypeMeta{
+					APIVersion: "redpanda.vectorized.io/v1alpha1",
+					Kind:       "Console",
+				},
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "deleting-console",
+					Namespace: brokenKey.Namespace,
+				},
+				Spec: redpandav1alpha1.ConsoleSpec{
+					ClusterRef:     redpandav1alpha1.NamespaceNameRef{Namespace: brokenKey.Namespace, Name: brokenKey.Name},
+					SchemaRegistry: redpandav1alpha1.Schema{Enabled: enableSchemaRegistry},
+					Deployment:     redpandav1alpha1.Deployment{Image: deploymentImage},
+					Connect:        redpandav1alpha1.Connect{Enabled: enableConnect},
+				},
+			}
+			Expect(k8sClient.Create(ctx, console)).Should(Succeed())
+			consoleLookupKey := types.NamespacedName{Name: console.Name, Namespace: console.Namespace}
+			Eventually(func() bool {
+				return k8sClient.Get(ctx, consoleLookupKey, &redpandav1alpha1.Console{}) == nil
+			}, timeout, interval).Should(BeTrue())
+			Expect(k8sClient.Delete(ctx, console)).Should(Succeed())
+			Eventually(func() bool {
+				return k8sClient.Get(ctx, consoleLookupKey, &redpandav1alpha1.Console{}) != nil
+			}, timeout, interval).Should(BeTrue())
+		})
+	})
+
 	Context("When updating Console", func() {
 		ctx := context.Background()
 		It("Should not create new ConfigMap if no change on spec", func() {
