@@ -99,6 +99,20 @@ ss::future<> tx_registry_stm::apply(const model::record_batch& b) {
     return ss::now();
 }
 
+std::optional<model::partition_id>
+tx_registry_stm::find_hosting_partition(kafka::transactional_id tid) {
+    for (auto& [partition, hosted] : _mapping.mapping) {
+        if (hosted_transactions::contains(hosted, tid)) {
+            return partition;
+        }
+    }
+    vlog(
+      txlog.error,
+      "tx_registry must cover full tx.id space but {} isn't found",
+      tid);
+    return std::nullopt;
+}
+
 ss::future<bool> tx_registry_stm::try_init_mapping(
   model::term_id term, int32_t partitions_count) {
     if (_initialized) {
