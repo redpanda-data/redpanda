@@ -195,7 +195,8 @@ transport::make_response_handler(
               vlog(
                 rpclog.info,
                 "RPC timeout ({}) to {}, method: {}, correlation id: {}, {} "
-                "in flight, time since: {{init: {}, enqueue: {}, dispatch: "
+                "in flight, time since: {{init: {}, enqueue: {}, "
+                "memory_reserved: {} dispatch: "
                 "{}, written: {}}}, flushed: {}",
                 format_ms(timing.timeout.timeout_period),
                 server_address(),
@@ -205,6 +206,7 @@ transport::make_response_handler(
                 from_now(
                   timing.timeout.timeout_at() - timing.timeout.timeout_period),
                 from_now(timing.enqueued_at),
+                from_now(timing.memory_reserved_at),
                 from_now(timing.dispatched_at),
                 from_now(timing.written_at),
                 timing.flushed);
@@ -234,7 +236,13 @@ transport::do_send(sequence_t seq, netbuf b, rpc::client_opts opts) {
           auto sz = b.buffer().size_bytes();
           auto corr = b.correlation_id();
           return get_units(_memory, sz)
-            .then([b = std::move(b)](ssx::semaphore_units units) mutable {
+            .then([b = std::move(b), corr, this](
+                    ssx::semaphore_units units) mutable {
+                auto it = _correlations.find(corr);
+                if (likely(it != _correlations.end())) {
+                    auto& timing = it->second->timing;
+                    timing.memory_reserved_at = clock_type::now();
+                }
                 return std::move(b).as_scattered().then(
                   [u = std::move(units)](
                     ss::scattered_message<char> scattered_message) mutable {
