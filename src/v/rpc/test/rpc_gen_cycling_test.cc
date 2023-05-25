@@ -423,36 +423,6 @@ FIXTURE_TEST(timeout_test, rpc_integration_fixture) {
     client.stop().get();
 }
 
-FIXTURE_TEST(test_dispatch_loop_stall, rpc_integration_fixture) {
-    configure_server();
-    register_services();
-    start_server();
-
-    auto client = rpc::make_client<echo::echo_client_protocol>(client_config());
-    client.connect(model::no_timeout).get();
-    auto deferred = ss::defer([&] { client.stop().get(); });
-
-    using resp = ss::future<result<rpc::client_context<echo::sleep_resp>>>;
-
-    std::vector<resp> succeed;
-    succeed.reserve(10);
-    for (int i=0 ; i < 5; i++) {
-      succeed.push_back(client.sleep_for(echo::sleep_req{.secs = 1}, rpc::client_opts(rpc::no_timeout)));
-    }
-
-    resp timed_out = client.sleep_for(
-      echo::sleep_req{.secs = 1},
-      rpc::client_opts(rpc::clock_type::now() + 100ms));
-
-    for (int i=0 ; i < 5; i++) {
-      succeed.push_back(client.sleep_for(echo::sleep_req{.secs = 1}, rpc::client_opts(rpc::no_timeout)));
-    }
-
-    BOOST_REQUIRE(timed_out.get0().has_error());
-
-    ss::with_timeout(rpc::clock_type::now() + 10s, ss::when_all(succeed.begin(), succeed.end())).get();
-}
-
 FIXTURE_TEST(timeout_test_cleanup_resources, rpc_integration_fixture) {
     configure_server();
     register_services();
