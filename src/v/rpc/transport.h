@@ -163,7 +163,7 @@ private:
     void dispatch_send(sequence_t);
 
     ss::future<result<std::unique_ptr<streaming_context>>>
-    make_response_handler(netbuf&, rpc::client_opts&, sequence_t);
+    make_response_handler(netbuf&, rpc::client_opts&);
 
     ssx::semaphore _memory;
 
