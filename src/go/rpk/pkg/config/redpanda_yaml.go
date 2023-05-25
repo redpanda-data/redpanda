@@ -192,7 +192,7 @@ type (
 	SASL struct {
 		User      string `yaml:"user,omitempty" json:"user,omitempty"`
 		Password  string `yaml:"password,omitempty" json:"password,omitempty"`
-		Mechanism string `yaml:"type,omitempty" json:"type,omitempty"`
+		Mechanism string `yaml:"mechanism,omitempty" json:"mechanism,omitempty"`
 	}
 )
 

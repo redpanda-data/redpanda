@@ -56,7 +56,7 @@ const (
 	xKafkaCACert        = "tls.ca"
 	xKafkaClientCert    = "tls.cert"
 	xKafkaClientKey     = "tls.key"
-	xKafkaSASLMechanism = "sasl.type"
+	xKafkaSASLMechanism = "sasl.mechanism"
 	xKafkaSASLUser      = "user"
 	xKafkaSASLPass      = "pass"
 	xAdminHosts         = "admin.hosts"
@@ -166,7 +166,7 @@ var xflags = map[string]xflag{
 	},
 
 	xKafkaSASLMechanism: {
-		"kafka_api.sasl.type",
+		"kafka_api.sasl.mechanism",
 		"scram-sha-256",
 		xkindProfile,
 		func(v string, y *RpkYaml) error {
@@ -380,7 +380,7 @@ tls.key=/path/to/key.pem
   A filepath to a PEM encoded client key file to talk to your broker's Kafka
   API listeners with mTLS.
 
-sasl.type=SCRAM-SHA-256
+sasl.mechanism=SCRAM-SHA-256
   The SASL mechanism to use for authentication. This can be either SCRAM-SHA-256
   or SCRAM-SHA-512. Note that with Redpanda, the Admin API can be configured to
   require basic authentication with your Kafka API SASL credentials. This
@@ -433,7 +433,7 @@ tls.enabled=boolean
 tls.ca=/path/to/ca.pem
 tls.cert=/path/to/cert.pem
 tls.key=/path/to/key.pem
-sasl.type=SCRAM-SHA-256 or SCRAM-SHA-512
+sasl.mechanism=SCRAM-SHA-256 or SCRAM-SHA-512
 user=username
 pass=password
 admin.hosts=comma,delimited,host:ports

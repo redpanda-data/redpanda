@@ -684,14 +684,18 @@ func (s *SASL) UnmarshalYAML(n *yaml.Node) error {
 	var internal struct {
 		User      weakString `yaml:"user"`
 		Password  weakString `yaml:"password"`
-		Mechanism weakString `yaml:"type"`
+		Mechanism weakString `yaml:"mechanism"`
+		Type      weakString `yaml:"type"` // BACKCOMPAT 23-05-24 we deserialize type into mechanism
 	}
 	if err := n.Decode(&internal); err != nil {
 		return err
 	}
 	s.User = string(internal.User)
 	s.Password = string(internal.Password)
-	s.Mechanism = string(internal.Mechanism)
+	s.Mechanism = string(internal.Type)
+	if internal.Mechanism != "" {
+		s.Mechanism = string(internal.Mechanism)
+	}
 
 	return nil
 }
