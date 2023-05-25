@@ -934,26 +934,26 @@ class RpkTool:
 
     def _kafka_conn_settings(self):
         flags = [
-            "--brokers",
-            self._redpanda.brokers(),
+            "-X",
+            "brokers=" + self._redpanda.brokers(),
         ]
         if self._username:
             flags += [
-                "--user",
-                self._username,
-                "--password",
-                self._password,
-                "--sasl-mechanism",
-                self._sasl_mechanism,
+                "-X",
+                "user=" + self._username,
+                "-X",
+                "pass=" + self._password,
+                "-X",
+                "sasl.mechanism=" + self._sasl_mechanism,
             ]
         if self._tls_cert:
             flags += [
-                "--tls-key",
-                self._tls_cert.key,
-                "--tls-cert",
-                self._tls_cert.crt,
-                "--tls-truststore",
-                self._tls_cert.ca.crt,
+                "-X",
+                "tls.key=" + self._tls_cert.key,
+                "-X",
+                "tls.cert=" + self._tls_cert.crt,
+                "-X",
+                "tls.ca=" + self._tls_cert.ca.crt,
             ]
         return flags
 
@@ -1023,8 +1023,8 @@ class RpkTool:
         because there are already other ways to get at that.
         """
         cmd = [
-            self._rpk_binary(), '--brokers',
-            self._redpanda.brokers(), 'cluster', 'metadata'
+            self._rpk_binary(), '-X', "brokers=" + self._redpanda.brokers(),
+            'cluster', 'metadata'
         ]
         output = self._execute(cmd)
         lines = output.strip().split("\n")
@@ -1043,8 +1043,8 @@ class RpkTool:
 
     def license_set(self, path, license=""):
         cmd = [
-            self._rpk_binary(), "--api-urls",
-            self._admin_host(), "cluster", "license", "set"
+            self._rpk_binary(), "-X", "admin.hosts=" + self._admin_host(),
+            "cluster", "license", "set"
         ]
 
         if license:
