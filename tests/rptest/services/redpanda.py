@@ -1965,12 +1965,21 @@ class RedpandaService(RedpandaServiceBase):
             raise AssertionError(
                 "Nodes report restart required but expect_restart is False")
 
-    def await_feature_active(self, feature_name: str, *, timeout_sec: int):
+    def set_feature_active(self, feature_name: str, active: bool, *,
+                           timeout_sec: int):
+        self._admin.put_feature(feature_name,
+                                {"state": "active" if active else "disabled"})
+        self.await_feature(feature_name, active, timeout_sec=timeout_sec)
+
+    def await_feature(self, feature_name: str, active: bool, *,
+                      timeout_sec: int):
         """
         For use during upgrade tests, when after upgrade yo uwould like to block
-        until a particular feature is active (e.g. if it does migrations)
+        until a particular feature's active status updates (e.g. if it does migrations)
         """
-        def is_active():
+        await_state = 'active' if active else 'disabled'
+
+        def is_awaited_state():
             for n in self.nodes:
                 f = self._admin.get_features(node=n)
                 by_name = dict((f['name'], f) for f in f['features'])
@@ -1979,16 +1988,16 @@ class RedpandaService(RedpandaServiceBase):
                 except KeyError:
                     state = None
 
-                if state != 'active':
+                if state != await_state:
                     self.logger.info(
-                        f"Feature {feature_name} not yet active on {n.name} (state {state})"
+                        f"Feature {feature_name} not yet {await_state} on {n.name} (state {state})"
                     )
                     return False
 
-            self.logger.info(f"Feature {feature_name} is now active")
+            self.logger.info(f"Feature {feature_name} is now {await_state}")
             return True
 
-        wait_until(is_active, timeout_sec=timeout_sec, backoff_sec=1)
+        wait_until(is_awaited_state, timeout_sec=timeout_sec, backoff_sec=1)
 
     def monitor_log(self, node):
         assert node in self.nodes, f"where node is {node.name}"

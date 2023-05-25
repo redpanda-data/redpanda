@@ -551,7 +551,9 @@ class CreateTopicUpgradeTest(RedpandaTest):
         self.redpanda.restart_nodes(self.redpanda.nodes)
 
         # Wait for properties migration to run
-        self.redpanda.await_feature_active("cloud_retention", timeout_sec=30)
+        self.redpanda.await_feature("cloud_retention",
+                                    active=True,
+                                    timeout_sec=30)
 
         self.logger.info(
             f"Config status after upgrade: {self.redpanda._admin.get_cluster_config_status()}"
@@ -644,7 +646,9 @@ class CreateTopicUpgradeTest(RedpandaTest):
         self.redpanda.restart_nodes(self.redpanda.nodes)
 
         # Wait for any migration steps to complete
-        self.redpanda.await_feature_active('cloud_retention', timeout_sec=30)
+        self.redpanda.await_feature("cloud_retention",
+                                    active=True,
+                                    timeout_sec=30)
 
         non_si_configs = self.rpk.describe_topic_configs(
             "test-topic-with-retention")
@@ -800,7 +804,9 @@ class CreateTopicUpgradeTest(RedpandaTest):
         self.redpanda.restart_nodes(self.redpanda.nodes)
 
         # Wait for any migration steps to complete
-        self.redpanda.await_feature_active('cloud_retention', timeout_sec=30)
+        self.redpanda.await_feature('cloud_retention',
+                                    active=True,
+                                    timeout_sec=30)
 
         # Because legacy Redpanda treated cloud_storage_enable_remote_write as
         # an override to the topic property (even if the topic remote.write was explicitly
