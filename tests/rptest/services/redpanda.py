@@ -692,6 +692,7 @@ class RedpandaServiceBase(Service):
     DATA_DIR = os.path.join(PERSISTENT_ROOT, "data")
     NODE_CONFIG_FILE = "/etc/redpanda/redpanda.yaml"
     CLUSTER_BOOTSTRAP_CONFIG_FILE = "/etc/redpanda/.bootstrap.yaml"
+    RPK_CONFIG_FILE = "/root/.config/rpk/rpk.yaml"
     TLS_SERVER_KEY_FILE = "/etc/redpanda/server.key"
     TLS_SERVER_CRT_FILE = "/etc/redpanda/server.crt"
     TLS_CA_CRT_FILE = "/etc/redpanda/ca.crt"

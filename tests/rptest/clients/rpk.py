@@ -833,11 +833,12 @@ class RpkTool:
         ]
         return self._execute(cmd)
 
-    def _execute(self, cmd, stdin=None, timeout=None):
+    def _execute(self, cmd, stdin=None, timeout=None, log_cmd=True):
         if timeout is None:
             timeout = DEFAULT_TIMEOUT
 
-        self._redpanda.logger.debug("Executing command: %s", cmd)
+        if log_cmd:
+            self._redpanda.logger.debug("Executing command: %s", cmd)
 
         p = subprocess.Popen(cmd,
                              stdout=subprocess.PIPE,
@@ -856,7 +857,8 @@ class RpkTool:
             self._redpanda.logger.error(error)
             raise RpkException(
                 'command %s returned %d, output: %s' %
-                (' '.join(cmd), p.returncode, output), error, p.returncode)
+                (' '.join(cmd) if log_cmd else '[redacted]', p.returncode,
+                 output), error, p.returncode)
 
         return output
 
@@ -1052,7 +1054,7 @@ class RpkTool:
         if path:
             cmd += ["--path", path]
 
-        return self._execute(cmd)
+        return self._execute(cmd, log_cmd=False)
 
     def license_info(self):
 
@@ -1179,3 +1181,25 @@ class RpkTool:
                                    int(size)))
 
         return result
+
+    def cloud_login_cc(self, id, secret):
+
+        cmd = [
+            self._rpk_binary(), "cloud", "login", "--client-id", id,
+            "--client-secret", secret
+        ]
+
+        self._redpanda.logger.debug(
+            "Executing command: %s cloud login --client-id %s --client-secret [redacted]",
+            self._rpk_binary(), id)
+
+        return self._execute(cmd, log_cmd=False)
+
+    def cloud_logout(self, clear_credentials=True):
+
+        cmd = [self._rpk_binary(), "cloud", "logout"]
+
+        if clear_credentials:
+            cmd += ["--clear-credentials"]
+
+        return self._execute(cmd)
