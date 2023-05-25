@@ -40,14 +40,7 @@ git remote add upstream "https://github.com/$TARGET_FULL_REPO.git"
 git fetch --all
 git remote set-url origin "https://$GIT_USER:$GITHUB_TOKEN@github.com/$GIT_USER/$TARGET_REPO.git"
 
-backport_issues_numbers=""
-for issue_url in $fixing_issue_urls; do
-  backport_issues_numbers+=$(echo "$issue_url" | awk -F/ '{print $NF"-"}')
-done
-if [[ $backport_issues_numbers == "" ]]; then
-  backport_issues_numbers="fixes-to-"
-fi
-head_branch=$(echo "backport-$backport_issues_numbers$BACKPORT_BRANCH-$suffix" | sed 's/ /-/g')
+head_branch=$(echo "backport-pr-$PR_NUMBER-$BACKPORT_BRANCH-$suffix" | sed 's/ /-/g')
 git checkout -b "$head_branch" "remotes/upstream/$BACKPORT_BRANCH"
 
 if ! git cherry-pick -x $BACKPORT_COMMITS; then
