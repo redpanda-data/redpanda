@@ -266,7 +266,7 @@ transport::do_send(sequence_t seq, netbuf b, rpc::client_opts opts) {
 
                       _requests_queue.emplace(
                         seq, std::make_unique<entry>(std::move(e)));
-                      dispatch_send();
+                      dispatch_send(seq);
                   }
                   return std::move(f).finally([u = std::move(units)] {});
               })
@@ -279,9 +279,9 @@ transport::do_send(sequence_t seq, netbuf b, rpc::client_opts opts) {
       });
 }
 
-void transport::dispatch_send() {
+void transport::dispatch_send(sequence_t trigger_seq) {
     ssx::background
-      = ssx::spawn_with_gate_then(_dispatch_gate, [this]() mutable {
+      = ssx::spawn_with_gate_then(_dispatch_gate, [this, trigger_seq]() mutable {
             return ss::do_until(
               [this] {
                   return _requests_queue.empty()
@@ -299,7 +299,7 @@ void transport::dispatch_send() {
               // `_requests_queue.erase` the conditional for executing the
               // lambda could succeed for two different messages concurrently
               // resulting in incorrect ordering of the sent messages.
-              [this] {
+              [this, trigger_seq] {
                   auto it = _requests_queue.begin();
                   _last_seq = it->first;
                   auto v = std::move(*it->second->scattered_message);
@@ -325,6 +325,17 @@ void transport::dispatch_send() {
 
                   auto f = _out.write(std::move(v));
                   resp_entry->timing.dispatched_at = clock_type::now();
+                  vlog(
+                    rpclog.trace,
+                    "Dispatched request with sequence: {}, trigger sequence: "
+                    "{}, "
+                    "correlation_idx: {}, "
+                    "pending queue_size: {}, target_address: {}",
+                    _last_seq,
+                    trigger_seq,
+                    corr,
+                    _requests_queue.size(),
+                    server_address());
                   return std::move(f)
                     .then([this, corr](bool flushed) {
                         if (auto maybe_timing = get_timing(corr)) {
