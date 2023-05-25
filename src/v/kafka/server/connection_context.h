@@ -71,6 +71,7 @@ public:
         _probe.request_completed();
         if (_errored) {
             _h_probe.request_errored();
+            _probe.service_error();
         } else {
             _h_probe.request_completed();
         }
