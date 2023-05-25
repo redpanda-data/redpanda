@@ -3703,6 +3703,9 @@ class RedpandaService(RedpandaServiceBase):
                 )
 
 
-def make_redpanda_service(environment):
+def make_redpanda_service(context, num_brokers, **kwargs):
     """Factory function for instatiating the appropriate RedpandaServiceBase subclass."""
-    pass
+    if RedpandaServiceCloud.GLOBAL_CLOUD_API_URL in context.globals:
+        return RedpandaServiceCloud(context, num_brokers, **kwargs)
+    else:
+        return RedpandaService(context, num_brokers, **kwargs)
