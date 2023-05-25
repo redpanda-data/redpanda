@@ -282,19 +282,58 @@ tx_registry_frontend::find_coordinator_locally(kafka::transactional_id tid) {
                             errc::generic_tx_error));
                     }
                     auto stm = r.value();
-                    return stm->read_lock().then(
-                      [&self, tid](ss::basic_rwlock<>::holder unit) mutable {
-                          return self.do_find_coordinator_locally(tid).finally(
-                            [u = std::move(unit)] {});
-                      });
+                    return self.do_find_coordinator_locally(stm, tid);
                 });
           });
       });
 }
 
 ss::future<find_coordinator_reply>
-tx_registry_frontend::do_find_coordinator_locally(kafka::transactional_id tid) {
-    return find_coordinator_statically(tid);
+tx_registry_frontend::do_find_coordinator_locally(
+  ss::shared_ptr<cluster::tx_registry_stm> stm, kafka::transactional_id tid) {
+    auto term_opt = co_await stm->sync();
+    if (!term_opt.has_value()) {
+        vlog(clusterlog.info, "can't sync tx registry");
+        co_return find_coordinator_reply(
+          std::nullopt, std::nullopt, errc::not_leader);
+    }
+    auto term = term_opt.value();
+
+    if (stm->seen_unknown_batch_subtype()) {
+        // it may happen only if there was a downgrade from a a patch release
+        // we assume that before it happen a user restore default static
+        // partitioning so it's safe to fall back to it
+        co_return co_await find_coordinator_statically(tid);
+    }
+
+    auto cfg = _metadata_cache.local().get_topic_cfg(model::tx_manager_nt);
+    if (!cfg) {
+        vlog(
+          clusterlog.warn,
+          "can't find {} in the metadata cache",
+          model::tx_manager_nt);
+        co_return find_coordinator_reply(
+          std::nullopt, std::nullopt, errc::topic_not_exists);
+    }
+
+    auto inited = co_await stm->try_init_mapping(term, cfg->partition_count);
+    if (!inited) {
+        co_return find_coordinator_reply(
+          std::nullopt, std::nullopt, errc::not_leader);
+    }
+
+    auto units = co_await stm->read_lock();
+
+    auto partition = stm->find_hosting_partition(tid);
+    if (!partition) {
+        co_return find_coordinator_reply(
+          std::nullopt, std::nullopt, errc::generic_tx_error);
+    }
+
+    auto ntp = model::ntp(
+      model::tx_manager_nt.ns, model::tx_manager_nt.tp, partition.value());
+    auto leader = _metadata_cache.local().get_leader_id(ntp);
+    co_return find_coordinator_reply(leader, ntp, errc::success);
 }
 
 ss::future<find_coordinator_reply>

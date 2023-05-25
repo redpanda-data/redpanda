@@ -95,6 +95,9 @@ public:
 
     ss::future<bool> try_init_mapping(model::term_id, int32_t);
 
+    std::optional<model::partition_id>
+      find_hosting_partition(kafka::transactional_id);
+
     bool seen_unknown_batch_subtype() const {
         return _seen_unknown_batch_subtype;
     }
