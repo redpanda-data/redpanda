@@ -78,8 +78,8 @@ producer::do_send(model::topic_partition tp, model::record_batch batch) {
     auto partition = std::move(topic.partitions[0]);
     if (partition.error_code != error_code::none) {
         throw partition_error(
-            model::topic_partition(topic.name, partition.partition_index),
-            partition.error_code);
+          model::topic_partition(topic.name, partition.partition_index),
+          partition.error_code);
     }
 
     co_return partition;

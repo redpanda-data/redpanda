@@ -88,7 +88,7 @@ rpc_server::send_reply(ss::lw_shared_ptr<server_context_impl> ctx, netbuf buf) {
     }
     try {
         co_await ctx->conn->write(std::move(view));
-    } catch(...) {
+    } catch (...) {
         auto e = std::current_exception();
         auto disconnect = net::is_disconnect_exception(e);
         if (disconnect) {

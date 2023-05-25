@@ -258,8 +258,13 @@ ss::future<response_ptr> create_topics_handler::handle(
     }
 
     // Create the topics with controller on core 0
-    auto c_res = co_await ctx.topics_frontend().create_topics(std::move(to_create), to_timeout(request.data.timeout_ms));
-    co_await wait_for_topics(ctx.metadata_cache(), c_res, ctx.controller_api(), to_timeout(request.data.timeout_ms));
+    auto c_res = co_await ctx.topics_frontend().create_topics(
+      std::move(to_create), to_timeout(request.data.timeout_ms));
+    co_await wait_for_topics(
+      ctx.metadata_cache(),
+      c_res,
+      ctx.controller_api(),
+      to_timeout(request.data.timeout_ms));
     // Append controller results to validation errors
     append_cluster_results(c_res, response.data.topics);
     if (ctx.header().version >= api_version(5)) {

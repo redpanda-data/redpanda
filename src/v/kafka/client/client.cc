@@ -442,8 +442,7 @@ client::get_consumer(const group_id& g_id, const member_id& name) {
       consumer_error(g_id, name, error_code::unknown_member_id));
 }
 
-ss::future<>
-client::remove_consumer(group_id g_id, const member_id& name) {
+ss::future<> client::remove_consumer(group_id g_id, const member_id& name) {
     auto c = co_await get_consumer(g_id, name);
     auto& group = _consumers[g_id];
     group.erase(c);

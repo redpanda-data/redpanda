@@ -353,18 +353,18 @@ topics_frontend::dispatch_create_non_replicable_to_leader(
   model::timeout_clock::duration timeout) {
     vlog(clusterlog.trace, "Dispatching create topics to {}", leader);
     auto r = co_await _connections.local()
-                    .with_node_client<cluster::controller_client_protocol>(
-                      _self,
-                      ss::this_shard_id(),
-                      leader,
-                      timeout,
-                      [topics, timeout](controller_client_protocol cp) mutable {
-                          return cp.create_non_replicable_topics(
-                            create_non_replicable_topics_request{
-                              .topics = std::move(topics), .timeout = timeout},
-                            rpc::client_opts(timeout));
-                      })
-                    .then(&rpc::get_ctx_data<create_non_replicable_topics_reply>);
+               .with_node_client<cluster::controller_client_protocol>(
+                 _self,
+                 ss::this_shard_id(),
+                 leader,
+                 timeout,
+                 [topics, timeout](controller_client_protocol cp) mutable {
+                     return cp.create_non_replicable_topics(
+                       create_non_replicable_topics_request{
+                         .topics = std::move(topics), .timeout = timeout},
+                       rpc::client_opts(timeout));
+                 })
+               .then(&rpc::get_ctx_data<create_non_replicable_topics_reply>);
     if (r.has_error()) {
         co_return create_topic_results(topics, map_errc(r.error()));
     }
@@ -779,22 +779,22 @@ topics_frontend::dispatch_create_to_leader(
   model::timeout_clock::duration timeout) {
     vlog(clusterlog.trace, "Dispatching create topics to {}", leader);
     auto r = co_await _connections.local()
-      .with_node_client<cluster::controller_client_protocol>(
-        _self,
-        ss::this_shard_id(),
-        leader,
-        timeout,
-        [topics, timeout](controller_client_protocol cp) mutable {
-            return cp.create_topics(
-              create_topics_request{
-                .topics = std::move(topics), .timeout = timeout},
-              rpc::client_opts(model::timeout_clock::now() + timeout));
-        })
-      .then(&rpc::get_ctx_data<create_topics_reply>);
-            if (r.has_error()) {
-                co_return create_topic_results(topics, map_errc(r.error()));
-            }
-            co_return std::move(r.value().results);
+               .with_node_client<cluster::controller_client_protocol>(
+                 _self,
+                 ss::this_shard_id(),
+                 leader,
+                 timeout,
+                 [topics, timeout](controller_client_protocol cp) mutable {
+                     return cp.create_topics(
+                       create_topics_request{
+                         .topics = std::move(topics), .timeout = timeout},
+                       rpc::client_opts(model::timeout_clock::now() + timeout));
+                 })
+               .then(&rpc::get_ctx_data<create_topics_reply>);
+    if (r.has_error()) {
+        co_return create_topic_results(topics, map_errc(r.error()));
+    }
+    co_return std::move(r.value().results);
 }
 
 ss::future<topic_result> topics_frontend::dispatch_purged_topic_to_leader(
@@ -808,22 +808,22 @@ ss::future<topic_result> topics_frontend::dispatch_purged_topic_to_leader(
       leader);
 
     auto r = co_await _connections.local()
-      .with_node_client<cluster::controller_client_protocol>(
-        _self,
-        ss::this_shard_id(),
-        leader,
-        timeout,
-        [topic, timeout](controller_client_protocol cp) mutable {
-            return cp.purged_topic(
-              purged_topic_request{
-                .topic = std::move(topic), .timeout = timeout},
-              rpc::client_opts(model::timeout_clock::now() + timeout));
-        })
-      .then(&rpc::get_ctx_data<purged_topic_reply>);
-          if (r.has_error()) {
-              co_return topic_result(topic.nt, map_errc(r.error()));
-          }
-          co_return std::move(r.value().result);
+               .with_node_client<cluster::controller_client_protocol>(
+                 _self,
+                 ss::this_shard_id(),
+                 leader,
+                 timeout,
+                 [topic, timeout](controller_client_protocol cp) mutable {
+                     return cp.purged_topic(
+                       purged_topic_request{
+                         .topic = std::move(topic), .timeout = timeout},
+                       rpc::client_opts(model::timeout_clock::now() + timeout));
+                 })
+               .then(&rpc::get_ctx_data<purged_topic_reply>);
+    if (r.has_error()) {
+        co_return topic_result(topic.nt, map_errc(r.error()));
+    }
+    co_return std::move(r.value().result);
 }
 
 bool topics_frontend::validate_topic_name(const model::topic_namespace& topic) {
@@ -1191,8 +1191,8 @@ topics_frontend::do_cancel_moving_partition_replicas(
     co_await ss::max_concurrent_for_each(
       ntps, 32, [this, &results, timeout](model::ntp& ntp) {
           auto f = cancel_moving_partition_replicas(ntp, timeout);
-          return f
-            .then([ntp = std::move(ntp), &results](std::error_code ec) mutable {
+          return f.then(
+            [ntp = std::move(ntp), &results](std::error_code ec) mutable {
                 results.emplace_back(
                   std::move(ntp), map_update_interruption_error_code(ec));
             });

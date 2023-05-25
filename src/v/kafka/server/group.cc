@@ -1462,49 +1462,47 @@ group::sync_group_stages group::sync_group_completing_rebalance(
     // calling `then` after `store_group`.
     auto replicate_result = store_group(checkpoint(assignments));
     auto f = replicate_result.then([this,
-                      response = std::move(response),
-                      expected_generation = generation(),
-                      assignments = std::move(assignments)](
-                       result<raft::replicate_result> r) mutable {
-                   /*
-                    * the group's state has changed (e.g. another member
-                    * joined). there's nothing to do now except have the client
-                    * wait for an update.
-                    */
-                   if (
-                     !in_state(group_state::completing_rebalance)
-                     || expected_generation != generation()) {
-                       vlog(
-                         _ctxlog.trace,
-                         "Group state changed while completing sync");
-                       return std::move(response);
-                   }
+                                    response = std::move(response),
+                                    expected_generation = generation(),
+                                    assignments = std::move(assignments)](
+                                     result<raft::replicate_result> r) mutable {
+        /*
+         * the group's state has changed (e.g. another member
+         * joined). there's nothing to do now except have the client
+         * wait for an update.
+         */
+        if (
+          !in_state(group_state::completing_rebalance)
+          || expected_generation != generation()) {
+            vlog(_ctxlog.trace, "Group state changed while completing sync");
+            return std::move(response);
+        }
 
-                   if (r) {
-                       // the group state was successfully persisted:
-                       //   - save the member assignments; clients may
-                       //   re-request
-                       //   - unblock any clients waiting on their assignment
-                       //   - transition the group to the stable state
-                       set_assignments(std::move(assignments));
-                       finish_syncing_members(error_code::none);
-                       set_state(group_state::stable);
-                       vlog(_ctxlog.trace, "Successfully completed group sync");
-                   } else {
-                       vlog(
-                         _ctxlog.trace,
-                         "An error occurred completing group sync {}",
-                         r.error());
-                       // an error was encountered persisting the group state:
-                       //   - clear all the member assignments
-                       //   - propagate error back to waiting clients
-                       clear_assignments();
-                       finish_syncing_members(error_code::not_coordinator);
-                       try_prepare_rebalance();
-                   }
+        if (r) {
+            // the group state was successfully persisted:
+            //   - save the member assignments; clients may
+            //   re-request
+            //   - unblock any clients waiting on their assignment
+            //   - transition the group to the stable state
+            set_assignments(std::move(assignments));
+            finish_syncing_members(error_code::none);
+            set_state(group_state::stable);
+            vlog(_ctxlog.trace, "Successfully completed group sync");
+        } else {
+            vlog(
+              _ctxlog.trace,
+              "An error occurred completing group sync {}",
+              r.error());
+            // an error was encountered persisting the group state:
+            //   - clear all the member assignments
+            //   - propagate error back to waiting clients
+            clear_assignments();
+            finish_syncing_members(error_code::not_coordinator);
+            try_prepare_rebalance();
+        }
 
-                   return std::move(response);
-               });
+        return std::move(response);
+    });
     return sync_group_stages(std::move(f));
 }
 

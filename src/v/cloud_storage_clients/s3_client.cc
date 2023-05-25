@@ -518,43 +518,42 @@ ss::future<http::client::response_stream_ref> s3_client::do_get_object(
           // clang-tidy 16.0.4 is reporting an erroneous 'use-after-move' error
           // when calling `then` after `prefetch_headers`.
           auto f = ref->prefetch_headers();
-          return f.then(
-            [ref = std::move(ref),
-             expect_no_such_key,
-             is_byte_range_requested]() mutable {
-                vassert(ref->is_header_done(), "Header is not received");
-                const auto result = ref->get_headers().result();
-                bool request_failed = result != boost::beast::http::status::ok;
-                if (is_byte_range_requested) {
-                    request_failed
-                      &= result != boost::beast::http::status::partial_content;
-                }
-                if (request_failed) {
-                    // Got error response, consume the response body and produce
-                    // rest api error
-                    if (
-                      expect_no_such_key
-                      && result == boost::beast::http::status::not_found) {
-                        vlog(
-                          s3_log.debug,
-                          "S3 replied with expected error: {:l}",
-                          ref->get_headers());
-                    } else {
-                        vlog(
-                          s3_log.warn,
-                          "S3 replied with error: {:l}",
-                          ref->get_headers());
-                    }
-                    return util::drain_response_stream(std::move(ref))
-                      .then([result](iobuf&& res) {
-                          return parse_rest_error_response<
-                            http::client::response_stream_ref>(
-                            result, std::move(res));
-                      });
-                }
-                return ss::make_ready_future<http::client::response_stream_ref>(
-                  std::move(ref));
-            });
+          return f.then([ref = std::move(ref),
+                         expect_no_such_key,
+                         is_byte_range_requested]() mutable {
+              vassert(ref->is_header_done(), "Header is not received");
+              const auto result = ref->get_headers().result();
+              bool request_failed = result != boost::beast::http::status::ok;
+              if (is_byte_range_requested) {
+                  request_failed
+                    &= result != boost::beast::http::status::partial_content;
+              }
+              if (request_failed) {
+                  // Got error response, consume the response body and produce
+                  // rest api error
+                  if (
+                    expect_no_such_key
+                    && result == boost::beast::http::status::not_found) {
+                      vlog(
+                        s3_log.debug,
+                        "S3 replied with expected error: {:l}",
+                        ref->get_headers());
+                  } else {
+                      vlog(
+                        s3_log.warn,
+                        "S3 replied with error: {:l}",
+                        ref->get_headers());
+                  }
+                  return util::drain_response_stream(std::move(ref))
+                    .then([result](iobuf&& res) {
+                        return parse_rest_error_response<
+                          http::client::response_stream_ref>(
+                          result, std::move(res));
+                    });
+              }
+              return ss::make_ready_future<http::client::response_stream_ref>(
+                std::move(ref));
+          });
       });
 }
 

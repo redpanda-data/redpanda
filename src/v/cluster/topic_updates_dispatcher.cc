@@ -163,23 +163,19 @@ ss::future<std::error_code> topic_updates_dispatcher::apply(
     auto p_as = _topic_table.local().get_partition_assignment(cmd.key);
     auto ec = co_await dispatch_updates_to_cores(cmd, offset);
     if (!ec) {
-              const auto& ntp = cmd.key;
-              vassert(
-                p_as.has_value(),
-                "Partition {} have to exist before successful "
-                "partition reallocation",
-                ntp);
-              auto to_add = subtract_replica_sets(cmd.value, p_as->replicas);
-              _partition_allocator.local().add_allocations(
-                to_add, get_allocation_domain(ntp));
+        const auto& ntp = cmd.key;
+        vassert(
+          p_as.has_value(),
+          "Partition {} have to exist before successful "
+          "partition reallocation",
+          ntp);
+        auto to_add = subtract_replica_sets(cmd.value, p_as->replicas);
+        _partition_allocator.local().add_allocations(
+          to_add, get_allocation_domain(ntp));
 
-              _partition_balancer_state.local().handle_ntp_update(
-                ntp.ns,
-                ntp.tp.topic,
-                ntp.tp.partition,
-                p_as->replicas,
-                cmd.value);
-          }
+        _partition_balancer_state.local().handle_ntp_update(
+          ntp.ns, ntp.tp.topic, ntp.tp.partition, p_as->replicas, cmd.value);
+    }
     co_return ec;
 }
 ss::future<std::error_code> topic_updates_dispatcher::apply(
