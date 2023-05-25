@@ -41,15 +41,15 @@ ensures it is still valid. If no token is found or the token is no longer valid,
 this command will login and save your token along with the client ID used to 
 request the token.
 
-You may use any of the following methods to pass the cloud credentials to rpk:
+You may use either SSO or client credentials to log in.
 
-SSO:
+SSO
 
 This will automatically launch your default web browser and prompt you to 
 authenticate via our Redpanda Cloud page. Once you have successfully 
 authenticated, you will be ready to use rpk cloud commands.
 
-CLIENT CREDENTIALS:
+CLIENT CREDENTIALS
 
 Cloud client credentials can be used to login to Redpanda, they can be created 
 in the Clients tab of the Users section in the Redpanda Cloud online interface. 
@@ -63,6 +63,14 @@ If none of these are provided, rpk will use the SSO method to login.
 If you specify environment variables or flags, they will not be synced to the
 rpk.yaml file unless the --save flag is passed. The cloud authorization 
 token and client ID is always synced.
+
+PROFILE SELECTION
+
+This command by default attempts to populate a new profile that talks to a
+cloud cluster for you. If you have an existing cloud profile, this will select
+it, prompting which to use if you have many. If you have no cloud profile, this
+command will prompt you to select one that exists in your organization. If you
+want to disable automatic profile creation and selection, use --no-profile.
 `,
 		Run: func(cmd *cobra.Command, _ []string) {
 			cfg, err := p.Load(fs)

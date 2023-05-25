@@ -21,8 +21,13 @@ import (
 
 func newEditCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	return &cobra.Command{
-		Use:               "edit [NAME]",
-		Short:             "Edit an rpk context",
+		Use:   "edit [NAME]",
+		Short: "Edit an rpk auth",
+		Long: `Edit an rpk auth.
+
+This command opens your default editor to edit the specified cloud auth, or the
+current cloud auth if no cloud auth is specified.
+`,
 		Args:              cobra.MaximumNArgs(1),
 		ValidArgsFunction: validAuths(fs, p),
 		Run: func(_ *cobra.Command, args []string) {

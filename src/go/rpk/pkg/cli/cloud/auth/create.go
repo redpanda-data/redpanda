@@ -28,7 +28,19 @@ func newCreateCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "create [NAME]",
 		Short: "Create an rpk cloud auth",
-		Args:  cobra.ExactArgs(1),
+		Long: `Create an rpk cloud auth.
+
+This command creates a new rpk cloud auth. The default SSO login does not need
+any additional auth values (the token is populated on login) so you can just
+create an empty auth. You can also use --set to set key=value pairs for client
+credentials.
+
+The --set flag supports autocompletion, suggesting the -X key format. If you
+begin writing a YAML path, the flag will suggest the rest of the path.
+
+rpk always switches the current cloud auth to the newly created auth.
+`,
+		Args: cobra.ExactArgs(1),
 		Run: func(_ *cobra.Command, args []string) {
 			cfg, err := p.Load(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)

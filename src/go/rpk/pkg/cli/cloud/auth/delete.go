@@ -20,8 +20,14 @@ import (
 
 func newDeleteCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	return &cobra.Command{
-		Use:               "delete [NAME]",
-		Short:             "Delete an rpk cloud auth",
+		Use:   "delete [NAME]",
+		Short: "Delete an rpk cloud auth",
+		Long: `Delete an rpk cloud auth.
+
+Deleting a cloud auth removes it from the rpk.yaml file. If the deleted
+auth was the current auth, rpk will use a default SSO auth the next time
+you try to login and, if the login is successful, will safe that auth.
+`,
 		Args:              cobra.ExactArgs(1),
 		ValidArgsFunction: validAuths(fs, p),
 		Run: func(_ *cobra.Command, args []string) {
@@ -38,7 +44,7 @@ func newDeleteCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 			out.MaybeDieErr(err)
 			fmt.Printf("Deleted cloud auth %q.\n", name)
 			if wasUsing {
-				fmt.Println("The current context was using this cloud auth.\nYou may need to reauthenticate before the current context can be used again.")
+				fmt.Println("The current profile was using this cloud auth.\nYou may need to reauthenticate before the current profile can be used again.")
 			}
 		},
 	}

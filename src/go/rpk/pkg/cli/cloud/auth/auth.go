@@ -21,6 +21,15 @@ func NewCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "auth",
 		Short: "Manage rpk cloud authentications",
+		Long: `Manage rpk cloud authentications.
+
+An rpk cloud authentication allows you to talk to Redpanda Cloud. Most likely,
+you will only ever need to use a single SSO based login and you will not need
+this command space. Multiple authentications can be useful if you have multiple
+Redpanda Cloud accounts for different organizations and want to swap between
+them, or if you use SSO as well as client credentials. It is recommended to
+only use a single SSO based login.
+`,
 	}
 
 	cmd.AddCommand(
