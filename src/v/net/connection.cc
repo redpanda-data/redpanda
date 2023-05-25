@@ -32,6 +32,7 @@ bool is_reconnect_error(const std::system_error& e) {
         case GNUTLS_E_PUSH_ERROR:
         case GNUTLS_E_PULL_ERROR:
         case GNUTLS_E_UNEXPECTED_PACKET:
+        case GNUTLS_E_INVALID_SESSION:
         case GNUTLS_E_UNSUPPORTED_VERSION_PACKET:
         case GNUTLS_E_NO_CIPHER_SUITES:
         case GNUTLS_E_PREMATURE_TERMINATION:
