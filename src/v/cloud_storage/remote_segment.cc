@@ -278,6 +278,7 @@ remote_segment::offset_data_stream(
     ss::gate::holder g(_gate);
     co_await hydrate();
     offset_index::find_result pos;
+    std::optional<uint16_t> prefetch_override = std::nullopt;
     if (first_timestamp) {
         // Time queries are linear search from front of the segment.  The
         // dominant cost of a time query on a remote partition is promoting
@@ -290,6 +291,7 @@ remote_segment::offset_data_stream(
           .kaf_offset = _base_rp_offset - _base_offset_delta,
           .file_pos = 0,
         };
+        prefetch_override = 0;
     } else {
         pos = maybe_get_offsets(start).value_or(offset_index::find_result{
           .rp_offset = _base_rp_offset,
@@ -320,7 +322,8 @@ remote_segment::offset_data_stream(
           pos.kaf_offset,
           end,
           pos.file_pos,
-          std::move(options));
+          std::move(options),
+          prefetch_override);
         data_stream = ss::input_stream<char>{
           ss::data_source{std::move(chunk_ds)}};
     }

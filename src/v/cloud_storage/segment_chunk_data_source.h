@@ -27,7 +27,8 @@ public:
       kafka::offset start,
       kafka::offset end,
       int64_t begin_stream_at,
-      ss::file_input_stream_options stream_options);
+      ss::file_input_stream_options stream_options,
+      std::optional<uint16_t> prefetch_override = std::nullopt);
 
     chunk_data_source_impl(const chunk_data_source_impl&) = delete;
     chunk_data_source_impl& operator=(const chunk_data_source_impl&) = delete;
@@ -68,6 +69,7 @@ private:
     ss::abort_source _as;
     retry_chain_node _rtc;
     retry_chain_logger _ctxlog;
+    std::optional<uint16_t> _prefetch_override;
 };
 
 } // namespace cloud_storage

@@ -110,8 +110,8 @@ bool segment_chunks::downloads_in_progress() const {
     });
 }
 
-ss::future<ss::file>
-segment_chunks::do_hydrate_and_materialize(chunk_start_offset_t chunk_start) {
+ss::future<ss::file> segment_chunks::do_hydrate_and_materialize(
+  chunk_start_offset_t chunk_start, std::optional<uint16_t> prefetch_override) {
     gate_guard g{_gate};
     vassert(_started, "chunk API is not started");
 
@@ -121,15 +121,15 @@ segment_chunks::do_hydrate_and_materialize(chunk_start_offset_t chunk_start) {
         chunk_end = next->first - 1;
     }
 
-    co_await _segment.hydrate_chunk(segment_chunk_range{
-      _chunks,
-      config::shard_local_cfg().cloud_storage_chunk_prefetch,
-      chunk_start});
+    const auto prefetch = prefetch_override.value_or(
+      config::shard_local_cfg().cloud_storage_chunk_prefetch);
+    co_await _segment.hydrate_chunk(
+      segment_chunk_range{_chunks, prefetch, chunk_start});
     co_return co_await _segment.materialize_chunk(chunk_start);
 }
 
-ss::future<segment_chunk::handle_t>
-segment_chunks::hydrate_chunk(chunk_start_offset_t chunk_start) {
+ss::future<segment_chunk::handle_t> segment_chunks::hydrate_chunk(
+  chunk_start_offset_t chunk_start, std::optional<uint16_t> prefetch_override) {
     gate_guard g{_gate};
     vassert(_started, "chunk API is not started");
 
@@ -161,7 +161,8 @@ segment_chunks::hydrate_chunk(chunk_start_offset_t chunk_start) {
         // Keep retrying if materialization fails.
         bool done = false;
         while (!done) {
-            auto handle = co_await do_hydrate_and_materialize(chunk_start);
+            auto handle = co_await do_hydrate_and_materialize(
+              chunk_start, prefetch_override);
             if (handle) {
                 done = true;
                 chunk.handle = ss::make_lw_shared(std::move(handle));
@@ -433,6 +434,8 @@ segment_chunk_range::segment_chunk_range(
   size_t prefetch,
   chunk_start_offset_t start) {
     auto it = chunks.find(start);
+    vassert(
+      it != chunks.end(), "failed to find {} in chunk start offsets", start);
     auto n_it = std::next(it);
 
     // We need one chunk which will be downloaded for the current read, plus the
