@@ -3367,7 +3367,9 @@ class RedpandaService(RedpandaServiceBase):
               family = vectorized_cluster_partition_under_replicated_replicas
               sample = vectorized_cluster_partition_under_replicated_replicas
         """
-        nodes = nodes or self.nodes
+        if nodes is None:
+            nodes = self.nodes
+
         sample_values = []
         for node in nodes:
             metrics = self.metrics(node, metrics_endpoint)
