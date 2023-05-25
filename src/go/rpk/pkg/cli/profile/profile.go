@@ -21,6 +21,14 @@ func NewCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "profile",
 		Short: "Manage rpk profiles",
+		Long: `Manage rpk profiles.
+
+An rpk profile talks to a single Redpanda cluster. You can create multiple
+profiles for multiple clusters and swap between them with 'rpk profile use'.
+Multiple profiles may be useful if, for example, you use rpk to talk to
+a localhost cluster, a dev cluster, and a prod cluster, and you want to keep
+your configuration in one place.
+`,
 	}
 
 	cmd.AddCommand(

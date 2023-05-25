@@ -35,7 +35,35 @@ func newCreateCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "create [NAME]",
 		Short: "Create an rpk profile",
-		Args:  cobra.MaximumNArgs(1),
+		Long: `Create an rpk profile.
+
+There are multiple ways to create a profile. If no name is provided, the
+name "default" is used.
+
+* If you have an older redpanda.yaml, you can use --from-simple to generate
+  a new profile from the existing redpanda.yaml file.
+
+* You can use --from-cloud to generate a profile from an existing cloud cluster
+  id. Note that you must be logged in with 'rpk cloud login' first.
+
+* You can use --set key=value to directly set fields. The key can either be
+  the name of a -X flag or the path to the field in the profile's YAML format.
+  For example, using --set tls.enabled=true OR --set kafka_api.tls.enabled=true
+  is equivalent. The former corresponds to the -X flag tls.enabled, while the
+  latter corresponds to the path kafka_api.tls.enabled in the profile's YAML.
+
+The --set flag is always applied last and can be used to set additional fields
+in tandem with --from-simple or --from-cloud.
+
+The --set flag supports autocompletion, suggesting the -X key format. If you
+begin writing a YAML path, the flag will suggest the rest of the path.
+
+It is recommended to always use the --description flag; the description is
+printed in the output of 'rpk profile list'.
+
+rpk always switches to the newly created profile.
+`,
+		Args: cobra.MaximumNArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
 			cfg, err := p.Load(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)

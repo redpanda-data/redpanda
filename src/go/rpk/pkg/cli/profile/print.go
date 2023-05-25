@@ -22,8 +22,15 @@ import (
 func newPrintCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	var raw bool
 	cmd := &cobra.Command{
-		Use:               "print [NAME]",
-		Short:             "Print rpk profile configuration",
+		Use:   "print [NAME]",
+		Short: "Print rpk profile configuration",
+		Long: `Print rpk profile configuration.
+
+If no name is specified, this command prints the current profile as it is
+loaded in rpk with internal defaults, user specified flags, and environment
+variables applied. If you wish to print the current raw profile as it exists
+in rpk.yaml, you can use the --raw flag.
+`,
 		Args:              cobra.MaximumNArgs(1),
 		ValidArgsFunction: validProfiles(fs, p),
 		Run: func(_ *cobra.Command, args []string) {

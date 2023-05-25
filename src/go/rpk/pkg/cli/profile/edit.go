@@ -22,8 +22,18 @@ import (
 func newEditCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	var raw bool
 	cmd := &cobra.Command{
-		Use:               "edit [NAME]",
-		Short:             "Edit an rpk profile",
+		Use:   "edit [NAME]",
+		Short: "Edit an rpk profile",
+		Long: `Edit an rpk profile.
+
+This command opens your default editor to edit the specified profile, or
+the current profile if no profile is specified.
+
+If you are editing the current profile, rpk also populates what you edit
+with internal defaults, user specified flags, and environment variables.
+If you want to edit the current raw profile as it exists in rpk.yaml, you
+can use the --raw flag.
+`,
 		Args:              cobra.MaximumNArgs(1),
 		ValidArgsFunction: validProfiles(fs, p),
 		Run: func(_ *cobra.Command, args []string) {
