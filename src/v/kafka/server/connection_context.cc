@@ -444,7 +444,6 @@ connection_context::dispatch_method_once(request_header hdr, size_t size) {
                             .finally([self, d = std::move(d), sres]() mutable {
                                 sres->tracker->mark_errored();
                                 self->_server.probe().service_error();
-                                self->_server.probe().request_completed();
                                 return std::move(d);
                             });
                       }
