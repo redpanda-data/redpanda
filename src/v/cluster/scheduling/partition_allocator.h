@@ -65,6 +65,10 @@ public:
     /// try to substitute an existing replica with a newly allocated one and add
     /// it to the allocated_partition object. If the request fails,
     /// allocated_partition remains unchanged.
+    ///
+    /// Note: if after reallocation the replica ends up on a node from the
+    /// original replica set (doesn't matter if the same as `previous` or a
+    /// different one), its shard id is preserved.
     result<model::broker_shard> reallocate_replica(
       allocated_partition&, model::node_id previous, allocation_constraints);
 

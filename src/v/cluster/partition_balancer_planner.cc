@@ -343,7 +343,7 @@ public:
         return (_reallocated ? _reallocated->replicas() : _orig_replicas);
     };
 
-    bool is_original(const model::broker_shard& replica) const {
+    bool is_original(model::node_id replica) const {
         return !_reallocated || _reallocated->is_original(replica);
     }
 
@@ -370,7 +370,7 @@ private:
       , _ctx(ctx) {}
 
     bool has_changes() const {
-        return _reallocated && _reallocated->has_node_changes();
+        return _reallocated && _reallocated->has_changes();
     }
 
     allocation_constraints
@@ -665,7 +665,7 @@ auto partition_balancer_planner::request_context::do_with_partition(
             reassignment_it->second = std::move(*reassignable._reallocated);
         } else if (
           reassignable._reallocated
-          && reassignable._reallocated->has_node_changes()) {
+          && reassignable._reallocated->has_changes()) {
             _reassignments.emplace(ntp, std::move(*reassignable._reallocated));
             _planned_moves_size_bytes += reassignable._size_bytes;
         }
@@ -807,10 +807,10 @@ void partition_balancer_planner::get_node_drain_actions(
     }
 
     ctx.for_each_partition([&](partition& part) {
-        std::vector<model::broker_shard> to_move;
+        std::vector<model::node_id> to_move;
         for (const auto& bs : part.replicas()) {
             if (nodes.contains(bs.node_id)) {
-                to_move.push_back(bs);
+                to_move.push_back(bs.node_id);
             }
         }
 
@@ -820,11 +820,11 @@ void partition_balancer_planner::get_node_drain_actions(
 
         part.match_variant(
           [&](reassignable_partition& part) {
-              for (const auto& bs : to_move) {
-                  if (part.is_original(bs)) {
+              for (const auto& replica : to_move) {
+                  if (part.is_original(replica)) {
                       // ignore result
                       (void)part.move_replica(
-                        bs.node_id,
+                        replica,
                         ctx.config().hard_max_disk_usage_ratio,
                         reason);
                   }
@@ -841,7 +841,7 @@ void partition_balancer_planner::get_node_drain_actions(
               }
 
               for (const auto& r : to_move) {
-                  if (!previous_replicas_set.contains(r.node_id)) {
+                  if (!previous_replicas_set.contains(r)) {
                       // makes sense to cancel
                       part.request_cancel(reason);
                       break;
@@ -886,14 +886,14 @@ void partition_balancer_planner::get_rack_constraint_repair_actions(
         }
 
         ctx.with_partition(ntp, [&](partition& part) {
-            std::vector<model::broker_shard> to_move;
+            std::vector<model::node_id> to_move;
             absl::flat_hash_set<model::rack_id> cur_racks;
             for (const auto& bs : part.replicas()) {
                 auto rack = ctx.state().members().get_node_rack_id(bs.node_id);
                 if (rack) {
                     auto [it, inserted] = cur_racks.insert(*rack);
                     if (!inserted) {
-                        to_move.push_back(bs);
+                        to_move.push_back(bs.node_id);
                     }
                 }
             }
@@ -910,12 +910,12 @@ void partition_balancer_planner::get_rack_constraint_repair_actions(
 
             part.match_variant(
               [&](reassignable_partition& part) {
-                  for (const auto& bs : to_move) {
-                      if (part.is_original(bs)) {
+                  for (const auto& replica : to_move) {
+                      if (part.is_original(replica)) {
                           // only move replicas that haven't been moved for
                           // other reasons
                           (void)part.move_replica(
-                            bs.node_id,
+                            replica,
                             ctx.config().hard_max_disk_usage_ratio,
                             "rack constraint repair");
                       }
@@ -982,8 +982,9 @@ void partition_balancer_planner::get_full_node_actions(request_context& ctx) {
           [&](reassignable_partition& part) {
               std::vector<model::node_id> replicas_on_full_nodes;
               for (const auto& bs : part.replicas()) {
-                  if (part.is_original(bs) && find_full_node(bs.node_id)) {
-                      replicas_on_full_nodes.push_back(bs.node_id);
+                  model::node_id replica = bs.node_id;
+                  if (part.is_original(replica) && find_full_node(replica)) {
+                      replicas_on_full_nodes.push_back(replica);
                   }
               }
 
@@ -1032,7 +1033,7 @@ void partition_balancer_planner::get_full_node_actions(request_context& ctx) {
                       for (const auto& r : part.replicas()) {
                           if (
                             ctx.timed_out_unavailable_nodes.contains(r.node_id)
-                            || !part.is_original(r)) {
+                            || !part.is_original(r.node_id)) {
                               continue;
                           }
 

@@ -385,14 +385,9 @@ result<model::broker_shard> partition_allocator::do_allocate_replica(
     if (!node) {
         return node.error();
     }
-    model::broker_shard replica{
-      .node_id = node.value(),
-      .shard = _state->allocate(node.value(), partition._domain)};
 
     revert.cancel();
-    partition.add_replica(replica, prev);
-
-    return replica;
+    return partition.add_replica(node.value(), prev);
 }
 
 void partition_allocator::add_allocations(
