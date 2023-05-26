@@ -6,15 +6,11 @@ apt-get install -qq \
   bind9-dnsutils \
   bsdmainutils \
   dmidecode \
-  krb5-admin-server \
-  krb5-kdc \
-  krb5-user \
   iproute2 \
   iptables \
   libatomic1 \
   libyajl-dev \
   libsasl2-dev \
-  libsasl2-modules-gssapi-mit \
   libssl-dev \
   net-tools \
   lsof \
@@ -22,9 +18,6 @@ apt-get install -qq \
   nodejs \
   npm \
   openssh-server \
-  netcat-openbsd \
+  netcat \
   sudo \
-  llvm \
-  python3-pip \
-  libzstd-dev \
-  pkg-config
+  python3-pip

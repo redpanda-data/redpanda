@@ -18,7 +18,6 @@ ENV TZ="UTC" \
     DEBIAN_FRONTEND=noninteractive
 
 RUN mkdir -p /opt/redpanda-tests
-COPY --chown=0:0 tests/protobuf /opt/redpanda-tests/protobuf
 
 COPY --chown=0:0 --chmod=0755 tests/docker/ducktape-deps/java-dev-tools /
 COPY --chown=0:0 --chmod=0755 tests/docker/ducktape-deps/protobuf /
@@ -56,8 +55,10 @@ RUN /omb && \
 
 FROM base as java-verifiers
 
+COPY --chown=0:0 tests/java/kafka-verifier /opt/redpanda-tests/java/kafka-verifier
+COPY --chown=0:0 tests/java/compacted-log-verifier /opt/redpanda-tests/java/compacted-log-verifier
+COPY --chown=0:0 tests/java/tx-verifier /opt/redpanda-tests/java/tx-verifier
 COPY --chown=0:0 tests/java/e2e-verifiers /opt/redpanda-tests/java/e2e-verifiers
-COPY --chown=0:0 tests/java/verifiers /opt/redpanda-tests/java/verifiers
 COPY --chown=0:0 tests/java/kafka-serde /opt/redpanda-tests/java/kafka-serde
 COPY --chown=0:0 --chmod=0755 tests/docker/ducktape-deps/java-verifiers /
 RUN /java-verifiers && \
@@ -170,10 +171,6 @@ COPY --chown=0:0 --chmod=0755 tests/docker/ducktape-deps/arroyo /
 RUN /arroyo && \
     rm /arroyo
 
-RUN mkdir -p /opt/scripts/consumer_offsets_recovery
-COPY --chown=0:0 --chmod=0755 tools/consumer_offsets_recovery /opt/scripts/consumer_offsets_recovery
-RUN python3 -m pip install --force --no-cache-dir -r  /opt/scripts/consumer_offsets_recovery/requirements.txt
-
 # install python dependencies and rptest package.
 # rptest package installed in editable mode so it can be overridden.
 # passes --force so system pip packages can be updated
@@ -207,8 +204,10 @@ COPY --from=kafka-streams-examples /root/.m2 /root/.m2
 COPY --from=omb /opt/openmessaging-benchmark /opt/openmessaging-benchmark
 COPY --from=omb /root/.m2 /root/.m2
 COPY --from=java-verifiers /opt/redpanda-tests/java /opt/redpanda-tests/java
-COPY --from=java-verifiers /opt/verifiers /opt/verifiers
 COPY --from=java-verifiers /opt/kafka-serde /opt/kafka-serde
+COPY --from=java-verifiers /opt/kafka-verifier /opt/kafka-verifier
+COPY --from=java-verifiers /opt/compacted-log-verifier /opt/compacted-log-verifier
+COPY --from=java-verifiers /opt/tx-verifier /opt/tx-verifier
 COPY --from=java-verifiers /root/.m2 /root/.m2
 COPY --from=kafka-tools /opt /opt
 COPY --from=librdkafka /opt/librdkafka /opt/librdkafka
@@ -217,7 +216,6 @@ COPY --from=kcat /usr/local/bin/kcat /usr/local/bin/
 COPY --from=sarama-examples /opt/sarama /opt/sarama
 COPY --from=golang-test-clients /opt/redpanda-tests/go /opt/redpanda-tests/go
 COPY --from=client-swarm /usr/local/bin/client-swarm /usr/local/bin/
-COPY --from=client-swarm /usr/local/bin/rp-storage-tool /usr/local/bin/
 COPY --from=franz-bench /opt/franz-go/examples/bench /opt/franz-go/examples/bench
 COPY --from=k8s /usr/local/bin/kubectl /usr/local/bin/helm /usr/local/bin/
 COPY --from=kaf /usr/local/bin/kaf /usr/local/bin/
