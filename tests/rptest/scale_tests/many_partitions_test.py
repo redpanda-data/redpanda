@@ -352,7 +352,13 @@ class ManyPartitionsTest(PreallocNodesTest):
                                    p_per_topic: int, node_id: int):
         any_incomplete = False
         for tn in topic_names:
-            partitions = list(self.rpk.describe_topic(tn, tolerant=True))
+            try:
+                partitions = list(self.rpk.describe_topic(tn, tolerant=True))
+            except RpkException as e:
+                # same as in _node_leadership_balanced
+                self.logger.warn(f"RPK error, assuming retryable: {e}")
+                return False
+
             if len(partitions) < p_per_topic:
                 self.logger.info(f"describe omits partitions for topic {tn}")
                 any_incomplete = True
