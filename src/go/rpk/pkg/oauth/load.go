@@ -48,5 +48,7 @@ func LoadFlow(ctx context.Context, fs afero.Fs, cfg *config.Config, cl Client) (
 	}
 	authAct.ClientID = authVir.ClientID
 	authAct.AuthToken = resp.AccessToken
+
+	authVir.AuthToken = resp.AccessToken
 	return resp.AccessToken, yAct.Write(fs)
 }
