@@ -679,6 +679,31 @@ class Admin:
         path = f"tx_registry"
         return self._request('get', path, node=node).json()
 
+    def start_tx_draining(self,
+                          tm_partition,
+                          repartitioning_id,
+                          tx_ids,
+                          tx_ranges,
+                          node=None):
+        """
+        Mark tx ids and ranges as draining
+        """
+        path = f"transactions/draining_transactions?tm_partition={tm_partition}"
+        json = dict(repartitioning_id=repartitioning_id,
+                    transactional_ids=tx_ids,
+                    hash_ranges=[{
+                        "from": range[0],
+                        "to": range[1]
+                    } for range in tx_ranges])
+        return self._request('post', path, json=json, node=node)
+
+    def get_draining_transactions(self, tm_partition, node=None):
+        """
+        Get draining transaction for tm_partition
+        """
+        path = f"transactions/draining_transactions?tm_partition={tm_partition}"
+        return self._request('get', path, node=node).json()
+
     def set_partition_replicas(self,
                                topic,
                                partition,
