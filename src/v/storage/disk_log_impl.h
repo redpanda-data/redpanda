@@ -177,6 +177,7 @@ private:
     retention_adjust_timestamps(std::chrono::seconds ignore_in_future);
 
     gc_config apply_overrides(gc_config) const;
+    gc_config apply_base_overrides(gc_config) const;
 
     storage_resources& resources();
 
@@ -187,6 +188,17 @@ private:
     bool is_cloud_retention_active() const;
 
     std::optional<model::offset> retention_offset(gc_config);
+
+    /*
+     * total disk usage and the amount of reclaimable space are most efficiently
+     * computed together given that use cases often use both together.
+     */
+    ss::future<std::pair<usage, reclaim_size_limits>>
+      disk_usage_and_reclaimable_space(gc_config);
+
+    ss::future<usage_target> disk_usage_target(gc_config, usage);
+    ss::future<std::optional<size_t>>
+      disk_usage_target_time_retention(gc_config);
 
 private:
     size_t max_segment_size() const;

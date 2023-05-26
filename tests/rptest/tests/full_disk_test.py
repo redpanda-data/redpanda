@@ -318,8 +318,66 @@ class FullDiskReclaimTest(RedpandaTest):
                    backoff_sec=2)
 
 
+class LocalDiskReportTimeTest(RedpandaTest):
+    topics = (TopicSpec(segment_bytes=2**20,
+                        partition_count=1,
+                        retention_bytes=-1,
+                        retention_ms=60 * 60 * 1000,
+                        cleanup_policy=TopicSpec.CLEANUP_DELETE), )
+
+    def __init__(self, test_ctx):
+        extra_rp_conf = dict(log_compaction_interval_ms=3600 * 1000)
+        super().__init__(test_context=test_ctx, extra_rp_conf=extra_rp_conf)
+
+    @cluster(num_nodes=3)
+    def test_target_min_capacity_wanted_time_based(self):
+        admin = Admin(self.redpanda)
+        default_segment_size = admin.get_cluster_config()["log_segment_size"]
+
+        # produce roughly 30mb at 0.5mb/sec
+        kafka_tools = KafkaCliTools(self.redpanda)
+        kafka_tools.produce(self.topic,
+                            30 * 1024,
+                            1024,
+                            throughput=500,
+                            acks=-1)
+
+        node = self.redpanda.nodes[0]
+        reported = admin.get_local_storage_usage(
+            node)["target_min_capacity_wanted"]
+
+        # params. the size is about 900k larger than what was written,
+        # attributable to per record overheads etc... and determined emperically
+        # by looking at trace log stats.
+        size = 32441102
+        time = 61
+        retention = 3600
+        expected = retention * (size / time)
+
+        # factor in the 2 segments worth of space for controller log
+        diff = abs(reported - expected - 2 * default_segment_size)
+
+        # there is definitely going to be some fuzz factor needed here and may
+        # need updated, but after many runs 50mb was a good amount of slack.
+        assert diff <= (
+            100 * 2**20
+        ), f"diff {diff} reported {reported} expected {expected} default seg size {default_segment_size}"
+
+
 class LocalDiskReportTest(RedpandaTest):
-    topics = (TopicSpec(), TopicSpec(partition_count=4))
+    topics = (
+        TopicSpec(segment_bytes=2**30,
+                  retention_bytes=2 * 2**30,
+                  cleanup_policy=TopicSpec.CLEANUP_COMPACT),
+        TopicSpec(
+            partition_count=4,
+            # retention should be larger than default segment size
+            retention_bytes=200 * 2**20,
+            cleanup_policy=TopicSpec.CLEANUP_DELETE))
+
+    def __init__(self, test_ctx):
+        extra_rp_conf = dict(log_compaction_interval_ms=3600 * 1000)
+        super().__init__(test_context=test_ctx, extra_rp_conf=extra_rp_conf)
 
     def check(self, threshold):
         admin = Admin(self.redpanda)
@@ -334,6 +392,57 @@ class LocalDiskReportTest(RedpandaTest):
             if pct_diff > threshold:
                 return False
         return True
+
+    @cluster(num_nodes=3)
+    def test_target_min_capacity_wanted(self):
+        """
+        Test minimum capacity wanted calculation.
+        """
+        admin = Admin(self.redpanda)
+        default_segment_size = admin.get_cluster_config()["log_segment_size"]
+        node = self.redpanda.nodes[0]
+
+        # minimum based on retention bytes policy
+        reported = admin.get_local_storage_usage(
+            node)["target_min_capacity_wanted"]
+        expected = 4 * 200 * 2**20 + \
+                2 * 1 * 2**30 # the compacted topic clamp min wanted at min needed but doesn't contain any data
+        diff = abs(reported - expected)
+        # the difference should be less than the one extra segment per
+        # partitions since the reported size will try to round up to the nearest
+        # segment.
+        assert diff <= (
+            4 * default_segment_size
+        ), f"diff {diff} expected {expected} reported {reported}"
+
+    @cluster(num_nodes=3)
+    def test_target_min_capacity(self):
+        """
+        Test that the target min storage capcity reflects changes to reserved min
+        segments configuration option.
+        """
+        admin = Admin(self.redpanda)
+        default_segment_size = admin.get_cluster_config()["log_segment_size"]
+        node = self.redpanda.nodes[0]
+
+        for min_segments in (1, 2, 3):
+            self.redpanda.set_cluster_config(
+                dict(storage_reserve_min_segments=min_segments))
+            reported = admin.get_local_storage_usage(
+                node)["target_min_capacity"]
+
+            # 1 partition with 1gb segment size
+            # 4 partition with default segment size
+            # controller partition has default segment size
+            # reservation will be for min_segments
+            expected = min_segments * ((1 * self.topics[0].segment_bytes) + \
+                       (4 * default_segment_size) + \
+                       (1 * default_segment_size))
+
+            diff = abs(reported - expected)
+            assert diff <= (
+                0.001 * reported
+            ), f"diff {diff} expected {expected} reported {reported}"
 
     @cluster(num_nodes=3)
     def test_basic_usage_report(self):

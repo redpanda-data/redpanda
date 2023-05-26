@@ -193,6 +193,7 @@ struct configuration final : public config_store {
     property<size_t> max_compacted_log_segment_size;
     property<std::optional<std::chrono::seconds>>
       storage_ignore_timestamps_in_future_sec;
+    bounded_property<int16_t> storage_reserve_min_segments;
 
     property<int16_t> id_allocator_log_capacity;
     property<int16_t> id_allocator_batch_size;

@@ -4205,6 +4205,8 @@ admin_server::get_local_storage_usage_handler(
     ret.index = disk.usage.index;
     ret.compaction = disk.usage.compaction;
     ret.reclaimable_by_retention = disk.reclaim.retention;
+    ret.target_min_capacity = disk.target.min_capacity;
+    ret.target_min_capacity_wanted = disk.target.min_capacity_wanted;
 
     co_return ret;
 }

@@ -704,9 +704,12 @@ bool disk_log_impl::is_cloud_retention_active() const {
            && (config().is_archival_enabled());
 }
 
-gc_config disk_log_impl::apply_overrides(gc_config defaults) const {
+/*
+ * applies overrides for non-cloud storage settings
+ */
+gc_config disk_log_impl::apply_base_overrides(gc_config defaults) const {
     if (!config().has_overrides()) {
-        return override_retention_config(defaults);
+        return defaults;
     }
 
     auto ret = defaults;
@@ -734,6 +737,11 @@ gc_config disk_log_impl::apply_overrides(gc_config defaults) const {
           model::timestamp::now().value() - retention_time.value().count());
     }
 
+    return ret;
+}
+
+gc_config disk_log_impl::apply_overrides(gc_config defaults) const {
+    auto ret = apply_base_overrides(defaults);
     return override_retention_config(ret);
 }
 
@@ -1808,10 +1816,11 @@ log make_disk_backed_log(
     return log(ptr);
 }
 
-ss::future<usage_report> disk_log_impl::disk_usage(gc_config cfg) {
-    // protect against concurrent log removal with housekeeping loop
-    auto gate = _compaction_housekeeping_gate.hold();
-
+/*
+ * assumes that the compaction gate is held.
+ */
+ss::future<std::pair<usage, reclaim_size_limits>>
+disk_log_impl::disk_usage_and_reclaimable_space(gc_config cfg) {
     std::optional<model::offset> max_offset;
     if (config().is_collectable()) {
         cfg = apply_overrides(cfg);
@@ -1903,10 +1912,221 @@ ss::future<usage_report> disk_log_impl::disk_usage(gc_config cfg) {
       .available = retention.total() + available.total(),
     };
 
-    co_return usage_report{
-      .usage = usage,
-      .reclaim = reclaim,
-    };
+    co_return std::make_pair(usage, reclaim);
+}
+
+/*
+ * assumes that the compaction gate is held.
+ */
+ss::future<usage_target>
+disk_log_impl::disk_usage_target(gc_config cfg, usage usage) {
+    usage_target target;
+
+    target.min_capacity
+      = config::shard_local_cfg().storage_reserve_min_segments()
+        * max_segment_size();
+
+    cfg = apply_base_overrides(cfg);
+
+    /*
+     * compacted topics are always stored whole on local storage such that local
+     * retention settings do not come into play.
+     */
+    if (config().is_compacted()) {
+        /*
+         * if there is no delete policy enabled for a compacted topic then its
+         * local capacity requirement is limited only by compaction process and
+         * how much data is written. for this case we use a heuristic of to
+         * report space wanted as `factor * current capacity` to reflect that we
+         * want space for continued growth.
+         */
+        if (!config().is_collectable() || deletion_exempt(config().ntp())) {
+            target.min_capacity_wanted = usage.total() * 2;
+            co_return target;
+        }
+
+        /*
+         * otherwise, we fall through and evaluate the space wanted metric using
+         * any configured retention policies _without_ overriding based on cloud
+         * retention settings. the assumption here is that retention and not
+         * compaction is what will limit on disk space. this heuristic should be
+         * updated if we decide to also make "nice to have" estimates based on
+         * expected compaction ratios.
+         */
+    } else {
+        // applies local retention overrides for cloud storage
+        cfg = override_retention_config(cfg);
+    }
+
+    /*
+     * estimate how much space is needed to be meet size based retention policy.
+     *
+     * even though retention bytes has a built-in mechanism (ie -1 / nullopt) to
+     * represent infinite retention, it is concievable that a user sets a large
+     * value to achieve the same goal. in this case we cannot know precisely
+     * what the intention is, and so we preserve the large value.
+     *
+     * TODO: it is likely that we will want to clamp this value at some point,
+     * either here or at a higher level.
+     */
+    std::optional<size_t> want_size;
+    if (cfg.max_bytes.has_value()) {
+        want_size = cfg.max_bytes.value();
+        /*
+         * since prefix truncation / garbage collection only removes whole
+         * segments we can make the estimate a bit more conservative by rounding
+         * up to roughly the nearest segment size.
+         */
+        want_size.value() += max_segment_size()
+                             - (cfg.max_bytes.value() % max_segment_size());
+    }
+
+    /*
+     * grab the time based retention estimate and combine. if only time or size
+     * is available, use that. if neither is available, use the `factor *
+     * current size` heuristic to express that we want to allow for growth.
+     * when both are available the minimum is taken. the reason for this is that
+     * when retention rules are eventually applied, garbage collection will
+     * select the rule that results in the most data being collected.
+     */
+    auto want_time = co_await disk_usage_target_time_retention(cfg);
+
+    if (!want_time.has_value() && !want_size.has_value()) {
+        target.min_capacity_wanted = usage.total() * 2;
+    } else if (want_time.has_value() && want_size.has_value()) {
+        target.min_capacity_wanted = std::min(
+          want_time.value(), want_size.value());
+    } else if (want_time.has_value()) {
+        target.min_capacity_wanted = want_time.value();
+    } else {
+        target.min_capacity_wanted = want_size.value();
+    }
+
+    co_return target;
+}
+
+ss::future<std::optional<size_t>>
+disk_log_impl::disk_usage_target_time_retention(gc_config cfg) {
+    /*
+     * take the opportunity to maybe fixup janky weird timestamps. also done in
+     * normal garbage collection path and should be idempotent.
+     */
+    if (auto ignore_timestamps_in_future
+        = config::shard_local_cfg().storage_ignore_timestamps_in_future_sec();
+        ignore_timestamps_in_future.has_value()) {
+        co_await retention_adjust_timestamps(
+          ignore_timestamps_in_future.value());
+    }
+
+    /*
+     * we are going to use whole segments for the data we'll use to extrapolate
+     * the time-based retention capacity needs to avoid complexity of index
+     * lookups (for now); if there isn't an entire segment worth of data, we
+     * might not have a good sample size either. first we'll find the oldest
+     * segment whose starting offset is greater than the eviction time. this and
+     * subsequent segments will be fully contained within the time range.
+     */
+    auto it = std::find_if(
+      std::cbegin(_segs),
+      std::cend(_segs),
+      [time = cfg.eviction_time](const ss::lw_shared_ptr<segment>& s) {
+          return s->index().base_timestamp() >= time;
+      });
+
+    // collect segments for reducing
+    fragmented_vector<segment_set::type> segments;
+    for (; it != std::cend(_segs); ++it) {
+        segments.push_back(*it);
+    }
+
+    /*
+     * not enough data. caller will substitute in a reasonable value.
+     */
+    if (segments.size() < 2) {
+        vlog(
+          stlog.trace,
+          "time-based-usage: skipping log without too few segments ({}) ntp {}",
+          segments.size(),
+          config().ntp());
+        co_return std::nullopt;
+    }
+
+    auto start_timestamp = segments.front()->index().base_timestamp();
+    auto end_timestamp = segments.back()->index().max_timestamp();
+    auto duration = end_timestamp - start_timestamp;
+    auto missing = start_timestamp - cfg.eviction_time;
+
+    /*
+     * timestamps are weird or there isn't a lot of data. be careful with "not a
+     * lot of data" when considering time because throughput may be large. so we
+     * go with something like 10 seconds just as a sanity check.
+     */
+    constexpr auto min_time_needed = model::timestamp(10'000);
+    if (missing <= model::timestamp(0) || duration <= min_time_needed) {
+        vlog(
+          stlog.trace,
+          "time-based-usage: skipping with time params start {} end {} etime "
+          "{} dur {} miss {} ntp {}",
+          start_timestamp,
+          end_timestamp,
+          cfg.eviction_time,
+          duration,
+          missing,
+          config().ntp());
+        co_return std::nullopt;
+    }
+
+    // roll up the amount of disk space taken by these segments
+    auto usage = co_await ss::map_reduce(
+      segments,
+      [](const segment_set::type& seg) { return seg->persistent_size(); },
+      storage::usage{},
+      [](storage::usage acc, storage::usage u) { return acc + u; });
+
+    // extrapolate out for the missing period of time in the retention period
+    auto missing_bytes = (usage.total() * missing.value()) / duration.value();
+    auto total = usage.total() + missing_bytes;
+
+    vlog(
+      stlog.trace,
+      "time-based-usage: reporting total {} usage {} start {} end {} etime {} "
+      "dur {} miss {} ntp {}",
+      total,
+      usage.total(),
+      start_timestamp,
+      end_timestamp,
+      cfg.eviction_time,
+      duration,
+      missing,
+      config().ntp());
+
+    co_return total;
+}
+
+ss::future<usage_report> disk_log_impl::disk_usage(gc_config cfg) {
+    // protect against concurrent log removal with housekeeping loop
+    auto gate = _compaction_housekeeping_gate.hold();
+
+    /*
+     * compute the amount of current disk usage as well as the amount available
+     * for being reclaimed.
+     */
+    auto [usage, reclaim] = co_await disk_usage_and_reclaimable_space(cfg);
+
+    /*
+     * compute target capacities such as minimum required capacity as well as
+     * capacities needed to meet goals such as local retention.
+     */
+    auto target = co_await disk_usage_target(cfg, usage);
+
+    /*
+     * the intention here is to establish a needed <= wanted relationship which
+     * should generally provide a nicer set of numbers for consumers to use.
+     */
+    target.min_capacity_wanted = std::max(
+      target.min_capacity_wanted, target.min_capacity);
+
+    co_return usage_report(usage, reclaim, target);
 }
 
 } // namespace storage

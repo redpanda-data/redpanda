@@ -800,6 +800,14 @@
                 "reclaimable_by_retention": {
                     "type": "long",
                     "description": "Number of bytes currently reclaimable by retention"
+                },
+                "target_min_capacity": {
+                    "type": "long",
+                    "description": "Target minimum capacity"
+                },
+                "target_min_capacity_wanted": {
+                    "type": "long",
+                    "description": "Target minimum capacity wanted"
                 }
             }
         }
