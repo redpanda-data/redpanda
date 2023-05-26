@@ -81,11 +81,24 @@ void partition_balancer_backend::maybe_rearm_timer(bool now) {
         return;
     }
     auto schedule_at = now ? clock_t::now() : clock_t::now() + _tick_interval();
+    auto duration_ms = [](clock_t::time_point time_point) {
+        return std::chrono::duration_cast<std::chrono::milliseconds>(
+                 time_point - clock_t::now())
+          .count();
+    };
     if (_timer.armed()) {
         schedule_at = std::min(schedule_at, _timer.get_timeout());
         _timer.rearm(schedule_at);
+        vlog(
+          clusterlog.debug,
+          "Tick rescheduled to run in: {}ms",
+          duration_ms(schedule_at));
     } else if (_lock.waiters() == 0) {
         _timer.arm(schedule_at);
+        vlog(
+          clusterlog.debug,
+          "Tick scheduled to run in: {}ms",
+          duration_ms(schedule_at));
     }
 }
 
