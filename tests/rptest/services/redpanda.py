@@ -798,7 +798,7 @@ class RedpandaServiceBase(Service):
             resource_settings = ResourceSettings()
         self._resource_settings = resource_settings
 
-        self._trim_logs = self._context.globals.get(self.TRIM_LOGS_KEY, True)
+        self._trim_logs = self._context.globals.get(self.TRIM_LOGS_KEY, False)
 
         self._node_id_by_idx = {}
 

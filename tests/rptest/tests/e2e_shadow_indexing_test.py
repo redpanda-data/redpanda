@@ -16,6 +16,7 @@ from ducktape.mark import matrix
 from ducktape.tests.test import TestContext
 from ducktape.utils.util import wait_until
 
+from rptest.archival.s3_client import S3Client
 from rptest.clients.kafka_cli_tools import KafkaCliTools
 from rptest.clients.rpk import RpkTool
 from rptest.clients.types import TopicSpec
@@ -26,6 +27,7 @@ from rptest.services.kgo_verifier_services import KgoVerifierProducer, KgoVerifi
 from rptest.services.metrics_check import MetricCheck
 from rptest.services.redpanda import RedpandaService, CHAOS_LOG_ALLOW_LIST
 from rptest.services.redpanda import SISettings, get_cloud_storage_type
+from rptest.services.verifiable_consumer import VerifiableConsumer
 from rptest.tests.end_to_end import EndToEndTest
 from rptest.tests.prealloc_nodes import PreallocNodesTest
 from rptest.util import Scale, wait_until_segments
@@ -36,7 +38,7 @@ from rptest.util import (
     wait_for_local_storage_truncate,
 )
 from rptest.utils.mode_checks import skip_debug_mode
-from rptest.utils.si_utils import nodes_report_cloud_segments, BucketView
+from rptest.utils.si_utils import nodes_report_cloud_segments, BucketView, NTP, gen_manifest_path
 
 
 class EndToEndShadowIndexingBase(EndToEndTest):
@@ -330,6 +332,187 @@ class EndToEndShadowIndexingTest(EndToEndShadowIndexingBase):
         rpk = RpkTool(self.redpanda)
         rpk.cluster_recovery_start(wait=True)
         wait_until(lambda: len(set(rpk.list_topics())) == 1,
+                   timeout_sec=30,
+                   backoff_sec=1)
+
+
+class EndToEndShadowIndexingTestOffByOneManifest(EndToEndTest):
+    """
+    Normally manifests look like a list of segments:
+
+    [0...10][11...20][21...30]
+
+    In the wild, on older versions of Redpanda we've seen:
+
+    Manifest says:
+
+    [0...10][11...21][21...30]
+
+    ...but the segments actually look like the former case.
+
+    This attempts to reproduce issues by starting up a read replica cluster to
+    read from this path. We're using a read replica so we can force a reload of
+    the manifest.
+    """
+    segment_size = 1024 * 1024
+    s3_topic_name = "panda-topic"
+    num_brokers = 1
+    topics = (TopicSpec(
+        name=s3_topic_name,
+        partition_count=1,
+        replication_factor=1,
+    ), )
+
+    def __init__(self, test_context):
+        super(EndToEndShadowIndexingTestOffByOneManifest,
+              self).__init__(test_context=test_context)
+
+        self.test_context = test_context
+        self.topic = self.s3_topic_name
+
+        self.si_settings = SISettings(
+            test_context,
+            cloud_storage_max_connections=5,
+            log_segment_size=self.segment_size,  # 1MB
+            cloud_storage_segment_max_upload_interval_sec=1,
+        )
+        self.s3_bucket_name = self.si_settings.cloud_storage_bucket
+        self.si_settings.load_context(self.logger, test_context)
+        self.scale = Scale(test_context)
+
+        self.redpanda = RedpandaService(context=self.test_context,
+                                        num_brokers=self.num_brokers,
+                                        si_settings=self.si_settings)
+        self.kafka_tools = KafkaCliTools(self.redpanda)
+
+        # Read reaplica shouldn't have it's own bucket.
+        # We're adding 'none' as a bucket name without creating
+        # an actual bucket with such name.
+        self.rr_settings = SISettings(
+            test_context,
+            bypass_bucket_creation=True,
+            cloud_storage_enable_remote_write=False,
+            cloud_storage_max_connections=5,
+            log_segment_size=self.segment_size,
+            cloud_storage_readreplica_manifest_sync_timeout_ms=500,
+            cloud_storage_segment_max_upload_interval_sec=5,
+            cloud_storage_housekeeping_interval_ms=10)
+        self.second_cluster = None
+
+    def setUp(self):
+        assert self.redpanda
+        self.redpanda._installer.install(self.redpanda.nodes, (22, 3))
+        self.redpanda.start()
+        for topic in self.topics:
+            self.kafka_tools.create_topic(topic)
+
+    @cluster(num_nodes=4)
+    def test_off_by_one_manifest(self):
+        self.start_producer(throughput=50000)
+        wait_until_segments(
+            redpanda=self.redpanda,
+            topic=self.topic,
+            partition_idx=0,
+            count=10,
+        )
+        original_snapshot = self.redpanda.storage(
+            all_nodes=True).segments_by_node("kafka", self.topic, 0)
+
+        # Set a low local retention so we're guaranteed to require reading from
+        # cloud.
+        self.kafka_tools.alter_topic_config(
+            self.topic,
+            {
+                TopicSpec.PROPERTY_RETENTION_LOCAL_TARGET_BYTES:
+                2 * self.segment_size,
+            },
+        )
+        wait_for_removal_of_n_segments(redpanda=self.redpanda,
+                                       topic=self.s3_topic_name,
+                                       partition_idx=0,
+                                       n=8,
+                                       original_snapshot=original_snapshot)
+
+        # Wait for there to be some segments.
+        def manifest_has_segments():
+            s3_snapshot = BucketView(self.redpanda, topics=self.topics)
+            manifest = s3_snapshot.manifest_for_ntp(self.topics[0].name, 0)
+            if "segments" not in manifest:
+                return False
+            return len(manifest["segments"]) >= 9
+
+        wait_until(manifest_has_segments, timeout_sec=10, backoff_sec=1)
+        self.producer.stop()
+
+        # !!! MESS THE MANIFEST UP !!!
+        s3_snapshot = BucketView(self.redpanda, topics=self.topics)
+        manifest = s3_snapshot.manifest_for_ntp(self.topics[0].name, 0)
+        segment_names = list(manifest["segments"].keys())
+
+        self.logger.debug(f"Segments {segment_names}")
+
+        seg_name = segment_names[3]
+        self.logger.debug(f"Updating segment {seg_name}")
+        committed_offset = manifest["segments"][seg_name]["committed_offset"]
+        manifest["segments"][seg_name][
+            "committed_offset"] = committed_offset + 1
+
+        next_seg_name = segment_names[4]
+        next_seg = manifest["segments"][next_seg_name]
+        next_base_offset = next_seg["base_offset"]
+        assert committed_offset + 1 == next_base_offset, f"{committed_offset} vs {next_base_offset}"
+        next_kafka_offset = next_seg["committed_offset"] - next_seg[
+            "delta_offset_end"]
+
+        ntp = NTP('kafka', self.s3_topic_name, 0)
+        ntpr = s3_snapshot.ntp_to_ntpr(ntp)
+        manifest_path = gen_manifest_path(ntpr)
+
+        # Stop this cluster to avoid interfering with us messing with the
+        # manifest.
+        self.redpanda.stop()
+
+        self.redpanda.cloud_storage_client.put_object(
+            bucket=self.s3_bucket_name,
+            key=manifest_path,
+            data=json.dumps(manifest))
+        self.logger.debug(f"Updated manifest {json.dumps(manifest)}")
+        # !!! END MESS !!!
+
+        # Now start the read replica cluster to read.
+        self.second_cluster = RedpandaService(self.test_context,
+                                              num_brokers=1,
+                                              si_settings=self.rr_settings)
+        self.second_cluster._installer.install(self.second_cluster.nodes,
+                                               (22, 3))
+        self.second_cluster.start(start_si=False)
+        rpk_dst_cluster = RpkTool(self.second_cluster)
+        conf = {
+            'redpanda.remote.readreplica': self.s3_bucket_name,
+        }
+        rpk_dst_cluster.create_topic(self.s3_topic_name, config=conf)
+
+        def has_leader():
+            partitions = list(
+                rpk_dst_cluster.describe_topic(self.s3_topic_name,
+                                               tolerant=True))
+            for part in partitions:
+                if part.leader == -1:
+                    return False
+            return True
+
+        wait_until(has_leader,
+                   timeout_sec=60,
+                   backoff_sec=10,
+                   err_msg="No leader in read-replica")
+
+        self.consumer = VerifiableConsumer(self.test_context,
+                                           num_nodes=1,
+                                           redpanda=self.second_cluster,
+                                           topic=self.s3_topic_name,
+                                           group_id='consumer_test_group')
+        self.consumer.start()
+        wait_until(lambda: self.consumer.total_consumed() >= next_kafka_offset,
                    timeout_sec=30,
                    backoff_sec=1)
 
