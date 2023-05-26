@@ -1416,7 +1416,9 @@ configuration::configuration()
       "Time limit on waiting for uploads to complete before a leadership "
       "transfer.  If this is null, leadership transfers will proceed without "
       "waiting.",
-      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      {.needs_restart = needs_restart::no,
+       .visibility = visibility::tunable,
+       .aliases = {"cloud_storage_graceful_transfer_timeout"}},
       5s)
   , cloud_storage_backend(
       *this,

@@ -71,6 +71,10 @@ public:
         std::optional<ss::sstring> example{std::nullopt};
         visibility visibility{visibility::user};
         is_secret secret{is_secret::no};
+
+        // Aliases are used exclusively for input: all output (e.g. listing
+        // configuration) uses the primary name of the property.
+        std::vector<std::string_view> aliases;
     };
 
     base_property(
@@ -86,6 +90,9 @@ public:
     bool needs_restart() const { return bool(_meta.needs_restart); }
     visibility get_visibility() const { return _meta.visibility; }
     bool is_secret() const { return bool(_meta.secret); }
+    const std::vector<std::string_view>& aliases() const {
+        return _meta.aliases;
+    }
 
     // this serializes the property value. a full configuration serialization is
     // performed in config_store::to_json where the json object key is taken

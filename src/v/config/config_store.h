@@ -22,10 +22,18 @@
 namespace config {
 class config_store {
 public:
-    bool contains(std::string_view name) { return _properties.contains(name); }
+    bool contains(std::string_view name) {
+        return _properties.contains(name) || _aliases.contains(name);
+    }
 
     base_property& get(const std::string_view& name) {
-        return *_properties.at(name);
+        if (auto found = _properties.find(name); found != _properties.end()) {
+            return *(found->second);
+        } else if (auto found = _aliases.find(name); found != _aliases.end()) {
+            return *(found->second);
+        } else {
+            throw std::out_of_range(fmt::format("Property {} not found", name));
+        }
     }
 
     using error_map_t = std::map<ss::sstring, ss::sstring>;
@@ -64,9 +72,12 @@ public:
             auto name = node.first.as<ss::sstring>();
             auto found = _properties.find(name);
             if (found == _properties.end()) {
-                if (!ignore_missing.contains(name)) {
-                    throw std::invalid_argument(
-                      fmt::format("Unknown property {}", name));
+                found = _aliases.find(name);
+                if (found == _aliases.end()) {
+                    if (!ignore_missing.contains(name)) {
+                        throw std::invalid_argument(
+                          fmt::format("Unknown property {}", name));
+                    }
                 }
             } else {
                 bool ok = false;
@@ -194,6 +205,11 @@ public:
 private:
     friend class base_property;
     std::unordered_map<std::string_view, base_property*> _properties;
+
+    // If a property has some aliases for backward compat, they are tracked
+    // here: a property must appear at least in _properties, and may appear
+    // 0..n times in _aliases
+    std::unordered_map<std::string_view, base_property*> _aliases;
 };
 
 inline YAML::Node to_yaml(const config_store& cfg, redact_secrets redact) {

@@ -208,6 +208,11 @@
           "type": "cluster_config_property_metadata_items",
           "description": "Type of items in an array",
           "nullable": true
+        },
+        "aliases": {
+          "type": "array",
+          "items": {"type": "string"},
+          "description": "List of legacy names for the property.  Property may be set using these names, but will always appear in GET requests via its primary name."
         }
       }
     }

@@ -7,11 +7,12 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 import json
+import logging
 import pprint
 import re
 import tempfile
 import time
-from typing import Any, NamedTuple
+from typing import Any, NamedTuple, Protocol
 
 import requests
 import yaml
@@ -24,7 +25,8 @@ from rptest.clients.rpk_remote import RpkRemoteTool
 from rptest.clients.types import TopicSpec
 from rptest.services.admin import Admin
 from rptest.services.cluster import cluster
-from rptest.services.redpanda import CloudStorageType, SISettings, RESTART_LOG_ALLOW_LIST, IAM_ROLES_API_CALL_ALLOW_LIST, get_cloud_storage_type
+from rptest.services.redpanda import CloudStorageType, SISettings, RESTART_LOG_ALLOW_LIST, IAM_ROLES_API_CALL_ALLOW_LIST, get_cloud_storage_type, RedpandaService
+from rptest.services.redpanda_installer import RedpandaInstaller
 from rptest.services.metrics_check import MetricCheck
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.util import expect_http_error, expect_exception, produce_until_segments
@@ -151,7 +153,34 @@ class ClusterConfigUpgradeTest(RedpandaTest):
             "Ignoring value for 'delete_retention_ms'")
 
 
-class ClusterConfigTest(RedpandaTest):
+class HasRedpandaAndAdmin(Protocol):
+    redpanda: RedpandaService
+    admin: Admin
+    logger: logging.Logger
+
+
+class ClusterConfigHelpersMixin:
+    def _check_value_everywhere(self: HasRedpandaAndAdmin, key, expect_value):
+        for node in self.redpanda.nodes:
+            actual_value = self.admin.get_cluster_config(node)[key]
+            if actual_value != expect_value:
+                self.logger.error(
+                    f"Wrong value on node {node.account.hostname}: {key}={actual_value} (!={expect_value})"
+                )
+            assert self.admin.get_cluster_config(node)[key] == expect_value
+
+    def _check_propagated_and_persistent(self: HasRedpandaAndAdmin, key,
+                                         expect_value):
+        """
+        Verify that a configuration value has successfully propagated to all
+        nodes, and that it persists after a restart.
+        """
+        self._check_value_everywhere(key, expect_value)
+        self.redpanda.restart_nodes(self.redpanda.nodes)
+        self._check_value_everywhere(key, expect_value)
+
+
+class ClusterConfigTest(RedpandaTest, ClusterConfigHelpersMixin):
     def __init__(self, *args, **kwargs):
         rp_conf = BOOTSTRAP_CONFIG.copy()
 
@@ -338,24 +367,6 @@ class ClusterConfigTest(RedpandaTest):
         self.redpanda.restart_nodes(self.redpanda.nodes)
         self._check_value_everywhere("cloud_storage_access_key", "user2")
         self._check_value_everywhere("cloud_storage_secret_key", "[secret]")
-
-    def _check_value_everywhere(self, key, expect_value):
-        for node in self.redpanda.nodes:
-            actual_value = self.admin.get_cluster_config(node)[key]
-            if actual_value != expect_value:
-                self.logger.error(
-                    f"Wrong value on node {node.account.hostname}: {key}={actual_value} (!={expect_value})"
-                )
-            assert self.admin.get_cluster_config(node)[key] == expect_value
-
-    def _check_propagated_and_persistent(self, key, expect_value):
-        """
-        Verify that a configuration value has successfully propagated to all
-        nodes, and that it persists after a restart.
-        """
-        self._check_value_everywhere(key, expect_value)
-        self.redpanda.restart_nodes(self.redpanda.nodes)
-        self._check_value_everywhere(key, expect_value)
 
     @cluster(num_nodes=3)
     def test_simple_live_change(self):
@@ -1334,6 +1345,113 @@ class ClusterConfigTest(RedpandaTest):
                 s for s in status
                 if s['node_id'] == self.redpanda.idx(controller_node))
             assert local_status['config_version'] == config_version
+
+
+class ClusterConfigAliasTest(RedpandaTest, ClusterConfigHelpersMixin):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+        self.admin = Admin(self.redpanda)
+        self.rpk = RpkTool(self.redpanda)
+        self.installer = self.redpanda._installer
+
+        # This became the name in 23.2
+        self.primary_name = "cloud_storage_graceful_transfer_timeout_ms"
+        # This is the 23.1 name, retained as an alias for backward compat
+        self.aliased_name = "cloud_storage_graceful_transfer_timeout"
+        # This is the version in which the alias name used to be the primary
+        self.legacy_version = (23, 1)
+
+    def setUp(self):
+        pass  # Will start cluster in test
+
+    @cluster(num_nodes=3)
+    def test_aliasing(self):
+        """
+        Validate that configuration property aliases enable the various means
+        of setting a property to accept the old name (alias) as well as the new one.
+        """
+        # Aliases should work when used in bootstrap
+        self.redpanda.set_extra_rp_conf({self.aliased_name: 1234})
+        self.redpanda.start()
+
+        # The configuration schema should include aliases
+        schema = self.admin.get_cluster_config_schema()['properties']
+        assert schema[self.primary_name]['aliases'] == [self.aliased_name]
+        assert self.aliased_name not in schema
+
+        # Config listing should not include aliases
+        cluster_config = self.admin.get_cluster_config(include_defaults=True)
+        assert self.primary_name in cluster_config
+        assert self.aliased_name not in cluster_config
+
+        # Aliases should work when used in API POST
+        self.redpanda.set_cluster_config({self.aliased_name: 1235})
+        self._check_value_everywhere(self.primary_name, 1235)
+
+        # Properties set via an alias should stay set after a restart
+        self.redpanda.restart_nodes(self.redpanda.nodes)
+        self._check_value_everywhere(self.primary_name, 1235)
+
+        # The rpk CLI should also accept aliased names
+        self.rpk.cluster_config_set(self.primary_name, "1236")
+        self._check_value_everywhere(self.primary_name, 1236)
+
+    @cluster(num_nodes=3)
+    @parametrize(wipe_cache=False)
+    @parametrize(wipe_cache=True)
+    def test_aliasing_with_upgrade(self, wipe_cache: bool):
+        """
+        Validate that a property written under an alias in a previous release
+        is read correctly after upgrade.
+
+        :param wipe_cache: if true, erase cluster config cache to ensure that the
+                           upgraded node is reading from the controller log rather
+                           than just cache.
+        """
+
+        old_version, _ = self.installer.latest_for_line(self.legacy_version)
+        self.installer.install(self.redpanda.nodes, old_version)
+
+        self.redpanda.start()
+
+        # Check we're running a version where the alias name is actually the primary
+        # (i.e. older than when the alias was introduced)
+        cluster_config = self.admin.get_cluster_config(include_defaults=True)
+        assert self.primary_name not in cluster_config
+        assert self.aliased_name in cluster_config
+
+        value_old_version = 1230
+
+        self.redpanda.set_cluster_config(
+            {self.aliased_name: value_old_version})
+        self._check_value_everywhere(self.aliased_name, value_old_version)
+
+        self.installer.install(self.redpanda.nodes, RedpandaInstaller.HEAD)
+        for node in self.redpanda.nodes:
+            self.redpanda.stop_node(node)
+
+            if wipe_cache:
+                # Erase the cluster config cache, so that the node will replay from
+                # controller log and/or controller snapshots
+                cache_path = f"{self.redpanda.DATA_DIR}/config_cache.yaml"
+                self.logger.info(
+                    "Erasing config cache on {node.name} at {cache_path}")
+                assert node.account.exists(cache_path)
+                node.account.remove(cache_path)
+
+            self.redpanda.start_node(node)
+
+        # The value we wrote under the old name should now be readable via the new name
+        self._check_value_everywhere(self.primary_name, value_old_version)
+
+        # Setting via the new name works
+        self.redpanda.set_cluster_config({self.primary_name: 1231})
+        self._check_value_everywhere(self.primary_name, 1231)
+
+        # Setting via the old name also still works
+        self.redpanda.set_cluster_config({self.primary_name: 1232})
+        self._check_value_everywhere(self.primary_name, 1232)
 
 
 class ClusterConfigClusterIdTest(RedpandaTest):
