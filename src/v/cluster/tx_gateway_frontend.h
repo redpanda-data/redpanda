@@ -13,6 +13,7 @@
 
 #include "cluster/fwd.h"
 #include "cluster/tm_stm.h"
+#include "cluster/tm_tx_hash_ranges.h"
 #include "cluster/tx_coordinator_mapper.h"
 #include "cluster/types.h"
 #include "features/feature_table.h"
@@ -78,6 +79,8 @@ public:
       describe_tx(kafka::transactional_id);
     ss::future<tx_errc>
     set_draining_txes(cluster::draining_txs draining, model::ntp tx_ntp);
+    ss::future<result<cluster::draining_txs, tx_errc>>
+    get_draining_txes(model::ntp tx_ntp);
 
     ss::future<tx_errc> delete_partition_from_tx(
       kafka::transactional_id, tm_transaction::tx_partition);
@@ -269,6 +272,8 @@ private:
       describe_tx(ss::shared_ptr<tm_stm>, kafka::transactional_id);
     ss::future<tx_errc>
       do_set_draining_txes(ss::shared_ptr<tm_stm>, cluster::draining_txs);
+    ss::future<result<cluster::draining_txs, tx_errc>>
+      do_get_draining_txes(ss::shared_ptr<tm_stm>);
 
     void expire_old_txs();
     ss::future<> expire_old_txs(ss::shared_ptr<tm_stm>);
