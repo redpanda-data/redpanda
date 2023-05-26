@@ -13,6 +13,7 @@
 
 #include "cluster/errc.h"
 #include "cluster/fwd.h"
+#include "cluster/tm_tx_hash_ranges.h"
 #include "kafka/types.h"
 #include "model/adl_serde.h"
 #include "model/fundamental.h"
@@ -1047,6 +1048,102 @@ struct find_coordinator_reply
     auto serde_fields() { return std::tie(coordinator, ntp, ec); }
 };
 
+struct set_draining_transactions_request
+  : serde::envelope<
+      set_draining_transactions_request,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    using rpc_adl_exempt = std::true_type;
+
+    model::ntp tm_ntp;
+    cluster::draining_txs draining;
+
+    set_draining_transactions_request() noexcept = default;
+
+    set_draining_transactions_request(
+      model::ntp tm_ntp, cluster::draining_txs draining)
+      : tm_ntp(tm_ntp)
+      , draining(std::move(draining)) {}
+
+    friend bool operator==(
+      const set_draining_transactions_request&,
+      const set_draining_transactions_request&)
+      = default;
+
+    friend std::ostream&
+    operator<<(std::ostream& o, const set_draining_transactions_request& r);
+
+    auto serde_fields() { return std::tie(tm_ntp, draining); }
+};
+
+struct set_draining_transactions_reply
+  : serde::envelope<
+      set_draining_transactions_reply,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    using rpc_adl_exempt = std::true_type;
+
+    tx_errc ec{};
+
+    set_draining_transactions_reply() noexcept = default;
+
+    set_draining_transactions_reply(tx_errc ec)
+      : ec(ec) {}
+
+    friend bool operator==(
+      const set_draining_transactions_reply&,
+      const set_draining_transactions_reply&)
+      = default;
+
+    friend std::ostream&
+    operator<<(std::ostream& o, const set_draining_transactions_reply& r);
+
+    auto serde_fields() { return std::tie(ec); }
+};
+
+struct join_request
+  : serde::envelope<join_request, serde::version<0>, serde::compat_version<0>> {
+    join_request() noexcept = default;
+
+    explicit join_request(model::broker b)
+      : node(std::move(b)) {}
+
+    model::broker node;
+
+    friend bool operator==(const join_request&, const join_request&) = default;
+
+    friend std::ostream& operator<<(std::ostream& o, const join_request& r) {
+        fmt::print(o, "node {}", r.node);
+        return o;
+    }
+
+    auto serde_fields() { return std::tie(node); }
+};
+
+struct join_reply
+  : serde::envelope<join_reply, serde::version<0>, serde::compat_version<0>> {
+    bool success;
+
+    join_reply() noexcept = default;
+
+    explicit join_reply(bool success)
+      : success(success) {}
+
+    friend bool operator==(const join_reply&, const join_reply&) = default;
+
+    friend std::ostream& operator<<(std::ostream& o, const join_reply& r) {
+        fmt::print(o, "success {}", r.success);
+        return o;
+    }
+
+    auto serde_fields() { return std::tie(success); }
+};
+
+/// Successor to join_request:
+/// - Include version metadata for joining node
+/// - Has fields for implementing auto-selection of
+///   node_id (https://github.com/redpanda-data/redpanda/issues/2793)
+///   in future.
 struct join_node_request
   : serde::
       envelope<join_node_request, serde::version<1>, serde::compat_version<0>> {

@@ -15,6 +15,7 @@
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/timestamp.h"
+#include "redpanda/admin/api-doc/transaction.json.h"
 #include "reflection/adl.h"
 #include "security/acl.h"
 #include "tristate.h"
@@ -1026,6 +1027,31 @@ std::ostream& operator<<(std::ostream& o, const find_coordinator_request& r) {
 std::ostream& operator<<(std::ostream& o, const find_coordinator_reply& r) {
     fmt::print(
       o, "{{coordinator {} ntp {} ec {}}}", r.coordinator, r.ntp, r.ec);
+    return o;
+}
+
+std::ostream&
+operator<<(std::ostream& o, const set_draining_transactions_request& r) {
+    ss::httpd::transaction_json::draining_transactions json;
+    json.repartitioning_id = r.draining.id;
+    for (const auto& tx_id : r.draining.transactions) {
+        json.transactional_ids.push(tx_id);
+    }
+
+    for (const auto& tx_range : r.draining.ranges.ranges) {
+        ss::httpd::transaction_json::hash_range range;
+        range.from = tx_range.first;
+        range.to = tx_range.last;
+        json.hash_ranges.push(range);
+    }
+    fmt::print(
+      o, "{{ntp: {} request data json: {}}}", r.tm_ntp, json.to_json());
+    return o;
+}
+
+std::ostream&
+operator<<(std::ostream& o, const set_draining_transactions_reply& r) {
+    fmt::print(o, "{{ec {}}}", r.ec);
     return o;
 }
 

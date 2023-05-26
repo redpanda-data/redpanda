@@ -13,6 +13,7 @@
 #include "cluster/fwd.h"
 #include "cluster/rm_group_proxy.h"
 #include "cluster/tx_gateway_service.h"
+#include "cluster/types.h"
 
 #include <seastar/core/sharded.hh>
 
@@ -72,6 +73,9 @@ public:
 
     ss::future<find_coordinator_reply> find_coordinator(
       find_coordinator_request&&, rpc::streaming_context&) override;
+
+    ss::future<set_draining_transactions_reply> set_draining_transactions(
+      set_draining_transactions_request&&, rpc::streaming_context&) override;
 
 private:
     ss::sharded<cluster::tx_gateway_frontend>& _tx_gateway_frontend;

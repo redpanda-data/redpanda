@@ -115,4 +115,12 @@ ss::future<find_coordinator_reply> tx_gateway::find_coordinator(
     return _tx_registry_frontend.local().find_coordinator_locally(r.tid);
 }
 
+ss::future<set_draining_transactions_reply>
+tx_gateway::set_draining_transactions(
+  set_draining_transactions_request&& r, rpc::streaming_context&) {
+    auto err = co_await _tx_gateway_frontend.local().set_draining_txes(
+      r.draining, r.tm_ntp);
+    co_return set_draining_transactions_reply(err);
+}
+
 } // namespace cluster
