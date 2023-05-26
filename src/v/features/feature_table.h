@@ -31,12 +31,11 @@ namespace features {
 
 struct feature_table_snapshot;
 
+/// The integers in this enum must be unique wrt each other, but _not_ over
+/// all time.  We always serialize features to string names, the integer is
+/// only used at runtime.  Therefore it is safe to re-use an integer that
+/// has been made available by another feature being retired.
 enum class feature : std::uint64_t {
-    central_config = 1ULL,
-    consumer_offsets = 1ULL << 1U,
-    maintenance_mode = 1ULL << 2U,
-    mtls_authentication = 1ULL << 3U,
-    rm_stm_kafka_cache = 1ULL << 4U,
     serde_raft_0 = 1ULL << 5U,
     license = 1ULL << 6U,
     raft_improved_configuration = 1ULL << 7U,
@@ -61,8 +60,25 @@ enum class feature : std::uint64_t {
     force_partition_reconfiguration = 1ULL << 26U,
 
     // Dummy features for testing only
-    test_alpha = 1ULL << 62U,
-    test_bravo = 1ULL << 63U,
+    test_alpha = 1ULL << 61U,
+    test_bravo = 1ULL << 62U,
+    test_charlie = 1ULL << 63U,
+};
+
+// Eventually, once a feature has been in use for a while, it is no longer
+// behind a feature flag, and the flag itself is retired.  We remember a list
+// of all retired features, because this enables us to distinguish between
+// controller messages for unknown features (unexpected), and controller
+// messages that refer to features that have been retired.
+//
+// retired does *not* mean the functionality is gone: it just means it
+// is no longer guarded by a feature flag.
+inline const std::set<std::string_view> retired_features = {
+  "central_config",
+  "consumer_offsets",
+  "maintenance_mode",
+  "mtls_authentication",
+  "rm_stm_kafka_cache",
 };
 
 /**
@@ -78,6 +94,10 @@ struct feature_spec {
         // The feature only becomes available once all cluster nodes
         // are recent enough *and* an administrator explicitly enables it.
         explicit_only,
+
+        // The feature proceeds to activate only if the cluster's original
+        // version is >= the feature's require_version
+        new_clusters_only,
     };
 
     // Policy defining whether the feature passes through 'preparing'
@@ -112,36 +132,6 @@ struct feature_spec {
 };
 
 constexpr static std::array feature_schema{
-  feature_spec{
-    cluster::cluster_version{1},
-    "central_config",
-    feature::central_config,
-    feature_spec::available_policy::always,
-    feature_spec::prepare_policy::always},
-  feature_spec{
-    cluster::cluster_version{2},
-    "consumer_offsets",
-    feature::consumer_offsets,
-    feature_spec::available_policy::always,
-    feature_spec::prepare_policy::always},
-  feature_spec{
-    cluster::cluster_version{3},
-    "maintenance_mode",
-    feature::maintenance_mode,
-    feature_spec::available_policy::always,
-    feature_spec::prepare_policy::always},
-  feature_spec{
-    cluster::cluster_version{3},
-    "mtls_authentication",
-    feature::mtls_authentication,
-    feature_spec::available_policy::explicit_only,
-    feature_spec::prepare_policy::always},
-  feature_spec{
-    cluster::cluster_version{4},
-    "rm_stm_kafka_cache",
-    feature::rm_stm_kafka_cache,
-    feature_spec::available_policy::always,
-    feature_spec::prepare_policy::always},
   feature_spec{
     cluster::cluster_version{5},
     "serde_raft_0",
@@ -254,7 +244,7 @@ constexpr static std::array feature_schema{
     cluster::cluster_version{10},
     "controller_snapshots",
     feature::controller_snapshots,
-    feature_spec::available_policy::explicit_only,
+    feature_spec::available_policy::new_clusters_only,
     feature_spec::prepare_policy::always},
   feature_spec{
     cluster::cluster_version{10},
@@ -272,22 +262,6 @@ constexpr static std::array feature_schema{
     cluster::cluster_version{10},
     "force_partition_reconfiguration",
     feature::force_partition_reconfiguration,
-    feature_spec::available_policy::always,
-    feature_spec::prepare_policy::always},
-
-  // For testing, a feature that does not auto-activate
-  feature_spec{
-    cluster::cluster_version{2001},
-    "__test_alpha",
-    feature::test_alpha,
-    feature_spec::available_policy::explicit_only,
-    feature_spec::prepare_policy::always},
-
-  // For testing, a feature that auto-activates
-  feature_spec{
-    cluster::cluster_version{2001},
-    "__test_bravo",
-    feature::test_bravo,
     feature_spec::available_policy::always,
     feature_spec::prepare_policy::always},
 };

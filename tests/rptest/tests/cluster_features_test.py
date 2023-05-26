@@ -20,7 +20,13 @@ from rptest.util import expect_exception
 
 from ducktape.errors import TimeoutError as DucktapeTimeoutError
 from ducktape.utils.util import wait_until
+from ducktape.mark import parametrize
 from rptest.util import wait_until_result
+
+FEATURE_ALPHA_NAME = "__test_alpha"
+FEATURE_BRAVO_NAME = "__test_bravo"
+FEATURE_CHARLIE_NAME = "__test_charlie"
+TEST_FEATURES_VERSION = 2001
 
 
 class FeaturesTestBase(RedpandaTest):
@@ -79,7 +85,7 @@ class FeaturesTestBase(RedpandaTest):
             f"Version mismatch: {initial_version} vs {self.head_latest_logical_version}"
 
         assert self._get_features_map(
-            features_response)['central_config']['state'] == 'active'
+            features_response)['license']['state'] == 'active'
 
         return features_response
 
@@ -101,18 +107,6 @@ class FeaturesTestBase(RedpandaTest):
         # it relies on periodic health messages
         wait_until(check, timeout_sec=20, backoff_sec=1)
 
-
-class FeaturesMultiNodeTest(FeaturesTestBase):
-    """
-    Multi-node variant of tests is the 'normal' execution path for feature manager.
-    """
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, num_brokers=3, **kwargs)
-
-    @cluster(num_nodes=3)
-    def test_get_features(self):
-        self._assert_default_features()
-
     def _wait_for_feature_everywhere(self, fn):
         """
         Apply a GET check to all nodes, for writes that are expected to
@@ -130,6 +124,18 @@ class FeaturesMultiNodeTest(FeaturesTestBase):
         # a particularly long timeout: it's here for when tests run very slow.
         wait_until(check, timeout_sec=10, backoff_sec=0.5)
 
+
+class FeaturesMultiNodeTest(FeaturesTestBase):
+    """
+    Multi-node variant of tests is the 'normal' execution path for feature manager.
+    """
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, num_brokers=3, **kwargs)
+
+    @cluster(num_nodes=3)
+    def test_get_features(self):
+        self._assert_default_features()
+
     @cluster(num_nodes=3, log_allow_list=RESTART_LOG_ALLOW_LIST)
     def test_explicit_activation(self):
         """
@@ -138,18 +144,17 @@ class FeaturesMultiNodeTest(FeaturesTestBase):
 
         # Parameters of the compiled-in test feature
         feature_alpha_version = 2001
-        feature_alpha_name = "__test_alpha"
 
         initial_version = self.admin.get_features()['cluster_version']
         assert (initial_version < feature_alpha_version)
         # Initially, before setting the magic environment variable, dummy test features
         # should be hidden
-        assert feature_alpha_name not in self._get_features_map().keys()
+        assert FEATURE_ALPHA_NAME not in self._get_features_map().keys()
 
         self.redpanda.set_environment({'__REDPANDA_TEST_FEATURES': "ON"})
         self.redpanda.restart_nodes(self.redpanda.nodes)
         assert self._get_features_map(
-        )[feature_alpha_name]['state'] == 'unavailable'
+        )[FEATURE_ALPHA_NAME]['state'] == 'unavailable'
 
         # Version is too low, feature should be unavailable
         assert initial_version == self.admin.get_features()['cluster_version']
@@ -172,30 +177,30 @@ class FeaturesMultiNodeTest(FeaturesTestBase):
         # Feature should become available now that version increased.  It should NOT
         # become active, because it has an explicit_only policy for activation.
         self._wait_for_feature_everywhere(
-            lambda fm: fm[feature_alpha_name]['state'] == 'available')
+            lambda fm: fm[FEATURE_ALPHA_NAME]['state'] == 'available')
 
         # Disable the feature, see that it enters the expected state
-        self.admin.put_feature(feature_alpha_name, {"state": "disabled"})
+        self.admin.put_feature(FEATURE_ALPHA_NAME, {"state": "disabled"})
         self._wait_for_feature_everywhere(
-            lambda fm: fm[feature_alpha_name]['state'] == 'disabled')
+            lambda fm: fm[FEATURE_ALPHA_NAME]['state'] == 'disabled')
 
-        state = self._get_features_map()[feature_alpha_name]
+        state = self._get_features_map()[FEATURE_ALPHA_NAME]
         assert state['state'] == 'disabled'
         assert state['was_active'] == False
 
         # Write to admin API to enable the feature
-        self.admin.put_feature(feature_alpha_name, {"state": "active"})
+        self.admin.put_feature(FEATURE_ALPHA_NAME, {"state": "active"})
 
         # This is an async check because propagation of feature_table is async
         self._wait_for_feature_everywhere(
-            lambda fm: fm[feature_alpha_name]['state'] == 'active')
+            lambda fm: fm[FEATURE_ALPHA_NAME]['state'] == 'active')
 
         # Disable the feature, see that it enters the expected state
-        self.admin.put_feature(feature_alpha_name, {"state": "disabled"})
+        self.admin.put_feature(FEATURE_ALPHA_NAME, {"state": "disabled"})
         self._wait_for_feature_everywhere(
-            lambda fm: fm[feature_alpha_name]['state'] == 'disabled')
+            lambda fm: fm[FEATURE_ALPHA_NAME]['state'] == 'disabled')
 
-        state = self._get_features_map()[feature_alpha_name]
+        state = self._get_features_map()[FEATURE_ALPHA_NAME]
         assert state['state'] == 'disabled'
         assert state['was_active'] == True
 
@@ -534,3 +539,123 @@ class FeaturesUpgradeAssertionTest(FeaturesTestBase):
         self.redpanda.start_node(
             upgrade_node,
             override_cfg_params={'upgrade_override_checks': True})
+
+
+class FeaturesUpgradeActivationTest(FeaturesTestBase):
+    def setUp(self):
+        pass
+
+    @cluster(num_nodes=1)
+    @parametrize(upgrade=False)
+    @parametrize(upgrade=True)
+    def test_new_cluster_only_activation(self, upgrade: bool):
+        if upgrade:
+            self.redpanda.set_environment({
+                '__REDPANDA_TEST_FEATURES':
+                "ON",
+                "__REDPANDA_LATEST_LOGICAL_VERSION":
+                TEST_FEATURES_VERSION - 1
+            })
+        else:
+            self.redpanda.set_environment({
+                '__REDPANDA_TEST_FEATURES':
+                "ON",
+                "__REDPANDA_LATEST_LOGICAL_VERSION":
+                TEST_FEATURES_VERSION,
+            })
+
+        self.redpanda.start()
+
+        if upgrade:
+            for f in [
+                    FEATURE_ALPHA_NAME, FEATURE_CHARLIE_NAME,
+                    FEATURE_CHARLIE_NAME
+            ]:
+                # Pre-upgrade, none of the features should be available
+                assert self._get_features_map()[f]['state'] == 'unavailable'
+
+            self.redpanda.set_environment({
+                '__REDPANDA_TEST_FEATURES':
+                "ON",
+                "__REDPANDA_LATEST_LOGICAL_VERSION":
+                TEST_FEATURES_VERSION,
+            })
+            self.redpanda.restart_nodes(self.redpanda.nodes)
+            self.redpanda.wait_until(lambda: self._get_features_map()[
+                FEATURE_ALPHA_NAME]['state'] == 'available',
+                                     timeout_sec=30,
+                                     backoff_sec=1)
+        else:
+            # No upgrade: feature should be available from time zero.
+            assert self._get_features_map(
+            )[FEATURE_ALPHA_NAME]['state'] == 'available'
+
+        # Once we are on the test feature version, auto-active features should be on
+        assert self._get_features_map(
+        )[FEATURE_BRAVO_NAME]['state'] == 'active'
+
+        # Once we are on the test feature version, new_clusters_only features' state
+        # should depend on whether we upgraded or we were always at this version.
+        assert self._get_features_map()[FEATURE_CHARLIE_NAME][
+            'state'] == 'available' if upgrade else 'active'
+
+    @cluster(num_nodes=1)
+    @parametrize(disable=False)
+    @parametrize(disable=True)
+    def test_policy_change_in_minor_release(self, disable: bool):
+        self.redpanda.set_environment({
+            '__REDPANDA_TEST_FEATURES':
+            "ON",
+            "__REDPANDA_LATEST_LOGICAL_VERSION":
+            TEST_FEATURES_VERSION,
+            "__REDPANDA_TEST_FEATURE_NO_AUTO_ACTIVATE_BRAVO":
+            'true',
+        })
+        self.logger.info(f"test: env={self.redpanda._environment}")
+        self.redpanda.start()
+
+        # The feature's policy is explicit_only, it should only go to available, not active
+        assert self._get_features_map(
+        )[FEATURE_BRAVO_NAME]['state'] == 'available'
+
+        # Ensure that the config manager background loop isn't activating wrongly
+        time.sleep(10)
+        assert self._get_features_map(
+        )[FEATURE_BRAVO_NAME]['state'] == 'available'
+
+        # Ensure that restarts don't activate the feature
+        self.redpanda.restart_nodes(self.redpanda.nodes)
+        time.sleep(10)
+        assert self._get_features_map(
+        )[FEATURE_BRAVO_NAME]['state'] == 'available'
+
+        if disable:
+            # Explicitly disable the feature: this should prevent it auto activating
+            # after the simulated upgrade
+            self.admin.put_feature(FEATURE_BRAVO_NAME, {"state": "disabled"})
+            self._wait_for_feature_everywhere(
+                lambda fm: fm[FEATURE_BRAVO_NAME]['state'] == 'disabled')
+
+        # Simulate upgrading to a .z release that changes the feature's policy to ::always
+        self.redpanda.unset_environment(
+            ["__REDPANDA_TEST_FEATURE_NO_AUTO_ACTIVATE_BRAVO"])
+        self.redpanda.set_environment({
+            '__REDPANDA_TEST_FEATURES':
+            "ON",
+            "__REDPANDA_LATEST_LOGICAL_VERSION":
+            TEST_FEATURES_VERSION
+        })
+        self.redpanda.restart_nodes(self.redpanda.nodes)
+
+        if disable:
+            # Because feature was explicitly disabled, it should not auto-activate
+            assert self._get_features_map(
+            )[FEATURE_BRAVO_NAME]['state'] == 'disabled'
+            time.sleep(10)
+            # ...even after time for some background ticks
+            assert self._get_features_map(
+            )[FEATURE_BRAVO_NAME]['state'] == 'disabled'
+        else:
+            # Now that the feature's policy is to auto-activate, it should activate
+            self._wait_for_feature_everywhere(
+                lambda fm: fm[FEATURE_BRAVO_NAME]['state'] == 'active')

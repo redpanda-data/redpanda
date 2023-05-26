@@ -25,16 +25,6 @@ namespace features {
 
 std::string_view to_string_view(feature f) {
     switch (f) {
-    case feature::central_config:
-        return "central_config";
-    case feature::consumer_offsets:
-        return "consumer_offsets";
-    case feature::maintenance_mode:
-        return "maintenance_mode";
-    case feature::mtls_authentication:
-        return "mtls_authentication";
-    case feature::rm_stm_kafka_cache:
-        return "rm_stm_kafka_cache";
     case feature::serde_raft_0:
         return "serde_raft_0";
     case feature::license:
@@ -87,6 +77,8 @@ std::string_view to_string_view(feature f) {
         return "__test_alpha";
     case feature::test_bravo:
         return "__test_bravo";
+    case feature::test_charlie:
+        return "__test_charlie";
     }
     __builtin_unreachable();
 }
@@ -140,18 +132,65 @@ static constexpr cluster_version latest_version = cluster_version{10};
 // - Eventually once all nodes are 23.1, all nodes advance active version to 9
 static constexpr cluster_version earliest_version = cluster_version{7};
 
+// Extra features that will be wired into the feature table if a special
+// environment variable is set
+static std::array test_extra_schema{
+  // For testing, a feature that does not auto-activate
+  feature_spec{
+    cluster::cluster_version{2001},
+    "__test_alpha",
+    feature::test_alpha,
+    feature_spec::available_policy::explicit_only,
+    feature_spec::prepare_policy::always},
+
+  // For testing, a feature that auto-activates
+  feature_spec{
+    cluster::cluster_version{2001},
+    "__test_bravo",
+    feature::test_bravo,
+    feature_spec::available_policy::always,
+    feature_spec::prepare_policy::always},
+
+  // For testing, a feature that auto-activates
+  feature_spec{
+    cluster::cluster_version{2001},
+    "__test_charlie",
+    feature::test_charlie,
+    feature_spec::available_policy::new_clusters_only,
+    feature_spec::prepare_policy::always},
+};
+
 feature_table::feature_table() {
     // Intentionally undocumented environment variable, only for use
     // in integration tests.
     const bool enable_test_features
       = (std::getenv("__REDPANDA_TEST_FEATURES") != nullptr);
 
-    _feature_state.reserve(feature_schema.size());
+    _feature_state.reserve(
+      feature_schema.size()
+      + (enable_test_features ? test_extra_schema.size() : 0));
     for (const auto& spec : feature_schema) {
-        if (spec.name.substr(0, 6) == "__test" && !enable_test_features) {
-            continue;
+        _feature_state.emplace_back(spec);
+    }
+    if (enable_test_features) {
+        for (const auto& spec : test_extra_schema) {
+            _feature_state.emplace_back(spec);
         }
-        _feature_state.emplace_back(feature_state{spec});
+    }
+
+    // For integration testing: toggle the activation mode of a test feature
+    // to simulate upgrading from a .z release where it is explicit_only
+    // to a .z release where it is auto-activating.
+    const bool no_auto_activate_bravo
+      = (std::getenv("__REDPANDA_TEST_FEATURE_NO_AUTO_ACTIVATE_BRAVO") != nullptr);
+    if (no_auto_activate_bravo) {
+        for (auto& spec : test_extra_schema) {
+            if (spec.name == "__test_bravo") {
+                spec.available_rule
+                  = feature_spec::available_policy::explicit_only;
+                break;
+            }
+        }
     }
 }
 
@@ -340,7 +379,11 @@ void feature_table::on_update() {
 void feature_table::apply_action(const feature_update_action& fua) {
     auto feature_id_opt = resolve_name(fua.feature_name);
     if (!feature_id_opt.has_value()) {
-        vlog(featureslog.warn, "Ignoring action {}, unknown feature", fua);
+        if (features::retired_features.contains(fua.feature_name)) {
+            vlog(featureslog.debug, "Ignoring action {}, retired feature", fua);
+        } else {
+            vlog(featureslog.warn, "Ignoring action {}, unknown feature", fua);
+        }
         return;
     } else {
         if (ss::this_shard_id() == 0) {
@@ -487,9 +530,9 @@ feature_state& feature_table::get_state(feature f_id) {
 
 std::optional<feature>
 feature_table::resolve_name(std::string_view feature_name) const {
-    for (auto& i : feature_schema) {
-        if (i.name == feature_name) {
-            return i.bits;
+    for (auto& i : _feature_state) {
+        if (i.spec.name == feature_name) {
+            return i.spec.bits;
         }
     }
 

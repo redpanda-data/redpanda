@@ -47,13 +47,6 @@ join_group_request make_join_group_request(
 struct consumer_offsets_fixture : public redpanda_thread_fixture {
     void
     wait_for_consumer_offsets_topic(const kafka::group_instance_id& group) {
-        app.controller->get_feature_table()
-          .local()
-          .await_feature(
-            features::feature::consumer_offsets,
-            app.controller->get_abort_source().local())
-          .get();
-
         auto client = make_kafka_client().get0();
 
         client.connect().get();

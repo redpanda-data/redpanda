@@ -2774,11 +2774,7 @@ uint8_t rm_stm::active_snapshot_version() {
         return tx_snapshot_v3::version;
     }
 
-    if (_feature_table.local().is_active(
-          features::feature::rm_stm_kafka_cache)) {
-        return tx_snapshot_v2::version;
-    }
-    return tx_snapshot_v1::version;
+    return tx_snapshot_v2::version;
 }
 
 template<class T>

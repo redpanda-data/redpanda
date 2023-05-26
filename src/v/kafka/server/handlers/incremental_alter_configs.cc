@@ -297,19 +297,6 @@ static ss::future<std::vector<resp_resource_t>> alter_broker_configuartion(
   request_context& ctx, std::vector<req_resource_t> resources) {
     std::vector<resp_resource_t> responses;
     responses.reserve(resources.size());
-
-    // If central config is disabled, we cannot set broker properties
-    if (!ctx.feature_table().local().is_active(
-          features::feature::central_config)) {
-        co_return co_await unsupported_broker_configuration<
-          req_resource_t,
-          resp_resource_t>(
-          std::move(resources),
-          "changing broker properties via this API is not enabled");
-
-        co_return responses;
-    }
-
     for (const auto& resource : resources) {
         cluster::config_update_request req;
 

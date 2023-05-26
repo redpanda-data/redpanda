@@ -139,6 +139,11 @@ feature_manager::start(std::vector<model::node_id>&& cluster_founder_nodes) {
                 update_node_version(
                   *config::node().node_id(),
                   features::feature_table::get_latest_logical_version());
+            } else if (_am_controller_leader) {
+                // In any case, kick the background update loop when
+                // we gain leadership, in case there is work to do like
+                // auto-activating some features.
+                _update_wait.signal();
             }
         });
 
@@ -150,7 +155,7 @@ feature_manager::start(std::vector<model::node_id>&& cluster_founder_nodes) {
     ssx::background = ssx::spawn_with_gate_then(_gate, [this] {
                           return ss::do_until(
                             [this] { return _as.local().abort_requested(); },
-                            [this] { return maybe_update_active_version(); });
+                            [this] { return maybe_update_feature_table(); });
                       }).handle_exception([](std::exception_ptr const& e) {
         vlog(clusterlog.warn, "Exception from updater: {}", e);
     });
@@ -228,7 +233,7 @@ ss::future<> feature_manager::maybe_log_license_check_info() {
     }
 }
 
-ss::future<> feature_manager::maybe_update_active_version() {
+ss::future<> feature_manager::maybe_update_feature_table() {
     vlog(clusterlog.debug, "Checking for active version update...");
     bool failed = false;
     try {
@@ -239,7 +244,20 @@ ss::future<> feature_manager::maybe_update_active_version() {
         // data for one of the nodes.
         vlog(
           clusterlog.debug,
-          "Exception from updater, will retry ({})",
+          "Exception updating cluster version, will retry ({})",
+          std::current_exception());
+        failed = true;
+    }
+
+    try {
+        // Even if we didn't advance our logical version, we might have some
+        // features to activate due to policy changes across different redpanda
+        // binaries with the same logical version
+        co_await do_maybe_activate_features();
+    } catch (...) {
+        vlog(
+          clusterlog.debug,
+          "Exception activating features, will retry ({})",
           std::current_exception());
         failed = true;
     }
@@ -249,8 +267,9 @@ ss::future<> feature_manager::maybe_update_active_version() {
             // Sleep for a while before next iteration of our outer do_until
             co_await ss::sleep_abortable(status_retry, _as.local());
         } else {
-            // Sleep until we have some updates to process
-            co_await _update_wait.wait([this]() { return !_updates.empty(); });
+            // Sleep until we have some node version updates to process, or
+            // some feature activations to do.
+            co_await _update_wait.wait([this]() { return updates_pending(); });
         }
     } catch (ss::condition_variable_timed_out&) {
         // Wait complete - proceed around next loop of do_until
@@ -258,6 +277,63 @@ ss::future<> feature_manager::maybe_update_active_version() {
         // Shutting down - nextiteration will drop out
     } catch (ss::sleep_aborted&) {
         // Shutting down - next iteration will drop out
+    }
+}
+
+std::vector<std::reference_wrapper<const features::feature_spec>>
+feature_manager::auto_activate_features(
+  cluster_version original_version, cluster_version effective_version) {
+    std::vector<std::reference_wrapper<const features::feature_spec>> result;
+
+    if (config::shard_local_cfg().features_auto_enable()) {
+        /*
+         * We auto-enable features if:
+         * - The global features_auto_enable setting is true.
+         * - They are not disabled
+         * - One of:
+         *   * Their policy is set to `always` and required_version is satisfied
+         *     by cluster's current version
+         *   * Their policy is set to `new_clusters_only` and required_version
+         *     is satisfied by cluster's original version.
+         */
+        for (const auto& fs : _feature_table.local().get_feature_state()) {
+            if (
+              (fs.get_state() == features::feature_state::state::unavailable
+               || fs.get_state() == features::feature_state::state::available)
+              && ((fs.spec.available_rule
+                   == features::feature_spec::available_policy::always
+              && effective_version >= fs.spec.require_version) || (
+                    fs.spec.available_rule == features::feature_spec::available_policy::new_clusters_only
+                    &&
+                    original_version >= fs.spec.require_version
+                    ))) {
+                result.push_back(fs.spec);
+            }
+        }
+    }
+
+    return result;
+}
+
+ss::future<>
+feature_manager::replicate_feature_update_cmd(feature_update_cmd_data data) {
+    auto new_version = data.logical_version;
+    auto cmd = feature_update_cmd(
+      std::move(data),
+      0 // unused
+    );
+
+    auto timeout = model::timeout_clock::now() + status_retry;
+    auto err = co_await replicate_and_wait(
+      _stm, _feature_table, _as, std::move(cmd), timeout);
+    if (err == errc::not_leader) {
+        // Harmless, we lost leadership so the new controller
+        // leader is responsible for picking up where we left off.
+        co_return;
+    } else if (err) {
+        // Raise exception to trigger backoff+retry
+        throw std::runtime_error(fmt::format(
+          "Error storing cluster version {}: {}", new_version, err));
     }
 }
 
@@ -393,51 +469,49 @@ ss::future<> feature_manager::do_maybe_update_active_version() {
     auto data = feature_update_cmd_data{.logical_version = max_version};
 
     // Identify any features which should auto-activate in this version
-    if (config::shard_local_cfg().features_auto_enable()) {
-        /*
-         * We auto-enable features if:
-         * - They are not disabled
-         * - Their required version is satisfied
-         * - Their policy is not explicit_only
-         * - The global features_auto_enable setting is true.
-         */
-        for (const auto& fs : _feature_table.local().get_feature_state()) {
-            if (
-              fs.get_state() == features::feature_state::state::unavailable
-              && fs.spec.available_rule
-                   == features::feature_spec::available_policy::always
-              && max_version >= fs.spec.require_version) {
-                vlog(
-                  clusterlog.info,
-                  "Auto-activating feature {} (logical version {})",
-                  fs.spec.name,
-                  max_version);
-                data.actions.push_back(cluster::feature_update_action{
-                  .feature_name = ss::sstring(fs.spec.name),
-                  .action = feature_update_action::action_t::activate});
-            }
-        }
+    for (const auto spec : auto_activate_features(
+           _feature_table.local().get_original_version(), max_version)) {
+        vlog(
+          clusterlog.info,
+          "Auto-activating feature {} (logical version {})",
+          spec.get().name,
+          max_version);
+        data.actions.push_back(cluster::feature_update_action{
+          .feature_name = ss::sstring(spec.get().name),
+          .action = feature_update_action::action_t::activate});
     }
 
-    auto cmd = feature_update_cmd(
-      std::move(data),
-      0 // unused
-    );
-
-    auto timeout = model::timeout_clock::now() + status_retry;
-    auto err = co_await replicate_and_wait(
-      _stm, _feature_table, _as, std::move(cmd), timeout);
-    if (err == errc::not_leader) {
-        // Harmless, we lost leadership so the new controller
-        // leader is responsible for picking up where we left off.
-        co_return;
-    } else if (err) {
-        // Raise exception to trigger backoff+retry
-        throw std::runtime_error(fmt::format(
-          "Error storing cluster version {}: {}", max_version, err));
-    }
+    co_await replicate_feature_update_cmd(std::move(data));
 
     vlog(clusterlog.info, "Updated cluster (logical version {})", max_version);
+}
+
+ss::future<> feature_manager::do_maybe_activate_features() {
+    if (!_am_controller_leader) {
+        co_return;
+    }
+
+    auto activate_features = auto_activate_features(
+      _feature_table.local().get_original_version(),
+      _feature_table.local().get_active_version());
+    if (!activate_features.empty()) {
+        vlog(clusterlog.info, "Activating features after upgrade...");
+
+        auto data = feature_update_cmd_data{
+          .logical_version = _feature_table.local().get_active_version()};
+        for (const auto spec : activate_features) {
+            vlog(
+              clusterlog.info,
+              "Activating feature {} (logical version {})",
+              spec.get().name,
+              _feature_table.local().get_active_version());
+            data.actions.push_back(cluster::feature_update_action{
+              .feature_name = ss::sstring(spec.get().name),
+              .action = feature_update_action::action_t::activate});
+        }
+
+        co_await replicate_feature_update_cmd(std::move(data));
+    }
 }
 
 ss::future<std::error_code>
