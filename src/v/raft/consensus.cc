@@ -1961,12 +1961,10 @@ consensus::do_append_entries(append_entries_request&& r) {
               }
               return do_append_entries(std::move(r));
           })
-          .handle_exception([this, reply = std::move(reply)](
-                              const std::exception_ptr& e) mutable {
+          .handle_exception([this, reply](const std::exception_ptr& e) mutable {
               vlog(_ctxlog.warn, "Error occurred while truncating log - {}", e);
               reply.result = append_entries_reply::status::failure;
-              return ss::make_ready_future<append_entries_reply>(
-                std::move(reply));
+              return ss::make_ready_future<append_entries_reply>(reply);
           });
     }
 
@@ -1986,12 +1984,11 @@ consensus::do_append_entries(append_entries_request&& r) {
                 return make_append_entries_reply(target, ofs);
             });
       })
-      .handle_exception([this, reply = std::move(reply)](
-                          const std::exception_ptr& e) mutable {
+      .handle_exception([this, reply](const std::exception_ptr& e) mutable {
           vlog(
             _ctxlog.warn, "Error occurred while appending log entries - {}", e);
           reply.result = append_entries_reply::status::failure;
-          return ss::make_ready_future<append_entries_reply>(std::move(reply));
+          return ss::make_ready_future<append_entries_reply>(reply);
       })
       .finally([this] {
           // we do not want to include our disk flush latency into
