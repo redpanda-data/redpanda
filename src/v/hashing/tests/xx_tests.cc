@@ -19,6 +19,7 @@
 
 #include <boost/test/unit_test.hpp>
 
+#include <array>
 #include <utility>
 
 BOOST_AUTO_TEST_CASE(incremental_same_as_array) {
