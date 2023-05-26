@@ -63,7 +63,7 @@ class KubectlTool:
     def exec(self, remote_cmd):
         self._install()
         cmd = self._cmd_prefix + [
-            'kubectl', 'exec', '-n', self._namespace,
+            'kubectl', 'exec', '-n', self._namespace, '-c', 'redpanda',
             f'rp-{self._cluster_id}-0', '--', 'bash', '-c'
         ] + ['"' + remote_cmd + '"']
         try:
@@ -78,7 +78,7 @@ class KubectlTool:
     def exists(self, remote_path):
         self._install()
         cmd = self._cmd_prefix + [
-            'kubectl', 'exec', '-n', self._namespace,
+            'kubectl', 'exec', '-n', self._namespace, '-c', 'redpanda',
             f'rp-{self._cluster_id}-0', '--', 'stat'
         ] + [remote_path]
         try:
