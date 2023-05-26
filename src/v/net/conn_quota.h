@@ -9,6 +9,7 @@
 
 #pragma once
 
+#include "bytes/oncore.h"
 #include "config/property.h"
 #include "seastar/core/gate.hh"
 #include "seastar/core/sharded.hh"
@@ -61,12 +62,14 @@ public:
         units(units const&) = delete;
         units& operator=(units const&) = delete;
         units(units&& rhs) noexcept
-          : _addr(rhs._addr) {
+          : _addr(rhs._addr)
+          , _verify_shard(rhs._verify_shard) {
             _quotas = std::exchange(rhs._quotas, std::nullopt);
         }
         units& operator=(units&& rhs) noexcept {
             _quotas = std::exchange(rhs._quotas, std::nullopt);
             _addr = rhs._addr;
+            _verify_shard = rhs._verify_shard;
             return *this;
         }
 
@@ -83,6 +86,7 @@ public:
     private:
         std::optional<std::reference_wrapper<conn_quota>> _quotas;
         ss::net::inet_address _addr;
+        oncore _verify_shard;
     };
 
     using config_fn = std::function<conn_quota_config()>;

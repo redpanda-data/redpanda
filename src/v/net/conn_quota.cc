@@ -20,6 +20,7 @@
 namespace net {
 
 conn_quota::units::~units() noexcept {
+    _verify_shard.assert_shard_source_location();
     if (_quotas) {
         (*_quotas).get().put(_addr);
     }
