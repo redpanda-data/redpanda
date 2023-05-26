@@ -26,16 +26,16 @@ public:
     // owner shard set on construction
     oncore();
 
-    void verify_shard_source_location(const char* file, int linenum) const;
+    void assert_shard_source_location(
+      const vlog::file_line = vlog::file_line::current()) const;
 
 private:
     shard_id_type _owner_shard;
 };
 
-// Next function should be replace with source_location in c++20 very soon
+// Debug builds assert, no checks in release builds
 // NOLINTNEXTLINE
 #define oncore_debug_verify(member)                                            \
     do {                                                                       \
-        expression_in_debug_mode((member).verify_shard_source_location(        \
-          get_file_basename(), __LINE__));                                     \
+        expression_in_debug_mode((member).assert_shard_source_location());     \
     } while (0)

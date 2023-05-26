@@ -13,25 +13,14 @@
 
 // NOLINTNEXTLINE
 #define fmt_with_ctx(method, fmt, args...)                                     \
-    method(                                                                    \
-      "{}:{} - " fmt,                                                          \
-      (const char*)&__FILE__[vlog_internal::log_basename_start<                \
-        vlog_internal::basename_index(__FILE__)>::value],                      \
-      __LINE__,                                                                \
-      ##args)
+    method("{} - " fmt, vlog::file_line::current(), ##args)
 
 // NOLINTNEXTLINE
 #define vlog(method, fmt, args...) fmt_with_ctx(method, fmt, ##args)
 
 // NOLINTNEXTLINE
 #define fmt_with_ctx_level(logger, level, fmt, args...)                        \
-    logger.log(                                                                \
-      level,                                                                   \
-      "{}:{} - " fmt,                                                          \
-      (const char*)&__FILE__[vlog_internal::log_basename_start<                \
-        vlog_internal::basename_index(__FILE__)>::value],                      \
-      __LINE__,                                                                \
-      ##args)
+    logger.log(level, "{} - " fmt, vlog::file_line::current(), ##args)
 
 // NOLINTNEXTLINE
 #define vlogl(logger, level, fmt, args...)                                     \

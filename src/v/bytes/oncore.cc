@@ -20,12 +20,11 @@ static_assert(std::is_same_v<oncore::shard_id_type, ss::shard_id>);
 oncore::oncore()
   : _owner_shard(ss::this_shard_id()) {}
 
-void oncore::verify_shard_source_location(const char* file, int linenum) const {
+void oncore::assert_shard_source_location(const vlog::file_line fl) const {
     vassert(
       _owner_shard == ss::this_shard_id(),
-      "{}:{} - Shard missmatch -  Operation on shard: {}. Owner shard:{}",
-      file,
-      linenum,
+      "{} - Shard missmatch -  Operation on shard: {}. Owner shard:{}",
+      fl,
       ss::this_shard_id(),
       _owner_shard);
 }
