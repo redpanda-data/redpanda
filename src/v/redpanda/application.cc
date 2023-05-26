@@ -1351,6 +1351,13 @@ void application::wire_up_redpanda_services(model::node_id node_id) {
           .get();
     }
 
+    construct_single_service(
+      space_manager,
+      config::shard_local_cfg().enable_storage_space_manager.bind(),
+      &storage,
+      &shadow_index_cache,
+      &partition_manager);
+
     // group membership
     syschecks::systemd_message("Creating kafka group manager").get();
     construct_service(
@@ -2240,6 +2247,8 @@ void application::start_runtime_services(
     for (const auto& m : _migrators) {
         m->start(controller->get_abort_source().local());
     }
+
+    space_manager->start().get();
 }
 
 /**

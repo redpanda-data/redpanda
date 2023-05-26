@@ -1840,6 +1840,13 @@ configuration::configuration()
       "the data directory. Redpanda will refuse to start if it is not found.",
       {.needs_restart = needs_restart::no, .visibility = visibility::user},
       false)
+  , enable_storage_space_manager(
+      *this,
+      "enable_storage_space_manager",
+      "Enable the storage space manager that coordinates and control space "
+      "usage between log data and the cloud storage cache.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::user},
+      true)
   , memory_abort_on_alloc_failure(
       *this,
       "memory_abort_on_alloc_failure",
