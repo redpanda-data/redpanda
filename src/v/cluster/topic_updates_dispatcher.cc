@@ -14,6 +14,7 @@
 #include "cluster/controller_snapshot.h"
 #include "cluster/partition_balancer_state.h"
 #include "cluster/partition_leaders_table.h"
+#include "cluster/scheduling/partition_allocator.h"
 #include "cluster/topic_table.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
