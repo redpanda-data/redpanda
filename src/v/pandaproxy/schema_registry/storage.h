@@ -318,6 +318,7 @@ struct schema_value {
     }
 };
 
+using unparsed_schema_value = schema_value<unparsed_schema_defnition_tag>;
 using canonical_schema_value = schema_value<canonical_schema_definition_tag>;
 
 template<typename Tag>
@@ -604,6 +605,9 @@ public:
     }
 };
 
+template<typename Encoding = ::json::UTF8<>>
+using unparsed_schema_value_handler
+  = schema_value_handler<unparsed_schema_defnition_tag, Encoding>;
 template<typename Encoding = ::json::UTF8<>>
 using canonical_schema_value_handler
   = schema_value_handler<canonical_schema_definition_tag, Encoding>;
@@ -1147,9 +1151,9 @@ struct consume_to_store {
         case topic_key_type::noop:
             break;
         case topic_key_type::schema: {
-            std::optional<canonical_schema_value> val;
+            std::optional<unparsed_schema_value> val;
             if (!record.value().empty()) {
-                val.emplace(from_json_iobuf<canonical_schema_value_handler<>>(
+                val.emplace(from_json_iobuf<unparsed_schema_value_handler<>>(
                   record.release_value()));
             }
             co_await apply(
