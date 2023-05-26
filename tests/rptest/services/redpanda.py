@@ -735,11 +735,6 @@ class RedpandaServiceBase(Service):
         'kafka_connections_max': 2048,
         'kafka_connections_max_per_ip': 1024,
         'kafka_connections_max_overrides': ["1.2.3.4:5"],
-
-        # TODO: we need this to not wait too long before moves are scheduled
-        # after decommission. Get rid of this after event-driven balancer execution
-        # is implemented.
-        "partition_autobalancing_tick_interval_ms": 5000,
     }
 
     logs = {
@@ -3004,10 +2999,6 @@ class RedpandaService(RedpandaServiceBase):
             # this configuration property was introduced in 22.2.1, ensure
             # it doesn't appear in older configurations
             conf.pop('cloud_storage_credentials_source', None)
-        if cur_ver != RedpandaInstaller.HEAD and cur_ver < (22, 2, 1):
-            # this configuration property was introduced in 22.2.1, ensure
-            # it doesn't appear in older configurations
-            conf.pop('partition_autobalancing_tick_interval_ms', None)
 
         if self._security.enable_sasl:
             self.logger.debug("Enabling SASL in cluster configuration")
