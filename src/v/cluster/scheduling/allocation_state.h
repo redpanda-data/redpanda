@@ -48,8 +48,9 @@ public:
     const underlying_t& allocation_nodes() const { return _nodes; }
     int16_t available_nodes() const;
 
-    // choose a shard for a replica and add the corresponding allocation.
-    result<uint32_t> allocate(model::node_id id, partition_allocation_domain);
+    // Choose a shard for a replica and add the corresponding allocation.
+    // node_id is required to belong to an existing node.
+    uint32_t allocate(model::node_id id, partition_allocation_domain);
 
     // Operations on state
     void
