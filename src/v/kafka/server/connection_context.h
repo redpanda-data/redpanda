@@ -10,6 +10,7 @@
  */
 #pragma once
 #include "config/property.h"
+#include "kafka/server/handlers/handler_probe.h"
 #include "kafka/server/response.h"
 #include "kafka/server/server.h"
 #include "kafka/types.h"
@@ -52,19 +53,34 @@ class request_context;
 // used to track number of pending requests
 class request_tracker {
 public:
-    explicit request_tracker(net::server_probe& probe) noexcept
-      : _probe(probe) {
+    explicit request_tracker(
+      net::server_probe& probe, handler_probe& h_probe) noexcept
+      : _probe(probe)
+      , _h_probe(h_probe) {
         _probe.request_received();
+        _h_probe.request_started();
     }
     request_tracker(const request_tracker&) = delete;
     request_tracker(request_tracker&&) = delete;
     request_tracker& operator=(const request_tracker&) = delete;
     request_tracker& operator=(request_tracker&&) = delete;
 
-    ~request_tracker() noexcept { _probe.request_completed(); }
+    void mark_errored() { _errored = true; }
+
+    ~request_tracker() noexcept {
+        _probe.request_completed();
+        if (_errored) {
+            _h_probe.request_errored();
+            _probe.service_error();
+        } else {
+            _h_probe.request_completed();
+        }
+    }
 
 private:
     net::server_probe& _probe;
+    handler_probe& _h_probe;
+    bool _errored{false};
 };
 
 struct request_data {
