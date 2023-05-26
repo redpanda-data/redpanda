@@ -12,7 +12,7 @@
 #include "security/acl.h"
 
 #include <absl/container/btree_map.h>
-#include <absl/container/flat_hash_set.h>
+#include <absl/container/node_hash_set.h>
 
 namespace security {
 
@@ -21,7 +21,7 @@ namespace security {
  */
 class acl_entry_set {
 public:
-    using container_type = absl::flat_hash_set<acl_entry>;
+    using container_type = absl::node_hash_set<acl_entry>;
     using const_iterator = container_type::const_iterator;
     using const_reference = std::reference_wrapper<const acl_entry>;
 
