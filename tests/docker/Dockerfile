@@ -225,7 +225,6 @@ COPY --from=kcat /usr/local/bin/kcat /usr/local/bin/
 COPY --from=sarama-examples /opt/sarama /opt/sarama
 COPY --from=golang-test-clients /opt/redpanda-tests/go /opt/redpanda-tests/go
 COPY --from=client-swarm /usr/local/bin/client-swarm /usr/local/bin/
-COPY --from=client-swarm /usr/local/bin/rp-storage-tool /usr/local/bin/
 COPY --from=franz-bench /opt/franz-go/examples/bench /opt/franz-go/examples/bench
 COPY --from=k8s /usr/local/bin/kubectl /usr/local/bin/helm /usr/local/bin/
 COPY --from=kaf /usr/local/bin/kaf /usr/local/bin/
