@@ -111,8 +111,8 @@ SEASTAR_THREAD_TEST_CASE(test_consume_to_store) {
 
     auto good_schema_1 = pps::as_record_batch(
       pps::schema_key{sequence, node_id, subject0, version0, magic1},
-      pps::schema_value{{subject0, string_def0}, version0, id0});
-    BOOST_REQUIRE_NO_THROW(c(std::move(good_schema_1)).get());
+      pps::canonical_schema_value{{subject0, string_def0}, version0, id0});
+    BOOST_REQUIRE_NO_THROW(c(good_schema_1.copy()).get());
 
     auto s_res = s.get_subject_schema(
                     subject0, version0, pps::include_deleted::no)
@@ -123,8 +123,9 @@ SEASTAR_THREAD_TEST_CASE(test_consume_to_store) {
       {.name{"ref"}, .sub{subject0}, .version{version0}}};
     auto good_schema_ref_1 = pps::as_record_batch(
       pps::schema_key{sequence, node_id, subject0, version1, magic1},
-      pps::schema_value{{subject0, string_def0, refs}, version1, id1});
-    BOOST_REQUIRE_NO_THROW(c(std::move(good_schema_ref_1)).get());
+      pps::canonical_schema_value{
+        {subject0, string_def0, refs}, version1, id1});
+    BOOST_REQUIRE_NO_THROW(c(good_schema_ref_1.copy()).get());
 
     auto s_ref_res = s.get_subject_schema(
                         subject0, version1, pps::include_deleted::no)
@@ -140,8 +141,8 @@ SEASTAR_THREAD_TEST_CASE(test_consume_to_store) {
 
     auto bad_schema_magic = pps::as_record_batch(
       pps::schema_key{sequence, node_id, subject0, version0, magic2},
-      pps::schema_value{{subject0, string_def0}, version0, id0});
-    BOOST_REQUIRE_THROW(c(std::move(bad_schema_magic)).get(), pps::exception);
+      pps::canonical_schema_value{{subject0, string_def0}, version0, id0});
+    BOOST_REQUIRE_THROW(c(bad_schema_magic.copy()).get(), pps::exception);
 
     BOOST_REQUIRE(
       s.get_compatibility().get() == pps::compatibility_level::backward);
