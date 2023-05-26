@@ -95,6 +95,11 @@ func (r *ConsoleReconciler) Reconcile(
 		return ctrl.Result{}, err
 	}
 
+	var consoleIsDeleting bool
+	if !console.GetDeletionTimestamp().IsZero() {
+		consoleIsDeleting = true
+	}
+
 	cluster, err := console.GetCluster(ctx, r.Client)
 	if err != nil {
 		// Create event instead of logging the error, so user can see in Console CR instead of checking logs in operator
@@ -111,7 +116,9 @@ func (r *ConsoleReconciler) Reconcile(
 				corev1.EventTypeWarning, ClusterNotFoundEvent,
 				"Unable to reconcile Console as the referenced Cluster %s is not found or is being deleted", console.GetClusterRef(),
 			)
-		case errors.Is(err, redpandav1alpha1.ErrClusterNotConfigured):
+		case errors.Is(err, redpandav1alpha1.ErrClusterNotConfigured) && consoleIsDeleting:
+			r.Log.Info("cluster %s is not yet configured but console is deleting -> proceeding with the delete.", console.GetClusterRef())
+		case errors.Is(err, redpandav1alpha1.ErrClusterNotConfigured) && !consoleIsDeleting:
 			r.EventRecorder.Eventf(
 				console,
 				corev1.EventTypeWarning, ClusterNotConfiguredEvent,
@@ -119,8 +126,10 @@ func (r *ConsoleReconciler) Reconcile(
 			)
 			// When Cluster will be configured, Console will receive a notification trigger
 			return ctrl.Result{}, nil
+
+		default:
+			return ctrl.Result{}, err
 		}
-		return ctrl.Result{}, err
 	}
 
 	r.Log.V(logger.DebugLevel).Info("console", "observed generation", console.Status.ObservedGeneration, "generation", console.GetGeneration())
