@@ -11,7 +11,7 @@ import os
 from typing import Sequence
 
 from ducktape.tests.test import Test
-from rptest.services.redpanda import RedpandaService, CloudStorageType
+from rptest.services.redpanda import make_redpanda_service, CloudStorageType
 from rptest.clients.kafka_cli_tools import KafkaCliTools
 from rptest.clients.default import DefaultClient
 from rptest.util import Scale
@@ -54,11 +54,11 @@ class RedpandaTest(Test):
             else:
                 num_brokers = 1
 
-        self.redpanda = RedpandaService(test_context,
-                                        num_brokers,
-                                        extra_rp_conf=extra_rp_conf,
-                                        si_settings=self.si_settings,
-                                        **kwargs)
+        self.redpanda = make_redpanda_service(test_context,
+                                              num_brokers,
+                                              extra_rp_conf=extra_rp_conf,
+                                              si_settings=self.si_settings,
+                                              **kwargs)
         self._client = DefaultClient(self.redpanda)
 
     def early_exit_hook(self):

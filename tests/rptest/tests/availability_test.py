@@ -13,7 +13,7 @@ from rptest.clients.default import DefaultClient
 from rptest.services.cluster import cluster
 from rptest.clients.types import TopicSpec
 from rptest.services.failure_injector import FailureSpec
-from rptest.services.redpanda import RedpandaService, CHAOS_LOG_ALLOW_LIST
+from rptest.services.redpanda import make_redpanda_service, CHAOS_LOG_ALLOW_LIST
 from rptest.tests.e2e_finjector import EndToEndFinjectorTest
 
 
@@ -35,7 +35,7 @@ class AvailabilityTests(EndToEndFinjectorTest):
 
     @cluster(num_nodes=5, log_allow_list=CHAOS_LOG_ALLOW_LIST)
     def test_availability_when_one_node_failed(self):
-        self.redpanda = RedpandaService(
+        self.redpanda = make_redpanda_service(
             self.test_context,
             3,
             extra_rp_conf={
@@ -66,7 +66,7 @@ class AvailabilityTests(EndToEndFinjectorTest):
     @cluster(num_nodes=5, log_allow_list=CHAOS_LOG_ALLOW_LIST)
     def test_recovery_after_catastrophic_failure(self):
 
-        self.redpanda = RedpandaService(
+        self.redpanda = make_redpanda_service(
             self.test_context,
             3,
             extra_rp_conf={

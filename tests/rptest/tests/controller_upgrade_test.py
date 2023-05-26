@@ -15,7 +15,7 @@ from rptest.clients.default import DefaultClient
 from rptest.services.admin import Admin
 from rptest.services.admin_ops_fuzzer import AdminOperationsFuzzer, RedpandaAdminOperation
 from rptest.services.cluster import cluster
-from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST, RedpandaService
+from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST, make_redpanda_service
 from rptest.services.redpanda_installer import RedpandaInstaller
 from rptest.tests.end_to_end import EndToEndTest
 
@@ -46,7 +46,7 @@ class ControllerUpgradeTest(EndToEndTest):
         Validates that cluster is operational when upgrading controller log
         '''
 
-        self.redpanda = RedpandaService(self.test_context, 5)
+        self.redpanda = make_redpanda_service(self.test_context, 5)
         installer = self.redpanda._installer
         prev_version = installer.highest_from_prior_feature_version(
             RedpandaInstaller.HEAD)

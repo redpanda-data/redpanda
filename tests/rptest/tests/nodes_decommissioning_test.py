@@ -23,7 +23,7 @@ from ducktape.mark import parametrize
 from rptest.clients.types import TopicSpec
 from rptest.tests.end_to_end import EndToEndTest
 from rptest.services.admin import Admin
-from rptest.services.redpanda import CHAOS_LOG_ALLOW_LIST, RESTART_LOG_ALLOW_LIST, RedpandaService
+from rptest.services.redpanda import CHAOS_LOG_ALLOW_LIST, RESTART_LOG_ALLOW_LIST, RedpandaService, make_redpanda_service
 from rptest.utils.node_operations import NodeDecommissionWaiter
 
 
@@ -514,7 +514,7 @@ class NodesDecommissioningTest(EndToEndTest):
     @parametrize(shutdown_decommissioned=False)
     def test_decommissioning_rebalancing_node(self, shutdown_decommissioned):
         # start redpanda with disabled rebalancing
-        self.redpanda = RedpandaService(
+        self.redpanda = make_redpanda_service(
             self.test_context,
             4,
             extra_rp_conf={"partition_autobalancing_mode": "node_add"})

@@ -13,7 +13,7 @@ from rptest.clients.kafka_cli_tools import KafkaCliTools
 from rptest.clients.rpk import RpkTool, RpkException
 from rptest.clients.types import TopicSpec
 from rptest.services.cluster import cluster
-from rptest.services.redpanda import CloudStorageType, RedpandaService, MetricsEndpoint, SISettings, get_cloud_storage_type
+from rptest.services.redpanda import CloudStorageType, make_redpanda_service, MetricsEndpoint, SISettings, get_cloud_storage_type
 from rptest.tests.end_to_end import EndToEndTest
 from rptest.util import wait_until
 from ducktape.mark import matrix
@@ -90,11 +90,11 @@ class CloudStorageCompactionTest(EndToEndTest):
             self.configuration["max_compacted_log_segment_size"],
         })
 
-        self.redpanda = RedpandaService(context=self.test_context,
-                                        num_brokers=3,
-                                        si_settings=self.si_settings,
-                                        extra_rp_conf=extra_rp_conf,
-                                        environment=environment)
+        self.redpanda = make_redpanda_service(context=self.test_context,
+                                              num_brokers=3,
+                                              si_settings=self.si_settings,
+                                              extra_rp_conf=extra_rp_conf,
+                                              environment=environment)
 
     def setUp(self):
         assert self.redpanda
@@ -136,9 +136,8 @@ class CloudStorageCompactionTest(EndToEndTest):
             cloud_storage_segment_max_upload_interval_sec=self.
             configuration["cloud_storage_segment_max_upload_interval_sec"])
         self.rr_si_settings.load_context(self.logger, self.test_context)
-        self.rr_cluster = RedpandaService(self.test_context,
-                                          num_brokers=3,
-                                          si_settings=self.rr_si_settings)
+        self.rr_cluster = make_redpanda_service(
+            self.test_context, num_brokers=3, si_settings=self.rr_si_settings)
 
     def _create_read_repica_topic_success(self):
         try:

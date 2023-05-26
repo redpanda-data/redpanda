@@ -16,7 +16,7 @@ from ducktape.mark import matrix
 from rptest.clients.kafka_cat import KafkaCat
 from rptest.clients.types import TopicSpec
 from rptest.clients.default import DefaultClient
-from rptest.services.redpanda import RedpandaService
+from rptest.services.redpanda import make_redpanda_service
 from rptest.tests.end_to_end import EndToEndTest
 
 
@@ -134,14 +134,13 @@ class ScalingUpTest(EndToEndTest):
     @cluster(num_nodes=5)
     @matrix(partition_count=[1, 20])
     def test_adding_nodes_to_cluster(self, partition_count):
-        self.redpanda = RedpandaService(self.test_context,
-                                        3,
-                                        extra_rp_conf={
-                                            "group_topic_partitions":
-                                            self.group_topic_partitions,
-                                            "partition_autobalancing_mode":
-                                            "node_add"
-                                        })
+        self.redpanda = make_redpanda_service(
+            self.test_context,
+            3,
+            extra_rp_conf={
+                "group_topic_partitions": self.group_topic_partitions,
+                "partition_autobalancing_mode": "node_add"
+            })
         # start single node cluster
         self.redpanda.start(nodes=[self.redpanda.nodes[0]])
         # create some topics
@@ -168,14 +167,13 @@ class ScalingUpTest(EndToEndTest):
     @matrix(partition_count=[1, 20])
     def test_adding_multiple_nodes_to_the_cluster(self, partition_count):
 
-        self.redpanda = RedpandaService(self.test_context,
-                                        6,
-                                        extra_rp_conf={
-                                            "partition_autobalancing_mode":
-                                            "node_add",
-                                            "group_topic_partitions":
-                                            self.group_topic_partitions
-                                        })
+        self.redpanda = make_redpanda_service(
+            self.test_context,
+            6,
+            extra_rp_conf={
+                "partition_autobalancing_mode": "node_add",
+                "group_topic_partitions": self.group_topic_partitions
+            })
         # start single node cluster
         self.redpanda.start(nodes=self.redpanda.nodes[0:3])
         # create some topics
@@ -201,14 +199,13 @@ class ScalingUpTest(EndToEndTest):
     @matrix(partition_count=[1, 20])
     def test_on_demand_rebalancing(self, partition_count):
         # start redpanda with disabled rebalancing
-        self.redpanda = RedpandaService(self.test_context,
-                                        6,
-                                        extra_rp_conf={
-                                            "partition_autobalancing_mode":
-                                            "off",
-                                            "group_topic_partitions":
-                                            self.group_topic_partitions
-                                        })
+        self.redpanda = make_redpanda_service(
+            self.test_context,
+            6,
+            extra_rp_conf={
+                "partition_autobalancing_mode": "off",
+                "group_topic_partitions": self.group_topic_partitions
+            })
         # start single node cluster
         self.redpanda.start(nodes=self.redpanda.nodes[0:3])
         # create some topics
@@ -242,14 +239,13 @@ class ScalingUpTest(EndToEndTest):
 
     @cluster(num_nodes=7)
     def test_topic_hot_spots(self):
-        self.redpanda = RedpandaService(self.test_context,
-                                        5,
-                                        extra_rp_conf={
-                                            "group_topic_partitions":
-                                            self.group_topic_partitions,
-                                            "partition_autobalancing_mode":
-                                            "node_add"
-                                        })
+        self.redpanda = make_redpanda_service(
+            self.test_context,
+            5,
+            extra_rp_conf={
+                "group_topic_partitions": self.group_topic_partitions,
+                "partition_autobalancing_mode": "node_add"
+            })
         # start 3 nodes cluster
         self.redpanda.start(nodes=self.redpanda.nodes[0:3])
         # create some topics

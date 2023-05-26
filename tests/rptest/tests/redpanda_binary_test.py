@@ -11,7 +11,7 @@ import re
 
 from ducktape.tests.test import Test
 from rptest.services.cluster import cluster
-from rptest.services.redpanda import RedpandaService
+from rptest.services.redpanda import make_redpanda_service
 
 
 class RedpandaBinaryTest(Test):
@@ -21,7 +21,7 @@ class RedpandaBinaryTest(Test):
     """
     def __init__(self, test_context):
         super(RedpandaBinaryTest, self).__init__(test_context=test_context)
-        self.redpanda = RedpandaService(self.test_context, 1)
+        self.redpanda = make_redpanda_service(self.test_context, 1)
 
     @cluster(num_nodes=1, check_allowed_error_logs=False)
     def test_version(self):

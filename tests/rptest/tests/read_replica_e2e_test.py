@@ -18,7 +18,7 @@ from rptest.util import expect_exception
 from ducktape.mark import matrix
 from ducktape.tests.test import TestContext
 
-from rptest.services.redpanda import CloudStorageType, RedpandaService, get_cloud_storage_type
+from rptest.services.redpanda import CloudStorageType, RedpandaService, get_cloud_storage_type, make_redpanda_service
 from rptest.services.redpanda_installer import InstallOptions, RedpandaInstaller
 from rptest.tests.end_to_end import EndToEndTest
 from rptest.utils.expect_rate import ExpectRate, RateTarget
@@ -124,9 +124,8 @@ class TestReadReplicaService(EndToEndTest):
         self.second_cluster = None
 
     def start_second_cluster(self) -> None:
-        self.second_cluster = RedpandaService(self.test_context,
-                                              num_brokers=3,
-                                              si_settings=self.rr_settings)
+        self.second_cluster = make_redpanda_service(
+            self.test_context, num_brokers=3, si_settings=self.rr_settings)
         self.second_cluster.start(start_si=False)
 
     def create_read_replica_topic(self) -> None:
@@ -386,9 +385,8 @@ class ReadReplicasUpgradeTest(EndToEndTest):
                        30)
         self.producer.stop()
 
-        self.second_cluster = RedpandaService(self.test_context,
-                                              num_brokers=3,
-                                              si_settings=self.rr_settings)
+        self.second_cluster = make_redpanda_service(
+            self.test_context, num_brokers=3, si_settings=self.rr_settings)
         previous_version = self.second_cluster._installer.highest_from_prior_feature_version(
             RedpandaInstaller.HEAD)
         self.second_cluster._installer.install(self.second_cluster.nodes,

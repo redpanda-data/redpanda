@@ -24,7 +24,7 @@ import os
 from typing import Optional
 from ducktape.tests.test import Test
 from ducktape.utils.util import wait_until
-from rptest.services.redpanda import RedpandaService
+from rptest.services.redpanda import RedpandaService, make_redpanda_service
 from rptest.services.redpanda_installer import InstallOptions
 from rptest.services.redpanda_installer import RedpandaInstaller
 from rptest.clients.default import DefaultClient
@@ -97,12 +97,13 @@ class EndToEndTest(Test):
             self._extra_rp_conf = {**self._extra_rp_conf, **extra_rp_conf}
         assert self.redpanda is None
 
-        self.redpanda = RedpandaService(self.test_context,
-                                        num_nodes,
-                                        extra_rp_conf=self._extra_rp_conf,
-                                        extra_node_conf=self._extra_node_conf,
-                                        si_settings=self.si_settings,
-                                        environment=environment)
+        self.redpanda = make_redpanda_service(
+            self.test_context,
+            num_nodes,
+            extra_rp_conf=self._extra_rp_conf,
+            extra_node_conf=self._extra_node_conf,
+            si_settings=self.si_settings,
+            environment=environment)
         if new_bootstrap:
             seeds = [
                 self.redpanda.nodes[i]

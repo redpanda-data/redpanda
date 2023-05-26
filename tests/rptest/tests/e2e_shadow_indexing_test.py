@@ -24,7 +24,7 @@ from rptest.services.admin import Admin
 from rptest.services.cluster import cluster
 from rptest.services.kgo_verifier_services import KgoVerifierProducer, KgoVerifierRandomConsumer, KgoVerifierSeqConsumer
 from rptest.services.metrics_check import MetricCheck
-from rptest.services.redpanda import RedpandaService, CHAOS_LOG_ALLOW_LIST
+from rptest.services.redpanda import make_redpanda_service, CHAOS_LOG_ALLOW_LIST
 from rptest.services.redpanda import SISettings, get_cloud_storage_type
 from rptest.tests.end_to_end import EndToEndTest
 from rptest.tests.prealloc_nodes import PreallocNodesTest
@@ -71,11 +71,11 @@ class EndToEndShadowIndexingBase(EndToEndTest):
         self.si_settings.load_context(self.logger, test_context)
         self.scale = Scale(test_context)
 
-        self.redpanda = RedpandaService(context=self.test_context,
-                                        num_brokers=self.num_brokers,
-                                        si_settings=self.si_settings,
-                                        extra_rp_conf=extra_rp_conf,
-                                        environment=environment)
+        self.redpanda = make_redpanda_service(context=self.test_context,
+                                              num_brokers=self.num_brokers,
+                                              si_settings=self.si_settings,
+                                              extra_rp_conf=extra_rp_conf,
+                                              environment=environment)
         self.kafka_tools = KafkaCliTools(self.redpanda)
         self.rpk = RpkTool(self.redpanda)
 

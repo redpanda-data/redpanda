@@ -13,7 +13,7 @@ from ducktape.utils.util import wait_until
 from rptest.services.cluster import cluster
 from rptest.clients.types import TopicSpec
 from rptest.tests.end_to_end import EndToEndTest
-from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST, RedpandaService
+from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST, make_redpanda_service
 from rptest.services.admin import Admin
 from rptest.services.failure_injector import FailureInjector, FailureSpec
 from rptest.util import wait_until_result
@@ -42,9 +42,9 @@ class ShutdownTest(EndToEndTest):
             'enable_leader_balancer': False,
             'auto_create_topics_enabled': True
         }
-        self.redpanda = RedpandaService(self.test_context,
-                                        3,
-                                        extra_rp_conf=rp_conf)
+        self.redpanda = make_redpanda_service(self.test_context,
+                                              3,
+                                              extra_rp_conf=rp_conf)
         admin = Admin(self.redpanda)
 
         def checked_get_leader():
