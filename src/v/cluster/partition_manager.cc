@@ -14,6 +14,7 @@
 #include "cloud_storage/cache_service.h"
 #include "cloud_storage/partition_manifest.h"
 #include "cloud_storage/remote.h"
+#include "cloud_storage/remote_partition.h"
 #include "cluster/archival_metadata_stm.h"
 #include "cluster/fwd.h"
 #include "cluster/logger.h"
@@ -392,6 +393,28 @@ ss::future<size_t> partition_manager::non_log_disk_size_bytes() const {
       },
       size_t{0},
       [](size_t acc, size_t update) { return acc + update; });
+}
+
+ss::future<cloud_storage::cache_usage_target>
+partition_manager::get_cloud_cache_disk_usage_target() const {
+    co_return co_await container().map_reduce0(
+      [](const partition_manager& pm) {
+          const auto size = std::accumulate(
+            pm._raft_table.cbegin(),
+            pm._raft_table.cend(),
+            cloud_storage::cache_usage_target{},
+            [](auto acc, const auto& p) {
+                if (p.second->remote_partition()) {
+                    acc = acc
+                          + p.second->remote_partition()
+                              ->get_cache_usage_target();
+                }
+                return acc;
+            });
+          return size;
+      },
+      cloud_storage::cache_usage_target{},
+      [](auto acc, auto update) { return acc + update; });
 }
 
 } // namespace cluster
