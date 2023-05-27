@@ -19,7 +19,7 @@ import random
 from ducktape.utils.util import wait_until
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.services.admin import Admin
-from rptest.services.redpanda import RedpandaService
+from rptest.services.redpanda import RedpandaService, make_redpanda_service
 from rptest.clients.default import DefaultClient
 from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST
 import confluent_kafka as ck
@@ -720,7 +720,7 @@ class GATransaction_MixedVersionsTest(RedpandaTest):
 
     @cluster(num_nodes=2, log_allow_list=RESTART_LOG_ALLOW_LIST)
     def check_parsing_test(self):
-        self.redpanda = RedpandaService(
+        self.redpanda = make_redpanda_service(
             self.test_context,
             1,
             extra_rp_conf={

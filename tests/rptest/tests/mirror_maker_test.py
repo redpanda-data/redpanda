@@ -20,7 +20,7 @@ from rptest.services.rpk_producer import RpkProducer
 from rptest.services.kafka import KafkaServiceAdapter
 from rptest.services.mirror_maker2 import MirrorMaker2
 
-from rptest.services.redpanda import RedpandaService
+from rptest.services.redpanda import make_redpanda_service
 from rptest.tests.end_to_end import EndToEndTest
 from rptest.services.verifiable_producer import VerifiableProducer, is_int_with_prefix
 from rptest.services.verifiable_consumer import VerifiableConsumer
@@ -68,8 +68,8 @@ class MirrorMakerService(EndToEndTest):
 
     def start_brokers(self, source_type=kafka_source):
         if source_type == TestMirrorMakerService.redpanda_source:
-            self.source_broker = RedpandaService(self.test_context,
-                                                 num_brokers=3)
+            self.source_broker = make_redpanda_service(self.test_context,
+                                                       num_brokers=3)
         else:
             self.source_broker = KafkaServiceAdapter(
                 self.test_context,
@@ -78,7 +78,7 @@ class MirrorMakerService(EndToEndTest):
                              zk=self.zk,
                              version=V_3_0_0))
 
-        self.redpanda = RedpandaService(self.test_context, num_brokers=3)
+        self.redpanda = make_redpanda_service(self.test_context, num_brokers=3)
         self.source_broker.start()
         self.redpanda.start()
 

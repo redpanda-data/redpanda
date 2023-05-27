@@ -3,7 +3,7 @@ import pprint
 from rptest.clients.rpk import RpkTool
 from rptest.clients.types import TopicSpec
 from rptest.services.cluster import cluster
-from rptest.services.redpanda import CloudStorageType, SISettings, RedpandaService, LoggingConfig, get_cloud_storage_type
+from rptest.services.redpanda import CloudStorageType, SISettings, make_redpanda_service, LoggingConfig, get_cloud_storage_type
 from rptest.tests.end_to_end import EndToEndTest
 from rptest.util import wait_until_segments, wait_for_removal_of_n_segments
 from rptest.utils.si_utils import BucketView
@@ -30,10 +30,10 @@ class ShadowIndexingCompactedTopicTest(EndToEndTest):
             group_initial_rebalance_delay=300,
             compacted_log_segment_size=self.segment_size,
         )
-        self.redpanda = RedpandaService(context=self.test_context,
-                                        num_brokers=self.num_brokers,
-                                        si_settings=self.si_settings,
-                                        extra_rp_conf=extra_rp_conf)
+        self.redpanda = make_redpanda_service(context=self.test_context,
+                                              num_brokers=self.num_brokers,
+                                              si_settings=self.si_settings,
+                                              extra_rp_conf=extra_rp_conf)
         self.topic = self.topics[0].name
         self._rpk_client = RpkTool(self.redpanda)
 

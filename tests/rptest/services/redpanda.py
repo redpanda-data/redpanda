@@ -37,6 +37,7 @@ from ducktape.cluster.remoteaccount import RemoteCommandError
 from ducktape.utils.local_filesystem_utils import mkdir_p
 from ducktape.utils.util import wait_until
 from ducktape.cluster.cluster import ClusterNode
+from ducktape.cluster.cluster_spec import ClusterSpec
 from prometheus_client.parser import text_string_to_metric_families
 from ducktape.errors import TimeoutError
 from ducktape.tests.test import TestContext
@@ -760,18 +761,19 @@ class RedpandaServiceBase(Service):
         }
     }
 
-    def __init__(
-        self,
-        context,
-        num_brokers,
-        *,
-        extra_rp_conf=None,
-        resource_settings: Optional[ResourceSettings] = None,
-        si_settings: Optional[SISettings] = None,
-        superuser: Optional[SaslCredentials] = None,
-    ):
+    def __init__(self,
+                 context,
+                 num_brokers,
+                 *,
+                 cluster_spec=None,
+                 extra_rp_conf=None,
+                 resource_settings: Optional[ResourceSettings] = None,
+                 si_settings: Optional[SISettings] = None,
+                 superuser: Optional[SaslCredentials] = None,
+                 disable_cloud_storage_diagnostics=True):
         super(RedpandaServiceBase, self).__init__(context,
-                                                  num_nodes=num_brokers)
+                                                  num_nodes=num_brokers,
+                                                  cluster_spec=cluster_spec)
         self._context = context
         self._extra_rp_conf = extra_rp_conf or dict()
 
@@ -797,6 +799,11 @@ class RedpandaServiceBase(Service):
         if resource_settings is None:
             resource_settings = ResourceSettings()
         self._resource_settings = resource_settings
+
+        # Disable saving cloud storage diagnostics. This may be useful for
+        # tests that generate millions of objecst, as collecting diagnostics
+        # may take a significant amount of time.
+        self._disable_cloud_storage_diagnostics = disable_cloud_storage_diagnostics
 
         self._trim_logs = self._context.globals.get(self.TRIM_LOGS_KEY, True)
 
@@ -1035,10 +1042,21 @@ class RedpandaServiceBase(Service):
         self._node_id_by_idx[idx] = node_id
         return node_id
 
+    def cloud_storage_diagnostics(self):
+        pass
+
+    def raise_on_storage_usage_inconsistency(self):
+        pass
+
+    def validate_controller_log(self):
+        pass
+
 
 class RedpandaServiceK8s(RedpandaServiceBase):
-    def __init__(self, context, num_brokers):
-        super(RedpandaServiceK8s, self).__init__(context, num_brokers)
+    def __init__(self, context, num_brokers, cluster_spec=None):
+        super(RedpandaServiceK8s, self).__init__(context,
+                                                 num_brokers,
+                                                 cluster_spec=cluster_spec)
         self._trim_logs = False
         self._helm = HelmTool(self)
         self._kubectl = KubectlTool(self)
@@ -1118,6 +1136,333 @@ class RedpandaServiceK8s(RedpandaServiceBase):
         self._helm.upgrade_config_cluster(values)
 
 
+class RedpandaServiceCloud(RedpandaServiceK8s):
+    """
+    Service class for running tests against Redpanda Cloud.
+
+    Use the `make_redpanda_service` factory function to instantiate. Set
+    the GLOBAL_CLOUD_* values in the global json file to have the factory
+    use `RedpandaServiceCloud`.
+    """
+
+    GLOBAL_CLOUD_OAUTH_URL = 'cloud_oauth_url'
+    GLOBAL_CLOUD_OAUTH_CLIENT_ID = 'cloud_oauth_client_id'
+    GLOBAL_CLOUD_OAUTH_CLIENT_SECRET = 'cloud_oauth_client_secret'
+    GLOBAL_CLOUD_OAUTH_AUDIENCE = 'cloud_oauth_audience'
+    GLOBAL_CLOUD_API_URL = 'cloud_api_url'
+    GLOBAL_CLOUD_CLUSTER_ID = 'cloud_cluster_id'
+    GLOBAL_CLOUD_DELETE_CLUSTER = 'cloud_delete_cluster'
+
+    class CloudCluster():
+        """
+        Operations on a Redpanda Cloud cluster via the swagger API.
+
+        Creates and deletes a cluster. Will also create a new namespace for
+        that cluster.
+        """
+
+        CHECK_TIMEOUT_SEC = 3600
+        CHECK_BACKOFF_SEC = 60.0
+        DEFAULT_PRODUCT_ID = 'cgrdrd9jiflmsknn2nl0'
+
+        def __init__(self,
+                     logger,
+                     oauth_url,
+                     oauth_client_id,
+                     oauth_client_secret,
+                     oauth_audience,
+                     api_url,
+                     cluster_id=None,
+                     delete_namespace=False):
+            """
+            Initializes the object, but does not create clusters. Use
+            `create` method to create a cluster.
+
+
+            :param logger: logging object
+            :param oauth_url: full url of the oauth endpoint to get a token
+            :param oauth_client_id: client id from redpanda cloud ui page for clients
+            :param oauth_client_secret: client secret from redpanda cloud ui page for clients
+            :param oauth_audience: oauth audience
+            :param api_url: url of hostname for swagger api without trailing slash char
+            :param cluster_id: if not None, will skip creating a new cluster
+            :param delete_namespace: if False, will skip namespace deletion step after tests are run
+            """
+
+            self._logger = logger
+            self._oauth_url = oauth_url
+            self._oauth_client_id = oauth_client_id
+            self._oauth_client_secret = oauth_client_secret
+            self._oauth_audience = oauth_audience
+            self._api_url = api_url
+            self._cluster_id = cluster_id
+            self._delete_namespace = delete_namespace
+            self._token = None
+
+            # unique 8-char identifier to be used when creating names of things for this cluster
+            self._unique_id = str(uuid.uuid1())[:8]
+
+        @property
+        def cluster_id(self):
+            """
+            The clusterId of the created cluster.
+            """
+
+            return self._cluster_id
+
+        def _get_token(self):
+            """
+            Returns access token to be used in subsequent api calls to cloud api.
+
+            To save on repeated token generation, this function will cache it in a local variable.
+            Assumes the token has an expiration that will last throughout the usage of this cluster.
+
+            :return: access token as a string
+            """
+
+            if self._token is None:
+                headers = {'Content-Type': "application/x-www-form-urlencoded"}
+                data = {
+                    'grant_type': 'client_credentials',
+                    'client_id': f'{self._oauth_client_id}',
+                    'client_secret': f'{self._oauth_client_secret}',
+                    'audience': f'{self._oauth_audience}'
+                }
+                resp = requests.post(f'{self._oauth_url}',
+                                     headers=headers,
+                                     data=data)
+                resp.raise_for_status()
+                j = resp.json()
+                self._token = j['access_token']
+            return self._token
+
+        def _http_get(self, endpoint, **kwargs):
+            token = self._get_token()
+            headers = {
+                'Authorization': f'Bearer {token}',
+                'Accept': 'application/json'
+            }
+            resp = requests.get(f'{self._api_url}{endpoint}',
+                                headers=headers,
+                                **kwargs)
+            resp.raise_for_status()
+            return resp.json()
+
+        def _http_post(self, endpoint, **kwargs):
+            token = self._get_token()
+            headers = {
+                'Authorization': f'Bearer {token}',
+                'Accept': 'application/json'
+            }
+            resp = requests.post(f'{self._api_url}{endpoint}',
+                                 headers=headers,
+                                 **kwargs)
+            resp.raise_for_status()
+            return resp.json()
+
+        def _http_delete(self, endpoint, **kwargs):
+            token = self._get_token()
+            headers = {
+                'Authorization': f'Bearer {token}',
+                'Accept': 'application/json'
+            }
+            resp = requests.delete(f'{self._api_url}{endpoint}',
+                                   headers=headers,
+                                   **kwargs)
+            resp.raise_for_status()
+            return resp.json()
+
+        def _create_namespace(self):
+            name = f'rp-ducktape-ns-{self._unique_id}'  # e.g. rp-ducktape-ns-3b36f516
+            self._logger.debug(f'creating namespace name {name}')
+            body = {'name': name}
+            r = self._http_post('/api/v1/namespaces', json=body)
+            self._logger.debug(f'created namespaceUuid {r["id"]}')
+            return r['id']
+
+        def _cluster_ready(self, namespace_uuid, name):
+            self._logger.debug(f'checking readiness of cluster {name}')
+            params = {'namespaceUuid': namespace_uuid}
+            clusters = self._http_get('/api/v1/clusters', params=params)
+            for c in clusters:
+                if c['name'] == name:
+                    if c['state'] == 'ready':
+                        return True
+            return False
+
+        def _get_cluster_id(self, namespace_uuid, name):
+            """
+            Get clusterId.
+
+            :param namespace_uuid: namespaceUuid the cluster is contained in
+            :param name: name of the cluster
+            :return: clusterId as a string or None if not found
+            """
+
+            params = {'namespaceUuid': namespace_uuid}
+            clusters = self._http_get('/api/v1/clusters', params=params)
+            for c in clusters:
+                if c['name'] == name:
+                    return c['id']
+            return None
+
+        def create(self, product_id=None):
+            """
+            Create a cloud cluster and a new namespace; block until cluster is finished creating.
+
+            Returns the clusterId.
+            """
+
+            if product_id is None:
+                product_id = self.DEFAULT_PRODUCT_ID
+
+            if self.cluster_id is not None:
+                self._logger.warn(
+                    f'will not create cluster; already have cluster_id {self.cluster_id}'
+                )
+                return self.cluster_id
+
+            namespace_uuid = self._create_namespace()
+
+            name = f'rp-ducktape-cluster-{self._unique_id}'  # e.g. rp-ducktape-cluster-3b36f516
+            self._logger.debug(f'creating cluster name {name}')
+            body = {
+                "namespaceUuid": namespace_uuid,
+                "connectionType": "public",
+                "network": {
+                    "displayName": f"public-network-{name}",
+                    "spec": {
+                        "deploymentType": "FMC",
+                        "provider": "AWS",
+                        "regionId": "ccpfuvec6lhdao925q10",
+                        "zones": ["usw2-az1"],
+                        "installPackVersion": "23.1.20230502184729",
+                        "cidr": "10.0.0.0/16"
+                    }
+                },
+                "cluster": {
+                    "name": name,
+                    "productId": product_id,
+                    "spec": {
+                        "clusterType": "FMC",
+                        "provider": "AWS",
+                        "region": "us-west-2",
+                        "isMultiAz": False,
+                        "zones": ["usw2-az1"],
+                        "installPackVersion": "23.1.20230502184729",
+                        "connectors": {
+                            "enabled": True
+                        },
+                        "networkId": ""
+                    }
+                }
+            }
+
+            self._logger.debug(f'body: {json.dumps(body)}')
+
+            r = self._http_post('/api/v1/workflows/network-cluster', json=body)
+
+            self._logger.info(
+                f'waiting for creation of cluster {name} namespaceUuid {r["namespaceUuid"]}, checking every {self.CHECK_BACKOFF_SEC} seconds'
+            )
+
+            wait_until(
+                lambda: self._cluster_ready(namespace_uuid, name),
+                timeout_sec=self.CHECK_TIMEOUT_SEC,
+                backoff_sec=self.CHECK_BACKOFF_SEC,
+                err_msg=
+                f'Unable to deterimine readiness of cloud cluster {name}')
+            self._cluster_id = self._get_cluster_id(namespace_uuid, name)
+
+            return self._cluster_id
+
+        def delete(self):
+            """
+            Deletes a cloud cluster and the namespace it belongs to.
+            """
+
+            if self._cluster_id is None:
+                self._logger.warn(
+                    f'cluster_id is None, unable to delete cluster')
+                return
+
+            resp = self._http_get(f'/api/v1/clusters/{self.cluster_id}')
+            namespace_uuid = resp['namespaceUuid']
+
+            resp = self._http_delete(f'/api/v1/clusters/{self.cluster_id}')
+            self._logger.debug(f'resp: {json.dumps(resp)}')
+            self._cluster_id = None
+
+            # skip namespace deletion to avoid error because cluster delete not complete yet
+            if self._delete_namespace:
+                resp = self._http_delete(
+                    f'/api/v1/namespaces/{namespace_uuid}')
+                self._logger.debug(f'resp: {json.dumps(resp)}')
+
+    def __init__(self, context, num_brokers):
+        """
+        Initialize a RedpandaServiceCloud object.
+
+        :param context: test context object
+        :param num_brokers: ignored because Redpanda Cloud will launch the number of brokers necessary to satisfy the product needs
+        """
+
+        super(RedpandaServiceCloud,
+              self).__init__(context, None, cluster_spec=ClusterSpec.empty())
+        self.logger.info(
+            f'num_brokers is {num_brokers}, but setting to None for cloud')
+
+        self._trim_logs = False
+
+        self._cloud_oauth_url = context.globals.get(
+            self.GLOBAL_CLOUD_OAUTH_URL, None)
+        self._cloud_oauth_client_id = context.globals.get(
+            self.GLOBAL_CLOUD_OAUTH_CLIENT_ID, None)
+        self._cloud_oauth_client_secret = context.globals.get(
+            self.GLOBAL_CLOUD_OAUTH_CLIENT_SECRET, None)
+        self._cloud_oauth_audience = context.globals.get(
+            self.GLOBAL_CLOUD_OAUTH_AUDIENCE, None)
+        self._cloud_api_url = context.globals.get(self.GLOBAL_CLOUD_API_URL,
+                                                  None)
+        self._cloud_cluster_id = context.globals.get(
+            self.GLOBAL_CLOUD_CLUSTER_ID, None)
+        self._cloud_delete_cluster = context.globals.get(
+            self.GLOBAL_CLOUD_DELETE_CLUSTER, True)
+        self.logger.debug(f'initial cluster_id: {self._cloud_cluster_id}')
+
+        self._cloud_cluster = self.CloudCluster(
+            self.logger, self._cloud_oauth_url, self._cloud_oauth_client_id,
+            self._cloud_oauth_client_secret, self._cloud_oauth_audience,
+            self._cloud_api_url, self._cloud_cluster_id)
+        self._kubectl = None
+
+    def start_node(self, node, **kwargs):
+        pass
+
+    def start(self, **kwargs):
+        cluster_id = self._cloud_cluster.create()
+        target = f'redpanda@{cluster_id}-agent'
+        self._kubectl = KubectlTool(self,
+                                    cmd_prefix=['tsh', 'ssh', target],
+                                    cluster_id=self._cloud_cluster.cluster_id)
+
+    def stop_node(self, node, **kwargs):
+        pass
+
+    def stop(self, **kwargs):
+        if self._cloud_delete_cluster:
+            self._cloud_cluster.delete()
+        else:
+            self.logger.info(
+                f'skipping delete of cluster {self._cloud_cluster.cluster_id}')
+
+    def clean_node(self, node, **kwargs):
+        pass
+
+    def node_id(self, node, force_refresh=False, timeout_sec=30):
+        pass
+
+
 class RedpandaService(RedpandaServiceBase):
     def __init__(self,
                  context,
@@ -1144,6 +1489,7 @@ class RedpandaService(RedpandaServiceBase):
             resource_settings=resource_settings,
             si_settings=si_settings,
             superuser=superuser,
+            disable_cloud_storage_diagnostics=disable_cloud_storage_diagnostics
         )
         self._security = security
         self._installer: RedpandaInstaller = RedpandaInstaller(self)
@@ -1183,11 +1529,6 @@ class RedpandaService(RedpandaServiceBase):
 
         self.logger.info(
             f"ResourceSettings: dedicated_nodes={self._dedicated_nodes}")
-
-        # Disable saving cloud storage diagnostics. This may be useful for
-        # tests that generate millions of objecst, as collecting diagnostics
-        # may take a significant amount of time.
-        self._disable_cloud_storage_diagnostics = disable_cloud_storage_diagnostics
 
         self.cloud_storage_client: Optional[S3Client] = None
 
@@ -3362,6 +3703,9 @@ class RedpandaService(RedpandaServiceBase):
                 )
 
 
-def make_redpanda_service(environment):
+def make_redpanda_service(context, num_brokers, **kwargs):
     """Factory function for instatiating the appropriate RedpandaServiceBase subclass."""
-    pass
+    if RedpandaServiceCloud.GLOBAL_CLOUD_API_URL in context.globals:
+        return RedpandaServiceCloud(context, num_brokers, **kwargs)
+    else:
+        return RedpandaService(context, num_brokers, **kwargs)

@@ -14,7 +14,7 @@ import threading
 
 from rptest.services.cluster import cluster
 from rptest.tests.redpanda_test import RedpandaTest
-from rptest.services.redpanda import RedpandaService, SISettings
+from rptest.services.redpanda import RedpandaService, SISettings, make_redpanda_service
 from rptest.services.metrics_check import MetricCheck
 from rptest.clients.types import TopicSpec
 from rptest.clients.rpk import RpkTool
@@ -459,9 +459,9 @@ class TestReadReplicaTimeQuery(RedpandaTest):
         self.rr_cluster = None
 
     def start_read_replica_cluster(self, num_brokers) -> None:
-        self.rr_cluster = RedpandaService(self.test_context,
-                                          num_brokers=num_brokers,
-                                          si_settings=self.rr_settings)
+        self.rr_cluster = make_redpanda_service(self.test_context,
+                                                num_brokers=num_brokers,
+                                                si_settings=self.rr_settings)
         self.rr_cluster.start(start_si=False)
 
     def create_read_replica_topic(self) -> None:

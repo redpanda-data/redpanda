@@ -12,14 +12,14 @@ import json
 from rptest.services.cluster import cluster
 from ducktape.utils.util import wait_until
 from rptest.services.admin import Admin
-from rptest.services.redpanda import RedpandaService
+from rptest.services.redpanda import make_redpanda_service
 from rptest.tests.end_to_end import EndToEndTest
 
 
 class ClusterViewTest(EndToEndTest):
     @cluster(num_nodes=3)
     def test_view_changes_on_add(self):
-        self.redpanda = RedpandaService(self.test_context, 3)
+        self.redpanda = make_redpanda_service(self.test_context, 3)
         # start single node cluster
         self.redpanda.start(nodes=[self.redpanda.nodes[0]])
 

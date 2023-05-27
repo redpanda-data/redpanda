@@ -16,7 +16,7 @@ from rptest.services.admin import Admin
 from rptest.util import wait_until_result
 from rptest.utils.mode_checks import skip_debug_mode
 from rptest.clients.default import DefaultClient
-from rptest.services.redpanda import RedpandaService, CHAOS_LOG_ALLOW_LIST, MetricsEndpoint
+from rptest.services.redpanda import make_redpanda_service, CHAOS_LOG_ALLOW_LIST, MetricsEndpoint
 from rptest.services.failure_injector import FailureInjector, FailureSpec
 from rptest.services.admin_ops_fuzzer import AdminOperationsFuzzer
 from rptest.services.kgo_verifier_services import KgoVerifierProducer
@@ -457,9 +457,9 @@ class PartitionBalancerTest(PartitionBalancerService):
     @cluster(num_nodes=8, log_allow_list=CHAOS_LOG_ALLOW_LIST)
     def test_rack_awareness(self):
         extra_rp_conf = self._extra_rp_conf | {"enable_rack_awareness": True}
-        self.redpanda = RedpandaService(self.test_context,
-                                        num_brokers=6,
-                                        extra_rp_conf=extra_rp_conf)
+        self.redpanda = make_redpanda_service(self.test_context,
+                                              num_brokers=6,
+                                              extra_rp_conf=extra_rp_conf)
 
         rack_layout = "AABBCC"
         for ix, node in enumerate(self.redpanda.nodes):
@@ -502,9 +502,9 @@ class PartitionBalancerTest(PartitionBalancerService):
         """
 
         extra_rp_conf = self._extra_rp_conf | {"enable_rack_awareness": True}
-        self.redpanda = RedpandaService(self.test_context,
-                                        num_brokers=5,
-                                        extra_rp_conf=extra_rp_conf)
+        self.redpanda = make_redpanda_service(self.test_context,
+                                              num_brokers=5,
+                                              extra_rp_conf=extra_rp_conf)
 
         rack_layout = "ABBCC"
         for ix, node in enumerate(self.redpanda.nodes):
@@ -641,7 +641,7 @@ class PartitionBalancerTest(PartitionBalancerService):
         if skip_reason:
             self.logger.warn("skipping test: " + skip_reason)
             # avoid the "Test requested 6 nodes, used only 0" error
-            self.redpanda = RedpandaService(self.test_context, 0)
+            self.redpanda = make_redpanda_service(self.test_context, 0)
             self.test_context.cluster.alloc(ClusterSpec.simple_linux(6))
             return
 
