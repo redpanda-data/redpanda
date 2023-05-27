@@ -199,6 +199,154 @@ bool check_scan(
     return ret;
 }
 
+FIXTURE_TEST(
+  test_remote_partition_cache_size_estimate_no_partitions,
+  cloud_storage_fixture) {
+    auto segments = setup_s3_imposter(*this, 0, 0);
+    auto bucket = cloud_storage_clients::bucket_name("bucket");
+    auto manifest = hydrate_manifest(api.local(), bucket);
+    auto partition = ss::make_shared<remote_partition>(
+      manifest, api.local(), cache.local(), bucket);
+    auto partition_stop = ss::defer([&partition] { partition->stop().get(); });
+    partition->start().get();
+
+    /*
+     * there are no materialized segments and no segments in the manifest.
+     */
+    BOOST_REQUIRE(!manifest.last_segment().has_value());
+
+    /*
+     * in this case we have really not much information to estimate anything
+     * other than configuration values. for example, we don't know if the
+     * segments support chunking or not. so we use just use the info we do have.
+     */
+
+    // synchronize with remote_partition::get_cache_usage
+    constexpr auto min_chunks = 1;
+    constexpr auto wanted_chunks = 20;
+    constexpr auto min_segments = 1;
+    constexpr auto wanted_segments = 2;
+
+    auto usage = partition->get_cache_usage_target();
+    if (config::shard_local_cfg().cloud_storage_disable_chunk_reads()) {
+        BOOST_REQUIRE(
+          usage.target_min_bytes
+          == min_segments * config::shard_local_cfg().log_segment_size());
+        BOOST_REQUIRE(
+          usage.target_bytes
+          == wanted_segments * config::shard_local_cfg().log_segment_size());
+    } else {
+        BOOST_REQUIRE(
+          usage.target_min_bytes
+          == min_chunks
+               * config::shard_local_cfg().cloud_storage_cache_chunk_size());
+        BOOST_REQUIRE(
+          usage.target_bytes
+          == wanted_chunks
+               * config::shard_local_cfg().cloud_storage_cache_chunk_size());
+    }
+}
+
+static void
+test_remote_partition_cache_size_estimate_materialized_segments_args(
+  cloud_storage_fixture& context,
+  ss::sharded<remote>& api,
+  ss::sharded<cloud_storage::cache>& cache,
+  cloud_storage::segment_name_format sname_format) {
+    auto segments = setup_s3_imposter(
+      context, 3, 10, manifest_inconsistency::none, sname_format);
+    auto bucket = cloud_storage_clients::bucket_name("bucket");
+    auto manifest = hydrate_manifest(api.local(), bucket);
+    auto partition = ss::make_shared<remote_partition>(
+      manifest, api.local(), cache.local(), bucket);
+    auto partition_stop = ss::defer([&partition] { partition->stop().get(); });
+
+    // synchronize with remote_partition::get_cache_usage
+    constexpr auto min_chunks = 1;
+    constexpr auto wanted_chunks = 20;
+    constexpr auto min_segments = 1;
+    constexpr auto wanted_segments = 2;
+
+    /*
+     * This is the rule for legacy segments. it determines how we should
+     * calculate the cache size that we'll test for from the cache estimate api
+     * because the segments may be chunked or not.
+     *
+     * this is only for the case where segments haven't been materialized. see
+     * below for that.
+     *
+     * When there are no materialized segments to examine then rely on the
+     * manifest itself to inquire about the state of segment.
+     */
+    BOOST_REQUIRE(manifest.last_segment().has_value());
+    auto usage = partition->get_cache_usage_target();
+    if (usage.chunked) {
+        BOOST_REQUIRE(
+          usage.target_min_bytes
+          == min_chunks
+               * config::shard_local_cfg().cloud_storage_cache_chunk_size());
+        BOOST_REQUIRE(
+          usage.target_bytes
+          == wanted_chunks
+               * config::shard_local_cfg().cloud_storage_cache_chunk_size());
+    } else {
+        auto seg = manifest.last_segment();
+        BOOST_REQUIRE(
+          usage.target_min_bytes = min_segments * seg.value().size_bytes);
+        BOOST_REQUIRE(
+          usage.target_bytes = wanted_segments * seg.value().size_bytes);
+    }
+
+    /*
+     * Now materialize all the segments as remote segments
+     */
+    partition->start().get();
+    auto base = segments[0].base_offset;
+    auto max = segments[2].max_offset;
+    storage::log_reader_config reader_config(
+      base, max, ss::default_priority_class());
+    auto reader = partition->make_reader(reader_config).get().reader;
+    reader.consume(test_consumer(), model::no_timeout).get();
+    std::move(reader).release();
+
+    /*
+     * this should now use the in memory representation of the segments to
+     * calculate usage. it is preferred because it is doesn't need to do any
+     * decoding of manifest info.
+     */
+    usage = partition->get_cache_usage_target();
+    if (usage.chunked) {
+        BOOST_REQUIRE(
+          usage.target_min_bytes
+          == min_chunks
+               * config::shard_local_cfg().cloud_storage_cache_chunk_size());
+        BOOST_REQUIRE(
+          usage.target_bytes
+          == wanted_chunks
+               * config::shard_local_cfg().cloud_storage_cache_chunk_size());
+    } else {
+        auto seg = manifest.last_segment();
+        BOOST_REQUIRE(
+          usage.target_min_bytes = min_segments * seg.value().size_bytes);
+        BOOST_REQUIRE(
+          usage.target_bytes = wanted_segments * seg.value().size_bytes);
+    }
+}
+
+FIXTURE_TEST(
+  test_remote_partition_cache_size_estimate_materialized_segments_v2,
+  cloud_storage_fixture) {
+    test_remote_partition_cache_size_estimate_materialized_segments_args(
+      *this, api, cache, segment_name_format::v2);
+}
+
+FIXTURE_TEST(
+  test_remote_partition_cache_size_estimate_materialized_segments_v3,
+  cloud_storage_fixture) {
+    test_remote_partition_cache_size_estimate_materialized_segments_args(
+      *this, api, cache, segment_name_format::v3);
+}
+
 FIXTURE_TEST(test_scan_by_kafka_offset, cloud_storage_fixture) {
     // mo: 0     5 6    11 12   17 18
     //     [a    ] [b    ] [c    ] end

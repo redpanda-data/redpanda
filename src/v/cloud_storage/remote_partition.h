@@ -158,6 +158,12 @@ public:
     void evict_reader(std::unique_ptr<remote_segment_batch_reader> reader);
     void evict_segment(ss::lw_shared_ptr<remote_segment> segment);
 
+    // Compute cache usage statistics. This method uses information from the
+    // most recent segment to determine target cache size needs. The results
+    // depend on if the partition appears to be able to use chunk-based storage
+    // vs segment-based storage in the cache.
+    cache_usage_target get_cache_usage_target() const;
+
 private:
     friend struct materialized_segment_state;
 

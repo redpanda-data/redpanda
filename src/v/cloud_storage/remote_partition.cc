@@ -35,6 +35,8 @@
 #include <seastar/core/shared_ptr.hh>
 #include <seastar/core/temporary_buffer.hh>
 
+#include <boost/range/adaptor/reversed.hpp>
+
 #include <chrono>
 #include <exception>
 #include <iterator>
@@ -1099,6 +1101,87 @@ void remote_partition::offload_segment(model::offset o) {
 
 materialized_segments& remote_partition::materialized() {
     return _api.materialized();
+}
+
+cache_usage_target remote_partition::get_cache_usage_target() const {
+    // minimum and nice-to-have chunks per partition
+    constexpr auto min_chunks = 1;
+    constexpr auto wanted_chunks = 20;
+
+    // minimum and nice-to-have segments per partition are roughly the same
+    // (compared to chunks) as segments are much lager. for example, 2 segments
+    // at the default segment size is about the same as 20 default sized chunks.
+    constexpr auto min_segments = 1;
+    constexpr auto wanted_segments = 2;
+
+    // check for a recent materialized segment
+    for (const auto& it : boost::adaptors::reverse(_segments)) {
+        const auto& seg = it.second->segment;
+        if (!seg) {
+            continue;
+        }
+        auto [size, chunked] = seg->min_cache_cost();
+        if (chunked) {
+            return cache_usage_target{
+              .target_min_bytes = min_chunks * size,
+              .target_bytes = wanted_chunks * size,
+              .chunked = chunked,
+            };
+        } else {
+            return cache_usage_target{
+              .target_min_bytes = min_segments * size,
+              .target_bytes = wanted_segments * size,
+              .chunked = chunked,
+            };
+        }
+    }
+
+    // we may not have any materialized segments, but we can decode some info
+    // about them anyway from the manifest.
+    auto seg = _manifest.last_segment();
+    if (seg.has_value()) {
+        const auto chunked
+          = !config::shard_local_cfg().cloud_storage_disable_chunk_reads()
+            && seg.value().sname_format > segment_name_format::v2;
+        if (chunked) {
+            return cache_usage_target{
+              .target_min_bytes
+              = min_chunks
+                * config::shard_local_cfg().cloud_storage_cache_chunk_size(),
+              .target_bytes
+              = wanted_chunks
+                * config::shard_local_cfg().cloud_storage_cache_chunk_size(),
+              .chunked = chunked,
+            };
+        } else {
+            return cache_usage_target{
+              .target_min_bytes = min_segments * seg.value().size_bytes,
+              .target_bytes = wanted_segments * seg.value().size_bytes,
+              .chunked = chunked,
+            };
+        }
+    }
+
+    // with no information at all, we'll just make a reasonable guess
+    if (!config::shard_local_cfg().cloud_storage_disable_chunk_reads()) {
+        return cache_usage_target{
+          .target_min_bytes
+          = min_chunks
+            * config::shard_local_cfg().cloud_storage_cache_chunk_size(),
+          .target_bytes
+          = wanted_chunks
+            * config::shard_local_cfg().cloud_storage_cache_chunk_size(),
+          .chunked = true,
+        };
+    } else {
+        return cache_usage_target{
+          .target_min_bytes = min_segments
+                              * config::shard_local_cfg().log_segment_size(),
+          .target_bytes = wanted_segments
+                          * config::shard_local_cfg().log_segment_size(),
+          .chunked = false,
+        };
+    }
 }
 
 } // namespace cloud_storage
