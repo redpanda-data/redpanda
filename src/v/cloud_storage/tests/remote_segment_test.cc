@@ -533,6 +533,16 @@ FIXTURE_TEST(test_remote_segment_chunk_read, cloud_storage_fixture) {
     stream.close().get();
 
     BOOST_REQUIRE(!segment.is_fallback_engaged());
+
+    /*
+     * when fallback mode is NOT engaged, the estimated min cache cost for the
+     * segment should be the size of a single chunk.
+     */
+    BOOST_REQUIRE(
+      segment.min_cache_cost()
+      == std::make_pair(
+        config::shard_local_cfg().cloud_storage_cache_chunk_size(), true));
+
     segment.stop().get();
 
     BOOST_REQUIRE_EQUAL(downloaded.size_bytes(), segment_bytes.size_bytes());
@@ -571,6 +581,14 @@ FIXTURE_TEST(test_remote_segment_chunk_read_fallback, cloud_storage_fixture) {
     stream.close().get();
 
     BOOST_REQUIRE(segment.is_fallback_engaged());
+
+    /*
+     * when fallback mode IS engaged, the estimated min cache cost for the
+     * segment should be the size of the segment itself.
+     */
+    BOOST_REQUIRE(
+      segment.min_cache_cost()
+      == std::make_pair(segment_bytes.size_bytes(), false));
 
     std::regex log_file_expr{".*-.*log(\\.\\d+)?$"};
 
