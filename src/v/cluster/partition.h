@@ -15,6 +15,7 @@
 #include "cloud_storage/fwd.h"
 #include "cluster/archival_metadata_stm.h"
 #include "cluster/id_allocator_stm.h"
+#include "cluster/log_eviction_stm.h"
 #include "cluster/partition_probe.h"
 #include "cluster/rm_stm.h"
 #include "cluster/tm_stm.h"
@@ -29,7 +30,6 @@
 #include "raft/consensus.h"
 #include "raft/consensus_utils.h"
 #include "raft/group_configuration.h"
-#include "raft/log_eviction_stm.h"
 #include "raft/types.h"
 #include "storage/translating_reader.h"
 #include "storage/types.h"
@@ -375,7 +375,7 @@ private:
 
     consensus_ptr _raft;
     ss::shared_ptr<util::mem_tracker> _partition_mem_tracker;
-    ss::lw_shared_ptr<raft::log_eviction_stm> _log_eviction_stm;
+    ss::lw_shared_ptr<cluster::log_eviction_stm> _log_eviction_stm;
     ss::shared_ptr<cluster::id_allocator_stm> _id_allocator_stm;
     ss::shared_ptr<cluster::rm_stm> _rm_stm;
     ss::shared_ptr<cluster::tm_stm> _tm_stm;

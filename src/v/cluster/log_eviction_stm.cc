@@ -7,17 +7,17 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
-#include "raft/log_eviction_stm.h"
+#include "cluster/log_eviction_stm.h"
 
 #include "raft/consensus.h"
 #include "raft/types.h"
 
 #include <seastar/core/future-util.hh>
 
-namespace raft {
+namespace cluster {
 
 log_eviction_stm::log_eviction_stm(
-  consensus* raft,
+  raft::consensus* raft,
   ss::logger& logger,
   ss::lw_shared_ptr<storage::stm_manager> stm_manager,
   ss::abort_source& as)
@@ -105,8 +105,8 @@ log_eviction_stm::handle_deletion_notification(model::offset last_evicted) {
 
           return f.then([this, last_evicted]() {
               return _raft->write_snapshot(
-                write_snapshot_cfg(last_evicted, iobuf()));
+                raft::write_snapshot_cfg(last_evicted, iobuf()));
           });
       });
 }
-} // namespace raft
+} // namespace cluster

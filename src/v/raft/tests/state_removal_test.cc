@@ -64,9 +64,6 @@ void stop_node(raft_node& node) {
     node.recovery_throttle.stop().get();
     node.server.stop().get0();
     node._as.request_abort();
-    if (node._nop_stm != nullptr) {
-        node._nop_stm->stop().get0();
-    }
     node.raft_manager.stop().get0();
     node.consensus = nullptr;
     node.hbeats->stop().get0();

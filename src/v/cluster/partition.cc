@@ -73,7 +73,7 @@ partition::partition(
           clusterlog, _raft.get());
     } else if (is_tx_manager_topic(_raft->ntp())) {
         if (_raft->log_config().is_collectable()) {
-            _log_eviction_stm = ss::make_lw_shared<raft::log_eviction_stm>(
+            _log_eviction_stm = ss::make_lw_shared<cluster::log_eviction_stm>(
               _raft.get(), clusterlog, stm_manager, _as);
         }
 
@@ -86,7 +86,7 @@ partition::partition(
         }
     } else {
         if (_raft->log_config().is_collectable()) {
-            _log_eviction_stm = ss::make_lw_shared<raft::log_eviction_stm>(
+            _log_eviction_stm = ss::make_lw_shared<cluster::log_eviction_stm>(
               _raft.get(), clusterlog, stm_manager, _as);
         }
         const model::topic_namespace tp_ns(

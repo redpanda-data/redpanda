@@ -111,6 +111,7 @@ v_cc_library(
     tm_stm_cache.cc
     tm_stm.cc
     rm_stm.cc
+    log_eviction_stm.cc
     tx_helpers.cc
     security_manager.cc
     security_frontend.cc

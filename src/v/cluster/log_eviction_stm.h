@@ -12,6 +12,7 @@
 #pragma once
 #include "config/configuration.h"
 #include "model/fundamental.h"
+#include "raft/fwd.h"
 #include "seastarx.h"
 #include "storage/types.h"
 
@@ -19,7 +20,7 @@
 #include <seastar/core/gate.hh>
 #include <seastar/util/log.hh>
 
-namespace raft {
+namespace cluster {
 
 class consensus;
 
@@ -36,7 +37,7 @@ class consensus;
 class log_eviction_stm {
 public:
     log_eviction_stm(
-      consensus*,
+      raft::consensus*,
       ss::logger&,
       ss::lw_shared_ptr<storage::stm_manager>,
       ss::abort_source&);
@@ -59,7 +60,7 @@ private:
     ss::future<> handle_deletion_notification(model::offset);
     void monitor_log_eviction();
 
-    consensus* _raft;
+    raft::consensus* _raft;
     ss::logger& _logger;
     ss::lw_shared_ptr<storage::stm_manager> _stm_manager;
     ss::abort_source& _as;
@@ -68,4 +69,4 @@ private:
     model::offset _requested_eviction_offset;
 };
 
-} // namespace raft
+} // namespace cluster
