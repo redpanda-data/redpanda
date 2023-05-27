@@ -1676,14 +1676,14 @@ group::commit_tx(cluster::commit_group_tx_request r) {
     if (fence_it == _fence_pid_epoch.end()) {
         vlog(
           _ctx_txlog.warn,
-          "Can't prepare tx: fence with pid {} isn't set",
+          "Can't commit tx: fence with pid {} isn't set",
           r.pid);
         co_return make_commit_tx_reply(cluster::tx_errc::request_rejected);
     }
     if (r.pid.get_epoch() != fence_it->second) {
         vlog(
           _ctx_txlog.trace,
-          "Can't prepare tx with pid {} - the fence doesn't match {}",
+          "Can't commit tx with pid {} - the fence doesn't match {}",
           r.pid,
           fence_it->second);
         co_return make_commit_tx_reply(cluster::tx_errc::request_rejected);
