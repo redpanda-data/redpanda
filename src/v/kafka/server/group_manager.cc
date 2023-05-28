@@ -716,11 +716,11 @@ ss::future<> group_manager::do_recover_group(
               group_stm.get_metadata(),
               _conf,
               p,
+              term,
               _tx_frontend,
               _feature_table,
               _serializer_factory(),
               _enable_group_metrics);
-            group->reset_tx_state(term);
             _groups.emplace(group_id, group);
             group->reschedule_all_member_heartbeats();
         }
@@ -916,11 +916,11 @@ group::join_group_stages group_manager::join_group(join_group_request&& r) {
           group_state::empty,
           _conf,
           p,
+          it->second->term,
           _tx_frontend,
           _feature_table,
           _serializer_factory(),
           _enable_group_metrics);
-        group->reset_tx_state(it->second->term);
         _groups.emplace(r.data.group_id, group);
         _groups.rehash(0);
         is_new_group = true;
@@ -1064,11 +1064,11 @@ group_manager::txn_offset_commit(txn_offset_commit_request&& r) {
                 group_state::empty,
                 _conf,
                 p,
+                p->term,
                 _tx_frontend,
                 _feature_table,
                 _serializer_factory(),
                 _enable_group_metrics);
-              group->reset_tx_state(p->term);
               _groups.emplace(r.data.group_id, group);
               _groups.rehash(0);
           }
@@ -1150,11 +1150,11 @@ group_manager::begin_tx(cluster::begin_group_tx_request&& r) {
                 group_state::empty,
                 _conf,
                 p,
+                p->term,
                 _tx_frontend,
                 _feature_table,
                 _serializer_factory(),
                 _enable_group_metrics);
-              group->reset_tx_state(p->term);
               _groups.emplace(r.group_id, group);
               _groups.rehash(0);
           }
@@ -1258,11 +1258,11 @@ group_manager::offset_commit(offset_commit_request&& r) {
               group_state::empty,
               _conf,
               p,
+              p->term,
               _tx_frontend,
               _feature_table,
               _serializer_factory(),
               _enable_group_metrics);
-            group->reset_tx_state(p->term);
             _groups.emplace(r.data.group_id, group);
             _groups.rehash(0);
         } else {
