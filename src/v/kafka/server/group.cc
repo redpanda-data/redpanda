@@ -1662,6 +1662,10 @@ void group::reset_tx_state(model::term_id term) {
     // to avoid modifying the state of the executing tx methods
     _term = term;
     _volatile_txs.clear();
+    _prepared_txs.clear();
+    _expiration_info.clear();
+    _tx_seqs.clear();
+    _fence_pid_epoch.clear();
 }
 
 void group::insert_prepared(prepared_tx tx) {
