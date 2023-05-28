@@ -49,6 +49,7 @@ group::group(
   group_state s,
   config::configuration& conf,
   ss::lw_shared_ptr<attached_partition> p,
+  model::term_id term,
   ss::sharded<cluster::tx_gateway_frontend>& tx_frontend,
   ss::sharded<features::feature_table>& feature_table,
   group_metadata_serializer serializer,
@@ -66,6 +67,7 @@ group::group(
   , _ctxlog(klog, *this)
   , _ctx_txlog(cluster::txlog, *this)
   , _md_serializer(std::move(serializer))
+  , _term(term)
   , _enable_group_metrics(group_metrics)
   , _abort_interval_ms(config::shard_local_cfg()
                          .abort_timed_out_transactions_interval_ms.value())
@@ -83,6 +85,7 @@ group::group(
   group_metadata_value& md,
   config::configuration& conf,
   ss::lw_shared_ptr<attached_partition> p,
+  model::term_id term,
   ss::sharded<cluster::tx_gateway_frontend>& tx_frontend,
   ss::sharded<features::feature_table>& feature_table,
   group_metadata_serializer serializer,
@@ -103,6 +106,7 @@ group::group(
   , _ctxlog(klog, *this)
   , _ctx_txlog(cluster::txlog, *this)
   , _md_serializer(std::move(serializer))
+  , _term(term)
   , _enable_group_metrics(group_metrics)
   , _abort_interval_ms(config::shard_local_cfg()
                          .abort_timed_out_transactions_interval_ms.value())
