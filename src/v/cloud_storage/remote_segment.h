@@ -183,6 +183,8 @@ private:
 
     using tx_range_vec = fragmented_vector<cluster::rm_stm::tx_range>;
     std::optional<tx_range_vec> _tx_range;
+
+    bool _hydration_loop_running{false};
 };
 
 class remote_segment_batch_consumer;
