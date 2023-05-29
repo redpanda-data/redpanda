@@ -66,6 +66,53 @@ class RpkRemoteTool:
 
         return self._execute(cmd, timeout=timeout)
 
+    def _run_profile(self, cmd):
+        cmd = [self._rpk_binary(), "profile"] + cmd
+        return self._execute(cmd)
+
+    def create_profile(self, name):
+        cmd = ["create", name]
+        return self._run_profile(cmd)
+
+    def create_profile_simple(self, name, cfg_location):
+        return self._execute(['create', name, "--from-simple", cfg_location])
+
+    def use_profile(self, name):
+        cmd = ["use", name]
+        return self._run_profile(cmd)
+
+    def delete_profile(self, name):
+        cmd = ["delete", name]
+        return self._run_profile(cmd)
+
+    def rename_profile(self, new_name):
+        cmd = ["rename-to", new_name]
+        return self._run_profile(cmd)
+
+    def set_profile(self, kv):
+        cmd = ["set", kv]
+        return self._run_profile(cmd)
+
+    def list_profiles(self):
+        cmd = ["list"]
+        out = self._run_profile(cmd)
+        lines = out.splitlines()
+        if len(lines) == 1:
+            return []
+
+        def profile_line(line):
+            parts = line.split()
+            # We remove the asterisk that denotes that is the selected profile. Not needed here.
+            return parts[0].strip("*")
+
+        for i, line in enumerate(lines):
+            if line.split() == ["NAME", "DESCRIPTION"]:
+                return list(map(profile_line, lines[i + 1:]))
+
+    def create_topic_no_flags(self, name):
+        cmd = [self._rpk_binary(), "topic", "create", name]
+        return self._execute(cmd)
+
     def _execute(self, cmd, timeout=30):
         self._redpanda.logger.debug("Executing command: %s", cmd)
 

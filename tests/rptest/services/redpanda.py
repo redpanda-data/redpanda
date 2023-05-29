@@ -693,6 +693,7 @@ class RedpandaServiceBase(Service):
     TRIM_LOGS_KEY = "trim_logs"
     DATA_DIR = os.path.join(PERSISTENT_ROOT, "data")
     NODE_CONFIG_FILE = "/etc/redpanda/redpanda.yaml"
+    RPK_CONFIG_FILE = "/root/.config/rpk/rpk.yaml"
     CLUSTER_BOOTSTRAP_CONFIG_FILE = "/etc/redpanda/.bootstrap.yaml"
     TLS_SERVER_KEY_FILE = "/etc/redpanda/server.key"
     TLS_SERVER_CRT_FILE = "/etc/redpanda/server.crt"
@@ -2840,6 +2841,8 @@ class RedpandaService(RedpandaServiceBase):
                         f"{RedpandaService.PERSISTENT_ROOT}/data/*")
         if node.account.exists(RedpandaService.NODE_CONFIG_FILE):
             node.account.remove(f"{RedpandaService.NODE_CONFIG_FILE}")
+        if node.account.exists(RedpandaService.RPK_CONFIG_FILE):
+            node.account.remove(f"{RedpandaService.RPK_CONFIG_FILE}")
         if node.account.exists(RedpandaService.CLUSTER_BOOTSTRAP_CONFIG_FILE):
             node.account.remove(
                 f"{RedpandaService.CLUSTER_BOOTSTRAP_CONFIG_FILE}")
