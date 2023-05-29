@@ -1181,25 +1181,3 @@ class RpkTool:
                                    int(size)))
 
         return result
-
-    def cloud_login_cc(self, id, secret):
-
-        cmd = [
-            self._rpk_binary(), "cloud", "login", "--client-id", id,
-            "--client-secret", secret
-        ]
-
-        self._redpanda.logger.debug(
-            "Executing command: %s cloud login --client-id %s --client-secret [redacted]",
-            self._rpk_binary(), id)
-
-        return self._execute(cmd, log_cmd=False)
-
-    def cloud_logout(self, clear_credentials=True):
-
-        cmd = [self._rpk_binary(), "cloud", "logout"]
-
-        if clear_credentials:
-            cmd += ["--clear-credentials"]
-
-        return self._execute(cmd)

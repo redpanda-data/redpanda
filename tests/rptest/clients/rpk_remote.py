@@ -75,7 +75,8 @@ class RpkRemoteTool:
         return self._run_profile(cmd)
 
     def create_profile_simple(self, name, cfg_location):
-        return self._execute(['create', name, "--from-simple", cfg_location])
+        return self._run_profile(
+            ['create', name, "--from-simple", cfg_location])
 
     def use_profile(self, name):
         cmd = ["use", name]
@@ -113,8 +114,31 @@ class RpkRemoteTool:
         cmd = [self._rpk_binary(), "topic", "create", name]
         return self._execute(cmd)
 
-    def _execute(self, cmd, timeout=30):
-        self._redpanda.logger.debug("Executing command: %s", cmd)
+    def cloud_login_cc(self, id, secret):
+
+        cmd = [
+            self._rpk_binary(), "cloud", "login", "--client-id", id,
+            "--client-secret", secret, "--save", "--no-profile"
+        ]
+
+        self._redpanda.logger.debug(
+            "Executing command: %s cloud login --client-id %s --client-secret [redacted]",
+            self._rpk_binary(), id)
+
+        return self._execute(cmd, log_cmd=False)
+
+    def cloud_logout(self, clear_credentials=True):
+
+        cmd = [self._rpk_binary(), "cloud", "logout"]
+
+        if clear_credentials:
+            cmd += ["--clear-credentials"]
+
+        return self._execute(cmd)
+
+    def _execute(self, cmd, timeout=30, log_cmd=True):
+        if log_cmd:
+            self._redpanda.logger.debug("Executing command: %s", cmd)
 
         return self._node.account.ssh_output(
             ' '.join(cmd),
