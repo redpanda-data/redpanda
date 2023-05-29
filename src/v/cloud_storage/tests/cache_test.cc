@@ -92,8 +92,10 @@ FIXTURE_TEST(missing_file_not_cached, cache_test_fixture) {
 
 FIXTURE_TEST(is_cached_after_put_success, cache_test_fixture) {
     iobuf buf;
+    auto reservation
+      = sharded_cache.local().reserve_space(buf.size_bytes(), 1).get();
     auto input = make_iobuf_input_stream(std::move(buf));
-    sharded_cache.local().put(KEY, input).get();
+    sharded_cache.local().put(KEY, input, reservation).get();
 
     auto is_cached = sharded_cache.local().is_cached(KEY).get();
 
@@ -143,10 +145,10 @@ FIXTURE_TEST(
     // put() calls are _not_ strictly capacity checked: we are circumventing
     // the capacity checks that would usually happen in reserve_space()
     auto data_string1 = create_data_string('a', 1_MiB + 1_KiB);
-    put_into_cache(data_string1, KEY);
+    put_into_cache(data_string1, KEY, true);
     auto data_string2 = create_data_string('b', 1_MiB + 1_KiB);
     ss::sleep(1s).get(); // Sleep long enough to ensure low res atimes differ
-    put_into_cache(data_string1, KEY2);
+    put_into_cache(data_string1, KEY2, true);
 
     // Give backgrounded futures a chance to execute
     ss::sleep(ss::lowres_clock::duration(2s)).get();
@@ -285,10 +287,12 @@ FIXTURE_TEST(put_outside_cache_dir_throws, cache_test_fixture) {
     auto data_string1 = create_data_string('a', 1_MiB + 1_KiB);
     iobuf buf;
     buf.append(data_string1.data(), data_string1.length());
+    auto reservation
+      = sharded_cache.local().reserve_space(buf.size_bytes(), 1).get();
     auto input = make_iobuf_input_stream(std::move(buf));
 
     BOOST_CHECK_EXCEPTION(
-      sharded_cache.local().put(key, input).get(),
+      sharded_cache.local().put(key, input, reservation).get(),
       std::invalid_argument,
       [](const std::invalid_argument& e) {
           return std::string(e.what()).find(

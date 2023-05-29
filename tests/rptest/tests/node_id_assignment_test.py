@@ -160,8 +160,7 @@ class NodeIdAssignmentParallel(RedpandaTest):
     def test_assign_multiple_nodes(self):
         self.redpanda.start(self.redpanda.nodes[1:],
                             auto_assign_node_id=True,
-                            omit_seeds_on_idx_one=False,
-                            parallel=True)
+                            omit_seeds_on_idx_one=False)
 
         def check_num_nodes():
             brokers = self.redpanda._admin.get_brokers()

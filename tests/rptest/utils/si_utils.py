@@ -60,6 +60,54 @@ class NTPR(NamedTuple):
         return NTP(self.ns, self.topic, self.partition)
 
 
+@dataclass
+class LogRegionSize:
+    total: int = 0
+    accessible: int = 0
+
+    def __iadd__(self, other):
+        self.total += other.total
+        self.accessible += other.accessible
+        return self
+
+
+@dataclass
+class CloudLogSize:
+    stm: LogRegionSize
+    archive: LogRegionSize
+
+    @staticmethod
+    def make_empty():
+        return CloudLogSize(stm=LogRegionSize(), archive=LogRegionSize())
+
+    def __iadd__(self, other):
+        self.stm += other.stm
+        self.archive += other.archive
+        return self
+
+    def accessible(self, no_archive: bool = False) -> int:
+        if no_archive and self.archive.accessible > 0:
+            raise RuntimeError(
+                f"CloudLogSize requested to ignore archive with accessible contents: archive={self.archive}"
+            )
+
+        if no_archive:
+            return self.stm.accessible
+        else:
+            return self.stm.accessible + self.archive.accessible
+
+    def total(self, no_archive: bool = False) -> int:
+        if no_archive and self.archive.total > 0:
+            raise RuntimeError(
+                f"CloudLogSize requested to ignore archive with contents: archive={self.archive}"
+            )
+
+        if no_archive:
+            return self.stm.total
+        else:
+            return self.stm.total + self.archive.total
+
+
 TopicManifestMetadata = namedtuple('TopicManifestMetadata',
                                    ['ntp', 'revision'])
 SegmentMetadata = namedtuple(
@@ -590,7 +638,7 @@ def quiesce_uploads(redpanda, topic_names: list[str], timeout_sec):
             raise RuntimeError(f"Found 0 partitions for topic '{topic_name}'")
 
 
-@dataclass(order=True)
+@dataclass(order=True, frozen=True)
 class SpillMeta:
     base: int
     last: int
@@ -598,37 +646,37 @@ class SpillMeta:
     last_kafka: int
     base_ts: int
     last_ts: int
-
-    path: str
     ntpr: NTPR
+    path: str
 
-    def __init__(self, ntpr: NTPR, path: str):
-        self.path = path.lstrip()
-        self.ntpr = ntpr
+    @staticmethod
+    def make(ntpr: NTPR, path: str):
+        base, last, base_kafka, last_kafka, base_ts, last_ts = SpillMeta._parse_path(
+            ntpr, path)
+        return SpillMeta(base=base,
+                         last=last,
+                         base_kafka=base_kafka,
+                         last_kafka=last_kafka,
+                         base_ts=base_ts,
+                         last_ts=last_ts,
+                         ntpr=ntpr,
+                         path=path)
 
-        self.base, self.last, self.base_kafka, self.last_kafka, self.base_ts, self.last_ts = self.parse_path(
-        )
-
-    def __eq__(self, other):
-        return self.path == other.path
-
-    def __hash__(self):
-        return hash(self.path)
-
-    def parse_path(self) -> list[str]:
+    @staticmethod
+    def _parse_path(ntpr: NTPR, path: str) -> list[str]:
         """
         Extract metadata from spillover manifest path.
         Expected format is:
         {base}.{base_rp_offset}.{last_rp_offest}.{base_kafka_offset}.{last_kafka_offset}.{first_ts}.{last_ts}
         where base = {hash}/meta/{ntpr.ns}/{ntpr.topic}/{ntpr.partition}_{ntpr.revision}/manifest"
         """
-        base = BucketView.gen_manifest_path(self.ntpr)
-        suffix = self.path.removeprefix(f"{base}.")
+        base = BucketView.gen_manifest_path(ntpr)
+        suffix = path.removeprefix(f"{base}.")
 
         split = suffix.split(".")
         if len(split) != 6:
             raise RuntimeError(
-                f"Invalid spillover manifest {self.path=} for {self.ntpr=}")
+                f"Invalid spillover manifest {path=} for {ntpr=}")
 
         return split
 
@@ -736,24 +784,11 @@ class BucketView:
         return self._state.partition_manifests
 
     @staticmethod
-    def cloud_log_size_from_ntp_manifest(manifest,
-                                         include_below_start_offset=True
-                                         ) -> int:
-        if 'segments' not in manifest or len(manifest['segments']) == 0:
-            return 0
-
-        start_offset = 0
-        if not include_below_start_offset:
-            start_offset = manifest['start_offset']
-
-        res = sum(seg_meta['size_bytes']
-                  for seg_meta in manifest['segments'].values()
-                  if seg_meta['base_offset'] >= start_offset)
-
-        return res
-
-    @staticmethod
     def kafka_start_offset(manifest) -> Optional[int]:
+        if "archive_start_offset" in manifest:
+            return manifest["archive_start_offset"] - manifest[
+                "archive_start_offset_delta"]
+
         if 'segments' not in manifest or len(manifest['segments']) == 0:
             return None
 
@@ -792,15 +827,19 @@ class BucketView:
 
         return last_model_offset - delta
 
-    def total_cloud_log_size(self,
-                             include_below_start_offset: bool = False) -> int:
+    def cloud_log_sizes_sum(self) -> CloudLogSize:
+        """
+        Returns the cloud log size summed over all ntps.
+        """
         self._do_listing()
 
-        total = 0
-        for pm in self._state.partition_manifests.values():
-            total += BucketView.cloud_log_size_from_ntp_manifest(
-                pm, include_below_start_offset=include_below_start_offset)
+        total = CloudLogSize.make_empty()
+        for ns, topic, partition in self._state.partition_manifests.keys():
+            val = self.cloud_log_size_for_ntp(topic, partition, ns)
+            self.logger.debug(f"{topic}/{partition} log_size={val}")
+            total += val
 
+        self.logger.debug(f"cloud_log_size_sum()={total}")
         return total
 
     def _ensure_listing(self):
@@ -909,7 +948,7 @@ class BucketView:
         if ntp not in self._state.spillover_manifests:
             self._state.spillover_manifests[ntp] = {}
 
-        meta = SpillMeta(ntpr, path)
+        meta = SpillMeta.make(ntpr, path)
         self._state.spillover_manifests[ntp][meta] = manifest
 
         self.logger.debug(
@@ -942,7 +981,7 @@ class BucketView:
         spill_metas = []
         for manifest_obj in list_res:
             if is_spillover_manifest_path(manifest_obj.key):
-                spill_metas.append(SpillMeta(ntpr, manifest_obj.key))
+                spill_metas.append(SpillMeta.make(ntpr, manifest_obj.key))
 
         return sorted(spill_metas)
 
@@ -1160,20 +1199,65 @@ class BucketView:
 
         return len(manifest['segments'])
 
-    def cloud_log_size_for_ntp(
-            self,
-            topic: str,
-            partition: int,
-            ns: str = 'kafka',
-            include_size_below_start_offset: bool = True) -> int:
+    def stm_region_size_for_ntp(self,
+                                topic: str,
+                                partition: int,
+                                ns: str = "kafka") -> LogRegionSize:
+        size = LogRegionSize()
+
         try:
             manifest = self.manifest_for_ntp(topic, partition, ns)
         except KeyError:
-            return 0
-        else:
-            return BucketView.cloud_log_size_from_ntp_manifest(
-                manifest,
-                include_below_start_offset=include_size_below_start_offset)
+            return size
+
+        if 'segments' not in manifest or len(manifest['segments']) == 0:
+            return size
+
+        so = manifest['start_offset']
+        for seg in manifest['segments'].values():
+            size.total += seg['size_bytes']
+            if seg['base_offset'] >= so:
+                size.accessible += seg['size_bytes']
+
+        return size
+
+    def archive_size_for_ntp(self,
+                             topic: str,
+                             partition: int,
+                             ns: str = "kafka") -> LogRegionSize:
+        size = LogRegionSize()
+
+        try:
+            manifest = self.manifest_for_ntp(topic, partition, ns)
+        except KeyError:
+            return size
+
+        if "archive_clean_offset" not in manifest or "archive_start_offset" not in manifest:
+            return size
+
+        archive_clean_offset = manifest["archive_clean_offset"]
+        archive_start_offset = manifest["archive_start_offset"]
+
+        spills = self.get_spillover_manifests(NTP(ns, topic, partition))
+        if spills is None:
+            return size
+
+        for meta, spill in spills.items():
+            for seg in spill["segments"].values():
+                if seg["base_offset"] >= archive_clean_offset:
+                    size.total += seg["size_bytes"]
+                if seg["base_offset"] >= archive_start_offset:
+                    size.accessible += seg["size_bytes"]
+
+        return size
+
+    def cloud_log_size_for_ntp(self,
+                               topic: str,
+                               partition: int,
+                               ns: str = 'kafka') -> CloudLogSize:
+        return CloudLogSize(
+            stm=self.stm_region_size_for_ntp(topic, partition, ns),
+            archive=self.archive_size_for_ntp(topic, partition, ns))
 
     def assert_at_least_n_uploaded_segments_compacted(self,
                                                       topic: str,

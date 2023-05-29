@@ -50,25 +50,42 @@ std::ostream& operator<<(std::ostream& o, cache_element_status);
 
 class cache;
 
+/// RAII guard for bytes reserved in the cache: constructed prior to a call
+/// to cache::put, and may be destroyed afterwards.
 class space_reservation_guard {
 public:
-    space_reservation_guard(cache& cache, size_t bytes) noexcept
+    space_reservation_guard(
+      cache& cache, uint64_t bytes, size_t objects) noexcept
       : _cache(cache)
-      , _bytes(bytes) {}
+      , _bytes(bytes)
+      , _objects(objects) {}
 
     space_reservation_guard(const space_reservation_guard&) = delete;
     space_reservation_guard() = delete;
     space_reservation_guard(space_reservation_guard&& rhs) noexcept
       : _cache(rhs._cache)
-      , _bytes(rhs._bytes) {
+      , _bytes(rhs._bytes)
+      , _objects(rhs._objects) {
         rhs._bytes = 0;
+        rhs._objects = 0;
     }
 
     ~space_reservation_guard();
 
+    /// After completing the write operation that this space reservation
+    /// protected, indicate how many bytes were really written: this is used to
+    /// atomically update cache usage stats to free the reservation and update
+    /// the bytes used stats together.
+    ///
+    /// May only be called once per reservation.
+    void wrote_data(uint64_t, size_t);
+
 private:
     cache& _cache;
-    size_t _bytes;
+
+    // Size acquired at time of reservation
+    uint64_t _bytes{0};
+    size_t _objects{0};
 };
 
 class cache : public ss::peering_sharded_service<cache> {
@@ -76,7 +93,10 @@ public:
     /// C-tor.
     ///
     /// \param cache_dir is a directory where cached data is stored
-    cache(std::filesystem::path cache_dir, config::binding<uint64_t>) noexcept;
+    cache(
+      std::filesystem::path cache_dir,
+      config::binding<uint64_t>,
+      config::binding<uint32_t>) noexcept;
 
     cache(const cache&) = delete;
     cache(cache&& rhs) = delete;
@@ -96,9 +116,12 @@ public:
     /// \param data is an input stream containing data
     /// \param write_buffer_size is a write buffer size for disk write
     /// \param write_behind number of pages that can be written asynchronously
+    /// \param reservation caller must have reserved cache space before
+    /// proceeding with put
     ss::future<> put(
       std::filesystem::path key,
       ss::input_stream<char>& data,
+      space_reservation_guard& reservation,
       ss::io_priority_class io_priority
       = priority_manager::local().shadow_indexing_priority(),
       size_t write_buffer_size = default_write_buffer_size,
@@ -123,11 +146,11 @@ public:
 
     // Call this before starting a download, to trim the cache if necessary
     // and wait until enough free space is available.
-    ss::future<space_reservation_guard> reserve_space(size_t);
+    ss::future<space_reservation_guard> reserve_space(uint64_t, size_t);
 
     // Release capacity acquired via `reserve_space`.  This spawns
     // a background fiber in order to be callable from the guard destructor.
-    void reserve_space_release(size_t);
+    void reserve_space_release(uint64_t, size_t, uint64_t, size_t);
 
     static ss::future<> initialize(std::filesystem::path);
 
@@ -137,6 +160,10 @@ public:
       uint64_t total_space,
       uint64_t free_space,
       storage::disk_space_alert alert);
+
+    size_t get_usage_objects() { return _current_cache_objects; }
+
+    uint64_t get_usage_bytes() { return _current_cache_size; }
 
 private:
     /// Load access time tracker from file
@@ -153,6 +180,11 @@ private:
     /// them until cache size <= _cache_size_low_watermark * max_bytes
     ss::future<> trim();
 
+    /// If trimming may proceed immediately, return nullopt.  Else return
+    /// how long the caller should wait before trimming to respect the
+    /// rate limit.
+    std::optional<std::chrono::milliseconds> get_trim_delay() const;
+
     /// Invoke trim, waiting if not enough time passed since the last trim
     ss::future<> trim_throttled();
 
@@ -167,23 +199,24 @@ private:
     /// \return true if any parents were deleted
     ss::future<bool> delete_file_and_empty_parents(const std::string_view& key);
 
-    /// This method is called on shard 0 by other shards to report disk
-    /// space changes.
-    void consume_cache_space(size_t);
-
     /// Block until enough space is available to commit to a reservation
     /// (only runs on shard 0)
-    ss::future<> do_reserve_space(size_t bytes);
+    ss::future<> do_reserve_space(uint64_t, size_t);
 
     /// Return true if the sum of used space and reserved space is far enough
     /// below max size to accommodate a new reservation of `bytes`
     /// (only runs on shard 0)
-    bool may_reserve_space(size_t bytes);
+    bool may_reserve_space(uint64_t, size_t);
+
+    /// Return true if it is safe to overshoot the configured limits, even if
+    /// may_reserve_space returned false.  This enables selectively exceeding
+    /// our configured limits to enable progress if trimming is not possible.
+    bool may_exceed_limits(uint64_t, size_t);
 
     /// Release units from _reserved_cache_size: the inner part of
     /// `reserve_space_release`
     /// (only runs on shard 0)
-    void do_reserve_space_release(size_t bytes);
+    void do_reserve_space_release(uint64_t, size_t, uint64_t, size_t);
 
     /// Update _block_puts and kick _block_puts_cond if necessary.  This is
     /// called on all shards by shard 0 when handling a disk space status
@@ -192,6 +225,7 @@ private:
 
     std::filesystem::path _cache_dir;
     config::binding<uint64_t> _max_bytes;
+    config::binding<uint32_t> _max_objects;
 
     ss::abort_source _as;
     ss::gate _gate;
@@ -206,13 +240,17 @@ private:
     /// Current size of the cache directory (only used on shard 0)
     uint64_t _current_cache_size{0};
 
+    size_t _current_cache_objects{0};
+
     /// Bytes reserved by downloads in progress, owned by instances of
     /// space_reservation_guard.
     uint64_t _reserved_cache_size{0};
+    size_t _reserved_cache_objects{0};
 
     /// Bytes waiting to be reserved when the next cache trim completes: a
     /// hint to clean_up_cache on how much extra space to try and free
     uint64_t _reservations_pending{0};
+    size_t _reservations_pending_objects{0};
 
     /// A _lazily updated_ record of physical space on the drive.  This is only
     /// for use in corner cases when we e.g. cannot trim the cache far enough
@@ -230,6 +268,10 @@ private:
     /// Remember when we last finished clean_up_cache, in order to
     /// avoid wastefully running it again soon after.
     ss::lowres_clock::time_point _last_clean_up;
+
+    /// 'failed' in the sense that we were unable to release sufficient space to
+    /// enable a may_reserve_space() call to return true.
+    bool _last_trim_failed{false};
 
     // If true, no space reservation requests will be granted: this is used to
     // block cache promotions when critically low on disk space.

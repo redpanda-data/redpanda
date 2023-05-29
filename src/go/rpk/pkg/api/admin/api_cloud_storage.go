@@ -11,6 +11,7 @@ package admin
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 )
 
@@ -41,6 +42,25 @@ type TopicRecoveryStatus struct {
 	RecoveryRequest RecoveryRequestParams `json:"request"`
 }
 
+// CloudStorageStatus represents the status of a partition of a topic in the
+// cloud storage.
+type CloudStorageStatus struct {
+	CloudStorageMode          string `json:"cloud_storage_mode"`                    // The partition's cloud storage mode (one of: disabled, write_only, read_only, full and read_replica).
+	MsSinceLastManifestUpload int    `json:"ms_since_last_manifest_upload"`         // Delta in milliseconds since the last upload of the partition's manifest.
+	MsSinceLastSegmentUpload  int    `json:"ms_since_last_segment_upload"`          // Delta in milliseconds since the last segment upload for the partition.
+	MsSinceLastManifestSync   *int   `json:"ms_since_last_manifest_sync,omitempty"` // Delta in milliseconds since the last manifest sync (only present for read replicas).
+	TotalLogBytes             int    `json:"total_log_size_bytes"`                  // Total size of the log for the partition (overlap between local and cloud log is excluded).
+	CloudLogBytes             int    `json:"cloud_log_size_bytes"`                  // Total size of the addressable cloud log for the partition.
+	LocalLogBytes             int    `json:"local_log_size_bytes"`                  // Total size of the addressable local log for the partition.
+	CloudLogSegmentCount      int    `json:"cloud_log_segment_count"`               // Number of segments in the cloud log (does not include segments queued for removal).
+	LocalLogSegmentCount      int    `json:"local_log_segment_count"`               // Number of segments in the local log.
+	CloudLogStartOffset       int    `json:"cloud_log_start_offset"`                // The first Kafka offset accessible from the cloud (inclusive).
+	CloudLogLastOffset        int    `json:"cloud_log_last_offset"`                 // The last Kafka offset accessible from the cloud (inclusive).
+	LocalLogStartOffset       int    `json:"local_log_start_offset"`                // The first Kafka offset accessible locally (inclusive).
+	LocalLogLastOffset        int    `json:"local_log_last_offset"`                 // The last Kafka offset accessible locally (inclusive).
+	MetadataUpdatePending     bool   `json:"metadata_update_pending"`               // If true, the remote metadata may not yet include all segments that have been uploaded.
+}
+
 // StartAutomatedRecovery starts the automated recovery process by sending a request to the automated recovery API endpoint.
 func (a *AdminAPI) StartAutomatedRecovery(ctx context.Context, topicNamesPattern string) (RecoveryStartResponse, error) {
 	requestParams := &RecoveryRequestParams{
@@ -55,4 +75,10 @@ func (a *AdminAPI) StartAutomatedRecovery(ctx context.Context, topicNamesPattern
 func (a *AdminAPI) PollAutomatedRecoveryStatus(ctx context.Context) (*TopicRecoveryStatus, error) {
 	var response TopicRecoveryStatus
 	return &response, a.sendAny(ctx, http.MethodGet, "/v1/cloud_storage/automated_recovery", http.NoBody, &response)
+}
+
+func (a *AdminAPI) CloudStorageStatus(ctx context.Context, topic, partition string) (CloudStorageStatus, error) {
+	var response CloudStorageStatus
+	path := fmt.Sprintf("/v1/cloud_storage/status/%s/%s", topic, partition)
+	return response, a.sendAny(ctx, http.MethodGet, path, http.NoBody, &response)
 }

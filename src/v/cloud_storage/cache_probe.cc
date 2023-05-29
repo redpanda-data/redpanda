@@ -78,6 +78,12 @@ cache_probe::cache_probe() {
                   [this] { return _cur_num_files; },
                   sm::description("Number of objects in cache."))
                   .aggregate(aggregate_labels),
+                sm::make_gauge(
+                  "hwm_files",
+                  [this] { return _hwm_num_files; },
+                  sm::description(
+                    "High watermark of number of objects in cache."))
+                  .aggregate(aggregate_labels),
               });
         }
 

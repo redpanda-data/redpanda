@@ -11,6 +11,7 @@ import os
 import re
 import itertools
 from typing import Optional
+from dataclasses import dataclass
 
 
 class Segment:
@@ -154,11 +155,26 @@ class PartitionNotFoundError(Exception):
     pass
 
 
+@dataclass
+class NodeCacheStorage:
+    # Total size of the directory according to `du`
+    bytes: int
+
+    # Total number of non-directory files in the cache dir.  This count
+    # overlaps with subsequent type-specific object counts
+    objects: int
+
+    # Number of .index files
+    indices: int
+
+
 class NodeStorage:
-    def __init__(self, name, data_dir):
+    def __init__(self, name: str, data_dir: str, cache_dir: str):
         self.data_dir = data_dir
+        self.cache_dir = cache_dir
         self.ns = dict()
         self.name = name
+        self.cache = None
 
     def add_namespace(self, ns, path):
         n = Namespace(ns, path)
@@ -182,6 +198,9 @@ class NodeStorage:
             )
 
         return partitions[partition_idx].segments.values()
+
+    def set_cache_stats(self, stats: NodeCacheStorage):
+        self.cache = stats
 
 
 class ClusterStorage:

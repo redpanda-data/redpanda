@@ -206,15 +206,19 @@ private:
     ss::future<> do_hydrate_segment();
 
     /// Helper for do_hydrate_segment
-    ss::future<uint64_t>
-      put_segment_in_cache_and_create_index(uint64_t, ss::input_stream<char>);
+    ss::future<uint64_t> put_segment_in_cache_and_create_index(
+      uint64_t, space_reservation_guard&, ss::input_stream<char>);
 
-    ss::future<uint64_t> put_segment_in_cache(uint64_t, ss::input_stream<char>);
+    ss::future<uint64_t> put_segment_in_cache(
+      uint64_t, space_reservation_guard&, ss::input_stream<char>);
 
     /// Stores a segment chunk in cache. The chunk is stored in a path derived
     /// from the segment path: <segment_path>_chunks/chunk_start_file_offset.
     ss::future<uint64_t> put_chunk_in_cache(
-      uint64_t, ss::input_stream<char>, chunk_start_offset_t chunk_start);
+      uint64_t,
+      space_reservation_guard&,
+      ss::input_stream<char>,
+      chunk_start_offset_t chunk_start);
 
     /// Hydrate tx manifest. Method downloads the manifest file to the cache
     /// dir.

@@ -34,4 +34,6 @@ void api::handle_disk_notification(
     }
 }
 
+void api::trigger_gc() { _log_mgr->trigger_gc(); }
+
 } // namespace storage

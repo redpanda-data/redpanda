@@ -282,88 +282,95 @@ transport::do_send(sequence_t seq, netbuf b, rpc::client_opts opts) {
       });
 }
 
+ss::future<> transport::do_dispatch_send() {
+    return ss::do_until(
+      [this] {
+          if (_requests_queue.empty()) {
+              return true;
+          }
+          auto queue_begin_sequence = _requests_queue.begin()->first;
+          auto out_of_order = queue_begin_sequence
+                              > (_last_seq + sequence_t(1));
+          if (unlikely(out_of_order)) {
+              vlog(
+                rpclog.debug,
+                "Dispatch request queue out of order. Last seq: "
+                "{}, "
+                "queue begin seq: {}",
+                _last_seq,
+                queue_begin_sequence);
+          }
+          return out_of_order;
+      },
+      // Be careful adding any scheduling points in the lambda
+      // below.
+      //
+      // If a scheduling point is added before
+      // `_requests_queue.erase` then two concurrent instances of
+      // dispatch_send could try sending the same message.
+      // Resulting in one of them throwing a seg. fault.
+      //
+      // And if a scheduling point is added after
+      // `_requests_queue.erase` the conditional for executing the
+      // lambda could succeed for two different messages
+      // concurrently resulting in incorrect ordering of the sent
+      // messages.
+      [this] {
+          auto it = _requests_queue.begin();
+          _last_seq = it->first;
+          auto v = std::move(*it->second->scattered_message);
+          auto corr = it->second->correlation_id;
+          _requests_queue.erase(it);
+
+          auto resp_it = _correlations.find(corr);
+          if (resp_it == _correlations.end()) {
+              // request had already completed even before we sent
+              // it (probably due to timeout or disconnect). We
+              // don't need to do anything.
+              return ss::now();
+          }
+          auto& resp_entry = resp_it->second;
+
+          // These units are released once we are out of scope here
+          // and that is intentional because the underlying write
+          // call to the batched output stream guarantees us the
+          // in-order delivery of the dispatched write calls, which
+          // is the intent of holding on to the units up until this
+          // point.
+          auto units = std::move(resp_entry->resource_units);
+          auto msg_size = v.size();
+
+          auto f = _out.write(std::move(v));
+          resp_entry->timing.dispatched_at = clock_type::now();
+          vlog(
+            rpclog.trace,
+            "Dispatched request with sequence: {}, "
+            "correlation_idx: {}, "
+            "pending queue_size: {}, target_address: {}",
+            _last_seq,
+            corr,
+            _requests_queue.size(),
+            server_address());
+          return std::move(f)
+            .then([this, corr](bool flushed) {
+                if (auto maybe_timing = get_timing(corr)) {
+                    maybe_timing->written_at = clock_type::now();
+                    maybe_timing->flushed = flushed;
+                }
+            })
+            .finally([this, msg_size] { _probe->add_bytes_sent(msg_size); });
+      });
+}
+
 void transport::dispatch_send() {
-    ssx::background
-      = ssx::spawn_with_gate_then(_dispatch_gate, [this]() mutable {
-            return ss::do_until(
-              [this] {
-                  if (_requests_queue.empty()) {
-                      return true;
-                  }
-                  auto queue_begin_sequence = _requests_queue.begin()->first;
-                  auto out_of_order = queue_begin_sequence
-                                      > (_last_seq + sequence_t(1));
-                  if (unlikely(out_of_order)) {
-                      vlog(
-                        rpclog.debug,
-                        "Dispatch request queue out of order. Last seq: {}, "
-                        "queue begin seq: {}",
-                        _last_seq,
-                        queue_begin_sequence);
-                  }
-                  return out_of_order;
-              },
-              // Be careful adding any scheduling points in the lambda below.
-              //
-              // If a scheduling point is added before `_requests_queue.erase`
-              // then two concurrent instances of dispatch_send could try
-              // sending the same message. Resulting in one of them throwing a
-              // seg. fault.
-              //
-              // And if a scheduling point is added after
-              // `_requests_queue.erase` the conditional for executing the
-              // lambda could succeed for two different messages concurrently
-              // resulting in incorrect ordering of the sent messages.
-              [this] {
-                  auto it = _requests_queue.begin();
-                  _last_seq = it->first;
-                  auto v = std::move(*it->second->scattered_message);
-                  auto corr = it->second->correlation_id;
-                  _requests_queue.erase(it);
-
-                  auto resp_it = _correlations.find(corr);
-                  if (resp_it == _correlations.end()) {
-                      // request had already completed even before we sent it
-                      // (probably due to timeout or disconnect). We don't need
-                      // to do anything.
-                      return ss::now();
-                  }
-                  auto& resp_entry = resp_it->second;
-
-                  // These units are released once we are out of scope here
-                  // and that is intentional because the underlying write call
-                  // to the batched output stream guarantees us the in-order
-                  // delivery of the dispatched write calls, which is the intent
-                  // of holding on to the units up until this point.
-                  auto units = std::move(resp_entry->resource_units);
-                  auto msg_size = v.size();
-
-                  auto f = _out.write(std::move(v));
-                  resp_entry->timing.dispatched_at = clock_type::now();
-                  vlog(
-                    rpclog.trace,
-                    "Dispatched request with sequence: {}, "
-                    "correlation_idx: {}, "
-                    "pending queue_size: {}, target_address: {}",
-                    _last_seq,
-                    corr,
-                    _requests_queue.size(),
-                    server_address());
-                  return std::move(f)
-                    .then([this, corr](bool flushed) {
-                        if (auto maybe_timing = get_timing(corr)) {
-                            maybe_timing->written_at = clock_type::now();
-                            maybe_timing->flushed = flushed;
-                        }
-                    })
-                    .finally(
-                      [this, msg_size] { _probe->add_bytes_sent(msg_size); });
-              });
-        }).handle_exception([this](std::exception_ptr e) {
-            vlog(rpclog.info, "Error dispatching socket write:{}", e);
-            _probe->request_error();
-            fail_outstanding_futures();
-        });
+    ssx::spawn_with_gate(_dispatch_gate, [this]() mutable {
+        return ssx::ignore_shutdown_exceptions(do_dispatch_send())
+          .handle_exception([this](std::exception_ptr e) {
+              vlog(rpclog.info, "Error dispatching socket write:{}", e);
+              _probe->request_error();
+              fail_outstanding_futures();
+          });
+    });
 }
 
 ss::future<> transport::do_reads() {
@@ -396,14 +403,15 @@ ss::future<> transport::dispatch(header h) {
           rpclog.debug,
           "Unable to find handler for correlation {}",
           h.correlation_id);
-        // we have to skip received bytes to make input stream state correct
+        // we have to skip received bytes to make input stream
+        // state correct
         return _in.skip(h.payload_size);
     }
     _probe->add_bytes_received(size_of_rpc_header + h.payload_size);
     auto ctx = std::make_unique<client_context_impl>(*this, h);
     auto fut = ctx->pr.get_future();
-    // delete before setting value so that we don't run into nested exceptions
-    // of broken promises
+    // delete before setting value so that we don't run into nested
+    // exceptions of broken promises
     auto pr = std::move(it->second);
     _correlations.erase(it);
     pr->handler.set_value(std::move(ctx));
@@ -426,7 +434,8 @@ transport::~transport() {
     vlog(rpclog.debug, "RPC Client to {} probes: {}", server_address(), _probe);
     vassert(
       !is_valid(),
-      "connection '{}' is still valid. must call stop() before destroying",
+      "connection '{}' is still valid. must call stop() before "
+      "destroying",
       *this);
 }
 

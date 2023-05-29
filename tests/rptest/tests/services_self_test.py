@@ -194,10 +194,9 @@ class BucketScrubSelfTest(RedpandaTest):
         # Initially a bucket scrub should pass
         self.logger.info(f"Running baseline scrub")
         self.redpanda.stop_and_scrub_object_storage()
-        self.redpanda._for_nodes(
+        self.redpanda.for_nodes(
             self.redpanda.nodes,
-            lambda n: self.redpanda.start_node(n, first_start=False),
-            parallel=True)
+            lambda n: self.redpanda.start_node(n, first_start=False))
 
         # Go delete a segment: pick one arbitrarily, but it must be one
         # that is linked into a manifest to constitute a corruption.
@@ -230,10 +229,9 @@ class BucketScrubSelfTest(RedpandaTest):
             segment_key,
             validate=True)
 
-        self.redpanda._for_nodes(
+        self.redpanda.for_nodes(
             self.redpanda.nodes,
-            lambda n: self.redpanda.start_node(n, first_start=False),
-            parallel=True)
+            lambda n: self.redpanda.start_node(n, first_start=False))
 
 
 class SimpleSelfTest(Test):

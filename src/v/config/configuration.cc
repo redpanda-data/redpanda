@@ -110,6 +110,15 @@ configuration::configuration()
        .example = "31536000000",
        .visibility = visibility::tunable},
       24h * 365)
+  , log_storage_target_size(
+      *this,
+      "log_storage_target_size",
+      "The target size in bytes that log storage will try meet. When no target "
+      "is specified storage usage is unbounded.",
+      {.needs_restart = needs_restart::no,
+       .example = "2147483648000",
+       .visibility = visibility::tunable},
+      std::nullopt)
   , rpc_server_listen_backlog(
       *this,
       "rpc_server_listen_backlog",
@@ -1572,6 +1581,16 @@ configuration::configuration()
       "Max size of archival cache",
       {.needs_restart = needs_restart::no, .visibility = visibility::user},
       20_GiB)
+  , cloud_storage_cache_max_objects(
+      *this,
+      "cloud_storage_cache_max_objects",
+      "Maximum number of objects that may be held in the tiered storage "
+      "cache.  This applies simultaneously with `cloud_storage_cache_size`, "
+      "and which ever limit is hit first will drive trimming of the cache.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      // Enough for a >1TiB cache of 16MiB objects.  Decrease this in case
+      // of issues with trim performance.
+      100000)
   , cloud_storage_cache_check_interval_ms(
       *this,
       "cloud_storage_cache_check_interval",

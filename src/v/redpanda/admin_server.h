@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include "cloud_storage/fwd.h"
 #include "cluster/fwd.h"
 #include "cluster/types.h"
 #include "config/endpoint_tls_config.h"
@@ -77,7 +78,8 @@ public:
       ss::sharded<cluster::topic_recovery_status_frontend>&,
       ss::sharded<cluster::tx_registry_frontend>&,
       ss::sharded<storage::node>&,
-      ss::sharded<memory_sampling>&);
+      ss::sharded<memory_sampling>&,
+      ss::sharded<cloud_storage::cache>&);
 
     ss::future<> start();
     ss::future<> stop();
@@ -522,6 +524,7 @@ private:
     ss::sharded<cluster::tx_registry_frontend>& _tx_registry_frontend;
     ss::sharded<storage::node>& _storage_node;
     ss::sharded<memory_sampling>& _memory_sampling_service;
+    ss::sharded<cloud_storage::cache>& _cloud_storage_cache;
     // Value before the temporary override
     std::chrono::milliseconds _default_blocked_reactor_notify;
     ss::timer<> _blocked_reactor_notify_reset_timer;

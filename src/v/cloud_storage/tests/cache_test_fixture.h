@@ -53,10 +53,23 @@ public:
       , CACHE_DIR(get_cache_dir(test_dir.get_path())) {
         cache::initialize(CACHE_DIR).get();
         sharded_cache
-          .start(CACHE_DIR, config::mock_binding<uint64_t>(1_MiB + 500_KiB))
+          .start(
+            CACHE_DIR,
+            config::mock_binding<uint64_t>(1_MiB + 500_KiB),
+            config::mock_binding<uint32_t>(100000))
           .get();
         sharded_cache
           .invoke_on_all([](cloud_storage::cache& c) { return c.start(); })
+          .get();
+        sharded_cache
+          .invoke_on(
+            ss::shard_id{0},
+            [](cloud_storage::cache& c) {
+                c.notify_disk_status(
+                  100ULL * 1024 * 1024 * 1024,
+                  50ULL * 1024 * 1024 * 1024,
+                  storage::disk_space_alert::ok);
+            })
           .get();
     }
 
@@ -72,12 +85,19 @@ public:
         return data_string;
     }
 
-    void put_into_cache(auto data_string, auto key) {
+    /// @param no_trim: if true, do not reserve space, thereby ensuring that
+    ///                 we will not trim the cache.  This ignores cache size
+    ///                 enforcement.
+    void put_into_cache(auto data_string, auto key, bool no_trim = false) {
         iobuf buf;
         buf.append(data_string.data(), data_string.length());
 
+        auto reservation
+          = no_trim
+              ? space_reservation_guard(sharded_cache.local(), 0, 0)
+              : sharded_cache.local().reserve_space(buf.size_bytes(), 1).get();
         auto input = make_iobuf_input_stream(std::move(buf));
-        sharded_cache.local().put(key, input).get();
+        sharded_cache.local().put(key, input, reservation).get();
     }
 
     ss::future<> clean_up_at_start() {

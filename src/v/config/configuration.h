@@ -54,6 +54,7 @@ struct configuration final : public config_store {
     bounded_property<std::optional<std::chrono::milliseconds>> log_segment_ms;
     property<std::chrono::milliseconds> log_segment_ms_min;
     property<std::chrono::milliseconds> log_segment_ms_max;
+    property<std::optional<uint64_t>> log_storage_target_size;
 
     // Network
     bounded_property<std::optional<int>> rpc_server_listen_backlog;
@@ -317,6 +318,7 @@ struct configuration final : public config_store {
 
     // Archival cache
     property<uint64_t> cloud_storage_cache_size;
+    property<uint32_t> cloud_storage_cache_max_objects;
     property<std::chrono::milliseconds> cloud_storage_cache_check_interval_ms;
     property<std::optional<uint32_t>> cloud_storage_max_readers_per_shard;
     property<std::optional<uint32_t>>

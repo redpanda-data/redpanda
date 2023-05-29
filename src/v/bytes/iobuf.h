@@ -177,8 +177,7 @@ public:
     std::string hexdump(size_t) const;
 
 private:
-    /// \brief trims the back, and appends direct.
-    void prepend_take_ownership(fragment*);
+    void prepend(std::unique_ptr<fragment>);
 
     size_t available_bytes() const;
     void create_new_fragment(size_t);
@@ -231,9 +230,9 @@ inline void iobuf::append(std::unique_ptr<fragment> f) {
     _size += f->size();
     _frags.push_back(*f.release());
 }
-inline void iobuf::prepend_take_ownership(fragment* f) {
+inline void iobuf::prepend(std::unique_ptr<fragment> f) {
     _size += f->size();
-    _frags.push_front(*f);
+    _frags.push_front(*f.release());
 }
 
 inline void iobuf::create_new_fragment(size_t sz) {
@@ -259,8 +258,7 @@ inline void iobuf::reserve_memory(size_t reservation) {
     if (unlikely(!b.size())) {
         return;
     }
-    auto f = new fragment(std::move(b));
-    prepend_take_ownership(f);
+    prepend(std::make_unique<fragment>(std::move(b)));
 }
 [[gnu::always_inline]] void inline iobuf::prepend(iobuf b) {
     oncore_debug_verify(_verify_shard);

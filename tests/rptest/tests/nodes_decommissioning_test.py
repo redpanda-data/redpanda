@@ -13,6 +13,8 @@ import requests
 from rptest.clients.kafka_cat import KafkaCat
 from time import sleep
 from rptest.clients.default import DefaultClient
+from rptest.services.kgo_verifier_services import KgoVerifierConsumerGroupConsumer, KgoVerifierProducer
+from rptest.tests.prealloc_nodes import PreallocNodesTest
 
 from rptest.utils.mode_checks import skip_debug_mode
 from rptest.util import wait_for_recovery_throttle_rate
@@ -28,14 +30,21 @@ from rptest.services.redpanda import CHAOS_LOG_ALLOW_LIST, RESTART_LOG_ALLOW_LIS
 from rptest.utils.node_operations import NodeDecommissionWaiter
 
 
-class NodesDecommissioningTest(EndToEndTest):
+class NodesDecommissioningTest(PreallocNodesTest):
     """
     Basic nodes decommissioning test.
     """
     def __init__(self, test_context):
+        self._topic = None
 
         super(NodesDecommissioningTest,
-              self).__init__(test_context=test_context)
+              self).__init__(test_context=test_context,
+                             num_brokers=5,
+                             node_prealloc_count=1)
+
+    def setup(self):
+        # defer starting redpanda to test body
+        pass
 
     @property
     def admin(self):
@@ -59,7 +68,7 @@ class NodesDecommissioningTest(EndToEndTest):
         for spec in topics:
             self.client().create_topic(spec)
 
-        self.topic = random.choice(topics).name
+        self._topic = random.choice(topics).name
 
         return total_partitions
 
@@ -222,6 +231,72 @@ class NodesDecommissioningTest(EndToEndTest):
 
         wait_until(recommissioned, 30, 1)
 
+    @property
+    def msg_size(self):
+        return 64
+
+    @property
+    def msg_count(self):
+        return int(20 * self.producer_throughput / self.msg_size)
+
+    @property
+    def producer_throughput(self):
+        return 1024 if self.debug_mode else 1024 * 1024
+
+    def start_producer(self):
+        self.logger.info(
+            f"starting kgo-verifier producer with {self.msg_count} messages of size {self.msg_size} and throughput: {self.producer_throughput} bps"
+        )
+        self.producer = KgoVerifierProducer(
+            self.test_context,
+            self.redpanda,
+            self._topic,
+            self.msg_size,
+            self.msg_count,
+            custom_node=self.preallocated_nodes,
+            rate_limit_bps=self.producer_throughput)
+
+        self.producer.start(clean=False)
+
+        wait_until(lambda: self.producer.produce_status.acked > 10,
+                   timeout_sec=120,
+                   backoff_sec=1)
+
+    def start_consumer(self):
+        self.consumer = KgoVerifierConsumerGroupConsumer(
+            self.test_context,
+            self.redpanda,
+            self._topic,
+            self.msg_size,
+            readers=1,
+            nodes=self.preallocated_nodes)
+
+    def verify(self):
+        self.logger.info(
+            f"verifying workload: topic: {self._topic}, with [rate_limit: {self.producer_throughput}, message size: {self.msg_size}, message count: {self.msg_count}]"
+        )
+        self.producer.wait()
+
+        # Await the consumer that is reading only the subset of data that
+        # was written before it started.
+        self.consumer.wait()
+
+        assert self.consumer.consumer_status.validator.invalid_reads == 0, f"Invalid reads in topic: {self._topic}, invalid reads count: {self.consumer.consumer_status.validator.invalid_reads}"
+        del self.consumer
+
+        # Start a new consumer to read all data written
+        self.start_consumer()
+        self.consumer.wait()
+
+        assert self.consumer.consumer_status.validator.invalid_reads == 0, f"Invalid reads in topic: {self._topic}, invalid reads count: {self.consumer.consumer_status.validator.invalid_reads}"
+
+    def start_redpanda(self, new_bootstrap=True):
+        if new_bootstrap:
+            self.redpanda.set_seed_servers(self.redpanda.nodes)
+
+        self.redpanda.start(auto_assign_node_id=new_bootstrap,
+                            omit_seeds_on_idx_one=not new_bootstrap)
+
     @cluster(
         num_nodes=6,
         # A decom can look like a restart in terms of logs from peers dropping
@@ -229,28 +304,24 @@ class NodesDecommissioningTest(EndToEndTest):
         log_allow_list=RESTART_LOG_ALLOW_LIST)
     @matrix(delete_topic=[True, False], tick_interval=[5000, 3600000])
     def test_decommissioning_working_node(self, delete_topic, tick_interval):
-
-        # Decommission should progress regardless of tick interval as the invocation
-        # and progress is event driven.
-        # Lower concurrent moves results in multiple planner runs to achieve the
-        # desired state.
-        self.start_redpanda(num_nodes=4,
-                            extra_rp_conf={
-                                'partition_autobalancing_tick_interval_ms':
-                                tick_interval,
-                                'partition_autobalancing_concurrent_moves': 2
-                            })
+        self.start_redpanda()
+        self.redpanda.set_cluster_config({
+            'partition_autobalancing_tick_interval_ms':
+            tick_interval,
+            'partition_autobalancing_concurrent_moves':
+            2
+        })
         self._create_topics()
 
-        self.start_producer(1)
-        self.start_consumer(1)
+        self.start_producer()
+        self.start_consumer()
 
         to_decommission = random.choice(self.redpanda.nodes)
-        to_decommission_id = self.redpanda.idx(to_decommission)
+        to_decommission_id = self.redpanda.node_id(to_decommission)
         self.logger.info(f"decommissioning node: {to_decommission_id}", )
         self._decommission(to_decommission_id)
         if delete_topic:
-            self.client().delete_topic(self.topic)
+            self.client().delete_topic(self._topic)
         self._wait_for_node_removed(to_decommission_id)
 
         # Stop the decommissioned node, because redpanda internally does not
@@ -261,28 +332,26 @@ class NodesDecommissioningTest(EndToEndTest):
         self.redpanda.stop_node(to_decommission)
 
         if not delete_topic:
-            self.run_validation(enable_idempotence=False,
-                                consumer_timeout_sec=45)
+            self.verify()
 
     @cluster(num_nodes=6, log_allow_list=CHAOS_LOG_ALLOW_LIST)
     def test_decommissioning_crashed_node(self):
 
-        self.start_redpanda(num_nodes=4)
+        self.start_redpanda()
         self._create_topics(replication_factors=[3])
 
-        self.start_producer(1)
-        self.start_consumer(1)
-        self.await_startup()
+        self.start_producer()
+        self.start_consumer()
 
         to_decommission = self.redpanda.nodes[1]
-        node_id = self.redpanda.idx(to_decommission)
+        node_id = self.redpanda.node_id(to_decommission)
         self.redpanda.stop_node(node=to_decommission)
         self.logger.info(f"decommissioning node: {node_id}", )
         self._decommission(node_id)
 
         self._wait_for_node_removed(node_id)
 
-        self.run_validation(enable_idempotence=False, consumer_timeout_sec=45)
+        self.verify()
 
     @cluster(
         num_nodes=6,
@@ -290,12 +359,11 @@ class NodesDecommissioningTest(EndToEndTest):
         # connections with it
         log_allow_list=RESTART_LOG_ALLOW_LIST)
     def test_decommissioning_cancel_ongoing_movements(self):
-        self.start_redpanda(num_nodes=4)
+        self.start_redpanda()
         self._create_topics()
 
-        self.start_producer(1)
-        self.start_consumer(1)
-        self.await_startup()
+        self.start_producer()
+        self.start_consumer()
 
         brokers = self.admin.get_brokers()
         to_decommission = random.choice(brokers)['node_id']
@@ -337,16 +405,15 @@ class NodesDecommissioningTest(EndToEndTest):
         # stop decommissioned node
         self.redpanda.stop_node(self.redpanda.get_node(to_decommission))
 
-        self.run_validation(enable_idempotence=False, consumer_timeout_sec=90)
+        self.verify()
 
     @cluster(num_nodes=6, log_allow_list=RESTART_LOG_ALLOW_LIST)
     def test_recommissioning_node(self):
-        self.start_redpanda(num_nodes=4)
+        self.start_redpanda()
         self._create_topics()
 
-        self.start_producer(1)
-        self.start_consumer(1)
-        self.await_startup()
+        self.start_producer()
+        self.start_consumer()
 
         brokers = self.admin.get_brokers()
         to_decommission = random.choice(brokers)['node_id']
@@ -371,14 +438,15 @@ class NodesDecommissioningTest(EndToEndTest):
                    timeout_sec=15,
                    backoff_sec=1)
 
+        self.verify()
+
     @cluster(num_nodes=6, log_allow_list=RESTART_LOG_ALLOW_LIST)
     def test_recommissioning_node_finishes(self):
-        self.start_redpanda(num_nodes=4)
+        self.start_redpanda()
         self._create_topics()
 
-        self.start_producer(1)
-        self.start_consumer(1)
-        self.await_startup()
+        self.start_producer()
+        self.start_consumer()
 
         brokers = self.admin.get_brokers()
         to_decommission = random.choice(brokers)['node_id']
@@ -409,14 +477,15 @@ class NodesDecommissioningTest(EndToEndTest):
         self._set_recovery_rate(1024 * 1024 * 1024)
         self._wait_for_node_removed(to_decommission)
 
+        self.verify()
+
     @cluster(num_nodes=6, log_allow_list=RESTART_LOG_ALLOW_LIST)
     def test_recommissioning_do_not_stop_all_moves_node(self):
-        self.start_redpanda(num_nodes=4)
+        self.start_redpanda()
         self._create_topics()
 
-        self.start_producer(1)
-        self.start_consumer(1)
-        self.await_startup()
+        self.start_producer()
+        self.start_consumer()
 
         brokers = self.admin.get_brokers()
         to_decommission = random.choice(brokers)['node_id']
@@ -463,15 +532,15 @@ class NodesDecommissioningTest(EndToEndTest):
             return len(reconfigurations) == 1
 
         wait_until(one_left_moving, timeout_sec=15, backoff_sec=1)
+        self.verify()
 
-    @cluster(num_nodes=7, log_allow_list=RESTART_LOG_ALLOW_LIST)
+    @cluster(num_nodes=6, log_allow_list=RESTART_LOG_ALLOW_LIST)
     def test_recommissioning_one_of_decommissioned_nodes(self):
-        self.start_redpanda(num_nodes=5)
+        self.start_redpanda()
         self._create_topics()
 
-        self.start_producer(1)
-        self.start_consumer(1)
-        self.await_startup()
+        self.start_producer()
+        self.start_consumer()
 
         brokers = self.admin.get_brokers()
         to_decommission_1 = random.choice(brokers)['node_id']
@@ -512,42 +581,33 @@ class NodesDecommissioningTest(EndToEndTest):
 
         self._set_recovery_rate(2 << 30)
         self._wait_for_node_removed(to_decommission_2)
-
-    def producer_throughput(self):
-        return 1000 if self.debug_mode else 100000
-
-    def records_to_wait(self):
-        return 8 * self.producer_throughput()
+        self.verify()
 
     @cluster(num_nodes=6, log_allow_list=RESTART_LOG_ALLOW_LIST)
     @parametrize(shutdown_decommissioned=True)
     @parametrize(shutdown_decommissioned=False)
     def test_decommissioning_rebalancing_node(self, shutdown_decommissioned):
-        # start redpanda with disabled rebalancing
-        self.redpanda = make_redpanda_service(
-            self.test_context,
-            4,
-            extra_rp_conf={"partition_autobalancing_mode": "node_add"})
-        # start 3 nodes
-        self.redpanda.start(nodes=self.redpanda.nodes[0:3])
+
+        # start 4 nodes
+        self.redpanda.start(nodes=self.redpanda.nodes[0:4])
         self._client = DefaultClient(self.redpanda)
         self._rpk_client = RpkTool(self.redpanda)
 
         topic = TopicSpec(partition_count=64, replication_factor=3)
 
         self.client().create_topic(topic)
-        self.topic = topic.name
+        self._topic = topic.name
 
-        self.start_producer(1, throughput=self.producer_throughput())
-        self.start_consumer(1)
-        self.await_startup(min_records=self.records_to_wait(), timeout_sec=120)
+        self.start_producer()
+        self.start_consumer()
+
         # throttle recovery
         self.redpanda.clean_node(self.redpanda.nodes[-1],
                                  preserve_current_install=True)
         self.redpanda.start_node(self.redpanda.nodes[-1])
         self._set_recovery_rate(10)
-        # wait for rebalancing to start
 
+        # wait for rebalancing to start
         to_decommission = self.redpanda.nodes[-1]
         to_decommission_id = self.redpanda.node_id(to_decommission)
         first_node = self.redpanda.nodes[0]
@@ -566,7 +626,7 @@ class NodesDecommissioningTest(EndToEndTest):
         self._set_recovery_rate(2 << 30)
         self._wait_for_node_removed(to_decommission_id)
 
-        self.run_validation(enable_idempotence=False, consumer_timeout_sec=240)
+        self.verify()
 
     @cluster(num_nodes=6, log_allow_list=RESTART_LOG_ALLOW_LIST)
     @parametrize(delete_topic=True)
@@ -574,12 +634,11 @@ class NodesDecommissioningTest(EndToEndTest):
     def test_decommissioning_finishes_after_manual_cancellation(
             self, delete_topic):
 
-        self.start_redpanda(num_nodes=4)
+        self.start_redpanda()
         self._create_topics(replication_factors=[3])
 
-        self.start_producer(1, throughput=self.producer_throughput())
-        self.start_consumer(1)
-        self.await_startup(min_records=self.records_to_wait(), timeout_sec=180)
+        self.start_producer()
+        self.start_consumer()
 
         to_decommission = random.choice(self.redpanda.nodes)
         node_id = self.redpanda.node_id(to_decommission)
@@ -599,26 +658,24 @@ class NodesDecommissioningTest(EndToEndTest):
         self.admin.cancel_all_reconfigurations()
 
         if delete_topic:
-            self.client().delete_topic(self.topic)
+            self.client().delete_topic(self._topic)
 
         self._set_recovery_rate(2 << 30)
         self._wait_for_node_removed(node_id)
 
         if not delete_topic:
-            self.run_validation(enable_idempotence=False,
-                                consumer_timeout_sec=240)
+            self.verify()
 
     @cluster(num_nodes=6, log_allow_list=RESTART_LOG_ALLOW_LIST)
     @parametrize(node_is_alive=True)
     @parametrize(node_is_alive=False)
     def test_flipping_decommission_recommission(self, node_is_alive):
 
-        self.start_redpanda(num_nodes=4)
+        self.start_redpanda()
         self._create_topics(replication_factors=[3])
 
-        self.start_producer(1, throughput=self.producer_throughput())
-        self.start_consumer(1)
-        self.await_startup(min_records=self.records_to_wait(), timeout_sec=180)
+        self.start_producer()
+        self.start_consumer()
 
         to_decommission = random.choice(self.redpanda.nodes)
         node_id = self.redpanda.node_id(to_decommission)
@@ -651,7 +708,7 @@ class NodesDecommissioningTest(EndToEndTest):
 
             self._wait_for_node_removed(node_id)
 
-        self.run_validation(enable_idempotence=False, consumer_timeout_sec=240)
+        self.verify()
 
     def _replicas_per_node(self):
         kafkacat = KafkaCat(self.redpanda)
@@ -669,15 +726,14 @@ class NodesDecommissioningTest(EndToEndTest):
         return node_replicas
 
     @skip_debug_mode
-    @cluster(num_nodes=7, log_allow_list=RESTART_LOG_ALLOW_LIST)
+    @cluster(num_nodes=6, log_allow_list=RESTART_LOG_ALLOW_LIST)
     def test_multiple_decommissions(self):
         self._extra_node_conf = {"empty_seed_starts_cluster": False}
-        self.start_redpanda(num_nodes=5, new_bootstrap=True)
+        self.start_redpanda()
         total_partitions = self._create_topics()
 
-        self.start_producer(1)
-        self.start_consumer(1)
-        self.await_startup()
+        self.start_producer()
+        self.start_consumer()
 
         def node_by_id(node_id):
             for n in self.redpanda.nodes:
@@ -718,13 +774,13 @@ class NodesDecommissioningTest(EndToEndTest):
                                     auto_assign_node_id=True,
                                     omit_seeds_on_idx_one=False)
 
-        self.run_validation(enable_idempotence=False, consumer_timeout_sec=180)
+        self.verify()
 
-    @cluster(num_nodes=4, log_allow_list=RESTART_LOG_ALLOW_LIST)
+    @cluster(num_nodes=5, log_allow_list=RESTART_LOG_ALLOW_LIST)
     @parametrize(new_bootstrap=True)
     @parametrize(new_bootstrap=False)
     def test_node_is_not_allowed_to_join_after_restart(self, new_bootstrap):
-        self.start_redpanda(num_nodes=4, new_bootstrap=new_bootstrap)
+        self.start_redpanda(new_bootstrap=new_bootstrap)
         self._create_topics()
 
         to_decommission = self.redpanda.nodes[-1]
@@ -757,7 +813,7 @@ class NodesDecommissioningTest(EndToEndTest):
 
         wait_until(tried_to_join, 20, 1)
 
-        assert len(self.admin.get_brokers(node=self.redpanda.nodes[0])) == 3
+        assert len(self.admin.get_brokers(node=self.redpanda.nodes[0])) == 4
         self.redpanda.stop_node(to_decommission)
         # clean node and restart it, it should join the cluster
         self.redpanda.clean_node(to_decommission, preserve_logs=True)
@@ -765,4 +821,4 @@ class NodesDecommissioningTest(EndToEndTest):
                                  omit_seeds_on_idx_one=not new_bootstrap,
                                  auto_assign_node_id=new_bootstrap)
 
-        assert len(self.admin.get_brokers(node=self.redpanda.nodes[0])) == 4
+        assert len(self.admin.get_brokers(node=self.redpanda.nodes[0])) == 5
