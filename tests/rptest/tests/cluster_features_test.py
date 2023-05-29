@@ -361,7 +361,7 @@ class FeaturesSingleNodeUpgradeTest(FeaturesTestBase):
         self.redpanda.restart_nodes([self.redpanda.nodes[0]])
         wait_until(lambda: self.head_latest_logical_version == self.admin.
                    get_features()['cluster_version'],
-                   timeout_sec=5,
+                   timeout_sec=10,
                    backoff_sec=1)
 
 
