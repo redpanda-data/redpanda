@@ -87,7 +87,7 @@ private:
 /// This is needed to 1) avoid querying cloud storage on partition startup and
 /// 2) to replicate metadata to raft followers so that they can decide which
 /// segments can be safely evicted.
-class archival_metadata_stm final : public persisted_stm {
+class archival_metadata_stm final : public persisted_stm<> {
     friend class details::archival_metadata_stm_accessor;
 
 public:

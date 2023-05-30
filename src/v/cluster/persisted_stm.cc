@@ -52,22 +52,31 @@ std::optional<cluster::stm_snapshot_header> read_snapshot_header(
 } // namespace
 namespace cluster {
 
-persisted_stm::persisted_stm(
-  ss::sstring snapshot_mgr_name, ss::logger& logger, raft::consensus* c)
+template<supported_stm_snapshot T>
+template<typename... Args>
+persisted_stm<T>::persisted_stm(
+  ss::sstring snapshot_mgr_name,
+  ss::logger& logger,
+  raft::consensus* c,
+  Args&&... args)
   : raft::state_machine(c, logger, ss::default_priority_class())
   , _c(c)
   , _log(logger, ssx::sformat("[{} ({})]", _c->ntp(), name()))
-  , _snapshot_backend(std::move(snapshot_mgr_name), _log, c) {}
+  , _snapshot_backend(
+      std::move(snapshot_mgr_name), _log, c, std::forward<Args>(args)...) {}
 
-ss::future<std::optional<stm_snapshot>> persisted_stm::load_snapshot() {
+template<supported_stm_snapshot T>
+ss::future<std::optional<stm_snapshot>> persisted_stm<T>::load_snapshot() {
     return _snapshot_backend.load_snapshot();
 }
 
-ss::future<> persisted_stm::remove_persistent_state() {
+template<supported_stm_snapshot T>
+ss::future<> persisted_stm<T>::remove_persistent_state() {
     return _snapshot_backend.remove_persistent_state();
 }
 
-ss::future<> persisted_stm::persist_snapshot(stm_snapshot&& snapshot) {
+template<supported_stm_snapshot T>
+ss::future<> persisted_stm<T>::persist_snapshot(stm_snapshot&& snapshot) {
     return _snapshot_backend.persist_snapshot(std::move(snapshot));
 }
 
@@ -172,7 +181,8 @@ size_t file_backed_stm_snapshot::get_snapshot_size() const {
     return _snapshot_size;
 }
 
-ss::future<> persisted_stm::wait_for_snapshot_hydrated() {
+template<supported_stm_snapshot T>
+ss::future<> persisted_stm<T>::wait_for_snapshot_hydrated() {
     auto f = ss::now();
     if (unlikely(!_resolved_when_snapshot_hydrated.available())) {
         f = _resolved_when_snapshot_hydrated.get_shared_future();
@@ -180,7 +190,8 @@ ss::future<> persisted_stm::wait_for_snapshot_hydrated() {
     return f;
 }
 
-ss::future<> persisted_stm::do_make_snapshot() {
+template<supported_stm_snapshot T>
+ss::future<> persisted_stm<T>::do_make_snapshot() {
     auto snapshot = co_await take_snapshot();
     auto offset = snapshot.header.offset;
 
@@ -188,23 +199,27 @@ ss::future<> persisted_stm::do_make_snapshot() {
     _last_snapshot_offset = std::max(_last_snapshot_offset, offset);
 }
 
-void persisted_stm::make_snapshot_in_background() {
+template<supported_stm_snapshot T>
+void persisted_stm<T>::make_snapshot_in_background() {
     ssx::spawn_with_gate(_gate, [this] { return make_snapshot(); });
 }
 
-ss::future<> persisted_stm::make_snapshot() {
+template<supported_stm_snapshot T>
+ss::future<> persisted_stm<T>::make_snapshot() {
     return _op_lock.with([this]() {
         auto f = wait_for_snapshot_hydrated();
         return f.then([this] { return do_make_snapshot(); });
     });
 }
 
-uint64_t persisted_stm::get_snapshot_size() const {
+template<supported_stm_snapshot T>
+uint64_t persisted_stm<T>::get_snapshot_size() const {
     return _snapshot_backend.get_snapshot_size();
 }
 
+template<supported_stm_snapshot T>
 ss::future<>
-persisted_stm::ensure_snapshot_exists(model::offset target_offset) {
+persisted_stm<T>::ensure_snapshot_exists(model::offset target_offset) {
     return _op_lock.with([this, target_offset]() {
         auto f = wait_for_snapshot_hydrated();
 
@@ -229,16 +244,19 @@ persisted_stm::ensure_snapshot_exists(model::offset target_offset) {
     });
 }
 
-model::offset persisted_stm::max_collectible_offset() {
+template<supported_stm_snapshot T>
+model::offset persisted_stm<T>::max_collectible_offset() {
     return model::offset::max();
 }
 
+template<supported_stm_snapshot T>
 ss::future<fragmented_vector<model::tx_range>>
-persisted_stm::aborted_tx_ranges(model::offset, model::offset) {
+persisted_stm<T>::aborted_tx_ranges(model::offset, model::offset) {
     return ss::make_ready_future<fragmented_vector<model::tx_range>>();
 }
 
-ss::future<> persisted_stm::wait_offset_committed(
+template<supported_stm_snapshot T>
+ss::future<> persisted_stm<T>::wait_offset_committed(
   model::timeout_clock::duration timeout,
   model::offset offset,
   model::term_id term) {
@@ -249,7 +267,8 @@ ss::future<> persisted_stm::wait_offset_committed(
     return _c->commit_index_updated().wait(timeout, stop_cond);
 }
 
-ss::future<bool> persisted_stm::do_sync(
+template<supported_stm_snapshot T>
+ss::future<bool> persisted_stm<T>::do_sync(
   model::timeout_clock::duration timeout,
   model::offset offset,
   model::term_id term) {
@@ -321,7 +340,9 @@ ss::future<bool> persisted_stm::do_sync(
     co_return false;
 }
 
-ss::future<bool> persisted_stm::sync(model::timeout_clock::duration timeout) {
+template<supported_stm_snapshot T>
+ss::future<bool>
+persisted_stm<T>::sync(model::timeout_clock::duration timeout) {
     auto term = _c->term();
     if (!_c->is_leader()) {
         co_return false;
@@ -367,7 +388,8 @@ ss::future<bool> persisted_stm::sync(model::timeout_clock::duration timeout) {
     co_return is_synced;
 }
 
-ss::future<bool> persisted_stm::wait_no_throw(
+template<supported_stm_snapshot T>
+ss::future<bool> persisted_stm<T>::wait_no_throw(
   model::offset offset,
   model::timeout_clock::time_point deadline,
   std::optional<std::reference_wrapper<ss::abort_source>> as) {
@@ -392,7 +414,8 @@ ss::future<bool> persisted_stm::wait_no_throw(
       });
 }
 
-ss::future<> persisted_stm::start() {
+template<supported_stm_snapshot T>
+ss::future<> persisted_stm<T>::start() {
     std::optional<stm_snapshot> maybe_snapshot;
     try {
         maybe_snapshot = co_await load_snapshot();
@@ -448,5 +471,10 @@ ss::future<> persisted_stm::start() {
     }
     co_await state_machine::start();
 }
+
+template class persisted_stm<file_backed_stm_snapshot>;
+
+template persisted_stm<file_backed_stm_snapshot>::persisted_stm(
+  ss::sstring, seastar::logger&, raft::consensus*);
 
 } // namespace cluster

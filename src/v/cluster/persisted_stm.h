@@ -79,6 +79,18 @@ private:
     size_t _snapshot_size{0};
 };
 
+template<typename T>
+concept supported_stm_snapshot = requires(T s, stm_snapshot&& snapshot) {
+    {
+        s.load_snapshot()
+    } -> std::same_as<ss::future<std::optional<stm_snapshot>>>;
+    { s.persist_snapshot(std::move(snapshot)) } -> std::same_as<ss::future<>>;
+    { s.remove_persistent_state() } -> std::same_as<ss::future<>>;
+    { s.get_snapshot_size() } -> std::convertible_to<size_t>;
+    { s.name() } -> std::convertible_to<const ss::sstring&>;
+    { s.store_path() } -> std::convertible_to<ss::sstring>;
+};
+
 /**
  * persisted_stm is a base class for building ingestion time (*) state
  * machines. Ingestion time means a state machine doesn't need to
@@ -103,11 +115,14 @@ private:
  * and uses it as a base for replaying the commands.
  */
 
+template<supported_stm_snapshot T = file_backed_stm_snapshot>
 class persisted_stm
   : public raft::state_machine
   , public storage::snapshotable_stm {
 public:
-    explicit persisted_stm(ss::sstring, ss::logger&, raft::consensus*);
+    template<typename... Args>
+    explicit persisted_stm(
+      ss::sstring, ss::logger&, raft::consensus*, Args&&...);
 
     void make_snapshot_in_background() final;
     ss::future<> ensure_snapshot_exists(model::offset) final;
@@ -182,7 +197,7 @@ protected:
     model::offset _insync_offset;
     raft::consensus* _c;
     prefix_logger _log;
-    file_backed_stm_snapshot _snapshot_backend;
+    T _snapshot_backend;
 };
 
 } // namespace cluster

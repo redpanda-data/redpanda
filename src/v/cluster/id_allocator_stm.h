@@ -31,7 +31,7 @@ namespace cluster {
 
 // id_allocator is a service to generate cluster-wide unique id (int64)
 
-class id_allocator_stm final : public persisted_stm {
+class id_allocator_stm final : public persisted_stm<> {
 public:
     struct stm_allocation_result {
         int64_t id;
