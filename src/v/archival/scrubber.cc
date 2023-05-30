@@ -28,6 +28,8 @@
 namespace {
 static constexpr std::string_view serde_extension = ".bin";
 static constexpr std::string_view json_extension = ".json";
+
+static constexpr auto partition_purge_timeout = 20s;
 } // namespace
 
 namespace archival {
@@ -51,8 +53,12 @@ ss::future<scrubber::purge_result> scrubber::purge_partition(
   model::ntp ntp,
   model::initial_revision_id remote_revision,
   retry_chain_node& parent_rtc) {
-    retry_chain_node manifest_rtc(
-      ss::lowres_clock::now() + 5s, 1s, &parent_rtc);
+    retry_chain_node partition_purge_rtc(
+      partition_purge_timeout,
+      1s /* unused */,
+      retry_strategy::disallow,
+      &parent_rtc);
+    retry_chain_logger ctxlog(archival_log, partition_purge_rtc);
 
     if (lifecycle_marker.config.is_read_replica()) {
         // Paranoia check: should never happen.
@@ -60,7 +66,7 @@ ss::future<scrubber::purge_result> scrubber::purge_partition(
         // has read replica flag set, something isn't right here, do not
         // delete.
         vlog(
-          archival_log.error,
+          ctxlog.error,
           "Read replica mode set in tombstone on {}, refusing to purge",
           ntp);
         co_return purge_result{.status = purge_status::success, .ops = 0};
@@ -71,20 +77,20 @@ ss::future<scrubber::purge_result> scrubber::purge_partition(
         // We should not have been called for a topic with remote delete
         // disabled, but double-check just in case.
         vlog(
-          archival_log.error,
+          ctxlog.error,
           "Remote delete disabled in tombstone on {}, refusing to purge",
           ntp);
         co_return purge_result{.status = purge_status::success, .ops = 0};
     }
 
     auto collected = co_await collect_manifest_paths(
-      bucket, ntp, remote_revision, parent_rtc);
+      bucket, ntp, remote_revision, partition_purge_rtc);
     if (!collected) {
         co_return purge_result{
           .status = purge_status::retryable_failure, .ops = 0};
     } else if (collected->empty()) {
         vlog(
-          archival_log.info,
+          ctxlog.info,
           "Inline deletion already cleaned-up everything. Nothing to purge",
           ntp);
         co_return purge_result{.status = purge_status::success, .ops = 0};
@@ -94,7 +100,6 @@ ss::future<scrubber::purge_result> scrubber::purge_partition(
       = collected->flatten();
 
     size_t ops_performed = 0;
-    size_t retryable_failure = 0;
     size_t permanent_failure = 0;
     for (auto rit = manifests_to_purge.rbegin();
          rit != manifests_to_purge.rend();
@@ -110,14 +115,27 @@ ss::future<scrubber::purge_result> scrubber::purge_partition(
           remote_revision,
           remote_manifest_path{*rit},
           format,
-          manifest_rtc);
+          partition_purge_rtc);
 
         ops_performed += local_res.ops;
+
         switch (local_res.status) {
         case purge_status::retryable_failure:
-            ++retryable_failure;
+            // Drop out when encountering a retry-able failure. These are often
+            // back-offs from cloud storage, so it's wise to terminate the scrub
+            // and retry later.
+            vlog(
+              ctxlog.info,
+              "Retryable failures encountered while purging partition {}. Will "
+              "retry ...",
+              ntp);
+
+            co_return purge_result{
+              .status = purge_status::retryable_failure, .ops = ops_performed};
             break;
         case purge_status::permanent_failure:
+            // Keep going when encountering a permanent failure. We might still
+            // be able to purge subsequent manifests.
             ++permanent_failure;
             break;
         case purge_status::success:
@@ -127,36 +145,29 @@ ss::future<scrubber::purge_result> scrubber::purge_partition(
 
     if (legacy_manifest_path) {
         vlog(
-          archival_log.debug,
+          ctxlog.debug,
           "Erasing legacy partition manifest {}",
           *legacy_manifest_path);
-        retry_chain_node legacy_manifest_delete_rtc(
-          ss::lowres_clock::now() + 5s, 1s, &parent_rtc);
-        ops_performed += 1;
         const auto manifest_delete_result = co_await _api.delete_object(
           bucket,
           cloud_storage_clients::object_key(*legacy_manifest_path),
-          legacy_manifest_delete_rtc);
+          partition_purge_rtc);
         if (manifest_delete_result != upload_result::success) {
-            ++retryable_failure;
+            vlog(
+              ctxlog.info,
+              "Retryable failures encountered while purging partition legacy "
+              "manifest at {}. Will "
+              "retry ...",
+              legacy_manifest_path.value());
+
+            co_return purge_result{
+              .status = purge_status::retryable_failure, .ops = ops_performed};
         }
     }
 
-    // If any of the purges resulted in a retryable failure, map the entire
-    // operation to a retryable failure. Otherwise, if there were any permanent
-    // failures map to permanent failure.
-    if (retryable_failure > 0) {
+    if (permanent_failure > 0) {
         vlog(
-          archival_log.info,
-          "Retryable failures encountered while purging partition {}. Will "
-          "retry ...",
-          ntp);
-
-        co_return purge_result{
-          .status = purge_status::retryable_failure, .ops = ops_performed};
-    } else if (permanent_failure > 0) {
-        vlog(
-          archival_log.error,
+          ctxlog.error,
           "Permanent failures encountered while purging partition {}. Giving "
           "up ...",
           ntp);
@@ -165,7 +176,7 @@ ss::future<scrubber::purge_result> scrubber::purge_partition(
           .status = purge_status::permanent_failure, .ops = ops_performed};
     } else {
         vlog(
-          archival_log.info,
+          ctxlog.info,
           "Finished erasing partition {} from object storage in {} requests",
           ntp,
           ops_performed);
@@ -181,8 +192,8 @@ scrubber::collect_manifest_paths(
   model::ntp ntp,
   model::initial_revision_id remote_revision,
   retry_chain_node& parent_rtc) {
-    retry_chain_node collection_rtc(
-      ss::lowres_clock::now() + 5s, 1s, &parent_rtc);
+    retry_chain_node collection_rtc(&parent_rtc);
+    retry_chain_logger ctxlog(archival_log, collection_rtc);
 
     cloud_storage::partition_manifest manifest(ntp, remote_revision);
     auto path = manifest.get_manifest_path(
@@ -203,7 +214,7 @@ scrubber::collect_manifest_paths(
 
     if (list_result.has_error()) {
         vlog(
-          archival_log.warn,
+          ctxlog.warn,
           "Failed to collect manifests to scrub partition {}",
           ntp);
 
@@ -237,13 +248,13 @@ ss::future<scrubber::purge_result> scrubber::purge_manifest(
   remote_manifest_path manifest_key,
   cloud_storage::manifest_format format,
   retry_chain_node& parent_rtc) {
-    retry_chain_node manifest_purge_rtc(
-      ss::lowres_clock::now() + 5s, 1s, &parent_rtc);
+    retry_chain_node manifest_purge_rtc(&parent_rtc);
+    retry_chain_logger ctxlog(archival_log, manifest_purge_rtc);
 
     purge_result result{.status = purge_status::success, .ops = 0};
 
     vlog(
-      archival_log.info,
+      ctxlog.info,
       "Purging manifest at {} and its contents for partition {}",
       manifest_key(),
       ntp);
@@ -253,15 +264,12 @@ ss::future<scrubber::purge_result> scrubber::purge_manifest(
       bucket, {format, manifest_key}, manifest, manifest_purge_rtc);
 
     if (manifest_get_result == download_result::notfound) {
-        vlog(
-          archival_log.debug,
-          "Partition manifest get {} not found",
-          manifest_key);
+        vlog(ctxlog.debug, "Partition manifest get {} not found", manifest_key);
         result.status = purge_status::permanent_failure;
         co_return result;
     } else if (manifest_get_result != download_result::success) {
         vlog(
-          archival_log.debug,
+          ctxlog.debug,
           "Partition manifest get {} failed: {}",
           manifest_key(),
           manifest_get_result);
@@ -277,9 +285,6 @@ ss::future<scrubber::purge_result> scrubber::purge_manifest(
     const auto estimate_delete_ops = std::max(
       static_cast<size_t>(manifest.size() / 1000), size_t{1});
 
-    // TODO: tip off remote() to not retry on SlowDown responses: if we hit
-    // one during housekeeping we should drop out.  Maybe retry_chain_node
-    // could have a "drop out on slowdown" flag?
     const auto erase_result = co_await cloud_storage::remote_partition::erase(
       _api, bucket, std::move(manifest), manifest_key, manifest_purge_rtc);
 
@@ -287,7 +292,7 @@ ss::future<scrubber::purge_result> scrubber::purge_manifest(
 
     if (erase_result != cloud_storage::remote_partition::erase_result::erased) {
         vlog(
-          archival_log.debug,
+          ctxlog.debug,
           "One or more objects deletions failed for manifest {} of {}",
           manifest_key(),
           ntp);
