@@ -8,6 +8,8 @@
 # by the Apache License, Version 2.0
 
 import functools
+import time
+import psutil
 
 from rptest.services.redpanda import RedpandaService
 from ducktape.mark.resource import ClusterUseMetadata
@@ -36,6 +38,32 @@ def cluster(log_allow_list=None, check_allowed_error_logs=True, **kwargs):
             if isinstance(svc, RedpandaService) and svc is not test.redpanda:
                 yield svc
 
+    def log_local_load(test_name, logger, t_initial, initial_disk_stats):
+        """
+        Log indicators of system load on the machine running ducktape tests.  When
+        running tests in a single-node docker environment, this is useful to help
+        diagnose whether slow-running/flaky tests are the victim of an overloaded
+        node.
+        """
+        load = psutil.getloadavg()
+        memory = psutil.virtual_memory()
+        swap = psutil.swap_memory()
+        disk_stats = psutil.disk_io_counters()
+        disk_deltas = {}
+        disk_rates = {}
+        runtime = time.time() - t_initial
+        for f in disk_stats._fields:
+            a = getattr(initial_disk_stats, f)
+            b = getattr(disk_stats, f)
+            disk_deltas[f] = b - a
+            disk_rates[f] = (b - a) / runtime
+
+        logger.info(f"Load average after {test_name}: {load}")
+        logger.info(f"Memory after {test_name}: {memory}")
+        logger.info(f"Swap after {test_name}: {swap}")
+        logger.info(f"Disk activity during {test_name}: {disk_deltas}")
+        logger.info(f"Disk rates during {test_name}: {disk_rates}")
+
     def cluster_use_metadata_adder(f):
         Mark.mark(f, ClusterUseMetadata(**kwargs))
 
@@ -45,12 +73,18 @@ def cluster(log_allow_list=None, check_allowed_error_logs=True, **kwargs):
             # such as RedpandaTest subclasses
             assert hasattr(self, 'redpanda')
 
+            t_initial = time.time()
+            disk_stats_initial = psutil.disk_io_counters()
             try:
                 r = f(self, *args, **kwargs)
             except:
                 if not hasattr(self, 'redpanda') or self.redpanda is None:
                     # We failed so early there isn't even a RedpandaService instantiated
                     raise
+
+                log_local_load(self.test_context.test_name,
+                               self.redpanda.logger, t_initial,
+                               disk_stats_initial)
 
                 for redpanda in all_redpandas(self):
                     redpanda.logger.exception(
@@ -71,6 +105,24 @@ def cluster(log_allow_list=None, check_allowed_error_logs=True, **kwargs):
                     # We passed without instantiating a RedpandaService, for example
                     # in a skipped test
                     return r
+
+                log_local_load(self.test_context.test_name,
+                               self.redpanda.logger, t_initial,
+                               disk_stats_initial)
+
+                # In debug mode, any test writing too much traffic will impose too much
+                # load on the system and destabilize other tests.  Detect this with a
+                # post-test check for total bytes written.
+                debug_mode_data_limit = 64 * 1024 * 1024
+                if hasattr(self, 'debug_mode') and self.debug_mode is True:
+                    bytes_written = self.redpanda.estimate_bytes_written()
+                    if bytes_written is not None:
+                        self.redpanda.logger.info(
+                            f"Estimated bytes written: {bytes_written}")
+                        if bytes_written > debug_mode_data_limit:
+                            self.redpanda.logger.error(
+                                f"Debug-mode test wrote too much data ({int(bytes_written) // (1024 * 1024)}MiB)"
+                            )
 
                 for redpanda in all_redpandas(self):
                     redpanda.logger.info(

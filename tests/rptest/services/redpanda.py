@@ -3367,7 +3367,9 @@ class RedpandaService(RedpandaServiceBase):
               family = vectorized_cluster_partition_under_replicated_replicas
               sample = vectorized_cluster_partition_under_replicated_replicas
         """
-        nodes = nodes or self.nodes
+        if nodes is None:
+            nodes = self.nodes
+
         sample_values = []
         for node in nodes:
             metrics = self.metrics(node, metrics_endpoint)
@@ -3701,6 +3703,22 @@ class RedpandaService(RedpandaServiceBase):
                 raise RuntimeError(
                     f"Oversized controller log detected!  {max_length} records"
                 )
+
+    def estimate_bytes_written(self):
+        try:
+            samples = self.metrics_sample(
+                "vectorized_io_queue_total_write_bytes_total",
+                nodes=self.started_nodes())
+        except Exception as e:
+            self.logger.warn(
+                f"Cannot check metrics, did a test finish with all nodes down? ({e})"
+            )
+            return None
+
+        if samples is not None and samples.samples:
+            return sum(s.value for s in samples.samples)
+        else:
+            return None
 
 
 def make_redpanda_service(context, num_brokers, **kwargs):
