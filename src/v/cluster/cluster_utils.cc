@@ -25,6 +25,15 @@
 
 #include <chrono>
 
+namespace detail {
+
+ss::sstring
+stm_snapshot_key(const ss::sstring& snapshot_name, const model::ntp& ntp) {
+    return ssx::sformat("{}/{}", snapshot_name, ntp);
+}
+
+} // namespace detail
+
 namespace cluster {
 
 std::vector<ss::shard_id>

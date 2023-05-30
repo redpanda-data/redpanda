@@ -79,6 +79,38 @@ private:
     size_t _snapshot_size{0};
 };
 
+class kvstore_backed_stm_snapshot {
+public:
+    kvstore_backed_stm_snapshot(
+      ss::sstring snapshot_name,
+      prefix_logger& log,
+      raft::consensus* c,
+      storage::kvstore& kvstore);
+
+    /// For testing
+    kvstore_backed_stm_snapshot(
+      ss::sstring snapshot_name,
+      prefix_logger& log,
+      model::ntp ntp,
+      storage::kvstore& kvstore);
+
+    ss::future<std::optional<stm_snapshot>> load_snapshot();
+    ss::future<> persist_snapshot(stm_snapshot&&);
+    const ss::sstring& name();
+    ss::sstring store_path() const;
+    ss::future<> remove_persistent_state();
+    size_t get_snapshot_size() const;
+
+private:
+    bytes snapshot_key() const;
+
+    model::ntp _ntp;
+    ss::sstring _name;
+    ss::sstring _snapshot_key;
+    prefix_logger& _log;
+    storage::kvstore& _kvstore;
+};
+
 template<typename T>
 concept supported_stm_snapshot = requires(T s, stm_snapshot&& snapshot) {
     {

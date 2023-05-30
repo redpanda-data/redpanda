@@ -10,12 +10,14 @@
 #include "cluster/persisted_stm.h"
 
 #include "bytes/iostream.h"
+#include "cluster/cluster_utils.h"
 #include "cluster/logger.h"
 #include "raft/consensus.h"
 #include "raft/errc.h"
 #include "raft/offset_monitor.h"
 #include "raft/types.h"
 #include "ssx/sformat.h"
+#include "storage/kvstore.h"
 #include "storage/record_batch_builder.h"
 #include "storage/snapshot.h"
 
@@ -61,9 +63,9 @@ persisted_stm<T>::persisted_stm(
   Args&&... args)
   : raft::state_machine(c, logger, ss::default_priority_class())
   , _c(c)
-  , _log(logger, ssx::sformat("[{} ({})]", _c->ntp(), name()))
-  , _snapshot_backend(
-      std::move(snapshot_mgr_name), _log, c, std::forward<Args>(args)...) {}
+  , _log(logger, ssx::sformat("[{} ({})]", _c->ntp(), snapshot_mgr_name))
+  , _snapshot_backend(snapshot_mgr_name, _log, c, std::forward<Args>(args)...) {
+}
 
 template<supported_stm_snapshot T>
 ss::future<std::optional<stm_snapshot>> persisted_stm<T>::load_snapshot() {
@@ -179,6 +181,94 @@ ss::sstring file_backed_stm_snapshot::store_path() const {
 
 size_t file_backed_stm_snapshot::get_snapshot_size() const {
     return _snapshot_size;
+}
+
+kvstore_backed_stm_snapshot::kvstore_backed_stm_snapshot(
+  ss::sstring snapshot_name,
+  prefix_logger& log,
+  raft::consensus* c,
+  storage::kvstore& kvstore)
+  : _ntp(c->ntp())
+  , _name(snapshot_name)
+  , _snapshot_key(detail::stm_snapshot_key(snapshot_name, c->ntp()))
+  , _log(log)
+  , _kvstore(kvstore) {}
+
+kvstore_backed_stm_snapshot::kvstore_backed_stm_snapshot(
+  ss::sstring snapshot_name,
+  prefix_logger& log,
+  model::ntp ntp,
+  storage::kvstore& kvstore)
+  : _ntp(ntp)
+  , _name(snapshot_name)
+  , _snapshot_key(detail::stm_snapshot_key(snapshot_name, ntp))
+  , _log(log)
+  , _kvstore(kvstore) {}
+
+bytes kvstore_backed_stm_snapshot::snapshot_key() const {
+    bytes k;
+    k.append(
+      reinterpret_cast<const uint8_t*>(_snapshot_key.begin()),
+      _snapshot_key.size());
+    return k;
+}
+
+const ss::sstring& kvstore_backed_stm_snapshot::name() { return _name; }
+
+ss::sstring kvstore_backed_stm_snapshot::store_path() const {
+    return _snapshot_key;
+}
+
+/// Serialized format of snapshots for newer format used by
+/// kvstore_backed_stm_snapshot, once deserialized struct will be decomposed
+/// into a normal stm_snapshot to keep the interface the same across impls
+struct stm_thin_snapshot
+  : serde::
+      envelope<stm_thin_snapshot, serde::version<0>, serde::compat_version<0>> {
+    model::offset offset;
+    iobuf data;
+
+    auto serde_fields() { return std::tie(offset, data); }
+};
+
+ss::future<std::optional<stm_snapshot>>
+kvstore_backed_stm_snapshot::load_snapshot() {
+    auto snapshot_blob = _kvstore.get(
+      storage::kvstore::key_space::stms, snapshot_key());
+    if (!snapshot_blob) {
+        co_return std::nullopt;
+    }
+    auto thin_snapshot = serde::from_iobuf<stm_thin_snapshot>(
+      std::move(*snapshot_blob));
+    stm_snapshot snapshot;
+    snapshot.header = stm_snapshot_header{
+      .version = snapshot_version,
+      .snapshot_size = static_cast<int32_t>(thin_snapshot.data.size_bytes()),
+      .offset = thin_snapshot.offset};
+    snapshot.data = std::move(thin_snapshot.data);
+    co_return snapshot;
+}
+
+ss::future<>
+kvstore_backed_stm_snapshot::persist_snapshot(stm_snapshot&& snapshot) {
+    stm_thin_snapshot thin_snapshot{
+      .offset = snapshot.header.offset, .data = std::move(snapshot.data)};
+    auto serialized_snapshot = serde::to_iobuf(std::move(thin_snapshot));
+    co_await _kvstore.put(
+      storage::kvstore::key_space::stms,
+      snapshot_key(),
+      std::move(serialized_snapshot));
+}
+
+ss::future<> kvstore_backed_stm_snapshot::remove_persistent_state() {
+    co_await _kvstore.remove(storage::kvstore::key_space::stms, snapshot_key());
+}
+
+size_t kvstore_backed_stm_snapshot::get_snapshot_size() const {
+    /// get_snapshot_size() is used to account for total size of files across
+    /// the disk, kvstore has its own accounting method so return 0 here to not
+    /// skew the existing metrics.
+    return 0;
 }
 
 template<supported_stm_snapshot T>
@@ -473,8 +563,12 @@ ss::future<> persisted_stm<T>::start() {
 }
 
 template class persisted_stm<file_backed_stm_snapshot>;
+template class persisted_stm<kvstore_backed_stm_snapshot>;
 
 template persisted_stm<file_backed_stm_snapshot>::persisted_stm(
   ss::sstring, seastar::logger&, raft::consensus*);
+
+template persisted_stm<kvstore_backed_stm_snapshot>::persisted_stm(
+  ss::sstring, seastar::logger&, raft::consensus*, storage::kvstore&);
 
 } // namespace cluster

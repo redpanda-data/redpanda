@@ -30,6 +30,8 @@
 
 namespace detail {
 
+ss::sstring stm_snapshot_key(const ss::sstring&, const model::ntp& ntp);
+
 template<typename T, typename Fn>
 std::vector<cluster::topic_result>
 create_topic_results(const std::vector<T>& topics, Fn fn) {
