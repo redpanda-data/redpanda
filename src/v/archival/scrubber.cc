@@ -311,13 +311,16 @@ scrubber::run(retry_chain_node& parent_rtc, run_quota_t quota) {
             auto purge_result = co_await _topics_frontend.local().purged_topic(
               nt_revision, 5s);
             if (purge_result.ec != cluster::errc::success) {
+                auto errc = cluster::make_error_code(purge_result.ec);
                 // Just log: this will get retried next time the scrubber runs
                 vlog(
                   archival_log.info,
                   "Failed to mark topic {} purged: {}, will retry on next "
                   "scrub",
                   nt_revision.nt,
-                  purge_result.ec);
+                  errc.message());
+            } else {
+                vlog(archival_log.info, "Topic {} purge complete", nt_revision);
             }
         }
     }

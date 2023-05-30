@@ -160,7 +160,7 @@ topic_table::apply(topic_lifecycle_transition soft_del, model::offset offset) {
     _last_applied_revision_id = model::revision_id(offset);
 
     if (soft_del.mode == topic_lifecycle_transition_mode::pending_gc) {
-        // Create tombstone
+        // Create a lifecycle marker
         auto tp = _topics.find(soft_del.topic.nt);
         if (tp == _topics.end()) {
             return ss::make_ready_future<std::error_code>(
@@ -175,14 +175,14 @@ topic_table::apply(topic_lifecycle_transition soft_del, model::offset offset) {
         _lifecycle_markers.emplace(soft_del.topic, tombstone);
         vlog(
           clusterlog.debug,
-          "Created tombstone for topic {} {}",
+          "Created lifecycle marker for topic {} {}",
           soft_del.topic.nt,
           soft_del.topic.initial_revision_id);
     } else if (soft_del.mode == topic_lifecycle_transition_mode::drop) {
         if (_lifecycle_markers.contains(soft_del.topic)) {
             vlog(
               clusterlog.debug,
-              "Purged tombstone for {} {}",
+              "Purged lifecycle marker for {} {}",
               soft_del.topic.nt,
               soft_del.topic.initial_revision_id);
             _lifecycle_markers.erase(soft_del.topic);
@@ -191,7 +191,9 @@ topic_table::apply(topic_lifecycle_transition soft_del, model::offset offset) {
             // This is harmless but should not happen and indicates a bug.
             vlog(
               clusterlog.error,
-              "Unexpected request to drop non-existent tombstone {} {}",
+              "Unexpected record at offset {} to drop non-existent lifecycle "
+              "marker {} {}",
+              offset,
               soft_del.topic.nt,
               soft_del.topic.initial_revision_id);
             return ss::make_ready_future<std::error_code>(

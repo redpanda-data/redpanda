@@ -648,6 +648,8 @@ ss::future<topic_result> topics_frontend::do_delete_topic(
                     auto ec = f.get0();
                     if (ec != errc::success) {
                         return topic_result(std::move(tp_ns), map_errc(ec));
+                    } else {
+                        vlog(clusterlog.info, "Deleting topic {}", tp_ns);
                     }
                     return topic_result(std::move(tp_ns), errc::success);
                 } catch (...) {
@@ -669,12 +671,9 @@ ss::future<topic_result> topics_frontend::do_delete_topic(
           : topic_lifecycle_transition_mode::oneshot_delete;
 
     if (mode == topic_lifecycle_transition_mode::oneshot_delete) {
-        vlog(clusterlog.debug, "Deleting {} without tombstone", tp_ns);
+        vlog(clusterlog.info, "Deleting topic {}", tp_ns);
     } else if (mode == topic_lifecycle_transition_mode::pending_gc) {
-        vlog(
-          clusterlog.debug,
-          "Deleting {} with tombstone (tiered storage enabled)",
-          tp_ns);
+        vlog(clusterlog.info, "Created deletion marker for topic {}", tp_ns);
     }
 
     auto remote_revision = topic_meta.get_remote_revision().value_or(
@@ -729,6 +728,16 @@ ss::future<topic_result> topics_frontend::do_purged_topic(
       topic.nt,
       topic_lifecycle_transition{
         .topic = topic, .mode = topic_lifecycle_transition_mode::drop});
+
+    if (!_topics.local().get_lifecycle_markers().contains(topic)) {
+        // Do not write to log if the marker is already gone
+        vlog(
+          clusterlog.info,
+          "Dropping duplicate purge request for lifecycle marker {}",
+          topic.nt);
+        co_return topic_result(std::move(topic.nt), errc::success);
+    }
+
     std::error_code repl_ec;
     try {
         repl_ec = co_await replicate_and_wait(
@@ -745,6 +754,7 @@ ss::future<topic_result> topics_frontend::do_purged_topic(
     if (repl_ec != errc::success) {
         co_return topic_result(std::move(topic.nt), map_errc(repl_ec));
     } else {
+        vlog(clusterlog.info, "Finished deleting topic {}", topic);
         co_return topic_result(std::move(topic.nt), errc::success);
     }
 }
