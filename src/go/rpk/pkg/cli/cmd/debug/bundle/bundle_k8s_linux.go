@@ -199,6 +199,9 @@ func saveClusterAdminAPICalls(ctx context.Context, ps *stepParams, fs afero.Fs, 
 	return func() error {
 		allCfg := &config.Config{
 			Rpk: config.RpkConfig{
+				KafkaAPI: config.RpkKafkaAPI{
+					SASL: cfg.Rpk.KafkaAPI.SASL,
+				},
 				AdminAPI: config.RpkAdminAPI{
 					Addresses: adminAddresses,
 					TLS:       cfg.Rpk.AdminAPI.TLS,
@@ -244,6 +247,9 @@ func saveSingleAdminAPICalls(ctx context.Context, ps *stepParams, fs afero.Fs, c
 			a := a
 			c := &config.Config{
 				Rpk: config.RpkConfig{
+					KafkaAPI: config.RpkKafkaAPI{
+						SASL: cfg.Rpk.KafkaAPI.SASL,
+					},
 					AdminAPI: config.RpkAdminAPI{
 						Addresses: []string{a},
 						TLS:       cfg.Rpk.AdminAPI.TLS,
