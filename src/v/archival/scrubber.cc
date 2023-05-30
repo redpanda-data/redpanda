@@ -319,6 +319,8 @@ scrubber::run(retry_chain_node& parent_rtc, run_quota_t quota) {
                   "scrub",
                   nt_revision.nt,
                   errc.message());
+            } else {
+                vlog(archival_log.info, "Topic {} purge complete", nt_revision);
             }
         }
     }

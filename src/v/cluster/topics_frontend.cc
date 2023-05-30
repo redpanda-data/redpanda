@@ -728,6 +728,16 @@ ss::future<topic_result> topics_frontend::do_purged_topic(
       topic.nt,
       topic_lifecycle_transition{
         .topic = topic, .mode = topic_lifecycle_transition_mode::drop});
+
+    if (!_topics.local().get_lifecycle_markers().contains(topic)) {
+        // Do not write to log if the marker is already gone
+        vlog(
+          clusterlog.info,
+          "Dropping duplicate purge request for lifecycle marker {}",
+          topic.nt);
+        co_return topic_result(std::move(topic.nt), errc::success);
+    }
+
     std::error_code repl_ec;
     try {
         repl_ec = co_await replicate_and_wait(
