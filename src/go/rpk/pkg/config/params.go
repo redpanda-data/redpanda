@@ -584,7 +584,6 @@ func (p *Params) Load(fs afero.Fs) (*Config, error) {
 		return nil, err
 	}
 
-	c.redpandaYaml.backcompat()
 	c.mergeRpkIntoRedpanda(true)     // merge actual rpk.yaml KafkaAPI,AdminAPI,Tuners into redpanda.yaml rpk section
 	c.addUnsetRedpandaDefaults(true) // merge from actual redpanda.yaml redpanda section to rpk section
 	c.ensureRpkProfile()             // ensure Virtual rpk.yaml has a loaded profile
@@ -873,21 +872,6 @@ func (p *Params) readRedpandaConfig(fs afero.Fs, c *Config) error {
 	c.redpandaYaml.fileLocation = location
 	c.redpandaYamlActual.fileLocation = location
 	return nil
-}
-
-// Before we process overrides, we process any backwards compatibility from the
-// loaded file.
-func (y *RedpandaYaml) backcompat() {
-	r := &y.Rpk
-	if r.KafkaAPI.TLS == nil {
-		r.KafkaAPI.TLS = r.TLS
-	}
-	if r.KafkaAPI.SASL == nil {
-		r.KafkaAPI.SASL = r.SASL
-	}
-	if r.AdminAPI.TLS == nil {
-		r.AdminAPI.TLS = r.TLS
-	}
 }
 
 // We merge rpk.yaml files into our Virtual redpanda.yaml rpk section,

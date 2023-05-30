@@ -437,10 +437,18 @@ func (rpkc *RpkNodeConfig) UnmarshalYAML(n *yaml.Node) error {
 		return err
 	}
 
-	rpkc.TLS = internal.TLS
-	rpkc.SASL = internal.SASL
+	// backcompat, immediately convert to new tls
 	rpkc.KafkaAPI = internal.KafkaAPI
 	rpkc.AdminAPI = internal.AdminAPI
+	if rpkc.KafkaAPI.TLS == nil {
+		rpkc.KafkaAPI.TLS = internal.TLS
+	}
+	if rpkc.KafkaAPI.SASL == nil {
+		rpkc.KafkaAPI.SASL = internal.SASL
+	}
+	if rpkc.AdminAPI.TLS == nil {
+		rpkc.AdminAPI.TLS = internal.TLS
+	}
 	rpkc.AdditionalStartFlags = internal.AdditionalStartFlags
 	rpkc.EnableMemoryLocking = bool(internal.EnableMemoryLocking)
 	rpkc.Overprovisioned = bool(internal.Overprovisioned)

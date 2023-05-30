@@ -71,10 +71,10 @@ rpk:
 				c.Rpk.KafkaAPI.Brokers = []string{"127.0.1.1:9647"}
 			},
 			exp: `rpk:
-    tls: {}
     kafka_api:
         brokers:
             - 127.0.1.1:9647
+        tls: {}
 `,
 		},
 		{

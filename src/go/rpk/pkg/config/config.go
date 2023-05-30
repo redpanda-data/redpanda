@@ -199,8 +199,6 @@ func (y *RedpandaYaml) setDevMode() {
 	y.Redpanda.DeveloperMode = true
 	// Defaults to setting all tuners to false
 	y.Rpk = RpkNodeConfig{
-		TLS:                  y.Rpk.TLS,
-		SASL:                 y.Rpk.SASL,
 		KafkaAPI:             y.Rpk.KafkaAPI,
 		AdminAPI:             y.Rpk.AdminAPI,
 		AdditionalStartFlags: y.Rpk.AdditionalStartFlags,
