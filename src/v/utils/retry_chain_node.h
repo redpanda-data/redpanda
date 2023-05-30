@@ -155,6 +155,8 @@ enum class retry_strategy {
     polling,
     /// Exponential backoff
     backoff,
+    /// No retries
+    disallow
 };
 
 /// Retry permit
