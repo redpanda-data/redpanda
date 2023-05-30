@@ -103,10 +103,13 @@ allocated_partition::prepare_move(model::node_id prev_node) {
     }
     prev.bs = *it;
     prev.idx = it - _replicas.begin();
-    if (!_original) {
-        _original.emplace(_replicas.begin(), _replicas.end());
-    } else if (!_original->contains(prev.bs)) {
-        // if replica prev.bs is not original, pick an arbitrary original one
+    if (!_original_node2shard) {
+        _original_node2shard.emplace();
+        for (const auto& bs : _replicas) {
+            _original_node2shard->emplace(bs.node_id, bs.shard);
+        }
+    } else if (!_original_node2shard->contains(prev_node)) {
+        // if replica prev_node is not original, pick an arbitrary original one
         // that is not present in the current set as the "source" for prev.bs
         // (they are all interchangeable).
         //
@@ -117,7 +120,8 @@ allocated_partition::prepare_move(model::node_id prev_node) {
         // object), we need to arbitrarily designate one of nodes 0 and 1 as the
         // "original" for replica 4 (meaning that the replica on node 4 was
         // originally on node 0 or 1).
-        for (const auto& bs : *_original) {
+        for (const auto& [node_id, shard] : *_original_node2shard) {
+            model::broker_shard bs{.node_id = node_id, .shard = shard};
             if (
               std::find(_replicas.begin(), _replicas.end(), bs)
               == _replicas.end()) {
@@ -138,41 +142,35 @@ allocated_partition::prepare_move(model::node_id prev_node) {
     return prev;
 }
 
-void allocated_partition::add_replica(
-  model::broker_shard replica, const std::optional<previous_replica>& prev) {
-    if (!_original) {
-        _original = absl::flat_hash_set<model::broker_shard>(
-          _replicas.begin(), _replicas.end());
+model::broker_shard allocated_partition::add_replica(
+  model::node_id node, const std::optional<previous_replica>& prev) {
+    if (!_original_node2shard) {
+        _original_node2shard.emplace();
+        for (const auto& bs : _replicas) {
+            _original_node2shard->emplace(bs.node_id, bs.shard);
+        }
     }
 
-    _replicas.push_back(replica);
     if (prev) {
         model::broker_shard original = prev->original.value_or(prev->bs);
         // previous replica will still be present while partition move is in
-        // progress, so add its contribution back.
+        // progress, so add its contribution (that we removed when preparing the
+        // move) back.
         _state->add_allocation(original, _domain);
     }
-    if (_original->contains(replica)) {
-        // if the new replica is original its contribution is already
-        // counted, don't do it twice (second time is by the allocation itself).
-        //
-        // Example (omitting shard ids for clarity):
-        // _original = [0, 1, 2], _replicas = [2, 3, 4], prev = 4, replica = 0
-        // (i.e. we are moving replica on node 4 to node 0). Here is how
-        // partition counts will evolve:
-        // * [1, 1, 1, 1, 1] (prior to reallocation)
-        // * [1, 0, 1, 1, 0] (after prepare_move is called, we picked 1 as
-        //   prev->original)
-        // * [2, 0, 1, 1, 0] (after _allocation_strategy.allocate_replica is
-        //   called)
-        // * [2, 1, 1, 1, 0] (after the contribution of prev->original was added
-        //   back)
-        // Here the replica contribution on node 0 was counted twice, so we need
-        // to remove one to bring the counts to the correct value: [1, 1, 1, 0].
-        // Note also that if we had picked 0 as prev->original, we would end up
-        // with correct counts as well.
-        _state->remove_allocation(replica, _domain);
+
+    model::broker_shard replica{.node_id = node};
+    if (auto it = _original_node2shard->find(node);
+        it != _original_node2shard->end()) {
+        // this is an original replica, preserve the shard
+        replica.shard = it->second;
+    } else {
+        // the replica is new, choose the shard and add allocation
+        replica.shard = _state->allocate(node, _domain);
     }
+
+    _replicas.push_back(replica);
+    return replica;
 }
 
 void allocated_partition::cancel_move(const previous_replica& prev) {
@@ -187,69 +185,48 @@ void allocated_partition::cancel_move(const previous_replica& prev) {
 
 std::vector<model::broker_shard> allocated_partition::release_new_partition() {
     vassert(
-      _original && _original->empty(),
+      _original_node2shard && _original_node2shard->empty(),
       "new partition shouldn't have previous replicas");
     _state = nullptr;
     return std::move(_replicas);
 }
 
 bool allocated_partition::has_changes() const {
-    if (!_original) {
+    if (!_original_node2shard) {
         return false;
     }
-    if (_replicas.size() != _original->size()) {
+    if (_replicas.size() != _original_node2shard->size()) {
         return true;
     }
     for (const auto& bs : _replicas) {
-        if (!_original->contains(bs)) {
+        if (!_original_node2shard->contains(bs.node_id)) {
             return true;
         }
     }
     return false;
 }
 
-bool allocated_partition::has_node_changes() const {
-    if (!_original) {
-        return false;
+bool allocated_partition::is_original(model::node_id node) const {
+    if (_original_node2shard) {
+        return _original_node2shard->contains(node);
     }
-    if (_replicas.size() != _original->size()) {
-        return true;
-    }
-
-    absl::flat_hash_set<model::node_id> original;
-    original.reserve(_original->size());
-    for (const auto& bs : *_original) {
-        original.insert(bs.node_id);
-    }
-
-    absl::flat_hash_set<model::node_id> current;
-    current.reserve(_replicas.size());
-    for (const auto& bs : _replicas) {
-        current.insert(bs.node_id);
-    }
-
-    return original != current;
-}
-
-bool allocated_partition::is_original(
-  const model::broker_shard& replica) const {
-    if (_original) {
-        return _original->contains(replica);
-    }
-    return std::find(_replicas.begin(), _replicas.end(), replica)
+    return std::find_if(
+             _replicas.begin(),
+             _replicas.end(),
+             [node](const auto& bs) { return bs.node_id == node; })
            != _replicas.end();
 }
 
 allocated_partition::~allocated_partition() {
     oncore_debug_verify(_oncore);
 
-    if (!_original || !_state) {
+    if (!_original_node2shard || !_state) {
         // no new allocations took place or object was moved from
         return;
     }
 
     for (const auto& bs : _replicas) {
-        if (!_original->contains(bs)) {
+        if (!_original_node2shard->contains(bs.node_id)) {
             _state->remove_allocation(bs, _domain);
         }
     }

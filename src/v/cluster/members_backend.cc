@@ -8,6 +8,7 @@
 #include "cluster/members_manager.h"
 #include "cluster/members_table.h"
 #include "cluster/scheduling/allocation_strategy.h"
+#include "cluster/scheduling/partition_allocator.h"
 #include "cluster/topic_table.h"
 #include "cluster/topics_frontend.h"
 #include "cluster/types.h"

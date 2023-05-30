@@ -380,16 +380,14 @@ result<model::broker_shard> partition_allocator::do_allocate_replica(
         }
     });
 
-    auto replica = _allocation_strategy.allocate_replica(
+    auto node = _allocation_strategy.choose_node(
       partition._replicas, effective_constraints, *_state, partition._domain);
-    if (!replica) {
-        return replica;
+    if (!node) {
+        return node.error();
     }
 
     revert.cancel();
-    partition.add_replica(replica.value(), prev);
-
-    return replica;
+    return partition.add_replica(node.value(), prev);
 }
 
 void partition_allocator::add_allocations(

@@ -213,6 +213,9 @@ private:
     [[no_unique_address]] oncore _oncore;
 };
 
+/// RAII helper for incremental partition (re)allocation.
+///
+/// Note: shard ids for original replicas are preserved.
 class allocated_partition {
 public:
     const std::vector<model::broker_shard>& replicas() const {
@@ -220,10 +223,7 @@ public:
     }
 
     bool has_changes() const;
-    // true if the set of nodes differs from the original
-    bool has_node_changes() const;
-
-    bool is_original(const model::broker_shard&) const;
+    bool is_original(model::node_id) const;
 
     allocated_partition& operator=(allocated_partition&&) = default;
     allocated_partition& operator=(const allocated_partition&) = delete;
@@ -247,8 +247,8 @@ private:
     };
 
     std::optional<previous_replica> prepare_move(model::node_id previous);
-    void
-    add_replica(model::broker_shard, const std::optional<previous_replica>&);
+    model::broker_shard
+    add_replica(model::node_id, const std::optional<previous_replica>&);
     void cancel_move(const previous_replica&);
 
     // used to move the allocation to allocation_units
@@ -256,7 +256,8 @@ private:
 
 private:
     std::vector<model::broker_shard> _replicas;
-    std::optional<absl::flat_hash_set<model::broker_shard>> _original;
+    std::optional<absl::flat_hash_map<model::node_id, uint32_t>>
+      _original_node2shard;
     partition_allocation_domain _domain;
     ss::weak_ptr<allocation_state> _state;
     // oncore checker to ensure destruction happens on the same core

@@ -159,11 +159,11 @@ model::node_id find_best_fit(
 allocation_strategy simple_allocation_strategy() {
     class impl : public allocation_strategy::impl {
     public:
-        result<model::broker_shard> allocate_replica(
+        result<model::node_id> choose_node(
           const std::vector<model::broker_shard>& current_replicas,
           const allocation_constraints& request,
           allocation_state& state,
-          const partition_allocation_domain domain) final {
+          const partition_allocation_domain) final {
             const auto& nodes = state.allocation_nodes();
             /**
              * evaluate hard constraints
@@ -186,16 +186,7 @@ allocation_strategy simple_allocation_strategy() {
               possible_nodes,
               nodes);
 
-            auto it = nodes.find(best_fit);
-            vassert(
-              it != nodes.end(),
-              "allocated node with id {} have to be present",
-              best_fit);
-            auto core = (it->second)->allocate(domain);
-            return model::broker_shard{
-              .node_id = it->first,
-              .shard = core,
-            };
+            return best_fit;
         }
     };
     return make_allocation_strategy<impl>();

@@ -11,6 +11,7 @@
 
 #include "cluster/node_isolation_watcher.h"
 
+#include "cluster/logger.h"
 #include "cluster/metadata_cache.h"
 #include "config/node_config.h"
 #include "ssx/future-util.h"
