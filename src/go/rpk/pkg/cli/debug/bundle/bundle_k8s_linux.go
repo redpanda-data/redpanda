@@ -198,6 +198,9 @@ func getClusterDomain() string {
 func saveClusterAdminAPICalls(ctx context.Context, ps *stepParams, fs afero.Fs, p *config.RpkProfile, adminAddresses []string) step {
 	return func() error {
 		p = &config.RpkProfile{
+			KafkaAPI: config.RpkKafkaAPI{
+				SASL: p.KafkaAPI.SASL,
+			},
 			AdminAPI: config.RpkAdminAPI{
 				Addresses: adminAddresses,
 				TLS:       p.AdminAPI.TLS,
@@ -241,6 +244,9 @@ func saveSingleAdminAPICalls(ctx context.Context, ps *stepParams, fs afero.Fs, p
 		for _, a := range adminAddresses {
 			a := a
 			p = &config.RpkProfile{
+				KafkaAPI: config.RpkKafkaAPI{
+					SASL: p.KafkaAPI.SASL,
+				},
 				AdminAPI: config.RpkAdminAPI{
 					Addresses: []string{a},
 					TLS:       p.AdminAPI.TLS,
