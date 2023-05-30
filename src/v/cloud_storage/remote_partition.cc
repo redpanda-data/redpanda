@@ -1164,7 +1164,10 @@ ss::future<remote_partition::erase_result> remote_partition::erase(
           *(batch_keys.begin()),
           *(--batch_keys.end()));
 
-        for (const auto& object_set : {batch_keys, tx_batch_keys, index_keys}) {
+        for (auto& object_set : std::vector{
+               std::move(batch_keys),
+               std::move(tx_batch_keys),
+               std::move(index_keys)}) {
             if (
               co_await api.delete_objects(
                 bucket, std::move(object_set), local_rtc)
