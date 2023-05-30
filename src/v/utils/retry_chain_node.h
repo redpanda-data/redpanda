@@ -150,7 +150,7 @@
 #include <variant>
 
 /// Retry strategy
-enum class retry_strategy {
+enum class retry_strategy : uint8_t {
     /// Simple polling
     polling,
     /// Exponential backoff
@@ -215,18 +215,33 @@ public:
       ss::lowres_clock::duration initial_backoff);
     retry_chain_node(
       ss::abort_source& as,
+      ss::lowres_clock::time_point deadline,
+      ss::lowres_clock::duration initial_backoff,
+      retry_strategy retry_strategy);
+    retry_chain_node(
+      ss::abort_source& as,
       ss::lowres_clock::duration timeout,
       ss::lowres_clock::duration initial_backoff);
+    retry_chain_node(
+      ss::abort_source& as,
+      ss::lowres_clock::duration timeout,
+      ss::lowres_clock::duration initial_backoff,
+      retry_strategy retry_strategy);
     /// Create a node attached to the parent.
     /// The node will share the time budget and backoff granularity with
     /// the parent.
     /// This isn't a copy c-tor!
     explicit retry_chain_node(retry_chain_node* parent);
+    retry_chain_node(retry_strategy retry_strategy, retry_chain_node* parent);
     /// Create a node attached to the parent.
     /// The node will share the time budget with the parent.
     /// The initial backoff can be set explicitly.
     retry_chain_node(
       ss::lowres_clock::duration initial_backoff, retry_chain_node* parent);
+    retry_chain_node(
+      ss::lowres_clock::duration initial_backoff,
+      retry_strategy retry_strategy,
+      retry_chain_node* parent);
     /// Create a node attached to the parent.
     /// The initial backoff and deadline can be set explicitly.
     retry_chain_node(
@@ -234,8 +249,18 @@ public:
       ss::lowres_clock::duration initial_backoff,
       retry_chain_node* parent);
     retry_chain_node(
+      ss::lowres_clock::time_point deadline,
+      ss::lowres_clock::duration initial_backoff,
+      retry_strategy retry_strategy,
+      retry_chain_node* parent);
+    retry_chain_node(
       ss::lowres_clock::duration timeout,
       ss::lowres_clock::duration initial_backoff,
+      retry_chain_node* parent);
+    retry_chain_node(
+      ss::lowres_clock::duration timeout,
+      ss::lowres_clock::duration initial_backoff,
+      retry_strategy retry_strategy,
       retry_chain_node* parent);
     /// D-tor (performs some validaton steps and can fail)
     ~retry_chain_node();
@@ -283,7 +308,7 @@ public:
     /// The generated backoff interval is guaranteed to be short enough
     /// for the sleep to awake inside the allowed time interval.
     /// @return retry permit object
-    retry_permit retry(retry_strategy st = retry_strategy::backoff);
+    retry_permit retry();
 
     /// Requests abort using the abort_source set in a root node c-tor.
     ///
@@ -331,6 +356,8 @@ private:
     ss::abort_source* get_abort_source();
     const ss::abort_source* get_abort_source() const;
 
+    /// Retry strategy to be used by this node
+    retry_strategy _retry_strategy{retry_strategy::backoff};
     /// This node's id
     uint16_t _id;
     /// Number of retries

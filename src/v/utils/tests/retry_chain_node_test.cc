@@ -121,23 +121,22 @@ SEASTAR_THREAD_TEST_CASE(check_retry2) {
 SEASTAR_THREAD_TEST_CASE(check_child_retry_canceled) {
     ss::abort_source as;
     retry_chain_node n1(as, ss::lowres_clock::now() + 1000ms, 100ms);
-    retry_chain_node n2(&n1);
-    retry_permit permit = n2.retry(retry_strategy::polling);
+    retry_chain_node n2(retry_strategy::polling, &n1);
+    retry_permit permit = n2.retry();
     BOOST_REQUIRE(permit.is_allowed);
     n1.request_abort();
-    BOOST_REQUIRE_THROW(
-      n2.retry(retry_strategy::polling), ss::abort_requested_exception);
+    BOOST_REQUIRE_THROW(n2.retry(), ss::abort_requested_exception);
 }
 
 SEASTAR_THREAD_TEST_CASE(check_root_retry_canceled) {
     ss::abort_source as;
-    retry_chain_node n1(as, ss::lowres_clock::now() + 1000ms, 100ms);
+    retry_chain_node n1(
+      as, ss::lowres_clock::now() + 1000ms, 100ms, retry_strategy::polling);
     retry_chain_node n2(&n1);
-    retry_permit permit = n1.retry(retry_strategy::polling);
+    retry_permit permit = n1.retry();
     BOOST_REQUIRE(permit.is_allowed);
     n2.request_abort();
-    BOOST_REQUIRE_THROW(
-      n1.retry(retry_strategy::polling), ss::abort_requested_exception);
+    BOOST_REQUIRE_THROW(n1.retry(), ss::abort_requested_exception);
 }
 
 SEASTAR_THREAD_TEST_CASE(check_abort_requested) {
