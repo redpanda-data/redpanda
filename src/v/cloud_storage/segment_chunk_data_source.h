@@ -48,6 +48,7 @@ private:
     ss::future<> load_stream_for_chunk(chunk_start_offset_t chunk_start);
 
     ss::future<> maybe_close_stream();
+    ss::future<> load_chunk_handle(chunk_start_offset_t chunk_start);
 
     segment_chunks& _chunks;
     remote_segment& _segment;
