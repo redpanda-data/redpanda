@@ -191,7 +191,9 @@ topic_table::apply(topic_lifecycle_transition soft_del, model::offset offset) {
             // This is harmless but should not happen and indicates a bug.
             vlog(
               clusterlog.error,
-              "Unexpected request to drop non-existent lifecycle marker {} {}",
+              "Unexpected record at offset {} to drop non-existent lifecycle "
+              "marker {} {}",
+              offset,
               soft_del.topic.nt,
               soft_del.topic.initial_revision_id);
             return ss::make_ready_future<std::error_code>(
