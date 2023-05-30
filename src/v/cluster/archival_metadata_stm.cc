@@ -458,7 +458,8 @@ ss::future<> archival_metadata_stm::make_snapshot(
       "archival_metadata.snapshot",
       raft_priority());
 
-    co_await persist_snapshot(tmp_snapshot_mgr, std::move(snapshot));
+    co_await file_backed_stm_snapshot::persist_snapshot(
+      tmp_snapshot_mgr, std::move(snapshot));
 }
 
 archival_metadata_stm::archival_metadata_stm(

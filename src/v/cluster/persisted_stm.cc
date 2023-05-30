@@ -25,25 +25,69 @@
 
 #include <filesystem>
 
+namespace {
+
+std::optional<cluster::stm_snapshot_header> read_snapshot_header(
+  iobuf_parser& parser, const model::ntp& ntp, const ss::sstring& name) {
+    auto version = reflection::adl<int8_t>{}.from(parser);
+    vassert(
+      version == cluster::snapshot_version
+        || version == cluster::snapshot_version_v0,
+      "[{} ({})] Unsupported persisted_stm snapshot_version {}",
+      ntp,
+      name,
+      version);
+
+    if (version == cluster::snapshot_version_v0) {
+        return std::nullopt;
+    }
+
+    cluster::stm_snapshot_header header;
+    header.offset = model::offset(reflection::adl<int64_t>{}.from(parser));
+    header.version = reflection::adl<int8_t>{}.from(parser);
+    header.snapshot_size = reflection::adl<int32_t>{}.from(parser);
+    return header;
+}
+
+} // namespace
 namespace cluster {
 
 persisted_stm::persisted_stm(
   ss::sstring snapshot_mgr_name, ss::logger& logger, raft::consensus* c)
   : raft::state_machine(c, logger, ss::default_priority_class())
   , _c(c)
-  , _snapshot_mgr(
-      std::filesystem::path(c->log_config().work_directory()),
-      snapshot_mgr_name,
-      ss::default_priority_class())
-  , _log(logger, ssx::sformat("[{} ({})]", _c->ntp(), name())) {}
+  , _log(logger, ssx::sformat("[{} ({})]", _c->ntp(), name()))
+  , _snapshot_backend(std::move(snapshot_mgr_name), _log, c) {}
+
+ss::future<std::optional<stm_snapshot>> persisted_stm::load_snapshot() {
+    return _snapshot_backend.load_snapshot();
+}
 
 ss::future<> persisted_stm::remove_persistent_state() {
+    return _snapshot_backend.remove_persistent_state();
+}
+
+ss::future<> persisted_stm::persist_snapshot(stm_snapshot&& snapshot) {
+    return _snapshot_backend.persist_snapshot(std::move(snapshot));
+}
+
+file_backed_stm_snapshot::file_backed_stm_snapshot(
+  ss::sstring snapshot_name, prefix_logger& log, raft::consensus* c)
+  : _ntp(c->ntp())
+  , _log(log)
+  , _snapshot_mgr(
+      std::filesystem::path(c->log_config().work_directory()),
+      snapshot_name,
+      ss::default_priority_class()) {}
+
+ss::future<> file_backed_stm_snapshot::remove_persistent_state() {
     _snapshot_size = 0;
     co_await _snapshot_mgr.remove_snapshot();
     co_await _snapshot_mgr.remove_partial_snapshots();
 }
 
-ss::future<std::optional<stm_snapshot>> persisted_stm::load_snapshot() {
+ss::future<std::optional<stm_snapshot>>
+file_backed_stm_snapshot::load_snapshot() {
     auto maybe_reader = co_await _snapshot_mgr.open_snapshot();
     if (!maybe_reader) {
         co_return std::nullopt;
@@ -52,33 +96,17 @@ ss::future<std::optional<stm_snapshot>> persisted_stm::load_snapshot() {
     storage::snapshot_reader& reader = *maybe_reader;
     iobuf meta_buf = co_await reader.read_metadata();
     iobuf_parser meta_parser(std::move(meta_buf));
-
-    auto version = reflection::adl<int8_t>{}.from(meta_parser);
-    vassert(
-      version == snapshot_version || version == snapshot_version_v0,
-      "[{} ({})] Unsupported persisted_stm snapshot_version {}",
-      _c->ntp(),
-      name(),
-      version);
-
-    if (version == snapshot_version_v0) {
-        vlog(
-          _log.warn,
-          "Skipping snapshot {} due to old format",
-          _snapshot_mgr.snapshot_path());
+    auto header = read_snapshot_header(meta_parser, _ntp, name());
+    if (!header) {
+        vlog(_log.warn, "Skipping snapshot {} due to old format", store_path());
 
         // can't load old format of the snapshot, since snapshot is missing
         // it will be reconstructed by replaying the log
         co_await reader.close();
         co_return std::nullopt;
     }
-
     stm_snapshot snapshot;
-    snapshot.header.offset = model::offset(
-      reflection::adl<int64_t>{}.from(meta_parser));
-    snapshot.header.version = reflection::adl<int8_t>{}.from(meta_parser);
-    snapshot.header.snapshot_size = reflection::adl<int32_t>{}.from(
-      meta_parser);
+    snapshot.header = *header;
     snapshot.data = co_await read_iobuf_exactly(
       reader.input(), snapshot.header.snapshot_size);
 
@@ -89,15 +117,7 @@ ss::future<std::optional<stm_snapshot>> persisted_stm::load_snapshot() {
     co_return snapshot;
 }
 
-ss::future<> persisted_stm::wait_for_snapshot_hydrated() {
-    auto f = ss::now();
-    if (unlikely(!_resolved_when_snapshot_hydrated.available())) {
-        f = _resolved_when_snapshot_hydrated.get_shared_future();
-    }
-    return f;
-}
-
-ss::future<> persisted_stm::persist_snapshot(
+ss::future<> file_backed_stm_snapshot::persist_snapshot(
   storage::simple_snapshot_manager& snapshot_mgr, stm_snapshot&& snapshot) {
     iobuf data_size_buf;
 
@@ -132,11 +152,32 @@ ss::future<> persisted_stm::persist_snapshot(
       });
 }
 
-ss::future<> persisted_stm::persist_snapshot(stm_snapshot&& snapshot) {
+ss::future<>
+file_backed_stm_snapshot::persist_snapshot(stm_snapshot&& snapshot) {
     return persist_snapshot(_snapshot_mgr, std::move(snapshot)).then([this] {
         return _snapshot_mgr.get_snapshot_size().then(
           [this](uint64_t size) { _snapshot_size = size; });
     });
+}
+
+const ss::sstring& file_backed_stm_snapshot::name() {
+    return _snapshot_mgr.name();
+}
+
+ss::sstring file_backed_stm_snapshot::store_path() const {
+    return _snapshot_mgr.snapshot_path().string();
+}
+
+size_t file_backed_stm_snapshot::get_snapshot_size() const {
+    return _snapshot_size;
+}
+
+ss::future<> persisted_stm::wait_for_snapshot_hydrated() {
+    auto f = ss::now();
+    if (unlikely(!_resolved_when_snapshot_hydrated.available())) {
+        f = _resolved_when_snapshot_hydrated.get_shared_future();
+    }
+    return f;
 }
 
 ss::future<> persisted_stm::do_make_snapshot() {
@@ -158,7 +199,9 @@ ss::future<> persisted_stm::make_snapshot() {
     });
 }
 
-uint64_t persisted_stm::get_snapshot_size() const { return _snapshot_size; }
+uint64_t persisted_stm::get_snapshot_size() const {
+    return _snapshot_backend.get_snapshot_size();
+}
 
 ss::future<>
 persisted_stm::ensure_snapshot_exists(model::offset target_offset) {
@@ -359,7 +402,7 @@ ss::future<> persisted_stm::start() {
           "[[{}] ({})]Can't load snapshot from '{}'. Got error: {}",
           _c->ntp(),
           name(),
-          _snapshot_mgr.snapshot_path(),
+          _snapshot_backend.store_path(),
           std::current_exception());
     }
 
@@ -383,7 +426,7 @@ ss::future<> persisted_stm::start() {
             vlog(
               _log.warn,
               "Skipping snapshot {} since it's out of sync with the log",
-              _snapshot_mgr.snapshot_path());
+              _snapshot_backend.store_path());
             vlog(
               _log.debug,
               "start with non-applied snapshot, set_next {}",
