@@ -29,6 +29,8 @@ from rptest.services.cluster import cluster
 from requests.exceptions import HTTPError
 from ducktape.utils.util import wait_until
 
+from rptest.utils.mode_checks import skip_debug_mode
+
 OPERATIONS_LIMIT = 3
 TOO_MANY_REQUESTS_ERROR_CODE = 89
 TOO_MANY_REQUESTS_HTTP_ERROR_CODE = 429
@@ -342,6 +344,7 @@ class ControllerLogLimitMirrorMakerTests(MirrorMakerService):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
+    @skip_debug_mode
     @cluster(num_nodes=10)
     def test_mirror_maker_with_limits(self):
         # start brokers
