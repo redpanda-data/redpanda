@@ -27,8 +27,17 @@ using tests::kv_t;
 
 static ss::logger e2e_test_log("e2e_test");
 
+class e2e_config_mixin {
+public:
+    e2e_config_mixin() {
+        config::shard_local_cfg().cloud_storage_enable_remote_write.set_value(
+          false);
+    }
+};
+
 class e2e_fixture
-  : public s3_imposter_fixture
+  : public e2e_config_mixin
+  , public s3_imposter_fixture
   , public redpanda_thread_fixture
   , public enable_cloud_storage_fixture {
 public:
