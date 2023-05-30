@@ -281,7 +281,7 @@ ss::future<scrubber::purge_result> scrubber::purge_manifest(
     // one during housekeeping we should drop out.  Maybe retry_chain_node
     // could have a "drop out on slowdown" flag?
     const auto erase_result = co_await cloud_storage::remote_partition::erase(
-      _api, bucket, std::move(manifest), manifest_key, _as);
+      _api, bucket, std::move(manifest), manifest_key, manifest_purge_rtc);
 
     result.ops += estimate_delete_ops;
 

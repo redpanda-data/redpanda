@@ -1109,11 +1109,8 @@ ss::future<remote_partition::erase_result> remote_partition::erase(
   cloud_storage_clients::bucket_name bucket,
   partition_manifest manifest,
   remote_manifest_path manifest_path,
-  ss::abort_source& as) {
-    // This function is called after ::stop, so we may not use our
-    // main retry_chain_node which is bound to our abort source,
-    // and construct a special one.
-    retry_chain_node local_rtc(as, erase_timeout, erase_backoff);
+  retry_chain_node& parent_rtc) {
+    retry_chain_node local_rtc(&parent_rtc);
 
     auto replaced_segments = manifest.replaced_segments();
 
@@ -1226,7 +1223,7 @@ ss::future<> remote_partition::try_erase(ss::abort_source& as) {
     // This function is called after ::stop, so we may not use our
     // main retry_chain_node which is bound to our abort source,
     // and construct a special one.
-    retry_chain_node local_rtc(as, erase_timeout, erase_backoff);
+    retry_chain_node erase_rtc(as, erase_timeout, erase_backoff);
 
     // Download manifest because we may not be running on the most up to
     // date node, but hopefully the latest leader will have uploaded
@@ -1235,7 +1232,7 @@ ss::future<> remote_partition::try_erase(ss::abort_source& as) {
       stm_manifest.get_ntp(), stm_manifest.get_revision_id());
     auto [manifest_get_result, result_fmt]
       = co_await _api.try_download_partition_manifest(
-        _bucket, manifest, local_rtc, true);
+        _bucket, manifest, erase_rtc, true);
 
     if (manifest_get_result != download_result::success) {
         vlog(
@@ -1247,7 +1244,8 @@ ss::future<> remote_partition::try_erase(ss::abort_source& as) {
 
     auto path = manifest.get_manifest_path(
       cloud_storage::manifest_format::serde);
-    co_await erase(_api, _bucket, std::move(manifest), std::move(path), as);
+    co_await erase(
+      _api, _bucket, std::move(manifest), std::move(path), erase_rtc);
 }
 
 void remote_partition::offload_segment(model::offset o) {

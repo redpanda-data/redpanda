@@ -154,7 +154,7 @@ public:
       cloud_storage_clients::bucket_name,
       partition_manifest,
       remote_manifest_path,
-      ss::abort_source&);
+      retry_chain_node&);
 
     /// Hook for materialized_segment to notify us when a segment is evicted
     void offload_segment(model::offset);
