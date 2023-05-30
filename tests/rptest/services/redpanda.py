@@ -2376,7 +2376,7 @@ class RedpandaService(RedpandaServiceBase):
 
             crash_log = None
             for line in node.account.ssh_capture(
-                    f"grep -e SEGV -e Segmentation\ fault -e [Aa]ssert {RedpandaService.STDOUT_STDERR_CAPTURE} || true",
+                    f"grep -e SEGV -e Segmentation\ fault -e [Aa]ssert -e Sanitizer {RedpandaService.STDOUT_STDERR_CAPTURE} || true",
                     timeout_sec=30):
                 if 'SEGV' in line and ('x-amz-id' in line
                                        or 'x-amz-request' in line):
