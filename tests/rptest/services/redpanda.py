@@ -3676,8 +3676,7 @@ class RedpandaService(RedpandaServiceBase):
         max_length = None
         for node in self.started_nodes():
             try:
-                status = self._admin.get_controller_status(
-                    node=node)['committed_index']
+                status = self._admin.get_controller_status(node=node)
                 node_length = status['committed_index'] - max(
                     0, status['start_offset'] - 1)
             except Exception as e:
