@@ -74,9 +74,9 @@ class RpkRemoteTool:
         cmd = ["create", name]
         return self._run_profile(cmd)
 
-    def create_profile_simple(self, name, cfg_location):
+    def create_profile_redpanda(self, name, cfg_location):
         return self._run_profile(
-            ['create', name, "--from-simple", cfg_location])
+            ['create', name, "--from-redpanda", cfg_location])
 
     def use_profile(self, name):
         cmd = ["use", name]
