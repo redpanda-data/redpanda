@@ -33,6 +33,8 @@ your configuration in one place.
 
 	cmd.AddCommand(
 		newCreateCommand(fs, p),
+		newClearCommand(fs, p),
+		newCurrentCommand(fs, p),
 		newDeleteCommand(fs, p),
 		newEditCommand(fs, p),
 		newListCommand(fs, p),
