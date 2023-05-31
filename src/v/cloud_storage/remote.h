@@ -321,9 +321,10 @@ public:
     ///
     /// \param bucket The bucket to delete from
     /// \param keys A vector of keys which will be deleted
+    template<std::ranges::range Range>
     ss::future<upload_result> delete_objects(
       const cloud_storage_clients::bucket_name& bucket,
-      std::vector<cloud_storage_clients::object_key> keys,
+      Range keys,
       retry_chain_node& parent);
 
     using list_result = result<

@@ -839,9 +839,10 @@ ss::future<upload_result> remote::delete_object(
     co_return *result;
 }
 
+template<std::ranges::range Range>
 ss::future<upload_result> remote::delete_objects(
   const cloud_storage_clients::bucket_name& bucket,
-  std::vector<cloud_storage_clients::object_key> keys,
+  Range keys,
   retry_chain_node& parent) {
     ss::gate::holder gh{_gate};
 
