@@ -11,6 +11,7 @@
 
 #pragma once
 #include "cluster/fwd.h"
+#include "cluster/tx_registry_stm.h"
 #include "cluster/types.h"
 #include "features/feature_table.h"
 #include "rpc/fwd.h"
@@ -25,6 +26,14 @@ namespace cluster {
 class tx_registry_frontend final
   : public ss::peering_sharded_service<tx_registry_frontend> {
 public:
+    struct info {
+        repartitioning_id id;
+        absl::flat_hash_map<model::partition_id, tx_registry_stm::hosted_txs>
+          mapping;
+
+        info() = default;
+    };
+
     tx_registry_frontend(
       ss::smp_service_group,
       ss::sharded<cluster::partition_manager>&,
@@ -37,6 +46,8 @@ public:
       ss::sharded<features::feature_table>&);
 
     ss::future<bool> ensure_tx_topic_exists();
+
+    ss::future<checked<tx_registry_frontend::info, tx_errc>> get_info();
 
     ss::future<find_coordinator_reply>
       find_coordinator(kafka::transactional_id, model::timeout_clock::duration);
@@ -66,6 +77,9 @@ private:
 
     template<typename Func>
     auto with_stm(Func&& func);
+
+    ss::future<checked<tx_registry_frontend::info, tx_errc>>
+      do_get_info(ss::shared_ptr<cluster::tx_registry_stm>);
 
     ss::future<find_coordinator_reply> dispatch_find_coordinator(
       model::node_id, kafka::transactional_id, model::timeout_clock::duration);

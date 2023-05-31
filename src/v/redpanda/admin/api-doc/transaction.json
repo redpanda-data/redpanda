@@ -26,6 +26,21 @@
             ]
         },
         {
+            "path": "/v1/tx_registry",
+            "operations": [
+                {
+                    "method": "GET",
+                    "summary": "Get tx registry state",
+                    "type": "tx_registry_info",
+                    "nickname": "tx_registry",
+                    "produces": [
+                        "application/json"
+                    ],
+                    "parameters": []
+                }
+            ]
+        },
+        {
             "path": "/v1/transaction/{transactional_id}/find_coordinator",
             "operations": [
                 {
@@ -95,6 +110,68 @@
         }
     ],
     "models": {
+        "hash_range": {
+            "id": "hash_range",
+            "description": "Hash range",
+            "properties": {
+                "from": {
+                    "type": "long",
+                    "description": "from"
+                },
+                "to": {
+                    "type": "long",
+                    "description": "to"
+                }
+            }
+        },
+        "tx_mapping_entry": {
+            "id": "tx_mapping_entry",
+            "description": "tx_mapping_entry",
+            "properties": {
+                "partition_id": {
+                    "type": "int",
+                    "description": "partition_id"
+                },
+                "excluded_tx_ids": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "description": "excluded_tx_ids"
+                },
+                "included_tx_ids": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "description": "included_tx_ids"
+                },
+                "hash_ranges": {
+                    "type": "array",
+                    "items": {
+                        "type": "hash_range"
+                    },
+                    "description": "hash_ranges"
+                }
+            }
+        },
+        "tx_registry_info": {
+            "id": "tx_registry_info",
+            "description": "tx registry info",
+            "properties": {
+                "version": {
+                    "type": "long",
+                    "description": "repartitioning_id"
+                },
+                "tx_mapping": {
+                    "type": "array",
+                    "items": {
+                        "type": "tx_mapping_entry"
+                    },
+                    "description": "tx_mapping"
+                }
+            }
+        },
         "ntp": {
             "id": "ntp",
             "description": "NTP",

@@ -130,6 +130,68 @@ ss::future<bool> tx_registry_frontend::ensure_tx_topic_exists() {
     co_return false;
 }
 
+ss::future<checked<tx_registry_frontend::info, tx_errc>>
+tx_registry_frontend::get_info() {
+    auto shard = _shard_table.local().shard_for(model::tx_registry_ntp);
+
+    if (!shard) {
+        vlog(
+          clusterlog.warn,
+          "can't find {} in the shard table",
+          model::tx_registry_ntp);
+        co_return tx_errc::stm_not_found;
+    }
+
+    gate_guard guard{_gate};
+
+    co_return co_await container().invoke_on(
+      *shard, _ssg, [](tx_registry_frontend& self) mutable {
+          return ss::with_gate(self._gate, [&self]() {
+              return self.with_stm(
+                [&self](checked<ss::shared_ptr<tx_registry_stm>, tx_errc> r) {
+                    if (!r) {
+                        return ss::make_ready_future<checked<info, tx_errc>>(
+                          tx_errc::stm_not_found);
+                    }
+                    auto stm = r.value();
+
+                    return stm->read_lock().then(
+                      [&self, stm](ss::basic_rwlock<>::holder unit) {
+                          return self.do_get_info(stm).finally(
+                            [u = std::move(unit)] {});
+                      });
+                });
+          });
+      });
+}
+
+ss::future<checked<tx_registry_frontend::info, tx_errc>>
+tx_registry_frontend::do_get_info(
+  ss::shared_ptr<cluster::tx_registry_stm> stm) {
+    auto term_opt = co_await stm->sync();
+    if (!term_opt.has_value()) {
+        vlog(clusterlog.trace, "can't sync tx registry");
+        co_return tx_errc::leader_not_found;
+    }
+
+    info r;
+    r.id = repartitioning_id(-1);
+
+    if (!stm->is_initialized()) {
+        co_return r;
+    }
+
+    if (stm->seen_unknown_batch_subtype()) {
+        co_return r;
+    }
+
+    auto mapping = stm->get_mapping();
+    r.id = mapping.id;
+    r.mapping = mapping.mapping;
+
+    co_return r;
+}
+
 ss::future<find_coordinator_reply> tx_registry_frontend::find_coordinator(
   kafka::transactional_id tid, model::timeout_clock::duration timeout) {
     if (!_metadata_cache.local().contains(model::tx_manager_nt)) {
