@@ -828,17 +828,18 @@ cluster::cluster_health_report random_cluster_health_report() {
     }
     std::vector<cluster::node_health_report> node_reports;
     for (auto i = 0, mi = random_generators::get_int(20); i < mi; ++i) {
-        std::vector<cluster::topic_status> topics;
+        ss::chunked_fifo<cluster::topic_status> topics;
         for (auto i = 0, mi = random_generators::get_int(20); i < mi; ++i) {
             topics.push_back(random_topic_status());
         }
-        node_reports.push_back(cluster::node_health_report{
-          .id = tests::random_named_int<model::node_id>(),
-          .local_state = random_local_state(),
-          .topics = topics,
-          .include_drain_status = true, // so adl considers drain status
-          .drain_status = random_drain_status(),
-        });
+        auto report = cluster::node_health_report(
+          tests::random_named_int<model::node_id>(),
+          random_local_state(),
+          std::move(topics),
+          /*include_drain_status=*/true,
+          random_drain_status());
+
+        node_reports.push_back(report);
     }
     cluster::cluster_health_report data{
       .raft0_leader = std::nullopt,
@@ -1711,31 +1712,29 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
         roundtrip_test(data);
     }
     {
-        std::vector<cluster::topic_status> topics;
+        ss::chunked_fifo<cluster::topic_status> topics;
         for (auto i = 0, mi = random_generators::get_int(20); i < mi; ++i) {
             topics.push_back(random_topic_status());
         }
-        cluster::node_health_report data{
-          .id = tests::random_named_int<model::node_id>(),
-          .local_state = random_local_state(),
-          .topics = topics,
-          .drain_status = random_drain_status(),
-        };
-        data.include_drain_status = true; // so adl considers drain status
+        cluster::node_health_report data(
+          tests::random_named_int<model::node_id>(),
+          random_local_state(),
+          std::move(topics),
+          true,
+          random_drain_status());
         roundtrip_test(data);
     }
     {
-        std::vector<cluster::topic_status> topics;
+        ss::chunked_fifo<cluster::topic_status> topics;
         for (auto i = 0, mi = random_generators::get_int(20); i < mi; ++i) {
             topics.push_back(random_topic_status());
         }
-        cluster::node_health_report report{
-          .id = tests::random_named_int<model::node_id>(),
-          .local_state = random_local_state(),
-          .topics = topics,
-          .drain_status = random_drain_status(),
-        };
-        report.include_drain_status = true; // so adl considers drain status
+        cluster::node_health_report report(
+          tests::random_named_int<model::node_id>(),
+          random_local_state(),
+          std::move(topics),
+          true,
+          random_drain_status());
         cluster::get_node_health_reply data{
           .report = report,
         };
