@@ -549,7 +549,7 @@ public:
         }
         auto bo = *base_offset_iter;
         auto ix = base_offset_iter.index();
-        auto hint_it = _hints.lower_bound(bo);
+        auto hint_it = _hints.find(bo);
         if (hint_it == _hints.end() || hint_it->second == std::nullopt) {
             return iterators_t(
               _is_compacted.at_index(ix),
@@ -633,7 +633,7 @@ public:
         // belong to it are no longer valid.
         const auto& frame = _base_offset.get_frame_by_element_index(ix).get();
         auto frame_max_offset = frame.last_value();
-        auto it = _hints.upper_bound(frame_max_offset.value_or(bo));
+        auto it = _hints.lower_bound(frame_max_offset.value_or(bo));
 
         // Truncate columns
         std::apply(
