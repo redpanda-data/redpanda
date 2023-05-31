@@ -40,6 +40,10 @@ struct planner_config {
     std::chrono::seconds node_availability_timeout_sec;
     // Fallocation step used to calculate upperbound for partition size
     size_t segment_fallocation_step;
+    // Threshold for minimum size of partition that is going to be prioritized
+    // for movement, partitions with size smaller than threshold will have the
+    // lowest priority
+    size_t min_partition_size_threshold;
 };
 
 class partition_balancer_planner {
@@ -89,6 +93,8 @@ private:
       std::string_view reason);
     static void get_rack_constraint_repair_actions(request_context&);
     static void get_full_node_actions(request_context&);
+    static size_t calculate_full_disk_partition_move_priority(
+      model::node_id, const reassignable_partition&, const request_context&);
 
     planner_config _config;
     partition_balancer_state& _state;

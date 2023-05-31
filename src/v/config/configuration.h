@@ -347,6 +347,7 @@ struct configuration final : public config_store {
     property<size_t> partition_autobalancing_movement_batch_size_bytes;
     property<size_t> partition_autobalancing_concurrent_moves;
     property<double> partition_autobalancing_tick_moves_drop_threshold;
+    property<std::optional<size_t>> partition_autobalancing_min_size_threshold;
 
     property<bool> enable_leader_balancer;
     enum_property<model::leader_balancer_mode> leader_balancer_mode;

@@ -1751,6 +1751,14 @@ configuration::configuration()
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       0.2,
       &validate_0_to_1_ratio)
+  , partition_autobalancing_min_size_threshold(
+      *this,
+      "partition_autobalancing_min_size_threshold",
+      "Minimum size of partition that is going to be prioritized when "
+      "rebalancing cluster due to disk size threshold being breached. By "
+      "default this value is calculated automaticaly",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      std::nullopt)
   , enable_leader_balancer(
       *this,
       "enable_leader_balancer",

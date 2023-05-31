@@ -14,6 +14,7 @@
 #include "cluster/fwd.h"
 #include "cluster/partition_balancer_types.h"
 #include "cluster/types.h"
+#include "config/property.h"
 #include "model/fundamental.h"
 #include "raft/consensus.h"
 #include "seastarx.h"
@@ -42,7 +43,9 @@ public:
       config::binding<size_t>&& movement_batch_size_bytes,
       config::binding<size_t>&& max_concurrent_actions,
       config::binding<double>&& moves_drop_threshold,
-      config::binding<size_t>&& segment_fallocation_step);
+      config::binding<size_t>&& segment_fallocation_step,
+      config::binding<std::optional<size_t>> min_partition_size_threshold,
+      config::binding<size_t> raft_learner_recovery_rate);
 
     void start();
     ss::future<> stop();
@@ -68,6 +71,7 @@ private:
     void maybe_rearm_timer(bool now = false);
     void on_members_update(model::node_id, model::membership_state);
     void on_topic_table_update();
+    size_t get_min_partition_size_threshold() const;
 
 private:
     using clock_t = ss::lowres_clock;
@@ -88,6 +92,8 @@ private:
     config::binding<size_t> _max_concurrent_actions;
     config::binding<double> _concurrent_moves_drop_threshold;
     config::binding<size_t> _segment_fallocation_step;
+    config::binding<std::optional<size_t>> _min_partition_size_threshold;
+    config::binding<size_t> _raft_learner_recovery_rate;
 
     model::term_id _last_leader_term;
     clock_t::time_point _last_tick_time;
