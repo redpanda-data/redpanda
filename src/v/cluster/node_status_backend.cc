@@ -43,25 +43,31 @@ node_status_backend::node_status_backend(
 
     _members_table_notification_handle
       = _members_table.local().register_members_updated_notification(
-        [this](auto ids) {
-            handle_members_updated_notification(std::move(ids));
+        [this](model::node_id n, model::membership_state state) {
+            handle_members_updated_notification(n, state);
         });
 
     _timer.set_callback([this] { tick(); });
 }
 
 void node_status_backend::handle_members_updated_notification(
-  std::vector<model::node_id> node_ids) {
-    for (const auto& node_id : node_ids) {
-        if (node_id == _self || _discovered_peers.contains(node_id)) {
-            continue;
+  model::node_id node_id, model::membership_state state) {
+    if (state == model::membership_state::active) {
+        if (node_id != _self && !_discovered_peers.contains(node_id)) {
+            vlog(
+              clusterlog.info,
+              "Node {} has been discovered via members table",
+              node_id);
+            _discovered_peers.insert(node_id);
         }
-
+    } else if (
+      state == model::membership_state::removed
+      && _discovered_peers.contains(node_id)) {
         vlog(
           clusterlog.info,
-          "Node {} has been discovered via members table",
+          "Node {} has been removed via members table",
           node_id);
-        _discovered_peers.insert(node_id);
+        _discovered_peers.erase(node_id);
     }
 }
 

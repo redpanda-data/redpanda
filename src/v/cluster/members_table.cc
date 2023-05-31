@@ -89,7 +89,7 @@ std::error_code members_table::apply(model::offset o, add_node_cmd cmd) {
 
     _waiters.notify(cmd.value.id());
 
-    notify_members_updated();
+    notify_member_updated(cmd.value.id(), model::membership_state::active);
     return errc::success;
 }
 
@@ -100,9 +100,8 @@ void members_table::set_initial_brokers(std::vector<model::broker> brokers) {
         const auto id = b.id();
         _nodes.emplace(id, node_metadata{.broker = std::move(b)});
         _waiters.notify(id);
+        notify_member_updated(id, model::membership_state::active);
     }
-
-    notify_members_updated();
 }
 
 std::error_code members_table::apply(model::offset o, update_node_cfg_cmd cmd) {
@@ -114,7 +113,7 @@ std::error_code members_table::apply(model::offset o, update_node_cfg_cmd cmd) {
     vlog(clusterlog.info, "updating node configuration {}", cmd.value);
     it->second.broker = std::move(cmd.value);
 
-    notify_members_updated();
+    notify_member_updated(cmd.value.id(), model::membership_state::active);
     return errc::success;
 }
 
@@ -137,7 +136,7 @@ std::error_code members_table::apply(model::offset o, remove_node_cmd cmd) {
       model::membership_state::removed);
     _removed_nodes.insert(std::move(handle));
 
-    notify_members_updated();
+    notify_member_updated(cmd.key, model::membership_state::removed);
     return errc::success;
 }
 
@@ -158,6 +157,7 @@ members_table::apply(model::offset version, decommission_node_cmd cmd) {
           id,
           model::membership_state::draining);
         metadata.state.set_membership_state(model::membership_state::draining);
+        notify_member_updated(cmd.key, model::membership_state::draining);
         return errc::success;
     }
     return errc::node_does_not_exists;
@@ -180,6 +180,7 @@ members_table::apply(model::offset version, recommission_node_cmd cmd) {
           id,
           model::membership_state::active);
         metadata.state.set_membership_state(model::membership_state::active);
+        notify_member_updated(cmd.key, model::membership_state::active);
         return errc::success;
     }
     return errc::node_does_not_exists;
@@ -290,12 +291,14 @@ void members_table::apply_snapshot(
     for (const auto& [id, node] : snap.nodes) {
         _nodes.emplace(id, node_metadata{node.broker, node.state});
         _waiters.notify(id);
+        notify_member_updated(id, node.state.get_membership_state());
     }
 
     _removed_nodes.clear();
 
     for (const auto& [id, node] : snap.removed_nodes) {
         _removed_nodes.emplace(id, node_metadata{node.broker, node.state});
+        notify_member_updated(id, model::membership_state::removed);
     }
 
     // notify for changes in broker state
@@ -320,8 +323,6 @@ void members_table::apply_snapshot(
     for (const auto& [id, node] : _removed_nodes) {
         maybe_notify(node);
     }
-
-    notify_members_updated();
 }
 
 bool members_table::contains(model::node_id id) const {
@@ -373,9 +374,10 @@ void members_table::unregister_members_updated_notification(
     }
 }
 
-void members_table::notify_members_updated() {
+void members_table::notify_member_updated(
+  model::node_id n, model::membership_state new_state) {
     for (const auto& [id, cb] : _members_updated_notifications) {
-        cb(node_ids());
+        cb(n, new_state);
     }
 }
 

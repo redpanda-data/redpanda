@@ -58,7 +58,8 @@ public:
     ss::future<> stop();
 
 private:
-    void handle_members_updated_notification(std::vector<model::node_id>);
+    void handle_members_updated_notification(
+      model::node_id, model::membership_state);
 
     void tick();
 

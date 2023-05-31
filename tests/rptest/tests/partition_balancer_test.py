@@ -21,6 +21,7 @@ from rptest.services.failure_injector import FailureInjector, FailureSpec
 from rptest.services.admin_ops_fuzzer import AdminOperationsFuzzer
 from rptest.services.kgo_verifier_services import KgoVerifierProducer
 
+from rptest.util import wait_for_recovery_throttle_rate
 from rptest.tests.end_to_end import EndToEndTest
 from rptest.clients.types import TopicSpec
 from rptest.clients.rpk import RpkTool, RpkException
@@ -163,7 +164,9 @@ class PartitionBalancerService(EndToEndTest):
             req_start = time.time()
 
             status = admin.get_partition_balancer_status(timeout=10)
-            self.logger.info(f"partition balancer status: {status}")
+            self.logger.info(
+                f"partition balancer status: {status}, req_start: {req_start}, start: {start}"
+            )
 
             if "seconds_since_last_tick" not in status:
                 return False
@@ -396,6 +399,7 @@ class PartitionBalancerTest(PartitionBalancerService):
     def _throttle_recovery(self, new_value):
         self.redpanda.set_cluster_config(
             {"raft_learner_recovery_rate": str(new_value)})
+        wait_for_recovery_throttle_rate(self.redpanda, new_value)
 
     @skip_debug_mode
     @cluster(num_nodes=6, log_allow_list=CHAOS_LOG_ALLOW_LIST)

@@ -20,6 +20,7 @@ from rptest.clients.rpk import RpkTool
 from rptest.services.cluster import cluster
 from ducktape.utils.util import wait_until
 from ducktape.mark import parametrize
+from ducktape.mark import matrix
 from rptest.clients.types import TopicSpec
 from rptest.tests.end_to_end import EndToEndTest
 from rptest.services.admin import Admin
@@ -226,10 +227,19 @@ class NodesDecommissioningTest(EndToEndTest):
         # A decom can look like a restart in terms of logs from peers dropping
         # connections with it
         log_allow_list=RESTART_LOG_ALLOW_LIST)
-    @parametrize(delete_topic=True)
-    @parametrize(delete_topic=False)
-    def test_decommissioning_working_node(self, delete_topic):
-        self.start_redpanda(num_nodes=4)
+    @matrix(delete_topic=[True, False], tick_interval=[5000, 3600000])
+    def test_decommissioning_working_node(self, delete_topic, tick_interval):
+
+        # Decommission should progress regardless of tick interval as the invocation
+        # and progress is event driven.
+        # Lower concurrent moves results in multiple planner runs to achieve the
+        # desired state.
+        self.start_redpanda(num_nodes=4,
+                            extra_rp_conf={
+                                'partition_autobalancing_tick_interval_ms':
+                                tick_interval,
+                                'partition_autobalancing_concurrent_moves': 2
+                            })
         self._create_topics()
 
         self.start_producer(1)
