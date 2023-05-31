@@ -35,6 +35,7 @@ type consumer struct {
 	partitions []int32
 	regex      bool
 
+	rack     string
 	group    string
 	balancer string
 
@@ -138,6 +139,8 @@ func newConsumeCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	cmd.Flags().IntVarP(&c.num, "num", "n", 0, "Quit after consuming this number of records (0 is unbounded)")
 	cmd.Flags().BoolVar(&c.pretty, "pretty-print", true, "Pretty print each record over multiple lines (for -f json)")
 	cmd.Flags().BoolVar(&c.metaOnly, "meta-only", false, "Print all record info except the record value (for -f json)")
+
+	cmd.Flags().StringVar(&c.rack, "rack", "", "Rack to use for consuming, which opts into follower fetching")
 
 	// Deprecated.
 	cmd.Flags().BoolVar(new(bool), "commit", false, "")
@@ -666,7 +669,7 @@ func (c *consumer) intoOptions(topics []string) ([]kgo.Opt, error) {
 		kgo.ConsumeResetOffset(c.resetOffset),
 	}
 
-	if len(c.group) != 0 {
+	if c.group != "" {
 		if len(c.partitions) != 0 {
 			return nil, errors.New("invalid flags: only one of --partitions and --group can be specified")
 		} else if c.partEnds != nil {
@@ -674,6 +677,9 @@ func (c *consumer) intoOptions(topics []string) ([]kgo.Opt, error) {
 		}
 		opts = append(opts, kgo.ConsumerGroup(c.group))
 		opts = append(opts, kgo.AutoCommitMarks())
+	}
+	if c.rack != "" {
+		opts = append(opts, kgo.Rack(c.rack))
 	}
 
 	// If we have ends, we have to consume control records because a
