@@ -353,13 +353,13 @@ public:
     auto validate(const foreign_data_t& data) { return validate(*data.buffer); }
 
     ss::future<result> operator()(model::record_batch_reader&& rbr) {
-        if (!_api->_controller->get_feature_table().local().is_active(
-              features::feature::schema_id_validation)) {
-            co_return std::move(rbr);
-        }
         if (!_api) {
             // If Schema Registry is not enabled, the safe default is to reject
             co_return kafka::error_code::invalid_record;
+        }
+        if (!_api->_controller->get_feature_table().local().is_active(
+              features::feature::schema_id_validation)) {
+            co_return std::move(rbr);
         }
 
         auto impl = std::move(rbr).release();
