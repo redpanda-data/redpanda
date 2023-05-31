@@ -13,6 +13,7 @@
 
 #include "cluster/errc.h"
 #include "cluster/fwd.h"
+#include "cluster/tx_hash_ranges.h"
 #include "kafka/types.h"
 #include "model/adl_serde.h"
 #include "model/fundamental.h"
@@ -1064,6 +1065,30 @@ struct find_coordinator_request
     operator<<(std::ostream& o, const find_coordinator_request& r);
 
     auto serde_fields() { return std::tie(tid); }
+};
+
+struct describe_tx_registry_reply {
+    repartitioning_id id;
+    absl::flat_hash_map<model::partition_id, hosted_txs> mapping;
+    tx_errc ec{};
+
+    describe_tx_registry_reply() noexcept = default;
+
+    describe_tx_registry_reply(tx_errc ec)
+      : ec(ec) {}
+
+    friend std::ostream&
+    operator<<(std::ostream& o, const describe_tx_registry_reply& r);
+};
+
+struct describe_tx_registry_request {
+    using reply = describe_tx_registry_reply;
+    static constexpr const std::string_view name = "describe_tx_registry";
+
+    describe_tx_registry_request() noexcept = default;
+
+    friend std::ostream&
+    operator<<(std::ostream& o, const describe_tx_registry_request& r);
 };
 
 struct join_node_request
