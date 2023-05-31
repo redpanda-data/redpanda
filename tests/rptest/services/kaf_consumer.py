@@ -17,7 +17,7 @@ class KafConsumer(BackgroundThreadService):
                  context,
                  redpanda,
                  topic,
-                 num_records=1,
+                 num_records=None,
                  offset_for_read="newest"):
         super(KafConsumer, self).__init__(context, num_nodes=1)
         self._redpanda = redpanda
@@ -33,8 +33,10 @@ class KafConsumer(BackgroundThreadService):
         self._stopping.clear()
         try:
             partition = None
-            cmd = "echo $$ ; kaf consume -b %s -f --offset %s %s" % (
-                self._redpanda.brokers(), self._offset_for_read, self._topic)
+            cmd = "echo $$ ; kaf consume -b %s %s --offset %s %s" % (
+                self._redpanda.brokers(), "--follow" if self._num_records is
+                None else f"--limit-messages {self._num_records}",
+                self._offset_for_read, self._topic)
             for line in node.account.ssh_capture(cmd):
                 if self._pid is None:
                     self._pid = line.strip()
