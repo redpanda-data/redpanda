@@ -30,8 +30,8 @@
 
 namespace cluster {
 
-static constexpr const int8_t snapshot_version_v0 = 0;
-static constexpr const int8_t snapshot_version = 1;
+static constexpr const int8_t stm_snapshot_version_v0 = 0;
+static constexpr const int8_t stm_snapshot_version = 1;
 
 struct stm_snapshot_header {
     int8_t version{0};

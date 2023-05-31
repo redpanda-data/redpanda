@@ -33,14 +33,14 @@ std::optional<cluster::stm_snapshot_header> read_snapshot_header(
   iobuf_parser& parser, const model::ntp& ntp, const ss::sstring& name) {
     auto version = reflection::adl<int8_t>{}.from(parser);
     vassert(
-      version == cluster::snapshot_version
-        || version == cluster::snapshot_version_v0,
+      version == cluster::stm_snapshot_version
+        || version == cluster::stm_snapshot_version_v0,
       "[{} ({})] Unsupported persisted_stm snapshot_version {}",
       ntp,
       name,
       version);
 
-    if (version == cluster::snapshot_version_v0) {
+    if (version == cluster::stm_snapshot_version_v0) {
         return std::nullopt;
     }
 
@@ -132,7 +132,7 @@ ss::future<> file_backed_stm_snapshot::persist_snapshot(
   storage::simple_snapshot_manager& snapshot_mgr, stm_snapshot&& snapshot) {
     iobuf data_size_buf;
 
-    int8_t version = snapshot_version;
+    int8_t version = stm_snapshot_version;
     int64_t offset = snapshot.header.offset();
     int8_t data_version = snapshot.header.version;
     int32_t data_size = snapshot.header.snapshot_size;
@@ -242,7 +242,7 @@ kvstore_backed_stm_snapshot::load_snapshot() {
       std::move(*snapshot_blob));
     stm_snapshot snapshot;
     snapshot.header = stm_snapshot_header{
-      .version = snapshot_version,
+      .version = stm_snapshot_version,
       .snapshot_size = static_cast<int32_t>(thin_snapshot.data.size_bytes()),
       .offset = thin_snapshot.offset};
     snapshot.data = std::move(thin_snapshot.data);

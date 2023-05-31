@@ -200,7 +200,7 @@ FIXTURE_TEST(persisted_stm_kvstore_test, kvstore_test_fixture) {
     for (auto i = 0; i < 10; ++i) {
         cluster::stm_snapshot ss;
         ss.header = cluster::stm_snapshot_header{
-          .version = cluster::snapshot_version,
+          .version = cluster::stm_snapshot_version,
           .offset = model::offset(random_generators::get_int(256))};
         ss.data = random_generators::make_iobuf(
           random_generators::get_int(256));
