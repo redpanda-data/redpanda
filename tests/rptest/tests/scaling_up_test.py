@@ -83,19 +83,24 @@ class ScalingUpTest(EndToEndTest):
 
             # make sure # of replicas is level within each domain separately
             for domain, in_domain in per_domain_node.items():
-                expected_per_node = sum(in_domain.values()) / len(
-                    self.redpanda.started_nodes())
-                expected_range = [
-                    math.floor(0.8 * expected_per_node),
-                    math.ceil(1.2 * expected_per_node)
-                ]
-                if not all(expected_range[0] <= p[1] <= expected_range[1]
-                           for p in in_domain.items()):
-                    self.redpanda.logger.debug(
-                        f"In domain {domain}, not all nodes' partition counts "
-                        f"fall within the expected range {expected_range}. "
-                        f"Nodes: {len(self.redpanda.started_nodes())}")
-                    return False
+                # rule out the perfect distribution first
+                if max(in_domain.values()) - min(in_domain.values()) > 1:
+                    # judge nonperfect ones by falling into the ±20%
+                    # tolerance range
+                    expected_per_node = sum(in_domain.values()) / len(
+                        self.redpanda.started_nodes())
+                    expected_range = [
+                        math.floor(0.8 * expected_per_node),
+                        math.ceil(1.2 * expected_per_node)
+                    ]
+                    if not all(expected_range[0] <= p[1] <= expected_range[1]
+                               for p in in_domain.items()):
+                        self.redpanda.logger.debug(
+                            f"In domain {domain}, not all nodes' partition counts "
+                            f"fall within the expected range {expected_range}. "
+                            f"Nodes: {len(self.redpanda.started_nodes())}")
+                        return False
+
                 for n in in_domain:
                     per_node[n] = per_node.get(n, 0) + in_domain[n]
 
