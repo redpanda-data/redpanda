@@ -7,27 +7,35 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-import random, time, math
+import math
+import random
+import time
 from enum import Enum
 from typing import Tuple
+
+from ducktape.tests.test import TestContext
+from ducktape.utils.util import wait_until
+from rptest.clients.rpk import RpkTool
+from rptest.clients.types import TopicSpec
 from rptest.services.cluster import cluster
 from rptest.services.redpanda import MetricsEndpoint
+from rptest.services.rpk_producer import RpkProducer
 from rptest.tests.redpanda_test import RedpandaTest
-from rptest.clients.rpk import RpkTool
-from ducktape.tests.test import TestContext
+from rptest.services.kcat_consumer import KcatConsumer
+from rptest.clients.kafka_cat import KafkaCat
 
 # This file is about throughput limiting that works at shard/node/cluster (SNC)
 # levels, like cluster-wide and node-wide throughput limits
 
+kiB = 1024
+MiB = 1024 * kiB
+
 
 class ThroughputLimitsSnc(RedpandaTest):
     """
-    Throughput limiting that works at shard/node/cluster (SNC)
+    Tests for throughput limiting that works at shard/node/cluster (SNC)
     levels, like cluster-wide and node-wide throughput limits
     """
-
-    # see later if need to split into more classes
-
     def __init__(self, test_ctx: TestContext, *args, **kwargs):
         super(ThroughputLimitsSnc, self).__init__(test_ctx,
                                                   num_brokers=3,
@@ -47,15 +55,6 @@ class ThroughputLimitsSnc(RedpandaTest):
         self.logger.info(f"Random seed: {self.rnd_seed}")
         self.rnd = random.Random(self.rnd_seed)
         self.rpk = RpkTool(self.redpanda)
-
-        self.config = {}
-        for prop in list(self.ConfigProp):
-            val = self.get_config_parameter_random_value(prop)
-            self.config[prop] = val
-            if not val is None:
-                self.redpanda.add_extra_rp_conf({prop.value: val})
-        self.logger.info(
-            f"Initial cluster props: {self.redpanda._extra_rp_conf}")
 
     class ConfigProp(Enum):
         QUOTA_NODE_MAX_IN = "kafka_throughput_limit_node_in_bps"
@@ -163,12 +162,25 @@ class ThroughputLimitsSnc(RedpandaTest):
             }).samples)
         return node_quota_in, node_quota_eg
 
+    def setUp(self):
+        pass
+
     @cluster(num_nodes=3)
     def test_configuration(self):
         """
         Test various configuration patterns, including extreme ones,
         verify that it does not wreck havoc onto cluster
         """
+
+        self.config = {}
+        for prop in list(self.ConfigProp):
+            val = self.get_config_parameter_random_value(prop)
+            self.config[prop] = val
+            if not val is None:
+                self.redpanda.add_extra_rp_conf({prop.value: val})
+        self.logger.info(
+            f"Initial cluster props: {self.redpanda._extra_rp_conf}")
+        super(ThroughputLimitsSnc, self).setUp()
 
         # TBD: parameterize to run under load or not
 
@@ -220,3 +232,68 @@ class ThroughputLimitsSnc(RedpandaTest):
         assert len(errors) == 0, (
             f"Test has failed with {len(errors)} distinct errors. "
             f"{errors}, rnd_seed: {self.rnd_seed}")
+
+    @cluster(num_nodes=6)
+    def test_consumers(self):
+        """
+        Non-KIP-219-compliant consumers with capability beyond the configured
+        egress limit should not timeout or prevent other such consumers from
+        joining a cgroup
+        """
+        self.redpanda.add_extra_rp_conf({
+            self.ConfigProp.QUOTA_NODE_MAX_EG.value:
+            400 * kiB,
+            "kafka_batch_max_bytes":
+            1 * MiB,
+        })
+        self.redpanda.set_seed_servers(self.redpanda.nodes)
+        self.redpanda.start(omit_seeds_on_idx_one=False)
+
+        partition_count = 2
+        self.topics = [TopicSpec(partition_count=partition_count)]
+        self._create_initial_topics()
+
+        msg_count = 2000
+        producer = RpkProducer(self.test_context,
+                               self.redpanda,
+                               self.topic,
+                               msg_size=10 * kiB,
+                               msg_count=msg_count // partition_count,
+                               printable=True)
+        producer.start()
+
+        def on_message(consumer: KcatConsumer, message: dict):
+            message["payload"] = f"<{len(message['payload'])} bytes>"
+            consumer._redpanda.logger.debug(f"{consumer._caption}{message}")
+
+        consumer = KcatConsumer(self.test_context,
+                                self.redpanda,
+                                self.topic,
+                                offset=KcatConsumer.OffsetMeta.beginning,
+                                cgroup_name="cg01",
+                                auto_commit_interval_ms=500
+                                #caption="consumer1"
+                                )
+        consumer.set_on_message(on_message)
+        consumer.start()
+        wait_until(lambda: consumer.consumed_total >= msg_count // 10,
+                   timeout_sec=10,
+                   backoff_sec=0.001)
+
+        consumer2 = KcatConsumer(self.test_context,
+                                 self.redpanda,
+                                 self.topic,
+                                 offset=KcatConsumer.OffsetMeta.stored,
+                                 cgroup_name="cg01",
+                                 auto_commit_interval_ms=500
+                                 #caption="consumer2"
+                                 )
+        consumer2.set_on_message(on_message)
+        consumer2.start()
+        # ensure that the 2nd consumer has connected and joined the cgroup
+        # by checking that it has started to consume
+        wait_until(lambda: consumer2.consumed_total > 0, timeout_sec=30)
+
+        producer.stop()
+        consumer.stop()
+        consumer2.stop()
