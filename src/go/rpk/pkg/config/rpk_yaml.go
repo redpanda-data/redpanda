@@ -97,6 +97,7 @@ type (
 	RpkProfile struct {
 		Name         string           `yaml:"name,omitempty"`
 		Description  string           `yaml:"description,omitempty"`
+		Prompt       string           `yaml:"prompt,omitempty"`
 		FromCloud    bool             `yaml:"from_cloud,omitempty"`
 		CloudCluster *RpkCloudCluster `yaml:"cloud_cluster,omitempty"`
 		KafkaAPI     RpkKafkaAPI      `yaml:"kafka_api,omitempty"`

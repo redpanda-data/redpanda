@@ -39,6 +39,7 @@ your configuration in one place.
 		newEditCommand(fs, p),
 		newListCommand(fs, p),
 		newPrintCommand(fs, p),
+		newPromptCommand(fs, p),
 		newRenameToCommand(fs, p),
 		newSetCommand(fs, p),
 		newUseCommand(fs, p),
