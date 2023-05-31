@@ -22,7 +22,9 @@
 #include "model/metadata.h"
 #include "model/namespace.h"
 #include "model/record_batch_reader.h"
+#include "model/timeout_clock.h"
 #include "model/timestamp.h"
+#include "pandaproxy/schema_registry/validation.h"
 #include "raft/errc.h"
 #include "raft/types.h"
 #include "ssx/future-util.h"
@@ -285,6 +287,9 @@ static partition_produce_stages produce_topic_partition(
     auto batch_size = batch.size_bytes();
     auto num_records = batch.record_count();
     auto reader = reader_from_lcore_batch(std::move(batch));
+    auto validator
+      = pandaproxy::schema_registry::maybe_make_schema_id_validator(
+        octx.rctx.schema_registry(), topic.name, topic_cfg->properties);
     auto start = std::chrono::steady_clock::now();
 
     auto dispatch = std::make_unique<ss::promise<>>();
@@ -296,6 +301,7 @@ static partition_produce_stages produce_topic_partition(
             *shard,
             octx.ssg,
             [reader = std::move(reader),
+             validator = std::move(validator),
              ntp = std::move(ntp),
              dispatch = std::move(dispatch),
              num_records,
@@ -336,38 +342,59 @@ static partition_produce_stages produce_topic_partition(
                       ntp,
                       source_shard);
                 }
-                auto stages = partition_append(
-                  ntp.tp.partition,
-                  ss::make_lw_shared<replicated_partition>(
-                    std::move(partition)),
-                  bid,
-                  std::move(reader),
-                  acks,
-                  num_records,
-                  batch_size,
-                  timeout);
-                return stages.dispatched
-                  .then_wrapped([source_shard, dispatch = std::move(dispatch)](
-                                  ss::future<> f) mutable {
-                      if (f.failed()) {
-                          (void)ss::smp::submit_to(
-                            source_shard,
-                            [dispatch = std::move(dispatch),
-                             e = f.get_exception()]() mutable {
-                                dispatch->set_exception(e);
-                                dispatch.reset();
-                            });
-                          return;
+
+                return pandaproxy::schema_registry::maybe_validate_schema_id(
+                         std::move(validator), std::move(reader))
+                  .then([ntp{std::move(ntp)},
+                         partition{std::move(partition)},
+                         dispatch = std::move(dispatch),
+                         bid,
+                         acks,
+                         source_shard,
+                         num_records,
+                         batch_size,
+                         timeout](auto reader) mutable {
+                      if (reader.has_error()) {
+                          return finalize_request_with_error_code(
+                            reader.assume_error(),
+                            std::move(dispatch),
+                            ntp,
+                            source_shard);
                       }
-                      (void)ss::smp::submit_to(
-                        source_shard,
-                        [dispatch = std::move(dispatch)]() mutable {
-                            dispatch->set_value();
-                            dispatch.reset();
+                      auto stages = partition_append(
+                        ntp.tp.partition,
+                        ss::make_lw_shared<replicated_partition>(
+                          std::move(partition)),
+                        bid,
+                        std::move(reader).assume_value(),
+                        acks,
+                        num_records,
+                        batch_size,
+                        timeout);
+                      return stages.dispatched
+                        .then_wrapped(
+                          [source_shard, dispatch = std::move(dispatch)](
+                            ss::future<> f) mutable {
+                              if (f.failed()) {
+                                  (void)ss::smp::submit_to(
+                                    source_shard,
+                                    [dispatch = std::move(dispatch),
+                                     e = f.get_exception()]() mutable {
+                                        dispatch->set_exception(e);
+                                        dispatch.reset();
+                                    });
+                                  return;
+                              }
+                              (void)ss::smp::submit_to(
+                                source_shard,
+                                [dispatch = std::move(dispatch)]() mutable {
+                                    dispatch->set_value();
+                                    dispatch.reset();
+                                });
+                          })
+                        .then([f = std::move(stages.produced)]() mutable {
+                            return std::move(f);
                         });
-                  })
-                  .then([f = std::move(stages.produced)]() mutable {
-                      return std::move(f);
                   });
             })
           .then([&octx, start, m = std::move(m)](

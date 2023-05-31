@@ -193,6 +193,14 @@ class CreateTopicsTest(RedpandaTest):
         lambda: "true" if random.randint(0, 1) else "false",
         'segment.ms':
         lambda: random.choice([-1, random.randint(10000, 10000000)]),
+        TopicSpec.PROPERTY_RECORD_KEY_SCHEMA_ID_VALIDATION:
+        lambda: "true" if random.randint(0, 1) else "false",
+        TopicSpec.PROPERTY_RECORD_KEY_SUBJECT_NAME_STRATEGY:
+        lambda: random.choice(list(TopicSpec.SubjectNameStrategy)).value,
+        TopicSpec.PROPERTY_RECORD_VALUE_SCHEMA_ID_VALIDATION:
+        lambda: "true" if random.randint(0, 1) else "false",
+        TopicSpec.PROPERTY_RECORD_VALUE_SUBJECT_NAME_STRATEGY:
+        lambda: random.choice(list(TopicSpec.SubjectNameStrategy)).value
     }
 
     def __init__(self, test_context):

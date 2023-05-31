@@ -12,7 +12,9 @@
 #pragma once
 
 #include "avro/ValidSchema.hh"
+#include "kafka/protocol/errors.h"
 #include "model/metadata.h"
+#include "outcome.h"
 #include "seastarx.h"
 #include "utils/named_type.h"
 #include "utils/string_switch.h"
@@ -131,6 +133,8 @@ public:
         return {raw(), type()};
     }
 
+    ss::sstring name() const;
+
 private:
     avro::ValidSchema _impl;
 };
@@ -159,6 +163,9 @@ public:
     explicit operator canonical_schema_definition() const {
         return {raw(), type()};
     }
+
+    ::result<ss::sstring, kafka::error_code>
+    name(std::vector<int> const& fields) const;
 
 private:
     pimpl _impl;

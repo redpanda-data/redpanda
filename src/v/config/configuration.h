@@ -415,6 +415,9 @@ struct configuration final : public config_store {
     property<bool> legacy_permit_unsafe_log_operation;
     property<std::chrono::seconds> legacy_unsafe_log_warning_interval_sec;
 
+    // schema id validation
+    config::property<size_t> kafka_schema_id_validation_cache_capacity;
+
     configuration();
 
     error_map_t load(const YAML::Node& root_node);

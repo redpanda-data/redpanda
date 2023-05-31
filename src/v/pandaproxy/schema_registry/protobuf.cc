@@ -11,6 +11,7 @@
 
 #include "pandaproxy/schema_registry/protobuf.h"
 
+#include "kafka/protocol/errors.h"
 #include "pandaproxy/logger.h"
 #include "pandaproxy/schema_registry/errors.h"
 #include "pandaproxy/schema_registry/sharded_store.h"
@@ -310,6 +311,22 @@ struct protobuf_schema_definition::impl {
 canonical_schema_definition::raw_string
 protobuf_schema_definition::raw() const {
     return canonical_schema_definition::raw_string{_impl->fd->DebugString()};
+}
+
+::result<ss::sstring, kafka::error_code>
+protobuf_schema_definition::name(std::vector<int> const& fields) const {
+    if (fields.empty()) {
+        return kafka::error_code::invalid_record;
+    }
+    auto f = fields.begin();
+    auto d = _impl->fd->message_type(*f++);
+    while (fields.end() != f && d) {
+        d = d->nested_type(*f++);
+    }
+    if (!d) {
+        return kafka::error_code::invalid_record;
+    }
+    return d->full_name();
 }
 
 bool operator==(

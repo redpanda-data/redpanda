@@ -6,6 +6,7 @@ rp_test(
     util.cc
     storage.cc
     store.cc
+    schema_id_cache.cc
   DEFINITIONS BOOST_TEST_DYN_LINK
   LIBRARIES Boost::unit_test_framework v_pandaproxy_schema_registry
   LABELS pandaproxy

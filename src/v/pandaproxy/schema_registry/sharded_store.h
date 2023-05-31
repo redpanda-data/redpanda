@@ -125,6 +125,8 @@ public:
     ss::future<bool>
     is_compatible(schema_version version, canonical_schema new_schema);
 
+    ss::future<bool> has_version(const subject&, schema_id, include_deleted);
+
 private:
     ss::future<bool>
     upsert_schema(schema_id id, canonical_schema_definition def);

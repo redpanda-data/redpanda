@@ -45,6 +45,7 @@ public:
     ss::future<> restart();
 
 private:
+    friend class schema_id_validator;
     model::node_id _node_id;
     ss::smp_service_group _sg;
     size_t _max_memory;
@@ -54,6 +55,8 @@ private:
 
     ss::sharded<kafka::client::client> _client;
     std::unique_ptr<pandaproxy::schema_registry::sharded_store> _store;
+    ss::sharded<schema_id_validation_probe> _schema_id_validation_probe;
+    ss::sharded<schema_id_cache> _schema_id_cache;
     ss::sharded<pandaproxy::schema_registry::service> _service;
     ss::sharded<pandaproxy::schema_registry::seq_writer> _sequencer;
 };

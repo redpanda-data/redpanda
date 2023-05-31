@@ -729,7 +729,7 @@ public:
 private:
     record_batch_header _header;
     iobuf _records;
-    bool _compressed;
+    bool _compressed{false};
 
     record_batch(record_batch_header header, iobuf&& records, bool compressed)
       : _header(header)

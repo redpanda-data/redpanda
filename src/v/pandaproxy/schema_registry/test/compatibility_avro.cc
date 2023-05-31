@@ -249,6 +249,7 @@ SEASTAR_THREAD_TEST_CASE(test_avro_schema_definition) {
       "schema2 is an avro_schema_definition");
     pps::canonical_schema_definition avro_conversion{valid};
     BOOST_CHECK_EQUAL(expected, avro_conversion);
+    BOOST_CHECK_EQUAL(valid.name(), "myrecord");
 }
 
 SEASTAR_THREAD_TEST_CASE(test_avro_schema_definition_custom_attributes) {

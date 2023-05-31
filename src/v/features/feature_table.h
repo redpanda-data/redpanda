@@ -58,6 +58,7 @@ enum class feature : std::uint64_t {
     cloud_storage_manifest_format_v2 = 1ULL << 24U,
     transaction_partitioning = 1ULL << 25U,
     force_partition_reconfiguration = 1ULL << 26U,
+    schema_id_validation = 1ULL << 27U,
 
     // Dummy features for testing only
     test_alpha = 1ULL << 61U,
@@ -262,6 +263,12 @@ constexpr static std::array feature_schema{
     cluster::cluster_version{10},
     "force_partition_reconfiguration",
     feature::force_partition_reconfiguration,
+    feature_spec::available_policy::always,
+    feature_spec::prepare_policy::always},
+  feature_spec{
+    cluster::cluster_version{10},
+    "schema_id_validation",
+    feature::schema_id_validation,
     feature_spec::available_policy::always,
     feature_spec::prepare_policy::always},
 };

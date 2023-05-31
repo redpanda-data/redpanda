@@ -29,28 +29,37 @@
 
 #include <fmt/ostream.h>
 
+#include <array>
 #include <chrono>
 #include <string_view>
 
 namespace kafka {
 
-static constexpr std::array<std::string_view, 16> supported_configs{
-  topic_property_compression,
-  topic_property_cleanup_policy,
-  topic_property_timestamp_type,
-  topic_property_segment_size,
-  topic_property_compaction_strategy,
-  topic_property_retention_bytes,
-  topic_property_retention_duration,
-  topic_property_recovery,
-  topic_property_remote_write,
-  topic_property_remote_read,
-  topic_property_remote_delete,
-  topic_property_read_replica,
-  topic_property_max_message_bytes,
-  topic_property_retention_local_target_bytes,
-  topic_property_retention_local_target_ms,
-  topic_property_segment_ms};
+static constexpr auto supported_configs = std::to_array(
+  {topic_property_compression,
+   topic_property_cleanup_policy,
+   topic_property_timestamp_type,
+   topic_property_segment_size,
+   topic_property_compaction_strategy,
+   topic_property_retention_bytes,
+   topic_property_retention_duration,
+   topic_property_recovery,
+   topic_property_remote_write,
+   topic_property_remote_read,
+   topic_property_remote_delete,
+   topic_property_read_replica,
+   topic_property_max_message_bytes,
+   topic_property_retention_local_target_bytes,
+   topic_property_retention_local_target_ms,
+   topic_property_segment_ms,
+   topic_property_record_key_schema_id_validation,
+   topic_property_record_key_schema_id_validation_compat,
+   topic_property_record_key_subject_name_strategy,
+   topic_property_record_key_subject_name_strategy_compat,
+   topic_property_record_value_schema_id_validation,
+   topic_property_record_value_schema_id_validation_compat,
+   topic_property_record_value_subject_name_strategy,
+   topic_property_record_value_subject_name_strategy_compat});
 
 bool is_supported(std::string_view name) {
     return std::any_of(
@@ -71,7 +80,8 @@ using validators = make_validator_types<
   timestamp_type_validator,
   cleanup_policy_validator,
   remote_read_and_write_are_not_supported_for_read_replica,
-  batch_max_bytes_limits>;
+  batch_max_bytes_limits,
+  subject_name_strategy_validator>;
 
 static std::vector<creatable_topic_configs>
 properties_to_result_configs(config_map_t config_map) {

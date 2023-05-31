@@ -342,6 +342,10 @@ canonical_schema_definition::raw_string avro_schema_definition::raw() const {
     return canonical_schema_definition::raw_string{_impl.toJson(false)};
 }
 
+ss::sstring avro_schema_definition::name() const {
+    return _impl.root()->name().fullname();
+};
+
 class collected_schema {
 public:
     bool contains(const ss::sstring& name) const {

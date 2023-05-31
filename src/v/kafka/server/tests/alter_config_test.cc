@@ -346,7 +346,15 @@ FIXTURE_TEST(
       "retention.local.target.bytes",
       "retention.local.target.ms",
       "redpanda.remote.delete",
-      "segment.ms"};
+      "segment.ms",
+      "redpanda.key.schema.id.validation",
+      "confluent.key.schema.validation",
+      "redpanda.key.subject.name.strategy",
+      "confluent.key.subject.name.strategy",
+      "redpanda.value.schema.id.validation",
+      "confluent.value.schema.validation",
+      "redpanda.value.subject.name.strategy",
+      "confluent.value.subject.name.strategy"};
 
     // All properties_request
     auto all_describe_resp = describe_configs(test_tp);

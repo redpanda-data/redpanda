@@ -122,10 +122,14 @@ bool valid_config_resource_operation(uint8_t v) {
 }
 
 checked<cluster::topic_properties_update, resp_resource_t>
-create_topic_properties_update(incremental_alter_configs_resource& resource) {
+create_topic_properties_update(
+  request_context& ctx, incremental_alter_configs_resource& resource) {
     model::topic_namespace tp_ns(
       model::kafka_namespace, model::topic(resource.resource_name));
     cluster::topic_properties_update update(tp_ns);
+
+    schema_id_validation_config_parser schema_id_validation_config_parser{
+      update.properties};
 
     for (auto& cfg : resource.configs) {
         // Validate int8_t is within range of config_resource_operation
@@ -237,6 +241,12 @@ create_topic_properties_update(incremental_alter_configs_resource& resource) {
                   update.properties.segment_ms, cfg.value, op);
                 continue;
             }
+            if (ctx.feature_table().local().is_active(
+                  features::feature::schema_id_validation)) {
+                if (schema_id_validation_config_parser(cfg, op)) {
+                    continue;
+                }
+            }
             if (
               std::find(
                 std::begin(allowlist_topic_noop_confs),
@@ -274,8 +284,8 @@ static ss::future<std::vector<resp_resource_t>> alter_topic_configuration(
   std::vector<req_resource_t> resources,
   bool validate_only) {
     return do_alter_topics_configuration<req_resource_t, resp_resource_t>(
-      ctx, std::move(resources), validate_only, [](req_resource_t& r) {
-          return create_topic_properties_update(r);
+      ctx, std::move(resources), validate_only, [&ctx](req_resource_t& r) {
+          return create_topic_properties_update(ctx, r);
       });
 }
 

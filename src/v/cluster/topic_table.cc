@@ -15,6 +15,7 @@
 #include "cluster/errc.h"
 #include "cluster/fwd.h"
 #include "cluster/logger.h"
+#include "cluster/topic_validators.h"
 #include "cluster/types.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
@@ -53,6 +54,11 @@ topic_table::apply(create_topic_cmd cmd, model::offset offset) {
         // topic already exists
         return ss::make_ready_future<std::error_code>(
           errc::topic_already_exists);
+    }
+
+    if (!schema_id_validation_validator::is_valid(cmd.value.cfg.properties)) {
+        return ss::make_ready_future<std::error_code>(
+          schema_id_validation_validator::ec);
     }
 
     std::optional<model::initial_revision_id> remote_revision
@@ -821,10 +827,39 @@ topic_table::apply(update_topic_properties_cmd cmd, model::offset o) {
       overrides.remote_delete,
       storage::ntp_config::default_remote_delete);
     incremental_update(properties.segment_ms, overrides.segment_ms);
+    incremental_update(
+      properties.record_key_schema_id_validation,
+      overrides.record_key_schema_id_validation);
+    incremental_update(
+      properties.record_key_schema_id_validation_compat,
+      overrides.record_key_schema_id_validation_compat);
+    incremental_update(
+      properties.record_key_subject_name_strategy,
+      overrides.record_key_subject_name_strategy);
+    incremental_update(
+      properties.record_key_subject_name_strategy_compat,
+      overrides.record_key_subject_name_strategy_compat);
+    incremental_update(
+      properties.record_value_schema_id_validation,
+      overrides.record_value_schema_id_validation);
+    incremental_update(
+      properties.record_value_schema_id_validation_compat,
+      overrides.record_value_schema_id_validation_compat);
+    incremental_update(
+      properties.record_value_subject_name_strategy,
+      overrides.record_value_subject_name_strategy);
+    incremental_update(
+      properties.record_value_subject_name_strategy_compat,
+      overrides.record_value_subject_name_strategy_compat);
     // no configuration change, no need to generate delta
     if (properties == properties_snapshot) {
         co_return errc::success;
     }
+
+    if (!schema_id_validation_validator::is_valid(properties)) {
+        co_return schema_id_validation_validator::ec;
+    }
+
     // generate deltas for controller backend
     const auto& assignments = tp->second.get_assignments();
     for (auto& p_as : assignments) {

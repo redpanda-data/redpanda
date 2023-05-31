@@ -15,6 +15,7 @@
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/timestamp.h"
+#include "pandaproxy/schema_registry/subject_name_strategy.h"
 #include "utils/string_switch.h"
 
 #include <boost/lexical_cast.hpp>
@@ -434,6 +435,37 @@ struct convert<model::cloud_storage_chunk_eviction_strategy> {
                 .match(
                   "predictive",
                   model::cloud_storage_chunk_eviction_strategy::predictive);
+        return true;
+    }
+};
+
+template<>
+struct convert<pandaproxy::schema_registry::subject_name_strategy> {
+    using type = pandaproxy::schema_registry::subject_name_strategy;
+
+    static constexpr auto acceptable_values = std::to_array(
+      {to_string_view(type::topic_name),
+       to_string_view(type::record_name),
+       to_string_view(type::topic_record_name)});
+
+    static Node encode(const type& rhs) { return Node(fmt::format("{}", rhs)); }
+
+    static bool decode(const Node& node, type& rhs) {
+        auto value = node.as<std::string>();
+
+        if (
+          std::find(acceptable_values.begin(), acceptable_values.end(), value)
+          == acceptable_values.end()) {
+            return false;
+        }
+
+        rhs = string_switch<type>(std::string_view{value})
+                .match(to_string_view(type::topic_name), type::topic_name)
+                .match(to_string_view(type::record_name), type::record_name)
+                .match(
+                  to_string_view(type::topic_record_name),
+                  type::topic_record_name);
+
         return true;
     }
 };

@@ -47,7 +47,9 @@ class SerdeClient(BackgroundThreadService):
                  topic=str(uuid4()),
                  group=str(uuid4()),
                  security_config: Optional[dict] = None,
-                 skip_known_types: Optional[bool] = None):
+                 skip_known_types: Optional[bool] = None,
+                 subject_name_strategy: Optional[str] = None,
+                 payload_class: Optional[str] = None):
 
         if num_nodes is None and nodes is None:
             num_nodes = 1
@@ -72,6 +74,14 @@ class SerdeClient(BackgroundThreadService):
                 self._cmd_args += " --skip-known-types"
             else:
                 assert False
+
+        if subject_name_strategy is not None:
+            assert self._serde_client_type == SerdeClientType.Python
+            self._cmd_args += f" --subject-name-strategy {subject_name_strategy}"
+
+        if payload_class is not None:
+            assert self._serde_client_type == SerdeClientType.Python
+            self._cmd_args += f" --payload-class {payload_class}"
 
         if self._serde_client_type == SerdeClientType.Golang:
             self._cmd_args += f" --debug"
@@ -100,3 +110,13 @@ class SerdeClient(BackgroundThreadService):
 
         for line in ssh_output:
             self.logger.debug(line)
+
+    def __enter__(self):
+        self.run()
+
+    def __exit__(self, *args):
+        self.reset()
+
+    def reset(self):
+        self.worker_errors.clear()
+        self.errors = ''

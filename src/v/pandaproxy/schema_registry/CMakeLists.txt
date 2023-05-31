@@ -21,12 +21,13 @@ v_cc_library(
     types.cc
     avro.cc
     protobuf.cc
+    validation.cc
   DEPS
     v::pandaproxy_common
     v::pandaproxy_parsing
     v::pandaproxy_json
     v::kafka_client
-    v::kafka
+    v::kafka_protocol
     v::ssx
     v::utils
     v::pandaproxy_schema_registry_protobuf

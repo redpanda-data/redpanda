@@ -173,7 +173,6 @@ ss::future<> service::do_start() {
     }
     auto guard = gate_guard(_gate);
     try {
-        co_await configure();
         co_await create_internal_topic();
         vlog(plog.info, "Schema registry successfully initialized");
     } catch (...) {
@@ -364,9 +363,10 @@ service::service(
       controller.get()} {}
 
 ss::future<> service::start() {
+    co_await configure();
     static std::vector<model::broker_endpoint> not_advertised{};
     _server.routes(get_schema_registry_routes(_gate, _ensure_started));
-    return _server.start(
+    co_return co_await _server.start(
       _config.schema_registry_api(),
       _config.schema_registry_api_tls(),
       not_advertised);

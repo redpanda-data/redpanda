@@ -304,6 +304,25 @@ std::optional<std::chrono::milliseconds>
 metadata_cache::get_default_segment_ms() const {
     return config::shard_local_cfg().log_segment_ms();
 }
+
+bool metadata_cache::get_default_record_key_schema_id_validation() const {
+    return false;
+}
+
+pandaproxy::schema_registry::subject_name_strategy
+metadata_cache::get_default_record_key_subject_name_strategy() const {
+    return pandaproxy::schema_registry::subject_name_strategy::topic_name;
+}
+
+bool metadata_cache::get_default_record_value_schema_id_validation() const {
+    return false;
+}
+
+pandaproxy::schema_registry::subject_name_strategy
+metadata_cache::get_default_record_value_subject_name_strategy() const {
+    return pandaproxy::schema_registry::subject_name_strategy::topic_name;
+}
+
 topic_properties metadata_cache::get_default_properties() const {
     topic_properties tp;
     tp.compression = {get_default_compression()};

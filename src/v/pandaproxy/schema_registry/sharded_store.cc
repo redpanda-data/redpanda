@@ -598,4 +598,14 @@ ss::future<bool> sharded_store::is_compatible(
     co_return is_compat;
 }
 
+ss::future<bool> sharded_store::has_version(
+  const subject& sub, schema_id id, include_deleted i) {
+    auto sub_shard{shard_for(sub)};
+    auto has_id = co_await _store.invoke_on(
+      sub_shard, _smp_opts, [id, sub, i](class store& s) mutable {
+          return s.has_version(sub, id, i);
+      });
+    co_return has_id.has_value() && has_id.assume_value();
+}
+
 } // namespace pandaproxy::schema_registry

@@ -17,12 +17,14 @@ import time
 import random
 import socket
 
-from ducktape.mark import parametrize
+from confluent_kafka.schema_registry import topic_subject_name_strategy, record_subject_name_strategy, topic_record_subject_name_strategy
+from confluent_kafka.serialization import (MessageField, SerializationContext)
+from ducktape.mark import parametrize, matrix
 from ducktape.services.background_thread import BackgroundThreadService
 from ducktape.utils.util import wait_until
 
 from rptest.clients.kafka_cli_tools import KafkaCliTools
-from rptest.clients.rpk import RpkTool
+from rptest.clients.rpk import RpkException, RpkTool
 from rptest.clients.serde_client_utils import SchemaType, SerdeClientType
 from rptest.clients.types import TopicSpec
 from rptest.services import tls
@@ -37,6 +39,24 @@ from rptest.util import inject_remote_script, search_logs_with_timeout
 
 def create_topic_names(count):
     return list(f"pandaproxy-topic-{uuid.uuid4()}" for _ in range(count))
+
+
+def get_subject_name(sns: str, topic: str, field: MessageField,
+                     record_name: str):
+    return {
+        TopicSpec.SubjectNameStrategy.TOPIC_NAME:
+        topic_subject_name_strategy,
+        TopicSpec.SubjectNameStrategyCompat.TOPIC_NAME:
+        topic_subject_name_strategy,
+        TopicSpec.SubjectNameStrategy.RECORD_NAME:
+        record_subject_name_strategy,
+        TopicSpec.SubjectNameStrategyCompat.RECORD_NAME:
+        record_subject_name_strategy,
+        TopicSpec.SubjectNameStrategy.TOPIC_RECORD_NAME:
+        topic_record_subject_name_strategy,
+        TopicSpec.SubjectNameStrategyCompat.TOPIC_RECORD_NAME:
+        topic_record_subject_name_strategy
+    }[sns](SerializationContext(topic, field), record_name)
 
 
 HTTP_GET_HEADERS = {"Accept": "application/vnd.schemaregistry.v1+json"}
@@ -159,19 +179,22 @@ class SchemaRegistryEndpoints(RedpandaTest):
     def _base_uri(self):
         return f"http://{self.redpanda.nodes[0].account.hostname}:8081"
 
-    def _get_kafka_cli_tools(self):
+    def _get_rpk_tools(self):
         sasl_enabled = self.redpanda.sasl_enabled()
         cfg = self.redpanda.security_config() if sasl_enabled else {}
-        return KafkaCliTools(self.redpanda,
-                             user=cfg.get('sasl_plain_username'),
-                             passwd=cfg.get('sasl_plain_password'))
+        return RpkTool(self.redpanda,
+                       username=cfg.get('sasl_plain_username'),
+                       password=cfg.get('sasl_plain_password'),
+                       sasl_mechanism=cfg.get('sasl_mechanism'))
 
     def _get_serde_client(self,
                           schema_type: SchemaType,
                           client_type: SerdeClientType,
                           topic: str,
                           count: int,
-                          skip_known_types: Optional[bool] = None):
+                          skip_known_types: Optional[bool] = None,
+                          subject_name_strategy: Optional[str] = None,
+                          payload_class: Optional[str] = None):
         schema_reg = self.redpanda.schema_reg().split(',', 1)[0]
         sasl_enabled = self.redpanda.sasl_enabled()
         sec_cfg = self.redpanda.security_config() if sasl_enabled else None
@@ -184,38 +207,57 @@ class SchemaRegistryEndpoints(RedpandaTest):
                            count,
                            topic=topic,
                            security_config=sec_cfg,
-                           skip_known_types=skip_known_types)
+                           skip_known_types=skip_known_types,
+                           subject_name_strategy=subject_name_strategy,
+                           payload_class=payload_class)
 
     def _get_topics(self):
         return requests.get(
             f"http://{self.redpanda.nodes[0].account.hostname}:8082/topics")
 
-    def _create_topics(self,
-                       names=create_topic_names(1),
-                       partitions=1,
-                       replicas=1,
-                       cleanup_policy=TopicSpec.CLEANUP_DELETE):
-        self.logger.debug(f"Creating topics: {names}")
-        kafka_tools = self._get_kafka_cli_tools()
-        for name in names:
-            kafka_tools.create_topic(
-                TopicSpec(name=name,
-                          partition_count=partitions,
-                          replication_factor=replicas))
+    def _create_topic(self,
+                      topic=create_topic_names(1),
+                      partition_count=1,
+                      replication_factor=1,
+                      config={
+                          TopicSpec.PROPERTY_CLEANUP_POLICY:
+                          TopicSpec.CLEANUP_DELETE
+                      }):
+        self.logger.debug(f"Creating topic: {topic}")
+        rpk_tools = self._get_rpk_tools()
+        rpk_tools.create_topic(topic=topic,
+                               partitions=partition_count,
+                               replicas=replication_factor,
+                               config=config)
 
-        def has_topics():
+        def has_topic():
             self_topics = self._get_topics()
             self.logger.info(
-                f"set(names): {set(names)}, self._get_topics().status_code: {self_topics.status_code}, self_topics.json(): {self_topics.json()}"
+                f"name: {topic}, self._get_topics().status_code: {self_topics.status_code}, self_topics.json(): {self_topics.json()}"
             )
-            return set(names).issubset(self_topics.json())
+            return topic in self_topics.json()
 
-        wait_until(has_topics,
+        wait_until(has_topic,
                    timeout_sec=10,
                    backoff_sec=1,
-                   err_msg="Timeout waiting for topics: {names}")
+                   err_msg="Timeout waiting for topic: {topic}")
 
-        return names
+        return topic
+
+    def _alter_topic_config(self, topic, set_key, set_value):
+        rpk = self._get_rpk_tools()
+        rpk.alter_topic_config(topic=topic,
+                               set_key=set_key,
+                               set_value=set_value)
+
+        def has_config():
+            configs = rpk.describe_topic_configs(topic=topic)
+            self.logger.warn(f"CONFIGS: {configs}")
+            config = configs.get(set_key, None)
+            self.logger.warn(f"CONFIG: {config[0]}")
+            return config[0] == set_value
+
+        wait_until(has_config, 5)
 
     def _get_config(self, headers=HTTP_GET_HEADERS, **kwargs):
         return self._request("GET", "config", headers=headers, **kwargs)
@@ -1186,7 +1228,7 @@ class SchemaRegistryTestMethods(SchemaRegistryEndpoints):
         """
 
         topic = f"serde-topic-{protocol.name}-{client_type.name}"
-        self._create_topics([topic])
+        self._create_topic(topic=topic)
         schema_reg = self.redpanda.schema_reg().split(',', 1)[0]
         self.logger.info(
             f"Connecting to redpanda: {self.redpanda.brokers()} schema_Reg: {schema_reg}"
@@ -1206,6 +1248,106 @@ class SchemaRegistryTestMethods(SchemaRegistryEndpoints):
             assert schema.json().get("schemaType") is None
         else:
             assert schema.json()["schemaType"] == protocol.name
+
+    @cluster(num_nodes=4)
+    @matrix(protocol=[SchemaType.AVRO, SchemaType.PROTOBUF],
+            client_type=[SerdeClientType.Python],
+            validate_schema_id=[True],
+            subject_name_strategy=list(TopicSpec.SubjectNameStrategyCompat),
+            payload_class=[
+                "com.redpanda.Payload", "com.redpanda.A.B.C.D.NestedPayload"
+            ])
+    def test_schema_id_validation(self,
+                                  protocol: SchemaType,
+                                  client_type: SerdeClientType,
+                                  skip_known_types: Optional[bool] = None,
+                                  validate_schema_id: Optional[bool] = None,
+                                  subject_name_strategy: Optional[str] = None,
+                                  payload_class: str = "com.redpanda.Payload"):
+        Admin(self.redpanda).put_feature("schema_id_validation",
+                                         {"state": "active"})
+        self.redpanda.await_feature("schema_id_validation",
+                                    True,
+                                    timeout_sec=10)
+
+        def get_next_strategy(subject_name_strategy):
+            all_strategies = list(TopicSpec.SubjectNameStrategyCompat)
+            index = all_strategies.index(subject_name_strategy)
+            return all_strategies[(index + 1) % len(all_strategies)]
+
+        # Create a topic with incorrect strategy
+        topic = f"serde-topic-{protocol.name}-{client_type.name}"
+
+        def check_subject():
+            expected = get_subject_name(subject_name_strategy, topic,
+                                        MessageField.VALUE, payload_class)
+            result_raw = self._get_subjects()
+            assert result_raw.status_code == requests.codes.ok
+            res_subjects = result_raw.json()
+            self.logger.debug(
+                f"SUBJECTS: {res_subjects}, expected: {expected}")
+
+            return expected in res_subjects
+
+        def bool_alpha(b: bool) -> str:
+            return f"{b}".lower()
+
+        self._create_topic(
+            topic=topic,
+            config={
+                TopicSpec.PROPERTY_RECORD_VALUE_SCHEMA_ID_VALIDATION_COMPAT:
+                bool_alpha(validate_schema_id),
+                TopicSpec.PROPERTY_RECORD_VALUE_SUBJECT_NAME_STRATEGY_COMPAT:
+                get_next_strategy(subject_name_strategy)
+            })
+        schema_reg = self.redpanda.schema_reg().split(',', 1)[0]
+        self.logger.info(
+            f"Connecting to redpanda: {self.redpanda.brokers()} schema_Reg: {schema_reg}"
+        )
+
+        Admin(self.redpanda).put_feature("schema_id_validation",
+                                         {"state": "active"})
+        self.redpanda.await_feature("schema_id_validation",
+                                    True,
+                                    timeout_sec=10)
+
+        # Test against misconfigered strategy
+        client = self._get_serde_client(
+            protocol,
+            client_type,
+            topic,
+            2,
+            skip_known_types,
+            subject_name_strategy=subject_name_strategy,
+            payload_class=payload_class)
+
+        self.logger.debug("Running client, expecting failure")
+        try:
+            client.run()
+            assert False, "expected exit code 87"
+        except Exception as ex:
+            if "returned non-zero exit status 87" not in ex.args[0]:
+                self.logger.debug("RemoteCommandError exit WAS NOT 87!")
+                raise
+            self.logger.debug("RemoteCommandError exit WAS 87!")
+        finally:
+            client.reset()
+
+        self.logger.debug("Client completed")
+
+        assert check_subject()
+
+        # Update the strategy to the expected one
+        self._alter_topic_config(
+            topic=topic,
+            set_key=TopicSpec.
+            PROPERTY_RECORD_VALUE_SUBJECT_NAME_STRATEGY_COMPAT,
+            set_value=subject_name_strategy)
+
+        self.logger.debug("Running client, expecting success")
+        client.run()
+
+        self.logger.debug("Client completed")
 
     @cluster(num_nodes=3)
     def test_restarts(self):
@@ -2014,3 +2156,239 @@ class SchemaRegistryMTLSAndBasicAuthTest(SchemaRegistryMTLSBase):
         assert result_raw.status_code == requests.codes.ok
         result = result_raw.json()
         assert set(result) == {"PROTOBUF", "AVRO"}
+
+
+class SchemaValidationTopicPropertiesTest(RedpandaTest):
+    def __init__(self, *args, **kwargs):
+        super(SchemaValidationTopicPropertiesTest,
+              self).__init__(*args, **kwargs)
+        self.rpk = RpkTool(self.redpanda)
+        self.admin = Admin(self.redpanda)
+
+    @cluster(num_nodes=3)
+    def test_schema_id_validation_disabled_config(self):
+        '''
+        When the feature is disabled, the configs should not appear
+        '''
+
+        self.admin.put_feature("schema_id_validation", {"state": "disabled"})
+        self.redpanda.await_feature("schema_id_validation",
+                                    False,
+                                    timeout_sec=10)
+        topic = "default-topic"
+        self.rpk.create_topic(topic)
+        desc = self.rpk.describe_topic_configs(topic)
+
+        assert TopicSpec.PROPERTY_RECORD_KEY_SCHEMA_ID_VALIDATION not in desc
+        assert TopicSpec.PROPERTY_RECORD_KEY_SUBJECT_NAME_STRATEGY not in desc
+        assert TopicSpec.PROPERTY_RECORD_VALUE_SCHEMA_ID_VALIDATION not in desc
+        assert TopicSpec.PROPERTY_RECORD_VALUE_SUBJECT_NAME_STRATEGY not in desc
+
+    @cluster(num_nodes=3)
+    def test_schema_id_validation_active_config(self):
+        '''
+        When the feature is active, the configs should be default
+        '''
+
+        self.admin.put_feature("schema_id_validation", {"state": "active"})
+        self.redpanda.await_feature("schema_id_validation",
+                                    True,
+                                    timeout_sec=10)
+        topic = "default-topic"
+        self.rpk.create_topic(topic)
+        desc = self.rpk.describe_topic_configs(topic)
+
+        assert desc[TopicSpec.PROPERTY_RECORD_KEY_SCHEMA_ID_VALIDATION] == (
+            'false', 'DEFAULT_CONFIG')
+        assert desc[TopicSpec.PROPERTY_RECORD_KEY_SUBJECT_NAME_STRATEGY] == (
+            TopicSpec.SubjectNameStrategy.TOPIC_NAME.value, 'DEFAULT_CONFIG')
+        assert desc[TopicSpec.PROPERTY_RECORD_VALUE_SCHEMA_ID_VALIDATION] == (
+            'false', 'DEFAULT_CONFIG')
+        assert desc[TopicSpec.PROPERTY_RECORD_VALUE_SUBJECT_NAME_STRATEGY] == (
+            TopicSpec.SubjectNameStrategy.TOPIC_NAME.value, 'DEFAULT_CONFIG')
+
+    @cluster(num_nodes=3)
+    def test_schema_id_validation_active_explicit_default_config(self):
+        '''
+        If the configuration is explicitly set to default, pretend it isn't
+        dynamic, so that tools with a reconcialiation loop aren't confused
+        '''
+
+        self.admin.put_feature("schema_id_validation", {"state": "active"})
+        self.redpanda.await_feature("schema_id_validation",
+                                    True,
+                                    timeout_sec=10)
+        topic = "default-topic"
+        self.rpk.create_topic(
+            topic,
+            config={
+                TopicSpec.PROPERTY_RECORD_KEY_SCHEMA_ID_VALIDATION:
+                'false',
+                TopicSpec.PROPERTY_RECORD_KEY_SUBJECT_NAME_STRATEGY:
+                TopicSpec.SubjectNameStrategy.TOPIC_NAME.value,
+                TopicSpec.PROPERTY_RECORD_VALUE_SCHEMA_ID_VALIDATION:
+                'false',
+                TopicSpec.PROPERTY_RECORD_VALUE_SUBJECT_NAME_STRATEGY:
+                TopicSpec.SubjectNameStrategy.TOPIC_NAME.value,
+                TopicSpec.PROPERTY_RECORD_KEY_SCHEMA_ID_VALIDATION_COMPAT:
+                'false',
+                TopicSpec.PROPERTY_RECORD_KEY_SUBJECT_NAME_STRATEGY_COMPAT:
+                TopicSpec.SubjectNameStrategyCompat.TOPIC_NAME.value,
+                TopicSpec.PROPERTY_RECORD_VALUE_SCHEMA_ID_VALIDATION_COMPAT:
+                'false',
+                TopicSpec.PROPERTY_RECORD_VALUE_SUBJECT_NAME_STRATEGY_COMPAT:
+                TopicSpec.SubjectNameStrategyCompat.TOPIC_NAME.value,
+            })
+        desc = self.rpk.describe_topic_configs(topic)
+
+        assert desc[TopicSpec.PROPERTY_RECORD_KEY_SCHEMA_ID_VALIDATION] == (
+            'false', 'DEFAULT_CONFIG')
+        assert desc[TopicSpec.PROPERTY_RECORD_KEY_SUBJECT_NAME_STRATEGY] == (
+            TopicSpec.SubjectNameStrategy.TOPIC_NAME.value, 'DEFAULT_CONFIG')
+        assert desc[TopicSpec.PROPERTY_RECORD_VALUE_SCHEMA_ID_VALIDATION] == (
+            'false', 'DEFAULT_CONFIG')
+        assert desc[TopicSpec.PROPERTY_RECORD_VALUE_SUBJECT_NAME_STRATEGY] == (
+            TopicSpec.SubjectNameStrategy.TOPIC_NAME.value, 'DEFAULT_CONFIG')
+
+        assert desc[
+            TopicSpec.PROPERTY_RECORD_KEY_SCHEMA_ID_VALIDATION_COMPAT] == (
+                'false', 'DEFAULT_CONFIG')
+        assert desc[
+            TopicSpec.PROPERTY_RECORD_KEY_SUBJECT_NAME_STRATEGY_COMPAT] == (
+                TopicSpec.SubjectNameStrategyCompat.TOPIC_NAME.value,
+                'DEFAULT_CONFIG')
+        assert desc[
+            TopicSpec.PROPERTY_RECORD_VALUE_SCHEMA_ID_VALIDATION_COMPAT] == (
+                'false', 'DEFAULT_CONFIG')
+        assert desc[
+            TopicSpec.PROPERTY_RECORD_VALUE_SUBJECT_NAME_STRATEGY_COMPAT] == (
+                TopicSpec.SubjectNameStrategyCompat.TOPIC_NAME.value,
+                'DEFAULT_CONFIG')
+
+    @cluster(num_nodes=1)
+    def test_schema_id_validation_active_nondefault_config(self):
+        '''
+        If the configuration is explicitly set to non-default, it should show
+        as dyamic
+        '''
+
+        self.admin.put_feature("schema_id_validation", {"state": "active"})
+        self.redpanda.await_feature("schema_id_validation",
+                                    True,
+                                    timeout_sec=10)
+        topic = "default-topic"
+        self.rpk.create_topic(
+            topic,
+            config={
+                TopicSpec.PROPERTY_RECORD_KEY_SCHEMA_ID_VALIDATION:
+                'true',
+                TopicSpec.PROPERTY_RECORD_KEY_SUBJECT_NAME_STRATEGY:
+                TopicSpec.SubjectNameStrategy.TOPIC_RECORD_NAME.value,
+                TopicSpec.PROPERTY_RECORD_VALUE_SCHEMA_ID_VALIDATION:
+                'true',
+                TopicSpec.PROPERTY_RECORD_VALUE_SUBJECT_NAME_STRATEGY:
+                TopicSpec.SubjectNameStrategy.RECORD_NAME.value,
+            })
+        desc = self.rpk.describe_topic_configs(topic)
+
+        assert desc[TopicSpec.PROPERTY_RECORD_KEY_SCHEMA_ID_VALIDATION] == (
+            'true', 'DYNAMIC_TOPIC_CONFIG')
+        assert desc[TopicSpec.PROPERTY_RECORD_KEY_SUBJECT_NAME_STRATEGY] == (
+            TopicSpec.SubjectNameStrategy.TOPIC_RECORD_NAME.value,
+            'DYNAMIC_TOPIC_CONFIG')
+        assert desc[TopicSpec.PROPERTY_RECORD_VALUE_SCHEMA_ID_VALIDATION] == (
+            'true', 'DYNAMIC_TOPIC_CONFIG')
+        assert desc[TopicSpec.PROPERTY_RECORD_VALUE_SUBJECT_NAME_STRATEGY] == (
+            TopicSpec.SubjectNameStrategy.RECORD_NAME.value,
+            'DYNAMIC_TOPIC_CONFIG')
+
+    @cluster(num_nodes=1)
+    def test_schema_id_validation_active_nondefault_compat_config(self):
+        '''
+        If the configuration is explicitly set to non-default, it should show
+        as dyamic
+        '''
+
+        self.admin.put_feature("schema_id_validation", {"state": "active"})
+        self.redpanda.await_feature("schema_id_validation",
+                                    True,
+                                    timeout_sec=10)
+        topic = "default-topic"
+        self.rpk.create_topic(
+            topic,
+            config={
+                TopicSpec.PROPERTY_RECORD_KEY_SCHEMA_ID_VALIDATION_COMPAT:
+                'true',
+                TopicSpec.PROPERTY_RECORD_KEY_SUBJECT_NAME_STRATEGY_COMPAT:
+                TopicSpec.SubjectNameStrategyCompat.TOPIC_RECORD_NAME.value,
+                TopicSpec.PROPERTY_RECORD_VALUE_SCHEMA_ID_VALIDATION_COMPAT:
+                'true',
+                TopicSpec.PROPERTY_RECORD_VALUE_SUBJECT_NAME_STRATEGY_COMPAT:
+                TopicSpec.SubjectNameStrategyCompat.RECORD_NAME.value,
+            })
+        desc = self.rpk.describe_topic_configs(topic)
+
+        assert desc[
+            TopicSpec.PROPERTY_RECORD_KEY_SCHEMA_ID_VALIDATION_COMPAT] == (
+                'true', 'DYNAMIC_TOPIC_CONFIG')
+        assert desc[
+            TopicSpec.PROPERTY_RECORD_KEY_SUBJECT_NAME_STRATEGY_COMPAT] == (
+                TopicSpec.SubjectNameStrategyCompat.TOPIC_RECORD_NAME.value,
+                'DYNAMIC_TOPIC_CONFIG')
+        assert desc[
+            TopicSpec.PROPERTY_RECORD_VALUE_SCHEMA_ID_VALIDATION_COMPAT] == (
+                'true', 'DYNAMIC_TOPIC_CONFIG')
+        assert desc[
+            TopicSpec.PROPERTY_RECORD_VALUE_SUBJECT_NAME_STRATEGY_COMPAT] == (
+                TopicSpec.SubjectNameStrategyCompat.RECORD_NAME.value,
+                'DYNAMIC_TOPIC_CONFIG')
+
+    @cluster(num_nodes=1)
+    def test_schema_id_validation_create_collision(self):
+        '''
+        Test creating a topic where Redpanda and compat modes are incompatible
+        '''
+
+        self.admin.put_feature("schema_id_validation", {"state": "active"})
+        self.redpanda.await_feature("schema_id_validation",
+                                    True,
+                                    timeout_sec=10)
+        topic = "default-topic"
+        try:
+            self.rpk.create_topic(
+                topic,
+                config={
+                    TopicSpec.PROPERTY_RECORD_KEY_SCHEMA_ID_VALIDATION:
+                    'true',
+                    TopicSpec.PROPERTY_RECORD_KEY_SCHEMA_ID_VALIDATION_COMPAT:
+                    'false',
+                })
+            assert False, "Expected failure"
+        except RpkException:
+            pass
+
+    @cluster(num_nodes=1)
+    def test_schema_id_validation_alter_collision(self):
+        '''
+        Test altering a topic where Redpanda and compat modes are incompatible
+        '''
+
+        self.admin.put_feature("schema_id_validation", {"state": "active"})
+        self.redpanda.await_feature("schema_id_validation",
+                                    True,
+                                    timeout_sec=10)
+        topic = "default-topic"
+        self.rpk.create_topic(
+            topic,
+            config={
+                TopicSpec.PROPERTY_RECORD_KEY_SCHEMA_ID_VALIDATION: 'true',
+            })
+        try:
+            self.rpk.alter_topic_config(
+                topic=topic,
+                set_key=TopicSpec.
+                PROPERTY_RECORD_KEY_SCHEMA_ID_VALIDATION_COMPAT,
+                set_value='false')
+            assert False, "Expected failure"
+        except RpkException:
+            pass

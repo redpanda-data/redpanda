@@ -22,6 +22,7 @@
 #include "model/metadata.h"
 #include "model/namespace.h"
 #include "model/validation.h"
+#include "pandaproxy/schema_registry/subject_name_strategy.h"
 #include "reflection/type_traits.h"
 #include "security/acl.h"
 #include "ssx/sformat.h"
@@ -112,7 +113,8 @@ consteval describe_configs_type property_config_type() {
         std::is_same_v<T, model::cleanup_policy_bitflags> ||
         std::is_same_v<T, model::timestamp_type> ||
         std::is_same_v<T, config::data_directory_path> ||
-        std::is_same_v<T, v8_engine::data_policy>;
+        std::is_same_v<T, v8_engine::data_policy> ||
+        std::is_same_v<T, pandaproxy::schema_registry::subject_name_strategy>;
 
     constexpr auto is_long_type = is_long<T> ||
         // Long type since seconds is atleast a 35-bit signed integral
@@ -807,6 +809,149 @@ ss::future<response_ptr> describe_configs_handler::handle(
               maybe_make_documentation(
                 request.data.include_documentation,
                 config::shard_local_cfg().log_segment_ms.desc()));
+
+            if (ctx.feature_table().local().is_active(
+                  features::feature::schema_id_validation)) {
+                constexpr std::string_view key_validation
+                  = "Enable validation of the schema id for keys on a record";
+                constexpr std::string_view val_validation
+                  = "Enable validation of the schema id for values on a record";
+                const bool hide_default_override = true;
+                add_topic_config_if_requested(
+                  resource,
+                  result,
+                  topic_property_record_key_schema_id_validation,
+                  ctx.metadata_cache()
+                    .get_default_record_key_schema_id_validation(),
+                  topic_property_record_key_schema_id_validation,
+                  topic_config->properties.record_key_schema_id_validation,
+                  request.data.include_synonyms,
+                  maybe_make_documentation(
+                    request.data.include_documentation, key_validation),
+                  &describe_as_string<bool>,
+                  hide_default_override);
+
+                add_topic_config_if_requested(
+                  resource,
+                  result,
+                  topic_property_record_key_schema_id_validation_compat,
+                  ctx.metadata_cache()
+                    .get_default_record_key_schema_id_validation(),
+                  topic_property_record_key_schema_id_validation_compat,
+                  topic_config->properties
+                    .record_key_schema_id_validation_compat,
+                  request.data.include_synonyms,
+                  maybe_make_documentation(
+                    request.data.include_documentation, key_validation),
+                  &describe_as_string<bool>,
+                  hide_default_override);
+
+                add_topic_config_if_requested(
+                  resource,
+                  result,
+                  topic_property_record_key_subject_name_strategy,
+                  ctx.metadata_cache()
+                    .get_default_record_key_subject_name_strategy(),
+                  topic_property_record_key_subject_name_strategy,
+                  topic_config->properties.record_key_subject_name_strategy,
+                  request.data.include_synonyms,
+                  maybe_make_documentation(
+                    request.data.include_documentation,
+                    fmt::format(
+                      "The subject name strategy for keys if {} is enabled",
+                      topic_property_record_key_schema_id_validation)),
+                  &describe_as_string<
+                    pandaproxy::schema_registry::subject_name_strategy>,
+                  hide_default_override);
+
+                add_topic_config_if_requested(
+                  resource,
+                  result,
+                  topic_property_record_key_subject_name_strategy_compat,
+                  ctx.metadata_cache()
+                    .get_default_record_key_subject_name_strategy(),
+                  topic_property_record_key_subject_name_strategy_compat,
+                  topic_config->properties
+                    .record_key_subject_name_strategy_compat,
+                  request.data.include_synonyms,
+                  maybe_make_documentation(
+                    request.data.include_documentation,
+                    fmt::format(
+                      "The subject name strategy for keys if {} is enabled",
+                      topic_property_record_key_schema_id_validation_compat)),
+                  [](auto sns) {
+                      return ss::sstring(to_string_view_compat(sns));
+                  },
+                  hide_default_override);
+
+                add_topic_config_if_requested(
+                  resource,
+                  result,
+                  topic_property_record_value_schema_id_validation,
+                  ctx.metadata_cache()
+                    .get_default_record_value_schema_id_validation(),
+                  topic_property_record_value_schema_id_validation,
+                  topic_config->properties.record_value_schema_id_validation,
+                  request.data.include_synonyms,
+                  maybe_make_documentation(
+                    request.data.include_documentation, val_validation),
+                  &describe_as_string<bool>,
+                  hide_default_override);
+
+                add_topic_config_if_requested(
+                  resource,
+                  result,
+                  topic_property_record_value_schema_id_validation_compat,
+                  ctx.metadata_cache()
+                    .get_default_record_value_schema_id_validation(),
+                  topic_property_record_value_schema_id_validation_compat,
+                  topic_config->properties
+                    .record_value_schema_id_validation_compat,
+                  request.data.include_synonyms,
+                  maybe_make_documentation(
+                    request.data.include_documentation, val_validation),
+                  &describe_as_string<bool>,
+                  hide_default_override);
+
+                add_topic_config_if_requested(
+                  resource,
+                  result,
+                  topic_property_record_value_subject_name_strategy,
+                  ctx.metadata_cache()
+                    .get_default_record_value_subject_name_strategy(),
+                  topic_property_record_value_subject_name_strategy,
+                  topic_config->properties.record_value_subject_name_strategy,
+                  request.data.include_synonyms,
+                  maybe_make_documentation(
+                    request.data.include_documentation,
+                    fmt::format(
+                      "The subject name strategy for values if {} is enabled",
+                      topic_property_record_value_schema_id_validation)),
+                  &describe_as_string<
+                    pandaproxy::schema_registry::subject_name_strategy>,
+                  hide_default_override);
+
+                add_topic_config_if_requested(
+                  resource,
+                  result,
+                  topic_property_record_value_subject_name_strategy_compat,
+                  ctx.metadata_cache()
+                    .get_default_record_value_subject_name_strategy(),
+                  topic_property_record_value_subject_name_strategy_compat,
+                  topic_config->properties
+                    .record_value_subject_name_strategy_compat,
+                  request.data.include_synonyms,
+                  maybe_make_documentation(
+                    request.data.include_documentation,
+                    fmt::format(
+                      "The subject name strategy for values if {} is enabled",
+                      topic_property_record_value_schema_id_validation_compat)),
+                  [](auto sns) {
+                      return ss::sstring(to_string_view_compat(sns));
+                  },
+                  hide_default_override);
+            }
+
             break;
         }
 

@@ -17,8 +17,8 @@ v_cc_library(
     v::pandaproxy_parsing
     v::pandaproxy_json
     v::kafka_client
+    v::kafka_protocol
     v::syschecks
-    v::kafka
     v::ssx
     v::utils
   )

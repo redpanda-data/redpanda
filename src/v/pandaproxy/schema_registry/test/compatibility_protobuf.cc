@@ -83,6 +83,19 @@ SEASTAR_THREAD_TEST_CASE(test_protobuf_simple) {
     store.insert(schema1, pps::schema_version{1});
     auto valid_simple
       = pps::make_protobuf_schema_definition(store.store, schema1).get();
+    BOOST_REQUIRE_EQUAL(valid_simple.name({0}).value(), "Simple");
+}
+
+SEASTAR_THREAD_TEST_CASE(test_protobuf_nested) {
+    simple_sharded_store store;
+
+    auto schema1 = pps::canonical_schema{pps::subject{"nested"}, nested};
+    store.insert(schema1, pps::schema_version{1});
+    auto valid_nested
+      = pps::make_protobuf_schema_definition(store.store, schema1).get();
+    BOOST_REQUIRE_EQUAL(valid_nested.name({0}).value(), "A0");
+    BOOST_REQUIRE_EQUAL(valid_nested.name({1, 0, 2}).value(), "A1.B0.C2");
+    BOOST_REQUIRE_EQUAL(valid_nested.name({1, 0, 4}).value(), "A1.B0.C4");
 }
 
 SEASTAR_THREAD_TEST_CASE(test_protobuf_imported_failure) {

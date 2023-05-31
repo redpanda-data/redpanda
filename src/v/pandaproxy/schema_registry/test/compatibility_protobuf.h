@@ -56,3 +56,20 @@ message Test3 {
   Test2 id =  1;
 })",
   pps::schema_type::protobuf};
+
+const auto nested = pps::canonical_schema_definition{
+  R"(
+syntax = "proto3";
+
+message A0 {}
+
+message A1 {
+  message B0 {
+     message C0 {}
+     message C1 {}
+     message C2 {}
+     message C3 {}
+     message C4 {}
+  }
+})",
+  pps::schema_type::protobuf};
