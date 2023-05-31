@@ -170,9 +170,9 @@ ss::future<std::error_code> topic_updates_dispatcher::apply(
           "Partition {} have to exist before successful "
           "partition reallocation",
           ntp);
-        auto to_add = subtract_replica_sets(cmd.value, p_as->replicas);
-        _partition_allocator.local().add_allocations(
-          to_add, get_allocation_domain(ntp));
+
+        update_allocations_for_reconfiguration(
+          p_as->replicas, cmd.value, get_allocation_domain(ntp));
 
         _partition_balancer_state.local().handle_ntp_update(
           ntp.ns, ntp.tp.topic, ntp.tp.partition, p_as->replicas, cmd.value);
@@ -201,6 +201,16 @@ ss::future<std::error_code> topic_updates_dispatcher::apply(
             "update can only be applied to partition that is "
             "currently being updated",
             ntp);
+
+          auto to_add = subtract_replica_sets(
+            *new_target_replicas, current_assignment->replicas);
+          _partition_allocator.local().add_final_counts(
+            to_add, get_allocation_domain(ntp));
+
+          auto to_remove = subtract_replica_sets(
+            current_assignment->replicas, *new_target_replicas);
+          _partition_allocator.local().remove_final_counts(
+            to_remove, get_allocation_domain(ntp));
 
           _partition_balancer_state.local().handle_ntp_update(
             ntp.ns,
@@ -345,10 +355,10 @@ ss::future<std::error_code> topic_updates_dispatcher::apply(
             if (assigment_it == assignments.value().end()) {
                 co_return std::error_code(errc::partition_not_exists);
             }
-            auto to_add = subtract_replica_sets(
-              replicas, assigment_it->replicas);
-            _partition_allocator.local().add_allocations(
-              to_add, get_allocation_domain(ntp));
+
+            update_allocations_for_reconfiguration(
+              assigment_it->replicas, replicas, get_allocation_domain(ntp));
+
             _partition_balancer_state.local().handle_ntp_update(
               ntp.ns,
               ntp.tp.topic,
@@ -406,9 +416,16 @@ ss::future<std::error_code> topic_updates_dispatcher::apply(
             "currently being cancelled",
             ntp);
 
+          auto to_add = subtract_replica_sets(
+            *target_replicas, *previous_replicas);
+          _partition_allocator.local().add_final_counts(
+            to_add, get_allocation_domain(ntp));
+
           auto to_delete = subtract_replica_sets(
             *previous_replicas, *target_replicas);
           _partition_allocator.local().remove_allocations(
+            to_delete, get_allocation_domain(ntp));
+          _partition_allocator.local().remove_final_counts(
             to_delete, get_allocation_domain(ntp));
 
           _partition_balancer_state.local().handle_ntp_update(
@@ -423,9 +440,29 @@ ss::future<std::error_code> topic_updates_dispatcher::apply(
 
 ss::future<std::error_code> topic_updates_dispatcher::apply(
   force_partition_reconfiguration_cmd cmd, model::offset base_offset) {
-    // Post dispatch, allocator updates are skipped because the target
-    // replica set is a subset of the original replica set.
-    return dispatch_updates_to_cores(std::move(cmd), base_offset);
+    auto p_as = _topic_table.local().get_partition_assignment(cmd.key);
+    auto ec = co_await dispatch_updates_to_cores(cmd, base_offset);
+    if (ec) {
+        co_return ec;
+    }
+
+    const auto& ntp = cmd.key;
+    vassert(
+      p_as.has_value(),
+      "Partition {} have to exist before successful force-reconfiguration",
+      ntp);
+
+    update_allocations_for_reconfiguration(
+      p_as->replicas, cmd.value.replicas, get_allocation_domain(ntp));
+
+    _partition_balancer_state.local().handle_ntp_update(
+      ntp.ns,
+      ntp.tp.topic,
+      ntp.tp.partition,
+      p_as->replicas,
+      cmd.value.replicas);
+
+    co_return ec;
 }
 
 topic_updates_dispatcher::in_progress_map
@@ -520,6 +557,7 @@ void topic_updates_dispatcher::deallocate_topic(
                            ? p_as.replicas
                            : union_replica_sets(it->second, p_as.replicas);
         _partition_allocator.local().remove_allocations(to_delete, domain);
+        _partition_allocator.local().remove_final_counts(p_as.replicas, domain);
         if (unlikely(clusterlog.is_enabled(ss::log_level::trace))) {
             vlog(
               clusterlog.trace,
@@ -539,6 +577,18 @@ void topic_updates_dispatcher::add_allocations_for_new_partitions(
         allocator.add_allocations_for_new_partition(
           pas.replicas, pas.group, domain);
     }
+}
+
+void topic_updates_dispatcher::update_allocations_for_reconfiguration(
+  const std::vector<model::broker_shard>& previous,
+  const std::vector<model::broker_shard>& target,
+  partition_allocation_domain domain) {
+    auto to_add = subtract_replica_sets(target, previous);
+    _partition_allocator.local().add_allocations(to_add, domain);
+    _partition_allocator.local().add_final_counts(to_add, domain);
+
+    auto to_remove = subtract_replica_sets(previous, target);
+    _partition_allocator.local().remove_final_counts(to_remove, domain);
 }
 
 ss::future<>

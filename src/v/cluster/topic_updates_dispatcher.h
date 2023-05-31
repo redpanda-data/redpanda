@@ -115,6 +115,11 @@ private:
     void
     add_allocations_for_new_partitions(const T&, partition_allocation_domain);
 
+    void update_allocations_for_reconfiguration(
+      const std::vector<model::broker_shard>& previous,
+      const std::vector<model::broker_shard>& target,
+      partition_allocation_domain);
+
     void deallocate_topic(
       const model::topic_namespace&,
       const assignments_set&,
