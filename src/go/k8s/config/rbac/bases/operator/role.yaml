@@ -363,6 +363,32 @@ rules:
   - patch
   - update
 - apiGroups:
+  - cluster.redpanda.com
+  resources:
+  - topics
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - cluster.redpanda.com
+  resources:
+  - topics/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - cluster.redpanda.com
+  resources:
+  - topics/status
+  verbs:
+  - get
+  - patch
+  - update
+- apiGroups:
   - coordination.k8s.io
   resources:
   - leases
