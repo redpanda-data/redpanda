@@ -73,6 +73,13 @@ func Die(msg string, args ...interface{}) {
 	os.Exit(1)
 }
 
+// DieString is like Die, but does not format the message. This still adds
+// a newline.
+func DieString(msg string) {
+	fmt.Fprintln(os.Stderr, msg)
+	os.Exit(1)
+}
+
 // MaybeDie calls Die if err is non-nil.
 func MaybeDie(err error, msg string, args ...interface{}) {
 	if err != nil {
