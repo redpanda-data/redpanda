@@ -131,6 +131,39 @@ ss::future<bool> tx_registry_frontend::ensure_tx_topic_exists() {
     co_return false;
 }
 
+ss::future<describe_tx_registry_reply>
+tx_registry_frontend::route_locally(describe_tx_registry_request&& r) {
+    return do_route_locally(std::move(r));
+}
+
+ss::future<describe_tx_registry_reply> tx_registry_frontend::process_locally(
+  ss::shared_ptr<cluster::tx_registry_stm> stm,
+  describe_tx_registry_request&&) {
+    auto term_opt = co_await stm->sync();
+    if (!term_opt.has_value()) {
+        vlog(clusterlog.trace, "can't sync tx registry");
+        co_return describe_tx_registry_reply(tx_errc::leader_not_found);
+    }
+
+    describe_tx_registry_reply r;
+    r.ec = tx_errc::none;
+    r.id = repartitioning_id(-1);
+
+    if (!stm->is_initialized()) {
+        co_return r;
+    }
+
+    if (stm->seen_unknown_batch_subtype()) {
+        co_return r;
+    }
+
+    auto mapping = stm->get_mapping();
+    r.id = mapping.id;
+    r.mapping = mapping.mapping;
+
+    co_return r;
+}
+
 ss::future<find_coordinator_reply> tx_registry_frontend::find_coordinator(
   kafka::transactional_id tid, model::timeout_clock::duration timeout) {
     if (!_metadata_cache.local().contains(model::tx_manager_nt)) {

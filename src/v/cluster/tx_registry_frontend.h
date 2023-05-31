@@ -11,6 +11,8 @@
 
 #pragma once
 #include "cluster/fwd.h"
+#include "cluster/tx_gateway_frontend.h"
+#include "cluster/tx_registry_stm.h"
 #include "cluster/types.h"
 #include "features/feature_table.h"
 #include "rpc/fwd.h"
@@ -37,6 +39,9 @@ public:
       ss::sharded<features::feature_table>&);
 
     ss::future<bool> ensure_tx_topic_exists();
+
+    ss::future<describe_tx_registry_reply>
+    route_locally(describe_tx_registry_request&&);
 
     ss::future<find_coordinator_reply>
       find_coordinator(kafka::transactional_id, model::timeout_clock::duration);
@@ -75,6 +80,9 @@ private:
 
     ss::future<find_coordinator_reply> process_locally(
       ss::shared_ptr<cluster::tx_registry_stm>, find_coordinator_request&&);
+
+    ss::future<describe_tx_registry_reply> process_locally(
+      ss::shared_ptr<cluster::tx_registry_stm>, describe_tx_registry_request&&);
 
     ss::future<find_coordinator_reply>
       find_coordinator_statically(kafka::transactional_id);

@@ -26,6 +26,21 @@
             ]
         },
         {
+            "path": "/v1/tx_registry",
+            "operations": [
+                {
+                    "method": "GET",
+                    "summary": "Get tx registry state",
+                    "type": "describe_tx_registry_reply",
+                    "nickname": "describe_tx_registry",
+                    "produces": [
+                        "application/json"
+                    ],
+                    "parameters": []
+                }
+            ]
+        },
+        {
             "path": "/v1/transaction/{transactional_id}/find_coordinator",
             "operations": [
                 {
@@ -95,6 +110,54 @@
         }
     ],
     "models": {
+        "hash_range": {
+            "id": "hash_range",
+            "description": "Hash range",
+            "properties": {
+                "first": {
+                    "type": "long",
+                    "description": "first"
+                },
+                "last": {
+                    "type": "long",
+                    "description": "last"
+                }
+            }
+        },
+        "tx_mapping_entry": {
+            "id": "tx_mapping_entry",
+            "description": "tx_mapping_entry",
+            "properties": {
+                "partition_id": {
+                    "type": "int",
+                    "description": "partition_id"
+                },
+                "hosted_txs": {
+                    "type": "hosted_txs",
+                    "description": "hosted transactions"
+                }
+            }
+        },
+        "describe_tx_registry_reply": {
+            "id": "describe_tx_registry_reply",
+            "description": "tx registry state",
+            "properties": {
+                "ec": {
+                    "type": "long"
+                },
+                "version": {
+                    "type": "long",
+                    "description": "repartitioning_id"
+                },
+                "tx_mapping": {
+                    "type": "array",
+                    "items": {
+                        "type": "tx_mapping_entry"
+                    },
+                    "description": "tx_mapping"
+                }
+            }
+        },
         "ntp": {
             "id": "ntp",
             "description": "NTP",
@@ -226,6 +289,30 @@
                         "type": "group"
                     },
                     "description": "Consumer groups for transaction"
+                }
+            }
+        },
+        "hosted_txs": {
+            "id": "hosted_txs",
+            "description": "hosted_txs",
+            "properties": {
+                "excluded_transactions": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "included_transactions": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "hash_ranges": {
+                    "type": "array",
+                    "items": {
+                        "type": "hash_range"
+                    }
                 }
             }
         }

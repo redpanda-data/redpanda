@@ -991,6 +991,16 @@ std::ostream& operator<<(std::ostream& o, const find_coordinator_reply& r) {
     return o;
 }
 
+std::ostream& operator<<(std::ostream& o, const describe_tx_registry_request&) {
+    fmt::print(o, "{{}}");
+    return o;
+}
+
+std::ostream& operator<<(std::ostream& o, const describe_tx_registry_reply& r) {
+    fmt::print(o, "{{ec: {}}}", r.ec);
+    return o;
+}
+
 std::ostream&
 operator<<(std::ostream& o, const configuration_update_request& cr) {
     fmt::print(o, "{{broker: {} target_node: {}}}", cr.node, cr.target_node);
