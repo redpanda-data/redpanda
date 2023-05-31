@@ -313,6 +313,10 @@ void s3_imposter_fixture::set_routes(
               request._method == "POST"
               && request.query_parameters.contains("delete")) {
                 // Delete objects
+                auto it = expectations.find(request._url);
+                if (it != expectations.end() && it->second.body.has_value()) {
+                    return it->second.body.value();
+                }
                 return R"xml(<DeleteResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/"></DeleteResult>)xml";
             }
             BOOST_FAIL("Unexpected request");

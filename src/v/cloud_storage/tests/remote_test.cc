@@ -68,6 +68,14 @@ static constexpr std::string_view manifest_payload = R"json({
     }
 })json";
 
+static constexpr std::string_view plural_delete_error = R"json(
+<DeleteResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/">
+    <Error>
+        <Key>a</Key>
+        <Code>TestFailure</Code>
+    </Error>
+</DeleteResult>)json";
+
 static cloud_storage::lazy_abort_source always_continue{
   []() { return std::nullopt; }};
 
@@ -723,6 +731,27 @@ FIXTURE_TEST(test_delete_objects, remote_fixture) {
       cloud_storage_clients::object_key{"b"}};
     auto result = remote.local().delete_objects(bucket, to_delete, fib).get();
     BOOST_REQUIRE_EQUAL(cloud_storage::upload_result::success, result);
+    auto request = get_requests()[0];
+    BOOST_REQUIRE_EQUAL(request.method, "POST");
+    BOOST_REQUIRE_EQUAL(request.url, "/?delete");
+    BOOST_REQUIRE(request.has_q_delete);
+}
+
+FIXTURE_TEST(test_delete_objects_failure_handling, remote_fixture) {
+    // Test that the failure to delete one key via the plural form
+    // fails the entire operation.
+    set_expectations_and_listen({expectation{
+      .url = "/?delete", .body = ss::sstring(plural_delete_error)}});
+
+    cloud_storage_clients::bucket_name bucket{"test"};
+    retry_chain_node fib(never_abort, 100ms, 20ms);
+
+    std::vector<cloud_storage_clients::object_key> to_delete{
+      cloud_storage_clients::object_key{"a"},
+      cloud_storage_clients::object_key{"b"}};
+    auto result = remote.local().delete_objects(bucket, to_delete, fib).get();
+    BOOST_REQUIRE_EQUAL(cloud_storage::upload_result::failed, result);
+
     auto request = get_requests()[0];
     BOOST_REQUIRE_EQUAL(request.method, "POST");
     BOOST_REQUIRE_EQUAL(request.url, "/?delete");
