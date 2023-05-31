@@ -25,6 +25,7 @@
 #include "model/namespace.h"
 #include "model/record_batch_reader.h"
 #include "rpc/connection_cache.h"
+#include "utils/gate_guard.h"
 #include "vformat.h"
 
 #include <seastar/core/coroutine.hh>
@@ -267,6 +268,8 @@ tx_registry_frontend::find_coordinator_locally(kafka::transactional_id tid) {
         co_return find_coordinator_reply(
           std::nullopt, std::nullopt, errc::not_leader);
     }
+
+    gate_guard guard{_gate};
 
     co_return co_await container().invoke_on(
       *shard, _ssg, [tid](tx_registry_frontend& self) mutable {
