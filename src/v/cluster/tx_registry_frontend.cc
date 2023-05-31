@@ -61,6 +61,36 @@ tx_registry_frontend::tx_registry_frontend(
       config::shard_local_cfg().metadata_dissemination_retry_delay_ms.value()) {
 }
 
+template<typename Func>
+auto tx_registry_frontend::with_stm(Func&& func) {
+    auto partition = _partition_manager.local().get(model::tx_registry_ntp);
+    if (!partition) {
+        vlog(
+          txlog.warn, "can't get partition by {} ntp", model::tx_registry_ntp);
+        return func(tx_errc::partition_not_found);
+    }
+
+    auto stm = partition->tx_registry_stm();
+
+    if (!stm) {
+        vlog(
+          txlog.warn,
+          "can't get tx_registry_stm of the {}' partition",
+          model::tx_registry_ntp);
+        return func(tx_errc::stm_not_found);
+    }
+
+    if (stm->gate().is_closed()) {
+        return func(tx_errc::not_coordinator);
+    }
+
+    return ss::with_gate(stm->gate(), [func = std::forward<Func>(func), stm]() {
+        vlog(txlog.trace, "entered tx_registry_stm's gate");
+        return func(stm).finally(
+          [] { vlog(txlog.trace, "leaving tx_registry_stm's gate"); });
+    });
+}
+
 ss::future<bool> tx_registry_frontend::ensure_tx_topic_exists() {
     if (_metadata_cache.local().contains(model::tx_manager_nt)) {
         co_return true;
@@ -229,38 +259,36 @@ ss::future<find_coordinator_reply>
 tx_registry_frontend::find_coordinator_locally(kafka::transactional_id tid) {
     auto shard = _shard_table.local().shard_for(model::tx_registry_ntp);
 
-    if (unlikely(!shard)) {
-        auto retries = _metadata_dissemination_retries;
-        auto delay_ms = _metadata_dissemination_retry_delay_ms;
-        auto aborted = false;
-        while (!aborted && !shard && 0 < retries--) {
-            aborted = !co_await sleep_abortable(delay_ms, _as);
-            shard = _shard_table.local().shard_for(model::tx_registry_ntp);
-        }
-
-        if (!shard) {
-            vlog(
-              clusterlog.warn,
-              "can't find {} in the shard table",
-              model::tx_registry_ntp);
-            co_return find_coordinator_reply(
-              std::nullopt, std::nullopt, errc::not_leader);
-        }
+    if (!shard) {
+        vlog(
+          clusterlog.warn,
+          "can't find {} in the shard table",
+          model::tx_registry_ntp);
+        co_return find_coordinator_reply(
+          std::nullopt, std::nullopt, errc::not_leader);
     }
 
-    co_return co_await _partition_manager.invoke_on(
-      *shard, _ssg, [this, tid](cluster::partition_manager& mgr) mutable {
-          auto partition = mgr.get(model::tx_registry_ntp);
-          if (!partition) {
-              vlog(
-                clusterlog.warn,
-                "can't get partition by {} ntp",
-                model::tx_registry_ntp);
-              return ss::make_ready_future<find_coordinator_reply>(
-                find_coordinator_reply(
-                  std::nullopt, std::nullopt, errc::topic_not_exists));
-          }
-          return do_find_coordinator_locally(tid);
+    co_return co_await container().invoke_on(
+      *shard, _ssg, [tid](tx_registry_frontend& self) mutable {
+          return ss::with_gate(self._gate, [&self, tid]() {
+              return self.with_stm(
+                [&self,
+                 tid](checked<ss::shared_ptr<tx_registry_stm>, tx_errc> r) {
+                    if (!r) {
+                        return ss::make_ready_future<find_coordinator_reply>(
+                          find_coordinator_reply(
+                            std::nullopt,
+                            std::nullopt,
+                            errc::generic_tx_error));
+                    }
+                    auto stm = r.value();
+                    return stm->read_lock().then(
+                      [&self, tid](ss::basic_rwlock<>::holder unit) mutable {
+                          return self.do_find_coordinator_locally(tid).finally(
+                            [u = std::move(unit)] {});
+                      });
+                });
+          });
       });
 }
 

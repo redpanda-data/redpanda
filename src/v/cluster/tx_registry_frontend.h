@@ -22,7 +22,8 @@
 
 namespace cluster {
 
-class tx_registry_frontend {
+class tx_registry_frontend final
+  : public ss::peering_sharded_service<tx_registry_frontend> {
 public:
     tx_registry_frontend(
       ss::smp_service_group,
@@ -50,6 +51,7 @@ public:
 
 private:
     ss::abort_source _as;
+    ss::gate _gate;
     ss::smp_service_group _ssg;
     ss::sharded<cluster::partition_manager>& _partition_manager;
     ss::sharded<cluster::shard_table>& _shard_table;
@@ -61,6 +63,9 @@ private:
     ss::sharded<features::feature_table>& _feature_table;
     int16_t _metadata_dissemination_retries{1};
     std::chrono::milliseconds _metadata_dissemination_retry_delay_ms;
+
+    template<typename Func>
+    auto with_stm(Func&& func);
 
     ss::future<find_coordinator_reply> dispatch_find_coordinator(
       model::node_id, kafka::transactional_id, model::timeout_clock::duration);
