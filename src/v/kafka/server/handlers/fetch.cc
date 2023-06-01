@@ -448,7 +448,7 @@ handle_shard_fetch(ss::shard_id shard, op_context& octx, shard_fetch fetch) {
             // This is meant to help avoiding unintended cross shard access
             return fetch_ntps_in_parallel(
               mgr,
-              octx.rctx.replica_selector(),
+              octx.rctx.server().local().get_replica_selector(),
               std::move(configs),
               foreign_read,
               deadline,

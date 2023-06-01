@@ -174,7 +174,7 @@ FIXTURE_TEST(read_from_ntp_max_bytes, redpanda_thread_fixture) {
             [ktp, config, &octx](cluster::partition_manager& pm) {
                 return kafka::read_from_ntp(
                   pm,
-                  octx.rctx.replica_selector(),
+                  octx.rctx.server().local().get_replica_selector(),
                   ktp,
                   config,
                   true,
