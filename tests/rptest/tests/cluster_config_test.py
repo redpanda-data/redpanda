@@ -378,7 +378,7 @@ class ClusterConfigTest(RedpandaTest, ClusterConfigHelpersMixin):
         patch_result = self.admin.patch_cluster_config(
             upsert=dict([norestart_new_setting]))
         new_version = patch_result['config_version']
-        wait_for_version_sync(self.admin, self.redpanda, new_version)
+        wait_for_version_status_sync(self.admin, self.redpanda, new_version)
 
         assert self.admin.get_cluster_config()[
             norestart_new_setting[0]] == norestart_new_setting[1]
