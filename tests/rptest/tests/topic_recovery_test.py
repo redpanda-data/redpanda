@@ -1297,7 +1297,6 @@ class TopicRecoveryTest(RedpandaTest):
                                self.logger, self.rpk_producer_maker)
         self.do_run(test_case)
 
-    @ok_to_fail  # https://github.com/redpanda-data/redpanda/issues/10219
     @cluster(num_nodes=3,
              log_allow_list=MISSING_DATA_ERRORS + TRANSIENT_ERRORS)
     @matrix(cloud_storage_type=get_cloud_storage_type())
