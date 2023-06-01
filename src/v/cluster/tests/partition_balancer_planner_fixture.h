@@ -65,13 +65,20 @@ public:
             config::mock_binding<uint32_t>(uint32_t{partitions_reserve_shard0}),
             config::mock_binding<bool>(true))
           .get();
+        // use node status that is not used in test as self is always available
+        node_status_table.start_single(model::node_id{123}).get();
         state
-          .start_single(std::ref(table), std::ref(members), std::ref(allocator))
+          .start_single(
+            std::ref(table),
+            std::ref(members),
+            std::ref(allocator),
+            std::ref(node_status_table))
           .get();
     }
 
     ~controller_workers() {
         state.stop().get();
+        node_status_table.stop().get();
         table.stop().get();
         allocator.stop().get();
         members.stop().get();
@@ -82,6 +89,7 @@ public:
     ss::sharded<cluster::topic_table> table;
     ss::sharded<cluster::partition_leaders_table> leaders;
     ss::sharded<cluster::partition_balancer_state> state;
+    ss::sharded<cluster::node_status_table> node_status_table;
     cluster::topic_updates_dispatcher dispatcher;
 };
 

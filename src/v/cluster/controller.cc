@@ -31,6 +31,7 @@
 #include "cluster/members_table.h"
 #include "cluster/metadata_dissemination_service.h"
 #include "cluster/metrics_reporter.h"
+#include "cluster/node_status_table.h"
 #include "cluster/partition_balancer_backend.h"
 #include "cluster/partition_balancer_state.h"
 #include "cluster/partition_leaders_table.h"
@@ -73,7 +74,8 @@ controller::controller(
   ss::sharded<node::local_monitor>& local_monitor,
   ss::sharded<raft::group_manager>& raft_manager,
   ss::sharded<features::feature_table>& feature_table,
-  ss::sharded<cloud_storage::remote>& cloud_storage_api)
+  ss::sharded<cloud_storage::remote>& cloud_storage_api,
+  ss::sharded<node_status_table>& node_status_table)
   : _config_preload(std::move(config_preload))
   , _connections(ccache)
   , _partition_manager(pm)
@@ -89,6 +91,7 @@ controller::controller(
   , _raft_manager(raft_manager)
   , _feature_table(feature_table)
   , _cloud_storage_api(cloud_storage_api)
+  , _node_status_table(node_status_table)
   , _probe(*this) {}
 
 ss::future<> controller::wire_up() {
@@ -114,7 +117,8 @@ ss::future<> controller::wire_up() {
           return _partition_balancer_state.start_single(
             std::ref(_tp_state),
             std::ref(_members_table),
-            std::ref(_partition_allocator));
+            std::ref(_partition_allocator),
+            std::ref(_node_status_table));
       })
       .then([this] { _probe.start(); });
 }
@@ -506,6 +510,7 @@ controller::start(cluster_discovery& discovery, ss::abort_source& shard0_as) {
             config::shard_local_cfg().segment_fallocation_step.bind(),
             config::shard_local_cfg()
               .partition_autobalancing_min_size_threshold.bind(),
+            config::shard_local_cfg().node_status_interval.bind(),
             config::shard_local_cfg().raft_learner_recovery_rate.bind());
       })
       .then([this] {
