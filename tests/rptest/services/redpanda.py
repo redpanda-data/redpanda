@@ -1340,6 +1340,8 @@ class RedpandaServiceCloud(RedpandaServiceK8s):
     GLOBAL_CLOUD_DELETE_CLUSTER = 'cloud_delete_cluster'
     GLOBAL_TELEPORT_AUTH_SERVER = 'cloud_teleport_auth_server'
     GLOBAL_TELEPORT_BOT_TOKEN = 'cloud_teleport_bot_token'
+    GLOBAL_CLOUD_PEER_VPC_ID = 'cloud_peer_vpc_id'
+    GLOBAL_CLOUD_PEER_OWNER_ID = 'cloud_peer_owner_id'
 
     class CloudCluster():
         """
@@ -1359,8 +1361,10 @@ class RedpandaServiceCloud(RedpandaServiceK8s):
                      oauth_client_secret,
                      oauth_audience,
                      api_url,
-                     cluster_id='',
-                     delete_namespace=False):
+                     cluster_id=None,
+                     delete_namespace=False,
+                     peer_vpc_id=None,
+                     peer_owner_id=None):
             """
             Initializes the object, but does not create clusters. Use
             `create` method to create a cluster.
@@ -1384,6 +1388,8 @@ class RedpandaServiceCloud(RedpandaServiceK8s):
             self._api_url = api_url
             self._cluster_id = cluster_id
             self._delete_namespace = delete_namespace
+            self._peer_vpc_id = peer_vpc_id
+            self._peer_owner_id = peer_owner_id
             self._token = None
 
             # unique 8-char identifier to be used when creating names of things for this cluster
@@ -1601,6 +1607,11 @@ class RedpandaServiceCloud(RedpandaServiceK8s):
             product_id = self._get_product_id(config_profile_name, provider,
                                               cluster_type, region,
                                               install_pack_ver)
+            public = True # TODO get value from globals config setting
+            if public:
+                connection_type = 'public'
+            else
+                connection_type = 'private'
 
             self._logger.info(f'creating cluster name {name}')
             body = {
@@ -1620,10 +1631,10 @@ class RedpandaServiceCloud(RedpandaServiceK8s):
                         "zones": zones,
                     }
                 },
-                "connectionType": "public",
+                "connectionType": connection_type,
                 "namespaceUuid": namespace_uuid,
                 "network": {
-                    "displayName": f"public-network-{name}",
+                    "displayName": f"{connection_type}-network-{name}",
                     "spec": {
                         "cidr": "10.1.0.0/16",
                         "deploymentType": cluster_type,
@@ -1657,6 +1668,31 @@ class RedpandaServiceCloud(RedpandaServiceK8s):
                 )
                 self._create_user(superuser)
                 self._create_acls(superuser.username)
+
+            if not public:
+                # https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/instancedata-data-categories.html
+                # curl -s http://169.254.169.254/latest/meta-data/network/interfaces/macs/$(ip -br link show eth0 | awk '{print$3}')/owner-id
+                # curl -s http://169.254.169.254/latest/meta-data/network/interfaces/macs/$(ip -br link show eth0 | awk '{print$3}')/vpc-id
+                network_id = ''  # TODO get network ID from newly-created cluster
+                body = {
+                    "networkPeering": {
+                        "displayName": f'peer-{name}',
+                        "spec": {
+                            "provider": "AWS",
+                            "cloudProvider": {
+                                "aws": {
+                                    "peerOwnerId": self._peer_owner_id,
+                                    "peerVpcId": self._peer_vpc_id
+                                }
+                            }
+                        }
+                    },
+                    "namespaceUuid": namespace_uuid
+                }
+                resp = self._http_post(
+                    f'/api/v1/networks/{network_id}/network-peerings',
+                    json=body)
+                # TODO accept the AWS VPC peering request
 
             return self._cluster_id
 
@@ -1792,10 +1828,16 @@ class RedpandaServiceCloud(RedpandaServiceK8s):
             self.GLOBAL_CLOUD_DELETE_CLUSTER, True)
         self.logger.debug(f'initial cluster_id: {self._cloud_cluster_id}')
 
+        self._cloud_peer_vpc_id = context.globals.get(
+            self.GLOBAL_CLOUD_PEER_VPC_ID, None)
+        self._cloud_peer_owner_id = context.globals.get(
+            self.GLOBAL_CLOUD_PEER_OWNER_ID, None)
+
         self._cloud_cluster = self.CloudCluster(
             self.logger, self._cloud_oauth_url, self._cloud_oauth_client_id,
             self._cloud_oauth_client_secret, self._cloud_oauth_audience,
-            self._cloud_api_url, self._cloud_cluster_id)
+            self._cloud_api_url, self._cloud_cluster_id,
+            self._cloud_peer_vpc_id, self._cloud_peer_owner_id)
         self._kubectl = None
 
     def start_node(self, node, **kwargs):
