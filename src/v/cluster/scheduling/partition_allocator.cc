@@ -66,9 +66,9 @@ allocation_constraints partition_allocator::default_constraints(
     req.add(is_active());
 
     if (domain == partition_allocation_domains::common) {
-        req.add(least_allocated());
+        req.add(max_final_capacity());
     } else {
-        req.add(least_allocated_in_domain(domain));
+        req.add(max_final_capacity_in_domain(domain));
     }
     if (_enable_rack_awareness()) {
         req.add(distinct_rack_preferred(_members.local()));

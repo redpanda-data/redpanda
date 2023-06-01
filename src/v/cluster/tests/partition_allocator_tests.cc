@@ -663,8 +663,13 @@ FIXTURE_TEST(incrementally_reallocate_replicas, partition_allocator_fixture) {
         check_allocated_counts(allocator, {1, 1, 1, 1});
         check_final_counts(allocator, {0, 1, 1, 1});
 
+        std::vector node_0(
+          {model::broker_shard{.node_id = model::node_id{0}, .shard = 0}});
+        cluster::allocation_constraints not_on_node0;
+        not_on_node0.add(cluster::distinct_from(node_0));
+
         auto moved5 = allocator.reallocate_replica(
-          reallocated, model::node_id{2}, cluster::allocation_constraints{});
+          reallocated, model::node_id{2}, not_on_node0);
         BOOST_REQUIRE(moved5.has_value());
         BOOST_REQUIRE_EQUAL(moved5.value().node_id, model::node_id{2});
         BOOST_REQUIRE_EQUAL(

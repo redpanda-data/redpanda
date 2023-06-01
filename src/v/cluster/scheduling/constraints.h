@@ -54,18 +54,18 @@ hard_constraint disk_not_overflowed_by_partition(
     node_disk_reports);
 
 /*
- * scores nodes based on free overall allocation capacity left
+ * scores nodes based on partition count after all moves have been finished
  * returning `0` for fully allocated nodes and `max_capacity` for empty nodes
  */
-soft_constraint least_allocated();
+soft_constraint max_final_capacity();
 
 /*
- * scores nodes based on allocation capacity used by priority partitions
- * returning `0` for nodes fully allocated for priority partitions
- * and `max_capacity` for nodes without any priority partitions
- * non-priority partition allocations are ignored
+ * scores nodes based on partition counts of priority partitions after all moves
+ * have been finished, returning `0` for nodes fully allocated for priority
+ * partitions and `max_capacity` for nodes without any priority partitions.
+ * non-priority partition allocations are ignored.
  */
-soft_constraint least_allocated_in_domain(partition_allocation_domain);
+soft_constraint max_final_capacity_in_domain(partition_allocation_domain);
 
 /*
  * constraint scores nodes on free disk space
