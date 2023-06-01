@@ -9,9 +9,13 @@
 
 #include "raft/replicate_entries_stm.h"
 
+#include "features/feature_table.h"
 #include "likely.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
+#include "model/record.h"
+#include "model/record_batch_reader.h"
+#include "outcome.h"
 #include "outcome_future_utils.h"
 #include "raft/consensus.h"
 #include "raft/consensus_utils.h"
@@ -23,34 +27,33 @@
 #include "rpc/types.h"
 
 #include <seastar/core/coroutine.hh>
+#include <seastar/core/semaphore.hh>
 #include <seastar/util/defer.hh>
 
 #include <chrono>
+#include <memory>
 
 namespace raft {
 using namespace std::chrono_literals;
 
-ss::future<append_entries_request> replicate_entries_stm::share_request() {
+ss::future<model::record_batch_reader> replicate_entries_stm::share_batches() {
     // one extra copy is needed for retries
-    return with_semaphore(_share_sem, 1, [this] {
-        return details::foreign_share_n(std::move(_req->batches()), 2)
-          .then([this](std::vector<model::record_batch_reader> readers) {
-              // keep a copy around until the end
-              _req->batches() = std::move(readers.back());
-              readers.pop_back();
-              return append_entries_request(
-                _req->node_id,
-                _req->meta,
-                std::move(readers.back()),
-                _req->flush);
-          });
-    });
+    auto u = co_await _share_mutex.get_units();
+
+    auto readers = co_await details::foreign_share_n(
+      std::move(_batches.value()), 2);
+
+    // keep a copy around until the end
+    _batches = std::move(readers.back());
+    readers.pop_back();
+
+    co_return std::move(readers.back());
 }
 
 ss::future<result<append_entries_reply>> replicate_entries_stm::flush_log() {
     using ret_t = result<append_entries_reply>;
     auto flush_f = ss::now();
-    if (_req->flush) {
+    if (_is_flush_required) {
         flush_f = _ptr->flush_log();
     }
 
@@ -91,17 +94,16 @@ clock_type::time_point replicate_entries_stm::append_entries_timeout() {
 
 ss::future<result<append_entries_reply>>
 replicate_entries_stm::send_append_entries_request(
-  vnode n, append_entries_request req) {
+  vnode n, model::record_batch_reader batches) {
     _ptr->update_node_append_timestamp(n);
-    vlog(_ctxlog.trace, "Sending append entries request {} to {}", req.meta, n);
 
-    req.target_node_id = n;
+    vlog(_ctxlog.trace, "Sending append entries request {} to {}", _meta, n);
 
     auto opts = rpc::client_opts(append_entries_timeout());
     opts.resource_units = ss::make_foreign<ss::lw_shared_ptr<units_t>>(_units);
 
     auto f = _ptr->_fstats.get_append_entries_unit(n).then_wrapped(
-      [this, req = std::move(req), opts = std::move(opts), n](
+      [this, batches = std::move(batches), opts = std::move(opts), n](
         ss::future<ssx::semaphore_units> f) mutable {
           // we want to signal dispatch semaphore after calling append entries.
           // When dispatch semaphore is released the append_entries_stm releases
@@ -117,7 +119,12 @@ replicate_entries_stm::send_append_entries_request(
           auto u = f.get();
 
           return _ptr->_client_protocol
-            .append_entries(n.id(), std::move(req), std::move(opts))
+            .append_entries(
+              n.id(),
+              append_entries_request(
+                _ptr->self(), n, _meta, std::move(batches), _is_flush_required),
+              std::move(opts),
+              _ptr->use_all_serde_append_entries())
             .then([this, target_node_id = n.id()](
                     result<append_entries_reply> reply) {
                 return _ptr->validate_reply_target_node(
@@ -172,26 +179,26 @@ ss::future<result<append_entries_reply>>
 replicate_entries_stm::dispatch_single_retry(vnode id) {
     if (id == _ptr->_self) {
         return flush_log();
-    } else {
-        return share_request().then(
-          [this, id](append_entries_request r) mutable {
-              return send_append_entries_request(id, std::move(r));
-          });
     }
+    return share_batches().then(
+      [this, id](model::record_batch_reader batches) mutable {
+          return send_append_entries_request(id, std::move(batches));
+      });
 }
 
 ss::future<result<storage::append_result>>
 replicate_entries_stm::append_to_self() {
-    return share_request()
-      .then([this](append_entries_request req) mutable {
-          vlog(_ctxlog.trace, "Self append entries - {}", req.meta);
+    return share_batches()
+      .then([this](model::record_batch_reader batches) mutable {
+          vlog(_ctxlog.trace, "Self append entries - {}", _meta);
+
           _ptr->_last_write_consistency_level
-            = _req->flush ? consistency_level::quorum_ack
-                          : consistency_level::leader_ack;
+            = _is_flush_required ? consistency_level::quorum_ack
+                                 : consistency_level::leader_ack;
           return _ptr->disk_append(
-            std::move(req.batches()),
-            _req->flush ? consensus::update_last_quorum_index::yes
-                        : consensus::update_last_quorum_index::no);
+            std::move(batches),
+            _is_flush_required ? consensus::update_last_quorum_index::yes
+                               : consensus::update_last_quorum_index::no);
       })
       .then([this](storage::append_result res) {
           vlog(_ctxlog.trace, "Leader append result: {}", res);
@@ -239,14 +246,14 @@ inline bool replicate_entries_stm::should_skip_follower_request(vnode id) {
               id);
             return true;
         }
-        if (it->second.last_sent_offset != _req->meta.prev_log_index) {
+        if (it->second.last_sent_offset != _meta.prev_log_index) {
             vlog(
               _ctxlog.trace,
               "Skipping sending append request to {} - last sent offset: {}, "
               "expected follower last offset: {}",
               id,
               it->second.last_sent_offset,
-              _req->meta.prev_log_index);
+              _meta.prev_log_index);
             return true;
         }
         return false;
@@ -299,7 +306,7 @@ ss::future<result<replicate_result>> replicate_entries_stm::apply(units_t u) {
         // Wait until all RPCs will be dispatched
         return _dispatch_sem.wait(_requests_count).then([this] {
             // release memory reservations, and destroy data
-            _req.reset();
+            _batches.reset();
             _units.release();
         });
     });
@@ -418,9 +425,10 @@ replicate_entries_stm::replicate_entries_stm(
   append_entries_request r,
   absl::flat_hash_map<vnode, follower_req_seq> seqs)
   : _ptr(p)
-  , _req(std::make_unique<append_entries_request>(std::move(r)))
+  , _meta(r.metadata())
+  , _is_flush_required(r.is_flush_required())
+  , _batches(std::move(r).release_batches())
   , _followers_seq(std::move(seqs))
-  , _share_sem(1, "raft/repl-entries")
   , _ctxlog(_ptr->_ctxlog) {}
 
 replicate_entries_stm::~replicate_entries_stm() {

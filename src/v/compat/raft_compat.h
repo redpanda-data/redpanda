@@ -510,8 +510,13 @@ struct compat_check<raft::heartbeat_reply> {
 template<>
 inline std::pair<raft::append_entries_request, raft::append_entries_request>
 compat_copy(raft::append_entries_request r) {
+    auto metadata = r.metadata();
+    auto target_node = r.target_node();
+    auto source_node = r.source_node();
+    auto flush = r.is_flush_required();
+
     auto a_batches = model::consume_reader_to_memory(
-                       std::move(r.batches()), model::no_timeout)
+                       std::move(r).release_batches(), model::no_timeout)
                        .get0();
 
     ss::circular_buffer<model::record_batch> b_batches;
@@ -520,18 +525,18 @@ compat_copy(raft::append_entries_request r) {
     }
 
     raft::append_entries_request a(
-      r.node_id,
-      r.target_node_id,
-      r.meta,
+      source_node,
+      target_node,
+      metadata,
       model::make_memory_record_batch_reader(std::move(a_batches)),
-      r.flush);
+      flush);
 
     raft::append_entries_request b(
-      r.node_id,
-      r.target_node_id,
-      r.meta,
+      source_node,
+      target_node,
+      metadata,
       model::make_memory_record_batch_reader(std::move(b_batches)),
-      r.flush);
+      flush);
 
     return {std::move(a), std::move(b)};
 }
@@ -549,12 +554,12 @@ struct compat_check<raft::append_entries_request> {
 
     static void to_json(
       raft::append_entries_request obj, json::Writer<json::StringBuffer>& wr) {
-        json_write(node_id);
-        json_write(target_node_id);
-        json_write(meta);
-        json_write(flush);
+        json::write_member(wr, "node_id", obj.source_node());
+        json::write_member(wr, "target_node_id", obj.target_node());
+        json::write_member(wr, "meta", obj.metadata());
+        json::write_member(wr, "flush", obj.is_flush_required());
         auto batches = model::consume_reader_to_memory(
-                         std::move(obj.batches()), model::no_timeout)
+                         std::move(obj).release_batches(), model::no_timeout)
                          .get0();
         json::write_member(wr, "batches", batches);
     }
@@ -563,7 +568,7 @@ struct compat_check<raft::append_entries_request> {
         raft::vnode node;
         raft::vnode target;
         raft::protocol_metadata meta;
-        raft::append_entries_request::flush_after_append flush;
+        raft::flush_after_append flush;
         model::record_batch_reader::data_t batches;
 
         json::read_member(rd, "node_id", node);
@@ -590,35 +595,41 @@ struct compat_check<raft::append_entries_request> {
         auto decoded = decode_serde_only<raft::append_entries_request>(
           std::move(test));
 
-        if (decoded.node_id != expected.node_id) {
+        if (decoded.source_node() != expected.source_node()) {
             throw compat_error(fmt::format(
-              "Expected node_id {} got {}", expected.node_id, decoded.node_id));
+              "Expected node_id {} got {}",
+              expected.source_node(),
+              decoded.source_node()));
         }
 
-        if (decoded.target_node_id != expected.target_node_id) {
+        if (decoded.target_node() != expected.target_node()) {
             throw compat_error(fmt::format(
               "Expected target_node_id {} got {}",
-              expected.target_node_id,
-              decoded.target_node_id));
+              expected.target_node(),
+              decoded.target_node()));
         }
 
-        if (decoded.meta != expected.meta) {
+        if (decoded.metadata() != expected.metadata()) {
             throw compat_error(fmt::format(
-              "Expected meta {} got {}", expected.meta, decoded.meta));
+              "Expected meta {} got {}",
+              expected.metadata(),
+              decoded.metadata()));
         }
 
-        if (decoded.flush != expected.flush) {
+        if (decoded.is_flush_required() != expected.is_flush_required()) {
             throw compat_error(fmt::format(
-              "Expected flush {} got {}", expected.flush, decoded.flush));
+              "Expected flush {} got {}",
+              expected.is_flush_required(),
+              decoded.is_flush_required()));
         }
 
         auto decoded_batches = model::consume_reader_to_memory(
-                                 std::move(decoded.batches()),
+                                 std::move(decoded).release_batches(),
                                  model::no_timeout)
                                  .get0();
 
         auto expected_batches = model::consume_reader_to_memory(
-                                  std::move(expected.batches()),
+                                  std::move(expected).release_batches(),
                                   model::no_timeout)
                                   .get0();
 

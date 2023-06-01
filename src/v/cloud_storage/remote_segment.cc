@@ -1175,6 +1175,10 @@ public:
         // redpanda offset.
         batch.header().base_offset = kafka::offset_cast(
           rp_to_kafka(batch.base_offset()));
+        // since base offset isn't accounted into Kafka crc we need to only
+        // update header_crc
+        batch.header().header_crc = model::internal_header_only_crc(
+          batch.header());
 
         size_t sz = _parent.produce(std::move(batch));
 

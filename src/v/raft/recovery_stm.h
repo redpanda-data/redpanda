@@ -34,9 +34,7 @@ private:
     read_range_for_recovery(model::offset, ss::io_priority_class, bool, size_t);
 
     ss::future<> replicate(
-      model::record_batch_reader&&,
-      append_entries_request::flush_after_append,
-      ssx::semaphore_units);
+      model::record_batch_reader&&, flush_after_append, ssx::semaphore_units);
     ss::future<result<append_entries_reply>> dispatch_append_entries(
       append_entries_request&&, std::vector<ssx::semaphore_units>);
     std::optional<follower_index_metadata*> get_follower_meta();
@@ -49,8 +47,7 @@ private:
     ss::future<> close_snapshot_reader();
     bool state_changed();
     bool is_recovery_finished();
-    append_entries_request::flush_after_append
-      should_flush(model::offset) const;
+    flush_after_append should_flush(model::offset) const;
     consensus* _ptr;
     vnode _node_id;
     model::offset _base_batch_offset;

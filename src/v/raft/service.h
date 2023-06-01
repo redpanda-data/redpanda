@@ -79,7 +79,7 @@ public:
               m.meta,
               model::make_memory_record_batch_reader(
                 ss::circular_buffer<model::record_batch>{}),
-              append_entries_request::flush_after_append::no);
+              flush_after_append::no);
             reqs.push_back(std::move(append_req));
         };
 
@@ -101,7 +101,7 @@ public:
           std::back_inserter(group_missing_replies),
           [](append_entries_request& r) {
               return append_entries_reply{
-                .group = r.meta.group,
+                .group = r.metadata().group,
                 .result = append_entries_reply::status::group_unavailable};
           });
 
@@ -141,6 +141,20 @@ public:
               [gr]() { return make_missing_group_reply(gr); },
               [](append_entries_request&& r, consensus_ptr c) {
                   return c->append_entries(std::move(r));
+              });
+        });
+    }
+    [[gnu::always_inline]] ss::future<append_entries_reply>
+    append_entries_full_serde(
+      append_entries_request_serde_wrapper&& r, rpc::streaming_context&) final {
+        return _probe.append_entries().then([this, r = std::move(r)]() mutable {
+            auto request = std::move(r).release();
+            const raft::group_id gr = request.target_group();
+            return dispatch_request(
+              append_entries_request::make_foreign(std::move(request)),
+              [gr]() { return make_missing_group_reply(gr); },
+              [](append_entries_request&& req, consensus_ptr c) {
+                  return c->append_entries(std::move(req));
               });
         });
     }
@@ -297,12 +311,12 @@ private:
         shard_groupped_hbeat_requests ret;
 
         for (auto& r : reqs) {
-            if (unlikely(!_shard_table.contains(r.meta.group))) {
+            if (unlikely(!_shard_table.contains(r.metadata().group))) {
                 ret.group_missing_requests.push_back(std::move(r));
                 continue;
             }
 
-            auto shard = _shard_table.shard_for(r.meta.group);
+            auto shard = _shard_table.shard_for(r.metadata().group);
             auto it = ret.shard_requests.find(shard);
             if (it == ret.shard_requests.end()) {
                 auto result = ret.shard_requests.try_emplace(
@@ -321,7 +335,7 @@ private:
 
     ss::future<append_entries_reply>
     dispatch_append_entries(ConsensusManager& m, append_entries_request&& r) {
-        auto group = group_id(r.meta.group);
+        auto group = group_id(r.metadata().group);
         auto c = m.consensus_for(group);
         if (unlikely(!c)) {
             return make_missing_group_reply(group);

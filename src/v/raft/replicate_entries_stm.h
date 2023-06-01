@@ -13,13 +13,18 @@
 
 #include "model/fundamental.h"
 #include "model/metadata.h"
+#include "model/record.h"
+#include "model/record_batch_reader.h"
 #include "outcome.h"
 #include "raft/fwd.h"
 #include "raft/group_configuration.h"
 #include "raft/logger.h"
+#include "raft/types.h"
+#include "rpc/types.h"
 #include "seastarx.h"
 #include "ssx/semaphore.h"
 #include "storage/types.h"
+#include "utils/mutex.h"
 
 #include <seastar/core/gate.hh>
 #include <seastar/core/shared_ptr.hh>
@@ -106,14 +111,15 @@ public:
     ss::future<> wait_for_shutdown();
 
 private:
-    ss::future<append_entries_request> share_request();
+    ss::future<model::record_batch_reader> share_batches();
 
     ss::future<> dispatch_one(vnode);
     ss::future<result<append_entries_reply>> dispatch_single_retry(vnode);
     ss::future<result<append_entries_reply>> flush_log();
 
     ss::future<result<append_entries_reply>>
-      send_append_entries_request(vnode, append_entries_request);
+      send_append_entries_request(vnode, model::record_batch_reader);
+
     result<replicate_result> process_result(model::offset, model::term_id);
     bool should_skip_follower_request(vnode);
     clock_type::time_point append_entries_timeout();
@@ -124,9 +130,11 @@ private:
 
     consensus* _ptr;
     /// we keep a copy around until we finish the retries
-    std::unique_ptr<append_entries_request> _req;
+    protocol_metadata _meta;
+    flush_after_append _is_flush_required;
+    std::optional<model::record_batch_reader> _batches;
     absl::flat_hash_map<vnode, follower_req_seq> _followers_seq;
-    ssx::semaphore _share_sem;
+    mutex _share_mutex;
     ssx::semaphore _dispatch_sem{0, "raft/repl-dispatch"};
     ss::gate _req_bg;
     ctx_log _ctxlog;

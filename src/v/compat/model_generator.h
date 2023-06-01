@@ -10,13 +10,19 @@
  */
 #pragma once
 
+#include "bytes/iobuf.h"
 #include "compat/generator.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
+#include "model/record.h"
+#include "model/record_batch_types.h"
+#include "model/tests/random_batch.h"
 #include "model/tests/randoms.h"
 #include "model/timestamp.h"
 #include "random/generators.h"
 #include "test_utils/randoms.h"
+
+#include <cstdint>
 
 namespace compat {
 
@@ -111,6 +117,65 @@ struct instance_generator<model::topic_metadata> {
         return tm;
     }
     static std::vector<model::topic_metadata> limits() { return {}; }
+};
+
+template<>
+struct instance_generator<model::record_batch_header> {
+    static model::record_batch_header random() {
+        model::record_batch_header h;
+        h.header_crc = random_generators::get_int(
+          std::numeric_limits<uint32_t>::min(),
+          std::numeric_limits<uint32_t>::max());
+
+        h.size_bytes = random_generators::get_int(
+          std::numeric_limits<int32_t>::min(),
+          std::numeric_limits<int32_t>::max());
+        h.base_offset = tests::random_named_int<model::offset>();
+        h.type = tests::random_batch_type();
+        h.crc = random_generators::get_int(
+          std::numeric_limits<int32_t>::min(),
+          std::numeric_limits<int32_t>::max());
+        h.attrs = model::record_batch_attributes(
+          random_generators::get_int<int16_t>(0, 256));
+        h.last_offset_delta = random_generators::get_int(0, 10);
+        h.first_timestamp = model::timestamp(
+          random_generators::get_int<int64_t>(
+            0, std::numeric_limits<int64_t>::max()));
+        h.max_timestamp = model::timestamp(random_generators::get_int<int64_t>(
+          0, std::numeric_limits<int64_t>::max()));
+        h.producer_id = random_generators::get_int(
+          random_generators::get_int<int64_t>(
+            0, std::numeric_limits<int64_t>::max()));
+        h.producer_epoch = random_generators::get_int(
+          random_generators::get_int<int16_t>(
+            0, std::numeric_limits<int16_t>::max()));
+        h.base_sequence = random_generators::get_int(
+          0, std::numeric_limits<int32_t>::max());
+        h.record_count = random_generators::get_int(
+          0, std::numeric_limits<int32_t>::max());
+        return h;
+    }
+    static std::vector<model::record_batch_header> limits() { return {}; }
+};
+
+template<>
+struct instance_generator<model::record_batch> {
+    static model::record_batch random() {
+        return model::test::make_random_batch(model::test::record_batch_spec{
+          .allow_compression = true,
+          .count = 1,
+          .bt = tests::random_batch_type(),
+          .enable_idempotence = tests::random_bool(),
+          .producer_id = random_generators::get_int(
+            0, std::numeric_limits<int32_t>::max()),
+          .producer_epoch = random_generators::get_int<int16_t>(
+            0, std::numeric_limits<int16_t>::max()),
+          .base_sequence = random_generators::get_int(
+            0, std::numeric_limits<int32_t>::max()),
+          .is_transactional = tests::random_bool()});
+    }
+
+    static std::vector<model::record_batch> limits() { return {}; }
 };
 
 } // namespace compat

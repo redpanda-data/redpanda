@@ -86,7 +86,7 @@ SEASTAR_THREAD_TEST_CASE(append_entries_requests) {
       std::move(readers.back()));
 
     readers.pop_back();
-    const auto target_node_id = req.target_node_id;
+    const auto target_node_id = req.target_node();
 
     iobuf buf;
     serde::write_async(buf, std::move(req)).get();
@@ -94,19 +94,21 @@ SEASTAR_THREAD_TEST_CASE(append_entries_requests) {
     auto d = serde::read_async<raft::append_entries_request>(p).get();
 
     BOOST_REQUIRE_EQUAL(
-      d.node_id, raft::vnode(model::node_id(1), model::revision_id(10)));
-    BOOST_REQUIRE_EQUAL(d.target_node_id, target_node_id);
-    BOOST_REQUIRE_EQUAL(d.meta.group, meta.group);
-    BOOST_REQUIRE_EQUAL(d.meta.commit_index, meta.commit_index);
-    BOOST_REQUIRE_EQUAL(d.meta.term, meta.term);
-    BOOST_REQUIRE_EQUAL(d.meta.prev_log_index, meta.prev_log_index);
-    BOOST_REQUIRE_EQUAL(d.meta.prev_log_term, meta.prev_log_term);
-    BOOST_REQUIRE_EQUAL(d.meta.last_visible_index, meta.last_visible_index);
+      d.source_node(), raft::vnode(model::node_id(1), model::revision_id(10)));
+    BOOST_REQUIRE_EQUAL(d.target_node(), target_node_id);
+    BOOST_REQUIRE_EQUAL(d.metadata().group, meta.group);
+    BOOST_REQUIRE_EQUAL(d.metadata().commit_index, meta.commit_index);
+    BOOST_REQUIRE_EQUAL(d.metadata().term, meta.term);
+    BOOST_REQUIRE_EQUAL(d.metadata().prev_log_index, meta.prev_log_index);
+    BOOST_REQUIRE_EQUAL(d.metadata().prev_log_term, meta.prev_log_term);
+    BOOST_REQUIRE_EQUAL(
+      d.metadata().last_visible_index, meta.last_visible_index);
 
     auto batches_result = model::consume_reader_to_memory(
                             std::move(readers.back()), model::no_timeout)
                             .get0();
-    d.batches()
+    std::move(d)
+      .release_batches()
       .consume(checking_consumer(std::move(batches_result)), model::no_timeout)
       .get0();
 }
@@ -532,4 +534,65 @@ SEASTAR_THREAD_TEST_CASE(snapshot_metadata_backward_compatibility) {
     BOOST_REQUIRE_EQUAL(metadata.latest_configuration, c);
     BOOST_REQUIRE_EQUAL(
       metadata.log_start_delta, raft::offset_translator_delta{});
+}
+
+SEASTAR_THREAD_TEST_CASE(append_entries_request_serde_wrapper_serde) {
+    auto batches = model::test::make_random_batches(model::offset(1), 3, false);
+
+    for (auto& b : batches) {
+        b.set_term(model::term_id(123));
+    }
+
+    auto rdr = model::make_memory_record_batch_reader(std::move(batches));
+    // share readers to have a copy of data to compare
+    auto readers = raft::details::share_n(std::move(rdr), 2).get0();
+
+    auto meta = raft::protocol_metadata{
+      .group = raft::group_id(1),
+      .commit_index = model::offset(100),
+      .term = model::term_id(10),
+      .prev_log_index = model::offset(99),
+      .prev_log_term = model::term_id(-1),
+      .last_visible_index = model::offset(200),
+    };
+    raft::append_entries_request req(
+      raft::vnode(model::node_id(1), model::revision_id(10)),
+      raft::vnode(model::node_id(10), model::revision_id(101)),
+      meta,
+      std::move(readers.back()));
+
+    readers.pop_back();
+
+    const auto src_node = req.source_node();
+    const auto target_node = req.target_node();
+
+    raft::append_entries_request_serde_wrapper wrapper(std::move(req));
+
+    iobuf buf;
+    serde::write_async(buf, std::move(wrapper)).get();
+    iobuf_parser parser(std::move(buf));
+    auto decoded_wrapper
+      = serde::read_async<raft::append_entries_request_serde_wrapper>(parser)
+          .get();
+    auto decoded_req = std::move(decoded_wrapper).release();
+
+    BOOST_REQUIRE_EQUAL(decoded_req.source_node(), src_node);
+    BOOST_REQUIRE_EQUAL(decoded_req.target_node(), target_node);
+    BOOST_REQUIRE_EQUAL(decoded_req.metadata().group, meta.group);
+    BOOST_REQUIRE_EQUAL(decoded_req.metadata().commit_index, meta.commit_index);
+    BOOST_REQUIRE_EQUAL(decoded_req.metadata().term, meta.term);
+    BOOST_REQUIRE_EQUAL(
+      decoded_req.metadata().prev_log_index, meta.prev_log_index);
+    BOOST_REQUIRE_EQUAL(
+      decoded_req.metadata().prev_log_term, meta.prev_log_term);
+    BOOST_REQUIRE_EQUAL(
+      decoded_req.metadata().last_visible_index, meta.last_visible_index);
+
+    auto batches_result = model::consume_reader_to_memory(
+                            std::move(readers.back()), model::no_timeout)
+                            .get0();
+    std::move(decoded_req)
+      .release_batches()
+      .consume(checking_consumer(std::move(batches_result)), model::no_timeout)
+      .get0();
 }

@@ -11,6 +11,7 @@
 
 #include "outcome_future_utils.h"
 #include "raft/raftgen_service.h"
+#include "raft/types.h"
 #include "rpc/connection_cache.h"
 #include "rpc/exceptions.h"
 #include "rpc/transport.h"
@@ -36,15 +37,25 @@ ss::future<result<vote_reply>> rpc_client_protocol::vote(
 }
 
 ss::future<result<append_entries_reply>> rpc_client_protocol::append_entries(
-  model::node_id n, append_entries_request&& r, rpc::client_opts opts) {
+  model::node_id n,
+  append_entries_request&& r,
+  rpc::client_opts opts,
+  bool use_all_serde_encoding) {
     auto timeout = opts.timeout;
     return _connection_cache.local().with_node_client<raftgen_client_protocol>(
       _self,
       ss::this_shard_id(),
       n,
       timeout,
-      [r = std::move(r),
-       opts = std::move(opts)](raftgen_client_protocol client) mutable {
+      [r = std::move(r), opts = std::move(opts), use_all_serde_encoding](
+        raftgen_client_protocol client) mutable {
+          if (likely(use_all_serde_encoding)) {
+              return client
+                .append_entries_full_serde(
+                  append_entries_request_serde_wrapper(std::move(r)),
+                  std::move(opts))
+                .then(&rpc::get_ctx_data<append_entries_reply>);
+          }
           return client.append_entries(std::move(r), std::move(opts))
             .then(&rpc::get_ctx_data<append_entries_reply>);
       });

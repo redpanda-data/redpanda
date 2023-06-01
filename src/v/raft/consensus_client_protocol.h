@@ -31,7 +31,10 @@ public:
         vote(model::node_id, vote_request&&, rpc::client_opts) = 0;
 
         virtual ss::future<result<append_entries_reply>> append_entries(
-          model::node_id, append_entries_request&&, rpc::client_opts)
+          model::node_id,
+          append_entries_request&&,
+          rpc::client_opts,
+          bool use_all_serde_encoding)
           = 0;
 
         virtual ss::future<result<heartbeat_reply>>
@@ -68,9 +71,10 @@ public:
     ss::future<result<append_entries_reply>> append_entries(
       model::node_id target_node,
       append_entries_request&& r,
-      rpc::client_opts opts) {
+      rpc::client_opts opts,
+      bool use_all_serde_encoding) {
         return _impl->append_entries(
-          target_node, std::move(r), std::move(opts));
+          target_node, std::move(r), std::move(opts), use_all_serde_encoding);
     }
 
     ss::future<result<heartbeat_reply>> heartbeat(

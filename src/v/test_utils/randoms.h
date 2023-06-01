@@ -243,6 +243,33 @@ inline security::acl_operation random_acl_operation() {
        security::acl_operation::describe});
 }
 
+inline model::record_batch_type random_batch_type() {
+    return random_generators::random_choice(
+      std::vector<model::record_batch_type>{
+        model::record_batch_type::raft_data,
+        model::record_batch_type::raft_configuration,
+        model::record_batch_type::controller,
+        model::record_batch_type::kvstore,
+        model::record_batch_type::checkpoint,
+        model::record_batch_type::topic_management_cmd,
+        model::record_batch_type::ghost_batch,
+        model::record_batch_type::id_allocator,
+        model::record_batch_type::tx_prepare,
+        model::record_batch_type::tx_fence,
+        model::record_batch_type::tm_update,
+        model::record_batch_type::user_management_cmd,
+        model::record_batch_type::acl_management_cmd,
+        model::record_batch_type::group_prepare_tx,
+        model::record_batch_type::group_commit_tx,
+        model::record_batch_type::group_abort_tx,
+        model::record_batch_type::node_management_cmd,
+        model::record_batch_type::data_policy_management_cmd,
+        model::record_batch_type::archival_metadata,
+        model::record_batch_type::cluster_config_cmd,
+        model::record_batch_type::feature_update,
+      });
+}
+
 inline security::acl_permission random_acl_permission() {
     return random_generators::random_choice<security::acl_permission>(
       {security::acl_permission::allow, security::acl_permission::deny});

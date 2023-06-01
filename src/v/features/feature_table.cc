@@ -71,6 +71,8 @@ std::string_view to_string_view(feature f) {
         return "force_partition_reconfiguration";
     case feature::schema_id_validation:
         return "schema_id_validation";
+    case feature::raft_append_entries_serde:
+        return "raft_append_entries_serde";
 
     /*
      * testing features

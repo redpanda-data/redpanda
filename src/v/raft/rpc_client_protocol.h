@@ -35,7 +35,10 @@ public:
     vote(model::node_id, vote_request&&, rpc::client_opts) final;
 
     ss::future<result<append_entries_reply>> append_entries(
-      model::node_id, append_entries_request&&, rpc::client_opts) final;
+      model::node_id,
+      append_entries_request&&,
+      rpc::client_opts,
+      bool use_all_serde_encoding) final;
 
     ss::future<result<heartbeat_reply>>
     heartbeat(model::node_id, heartbeat_request&&, rpc::client_opts) final;

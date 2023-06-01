@@ -2046,16 +2046,15 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
             tests::random_named_int<model::revision_id>()},
           pmd,
           model::make_memory_record_batch_reader(std::move(batches_in)),
-          raft::append_entries_request::flush_after_append(
-            tests::random_bool()),
+          raft::flush_after_append(tests::random_bool()),
         };
 
         // append_entries_request -> iobuf
         iobuf serde_out;
-        const auto node_id = data.node_id;
-        const auto target_node_id = data.target_node_id;
-        const auto meta = data.meta;
-        const auto flush = data.flush;
+        const auto node_id = data.source_node();
+        const auto target_node_id = data.target_node();
+        const auto meta = data.metadata();
+        const auto flush = data.is_flush_required();
         serde::write_async(serde_out, std::move(data)).get();
 
         // iobuf -> append_entries_request
@@ -2063,13 +2062,13 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
         auto from_serde
           = serde::read_async<raft::append_entries_request>(serde_in).get0();
 
-        BOOST_REQUIRE(from_serde.node_id == node_id);
-        BOOST_REQUIRE(from_serde.target_node_id == target_node_id);
-        BOOST_REQUIRE(from_serde.meta == meta);
-        BOOST_REQUIRE(from_serde.flush == flush);
+        BOOST_REQUIRE(from_serde.source_node() == node_id);
+        BOOST_REQUIRE(from_serde.target_node() == target_node_id);
+        BOOST_REQUIRE(from_serde.metadata() == meta);
+        BOOST_REQUIRE(from_serde.is_flush_required() == flush);
 
         auto batches_from_serde = model::consume_reader_to_memory(
-                                    std::move(from_serde.batches()),
+                                    std::move(from_serde).release_batches(),
                                     model::no_timeout)
                                     .get0();
         BOOST_REQUIRE(gold.size() > 0);

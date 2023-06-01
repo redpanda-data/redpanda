@@ -228,7 +228,7 @@ ss::future<> replicate_batcher::flush(
         ss::circular_buffer<model::record_batch> data;
         std::vector<item_ptr> notifications;
         ssx::semaphore_units item_memory_units(_max_batch_size_sem, 0);
-        auto needs_flush = append_entries_request::flush_after_append::no;
+        auto needs_flush = flush_after_append::no;
 
         for (auto& n : item_cache) {
             if (
@@ -238,8 +238,7 @@ ss::future<> replicate_batcher::flush(
                 item_memory_units.adopt(std::move(units));
                 if (
                   n->get_consistency_level() == consistency_level::quorum_ack) {
-                    needs_flush
-                      = append_entries_request::flush_after_append::yes;
+                    needs_flush = flush_after_append::yes;
                 }
                 for (auto& b : batches) {
                     b.set_term(term);
@@ -318,7 +317,7 @@ ss::future<> replicate_batcher::do_flush(
   append_entries_request req,
   std::vector<ssx::semaphore_units> u,
   absl::flat_hash_map<vnode, follower_req_seq> seqs) {
-    auto needs_flush = req.flush;
+    auto needs_flush = req.is_flush_required();
     _ptr->_probe.replicate_batch_flushed();
     auto stm = ss::make_lw_shared<replicate_entries_stm>(
       _ptr, std::move(req), std::move(seqs));

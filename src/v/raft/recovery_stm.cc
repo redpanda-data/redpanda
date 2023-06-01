@@ -150,7 +150,7 @@ ss::future<> recovery_stm::do_recover(ss::io_priority_class iopc) {
     }
 
     auto flush = should_flush(follower_committed_match_index);
-    if (flush == append_entries_request::flush_after_append::yes) {
+    if (flush == flush_after_append::yes) {
         _recovered_bytes_since_flush = 0;
     }
 
@@ -169,7 +169,7 @@ bool recovery_stm::state_changed() {
            || meta.value()->last_sent_offset == lstats.dirty_offset;
 }
 
-append_entries_request::flush_after_append
+flush_after_append
 recovery_stm::should_flush(model::offset follower_committed_match_index) const {
     constexpr size_t checkpoint_flush_size = 1_MiB;
 
@@ -203,8 +203,7 @@ recovery_stm::should_flush(model::offset follower_committed_match_index) const {
     const bool should_checkpoint_flush = _recovered_bytes_since_flush
                                          >= checkpoint_flush_size;
 
-    return append_entries_request::flush_after_append(
-      is_last || should_checkpoint_flush);
+    return flush_after_append(is_last || should_checkpoint_flush);
 }
 
 ss::future<std::optional<model::record_batch_reader>>
@@ -398,7 +397,7 @@ ss::future<> recovery_stm::install_snapshot() {
 
 ss::future<> recovery_stm::replicate(
   model::record_batch_reader&& reader,
-  append_entries_request::flush_after_append flush,
+  flush_after_append flush,
   ssx::semaphore_units mem_units) {
     // collect metadata for append entries request
     // last persisted offset is last_offset of batch before the first one in the
@@ -514,7 +513,11 @@ ss::future<result<append_entries_reply>> recovery_stm::dispatch_append_entries(
       ss::make_lw_shared<std::vector<ssx::semaphore_units>>(std::move(units)));
 
     return _ptr->_client_protocol
-      .append_entries(_node_id.id(), std::move(r), std::move(opts))
+      .append_entries(
+        _node_id.id(),
+        std::move(r),
+        std::move(opts),
+        _ptr->use_all_serde_append_entries())
       .then([this](result<append_entries_reply> reply) {
           return _ptr->validate_reply_target_node(
             "append_entries_recovery", reply, _node_id.id());

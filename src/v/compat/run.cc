@@ -36,6 +36,7 @@
 #include "json/document.h"
 #include "json/prettywriter.h"
 #include "json/writer.h"
+#include "model/record.h"
 #include "seastarx.h"
 #include "utils/base64.h"
 #include "utils/file_io.h"
@@ -143,7 +144,9 @@ using compat_checks = type_list<
   cluster::incremental_topic_updates,
   cluster::topic_properties_update,
   cluster::update_topic_properties_request,
-  cluster::update_topic_properties_reply>;
+  cluster::update_topic_properties_reply,
+  model::record_batch_header,
+  model::record_batch>;
 
 template<typename T>
 struct corpus_helper {
