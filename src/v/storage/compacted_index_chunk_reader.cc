@@ -202,21 +202,26 @@ compacted_index_chunk_reader::load_slice(model::timeout_clock::time_point t) {
     }
 
     return ss::do_with(
-      ret_t{}, size_t(0), [this](ret_t& slice, size_t& mem_use) {
+      ret_t{}, [this](ret_t& slice) {
           return ss::do_until(
-                   [&mem_use, this] {
-                       // stop condition
-                       return is_end_of_stream()
-                              || mem_use >= _max_chunk_memory;
-                   },
-                   [&mem_use, &slice, this] {
+                 [&slice, this] {
+                     // stop condition
+                     constexpr auto entry_size = sizeof(compacted_index::entry);
+                     const auto mem_use = slice.size() * entry_size;
+                     const auto next_mem_use = slice.size() == slice.capacity()
+                                                 ? mem_use * 2
+                                                 : mem_use + entry_size;
+
+                     return is_end_of_stream()
+                            || next_mem_use > _max_chunk_memory;
+                 },
+                   [&slice, this] {
                        return ::read_iobuf_exactly(*_cursor, sizeof(uint16_t))
-                         .then([&mem_use, this](iobuf b) {
+                         .then([this](iobuf b) {
                              _byte_index += b.size_bytes();
                              iobuf_parser p(std::move(b));
                              const size_t entry_size
                                = reflection::adl<uint16_t>{}.from(p);
-                             mem_use += entry_size;
                              return ::read_iobuf_exactly(*_cursor, entry_size);
                          })
                          .then([this, &slice](iobuf b) {
