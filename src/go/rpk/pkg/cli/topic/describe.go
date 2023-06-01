@@ -14,7 +14,6 @@ import (
 	"errors"
 	"fmt"
 	"sort"
-	"strings"
 
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/kafka"
@@ -71,18 +70,7 @@ partitions section. By default, the summary and configs sections are printed.
 					sections++
 				}
 			}
-
-			header := func(name string, b bool, fn func()) {
-				if !b {
-					return
-				}
-				if sections > 1 {
-					fmt.Println(name)
-					fmt.Println(strings.Repeat("=", len(name)))
-					defer fmt.Println()
-				}
-				fn()
-			}
+			withSection := sections > 1
 
 			var t kmsg.MetadataResponseTopic
 			{
@@ -99,7 +87,7 @@ partitions section. By default, the summary and configs sections are printed.
 				t = resp.Topics[0]
 			}
 
-			header("SUMMARY", summary, func() {
+			header("SUMMARY", summary, withSection, func() {
 				tw := out.NewTabWriter()
 				defer tw.Flush()
 				tw.PrintColumn("NAME", *t.Topic)
@@ -116,7 +104,7 @@ partitions section. By default, the summary and configs sections are printed.
 				}
 			})
 
-			header("CONFIGS", configs, func() {
+			header("CONFIGS", configs, withSection, func() {
 				req := kmsg.NewPtrDescribeConfigsRequest()
 				reqResource := kmsg.NewDescribeConfigsRequestResource()
 				reqResource.ResourceType = kmsg.ConfigResourceTypeTopic
@@ -152,7 +140,7 @@ partitions section. By default, the summary and configs sections are printed.
 				return
 			}
 
-			header("PARTITIONS", partitions, func() {
+			header("PARTITIONS", partitions, withSection, func() {
 				offsets := listStartEndOffsets(cl, topic, len(t.Partitions), stable)
 
 				tw := out.NewTable(describePartitionsHeaders(
@@ -187,6 +175,21 @@ partitions section. By default, the summary and configs sections are printed.
 	cmd.Flags().BoolVar(&stable, "stable", false, "Include the stable offsets column in the partitions section; only relevant if you produce to this topic transactionally")
 
 	return cmd
+}
+
+// header prints a header section with a given name and executes a callback
+// function (fn).
+// If 'b' is false, nothing is printed.
+// If 'withSection' is true, the section name is printed before executing 'fn'.
+func header(name string, b, withSection bool, fn func()) {
+	if !b {
+		return
+	}
+	if withSection {
+		out.Section(name)
+		defer fmt.Println()
+	}
+	fn()
 }
 
 // We optionally include the following columns:
