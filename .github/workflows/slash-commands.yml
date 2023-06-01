@@ -17,6 +17,7 @@ jobs:
             ci-repeat
             test-codecov
             cdt
+            test-release-pipeline
           static-args: |
             org=redpanda-data
             repo=redpanda
