@@ -142,6 +142,37 @@ bool check_compatible(avro::Node& reader, avro::Node& writer) {
     return writer.resolve(reader) != avro::RESOLVE_NO_MATCH;
 }
 
+enum class object_type { complex, field };
+
+template<object_type type>
+struct member_sorter {
+    bool operator()(
+      json::Document::Member const& lhs, json::Document::Member const& rhs) {
+        constexpr auto order = [](std::string_view name) {
+            auto val = string_switch<char>(name)
+                         .match("type", type == object_type::complex ? 0 : 1)
+                         .match("name", type == object_type::complex ? 1 : 0)
+                         .match("namespace", 2)
+                         .match("doc", 3)
+                         .match("fields", 4)
+                         .match("order", 5)
+                         .match("symbols", 6)
+                         .match("items", 7)
+                         .match("values", 8)
+                         .match("default", 9)
+                         .match("size", 10)
+                         .match("aliases", 11)
+                         .default_match(std::numeric_limits<char>::max());
+            return val;
+        };
+        constexpr auto as_string_view = [](json::Value const& v) {
+            return std::string_view{v.GetString(), v.GetStringLength()};
+        };
+        return order(as_string_view(lhs.name))
+               < order(as_string_view(rhs.name));
+    }
+};
+
 result<void> sanitize(json::Value& v, json::MemoryPoolAllocator& alloc);
 result<void> sanitize(json::Value::Object& o, json::MemoryPoolAllocator& alloc);
 result<void> sanitize(json::Value::Array& a, json::MemoryPoolAllocator& alloc);
@@ -187,14 +218,27 @@ result<void> sanitize_avro_type(
   json::MemoryPoolAllocator& alloc) {
     auto type = string_switch<std::optional<avro::Type>>(type_sv)
                   .match("record", avro::Type::AVRO_RECORD)
+                  .match("array", avro::Type::AVRO_ARRAY)
+                  .match("enum", avro::Type::AVRO_ENUM)
+                  .match("map", avro::Type::AVRO_MAP)
+                  .match("fixed", avro::Type::AVRO_FIXED)
                   .default_match(std::nullopt);
     if (!type.has_value()) {
+        std::sort(o.begin(), o.end(), member_sorter<object_type::field>{});
         return outcome::success();
     }
 
     switch (type.value()) {
+    case avro::AVRO_ARRAY:
+    case avro::AVRO_ENUM:
+    case avro::AVRO_FIXED:
+    case avro::AVRO_MAP:
+        std::sort(o.begin(), o.end(), member_sorter<object_type::complex>{});
+        break;
     case avro::AVRO_RECORD: {
-        return sanitize_record(o, alloc);
+        auto res = sanitize_record(o, alloc);
+        std::sort(o.begin(), o.end(), member_sorter<object_type::complex>{});
+        return res;
     }
     default:
         break;
@@ -280,17 +324,14 @@ sanitize(json::Value::Object& o, json::MemoryPoolAllocator& alloc) {
         auto res = sanitize(t_it->value, alloc);
         if (res.has_error()) {
             return res.assume_error();
-        }
-
-        if (t_it->value.GetType() == json::Type::kStringType) {
+        } else if (t_it->value.GetType() == json::Type::kStringType) {
             std::string_view type_sv = {
               t_it->value.GetString(), t_it->value.GetStringLength()};
             auto res = sanitize_avro_type(o, type_sv, alloc);
             if (res.has_error()) {
                 return res.assume_error();
             }
-        }
-        if (t_it->value.GetType() == json::Type::kArrayType) {
+        } else if (t_it->value.GetType() == json::Type::kArrayType) {
             auto a = t_it->value.GetArray();
             for (auto& m : a) {
                 if (m.IsString()) {
@@ -299,6 +340,15 @@ sanitize(json::Value::Object& o, json::MemoryPoolAllocator& alloc) {
                         return res.assume_error();
                     }
                 }
+            }
+            auto res = sanitize_avro_type(o, "field", alloc);
+            if (res.has_error()) {
+                return res.assume_error();
+            }
+        } else if (t_it->value.GetType() == json::Type::kObjectType) {
+            auto res = sanitize_avro_type(o, "field", alloc);
+            if (res.has_error()) {
+                return res.assume_error();
             }
         }
     }

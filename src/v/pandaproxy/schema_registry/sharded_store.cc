@@ -200,6 +200,16 @@ sharded_store::project_ids(subject_schema schema) {
 
 ss::future<bool> sharded_store::upsert(
   seq_marker marker,
+  unparsed_schema schema,
+  schema_id id,
+  schema_version version,
+  is_deleted deleted) {
+    auto canonical = co_await make_canonical_schema(schema);
+    co_return co_await upsert(marker, canonical, id, version, deleted);
+}
+
+ss::future<bool> sharded_store::upsert(
+  seq_marker marker,
   canonical_schema schema,
   schema_id id,
   schema_version version,
