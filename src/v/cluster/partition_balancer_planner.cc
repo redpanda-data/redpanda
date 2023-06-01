@@ -12,6 +12,7 @@
 
 #include "cluster/cluster_utils.h"
 #include "cluster/members_table.h"
+#include "cluster/node_status_table.h"
 #include "cluster/partition_balancer_state.h"
 #include "cluster/partition_balancer_types.h"
 #include "cluster/scheduling/constraints.h"
@@ -137,9 +138,9 @@ private:
 
 void partition_balancer_planner::init_per_node_state(
   const cluster_health_report& health_report,
-  const std::vector<raft::follower_metrics>& follower_metrics,
   request_context& ctx,
   plan_data& result) const {
+    auto const now = rpc::clock_type::now();
     for (const auto& [id, broker] : _state.members().nodes()) {
         if (
           broker.state.get_membership_state()
@@ -162,37 +163,42 @@ void partition_balancer_planner::init_per_node_state(
             vlog(clusterlog.debug, "node {}: decommissioning", id);
             ctx.decommissioning_nodes.insert(id);
         }
-    }
-
-    const auto now = raft::clock_type::now();
-    for (const auto& follower : follower_metrics) {
-        auto unavailable_dur = now - follower.last_heartbeat;
+        auto node_status = _state.node_status().get_node_status(id);
+        // node status is not yet available, wait for it to be updated
+        if (!node_status) {
+            continue;
+        }
+        auto time_since_last_seen = now - node_status->last_seen;
 
         vlog(
           clusterlog.debug,
           "node {}: {} ms since last heartbeat",
-          follower.id,
-          std::chrono::duration_cast<std::chrono::milliseconds>(unavailable_dur)
+          id,
+          std::chrono::duration_cast<std::chrono::milliseconds>(
+            time_since_last_seen)
             .count());
 
-        if (follower.is_live) {
-            continue;
+        if (time_since_last_seen > _config.node_responsiveness_timeout) {
+            vlog(
+              clusterlog.info,
+              "node {} is unresponsive, time since last status reply: {} ms",
+              id,
+              time_since_last_seen / 1ms);
+            ctx.all_unavailable_nodes.insert(id);
         }
 
-        ctx.all_unavailable_nodes.insert(follower.id);
-
-        if (unavailable_dur > _config.node_availability_timeout_sec) {
-            ctx.timed_out_unavailable_nodes.insert(follower.id);
+        if (time_since_last_seen > _config.node_availability_timeout_sec) {
+            ctx.timed_out_unavailable_nodes.insert(id);
 
             if (
               _config.mode == model::partition_autobalancing_mode::continuous) {
                 model::timestamp unavailable_since = model::to_timestamp(
                   model::timestamp_clock::now()
                   - std::chrono::duration_cast<
-                    model::timestamp_clock::duration>(unavailable_dur));
+                    model::timestamp_clock::duration>(time_since_last_seen));
 
                 result.violations.unavailable_nodes.emplace_back(
-                  follower.id, unavailable_since);
+                  id, unavailable_since);
             }
         }
     }
@@ -1171,12 +1177,11 @@ void partition_balancer_planner::request_context::collect_actions(
 }
 
 partition_balancer_planner::plan_data partition_balancer_planner::plan_actions(
-  const cluster_health_report& health_report,
-  const std::vector<raft::follower_metrics>& follower_metrics) {
+  const cluster_health_report& health_report) {
     request_context ctx(*this);
     plan_data result;
 
-    init_per_node_state(health_report, follower_metrics, ctx, result);
+    init_per_node_state(health_report, ctx, result);
 
     if (!ctx.all_reports_received()) {
         result.status = status::waiting_for_reports;

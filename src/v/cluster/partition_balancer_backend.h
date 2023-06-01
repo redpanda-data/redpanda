@@ -22,6 +22,8 @@
 
 #include <seastar/core/sharded.hh>
 
+#include <chrono>
+
 namespace cluster {
 
 class partition_balancer_backend {
@@ -45,6 +47,7 @@ public:
       config::binding<double>&& moves_drop_threshold,
       config::binding<size_t>&& segment_fallocation_step,
       config::binding<std::optional<size_t>> min_partition_size_threshold,
+      config::binding<std::chrono::milliseconds> node_status_interval,
       config::binding<size_t> raft_learner_recovery_rate);
 
     void start();
@@ -93,6 +96,7 @@ private:
     config::binding<double> _concurrent_moves_drop_threshold;
     config::binding<size_t> _segment_fallocation_step;
     config::binding<std::optional<size_t>> _min_partition_size_threshold;
+    config::binding<std::chrono::milliseconds> _node_status_interval;
     config::binding<size_t> _raft_learner_recovery_rate;
 
     model::term_id _last_leader_term;
