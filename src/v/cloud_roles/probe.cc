@@ -14,8 +14,13 @@
 #include "prometheus/prometheus_sanitize.h"
 
 #include <seastar/core/metrics.hh>
+#include <seastar/util/log.hh>
 
 namespace cloud_roles {
+
+namespace {
+  ss::logger log("cloud_roles_probe");
+}
 
 auth_refresh_probe::auth_refresh_probe() {
     if (config::shard_local_cfg().disable_metrics()) {
@@ -34,6 +39,10 @@ auth_refresh_probe::auth_refresh_probe() {
           [this] { return _fetch_errors; },
           ss::metrics::description("Total errors while fetching")),
       });
+}
+
+auth_refresh_probe::~auth_refresh_probe() noexcept {
+  vlog(log.info, "Tearing down auth_refresh_probe");
 }
 
 } // namespace cloud_roles
