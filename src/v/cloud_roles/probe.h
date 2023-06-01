@@ -18,7 +18,8 @@ namespace cloud_roles {
 
 class auth_refresh_probe {
 public:
-    auth_refresh_probe();
+    void setup_metrics();
+    void reset() { _metrics.clear(); }
 
     void fetch_success() { ++_successful_fetches; }
     void fetch_failed() { ++_fetch_errors; }

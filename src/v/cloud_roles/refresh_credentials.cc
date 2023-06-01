@@ -50,6 +50,7 @@ refresh_credentials::refresh_credentials(
   , _region{std::move(region)} {}
 
 void refresh_credentials::start() {
+    _probe.setup_metrics();
     ssx::background = ssx::spawn_with_gate_then(
       _gate, [this]() { return do_start(); });
 }
@@ -214,6 +215,7 @@ ss::future<> refresh_credentials::stop() {
         _as.request_abort();
     }
     co_await _gate.close();
+    _probe.reset();
 }
 
 std::chrono::milliseconds

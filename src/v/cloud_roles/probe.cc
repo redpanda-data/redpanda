@@ -17,7 +17,7 @@
 
 namespace cloud_roles {
 
-auth_refresh_probe::auth_refresh_probe() {
+void auth_refresh_probe::setup_metrics() {
     if (config::shard_local_cfg().disable_metrics()) {
         return;
     }
