@@ -123,7 +123,11 @@ public:
         app.check_environment();
         app.wire_up_and_start(*app_signal, true);
 
-        configs.start(ss::sstring("fixture_config")).get();
+        net::server_configuration scfg("fixture_config");
+        scfg.max_service_memory_per_core = memory_groups::rpc_total_memory();
+        scfg.disable_metrics = net::metrics_disabled::yes;
+        scfg.disable_public_metrics = net::public_metrics_disabled::yes;
+        configs.start(scfg).get();
 
         // used by request context builder
         proto
