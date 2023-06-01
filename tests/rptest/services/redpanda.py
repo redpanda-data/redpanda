@@ -1418,7 +1418,11 @@ class RedpandaServiceCloud(RedpandaServiceK8s):
                 resp = requests.post(f'{self._oauth_url}',
                                      headers=headers,
                                      data=data)
-                resp.raise_for_status()
+                try:
+                    resp.raise_for_status()
+                except requests.HTTPError as e:
+                    self._logging.error(f'{e} {resp.text}')
+                    return None
                 j = resp.json()
                 self._token = j['access_token']
             return self._token
@@ -1432,7 +1436,11 @@ class RedpandaServiceCloud(RedpandaServiceK8s):
             resp = requests.get(f'{self._api_url}{endpoint}',
                                 headers=headers,
                                 **kwargs)
-            resp.raise_for_status()
+            try:
+                resp.raise_for_status()
+            except requests.HTTPError as e:
+                self._logging.error(f'{e} {resp.text}')
+                return None
             return resp.json()
 
         def _http_post(self, base_url=None, endpoint='', **kwargs):
@@ -1446,7 +1454,11 @@ class RedpandaServiceCloud(RedpandaServiceK8s):
             resp = requests.post(f'{base_url}{endpoint}',
                                  headers=headers,
                                  **kwargs)
-            resp.raise_for_status()
+            try:
+                resp.raise_for_status()
+            except requests.HTTPError as e:
+                self._logging.error(f'{e} {resp.text}')
+                return None
             return resp.json()
 
         def _http_delete(self, endpoint='', **kwargs):
@@ -1458,7 +1470,11 @@ class RedpandaServiceCloud(RedpandaServiceK8s):
             resp = requests.delete(f'{self._api_url}{endpoint}',
                                    headers=headers,
                                    **kwargs)
-            resp.raise_for_status()
+            try:
+                resp.raise_for_status()
+            except requests.HTTPError as e:
+                self._logging.error(f'{e} {resp.text}')
+                return None
             return resp.json()
 
         def _create_namespace(self):
