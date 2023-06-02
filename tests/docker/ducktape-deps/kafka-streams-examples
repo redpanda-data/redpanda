@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+set -e
+git -C /opt clone https://github.com/redpanda-data/kafka-streams-examples.git
+cd /opt/kafka-streams-examples
+git reset --hard da50fa2723840f6388f99a1dae8d58104fd7650d
+mvn -DskipTests=true clean package

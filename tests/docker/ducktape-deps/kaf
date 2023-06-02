@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+set -e
+go get github.com/birdayz/kaf/cmd/kaf
+mv /root/go/bin/kaf /usr/local/bin/

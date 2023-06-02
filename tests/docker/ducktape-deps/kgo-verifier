@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+set -e
+git -C /opt clone https://github.com/redpanda-data/kgo-verifier.git
+cd /opt/kgo-verifier
+git reset --hard cf552ccba1c6a68f53b51bbdbbcdb50c4e2c8cfe
+go mod tidy
+make
