@@ -112,12 +112,17 @@ public:
       const std::vector<model::broker_shard>&, partition_allocation_domain);
     void remove_allocations(
       const std::vector<model::broker_shard>&, partition_allocation_domain);
+    void add_final_counts(
+      const std::vector<model::broker_shard>&, partition_allocation_domain);
+    void remove_final_counts(
+      const std::vector<model::broker_shard>&, partition_allocation_domain);
 
     void add_allocations_for_new_partition(
       const std::vector<model::broker_shard>& replicas,
       raft::group_id group_id,
       partition_allocation_domain domain) {
         add_allocations(replicas, domain);
+        add_final_counts(replicas, domain);
         _state->update_highest_group_id(group_id);
     }
 

@@ -79,6 +79,7 @@ allocation_units::~allocation_units() {
     for (auto& pas : _assignments) {
         for (auto& replica : pas.replicas) {
             _state->remove_allocation(replica, _domain);
+            _state->remove_final_count(replica, _domain);
         }
     }
 }
@@ -136,9 +137,11 @@ allocated_partition::prepare_move(model::node_id prev_node) {
     std::swap(_replicas[prev.idx], _replicas.back());
     _replicas.pop_back();
     _state->remove_allocation(prev.bs, _domain);
+    _state->remove_final_count(prev.bs, _domain);
     if (prev.original) {
         _state->remove_allocation(*prev.original, _domain);
     }
+
     return prev;
 }
 
@@ -164,6 +167,7 @@ model::broker_shard allocated_partition::add_replica(
         it != _original_node2shard->end()) {
         // this is an original replica, preserve the shard
         replica.shard = it->second;
+        _state->add_final_count(replica, _domain);
     } else {
         // the replica is new, choose the shard and add allocation
         replica.shard = _state->allocate(node, _domain);
@@ -178,6 +182,7 @@ void allocated_partition::cancel_move(const previous_replica& prev) {
     _replicas.push_back(prev.bs);
     std::swap(_replicas[prev.idx], _replicas.back());
     _state->add_allocation(prev.bs, _domain);
+    _state->add_final_count(prev.bs, _domain);
     if (prev.original) {
         _state->add_allocation(*prev.original, _domain);
     }
@@ -226,9 +231,21 @@ allocated_partition::~allocated_partition() {
     }
 
     for (const auto& bs : _replicas) {
-        if (!_original_node2shard->contains(bs.node_id)) {
+        auto orig_it = _original_node2shard->find(bs.node_id);
+        if (orig_it == _original_node2shard->end()) {
+            // new replica
             _state->remove_allocation(bs, _domain);
+            _state->remove_final_count(bs, _domain);
+        } else {
+            // original replica that didn't change, erase from the map in
+            // preparation for the loop below
+            _original_node2shard->erase(orig_it);
         }
+    }
+
+    for (const auto& kv : *_original_node2shard) {
+        model::broker_shard bs{kv.first, kv.second};
+        _state->add_final_count(bs, _domain);
     }
 }
 

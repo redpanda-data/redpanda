@@ -25,7 +25,7 @@
 namespace cluster {
 namespace {
 struct node_replicas {
-    size_t allocated_replicas;
+    size_t final_count;
     size_t max_capacity;
 };
 
@@ -40,15 +40,13 @@ calculate_replicas_per_node(
         if (!n->is_active()) {
             continue;
         }
-        auto [it, _] = ret.try_emplace(
+        auto [it, inserted] = ret.try_emplace(
           id,
           node_replicas{
-            .allocated_replicas = 0,
-            .max_capacity = n->domain_partition_capacity(domain),
+            .final_count = n->domain_final_partitions(domain),
+            .max_capacity = n->max_capacity(),
           });
-
-        const auto domain_allocated = n->domain_allocated_partitions(domain);
-        it->second.allocated_replicas += domain_allocated;
+        vassert(inserted, "node {} inserted twice", id);
     }
     return ret;
 }
@@ -57,7 +55,7 @@ static size_t
 calculate_total_replicas(const node_replicas_map_t& node_replicas) {
     size_t total_replicas = 0;
     for (auto& [_, replicas] : node_replicas) {
-        total_replicas += replicas.allocated_replicas;
+        total_replicas += replicas.final_count;
     }
     return total_replicas;
 }
@@ -137,10 +135,7 @@ void reassign_replicas(
  *
  **/
 double calculate_unevenness_error(
-  const partition_allocator& allocator,
-  const members_backend::update_meta& update,
-  const topic_table& topics,
-  partition_allocation_domain domain) {
+  const partition_allocator& allocator, partition_allocation_domain domain) {
     static const std::vector<partition_allocation_domain> domains{
       partition_allocation_domains::consumer_offsets,
       partition_allocation_domains::common};
@@ -148,53 +143,8 @@ double calculate_unevenness_error(
     const auto node_cnt = allocator.state().available_nodes();
 
     auto node_replicas = calculate_replicas_per_node(allocator, domain);
-    /**
-     * adjust per node replicas with the replicas that are going to be removed
-     * from the node after successful reallocation
-     * based on the state of reallocation the following adjustments are made:
-     *
-     * reallocation_state::initial - no adjustment required
-     * reallocation_state::reassigned - allocator already updated, adjusting
-     * reallocation_state::requested - allocator already updated, adjusting
-     * reallocation_state::finished - no adjustment required
-     *
-     * Do not need to care about the cancel related state here as no
-     * cancellations are requested when node is added to the cluster.
-     */
 
-    for (const auto& [ntp, r] : update.partition_reallocations) {
-        using state = members_backend::reallocation_state;
-        /**
-         * In the initial or finished state the adjustment doesn't have
-         * to be taken into account as partition balancer is already updated.
-         */
-        if (
-          r.state == state::initial || r.state == state::finished
-          || r.state == state::cancelled || r.state == state::request_cancel) {
-            continue;
-        }
-        /**
-         * if a partition move was already requested it might have already been
-         * finished, consult topic table to check if the update is still in
-         * progress. If no move is in progress the adjustment must be skipped as
-         * allocator state is already up to date. Reallocation will be marked as
-         * finished in reconciliation loop pass.
-         */
-        if (r.state == state::requested && !topics.is_update_in_progress(ntp)) {
-            continue;
-        }
-
-        if (get_allocation_domain(ntp) == domain) {
-            for (const auto& to_remove : r.replicas_to_remove) {
-                auto it = node_replicas.find(to_remove);
-                if (it != node_replicas.end()) {
-                    it->second.allocated_replicas--;
-                }
-            }
-        }
-    }
     const auto total_replicas = calculate_total_replicas(node_replicas);
-
     if (total_replicas == 0) {
         return 0.0;
     }
@@ -213,14 +163,14 @@ double calculate_unevenness_error(
     double err = 0;
     for (auto& [id, allocation_info] : node_replicas) {
         double diff = static_cast<double>(target_replicas_per_node)
-                      - static_cast<double>(allocation_info.allocated_replicas);
+                      - static_cast<double>(allocation_info.final_count);
 
         vlog(
           clusterlog.trace,
           "node {} has {} replicas allocated in domain {}, requested replicas "
           "per node {}, difference: {}",
           id,
-          allocation_info.allocated_replicas,
+          allocation_info.final_count,
           domain,
           target_replicas_per_node,
           diff);
@@ -485,8 +435,7 @@ void members_backend::default_reallocation_strategy::
     }
     calculate_reallocations_batch(
       max_batch_size, allocator, topics, meta, domain);
-    auto current_error = calculate_unevenness_error(
-      allocator, meta, topics, domain);
+    auto current_error = calculate_unevenness_error(allocator, domain);
     auto [it, _] = meta.last_unevenness_error.try_emplace(domain, 1.0);
 
     auto improvement = it->second - current_error;
@@ -564,9 +513,8 @@ void members_backend::default_reallocation_strategy::
     absl::flat_hash_map<model::node_id, size_t> to_move_from_node;
 
     for (auto& [id, info] : node_replicas) {
-        auto to_move = info.allocated_replicas
-                       - std::min(
-                         target_replicas_per_node, info.allocated_replicas);
+        auto to_move = info.final_count
+                       - std::min(target_replicas_per_node, info.final_count);
         if (to_move > 0) {
             to_move_from_node.emplace(id, to_move);
         }
@@ -582,7 +530,7 @@ void members_backend::default_reallocation_strategy::
               cnt,
               id,
               domain,
-              node_replicas[id].allocated_replicas);
+              node_replicas[id].final_count);
         }
     }
 

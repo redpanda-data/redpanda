@@ -54,6 +54,8 @@ allocation_node::allocate(const partition_allocation_domain domain) {
     (*it)++; // increment the weights
     _allocated_partitions++;
     ++_allocated_domain_partitions[domain];
+    _final_partitions++;
+    ++_final_domain_partitions[domain];
     const ss::shard_id core = std::distance(_weights.begin(), it);
     vlog(
       clusterlog.trace,

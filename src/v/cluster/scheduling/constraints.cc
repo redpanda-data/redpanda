@@ -219,7 +219,7 @@ hard_constraint disk_not_overflowed_by_partition(
       max_disk_usage_ratio, partition_size, node_disk_reports));
 }
 
-soft_constraint least_allocated() {
+soft_constraint max_final_capacity() {
     class impl : public soft_constraint::impl {
     public:
         soft_constraint_evaluator
@@ -227,7 +227,10 @@ soft_constraint least_allocated() {
             return [](const allocation_node& node) {
                 // we return 0 for fully allocated node and 10'000'000 for nodes
                 // with maximum capacity available
-                return (soft_constraint::max_score * node.partition_capacity())
+                auto final_capacity
+                  = node.max_capacity()
+                    - std::min(node.max_capacity(), node.final_partitions());
+                return (soft_constraint::max_score * final_capacity)
                        / node.max_capacity();
             };
         }
@@ -239,7 +242,7 @@ soft_constraint least_allocated() {
 }
 
 soft_constraint
-least_allocated_in_domain(const partition_allocation_domain domain) {
+max_final_capacity_in_domain(const partition_allocation_domain domain) {
     struct impl : soft_constraint::impl {
         explicit impl(partition_allocation_domain domain_)
           : domain(domain_) {}
@@ -247,8 +250,11 @@ least_allocated_in_domain(const partition_allocation_domain domain) {
         soft_constraint_evaluator
         make_evaluator(const replicas_t&) const final {
             return [this](const allocation_node& node) {
-                return (soft_constraint::max_score
-                        * node.domain_partition_capacity(domain))
+                auto final_capacity = node.max_capacity()
+                                      - std::min(
+                                        node.max_capacity(),
+                                        node.domain_final_partitions(domain));
+                return (soft_constraint::max_score * final_capacity)
                        / node.max_capacity();
             };
         }

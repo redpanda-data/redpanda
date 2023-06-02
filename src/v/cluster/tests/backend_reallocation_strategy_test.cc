@@ -217,7 +217,11 @@ struct strategy_test_fixture {
             // update allocator
             allocator.add_allocations(
               added, cluster::partition_allocation_domains::common);
+            allocator.add_final_counts(
+              added, cluster::partition_allocation_domains::common);
             allocator.remove_allocations(
+              removed, cluster::partition_allocation_domains::common);
+            allocator.remove_final_counts(
               removed, cluster::partition_allocation_domains::common);
 
             auto ec = co_await topics.apply(
