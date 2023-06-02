@@ -14,11 +14,15 @@
 #include "cluster/cluster_utils.h"
 #include "cluster/errc.h"
 #include "cluster/logger.h"
+#include "cluster/node_status_table.h"
 #include "config/node_config.h"
+#include "rpc/types.h"
 #include "ssx/future-util.h"
 
 #include <seastar/core/condition-variable.hh>
 #include <seastar/util/defer.hh>
+
+#include <bits/types/clock_t.h>
 
 #include <exception>
 
@@ -97,6 +101,9 @@ ss::future<> node_status_backend::handle_members_updated_notification(
           "Node {} has been removed via members table",
           node_id);
         _discovered_peers.erase(node_id);
+
+        co_await _node_status_table.invoke_on_all(
+          [node_id](node_status_table& table) { table.remove_peer(node_id); });
     }
 }
 
