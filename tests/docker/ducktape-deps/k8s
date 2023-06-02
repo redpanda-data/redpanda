@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+set -e
+
+# install helm
+if [ $(uname -m) = "aarch64" ]; then
+  export ARCHID="arm64"
+else
+  export ARCHID="amd64"
+fi
+HELM_VERSION=3.11.2
+HELM_URL="https://get.helm.sh/helm-v${HELM_VERSION}-linux-${ARCHID}.tar.gz"
+curl \
+  -sSLf \
+  --retry 3 \
+  --retry-connrefused \
+  --retry-delay 2 \
+  $HELM_URL \
+  -o /tmp/helm.tgz
+tar -xz -C /tmp --strip 1 -f /tmp/helm.tgz "linux-${ARCHID}/helm"
+mv /tmp/helm /usr/local/bin/
+rm -rf /tmp/*
+
+# install kubectl
+KUBECTL_VERSION=1.26.0
+KUBECTL_URL="https://storage.googleapis.com/kubernetes-release/release/v${KUBECTL_VERSION}/bin/linux/${ARCHID}/kubectl"
+curl -sSLf --retry 3 --retry-connrefused --retry-delay 2 ${KUBECTL_URL} --retry-all-errors -o /usr/local/bin/kubectl
+chmod +x /usr/local/bin/kubectl

@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+set -e
+mkdir /tmp/protobuf
+curl -SL "https://vectorized-public.s3.amazonaws.com/dependencies/protobuf-cpp-3.21.8.tar.gz" | tar --no-same-owner -xz --strip-components=1 -C /tmp/protobuf
+cd /tmp/protobuf
+cmake -Dprotobuf_BUILD_TESTS=OFF -DCMAKE_INSTALL_PREFIX=/usr
+make -j$(nproc)
+make install

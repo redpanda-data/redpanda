@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+set -e
+git -C /opt clone -b v1.5.0 --single-branch https://github.com/twmb/franz-go.git
+cd /opt/franz-go/examples/bench
+go mod tidy
+go build

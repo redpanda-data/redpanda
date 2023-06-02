@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+set -e
+dir="$1"
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+export PATH="$dir/.cargo/bin:${PATH}"
+pushd /tmp
+git clone https://github.com/redpanda-data/client-swarm.git
+pushd client-swarm
+git reset --hard 9ef8e93
+cargo build --release
+cp target/release/client-swarm /usr/local/bin
+popd
+rm -rf client-swarm
+popd
+rm -rf $dir/.cargo
