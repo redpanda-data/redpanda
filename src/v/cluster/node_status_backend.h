@@ -62,7 +62,7 @@ public:
 
 private:
     ss::future<> drain_notifications_queue();
-    void handle_members_updated_notification(
+    ss::future<> handle_members_updated_notification(
       model::node_id, model::membership_state);
 
     void tick();

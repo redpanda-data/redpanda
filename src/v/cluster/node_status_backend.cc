@@ -64,14 +64,14 @@ ss::future<> node_status_backend::drain_notifications_queue() {
     auto deferred = ss::defer([this] { _draining = false; });
     while (!_pending_member_notifications.empty()) {
         auto& notification = _pending_member_notifications.front();
-        handle_members_updated_notification(
+        co_await handle_members_updated_notification(
           notification.id, notification.state);
         _pending_member_notifications.pop_front();
     }
     co_return;
 }
 
-void node_status_backend::handle_members_updated_notification(
+ss::future<> node_status_backend::handle_members_updated_notification(
   model::node_id node_id, model::membership_state state) {
     if (state == model::membership_state::active) {
         if (node_id != _self && !_discovered_peers.contains(node_id)) {
@@ -80,6 +80,14 @@ void node_status_backend::handle_members_updated_notification(
               "Node {} has been discovered via members table",
               node_id);
             _discovered_peers.insert(node_id);
+            // update node status table with initial state
+            co_await _node_status_table.invoke_on_all(
+              [node_id](node_status_table& table) {
+                  table.update_peers({node_status{
+                    .node_id = node_id,
+                    .last_seen = rpc::clock_type::now(),
+                  }});
+              });
         }
     } else if (
       state == model::membership_state::removed
