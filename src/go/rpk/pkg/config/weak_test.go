@@ -1061,8 +1061,6 @@ rpk:
 					SchemaRegistryReplicationFactor: func() *int { i := 3; return &i }(),
 				},
 				Rpk: RpkNodeConfig{
-					TLS:                  &TLS{KeyFile: "~/certs/key.pem"},
-					SASL:                 &SASL{User: "user", Password: "pass"},
 					AdditionalStartFlags: []string{"--overprovisioned"},
 					KafkaAPI: RpkKafkaAPI{
 						Brokers: []string{"192.168.72.34:9092", "192.168.72.35:9092"},
@@ -1382,8 +1380,6 @@ rpk:
 					SchemaRegistryReplicationFactor: func() *int { i := 3; return &i }(),
 				},
 				Rpk: RpkNodeConfig{
-					TLS:                  &TLS{KeyFile: "~/certs/key.pem"},
-					SASL:                 &SASL{User: "user", Password: "pass"},
 					AdditionalStartFlags: []string{"--overprovisioned"},
 					KafkaAPI: RpkKafkaAPI{
 						Brokers: []string{"192.168.72.34:9092", "192.168.72.35:9092"},

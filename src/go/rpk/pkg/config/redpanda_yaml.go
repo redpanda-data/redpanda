@@ -139,11 +139,6 @@ type (
 	}
 
 	RpkNodeConfig struct {
-		// Deprecated 2021-07-1
-		TLS *TLS `yaml:"tls,omitempty" json:"tls"`
-		// Deprecated 2021-07-1
-		SASL *SASL `yaml:"sasl,omitempty" json:"sasl,omitempty"`
-
 		KafkaAPI RpkKafkaAPI `yaml:"kafka_api,omitempty" json:"kafka_api"`
 		AdminAPI RpkAdminAPI `yaml:"admin_api,omitempty" json:"admin_api"`
 

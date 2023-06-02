@@ -462,10 +462,6 @@ func saveConfig(ps *stepParams, y *config.RedpandaYaml) step {
 			y.Rpk.KafkaAPI.SASL.User = redacted
 			y.Rpk.KafkaAPI.SASL.Password = redacted
 		}
-		if y.Rpk.SASL != nil {
-			y.Rpk.SASL.User = redacted
-			y.Rpk.SASL.Password = redacted
-		}
 		// We want to redact any blindly decoded parameters.
 		redactOtherMap(y.Other)
 		redactOtherMap(y.Redpanda.Other)
