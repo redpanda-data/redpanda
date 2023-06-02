@@ -95,3 +95,58 @@ FIXTURE_TEST(test_download_manifest, cluster_metadata_fixture) {
     BOOST_CHECK(m_res.has_error());
     BOOST_CHECK_EQUAL(error_outcome::list_failed, m_res.error());
 }
+
+FIXTURE_TEST(
+  test_download_highest_manifest_in_bucket, cluster_metadata_fixture) {
+    retry_chain_node retry_node(
+      never_abort, ss::lowres_clock::time_point::max(), 10ms);
+    auto m_res
+      = download_highest_manifest_in_bucket(remote, bucket, retry_node).get();
+    BOOST_REQUIRE(m_res.has_error());
+    BOOST_REQUIRE_EQUAL(m_res.error(), error_outcome::no_matching_metadata);
+
+    cluster_metadata_manifest manifest;
+    manifest.cluster_uuid = cluster_uuid;
+    manifest.metadata_id = cluster_metadata_id(10);
+    remote
+      .upload_manifest(
+        cloud_storage_clients::bucket_name("test-bucket"), manifest, retry_node)
+      .get();
+
+    m_res
+      = download_highest_manifest_in_bucket(remote, bucket, retry_node).get();
+    BOOST_REQUIRE(m_res.has_value());
+    BOOST_CHECK_EQUAL(cluster_uuid, m_res.value().cluster_uuid);
+    BOOST_CHECK_EQUAL(10, m_res.value().metadata_id());
+
+    auto new_uuid = model::cluster_uuid(uuid_t::create());
+    manifest.cluster_uuid = new_uuid;
+    manifest.metadata_id = cluster_metadata_id(15);
+
+    // Upload a new manifest with a higher metadata ID for a new cluster.
+    remote
+      .upload_manifest(
+        cloud_storage_clients::bucket_name("test-bucket"), manifest, retry_node)
+      .get();
+    m_res
+      = download_highest_manifest_in_bucket(remote, bucket, retry_node).get();
+    BOOST_REQUIRE(m_res.has_value());
+    BOOST_REQUIRE_EQUAL(15, m_res.value().metadata_id());
+    BOOST_REQUIRE_EQUAL(new_uuid, m_res.value().cluster_uuid);
+
+    // Sanity check that searching by the cluster UUIDs return the expected
+    // manifests.
+    m_res = download_highest_manifest_for_cluster(
+              remote, cluster_uuid, bucket, retry_node)
+              .get();
+    BOOST_REQUIRE(m_res.has_value());
+    BOOST_REQUIRE_EQUAL(10, m_res.value().metadata_id());
+    BOOST_REQUIRE_EQUAL(cluster_uuid, m_res.value().cluster_uuid);
+
+    m_res = download_highest_manifest_for_cluster(
+              remote, new_uuid, bucket, retry_node)
+              .get();
+    BOOST_REQUIRE(m_res.has_value());
+    BOOST_REQUIRE_EQUAL(15, m_res.value().metadata_id());
+    BOOST_REQUIRE_EQUAL(new_uuid, m_res.value().cluster_uuid);
+}

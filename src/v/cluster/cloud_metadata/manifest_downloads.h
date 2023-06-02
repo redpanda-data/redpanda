@@ -48,4 +48,15 @@ ss::future<std::list<ss::sstring>> list_orphaned_by_manifest(
   const cluster_metadata_manifest& manifest,
   retry_chain_node& retry_node);
 
+// Looks through the given bucket for cluster metadata with the highest
+// metadata ID.
+// - list_failed/download_failed: there was a physical error sending requests
+//   to remote storage, preventing us from returning an accurate result.
+// - no_matching_metadata: we were able to list an sift through the bucket, but
+//   no cluster metadata manifest exists.
+ss::future<cluster_manifest_result> download_highest_manifest_in_bucket(
+  cloud_storage::remote& remote,
+  const cloud_storage_clients::bucket_name& bucket,
+  retry_chain_node& retry_node);
+
 } // namespace cluster::cloud_metadata
