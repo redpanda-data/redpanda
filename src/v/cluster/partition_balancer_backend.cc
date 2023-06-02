@@ -125,6 +125,10 @@ void partition_balancer_backend::on_members_update(
     if (
       state == model::membership_state::active
       || state == model::membership_state::draining) {
+        if (_tick_in_progress) {
+            _tick_in_progress->request_abort_ex(balancer_tick_aborted_exception{
+              fmt::format("new membership update: {}", state)});
+        }
         maybe_rearm_timer(/*now = */ true);
     }
 }
