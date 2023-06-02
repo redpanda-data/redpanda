@@ -996,17 +996,13 @@ class Field:
 
     @property
     def type_name(self):
-        name, default_value = self._redpanda_type()
+        gen = self.type_name_parts()
+        name = next(gen)
         if isinstance(self._type, ArrayType):
-            assert default_value is None  # not supported
-            if name in enable_fragmentation_resistance:
-                name = f'large_fragment_vector<{name}>'
-            else:
-                name = f'std::vector<{name}>'
+            name = f'{next(gen)}<{name}>'
         if self.nullable():
-            assert default_value is None  # not supported
-            return f"std::optional<{name}>", None
-        return name, default_value
+            return f'{next(gen)}<{name}>', None
+        return name, next(gen)
 
     def type_name_parts(self):
         """
@@ -1016,10 +1012,14 @@ class Field:
         yield name
         if isinstance(self._type, ArrayType):
             assert default_value is None  # not supported
-            yield "std::vector"
+            if name in enable_fragmentation_resistance:
+                yield "large_fragment_vector"
+            else:
+                yield "std::vector"
         if self.nullable():
             assert default_value is None  # not supported
             yield "std::optional"
+        yield default_value
 
     @property
     def value_type(self):
