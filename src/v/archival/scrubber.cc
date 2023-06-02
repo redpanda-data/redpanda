@@ -89,10 +89,7 @@ ss::future<scrubber::purge_result> scrubber::purge_partition(
         co_return purge_result{
           .status = purge_status::retryable_failure, .ops = 0};
     } else if (collected->empty()) {
-        vlog(
-          ctxlog.info,
-          "Inline deletion already cleaned-up everything. Nothing to purge",
-          ntp);
+        vlog(ctxlog.debug, "Nothing to purge for {}", ntp);
         co_return purge_result{.status = purge_status::success, .ops = 0};
     }
 

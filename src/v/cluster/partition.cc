@@ -906,67 +906,28 @@ static ss::future<bool> should_finalize(
     }
 }
 
-ss::future<> partition::remove_remote_persistent_state(ss::abort_source& as) {
+ss::future<> partition::finalize_remote_partition(ss::abort_source& as) {
     if (!_feature_table.local().is_active(
           features::feature::cloud_storage_manifest_format_v2)) {
         // this is meant to prevent uploading manifests with new format while
         // the cluster is in a mixed state
         vlog(
-          clusterlog.info,
-          "skipping erasing tiered storage objects for partition {}",
-          ntp());
+          clusterlog.info, "skipping finalize of remote partition {}", ntp());
         co_return;
     }
-    // Backward compatibility: even if remote.delete is true, only do
-    // deletion if the partition is in full tiered storage mode (this
-    // excludes read replica clusters from deleting data in S3)
-    bool tiered_storage = get_ntp_config().is_tiered_storage();
+
+    const bool tiered_storage = get_ntp_config().is_archival_enabled();
 
     if (_cloud_storage_partition && tiered_storage) {
         const auto finalize = co_await should_finalize(
           as, _raft->self(), group_configuration());
 
-        cloud_storage::remote_partition::finalize_result finalize_r;
         if (finalize) {
             vlog(
               clusterlog.debug,
               "Finalizing remote metadata on partition delete {}",
               ntp());
-            finalize_r = co_await _cloud_storage_partition->finalize(as);
-        }
-
-        if (
-          get_ntp_config().remote_delete()
-          && finalize_r.get_status == cloud_storage::download_result::success) {
-            const bool do_erase = voter_position(
-                                    _raft->self(), group_configuration())
-                                  == 0;
-            if (do_erase) {
-                vlog(
-                  clusterlog.debug,
-                  "Erasing S3 objects for partition {} ({} {} {})",
-                  ntp(),
-                  get_ntp_config(),
-                  get_ntp_config().is_archival_enabled(),
-                  get_ntp_config().is_read_replica_mode_enabled());
-
-                // Paranoid double-check that this is not a read replica and
-                // that remote delete is not enabled (this is already implied
-                // by the outer condition, but re-checking directly adjacent
-                // to where we call the erase method).
-                if (
-                  get_ntp_config().is_read_replica_mode_enabled()
-                  || !get_ntp_config().remote_delete()) {
-                    vlog(
-                      clusterlog.error,
-                      "Blocking deletion of {}, configuration does not permit "
-                      "it",
-                      ntp());
-                    co_return;
-                }
-
-                co_await _cloud_storage_partition->try_erase(as);
-            }
+            co_await _cloud_storage_partition->finalize(as);
         }
     }
 }

@@ -339,7 +339,7 @@ partition_manager::remove(const model::ntp& ntp, partition_removal_mode mode) {
       .then([this, ntp] { return _storage.log_mgr().remove(ntp); })
       .then([this, partition, mode] {
           if (mode == partition_removal_mode::global) {
-              return partition->remove_remote_persistent_state(_as);
+              return partition->finalize_remote_partition(_as);
           } else {
               return ss::now();
           }

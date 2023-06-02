@@ -929,6 +929,8 @@ ss::future<upload_result> remote::delete_objects_sequentially(
   const cloud_storage_clients::bucket_name& bucket,
   std::vector<cloud_storage_clients::object_key> keys,
   retry_chain_node& parent) {
+    retry_chain_logger ctxlog(cst_log, parent);
+
     vlog(
       cst_log.debug,
       "Backend {} does not support batch delete, falling back to "
@@ -952,27 +954,27 @@ ss::future<upload_result> remote::delete_objects_sequentially(
       bucket,
       std::move(key_nodes),
       std::vector<upload_result>{},
-      [this](auto& bucket, auto& key_nodes, auto& results) {
+      [this, ctxlog](auto& bucket, auto& key_nodes, auto& results) {
           results.reserve(key_nodes.size());
           return ss::max_concurrent_for_each(
                    key_nodes.begin(),
                    key_nodes.end(),
                    concurrency(),
-                   [this, &bucket, &results](auto& kn) -> ss::future<> {
-                       vlog(cst_log.trace, "Deleting key {}", kn.key);
+                   [this, &bucket, &results, ctxlog](auto& kn) -> ss::future<> {
+                       vlog(ctxlog.trace, "Deleting key {}", kn.key);
                        return delete_object(bucket, kn.key, *kn.node)
                          .then([&results](auto result) {
                              results.push_back(result);
                          });
                    })
-            .handle_exception_type([](const std::exception& ex) {
-                vlog(cst_log.error, "Failed to delete keys: {}", ex.what());
+            .handle_exception_type([ctxlog](const std::exception& ex) {
+                vlog(ctxlog.error, "Failed to delete keys: {}", ex.what());
             })
             .then([&results] { return results; });
       });
 
     if (results.empty()) {
-        vlog(cst_log.error, "No keys were deleted");
+        vlog(ctxlog.error, "No keys were deleted");
         co_return upload_result::failed;
     }
 
