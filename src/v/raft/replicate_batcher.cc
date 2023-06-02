@@ -318,7 +318,7 @@ ss::future<> replicate_batcher::do_flush(
   std::vector<ssx::semaphore_units> u,
   absl::flat_hash_map<vnode, follower_req_seq> seqs) {
     auto needs_flush = req.is_flush_required();
-    _ptr->_probe.replicate_batch_flushed();
+    _ptr->_probe->replicate_batch_flushed();
     auto stm = ss::make_lw_shared<replicate_entries_stm>(
       _ptr, std::move(req), std::move(seqs));
     try {

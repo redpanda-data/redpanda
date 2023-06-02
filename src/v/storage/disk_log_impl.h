@@ -99,13 +99,13 @@ public:
     // maybe_call interface which enforces sizing policies.
     ss::future<> force_roll(ss::io_priority_class);
 
-    probe& get_probe() { return _probe; }
+    probe& get_probe() { return *_probe; }
     model::term_id term() const;
     segment_set& segments() { return _segs; }
     const segment_set& segments() const { return _segs; }
     size_t bytes_left_before_roll() const;
 
-    size_t size_bytes() const override { return _probe.partition_size(); }
+    size_t size_bytes() const override { return _probe->partition_size(); }
     uint64_t size_bytes_after_offset(model::offset o) const override;
     ss::future<> update_configuration(ntp_config::default_overrides) final;
 
@@ -222,7 +222,7 @@ private:
     // method.
     mutex _start_offset_lock;
     lock_manager _lock_mngr;
-    storage::probe _probe;
+    std::unique_ptr<storage::probe> _probe;
     failure_probes _failure_probes;
     std::optional<eviction_monitor> _eviction_monitor;
     size_t _max_segment_size;

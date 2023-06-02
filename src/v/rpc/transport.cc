@@ -40,7 +40,7 @@ struct client_context_impl final : streaming_context {
     ss::future<ssx::semaphore_units> reserve_memory(size_t ask) final {
         auto fut = get_units(_c.get()._memory, ask);
         if (_c.get()._memory.waiters()) {
-            _c.get()._probe.waiting_for_available_memory();
+            _c.get()._probe->waiting_for_available_memory();
         }
         return fut;
     }
@@ -103,7 +103,7 @@ transport::connect(rpc::clock_type::time_point connection_timeout) {
         // background
         ssx::spawn_with_gate(_dispatch_gate, [this] {
             return do_reads().then_wrapped([this](ss::future<> f) {
-                _probe.connection_closed();
+                _probe->connection_closed();
                 fail_outstanding_futures();
                 try {
                     f.get();
@@ -120,7 +120,7 @@ transport::connect(rpc::clock_type::time_point connection_timeout) {
                           server_address(),
                           e);
                     }
-                    _probe.read_dispatch_error();
+                    _probe->read_dispatch_error();
                 }
             });
         });
@@ -135,7 +135,7 @@ transport::send(netbuf b, rpc::client_opts opts) {
 ss::future<result<std::unique_ptr<streaming_context>>>
 transport::make_response_handler(netbuf& b, rpc::client_opts& opts) {
     if (_correlations.find(_correlation_idx + 1) != _correlations.end()) {
-        _probe.client_correlation_error();
+        _probe->client_correlation_error();
         vlog(
           rpclog.error,
           "Invalid transport state, reusing correlation id: {}",
@@ -206,7 +206,7 @@ transport::make_response_handler(netbuf& b, rpc::client_opts& opts) {
               from_now(timing.dispatched_at),
               from_now(timing.written_at),
               timing.flushed);
-            _probe.request_timeout();
+            _probe->request_timeout();
             _correlations.erase(it);
         }
     });
@@ -357,11 +357,11 @@ void transport::dispatch_send() {
                         }
                     })
                     .finally(
-                      [this, msg_size] { _probe.add_bytes_sent(msg_size); });
+                      [this, msg_size] { _probe->add_bytes_sent(msg_size); });
               });
         }).handle_exception([this](std::exception_ptr e) {
             vlog(rpclog.info, "Error dispatching socket write:{}", e);
-            _probe.request_error();
+            _probe->request_error();
             fail_outstanding_futures();
         });
 }
@@ -376,7 +376,7 @@ ss::future<> transport::do_reads() {
                     rpclog.debug,
                     "could not parse header from server: {}",
                     server_address());
-                  _probe.header_corrupted();
+                  _probe->header_corrupted();
                   fail_outstanding_futures();
                   return ss::make_ready_future<>();
               }
@@ -391,7 +391,7 @@ ss::future<> transport::dispatch(header h) {
     auto it = _correlations.find(h.correlation_id);
     if (it == _correlations.end()) {
         // We removed correlation already
-        _probe.server_correlation_error();
+        _probe->server_correlation_error();
         vlog(
           rpclog.debug,
           "Unable to find handler for correlation {}",
@@ -399,7 +399,7 @@ ss::future<> transport::dispatch(header h) {
         // we have to skip received bytes to make input stream state correct
         return _in.skip(h.payload_size);
     }
-    _probe.add_bytes_received(size_of_rpc_header + h.payload_size);
+    _probe->add_bytes_received(size_of_rpc_header + h.payload_size);
     auto ctx = std::make_unique<client_context_impl>(*this, h);
     auto fut = ctx->pr.get_future();
     // delete before setting value so that we don't run into nested exceptions
@@ -407,14 +407,14 @@ ss::future<> transport::dispatch(header h) {
     auto pr = std::move(it->second);
     _correlations.erase(it);
     pr->handler.set_value(std::move(ctx));
-    _probe.request_completed();
+    _probe->request_completed();
     return fut;
 }
 
 void transport::setup_metrics(
   const std::optional<connection_cache_label>& label,
   const std::optional<model::node_id>& node_id) {
-    _probe.setup_metrics(_metrics, label, node_id, server_address());
+    _probe->setup_metrics(_metrics, label, node_id, server_address());
 }
 
 timing_info* transport::get_timing(uint32_t correlation) {

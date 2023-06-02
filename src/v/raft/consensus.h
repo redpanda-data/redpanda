@@ -382,7 +382,7 @@ public:
 
     model::offset read_last_applied() const;
 
-    probe& get_probe() { return _probe; };
+    probe& get_probe() { return *_probe; };
 
     storage::log& log() { return _log; }
 
@@ -743,7 +743,7 @@ private:
     mutex _snapshot_lock;
     /// used for notifying when commits happened to log
     event_manager _event_manager;
-    probe _probe;
+    std::unique_ptr<probe> _probe;
     ctx_log _ctxlog;
     ss::condition_variable _commit_index_updated;
 

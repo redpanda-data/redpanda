@@ -24,6 +24,13 @@ public:
     void fetch_success() { ++_successful_fetches; }
     void fetch_failed() { ++_fetch_errors; }
 
+    auth_refresh_probe() = default;
+    auth_refresh_probe(const auth_refresh_probe&) = delete;
+    auth_refresh_probe& operator=(const auth_refresh_probe&) = delete;
+    auth_refresh_probe(auth_refresh_probe&&) = delete;
+    auth_refresh_probe& operator=(auth_refresh_probe&&) = delete;
+    ~auth_refresh_probe() = default;
+
 private:
     uint64_t _successful_fetches{0};
     uint64_t _fetch_errors{0};

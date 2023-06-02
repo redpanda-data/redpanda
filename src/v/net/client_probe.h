@@ -22,6 +22,13 @@
 namespace net {
 class client_probe {
 public:
+    client_probe() = default;
+    client_probe(const client_probe&) = delete;
+    client_probe& operator=(const client_probe&) = delete;
+    client_probe(client_probe&&) = delete;
+    client_probe& operator=(client_probe&&) = delete;
+    ~client_probe() = default;
+
     void request() {
         ++_requests;
         ++_requests_pending;

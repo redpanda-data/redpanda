@@ -87,18 +87,19 @@ disk_log_impl::disk_log_impl(
   , _feature_table(feature_table)
   , _start_offset(read_start_offset())
   , _lock_mngr(_segs)
+  , _probe(std::make_unique<storage::probe>())
   , _max_segment_size(compute_max_segment_size())
   , _readers_cache(std::make_unique<readers_cache>(
       config().ntp(), _manager.config().readers_cache_eviction_timeout)) {
     const bool is_compacted = config().is_compacted();
     for (auto& s : _segs) {
-        _probe.add_initial_segment(*s);
+        _probe->add_initial_segment(*s);
         if (is_compacted) {
             s->mark_as_compacted_segment();
         }
     }
-    _probe.initial_segments_count(_segs.size());
-    _probe.setup_metrics(this->config().ntp());
+    _probe->initial_segments_count(_segs.size());
+    _probe->setup_metrics(this->config().ntp());
 }
 disk_log_impl::~disk_log_impl() {
     vassert(_closed, "log segment must be closed before deleting:{}", *this);
@@ -143,7 +144,7 @@ ss::future<> disk_log_impl::remove() {
                   internal::clean_segment_key(config().ntp()));
             });
       })
-      .finally([this] { _probe.clear_metrics(); });
+      .finally([this] { _probe->clear_metrics(); });
 }
 
 ss::future<std::optional<ss::sstring>> disk_log_impl::close() {
@@ -178,7 +179,7 @@ ss::future<std::optional<ss::sstring>> disk_log_impl::close() {
           });
     });
 
-    _probe.clear_metrics();
+    _probe->clear_metrics();
 
     if (_segs.size() && !errors) {
         auto clean_seg = _segs.back()->filename();
@@ -202,7 +203,7 @@ disk_log_impl::size_based_gc_max_offset(gc_config cfg) {
     }
 
     const auto max_size = cfg.max_bytes.value();
-    const size_t partition_size = _probe.partition_size();
+    const size_t partition_size = _probe->partition_size();
     vlog(
       gclog.debug,
       "[{}] retention max bytes: {}, current partition size: {}",
@@ -401,7 +402,7 @@ ss::future<> disk_log_impl::do_compact(
           segment,
           _stm_manager,
           cfg,
-          _probe,
+          *_probe,
           *_readers_cache,
           _manager.resources(),
           storage::internal::should_apply_delta_time_offset(_feature_table));
@@ -546,16 +547,16 @@ ss::future<compaction_result> disk_log_impl::compact_adjacent_segments(
     // tracking needs to be adjusted as compaction routines assume the segment
     // size is already contained in the partition size probe
     replacement->mark_as_compacted_segment();
-    _probe.add_initial_segment(*replacement.get());
+    _probe->add_initial_segment(*replacement.get());
     auto ret = co_await storage::internal::self_compact_segment(
       replacement,
       _stm_manager,
       cfg,
-      _probe,
+      *_probe,
       *_readers_cache,
       _manager.resources(),
       storage::internal::should_apply_delta_time_offset(_feature_table));
-    _probe.delete_segment(*replacement.get());
+    _probe->delete_segment(*replacement.get());
     vlog(gclog.debug, "Final compacted segment {}", replacement);
 
     /*
@@ -620,7 +621,7 @@ ss::future<compaction_result> disk_log_impl::compact_adjacent_segments(
     }
     // transfer segment state from replacement to target
     locks = co_await internal::transfer_segment(
-      target, replacement, cfg, _probe, std::move(locks));
+      target, replacement, cfg, *_probe, std::move(locks));
 
     // remove the now redundant segments, if they haven't already been removed.
     // this could occur if racing with functions like truncate which manipulate
@@ -766,7 +767,7 @@ ss::future<> disk_log_impl::housekeeping(housekeeping_config cfg) {
         co_await do_compact(cfg.compact, new_start_offset);
     }
 
-    _probe.set_compaction_ratio(_compaction_ratio.get());
+    _probe->set_compaction_ratio(_compaction_ratio.get());
 }
 
 ss::future<> disk_log_impl::gc(gc_config cfg) {
@@ -993,7 +994,7 @@ ss::future<> disk_log_impl::new_segment(
                     h->mark_as_compacted_segment();
                 }
                 _segs.add(std::move(h));
-                _probe.segment_created();
+                _probe->segment_created();
                 _stm_manager->make_snapshot_in_background();
                 _stm_dirty_bytes_units.return_all();
             });
@@ -1194,7 +1195,7 @@ disk_log_impl::make_unchecked_reader(log_reader_config config) {
     return _lock_mngr.range_lock(config).then(
       [this, cfg = config](std::unique_ptr<lock_manager::lease> lease) {
           return model::make_record_batch_reader<log_reader>(
-            std::move(lease), cfg, _probe);
+            std::move(lease), cfg, *_probe);
       });
 }
 
@@ -1209,7 +1210,7 @@ disk_log_impl::make_cached_reader(log_reader_config config) {
     }
     return _lock_mngr.range_lock(config)
       .then([this, cfg = config](std::unique_ptr<lock_manager::lease> lease) {
-          return std::make_unique<log_reader>(std::move(lease), cfg, _probe);
+          return std::make_unique<log_reader>(std::move(lease), cfg, *_probe);
       })
       .then([this](auto rdr) { return _readers_cache->put(std::move(rdr)); });
 }
@@ -1228,7 +1229,7 @@ disk_log_impl::make_reader(log_reader_config config) {
     if (config.start_offset > config.max_offset) {
         auto lease = std::make_unique<lock_manager::lease>(segment_set({}));
         auto empty = model::make_record_batch_reader<log_reader>(
-          std::move(lease), config, _probe);
+          std::move(lease), config, *_probe);
         return ss::make_ready_future<model::record_batch_reader>(
           std::move(empty));
     }
@@ -1285,7 +1286,7 @@ disk_log_impl::make_reader(timequery_config config) {
             cfg.time,
             cfg.abort_source);
           return model::make_record_batch_reader<log_reader>(
-            std::move(lease), config, _probe);
+            std::move(lease), config, *_probe);
       });
 }
 
@@ -1343,7 +1344,7 @@ ss::future<> disk_log_impl::remove_segment_permanently(
   ss::lw_shared_ptr<segment> s, std::string_view ctx) {
     vlog(stlog.info, "Removing \"{}\" ({}, {})", s->filename(), ctx, s);
     // stats accounting must happen synchronously
-    _probe.delete_segment(*s);
+    _probe->delete_segment(*s);
     // background close
     s->tombstone();
     if (s->has_outstanding_locks()) {
@@ -1360,7 +1361,7 @@ ss::future<> disk_log_impl::remove_segment_permanently(
       .handle_exception([s](std::exception_ptr e) {
           vlog(stlog.error, "Cannot close segment: {} - {}", e, s);
       })
-      .finally([this, s] { _probe.segment_removed(); });
+      .finally([this, s] { _probe->segment_removed(); });
 }
 
 ss::future<> disk_log_impl::remove_full_segments(model::offset o) {
@@ -1582,7 +1583,7 @@ ss::future<> disk_log_impl::do_truncate(
         co_return co_await remove_segment_permanently(
           last_ptr, "truncate[post-translation]");
     }
-    _probe.remove_partition_bytes(last_ptr->size_bytes() - file_position);
+    _probe->remove_partition_bytes(last_ptr->size_bytes() - file_position);
     auto cache_lock = co_await _readers_cache->evict_truncate(cfg.base_offset);
 
     try {

@@ -52,7 +52,7 @@ ss::future<result<vote_reply>> vote_stm::do_dispatch_one(vnode n) {
     vlog(_ctxlog.info, "Sending vote request to {} with timeout {}", n, tout);
 
     auto r = _req;
-    _ptr->_probe.vote_request_sent();
+    _ptr->_probe->vote_request_sent();
     r.target_node_id = n;
     return _ptr->_client_protocol
       .vote(n.id(), std::move(r), rpc::client_opts(tout))

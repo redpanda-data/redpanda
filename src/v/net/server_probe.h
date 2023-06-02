@@ -21,6 +21,13 @@ namespace net {
 
 class server_probe {
 public:
+    server_probe() = default;
+    server_probe(const server_probe&) = delete;
+    server_probe& operator=(const server_probe&) = delete;
+    server_probe(server_probe&&) = delete;
+    server_probe& operator=(server_probe&&) = delete;
+    ~server_probe() = default;
+
     void connection_established() {
         ++_connects;
         ++_connections;

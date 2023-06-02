@@ -122,6 +122,7 @@ consensus::consensus(
         .raft_max_concurrent_append_requests_per_follower())
   , _batcher(this, config::shard_local_cfg().raft_replicate_batch_window_size())
   , _event_manager(this)
+  , _probe(std::make_unique<probe>())
   , _ctxlog(group, _log.config().ntp())
   , _replicate_append_timeout(
       config::shard_local_cfg().replicate_append_timeout_ms())
@@ -157,7 +158,7 @@ void consensus::setup_metrics() {
         return;
     }
 
-    _probe.setup_metrics(_log.config().ntp());
+    _probe->setup_metrics(_log.config().ntp());
     auto labels = probe::create_metric_labels(_log.config().ntp());
     auto aggregate_labels = config::shard_local_cfg().aggregate_metrics()
                               ? std::vector<sm::label>{sm::shard_label}
@@ -189,7 +190,7 @@ void consensus::setup_public_metrics() {
         return;
     }
 
-    _probe.setup_public_metrics(_log.config().ntp());
+    _probe->setup_public_metrics(_log.config().ntp());
 }
 
 void consensus::do_step_down(std::string_view ctx) {
@@ -781,13 +782,13 @@ replicate_stages consensus::do_replicate(
 
     switch (opts.consistency) {
     case consistency_level::no_ack:
-        _probe.replicate_requests_ack_none();
+        _probe->replicate_requests_ack_none();
         break;
     case consistency_level::leader_ack:
-        _probe.replicate_requests_ack_leader();
+        _probe->replicate_requests_ack_leader();
         break;
     case consistency_level::quorum_ack:
-        _probe.replicate_requests_ack_all();
+        _probe->replicate_requests_ack_all();
         break;
     }
 
@@ -1621,7 +1622,7 @@ ss::future<vote_reply> consensus::do_vote(vote_request&& r) {
     reply.node_id = _self;
     auto lstats = _log.offsets();
     auto last_log_index = lstats.dirty_offset;
-    _probe.vote_request();
+    _probe->vote_request();
     auto last_entry_term = get_last_entry_term(lstats);
     vlog(_ctxlog.trace, "Vote request: {}", r);
 
@@ -1791,7 +1792,7 @@ consensus::do_append_entries(append_entries_request&& r) {
     reply.last_dirty_log_index = lstats.dirty_offset;
     reply.last_flushed_log_index = _flushed_offset;
     reply.result = append_entries_reply::status::failure;
-    _probe.append_request();
+    _probe->append_request();
 
     if (unlikely(is_request_target_node_invalid("append_entries", r))) {
         return ss::make_ready_future<append_entries_reply>(reply);
@@ -1925,7 +1926,7 @@ consensus::do_append_entries(append_entries_request&& r) {
           request_metadata.prev_log_index,
           lstats.dirty_offset,
           truncate_at);
-        _probe.log_truncated();
+        _probe->log_truncated();
 
         // We are truncating the offset translator before truncating the log
         // because if saving offset translator state fails, we will retry and
@@ -1946,7 +1947,7 @@ consensus::do_append_entries(append_entries_request&& r) {
                 model::prev_offset(truncate_at), _flushed_offset);
 
               return _configuration_manager.truncate(truncate_at).then([this] {
-                  _probe.configuration_update();
+                  _probe->configuration_update();
                   update_follower_stats(_configuration_manager.get_latest());
               });
           })
@@ -2092,7 +2093,7 @@ ss::future<> consensus::do_hydrate_snapshot(storage::snapshot_reader& reader) {
           return _configuration_manager
             .add(_last_snapshot_index, std::move(metadata.latest_configuration))
             .then([this, delta = metadata.log_start_delta]() mutable {
-                _probe.configuration_update();
+                _probe->configuration_update();
 
                 if (delta < offset_translator_delta(0)) {
                     delta = offset_translator_delta(
@@ -2469,7 +2470,7 @@ ss::future<> consensus::flush_log() {
     if (!_has_pending_flushes) {
         return ss::now();
     }
-    _probe.log_flushed();
+    _probe->log_flushed();
     _has_pending_flushes = false;
     auto flushed_up_to = _log.offsets().dirty_offset;
     return _log.flush().then([this, flushed_up_to] {
@@ -2840,7 +2841,7 @@ void consensus::update_follower_stats(const group_configuration& cfg) {
 }
 
 void consensus::trigger_leadership_notification() {
-    _probe.leadership_changed();
+    _probe->leadership_changed();
     vlog(
       _ctxlog.debug,
       "triggering leadership notification with term: {}, new leader: {}",

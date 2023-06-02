@@ -47,10 +47,11 @@ refresh_credentials::refresh_credentials(
   : _impl(std::move(impl))
   , _as(as)
   , _credentials_update(std::move(creds_update))
-  , _region{std::move(region)} {}
+  , _region{std::move(region)}
+  , _probe(std::make_unique<auth_refresh_probe>()) {}
 
 void refresh_credentials::start() {
-    _probe.setup_metrics();
+    _probe->setup_metrics();
     ssx::background = ssx::spawn_with_gate_then(
       _gate, [this]() { return do_start(); });
 }
@@ -180,7 +181,7 @@ ss::future<> refresh_credentials::fetch_and_update_credentials() {
       std::move(handle_result),
       [this](malformed_api_response_error err) {
           _impl->increment_retries();
-          _probe.fetch_failed();
+          _probe->fetch_failed();
           vlog(
             clrl_log.error,
             "bad api response, missing fields: {}",
@@ -189,13 +190,13 @@ ss::future<> refresh_credentials::fetch_and_update_credentials() {
       },
       [this](api_response_parse_error err) {
           _impl->increment_retries();
-          _probe.fetch_failed();
+          _probe->fetch_failed();
           vlog(clrl_log.error, "failed to parse api response: {}", err.reason);
           return ss::now();
       },
       [this](api_request_error err) {
           _impl->increment_retries();
-          _probe.fetch_failed();
+          _probe->fetch_failed();
           vlog(
             clrl_log.error,
             "api request failed (retrying after cool-off period): {}",
@@ -204,7 +205,7 @@ ss::future<> refresh_credentials::fetch_and_update_credentials() {
       },
       [this](credentials creds) {
           _impl->reset_retries();
-          _probe.fetch_success();
+          _probe->fetch_success();
           vlog(clrl_log.info, "fetched credentials {}", creds);
           return _credentials_update(std::move(creds));
       });
@@ -215,7 +216,7 @@ ss::future<> refresh_credentials::stop() {
         _as.request_abort();
     }
     co_await _gate.close();
-    _probe.reset();
+    _probe->reset();
 }
 
 std::chrono::milliseconds

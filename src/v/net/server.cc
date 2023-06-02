@@ -33,6 +33,7 @@ server::server(server_configuration c, ss::logger& log)
   : cfg(std::move(c))
   , _log(log)
   , _memory{size_t{static_cast<size_t>(cfg.max_service_memory_per_core)}, "net/server-mem"}
+  , _probe(std::make_unique<server_probe>())
   , _public_metrics(ssx::metrics::public_metrics_handle) {}
 
 server::server(ss::sharded<server_configuration>* s, ss::logger& log)
@@ -43,12 +44,12 @@ server::~server() = default;
 void server::start() {
     if (!cfg.disable_metrics) {
         setup_metrics();
-        _probe.setup_metrics(_metrics, cfg.name.c_str());
+        _probe->setup_metrics(_metrics, cfg.name.c_str());
     }
 
     if (!cfg.disable_public_metrics) {
         setup_public_metrics();
-        _probe.setup_public_metrics(_public_metrics, cfg.name.c_str());
+        _probe->setup_public_metrics(_public_metrics, cfg.name.c_str());
     }
 
     if (cfg.connection_rate_bindings) {
@@ -60,7 +61,7 @@ void server::start() {
           .overrides
           = connection_rate_bindings.value().config_overrides_rate()};
 
-        _connection_rates.emplace(std::move(info), _conn_gate, _probe);
+        _connection_rates.emplace(std::move(info), _conn_gate, *_probe);
 
         connection_rate_bindings.value().config_general_rate.watch([this] {
             _connection_rates->update_general_rate(
@@ -200,7 +201,7 @@ server::accept_finish(ss::sstring name, ss::future<ss::accept_result> f_cs_sa) {
           ar.remote_address.addr());
         if (!cq_units.live()) {
             // Connection limit hit, drop this connection.
-            _probe.connection_rejected();
+            _probe->connection_rejected();
             vlog(
               _log.info,
               "Connection limit reached, rejecting {}",
@@ -233,7 +234,7 @@ server::accept_finish(ss::sstring name, ss::future<ss::accept_result> f_cs_sa) {
               "Timeout while waiting free token for connection rate. "
               "addr:{}",
               ar.remote_address);
-            _probe.timeout_waiting_rate_limit();
+            _probe->timeout_waiting_rate_limit();
             co_return ss::stop_iteration::no;
         }
     }
@@ -243,7 +244,7 @@ server::accept_finish(ss::sstring name, ss::future<ss::accept_result> f_cs_sa) {
       name,
       std::move(ar.connection),
       ar.remote_address,
-      _probe,
+      *_probe,
       cfg.stream_recv_buf);
     vlog(
       _log.trace,

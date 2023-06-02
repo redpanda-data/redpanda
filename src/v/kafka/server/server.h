@@ -70,7 +70,7 @@ public:
     ~server() noexcept override = default;
     server(const server&) = delete;
     server& operator=(const server&) = delete;
-    server(server&&) noexcept = default;
+    server(server&&) noexcept = delete;
     server& operator=(server&&) noexcept = delete;
 
     std::string_view name() const final { return "kafka rpc protocol"; }
@@ -158,7 +158,7 @@ public:
         return _gssapi_principal_mapper;
     }
 
-    latency_probe& latency_probe() { return _probe; }
+    latency_probe& latency_probe() { return *_probe; }
 
     ssx::thread_worker& thread_worker() { return _thread_worker; }
 
@@ -218,8 +218,8 @@ private:
     ssx::semaphore _memory_fetch_sem;
 
     handler_probe_manager _handler_probes;
-    class latency_probe _probe;
     ss::metrics::metric_groups _metrics;
+    std::unique_ptr<class latency_probe> _probe;
     ssx::thread_worker& _thread_worker;
     std::unique_ptr<replica_selector> _replica_selector;
     const std::unique_ptr<pandaproxy::schema_registry::api>& _schema_registry;

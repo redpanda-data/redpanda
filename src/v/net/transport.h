@@ -84,7 +84,7 @@ protected:
     ss::input_stream<char> _in;
     net::batched_output_stream _out;
     ss::gate _dispatch_gate;
-    client_probe _probe;
+    std::unique_ptr<client_probe> _probe;
 
 private:
     ss::future<> do_connect(clock_type::time_point);

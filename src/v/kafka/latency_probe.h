@@ -21,6 +21,13 @@
 namespace kafka {
 class latency_probe {
 public:
+    latency_probe() = default;
+    latency_probe(const latency_probe&) = delete;
+    latency_probe& operator=(const latency_probe&) = delete;
+    latency_probe(latency_probe&&) = delete;
+    latency_probe& operator=(latency_probe&&) = delete;
+    ~latency_probe() = default;
+
     void setup_metrics() {
         namespace sm = ss::metrics;
 

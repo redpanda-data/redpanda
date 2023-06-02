@@ -23,6 +23,11 @@ namespace kafka {
 class handler_probe {
 public:
     explicit handler_probe();
+    handler_probe(const handler_probe&) = delete;
+    handler_probe& operator=(const handler_probe&) = delete;
+    handler_probe(handler_probe&&) = delete;
+    handler_probe& operator=(handler_probe&&) = delete;
+    ~handler_probe() = default;
     void setup_metrics(ss::metrics::metric_groups&, api_key);
 
     void sample_in_progress();

@@ -129,7 +129,7 @@ public:
     virtual std::string_view name() const = 0;
     virtual ss::future<> apply(ss::lw_shared_ptr<net::connection>) = 0;
 
-    server_probe& probe() { return _probe; }
+    server_probe& probe() { return *_probe; }
     ssx::semaphore& memory() { return _memory; }
     ss::gate& conn_gate() { return _conn_gate; }
     hdr_hist& hist() { return _hist; }
@@ -163,7 +163,7 @@ private:
     ss::abort_source _as;
     ss::gate _conn_gate;
     hdr_hist _hist;
-    server_probe _probe;
+    std::unique_ptr<server_probe> _probe;
     ss::metrics::metric_groups _metrics;
     ss::metrics::metric_groups _public_metrics;
 

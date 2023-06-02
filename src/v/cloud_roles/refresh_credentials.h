@@ -160,7 +160,7 @@ private:
     ss::abort_source& _as;
     credentials_update_cb_t _credentials_update;
     aws_region_name _region;
-    auth_refresh_probe _probe;
+    std::unique_ptr<auth_refresh_probe> _probe;
 };
 
 std::ostream& operator<<(std::ostream& os, const refresh_credentials& rc);
