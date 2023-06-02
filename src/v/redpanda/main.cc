@@ -14,8 +14,18 @@ namespace debug {
 application* app;
 }
 
+static std::string* xp = nullptr;
+
+static void sup() {
+    std::string x;
+    xp = &x;
+}
+
 int main(int argc, char** argv, char** /*env*/) {
     // must be the first thing called
+    sup();
+    assert(xp);
+    fmt::print("{}", xp->size());
     syschecks::initialize_intrinsics();
     application app;
     debug::app = &app;
