@@ -45,4 +45,6 @@ std::chrono::system_clock::time_point parse_timestamp(std::string_view sv);
 void log_buffer_with_rate_limiting(
   const char* msg, iobuf& buf, ss::logger& logger);
 
+bool has_abort_or_gate_close_exception(const ss::nested_exception& ex);
+
 } // namespace cloud_storage_clients::util
