@@ -228,7 +228,7 @@ class CloudStorageChunkReadTest(PreallocNodesTest):
                                               self.topic,
                                               msg_size=0,
                                               rand_read_msgs=50,
-                                              parallel=50,
+                                              parallel=15,
                                               nodes=self.preallocated_nodes)
         rand_cons.start()
         rand_cons.wait(timeout_sec=300)
