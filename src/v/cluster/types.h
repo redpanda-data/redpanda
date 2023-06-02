@@ -3839,6 +3839,13 @@ std::ostream& operator<<(
       with_assignment.assignments);
     return o;
 }
+
+/// Names of snapshot files used by stm's
+static const ss::sstring archival_stm_snapshot = "archival_metadata.snapshot";
+static const ss::sstring rm_stm_snapshot = "tx.snapshot";
+static const ss::sstring tm_stm_snapshot = "tx.coordinator.snapshot";
+static const ss::sstring id_allocator_snapshot = "id.snapshot";
+
 } // namespace cluster
 namespace std {
 template<>
