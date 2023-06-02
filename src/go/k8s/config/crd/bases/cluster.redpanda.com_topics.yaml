@@ -49,6 +49,206 @@ spec:
                   schedule next reconciliation Default is 3 seconds
                 format: duration
                 type: string
+              kafkaApiSpec:
+                description: KafkaAPISpec is client configuration for connecting to
+                  Redpanda brokers
+                properties:
+                  brokers:
+                    items:
+                      type: string
+                    type: array
+                  sasl:
+                    description: KafkaSASL to connect to Kafka using SASL credentials
+                    properties:
+                      awsMskIam:
+                        description: 'KafkaSASLAWSMskIam is the config for AWS IAM
+                          SASL mechanism, see: https://docs.aws.amazon.com/msk/latest/developerguide/iam-access-control.html'
+                        properties:
+                          accessKey:
+                            type: string
+                          secretKeySecretRef:
+                            description: SecretKeyRef contains enough information
+                              to inspect or modify the referred Secret data REF https://pkg.go.dev/k8s.io/api/core/v1#ObjectReference
+                            properties:
+                              key:
+                                description: Key in Secret data to get value from
+                                type: string
+                              name:
+                                description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names'
+                                type: string
+                            required:
+                            - name
+                            type: object
+                          sessionTokenSecretRef:
+                            description: 'SessionToken, if non-empty, is a session
+                              / security token to use for authentication. See: https://docs.aws.amazon.com/STS/latest/APIReference/welcome.html'
+                            properties:
+                              key:
+                                description: Key in Secret data to get value from
+                                type: string
+                              name:
+                                description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names'
+                                type: string
+                            required:
+                            - name
+                            type: object
+                          userAgent:
+                            description: "UserAgent is the user agent to for the client
+                              to use when connecting to Kafka, overriding the default
+                              \"franz-go/<runtime.Version()>/<hostname>\". \n Setting
+                              a UserAgent allows authorizing based on the aws:UserAgent
+                              condition key; see the following link for more details:
+                              https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_condition-keys.html#condition-keys-useragent"
+                            type: string
+                        required:
+                        - accessKey
+                        - secretKeySecretRef
+                        - sessionTokenSecretRef
+                        - userAgent
+                        type: object
+                      gssapi:
+                        description: KafkaSASLGSSAPI represents the Kafka Kerberos
+                          config.
+                        properties:
+                          authType:
+                            type: string
+                          enableFast:
+                            description: EnableFAST enables FAST, which is a pre-authentication
+                              framework for Kerberos. It includes a mechanism for
+                              tunneling pre-authentication exchanges using armored
+                              KDC messages. FAST provides increased resistance to
+                              passive password guessing attacks.
+                            type: boolean
+                          kerberosConfigPath:
+                            type: string
+                          keyTabPath:
+                            type: string
+                          passwordSecretRef:
+                            description: SecretKeyRef contains enough information
+                              to inspect or modify the referred Secret data REF https://pkg.go.dev/k8s.io/api/core/v1#ObjectReference
+                            properties:
+                              key:
+                                description: Key in Secret data to get value from
+                                type: string
+                              name:
+                                description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names'
+                                type: string
+                            required:
+                            - name
+                            type: object
+                          realm:
+                            type: string
+                          serviceName:
+                            type: string
+                          username:
+                            type: string
+                        required:
+                        - authType
+                        - enableFast
+                        - kerberosConfigPath
+                        - keyTabPath
+                        - passwordSecretRef
+                        - realm
+                        - serviceName
+                        - username
+                        type: object
+                      mechanism:
+                        type: string
+                      oauth:
+                        description: KafkaSASLOAuthBearer is the config struct for
+                          the SASL OAuthBearer mechanism
+                        properties:
+                          tokenSecretRef:
+                            description: SecretKeyRef contains enough information
+                              to inspect or modify the referred Secret data REF https://pkg.go.dev/k8s.io/api/core/v1#ObjectReference
+                            properties:
+                              key:
+                                description: Key in Secret data to get value from
+                                type: string
+                              name:
+                                description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names'
+                                type: string
+                            required:
+                            - name
+                            type: object
+                        required:
+                        - tokenSecretRef
+                        type: object
+                      passwordSecretRef:
+                        description: SecretKeyRef contains enough information to inspect
+                          or modify the referred Secret data REF https://pkg.go.dev/k8s.io/api/core/v1#ObjectReference
+                        properties:
+                          key:
+                            description: Key in Secret data to get value from
+                            type: string
+                          name:
+                            description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names'
+                            type: string
+                        required:
+                        - name
+                        type: object
+                      username:
+                        type: string
+                    required:
+                    - mechanism
+                    type: object
+                  tls:
+                    description: KafkaTLS to connect to Kafka via TLS
+                    properties:
+                      caCertSecretRef:
+                        description: CaCert is the reference for certificate authority
+                          used to establish TLS connection to Redpanda
+                        properties:
+                          key:
+                            description: Key in Secret data to get value from
+                            type: string
+                          name:
+                            description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names'
+                            type: string
+                        required:
+                        - name
+                        type: object
+                      certSecretRef:
+                        description: Cert is the reference for client public certificate
+                          to establish mTLS connection to Redpanda
+                        properties:
+                          key:
+                            description: Key in Secret data to get value from
+                            type: string
+                          name:
+                            description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names'
+                            type: string
+                        required:
+                        - name
+                        type: object
+                      insecureSkipTlsVerify:
+                        description: InsecureSkipTLSVerify can skip verifying Redpanda
+                          self-signed certificate when establish TLS connection to
+                          Redpanda
+                        type: boolean
+                      keySecretRef:
+                        description: Key is the reference for client private certificate
+                          to establish mTLS connection to Redpanda
+                        properties:
+                          key:
+                            description: Key in Secret data to get value from
+                            type: string
+                          name:
+                            description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names'
+                            type: string
+                        required:
+                        - name
+                        type: object
+                    type: object
+                required:
+                - brokers
+                type: object
+              metricsNamespace:
+                description: MetricsNamespace can be used to overwrite fully-qualified
+                  name of the Metric. That should be easier to identify if multiple
+                  operator runs inside the same Kubernetes cluster. By default, it
+                  is set to `redpanda-operator`.
+                type: string
               overwriteTopicName:
                 description: OverwriteTopicName will change the topic name from the
                   `metadata.name` to `OverwriteTopicName`
