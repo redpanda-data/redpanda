@@ -48,6 +48,8 @@ public:
         }
     }
 
+    void remove_peer(model::node_id id) { _peers_status.erase(id); }
+
     bool is_isolated() const {
         if (_peers_status.empty()) {
             return false;

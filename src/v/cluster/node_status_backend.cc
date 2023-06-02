@@ -14,8 +14,18 @@
 #include "cluster/cluster_utils.h"
 #include "cluster/errc.h"
 #include "cluster/logger.h"
+#include "cluster/node_status_table.h"
 #include "config/node_config.h"
+#include "rpc/types.h"
 #include "ssx/future-util.h"
+
+#include <seastar/core/condition-variable.hh>
+#include <seastar/util/defer.hh>
+
+#include <bits/types/clock_t.h>
+
+#include <exception>
+#include <vector>
 
 namespace cluster {
 
@@ -41,25 +51,81 @@ node_status_backend::node_status_backend(
 
     _members_table_notification_handle
       = _members_table.local().register_members_updated_notification(
-        [this](auto ids) {
-            handle_members_updated_notification(std::move(ids));
+        [this](std::vector<model::node_id> ids) {
+            for (auto& id : ids) {
+                const auto node_meta
+                  = _members_table.local().get_node_metadata_ref(id);
+                if (!node_meta) {
+                    continue;
+                }
+
+                _pending_member_notifications.emplace_back(
+                  id, node_meta.value().get().state.get_membership_state());
+            }
+
+            for (const auto& node_id : _discovered_peers) {
+                if (!_members_table.local().contains(node_id)) {
+                    _pending_member_notifications.emplace_back(
+                      node_id, model::membership_state::removed);
+                }
+            }
+
+            if (!_draining) {
+                _draining = true;
+                ssx::spawn_with_gate(
+                  _gate, [this] { return drain_notifications_queue(); });
+            }
         });
 
     _timer.set_callback([this] { tick(); });
 }
 
-void node_status_backend::handle_members_updated_notification(
-  std::vector<model::node_id> node_ids) {
-    for (const auto& node_id : node_ids) {
-        if (node_id == _self || _discovered_peers.contains(node_id)) {
-            continue;
-        }
+ss::future<> node_status_backend::drain_notifications_queue() {
+    auto deferred = ss::defer([this] { _draining = false; });
+    while (!_pending_member_notifications.empty()) {
+        auto& notification = _pending_member_notifications.front();
+        co_await handle_members_updated_notification(
+          notification.id, notification.state);
+        _pending_member_notifications.pop_front();
+    }
+    co_return;
+}
 
-        vlog(
-          clusterlog.info,
-          "Node {} has been discovered via members table",
-          node_id);
-        _discovered_peers.insert(node_id);
+ss::future<> node_status_backend::handle_members_updated_notification(
+  model::node_id node_id, model::membership_state state) {
+    switch (state) {
+    case model::membership_state::active:
+    case model::membership_state::draining:
+        if (node_id != _self && !_discovered_peers.contains(node_id)) {
+            vlog(
+              clusterlog.info,
+              "Node {} has been discovered via members table",
+              node_id);
+            _discovered_peers.insert(node_id);
+            // update node status table with initial state
+            co_await _node_status_table.invoke_on_all(
+              [node_id](node_status_table& table) {
+                  table.update_peers({node_status{
+                    .node_id = node_id,
+                    .last_seen = rpc::clock_type::now(),
+                  }});
+              });
+        }
+        break;
+    case model::membership_state::removed:
+        if (_discovered_peers.contains(node_id)) {
+            vlog(
+              clusterlog.info,
+              "Node {} has been removed via members table",
+              node_id);
+            _discovered_peers.erase(node_id);
+
+            co_await _node_status_table.invoke_on_all(
+              [node_id](node_status_table& table) {
+                  table.remove_peer(node_id);
+              });
+        }
+        break;
     }
 }
 
