@@ -3,6 +3,7 @@ v_cc_library(
   SRCS
     adl_serde.cc
     async_adl_serde.cc
+    model_socheck.cc
     model.cc
     record_batch_reader.cc
     record_utils.cc

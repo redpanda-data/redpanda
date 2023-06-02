@@ -48,6 +48,7 @@ v_cc_library(
     server/rm_group_frontend.cc
     server/server.cc
     server/snc_quota_manager.cc
+    server/kafka_socheck.cc
     server/usage_manager.cc
  DEPS
     Seastar::seastar
