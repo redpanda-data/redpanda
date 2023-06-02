@@ -24,7 +24,6 @@ import (
 	"github.com/fluxcd/pkg/runtime/logger"
 	sourcev1 "github.com/fluxcd/source-controller/api/v1beta2"
 	helmSourceController "github.com/fluxcd/source-controller/controllers"
-	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources"
 	flag "github.com/spf13/pflag"
 	"helm.sh/helm/v3/pkg/getter"
 	corev1 "k8s.io/api/core/v1"
@@ -37,11 +36,14 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 
+	clusterredpandacomv1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/cluster.redpanda.com/v1alpha1"
 	redpandav1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
 	vectorizedv1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/vectorized/v1alpha1"
+	clusterredpandacomcontrollers "github.com/redpanda-data/redpanda/src/go/k8s/controllers/cluster.redpanda.com"
 	redpandacontrollers "github.com/redpanda-data/redpanda/src/go/k8s/controllers/redpanda"
 	adminutils "github.com/redpanda-data/redpanda/src/go/k8s/pkg/admin"
 	consolepkg "github.com/redpanda-data/redpanda/src/go/k8s/pkg/console"
+	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources"
 	redpandawebhooks "github.com/redpanda-data/redpanda/src/go/k8s/webhooks/redpanda"
 )
 
