@@ -1255,19 +1255,9 @@ if ({{ cond }}) {
 {%- set fname = field.name %}
 {%- endif %}
 {%- if field.is_array %}
-{%- if field.nullable() %}
-{%- if flex %}
-{{ fname }} = reader.read_nullable_flex_array([version](request_reader& reader) {
-{%- else %}
-{{ fname }} = reader.read_nullable_array([version](request_reader& reader) {
-{%- endif %}
-{%- else %}
-{%- if flex %}
-{{ fname }} = reader.read_flex_array([version](request_reader& reader) {
-{%- else %}
-{{ fname }} = reader.read_array([version](request_reader& reader) {
-{%- endif %}
-{%- endif %}
+{%- set nullable = "nullable_" if field.nullable() else "" %}
+{%- set flex = "flex_" if flex else "" %}
+{{ fname }} = reader.read_{{nullable}}{{flex}}array([version](request_reader& reader) {
     (void)version;
 {%- if field.type().value_type().is_struct %}
     {{ field.type().value_type().name }} v;
