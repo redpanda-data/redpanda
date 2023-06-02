@@ -70,47 +70,33 @@ ss::future<ss::temporary_buffer<char>> chunk_data_source_impl::get() {
     co_return buf;
 }
 
+ss::future<>
+chunk_data_source_impl::load_chunk_handle(chunk_start_offset_t chunk_start) {
+    try {
+        _current_data_file = co_await _chunks.hydrate_chunk(chunk_start);
+    } catch (const ss::abort_requested_exception& ex) {
+        throw;
+    } catch (const ss::gate_closed_exception& ex) {
+        throw;
+    } catch (const std::exception& ex) {
+        vlog(
+          _ctxlog.error,
+          "failed to hydrate chunk starting at {}, error: {}",
+          chunk_start,
+          ex);
+        throw;
+    }
+}
+
 ss::future<> chunk_data_source_impl::load_stream_for_chunk(
   chunk_start_offset_t chunk_start) {
     vlog(_ctxlog.debug, "loading stream for chunk starting at {}", chunk_start);
 
-    _current_data_file
-      = co_await _chunks.hydrate_chunk(chunk_start)
-          .handle_exception_type([this, chunk_start](
-                                   const ss::abort_requested_exception& ex) {
-              vlog(
-                _ctxlog.debug,
-                "abort requested during hydration of chunk starting at {}: {}",
-                chunk_start,
-                ex);
-
-              return maybe_close_stream().then([&ex] {
-                  return ss::make_exception_future<segment_chunk::handle_t>(ex);
-              });
-          })
-          .handle_exception_type([this, chunk_start](
-                                   const ss::gate_closed_exception& ex) {
-              vlog(
-                _ctxlog.debug,
-                "gate closed during hydration of chunk starting at {}: {}",
-                chunk_start,
-                ex);
-
-              return maybe_close_stream().then([&ex] {
-                  return ss::make_exception_future<segment_chunk::handle_t>(ex);
-              });
-          })
-          .handle_exception_type([this, chunk_start](const std::exception& ex) {
-              vlog(
-                _ctxlog.error,
-                "failed to hydrate chunk starting at {}, error: {}",
-                chunk_start,
-                ex);
-
-              return maybe_close_stream().then([&ex] {
-                  return ss::make_exception_future<segment_chunk::handle_t>(ex);
-              });
-          });
+    co_await load_chunk_handle(chunk_start)
+      .handle_exception([this](const std::exception_ptr& ex) {
+          return maybe_close_stream().then(
+            [&ex] { std::rethrow_exception(ex); });
+      });
 
     // Decrement the required_by_readers_in_future count by 1, we have acquired
     // the file handle here. Once we are done with this handle, if it is not

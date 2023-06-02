@@ -570,11 +570,22 @@ ss::future<download_result> remote::download_segment(
             auto length = boost::lexical_cast<uint64_t>(
               resp.value()->get_headers().at(
                 boost::beast::http::field::content_length));
-            uint64_t content_length = co_await cons_str(
-              length, resp.value()->as_input_stream());
-            _probe.successful_download();
-            _probe.register_download_size(content_length);
-            co_return download_result::success;
+            try {
+                uint64_t content_length = co_await cons_str(
+                  length, resp.value()->as_input_stream());
+                _probe.successful_download();
+                _probe.register_download_size(content_length);
+                co_return download_result::success;
+            } catch (...) {
+                const auto ex = std::current_exception();
+                vlog(
+                  ctxlog.debug,
+                  "unexpected error when consuming stream {}",
+                  ex);
+                resp
+                  = cloud_storage_clients::util::handle_client_transport_error(
+                    ex, cst_log);
+            }
         }
 
         lease.client->shutdown();
