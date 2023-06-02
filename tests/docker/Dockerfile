@@ -166,6 +166,11 @@ RUN /k8s && \
 
 FROM base as final
 
+COPY --chown=0:0 --chmod=0755 tests/docker/ducktape-deps/teleport /
+RUN /teleport && \
+    rm /teleport && \
+    rm -rf /var/lib/apt/lists/*
+
 COPY --chown=0:0 --chmod=0755 tests/docker/ducktape-deps/arroyo /
 RUN /arroyo && \
     rm /arroyo
