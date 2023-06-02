@@ -74,7 +74,8 @@ public:
         status status = status::empty;
     };
 
-    ss::future<plan_data> plan_actions(const cluster_health_report&);
+    ss::future<plan_data>
+    plan_actions(const cluster_health_report&, ss::abort_source&);
 
 private:
     class request_context;

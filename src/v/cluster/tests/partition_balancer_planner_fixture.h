@@ -356,4 +356,5 @@ struct partition_balancer_planner_fixture {
 
     controller_workers workers;
     int last_node_idx{};
+    ss::abort_source as;
 };
