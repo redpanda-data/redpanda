@@ -20,6 +20,7 @@
 namespace net {
 
 conn_quota::units::~units() noexcept {
+    _verify_shard.assert_shard_source_location();
     if (_quotas) {
         (*_quotas).get().put(_addr);
     }
@@ -449,8 +450,11 @@ void conn_quota::do_put(ss::net::inet_address addr) {
 
     auto home_shard = addr_to_shard(addr);
     if (home_shard == ss::this_shard_id()) {
-        vlog(rpc::rpclog.trace, "do_put: release directly to home");
         auto allowance = get_home_allowance(addr);
+        vlog(
+          rpc::rpclog.trace,
+          "do_put: release directly to home allowance={}",
+          allowance);
         allowance->put();
         if (should_leave_reclaim(*allowance)) {
             cancel_reclaim_to(addr, allowance);

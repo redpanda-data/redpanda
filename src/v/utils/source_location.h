@@ -10,29 +10,47 @@
  */
 #pragma once
 #include <cstdint>
+#include <ostream>
+#include <source_location>
 
-namespace vlog_internal {
-constexpr int32_t basename_index(
-  const char* const path,
+namespace vlog {
+namespace detail {
+consteval const char* file_basename(
+  const char* const path = std::source_location::current().file_name(),
   const int32_t index = 0,
   const int32_t slash_index = -1) {
     // NOLINTNEXTLINE
     const char c = path[index];
     if (c == '\0') {
-        return slash_index + 1;
+        // NOLINTNEXTLINE
+        return &path[slash_index + 1];
     }
     if (c == '/' || c == '\\') {
-        return basename_index(path, index + 1, index);
+        return file_basename(path, index + 1, index);
     }
-    return basename_index(path, index + 1, slash_index);
+    return file_basename(path, index + 1, slash_index);
 }
+} // namespace detail
 
-template<int32_t V>
-struct log_basename_start {
-    static constexpr const int32_t value = V;
+// file_line represents a source file (without the full path) and the line
+// number in a file.
+//
+// Usage is similar to std::source_location, but the full path is dropped so
+// that we don't include local paths from CI machines, etc.
+struct file_line {
+    const char* filename;
+    unsigned line;
+
+    consteval static file_line
+    current(const std::source_location src = std::source_location::current()) {
+        return {
+          .filename = detail::file_basename(src.file_name()),
+          .line = src.line()};
+    }
+
+    friend std::ostream& operator<<(std::ostream& o, const file_line& fl) {
+        return o << fl.filename << ":" << fl.line;
+    }
 };
-} // namespace vlog_internal
 
-#define get_file_basename()                                                    \
-    (const char*)&__FILE__[vlog_internal::log_basename_start<                  \
-      vlog_internal::basename_index(__FILE__)>::value]
+} // namespace vlog
