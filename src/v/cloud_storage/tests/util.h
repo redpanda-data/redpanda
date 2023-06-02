@@ -503,7 +503,7 @@ std::vector<cloud_storage_fixture::expectation> make_imposter_expectations(
   const std::vector<in_memory_segment>& segments,
   bool truncate_segments = false,
   model::offset_delta delta = model::offset_delta(0),
-  segment_name_format sname_format = segment_name_format::v2) {
+  segment_name_format sname_format = segment_name_format::v3) {
     std::vector<cloud_storage_fixture::expectation> results;
 
     for (const auto& s : segments) {
@@ -531,7 +531,8 @@ std::vector<cloud_storage_fixture::expectation> make_imposter_expectations(
           .delta_offset = segment_delta,
           .ntp_revision = m.get_revision_id(),
           .delta_offset_end = model::offset_delta(delta)
-                              + model::offset_delta(s.num_config_records)};
+                              + model::offset_delta(s.num_config_records),
+          .sname_format = sname_format};
 
         m.add(s.sname, meta);
         delta = delta
