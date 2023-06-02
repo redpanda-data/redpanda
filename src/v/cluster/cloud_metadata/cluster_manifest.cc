@@ -118,9 +118,9 @@ void cluster_metadata_manifest::to_json(std::ostream& out) const {
     w.Key("cluster_uuid");
     w.String(ss::sstring(cluster_uuid()));
     w.Key("upload_time_since_epoch");
-    w.Int(static_cast<int>(upload_time_since_epoch.count()));
+    w.Int64(static_cast<int64_t>(upload_time_since_epoch.count()));
     w.Key("metadata_id");
-    w.Int(static_cast<int>(metadata_id()));
+    w.Int64(static_cast<int64_t>(metadata_id()));
     w.Key("controller_snapshot_offset");
     w.Int64(controller_snapshot_offset());
     w.Key("controller_snapshot_path");
