@@ -248,6 +248,14 @@ def gen_topic_manifest_path(topic: NT):
     return f"{hash}/meta/{path}/topic_manifest.json"
 
 
+def gen_topic_lifecycle_marker_path(topic: NT):
+    x = xxhash.xxh32()
+    path = f"{topic.ns}/{topic.topic}"
+    x.update(path.encode('ascii'))
+    hash = x.hexdigest()[0] + '0000000'
+    return f"{hash}/meta/{path}/topic_manifest.json"
+
+
 def gen_segment_name_from_meta(meta: dict, key: str) -> str:
     """
     Generates segment name using the sname_format. If v2 is supplied,
@@ -486,6 +494,12 @@ class ManifestFormat(Enum):
     BINARY = 'binary'
 
 
+class LifecycleMarkerStatus(Enum):
+    LIVE = 1
+    PURGING = 2
+    PURGED = 3
+
+
 class BucketView:
     """
     A caching view onto an object storage bucket, that knows how to construct paths
@@ -681,8 +695,8 @@ class BucketView:
                 raise KeyError(f"Manifest for ntp {ntpr} not found")
 
         if format == ManifestFormat.BINARY:
-            manifest = RpStorageTool(self.logger).decode_partition_manifest(
-                data, self.logger)
+            manifest = RpStorageTool(
+                self.logger).decode_partition_manifest(data)
         else:
             manifest = json.loads(data)
 
@@ -737,6 +751,45 @@ class BucketView:
 
         path = gen_topic_manifest_path(topic)
         return self._load_topic_manifest(topic, path)
+
+    def get_lifecycle_marker_objects(self, topic: NT) -> list[ObjectMetadata]:
+        """
+        Topic manifests are identified by namespace-topic, whereas lifecycle
+        markers are identified by namespace-topic-revision.
+
+        It is convenient in tests to retrieve by NT though.
+        """
+
+        x = xxhash.xxh32()
+        path = f"{topic.ns}/{topic.topic}"
+        x.update(path.encode('ascii'))
+        hash = x.hexdigest()[0] + '0000000'
+        prefix = f"{hash}/meta/{path}/"
+        results = []
+        for obj_meta in self.client.list_objects(self.bucket, prefix=prefix):
+            if obj_meta.key.endswith("lifecycle.bin"):
+                results.append(obj_meta)
+
+        return results
+
+    def get_lifecycle_marker(self, topic: NT) -> dict:
+        """
+        Convenience: when we expect only one lifecycle marker for an NT (i.e. there
+        are not multiple revisions).  Return exactly one, or assert
+        """
+        objects = self.get_lifecycle_marker_objects(topic)
+        if len(objects) != 1:
+            raise RuntimeError(
+                f"Expected exactly 1 lifecycle marker for {topic}, found {len(objects)}"
+            )
+
+        key = objects[0].key
+        body = self.client.get_object_data(self.bucket, key)
+        decoded = RpStorageTool(self.logger).decode_lifecycle_marker(body)
+        self.logger.debug(
+            f"Decoded lifecycle marker for {topic}: {json.dumps(decoded,indent=2)}"
+        )
+        return decoded
 
     def is_segment_part_of_a_manifest(self, o: ObjectMetadata) -> bool:
         """

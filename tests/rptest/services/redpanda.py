@@ -3585,7 +3585,7 @@ class RedpandaService(RedpandaServiceBase):
         bucket = self.si_settings.cloud_storage_bucket
         environment = ' '.join(f'{k}=\"{v}\"' for k, v in vars.items())
         output = node.account.ssh_output(
-            f"{environment} rp-storage-tool --backend {backend} scan --source {bucket}",
+            f"{environment} rp-storage-tool --backend {backend} scan-metadata --source {bucket}",
             combine_stderr=False,
             allow_fail=True,
             timeout_sec=30)
@@ -3595,6 +3595,8 @@ class RedpandaService(RedpandaServiceBase):
         except:
             self.logger.error(f"Error running bucket scrub: {output}")
             raise
+        else:
+            self.logger.info(json.dumps(report, indent=2))
 
         # Example of a report:
         # {"malformed_manifests":[],
@@ -3617,10 +3619,10 @@ class RedpandaService(RedpandaServiceBase):
         permitted_anomalies = {"segments_outside_manifest"}
 
         # Whether any anomalies were found
-        any_anomalies = any(len(v) for v in report.values())
+        any_anomalies = any(len(v) for v in report['anomalies'].values())
 
         # List of fatal anomalies found
-        fatal_anomalies = set(k for k, v in report.items()
+        fatal_anomalies = set(k for k, v in report['anomalies'].items()
                               if len(v) and k not in permitted_anomalies)
 
         if not any_anomalies:
