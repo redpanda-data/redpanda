@@ -1,3 +1,16 @@
+v_cc_library(
+  NAME
+    s3_imposter
+  HDRS
+    "s3_imposter.h"
+  SRCS
+    "s3_imposter.cc"
+  DEPS
+    v::config
+    v::http
+    v::http_test_utils
+    v::model
+)
 
 # Regular unit tests that don't open ports and run on a single core
 rp_test(
