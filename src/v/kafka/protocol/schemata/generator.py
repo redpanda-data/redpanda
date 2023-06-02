@@ -1286,7 +1286,8 @@ if ({{ cond }}) {
 {%- if field.is_array %}
 {%- set nullable = "nullable_" if field.nullable() else "" %}
 {%- set flex = "flex_" if flex else "" %}
-{{ fname }} = reader.read_{{nullable}}{{flex}}array([version](protocol::decoder& reader) {
+{%- set container = (field.type_name_parts() | list)[1] %}
+{{ fname }} = reader.read_{{nullable}}{{flex}}array<{{ container }}>([version](protocol::decoder& reader) {
     (void)version;
 {%- if field.type().value_type().is_struct %}
     {{ field.type().value_type().name }} v;
