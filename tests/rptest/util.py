@@ -225,6 +225,9 @@ def wait_for_local_storage_truncate(redpanda,
     if timeout_sec is None:
         timeout_sec = 120
 
+    redpanda.logger.debug(
+        "Waiting for local storage to be truncated to {target_bytes} bytes")
+
     def is_truncated():
         storage = redpanda.storage(sizes=True)
         sizes = []

@@ -218,7 +218,6 @@ class EndToEndTopicRecovery(RedpandaTest):
         assert produce_acked >= num_messages
         assert consume_valid >= produce_acked, f"produced {produce_acked}, consumed {consume_valid}"
 
-    @ok_to_fail  # https://github.com/redpanda-data/redpanda/issues/7955
     @cluster(num_nodes=5, log_allow_list=ALLOWED_ERROR_LOG_LINES)
     @matrix(recovery_overrides=[{}, {
         'retention.local.target.bytes': 1024,

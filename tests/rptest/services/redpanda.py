@@ -24,6 +24,7 @@ import re
 import uuid
 import zipfile
 import pathlib
+import shlex
 from enum import Enum, IntEnum
 from typing import Mapping, Optional, Tuple, Union, Any
 
@@ -56,7 +57,7 @@ from rptest.services.redpanda_installer import RedpandaInstaller, VERSION_RE as 
 from rptest.services.rolling_restarter import RollingRestarter
 from rptest.services.storage import ClusterStorage, NodeStorage
 from rptest.services.utils import BadLogLines, NodeCrash
-from rptest.util import wait_until_result
+from rptest.util import inject_remote_script, wait_until_result
 
 Partition = collections.namedtuple('Partition',
                                    ['topic', 'index', 'leader', 'replicas'])
@@ -3137,60 +3138,36 @@ class RedpandaService(RedpandaServiceBase):
         Retrieve a summary of storage on a node.
 
         :param sizes: if true, stat each segment file and record its size in the
-                      `size` attribute of Segment.  This is expensive, only use it
-                      for small-ish numbers of segments.
+                      `size` attribute of Segment.
         """
-        def listdir(path, only_dirs=False):
-            try:
-                ents = node.account.sftp_client.listdir(path)
-            except FileNotFoundError:
-                # Perhaps the directory has been deleted since we saw it.
-                # This is normal if doing a listing concurrently with topic deletion.
-                return []
 
-            if not only_dirs:
-                return ents
-            paths = map(lambda fn: (fn, os.path.join(path, fn)), ents)
-
-            def safe_isdir(path):
-                try:
-                    return node.account.isdir(path)
-                except FileNotFoundError:
-                    # Things that no longer exist are also no longer directories
-                    return False
-
-            return [p[0] for p in paths if safe_isdir(p[1])]
-
-        def get_sizes(partition_path, segment_names, partition):
-            for s in segment_names:
-                try:
-                    stat = node.account.sftp_client.lstat(
-                        os.path.join(partition_path, s))
-                    partition.set_segment_size(s, stat.st_size)
-                except FileNotFoundError:
-                    # It is legal for a file to be deleted between a listdir
-                    # and a stat: update the partition object to reflect this,
-                    # rather than leaving a None size that could trip up sum()
-                    partition.delete_segment(s)
-
+        self.logger.debug(
+            f"Starting storage checks for {node.name} sizes={sizes}")
         store = NodeStorage(node.name, RedpandaService.DATA_DIR)
-        for ns in listdir(store.data_dir, True):
-            if ns == '.coprocessor_offset_checkpoints':
-                continue
-            if ns == 'cloud_storage_cache':
-                # Default cache dir is sub-path of data dir
-                continue
-
-            ns = store.add_namespace(ns, os.path.join(store.data_dir, ns))
-            for topic in listdir(ns.path):
-                topic = ns.add_topic(topic, os.path.join(ns.path, topic))
-                for num in listdir(topic.path):
-                    partition_path = os.path.join(topic.path, num)
-                    partition = topic.add_partition(num, node, partition_path)
-                    segment_names = listdir(partition.path)
-                    partition.add_files(segment_names)
-                    if sizes:
-                        get_sizes(partition_path, segment_names, partition)
+        script_path = inject_remote_script(node, "compute_storage.py")
+        cmd = [
+            "python3", script_path, f"--data-dir={RedpandaService.DATA_DIR}"
+        ]
+        if sizes:
+            cmd.append("--sizes")
+        output = node.account.ssh_output(shlex.join(cmd), timeout_sec=10)
+        namespaces = json.loads(output)
+        for ns, topics in namespaces.items():
+            ns_path = os.path.join(store.data_dir, ns)
+            ns = store.add_namespace(ns, ns_path)
+            for topic, partitions in topics.items():
+                topic_path = os.path.join(ns_path, topic)
+                topic = ns.add_topic(topic, topic_path)
+                for part, segments in partitions.items():
+                    partition_path = os.path.join(topic_path, part)
+                    partition = topic.add_partition(part, node, partition_path)
+                    partition.add_files(list(segments.keys()))
+                    if not sizes:
+                        continue
+                    for segment, data in segments.items():
+                        partition.set_segment_size(segment, data["size"])
+        self.logger.debug(
+            f"Finished storage checks for {node.name} sizes={sizes}")
         return store
 
     def storage(self, all_nodes: bool = False, sizes: bool = False):
@@ -3201,9 +3178,17 @@ class RedpandaService(RedpandaServiceBase):
         :returns: instances of ClusterStorage
         """
         store = ClusterStorage()
-        for node in (self.nodes if all_nodes else self._started):
+        self.logger.debug(
+            f"Starting storage checks all_nodes={all_nodes} sizes={sizes}")
+        nodes = self.nodes if all_nodes else self._started
+
+        def compute_node_storage(node):
             s = self.node_storage(node, sizes=sizes)
             store.add_node(s)
+
+        self._for_nodes(nodes, compute_node_storage, parallel=True)
+        self.logger.debug(
+            f"Finished storage checks all_nodes={all_nodes} sizes={sizes}")
         return store
 
     def copy_data(self, dest, node):
