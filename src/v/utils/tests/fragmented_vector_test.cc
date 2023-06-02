@@ -235,6 +235,7 @@ BOOST_AUTO_TEST_CASE(fragmented_vector_iterator_access) {
 
     BOOST_CHECK_EQUAL(*vec.begin(), foo{2});
     BOOST_CHECK_EQUAL((*vec.begin()).a, 2);
+    BOOST_CHECK_EQUAL(vec.begin()->a, 2);
 }
 
 /**

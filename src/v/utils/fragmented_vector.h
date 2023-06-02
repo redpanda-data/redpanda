@@ -246,6 +246,7 @@ public:
         iter() = default;
 
         reference operator*() const { return _vec->operator[](_index); }
+        pointer operator->() const { return &_vec->operator[](_index); }
 
         iter& operator+=(ssize_t n) {
             _index += n;
@@ -278,8 +279,6 @@ public:
             --*this;
             return tmp;
         }
-
-        pointer operator->() const { return &_vec->operator[](_index); }
 
         iter operator+(difference_type offset) { return iter{*this} += offset; }
         iter operator-(difference_type offset) { return iter{*this} -= offset; }
