@@ -200,7 +200,7 @@ ss::future<> partition_balancer_backend::do_tick() {
     // status requests by default 700ms
     auto const node_responsiveness_timeout = _node_status_interval() * 7;
     auto plan_data
-      = partition_balancer_planner(
+      = co_await partition_balancer_planner(
           planner_config{
             .mode = _mode(),
             .soft_max_disk_usage_ratio = soft_max_disk_usage_ratio,
