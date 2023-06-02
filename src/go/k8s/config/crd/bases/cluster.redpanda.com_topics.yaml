@@ -43,6 +43,131 @@ spec:
                   option that topic can have. Examples: cleanup.policy=compact redpanda.remote.write=true
                   redpanda.remote.read=true redpanda.remote.recovery=true redpanda.remote.delete=true'
                 type: object
+              clientId:
+                description: ClientID can be set to identify connection performed
+                  from Redpanda operator By default, it is set to `redpanda-operator`
+                type: string
+              kafkaApiSpec:
+                description: KafkaAPISpec represents definition for connection that
+                  used Kafka protocol.
+                properties:
+                  brokers:
+                    items:
+                      type: string
+                    type: array
+                  sasl:
+                    description: KafkaSASL to connect to Kafka using SASL credentials
+                    properties:
+                      awsMskIam:
+                        description: 'KafkaSASLAwsMskIam is the config for AWS IAM
+                          SASL mechanism, see: https://docs.aws.amazon.com/msk/latest/developerguide/iam-access-control.html'
+                        properties:
+                          accessKey:
+                            type: string
+                          secretKey:
+                            type: string
+                          sessionToken:
+                            description: 'SessionToken, if non-empty, is a session
+                              / security token to use for authentication. See: https://docs.aws.amazon.com/STS/latest/APIReference/welcome.html'
+                            type: string
+                          userAgent:
+                            description: "UserAgent is the user agent to for the client
+                              to use when connecting to Kafka, overriding the default
+                              \"franz-go/<runtime.Version()>/<hostname>\". \n Setting
+                              a UserAgent allows authorizing based on the aws:UserAgent
+                              condition key; see the following link for more details:
+                              https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_condition-keys.html#condition-keys-useragent"
+                            type: string
+                        required:
+                        - accessKey
+                        - secretKey
+                        - sessionToken
+                        - userAgent
+                        type: object
+                      gssapi:
+                        description: KafkaSASLGSSAPI represents the Kafka Kerberos
+                          config.
+                        properties:
+                          authType:
+                            type: string
+                          enableFast:
+                            description: EnableFAST enables FAST, which is a pre-authentication
+                              framework for Kerberos. It includes a mechanism for
+                              tunneling pre-authentication exchanges using armored
+                              KDC messages. FAST provides increased resistance to
+                              passive password guessing attacks.
+                            type: boolean
+                          kerberosConfigPath:
+                            type: string
+                          keyTabPath:
+                            type: string
+                          password:
+                            type: string
+                          realm:
+                            type: string
+                          serviceName:
+                            type: string
+                          username:
+                            type: string
+                        required:
+                        - authType
+                        - enableFast
+                        - kerberosConfigPath
+                        - keyTabPath
+                        - password
+                        - realm
+                        - serviceName
+                        - username
+                        type: object
+                      mechanism:
+                        type: string
+                      oauth:
+                        description: KafkaSASLOAuthBearer is the config struct for
+                          the SASL OAuthBearer mechanism
+                        properties:
+                          token:
+                            type: string
+                        required:
+                        - token
+                        type: object
+                      password:
+                        type: string
+                      username:
+                        type: string
+                    required:
+                    - awsMskIam
+                    - gssapi
+                    - mechanism
+                    - oauth
+                    - password
+                    - username
+                    type: object
+                  tls:
+                    description: KafkaTLS to connect to Kafka via TLS
+                    properties:
+                      caFilepath:
+                        type: string
+                      certFilepath:
+                        type: string
+                      insecureSkipTlsVerify:
+                        type: boolean
+                      keyFilepath:
+                        type: string
+                    required:
+                    - caFilepath
+                    - certFilepath
+                    - insecureSkipTlsVerify
+                    - keyFilepath
+                    type: object
+                required:
+                - brokers
+                type: object
+              metricsNamespace:
+                description: MetricsNamespace can be used to overwrite fully-qualified
+                  name of the Metric. That should be easier to identify if multiple
+                  operator runs inside the same Kubernetes cluster. By default, it
+                  is set to `redpanda-operator`.
+                type: string
               overwriteTopicName:
                 description: OverwriteTopicName will change the topic name from the
                   `metadata.name` to `OverwriteTopicName`
@@ -56,6 +181,10 @@ spec:
                   cluster configuration `default_topic_partitions`. https://docs.redpanda.com/docs/reference/cluster-properties/#default_topic_partitions
                   https://docs.redpanda.com/docs/get-started/architecture/#partitions
                 type: integer
+              rackId:
+                description: RackID should be used if connection should be made to
+                  particular rack
+                type: string
               replicationFactor:
                 description: ReplicationFactor is the number of replicas the topic
                   should have. Must be odd value. When absent this will default to

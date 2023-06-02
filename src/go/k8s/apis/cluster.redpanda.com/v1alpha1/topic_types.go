@@ -38,7 +38,88 @@ type TopicSpec struct {
 	// redpanda.remote.read=true
 	// redpanda.remote.recovery=true
 	// redpanda.remote.delete=true
-	AdditionalConfig map[string]string `json:"additionalConfig,omitempty"`
+	AdditionalConfig map[string]*string `json:"additionalConfig,omitempty"`
+
+	KafkaAPISpec *KafkaAPISpec `json:"kafkaApiSpec,omitempty"`
+
+	// ClientID can be set to identify connection performed from Redpanda operator
+	// By default, it is set to `redpanda-operator`
+	ClientID *string `json:"clientId,omitempty"`
+
+	// RackID should be used if connection should be made to particular rack
+	RackID *string `json:"rackId,omitempty"`
+
+	// MetricsNamespace can be used to overwrite fully-qualified
+	// name of the Metric. That should be easier to identify if
+	// multiple operator runs inside the same Kubernetes cluster.
+	// By default, it is set to `redpanda-operator`.
+	MetricsNamespace *string `json:"metricsNamespace,omitempty"`
+}
+
+// KafkaAPISpec represents definition for connection that used
+// Kafka protocol.
+type KafkaAPISpec struct {
+	Brokers []string   `json:"brokers"`
+	TLS     *KafkaTLS  `json:"tls,omitempty"`
+	SASL    *KafkaSASL `json:"sasl,omitempty"`
+}
+
+// KafkaSASL to connect to Kafka using SASL credentials
+type KafkaSASL struct {
+	Username     string               `json:"username"`
+	Password     string               `json:"password"`
+	Mechanism    string               `json:"mechanism"`
+	OAUth        KafkaSASLOAuthBearer `json:"oauth"`
+	GSSAPIConfig KafkaSASLGSSAPI      `json:"gssapi"`
+	AWSMskIam    KafkaSASLAwsMskIam   `json:"awsMskIam"`
+}
+
+// KafkaSASLOAuthBearer is the config struct for the SASL OAuthBearer mechanism
+type KafkaSASLOAuthBearer struct {
+	Token string `json:"token"`
+}
+
+// KafkaSASLGSSAPI represents the Kafka Kerberos config.
+type KafkaSASLGSSAPI struct {
+	AuthType           string `json:"authType"`
+	KeyTabPath         string `json:"keyTabPath"`
+	KerberosConfigPath string `json:"kerberosConfigPath"`
+	ServiceName        string `json:"serviceName"`
+	Username           string `json:"username"`
+	Password           string `json:"password"`
+	Realm              string `json:"realm"`
+
+	// EnableFAST enables FAST, which is a pre-authentication framework for Kerberos.
+	// It includes a mechanism for tunneling pre-authentication exchanges using armored KDC messages.
+	// FAST provides increased resistance to passive password guessing attacks.
+	EnableFast bool `json:"enableFast"`
+}
+
+// KafkaSASLAwsMskIam is the config for AWS IAM SASL mechanism,
+// see: https://docs.aws.amazon.com/msk/latest/developerguide/iam-access-control.html
+type KafkaSASLAwsMskIam struct {
+	AccessKey string `json:"accessKey"`
+	SecretKey string `json:"secretKey"`
+
+	// SessionToken, if non-empty, is a session / security token to use for authentication.
+	// See: https://docs.aws.amazon.com/STS/latest/APIReference/welcome.html
+	SessionToken string `json:"sessionToken"`
+
+	// UserAgent is the user agent to for the client to use when connecting
+	// to Kafka, overriding the default "franz-go/<runtime.Version()>/<hostname>".
+	//
+	// Setting a UserAgent allows authorizing based on the aws:UserAgent
+	// condition key; see the following link for more details:
+	// https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_condition-keys.html#condition-keys-useragent
+	UserAgent string `json:"userAgent"`
+}
+
+// KafkaTLS to connect to Kafka via TLS
+type KafkaTLS struct {
+	CaFilepath            string `json:"caFilepath"`
+	CertFilepath          string `json:"certFilepath"`
+	KeyFilepath           string `json:"keyFilepath"`
+	InsecureSkipTLSVerify bool   `json:"insecureSkipTlsVerify"`
 }
 
 // TopicStatus defines the observed state of Topic
