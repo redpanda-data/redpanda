@@ -17,6 +17,11 @@
 #include "config/node_config.h"
 #include "ssx/future-util.h"
 
+#include <seastar/core/condition-variable.hh>
+#include <seastar/util/defer.hh>
+
+#include <exception>
+
 namespace cluster {
 
 node_status_backend::node_status_backend(
@@ -44,10 +49,26 @@ node_status_backend::node_status_backend(
     _members_table_notification_handle
       = _members_table.local().register_members_updated_notification(
         [this](model::node_id n, model::membership_state state) {
-            handle_members_updated_notification(n, state);
+            _pending_member_notifications.emplace_back(n, state);
+            if (!_draining) {
+                _draining = true;
+                ssx::spawn_with_gate(
+                  _gate, [this] { return drain_notifications_queue(); });
+            }
         });
 
     _timer.set_callback([this] { tick(); });
+}
+
+ss::future<> node_status_backend::drain_notifications_queue() {
+    auto deferred = ss::defer([this] { _draining = false; });
+    while (!_pending_member_notifications.empty()) {
+        auto& notification = _pending_member_notifications.front();
+        handle_members_updated_notification(
+          notification.id, notification.state);
+        _pending_member_notifications.pop_front();
+    }
+    co_return;
 }
 
 void node_status_backend::handle_members_updated_notification(
