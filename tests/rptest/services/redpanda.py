@@ -2266,15 +2266,11 @@ class RedpandaService(RedpandaServiceBase):
         self.logger.debug(
             f"Deleting bucket/container: {self._si_settings.cloud_storage_bucket}"
         )
-        assert self.cloud_storage_client is not None
 
-        failed_deletions = self.cloud_storage_client.empty_bucket(
+        assert self.cloud_storage_client is not None
+        self.cloud_storage_client.empty_and_delete_bucket(
             self._si_settings.cloud_storage_bucket,
-            # If on dedicate nodes, assume tests may be high scale and do parallel deletion
             parallel=self.dedicated_nodes)
-        assert len(failed_deletions) == 0
-        self.cloud_storage_client.delete_bucket(
-            self._si_settings.cloud_storage_bucket)
 
     def get_objects_from_si(self):
         assert self.cloud_storage_client is not None

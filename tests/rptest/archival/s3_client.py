@@ -121,6 +121,13 @@ class S3Client:
             err_msg=
             f"Bucket {name} didn't become visible to ListObjectsvv2 requests")
 
+    def empty_and_delete_bucket(self, name, parallel=False):
+        failed_deletions = self.cloud_storage_client.empty_bucket(
+            self._si_settings.cloud_storage_bucket, parallel=parallel)
+
+        assert len(failed_deletions) == 0
+        self.delete_bucket(name)
+
     def delete_bucket(self, name):
         self.logger.info(f"Deleting bucket {name}...")
         try:
