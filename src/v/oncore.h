@@ -41,8 +41,9 @@ private:
 };
 
 // Debug builds assert, no checks in release builds
-// NOLINTNEXTLINE
+// NOLINTNEXTLINE(cppcoreguidelines-macro-usage)
 #define oncore_debug_verify(member)                                            \
+    /* NOLINTNEXTLINE(cppcoreguidelines-avoid-do-while) */                     \
     do {                                                                       \
         expression_in_debug_mode((member).assert_shard_source_location());     \
     } while (0)
