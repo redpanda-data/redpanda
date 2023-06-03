@@ -15,6 +15,7 @@
 #include "cluster/types.h"
 #include "config/property.h"
 #include "seastarx.h"
+#include "storage/fwd.h"
 #include "utils/retry_chain_node.h"
 
 #include <seastar/core/future.hh>
@@ -44,7 +45,7 @@ class uploader {
 public:
     uploader(
       raft::group_manager& group_manager,
-      model::cluster_uuid cluster_uuid,
+      storage::api& storage,
       cloud_storage_clients::bucket_name bucket,
       cloud_storage::remote& remote,
       consensus_ptr raft0);
@@ -111,7 +112,8 @@ private:
     ss::future<bool> term_has_changed(model::term_id);
 
     raft::group_manager& _group_manager;
-    const model::cluster_uuid _cluster_uuid;
+    storage::api& _storage;
+    model::cluster_uuid _cluster_uuid;
     cloud_storage::remote& _remote;
     consensus_ptr _raft0;
     const cloud_storage_clients::bucket_name _bucket;

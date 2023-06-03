@@ -22,6 +22,7 @@
 #include "raft/types.h"
 #include "ssx/future-util.h"
 #include "ssx/sleep_abortable.h"
+#include "storage/api.h"
 #include "storage/snapshot.h"
 
 #include <seastar/core/condition-variable.hh>
@@ -37,12 +38,15 @@ namespace cluster::cloud_metadata {
 
 uploader::uploader(
   raft::group_manager& group_manager,
-  model::cluster_uuid cluster_uuid,
+  storage::api& storage,
   cloud_storage_clients::bucket_name bucket,
   cloud_storage::remote& remote,
   consensus_ptr raft0)
   : _group_manager(group_manager)
-  , _cluster_uuid(cluster_uuid)
+  , _storage(storage)
+  , _cluster_uuid(
+      _storage.get_cluster_uuid() ? _storage.get_cluster_uuid().value()
+                                  : model::cluster_uuid{})
   , _remote(remote)
   , _raft0(std::move(raft0))
   , _bucket(bucket)
@@ -246,6 +250,15 @@ ss::future<error_outcome> uploader::maybe_upload_controller_snapshot(
 }
 
 ss::future<> uploader::upload_until_abort() {
+    // It's possible the cluster UUID wasn't available at construction time
+    // (e.g. this node was in the process of joining the cluster).
+    if (!co_await _storage.wait_for_cluster_uuid()) {
+        co_return;
+    }
+    _cluster_uuid = _storage.get_cluster_uuid().value();
+    vassert(
+      _cluster_uuid != model::cluster_uuid{},
+      "Expected cluster UUID after waiting");
     while (!_as.abort_requested()) {
         if (!_raft0->is_leader()) {
             bool shutdown = false;
