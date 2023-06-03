@@ -97,9 +97,6 @@ using client_configuration_variant = std::variant<Ts...>;
 using client_configuration
   = client_configuration_variant<abs_configuration, s3_configuration>;
 
-template<typename>
-inline constexpr bool always_false_v = false;
-
 model::cloud_storage_backend infer_backend_from_configuration(
   const client_configuration& client_config,
   model::cloud_credentials_source cloud_storage_credentials_source);

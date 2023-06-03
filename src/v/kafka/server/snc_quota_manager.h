@@ -11,6 +11,7 @@
 
 #pragma once
 #include "config/property.h"
+#include "config/throughput_control_group.h"
 #include "seastarx.h"
 #include "utils/bottomless_token_bucket.h"
 #include "utils/mutex.h"
@@ -18,10 +19,12 @@
 #include <seastar/core/future.hh>
 #include <seastar/core/lowres_clock.hh>
 #include <seastar/core/sharded.hh>
+#include <seastar/core/sstring.hh>
 #include <seastar/core/timer.hh>
 
 #include <chrono>
 #include <optional>
+#include <string_view>
 
 namespace kafka {
 
@@ -57,6 +60,29 @@ private:
     size_t _traffic_in = 0;
 };
 
+class snc_quota_context {
+public:
+    explicit snc_quota_context(std::optional<std::string_view> client_id)
+      : _client_id(client_id) {}
+
+private:
+    friend class snc_quota_manager;
+
+    // Indexing
+    std::optional<ss::sstring> _client_id;
+
+    // Configuration
+
+    /// Whether the connection belongs to an exempt tput control group
+    bool _exempt{false};
+
+    // Operating
+
+    /// What time the client on this conection should throttle (be throttled)
+    /// until
+    ss::lowres_clock::time_point _throttled_until;
+};
+
 /// Isolates \ref quota_manager functionality related to
 /// shard/node/cluster (SNC) wide quotas and limits
 class snc_quota_manager
@@ -82,28 +108,38 @@ public:
         clock::duration request{0};
     };
 
+    /// Depending on the other arguments, create or actualize or keep the
+    /// existing \p ctx. The context object is supposed to be stored
+    /// in the connection context, and created only once per connection
+    /// lifetime. However since the kafka API allows changing client_id of a
+    /// connection on the fly, we may need to replace the existing context with
+    /// a new one if that happens (actualize).
+    /// \post (bool)ctx == true
+    void get_or_create_quota_context(
+      std::unique_ptr<snc_quota_context>& ctx,
+      std::optional<std::string_view> client_id);
+
     /// Determine throttling required by shard level TP quotas.
-    /// @param connection_throttle_until (in,out) until what time the client
-    /// on this conection should throttle until. If it does not, this throttling
-    /// will be enforced on the next call. In: value from the last call, out:
-    /// value saved until the next call.
-    delays_t get_shard_delays(
-      clock::time_point& connection_throttle_until,
-      clock::time_point now) const;
+    delays_t get_shard_delays(snc_quota_context&, clock::time_point now) const;
 
     /// Record the request size when it has arrived from the transport.
     /// This should be done before calling \ref get_shard_delays because the
     /// recorded request size is used to calculate throttling parameters.
     void record_request_receive(
-      size_t request_size, clock::time_point now = clock::now()) noexcept;
+      snc_quota_context&,
+      size_t request_size,
+      clock::time_point now = clock::now()) noexcept;
 
     /// Record the request size when the request data is about to be consumed.
     /// This data is used to represent throttled throughput.
-    void record_request_intake(size_t request_size) noexcept;
+    void
+    record_request_intake(snc_quota_context&, size_t request_size) noexcept;
 
     /// Record the response size for all purposes
     void record_response(
-      size_t request_size, clock::time_point now = clock::now()) noexcept;
+      snc_quota_context&,
+      size_t request_size,
+      clock::time_point now = clock::now()) noexcept;
 
     /// Metrics probe object
     const snc_quotas_probe& get_snc_quotas_probe() const noexcept {
@@ -171,6 +207,8 @@ private:
       _kafka_quota_balancer_node_period;
     config::binding<double> _kafka_quota_balancer_min_shard_throughput_ratio;
     config::binding<quota_t> _kafka_quota_balancer_min_shard_throughput_bps;
+    config::binding<std::vector<config::throughput_control_group>>
+      _kafka_throughput_control;
 
     // operational, only used in the balancer shard
     ss::timer<ss::lowres_clock> _balancer_timer;

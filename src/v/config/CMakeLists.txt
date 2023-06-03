@@ -9,6 +9,7 @@ v_cc_library(
     base_property.cc
     rjson_serialization.cc
     validators.cc
+    throughput_control_group.cc
   DEPS
     v::json
     v::model

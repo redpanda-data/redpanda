@@ -24,6 +24,7 @@
 #include "kafka/server/response.h"
 #include "kafka/server/server.h"
 #include "kafka/server/snc_quota_manager.h"
+#include "likely.h"
 #include "net/exceptions.h"
 #include "security/exceptions.h"
 #include "units.h"
@@ -42,6 +43,29 @@
 using namespace std::chrono_literals;
 
 namespace kafka {
+
+connection_context::connection_context(
+  class server& s,
+  ss::lw_shared_ptr<net::connection> conn,
+  std::optional<security::sasl_server> sasl,
+  bool enable_authorizer,
+  std::optional<security::tls::mtls_state> mtls_state,
+  config::binding<uint32_t> max_request_size,
+  config::conversion_binding<std::vector<bool>, std::vector<ss::sstring>>
+    kafka_throughput_controlled_api_keys) noexcept
+  : _server(s)
+  , conn(conn)
+  , _sasl(std::move(sasl))
+  // tests may build a context without a live connection
+  , _client_addr(conn ? conn->addr.addr() : ss::net::inet_address{})
+  , _enable_authorizer(enable_authorizer)
+  , _authlog(_client_addr, client_port())
+  , _mtls_state(std::move(mtls_state))
+  , _max_request_size(std::move(max_request_size))
+  , _kafka_throughput_controlled_api_keys(
+      std::move(kafka_throughput_controlled_api_keys)) {}
+
+connection_context::~connection_context() noexcept = default;
 
 ss::future<> connection_context::process() {
     while (true) {
@@ -215,9 +239,12 @@ connection_context::record_tp_and_calculate_throttle(
     // Throttle on shard wide quotas
     snc_quota_manager::delays_t shard_delays;
     if (_kafka_throughput_controlled_api_keys().at(hdr.key)) {
-        _server.snc_quota_mgr().record_request_receive(request_size, now);
+        _server.snc_quota_mgr().get_or_create_quota_context(
+          _snc_quota_context, hdr.client_id);
+        _server.snc_quota_mgr().record_request_receive(
+          *_snc_quota_context, request_size, now);
         shard_delays = _server.snc_quota_mgr().get_shard_delays(
-          _throttled_until, now);
+          *_snc_quota_context, now);
     }
 
     // Sum up
@@ -334,7 +361,20 @@ connection_context::dispatch_method_once(request_header hdr, size_t size) {
               // protect against shutdown behavior
               return ss::make_ready_future<>();
           }
-          _server.snc_quota_mgr().record_request_intake(size);
+          if (_kafka_throughput_controlled_api_keys().at(hdr.key)) {
+              // Normally we can only get here after a prior call to
+              // snc_quota_mgr().get_or_create_quota_context() in
+              // record_tp_and_calculate_throttle(), but there is possibility
+              // that the changing configuration could still take us into this
+              // branch with unmatching (and even null) _snc_quota_context.
+              // Simply an unmatching _snc_quota_context is no big deal because
+              // it is a one off event, but we need protection from it being
+              // nullptr
+              if (likely(_snc_quota_context)) {
+                  _server.snc_quota_mgr().record_request_intake(
+                    *_snc_quota_context, size);
+              }
+          }
 
           auto sres = ss::make_lw_shared(std::move(sres_in));
 
@@ -524,7 +564,11 @@ ss::future<> connection_context::maybe_process_responses() {
         auto response_size = msg.size();
         auto request_key = resp_and_res.resources->request_data.request_key;
         if (_kafka_throughput_controlled_api_keys().at(request_key)) {
-            _server.snc_quota_mgr().record_response(response_size);
+            // see the comment in dispatch_method_once()
+            if (likely(_snc_quota_context)) {
+                _server.snc_quota_mgr().record_response(
+                  *_snc_quota_context, response_size);
+            }
         }
         _server.handler_probe(request_key).add_bytes_sent(response_size);
         try {

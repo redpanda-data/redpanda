@@ -19,6 +19,8 @@
 #include <fmt/core.h>
 #include <fmt/ranges.h>
 
+#include <iterator>
+#include <memory>
 #include <numeric>
 
 using namespace std::chrono_literals;
@@ -148,6 +150,7 @@ snc_quota_manager::snc_quota_manager()
   , _kafka_quota_balancer_min_shard_throughput_bps(
       config::shard_local_cfg()
         .kafka_quota_balancer_min_shard_throughput_bps.bind())
+  , _kafka_throughput_control(config::shard_local_cfg().kafka_throughput_control.bind())
   , _node_quota_default{calc_node_quota_default()}
   , _shard_quota{
       .in {node_to_shard_quota(_node_quota_default.in),
@@ -247,14 +250,61 @@ snc_quota_manager::calc_node_quota_default() const {
     return default_quota;
 }
 
+void snc_quota_manager::get_or_create_quota_context(
+  std::unique_ptr<snc_quota_context>& ctx,
+  std::optional<std::string_view> client_id) {
+    if (likely(ctx)) {
+        // NB: comparing string_view to sstring might be suboptimal
+        if (likely(ctx->_client_id == client_id)) {
+            // the context is the right one
+            return;
+        }
+
+        // either of the context indexing propeties have changed on the client
+        // within the same connection. This is an unexpected path, quotas may
+        // misbehave if we ever get here. The design is based on assumption that
+        // this should not happen. If it does happen with a supported client, we
+        // probably should start supporting multiple quota contexts per
+        // connection
+        vlog(
+          klog.warn,
+          "qm - client_id has changed on the connection. Quotas are reset now. "
+          "Old client_id: {}, new client_id: {}",
+          ctx->_client_id,
+          client_id);
+    }
+
+    ctx = std::make_unique<snc_quota_context>(client_id);
+    const auto tcgroup_it = config::find_throughput_control_group(
+      _kafka_throughput_control().cbegin(),
+      _kafka_throughput_control().cend(),
+      client_id);
+    if (tcgroup_it == _kafka_throughput_control().cend()) {
+        ctx->_exempt = false;
+        vlog(klog.debug, "qm - No throughput control group assigned");
+    } else {
+        ctx->_exempt = true;
+        if (tcgroup_it->is_noname()) {
+            vlog(
+              klog.debug,
+              "qm - Assigned throughput control group #{}",
+              std::distance(_kafka_throughput_control().cbegin(), tcgroup_it));
+        } else {
+            vlog(
+              klog.debug,
+              "qm - Assigned throughput control group: {}",
+              tcgroup_it->name);
+        }
+    }
+}
+
 snc_quota_manager::delays_t snc_quota_manager::get_shard_delays(
-  clock::time_point& connection_throttle_until,
-  const clock::time_point now) const {
+  snc_quota_context& ctx, const clock::time_point now) const {
     delays_t res;
 
     // force throttle whatever the client did not do on its side
-    if (now < connection_throttle_until) {
-        res.enforce = connection_throttle_until - now;
+    if (now < ctx._throttled_until) {
+        res.enforce = ctx._throttled_until - now;
     }
 
     // throttling delay the connection should be requested to throttle
@@ -262,23 +312,36 @@ snc_quota_manager::delays_t snc_quota_manager::get_shard_delays(
     res.request = std::min(
       _max_kafka_throttle_delay(),
       std::max(eval_delay(_shard_quota.in), eval_delay(_shard_quota.eg)));
-    connection_throttle_until = now + res.request;
+    ctx._throttled_until = now + res.request;
 
     return res;
 }
 
 void snc_quota_manager::record_request_receive(
-  const size_t request_size, const clock::time_point now) noexcept {
+  snc_quota_context& ctx,
+  const size_t request_size,
+  const clock::time_point now) noexcept {
+    if (ctx._exempt) {
+        return;
+    }
     _shard_quota.in.use(request_size, now);
 }
 
 void snc_quota_manager::record_request_intake(
-  const size_t request_size) noexcept {
+  snc_quota_context& ctx, const size_t request_size) noexcept {
+    if (ctx._exempt) {
+        return;
+    }
     _probe.rec_traffic_in(request_size);
 }
 
 void snc_quota_manager::record_response(
-  const size_t request_size, const clock::time_point now) noexcept {
+  snc_quota_context& ctx,
+  const size_t request_size,
+  const clock::time_point now) noexcept {
+    if (ctx._exempt) {
+        return;
+    }
     _shard_quota.eg.use(request_size, now);
 }
 
