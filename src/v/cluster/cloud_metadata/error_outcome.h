@@ -19,7 +19,9 @@ enum class error_outcome {
     success = 0,
     list_failed,
     download_failed,
+    upload_failed,
     no_matching_metadata,
+    term_has_changed,
 };
 
 struct error_outcome_category final : public std::error_category {
@@ -35,8 +37,12 @@ struct error_outcome_category final : public std::error_category {
             return "List objects failed";
         case error_outcome::download_failed:
             return "Download object failed";
+        case error_outcome::upload_failed:
+            return "Upload object failed";
         case error_outcome::no_matching_metadata:
             return "No matching metadata";
+        case error_outcome::term_has_changed:
+            return "Term has changed";
         default:
             return fmt::format("Unknown outcome ({})", c);
         }
