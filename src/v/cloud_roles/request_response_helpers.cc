@@ -10,8 +10,8 @@
 
 #include "cloud_roles/request_response_helpers.h"
 
-#include "bytes/iobuf_istreambuf.h"
 #include "bytes/iostream.h"
+#include "bytes/streambuf.h"
 #include "config/configuration.h"
 #include "json/istreamwrapper.h"
 #include "logger.h"

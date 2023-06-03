@@ -10,9 +10,8 @@
 
 #include "cloud_storage/topic_manifest.h"
 
-#include "bytes/iobuf_istreambuf.h"
-#include "bytes/iobuf_ostreambuf.h"
 #include "bytes/iostream.h"
+#include "bytes/streambuf.h"
 #include "cloud_storage/logger.h"
 #include "cloud_storage/types.h"
 #include "cluster/types.h"

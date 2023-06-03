@@ -10,8 +10,8 @@
  */
 #pragma once
 
-#include "bytes/iobuf_istreambuf.h"
 #include "bytes/iostream.h"
+#include "bytes/streambuf.h"
 #include "cloud_storage/partition_manifest.h"
 #include "cloud_storage/remote.h"
 #include "cloud_storage/remote_partition.h"
