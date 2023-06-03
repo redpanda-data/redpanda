@@ -3,7 +3,6 @@ v_cc_library(
     bytes
   SRCS
     "iobuf.cc"
-    oncore.cc
   DEPS
     Seastar::seastar
   )

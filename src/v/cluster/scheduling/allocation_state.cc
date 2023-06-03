@@ -9,8 +9,8 @@
 
 #include "cluster/scheduling/allocation_state.h"
 
-#include "bytes/oncore.h"
 #include "cluster/logger.h"
+#include "oncore.h"
 #include "ssx/sformat.h"
 
 namespace cluster {
