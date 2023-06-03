@@ -70,6 +70,13 @@ struct timing_info {
     time_point enqueued_at = unset;
 
     /**
+     * Moment in time the semaphore units needed for request buffer are
+     * reserved. The request is not dispatched until the required units are
+     * acquired.
+     */
+    time_point memory_reserved_at = unset;
+
+    /**
      * The moment in time we dispatched the request: that is, it was the next
      * request to be sent and we called .write on the output stream: note that
      * this does not perform the write (since that's an async method), but it
@@ -156,7 +163,7 @@ private:
     void dispatch_send();
 
     ss::future<result<std::unique_ptr<streaming_context>>>
-    make_response_handler(netbuf&, rpc::client_opts&, sequence_t);
+    make_response_handler(netbuf&, rpc::client_opts&);
 
     ssx::semaphore _memory;
 
