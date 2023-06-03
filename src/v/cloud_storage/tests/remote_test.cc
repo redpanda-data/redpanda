@@ -613,22 +613,21 @@ FIXTURE_TEST(test_list_bucket, remote_fixture) {
         BOOST_REQUIRE(result.value().common_prefixes.empty());
     }
     {
-        cloud_storage_clients::object_key prefix("/");
         auto result
-          = remote.local().list_objects(bucket, fib, prefix, '/').get();
+          = remote.local().list_objects(bucket, fib, std::nullopt, '/').get();
         BOOST_REQUIRE(result.has_value());
         BOOST_REQUIRE(result.value().contents.empty());
         BOOST_REQUIRE_EQUAL(result.value().common_prefixes.size(), first);
     }
     {
-        cloud_storage_clients::object_key prefix("/1/");
+        cloud_storage_clients::object_key prefix("1/");
         auto result = remote.local().list_objects(bucket, fib, prefix).get();
         BOOST_REQUIRE(result.has_value());
         BOOST_REQUIRE_EQUAL(result.value().contents.size(), second * third);
         BOOST_REQUIRE(result.value().common_prefixes.empty());
     }
     {
-        cloud_storage_clients::object_key prefix("/1/");
+        cloud_storage_clients::object_key prefix("1/");
         auto result
           = remote.local().list_objects(bucket, fib, prefix, '/').get();
         BOOST_REQUIRE(result.has_value());
@@ -655,18 +654,18 @@ FIXTURE_TEST(test_list_bucket_with_prefix, remote_fixture) {
 
     auto result = remote.local()
                     .list_objects(
-                      bucket, fib, cloud_storage_clients::object_key{"/x/"})
+                      bucket, fib, cloud_storage_clients::object_key{"x/"})
                     .get();
     BOOST_REQUIRE(result.has_value());
     auto items = result.value().contents;
     BOOST_REQUIRE_EQUAL(items.size(), 2);
-    BOOST_REQUIRE_EQUAL(items[0].key, "/x/a");
-    BOOST_REQUIRE_EQUAL(items[1].key, "/x/b");
+    BOOST_REQUIRE_EQUAL(items[0].key, "x/a");
+    BOOST_REQUIRE_EQUAL(items[1].key, "x/b");
     auto request = get_requests().back();
     BOOST_REQUIRE_EQUAL(request.method, "GET");
     BOOST_REQUIRE_EQUAL(request.q_list_type, "2");
-    BOOST_REQUIRE_EQUAL(request.q_prefix, "/x/");
-    BOOST_REQUIRE_EQUAL(request.h_prefix, "/x/");
+    BOOST_REQUIRE_EQUAL(request.q_prefix, "x/");
+    BOOST_REQUIRE_EQUAL(request.h_prefix, "x/");
 }
 
 FIXTURE_TEST(test_list_bucket_with_filter, remote_fixture) {
@@ -685,12 +684,12 @@ FIXTURE_TEST(test_list_bucket_with_filter, remote_fixture) {
                       fib,
                       std::nullopt,
                       std::nullopt,
-                      [](const auto& item) { return item.key == "/b"; })
+                      [](const auto& item) { return item.key == "b"; })
                     .get();
     BOOST_REQUIRE(result.has_value());
     auto items = result.value().contents;
     BOOST_REQUIRE_EQUAL(items.size(), 1);
-    BOOST_REQUIRE_EQUAL(items[0].key, "/b");
+    BOOST_REQUIRE_EQUAL(items[0].key, "b");
 }
 
 FIXTURE_TEST(test_put_string, remote_fixture) {

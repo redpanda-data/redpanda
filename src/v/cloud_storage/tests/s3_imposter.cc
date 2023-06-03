@@ -52,7 +52,8 @@ ss::sstring list_objects_resp(
     // Filter by prefix and group by the substring between the prefix and first
     // delimiter.
     for (const auto& [_, expectation] : objects) {
-        auto& key = expectation.url;
+        // Remove any '/' prefix before returning.
+        auto key = expectation.url.substr(1);
         vlog(fixt_log.trace, "Comparing {} to prefix {}", key, prefix);
         if (key.size() < prefix.size()) {
             continue;
