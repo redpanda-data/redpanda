@@ -160,7 +160,7 @@ static ss::future<metadata_response::topic> create_topic(
   const is_node_isolated_or_decommissioned is_node_isolated) {
     if (is_node_isolated) {
         vlog(
-          klog.error,
+          klog.info,
           "Can not autocreate topic({}) in metadata request, because node is "
           "isolated",
           topic);
