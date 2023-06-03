@@ -24,6 +24,7 @@
 
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/fstream.hh>
+#include <seastar/core/gate.hh>
 #include <seastar/core/lowres_clock.hh>
 #include <seastar/util/defer.hh>
 
@@ -39,7 +40,10 @@ uploader::uploader(
   : _cluster_uuid(cluster_uuid)
   , _remote(remote)
   , _raft0(std::move(raft0))
-  , _bucket(bucket) {}
+  , _bucket(bucket)
+  , _upload_interval_ms(
+      config::shard_local_cfg()
+        .cloud_storage_cluster_metadata_upload_interval_ms.bind()) {}
 
 ss::future<bool> uploader::term_has_changed(model::term_id term) {
     if (!_raft0->is_leader() || _raft0->term() != term) {
@@ -107,6 +111,62 @@ ss::future<error_outcome> uploader::upload_next_metadata(
         co_return error_outcome::upload_failed;
     }
     co_return error_outcome::success;
+}
+
+ss::future<> uploader::upload_until_term_change() {
+    ss::gate::holder g(_gate);
+    if (!_raft0->is_leader()) {
+        vlog(clusterlog.trace, "Not the leader, exiting uploader");
+        co_return;
+    }
+    // Since this loop isn't driven by a Raft STM, the uploader doesn't have a
+    // long-lived in-memory manifest that it keeps up-to-date: It's possible
+    // that an uploader from a different node uploaded since last time this
+    // replica was leader. As such, every time we change terms, we need to
+    // re-sync the manifest.
+    auto synced_term = _raft0->term();
+    vlog(
+      clusterlog.info,
+      "Syncing cluster metadata manifest in term {}",
+      synced_term);
+    retry_chain_node retry_node(_as, _upload_interval_ms(), 100ms);
+    auto manifest_res = co_await download_highest_manifest_or_create(
+      retry_node);
+    if (!manifest_res.has_value()) {
+        vlog(
+          clusterlog.warn,
+          "Manifest download failed in term {}: {}",
+          synced_term,
+          manifest_res);
+        co_return;
+    }
+    auto manifest = std::move(manifest_res.value());
+    vlog(
+      clusterlog.info,
+      "Starting cluster metadata upload loop in term {}",
+      synced_term);
+
+    while (_raft0->is_leader() && _raft0->term() == synced_term) {
+        if (co_await term_has_changed(synced_term)) {
+            co_return;
+        }
+        retry_chain_node retry_node(_as, _upload_interval_ms(), 100ms);
+        auto errc = co_await upload_next_metadata(
+          synced_term, manifest, retry_node);
+        if (errc == error_outcome::term_has_changed) {
+            co_return;
+        }
+        try {
+            co_await ssx::sleep_abortable(_upload_interval_ms(), _as);
+        } catch (const ss::sleep_aborted&) {
+            co_return;
+        }
+    }
+}
+
+ss::future<> uploader::stop_and_wait() {
+    _as.request_abort();
+    co_await _gate.close();
 }
 
 } // namespace cluster::cloud_metadata

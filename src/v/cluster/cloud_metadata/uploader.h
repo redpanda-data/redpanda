@@ -12,6 +12,7 @@
 #include "cloud_storage_clients/types.h"
 #include "cluster/cloud_metadata/cluster_manifest.h"
 #include "cluster/types.h"
+#include "config/property.h"
 #include "seastarx.h"
 #include "utils/retry_chain_node.h"
 
@@ -23,6 +24,17 @@ class remote;
 
 namespace cluster::cloud_metadata {
 
+// Periodically uploads cluster metadata within a given term.
+//
+// It is expected that this is instantiated on all controller replicas. Unlike
+// other Raft-driven loops (e.g. the NTP archiver), this is not driven by
+// replicating messages via Raft (e.g. archival_metadata_stm). Instead, this
+// uploader uses Raft linearizable barriers to send heartbeats to followers and
+// assert it is still the leader before performing operations.
+//
+// Since there is no Raft-replicated state machine that would be replicated on
+// all nodes, only the leader uploader keeps an in-memory view of cluster
+// metadata. Upon becoming leader, this view is hydrated from remote storage.
 class uploader {
 public:
     uploader(
@@ -30,6 +42,14 @@ public:
       cloud_storage_clients::bucket_name bucket,
       cloud_storage::remote& remote,
       consensus_ptr raft0);
+
+    ss::future<> stop_and_wait();
+
+    // Periodically uploads cluster metadata for as long as the local
+    // controller replica is the leader.
+    //
+    // At most one invocation should be running at any given time.
+    ss::future<> upload_until_term_change();
 
     // Downloads the manifest with the highest metadata ID for the cluster. If
     // no manifest exists, creates one with a default-initialized metadata ID.
@@ -71,6 +91,11 @@ private:
     cloud_storage::remote& _remote;
     consensus_ptr _raft0;
     const cloud_storage_clients::bucket_name _bucket;
+
+    config::binding<std::chrono::milliseconds> _upload_interval_ms;
+
+    ss::gate _gate;
+    ss::abort_source _as;
 };
 
 } // namespace cluster::cloud_metadata
