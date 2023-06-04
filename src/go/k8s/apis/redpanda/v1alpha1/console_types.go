@@ -220,6 +220,9 @@ type ConsoleStatus struct {
 	// The generation observed by the controller
 	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
 
+	// The generation of the Repanda cluster
+	ClusterGeneration int64 `json:"clusterGeneration,omitempty"`
+
 	Connectivity *Connectivity `json:"connectivity,omitempty"`
 }
 
