@@ -66,7 +66,13 @@ func (cm *ConfigMap) Ensure(ctx context.Context) error {
 			}
 			return &resources.RequeueError{Msg: err.Error()}
 		}
-		return err
+
+		if cm.clusterobj.GetGeneration() == cm.consoleobj.Status.ClusterGeneration || err != nil {
+			return err
+		}
+
+		log.V(logger.InfoLevel).Info("cluster spec changed; will generate new configmap", "cluster generation", cm.clusterobj.GetGeneration(),
+			"observed cluster generation", cm.consoleobj.Status.ClusterGeneration)
 	}
 
 	// If old ConfigMaps can't be deleted for any reason, it will not continue reconciliation

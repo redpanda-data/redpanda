@@ -228,18 +228,17 @@ func (r *Reconciling) Do(
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("reporting console status: %w", err)
 	}
+
+	if !console.GenerationMatchesObserved() || cluster.GetGeneration() != console.Status.ClusterGeneration {
+		r.Log.Info("observed generation updating", "observed generation", console.Status.ObservedGeneration, "generation", console.GetGeneration(),
+			"observed cluster generation", console.Status.ClusterGeneration, "cluster generation", cluster.GetGeneration())
+		console.Status.ObservedGeneration = console.GetGeneration()
+		console.Status.ClusterGeneration = cluster.GetGeneration()
+	}
+
 	if err := r.Status().Update(ctx, console); err != nil {
 		return ctrl.Result{}, err
 	}
-
-	if !console.GenerationMatchesObserved() {
-		r.Log.Info("observed generation updating", "observed generation", console.Status.ObservedGeneration, "generation", console.GetGeneration())
-		console.Status.ObservedGeneration = console.GetGeneration()
-		if err := r.Status().Update(ctx, console); err != nil {
-			return ctrl.Result{}, err
-		}
-	}
-
 	return ctrl.Result{}, nil
 }
 
