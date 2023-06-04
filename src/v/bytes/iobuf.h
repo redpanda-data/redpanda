@@ -118,7 +118,7 @@ public:
     /// don't violate the reservation size here
     placeholder reserve(size_t reservation);
 
-    /// only ensures that a segment of at least reservation is avaible
+    /// only ensures that a segment of at least reservation is available
     /// as an empty details::io_fragment
     void reserve_memory(size_t reservation);
 
