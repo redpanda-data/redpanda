@@ -766,6 +766,10 @@ spec:
           status:
             description: ConsoleStatus defines the observed state of Console
             properties:
+              clusterGeneration:
+                description: The generation of the Repanda cluster
+                format: int64
+                type: integer
               configMapRef:
                 description: The ConfigMap used by Console This is used to pass the
                   ConfigMap used to mount in the Deployment Resource since Ensure()
