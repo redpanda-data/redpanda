@@ -10,6 +10,9 @@
  */
 #pragma once
 #include "utils/source_location.h"
+#include "vassert.h"
+
+#include <seastar/core/smp.hh>
 
 #ifndef NDEBUG
 #define expression_in_debug_mode(x) x
@@ -19,23 +22,28 @@
 
 class oncore final {
 public:
-    // allow defining this class without importing seastar/core/smp.hh. a
-    // static_assert in oncore.cc that this type is the same as ss::shard_id.
-    using shard_id_type = unsigned;
-
     // owner shard set on construction
-    oncore();
+    oncore()
+      : _owner_shard(ss::this_shard_id()) {}
 
     void assert_shard_source_location(
-      const vlog::file_line = vlog::file_line::current()) const;
+      const vlog::file_line fl = vlog::file_line::current()) const {
+        vassert(
+          _owner_shard == seastar::this_shard_id(),
+          "{} - Shard missmatch -  Operation on shard: {}. Owner shard:{}",
+          fl,
+          seastar::this_shard_id(),
+          _owner_shard);
+    }
 
 private:
-    shard_id_type _owner_shard;
+    seastar::shard_id _owner_shard;
 };
 
 // Debug builds assert, no checks in release builds
-// NOLINTNEXTLINE
+// NOLINTNEXTLINE(cppcoreguidelines-macro-usage)
 #define oncore_debug_verify(member)                                            \
+    /* NOLINTNEXTLINE(cppcoreguidelines-avoid-do-while) */                     \
     do {                                                                       \
         expression_in_debug_mode((member).assert_shard_source_location());     \
     } while (0)

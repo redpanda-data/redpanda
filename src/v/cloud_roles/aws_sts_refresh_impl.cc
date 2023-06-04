@@ -10,7 +10,7 @@
 
 #include "cloud_roles/aws_sts_refresh_impl.h"
 
-#include "bytes/iobuf_istreambuf.h"
+#include "bytes/streambuf.h"
 #include "cloud_roles/logger.h"
 #include "cloud_roles/request_response_helpers.h"
 #include "utils/file_io.h"

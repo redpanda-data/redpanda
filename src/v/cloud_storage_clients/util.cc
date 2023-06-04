@@ -10,7 +10,7 @@
 
 #include "cloud_storage_clients/util.h"
 
-#include "bytes/iobuf_istreambuf.h"
+#include "bytes/streambuf.h"
 #include "net/connection.h"
 
 #include <boost/property_tree/xml_parser.hpp>

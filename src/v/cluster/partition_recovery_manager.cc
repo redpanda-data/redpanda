@@ -10,7 +10,7 @@
 
 #include "cluster/partition_recovery_manager.h"
 
-#include "bytes/iobuf_istreambuf.h"
+#include "bytes/streambuf.h"
 #include "cloud_storage/logger.h"
 #include "cloud_storage/recovery_utils.h"
 #include "cloud_storage/topic_manifest.h"

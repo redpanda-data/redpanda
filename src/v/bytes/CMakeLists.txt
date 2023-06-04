@@ -2,9 +2,7 @@ v_cc_library(
   NAME
     bytes
   SRCS
-    "bytes.cc"
     "iobuf.cc"
-    oncore.cc
   DEPS
     Seastar::seastar
   )

@@ -10,9 +10,8 @@
 #include "cloud_storage/tx_range_manifest.h"
 
 #include "bytes/iobuf.h"
-#include "bytes/iobuf_istreambuf.h"
-#include "bytes/iobuf_ostreambuf.h"
 #include "bytes/iostream.h"
+#include "bytes/streambuf.h"
 #include "cloud_storage/partition_manifest.h"
 #include "cloud_storage/types.h"
 #include "json/istreamwrapper.h"

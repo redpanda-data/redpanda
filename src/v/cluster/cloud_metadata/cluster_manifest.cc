@@ -10,9 +10,8 @@
 #include "cluster/cloud_metadata/cluster_manifest.h"
 
 #include "bytes/iobuf.h"
-#include "bytes/iobuf_istreambuf.h"
-#include "bytes/iobuf_ostreambuf.h"
 #include "bytes/iostream.h"
+#include "bytes/streambuf.h"
 #include "cluster/cloud_metadata/key_utils.h"
 #include "utils/uuid.h"
 

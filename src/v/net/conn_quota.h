@@ -9,8 +9,8 @@
 
 #pragma once
 
-#include "bytes/oncore.h"
 #include "config/property.h"
+#include "oncore.h"
 #include "seastar/core/gate.hh"
 #include "seastar/core/sharded.hh"
 #include "seastar/net/inet_address.hh"

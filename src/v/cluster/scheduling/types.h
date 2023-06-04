@@ -11,9 +11,9 @@
 
 #pragma once
 
-#include "bytes/oncore.h"
 #include "cluster/types.h"
 #include "model/fundamental.h"
+#include "oncore.h"
 #include "vassert.h"
 
 #include <seastar/core/chunked_fifo.hh>
