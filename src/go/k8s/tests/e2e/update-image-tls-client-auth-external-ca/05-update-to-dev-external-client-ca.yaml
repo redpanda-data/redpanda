@@ -2,7 +2,6 @@ apiVersion: kuttl.dev/v1beta1
 kind: TestStep
 commands:
 - command: ./create-cert-secrets.sh update-img-external-client-ca
-  namespaced: true
 
 ---
 
@@ -11,6 +10,7 @@ apiVersion: redpanda.vectorized.io/v1alpha1
 kind: Cluster
 metadata:
   name: update-img-external-client-ca
+  namespace: redpanda-system
 spec:
   image: "localhost/redpanda"
   version: "dev"
@@ -23,7 +23,7 @@ spec:
         requireClientAuth: true
         clientCACertRef:
           kind: Secret
-          name: ca-cert
+          name: upd-mtls-ca-cert
           apiGroup: ""
     schemaRegistry:
       port: 8081
@@ -33,5 +33,5 @@ spec:
         requireClientAuth: true
         clientCACertRef:
           kind: Secret
-          name: ca-cert
+          name: upd-mtls-ca-cert
           apiGroup: ""

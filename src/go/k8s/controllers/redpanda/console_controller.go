@@ -158,7 +158,7 @@ func (r *Reconciling) Do(
 	log logr.Logger,
 ) (ctrl.Result, error) {
 	// Ensure items in the store are updated
-	if err := r.Store.Sync(ctx, cluster); err != nil {
+	if err := r.Store.Sync(ctx, cluster, console); err != nil {
 		return ctrl.Result{}, fmt.Errorf("sync console store: %w", err)
 	}
 

@@ -1,13 +1,13 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: produce-msg-update-img-external-client-ca
+  name: get-topic-failure-update-img-external-client-ca
   namespace: redpanda-system
 status:
   conditions:
     - status: "True"
-      type: Complete
-  succeeded: 1
+      type: Failed
+  failed: 3
 
 ---
 
@@ -18,4 +18,3 @@ collectors:
   selector: app.kubernetes.io/name=redpanda
   namespace: redpanda-system
   tail: -1
-
