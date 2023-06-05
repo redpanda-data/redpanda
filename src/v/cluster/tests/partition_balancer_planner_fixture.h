@@ -119,6 +119,7 @@ public:
     void set_decommissioning(model::node_id id) {
         members.local().apply(
           model::offset{}, cluster::decommission_node_cmd(id, 0));
+        allocator.local().decommission_node(id);
         auto broker = members.local().get_node_metadata_ref(id);
         BOOST_REQUIRE(broker);
         BOOST_REQUIRE(

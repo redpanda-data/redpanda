@@ -447,3 +447,47 @@ FIXTURE_TEST(test_decommission, partition_balancer_sim_fixture) {
     BOOST_REQUIRE_EQUAL(
       allocation_nodes().at(model::node_id{0})->allocated_partitions()(), 0);
 }
+
+FIXTURE_TEST(test_two_decommissions, partition_balancer_sim_fixture) {
+    for (size_t i = 0; i < 5; ++i) {
+        add_node(model::node_id{i}, 100_GiB);
+    }
+    add_topic("mytopic", 500, 3, 100_MiB);
+    set_decommissioning(model::node_id{0});
+
+    size_t start_node_0_replicas
+      = nodes().at(model::node_id{0}).replicas.size();
+
+    print_state();
+    for (size_t i = 0; i < 10000; ++i) {
+        if (
+          nodes().at(model::node_id{0}).replicas.empty()
+          && nodes().at(model::node_id{1}).replicas.empty()) {
+            break;
+        }
+
+        if (
+          !allocation_nodes().at(model::node_id{1})->is_decommissioned()
+          && allocation_nodes().at(model::node_id{0})->final_partitions()()
+               < start_node_0_replicas / 2) {
+            logger.info(
+              "start decommissioning node 1 after {} ticks", cur_tick());
+            set_decommissioning(model::node_id{1});
+            print_state();
+        }
+
+        tick();
+        if (should_schedule_balancer_run()) {
+            print_state();
+            run_balancer();
+        }
+    }
+
+    logger.info("finished after {} ticks", cur_tick());
+    print_state();
+
+    BOOST_REQUIRE_EQUAL(
+      allocation_nodes().at(model::node_id{0})->allocated_partitions()(), 0);
+    BOOST_REQUIRE_EQUAL(
+      allocation_nodes().at(model::node_id{1})->allocated_partitions()(), 0);
+}
