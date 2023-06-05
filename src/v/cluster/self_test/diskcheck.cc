@@ -193,29 +193,29 @@ ss::future<metrics> diskcheck::do_run_benchmark(ss::file& file) {
 template<diskcheck::read_or_write mode>
 ss::future<> diskcheck::run_benchmark_fiber(
   ss::lowres_clock::time_point start, ss::file& file, metrics& m) {
-    auto buf = ss::allocate_aligned_buffer<char>(
-      _opts.request_size, _opts.alignment());
-    random_generators::fill_buffer_randomchars(buf.get(), _opts.request_size);
+    const auto buf_len = std::min(_opts.request_size, 128_KiB);
+    auto buf = ss::allocate_aligned_buffer<char>(buf_len, _opts.alignment());
+    random_generators::fill_buffer_randomchars(buf.get(), buf_len);
+
+    std::vector<iovec> iov;
+    iov.reserve(_opts.request_size / buf_len);
+    for (size_t offset = 0; offset < _opts.request_size; offset += buf_len) {
+        size_t len = std::min(_opts.request_size - offset, buf_len);
+        iov.push_back(iovec{buf.get(), len});
+    }
+
     auto stop = start + _opts.duration;
     while (stop > ss::lowres_clock::now() && !_cancelled) {
         if (unlikely(_as.abort_requested())) {
             throw diskcheck_aborted_exception();
         }
-        co_await m.measure([this, &buf, &file] {
+        co_await m.measure([this, &iov, &file] {
             if constexpr (mode == read_or_write::write) {
                 return file.dma_write(
-                  get_pos(),
-                  buf.get(),
-                  _opts.request_size,
-                  ss::default_priority_class(),
-                  &_intent);
+                  get_pos(), iov, ss::default_priority_class(), &_intent);
             } else {
                 return file.dma_read(
-                  get_pos(),
-                  buf.get(),
-                  _opts.request_size,
-                  ss::default_priority_class(),
-                  &_intent);
+                  get_pos(), iov, ss::default_priority_class(), &_intent);
             }
         });
     }
