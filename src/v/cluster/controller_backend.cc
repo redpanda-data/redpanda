@@ -384,7 +384,7 @@ ss::future<> controller_backend::start() {
                     .handle_exception([](const std::exception_ptr& err) {
                         vlog(
                           clusterlog.error,
-                          "Exception while cleaning oprhan files {}",
+                          "Exception while cleaning orphan files {}",
                           err);
                     });
               });

@@ -570,7 +570,7 @@ ss::future<> remove_orphan_partition_files(
                                            filesystem_error const& err) {
                     vlog(
                       stlog.error,
-                      "Exception while cleaning oprhan files for {} Error: {}",
+                      "Exception while cleaning orphan files for {} Error: {}",
                       ntp_directory,
                       err);
                 });
@@ -622,14 +622,14 @@ ss::future<> log_manager::remove_orphan_files(
                   [](std::filesystem::filesystem_error const& err) {
                       vlog(
                         stlog.error,
-                        "Exception while cleaning oprhan files {}",
+                        "Exception while cleaning orphan files {}",
                         err);
                   });
           })
           .handle_exception_type(
             [](std::filesystem::filesystem_error const& err) {
                 vlog(
-                  stlog.error, "Exception while cleaning oprhan files {}", err);
+                  stlog.error, "Exception while cleaning orphan files {}", err);
             });
     }
     co_return;
