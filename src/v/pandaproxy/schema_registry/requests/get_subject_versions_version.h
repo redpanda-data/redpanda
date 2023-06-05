@@ -37,10 +37,10 @@ inline void rjson_serialize(
         w.Key("schemaType");
         ::json::rjson_serialize(w, to_string_view(type));
     }
-    if (!res.schema.refs().empty()) {
+    if (!res.schema.def().refs().empty()) {
         w.Key("references");
         w.StartArray();
-        for (const auto& ref : res.schema.refs()) {
+        for (const auto& ref : res.schema.def().refs()) {
             w.StartObject();
             w.Key("name");
             ::json::rjson_serialize(w, ref.name);

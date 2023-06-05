@@ -49,7 +49,7 @@ class post_subject_versions_request_handler
         subject sub{invalid_subject};
         unparsed_schema_definition::raw_string def;
         schema_type type{schema_type::avro};
-        unparsed_schema::references refs;
+        unparsed_schema_definition::references refs;
     };
     mutable_schema _schema;
 
@@ -207,8 +207,7 @@ public:
             _state = state::empty;
             result.def = {
               std::move(_schema.sub),
-              {std::move(_schema.def), _schema.type},
-              std::move(_schema.refs)};
+              {std::move(_schema.def), _schema.type, std::move(_schema.refs)}};
             return true;
         }
         case state::reference: {

@@ -23,7 +23,7 @@ message Simple {
 })",
   pps::schema_type::protobuf};
 
-const auto imported = pps::canonical_schema_definition{
+const auto imported_no_ref = pps::canonical_schema_definition{
   R"(
 syntax = "proto3";
 
@@ -34,6 +34,18 @@ message Test2 {
 })",
   pps::schema_type::protobuf};
 
+const auto imported = pps::canonical_schema_definition{
+  R"(
+syntax = "proto3";
+
+import "simple";
+
+message Test2 {
+  Simple id =  1;
+})",
+  pps::schema_type::protobuf,
+  {{"simple", pps::subject{"simple.proto"}, pps::schema_version{1}}}};
+
 const auto imported_again = pps::canonical_schema_definition{
   R"(
 syntax = "proto3";
@@ -43,7 +55,8 @@ import "imported";
 message Test3 {
   Test2 id =  1;
 })",
-  pps::schema_type::protobuf};
+  pps::schema_type::protobuf,
+  {{"imported", pps::subject{"imported.proto"}, pps::schema_version{1}}}};
 
 const auto imported_twice = pps::canonical_schema_definition{
   R"(
@@ -55,4 +68,6 @@ import "imported";
 message Test3 {
   Test2 id =  1;
 })",
-  pps::schema_type::protobuf};
+  pps::schema_type::protobuf,
+  {{"simple", pps::subject{"simple.proto"}, pps::schema_version{1}},
+   {"imported", pps::subject{"imported.proto"}, pps::schema_version{1}}}};

@@ -53,8 +53,9 @@ const pps::canonical_schema_value avro_schema_value{
   .schema{
     pps::subject{"my-kafka-value"},
     pps::canonical_schema_definition{
-      R"({"type":"string"})", pps::schema_type::avro},
-    {{{"name"}, pps::subject{"subject"}, pps::schema_version{1}}}},
+      R"({"type":"string"})",
+      pps::schema_type::avro,
+      {{{"name"}, pps::subject{"subject"}, pps::schema_version{1}}}}},
   .version{pps::schema_version{1}},
   .id{pps::schema_id{1}},
   .deleted = pps::is_deleted::yes};
