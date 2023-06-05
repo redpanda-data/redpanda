@@ -75,6 +75,8 @@ public:
 
         virtual size_t segment_count() const = 0;
         virtual storage::offset_stats offsets() const = 0;
+        // Base offset of the first batch in the most recent term stored in log
+        virtual model::offset find_last_term_start_offset() const = 0;
         virtual model::timestamp start_timestamp() const = 0;
         virtual std::ostream& print(std::ostream& o) const = 0;
         virtual std::optional<model::term_id> get_term(model::offset) const = 0;
@@ -158,7 +160,9 @@ public:
     }
 
     storage::offset_stats offsets() const { return _impl->offsets(); }
-
+    model::offset find_last_term_start_offset() const {
+        return _impl->find_last_term_start_offset();
+    }
     std::optional<model::term_id> get_term(model::offset o) const {
         return _impl->get_term(o);
     }

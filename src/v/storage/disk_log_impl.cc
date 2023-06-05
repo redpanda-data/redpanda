@@ -945,6 +945,34 @@ offset_stats disk_log_impl::offsets() const {
     };
 }
 
+model::offset disk_log_impl::find_last_term_start_offset() const {
+    if (_segs.empty()) {
+        return {};
+    }
+
+    segment_set::type end;
+    segment_set::type term_start;
+    for (int i = (int)_segs.size() - 1; i >= 0; --i) {
+        auto& seg = _segs[i];
+        if (!seg->empty()) {
+            if (!end) {
+                end = seg;
+            }
+            // find term start offset
+            if (seg->offsets().term < end->offsets().term) {
+                break;
+            }
+            term_start = seg;
+        }
+    }
+
+    if (!end) {
+        return {};
+    }
+
+    return term_start->offsets().base_offset;
+}
+
 model::timestamp disk_log_impl::start_timestamp() const {
     if (_segs.empty()) {
         return model::timestamp{};
