@@ -146,14 +146,12 @@ std::ostream& operator<<(std::ostream& o, const offset_stats& s) {
     fmt::print(
       o,
       "{{start_offset:{}, committed_offset:{}, "
-      "committed_offset_term:{}, dirty_offset:{}, dirty_offset_term:{}, "
-      "last_term_start_offset:{}}}",
+      "committed_offset_term:{}, dirty_offset:{}, dirty_offset_term:{}}}",
       s.start_offset,
       s.committed_offset,
       s.committed_offset_term,
       s.dirty_offset,
-      s.dirty_offset_term,
-      s.last_term_start_offset);
+      s.dirty_offset_term);
     return o;
 }
 
