@@ -65,6 +65,26 @@ std::ostream& operator<<(std::ostream& os, const schema_type& v);
 using subject = named_type<ss::sstring, struct subject_tag>;
 static const subject invalid_subject{};
 
+///\brief The version of the schema registered with a subject.
+///
+/// A subject may evolve its schema over time. Each version is associated with a
+/// schema_id.
+using schema_version = named_type<int32_t, struct schema_version_tag>;
+static constexpr schema_version invalid_schema_version{-1};
+
+struct schema_reference {
+    friend bool
+    operator==(const schema_reference& lhs, const schema_reference& rhs)
+      = default;
+
+    friend std::ostream&
+    operator<<(std::ostream& os, const schema_reference& ref);
+
+    ss::sstring name;
+    subject sub{invalid_subject};
+    schema_version version{invalid_schema_version};
+};
+
 ///\brief Definition of a schema and its type.
 template<typename Tag>
 class typed_schema_definition {
@@ -224,13 +244,6 @@ private:
     impl _impl;
 };
 
-///\brief The version of the schema registered with a subject.
-///
-/// A subject may evolve its schema over time. Each version is associated with a
-/// schema_id.
-using schema_version = named_type<int32_t, struct schema_version_tag>;
-static constexpr schema_version invalid_schema_version{-1};
-
 ///\brief Globally unique identifier for a schema.
 using schema_id = named_type<int32_t, struct schema_id_tag>;
 static constexpr schema_id invalid_schema_id{-1};
@@ -274,20 +287,7 @@ struct seq_marker {
     friend std::ostream& operator<<(std::ostream& os, const seq_marker& v);
 };
 
-struct schema_reference {
-    friend bool
-    operator==(const schema_reference& lhs, const schema_reference& rhs)
-      = default;
-
-    friend std::ostream&
-    operator<<(std::ostream& os, const schema_reference& ref);
-
-    ss::sstring name;
-    subject sub{invalid_subject};
-    schema_version version{invalid_schema_version};
-};
-
-///\brief A schema with its subject and references.
+///\brief A schema with its subject
 template<typename Tag>
 class typed_schema {
 public:
