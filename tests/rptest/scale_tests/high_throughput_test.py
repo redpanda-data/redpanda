@@ -12,7 +12,7 @@ import math
 import re
 import time
 
-from ducktape.mark import ok_to_fail
+from ducktape.mark import ok_to_fail, ignore
 from ducktape.utils.util import wait_until
 from rptest.clients.rpk import RpkTool
 from rptest.services.cluster import cluster
@@ -478,6 +478,9 @@ class HighThroughputTest(PreallocNodesTest):
             producer.wait(timeout_sec=600)
             self.free_preallocated_nodes()
 
+    # The test is ignored because it can hardly achieve 1 GiB/s
+    # in the regular CDT environment, the test is designed for 3*is4gen.4xlarge
+    @ignore
     @cluster(num_nodes=10, log_allow_list=RESTART_LOG_ALLOW_LIST)
     def test_ts_resource_utilization(self):
         self.stage_tiered_storage_consuming()
