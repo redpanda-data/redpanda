@@ -80,7 +80,7 @@ public:
     template<typename Cmd>
     void dispatch_topic_command(Cmd cmd) {
         auto res
-          = dispatcher.apply_update(serialize_cmd(std::move(cmd)).get()).get();
+          = dispatcher.apply_update(serde_serialize_cmd(std::move(cmd))).get();
         BOOST_REQUIRE_EQUAL(res, cluster::errc::success);
     }
 

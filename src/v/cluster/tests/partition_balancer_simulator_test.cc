@@ -40,6 +40,10 @@ public:
 
     const auto& nodes() const { return _nodes; }
 
+    const cluster::allocation_state::underlying_t& allocation_nodes() const {
+        return _workers.allocator.local().state().allocation_nodes();
+    }
+
     void add_topic(
       const ss::sstring& name,
       int partitions,
@@ -52,11 +56,18 @@ public:
           cluster::create_topic_cmd(tp_ns, topic_conf));
         for (const auto& as : topic_conf.assignments) {
             model::ntp ntp{tp_ns.ns, tp_ns.tp, as.id};
+            // TODO: add size jitter
+            auto partition = ss::make_lw_shared<partition_state>(ntp, size);
+            _partitions.emplace(ntp, partition);
+
             for (const auto& bs : as.replicas) {
                 auto& node = _nodes.at(bs.node_id);
-                node.replica_sizes[ntp] = size; // TODO: add size jitter
+                node.replicas[ntp] = replica{
+                  .partition = partition, .local_size = size};
                 node.used += size;
             }
+
+            elect_leader(ntp);
         }
     }
 
@@ -64,7 +75,44 @@ public:
         _workers.set_decommissioning(id);
     }
 
+    size_t cur_tick() const { return _cur_tick; }
+
     void tick() {
+        // gather all recovery streams
+        // node -> leader -> learner
+        absl::flat_hash_map<model::node_id, std::vector<recovery_stream>>
+          node2pending_rs;
+        for (const auto& ntp :
+             _workers.table.local().all_updates_in_progress()) {
+            auto part = _partitions.at(ntp);
+            if (!part->leader) {
+                continue;
+            }
+
+            auto learners = get_learners(ntp);
+            for (const auto& id : learners) {
+                node2pending_rs[*part->leader].push_back(
+                  recovery_stream{.ntp = ntp, .from = *part->leader, .to = id});
+            }
+        }
+
+        // calculate size deltas and add them to learner sizes
+        for (const auto& [node, recovery_streams] : node2pending_rs) {
+            for (const auto& rs : recovery_streams) {
+                perform_recovery_step(rs);
+            }
+        }
+
+        // finish the updates that are ready
+        for (const auto& ntp :
+             _workers.table.local().all_updates_in_progress()) {
+            maybe_finish_update(ntp);
+        }
+
+        _cur_tick += 1;
+    }
+
+    void run_balancer() {
         auto hr = create_health_report();
         populate_node_status_table();
 
@@ -75,11 +123,16 @@ public:
             auto plan_data = planner.plan_actions(hr, as).get();
 
             logger.info(
-              "tick, action counts: reassignments: {}, cancellations: {}, "
+              "planned action counts: reassignments: {}, cancellations: {}, "
               "failed: {}",
               plan_data.reassignments.size(),
               plan_data.cancellations.size(),
               plan_data.failed_actions_count);
+
+            _last_run_in_progress_updates
+              = _workers.table.local().updates_in_progress().size()
+                + plan_data.reassignments.size()
+                + plan_data.cancellations.size();
 
             for (const auto& reassignment : plan_data.reassignments) {
                 dispatch_move(
@@ -89,34 +142,33 @@ public:
                 dispatch_cancel(ntp);
             }
         }
-
-        // TODO: more realistic movement
-        for (const auto& ntp :
-             _workers.table.local().all_updates_in_progress()) {
-            finish_update(ntp);
-        }
     }
 
     void print_state() const {
+        logger.info(
+          "TICK {}: {} nodes, {} partitions, {} updates in progress",
+          _cur_tick,
+          _nodes.size(),
+          _partitions.size(),
+          _workers.table.local().updates_in_progress().size());
         for (const auto& [id, node] : nodes()) {
             logger.info(
-              "node id: {}, used: {:.4} GiB ({}%), num replicas: {}",
+              "node id: {}, used: {:.4} GiB ({}%), num replicas: {} (final: "
+              "{})",
               id,
               double(node.used) / 1_GiB,
               (node.used * 100) / node.total,
-              node.replica_sizes.size());
+              node.replicas.size(),
+              allocation_nodes().at(id)->final_partitions());
         }
     }
 
-    void print_allocator() const {
-        const auto& state = _workers.allocator.local().state();
-        for (const auto& [id, node] : state.allocation_nodes()) {
-            logger.info(
-              "alloc node id: {}, allocated: {}, target: {}",
-              id,
-              node->allocated_partitions(),
-              node->final_partitions());
-        }
+    bool should_schedule_balancer_run() const {
+        auto current_in_progress
+          = _workers.table.local().updates_in_progress().size();
+        return current_in_progress == 0
+               || double(current_in_progress)
+                    < 0.8 * double(_last_run_in_progress_updates);
     }
 
 private:
@@ -163,10 +215,48 @@ private:
           _workers.allocator.local());
     }
 
+    std::vector<model::node_id> get_voters(const model::ntp& ntp) const {
+        std::vector<model::node_id> ret;
+        for (const auto& [id, node] : _nodes) {
+            auto it = node.replicas.find(ntp);
+            if (
+              it != node.replicas.end()
+              && it->second.local_size == it->second.partition->size) {
+                ret.push_back(id);
+            }
+        }
+        return ret;
+    }
+
+    std::vector<model::node_id> get_learners(const model::ntp& ntp) const {
+        std::vector<model::node_id> ret;
+        for (const auto& [id, node] : _nodes) {
+            auto it = node.replicas.find(ntp);
+            if (
+              it != node.replicas.end()
+              && it->second.local_size < it->second.partition->size) {
+                ret.push_back(id);
+            }
+        }
+        return ret;
+    }
+
+    void elect_leader(const model::ntp& ntp) {
+        auto voters = get_voters(ntp);
+        _partitions.at(ntp)->leader = random_generators::random_choice(voters);
+    }
+
     void dispatch_move(
       model::ntp ntp, std::vector<model::broker_shard> new_replicas) {
-        _workers.dispatch_topic_command(cluster::move_partition_replicas_cmd(
-          std::move(ntp), std::move(new_replicas)));
+        _workers.dispatch_topic_command(
+          cluster::move_partition_replicas_cmd(ntp, new_replicas));
+
+        auto partition = _partitions.at(ntp);
+        for (const auto& bs : new_replicas) {
+            auto& node = _nodes.at(bs.node_id);
+            node.replicas.emplace(
+              ntp, replica{.partition = partition, .local_size = 0});
+        }
     }
 
     void dispatch_cancel(model::ntp ntp) {
@@ -177,52 +267,127 @@ private:
         _workers.dispatch_topic_command(std::move(cmd));
     }
 
-    void finish_update(model::ntp ntp) {
+    struct recovery_stream {
+        model::ntp ntp;
+        model::node_id from;
+        model::node_id to;
+
+        friend bool operator==(const recovery_stream&, const recovery_stream&)
+          = default;
+    };
+
+    static constexpr size_t recovery_batch_size = 512_KiB;
+
+    void perform_recovery_step(const recovery_stream& rs) {
+        auto& dest_node = _nodes.at(rs.to);
+        auto& dest_replica = dest_node.replicas.at(rs.ntp);
+        const auto& partition = *dest_replica.partition;
+        auto step = std::min(
+          recovery_batch_size, partition.size - dest_replica.local_size);
+        dest_replica.local_size += step;
+        dest_node.used += step;
+    }
+
+    bool maybe_finish_update(const model::ntp& ntp) {
+        const auto& partition = *_partitions.at(ntp);
+        if (!partition.leader) {
+            // can't finish anything for a leaderless partition
+            return false;
+        }
+
+        const auto& cur_update
+          = _workers.table.local().updates_in_progress().at(ntp);
+
+        bool all_replicas_recovered = true;
+        for (const auto& bs : cur_update.get_target_replicas()) {
+            const auto& node = _nodes.at(bs.node_id);
+            if (node.replicas.at(ntp).local_size < partition.size) {
+                // some nodes are still learners
+                all_replicas_recovered = false;
+                break;
+            }
+        }
+
+        // dispatch the finish command
+
+        switch (cur_update.get_state()) {
+        case cluster::reconfiguration_state::in_progress:
+            if (!all_replicas_recovered) {
+                return false;
+            }
+
+            _workers.dispatch_topic_command(
+              cluster::finish_moving_partition_replicas_cmd{
+                ntp, cur_update.get_target_replicas()});
+            break;
+        case cluster::reconfiguration_state::cancelled:
+            if (all_replicas_recovered) {
+                _workers.dispatch_topic_command(
+                  cluster::revert_cancel_partition_move_cmd{
+                    0,
+                    cluster::revert_cancel_partition_move_cmd_data{
+                      .ntp = ntp}});
+            } else {
+                _workers.dispatch_topic_command(
+                  cluster::finish_moving_partition_replicas_cmd{
+                    ntp, cur_update.get_previous_replicas()});
+            }
+            break;
+        default:
+            // other states can't appear because they can only be created
+            // manually, not by the balancer.
+            BOOST_REQUIRE(false);
+        }
+
+        // remove excess replicas
+
         auto cur_assignment = _workers.table.local().get_partition_assignment(
           ntp);
         BOOST_REQUIRE(cur_assignment);
-
-        cluster::finish_moving_partition_replicas_cmd cmd{
-          ntp, cur_assignment->replicas};
-
-        _workers.dispatch_topic_command(std::move(cmd));
-
-        size_t size = max_partition_size(ntp);
 
         absl::flat_hash_set<model::node_id> cur_replicas;
         for (const auto& bs : cur_assignment->replicas) {
             cur_replicas.insert(bs.node_id);
         }
+
         for (auto& [id, node] : _nodes) {
-            if (cur_replicas.contains(id)) {
-                size_t old = std::exchange(node.replica_sizes[ntp], size);
-                node.used += size - old;
-            } else {
-                auto it = node.replica_sizes.find(ntp);
-                if (it != node.replica_sizes.end()) {
-                    node.used -= it->second;
-                    node.replica_sizes.erase(it);
+            if (!cur_replicas.contains(id)) {
+                auto it = node.replicas.find(ntp);
+                if (it != node.replicas.end()) {
+                    node.used -= it->second.local_size;
+                    node.replicas.erase(it);
                 }
             }
         }
+
+        // for the case when the old leader is not in the new replica set.
+        elect_leader(ntp);
+
+        return true;
     }
 
-    size_t max_partition_size(const model::ntp& ntp) const {
+    struct partition_state {
+        partition_state(model::ntp ntp, size_t size)
+          : ntp(std::move(ntp))
+          , size(size) {}
+
+        model::ntp ntp;
         size_t size = 0;
-        for (const auto& [id, node] : _nodes) {
-            auto it = node.replica_sizes.find(ntp);
-            if (it != node.replica_sizes.end()) {
-                size = std::max(size, it->second);
-            }
-        }
-        return size;
-    }
+        std::optional<model::node_id> leader;
+
+        using ptr_t = ss::lw_shared_ptr<partition_state>;
+    };
+
+    struct replica {
+        partition_state::ptr_t partition;
+        size_t local_size = 0;
+    };
 
     struct node_state {
         model::node_id id;
         size_t total = 0;
         size_t used = 0;
-        absl::flat_hash_map<model::ntp, size_t> replica_sizes;
+        absl::flat_hash_map<model::ntp, replica> replicas;
 
         cluster::node_health_report get_health_report() const {
             cluster::node_health_report report;
@@ -234,10 +399,10 @@ private:
               model::topic_namespace,
               ss::chunked_fifo<cluster::partition_status>>
               topic2partitions;
-            for (const auto& [ntp, size] : replica_sizes) {
+            for (const auto& [ntp, repl] : replicas) {
                 topic2partitions[model::topic_namespace(ntp.ns, ntp.tp.topic)]
                   .push_back(cluster::partition_status{
-                    .id = ntp.tp.partition, .size_bytes = size});
+                    .id = ntp.tp.partition, .size_bytes = repl.local_size});
             }
 
             for (auto& [topic, partitions] : topic2partitions) {
@@ -250,6 +415,9 @@ private:
     };
 
     absl::btree_map<model::node_id, node_state> _nodes;
+    absl::flat_hash_map<model::ntp, partition_state::ptr_t> _partitions;
+    size_t _cur_tick = 0;
+    size_t _last_run_in_progress_updates = 0;
     controller_workers _workers;
 };
 
@@ -261,13 +429,21 @@ FIXTURE_TEST(test_decommission, partition_balancer_sim_fixture) {
     set_decommissioning(model::node_id{0});
 
     print_state();
-    for (size_t i = 0; i < 1000; ++i) {
-        if (nodes().at(model::node_id{0}).replica_sizes.empty()) {
+    for (size_t i = 0; i < 10000; ++i) {
+        if (nodes().at(model::node_id{0}).replicas.empty()) {
             break;
         }
+
         tick();
-        print_state();
+        if (should_schedule_balancer_run()) {
+            print_state();
+            run_balancer();
+        }
     }
 
-    BOOST_REQUIRE_EQUAL(nodes().at(model::node_id{0}).replica_sizes.size(), 0);
+    logger.info("finished after {} ticks", cur_tick());
+    print_state();
+
+    BOOST_REQUIRE_EQUAL(
+      allocation_nodes().at(model::node_id{0})->allocated_partitions()(), 0);
 }
