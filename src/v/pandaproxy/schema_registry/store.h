@@ -311,7 +311,7 @@ public:
         schema_id_set has_ids;
         for (const auto& s : _subjects) {
             for (const auto& r : s.second.versions) {
-                if (ids.contains(r.id)) {
+                if (!r.deleted && ids.contains(r.id)) {
                     has_ids.insert(r.id);
                 }
             }
@@ -321,8 +321,8 @@ public:
 
     bool subject_versions_has_any_of(const schema_id_set& ids) {
         return absl::c_any_of(_subjects, [&ids](const auto& s) {
-            return absl::c_any_of(s.second.versions, [&ids](const auto& v) {
-                return ids.contains(v.id);
+            return absl::c_any_of(s.second.versions, [&ids, &s](const auto& v) {
+                return !s.second.deleted && ids.contains(v.id);
             });
         });
     }

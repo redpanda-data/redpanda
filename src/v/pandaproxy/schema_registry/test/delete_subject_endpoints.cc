@@ -177,7 +177,7 @@ FIXTURE_TEST(test_delete_referenced_subject, pandaproxy_test_fixture) {
     }
 
     {
-        info("Delete subject int-key, expect failure 42206");
+        info("Delete subject int-key, expect failure 42206 (still referenced)");
         auto res = delete_subject(client, pps::subject{"int-key"});
         BOOST_REQUIRE_EQUAL(
           res.headers.result(),
@@ -193,24 +193,7 @@ FIXTURE_TEST(test_delete_referenced_subject, pandaproxy_test_fixture) {
     }
 
     {
-        info("Delete subject int-key");
-        auto res = delete_subject(client, pps::subject{"int-key"});
-        BOOST_REQUIRE_EQUAL(
-          res.headers.result(),
-          boost::beast::http::status::unprocessable_entity);
-        BOOST_REQUIRE_EQUAL(get_body_error_code(res.body), 42206);
-    }
-
-    {
-        info("Permanantly delete subject reference-key");
-        auto res = delete_subject(
-          client, pps::subject{"reference-key"}, pps::permanent_delete::yes);
-        BOOST_REQUIRE_EQUAL(
-          res.headers.result(), boost::beast::http::status::ok);
-    }
-
-    {
-        info("Delete subject int-key");
+        info("Delete subject int-key (not referenced - soft deleted)");
         auto res = delete_subject(client, pps::subject{"int-key"});
         BOOST_REQUIRE_EQUAL(
           res.headers.result(), boost::beast::http::status::ok);
