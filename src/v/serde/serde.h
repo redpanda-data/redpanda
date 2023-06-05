@@ -218,10 +218,6 @@ int64_t checked_duration_cast_to_nanoseconds(
 
 inline void write(iobuf& out, uuid_t t);
 
-template<typename T>
-requires(serde_is_enum_v<std::decay_t<T>>)
-void write(iobuf& out, T t);
-
 template<typename Rep, typename Period>
 void write(iobuf& out, std::chrono::duration<Rep, Period> t);
 
@@ -270,24 +266,6 @@ inline void write(iobuf& out, iobuf t);
 
 inline void write(iobuf& out, uuid_t t) {
     out.append(t.uuid().data, uuid_t::length);
-}
-
-template<typename T>
-requires(serde_is_enum_v<std::decay_t<T>>)
-void write(iobuf& out, T t) {
-    using Type = std::decay_t<T>;
-    auto const val = static_cast<std::underlying_type_t<Type>>(t);
-    if (unlikely(
-          val > std::numeric_limits<serde_enum_serialized_t>::max()
-          || val < std::numeric_limits<serde_enum_serialized_t>::min())) {
-        throw serde_exception{fmt_with_ctx(
-          ssx::sformat,
-          "serde: enum of type {} has value {} which is out of bounds for "
-          "serde_enum_serialized_t",
-          type_str<T>(),
-          val)};
-    }
-    write(out, static_cast<serde_enum_serialized_t>(val));
 }
 
 template<typename Rep, typename Period>
@@ -591,18 +569,6 @@ void read_nested(iobuf_parser& in, T& t, std::size_t const bytes_left_limit) {
         if (in.bytes_left() > h._bytes_left_limit) {
             in.skip(in.bytes_left() - h._bytes_left_limit);
         }
-    } else if constexpr (serde_is_enum_v<Type>) {
-        auto const val = read_nested<serde_enum_serialized_t>(
-          in, bytes_left_limit);
-        if (unlikely(
-              val > std::numeric_limits<std::underlying_type_t<Type>>::max())) {
-            throw serde_exception(fmt_with_ctx(
-              ssx::sformat,
-              "enum value {} too large for {}",
-              val,
-              type_str<Type>()));
-        }
-        t = static_cast<Type>(val);
     } else if constexpr (reflection::is_std_vector<Type>) {
         using value_type = typename Type::value_type;
         const auto size = read_nested<serde_size_t>(in, bytes_left_limit);
@@ -947,4 +913,5 @@ inline serde::serde_size_t peek_body_size(iobuf_parser& in) {
 
 } // namespace serde
 #include "serde/rw/bool_class.h"
+#include "serde/rw/enum.h"
 #include "serde/rw/scalar.h"
