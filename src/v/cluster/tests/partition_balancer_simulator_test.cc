@@ -8,11 +8,27 @@
 // by the Apache License, Version 2.0
 
 #include "cluster/tests/partition_balancer_planner_fixture.h"
+#include "random/generators.h"
 #include "vlog.h"
 
 #include <seastar/testing/thread_test_case.hh>
 
 static ss::logger logger("balancer_sim");
+
+static constexpr size_t produce_batch_size = 1_MiB;
+
+/// If a value is a sum of a large number of random variables that with some
+/// probability add item_size to the value and the result has a mean of `mean`
+/// (example: producing to a topic, randomly choosing the partition for each
+/// produced batch), the distribution will be approximately gaussian with stddev
+/// sqrt(mean number of items). We use this function to calculate partition size
+/// jitter.
+static size_t add_sqrt_jitter(size_t mean, size_t item_size) {
+    std::normal_distribution<> dist(0, sqrt(double(mean) / item_size));
+    auto jitter = std::min(
+      int(mean), int(item_size * dist(random_generators::internal::gen)));
+    return mean + jitter;
+}
 
 class partition_balancer_sim_fixture {
 public:
@@ -51,7 +67,7 @@ public:
       const ss::sstring& name,
       int partitions,
       int16_t replication_factor,
-      size_t size) {
+      size_t mean_partition_size) {
         auto tp_ns = model::topic_namespace(test_ns, model::topic(name));
         auto topic_conf = _workers.make_tp_configuration(
           name, partitions, replication_factor);
@@ -59,7 +75,8 @@ public:
           cluster::create_topic_cmd(tp_ns, topic_conf));
         for (const auto& as : topic_conf.assignments) {
             model::ntp ntp{tp_ns.ns, tp_ns.tp, as.id};
-            // TODO: add size jitter
+            auto size = add_sqrt_jitter(
+              mean_partition_size, produce_batch_size);
             auto partition = ss::make_lw_shared<partition_state>(ntp, size);
             _partitions.emplace(ntp, partition);
 
