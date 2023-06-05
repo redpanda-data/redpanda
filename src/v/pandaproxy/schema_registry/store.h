@@ -16,7 +16,9 @@
 #include "pandaproxy/schema_registry/errors.h"
 #include "pandaproxy/schema_registry/types.h"
 
+#include <absl/algorithm/container.h>
 #include <absl/container/btree_map.h>
+#include <absl/container/btree_set.h>
 #include <absl/container/node_hash_map.h>
 
 namespace pandaproxy::schema_registry {
@@ -24,18 +26,13 @@ namespace pandaproxy::schema_registry {
 ///\brief A mapping of version and schema id for a subject.
 struct subject_version_entry {
     subject_version_entry(
-      schema_version version,
-      schema_id id,
-      canonical_schema::references refs,
-      is_deleted deleted)
+      schema_version version, schema_id id, is_deleted deleted)
       : version{version}
       , id{id}
-      , refs{std::move(refs)}
       , deleted(deleted) {}
 
     schema_version version;
     schema_id id;
-    canonical_schema::references refs;
     is_deleted deleted{is_deleted::no};
 
     std::vector<seq_marker> written_at;
@@ -60,6 +57,8 @@ make_non_const_iterator(T& container, result<typename T::const_iterator> it) {
 
 class store {
 public:
+    using schema_id_set = absl::btree_set<schema_id>;
+
     struct insert_result {
         schema_version version;
         schema_id id;
@@ -74,8 +73,7 @@ public:
     /// return the schema_version and schema_id, and whether it's new.
     insert_result insert(canonical_schema schema) {
         auto id = insert_schema(std::move(schema).def()).id;
-        auto [version, inserted] = insert_subject(
-          std::move(schema).sub(), std::move(schema).refs(), id);
+        auto [version, inserted] = insert_subject(std::move(schema).sub(), id);
         return {version, id, inserted};
     }
 
@@ -149,7 +147,7 @@ public:
         auto def = BOOST_OUTCOME_TRYX(get_schema_definition(v_id.id));
 
         return subject_schema{
-          .schema = {sub, std::move(def), std::move(v_id.refs)},
+          .schema = {sub, std::move(def)},
           .version = v_id.version,
           .id = v_id.id,
           .deleted = v_id.deleted};
@@ -308,36 +306,36 @@ public:
         });
     }
 
-    bool is_referenced(const subject& sub, schema_version ver) {
-        return std::any_of(
-          _subjects.begin(), _subjects.end(), [&sub, ver](const auto& s) {
-              return std::any_of(
-                s.second.versions.begin(),
-                s.second.versions.end(),
-                [&sub, ver](const auto& v) {
-                    return std::any_of(
-                      v.refs.begin(),
-                      v.refs.end(),
-                      [&sub, ver](const auto& ref) {
-                          return ref.sub == sub && ref.version == ver;
-                      });
-                });
-          });
-    }
-
-    std::vector<schema_id>
-    referenced_by(const subject& sub, schema_version ver) {
-        std::vector<schema_id> references;
-        for (const auto& s : _subjects) {
-            for (const auto& v : s.second.versions) {
-                for (const auto& r : v.refs) {
-                    if (r.sub == sub && r.version == ver) {
-                        references.emplace_back(v.id);
-                    }
+    schema_id_set referenced_by(const subject& sub, schema_version ver) {
+        schema_id_set references;
+        for (const auto& s : _schemas) {
+            for (const auto& r : s.second.definition.refs()) {
+                if (r.sub == sub && r.version == ver) {
+                    references.insert(s.first);
                 }
             }
         }
         return references;
+    }
+
+    schema_id_set subject_versions_with_any_of(const schema_id_set& ids) {
+        schema_id_set has_ids;
+        for (const auto& s : _subjects) {
+            for (const auto& r : s.second.versions) {
+                if (ids.contains(r.id)) {
+                    has_ids.insert(r.id);
+                }
+            }
+        }
+        return has_ids;
+    }
+
+    bool subject_versions_has_any_of(const schema_id_set& ids) {
+        return absl::c_any_of(_subjects, [&ids](const auto& s) {
+            return absl::c_any_of(s.second.versions, [&ids](const auto& v) {
+                return ids.contains(v.id);
+            });
+        });
     }
 
     ///\brief Delete a subject.
@@ -485,8 +483,7 @@ public:
         schema_version version;
         bool inserted;
     };
-    insert_subject_result insert_subject(
-      subject sub, canonical_schema::references refs, schema_id id) {
+    insert_subject_result insert_subject(subject sub, schema_id id) {
         auto& subject_entry = _subjects[std::move(sub)];
         subject_entry.deleted = is_deleted::no;
         auto& versions = subject_entry.versions;
@@ -501,14 +498,13 @@ public:
 
         const auto version = versions.empty() ? schema_version{1}
                                               : versions.back().version + 1;
-        versions.emplace_back(version, id, std::move(refs), is_deleted::no);
+        versions.emplace_back(version, id, is_deleted::no);
         return {version, true};
     }
 
     bool upsert_subject(
       seq_marker marker,
       subject sub,
-      canonical_schema::references refs,
       schema_version version,
       schema_id id,
       is_deleted deleted) {
@@ -526,10 +522,9 @@ public:
 
         const bool found = v_it != versions.end() && v_it->version == version;
         if (found) {
-            *v_it = subject_version_entry(
-              version, id, std::move(refs), deleted);
+            *v_it = subject_version_entry(version, id, deleted);
         } else {
-            versions.emplace(v_it, version, id, std::move(refs), deleted);
+            versions.emplace(v_it, version, id, deleted);
         }
 
         const auto all_deleted = is_deleted(

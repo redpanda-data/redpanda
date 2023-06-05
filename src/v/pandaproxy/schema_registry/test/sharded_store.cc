@@ -45,9 +45,7 @@ SEASTAR_THREAD_TEST_CASE(test_sharded_store_referenced_by) {
 
     // Insert referenced
     auto importing_schema = pps::canonical_schema{
-      pps::subject{"imported.proto"},
-      imported,
-      {{"simple", pps::subject{"simple.proto"}, ver1}}};
+      pps::subject{"imported.proto"}, imported};
 
     store
       .upsert(

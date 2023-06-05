@@ -367,8 +367,10 @@ result<void> sanitize(json::Value::Array& a, json::MemoryPoolAllocator& alloc) {
 
 } // namespace
 
-avro_schema_definition::avro_schema_definition(avro::ValidSchema vs)
-  : _impl(std::move(vs)) {}
+avro_schema_definition::avro_schema_definition(
+  avro::ValidSchema vs, canonical_schema_definition::references refs)
+  : _impl(std::move(vs))
+  , _refs(std::move(refs)) {}
 
 const avro::ValidSchema& avro_schema_definition::operator()() const {
     return _impl;
@@ -422,7 +424,7 @@ ss::future<collected_schema> collect_schema(
   collected_schema collected,
   ss::sstring name,
   canonical_schema schema) {
-    for (auto& ref : std::move(schema).refs()) {
+    for (auto& ref : schema.def().refs()) {
         if (!collected.contains(ref.name)) {
             auto ss = co_await store.get_subject_schema(
               std::move(ref.sub), ref.version, include_deleted::no);
@@ -443,10 +445,13 @@ make_avro_schema_definition(sharded_store& store, canonical_schema schema) {
     std::optional<avro::Exception> ex;
     try {
         auto name = schema.sub()();
+        auto schema_refs = schema.def().refs();
         auto refs = co_await collect_schema(store, {}, name, std::move(schema));
         auto def = refs.flatten();
-        co_return avro_schema_definition{avro::compileJsonSchemaFromMemory(
-          reinterpret_cast<const uint8_t*>(def.data()), def.length())};
+        co_return avro_schema_definition{
+          avro::compileJsonSchemaFromMemory(
+            reinterpret_cast<const uint8_t*>(def.data()), def.length()),
+          std::move(schema_refs)};
     } catch (const avro::Exception& e) {
         ex = e;
     }
@@ -493,7 +498,8 @@ sanitize_avro_schema_definition(unparsed_schema_definition def) {
 
     return canonical_schema_definition{
       std::string_view{str_buf.GetString(), str_buf.GetSize()},
-      schema_type::avro};
+      schema_type::avro,
+      def.refs()};
 }
 
 bool check_compatible(
