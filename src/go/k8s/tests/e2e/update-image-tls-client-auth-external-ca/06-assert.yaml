@@ -1,12 +1,13 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: get-topic-failure-update-img-external-client-ca
+  name: get-schema-update-img-external-client-ca
+  namespace: redpanda-system
 status:
   conditions:
     - status: "True"
-      type: Failed
-  failed: 3
+      type: Complete
+  succeeded: 1
 
 ---
 
@@ -15,4 +16,5 @@ kind: TestAssert
 collectors:
 - type: pod
   selector: app.kubernetes.io/name=redpanda
+  namespace: redpanda-system
   tail: -1

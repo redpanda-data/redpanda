@@ -244,7 +244,7 @@ func (d *Deployment) syncSchemaRegistrySecret() (map[string][]byte, error) {
 	// Only write CA cert if not using DefaultCaFilePath
 	ca := &SecretTLSCa{
 		NodeSecretRef:  d.clusterobj.SchemaRegistryAPITLS().TLS.NodeSecretRef,
-		UsePublicCerts: UsePublicCerts,
+		UsePublicCerts: !d.consoleobj.Spec.SchemaRegistry.UseSchemaRegistryCA,
 	}
 	if ca.useCaCert() {
 		caCert, exists := d.store.GetSchemaRegistryNodeCert(d.clusterobj)

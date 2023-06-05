@@ -2,6 +2,7 @@ apiVersion: batch/v1
 kind: Job
 metadata:
   name: create-schema-update-img-external-client-ca
+  namespace: redpanda-system
 spec:
   template:
     spec:

@@ -1,12 +1,136 @@
-apiVersion: batch/v1
-kind: Job
+apiVersion: v1
+kind: Secret
 metadata:
-  name: produce-msg-update-img-external-client-ca
+  name: update-img-external-client-ca-schema-registry-trusted-client-ca
+  namespace: redpanda-system
+
+---
+
+apiVersion: v1
+kind: Secret
+metadata:
+  name: update-img-external-client-ca-proxy-api-trusted-client-ca
+  namespace: redpanda-system
+
+---
+
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: update-img-external-client-ca-proxy-selfsigned-issuer
+  namespace: redpanda-system
 status:
   conditions:
-    - status: "True"
-      type: Complete
-  succeeded: 1
+    - reason: IsReady
+      status: "True"
+      type: Ready
+
+---
+
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: update-img-external-client-ca-proxy-root-issuer
+  namespace: redpanda-system
+status:
+  conditions:
+    - reason: KeyPairVerified
+      status: "True"
+      type: Ready
+
+---
+
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: update-img-external-client-ca-proxy-root-certificate
+  namespace: redpanda-system
+status:
+  conditions:
+    - reason: Ready
+      status: "True"
+      type: Ready
+
+---
+
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: update-img-external-client-ca-proxy-api-node
+  namespace: redpanda-system
+status:
+  conditions:
+    - reason: Ready
+      status: "True"
+      type: Ready
+
+---
+
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: update-img-external-client-ca-schema-registry-selfsigned-issuer
+  namespace: redpanda-system
+status:
+  conditions:
+    - reason: IsReady
+      status: "True"
+      type: Ready
+
+---
+
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: update-img-external-client-ca-schema-registry-root-issuer
+  namespace: redpanda-system
+status:
+  conditions:
+    - reason: KeyPairVerified
+      status: "True"
+      type: Ready
+
+---
+
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: update-img-external-client-ca-schema-registry-root-certificate
+  namespace: redpanda-system
+status:
+  conditions:
+    - reason: Ready
+      status: "True"
+      type: Ready
+
+---
+
+apiVersion: v1
+kind: Pod
+metadata:
+  name: update-img-external-client-ca-0
+  namespace: redpanda-system
+spec:
+  containers:
+  - name: redpanda
+    image: "localhost/redpanda:dev"
+status:
+  phase: "Running"
+
+---
+
+apiVersion: redpanda.vectorized.io/v1alpha1
+kind: Cluster
+metadata:
+  name: update-img-external-client-ca
+  namespace: redpanda-system
+status:
+  version: "dev"
+  upgrading: false
+  restarting: false
+  conditions:
+  - type: ClusterConfigured
+    status: "True"
 
 ---
 
@@ -15,4 +139,5 @@ kind: TestAssert
 collectors:
 - type: pod
   selector: app.kubernetes.io/name=redpanda
+  namespace: redpanda-system
   tail: -1
