@@ -213,8 +213,7 @@ private:
 
     /// Stores a segment chunk in cache. The chunk is stored in a path derived
     /// from the segment path: <segment_path>_chunks/chunk_start_file_offset.
-    ss::future<uint64_t> put_chunk_in_cache(
-      uint64_t,
+    ss::future<> put_chunk_in_cache(
       space_reservation_guard&,
       ss::input_stream<char>,
       chunk_start_offset_t chunk_start);
@@ -303,18 +302,7 @@ private:
     std::optional<segment_chunks> _chunks_api;
     std::optional<offset_index::coarse_index_t> _coarse_index;
 
-    class consume_stream {
-    public:
-        consume_stream(
-          remote_segment& remote_segment, segment_chunk_range range);
-
-        ss::future<uint64_t>
-        operator()(uint64_t, ss::input_stream<char> stream);
-
-    private:
-        remote_segment& _segment;
-        segment_chunk_range _range;
-    };
+    friend class split_segment_into_chunk_range_consumer;
 };
 
 class remote_segment_batch_consumer;

@@ -73,6 +73,41 @@ private:
 
 namespace cloud_storage {
 
+class split_segment_into_chunk_range_consumer {
+public:
+    split_segment_into_chunk_range_consumer(
+      cloud_storage::remote_segment& remote_segment,
+      cloud_storage::segment_chunk_range range)
+      : _segment{remote_segment}
+      , _range{std::move(range)} {}
+
+    ss::future<uint64_t>
+    operator()(uint64_t size, ss::input_stream<char> stream) {
+        for (const auto [start, end] : _range) {
+            const auto bytes_to_read = end.value_or(_segment._size - 1) - start
+                                       + 1;
+            auto reservation = co_await _segment._cache.reserve_space(
+              bytes_to_read, 1);
+            vlog(
+              cst_log.trace,
+              "making stream from byte offset {} for {} bytes",
+              start,
+              bytes_to_read);
+            auto dsi = std::make_unique<bounded_stream>(stream, bytes_to_read);
+            auto stream_upto = ss::input_stream<char>{
+              ss::data_source{std::move(dsi)}};
+            co_await _segment.put_chunk_in_cache(
+              reservation, std::move(stream_upto), start);
+        }
+        co_await stream.close();
+        co_return size;
+    }
+
+private:
+    cloud_storage::remote_segment& _segment;
+    cloud_storage::segment_chunk_range _range;
+};
+
 std::filesystem::path
 generate_index_path(const cloud_storage::remote_segment_path& p) {
     return fmt::format("{}.index", p().native());
@@ -430,8 +465,7 @@ ss::future<uint64_t> remote_segment::put_segment_in_cache(
     co_return size_bytes;
 }
 
-ss::future<uint64_t> remote_segment::put_chunk_in_cache(
-  uint64_t size,
+ss::future<> remote_segment::put_chunk_in_cache(
   space_reservation_guard& reservation,
   ss::input_stream<char> stream,
   chunk_start_offset_t chunk_start) {
@@ -447,8 +481,6 @@ ss::future<uint64_t> remote_segment::put_chunk_in_cache(
           put_exception);
         std::rethrow_exception(put_exception);
     }
-
-    co_return size;
 }
 
 ss::future<> remote_segment::do_hydrate_segment() {
@@ -905,28 +937,6 @@ ss::future<> remote_segment::hydrate() {
       .discard_result();
 }
 
-remote_segment::consume_stream::consume_stream(
-  remote_segment& remote_segment, segment_chunk_range range)
-  : _segment{remote_segment}
-  , _range{std::move(range)} {}
-
-ss::future<uint64_t> remote_segment::consume_stream::operator()(
-  uint64_t size, ss::input_stream<char> stream) {
-    for (const auto [start, end] : _range) {
-        const auto space_required = end.value_or(_segment._size - 1) - start
-                                    + 1;
-        auto reservation = co_await _segment._cache.reserve_space(
-          space_required, 1);
-        auto dsi = std::make_unique<bounded_stream>(
-          stream, end.value_or(_segment._size));
-        auto stream_upto = ss::input_stream<char>{
-          ss::data_source{std::move(dsi)}};
-        co_await _segment.put_chunk_in_cache(
-          size, reservation, std::move(stream_upto), start);
-    }
-    co_return size;
-}
-
 ss::future<> remote_segment::hydrate_chunk(segment_chunk_range range) {
     const auto start = range.first_offset();
     const auto path_to_start = get_path_to_chunk(start);
@@ -954,7 +964,8 @@ ss::future<> remote_segment::hydrate_chunk(segment_chunk_range range) {
       cache_hydration_timeout, cache_hydration_backoff, &_rtc};
 
     const auto end = range.last_offset().value_or(_size - 1);
-    auto consumer = consume_stream{*this, std::move(range)};
+    auto consumer = split_segment_into_chunk_range_consumer{
+      *this, std::move(range)};
     auto res = co_await _api.download_segment(
       _bucket, _path, std::move(consumer), rtc, std::make_pair(start, end));
     if (res != download_result::success) {
