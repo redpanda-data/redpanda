@@ -13,6 +13,7 @@
 
 #include "cluster/commands.h"
 #include "cluster/members_table.h"
+#include "cluster/node_status_table.h"
 #include "cluster/partition_balancer_planner.h"
 #include "cluster/partition_balancer_state.h"
 #include "cluster/tests/utils.h"
@@ -65,13 +66,20 @@ public:
             config::mock_binding<uint32_t>(uint32_t{partitions_reserve_shard0}),
             config::mock_binding<bool>(true))
           .get();
+        // use node status that is not used in test as self is always available
+        node_status_table.start_single(model::node_id{123}).get();
         state
-          .start_single(std::ref(table), std::ref(members), std::ref(allocator))
+          .start_single(
+            std::ref(table),
+            std::ref(members),
+            std::ref(allocator),
+            std::ref(node_status_table))
           .get();
     }
 
     ~controller_workers() {
         state.stop().get();
+        node_status_table.stop().get();
         table.stop().get();
         allocator.stop().get();
         members.stop().get();
@@ -82,6 +90,7 @@ public:
     ss::sharded<cluster::topic_table> table;
     ss::sharded<cluster::partition_leaders_table> leaders;
     ss::sharded<cluster::partition_balancer_state> state;
+    ss::sharded<cluster::node_status_table> node_status_table;
     cluster::topic_updates_dispatcher dispatcher;
 };
 
@@ -97,7 +106,8 @@ struct partition_balancer_planner_fixture {
             .movement_disk_size_batch = reallocation_batch_size,
             .max_concurrent_actions = max_concurrent_actions,
             .node_availability_timeout_sec = std::chrono::minutes(1),
-            .segment_fallocation_step = 16},
+            .segment_fallocation_step = 16,
+            .node_responsiveness_timeout = std::chrono::seconds(10)},
           workers.state.local(),
           workers.allocator.local());
     }
@@ -267,27 +277,25 @@ struct partition_balancer_planner_fixture {
         dispatch_command(std::move(cmd));
     }
 
-    std::vector<raft::follower_metrics>
-    create_follower_metrics(const std::set<size_t>& unavailable_nodes = {}) {
-        std::vector<raft::follower_metrics> metrics;
-        metrics.reserve(last_node_idx);
+    ss::future<>
+    populate_node_status_table(std::set<size_t> unavailable_nodes = {}) {
+        std::vector<cluster::node_status> status_updates;
+        status_updates.reserve(last_node_idx + 1);
         for (size_t i = 0; i < last_node_idx; ++i) {
+            auto last_seen = raft::clock_type::now();
             if (unavailable_nodes.contains(i)) {
-                metrics.push_back(raft::follower_metrics{
-                  .id = model::node_id(i),
-                  .last_heartbeat = raft::clock_type::now()
-                                    - node_unavailable_timeout,
-                  .is_live = false,
-                });
-            } else {
-                metrics.push_back(raft::follower_metrics{
-                  .id = model::node_id(i),
-                  .last_heartbeat = raft::clock_type::now(),
-                  .is_live = true,
-                });
+                last_seen = last_seen - node_unavailable_timeout;
             }
+            status_updates.push_back(cluster::node_status{
+              .node_id = model::node_id(i),
+              .last_seen = last_seen,
+            });
         }
-        return metrics;
+
+        co_await workers.node_status_table.invoke_on_all(
+          [status_updates](cluster::node_status_table& nts) {
+              nts.update_peers(status_updates);
+          });
     }
 
     cluster::cluster_health_report create_health_report(

@@ -13,6 +13,7 @@
 #include "cluster/controller_snapshot.h"
 #include "cluster/logger.h"
 #include "cluster/members_table.h"
+#include "cluster/node_status_table.h"
 #include "cluster/scheduling/partition_allocator.h"
 #include "config/configuration.h"
 #include "prometheus/prometheus_sanitize.h"
@@ -27,10 +28,12 @@ namespace cluster {
 partition_balancer_state::partition_balancer_state(
   ss::sharded<topic_table>& topic_table,
   ss::sharded<members_table>& members_table,
-  ss::sharded<partition_allocator>& pa)
+  ss::sharded<partition_allocator>& pa,
+  ss::sharded<node_status_table>& nst)
   : _topic_table(topic_table.local())
   , _members_table(members_table.local())
   , _partition_allocator(pa.local())
+  , _node_status(nst.local())
   , _probe(*this) {}
 
 void partition_balancer_state::handle_ntp_update(

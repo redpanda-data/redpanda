@@ -12,12 +12,14 @@
 #pragma once
 
 #include "cluster/members_table.h"
+#include "cluster/node_status_table.h"
 #include "cluster/partition_balancer_state.h"
 #include "cluster/scheduling/allocation_node.h"
 #include "cluster/scheduling/partition_allocator.h"
 #include "cluster/tests/utils.h"
 #include "cluster/topic_table.h"
 #include "config/property.h"
+#include "model/metadata.h"
 #include "test_utils/fixture.h"
 #include "units.h"
 
@@ -59,13 +61,20 @@ struct topic_table_fixture {
           create_allocation_node(model::node_id(2), 12));
         allocator.local().register_node(
           create_allocation_node(model::node_id(3), 4));
+        // use node_id that isn't used anywhere in tests
+        node_status.start_single(model::node_id(123)).get();
         pb_state
-          .start_single(std::ref(table), std::ref(members), std::ref(allocator))
+          .start_single(
+            std::ref(table),
+            std::ref(members),
+            std::ref(allocator),
+            std::ref(node_status))
           .get();
     }
 
     ~topic_table_fixture() {
         pb_state.stop().get();
+        node_status.stop().get();
         table.stop().get0();
         allocator.stop().get0();
         members.stop().get0();
@@ -154,5 +163,6 @@ struct topic_table_fixture {
     ss::sharded<cluster::topic_table> table;
     ss::sharded<cluster::partition_leaders_table> leaders;
     ss::sharded<cluster::partition_balancer_state> pb_state;
+    ss::sharded<cluster::node_status_table> node_status;
     ss::abort_source as;
 };

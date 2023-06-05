@@ -18,6 +18,8 @@
 
 #include <absl/container/flat_hash_map.h>
 
+#include <chrono>
+
 namespace cluster {
 
 struct ntp_reassignment {
@@ -44,6 +46,10 @@ struct planner_config {
     // for movement, partitions with size smaller than threshold will have the
     // lowest priority
     size_t min_partition_size_threshold;
+    // Timeout after which node is claimed unresponsive i.e. it doesn't respond
+    // the request but it is not yet considered as a violation of partition
+    // balancing rules
+    std::chrono::milliseconds node_responsiveness_timeout;
 };
 
 class partition_balancer_planner {
@@ -68,8 +74,7 @@ public:
         status status = status::empty;
     };
 
-    plan_data plan_actions(
-      const cluster_health_report&, const std::vector<raft::follower_metrics>&);
+    plan_data plan_actions(const cluster_health_report&);
 
 private:
     class request_context;
@@ -79,10 +84,7 @@ private:
     class immutable_partition;
 
     void init_per_node_state(
-      const cluster_health_report&,
-      const std::vector<raft::follower_metrics>&,
-      request_context&,
-      plan_data&) const;
+      const cluster_health_report&, request_context&, plan_data&) const;
 
     void init_ntp_sizes_from_health_report(
       const cluster_health_report& health_report, request_context&);

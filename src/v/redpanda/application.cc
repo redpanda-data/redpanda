@@ -1178,6 +1178,7 @@ void application::wire_up_redpanda_services(model::node_id node_id) {
 
     construct_service(cp_partition_manager, std::ref(storage)).get();
 
+    construct_service(node_status_table, node_id).get();
     // controller
     syschecks::systemd_message("Creating cluster::controller").get();
 
@@ -1191,7 +1192,8 @@ void application::wire_up_redpanda_services(model::node_id node_id) {
       local_monitor,
       std::ref(raft_group_manager),
       std::ref(feature_table),
-      std::ref(cloud_storage_api));
+      std::ref(cloud_storage_api),
+      std::ref(node_status_table));
     controller->wire_up().get0();
 
     if (archival_storage_enabled()) {
@@ -1239,8 +1241,6 @@ void application::wire_up_redpanda_services(model::node_id node_id) {
       std::ref(self_test_backend),
       std::ref(_connection_cache))
       .get();
-
-    construct_service(node_status_table, node_id).get();
 
     construct_single_service_sharded(
       node_status_backend,

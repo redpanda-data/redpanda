@@ -51,6 +51,7 @@ partition_balancer_backend::partition_balancer_backend(
   config::binding<double>&& moves_drop_threshold,
   config::binding<size_t>&& segment_fallocation_step,
   config::binding<std::optional<size_t>> min_partition_size_threshold,
+  config::binding<std::chrono::milliseconds> node_status_interval,
   config::binding<size_t> raft_learner_recovery_rate)
   : _raft0(std::move(raft0))
   , _controller_stm(controller_stm.local())
@@ -69,6 +70,7 @@ partition_balancer_backend::partition_balancer_backend(
   , _concurrent_moves_drop_threshold(std::move(moves_drop_threshold))
   , _segment_fallocation_step(std::move(segment_fallocation_step))
   , _min_partition_size_threshold(std::move(min_partition_size_threshold))
+  , _node_status_interval(std::move(node_status_interval))
   , _raft_learner_recovery_rate(std::move(raft_learner_recovery_rate))
   , _timer([this] { tick(); }) {}
 
@@ -191,19 +193,12 @@ ss::future<> partition_balancer_backend::do_tick() {
         co_return;
     }
 
-    auto follower_metrics = _raft0->get_follower_metrics();
-    for (auto& follower : follower_metrics) {
-        // patch last heartbeat time so that we don't get false positives for
-        // unavailable node detection for nodes that didn't respond to a
-        // heartbeat since we became leader (last_heartbeat would be -infinity
-        // for them).
-        follower.last_heartbeat = std::max(
-          follower.last_heartbeat, _raft0->became_leader_at());
-    }
-
     double soft_max_disk_usage_ratio = _max_disk_usage_percent() / 100.0;
     double hard_max_disk_usage_ratio
       = (100 - _storage_space_alert_free_threshold_percent()) / 100.0;
+    // claim node unresponsive it doesn't responded to at least 7
+    // status requests by default 700ms
+    auto const node_responsiveness_timeout = _node_status_interval() * 7;
     auto plan_data
       = partition_balancer_planner(
           planner_config{
@@ -214,10 +209,11 @@ ss::future<> partition_balancer_backend::do_tick() {
             .max_concurrent_actions = _max_concurrent_actions(),
             .node_availability_timeout_sec = _availability_timeout(),
             .segment_fallocation_step = _segment_fallocation_step(),
-            .min_partition_size_threshold = get_min_partition_size_threshold()},
+            .min_partition_size_threshold = get_min_partition_size_threshold(),
+            .node_responsiveness_timeout = node_responsiveness_timeout},
           _state,
           _partition_allocator)
-          .plan_actions(health_report.value(), follower_metrics);
+          .plan_actions(health_report.value());
 
     _last_leader_term = _raft0->term();
     _last_tick_time = clock_t::now();

@@ -28,11 +28,14 @@ public:
     partition_balancer_state(
       ss::sharded<topic_table>&,
       ss::sharded<members_table>&,
-      ss::sharded<partition_allocator>&);
+      ss::sharded<partition_allocator>&,
+      ss::sharded<node_status_table>&);
 
     topic_table& topics() const { return _topic_table; }
 
     members_table& members() const { return _members_table; }
+
+    node_status_table& node_status() const { return _node_status; }
 
     const absl::btree_set<model::ntp>&
     ntps_with_broken_rack_constraint() const {
@@ -66,6 +69,7 @@ private:
     topic_table& _topic_table;
     members_table& _members_table;
     partition_allocator& _partition_allocator;
+    node_status_table& _node_status;
     absl::btree_set<model::ntp> _ntps_with_broken_rack_constraint;
     probe _probe;
 };

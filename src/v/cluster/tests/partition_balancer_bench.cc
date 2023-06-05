@@ -28,12 +28,12 @@ PERF_TEST_C(partition_balancer_planner_fixture, unavailable_nodes) {
     auto hr = create_health_report({}, {}, local_partition_size);
 
     std::set<size_t> unavailable_nodes = {0};
-    auto fm = create_follower_metrics(unavailable_nodes);
+    co_await populate_node_status_table(unavailable_nodes);
 
     auto planner = make_planner();
 
     perf_tests::start_measuring_time();
-    auto plan_data = planner.plan_actions(hr, fm);
+    auto plan_data = planner.plan_actions(hr);
     perf_tests::stop_measuring_time();
 
     const auto& reassignments = plan_data.reassignments;
