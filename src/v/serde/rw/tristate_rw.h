@@ -15,7 +15,7 @@
 namespace serde {
 
 template<typename T>
-void tag_invoke(tag_t<w>, iobuf& out, tristate<T> t) {
+void tag_invoke(tag_t<write_tag>, iobuf& out, tristate<T> t) {
     if (t.is_disabled()) {
         write<int8_t>(out, -1);
     } else if (!t.has_optional_value()) {
@@ -28,7 +28,7 @@ void tag_invoke(tag_t<w>, iobuf& out, tristate<T> t) {
 
 template<typename T>
 void tag_invoke(
-  tag_t<r>,
+  tag_t<read_tag>,
   iobuf_parser& in,
   tristate<T>& t,
   std::size_t const bytes_left_limit) {

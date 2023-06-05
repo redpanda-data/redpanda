@@ -16,7 +16,7 @@ namespace serde {
 
 template<typename T, typename Tag, typename IsConstexpr>
 void tag_invoke(
-  tag_t<r>,
+  tag_t<read_tag>,
   iobuf_parser& in,
   ::detail::base_named_type<T, Tag, IsConstexpr>& t,
   std::size_t const bytes_left_limit) {
@@ -26,7 +26,9 @@ void tag_invoke(
 
 template<typename T, typename Tag, typename IsConstexpr>
 void tag_invoke(
-  tag_t<w>, iobuf& out, ::detail::base_named_type<T, Tag, IsConstexpr> t) {
+  tag_t<write_tag>,
+  iobuf& out,
+  ::detail::base_named_type<T, Tag, IsConstexpr> t) {
     return write(out, static_cast<T>(t));
 }
 

@@ -36,13 +36,13 @@ header read_header(iobuf_parser& in, std::size_t const bytes_left_limit) {
     version_t compat_version;
     serde_size_t size;
 
-    r(in, version, bytes_left_limit);
-    r(in, compat_version, bytes_left_limit);
-    r(in, size, bytes_left_limit);
+    read_tag(in, version, bytes_left_limit);
+    read_tag(in, compat_version, bytes_left_limit);
+    read_tag(in, size, bytes_left_limit);
 
     auto checksum = checksum_t{};
     if constexpr (is_checksum_envelope<T>) {
-        r(in, checksum, bytes_left_limit);
+        read_tag(in, checksum, bytes_left_limit);
     }
 
     if (unlikely(in.bytes_left() < size)) {

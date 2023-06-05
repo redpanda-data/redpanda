@@ -22,7 +22,7 @@
 namespace serde {
 
 template<typename T, std::size_t Size>
-void tag_invoke(tag_t<w>, iobuf& out, std::array<T, Size> t) {
+void tag_invoke(tag_t<write_tag>, iobuf& out, std::array<T, Size> t) {
     static_assert(t.size() <= std::numeric_limits<serde_size_t>::max());
     write(out, static_cast<serde_size_t>(t.size()));
     for (auto& el : t) {
@@ -32,7 +32,7 @@ void tag_invoke(tag_t<w>, iobuf& out, std::array<T, Size> t) {
 
 template<typename T, std::size_t Size>
 void tag_invoke(
-  tag_t<r>,
+  tag_t<read_tag>,
   iobuf_parser& in,
   std::array<T, Size>& t,
   std::size_t const bytes_left_limit) {

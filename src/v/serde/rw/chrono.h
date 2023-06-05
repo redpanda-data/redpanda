@@ -73,7 +73,8 @@ int64_t checked_duration_cast_to_nanoseconds(
 }
 
 template<typename Rep, typename Period>
-void tag_invoke(tag_t<w>, iobuf& out, std::chrono::duration<Rep, Period> t) {
+void tag_invoke(
+  tag_t<write_tag>, iobuf& out, std::chrono::duration<Rep, Period> t) {
     // We explicitly serialize it as ns to avoid any surprises like
     // seastar updating underlying duration types without
     // notice. See https://github.com/redpanda-data/redpanda/pull/5002
@@ -99,7 +100,7 @@ void tag_invoke(tag_t<w>, iobuf& out, std::chrono::duration<Rep, Period> t) {
 
 template<class R, class P>
 void tag_invoke(
-  tag_t<r>,
+  tag_t<read_tag>,
   iobuf_parser& in,
   std::chrono::duration<R, P>& t,
   std::size_t const bytes_left_limit) {

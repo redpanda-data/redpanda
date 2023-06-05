@@ -34,7 +34,10 @@ concept Map = requires(T t) {
 };
 
 void tag_invoke(
-  tag_t<r>, iobuf_parser& in, Map auto& t, std::size_t const bytes_left_limit) {
+  tag_t<read_tag>,
+  iobuf_parser& in,
+  Map auto& t,
+  std::size_t const bytes_left_limit) {
     using Type = std::decay_t<decltype(t)>;
     auto const size = read_nested<serde_size_t>(in, bytes_left_limit);
     if constexpr (Reservable<Type>) {
@@ -49,7 +52,7 @@ void tag_invoke(
     }
 }
 
-void tag_invoke(tag_t<w>, iobuf& out, Map auto t) {
+void tag_invoke(tag_t<write_tag>, iobuf& out, Map auto t) {
     using Type = std::decay_t<decltype(t)>;
     if (unlikely(t.size() > std::numeric_limits<serde_size_t>::max())) {
         throw serde_exception(fmt_with_ctx(

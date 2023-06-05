@@ -25,7 +25,7 @@ concept DirectReadable = requires(iobuf_parser& in, const header& h) {
 
 template<typename T>
 void read_nested(iobuf_parser& in, T& t, std::size_t const bytes_left_limit) {
-    r(in, t, bytes_left_limit);
+    read_tag(in, t, bytes_left_limit);
 }
 
 template<typename T>
@@ -58,7 +58,7 @@ std::decay_t<T> read(iobuf_parser& in) {
 
 template<typename T>
 void write(iobuf& b, T x) {
-    w(b, std::forward<T>(x));
+    write_tag(b, std::forward<T>(x));
 }
 
 template<typename T>

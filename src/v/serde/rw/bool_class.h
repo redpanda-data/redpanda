@@ -16,13 +16,13 @@
 namespace serde {
 
 template<typename Tag>
-void tag_invoke(tag_t<w>, iobuf& out, ss::bool_class<Tag> t) {
+void tag_invoke(tag_t<write_tag>, iobuf& out, ss::bool_class<Tag> t) {
     write(out, static_cast<int8_t>(bool(t)));
 }
 
 template<typename Tag>
 void tag_invoke(
-  tag_t<r>,
+  tag_t<read_tag>,
   iobuf_parser& in,
   ss::bool_class<Tag>& t,
   std::size_t const bytes_left_limit) {

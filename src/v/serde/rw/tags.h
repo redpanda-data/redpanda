@@ -22,7 +22,7 @@ inline constexpr struct write_fn {
     void operator()(iobuf& b, T&& x) const {
         return tag_invoke(*this, b, std::forward<T>(x));
     }
-} w{};
+} write_tag{};
 
 inline constexpr struct read_fn {
     template<typename T>
@@ -30,6 +30,6 @@ inline constexpr struct read_fn {
       iobuf_parser& in, T& t, std::size_t const bytes_left_limit) const {
         return tag_invoke(*this, in, t, bytes_left_limit);
     }
-} r{};
+} read_tag{};
 
 } // namespace serde

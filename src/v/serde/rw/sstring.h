@@ -17,7 +17,7 @@ namespace serde {
 
 template<typename char_type, typename Size, Size max_size, bool NulTerminate>
 inline void tag_invoke(
-  tag_t<w>,
+  tag_t<write_tag>,
   iobuf& out,
   ss::basic_sstring<char_type, Size, max_size, NulTerminate> t) {
     write<serde_size_t>(out, t.size());
@@ -26,7 +26,7 @@ inline void tag_invoke(
 
 template<typename char_type, typename Size, Size max_size, bool NulTerminate>
 inline void tag_invoke(
-  tag_t<r>,
+  tag_t<read_tag>,
   iobuf_parser& in,
   ss::basic_sstring<char_type, Size, max_size, NulTerminate>& t,
   std::size_t const bytes_left_limit) {

@@ -16,11 +16,14 @@
 namespace serde {
 
 inline void tag_invoke(
-  tag_t<r>, iobuf_parser& in, iobuf& t, std::size_t const bytes_left_limit) {
+  tag_t<read_tag>,
+  iobuf_parser& in,
+  iobuf& t,
+  std::size_t const bytes_left_limit) {
     t = in.share(read_nested<serde_size_t>(in, bytes_left_limit));
 }
 
-inline void tag_invoke(tag_t<w>, iobuf& out, iobuf t) {
+inline void tag_invoke(tag_t<write_tag>, iobuf& out, iobuf t) {
     write<serde_size_t>(out, t.size_bytes());
     out.append(t.share(0, t.size_bytes()));
 }

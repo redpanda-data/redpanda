@@ -16,12 +16,12 @@
 
 namespace serde {
 
-inline void tag_invoke(tag_t<w>, iobuf& out, uuid_t t) {
+inline void tag_invoke(tag_t<write_tag>, iobuf& out, uuid_t t) {
     out.append(t.uuid().data, uuid_t::length);
 }
 
 inline void tag_invoke(
-  tag_t<r>,
+  tag_t<read_tag>,
   iobuf_parser& in,
   uuid_t& t,
   std::size_t const /* bytes_left_limit */) {

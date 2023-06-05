@@ -38,7 +38,7 @@ concept Vector = requires(T t) {
 };
 
 void tag_invoke(
-  tag_t<r>,
+  tag_t<read_tag>,
   iobuf_parser& in,
   Vector auto& t,
   std::size_t const bytes_left_limit) {
@@ -55,7 +55,7 @@ void tag_invoke(
     t.shrink_to_fit();
 }
 
-void tag_invoke(tag_t<w>, iobuf& out, Vector auto t) {
+void tag_invoke(tag_t<write_tag>, iobuf& out, Vector auto t) {
     if (unlikely(t.size() > std::numeric_limits<serde_size_t>::max())) {
         throw serde_exception(fmt_with_ctx(
           ssx::sformat,

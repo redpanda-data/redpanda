@@ -26,7 +26,7 @@ namespace serde {
 template<typename T>
 requires(std::is_scalar_v<std::decay_t<T>> && !serde_is_enum_v<std::decay_t<T>>)
 void tag_invoke(
-  tag_t<r>, iobuf_parser& in, T& t, std::size_t const bytes_left_limit) {
+  tag_t<read_tag>, iobuf_parser& in, T& t, std::size_t const bytes_left_limit) {
     using Type = std::decay_t<T>;
 
     if (unlikely(in.bytes_left() - bytes_left_limit < sizeof(Type))) {
@@ -51,7 +51,7 @@ void tag_invoke(
 
 template<typename T>
 requires(std::is_scalar_v<std::decay_t<T>> && !serde_is_enum_v<std::decay_t<T>>)
-void tag_invoke(tag_t<w>, iobuf& out, T t) {
+void tag_invoke(tag_t<write_tag>, iobuf& out, T t) {
     using Type = std::decay_t<T>;
     if constexpr (sizeof(Type) == 1) {
         out.append(reinterpret_cast<char const*>(&t), sizeof(t));
@@ -70,14 +70,17 @@ void tag_invoke(tag_t<w>, iobuf& out, T t) {
     }
 }
 
-inline void tag_invoke(tag_t<w>, iobuf& out, bool t) {
-    w(out, static_cast<int8_t>(t));
+inline void tag_invoke(tag_t<write_tag>, iobuf& out, bool t) {
+    write_tag(out, static_cast<int8_t>(t));
 }
 
 inline void tag_invoke(
-  tag_t<r>, iobuf_parser& in, bool& t, std::size_t const bytes_left_limit) {
+  tag_t<read_tag>,
+  iobuf_parser& in,
+  bool& t,
+  std::size_t const bytes_left_limit) {
     int8_t byte;
-    r(in, byte, bytes_left_limit);
+    read_tag(in, byte, bytes_left_limit);
     t = (byte != 0);
 }
 

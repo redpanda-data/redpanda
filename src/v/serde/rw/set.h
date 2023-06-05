@@ -35,7 +35,7 @@ template<typename T>
 concept SetNotMap = Set<T> && !Map<T>;
 
 void tag_invoke(
-  tag_t<r>,
+  tag_t<read_tag>,
   iobuf_parser& in,
   SetNotMap auto& t,
   std::size_t const bytes_left_limit) {
@@ -51,7 +51,7 @@ void tag_invoke(
     }
 }
 
-void tag_invoke(tag_t<w>, iobuf& out, SetNotMap auto t) {
+void tag_invoke(tag_t<write_tag>, iobuf& out, SetNotMap auto t) {
     using Type = std::decay_t<decltype(t)>;
     if (unlikely(t.size() > std::numeric_limits<serde_size_t>::max())) {
         throw serde_exception(fmt_with_ctx(

@@ -16,7 +16,7 @@
 namespace serde {
 
 template<typename T>
-void tag_invoke(tag_t<w>, iobuf& out, std::optional<T> t) {
+void tag_invoke(tag_t<write_tag>, iobuf& out, std::optional<T> t) {
     if (t) {
         write(out, true);
         write(out, std::move(t.value()));
@@ -27,7 +27,7 @@ void tag_invoke(tag_t<w>, iobuf& out, std::optional<T> t) {
 
 template<typename T>
 void tag_invoke(
-  tag_t<r>,
+  tag_t<read_tag>,
   iobuf_parser& in,
   std::optional<T>& t,
   std::size_t const bytes_left_limit) {
