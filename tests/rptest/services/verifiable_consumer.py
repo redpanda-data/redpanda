@@ -201,7 +201,7 @@ class VerifiableConsumer(BackgroundThreadService):
                 msg = "%s: Consumed position %d is behind the current "\
                     "committed offset %d for partition %s" % \
                     (self.account_str, min_offset, self.committed[tp], str(tp))
-                if self.verify_offsets:
+                if verify_offsets:
                     raise AssertionError(msg)
                 else:
                     logger.warn(msg)
