@@ -1,9 +1,12 @@
-apiVersion: apps/v1
-kind: Deployment
+apiVersion: batch/v1
+kind: Job
 metadata:
-  name: upd-schema-registry-mtls-console
+  name: call-console-update-img-external-client-ca
 status:
-  readyReplicas: 1
+  conditions:
+    - status: "True"
+      type: Complete
+  succeeded: 1
 
 ---
 

@@ -426,12 +426,6 @@ func (cm *ConfigMap) genServer() rest.Config {
 }
 
 var (
-	// UsePublicCerts defines if certificate is signed publicly
-	// Currently issuing TLS certs through LetsEncrypt
-	// SchemaRegistry.TLS.NodeSecretRef is set to Secret without CaFile "ca.crt"
-	// This flag overrides using NodeSecretRef to mount CaFile
-	UsePublicCerts = true
-
 	// DefaultCaFilePath defines the default CA filepath in the host
 	// Console is creating a NewCertPool() which will not use host default certificates when left blank
 	// REF https://github.com/redpanda-data/console/blob/master/backend/pkg/schema/client.go#L60
@@ -505,7 +499,7 @@ func (cm *ConfigMap) genKafka(username string) config.Kafka {
 		if yy := cm.clusterobj.IsSchemaRegistryTLSEnabled(); yy {
 			ca := &SecretTLSCa{
 				NodeSecretRef:  cm.clusterobj.SchemaRegistryAPITLS().TLS.NodeSecretRef,
-				UsePublicCerts: UsePublicCerts,
+				UsePublicCerts: !cm.consoleobj.Spec.SchemaRegistry.UseSchemaRegistryCA,
 			}
 			tls = config.SchemaTLS{
 				Enabled:    y,

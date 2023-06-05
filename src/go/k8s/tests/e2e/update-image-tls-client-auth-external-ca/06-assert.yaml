@@ -1,12 +1,12 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: get-topic-failure-update-img-external-client-ca
+  name: get-schema-update-img-external-client-ca
 status:
   conditions:
     - status: "True"
-      type: Failed
-  failed: 3
+      type: Complete
+  succeeded: 1
 
 ---
 

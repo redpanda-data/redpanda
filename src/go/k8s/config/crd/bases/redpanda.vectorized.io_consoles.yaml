@@ -507,6 +507,11 @@ spec:
                 properties:
                   enabled:
                     type: boolean
+                  useSchemaRegistryCA:
+                    description: Indication on whether to use the schema registry
+                      CA as trust when connecting to the schema registry. If not set,
+                      the public CAs will be used.
+                    type: boolean
                 required:
                 - enabled
                 type: object

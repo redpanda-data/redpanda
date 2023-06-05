@@ -134,6 +134,10 @@ type Server struct {
 // Schema defines configurable fields for Schema Registry
 type Schema struct {
 	Enabled bool `json:"enabled"`
+
+	// Indication on whether to use the schema registry CA as trust when connecting to the schema registry.
+	// If not set, the public CAs will be used.
+	UseSchemaRegistryCA bool `json:"useSchemaRegistryCA,omitempty"`
 }
 
 // Deployment defines configurable fields for the Console Deployment resource

@@ -1,12 +1,12 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: get-schema-failure-update-img-external-client-ca
+  name: produce-msg-update-img-external-client-ca
 status:
   conditions:
     - status: "True"
-      type: Failed
-  failed: 3
+      type: Complete
+  succeeded: 1
 
 ---
 
@@ -16,3 +16,4 @@ collectors:
 - type: pod
   selector: app.kubernetes.io/name=redpanda
   tail: -1
+
