@@ -168,12 +168,6 @@ template<typename T>
 void write(iobuf& out, std::optional<T> t);
 
 template<typename T>
-requires is_absl_node_hash_set<std::decay_t<T>>
-         || is_absl_flat_hash_set<std::decay_t<T>>
-         || is_absl_btree_set<std::decay_t<T>>
-void write(iobuf& out, T t);
-
-template<typename T>
 requires is_envelope<std::decay_t<T>>
 void write(iobuf& out, T t);
 
@@ -194,24 +188,6 @@ void write(iobuf& out, std::optional<T> t) {
         write(out, std::move(t.value()));
     } else {
         write(out, false);
-    }
-}
-
-template<typename T>
-requires is_absl_node_hash_set<std::decay_t<T>>
-         || is_absl_flat_hash_set<std::decay_t<T>>
-         || is_absl_btree_set<std::decay_t<T>>
-void write(iobuf& out, T t) {
-    if (unlikely(t.size() > std::numeric_limits<serde_size_t>::max())) {
-        throw serde_exception(fmt_with_ctx(
-          ssx::sformat,
-          "serde: {} size {} exceeds serde_size_t",
-          type_str<T>(),
-          t.size()));
-    }
-    write(out, static_cast<serde_size_t>(t.size()));
-    for (auto& e : t) {
-        write(out, e);
     }
 }
 
@@ -339,22 +315,6 @@ void read_nested(iobuf_parser& in, T& t, std::size_t const bytes_left_limit) {
               ? Type{read_nested<typename Type::value_type>(
                 in, bytes_left_limit)}
               : std::nullopt;
-    } else if constexpr (
-      is_absl_node_hash_set<Type> || is_absl_flat_hash_set<Type>) {
-        const auto size = read_nested<serde_size_t>(in, bytes_left_limit);
-        t.reserve(size);
-        for (auto i = 0U; i < size; ++i) {
-            auto elem = read_nested<typename Type::key_type>(
-              in, bytes_left_limit);
-            t.emplace(std::move(elem));
-        }
-    } else if constexpr (is_absl_btree_set<Type>) {
-        const auto size = read_nested<serde_size_t>(in, bytes_left_limit);
-        for (auto i = 0U; i < size; ++i) {
-            auto elem = read_nested<typename Type::key_type>(
-              in, bytes_left_limit);
-            t.emplace(std::move(elem));
-        }
     } else if constexpr (std::is_same_v<T, ss::net::inet_address>) {
         bool is_ipv4 = read_nested<bool>(in, bytes_left_limit);
         auto address_buf = read_nested<iobuf>(in, bytes_left_limit);
@@ -593,6 +553,7 @@ inline serde::serde_size_t peek_body_size(iobuf_parser& in) {
 #include "serde/rw/map.h"
 #include "serde/rw/named_type.h"
 #include "serde/rw/scalar.h"
+#include "serde/rw/set.h"
 #include "serde/rw/sstring.h"
 #include "serde/rw/tristate_rw.h"
 #include "serde/rw/uuid.h"
