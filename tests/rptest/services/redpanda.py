@@ -1347,6 +1347,8 @@ class RedpandaServiceCloud(RedpandaServiceK8s):
     GLOBAL_CLOUD_CLUSTER_REGION = 'cloud_cluster_region'
     GLOBAL_CLOUD_CLUSTER_PROVIDER = 'cloud_provider'
     GLOBAL_CLOUD_CLUSTER_TYPE = 'cloud_cluster_type'
+    GLOBAL_CLOUD_PEER_VPC_ID = 'cloud_peer_vpc_id'
+    GLOBAL_CLOUD_PEER_OWNER_ID = 'cloud_peer_owner_id'
 
     class CloudCluster():
         """
@@ -1366,11 +1368,13 @@ class RedpandaServiceCloud(RedpandaServiceK8s):
                      oauth_client_secret,
                      oauth_audience,
                      api_url,
-                     cluster_id='',
+                     cluster_id=None,
                      delete_namespace=False,
                      cloud_cluster_region="us-west-2",
                      cloud_cluster_provider="AWS",
-                     cloud_cluster_type="FMC"):
+                     cloud_cluster_type="FMC",
+                     peer_vpc_id=None,
+                     peer_owner_id=None):
             """
             Initializes the object, but does not create clusters. Use
             `create` method to create a cluster.
@@ -1397,6 +1401,8 @@ class RedpandaServiceCloud(RedpandaServiceK8s):
             self._coud_cluster_provider = cloud_cluster_provider
             self._coud_cluster_type = cloud_cluster_type
             self._delete_namespace = delete_namespace
+            self._peer_vpc_id = peer_vpc_id
+            self._peer_owner_id = peer_owner_id
             self._token = None
 
             # unique 8-char identifier to be used when creating names of things for this cluster
@@ -1431,7 +1437,11 @@ class RedpandaServiceCloud(RedpandaServiceK8s):
                 resp = requests.post(f'{self._oauth_url}',
                                      headers=headers,
                                      data=data)
-                resp.raise_for_status()
+                try:
+                    resp.raise_for_status()
+                except requests.HTTPError as e:
+                    self._logging.error(f'{e} {resp.text}')
+                    return None
                 j = resp.json()
                 self._token = j['access_token']
             return self._token
@@ -1445,7 +1455,11 @@ class RedpandaServiceCloud(RedpandaServiceK8s):
             resp = requests.get(f'{self._api_url}{endpoint}',
                                 headers=headers,
                                 **kwargs)
-            resp.raise_for_status()
+            try:
+                resp.raise_for_status()
+            except requests.HTTPError as e:
+                self._logging.error(f'{e} {resp.text}')
+                return None
             return resp.json()
 
         def _http_post(self, base_url=None, endpoint='', **kwargs):
@@ -1459,7 +1473,11 @@ class RedpandaServiceCloud(RedpandaServiceK8s):
             resp = requests.post(f'{base_url}{endpoint}',
                                  headers=headers,
                                  **kwargs)
-            resp.raise_for_status()
+            try:
+                resp.raise_for_status()
+            except requests.HTTPError as e:
+                self._logging.error(f'{e} {resp.text}')
+                return None
             return resp.json()
 
         def _http_delete(self, endpoint='', **kwargs):
@@ -1471,7 +1489,11 @@ class RedpandaServiceCloud(RedpandaServiceK8s):
             resp = requests.delete(f'{self._api_url}{endpoint}',
                                    headers=headers,
                                    **kwargs)
-            resp.raise_for_status()
+            try:
+                resp.raise_for_status()
+            except requests.HTTPError as e:
+                self._logging.error(f'{e} {resp.text}')
+                return None
             return resp.json()
 
         def _create_namespace(self):
@@ -1493,7 +1515,7 @@ class RedpandaServiceCloud(RedpandaServiceK8s):
                         return True
             return False
 
-        def _get_cluster_id(self, namespace_uuid, name):
+        def _get_cluster_id_and_network_id(self, namespace_uuid, name):
             """
             Get clusterId.
 
@@ -1507,8 +1529,8 @@ class RedpandaServiceCloud(RedpandaServiceK8s):
                                       params=params)
             for c in clusters:
                 if c['name'] == name:
-                    return c['id']
-            return None
+                    return (c['id'], c['spec']['networkId'])
+            return None, None
 
         def _get_install_pack_ver(self):
             """Get the latest certified install pack version.
@@ -1601,6 +1623,11 @@ class RedpandaServiceCloud(RedpandaServiceK8s):
             product_id = self._get_product_id(config_profile_name, provider,
                                               cluster_type, region,
                                               install_pack_ver)
+            public = True # TODO get value from globals config setting
+            if public:
+                connection_type = 'public'
+            else:
+                connection_type = 'private'
 
             self._logger.info(f'creating cluster name {name}')
             body = {
@@ -1620,10 +1647,10 @@ class RedpandaServiceCloud(RedpandaServiceK8s):
                         "zones": zones,
                     }
                 },
-                "connectionType": "public",
+                "connectionType": connection_type,
                 "namespaceUuid": namespace_uuid,
                 "network": {
-                    "displayName": f"public-network-{name}",
+                    "displayName": f"{connection_type}-network-{name}",
                     "spec": {
                         "cidr": "10.1.0.0/16",
                         "deploymentType": cluster_type,
@@ -1649,7 +1676,8 @@ class RedpandaServiceCloud(RedpandaServiceK8s):
                 backoff_sec=self.CHECK_BACKOFF_SEC,
                 err_msg=
                 f'Unable to deterimine readiness of cloud cluster {name}')
-            self._cluster_id = self._get_cluster_id(namespace_uuid, name)
+            self._cluster_id, network_id = self._get_cluster_id(
+                namespace_uuid, name)
 
             if superuser is not None:
                 self._logger.debug(
@@ -1657,6 +1685,32 @@ class RedpandaServiceCloud(RedpandaServiceK8s):
                 )
                 self._create_user(superuser)
                 self._create_acls(superuser.username)
+
+            if not public:
+                # https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/instancedata-data-categories.html
+                # curl -s http://169.254.169.254/latest/meta-data/network/interfaces/macs/$(ip -br link show eth0 | awk '{print$3}')/owner-id
+                # curl -s http://169.254.169.254/latest/meta-data/network/interfaces/macs/$(ip -br link show eth0 | awk '{print$3}')/vpc-id
+                network_id = ''  # TODO get network ID from newly-created cluster
+                body = {
+                    "networkPeering": {
+                        "displayName": f'peer-{name}',
+                        "spec": {
+                            "provider": "AWS",
+                            "cloudProvider": {
+                                "aws": {
+                                    "peerOwnerId": self._peer_owner_id,
+                                    "peerVpcId": self._peer_vpc_id
+                                }
+                            }
+                        }
+                    },
+                    "namespaceUuid": namespace_uuid
+                }
+                resp = self._http_post(
+                    f'/api/v1/networks/{network_id}/network-peerings',
+                    json=body)
+                # TODO accept the AWS VPC peering request
+                # TODO create route between vpc and peering connection
 
             return self._cluster_id
 
@@ -1798,6 +1852,11 @@ class RedpandaServiceCloud(RedpandaServiceK8s):
             self.GLOBAL_CLOUD_CLUSTER_TYPE, "FMC").upper()
         self.logger.debug(f'initial cluster_id: {self._cloud_cluster_id}')
 
+        self._cloud_peer_vpc_id = context.globals.get(
+            self.GLOBAL_CLOUD_PEER_VPC_ID, None)
+        self._cloud_peer_owner_id = context.globals.get(
+            self.GLOBAL_CLOUD_PEER_OWNER_ID, None)
+
         self._cloud_cluster = self.CloudCluster(
             self.logger,
             self._cloud_oauth_url,
@@ -1808,7 +1867,9 @@ class RedpandaServiceCloud(RedpandaServiceK8s):
             self._cloud_cluster_id,
             cloud_cluster_region=self._cloud_cluster_region,
             cloud_cluster_provider=self._cloud_cluster_provider,
-            cloud_cluster_type=self._cloud_cluster_type)
+            cloud_cluster_type=self._cloud_cluster_type,
+            peer_vpc_id=self._cloud_peer_vpc_id,
+            peer_owner_id=self._cloud_peer_owner_id)
         self._kubectl = None
 
     def start_node(self, node, **kwargs):
