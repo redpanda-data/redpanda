@@ -58,6 +58,12 @@ bool check_compatible(const valid_schema& reader, const valid_schema& writer) {
     });
 }
 
+constexpr auto set_accumulator =
+  [](store::schema_id_set acc, store::schema_id_set refs) {
+      acc.insert(refs.begin(), refs.end());
+      return acc;
+  };
+
 } // namespace
 
 ss::future<> sharded_store::start(ss::smp_service_group sg) {
@@ -73,8 +79,7 @@ sharded_store::make_canonical_schema(unparsed_schema schema) {
     case schema_type::avro: {
         co_return canonical_schema{
           std::move(schema.sub()),
-          sanitize_avro_schema_definition(schema.def()).value(),
-          std::move(schema.refs())};
+          sanitize_avro_schema_definition(schema.def()).value()};
     }
     case schema_type::protobuf:
         co_return co_await make_canonical_protobuf_schema(
@@ -217,12 +222,7 @@ ss::future<bool> sharded_store::upsert(
   is_deleted deleted) {
     co_await upsert_schema(id, std::move(schema).def());
     co_return co_await upsert_subject(
-      marker,
-      std::move(schema).sub(),
-      std::move(schema).refs(),
-      version,
-      id,
-      deleted);
+      marker, std::move(schema).sub(), version, id, deleted);
 }
 
 ss::future<bool> sharded_store::has_schema(schema_id id) {
@@ -299,7 +299,7 @@ ss::future<subject_schema> sharded_store::get_subject_schema(
       });
 
     co_return subject_schema{
-      .schema = {sub, std::move(def), std::move(v_id.refs)},
+      .schema = {sub, std::move(def)},
       .version = v_id.version,
       .id = v_id.id,
       .deleted = v_id.deleted};
@@ -328,10 +328,21 @@ sharded_store::get_versions(subject sub, include_deleted inc_del) {
 }
 
 ss::future<bool> sharded_store::is_referenced(subject sub, schema_version ver) {
-    auto map = [sub{std::move(sub)}, ver](store& s) {
-        return s.is_referenced(sub, ver);
-    };
-    co_return co_await _store.map_reduce0(map, false, std::logical_or<>{});
+    // Find all the schema that reference this sub-ver
+    auto references = co_await _store.map_reduce0(
+      [sub{std::move(sub)}, ver](store& s) {
+          return s.referenced_by(sub, ver);
+      },
+      store::schema_id_set{},
+      set_accumulator);
+
+    // Find whether any subject version reference any of the schema
+    co_return co_await _store.map_reduce0(
+      [refs{std::move(references)}](store& s) {
+          return s.subject_versions_has_any_of(refs);
+      },
+      false,
+      std::logical_or<>{});
 }
 
 ss::future<std::vector<schema_id>> sharded_store::referenced_by(
@@ -346,17 +357,23 @@ ss::future<std::vector<schema_id>> sharded_store::referenced_by(
         ver = versions.back();
     }
 
-    auto map = [sub{std::move(sub)}, ver](store& s) {
-        return s.referenced_by(sub, ver);
-    };
-    auto reduce = [](std::vector<schema_id> acc, std::vector<schema_id> refs) {
-        acc.insert(acc.end(), refs.begin(), refs.end());
-        return acc;
-    };
+    // Find all the schema that reference this sub-ver
     auto references = co_await _store.map_reduce0(
-      map, std::vector<schema_id>{}, reduce);
-    std::sort(references.begin(), references.end());
-    co_return references;
+      [sub{std::move(sub)}, ver](store& s) {
+          return s.referenced_by(sub, ver);
+      },
+      store::schema_id_set{},
+      set_accumulator);
+
+    // Find all the subject versions that reference any of the schema
+    references = co_await _store.map_reduce0(
+      [refs{std::move(references)}](store& s) {
+          return s.subject_versions_with_any_of(refs);
+      },
+      store::schema_id_set{},
+      set_accumulator);
+
+    co_return std::vector<schema_id>{references.begin(), references.end()};
 }
 
 ss::future<std::vector<schema_version>> sharded_store::delete_subject(
@@ -462,14 +479,12 @@ sharded_store::upsert_schema(schema_id id, canonical_schema_definition def) {
       });
 }
 
-ss::future<sharded_store::insert_subject_result> sharded_store::insert_subject(
-  subject sub, canonical_schema::references refs, schema_id id) {
+ss::future<sharded_store::insert_subject_result>
+sharded_store::insert_subject(subject sub, schema_id id) {
     auto sub_shard{shard_for(sub)};
     auto [version, inserted] = co_await _store.invoke_on(
-      sub_shard,
-      _smp_opts,
-      [sub{std::move(sub)}, refs{std::move(refs)}, id](store& s) mutable {
-          return s.insert_subject(sub, std::move(refs), id);
+      sub_shard, _smp_opts, [sub{std::move(sub)}, id](store& s) mutable {
+          return s.insert_subject(sub, id);
       });
     co_return insert_subject_result{version, inserted};
 }
@@ -477,7 +492,6 @@ ss::future<sharded_store::insert_subject_result> sharded_store::insert_subject(
 ss::future<bool> sharded_store::upsert_subject(
   seq_marker marker,
   subject sub,
-  canonical_schema::references refs,
   schema_version version,
   schema_id id,
   is_deleted deleted) {
@@ -485,14 +499,8 @@ ss::future<bool> sharded_store::upsert_subject(
     co_return co_await _store.invoke_on(
       sub_shard,
       _smp_opts,
-      [marker,
-       sub{std::move(sub)},
-       refs{std::move(refs)},
-       version,
-       id,
-       deleted](store& s) mutable {
-          return s.upsert_subject(
-            marker, std::move(sub), std::move(refs), version, id, deleted);
+      [marker, sub{std::move(sub)}, version, id, deleted](store& s) mutable {
+          return s.upsert_subject(marker, std::move(sub), version, id, deleted);
       });
 }
 

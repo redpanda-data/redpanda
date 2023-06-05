@@ -337,10 +337,10 @@ inline void rjson_serialize(
         w.Key("schemaType");
         ::json::rjson_serialize(w, to_string_view(type));
     }
-    if (!val.schema.refs().empty()) {
+    if (!val.schema.def().refs().empty()) {
         w.Key("references");
         w.StartArray();
-        for (const auto& ref : val.schema.refs()) {
+        for (const auto& ref : val.schema.def().refs()) {
             w.StartObject();
             w.Key("name");
             ::json::rjson_serialize(w, ref.name);
@@ -382,7 +382,7 @@ class schema_value_handler final : public json::base_handler<Encoding> {
         subject sub{invalid_subject};
         typename typed_schema_definition<Tag>::raw_string def;
         schema_type type{schema_type::avro};
-        typename typed_schema<Tag>::references refs;
+        typename typed_schema_definition<Tag>::references refs;
     };
     mutable_schema _schema;
 
@@ -573,8 +573,7 @@ public:
             _state = state::empty;
             result.schema = {
               std::move(_schema.sub),
-              {std::move(_schema.def), _schema.type},
-              std::move(_schema.refs)};
+              {std::move(_schema.def), _schema.type, std::move(_schema.refs)}};
             return true;
         }
         case state::reference: {
