@@ -66,6 +66,26 @@ SEASTAR_THREAD_TEST_CASE(test_sharded_store_referenced_by) {
     BOOST_REQUIRE(
       store.is_referenced(pps::subject{"simple.proto"}, pps::schema_version{1})
         .get());
+
+    // soft delete subject
+    store
+      .upsert(
+        pps::seq_marker{
+          std::nullopt, std::nullopt, ver1, pps::seq_marker_key_type::schema},
+        importing_schema,
+        pps::schema_id{2},
+        ver1,
+        pps::is_deleted::yes)
+      .get();
+
+    // Soft-deleted should not partake in reference calculations
+    BOOST_REQUIRE(
+      store.referenced_by(pps::subject{"simple.proto"}, pps::schema_version{1})
+        .get()
+        .empty());
+    BOOST_REQUIRE(
+      !store.is_referenced(pps::subject{"simple.proto"}, pps::schema_version{1})
+         .get());
 }
 
 SEASTAR_THREAD_TEST_CASE(test_sharded_store_find_unordered) {
