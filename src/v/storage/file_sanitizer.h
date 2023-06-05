@@ -127,11 +127,12 @@ public:
       std::vector<iovec> iov,
       const ss::io_priority_class& pc) final {
         assert_file_not_closed();
+        auto iov_size = iov.size();
         return with_op(
           ssx::sformat(
             "ss::future<size_t>::write_dma(pos:{}, vector<iovec>:{})",
             pos,
-            iov.size()),
+            iov_size),
           maybe_inject_failure(failable_op_type::write)
             .then([this, pos, iov = std::move(iov), &pc]() {
                 return get_file_impl(_file)

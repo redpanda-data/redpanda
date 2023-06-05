@@ -81,8 +81,7 @@ public:
       model::topic topic_name,
       model::partition_id pid,
       model::offset kafka_offset_inclusive) {
-        auto m = co_await consume(
-          std::move(topic_name), {pid}, kafka_offset_inclusive);
+        auto m = co_await consume(topic_name, {pid}, kafka_offset_inclusive);
         if (m.empty()) {
             throw std::runtime_error(
               fmt::format("empty fetch {}/{}", topic_name(), pid()));

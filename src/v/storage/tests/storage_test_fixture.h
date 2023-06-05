@@ -350,6 +350,8 @@ public:
 
     void append_batch(storage::log log, model::record_batch batch) {
         model::record_batch_reader::data_t buffer;
+        const auto last_offset_delta = model::offset(
+          batch.header().last_offset_delta);
         buffer.push_back(std::move(batch));
         storage::log_append_config append_cfg{
           storage::log_append_config::fsync::no,
@@ -360,8 +362,7 @@ public:
         model::offset base_offset = old_dirty_offset < model::offset(0)
                                       ? model::offset(0)
                                       : old_dirty_offset + model::offset(1);
-        auto expected_offset
-          = base_offset + model::offset{batch.header().last_offset_delta};
+        auto expected_offset = base_offset + last_offset_delta;
 
         auto res = model::make_memory_record_batch_reader(std::move(buffer))
                      .for_each_ref(

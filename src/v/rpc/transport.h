@@ -296,7 +296,11 @@ ss::future<result<rpc::client_context<T>>> parse_result(
         return ss::make_ready_future<ret_t>(map_server_error(st));
     }
 
-    return parse_type<T, default_message_codec>(in, sctx->get_header())
+    // use-after-move check doesn't take into account c++17 evaluation order
+    // correctly, so when used before and after `.then` it is a false positive.
+    // https://reviews.llvm.org/D145581
+    auto header = sctx->get_header();
+    return parse_type<T, default_message_codec>(in, header)
       .then_wrapped([sctx = std::move(sctx)](ss::future<T> data_fut) {
           if (data_fut.failed()) {
               const auto ex = data_fut.get_exception();

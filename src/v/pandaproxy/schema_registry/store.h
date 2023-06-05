@@ -73,6 +73,7 @@ public:
     /// return the schema_version and schema_id, and whether it's new.
     insert_result insert(canonical_schema schema) {
         auto id = insert_schema(std::move(schema).def()).id;
+        // NOLINTNEXTLINE(bugprone-use-after-move)
         auto [version, inserted] = insert_subject(std::move(schema).sub(), id);
         return {version, id, inserted};
     }

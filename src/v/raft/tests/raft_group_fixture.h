@@ -161,7 +161,7 @@ struct raft_node {
           .get();
 
         // setup consensus
-        auto self_id = broker.id();
+        auto self_id = this->broker.id();
         consensus = ss::make_lw_shared<raft::consensus>(
           self_id,
           gr_id,
