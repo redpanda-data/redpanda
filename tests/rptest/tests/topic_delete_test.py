@@ -461,6 +461,47 @@ class TopicDeleteCloudStorageTest(RedpandaTest):
         self._assert_topic_lifecycle_marker_status(
             self.topic, LifecycleMarkerStatus.PURGED)
 
+    @cluster(
+        num_nodes=3,
+        log_allow_list=[
+            'exception while executing partition operation: {type: deletion'
+        ])
+    @matrix(cloud_storage_type=get_cloud_storage_type())
+    def drop_lifecycle_marker_test(self, cloud_storage_type):
+        self._populate_topic(self.topic)
+        with firewall_blocked(self.redpanda.nodes, self._s3_port):
+            self.kafka_tools.delete_topic(self.topic)
+
+            admin = Admin(self.redpanda)
+            controller_markers = admin.get_cloud_storage_lifecycle_markers(
+            )['markers']
+            assert len(controller_markers) == 1
+            marker = controller_markers[0]
+            assert marker['topic'] == self.topic
+            assert marker['status'] == 'purging'
+
+            # Marker shouldn't go anywhere, we can't do the purge
+            time.sleep(5)
+            controller_markers = admin.get_cloud_storage_lifecycle_markers(
+            )['markers']
+            assert len(controller_markers) == 1
+            marker = controller_markers[0]
+            assert marker['topic'] == self.topic
+            assert marker['status'] == 'purging'
+
+            # We should be able to delete the marker manually, this is testing
+            # the escape hatch for systems where we e.g. lost access to a bucket therefore
+            # can never process the marker properly.
+            #
+            # Use the controller node for the API access, to ensure read-after-write consistency
+            controller_node = self.redpanda.controller()
+            admin.delete_cloud_storage_lifecycle_marker(marker['topic'],
+                                                        marker['revision_id'],
+                                                        node=controller_node)
+            controller_markers = admin.get_cloud_storage_lifecycle_markers(
+                node=controller_node)['markers']
+            assert len(controller_markers) == 0
+
     @skip_debug_mode  # Rely on timely uploads during leader transfers
     @cluster(
         num_nodes=3,
@@ -559,6 +600,21 @@ class TopicDeleteCloudStorageTest(RedpandaTest):
 
         # The JSON value is an integer, use the underlying value of the Python enum
         assert marker['status'] == status.value
+
+        if status == LifecycleMarkerStatus.PURGED:
+            # Shortly after the remote status goes to PURGED, we should see the local
+            # topic table status update (when the scrubber RPCs to the controller to
+            # ask it to drop the life cycle marker.
+            def get_topics_with_markers():
+                admin = Admin(self.redpanda)
+                markers = admin.get_cloud_storage_lifecycle_markers(
+                )['markers']
+                self.logger.info(f"markers: {markers}")
+                return set(i['topic'] for i in markers)
+
+            wait_until(lambda: topic_name not in get_topics_with_markers(),
+                       timeout_sec=10,
+                       backoff_sec=1)
 
     def _assert_topic_lifecycle_marker_absent(self, topic_name: str):
         """
