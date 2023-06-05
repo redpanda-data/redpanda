@@ -33,14 +33,6 @@
 
 namespace pps = pandaproxy::schema_registry;
 
-const pps::canonical_schema_definition string_def0{
-  pps::sanitize_avro_schema_definition(
-    {R"({"type":"string"})", pps::schema_type::avro})
-    .value()};
-const pps::canonical_schema_definition int_def0{
-  pps::sanitize_avro_schema_definition(
-    {R"({"type": "int"})", pps::schema_type::avro})
-    .value()};
 const pps::subject subject0{"subject0"};
 constexpr pps::topic_key_magic magic0{0};
 constexpr pps::topic_key_magic magic1{1};
@@ -49,6 +41,15 @@ constexpr pps::schema_version version0{0};
 constexpr pps::schema_version version1{1};
 constexpr pps::schema_id id0{0};
 constexpr pps::schema_id id1{1};
+
+const pps::canonical_schema_definition string_def0{
+  pps::sanitize_avro_schema_definition(
+    {R"({"type":"string"})", pps::schema_type::avro})
+    .value()};
+const pps::canonical_schema_definition int_def0{
+  pps::sanitize_avro_schema_definition(
+    {R"({"type": "int"})", pps::schema_type::avro})
+    .value()};
 
 inline model::record_batch make_delete_subject_batch(pps::subject sub) {
     storage::record_batch_builder rb{
