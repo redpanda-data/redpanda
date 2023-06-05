@@ -15,11 +15,14 @@
 #include "cluster/node_status_table.h"
 #include "config/property.h"
 #include "features/feature_table.h"
+#include "model/metadata.h"
 #include "rpc/connection_cache.h"
 #include "rpc/types.h"
 #include "seastarx.h"
 #include "ssx/metrics.h"
 
+#include <seastar/core/chunked_fifo.hh>
+#include <seastar/core/condition-variable.hh>
 #include <seastar/core/future.hh>
 #include <seastar/core/lowres_clock.hh>
 #include <seastar/core/timer.hh>
@@ -58,7 +61,8 @@ public:
     ss::future<> stop();
 
 private:
-    void handle_members_updated_notification(
+    ss::future<> drain_notifications_queue();
+    ss::future<> handle_members_updated_notification(
       model::node_id, model::membership_state);
 
     void tick();
@@ -104,6 +108,18 @@ private:
       ssx::metrics::public_metrics_handle};
 
     ss::sharded<ss::abort_source>& _as;
+    struct member_notification {
+        member_notification(model::node_id id, model::membership_state state)
+          : id(id)
+          , state(state) {}
+
+        model::node_id id;
+        model::membership_state state;
+    };
+
+    ss::chunked_fifo<member_notification> _pending_member_notifications;
+
+    bool _draining = false;
 
     friend class node_status_rpc_handler;
 };
