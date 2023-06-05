@@ -67,6 +67,13 @@ SEASTAR_THREAD_TEST_CASE(test_sharded_store_referenced_by) {
       store.is_referenced(pps::subject{"simple.proto"}, pps::schema_version{1})
         .get());
 
+    auto importing = store.get_schema_definition(pps::schema_id{2}).get();
+    BOOST_REQUIRE_EQUAL(importing.refs().size(), 1);
+    BOOST_REQUIRE_EQUAL(importing.refs()[0].sub, imported.refs()[0].sub);
+    BOOST_REQUIRE_EQUAL(
+      importing.refs()[0].version, imported.refs()[0].version);
+    BOOST_REQUIRE_EQUAL(importing.refs()[0].name, imported.refs()[0].name);
+
     // soft delete subject
     store
       .upsert(
