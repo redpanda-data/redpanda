@@ -306,8 +306,9 @@ ss::future<bool> persisted_stm::sync(model::timeout_clock::duration timeout) {
     model::offset sync_offset;
     auto log_offsets = _c->log().offsets();
     if (log_offsets.dirty_offset_term == term) {
-        if (log_offsets.last_term_start_offset > model::offset{0}) {
-            sync_offset = log_offsets.last_term_start_offset - model::offset{1};
+        auto last_term_start_offset = _c->log().find_last_term_start_offset();
+        if (last_term_start_offset > model::offset{0}) {
+            sync_offset = last_term_start_offset - model::offset{1};
         } else {
             sync_offset = model::offset{};
         }
