@@ -19,6 +19,7 @@
 
 #include <array>
 #include <string_view>
+#include <unordered_set>
 
 // cluster classes that we will make friends of the feature_table
 namespace cluster {
@@ -75,7 +76,7 @@ enum class feature : std::uint64_t {
 //
 // retired does *not* mean the functionality is gone: it just means it
 // is no longer guarded by a feature flag.
-inline const std::set<std::string_view> retired_features = {
+inline const std::unordered_set<std::string_view> retired_features = {
   "central_config",
   "consumer_offsets",
   "maintenance_mode",
