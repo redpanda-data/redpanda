@@ -168,9 +168,6 @@ template<typename T>
 void write(iobuf& out, std::optional<T> t);
 
 template<typename T>
-void write(iobuf& out, tristate<T> t);
-
-template<typename T>
 requires is_absl_node_hash_set<std::decay_t<T>>
          || is_absl_flat_hash_set<std::decay_t<T>>
          || is_absl_btree_set<std::decay_t<T>>
@@ -204,18 +201,6 @@ void write(iobuf& out, std::optional<T> t) {
         write(out, std::move(t.value()));
     } else {
         write(out, false);
-    }
-}
-
-template<typename T>
-void write(iobuf& out, tristate<T> t) {
-    if (t.is_disabled()) {
-        write<int8_t>(out, -1);
-    } else if (!t.has_optional_value()) {
-        write<int8_t>(out, 0);
-    } else {
-        write<int8_t>(out, 1);
-        write(out, std::move(t.value()));
     }
 }
 
@@ -417,26 +402,6 @@ void read_nested(iobuf_parser& in, T& t, std::size_t const bytes_left_limit) {
             auto value = read_nested<typename Type::mapped_type>(
               in, bytes_left_limit);
             t.emplace(std::move(key), std::move(value));
-        }
-    } else if constexpr (reflection::is_tristate<T>) {
-        int8_t flag = read_nested<int8_t>(in, bytes_left_limit);
-        if (flag == -1) {
-            // disabled
-            t = T{};
-        } else if (flag == 0) {
-            // empty
-            t = T(std::nullopt);
-        } else if (flag == 1) {
-            t = T(read_nested<typename T::value_type>(in, bytes_left_limit));
-        } else {
-            throw serde_exception(fmt_with_ctx(
-              ssx::sformat,
-              "reading type {} of size {}: {} bytes left - unexpected tristate "
-              "state flag: {}, expected states are -1,0,1",
-              type_str<Type>(),
-              sizeof(Type),
-              in.bytes_left(),
-              flag));
         }
     } else if constexpr (std::is_same_v<T, ss::net::inet_address>) {
         bool is_ipv4 = read_nested<bool>(in, bytes_left_limit);
@@ -676,5 +641,6 @@ inline serde::serde_size_t peek_body_size(iobuf_parser& in) {
 #include "serde/rw/named_type.h"
 #include "serde/rw/scalar.h"
 #include "serde/rw/sstring.h"
+#include "serde/rw/tristate_rw.h"
 #include "serde/rw/uuid.h"
 #include "serde/rw/vector.h"
