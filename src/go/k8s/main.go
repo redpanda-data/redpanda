@@ -78,6 +78,7 @@ func init() {
 	utilruntime.Must(cmapiv1.AddToScheme(scheme))
 	utilruntime.Must(helmControllerAPIV2.AddToScheme(scheme))
 	utilruntime.Must(sourcev1.AddToScheme(scheme))
+	utilruntime.Must(clusterredpandacomv1alpha1.AddToScheme(scheme))
 	//+kubebuilder:scaffold:scheme
 }
 
@@ -338,6 +339,13 @@ func main() {
 		}
 	}
 
+	if err = (&clusterredpandacomcontrollers.TopicReconciler{
+		Client: mgr.GetClient(),
+		Scheme: mgr.GetScheme(),
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "Topic")
+		os.Exit(1)
+	}
 	//+kubebuilder:scaffold:builder
 
 	if err := mgr.AddHealthzCheck("health", healthz.Ping); err != nil {
