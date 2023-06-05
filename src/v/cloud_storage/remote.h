@@ -124,6 +124,8 @@ public:
     static const cloud_storage_clients::object_tag_formatter
       default_topic_manifest_tags;
     static const cloud_storage_clients::object_tag_formatter default_index_tags;
+    static const cloud_storage_clients::object_tag_formatter
+      default_lifecycle_marker_tags;
 
     /// Functor that returns fresh input_stream object that can be used
     /// to re-upload and will return all data that needs to be uploaded
@@ -447,6 +449,11 @@ public:
 
     static cloud_storage_clients::object_tag_formatter make_segment_index_tags(
       const model::ntp& ntp, model::initial_revision_id rev);
+    static cloud_storage_clients::object_tag_formatter
+    make_lifecycle_marker_tags(
+      const model::ns& ns,
+      const model::topic& topic,
+      const model::initial_revision_id rev);
 
 private:
     ss::future<upload_result> delete_objects_sequentially(

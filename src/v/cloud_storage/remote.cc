@@ -1358,6 +1358,17 @@ cloud_storage_clients::object_tag_formatter remote::make_segment_index_tags(
     return tags;
 }
 
+cloud_storage_clients::object_tag_formatter remote::make_lifecycle_marker_tags(
+  const model::ns& ns,
+  const model::topic& topic,
+  const model::initial_revision_id rev) {
+    auto tags = default_lifecycle_marker_tags;
+    tags.add("rp-ns", ns());
+    tags.add("rp-topic", topic());
+    tags.add("rp-rev", rev());
+    return tags;
+}
+
 cloud_storage_clients::object_tag_formatter remote::make_tx_manifest_tags(
   const model::ntp& ntp, model::initial_revision_id rev) {
     // Note: tx-manifest is related to segment (contains data which are used
@@ -1376,6 +1387,9 @@ const cloud_storage_clients::object_tag_formatter
   = {{"rp-type", "partition-manifest"}};
 const cloud_storage_clients::object_tag_formatter remote::default_index_tags = {
   {"rp-type", "segment-index"}};
+const cloud_storage_clients::object_tag_formatter
+  remote::default_lifecycle_marker_tags
+  = {{"rp-type", "lifecycle-marker"}};
 
 ss::future<api_activity_notification>
 remote::subscribe(remote::event_filter& filter) {
