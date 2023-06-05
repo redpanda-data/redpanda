@@ -1502,7 +1502,7 @@ class RedpandaServiceCloud(RedpandaServiceK8s):
                         return True
             return False
 
-        def _get_cluster_id(self, namespace_uuid, name):
+        def _get_cluster_id_and_network_id(self, namespace_uuid, name):
             """
             Get clusterId.
 
@@ -1516,8 +1516,8 @@ class RedpandaServiceCloud(RedpandaServiceK8s):
                                       params=params)
             for c in clusters:
                 if c['name'] == name:
-                    return c['id']
-            return None
+                    return (c['id'], c['spec']['networkId'])
+            return None, None
 
         def _get_install_pack_ver(self):
             """Get the latest certified install pack version.
@@ -1660,7 +1660,8 @@ class RedpandaServiceCloud(RedpandaServiceK8s):
                 backoff_sec=self.CHECK_BACKOFF_SEC,
                 err_msg=
                 f'Unable to deterimine readiness of cloud cluster {name}')
-            self._cluster_id = self._get_cluster_id(namespace_uuid, name)
+            self._cluster_id, network_id = self._get_cluster_id(
+                namespace_uuid, name)
 
             if superuser is not None:
                 self._logger.debug(
@@ -1673,7 +1674,6 @@ class RedpandaServiceCloud(RedpandaServiceK8s):
                 # https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/instancedata-data-categories.html
                 # curl -s http://169.254.169.254/latest/meta-data/network/interfaces/macs/$(ip -br link show eth0 | awk '{print$3}')/owner-id
                 # curl -s http://169.254.169.254/latest/meta-data/network/interfaces/macs/$(ip -br link show eth0 | awk '{print$3}')/vpc-id
-                network_id = ''  # TODO get network ID from newly-created cluster
                 body = {
                     "networkPeering": {
                         "displayName": f'peer-{name}',
@@ -1693,6 +1693,7 @@ class RedpandaServiceCloud(RedpandaServiceK8s):
                     f'/api/v1/networks/{network_id}/network-peerings',
                     json=body)
                 # TODO accept the AWS VPC peering request
+                # TODO create route between vpc and peering connection
 
             return self._cluster_id
 
