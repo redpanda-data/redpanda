@@ -522,8 +522,8 @@ pub struct DeltaFORStreamPos {
 }
 
 impl DeltaFORStreamPos {
-    pub fn from(mut cursor: &mut std::io::Cursor<&[u8]>) -> Result<Self, BucketReaderError> {
-        decode_envelope(cursor, 0, |env, mut cursor| {
+    pub fn from(cursor: &mut std::io::Cursor<&[u8]>) -> Result<Self, BucketReaderError> {
+        decode_envelope(cursor, 0, |_env, mut cursor| {
             let initial = read_i64(&mut cursor)?;
             let offset = read_u32(&mut cursor)?;
             let num_rows = read_u32(&mut cursor)?;
@@ -892,11 +892,11 @@ pub struct LifecycleMarker {
 }
 
 impl RpSerde for LifecycleMarker {
-    fn from_bytes(mut cursor: &mut std::io::Cursor<&[u8]>) -> Result<Self, BucketReaderError> {
-        decode_envelope(cursor, 0, |env, mut cursor| {
+    fn from_bytes(cursor: &mut std::io::Cursor<&[u8]>) -> Result<Self, BucketReaderError> {
+        decode_envelope(cursor, 0, |_env, mut cursor| {
             let cluster_id = read_string(&mut cursor)?;
 
-            let ntr = decode_envelope(cursor, 0, |env, mut cursor| {
+            let ntr = decode_envelope(cursor, 0, |_env, mut cursor| {
                 let namespace = read_string(&mut cursor)?;
                 let topic = read_string(&mut cursor)?;
                 let revision_id = read_i64(&mut cursor)?;
