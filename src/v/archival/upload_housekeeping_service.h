@@ -229,12 +229,12 @@ private:
     /// Idle timeout, the service is activated when remote
     /// api is idle for longer than '_idle_timeout'
     config::binding<std::chrono::milliseconds> _idle_timeout;
+    /// Idle timeout with jitter
+    simple_time_jitter<ss::lowres_clock> _idle_jittery_timeout;
     /// Timeout that defines the duration of epoch
     config::binding<std::chrono::milliseconds> _epoch_duration;
     /// Idle threshold
     config::binding<double> _api_idle_threshold;
-    /// Jitter for timers
-    simple_time_jitter<ss::lowres_clock> _time_jitter;
     retry_chain_node _rtc;
     retry_chain_logger _ctxlog;
     cloud_storage::remote::event_filter _filter;

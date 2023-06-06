@@ -55,11 +55,11 @@ upload_housekeeping_service::upload_housekeeping_service(
   : _remote(api.local())
   , _idle_timeout(
       config::shard_local_cfg().cloud_storage_idle_timeout_ms.bind())
+  , _idle_jittery_timeout(_idle_timeout(), 100ms)
   , _epoch_duration(
       config::shard_local_cfg().cloud_storage_housekeeping_interval_ms.bind())
   , _api_idle_threshold(
       config::shard_local_cfg().cloud_storage_idle_threshold_rps.bind())
-  , _time_jitter(100ms)
   , _rtc(_as)
   , _ctxlog(archival_log, _rtc)
   , _filter(_rtc)
@@ -72,6 +72,10 @@ upload_housekeeping_service::upload_housekeeping_service(
         auto initial = _api_utilization->get();
         _api_utilization = std::make_unique<sliding_window_t>(
           initial, _idle_timeout(), ma_resolution);
+
+        _idle_jittery_timeout = simple_time_jitter<ss::lowres_clock>(
+          _idle_timeout(), 100ms);
+        _idle_timer.arm(_idle_jittery_timeout.next_duration());
     });
 
     _epoch_duration.watch(
@@ -83,6 +87,7 @@ upload_housekeeping_service::~upload_housekeeping_service() {}
 ss::future<> upload_housekeeping_service::start() {
     _workflow.start();
     _epoch_timer.arm_periodic(_epoch_duration());
+    _idle_timer.arm(_idle_jittery_timeout.next_duration());
     ssx::spawn_with_gate(_gate, [this]() { return bg_idle_loop(); });
     return ss::now();
 }
@@ -118,6 +123,7 @@ ss::future<> upload_housekeeping_service::bg_idle_loop() {
             weight = 1;
             break;
         };
+
         _api_utilization->update(weight, ss::lowres_clock::now());
         if (_api_utilization->get() >= _api_idle_threshold()) {
             // Restart the timer and delay idle timeout
@@ -134,8 +140,7 @@ ss::future<> upload_housekeeping_service::bg_idle_loop() {
 
 void upload_housekeeping_service::rearm_idle_timer() {
     _idle_timer.rearm(
-      ss::lowres_clock::now() + _idle_timeout()
-      + _time_jitter.next_jitter_duration());
+      ss::lowres_clock::now() + _idle_jittery_timeout.next_duration());
 }
 
 void upload_housekeeping_service::idle_timer_callback() {
@@ -144,6 +149,8 @@ void upload_housekeeping_service::idle_timer_callback() {
         vlog(_ctxlog.debug, "Activating upload housekeeping");
         _workflow.resume(false);
     }
+
+    rearm_idle_timer();
 }
 
 void upload_housekeeping_service::epoch_timer_callback() {
