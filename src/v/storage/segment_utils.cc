@@ -18,6 +18,7 @@
 #include "random/generators.h"
 #include "reflection/adl.h"
 #include "ssx/future-util.h"
+#include "storage/chunk_cache.h"
 #include "storage/compacted_index.h"
 #include "storage/compacted_index_writer.h"
 #include "storage/compaction_reducers.h"
@@ -181,7 +182,7 @@ ss::future<segment_appender_ptr> make_segment_appender(
 
 size_t number_of_chunks_from_config(const ntp_config& ntpc) {
     auto def = segment_appender::write_behind_memory
-               / config::shard_local_cfg().append_chunk_size();
+               / internal::chunks().chunk_size();
 
     if (!ntpc.has_overrides()) {
         return def;
@@ -366,7 +367,7 @@ ss::future<storage::index_state> do_copy_segment_data(
                    tmpname,
                    cfg.sanitize,
                    segment_appender::write_behind_memory
-                     / config::shard_local_cfg().append_chunk_size(),
+                     / internal::chunks().chunk_size(),
                    std::nullopt,
                    cfg.iopc,
                    resources)
