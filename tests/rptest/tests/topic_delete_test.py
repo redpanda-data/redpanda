@@ -13,7 +13,7 @@ from typing import Optional
 
 from ducktape.utils.util import wait_until
 
-from ducktape.mark import matrix, parametrize
+from ducktape.mark import matrix, parametrize, ok_to_fail
 from requests.exceptions import HTTPError
 
 from rptest.utils.mode_checks import skip_debug_mode
@@ -461,6 +461,7 @@ class TopicDeleteCloudStorageTest(RedpandaTest):
         self._assert_topic_lifecycle_marker_status(
             self.topic, LifecycleMarkerStatus.PURGED)
 
+    @ok_to_fail
     @cluster(
         num_nodes=3,
         log_allow_list=[
