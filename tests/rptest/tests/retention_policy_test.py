@@ -416,9 +416,12 @@ class ShadowIndexingCloudRetentionTest(RedpandaTest):
             self.logger.debug(f"Current cloud log size is: {cloud_log_size}")
             return cloud_log_size
 
-        # Wait for everything to be uploaded to the cloud.
+        # Wait for everything to be uploaded to the cloud.  This should take at most
+        # the bandwidth time for the amount of data we produced, plus the segment
+        # upload interval (set to 10s via fast_uploads), plus the manifest upload
+        # interval (set to 1s via fast_uploads).
         wait_until(lambda: cloud_log_size() >= total_bytes,
-                   timeout_sec=10,
+                   timeout_sec=30,
                    backoff_sec=2,
                    err_msg=f"Segments not uploaded")
 
