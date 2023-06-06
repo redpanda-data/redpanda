@@ -114,13 +114,14 @@ class PartitionBalancerScaleTest(PreallocNodesTest, PartitionMovementMixin):
             message_cnt = 64000
             consumers = 1
             partitions_count = 16
+            timeout = 120
         elif type == self.MANY_PARTITIONS:
 
             message_size = 128 * (2**10)
             message_cnt = 819200
             consumers = 8
             partitions_count = self._max_partition_count(
-                len(self.redpanda.nodes))
+                len(self.redpanda.nodes) - 1)
             timeout = 500
         else:
             message_size = 128 * (2**10)
