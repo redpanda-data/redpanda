@@ -238,7 +238,7 @@ ss::future<> spill_key_index::spill(
 }
 
 ss::future<> spill_key_index::append(compacted_index::entry e) {
-    return ss::try_with_gate(_gate, [this, e = std::move(e)]() {
+    return ss::try_with_gate(_gate, [this, e = std::move(e)]() mutable {
         return ss::do_with(std::move(e), [this](compacted_index::entry& e) {
             return spill(e.type, e.key, value_type{e.offset, e.delta});
         });

@@ -699,13 +699,13 @@ public:
     using property<std::vector<T>>::property;
 
     bool set_value(YAML::Node n) override {
-        auto value = decode_yaml(std::move(n));
+        auto value = decode_yaml(n);
         return property<std::vector<T>>::update_value(std::move(value));
     }
 
     std::optional<validation_error>
     validate([[maybe_unused]] YAML::Node n) const override {
-        std::vector<T> value = decode_yaml(std::move(n));
+        std::vector<T> value = decode_yaml(n);
         return property<std::vector<T>>::validate(value);
     }
 
@@ -739,14 +739,13 @@ public:
     using property<std::unordered_map<typename T::key_type, T>>::property;
 
     bool set_value(YAML::Node n) override {
-        auto value = decode_yaml(std::move(n));
+        auto value = decode_yaml(n);
         return property<std::unordered_map<typename T::key_type, T>>::
           update_value(std::move(value));
     }
 
     std::optional<validation_error> validate(YAML::Node n) const override {
-        std::unordered_map<typename T::key_type, T> value = decode_yaml(
-          std::move(n));
+        std::unordered_map<typename T::key_type, T> value = decode_yaml(n);
         return property<std::unordered_map<typename T::key_type, T>>::validate(
           value);
     }
