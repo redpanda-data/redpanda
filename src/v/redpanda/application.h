@@ -37,7 +37,6 @@
 #include "raft/fwd.h"
 #include "redpanda/admin_server.h"
 #include "redpanda/busy_loop.h"
-#include "redpanda/monitor_unsafe_log_flag.h"
 #include "resource_mgmt/cpu_scheduling.h"
 #include "resource_mgmt/memory_groups.h"
 #include "resource_mgmt/scheduling_groups_probe.h"

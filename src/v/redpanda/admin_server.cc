@@ -3321,7 +3321,7 @@ void admin_server::register_self_test_routes() {
 void admin_server::register_debug_routes() {
     register_route<user>(
       ss::httpd::debug_json::busy_loop_stop,
-      [this](std::unique_ptr<ss::http::request>) {
+      [this](std::unique_ptr<ss::httpd::request>) {
           vlog(logger.info, "Stopping busy loop");
           return _busy_loop_manager
             .invoke_on_all([](auto& looper) { return looper.stop(); })
@@ -3331,7 +3331,7 @@ void admin_server::register_debug_routes() {
 
     register_route<user>(
       ss::httpd::debug_json::busy_loop_start,
-      [this](std::unique_ptr<ss::http::request> req) {
+      [this](std::unique_ptr<ss::httpd::request> req) {
           vlog(logger.info, "Requested busy loop");
           int min_spins_per_scheduling_point = 0;
           if (auto e = req->get_query_param("min_spins_per_scheduling_point");
