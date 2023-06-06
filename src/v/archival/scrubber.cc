@@ -561,6 +561,8 @@ void scrubber::acquire() { _holder = ss::gate::holder(_gate); }
 
 void scrubber::release() { _holder.release(); }
 
+ss::sstring scrubber::name() const { return "scrubber"; }
+
 bool scrubber::collected_manifests::empty() const {
     return !current_serde.has_value() && !current_json.has_value()
            && spillover.empty();

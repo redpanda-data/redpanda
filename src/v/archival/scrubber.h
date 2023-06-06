@@ -46,6 +46,8 @@ public:
     void acquire() override;
     void release() override;
 
+    ss::sstring name() const override;
+
 private:
     enum class purge_status : uint8_t {
         success,

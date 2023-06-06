@@ -130,6 +130,12 @@ ss::future<> upload_housekeeping_service::bg_idle_loop() {
             rearm_idle_timer();
             if (_workflow.state() == housekeeping_state::active) {
                 // Try to pause the housekeeping workflow
+                vlog(
+                  _ctxlog.debug,
+                  "Cloud storage api utilisation greater than threshold ({} >= "
+                  "{}). Pausing housekeeping workflow.",
+                  _api_utilization->get(),
+                  _api_idle_threshold());
                 _workflow.pause();
             }
             // NOTE: do not pause if workflow is in housekeeping_state::draining
@@ -167,6 +173,7 @@ void upload_housekeeping_service::epoch_timer_callback() {
 void upload_housekeeping_service::register_jobs(
   std::vector<std::reference_wrapper<housekeeping_job>> jobs) {
     for (auto ref : jobs) {
+        vlog(_ctxlog.info, "Registering job: {}", ref.get().name());
         _workflow.register_job(ref.get());
     }
 }
@@ -174,6 +181,7 @@ void upload_housekeeping_service::register_jobs(
 void upload_housekeeping_service::deregister_jobs(
   std::vector<std::reference_wrapper<housekeeping_job>> jobs) {
     for (auto ref : jobs) {
+        vlog(_ctxlog.info, "Deregistering job: {}", ref.get().name());
         _workflow.deregister_job(ref.get());
     }
 }
@@ -311,6 +319,7 @@ ss::future<> housekeeping_workflow::run_jobs_bg() {
         if (_as.abort_requested()) {
             co_return;
         }
+
         vassert(
           !_pending.empty(),
           "housekeeping_workflow: pendings empty, state {}, backlog {}, "
@@ -332,6 +341,11 @@ ss::future<> housekeeping_workflow::run_jobs_bg() {
             ss::gate::holder hh(_exec_gate);
             try {
                 auto r = exec_timer.time();
+                vlog(
+                  archival_log.debug,
+                  "Running job {} with quota {}",
+                  _running.front().name(),
+                  quota);
                 auto res = co_await _running.front().run(_parent, quota);
                 jobs_executed++;
                 quota = res.remaining;

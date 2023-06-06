@@ -44,6 +44,8 @@ public:
     void acquire() override;
     void release() override;
 
+    ss::sstring name() const override;
+
 private:
     std::optional<adjacent_segment_run> scan_manifest(
       model::offset local_start_offset,

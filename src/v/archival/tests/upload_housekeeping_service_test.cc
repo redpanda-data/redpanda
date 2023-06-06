@@ -78,6 +78,8 @@ public:
 
     void release() override { _holder.release(); }
 
+    ss::sstring name() const override { return "mock_job"; }
+
     size_t executed{0};
     size_t interrupt_cnt{0};
 

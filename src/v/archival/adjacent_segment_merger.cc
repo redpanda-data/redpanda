@@ -64,6 +64,10 @@ void adjacent_segment_merger::acquire() { _holder = ss::gate::holder(_gate); }
 
 void adjacent_segment_merger::release() { _holder.release(); }
 
+ss::sstring adjacent_segment_merger::name() const {
+    return ssx::sformat("adjacent_segment_merger:{}", _archiver.get_ntp());
+}
+
 std::optional<adjacent_segment_run> adjacent_segment_merger::scan_manifest(
   model::offset local_start_offset,
   const cloud_storage::partition_manifest& manifest) {
