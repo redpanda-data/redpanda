@@ -13,6 +13,7 @@
 #include "cloud_roles/refresh_credentials.h"
 #include "cloud_storage/base_manifest.h"
 #include "cloud_storage/fwd.h"
+#include "cloud_storage/logger.h"
 #include "cloud_storage/probe.h"
 #include "cloud_storage/remote_segment_index.h"
 #include "cloud_storage/types.h"
@@ -450,7 +451,13 @@ public:
       const model::ntp& ntp, model::initial_revision_id rev);
 
 private:
+    template<std::ranges::range Range>
     ss::future<upload_result> delete_objects_sequentially(
+      const cloud_storage_clients::bucket_name& bucket,
+      Range keys,
+      retry_chain_node& parent);
+
+    ss::future<upload_result> do_delete_objects(
       const cloud_storage_clients::bucket_name& bucket,
       std::vector<cloud_storage_clients::object_key> keys,
       retry_chain_node& parent);
@@ -475,5 +482,113 @@ private:
 
     model::cloud_storage_backend _cloud_storage_backend;
 };
+
+template<std::ranges::range Range>
+inline ss::future<upload_result> remote::delete_objects(
+  const cloud_storage_clients::bucket_name& bucket,
+  Range keys,
+  retry_chain_node& parent) {
+    ss::gate::holder gh{_gate};
+
+    if (keys.empty()) {
+        vlog(cst_log.info, "No keys to delete, returning");
+        co_return upload_result::success;
+    }
+
+    if (!is_batch_delete_supported()) {
+        co_return co_await delete_objects_sequentially(
+          bucket, std::move(keys), parent);
+    }
+
+    size_t span_begin = 0;
+    size_t span_size = std::min(
+      keys.size(),
+      size_t{cloud_storage_clients::client::delete_objects_max_keys});
+
+    do {
+        std::vector<cloud_storage_clients::object_key> to_delete{
+          std::make_move_iterator(keys.begin() + span_begin),
+          std::make_move_iterator(keys.begin() + span_begin + span_size)};
+
+        vlog(
+          cst_log.debug,
+          "Deleting range [{}, {}]",
+          span_begin,
+          span_begin + span_size - 1);
+        const auto res = co_await do_delete_objects(
+          bucket, std::move(to_delete), parent);
+        if (res != upload_result::success) {
+            vlog(
+              cst_log.debug,
+              "Deletion of range [{}, {}] failed: {}",
+              span_begin,
+              span_begin + span_size - 1,
+              res);
+            co_return res;
+        }
+
+        span_begin += span_size;
+        span_size = std::min(
+          keys.size() - span_begin,
+          size_t{cloud_storage_clients::client::delete_objects_max_keys});
+    } while (span_begin < keys.size());
+
+    co_return upload_result::success;
+}
+
+template<std::ranges::range Range>
+ss::future<upload_result> remote::delete_objects_sequentially(
+  const cloud_storage_clients::bucket_name& bucket,
+  Range keys,
+  retry_chain_node& parent) {
+    vlog(
+      cst_log.debug,
+      "Backend {} does not support batch delete, falling back to "
+      "sequential deletes",
+      _cloud_storage_backend);
+
+    auto results = co_await ss::do_with(
+      bucket,
+      std::move(keys),
+      std::vector<upload_result>{},
+      [this, &parent](auto& bucket, auto& keys, auto& results) {
+          results.reserve(keys.size());
+          return ss::max_concurrent_for_each(
+                   keys.begin(),
+                   keys.end(),
+                   concurrency(),
+                   [this, &bucket, &results, &parent](auto& k) -> ss::future<> {
+                       vlog(cst_log.trace, "Deleting key {}", k);
+                       return delete_object(bucket, k, parent)
+                         .then([&results](auto result) {
+                             results.push_back(result);
+                         });
+                   })
+            .handle_exception_type([](const std::exception& ex) {
+                vlog(cst_log.error, "Failed to delete keys: {}", ex.what());
+            })
+            .then([&results] { return results; });
+      });
+
+    if (results.empty()) {
+        vlog(cst_log.error, "No keys were deleted");
+        co_return upload_result::failed;
+    }
+
+    // This is not ideal, we lose all non-failures but the first one, but
+    // returning a single result for multiple operations will lose
+    // information.
+    co_return std::reduce(
+      results.begin(),
+      results.end(),
+      upload_result::success,
+      [](auto res_a, auto res_b) {
+          if (res_a != upload_result::success) {
+              return res_a;
+          }
+
+          return res_b;
+      });
+}
 
 } // namespace cloud_storage

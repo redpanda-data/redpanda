@@ -12,7 +12,6 @@
 
 #include "bytes/iostream.h"
 #include "cloud_storage/base_manifest.h"
-#include "cloud_storage/logger.h"
 #include "cloud_storage/materialized_segments.h"
 #include "cloud_storage/types.h"
 #include "cloud_storage_clients/client_pool.h"
@@ -35,16 +34,6 @@
 #include <exception>
 #include <utility>
 #include <variant>
-
-namespace {
-// Holds the key and associated retry_chain_node to make it
-// easier to keep objects on heap using do_with, as retry_chain_node
-// cannot be copied or moved.
-struct key_and_node {
-    cloud_storage_clients::object_key key;
-    std::unique_ptr<retry_chain_node> node;
-};
-} // namespace
 
 namespace cloud_storage {
 
@@ -839,21 +828,15 @@ ss::future<upload_result> remote::delete_object(
     co_return *result;
 }
 
-template<std::ranges::range Range>
-ss::future<upload_result> remote::delete_objects(
+ss::future<upload_result> remote::do_delete_objects(
   const cloud_storage_clients::bucket_name& bucket,
-  Range keys,
+  std::vector<cloud_storage_clients::object_key> keys,
   retry_chain_node& parent) {
     ss::gate::holder gh{_gate};
 
     if (keys.empty()) {
         vlog(cst_log.info, "No keys to delete, returning");
         co_return upload_result::success;
-    }
-
-    if (!is_batch_delete_supported()) {
-        co_return co_await delete_objects_sequentially(
-          bucket, std::move(keys), parent);
     }
 
     retry_chain_node fib(&parent);
@@ -926,73 +909,6 @@ ss::future<upload_result> remote::delete_objects(
           *result);
     }
     co_return *result;
-}
-
-ss::future<upload_result> remote::delete_objects_sequentially(
-  const cloud_storage_clients::bucket_name& bucket,
-  std::vector<cloud_storage_clients::object_key> keys,
-  retry_chain_node& parent) {
-    vlog(
-      cst_log.debug,
-      "Backend {} does not support batch delete, falling back to "
-      "sequential deletes",
-      _cloud_storage_backend);
-
-    std::vector<key_and_node> key_nodes;
-    key_nodes.reserve(keys.size());
-
-    std::transform(
-      std::make_move_iterator(keys.begin()),
-      std::make_move_iterator(keys.end()),
-      std::back_inserter(key_nodes),
-      [&parent](auto&& key) {
-          return key_and_node{
-            .key = std::forward<cloud_storage_clients::object_key>(key),
-            .node = std::make_unique<retry_chain_node>(&parent)};
-      });
-
-    auto results = co_await ss::do_with(
-      bucket,
-      std::move(key_nodes),
-      std::vector<upload_result>{},
-      [this](auto& bucket, auto& key_nodes, auto& results) {
-          results.reserve(key_nodes.size());
-          return ss::max_concurrent_for_each(
-                   key_nodes.begin(),
-                   key_nodes.end(),
-                   concurrency(),
-                   [this, &bucket, &results](auto& kn) -> ss::future<> {
-                       vlog(cst_log.trace, "Deleting key {}", kn.key);
-                       return delete_object(bucket, kn.key, *kn.node)
-                         .then([&results](auto result) {
-                             results.push_back(result);
-                         });
-                   })
-            .handle_exception_type([](const std::exception& ex) {
-                vlog(cst_log.error, "Failed to delete keys: {}", ex.what());
-            })
-            .then([&results] { return results; });
-      });
-
-    if (results.empty()) {
-        vlog(cst_log.error, "No keys were deleted");
-        co_return upload_result::failed;
-    }
-
-    // This is not ideal, we lose all non-failures but the first one, but
-    // returning a single result for multiple operations will lose
-    // information.
-    co_return std::reduce(
-      results.begin(),
-      results.end(),
-      upload_result::success,
-      [](auto res_a, auto res_b) {
-          if (res_a != upload_result::success) {
-              return res_a;
-          }
-
-          return res_b;
-      });
 }
 
 ss::future<remote::list_result> remote::list_objects(

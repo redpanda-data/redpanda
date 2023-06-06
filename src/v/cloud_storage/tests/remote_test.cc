@@ -759,6 +759,57 @@ FIXTURE_TEST(test_delete_objects_failure_handling, remote_fixture) {
     BOOST_REQUIRE(request.has_q_delete);
 }
 
+FIXTURE_TEST(test_delete_objects_splitting, remote_fixture) {
+    // Test that the remote splits large DeleteObjects requests
+    // correctly.
+
+    set_expectations_and_listen({});
+
+    cloud_storage_clients::bucket_name bucket{"test"};
+    retry_chain_node fib(never_abort, 100ms, 20ms);
+
+    std::vector<cloud_storage_clients::object_key> to_delete;
+    for (auto i = 0; i < 1000; ++i) {
+        to_delete.emplace_back(std::to_string(i));
+    }
+
+    auto result = remote.local().delete_objects(bucket, to_delete, fib).get();
+    BOOST_REQUIRE_EQUAL(cloud_storage::upload_result::success, result);
+    BOOST_REQUIRE_EQUAL(get_requests().size(), 1);
+
+    auto check_request_has_interval = [](auto req, auto first, auto last) {
+        BOOST_REQUIRE_EQUAL(req.method, "POST");
+        BOOST_REQUIRE_EQUAL(req.url, "/?delete");
+        BOOST_REQUIRE(req.has_q_delete);
+
+        for (auto i = first; i <= last; ++i) {
+            BOOST_REQUIRE(
+              req.content.find(fmt::format("<Key>{}</Key>", i))
+              != ss::sstring::npos);
+        }
+    };
+
+    auto request = get_requests()[0];
+    check_request_has_interval(request, 0, 999);
+
+    for (auto i = 1000; i < 2500; ++i) {
+        to_delete.emplace_back(std::to_string(i));
+    }
+
+    result = remote.local().delete_objects(bucket, to_delete, fib).get();
+    BOOST_REQUIRE_EQUAL(cloud_storage::upload_result::success, result);
+    BOOST_REQUIRE_EQUAL(get_requests().size(), 4);
+
+    auto request_1 = get_requests()[1];
+    check_request_has_interval(request_1, 0, 999);
+
+    auto request_2 = get_requests()[2];
+    check_request_has_interval(request_2, 1000, 1999);
+
+    auto request_3 = get_requests()[3];
+    check_request_has_interval(request_3, 2000, 2499);
+}
+
 FIXTURE_TEST(test_delete_objects_on_unknown_backend, gcs_remote_fixture) {
     set_expectations_and_listen({});
 
