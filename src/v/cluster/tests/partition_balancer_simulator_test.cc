@@ -33,9 +33,12 @@ public:
           model::offset{}, cluster::add_node_cmd(id, broker));
         _workers.allocator.local().register_node(create_allocation_node(id, 4));
 
-        // TODO: add some random used space
+        // add some random initial used space
+        size_t initial_used = random_generators::get_int(
+          3 * total_size / 100, 5 * total_size / 100);
+
         _nodes.emplace(
-          id, node_state{.id = id, .total = total_size, .used = 0});
+          id, node_state{.id = id, .total = total_size, .used = initial_used});
     }
 
     const auto& nodes() const { return _nodes; }
