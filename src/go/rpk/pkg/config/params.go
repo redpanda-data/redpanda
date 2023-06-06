@@ -396,12 +396,11 @@ type Params struct {
 	// This is unused until step (2) in the refactoring process.
 	ConfigFlag string
 
-	// LogLevel can be either none (default), error, warn, info, or debug,
-	// or any prefix of those strings, upper or lower case.
+	// DebugLogs opts into debug logging.
 	//
-	// This field is meant to be set, to actually get a logger after the
+	// This field only for setting, to actually get a logger after the
 	// field is set, use Logger().
-	LogLevel string
+	DebugLogs bool
 
 	// FlagOverrides are any flag-specified config overrides.
 	//
@@ -729,39 +728,11 @@ func (p *Params) SugarLogger() *zap.SugaredLogger {
 	return p.Logger().Sugar()
 }
 
-// Logger parses p.LogLevel and returns the corresponding zap logger or
-// a NopLogger if the log level is invalid.
+// Logger parses returns the corresponding zap logger or a NopLogger.
 func (p *Params) Logger() *zap.Logger {
 	p.loggerOnce.Do(func() {
-		// First we normalize the level. We support prefixes such
-		// that "w" means warn.
-		p.LogLevel = strings.TrimSpace(strings.ToLower(p.LogLevel))
-		if p.LogLevel == "" {
-			p.LogLevel = "none"
-		}
-		var ok bool
-		for _, level := range []string{"none", "error", "warn", "info", "debug"} {
-			if strings.HasPrefix(level, p.LogLevel) {
-				p.LogLevel, ok = level, true
-				break
-			}
-		}
-		if !ok {
-			p.logger = zap.NewNop()
-			return
-		}
 		var level zapcore.Level
-		switch p.LogLevel {
-		case "none":
-			p.logger = zap.NewNop()
-			return
-		case "error":
-			level = zap.ErrorLevel
-		case "warn":
-			level = zap.WarnLevel
-		case "info":
-			level = zap.InfoLevel
-		case "debug":
+		if p.DebugLogs {
 			level = zap.DebugLevel
 		}
 
