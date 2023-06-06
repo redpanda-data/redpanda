@@ -3,6 +3,41 @@ include_directories(${CMAKE_CURRENT_BINARY_DIR})
 
 add_compile_options(-Wall)
 
+#
+# When enabled clang-tidy will be invoked along side the compiler, and
+# clang-tidy warnings will be reported as errors.
+#
+option(REDPANDA_RUN_CLANG_TIDY "Enable clang-tidy checks" OFF)
+if(REDPANDA_RUN_CLANG_TIDY)
+    find_program(CLANG_TIDY_COMMAND clang-tidy
+        PATHS ${PROJECT_SOURCE_DIR}/vbuild/llvm/install/bin)
+    if(NOT CLANG_TIDY_COMMAND)
+        message(FATAL_ERROR "Could not find clang-tidy program")
+    endif()
+    set(clang_tidy_checks
+        -*
+        bugprone-use-after-move
+        bugprone-assert-side-effect
+        bugprone-assignment-in-if-condition
+        bugprone-dangling-handle
+        bugprone-sizeof-container
+        bugprone-stringview-nullptr
+        bugprone-unused-return-value
+        bugprone-suspicious-string-compare
+        cppcoreguidelines-rvalue-reference-param-not-moved
+        misc-unused-using-decls
+        misc-unused-alias-decls
+        modernize-redundant-void-arg
+        performance-implicit-conversion-in-loop
+        performance-trivially-destructible
+        performance-no-automatic-move
+    )
+    list(JOIN clang_tidy_checks "," clang_tidy_checks)
+    set(CMAKE_CXX_CLANG_TIDY ${CLANG_TIDY_COMMAND}
+        -warnings-as-errors=* -checks=${clang_tidy_checks})
+    unset(clang_tidy_checks)
+endif()
+
 # libraries
 add_subdirectory(test_utils)
 add_subdirectory(ssx)
