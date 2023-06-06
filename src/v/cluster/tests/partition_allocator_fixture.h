@@ -116,7 +116,7 @@ struct partition_allocator_fixture {
     cluster::allocation_request
     make_allocation_request(int partitions, uint16_t replication_factor) {
         cluster::allocation_request req(
-          cluster::partition_allocation_domains::common);
+          tn, cluster::partition_allocation_domains::common);
         req.partitions.reserve(partitions);
         for (int i = 0; i < partitions; ++i) {
             req.partitions.emplace_back(
@@ -125,6 +125,7 @@ struct partition_allocator_fixture {
         return req;
     }
 
+    model::topic_namespace tn{model::kafka_namespace, model::topic{"test"}};
     ss::sharded<cluster::members_table> members;
     cluster::partition_allocator allocator;
 

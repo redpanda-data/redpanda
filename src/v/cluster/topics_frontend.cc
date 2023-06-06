@@ -304,7 +304,8 @@ make_error_result(const model::topic_namespace& tp_ns, std::error_code ec) {
 allocation_request
 make_allocation_request(const custom_assignable_topic_configuration& ca_cfg) {
     // no custom assignments, lets allocator decide based on partition count
-    allocation_request req(get_allocation_domain(ca_cfg.cfg.tp_ns));
+    const auto& tp_ns = ca_cfg.cfg.tp_ns;
+    allocation_request req(tp_ns, get_allocation_domain(tp_ns));
     if (!ca_cfg.has_custom_assignment()) {
         req.partitions.reserve(ca_cfg.cfg.partition_count);
         for (auto p = 0; p < ca_cfg.cfg.partition_count; ++p) {
@@ -955,7 +956,7 @@ allocation_request make_allocation_request(
   const create_partitions_configuration& cfg) {
     const auto new_partitions_cnt = cfg.new_total_partition_count
                                     - current_partitions_count;
-    allocation_request req(get_allocation_domain(cfg.tp_ns));
+    allocation_request req(cfg.tp_ns, get_allocation_domain(cfg.tp_ns));
     req.partitions.reserve(new_partitions_cnt);
     for (auto p = 0; p < new_partitions_cnt; ++p) {
         req.partitions.emplace_back(model::partition_id(p), replication_factor);
@@ -1287,18 +1288,17 @@ ss::future<std::error_code> topics_frontend::increase_replication_factor(
 
           partition_constraints.partition_id = p_id;
 
-          auto ntp = model::ntp(topic.ns, topic.tp, p_id);
-
           return _allocator
             .invoke_on(
               partition_allocator::shard,
-              [partition_constraints,
-               assignment = std::move(assignment),
-               ntp = std::move(ntp)](partition_allocator& al) {
+              [topic,
+               partition_constraints,
+               assignment = std::move(assignment)](partition_allocator& al) {
                   return al.reallocate_partition(
+                    topic,
                     partition_constraints,
                     assignment,
-                    get_allocation_domain(ntp));
+                    get_allocation_domain({topic.ns, topic.tp}));
               })
             .then([&error, &units, &new_assignments, topic, p_id](
                     result<allocated_partition> reallocation) {
@@ -1386,8 +1386,8 @@ allocation_request make_allocation_request(
   model::ntp ntp,
   replication_factor tp_replication_factor,
   const std::vector<model::node_id>& new_replicas) {
-    allocation_request req(
-      get_allocation_domain(model::topic_namespace{ntp.ns, ntp.tp.topic}));
+    auto nt = model::topic_namespace(ntp.ns, ntp.tp.topic);
+    allocation_request req(nt, get_allocation_domain(nt));
     req.partitions.reserve(1);
     allocation_constraints constraints;
     constraints.add(on_nodes(new_replicas));

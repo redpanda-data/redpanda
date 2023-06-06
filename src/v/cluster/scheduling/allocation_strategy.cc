@@ -42,13 +42,14 @@ inline bool contains_node_already(
 }
 
 std::vector<model::node_id> solve_hard_constraints(
+  const model::ntp& ntp,
   const std::vector<model::broker_shard>& current_replicas,
   const std::vector<hard_constraint_ptr>& constraints,
   const allocation_state::underlying_t& nodes) {
     std::vector<hard_constraint_evaluator> evaluators;
     evaluators.reserve(constraints.size());
     for (auto& c : constraints) {
-        evaluators.push_back(c->make_evaluator(current_replicas));
+        evaluators.push_back(c->make_evaluator(ntp, current_replicas));
     }
 
     // empty hard constraints, all nodes are eligible
@@ -160,6 +161,7 @@ allocation_strategy simple_allocation_strategy() {
     class impl : public allocation_strategy::impl {
     public:
         result<model::node_id> choose_node(
+          const model::ntp& ntp,
           const std::vector<model::broker_shard>& current_replicas,
           const allocation_constraints& request,
           allocation_state& state,
@@ -169,6 +171,7 @@ allocation_strategy simple_allocation_strategy() {
              * evaluate hard constraints
              */
             std::vector<model::node_id> possible_nodes = solve_hard_constraints(
+              ntp,
               current_replicas,
               request.hard_constraints,
               state.allocation_nodes());

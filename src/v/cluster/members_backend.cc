@@ -31,6 +31,7 @@ void reassign_replicas(
   partition_assignment current_assignment,
   members_backend::partition_reallocation& reallocation) {
     auto res = allocator.reallocate_partition(
+      model::topic_namespace{ntp.ns, ntp.tp.topic},
       reallocation.constraints.value(),
       current_assignment,
       get_allocation_domain(ntp),

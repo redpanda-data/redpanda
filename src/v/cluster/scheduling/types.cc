@@ -19,9 +19,9 @@
 
 namespace cluster {
 
-hard_constraint_evaluator
-hard_constraint::make_evaluator(const replicas_t& current_replicas) const {
-    auto ev = _impl->make_evaluator(current_replicas);
+hard_constraint_evaluator hard_constraint::make_evaluator(
+  const model::ntp& ntp, const replicas_t& current_replicas) const {
+    auto ev = _impl->make_evaluator(ntp, current_replicas);
     return [this, ev = std::move(ev)](const allocation_node& node) {
         auto res = ev(node);
         vlog(clusterlog.trace, "{}({}) = {}", name(), node.id(), res);
@@ -85,10 +85,12 @@ allocation_units::~allocation_units() {
 }
 
 allocated_partition::allocated_partition(
+  model::ntp ntp,
   std::vector<model::broker_shard> replicas,
   partition_allocation_domain domain,
   allocation_state& state)
-  : _replicas(std::move(replicas))
+  : _ntp(std::move(ntp))
+  , _replicas(std::move(replicas))
   , _domain(domain)
   , _state(state.weak_from_this()) {}
 

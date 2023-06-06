@@ -26,6 +26,7 @@ public:
          * constraints in the specified domain
          */
         virtual result<model::node_id> choose_node(
+          const model::ntp&,
           const replicas_t&,
           const allocation_constraints&,
           allocation_state&,
@@ -39,11 +40,12 @@ public:
       : _impl(std::move(impl)) {}
 
     result<model::node_id> choose_node(
+      const model::ntp& ntp,
       const replicas_t& current_replicas,
       const allocation_constraints& ac,
       allocation_state& state,
       const partition_allocation_domain domain) {
-        return _impl->choose_node(current_replicas, ac, state, domain);
+        return _impl->choose_node(ntp, current_replicas, ac, state, domain);
     }
 
 private:

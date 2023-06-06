@@ -23,12 +23,6 @@ namespace cluster {
 class allocation_state;
 
 static constexpr std::string_view rack_label = "rack";
-/**
- * make_soft_constraint adapts hard constraint to soft one by returning
- * max score for nodes that matches the soft constraint and 0 for
- * the ones that not
- */
-soft_constraint make_soft_constraint(hard_constraint);
 
 hard_constraint not_fully_allocated();
 hard_constraint is_active();

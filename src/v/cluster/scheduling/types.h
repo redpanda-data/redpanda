@@ -43,8 +43,8 @@ using soft_constraint_evaluator
 class hard_constraint {
 public:
     struct impl {
-        virtual hard_constraint_evaluator
-        make_evaluator(const replicas_t& current_replicas) const
+        virtual hard_constraint_evaluator make_evaluator(
+          const model::ntp&, const replicas_t& current_replicas) const
           = 0;
 
         virtual ss::sstring name() const = 0;
@@ -63,7 +63,7 @@ public:
     ~hard_constraint() noexcept = default;
 
     hard_constraint_evaluator
-    make_evaluator(const replicas_t& current_replicas) const;
+    make_evaluator(const model::ntp&, const replicas_t& current_replicas) const;
 
     ss::sstring name() const { return _impl->name(); }
 
@@ -243,6 +243,8 @@ public:
         return _replicas;
     }
 
+    const model::ntp& ntp() const { return _ntp; }
+
     bool has_changes() const;
     bool is_original(model::node_id) const;
 
@@ -260,6 +262,7 @@ private:
 
     // construct an object from an original assignment
     allocated_partition(
+      model::ntp,
       std::vector<model::broker_shard>,
       partition_allocation_domain,
       allocation_state&);
@@ -279,6 +282,7 @@ private:
     std::vector<model::broker_shard> release_new_partition();
 
 private:
+    model::ntp _ntp;
     std::vector<model::broker_shard> _replicas;
     std::optional<absl::flat_hash_map<model::node_id, uint32_t>>
       _original_node2shard;
@@ -309,14 +313,17 @@ struct partition_constraints {
 
 struct allocation_request {
     allocation_request() = delete;
-    explicit allocation_request(const partition_allocation_domain domain_)
-      : domain(domain_) {}
+    explicit allocation_request(
+      model::topic_namespace nt, const partition_allocation_domain domain_)
+      : _nt(std::move(nt))
+      , domain(domain_) {}
     allocation_request(const allocation_request&) = delete;
     allocation_request(allocation_request&&) = default;
     allocation_request& operator=(const allocation_request&) = delete;
     allocation_request& operator=(allocation_request&&) = default;
     ~allocation_request() = default;
 
+    model::topic_namespace _nt;
     ss::chunked_fifo<partition_constraints> partitions;
     partition_allocation_domain domain;
 
