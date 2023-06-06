@@ -29,8 +29,10 @@ hard_constraint not_fully_allocated() {
     class impl : public hard_constraint::impl {
     public:
         hard_constraint_evaluator
-        make_evaluator(const model::ntp&, const replicas_t&) const final {
-            return [](const allocation_node& node) { return !node.is_full(); };
+        make_evaluator(const model::ntp& ntp, const replicas_t&) const final {
+            return [&ntp](const allocation_node& node) {
+                return !node.is_full(ntp);
+            };
         }
 
         ss::sstring name() const final {

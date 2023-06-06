@@ -50,6 +50,26 @@ allocation_node::allocation_node(
     });
 }
 
+bool allocation_node::is_full(const model::ntp& ntp) const {
+    // Internal topics are excluded from checks to prevent allocation failures
+    // when creating them. This is okay because they are fairly small in number
+    // compared to kafka user topic partitions.
+    auto is_internal_ns = ntp.ns == model::redpanda_ns
+                          || ntp.ns == model::kafka_internal_namespace;
+    if (is_internal_ns) {
+        return false;
+    }
+    const auto& internal_topics = _internal_kafka_topics();
+    auto is_internal_topic = ntp.ns == model::kafka_namespace
+                             && std::any_of(
+                               internal_topics.cbegin(),
+                               internal_topics.cend(),
+                               [&ntp](const ss::sstring& topic) {
+                                   return topic == ntp.tp.topic();
+                               });
+    return !is_internal_topic && _allocated_partitions >= _max_capacity;
+}
+
 ss::shard_id
 allocation_node::allocate(const partition_allocation_domain domain) {
     auto it = std::min_element(_weights.begin(), _weights.end());
