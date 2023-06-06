@@ -1,5 +1,4 @@
 extern crate deltafor;
-extern crate redpanda_adl;
 extern crate redpanda_records;
 
 mod batch_crc;
@@ -11,6 +10,7 @@ mod ntp_mask;
 mod remote_types;
 mod repair;
 mod varint;
+mod util;
 
 use log::{debug, error, info, trace, warn};
 use remote_types::RpSerde;

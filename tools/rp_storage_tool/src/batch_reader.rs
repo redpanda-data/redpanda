@@ -3,19 +3,21 @@ use log::{debug, info, trace};
 use redpanda_records::{Record, RecordBatchHeader, RecordBatchType};
 use std::io;
 use tokio::io::AsyncReadExt;
+use crate::error::DecodeError;
+use crate::util::from_adl_bytes;
 
 use crate::varint::VarIntDecoder;
 
 #[derive(Debug)]
 pub enum DumpError {
     _Message(String),
-    DecodeError(redpanda_adl::Error),
+    DecodeError(DecodeError),
     IOError(io::Error),
     EOF,
 }
 
-impl From<redpanda_adl::Error> for DumpError {
-    fn from(e: redpanda_adl::Error) -> Self {
+impl From<DecodeError> for DumpError {
+    fn from(e: DecodeError) -> Self {
         Self::DecodeError(e)
     }
 }
@@ -268,7 +270,7 @@ impl<T: AsyncReadExt + Unpin> BatchStream<T> {
             Err(DumpError::EOF)
         } else {
             let result: RecordBatchHeader =
-                redpanda_adl::from_bytes(&header_buf, bincode::config::standard())?;
+                from_adl_bytes(&header_buf, bincode::config::standard())?;
 
             // Buffer for CRC32C calculation on the header_crc field of a batcn header: little
             // endian fixed-integer-width encoding of the header, omitting its leading 4 bytes

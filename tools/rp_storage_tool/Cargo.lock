@@ -1005,15 +1005,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "redpanda-adl"
-version = "0.1.0"
-dependencies = [
- "bincode",
- "log",
- "serde",
-]
-
-[[package]]
 name = "redpanda-records"
 version = "0.1.0"
 dependencies = [
@@ -1113,7 +1104,6 @@ dependencies = [
  "log",
  "num-traits",
  "object_store",
- "redpanda-adl",
  "redpanda-records",
  "regex",
  "serde",

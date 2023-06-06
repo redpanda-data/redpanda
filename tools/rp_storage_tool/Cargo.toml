@@ -45,9 +45,6 @@ name = "rp-storage-tool-unstable"
 path = "src/main_unstable.rs"
 required-features = ["unstable"]
 
-[dependencies.redpanda-adl]
-path = "redpanda-adl"
-
 [dependencies.redpanda-records]
 path = "redpanda-records"
 
@@ -56,7 +53,6 @@ path = "deltafor"
 
 [workspace]
 members = [
-    "redpanda-adl",
     "redpanda-records",
     "deltafor",
 ]

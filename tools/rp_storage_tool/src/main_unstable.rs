@@ -1,5 +1,4 @@
 extern crate deltafor;
-extern crate redpanda_adl;
 extern crate redpanda_records;
 
 mod batch_crc;
@@ -13,6 +12,7 @@ mod remote_types;
 mod repair;
 mod segment_writer;
 mod varint;
+mod util;
 
 use crate::segment_writer::SegmentWriter;
 use bytes::Bytes;
