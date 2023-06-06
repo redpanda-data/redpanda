@@ -35,10 +35,7 @@ func DefaultRpkYamlPath() (string, error) {
 }
 
 func defaultVirtualRpkYaml() (RpkYaml, error) {
-	path, err := DefaultRpkYamlPath()
-	if err != nil {
-		return RpkYaml{}, err
-	}
+	path, _ := DefaultRpkYamlPath() // if err is non-nil, we fail in Write
 	y := RpkYaml{
 		fileLocation: path,
 		Version:      1,
