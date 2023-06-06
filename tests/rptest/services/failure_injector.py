@@ -12,7 +12,7 @@ import signal
 import threading
 from ducktape.utils.util import wait_until
 from ducktape.errors import TimeoutError
-
+from rptest.clients.kubectl import KubectlTool
 from rptest.services import tc_netem
 
 
@@ -110,7 +110,6 @@ class FailureInjectorBase:
                                                  interval=spec.length)
                     self._in_flight.add(spec)
                     stop_timer.start()
-
 
     def _start_func(self, tp):
         if tp == FailureSpec.FAILURE_KILL:
@@ -300,3 +299,13 @@ class FailureInjector(FailureInjectorBase):
     def _netem_duplicate(self, node):
         op = tc_netem.NetemDuplicate(random.randint(1, 60), correlation=None)
         self._netem(node, op=op)
+
+
+class FailureInjectorCloud(FailureInjectorBase):
+    def __init__(self, redpanda):
+        super(FailureInjectorCloud, self).__init__(redpanda)
+        self._kubectl = KubectlTool(redpanda)
+
+    def _isolate(self, node):
+        self.redpanda.logger.info(f"isolating node {node.account.hostname}")
+        # TODO block port 33145 traffic on a node
