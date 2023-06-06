@@ -17,6 +17,13 @@ static ss::logger logger("balancer_sim");
 
 static constexpr size_t produce_batch_size = 1_MiB;
 
+// Recovery rate magic numbers. Recovery bandwidth is not directly controllable,
+// but it is related to the tick length: node bandwidth allows exactly 1 batch
+// per tick. For 100MiB/s bandwidth this gives us 5ms ticks.
+static constexpr size_t recovery_batch_size = 512_KiB;
+static constexpr size_t recovery_throttle_burst = 100_MiB;
+static constexpr size_t recovery_throttle_ticks_between_refills = 10;
+
 /// If a value is a sum of a large number of random variables that with some
 /// probability add item_size to the value and the result has a mean of `mean`
 /// (example: producing to a topic, randomly choosing the partition for each
@@ -98,8 +105,23 @@ public:
     size_t cur_tick() const { return _cur_tick; }
 
     void tick() {
-        // gather all recovery streams
-        // node -> leader -> learner
+        // refill the bandwidth
+        for (auto& [id, node] : _nodes) {
+            node.ticks_since_refill += 1;
+            if (
+              node.ticks_since_refill
+              >= recovery_throttle_ticks_between_refills) {
+                node.ticks_since_refill = 0;
+
+                if (node.bandwidth_left <= recovery_throttle_burst) {
+                    node.bandwidth_left
+                      += recovery_throttle_ticks_between_refills
+                         * recovery_batch_size;
+                }
+            }
+        }
+
+        // gather all active recovery streams
         absl::flat_hash_map<model::node_id, std::vector<recovery_stream>>
           node2pending_rs;
         for (const auto& ntp :
@@ -116,10 +138,23 @@ public:
             }
         }
 
-        // calculate size deltas and add them to learner sizes
-        for (const auto& [node, recovery_streams] : node2pending_rs) {
+        // perform recovery for lucky streams that have won the bandwidth
+        // lottery.
+        for (auto& [node_id, recovery_streams] : node2pending_rs) {
+            auto& node = _nodes.at(node_id);
+
+            std::shuffle(
+              recovery_streams.begin(),
+              recovery_streams.end(),
+              random_generators::internal::gen);
+
             for (const auto& rs : recovery_streams) {
-                perform_recovery_step(rs);
+                if (node.bandwidth_left >= recovery_batch_size) {
+                    perform_recovery_step(rs);
+                    node.bandwidth_left -= recovery_batch_size;
+                } else {
+                    break;
+                }
             }
         }
 
@@ -296,8 +331,6 @@ private:
           = default;
     };
 
-    static constexpr size_t recovery_batch_size = 512_KiB;
-
     void perform_recovery_step(const recovery_stream& rs) {
         auto& dest_node = _nodes.at(rs.to);
         auto& dest_replica = dest_node.replicas.at(rs.ntp);
@@ -408,6 +441,8 @@ private:
         size_t total = 0;
         size_t used = 0;
         absl::flat_hash_map<model::ntp, replica> replicas;
+        size_t bandwidth_left = recovery_throttle_burst;
+        size_t ticks_since_refill = 0;
 
         cluster::node_health_report get_health_report() const {
             cluster::node_health_report report;
@@ -445,12 +480,13 @@ FIXTURE_TEST(test_decommission, partition_balancer_sim_fixture) {
     for (size_t i = 0; i < 4; ++i) {
         add_node(model::node_id{i}, 100_GiB);
     }
-    add_topic("mytopic", 500, 3, 100_MiB);
+    add_topic("mytopic", 100, 3, 100_MiB);
     set_decommissioning(model::node_id{0});
 
     print_state();
     for (size_t i = 0; i < 10000; ++i) {
         if (nodes().at(model::node_id{0}).replicas.empty()) {
+            logger.info("finished in {} ticks", i);
             break;
         }
 
@@ -472,14 +508,14 @@ FIXTURE_TEST(test_two_decommissions, partition_balancer_sim_fixture) {
     for (size_t i = 0; i < 5; ++i) {
         add_node(model::node_id{i}, 100_GiB);
     }
-    add_topic("mytopic", 500, 3, 100_MiB);
+    add_topic("mytopic", 200, 3, 100_MiB);
     set_decommissioning(model::node_id{0});
 
     size_t start_node_0_replicas
       = nodes().at(model::node_id{0}).replicas.size();
 
     print_state();
-    for (size_t i = 0; i < 10000; ++i) {
+    for (size_t i = 0; i < 20000; ++i) {
         if (
           nodes().at(model::node_id{0}).replicas.empty()
           && nodes().at(model::node_id{1}).replicas.empty()) {
