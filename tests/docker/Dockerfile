@@ -107,11 +107,28 @@ RUN /kaf && \
 
 #################################
 
-FROM base as client-swarm
+FROM base as rust
+COPY --chown=0:0 --chmod=0755 tests/docker/ducktape-deps/rust /
+RUN /rust && \
+    rm /rust
+ENV PATH="${PATH}:/root/.cargo/bin"
+
+#################################
+
+FROM rust as client-swarm
 
 COPY --chown=0:0 --chmod=0755 tests/docker/ducktape-deps/client-swarm /
-RUN /client-swarm /root && \
+RUN /client-swarm && \
     rm /client-swarm
+
+#################################
+
+FROM rust as rp-storage-tool
+
+COPY --chown=0:0 --chmod=0755 tests/docker/ducktape-deps/rp-storage-tool /
+COPY --chown=0:0 --chmod=0755 tools/rp_storage_tool /rp_storage_tool
+RUN /rp-storage-tool && \
+    rm -rf /rp_storage_tool
 
 #################################
 
@@ -230,7 +247,7 @@ COPY --from=kcat /usr/local/bin/kcat /usr/local/bin/
 COPY --from=sarama-examples /opt/sarama /opt/sarama
 COPY --from=golang-test-clients /opt/redpanda-tests/go /opt/redpanda-tests/go
 COPY --from=client-swarm /usr/local/bin/client-swarm /usr/local/bin/
-COPY --from=client-swarm /usr/local/bin/rp-storage-tool /usr/local/bin/
+COPY --from=rp-storage-tool /usr/local/bin/rp-storage-tool /usr/local/bin/
 COPY --from=franz-bench /opt/franz-go/examples/bench /opt/franz-go/examples/bench
 COPY --from=k8s /usr/local/bin/kubectl /usr/local/bin/helm /usr/local/bin/
 COPY --from=kaf /usr/local/bin/kaf /usr/local/bin/
