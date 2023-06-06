@@ -145,7 +145,9 @@ void upload_housekeeping_service::rearm_idle_timer() {
 
 void upload_housekeeping_service::idle_timer_callback() {
     vlog(_ctxlog.debug, "Cloud storage is idle");
-    if (_workflow.state() == housekeeping_state::idle) {
+    if (
+      _workflow.state() == housekeeping_state::idle
+      || _workflow.state() == housekeeping_state::pause) {
         vlog(_ctxlog.debug, "Activating upload housekeeping");
         _workflow.resume(false);
     }
