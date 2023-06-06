@@ -65,10 +65,10 @@ class FailureInjectorBase:
         self._in_flight = set()
 
     def __enter__(self):
-        pass
+        return self
 
     def __exit__(self, type, value, traceback):
-        pass
+        self._heal_all()
 
     def inject_failure(self, spec):
         pass
@@ -147,12 +147,6 @@ class FailureInjectorBase:
 class FailureInjector(FailureInjectorBase):
     def __init__(self, redpanda):
         super(FailureInjector, self).__init__(redpanda)
-
-    def __enter__(self):
-        return self
-
-    def __exit__(self, type, value, traceback):
-        self._heal_all()
 
     def inject_failure(self, spec):
         if spec in self._in_flight:
