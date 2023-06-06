@@ -46,16 +46,18 @@ partition_allocator::partition_allocator(
   config::binding<std::optional<int32_t>> fds_per_partition,
   config::binding<uint32_t> partitions_per_shard,
   config::binding<uint32_t> partitions_reserve_shard0,
+  config::binding<std::vector<ss::sstring>> internal_kafka_topics,
   config::binding<bool> enable_rack_awareness)
   : _state(std::make_unique<allocation_state>(
-    partitions_per_shard, partitions_reserve_shard0))
+    partitions_per_shard, partitions_reserve_shard0, internal_kafka_topics))
   , _allocation_strategy(simple_allocation_strategy())
   , _members(members)
-  , _memory_per_partition(memory_per_partition)
-  , _fds_per_partition(fds_per_partition)
-  , _partitions_per_shard(partitions_per_shard)
-  , _partitions_reserve_shard0(partitions_reserve_shard0)
-  , _enable_rack_awareness(enable_rack_awareness) {}
+  , _memory_per_partition(std::move(memory_per_partition))
+  , _fds_per_partition(std::move(fds_per_partition))
+  , _partitions_per_shard(std::move(partitions_per_shard))
+  , _partitions_reserve_shard0(std::move(partitions_reserve_shard0))
+  , _internal_kafka_topics(std::move(internal_kafka_topics))
+  , _enable_rack_awareness(std::move(enable_rack_awareness)) {}
 
 allocation_constraints partition_allocator::default_constraints(
   const partition_allocation_domain domain) {
@@ -444,7 +446,9 @@ void partition_allocator::remove_final_counts(
 ss::future<>
 partition_allocator::apply_snapshot(const controller_snapshot& snap) {
     auto new_state = std::make_unique<allocation_state>(
-      _partitions_per_shard, _partitions_reserve_shard0);
+      _partitions_per_shard,
+      _partitions_reserve_shard0,
+      _internal_kafka_topics);
 
     for (const auto& [id, node] : snap.members.nodes) {
         allocation_node::state state;

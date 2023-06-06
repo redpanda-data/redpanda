@@ -54,6 +54,7 @@ struct topic_table_fixture {
             config::mock_binding<std::optional<int32_t>>(std::nullopt),
             config::mock_binding<uint32_t>(uint32_t{partitions_per_shard}),
             config::mock_binding<uint32_t>(uint32_t{partitions_reserve_shard0}),
+            config::mock_binding<std::vector<ss::sstring>>({}),
             config::mock_binding<bool>(false))
           .get0();
         allocator.local().register_node(
@@ -88,7 +89,8 @@ struct topic_table_fixture {
           nid,
           cores,
           config::mock_binding<uint32_t>(uint32_t{partitions_per_shard}),
-          config::mock_binding<uint32_t>(uint32_t{partitions_reserve_shard0}));
+          config::mock_binding<uint32_t>(uint32_t{partitions_reserve_shard0}),
+          config::mock_binding<std::vector<ss::sstring>>({}));
     }
 
     cluster::topic_configuration_assignment make_tp_configuration(

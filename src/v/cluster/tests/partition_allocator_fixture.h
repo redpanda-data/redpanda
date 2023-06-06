@@ -37,6 +37,7 @@ struct partition_allocator_fixture {
         config::mock_binding<std::optional<int32_t>>(std::nullopt),
         config::mock_binding<uint32_t>(uint32_t{partitions_per_shard}),
         config::mock_binding<uint32_t>(uint32_t{partitions_reserve_shard0}),
+        config::mock_binding<std::vector<ss::sstring>>({}),
         config::mock_binding<bool>(true)) {
         members.start().get0();
         ss::smp::invoke_on_all([] {
@@ -69,7 +70,8 @@ struct partition_allocator_fixture {
           broker.id(),
           broker.properties().cores,
           config::mock_binding<uint32_t>(uint32_t{partitions_per_shard}),
-          config::mock_binding<uint32_t>(uint32_t{partitions_reserve_shard0})));
+          config::mock_binding<uint32_t>(uint32_t{partitions_reserve_shard0}),
+          config::mock_binding<std::vector<ss::sstring>>({})));
     }
 
     void saturate_all_machines() {

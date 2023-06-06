@@ -20,12 +20,14 @@ allocation_node::allocation_node(
   model::node_id id,
   uint32_t cpus,
   config::binding<uint32_t> partitions_per_shard,
-  config::binding<uint32_t> partitions_reserve_shard0)
+  config::binding<uint32_t> partitions_reserve_shard0,
+  config::binding<std::vector<ss::sstring>> internal_kafka_topics)
   : _id(id)
   , _weights(cpus)
   , _max_capacity((cpus * partitions_per_shard()) - partitions_reserve_shard0())
   , _partitions_per_shard(std::move(partitions_per_shard))
   , _partitions_reserve_shard0(std::move(partitions_reserve_shard0))
+  , _internal_kafka_topics(std::move(internal_kafka_topics))
   , _cpus(cpus) {
     // add extra weights to core 0
     _weights[0] = _partitions_reserve_shard0();

@@ -59,7 +59,8 @@ public:
             id,
             n_cores,
             config::mock_binding<uint32_t>(1000),
-            config::mock_binding<uint32_t>(0)));
+            config::mock_binding<uint32_t>(0),
+            config::mock_binding<std::vector<ss::sstring>>({})));
 
         // add some random initial used space
         size_t initial_used = random_generators::get_int(
