@@ -340,8 +340,7 @@ ss::future<result<T, error_outcome>> abs_client::send_request(
         } else {
             vlog(
               abs_log.error,
-              "Received [{}] {} unexpected error response for storage account "
-              "{} from ABS: {}",
+              "Received [{}] {} unexpected error response from ABS: {}",
               err.http_code(),
               err.code_string(),
               err.message());
