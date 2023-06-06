@@ -43,13 +43,6 @@ redpanda section of your redpanda.yaml.
 	return cmd
 }
 
-// UserAPI encapsulates functions needed for a user API.
-type UserAPI interface {
-	CreateUser(username, password string) error
-	DeleteUser(username string) error
-	ListUsers() ([]string, error)
-}
-
 func newCreateUserCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	var userOld, pass, newPass, mechanism string
 	cmd := &cobra.Command{
