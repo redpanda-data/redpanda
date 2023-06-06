@@ -514,11 +514,11 @@ ss::future<> create_offset_translator_state_for_pre_existing_partition(
       raftlog.debug,
       "{} Set highest_known_offset in kv-store to {}",
       ntp_cfg.ntp(),
-      get_prev_offset(max_rp_offset));
+      max_rp_offset);
     co_await api.kvs().put(
       storage::kvstore::key_space::offset_translator,
       raft::offset_translator::kvstore_highest_known_offset_key(group),
-      reflection::to_iobuf(get_prev_offset(max_rp_offset)));
+      reflection::to_iobuf(max_rp_offset));
 }
 
 ss::future<> create_raft_state_for_pre_existing_partition(
@@ -534,18 +534,21 @@ ss::future<> create_raft_state_for_pre_existing_partition(
       raftlog.debug,
       "{} Prepare raft state, set latest_known_offset {} to the kv-store",
       ntp_cfg.ntp(),
-      get_prev_offset(max_rp_offset));
+      max_rp_offset);
     auto key = raft::details::serialize_group_key(
       group, raft::metadata_key::config_latest_known_offset);
     co_await api.kvs().put(
       storage::kvstore::key_space::consensus,
       key,
-      reflection::to_iobuf(get_prev_offset(max_rp_offset)));
+      reflection::to_iobuf(max_rp_offset));
 
     // Prepare Raft snapshot
     raft::group_configuration group_config(
       initial_nodes, ntp_cfg.get_revision());
     raft::snapshot_metadata meta = {
+      // `last_included_index` should be the last offset included in
+      // this fake snapshot. That's why we set it to be the first offest
+      // before the start of the recovered log.
       .last_included_index = get_prev_offset(min_rp_offset),
       .last_included_term = last_included_term,
       .version = raft::snapshot_metadata::current_version,
