@@ -15,6 +15,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"time"
 
 	"github.com/spf13/afero"
 	"go.uber.org/zap"
@@ -88,10 +89,43 @@ type (
 		// upgrade rpk".
 		Version int `yaml:"version"`
 
+		Defaults RpkDefaults `yaml:"defaults,omitempty"`
+
 		CurrentProfile   string         `yaml:"current_profile"`
 		CurrentCloudAuth string         `yaml:"current_cloud_auth"`
 		Profiles         []RpkProfile   `yaml:"profiles,omitempty"`
 		CloudAuths       []RpkCloudAuth `yaml:"cloud_auth,omitempty"`
+	}
+
+	RpkDefaults struct {
+		// Prompt is the prompt to use for all profiles, unless the
+		// profile itself overrides it.
+		Prompt string `yaml:"prompt,omitempty"`
+
+		// NoDefaultCluster disables localhost:{9092,9644} as a default
+		// profile when no other is selected.
+		NoDefaultCluster bool `yaml:"no_default_cluster,omitempty"`
+
+		// DialTimeout is how long we allow for initiating a connection
+		// to brokers for the Admin API and Kafka API.
+		DialTimeout Duration `yaml:"dial_timeout,omitempty"`
+
+		// RequestTimeoutOverhead, for Kafka API requests, how long do
+		// we give the request on top of any request's timeout field.
+		RequestTimeoutOverhead Duration `yaml:"request_timeout_overhead,omitempty"`
+
+		// RetryTimeout allows us to retry requests. If see we need to
+		// retry before the retry timeout has elapsed, we do -- even if
+		// backing off after we know to retry pushes us past the
+		// timeout.
+		RetryTimeout Duration `yaml:"retry_timeout,omitempty"`
+
+		// FetchMaxWait is how long we give the broker to respond to
+		// fetch requests.
+		FetchMaxWait Duration `yaml:"fetch_max_wait,omitempty"`
+
+		// RedpandaClientID is the client ID to use for the Kafka API.
+		RedpandaClientID string `yaml:"redpanda_client_id,omitempty"`
 	}
 
 	RpkProfile struct {
@@ -122,6 +156,8 @@ type (
 		ClientID     string `yaml:"client_id,omitempty"`
 		ClientSecret string `yaml:"client_secret,omitempty"`
 	}
+
+	Duration struct{ time.Duration }
 )
 
 // Profile returns the given profile, or nil if it does not exist.
@@ -268,3 +304,21 @@ func (y *RpkYaml) WriteAt(fs afero.Fs, path string) error {
 	}
 	return rpkos.ReplaceFile(fs, path, b, 0o644)
 }
+
+////////////////
+// MISC TYPES //
+////////////////
+
+// MarshalText implements encoding.TextMarshaler.
+func (d Duration) MarshalText() ([]byte, error) {
+	return []byte(d.Duration.String()), nil
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (d *Duration) UnmarshalText(text []byte) error {
+	var err error
+	d.Duration, err = time.ParseDuration(string(text))
+	return err
+}
+
+func (d *Duration) YamlTypeNameForTest() string { return "duration" }

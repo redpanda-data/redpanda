@@ -78,10 +78,34 @@ func TestRpkYamlVersion(t *testing.T) {
 			}
 
 			fmt.Fprintf(sb, "%s%s: ", spaces(), sf.Name)
-			if !walk(sf.Type) {
-				return false
+			addr := sf.Type
+			typ := sf.Type
+			if addr.Kind() != reflect.Ptr {
+				addr = reflect.PointerTo(addr)
 			}
-			fmt.Fprintf(sb, ", `yaml:\"%s\"`\n", tag)
+			for typ.Kind() == reflect.Ptr {
+				typ = typ.Elem()
+			}
+
+			_, hasUnmarshalText := addr.MethodByName("UnmarshalText")
+			if hasUnmarshalText {
+				fnt, ok := addr.MethodByName("YamlTypeNameForTest")
+				if !ok {
+					t.Errorf("field %s.%s at %s has UnmarshalText no YamlTypeNameForTest", typ.Name(), sf.Name, sb.String())
+					return false
+				}
+				if fnt.Type.NumIn() != 1 || fnt.Type.NumOut() != 1 || fnt.Type.Out(0).Kind() != reflect.String {
+					t.Errorf("field %s.%s at %s YamlTypeNameForTest: wrong signature", typ.Name(), sf.Name, sb.String())
+					return false
+				}
+				name := reflect.New(typ).MethodByName("YamlTypeNameForTest").Call(nil)[0].String()
+				fmt.Fprintf(sb, "%s", name)
+			} else {
+				if !walk(sf.Type) {
+					return false
+				}
+			}
+			fmt.Fprintf(sb, " `yaml:\"%s\"`\n", tag)
 		}
 		return true
 	}
@@ -95,10 +119,11 @@ func TestRpkYamlVersion(t *testing.T) {
 	shastr := hex.EncodeToString(sha[:])
 
 	const (
-		v1sha = "0a7e145ddf8b86aea0478bf976b0149b6a7df57cae19d89b87b12f5ccdeddb14" // 23-05-25
+		v1sha = "eb5ffa64ca15ceb04b1189a9f934a95b81577eadc5c8a7b3f60c8116d2799ef8" // 23-06-06
 	)
 
 	if shastr != v1sha {
 		t.Errorf("rpk.yaml type shape has changed (got sha %s != exp %s, if fields were reordered, update the valid v1 sha, otherwise bump the rpk.yaml version number", shastr, v1sha)
+		t.Errorf("current shape:\n%s\n", sb.String())
 	}
 }

@@ -71,6 +71,7 @@ const (
 const (
 	xkindProfile   = iota // configuration for the current profile
 	xkindCloudAuth        // configuration for the current cloud_auth
+	xkindDefault          // configuration for rpk.yaml defaults
 )
 
 type xflag struct {
@@ -266,6 +267,73 @@ var xflags = map[string]xflag{
 			return nil
 		},
 	},
+
+	"defaults.prompt": {
+		"defaults.prompt",
+		"bg-red \"%n\"",
+		xkindDefault,
+		func(v string, y *RpkYaml) error {
+			y.Defaults.Prompt = v
+			return nil
+		},
+	},
+
+	"defaults.no_default_cluster": {
+		"defaults.no_default_cluster",
+		"false",
+		xkindDefault,
+		func(v string, y *RpkYaml) error {
+			b, err := strconv.ParseBool(v)
+			y.Defaults.NoDefaultCluster = b
+			return err
+		},
+	},
+
+	"defaults.dial_timeout": {
+		"defaults.dial_timeout",
+		"3s",
+		xkindDefault,
+		func(v string, y *RpkYaml) error {
+			return y.Defaults.DialTimeout.UnmarshalText([]byte(v))
+		},
+	},
+
+	"defaults.request_timeout_overhead": {
+		"defaults.request_timeout_overhead",
+		"10s",
+		xkindDefault,
+		func(v string, y *RpkYaml) error {
+			return y.Defaults.RequestTimeoutOverhead.UnmarshalText([]byte(v))
+		},
+	},
+
+	"defaults.retry_timeout": {
+		"defaults.retry_timeout",
+		"30s",
+		xkindDefault,
+		func(v string, y *RpkYaml) error {
+			return y.Defaults.RetryTimeout.UnmarshalText([]byte(v))
+		},
+	},
+
+	"defaults.fetch_max_wait": {
+		"defaults.fetch_max_wait",
+		"5s",
+		xkindDefault,
+		func(v string, y *RpkYaml) error {
+			return y.Defaults.FetchMaxWait.UnmarshalText([]byte(v))
+		},
+	},
+
+	"defaults.redpanda_client_id": {
+		"defaults.redpanda_client_id",
+		"rpk",
+		xkindDefault,
+		func(v string, y *RpkYaml) error {
+			y.Defaults.RedpandaClientID = v
+			return nil
+		},
+	},
 }
 
 // XFlags returns the list of -X flags that are supported by rpk.
@@ -292,6 +360,18 @@ func XProfileFlags() (xs, yamlPaths []string) {
 func XCloudAuthFlags() (xs, yamlPaths []string) {
 	for k, v := range xflags {
 		if v.kind == xkindCloudAuth {
+			xs = append(xs, k)
+			yamlPaths = append(yamlPaths, v.path)
+		}
+	}
+	return
+}
+
+// XRpkDefaultsFlags returns all X flags that modify rpk defaults, and
+// their corresponding yaml paths.
+func XRpkDefaultsFlags() (xs, yamlPaths []string) {
+	for k, v := range xflags {
+		if v.kind == xkindDefault {
 			xs = append(xs, k)
 			yamlPaths = append(yamlPaths, v.path)
 		}
@@ -423,6 +503,41 @@ cloud.client_id=somestring
 
 cloud.client_secret=somelongerstring
   An oauth client secret to use for authenticating with the Redpanda Cloud API.
+
+defaults.prompt="%n"
+  A format string to use for the default prompt; see 'rpk profile prompt' for
+  more information.
+
+defaults.no_default_cluster=false
+  A boolean that disables rpk from talking to localhost:9092 if no other
+  cluster is specified.
+
+defaults.dial_timeout=3s
+  A duration that rpk will wait for a connection to be established before
+  timing out.
+
+defaults.request_timeout_overhead=10s
+  A duration that limits how long rpk waits for responses, *on top* of any
+  request-internal timeout. For example, ListOffsets has no Timeout field so
+  if request_timeout_overhead is 10s, rpk will wait for 10s for a response.
+  However, JoinGroup has a RebalanceTimeoutMillis field, so the 10s is applied
+  on top of the rebalance timeout.
+
+defaults.retry_timeout=30s
+  This timeout specifies how long rpk will retry Kafka API requests. This
+  timeout is evaluated before any backoff -- if a request fails, we first check
+  if the retry timeout has elapsed and if so, we stop retrying. If not, we wait
+  for the backoff and then retry.
+
+defaults.fetch_max_wait=5s
+  This timeout specifies the maximum time that brokers will wait before
+  replying to a fetch request with whatever data is available.
+
+defaults.redpanda_client_id=rpk
+  This string value is the client ID that rpk uses when issuing Kafka protocol
+  requests to Redpanda. This client ID shows up in Redpanda logs and metrics,
+  changing it can be useful if you want to have your own rpk client stand out
+  from others that may be hitting the cluster.
 `
 }
 
@@ -443,6 +558,13 @@ admin.tls.cert=/path/to/cert.pem
 admin.tls.key=/path/to/key.pem
 cloud.client_id=somestring
 cloud.client_secret=somelongerstring
+defaults.prompt="%n"
+defaults.no_default_cluster=boolean
+defaults.dial_timeout=duration(3s,1m,2h)
+defaults.request_timeout_overhead=duration(10s,1m,2h)
+defaults.retry_timeout=duration(30s,1m,2h)
+defaults.fetch_max_wait=duration(5s,1m,2h)
+defaults.redpanda_client_id=rpk
 `
 }
 
