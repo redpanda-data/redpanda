@@ -67,17 +67,45 @@ std::ostream& operator<<(std::ostream& os, const schema_type& v);
 using subject = named_type<ss::sstring, struct subject_tag>;
 static const subject invalid_subject{};
 
+///\brief The version of the schema registered with a subject.
+///
+/// A subject may evolve its schema over time. Each version is associated with a
+/// schema_id.
+using schema_version = named_type<int32_t, struct schema_version_tag>;
+static constexpr schema_version invalid_schema_version{-1};
+
+struct schema_reference {
+    friend bool
+    operator==(const schema_reference& lhs, const schema_reference& rhs)
+      = default;
+
+    friend std::ostream&
+    operator<<(std::ostream& os, const schema_reference& ref);
+
+    ss::sstring name;
+    subject sub{invalid_subject};
+    schema_version version{invalid_schema_version};
+};
+
 ///\brief Definition of a schema and its type.
 template<typename Tag>
 class typed_schema_definition {
 public:
     using tag = Tag;
     using raw_string = named_type<ss::sstring, tag>;
+    using references = std::vector<schema_reference>;
 
     template<typename T>
     typed_schema_definition(T&& def, schema_type type)
       : _def{ss::sstring{std::forward<T>(def)}}
-      , _type{type} {}
+      , _type{type}
+      , _refs{} {}
+
+    template<typename T>
+    typed_schema_definition(T&& def, schema_type type, references refs)
+      : _def{ss::sstring{std::forward<T>(def)}}
+      , _type{type}
+      , _refs{std::move(refs)} {}
 
     friend bool operator==(
       const typed_schema_definition& lhs, const typed_schema_definition& rhs)
@@ -91,9 +119,13 @@ public:
     const raw_string& raw() const& { return _def; }
     raw_string raw() && { return std::move(_def); }
 
+    const references& refs() const& { return _refs; }
+    references refs() && { return std::move(_refs); }
+
 private:
     raw_string _def;
     schema_type _type{schema_type::avro};
+    references _refs;
 };
 
 ///\brief An unvalidated definition of the schema and its type.
@@ -115,9 +147,13 @@ static const unparsed_schema_definition invalid_schema_definition{
 ///\brief The definition of an avro schema.
 class avro_schema_definition {
 public:
-    explicit avro_schema_definition(avro::ValidSchema vs);
+    explicit avro_schema_definition(
+      avro::ValidSchema vs, canonical_schema_definition::references refs);
 
     canonical_schema_definition::raw_string raw() const;
+    canonical_schema_definition::references const& refs() const {
+        return _refs;
+    };
 
     const avro::ValidSchema& operator()() const;
 
@@ -137,6 +173,7 @@ public:
 
 private:
     avro::ValidSchema _impl;
+    canonical_schema_definition::references _refs;
 };
 
 class protobuf_schema_definition {
@@ -144,10 +181,15 @@ public:
     struct impl;
     using pimpl = ss::shared_ptr<const impl>;
 
-    explicit protobuf_schema_definition(pimpl p)
-      : _impl{std::move(p)} {}
+    explicit protobuf_schema_definition(
+      pimpl p, canonical_schema_definition::references refs)
+      : _impl{std::move(p)}
+      , _refs(std::move(refs)) {}
 
     canonical_schema_definition::raw_string raw() const;
+    canonical_schema_definition::references const& refs() const {
+        return _refs;
+    };
 
     const impl& operator()() const { return *_impl; }
 
@@ -161,7 +203,7 @@ public:
     constexpr schema_type type() const { return schema_type::protobuf; }
 
     explicit operator canonical_schema_definition() const {
-        return {raw(), type()};
+        return {raw(), type(), refs()};
     }
 
     ::result<ss::sstring, kafka::error_code>
@@ -169,6 +211,7 @@ public:
 
 private:
     pimpl _impl;
+    canonical_schema_definition::references _refs;
 };
 
 ///\brief A schema that has been validated.
@@ -231,13 +274,6 @@ private:
     impl _impl;
 };
 
-///\brief The version of the schema registered with a subject.
-///
-/// A subject may evolve its schema over time. Each version is associated with a
-/// schema_id.
-using schema_version = named_type<int32_t, struct schema_version_tag>;
-static constexpr schema_version invalid_schema_version{-1};
-
 ///\brief Globally unique identifier for a schema.
 using schema_id = named_type<int32_t, struct schema_id_tag>;
 static constexpr schema_id invalid_schema_id{-1};
@@ -281,38 +317,18 @@ struct seq_marker {
     friend std::ostream& operator<<(std::ostream& os, const seq_marker& v);
 };
 
-struct schema_reference {
-    friend bool
-    operator==(const schema_reference& lhs, const schema_reference& rhs)
-      = default;
-
-    friend std::ostream&
-    operator<<(std::ostream& os, const schema_reference& ref);
-
-    ss::sstring name;
-    subject sub{invalid_subject};
-    schema_version version{invalid_schema_version};
-};
-
-///\brief A schema with its subject and references.
+///\brief A schema with its subject
 template<typename Tag>
 class typed_schema {
 public:
     using tag = Tag;
     using schema_definition = typed_schema_definition<tag>;
 
-    using references = std::vector<schema_reference>;
-
     typed_schema() = default;
 
     typed_schema(subject sub, schema_definition def)
       : _sub{std::move(sub)}
       , _def{std::move(def)} {}
-
-    typed_schema(subject sub, schema_definition def, references refs)
-      : _sub{std::move(sub)}
-      , _def{std::move(def)}
-      , _refs{std::move(refs)} {}
 
     friend bool operator==(const typed_schema& lhs, const typed_schema& rhs)
       = default;
@@ -327,13 +343,9 @@ public:
     const schema_definition& def() const& { return _def; }
     schema_definition def() && { return std::move(_def); }
 
-    const references& refs() const& { return _refs; }
-    references refs() && { return std::move(_refs); }
-
 private:
     subject _sub{invalid_subject};
     schema_definition _def{"", schema_type::avro};
-    references _refs;
 };
 
 using unparsed_schema = typed_schema<unparsed_schema_definition::tag>;

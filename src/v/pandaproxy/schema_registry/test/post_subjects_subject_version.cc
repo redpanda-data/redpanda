@@ -35,10 +35,10 @@ void rjson_serialize(
         w.Key("schemaType");
         ::json::rjson_serialize(w, to_string_view(r.schema.type()));
     }
-    if (!r.schema.refs().empty()) {
+    if (!r.schema.def().refs().empty()) {
         w.Key("references");
         w.StartArray();
-        for (const auto& ref : r.schema.refs()) {
+        for (const auto& ref : r.schema.def().refs()) {
             w.StartObject();
             w.Key("name");
             ::json::rjson_serialize(w, ref.name);
@@ -539,7 +539,7 @@ FIXTURE_TEST(schema_registry_post_avro_references, pandaproxy_test_fixture) {
 
     const auto employee_req = request{pps::canonical_schema{
       pps::subject{"employee-value"},
-      pps::canonical_schema_definition(
+      pps::canonical_schema_definition{
         R"({
   "namespace": "com.redpanda",
   "type": "record",
@@ -559,10 +559,10 @@ FIXTURE_TEST(schema_registry_post_avro_references, pandaproxy_test_fixture) {
     }
   ]
 })",
-        pps::schema_type::avro),
-      {{"com.redpanda.company",
-        pps::subject{"company-value"},
-        pps::schema_version{1}}}}};
+        pps::schema_type::avro,
+        {{"com.redpanda.company",
+          pps::subject{"company-value"},
+          pps::schema_version{1}}}}}};
 
     info("Connecting client");
     auto client = make_schema_reg_client();

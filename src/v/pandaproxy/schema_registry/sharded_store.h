@@ -142,13 +142,11 @@ private:
         schema_version version;
         bool inserted;
     };
-    ss::future<insert_subject_result> insert_subject(
-      subject sub, canonical_schema::references refs, schema_id id);
+    ss::future<insert_subject_result> insert_subject(subject sub, schema_id id);
 
     ss::future<bool> upsert_subject(
       seq_marker marker,
       subject sub,
-      canonical_schema::references refs,
       schema_version version,
       schema_id id,
       is_deleted deleted);

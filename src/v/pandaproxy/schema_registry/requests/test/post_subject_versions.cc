@@ -29,7 +29,10 @@ SEASTAR_THREAD_TEST_CASE(test_post_subject_versions_parser) {
       R"({\"type\":\"record\",\"name\":\"test\",\"fields\":[{\"type\":\"string\",\"name\":\"field1\"},{\"type\":\"com.acme.Referenced\",\"name\":\"int\"}]})"};
     const pps::unparsed_schema_definition expected_schema_def{
       R"({"type":"record","name":"test","fields":[{"type":"string","name":"field1"},{"type":"com.acme.Referenced","name":"int"}]})",
-      pps::schema_type::avro};
+      pps::schema_type::avro,
+      {{.name{"com.acme.Referenced"},
+        .sub{pps::subject{"childSubject"}},
+        .version{pps::schema_version{1}}}}};
 
     const ss::sstring payload{
       R"(
@@ -47,13 +50,7 @@ SEASTAR_THREAD_TEST_CASE(test_post_subject_versions_parser) {
 })"};
     const pps::subject sub{"test_subject"};
     const parse_result expected{
-      {sub,
-       expected_schema_def,
-       {{.name{"com.acme.Referenced"},
-         .sub{pps::subject{"childSubject"}},
-         .version{pps::schema_version{1}}}}},
-      std::nullopt,
-      std::nullopt};
+      {sub, expected_schema_def}, std::nullopt, std::nullopt};
 
     auto result{ppj::rjson_parse(
       payload.data(), pps::post_subject_versions_request_handler{sub})};
@@ -63,8 +60,9 @@ SEASTAR_THREAD_TEST_CASE(test_post_subject_versions_parser) {
     result.def = {
       std::move(result.def).sub(),
       pps::unparsed_schema_definition{
-        ppj::minify(result.def.def().raw()()), pps::schema_type::avro},
-      std::move(result.def).refs()};
+        ppj::minify(result.def.def().raw()()),
+        pps::schema_type::avro,
+        std::move(result.def).def().refs()}};
     // NOLINTEND(bugprone-use-after-move)
 
     BOOST_REQUIRE_EQUAL(expected.def, result.def);
