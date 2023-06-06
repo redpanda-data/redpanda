@@ -10,6 +10,7 @@
 #pragma once
 
 #include "cloud_storage/base_manifest.h"
+#include "cluster/cloud_metadata/error_outcome.h"
 #include "cluster/cloud_metadata/types.h"
 #include "model/fundamental.h"
 #include "seastarx.h"
@@ -90,5 +91,8 @@ private:
 };
 
 std::ostream& operator<<(std::ostream&, const cluster_metadata_manifest&);
+
+using cluster_manifest_result
+  = result<cluster_metadata_manifest, error_outcome>;
 
 } // namespace cluster::cloud_metadata

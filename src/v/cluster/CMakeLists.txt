@@ -175,6 +175,8 @@ v_cc_library(
     ../archival/scrubber.cc
     cloud_metadata/cluster_manifest.cc
     cloud_metadata/key_utils.cc
+    cloud_metadata/manifest_downloads.cc
+    cloud_metadata/uploader.cc
   DEPS
     Seastar::seastar
     bootstrap_rpc

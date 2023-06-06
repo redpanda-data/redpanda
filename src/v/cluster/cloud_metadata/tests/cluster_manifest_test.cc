@@ -11,6 +11,7 @@
 #include "bytes/iostream.h"
 #include "cluster/cloud_metadata/cluster_manifest.h"
 
+#include <seastar/core/lowres_clock.hh>
 #include <seastar/testing/thread_test_case.hh>
 
 using namespace cluster::cloud_metadata;
@@ -20,6 +21,19 @@ ss::input_stream<char> make_manifest_stream(std::string_view json) {
     iobuf i;
     i.append(json.data(), json.size());
     return make_iobuf_input_stream(std::move(i));
+}
+
+// Does a roundtrip of JSON serializing and returns the result.
+cluster_metadata_manifest roundtrip_json(const cluster_metadata_manifest& m) {
+    auto [is, size] = m.serialize().get();
+    iobuf buf;
+    auto os = make_iobuf_ref_output_stream(buf);
+    ss::copy(is, os).get();
+
+    auto rstr = make_iobuf_input_stream(std::move(buf));
+    cluster_metadata_manifest restored;
+    restored.update(std::move(rstr)).get();
+    return restored;
 }
 } // anonymous namespace
 
@@ -142,4 +156,36 @@ SEASTAR_THREAD_TEST_CASE(test_missing_fields_serialization) {
     BOOST_CHECK_EQUAL(cluster_metadata_id{}, manifest.metadata_id);
     BOOST_CHECK_EQUAL(model::offset{}, manifest.controller_snapshot_offset);
     BOOST_CHECK_EQUAL("", manifest.controller_snapshot_path);
+}
+
+SEASTAR_THREAD_TEST_CASE(test_max_vals) {
+    cluster_metadata_manifest max_manifest;
+    max_manifest.cluster_uuid = model::cluster_uuid(uuid_t::create());
+    max_manifest.upload_time_since_epoch
+      = std::chrono::duration_cast<std::chrono::milliseconds>(
+        ss::lowres_system_clock::duration::max());
+    max_manifest.metadata_id = cluster_metadata_id::max();
+    max_manifest.controller_snapshot_offset = model::offset::max();
+    auto max_restored = roundtrip_json(max_manifest);
+    BOOST_REQUIRE_EQUAL(max_manifest, max_restored);
+    // Sanity check that serializing the time is sane with respect to now.
+    BOOST_REQUIRE_LT(
+      ss::lowres_system_clock::now().time_since_epoch().count(),
+      max_restored.upload_time_since_epoch.count());
+}
+
+SEASTAR_THREAD_TEST_CASE(test_min_vals) {
+    cluster_metadata_manifest min_manifest;
+    min_manifest.cluster_uuid = model::cluster_uuid(uuid_t::create());
+    min_manifest.upload_time_since_epoch
+      = std::chrono::duration_cast<std::chrono::milliseconds>(
+        ss::lowres_system_clock::duration::min());
+    min_manifest.metadata_id = cluster_metadata_id::min();
+    min_manifest.controller_snapshot_offset = model::offset::min();
+    auto min_restored = roundtrip_json(min_manifest);
+    BOOST_REQUIRE_EQUAL(min_manifest, min_restored);
+    // Sanity check that serializing the time is sane with respect to now.
+    BOOST_REQUIRE_GT(
+      ss::lowres_system_clock::now().time_since_epoch().count(),
+      min_restored.upload_time_since_epoch.count());
 }
