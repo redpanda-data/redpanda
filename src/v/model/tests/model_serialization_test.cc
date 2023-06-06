@@ -60,9 +60,11 @@ SEASTAR_THREAD_TEST_CASE(tristate_rt_test) {
     tristate<size_t> empty(std::nullopt);
     tristate<size_t> present(1024);
 
+    // NOLINTBEGIN(performance-move-const-arg)
     auto r_disabled = serialize_roundtrip_rpc(std::move(disabled));
     auto r_empty = serialize_roundtrip_rpc(std::move(empty));
     auto r_present = serialize_roundtrip_rpc(std::move(present));
+    // NOLINTEND(performance-move-const-arg)
 
     BOOST_REQUIRE_EQUAL(r_disabled.is_disabled(), true);
     BOOST_REQUIRE_EQUAL(r_empty.is_disabled(), false);

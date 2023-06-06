@@ -30,7 +30,7 @@ iobuf header_as_iobuf(const header& h) {
 ss::future<ss::scattered_message<char>> netbuf::as_scattered() && {
     // Move object members into coroutine before first supension.
     iobuf out_buf = std::move(_out);
-    auto hdr = std::move(_hdr);
+    auto hdr = _hdr;
 
     if (hdr.correlation_id == 0 || hdr.meta == 0) {
         throw std::runtime_error(

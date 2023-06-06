@@ -43,8 +43,8 @@ public:
     }
 
     void update_peers(std::vector<node_status> updates) {
-        for (auto& node_status : updates) {
-            _peers_status[node_status.node_id] = std::move(node_status);
+        for (const auto& node_status : updates) {
+            _peers_status[node_status.node_id] = node_status;
         }
     }
 

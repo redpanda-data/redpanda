@@ -36,7 +36,7 @@ namespace rpc {
 struct client_context_impl final : streaming_context {
     client_context_impl(transport& s, header h)
       : _c(std::ref(s))
-      , _h(std::move(h)) {}
+      , _h(h) {}
     ss::future<ssx::semaphore_units> reserve_memory(size_t ask) final {
         auto fut = get_units(_c.get()._memory, ask);
         if (_c.get()._memory.waiters()) {
@@ -380,7 +380,7 @@ ss::future<> transport::do_reads() {
                   fail_outstanding_futures();
                   return ss::make_ready_future<>();
               }
-              return dispatch(std::move(h.value()));
+              return dispatch(h.value());
           });
       });
 }

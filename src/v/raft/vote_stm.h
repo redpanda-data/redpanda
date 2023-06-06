@@ -58,7 +58,7 @@ private:
         };
 
         void set_value(result<vote_reply> r) {
-            value = std::make_unique<result<vote_reply>>(std::move(r));
+            value = std::make_unique<result<vote_reply>>(r);
         }
 
         state get_state() const {

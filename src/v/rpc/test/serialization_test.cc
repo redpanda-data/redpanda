@@ -17,7 +17,7 @@
 SEASTAR_THREAD_TEST_CASE(serialize_pod) {
     auto b = iobuf();
     pod it;
-    reflection::serialize(b, std::move(it));
+    reflection::serialize(b, it);
     BOOST_CHECK_EQUAL(b.size_bytes(), pod_bytes());
 }
 
@@ -50,7 +50,7 @@ SEASTAR_THREAD_TEST_CASE(serialize_pod_with_vector) {
 SEASTAR_THREAD_TEST_CASE(serialize_pod_with_array) {
     auto b = iobuf();
     pod_with_array it;
-    reflection::serialize(b, std::move(it));
+    reflection::serialize(b, it);
     BOOST_CHECK_EQUAL(b.size_bytes(), pod_with_arr_bytes());
 }
 

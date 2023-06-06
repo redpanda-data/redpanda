@@ -125,9 +125,9 @@ public:
       , file_part({.base_offset = o, .term = t, .version = v}) {}
 
     segment_full_path(
-      partition_path&& dir_part, segment_path::metadata&& file_part)
+      partition_path&& dir_part, segment_path::metadata file_part)
       : dir_part(std::move(dir_part))
-      , file_part(std::move(file_part)) {}
+      , file_part(file_part) {}
 
     /**
      * Transformations from regular segment paths to the index etc

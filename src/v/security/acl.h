@@ -430,7 +430,7 @@ public:
       std::optional<acl_operation> operation,
       std::optional<acl_permission> permission)
       : _principal(std::move(principal))
-      , _host(std::move(host))
+      , _host(host)
       , _operation(operation)
       , _permission(permission) {}
 

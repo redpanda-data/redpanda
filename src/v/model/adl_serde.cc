@@ -37,7 +37,7 @@ model::ns adl<model::ns>::from(iobuf_parser& in) {
 
 void adl<model::topic_partition>::to(iobuf& out, model::topic_partition&& t) {
     auto str = ss::sstring(t.topic);
-    reflection::serialize(out, std::move(str), std::move(t.partition));
+    reflection::serialize(out, std::move(str), t.partition);
 }
 
 model::topic_partition adl<model::topic_partition>::from(iobuf_parser& in) {
