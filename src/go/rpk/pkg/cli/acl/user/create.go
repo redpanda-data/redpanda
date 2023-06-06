@@ -1,4 +1,4 @@
-// Copyright 2021 Redpanda Data, Inc.
+// Copyright 2023 Redpanda Data, Inc.
 //
 // Use of this software is governed by the Business Source License
 // included in the file licenses/BSL.md
@@ -7,7 +7,7 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
-package acl
+package user
 
 import (
 	"fmt"
@@ -19,29 +19,6 @@ import (
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
 )
-
-func newUserCommand(fs afero.Fs, p *config.Params) *cobra.Command {
-	cmd := &cobra.Command{
-		Use:   "user",
-		Short: "Manage SASL users",
-		Long: `Manage SASL users.
-
-If SASL is enabled, a SASL user is what you use to talk to Redpanda, and ACLs
-control what your user has access to. See 'rpk acl --help' for more information
-about ACLs, and 'rpk acl user create --help' for more information about
-creating SASL users. Using SASL requires setting "enable_sasl: true" in the
-redpanda section of your redpanda.yaml.
-`,
-	}
-	p.InstallAdminFlags(cmd)
-	p.InstallKafkaFlags(cmd) // old ACL user commands have this, and Kafka SASL creds are used for admin API basic auth
-	cmd.AddCommand(
-		newCreateUserCommand(fs, p),
-		newDeleteUserCommand(fs, p),
-		newListUsersCommand(fs, p),
-	)
-	return cmd
-}
 
 func newCreateUserCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	var userOld, pass, newPass, mechanism string
@@ -138,70 +115,4 @@ acl help text for more info.
 	cmd.Flags().StringVar(&mechanism, "mechanism", strings.ToLower(admin.ScramSha256), "SASL mechanism to use for the user you are creating (scram-sha-256, scram-sha-512, case insensitive); not to be confused with the global flag --sasl-mechanism which is used for authenticating the rpk client")
 
 	return cmd
-}
-
-func newDeleteUserCommand(fs afero.Fs, p *config.Params) *cobra.Command {
-	var oldUser string
-	cmd := &cobra.Command{
-		Use:   "delete [USER]",
-		Short: "Delete a SASL user",
-		Long: `Delete a SASL user.
-
-This command deletes the specified SASL account from Redpanda. This does not
-delete any ACLs that may exist for this user.
-`,
-		Args: cobra.MaximumNArgs(1),
-		Run: func(cmd *cobra.Command, args []string) {
-			p, err := p.LoadVirtualProfile(fs)
-			out.MaybeDie(err, "unable to load config: %v", err)
-
-			cl, err := admin.NewClient(fs, p)
-			out.MaybeDie(err, "unable to initialize admin client: %v", err)
-
-			// Backwards compat: we favor the new format (an
-			// argument), but if that is empty, we use the old
-			// flag. If still empty, we error.
-			var user string
-			if len(args) > 0 {
-				user = args[0]
-			} else if len(oldUser) > 0 {
-				user = oldUser
-			} else {
-				out.Die("missing required username argument")
-			}
-
-			err = cl.DeleteUser(cmd.Context(), user)
-			out.MaybeDie(err, "unable to delete user %q: %s", user, err)
-			fmt.Printf("Deleted user %q.\n", user)
-		},
-	}
-
-	cmd.Flags().StringVar(&oldUser, "delete-username", "", "The user to be deleted")
-	cmd.Flags().MarkDeprecated("delete-username", "The username now does not require a flag")
-
-	return cmd
-}
-
-func newListUsersCommand(fs afero.Fs, p *config.Params) *cobra.Command {
-	return &cobra.Command{
-		Use:     "list",
-		Aliases: []string{"ls"},
-		Short:   "List SASL users",
-		Run: func(cmd *cobra.Command, _ []string) {
-			p, err := p.LoadVirtualProfile(fs)
-			out.MaybeDie(err, "unable to load config: %v", err)
-
-			cl, err := admin.NewClient(fs, p)
-			out.MaybeDie(err, "unable to initialize admin client: %v", err)
-
-			users, err := cl.ListUsers(cmd.Context())
-			out.MaybeDie(err, "unable to list users: %v", err)
-
-			tw := out.NewTable("Username")
-			defer tw.Flush()
-			for _, u := range users {
-				tw.Print(u)
-			}
-		},
-	}
 }
