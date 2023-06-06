@@ -581,7 +581,17 @@ func (p *Params) InstallKafkaFlags(cmd *cobra.Command) {
 	pf.StringVar(&p.password, "password", "", "SASL password to be used for authentication")
 	pf.StringVar(&p.saslMechanism, "sasl-mechanism", "", "The authentication mechanism to use (SCRAM-SHA-256, SCRAM-SHA-512)")
 
+	pf.MarkHidden("brokers")
+	pf.MarkHidden(FlagSASLUser)
+	pf.MarkHidden("password")
+	pf.MarkHidden("sasl-mechanism")
+
 	p.InstallTLSFlags(cmd)
+
+	pf.MarkHidden(FlagEnableTLS)
+	pf.MarkHidden(FlagTLSCA)
+	pf.MarkHidden(FlagTLSCert)
+	pf.MarkHidden(FlagTLSKey)
 }
 
 // InstallTLSFlags adds the original rpk Kafka API TLS set of flags to this
@@ -610,6 +620,14 @@ func (p *Params) InstallAdminFlags(cmd *cobra.Command) {
 	pf.StringVar(&p.adminCAFile, "admin-api-tls-truststore", "", "The CA certificate  to be used for TLS communication with the admin API")
 	pf.StringVar(&p.adminCertFile, "admin-api-tls-cert", "", "The certificate to be used for TLS authentication with the admin API")
 	pf.StringVar(&p.adminKeyFile, "admin-api-tls-key", "", "The certificate key to be used for TLS authentication with the admin API")
+
+	pf.MarkHidden("api-urls")
+	pf.MarkHidden("hosts")
+	pf.MarkHidden("admin-url")
+	pf.MarkHidden("admin-api-tls-enabled")
+	pf.MarkHidden("admin-api-tls-truststore")
+	pf.MarkHidden("admin-api-tls-cert")
+	pf.MarkHidden("admin-api-tls-key")
 }
 
 // InstallCloudFlags adds the --client-id and --client-secret flags that
