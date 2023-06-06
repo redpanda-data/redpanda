@@ -74,7 +74,22 @@ class FailureInjectorBase:
         pass
 
     def _start_func(self, tp):
-        pass
+        if tp == FailureSpec.FAILURE_KILL:
+            return self._kill
+        elif tp == FailureSpec.FAILURE_SUSPEND:
+            return self._suspend
+        elif tp == FailureSpec.FAILURE_TERMINATE:
+            return self._terminate
+        elif tp == FailureSpec.FAILURE_ISOLATE:
+            return self._isolate
+        elif tp == FailureSpec.FAILURE_NETEM_RANDOM_DELAY:
+            return self._netem_delay
+        elif tp == FailureSpec.FAILURE_NETEM_PACKET_LOSS:
+            return self._netem_loss
+        elif tp == FailureSpec.FAILURE_NETEM_PACKET_CORRUPT:
+            return self._netem_corrupt
+        elif tp == FailureSpec.FAILURE_NETEM_PACKET_DUPLICATE:
+            return self._netem_duplicate
 
     def _stop_func(self, tp):
         pass
@@ -172,24 +187,6 @@ class FailureInjector(FailureInjectorBase):
                                                  interval=spec.length)
                     self._in_flight.add(spec)
                     stop_timer.start()
-
-    def _start_func(self, tp):
-        if tp == FailureSpec.FAILURE_KILL:
-            return self._kill
-        elif tp == FailureSpec.FAILURE_SUSPEND:
-            return self._suspend
-        elif tp == FailureSpec.FAILURE_TERMINATE:
-            return self._terminate
-        elif tp == FailureSpec.FAILURE_ISOLATE:
-            return self._isolate
-        elif tp == FailureSpec.FAILURE_NETEM_RANDOM_DELAY:
-            return self._netem_delay
-        elif tp == FailureSpec.FAILURE_NETEM_PACKET_LOSS:
-            return self._netem_loss
-        elif tp == FailureSpec.FAILURE_NETEM_PACKET_CORRUPT:
-            return self._netem_corrupt
-        elif tp == FailureSpec.FAILURE_NETEM_PACKET_DUPLICATE:
-            return self._netem_duplicate
 
     def _stop_func(self, tp):
         if tp == FailureSpec.FAILURE_KILL or tp == FailureSpec.FAILURE_TERMINATE:
