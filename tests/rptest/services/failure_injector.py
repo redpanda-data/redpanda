@@ -59,10 +59,72 @@ class FailureSpec:
         return (self.type, self.length, self.node)
 
 
-class FailureInjector:
+class FailureInjectorBase:
     def __init__(self, redpanda):
         self.redpanda = redpanda
         self._in_flight = set()
+
+    def __enter__(self):
+        pass
+
+    def __exit__(self, type, value, traceback):
+        pass
+
+    def inject_failure(self, spec):
+        pass
+
+    def _start_func(self, tp):
+        pass
+
+    def _stop_func(self, tp):
+        pass
+
+    def _kill(self, node):
+        pass
+
+    def _isolate(self, node):
+        pass
+
+    def _heal(self, node):
+        pass
+
+    def _delete_netem(self, node):
+        pass
+
+    def _heal_all(self):
+        pass
+
+    def _suspend(self, node):
+        pass
+
+    def _terminate(self, node):
+        pass
+
+    def _continue(self, node):
+        pass
+
+    def _start(self, node):
+        pass
+
+    def _netem(self, node, op):
+        pass
+
+    def _netem_delay(self, node):
+        pass
+
+    def _netem_loss(self, node):
+        pass
+
+    def _netem_corrupt(self, node):
+        pass
+
+    def _netem_duplicate(self, node):
+        pass
+
+
+class FailureInjector(FailureInjectorBase):
+    def __init__(self, redpanda):
+        super(FailureInjector, self).__init__(redpanda)
 
     def __enter__(self):
         return self
