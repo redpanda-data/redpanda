@@ -64,6 +64,10 @@
 #include <numeric>
 #include <stdexcept>
 
+namespace {
+constexpr auto housekeeping_jit = 5ms;
+}
+
 namespace archival {
 
 static std::unique_ptr<adjacent_segment_merger>
@@ -112,7 +116,7 @@ ntp_archiver::ntp_archiver(
         .cloud_storage_max_segments_pending_deletion_per_partition.bind())
   , _housekeeping_interval(
       config::shard_local_cfg().cloud_storage_housekeeping_interval_ms.bind())
-  , _housekeeping_jitter(_housekeeping_interval(), 5ms)
+  , _housekeeping_jitter(_housekeeping_interval(), housekeeping_jit)
   , _next_housekeeping(_housekeeping_jitter())
   , _segment_tags(cloud_storage::remote::make_segment_tags(_ntp, _rev))
   , _manifest_tags(
@@ -127,6 +131,12 @@ ntp_archiver::ntp_archiver(
         .cloud_storage_manifest_max_upload_interval_sec.bind())
   , _feature_table(parent.feature_table())
   , _manifest_view(std::move(amv)) {
+    _housekeeping_interval.watch([this] {
+        _housekeeping_jitter = simple_time_jitter<ss::lowres_clock>{
+          _housekeeping_interval(), housekeeping_jit};
+        _next_housekeeping = _housekeeping_jitter();
+    });
+
     _start_term = _parent.term();
     // Override bucket for read-replica
     if (_parent.is_read_replica_mode_enabled()) {
