@@ -92,7 +92,14 @@ class FailureInjectorBase:
             return self._netem_duplicate
 
     def _stop_func(self, tp):
-        pass
+        if tp == FailureSpec.FAILURE_KILL or tp == FailureSpec.FAILURE_TERMINATE:
+            return self._start
+        elif tp == FailureSpec.FAILURE_SUSPEND:
+            return self._continue
+        elif tp == FailureSpec.FAILURE_ISOLATE:
+            return self._heal
+        else:
+            return self._delete_netem
 
     def _kill(self, node):
         pass
@@ -187,16 +194,6 @@ class FailureInjector(FailureInjectorBase):
                                                  interval=spec.length)
                     self._in_flight.add(spec)
                     stop_timer.start()
-
-    def _stop_func(self, tp):
-        if tp == FailureSpec.FAILURE_KILL or tp == FailureSpec.FAILURE_TERMINATE:
-            return self._start
-        elif tp == FailureSpec.FAILURE_SUSPEND:
-            return self._continue
-        elif tp == FailureSpec.FAILURE_ISOLATE:
-            return self._heal
-        else:
-            return self._delete_netem
 
     def _kill(self, node):
         self.redpanda.logger.info(
