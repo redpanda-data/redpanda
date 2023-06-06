@@ -79,7 +79,7 @@ where revision is a Redpanda internal concept.
 				listed, err := adm.ListTopics(context.Background(), topics...)
 				out.MaybeDie(err, "unable to describe topics: %v", err)
 				listed.EachError(func(d kadm.TopicDetail) {
-					fmt.Fprintf(os.Stderr, "unable to discover the partitions on topic %q: %v", d.Topic, d.Err)
+					fmt.Fprintf(os.Stderr, "unable to discover the partitions on topic %q: %v\n", d.Topic, d.Err)
 				})
 				s = listed.TopicsSet()
 			}
