@@ -57,8 +57,6 @@
 #include <memory>
 #include <vector>
 
-namespace kc = kafka::client;
-
 namespace {
 
 std::vector<kafka::offset_fetch_request_topic>

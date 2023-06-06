@@ -24,7 +24,6 @@
 
 namespace pp = pandaproxy;
 namespace ppj = pp::json;
-namespace kc = kafka::client;
 
 namespace {
 
