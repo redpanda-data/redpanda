@@ -25,6 +25,7 @@
 #include "pandaproxy/schema_registry/exceptions.h"
 #include "pandaproxy/schema_registry/seq_writer.h"
 #include "pandaproxy/schema_registry/sharded_store.h"
+#include "pandaproxy/schema_registry/store.h"
 #include "pandaproxy/schema_registry/types.h"
 #include "raft/types.h"
 #include "storage/record_batch_builder.h"
@@ -297,8 +298,9 @@ public:
     }
 };
 
+template<typename Tag>
 struct schema_value {
-    canonical_schema schema;
+    typed_schema<Tag> schema;
     schema_version version;
     schema_id id;
     is_deleted deleted{false};
@@ -317,9 +319,12 @@ struct schema_value {
     }
 };
 
+using unparsed_schema_value = schema_value<unparsed_schema_defnition_tag>;
+using canonical_schema_value = schema_value<canonical_schema_definition_tag>;
+
+template<typename Tag>
 inline void rjson_serialize(
-  ::json::Writer<::json::StringBuffer>& w,
-  const schema_registry::schema_value& val) {
+  ::json::Writer<::json::StringBuffer>& w, const schema_value<Tag>& val) {
     w.StartObject();
     w.Key("subject");
     ::json::rjson_serialize(w, val.schema.sub());
@@ -354,7 +359,7 @@ inline void rjson_serialize(
     w.EndObject();
 }
 
-template<typename Encoding = ::json::UTF8<>>
+template<typename Tag, typename Encoding = ::json::UTF8<>>
 class schema_value_handler final : public json::base_handler<Encoding> {
     enum class state {
         empty = 0,
@@ -375,15 +380,15 @@ class schema_value_handler final : public json::base_handler<Encoding> {
 
     struct mutable_schema {
         subject sub{invalid_subject};
-        canonical_schema_definition::raw_string def;
+        typename typed_schema_definition<Tag>::raw_string def;
         schema_type type{schema_type::avro};
-        canonical_schema::references refs;
+        typename typed_schema<Tag>::references refs;
     };
     mutable_schema _schema;
 
 public:
     using Ch = typename json::base_handler<Encoding>::Ch;
-    using rjson_parse_result = schema_value;
+    using rjson_parse_result = schema_value<Tag>;
     rjson_parse_result result;
 
     schema_value_handler()
@@ -499,7 +504,7 @@ public:
             return true;
         }
         case state::definition: {
-            _schema.def = canonical_schema_definition::raw_string{
+            _schema.def = typename typed_schema_definition<Tag>::raw_string{
               ss::sstring{sv}};
             _state = state::object;
             return true;
@@ -600,6 +605,13 @@ public:
         return std::exchange(_state, state::object) == state::references;
     }
 };
+
+template<typename Encoding = ::json::UTF8<>>
+using unparsed_schema_value_handler
+  = schema_value_handler<unparsed_schema_defnition_tag, Encoding>;
+template<typename Encoding = ::json::UTF8<>>
+using canonical_schema_value_handler
+  = schema_value_handler<canonical_schema_definition_tag, Encoding>;
 
 struct config_key {
     static constexpr topic_key_type keytype{topic_key_type::config};
@@ -1140,9 +1152,9 @@ struct consume_to_store {
         case topic_key_type::noop:
             break;
         case topic_key_type::schema: {
-            std::optional<schema_value> val;
+            std::optional<unparsed_schema_value> val;
             if (!record.value().empty()) {
-                val.emplace(from_json_iobuf<schema_value_handler<>>(
+                val.emplace(from_json_iobuf<unparsed_schema_value_handler<>>(
                   record.release_value()));
             }
             co_await apply(
@@ -1181,8 +1193,11 @@ struct consume_to_store {
         co_await _sequencer.advance_offset(offset);
     }
 
+    template<typename Tag>
     ss::future<> apply(
-      model::offset offset, schema_key key, std::optional<schema_value> val) {
+      model::offset offset,
+      schema_key key,
+      std::optional<schema_value<Tag>> val) {
         if (key.magic != 0 && key.magic != 1) {
             throw exception(
               error_code::topic_parse_error,

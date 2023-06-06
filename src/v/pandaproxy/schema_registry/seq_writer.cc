@@ -147,7 +147,7 @@ ss::future<std::optional<schema_id>> seq_writer::do_write_subject_version(
           .node{seq._node_id},
           .sub{schema.schema.sub()},
           .version{projected.version}};
-        auto value = schema_value{
+        auto value = canonical_schema_value{
           .schema{schema.schema},
           .version{projected.version},
           .id{projected.id},
@@ -159,7 +159,8 @@ ss::future<std::optional<schema_id>> seq_writer::do_write_subject_version(
           write_at, std::move(batch));
         if (success) {
             auto applier = consume_to_store(seq._store, seq);
-            co_await applier.apply(write_at, key, value);
+            using Tag = decltype(value.schema)::tag;
+            co_await applier.apply<Tag>(write_at, key, value);
             seq.advance_offset_inner(write_at);
             co_return projected.id;
         } else {
@@ -244,7 +245,7 @@ ss::future<std::optional<bool>> seq_writer::do_delete_subject_version(
     auto key = schema_key{
       .seq{write_at}, .node{seq._node_id}, .sub{sub}, .version{version}};
     vlog(plog.debug, "seq_writer::delete_subject_version {}", key);
-    auto value = schema_value{
+    auto value = canonical_schema_value{
       .schema{std::move(ss.schema)},
       .version{version},
       .id{ss.id},
@@ -255,7 +256,8 @@ ss::future<std::optional<bool>> seq_writer::do_delete_subject_version(
     auto success = co_await seq.produce_and_check(write_at, std::move(batch));
     if (success) {
         auto applier = consume_to_store(seq._store, seq);
-        co_await applier.apply(write_at, key, value);
+        using Tag = decltype(value.schema)::tag;
+        co_await applier.apply<Tag>(write_at, key, value);
         seq.advance_offset_inner(write_at);
         co_return true;
     } else {
@@ -413,7 +415,8 @@ seq_writer::delete_subject_permanent_inner(
         co_await ss::visit(
           k,
           [&applier, &offset](const schema_key& skey) {
-              return applier.apply(offset, skey, std::nullopt);
+              using Tag = canonical_schema_definition_tag;
+              return applier.apply<Tag>(offset, skey, std::nullopt);
           },
           [&applier, &offset](const delete_subject_key& dkey) {
               return applier.apply(offset, dkey, std::nullopt);
