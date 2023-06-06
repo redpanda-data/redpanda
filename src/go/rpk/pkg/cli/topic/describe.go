@@ -33,6 +33,7 @@ func newDescribeCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 		summary    bool
 		configs    bool
 		partitions bool
+		stable     bool
 	)
 	cmd := &cobra.Command{
 		Use:     "describe [TOPIC]",
@@ -152,7 +153,7 @@ partitions section. By default, the summary and configs sections are printed.
 			}
 
 			header("PARTITIONS", partitions, func() {
-				offsets := listStartEndOffsets(cl, topic, len(t.Partitions))
+				offsets := listStartEndOffsets(cl, topic, len(t.Partitions), stable)
 
 				tw := out.NewTable(describePartitionsHeaders(
 					t.Partitions,
@@ -183,6 +184,8 @@ partitions section. By default, the summary and configs sections are printed.
 	cmd.Flags().BoolVarP(&partitions, "print-partitions", "p", false, "Print the detailed partitions section")
 	cmd.Flags().BoolVarP(&all, "print-all", "a", false, "Print all sections")
 
+	cmd.Flags().BoolVar(&stable, "stable", false, "Include the stable offsets column in the partitions section; only relevant if you produce to this topic transactionally")
+
 	return cmd
 }
 
@@ -200,6 +203,9 @@ func getDescribeUsed(partitions []kmsg.MetadataResponseTopicPartition, offsets [
 		}
 	}
 	for _, o := range offsets {
+		// The default stableErr is errUnlisted. We avoid listing
+		// stable offsets unless the user asks, so by default, we do
+		// not print the stable column.
 		if o.stableErr == nil && o.endErr == nil && o.stable != o.end {
 			useStable = true
 		}
@@ -304,9 +310,7 @@ var errUnlisted = errors.New("list failed")
 // always contain the one topic we asked for, and it will contain all
 // partitions we asked for. The logic below will panic redpanda replies
 // incorrectly.
-func listStartEndOffsets(
-	cl *kgo.Client, topic string, numPartitions int,
-) []startStableEndOffset {
+func listStartEndOffsets(cl *kgo.Client, topic string, numPartitions int, stable bool) []startStableEndOffset {
 	offsets := make([]startStableEndOffset, 0, numPartitions)
 
 	for i := 0; i < numPartitions; i++ {
@@ -352,10 +356,34 @@ func listStartEndOffsets(
 		return offsets
 	}
 
-	// Next we ask for the latest offsets (special timestamp -1).
+	// Both HWM and stable offset checks require Timestamp = -1.
 	for i := range req.Topics[0].Partitions {
 		req.Topics[0].Partitions[i].Timestamp = -1
 	}
+
+	// If the user requested stable offsets, we ask for them second. If we
+	// requested these before requesting the HWM, then we could show stable
+	// being higher than the HWM. Stable offsets are only relevant if
+	// transactions are in play.
+	if stable {
+		req.IsolationLevel = 1
+		shards = cl.RequestSharded(context.Background(), req)
+		allFailed = kafka.EachShard(req, shards, func(shard kgo.ResponseShard) {
+			resp := shard.Resp.(*kmsg.ListOffsetsResponse)
+			if len(resp.Topics) > 0 {
+				for _, partition := range resp.Topics[0].Partitions {
+					o := &offsets[partition.Partition]
+					o.stable = partition.Offset
+					o.stableErr = kerr.ErrorForCode(partition.ErrorCode)
+				}
+			}
+		})
+		if allFailed {
+			return offsets
+		}
+	}
+
+	// Finally, the HWM.
 	shards = cl.RequestSharded(context.Background(), req)
 	allFailed = kafka.EachShard(req, shards, func(shard kgo.ResponseShard) {
 		resp := shard.Resp.(*kmsg.ListOffsetsResponse)
@@ -367,26 +395,6 @@ func listStartEndOffsets(
 			}
 		}
 	})
-	// It is less likely to succeed on the first attempt and fail the second,
-	// but we may as well avoid trying a third if we do.
-	if allFailed {
-		return offsets
-	}
-
-	// Finally, we ask for the last stable offsets (relevant for transactions).
-	req.IsolationLevel = 1
-	shards = cl.RequestSharded(context.Background(), req)
-	kafka.EachShard(req, shards, func(shard kgo.ResponseShard) {
-		resp := shard.Resp.(*kmsg.ListOffsetsResponse)
-		if len(resp.Topics) > 0 {
-			for _, partition := range resp.Topics[0].Partitions {
-				o := &offsets[partition.Partition]
-				o.stable = partition.Offset
-				o.stableErr = kerr.ErrorForCode(partition.ErrorCode)
-			}
-		}
-	})
-
 	return offsets
 }
 
