@@ -1,16 +1,4 @@
-apiVersion: v1
-kind: Secret
-metadata:
-  name: console-console-sasl
-  namespace: superusers-prefix
-data:
-  username: X19yZWRwYW5kYV9zeXN0ZW1fX2NvbnNvbGVfY29uc29sZV9jbGllbnQ= # __redpanda_system__console_console_client base64 encoded
----
-
 apiVersion: kuttl.dev/v1beta1
 kind: TestAssert
 collectors:
-- type: pod
-  selector: app.kubernetes.io/name=redpanda-console
-  namespace: superusers-prefix
-  tail: -1
+- command: ../../../hack/get-redpanda-info.sh

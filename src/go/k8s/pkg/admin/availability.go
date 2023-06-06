@@ -16,7 +16,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	redpandav1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
+	vectorizedv1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/vectorized/v1alpha1"
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/labels"
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/utils"
 )
@@ -27,7 +27,7 @@ import (
 func IsAvailableInPreFlight(
 	ctx context.Context,
 	k8sClient client.Reader,
-	redpandaCluster *redpandav1alpha1.Cluster,
+	redpandaCluster *vectorizedv1alpha1.Cluster,
 ) (bool, error) {
 	var pods corev1.PodList
 	err := k8sClient.List(ctx, &pods, &client.ListOptions{

@@ -1,7 +1,7 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: produce-message
+  name: produce-message-using-pp
 spec:
   template:
     spec:
@@ -19,7 +19,7 @@ spec:
             - -ex
           args:
             - |
-              curl -s -v -X POST "http://cluster-proxy-0.cluster-proxy.$POD_NAMESPACE.svc.cluster.local:8082/topics/test" \
+              curl -s -v -X POST "http://proxy-test-0.proxy-test.$POD_NAMESPACE.svc.cluster.local:8082/topics/test" \
               -H "Content-Type: application/vnd.kafka.json.v2+json" \
               -d '{"records":[{"value":"Vectorized"},{"value":"Pandaproxy"},{"value":"JSON Demo"}]}' \
       restartPolicy: Never

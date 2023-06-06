@@ -30,7 +30,7 @@ import (
 
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 
-	redpandav1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
+	vectorizedv1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/vectorized/v1alpha1"
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/labels"
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources/configuration"
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources/featuregates"
@@ -58,7 +58,7 @@ var (
 	errCloudStorageSecretKeyCannotBeEmpty = errors.New("cloud storage SecretKey string cannot be empty")
 
 	// LastAppliedConfigurationAnnotationKey is used to store the last applied centralized configuration for doing three-way merge
-	LastAppliedConfigurationAnnotationKey = redpandav1alpha1.GroupVersion.Group + "/last-applied-configuration"
+	LastAppliedConfigurationAnnotationKey = vectorizedv1alpha1.GroupVersion.Group + "/last-applied-configuration"
 )
 
 var _ Resource = &ConfigMapResource{}
@@ -68,7 +68,7 @@ var _ Resource = &ConfigMapResource{}
 type ConfigMapResource struct {
 	k8sclient.Client
 	scheme       *runtime.Scheme
-	pandaCluster *redpandav1alpha1.Cluster
+	pandaCluster *vectorizedv1alpha1.Cluster
 
 	serviceFQDN            string
 	pandaproxySASLUser     types.NamespacedName
@@ -80,7 +80,7 @@ type ConfigMapResource struct {
 // NewConfigMap creates ConfigMapResource
 func NewConfigMap(
 	client k8sclient.Client,
-	pandaCluster *redpandav1alpha1.Cluster,
+	pandaCluster *vectorizedv1alpha1.Cluster,
 	scheme *runtime.Scheme,
 	serviceFQDN string,
 	pandaproxySASLUser types.NamespacedName,
@@ -96,7 +96,7 @@ func NewConfigMap(
 		pandaproxySASLUser,
 		schemaRegistrySASLUser,
 		tlsConfigProvider,
-		logger.WithValues("Kind", configMapKind()),
+		logger,
 	}
 }
 
@@ -151,7 +151,7 @@ func (r *ConfigMapResource) markConfigurationConditionChanged(
 		return nil
 	}
 
-	status := r.pandaCluster.Status.GetConditionStatus(redpandav1alpha1.ClusterConfiguredConditionType)
+	status := r.pandaCluster.Status.GetConditionStatus(vectorizedv1alpha1.ClusterConfiguredConditionType)
 	if status == corev1.ConditionFalse {
 		// Condition already indicates a change
 		return nil
@@ -166,9 +166,9 @@ func (r *ConfigMapResource) markConfigurationConditionChanged(
 
 	// We need to mark the cluster as changed to trigger the configuration workflow
 	r.pandaCluster.Status.SetCondition(
-		redpandav1alpha1.ClusterConfiguredConditionType,
+		vectorizedv1alpha1.ClusterConfiguredConditionType,
 		corev1.ConditionFalse,
-		redpandav1alpha1.ClusterConfiguredReasonUpdating,
+		vectorizedv1alpha1.ClusterConfiguredReasonUpdating,
 		"Detected cluster configuration change that needs to be applied to the cluster",
 	)
 	return r.Status().Update(ctx, r.pandaCluster)
@@ -668,13 +668,8 @@ func (r *ConfigMapResource) Key() types.NamespacedName {
 }
 
 // ConfigMapKey provides config map name that derived from redpanda.vectorized.io CR
-func ConfigMapKey(pandaCluster *redpandav1alpha1.Cluster) types.NamespacedName {
+func ConfigMapKey(pandaCluster *vectorizedv1alpha1.Cluster) types.NamespacedName {
 	return types.NamespacedName{Name: resourceNameTrim(pandaCluster.Name, baseSuffix), Namespace: pandaCluster.Namespace}
-}
-
-func configMapKind() string {
-	var cfg corev1.ConfigMap
-	return cfg.Kind
 }
 
 // TODO move to utilities

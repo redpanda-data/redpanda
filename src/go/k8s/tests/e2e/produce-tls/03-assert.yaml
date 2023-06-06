@@ -1,7 +1,7 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: produce-message-tls
+  name: produce-message-long-name
 status:
   conditions:
     - status: "True"

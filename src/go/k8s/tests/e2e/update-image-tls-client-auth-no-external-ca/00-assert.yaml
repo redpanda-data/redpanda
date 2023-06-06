@@ -1,7 +1,7 @@
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
-  name: up-img
+  name: up-img-admin-mtls
 status:
   readyReplicas: 3
 
@@ -10,7 +10,7 @@ status:
 apiVersion: cert-manager.io/v1
 kind: Issuer
 metadata:
-  name:  up-img-admin-selfsigned-issuer
+  name:  up-img-admin-mtls-admin-selfsigned-issuer
 status:
   conditions:
     - reason: IsReady
@@ -22,7 +22,7 @@ status:
 apiVersion: cert-manager.io/v1
 kind: Issuer
 metadata:
-  name:  up-img-admin-root-issuer
+  name:  up-img-admin-mtls-admin-root-issuer
 status:
   conditions:
     - reason: KeyPairVerified
@@ -33,7 +33,7 @@ status:
 apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:
-  name:  up-img-admin-root-certificate
+  name:  up-img-admin-mtls-admin-root-certificate
 status:
   conditions:
     - reason: Ready
@@ -45,7 +45,7 @@ status:
 apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:
-  name:  up-img-admin-api-node
+  name:  up-img-admin-mtls-admin-api-node
 status:
   conditions:
     - reason: Ready
@@ -57,7 +57,7 @@ status:
 apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:
-  name:  up-img-admin-api-client
+  name:  up-img-admin-mtls-admin-api-client
 status:
   conditions:
     - reason: Ready
@@ -76,7 +76,7 @@ collectors:
 apiVersion: redpanda.vectorized.io/v1alpha1
 kind: Cluster
 metadata:
-  name: up-img
+  name: up-img-admin-mtls
 status:
   version: "v22.1.11"
   readyReplicas: 3

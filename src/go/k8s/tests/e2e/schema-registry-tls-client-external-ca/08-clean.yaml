@@ -1,0 +1,43 @@
+apiVersion: kuttl.dev/v1beta1
+kind: TestStep
+delete:
+  - apiVersion: redpanda.vectorized.io/v1alpha1
+    kind: Cluster
+    name: sr-external-ca-mtls
+    namespace: redpanda-system
+  - apiVersion: v1
+    kind: PersistentVolumeClaim
+    name: datadir-sr-external-ca-mtls-0
+    namespace: redpanda-system
+  - apiVersion: batch/v1
+    kind: Job
+    name: create-schema-client-external-ca-mtls
+    namespace: redpanda-system
+  - apiVersion: batch/v1
+    kind: Job
+    name: retrieve-schema-client-external-ca-mtls
+    namespace: redpanda-system
+  - apiVersion: batch/v1
+    kind: Job
+    name: create-schema-client-without-cert
+    namespace: redpanda-system
+  - apiVersion: batch/v1
+    kind: Job
+    name: retrieve-schema-client-external-updated-ca-mtls
+    namespace: redpanda-system
+  - apiVersion: batch/v1
+    kind: Job
+    name: retrieve-schema-untrusted-client
+    namespace: redpanda-system
+  - apiVersion: v1
+    kind: Secret
+    namespace: redpanda-system
+    name: sr-client-cert-key
+  - apiVersion: v1
+    kind: Secret
+    namespace: redpanda-system
+    name: sr-client-cert-key1
+  - apiVersion: v1
+    kind: Secret
+    namespace: redpanda-system
+    name: sr-ca-cert

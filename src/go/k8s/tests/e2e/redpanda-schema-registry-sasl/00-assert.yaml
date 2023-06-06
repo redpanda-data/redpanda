@@ -1,9 +1,15 @@
-apiVersion: apps/v1
-kind: StatefulSet
+apiVersion: redpanda.vectorized.io/v1alpha1
+kind: Cluster
 metadata:
-  name: schema-registry
+  name: schema-registry-sasl
 status:
   readyReplicas: 1
+  replicas: 1
+  upgrading: false
+  restarting: false
+  conditions:
+    - type: ClusterConfigured
+      status: "True"
 
 ---
 

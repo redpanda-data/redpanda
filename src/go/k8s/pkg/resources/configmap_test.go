@@ -30,17 +30,17 @@ import (
 
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 
-	redpandav1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
+	vectorizedv1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/vectorized/v1alpha1"
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources"
 )
 
 func TestEnsureConfigMap(t *testing.T) {
-	require.NoError(t, redpandav1alpha1.AddToScheme(scheme.Scheme))
+	require.NoError(t, vectorizedv1alpha1.AddToScheme(scheme.Scheme))
 	clusterWithExternal := pandaCluster().DeepCopy()
-	clusterWithExternal.Spec.Configuration.KafkaAPI = append(clusterWithExternal.Spec.Configuration.KafkaAPI, redpandav1alpha1.KafkaAPI{AuthenticationMethod: "sasl", Port: 30001, External: redpandav1alpha1.ExternalConnectivityConfig{Enabled: true}})
+	clusterWithExternal.Spec.Configuration.KafkaAPI = append(clusterWithExternal.Spec.Configuration.KafkaAPI, vectorizedv1alpha1.KafkaAPI{AuthenticationMethod: "sasl", Port: 30001, External: vectorizedv1alpha1.ExternalConnectivityConfig{Enabled: true}})
 	clusterWithMultipleKafkaTLS := pandaCluster().DeepCopy()
-	clusterWithMultipleKafkaTLS.Spec.Configuration.KafkaAPI[0].TLS = redpandav1alpha1.KafkaAPITLS{Enabled: true}
-	clusterWithMultipleKafkaTLS.Spec.Configuration.KafkaAPI = append(clusterWithMultipleKafkaTLS.Spec.Configuration.KafkaAPI, redpandav1alpha1.KafkaAPI{Port: 30001, TLS: redpandav1alpha1.KafkaAPITLS{Enabled: true}, External: redpandav1alpha1.ExternalConnectivityConfig{Enabled: true}})
+	clusterWithMultipleKafkaTLS.Spec.Configuration.KafkaAPI[0].TLS = vectorizedv1alpha1.KafkaAPITLS{Enabled: true}
+	clusterWithMultipleKafkaTLS.Spec.Configuration.KafkaAPI = append(clusterWithMultipleKafkaTLS.Spec.Configuration.KafkaAPI, vectorizedv1alpha1.KafkaAPI{Port: 30001, TLS: vectorizedv1alpha1.KafkaAPITLS{Enabled: true}, External: vectorizedv1alpha1.ExternalConnectivityConfig{Enabled: true}})
 	clusterWithVersion22_2 := pandaCluster().DeepCopy()
 	clusterWithVersion22_2.Spec.Version = "v22.2.0"
 	clusterWithVersion22_3 := pandaCluster().DeepCopy()
@@ -48,7 +48,7 @@ func TestEnsureConfigMap(t *testing.T) {
 
 	testcases := []struct {
 		name             string
-		cluster          redpandav1alpha1.Cluster
+		cluster          vectorizedv1alpha1.Cluster
 		expectedString   string
 		unExpectedString string
 	}{
@@ -121,7 +121,7 @@ func TestEnsureConfigMap(t *testing.T) {
 }
 
 func TestEnsureConfigMap_AdditionalConfig(t *testing.T) {
-	require.NoError(t, redpandav1alpha1.AddToScheme(scheme.Scheme))
+	require.NoError(t, vectorizedv1alpha1.AddToScheme(scheme.Scheme))
 
 	testcases := []struct {
 		name                    string
@@ -264,12 +264,12 @@ func TestConfigMapResource_prepareSeedServerList(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			p := &redpandav1alpha1.Cluster{
+			p := &vectorizedv1alpha1.Cluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      tt.clusterName,
 					Namespace: "namespace",
 				},
-				Spec: redpandav1alpha1.ClusterSpec{
+				Spec: vectorizedv1alpha1.ClusterSpec{
 					Replicas: func() *int32 { i := tt.replicas; return &i }(),
 				},
 			}
@@ -298,14 +298,14 @@ func TestConfigMapResource_prepareSeedServerList(t *testing.T) {
 
 func TestConfigmap_BrokerTLSClients(t *testing.T) {
 	panda := pandaCluster().DeepCopy()
-	panda.Spec.Configuration.KafkaAPI[0].TLS = redpandav1alpha1.KafkaAPITLS{
+	panda.Spec.Configuration.KafkaAPI[0].TLS = vectorizedv1alpha1.KafkaAPITLS{
 		Enabled:           true,
 		RequireClientAuth: true,
 	}
-	panda.Spec.Configuration.SchemaRegistry = &redpandav1alpha1.SchemaRegistryAPI{
+	panda.Spec.Configuration.SchemaRegistry = &vectorizedv1alpha1.SchemaRegistryAPI{
 		Port: 8081,
 	}
-	panda.Spec.Configuration.PandaproxyAPI = []redpandav1alpha1.PandaproxyAPI{
+	panda.Spec.Configuration.PandaproxyAPI = []vectorizedv1alpha1.PandaproxyAPI{
 		{Port: 8082},
 	}
 	c := fake.NewClientBuilder().Build()

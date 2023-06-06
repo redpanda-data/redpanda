@@ -32,7 +32,7 @@ import (
 	k8sclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
-	redpandav1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
+	vectorizedv1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/vectorized/v1alpha1"
 	adminutils "github.com/redpanda-data/redpanda/src/go/k8s/pkg/admin"
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/labels"
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources/featuregates"
@@ -67,9 +67,9 @@ const (
 
 var (
 	// ConfigMapHashAnnotationKey contains the hash of the node local properties of the cluster
-	ConfigMapHashAnnotationKey = redpandav1alpha1.GroupVersion.Group + "/configmap-hash"
+	ConfigMapHashAnnotationKey = vectorizedv1alpha1.GroupVersion.Group + "/configmap-hash"
 	// CentralizedConfigurationHashAnnotationKey contains the hash of the centralized configuration properties that require a restart when changed
-	CentralizedConfigurationHashAnnotationKey = redpandav1alpha1.GroupVersion.Group + "/centralized-configuration-hash"
+	CentralizedConfigurationHashAnnotationKey = vectorizedv1alpha1.GroupVersion.Group + "/centralized-configuration-hash"
 
 	// terminationGracePeriodSeconds should account for additional delay introduced by hooks
 	terminationGracePeriodSeconds int64 = 120
@@ -88,7 +88,7 @@ type ConfiguratorSettings struct {
 type StatefulSetResource struct {
 	k8sclient.Client
 	scheme                 *runtime.Scheme
-	pandaCluster           *redpandav1alpha1.Cluster
+	pandaCluster           *vectorizedv1alpha1.Cluster
 	serviceFQDN            string
 	serviceName            string
 	nodePortName           types.NamespacedName
@@ -113,7 +113,7 @@ type StatefulSetResource struct {
 // NewStatefulSet creates StatefulSetResource
 func NewStatefulSet(
 	client k8sclient.Client,
-	pandaCluster *redpandav1alpha1.Cluster,
+	pandaCluster *vectorizedv1alpha1.Cluster,
 	scheme *runtime.Scheme,
 	serviceFQDN string,
 	serviceName string,
@@ -143,7 +143,7 @@ func NewStatefulSet(
 		nodeConfigMapHashGetter,
 		adminAPIClientFactory,
 		decommissionWaitInterval,
-		logger.WithValues("Kind", statefulSetKind()),
+		logger,
 		defaultAdminAPITimeout,
 		nil,
 	}
@@ -195,13 +195,13 @@ func (r *StatefulSetResource) Ensure(ctx context.Context) error {
 		return err
 	}
 
-	r.logger.Info("Running update", "resource name", r.Key().Name)
+	r.logger.Info("Running update")
 	err = r.runUpdate(ctx, &sts, obj.(*appsv1.StatefulSet))
 	if err != nil {
 		return err
 	}
 
-	r.logger.Info("Running scale handler", "resource name", r.Key().Name)
+	r.logger.Info("Running scale handler")
 	return r.handleScaling(ctx)
 }
 
@@ -240,7 +240,7 @@ func (r *StatefulSetResource) SetCentralizedConfigurationHashInCluster(
 
 func preparePVCResource(
 	name, namespace string,
-	storage redpandav1alpha1.StorageSpec,
+	storage vectorizedv1alpha1.StorageSpec,
 	clusterLabels map[string]string,
 ) corev1.PersistentVolumeClaim {
 	fileSystemMode := corev1.PersistentVolumeFilesystem
@@ -624,7 +624,7 @@ func (r *StatefulSetResource) getHook(script string) *corev1.LifecycleHandler {
 
 // setVolumes manipulates v1.StatefulSet object in order to add cloud storage and
 // Redpanda data volume
-func setVolumes(ss *appsv1.StatefulSet, cluster *redpandav1alpha1.Cluster) {
+func setVolumes(ss *appsv1.StatefulSet, cluster *vectorizedv1alpha1.Cluster) {
 	pvcDataDir := preparePVCResource(datadirName, cluster.Namespace, cluster.Spec.Storage, ss.Labels)
 	ss.Spec.VolumeClaimTemplates = append(ss.Spec.VolumeClaimTemplates, pvcDataDir)
 	vol := corev1.Volume{
@@ -712,7 +712,7 @@ func (r *StatefulSetResource) rpkStatusContainer(
 
 func prepareAdditionalArguments(
 	developerMode bool,
-	originalRequests redpandav1alpha1.RedpandaResourceRequirements,
+	originalRequests vectorizedv1alpha1.RedpandaResourceRequirements,
 	additionalCommandlineArguments map[string]string,
 ) []string {
 	requests := originalRequests.DeepCopy()
@@ -854,11 +854,6 @@ func (r *StatefulSetResource) getPorts() []corev1.ContainerPort {
 	}
 
 	return ports
-}
-
-func statefulSetKind() string {
-	var statefulSet appsv1.StatefulSet
-	return statefulSet.Kind
 }
 
 func (r *StatefulSetResource) fullConfiguratorImage() string {

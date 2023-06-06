@@ -22,7 +22,7 @@ import (
 	k8sclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
-	redpandav1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
+	vectorizedv1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/vectorized/v1alpha1"
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/labels"
 )
 
@@ -33,7 +33,7 @@ var _ Resource = &NodePortServiceResource{}
 type NodePortServiceResource struct {
 	k8sclient.Client
 	scheme       *runtime.Scheme
-	pandaCluster *redpandav1alpha1.Cluster
+	pandaCluster *vectorizedv1alpha1.Cluster
 	svcPorts     []NamedServiceNodePort
 	logger       logr.Logger
 }
@@ -41,7 +41,7 @@ type NodePortServiceResource struct {
 // NewNodePortService creates NodePortServiceResource
 func NewNodePortService(
 	client k8sclient.Client,
-	pandaCluster *redpandav1alpha1.Cluster,
+	pandaCluster *vectorizedv1alpha1.Cluster,
 	scheme *runtime.Scheme,
 	svcPorts []NamedServiceNodePort,
 	logger logr.Logger,
@@ -51,7 +51,7 @@ func NewNodePortService(
 		scheme,
 		pandaCluster,
 		svcPorts,
-		logger.WithValues("Kind", serviceKind(), "ServiceType", "NodePort"),
+		logger.WithValues("ServiceType", "NodePort"),
 	}
 }
 

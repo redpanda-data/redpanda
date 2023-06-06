@@ -21,11 +21,11 @@ spec:
               set -xe
               # using the same value found in the duck-tape test https://github.com/redpanda-data/redpanda/pull/9737/commits/cf98f44141a5b07eddf5d2f7e69868585c7246f4
               MAX_INDEX=1000
-              ADMIN_API_PATH="http://cluster-0.cluster.$POD_NAMESPACE.svc.cluster.local:9644"
+              ADMIN_API_PATH="http://cluster-sasl-no-calls-0.cluster-sasl-no-calls.$POD_NAMESPACE.svc.cluster.local:9644"
               CONTROLLER_STATUS_PATH="v1/debug/controller_status"
                             
               # we wait 5 minutes for controller to stabilize
-              sleep 300
+              sleep 200
               
               index=$(curl -s ${ADMIN_API_PATH}/${CONTROLLER_STATUS_PATH} | jq -r .commited_index)
               

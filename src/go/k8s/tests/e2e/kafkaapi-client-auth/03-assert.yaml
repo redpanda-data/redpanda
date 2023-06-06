@@ -1,7 +1,7 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: produce-message
+  name: produce-message-with-client-auth
 status:
   conditions:
     - status: "True"

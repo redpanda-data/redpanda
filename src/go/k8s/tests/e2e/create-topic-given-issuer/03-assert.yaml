@@ -1,7 +1,7 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: create-test-topic
+  name: create-test-topic-given-issuer
 status:
   conditions:
     - status: "True"

@@ -1,7 +1,7 @@
 apiVersion: redpanda.vectorized.io/v1alpha1
 kind: Cluster
 metadata:
-  name: schema-registry
+  name: schema-registry-sasl
 spec:
   configuration:
     schemaRegistry:

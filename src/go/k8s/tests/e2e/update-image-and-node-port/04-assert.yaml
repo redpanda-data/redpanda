@@ -14,7 +14,7 @@ metadata:
 spec:
   containers:
   - name: redpanda
-    image: vectorized/redpanda:v23.1.9
+    image: vectorized/redpanda:v23.1.11
 status:
   phase: "Running"
 
@@ -27,7 +27,7 @@ metadata:
 spec:
   containers:
   - name: redpanda
-    image: vectorized/redpanda:v23.1.9
+    image: vectorized/redpanda:v23.1.11
 status:
   phase: "Running"
 
@@ -40,7 +40,7 @@ metadata:
 spec:
   containers:
   - name: redpanda
-    image: vectorized/redpanda:v23.1.9
+    image: vectorized/redpanda:v23.1.11
 status:
   phase: "Running"
 
@@ -58,7 +58,7 @@ kind: Cluster
 metadata:
   name: update-image-cluster-and-node-port
 status:
-  version: v23.1.9
+  version: v23.1.11
   readyReplicas: 3
   replicas: 3
   upgrading: false

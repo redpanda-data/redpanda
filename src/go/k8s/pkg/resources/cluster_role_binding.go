@@ -21,7 +21,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	k8sclient "sigs.k8s.io/controller-runtime/pkg/client"
 
-	redpandav1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
+	vectorizedv1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/vectorized/v1alpha1"
 )
 
 var _ Resource = &ClusterRoleBindingResource{}
@@ -31,14 +31,14 @@ var _ Resource = &ClusterRoleBindingResource{}
 type ClusterRoleBindingResource struct {
 	k8sclient.Client
 	scheme       *runtime.Scheme
-	pandaCluster *redpandav1alpha1.Cluster
+	pandaCluster *vectorizedv1alpha1.Cluster
 	logger       logr.Logger
 }
 
 // NewClusterRoleBinding creates ClusterRoleBindingResource
 func NewClusterRoleBinding(
 	client k8sclient.Client,
-	pandaCluster *redpandav1alpha1.Cluster,
+	pandaCluster *vectorizedv1alpha1.Cluster,
 	scheme *runtime.Scheme,
 	logger logr.Logger,
 ) *ClusterRoleBindingResource {
@@ -46,7 +46,7 @@ func NewClusterRoleBinding(
 		client,
 		scheme,
 		pandaCluster,
-		logger.WithValues("Kind", clusterRoleBindingKind()),
+		logger,
 	}
 }
 
@@ -153,7 +153,7 @@ func (r *ClusterRoleBindingResource) RemoveSubject(
 	}
 
 	sa := &ServiceAccountResource{
-		pandaCluster: &redpandav1alpha1.Cluster{
+		pandaCluster: &vectorizedv1alpha1.Cluster{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      cluster.Name,
 				Namespace: cluster.Namespace,
@@ -177,9 +177,4 @@ func (r *ClusterRoleBindingResource) RemoveSubject(
 	}
 
 	return nil
-}
-
-func clusterRoleBindingKind() string {
-	var r v1.ClusterRoleBinding
-	return r.Kind
 }

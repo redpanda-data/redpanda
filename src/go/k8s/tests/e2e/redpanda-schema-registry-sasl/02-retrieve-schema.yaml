@@ -1,7 +1,7 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: retrive-schema
+  name: retrieve-schema-rp-sasl
 spec:
   template:
     spec:
@@ -12,12 +12,12 @@ spec:
             - name: SCRAM_USERNAME
               valueFrom:
                 secretKeyRef:
-                  name: schema-registry-schema-registry-sasl
+                  name: schema-registry-sasl-schema-registry-sasl
                   key: username
             - name: SCRAM_PASSWORD
               valueFrom:
                 secretKeyRef:
-                  name: schema-registry-schema-registry-sasl
+                  name: schema-registry-sasl-schema-registry-sasl
                   key: password
           command:
             - curl
@@ -27,7 +27,7 @@ spec:
             - GET
             - -u
             - "$SCRAM_USERNAME:$SCRAM_PASSWORD"
-            - http://schema-registry-cluster:8081/subjects/Kafka-value/versions/1
+            - http://schema-registry-sasl-cluster:8081/subjects/Kafka-value/versions/1
       restartPolicy: Never
   backoffLimit: 6
   parallelism: 1

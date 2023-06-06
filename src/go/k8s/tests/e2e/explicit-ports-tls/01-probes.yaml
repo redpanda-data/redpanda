@@ -22,8 +22,8 @@ spec:
           args:
             - >
               echo "Checking that the listener is bound to both Pandaproxy and schema registry ports and TLS is used" && 
-              sr_res=$(curl --silent -o /dev/null -w "%{http_code}" -k https://explicit-ports-tls-0.explicit-ports-tls.$NAMESPACE.svc.cluster.local:30081) &&
-              pp_res=$(curl --silent -o /dev/null -w "%{http_code}" -k https://explicit-ports-tls-0.explicit-ports-tls.$NAMESPACE.svc.cluster.local:30082) &&
+              sr_res=$(curl --silent -o /dev/null -w "%{http_code}" -k https://explicit-ports-tls-0.explicit-ports-tls.$NAMESPACE.svc.cluster.local:30087) &&
+              pp_res=$(curl --silent -o /dev/null -w "%{http_code}" -k https://explicit-ports-tls-0.explicit-ports-tls.$NAMESPACE.svc.cluster.local:30088) &&
               if [[ "$sr_res" != "404" ]] || [[ "$pp_res" != "404" ]]; then
                 exit 1;
               fi

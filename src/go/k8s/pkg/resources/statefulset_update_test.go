@@ -27,7 +27,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	redpandav1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
+	vectorizedv1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/vectorized/v1alpha1"
 	adminutils "github.com/redpanda-data/redpanda/src/go/k8s/pkg/admin"
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources/types"
 )
@@ -134,7 +134,7 @@ func TestPutInMaintenanceMode(t *testing.T) {
 				adminAPIClientFactory: func(
 					ctx context.Context,
 					k8sClient client.Reader,
-					redpandaCluster *redpandav1alpha1.Cluster,
+					redpandaCluster *vectorizedv1alpha1.Cluster,
 					fqdn string,
 					adminTLSProvider types.AdminTLSConfigProvider,
 					ordinals ...int32,
@@ -165,9 +165,9 @@ func TestEvaluateRedpandaUnderReplicatedPartition(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	ssres := StatefulSetResource{pandaCluster: &redpandav1alpha1.Cluster{
-		Spec: redpandav1alpha1.ClusterSpec{
-			RestartConfig: &redpandav1alpha1.RestartConfig{},
+	ssres := StatefulSetResource{pandaCluster: &vectorizedv1alpha1.Cluster{
+		Spec: vectorizedv1alpha1.ClusterSpec{
+			RestartConfig: &vectorizedv1alpha1.RestartConfig{},
 		},
 	}}
 
@@ -191,9 +191,9 @@ vectorized_cluster_partition_under_replicated_replicas{namespace="kafka",partiti
 	}))
 	defer ts.Close()
 
-	ssres := StatefulSetResource{pandaCluster: &redpandav1alpha1.Cluster{
-		Spec: redpandav1alpha1.ClusterSpec{
-			RestartConfig: &redpandav1alpha1.RestartConfig{},
+	ssres := StatefulSetResource{pandaCluster: &vectorizedv1alpha1.Cluster{
+		Spec: vectorizedv1alpha1.ClusterSpec{
+			RestartConfig: &vectorizedv1alpha1.RestartConfig{},
 		},
 	}}
 
@@ -217,9 +217,9 @@ vectorized_cluster_partition_under_replicated_replicas{namespace="kafka",partiti
 	}))
 	defer ts.Close()
 
-	ssres := StatefulSetResource{pandaCluster: &redpandav1alpha1.Cluster{
-		Spec: redpandav1alpha1.ClusterSpec{
-			RestartConfig: &redpandav1alpha1.RestartConfig{
+	ssres := StatefulSetResource{pandaCluster: &vectorizedv1alpha1.Cluster{
+		Spec: vectorizedv1alpha1.ClusterSpec{
+			RestartConfig: &vectorizedv1alpha1.RestartConfig{
 				UnderReplicatedPartitionThreshold: 1,
 			},
 		},
@@ -245,8 +245,8 @@ vectorized_cluster_partition_under_replicated_replicas{namespace="kafka",partiti
 	}))
 	defer ts.Close()
 
-	ssres := StatefulSetResource{pandaCluster: &redpandav1alpha1.Cluster{
-		Spec: redpandav1alpha1.ClusterSpec{},
+	ssres := StatefulSetResource{pandaCluster: &vectorizedv1alpha1.Cluster{
+		Spec: vectorizedv1alpha1.ClusterSpec{},
 	}}
 
 	adminURL := url.URL{

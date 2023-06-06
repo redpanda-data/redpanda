@@ -26,7 +26,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	redpandav1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
+	vectorizedv1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/vectorized/v1alpha1"
 	consolepkg "github.com/redpanda-data/redpanda/src/go/k8s/pkg/console"
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/labels"
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources"
@@ -63,7 +63,7 @@ var _ = Describe("Console controller", func() {
 	var (
 		ConsoleNamespace string
 		key              types.NamespacedName
-		redpandaCluster  *redpandav1alpha1.Cluster
+		redpandaCluster  *vectorizedv1alpha1.Cluster
 		namespace        *corev1.Namespace
 	)
 
@@ -73,7 +73,7 @@ var _ = Describe("Console controller", func() {
 			key, _, redpandaCluster, namespace = getInitialTestCluster(ClusterName)
 			ConsoleNamespace = key.Namespace
 		}
-		if err := k8sClient.Get(ctx, key, &redpandav1alpha1.Cluster{}); err != nil {
+		if err := k8sClient.Get(ctx, key, &vectorizedv1alpha1.Cluster{}); err != nil {
 			if !apierrors.IsNotFound(err) {
 				Expect(err).To(Equal(nil))
 			}
@@ -81,11 +81,11 @@ var _ = Describe("Console controller", func() {
 			Expect(k8sClient.Create(ctx, redpandaCluster)).Should(Succeed())
 			Eventually(clusterConfiguredConditionStatusGetter(key), timeout, interval).Should(BeTrue())
 		}
-		if err := k8sClient.Get(ctx, client.ObjectKey{Namespace: ConsoleNamespace, Name: ConsoleName}, &redpandav1alpha1.Console{}); err != nil {
+		if err := k8sClient.Get(ctx, client.ObjectKey{Namespace: ConsoleNamespace, Name: ConsoleName}, &vectorizedv1alpha1.Console{}); err != nil {
 			if !apierrors.IsNotFound(err) {
 				Expect(err).To(Equal(nil))
 			}
-			console := &redpandav1alpha1.Console{
+			console := &vectorizedv1alpha1.Console{
 				TypeMeta: metav1.TypeMeta{
 					APIVersion: "redpanda.vectorized.io/v1alpha1",
 					Kind:       "Console",
@@ -94,17 +94,17 @@ var _ = Describe("Console controller", func() {
 					Name:      ConsoleName,
 					Namespace: ConsoleNamespace,
 				},
-				Spec: redpandav1alpha1.ConsoleSpec{
-					ClusterRef:     redpandav1alpha1.NamespaceNameRef{Namespace: key.Namespace, Name: key.Name},
-					SchemaRegistry: redpandav1alpha1.Schema{Enabled: enableSchemaRegistry},
-					Deployment:     redpandav1alpha1.Deployment{Image: deploymentImage},
-					Connect:        redpandav1alpha1.Connect{Enabled: enableConnect},
+				Spec: vectorizedv1alpha1.ConsoleSpec{
+					ClusterRef:     vectorizedv1alpha1.NamespaceNameRef{Namespace: key.Namespace, Name: key.Name},
+					SchemaRegistry: vectorizedv1alpha1.Schema{Enabled: enableSchemaRegistry},
+					Deployment:     vectorizedv1alpha1.Deployment{Image: deploymentImage},
+					Connect:        vectorizedv1alpha1.Connect{Enabled: enableConnect},
 				},
 			}
 			Expect(k8sClient.Create(ctx, console)).Should(Succeed())
 			consoleLookupKey := types.NamespacedName{Name: ConsoleName, Namespace: ConsoleNamespace}
 			Eventually(func() bool {
-				return k8sClient.Get(ctx, consoleLookupKey, &redpandav1alpha1.Console{}) == nil
+				return k8sClient.Get(ctx, consoleLookupKey, &vectorizedv1alpha1.Console{}) == nil
 			}, timeout, interval).Should(BeTrue())
 		}
 	})
@@ -114,7 +114,7 @@ var _ = Describe("Console controller", func() {
 		It("Should expose Console web app", func() {
 			By("Getting Console")
 			consoleLookupKey := types.NamespacedName{Name: ConsoleName, Namespace: ConsoleNamespace}
-			console := &redpandav1alpha1.Console{}
+			console := &vectorizedv1alpha1.Console{}
 			Expect(k8sClient.Get(ctx, consoleLookupKey, console)).Should(Succeed())
 
 			By("Having a Secret for SASL user")
@@ -185,7 +185,7 @@ var _ = Describe("Console controller", func() {
 			// TODO: Not yet discussed if gonna use Ingress, check when finalized
 
 			By("Having the Console URLs in status")
-			createdConsole := &redpandav1alpha1.Console{}
+			createdConsole := &vectorizedv1alpha1.Console{}
 			Eventually(func() bool {
 				if err := k8sClient.Get(ctx, consoleLookupKey, createdConsole); err != nil {
 					return false
@@ -210,7 +210,7 @@ var _ = Describe("Console controller", func() {
 			brokenCluster.Spec.Replicas = &replicas1
 			Expect(k8sClient.Create(ctx, ns)).Should(Succeed())
 			Expect(k8sClient.Create(ctx, brokenCluster)).Should(Succeed())
-			console := &redpandav1alpha1.Console{
+			console := &vectorizedv1alpha1.Console{
 				TypeMeta: metav1.TypeMeta{
 					APIVersion: "redpanda.vectorized.io/v1alpha1",
 					Kind:       "Console",
@@ -219,21 +219,21 @@ var _ = Describe("Console controller", func() {
 					Name:      "deleting-console",
 					Namespace: brokenKey.Namespace,
 				},
-				Spec: redpandav1alpha1.ConsoleSpec{
-					ClusterRef:     redpandav1alpha1.NamespaceNameRef{Namespace: brokenKey.Namespace, Name: brokenKey.Name},
-					SchemaRegistry: redpandav1alpha1.Schema{Enabled: enableSchemaRegistry},
-					Deployment:     redpandav1alpha1.Deployment{Image: deploymentImage},
-					Connect:        redpandav1alpha1.Connect{Enabled: enableConnect},
+				Spec: vectorizedv1alpha1.ConsoleSpec{
+					ClusterRef:     vectorizedv1alpha1.NamespaceNameRef{Namespace: brokenKey.Namespace, Name: brokenKey.Name},
+					SchemaRegistry: vectorizedv1alpha1.Schema{Enabled: enableSchemaRegistry},
+					Deployment:     vectorizedv1alpha1.Deployment{Image: deploymentImage},
+					Connect:        vectorizedv1alpha1.Connect{Enabled: enableConnect},
 				},
 			}
 			Expect(k8sClient.Create(ctx, console)).Should(Succeed())
 			consoleLookupKey := types.NamespacedName{Name: console.Name, Namespace: console.Namespace}
 			Eventually(func() bool {
-				return k8sClient.Get(ctx, consoleLookupKey, &redpandav1alpha1.Console{}) == nil
+				return k8sClient.Get(ctx, consoleLookupKey, &vectorizedv1alpha1.Console{}) == nil
 			}, timeout, interval).Should(BeTrue())
 			Expect(k8sClient.Delete(ctx, console)).Should(Succeed())
 			Eventually(func() bool {
-				return k8sClient.Get(ctx, consoleLookupKey, &redpandav1alpha1.Console{}) != nil
+				return k8sClient.Get(ctx, consoleLookupKey, &vectorizedv1alpha1.Console{}) != nil
 			}, timeout, interval).Should(BeTrue())
 		})
 	})
@@ -246,7 +246,7 @@ var _ = Describe("Console controller", func() {
 			By("Getting Console")
 			consoleLookupKey := types.NamespacedName{Name: ConsoleName, Namespace: ConsoleNamespace}
 			Eventually(func() bool {
-				createdConsole := &redpandav1alpha1.Console{}
+				createdConsole := &vectorizedv1alpha1.Console{}
 				if err := k8sClient.Get(ctx, consoleLookupKey, createdConsole); err != nil {
 					return false
 				}
@@ -259,13 +259,13 @@ var _ = Describe("Console controller", func() {
 			}, timeout, interval).Should(BeTrue(), "Console %s/%s should be present with ConfigMap reference in the Status stanza", ConsoleNamespace, ConsoleName)
 
 			By("Adding label to Console")
-			Eventually(consoleUpdater(consoleLookupKey, func(console *redpandav1alpha1.Console) {
+			Eventually(consoleUpdater(consoleLookupKey, func(console *vectorizedv1alpha1.Console) {
 				console.SetLabels(map[string]string{"test.redpanda.vectorized.io/name": "updating-console"})
 			}), timeout, interval).Should(Succeed())
 
 			By("Checking updated console label exist")
 			Eventually(func() bool {
-				updatedConsole := &redpandav1alpha1.Console{}
+				updatedConsole := &vectorizedv1alpha1.Console{}
 				if err := k8sClient.Get(ctx, consoleLookupKey, updatedConsole); err != nil {
 					return false
 				}
@@ -276,7 +276,7 @@ var _ = Describe("Console controller", func() {
 
 			By("Checking updated console label content")
 			Eventually(func() string {
-				updatedConsole := &redpandav1alpha1.Console{}
+				updatedConsole := &vectorizedv1alpha1.Console{}
 				if err := k8sClient.Get(ctx, consoleLookupKey, updatedConsole); err != nil {
 					return ""
 				}
@@ -286,7 +286,7 @@ var _ = Describe("Console controller", func() {
 
 			By("Checking ConfigMapRef exist in status")
 			Eventually(func() bool {
-				updatedConsole := &redpandav1alpha1.Console{}
+				updatedConsole := &vectorizedv1alpha1.Console{}
 				if err := k8sClient.Get(ctx, consoleLookupKey, updatedConsole); err != nil {
 					return false
 				}
@@ -297,7 +297,7 @@ var _ = Describe("Console controller", func() {
 
 			By("Checking ConfigMapRef did not change")
 			Eventually(func() string {
-				updatedConsole := &redpandav1alpha1.Console{}
+				updatedConsole := &vectorizedv1alpha1.Console{}
 				if err := k8sClient.Get(ctx, consoleLookupKey, updatedConsole); err != nil {
 					return "console not found"
 				}
@@ -389,28 +389,28 @@ var _ = Describe("Console controller", func() {
 			Expect(k8sClient.Create(ctx, google)).Should(Succeed())
 
 			By("Updating Console Enterprise fields")
-			Eventually(consoleUpdater(types.NamespacedName{Namespace: ConsoleNamespace, Name: ConsoleName}, func(console *redpandav1alpha1.Console) {
-				console.Spec.Enterprise = &redpandav1alpha1.Enterprise{
-					RBAC: redpandav1alpha1.EnterpriseRBAC{
+			Eventually(consoleUpdater(types.NamespacedName{Namespace: ConsoleNamespace, Name: ConsoleName}, func(console *vectorizedv1alpha1.Console) {
+				console.Spec.Enterprise = &vectorizedv1alpha1.Enterprise{
+					RBAC: vectorizedv1alpha1.EnterpriseRBAC{
 						Enabled:         true,
 						RoleBindingsRef: corev1.LocalObjectReference{Name: rbacName},
 					},
 				}
-				console.Spec.LicenseRef = &redpandav1alpha1.SecretKeyRef{
+				console.Spec.LicenseRef = &vectorizedv1alpha1.SecretKeyRef{
 					Name:      licenseName,
 					Namespace: ConsoleNamespace,
 					Key:       licenseDataKey,
 				}
-				console.Spec.Login = &redpandav1alpha1.EnterpriseLogin{
+				console.Spec.Login = &vectorizedv1alpha1.EnterpriseLogin{
 					Enabled: true,
-					JWTSecretRef: redpandav1alpha1.SecretKeyRef{
+					JWTSecretRef: vectorizedv1alpha1.SecretKeyRef{
 						Name:      jwtName,
 						Namespace: ConsoleNamespace,
 						Key:       jwtDataKey,
 					},
-					Google: &redpandav1alpha1.EnterpriseLoginGoogle{
+					Google: &vectorizedv1alpha1.EnterpriseLoginGoogle{
 						Enabled: true,
-						ClientCredentialsRef: redpandav1alpha1.NamespaceNameRef{
+						ClientCredentialsRef: vectorizedv1alpha1.NamespaceNameRef{
 							Name:      googleName,
 							Namespace: ConsoleNamespace,
 						},
@@ -419,7 +419,7 @@ var _ = Describe("Console controller", func() {
 			}), timeout, interval).Should(Succeed())
 
 			By("Having a valid Enterprise ConfigMap")
-			console := &redpandav1alpha1.Console{}
+			console := &vectorizedv1alpha1.Console{}
 			Expect(k8sClient.Get(ctx, types.NamespacedName{Namespace: ConsoleNamespace, Name: ConsoleName}, console)).Should(Succeed())
 			createdConfigMaps := &corev1.ConfigMapList{}
 			Eventually(func() bool {
@@ -457,8 +457,8 @@ var _ = Describe("Console controller", func() {
 			)
 
 			By("Updating Console RedpandaCloud Login fields")
-			Eventually(consoleUpdater(types.NamespacedName{Namespace: ConsoleNamespace, Name: ConsoleName}, func(console *redpandav1alpha1.Console) {
-				console.Spec.Login.RedpandaCloud = &redpandav1alpha1.EnterpriseLoginRedpandaCloud{
+			Eventually(consoleUpdater(types.NamespacedName{Namespace: ConsoleNamespace, Name: ConsoleName}, func(console *vectorizedv1alpha1.Console) {
+				console.Spec.Login.RedpandaCloud = &vectorizedv1alpha1.EnterpriseLoginRedpandaCloud{
 					Enabled:        true,
 					Domain:         rpCloudDomain,
 					Audience:       rpCloudAudience,
@@ -467,7 +467,7 @@ var _ = Describe("Console controller", func() {
 			}), timeout, interval).Should(Succeed())
 
 			By("Having only RedpandaCloud provider in ConfigMap")
-			console := &redpandav1alpha1.Console{}
+			console := &vectorizedv1alpha1.Console{}
 			Expect(k8sClient.Get(ctx, types.NamespacedName{Namespace: ConsoleNamespace, Name: ConsoleName}, console)).Should(Succeed())
 			createdConfigMaps := &corev1.ConfigMapList{}
 			Eventually(func() bool {
@@ -514,21 +514,21 @@ var _ = Describe("Console controller", func() {
 			Expect(k8sClient.Create(ctx, jwt)).Should(Succeed())
 
 			By("Updating Console RedpandaCloud Login fields")
-			Eventually(consoleUpdater(types.NamespacedName{Namespace: ConsoleNamespace, Name: ConsoleName}, func(console *redpandav1alpha1.Console) {
-				console.Spec.Cloud = &redpandav1alpha1.CloudConfig{
-					PrometheusEndpoint: &redpandav1alpha1.PrometheusEndpointConfig{
+			Eventually(consoleUpdater(types.NamespacedName{Namespace: ConsoleNamespace, Name: ConsoleName}, func(console *vectorizedv1alpha1.Console) {
+				console.Spec.Cloud = &vectorizedv1alpha1.CloudConfig{
+					PrometheusEndpoint: &vectorizedv1alpha1.PrometheusEndpointConfig{
 						Enabled: true,
-						BasicAuth: redpandav1alpha1.BasicAuthConfig{
+						BasicAuth: vectorizedv1alpha1.BasicAuthConfig{
 							Username: "username",
-							PasswordRef: redpandav1alpha1.SecretKeyRef{
+							PasswordRef: vectorizedv1alpha1.SecretKeyRef{
 								Name:      secretName,
 								Namespace: ConsoleNamespace,
 								Key:       passwordKey,
 							},
 						},
-						Prometheus: &redpandav1alpha1.PrometheusConfig{
+						Prometheus: &vectorizedv1alpha1.PrometheusConfig{
 							Address: "address",
-							Jobs: []redpandav1alpha1.PrometheusScraperJobConfig{
+							Jobs: []vectorizedv1alpha1.PrometheusScraperJobConfig{
 								{
 									JobName:    "job",
 									KeepLabels: []string{"label"},
@@ -541,7 +541,7 @@ var _ = Describe("Console controller", func() {
 			}), timeout, interval).Should(Succeed())
 
 			By("Having only RedpandaCloud provider in ConfigMap")
-			console := &redpandav1alpha1.Console{}
+			console := &vectorizedv1alpha1.Console{}
 			Expect(k8sClient.Get(ctx, types.NamespacedName{Namespace: ConsoleNamespace, Name: ConsoleName}, console)).Should(Succeed())
 			createdConfigMaps := &corev1.ConfigMapList{}
 			var latestConfig *consolepkg.ConsoleConfig
@@ -593,7 +593,7 @@ var _ = Describe("Console controller", func() {
 		It("Should reconcile and recreate the ConfigMap", func() {
 			By("Getting Console")
 			consoleLookupKey := types.NamespacedName{Name: ConsoleName, Namespace: ConsoleNamespace}
-			createdConsole := &redpandav1alpha1.Console{}
+			createdConsole := &vectorizedv1alpha1.Console{}
 			Expect(k8sClient.Get(ctx, consoleLookupKey, createdConsole)).Should(Succeed())
 
 			By("Getting the ConfigMap")

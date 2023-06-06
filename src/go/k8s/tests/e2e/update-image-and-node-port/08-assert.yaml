@@ -1,0 +1,104 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: update-image-cluster-and-node-port
+status:
+  readyReplicas: 3
+
+---
+
+apiVersion: v1
+kind: Pod
+metadata:
+  name: update-image-cluster-and-node-port-0
+spec:
+  containers:
+  - name: redpanda
+    image: "localhost/redpanda:dev"
+    volumeMounts:
+    - mountPath: /etc/redpanda
+      name: config-dir
+    - mountPath: /scripts
+      name: hook-scripts-dir
+    - mountPath: /etc/redpanda/.bootstrap.yaml
+      name: configmap-dir
+      subPath: .bootstrap.yaml
+    - mountPath: /var/lib/redpanda/data
+      name: datadir
+    - mountPath: /var/run/secrets/kubernetes.io/serviceaccount
+      readOnly: true
+status:
+  phase: "Running"
+
+---
+
+apiVersion: v1
+kind: Pod
+metadata:
+  name: update-image-cluster-and-node-port-1
+spec:
+  containers:
+  - name: redpanda
+    image: "localhost/redpanda:dev"
+    volumeMounts:
+    - mountPath: /etc/redpanda
+      name: config-dir
+    - mountPath: /scripts
+      name: hook-scripts-dir
+    - mountPath: /etc/redpanda/.bootstrap.yaml
+      name: configmap-dir
+      subPath: .bootstrap.yaml
+    - mountPath: /var/lib/redpanda/data
+      name: datadir
+    - mountPath: /var/run/secrets/kubernetes.io/serviceaccount
+      readOnly: true
+status:
+  phase: "Running"
+
+---
+
+apiVersion: v1
+kind: Pod
+metadata:
+  name: update-image-cluster-and-node-port-2
+spec:
+  containers:
+  - name: redpanda
+    image: "localhost/redpanda:dev"
+    volumeMounts:
+    - mountPath: /etc/redpanda
+      name: config-dir
+    - mountPath: /scripts
+      name: hook-scripts-dir
+    - mountPath: /etc/redpanda/.bootstrap.yaml
+      name: configmap-dir
+      subPath: .bootstrap.yaml
+    - mountPath: /var/lib/redpanda/data
+      name: datadir
+    - mountPath: /var/run/secrets/kubernetes.io/serviceaccount
+      readOnly: true
+status:
+  phase: "Running"
+
+---
+
+apiVersion: kuttl.dev/v1beta1
+kind: TestAssert
+collectors:
+  - command: ../../../hack/get-redpanda-info.sh
+
+---
+
+apiVersion: redpanda.vectorized.io/v1alpha1
+kind: Cluster
+metadata:
+  name: update-image-cluster-and-node-port
+status:
+  version: "dev"
+  readyReplicas: 3
+  replicas: 3
+  upgrading: false
+  restarting: false
+  conditions:
+    - type: ClusterConfigured
+      status: "True"

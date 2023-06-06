@@ -2,15 +2,13 @@
 
 set -x
 
-script_namespace="${1:-$NAMESPACE}"
+script_namespace=${1:-redpanda-system}
 
-if [[ -z $script_namespace ]]; then
-  echo "Error: no NAMESPACE env defined nor script first argument"
-  exit 1
-fi
+ARTIFACTS_PATH=$(TMPDIR=../../_e2e_artifacts mktemp -d)
 
-ARTIFACTS_PATH=../../_e2e_artifacts/$TEST_NAME
-mkdir -p $ARTIFACTS_PATH
+mkdir -p $ARTIFACTS_PATH/exported-logs/
+kind export logs --name kind $ARTIFACTS_PATH/exported-logs/
+
 kubectl -n $script_namespace get pods -o yaml >$ARTIFACTS_PATH/pods.yaml
 
 for cl in $(kubectl -n $script_namespace get cluster --output=jsonpath='{.items..metadata.name}'); do
@@ -29,15 +27,21 @@ for cl in $(kubectl -n $script_namespace get cluster --output=jsonpath='{.items.
 
   kubectl -n $script_namespace get cluster $cl -o yaml >$ARTIFACTS_PATH/$cl.yaml
 
+  kubectl -n $script_namespace get svc -A -o yaml >$ARTIFACTS_PATH/svc-all-for-port-collision.yaml
+
   i=0
   while [[ $i -lt $replication_factor ]]; do
-    kubectl -n $script_namespace exec -c redpanda $cl-$i -- curl $curl_arguments://$cl-$i.$cl.$script_namespace.svc.cluster.local.:9644/v1/brokers >$ARTIFACTS_PATH/brokers-from-pod-$i.json
-    kubectl -n $script_namespace exec -c redpanda $cl-$i -- curl $curl_arguments://$cl-$i.$cl.$script_namespace.svc.cluster.local.:9644/v1/cluster_config/status >$ARTIFACTS_PATH/config-status-from-pod-$i.json
-    kubectl -n $script_namespace logs -c redpanda $cl-$i >$ARTIFACTS_PATH/logs-from-pod-$i.txt
-    kubectl -n $script_namespace logs -c redpanda $cl-$i -p >$ARTIFACTS_PATH/logs-from-previous-pod-$i.txt
+    kubectl -n $script_namespace exec -c redpanda $cl-$i -- curl $curl_arguments://$cl-$i.$cl.$script_namespace.svc.cluster.local.:9644/v1/brokers >$ARTIFACTS_PATH/brokers-from-pod-$cl-$i.json || true
+    kubectl -n $script_namespace exec -c redpanda $cl-$i -- curl $curl_arguments://$cl-$i.$cl.$script_namespace.svc.cluster.local.:9644/v1/cluster_config/status >$ARTIFACTS_PATH/config-status-from-pod-$cl-$i.json || true
+    kubectl -n $script_namespace exec -c redpanda $cl-$i -- curl $curl_arguments://$cl-$i.$cl.$script_namespace.svc.cluster.local.:9644/v1/status/ready >$ARTIFACTS_PATH/status-ready-pod-$cl-$i.json || true
+    kubectl -n $script_namespace exec -c redpanda $cl-$i -- curl $curl_arguments://$cl-$i.$cl.$script_namespace.svc.cluster.local.:9644/v1/features >$ARTIFACTS_PATH/features-from-pod-$cl-$i.json || true
+    kubectl -n $script_namespace logs -c redpanda $cl-$i >$ARTIFACTS_PATH/logs-from-pod-$cl-$i.txt || true
+    kubectl -n $script_namespace logs -c redpanda $cl-$i -p >$ARTIFACTS_PATH/logs-from-previous-pod-$cl-$i.txt || true
     ((i = i + 1))
   done
 done
 
-mkdir -p $ARTIFACTS_PATH/exported-logs/
-kind export logs --name kind $ARTIFACTS_PATH/exported-logs/
+kubectl get events --sort-by metadata.creationTimestamp >$ARTIFACTS_PATH/events.txt
+kubectl get events --sort-by metadata.creationTimestamp -A >$ARTIFACTS_PATH/all-events.txt
+kubectl describe node >$ARTIFACTS_PATH/described-nodes.txt
+kubectl get pod -A -o yaml >$ARTIFACTS_PATH/all-pods.yaml

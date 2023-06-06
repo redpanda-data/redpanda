@@ -1,14 +1,14 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: get-topic-test
+  name: get-topic-test-pp-ext-mtls
 spec:
   template:
     spec:
       volumes:
       - name: client-cert
         secret:
-          secretName: client-cert
+          secretName: pp-client-cert
       containers:
       - name: rpk
         image: localhost/redpanda:dev
@@ -29,6 +29,6 @@ spec:
         # Get the topics from the panda proxy
         - 'curl -vvv -k --cert /tmp/client/client.crt --key /tmp/client/client.key --sslv2 --http2 -H "Content-Type: application/vnd.kafka.v2+json" https://cluster-proxy-0.cluster-proxy.$POD_NAMESPACE.svc.cluster.local:8082/topics'
       restartPolicy: Never
-  backoffLimit: 6
+  backoffLimit: 20
   parallelism: 1
   completions: 1

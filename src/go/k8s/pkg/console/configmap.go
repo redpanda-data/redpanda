@@ -21,7 +21,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
-	redpandav1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
+	vectorizedv1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/vectorized/v1alpha1"
 	labels "github.com/redpanda-data/redpanda/src/go/k8s/pkg/labels"
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources"
 )
@@ -30,8 +30,8 @@ import (
 type ConfigMap struct {
 	client.Client
 	scheme     *runtime.Scheme
-	consoleobj *redpandav1alpha1.Console
-	clusterobj *redpandav1alpha1.Cluster
+	consoleobj *vectorizedv1alpha1.Console
+	clusterobj *vectorizedv1alpha1.Cluster
 	log        logr.Logger
 }
 
@@ -39,8 +39,8 @@ type ConfigMap struct {
 func NewConfigMap(
 	cl client.Client,
 	scheme *runtime.Scheme,
-	consoleobj *redpandav1alpha1.Console,
-	clusterobj *redpandav1alpha1.Cluster,
+	consoleobj *vectorizedv1alpha1.Console,
+	clusterobj *vectorizedv1alpha1.Cluster,
 	log logr.Logger,
 ) *ConfigMap {
 	return &ConfigMap{
@@ -182,7 +182,7 @@ func (cm *ConfigMap) genRedpanda() (r Redpanda) {
 }
 
 func (cm *ConfigMap) buildRedpandaAdmin(
-	aa *redpandav1alpha1.RedpandaAdmin,
+	aa *vectorizedv1alpha1.RedpandaAdmin,
 ) RedpandaAdmin {
 	r := RedpandaAdmin{
 		Enabled: aa.Enabled,
@@ -297,14 +297,14 @@ func (cm *ConfigMap) genLogin(
 
 		switch {
 		case provider.RedpandaCloud != nil:
-			enterpriseLogin.RedpandaCloud = &redpandav1alpha1.EnterpriseLoginRedpandaCloud{
+			enterpriseLogin.RedpandaCloud = &vectorizedv1alpha1.EnterpriseLoginRedpandaCloud{
 				Enabled:        provider.RedpandaCloud.Enabled,
 				Domain:         provider.RedpandaCloud.Domain,
 				Audience:       provider.RedpandaCloud.Audience,
 				AllowedOrigins: provider.RedpandaCloud.AllowedOrigins,
 			}
 		case provider.Google != nil:
-			cc := redpandav1alpha1.SecretKeyRef{
+			cc := vectorizedv1alpha1.SecretKeyRef{
 				Namespace: provider.Google.ClientCredentialsRef.Namespace,
 				Name:      provider.Google.ClientCredentialsRef.Name,
 			}
@@ -394,7 +394,7 @@ func (cm *ConfigMap) genLicense(ctx context.Context) (string, error) {
 		if err != nil {
 			return "", err
 		}
-		licenseValue, err := license.GetValue(licenseSecret, redpandav1alpha1.DefaultLicenseSecretKey)
+		licenseValue, err := license.GetValue(licenseSecret, vectorizedv1alpha1.DefaultLicenseSecretKey)
 		if err != nil {
 			return "", err
 		}
@@ -554,7 +554,7 @@ func (cm *ConfigMap) genKafka(username string) config.Kafka {
 	return k
 }
 
-func getBrokers(clusterobj *redpandav1alpha1.Cluster) []string {
+func getBrokers(clusterobj *vectorizedv1alpha1.Cluster) []string {
 	if l := clusterobj.KafkaListener(); !l.External.Enabled {
 		brokers := []string{}
 		for _, host := range clusterobj.Status.Nodes.Internal {
@@ -596,7 +596,7 @@ func getOrEmpty(key string, data map[string][]byte) string {
 }
 
 func (cm *ConfigMap) buildConfigCluster(
-	ctx context.Context, c redpandav1alpha1.ConnectCluster,
+	ctx context.Context, c vectorizedv1alpha1.ConnectCluster,
 ) (*config.ConnectCluster, error) {
 	cluster := &config.ConnectCluster{Name: c.Name, URL: c.URL}
 

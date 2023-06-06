@@ -1,0 +1,22 @@
+apiVersion: kuttl.dev/v1beta1
+kind: TestStep
+delete:
+  - apiVersion: redpanda.vectorized.io/v1alpha1
+    kind: Cluster
+    name: create-topic-with-client-auth
+    namespace: redpanda-system
+  - apiVersion: v1
+    kind: PersistentVolumeClaim
+    name: datadir-create-topic-with-client-auth-0
+    namespace: redpanda-system
+  - apiVersion: batch/v1
+    kind: Job
+    name: create-test-topic-with-client-auth
+    namespace: redpanda-system
+  - apiVersion: batch/v1
+    kind: Job
+    name: create-schema-with-client-auth
+    namespace: redpanda-system
+  - apiVersion: cert-manager.io/v1
+    kind: ClusterIssuer
+    name: cluster-tls-root-issuer

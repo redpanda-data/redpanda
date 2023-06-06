@@ -5,7 +5,7 @@ resources:
 - bases/fluxcd.resources.yaml
 - bases/redpanda.vectorized.io_clusters.yaml
 - bases/redpanda.vectorized.io_consoles.yaml
-- bases/redpanda.vectorized.io_redpandas.yaml
+- bases/cluster.redpanda.com_redpandas.yaml
 #+kubebuilder:scaffold:crdkustomizeresource
 
 patchesStrategicMerge:

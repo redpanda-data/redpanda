@@ -1,7 +1,7 @@
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
-  name: up-img
+  name: up-img-admin-mtls
 status:
   readyReplicas: 3
 
@@ -10,11 +10,11 @@ status:
 apiVersion: v1
 kind: Pod
 metadata:
-  name: up-img-0
+  name: up-img-admin-mtls-0
 spec:
   containers:
   - name: redpanda
-    image: "vectorized/redpanda:v23.1.9"
+    image: "vectorized/redpanda:v23.1.11"
 status:
   phase: "Running"
 
@@ -23,11 +23,11 @@ status:
 apiVersion: v1
 kind: Pod
 metadata:
-  name: up-img-1
+  name: up-img-admin-mtls-1
 spec:
   containers:
   - name: redpanda
-    image: "vectorized/redpanda:v23.1.9"
+    image: "vectorized/redpanda:v23.1.11"
 status:
   phase: "Running"
 
@@ -36,11 +36,11 @@ status:
 apiVersion: v1
 kind: Pod
 metadata:
-  name: up-img-2
+  name: up-img-admin-mtls-2
 spec:
   containers:
   - name: redpanda
-    image: "vectorized/redpanda:v23.1.9"
+    image: "vectorized/redpanda:v23.1.11"
 status:
   phase: "Running"
 
@@ -56,9 +56,9 @@ collectors:
 apiVersion: redpanda.vectorized.io/v1alpha1
 kind: Cluster
 metadata:
-  name: up-img
+  name: up-img-admin-mtls
 status:
-  version: "v23.1.9"
+  version: "v23.1.11"
   readyReplicas: 3
   replicas: 3
   upgrading: false

@@ -1,7 +1,7 @@
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
-  name: cluster-tls
+  name: cluster-admin-api-tls
 status:
   readyReplicas: 1
 
@@ -10,7 +10,7 @@ status:
 apiVersion: cert-manager.io/v1
 kind: Issuer
 metadata:
-  name: cluster-tls-admin-selfsigned-issuer
+  name: cluster-admin-api-tls-admin-selfsigned-issuer
 status:
   conditions:
     - reason: IsReady
@@ -22,7 +22,7 @@ status:
 apiVersion: cert-manager.io/v1
 kind: Issuer
 metadata:
-  name: cluster-tls-admin-root-issuer
+  name: cluster-admin-api-tls-admin-root-issuer
 status:
   conditions:
     - reason: KeyPairVerified
@@ -33,7 +33,7 @@ status:
 apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:
-  name: cluster-tls-admin-root-certificate
+  name: cluster-admin-api-tls-admin-root-certificate
 status:
   conditions:
     - reason: Ready
@@ -45,7 +45,7 @@ status:
 apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:
-  name: cluster-tls-admin-api-node
+  name: cluster-admin-api-tls-admin-api-node
 status:
   conditions:
     - reason: Ready

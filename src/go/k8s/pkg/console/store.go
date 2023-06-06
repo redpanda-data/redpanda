@@ -13,7 +13,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
-	redpandav1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
+	vectorizedv1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/vectorized/v1alpha1"
 	labels "github.com/redpanda-data/redpanda/src/go/k8s/pkg/labels"
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources"
 )
@@ -49,8 +49,11 @@ func NewStore(cl client.Client, scheme *runtime.Scheme) *Store {
 
 // Sync synchronizes watched resources to the store
 func (s *Store) Sync(
-	ctx context.Context, cluster *redpandav1alpha1.Cluster,
+	ctx context.Context, cluster *vectorizedv1alpha1.Cluster,
 ) error {
+	if cluster == nil {
+		return nil
+	}
 	if err := s.syncSchemaRegistry(ctx, cluster); err != nil {
 		return err
 	}
@@ -64,8 +67,11 @@ func (s *Store) Sync(
 }
 
 func (s *Store) syncSchemaRegistry(
-	ctx context.Context, cluster *redpandav1alpha1.Cluster,
+	ctx context.Context, cluster *vectorizedv1alpha1.Cluster,
 ) error {
+	if cluster == nil {
+		return nil
+	}
 	if !cluster.IsSchemaRegistryTLSEnabled() {
 		return nil
 	}
@@ -106,8 +112,11 @@ func (s *Store) syncSchemaRegistry(
 }
 
 func (s *Store) syncKafka(
-	ctx context.Context, cluster *redpandav1alpha1.Cluster,
+	ctx context.Context, cluster *vectorizedv1alpha1.Cluster,
 ) error {
+	if cluster == nil {
+		return nil
+	}
 	listener := cluster.KafkaListener()
 	if !listener.IsMutualTLSEnabled() {
 		return nil
@@ -144,8 +153,11 @@ func (s *Store) syncKafka(
 }
 
 func (s *Store) syncAdminAPI(
-	ctx context.Context, cluster *redpandav1alpha1.Cluster,
+	ctx context.Context, cluster *vectorizedv1alpha1.Cluster,
 ) error {
+	if cluster == nil {
+		return nil
+	}
 	listener := cluster.AdminAPIListener()
 	if !listener.TLS.Enabled {
 		return nil
@@ -201,43 +213,46 @@ func syncCert(
 }
 
 func (s *Store) getSchemaRegistryClientCertKey(
-	cluster *redpandav1alpha1.Cluster,
+	cluster *vectorizedv1alpha1.Cluster,
 ) string {
 	return fmt.Sprintf("%s-%s-%s", cluster.GetNamespace(), cluster.GetName(), schemaRegistryClientCertSuffix)
 }
 
 func (s *Store) getKafkaClientCertKey(
-	cluster *redpandav1alpha1.Cluster,
+	cluster *vectorizedv1alpha1.Cluster,
 ) string {
 	return fmt.Sprintf("%s-%s-%s", cluster.GetNamespace(), cluster.GetName(), kafkaClientCertSuffix)
 }
 
 func (s *Store) getAdminAPIClientCertKey(
-	cluster *redpandav1alpha1.Cluster,
+	cluster *vectorizedv1alpha1.Cluster,
 ) string {
 	return fmt.Sprintf("%s-%s-%s", cluster.GetNamespace(), cluster.GetName(), adminAPIClientCertSuffix)
 }
 
 func (s *Store) getSchemaRegistryNodeCertKey(
-	cluster *redpandav1alpha1.Cluster,
+	cluster *vectorizedv1alpha1.Cluster,
 ) string {
 	return fmt.Sprintf("%s-%s-%s", cluster.GetNamespace(), cluster.GetName(), schemaRegistryNodeCertSuffix)
 }
 
-func (s *Store) getKafkaNodeCertKey(cluster *redpandav1alpha1.Cluster) string {
+func (s *Store) getKafkaNodeCertKey(cluster *vectorizedv1alpha1.Cluster) string {
 	return fmt.Sprintf("%s-%s-%s", cluster.GetNamespace(), cluster.GetName(), kafkaNodeCertSuffix)
 }
 
 func (s *Store) getAdminAPINodeCertKey(
-	cluster *redpandav1alpha1.Cluster,
+	cluster *vectorizedv1alpha1.Cluster,
 ) string {
 	return fmt.Sprintf("%s-%s-%s", cluster.GetNamespace(), cluster.GetName(), adminAPINodeCertSuffix)
 }
 
 // GetSchemaRegistryClientCert gets the Schema Registry client cert and returns Secret object
 func (s *Store) GetSchemaRegistryClientCert(
-	cluster *redpandav1alpha1.Cluster,
+	cluster *vectorizedv1alpha1.Cluster,
 ) (*corev1.Secret, bool) {
+	if cluster == nil {
+		return nil, false
+	}
 	if secret, exists := s.Get(s.getSchemaRegistryClientCertKey(cluster)); exists {
 		return secret.(*corev1.Secret), true
 	}
@@ -246,8 +261,11 @@ func (s *Store) GetSchemaRegistryClientCert(
 
 // GetSchemaRegistryNodeCert gets the Schema Registry node cert and returns Secret object
 func (s *Store) GetSchemaRegistryNodeCert(
-	cluster *redpandav1alpha1.Cluster,
+	cluster *vectorizedv1alpha1.Cluster,
 ) (*corev1.Secret, bool) {
+	if cluster == nil {
+		return nil, false
+	}
 	if secret, exists := s.Get(s.getSchemaRegistryNodeCertKey(cluster)); exists {
 		return secret.(*corev1.Secret), true
 	}
@@ -256,8 +274,11 @@ func (s *Store) GetSchemaRegistryNodeCert(
 
 // GetKafkaClientCert gets the Kafka client cert and returns Secret object
 func (s *Store) GetKafkaClientCert(
-	cluster *redpandav1alpha1.Cluster,
+	cluster *vectorizedv1alpha1.Cluster,
 ) (*corev1.Secret, bool) {
+	if cluster == nil {
+		return nil, false
+	}
 	if secret, exists := s.Get(s.getKafkaClientCertKey(cluster)); exists {
 		return secret.(*corev1.Secret), true
 	}
@@ -266,8 +287,11 @@ func (s *Store) GetKafkaClientCert(
 
 // GetKafkaNodeCert gets the Kafka node cert and returns Secret object
 func (s *Store) GetKafkaNodeCert(
-	cluster *redpandav1alpha1.Cluster,
+	cluster *vectorizedv1alpha1.Cluster,
 ) (*corev1.Secret, bool) {
+	if cluster == nil {
+		return nil, false
+	}
 	if secret, exists := s.Get(s.getKafkaNodeCertKey(cluster)); exists {
 		return secret.(*corev1.Secret), true
 	}
@@ -276,8 +300,11 @@ func (s *Store) GetKafkaNodeCert(
 
 // GetAdminAPIClientCert gets the RedpandaAdmin client cert and returns Secret object
 func (s *Store) GetAdminAPIClientCert(
-	cluster *redpandav1alpha1.Cluster,
+	cluster *vectorizedv1alpha1.Cluster,
 ) (*corev1.Secret, bool) {
+	if cluster == nil {
+		return nil, false
+	}
 	if secret, exists := s.Get(s.getAdminAPIClientCertKey(cluster)); exists {
 		return secret.(*corev1.Secret), true
 	}
@@ -286,8 +313,11 @@ func (s *Store) GetAdminAPIClientCert(
 
 // GetAdminAPINodeCert gets the RedpandaAdmin node cert and returns Secret object
 func (s *Store) GetAdminAPINodeCert(
-	cluster *redpandav1alpha1.Cluster,
+	cluster *vectorizedv1alpha1.Cluster,
 ) (*corev1.Secret, bool) {
+	if cluster == nil {
+		return nil, false
+	}
 	if secret, exists := s.Get(s.getAdminAPINodeCertKey(cluster)); exists {
 		return secret.(*corev1.Secret), true
 	}
@@ -297,11 +327,14 @@ func (s *Store) GetAdminAPINodeCert(
 // CreateSyncedSecret creates the synced Secret in Console namespace
 func (s *Store) CreateSyncedSecret(
 	ctx context.Context,
-	console *redpandav1alpha1.Console,
+	console *vectorizedv1alpha1.Console,
 	data map[string][]byte,
 	secretNameSuffix string,
 	log logr.Logger,
 ) (string, error) {
+	if console == nil {
+		return "", nil
+	}
 	secret := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      fmt.Sprintf("%s-%s", console.GetName(), secretNameSuffix),

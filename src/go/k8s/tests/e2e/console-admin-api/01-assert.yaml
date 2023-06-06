@@ -1,18 +1,14 @@
-apiVersion: redpanda.vectorized.io/v1alpha1
-kind: Cluster
+apiVersion: apps/v1
+kind: Deployment
 metadata:
-  name: cluster
-  namespace: console-admin-api
+  name: console-admin-api
 status:
-  replicas: 2
-  restarting: false
-  conditions:
-    - type: ClusterConfigured
-      status: "True"
-
+  readyReplicas: 1
 ---
-
 apiVersion: kuttl.dev/v1beta1
 kind: TestAssert
 collectors:
-  - command: ../../../hack/get-redpanda-info.sh console-admin-api
+- type: pod
+  selector: app.kubernetes.io/name=redpanda-console
+  tail: -1
+- command: ../../../hack/get-redpanda-info.sh

@@ -1,7 +1,7 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: delete-schema-with-client-tls
+  name: delete-schema-with-client-tls-rp-sasl
 spec:
   template:
     spec:
@@ -9,11 +9,11 @@ spec:
         - name: tlscert
           secret:
             defaultMode: 420
-            secretName: schema-registry-schema-registry-client
+            secretName: schema-registry-sasl-schema-registry-client
         - name: tlscertca
           secret:
             defaultMode: 420
-            secretName: schema-registry-schema-registry-node
+            secretName: schema-registry-sasl-schema-registry-node
       containers:
         - name: rpk
           image: localhost/redpanda:dev
@@ -25,12 +25,12 @@ spec:
             - name: SCRAM_USERNAME
               valueFrom:
                 secretKeyRef:
-                  name: schema-registry-schema-registry-sasl
+                  name: schema-registry-sasl-schema-registry-sasl
                   key: username
             - name: SCRAM_PASSWORD
               valueFrom:
                 secretKeyRef:
-                  name: schema-registry-schema-registry-sasl
+                  name: schema-registry-sasl-schema-registry-sasl
                   key: password
           command:
             - /bin/bash
@@ -43,7 +43,7 @@ spec:
               --key /etc/tls/certs/schema-registry/tls.key
               -u "$SCRAM_USERNAME:$SCRAM_PASSWORD"
               -X DELETE
-              https://schema-registry-cluster.$POD_NAMESPACE.svc.cluster.local.:8081/subjects/Kafka-value/versions/1
+              https://schema-registry-sasl-cluster.$POD_NAMESPACE.svc.cluster.local.:8081/subjects/Kafka-value/versions/1
           volumeMounts:
             - mountPath: /etc/tls/certs/schema-registry
               name: tlscert

@@ -1,0 +1,23 @@
+apiVersion: kuttl.dev/v1beta1
+kind: TestStep
+delete:
+  - apiVersion: redpanda.vectorized.io/v1alpha1
+    kind: Cluster
+    name: up-img-admin-mtls
+    namespace: redpanda-system
+  - apiVersion: v1
+    kind: PersistentVolumeClaim
+    name: datadir-up-img-admin-mtls-0
+    namespace: redpanda-system
+  - apiVersion: v1
+    kind: PersistentVolumeClaim
+    name: datadir-up-img-admin-mtls-1
+    namespace: redpanda-system
+  - apiVersion: v1
+    kind: PersistentVolumeClaim
+    name: datadir-up-img-admin-mtls-2
+    namespace: redpanda-system
+  - apiVersion: apps/v1
+    kind: Deployment
+    name: kminion-no-ext-ca
+    namespace: redpanda-system

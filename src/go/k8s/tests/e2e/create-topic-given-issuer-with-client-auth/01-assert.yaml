@@ -1,16 +1,22 @@
-apiVersion: apps/v1
-kind: StatefulSet
+apiVersion: redpanda.vectorized.io/v1alpha1
+kind: Cluster
 metadata:
-  name: cluster-tls
+  name: create-topic-with-client-auth
 status:
   readyReplicas: 1
+  replicas: 1
+  upgrading: false
+  restarting: false
+  conditions:
+    - type: ClusterConfigured
+      status: "True"
 
 ---
 
 apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:
-  name: cluster-tls-user-client
+  name: create-topic-with-client-auth-user-client
 status:
   conditions:
     - reason: Ready
@@ -22,7 +28,7 @@ status:
 apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:
-  name: cluster-tls-operator-client
+  name: create-topic-with-client-auth-operator-client
 status:
   conditions:
     - reason: Ready
@@ -34,7 +40,7 @@ status:
 apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:
-  name: cluster-tls-redpanda
+  name: create-topic-with-client-auth-redpanda
 status:
   conditions:
     - reason: Ready
@@ -47,11 +53,11 @@ status:
 apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:
-  name: cluster-tls-schema-registry-client
+  name: create-topic-with-client-auth-schema-registry-client
 spec:
   # Always issued by internal issuer for mTLS certs
   issuerRef:
-    name: cluster-tls-schema-registry-root-issuer
+    name: create-topic-with-client-auth-schema-registry-root-issuer
 status:
   conditions:
     - reason: Ready
@@ -63,7 +69,7 @@ status:
 apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:
-  name: cluster-tls-schema-registry-node
+  name: create-topic-with-client-auth-schema-registry-node
 spec:
   # Issued by the issuer passed to the CR
   issuerRef:

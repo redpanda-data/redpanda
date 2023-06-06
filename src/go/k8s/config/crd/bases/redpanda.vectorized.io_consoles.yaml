@@ -766,6 +766,11 @@ spec:
           status:
             description: ConsoleStatus defines the observed state of Console
             properties:
+              availableReplicas:
+                description: Total number of available pods (ready for at least minReadySeconds)
+                  targeted by this deployment.
+                format: int32
+                type: integer
               configMapRef:
                 description: The ConfigMap used by Console This is used to pass the
                   ConfigMap used to mount in the Deployment Resource since Ensure()
@@ -816,6 +821,32 @@ spec:
                 description: The generation observed by the controller
                 format: int64
                 type: integer
+              readyReplicas:
+                description: readyReplicas is the number of pods targeted by this
+                  Deployment with a Ready Condition.
+                format: int32
+                type: integer
+              replicas:
+                description: Total number of non-terminated pods targeted by this
+                  deployment (their labels match the selector).
+                format: int32
+                type: integer
+              unavailableReplicas:
+                description: Total number of unavailable pods targeted by this deployment.
+                  This is the total number of pods that are still required for the
+                  deployment to have 100% available capacity. They may either be pods
+                  that are running but not yet available or pods that still have not
+                  been created.
+                format: int32
+                type: integer
+              updatedReplicas:
+                description: Total number of non-terminated pods targeted by this
+                  deployment that have the desired template spec.
+                format: int32
+                type: integer
+              version:
+                description: Current version of the cluster.
+                type: string
             type: object
         type: object
     served: true

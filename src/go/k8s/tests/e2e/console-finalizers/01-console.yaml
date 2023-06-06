@@ -1,0 +1,19 @@
+apiVersion: redpanda.vectorized.io/v1alpha1
+kind: Console
+metadata:
+  name: console-finalizers
+  annotations:
+    operator.redpanda.com/finalizers-timeout: 10s
+spec:
+  server:
+    listenPort: 8080
+  schema:
+    enabled: true
+  clusterRef:
+    name: cluster-finalizers
+    namespace: redpanda-system
+  deployment:
+    image: redpandadata/console:v2.2.4
+  connect:
+    enabled: false
+

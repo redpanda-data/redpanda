@@ -1,0 +1,47 @@
+apiVersion: kuttl.dev/v1beta1
+kind: TestStep
+delete:
+  - apiVersion: redpanda.vectorized.io/v1alpha1
+    kind: Cluster
+    name: schema-registry
+    namespace: redpanda-system
+  - apiVersion: v1
+    kind: PersistentVolumeClaim
+    name: datadir-schema-registry-0
+    namespace: redpanda-system
+  - apiVersion: batch/v1
+    kind: Job
+    name: create-schema-rp
+    namespace: redpanda-system
+  - apiVersion: batch/v1
+    kind: Job
+    name: retrieve-schema-rp
+    namespace: redpanda-system
+  - apiVersion: batch/v1
+    kind: Job
+    name: delete-schema-rp
+    namespace: redpanda-system
+  - apiVersion: batch/v1
+    kind: Job
+    name: create-schema-with-tls-rp
+    namespace: redpanda-system
+  - apiVersion: batch/v1
+    kind: Job
+    name: retrieve-schema-with-tls-rp
+    namespace: redpanda-system
+  - apiVersion: batch/v1
+    kind: Job
+    name: delete-schema-with-tls-rp
+    namespace: redpanda-system
+  - apiVersion: batch/v1
+    kind: Job
+    name: create-schema-with-client-tls-rp
+    namespace: redpanda-system
+  - apiVersion: batch/v1
+    kind: Job
+    name: retrieve-schema-with-client-tls-rp
+    namespace: redpanda-system
+  - apiVersion: batch/v1
+    kind: Job
+    name: delete-schema-with-client-tls-rp
+    namespace: redpanda-system

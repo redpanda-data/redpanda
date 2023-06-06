@@ -28,7 +28,7 @@ import (
 
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 
-	redpandav1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
+	vectorizedv1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/vectorized/v1alpha1"
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources"
 	resourcetypes "github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources/types"
 )
@@ -51,10 +51,10 @@ const (
 // Helper functions and types for Listeners
 
 var (
-	_ APIListener = redpandav1alpha1.KafkaAPI{}
-	_ APIListener = redpandav1alpha1.AdminAPI{}
-	_ APIListener = redpandav1alpha1.PandaproxyAPI{}
-	_ APIListener = redpandav1alpha1.SchemaRegistryAPI{}
+	_ APIListener = vectorizedv1alpha1.KafkaAPI{}
+	_ APIListener = vectorizedv1alpha1.AdminAPI{}
+	_ APIListener = vectorizedv1alpha1.PandaproxyAPI{}
+	_ APIListener = vectorizedv1alpha1.SchemaRegistryAPI{}
 
 	errNoTLSError   = errors.New("no TLS enabled for admin API")
 	errCertNotFound = errors.New("couldn't find the certificate")
@@ -65,12 +65,12 @@ type APIListener interface {
 	// GetPort returns API port
 	GetPort() int
 	// GetTLS returns API TLSConfig
-	GetTLS() *redpandav1alpha1.TLSConfig
+	GetTLS() *vectorizedv1alpha1.TLSConfig
 	// GetExternal returns API's ExternalConnectivityConfig
-	GetExternal() *redpandav1alpha1.ExternalConnectivityConfig
+	GetExternal() *vectorizedv1alpha1.ExternalConnectivityConfig
 }
 
-func kafkaAPIListeners(r *redpandav1alpha1.Cluster) []APIListener {
+func kafkaAPIListeners(r *vectorizedv1alpha1.Cluster) []APIListener {
 	listeners := []APIListener{}
 	for _, el := range r.Spec.Configuration.KafkaAPI {
 		listeners = append(listeners, el)
@@ -78,7 +78,7 @@ func kafkaAPIListeners(r *redpandav1alpha1.Cluster) []APIListener {
 	return listeners
 }
 
-func adminAPIListeners(r *redpandav1alpha1.Cluster) []APIListener {
+func adminAPIListeners(r *vectorizedv1alpha1.Cluster) []APIListener {
 	listeners := []APIListener{}
 	for _, el := range r.Spec.Configuration.AdminAPI {
 		listeners = append(listeners, el)
@@ -86,7 +86,7 @@ func adminAPIListeners(r *redpandav1alpha1.Cluster) []APIListener {
 	return listeners
 }
 
-func schemaRegistryAPIListeners(r *redpandav1alpha1.Cluster) []APIListener {
+func schemaRegistryAPIListeners(r *vectorizedv1alpha1.Cluster) []APIListener {
 	if r.Spec.Configuration.SchemaRegistry == nil {
 		return []APIListener{}
 	}
@@ -95,7 +95,7 @@ func schemaRegistryAPIListeners(r *redpandav1alpha1.Cluster) []APIListener {
 }
 
 // PandaProxyAPIListeners returns all PandaProxyAPI listeners
-func pandaProxyAPIListeners(r *redpandav1alpha1.Cluster) []APIListener {
+func pandaProxyAPIListeners(r *vectorizedv1alpha1.Cluster) []APIListener {
 	listeners := []APIListener{}
 	pp := r.Spec.Configuration.PandaproxyAPI
 	for i := range r.Spec.Configuration.PandaproxyAPI {
@@ -186,7 +186,7 @@ type ClusterCertificates struct {
 
 	client       client.Client
 	scheme       *runtime.Scheme
-	pandaCluster *redpandav1alpha1.Cluster
+	pandaCluster *vectorizedv1alpha1.Cluster
 	internalFQDN string
 	clusterFQDN  string
 	logger       logr.Logger
@@ -195,7 +195,7 @@ type ClusterCertificates struct {
 // NewClusterCertificates creates new cluster tls certificates resources
 func NewClusterCertificates(
 	ctx context.Context,
-	cluster *redpandav1alpha1.Cluster,
+	cluster *vectorizedv1alpha1.Cluster,
 	keystoreSecret types.NamespacedName,
 	k8sClient client.Client,
 	fqdn string,
@@ -389,7 +389,7 @@ func isSelfSigned(ctx context.Context, nodeSecretRef *corev1.ObjectReference, ex
 func prepareRoot(
 	prefix string,
 	k8sClient client.Client,
-	pandaCluster *redpandav1alpha1.Cluster,
+	pandaCluster *vectorizedv1alpha1.Cluster,
 	scheme *runtime.Scheme,
 	logger logr.Logger,
 ) ([]resources.Resource, *cmmetav1.ObjectReference, *types.NamespacedName) {

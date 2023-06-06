@@ -1,0 +1,23 @@
+apiVersion: kuttl.dev/v1beta1
+kind: TestStep
+delete:
+  - apiVersion: redpanda.vectorized.io/v1alpha1
+    kind: Cluster
+    name: schema-registry-test
+    namespace: redpanda-system
+  - apiVersion: v1
+    name: datadir-schema-registry-test-0
+    kind: PersistentVolumeClaim
+    namespace: redpanda-system
+  - apiVersion: apps/v1
+    kind: Deployment
+    name: cp-schema-registry
+    namespace: redpanda-system
+  - apiVersion: batch/v1
+    kind: Job
+    name: create-schema
+    namespace: redpanda-system
+  - apiVersion: batch/v1
+    kind: Job
+    name: retrive-schema
+    namespace: redpanda-system

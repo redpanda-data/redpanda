@@ -1,0 +1,16 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: wait-for-tip-of-the-dev-mtls
+status:
+  conditions:
+    - status: "True"
+      type: Complete
+  succeeded: 1
+
+---
+
+apiVersion: kuttl.dev/v1beta1
+kind: TestAssert
+collectors:
+  - command: ../../../hack/get-redpanda-info.sh

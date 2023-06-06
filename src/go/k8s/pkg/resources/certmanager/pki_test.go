@@ -15,20 +15,20 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
-	redpandav1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
+	vectorizedv1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/vectorized/v1alpha1"
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources/certmanager"
 )
 
 func TestKafkaAPIWithMultipleTLSListeners(t *testing.T) {
-	require.NoError(t, redpandav1alpha1.AddToScheme(scheme.Scheme))
+	require.NoError(t, vectorizedv1alpha1.AddToScheme(scheme.Scheme))
 	require.NoError(t, cmapiv1.AddToScheme(scheme.Scheme))
 	clusterWithMultipleTLS := pandaCluster().DeepCopy()
-	clusterWithMultipleTLS.Spec.Configuration.KafkaAPI[0].TLS = redpandav1alpha1.KafkaAPITLS{Enabled: true, RequireClientAuth: true}
-	clusterWithMultipleTLS.Spec.Configuration.KafkaAPI = append(clusterWithMultipleTLS.Spec.Configuration.KafkaAPI, redpandav1alpha1.KafkaAPI{Port: 30001, External: redpandav1alpha1.ExternalConnectivityConfig{Enabled: true}, TLS: redpandav1alpha1.KafkaAPITLS{Enabled: true}})
+	clusterWithMultipleTLS.Spec.Configuration.KafkaAPI[0].TLS = vectorizedv1alpha1.KafkaAPITLS{Enabled: true, RequireClientAuth: true}
+	clusterWithMultipleTLS.Spec.Configuration.KafkaAPI = append(clusterWithMultipleTLS.Spec.Configuration.KafkaAPI, vectorizedv1alpha1.KafkaAPI{Port: 30001, External: vectorizedv1alpha1.ExternalConnectivityConfig{Enabled: true}, TLS: vectorizedv1alpha1.KafkaAPITLS{Enabled: true}})
 
 	testcases := []struct {
 		name                 string
-		cluster              redpandav1alpha1.Cluster
+		cluster              vectorizedv1alpha1.Cluster
 		expectedCertificates []string
 	}{
 		{
@@ -60,7 +60,7 @@ func TestKafkaAPIWithMultipleTLSListeners(t *testing.T) {
 	}
 }
 
-func pandaCluster() *redpandav1alpha1.Cluster {
+func pandaCluster() *vectorizedv1alpha1.Cluster {
 	var replicas int32 = 1
 
 	resources := corev1.ResourceList{
@@ -68,7 +68,7 @@ func pandaCluster() *redpandav1alpha1.Cluster {
 		corev1.ResourceMemory: resource.MustParse("2Gi"),
 	}
 
-	return &redpandav1alpha1.Cluster{
+	return &vectorizedv1alpha1.Cluster{
 		TypeMeta: metav1.TypeMeta{
 			Kind:       "RedpandaCluster",
 			APIVersion: "core.vectorized.io/v1alpha1",
@@ -81,13 +81,13 @@ func pandaCluster() *redpandav1alpha1.Cluster {
 			},
 			UID: "ff2770aa-c919-43f0-8b4a-30cb7cfdaf79",
 		},
-		Spec: redpandav1alpha1.ClusterSpec{
+		Spec: vectorizedv1alpha1.ClusterSpec{
 			Image:    "image",
 			Version:  "v21.11.1",
 			Replicas: pointer.Int32(replicas),
-			CloudStorage: redpandav1alpha1.CloudStorageConfig{
+			CloudStorage: vectorizedv1alpha1.CloudStorageConfig{
 				Enabled: true,
-				CacheStorage: &redpandav1alpha1.StorageSpec{
+				CacheStorage: &vectorizedv1alpha1.StorageSpec{
 					Capacity:         resource.MustParse("10Gi"),
 					StorageClassName: "local",
 				},
@@ -96,19 +96,19 @@ func pandaCluster() *redpandav1alpha1.Cluster {
 					Name:      "archival",
 				},
 			},
-			Configuration: redpandav1alpha1.RedpandaConfig{
-				AdminAPI: []redpandav1alpha1.AdminAPI{{Port: 345}},
-				KafkaAPI: []redpandav1alpha1.KafkaAPI{{Port: 123}},
+			Configuration: vectorizedv1alpha1.RedpandaConfig{
+				AdminAPI: []vectorizedv1alpha1.AdminAPI{{Port: 345}},
+				KafkaAPI: []vectorizedv1alpha1.KafkaAPI{{Port: 123}},
 			},
-			Resources: redpandav1alpha1.RedpandaResourceRequirements{
+			Resources: vectorizedv1alpha1.RedpandaResourceRequirements{
 				ResourceRequirements: corev1.ResourceRequirements{
 					Limits:   resources,
 					Requests: resources,
 				},
 				Redpanda: nil,
 			},
-			Sidecars: redpandav1alpha1.Sidecars{
-				RpkStatus: &redpandav1alpha1.Sidecar{
+			Sidecars: vectorizedv1alpha1.Sidecars{
+				RpkStatus: &vectorizedv1alpha1.Sidecar{
 					Enabled: true,
 					Resources: &corev1.ResourceRequirements{
 						Limits:   resources,
@@ -116,7 +116,7 @@ func pandaCluster() *redpandav1alpha1.Cluster {
 					},
 				},
 			},
-			Storage: redpandav1alpha1.StorageSpec{
+			Storage: vectorizedv1alpha1.StorageSpec{
 				Capacity:         resource.MustParse("10Gi"),
 				StorageClassName: "storage-class",
 			},

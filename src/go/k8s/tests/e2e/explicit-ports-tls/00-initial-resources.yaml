@@ -40,7 +40,7 @@ spec:
           name: explicit-port-tls-issuer
     pandaproxyApi:
      - port: 8082
-     - port: 30082
+     - port: 30088
        external:
          enabled: true
          subdomain: cluster.com
@@ -51,7 +51,7 @@ spec:
            kind: Issuer
            name: explicit-port-tls-issuer
     schemaRegistry:
-      port: 30081
+      port: 30087
       external:
         staticNodePort: true
         enabled: true

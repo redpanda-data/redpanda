@@ -37,6 +37,7 @@ import (
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/api/admin"
 
 	redpandav1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
+	vectorizedv1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/vectorized/v1alpha1"
 	redpandacontrollers "github.com/redpanda-data/redpanda/src/go/k8s/controllers/redpanda"
 	adminutils "github.com/redpanda-data/redpanda/src/go/k8s/pkg/admin"
 	consolepkg "github.com/redpanda-data/redpanda/src/go/k8s/pkg/console"
@@ -93,6 +94,8 @@ var _ = BeforeSuite(func(done Done) {
 
 	err = scheme.AddToScheme(scheme.Scheme)
 	Expect(err).NotTo(HaveOccurred())
+	err = vectorizedv1alpha1.AddToScheme(scheme.Scheme)
+	Expect(err).NotTo(HaveOccurred())
 	err = redpandav1alpha1.AddToScheme(scheme.Scheme)
 	Expect(err).NotTo(HaveOccurred())
 	err = cmapiv1.AddToScheme(scheme.Scheme)
@@ -115,7 +118,7 @@ var _ = BeforeSuite(func(done Done) {
 	testAdminAPIFactory = func(
 		_ context.Context,
 		_ client.Reader,
-		_ *redpandav1alpha1.Cluster,
+		_ *vectorizedv1alpha1.Cluster,
 		_ string,
 		_ types.AdminTLSConfigProvider,
 		ordinals ...int32,
@@ -131,7 +134,7 @@ var _ = BeforeSuite(func(done Done) {
 
 	testStore = consolepkg.NewStore(k8sManager.GetClient(), k8sManager.GetScheme())
 	testKafkaAdmin = &mockKafkaAdmin{}
-	testKafkaAdminFactory = func(context.Context, client.Client, *redpandav1alpha1.Cluster, *consolepkg.Store) (consolepkg.KafkaAdminClient, error) {
+	testKafkaAdminFactory = func(context.Context, client.Client, *vectorizedv1alpha1.Cluster, *consolepkg.Store) (consolepkg.KafkaAdminClient, error) {
 		return testKafkaAdmin, nil
 	}
 

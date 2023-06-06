@@ -1,7 +1,7 @@
 apiVersion: redpanda.vectorized.io/v1alpha1
 kind: Cluster
 metadata:
-  name: cluster-proxy
+  name: proxy-tls-client-auth
 status:
   replicas: 1
 
@@ -10,7 +10,7 @@ status:
 apiVersion: v1
 kind: Service
 metadata:
-  name: cluster-proxy
+  name: proxy-tls-client-auth
 spec:
   clusterIP: None
   ports:
@@ -33,7 +33,7 @@ spec:
 apiVersion: cert-manager.io/v1
 kind: Issuer
 metadata:
-  name: cluster-proxy-proxy-selfsigned-issuer
+  name: proxy-tls-client-auth-proxy-selfsigned-issuer
 status:
   conditions:
     - reason: IsReady
@@ -45,7 +45,7 @@ status:
 apiVersion: cert-manager.io/v1
 kind: Issuer
 metadata:
-  name: cluster-proxy-proxy-root-issuer
+  name: proxy-tls-client-auth-proxy-root-issuer
 status:
   conditions:
     - reason: KeyPairVerified
@@ -56,7 +56,7 @@ status:
 apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:
-  name: cluster-proxy-proxy-root-certificate
+  name: proxy-tls-client-auth-proxy-root-certificate
 status:
   conditions:
     - reason: Ready
@@ -68,7 +68,7 @@ status:
 apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:
-  name: cluster-proxy-proxy-api-node
+  name: proxy-tls-client-auth-proxy-api-node
 status:
   conditions:
     - reason: Ready

@@ -1,7 +1,7 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: create-test-topic
+  name: create-test-topic-with-pp-mtls
 spec:
   template:
     spec:
@@ -18,7 +18,7 @@ spec:
             - -c
             - -ex
           args:
-            - rpk topic create test --brokers cluster-proxy-0.cluster-proxy.$POD_NAMESPACE.svc.cluster.local:9092 -v
+            - rpk topic create test --brokers proxy-tls-client-auth-0.proxy-tls-client-auth.$POD_NAMESPACE.svc.cluster.local:9092 -v
       restartPolicy: Never
   backoffLimit: 6
   parallelism: 1

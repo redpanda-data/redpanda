@@ -12,6 +12,22 @@ spec:
 
 ---
 
+apiVersion: redpanda.vectorized.io/v1alpha1
+kind: Cluster
+metadata:
+  name: update-cluster
+status:
+  version: "dev"
+  readyReplicas: 3
+  replicas: 3
+  upgrading: false
+  restarting: false
+  conditions:
+    - type: ClusterConfigured
+      status: "True"
+
+---
+
 apiVersion: kuttl.dev/v1beta1
 kind: TestAssert
 collectors:

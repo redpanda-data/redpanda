@@ -27,7 +27,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
-	redpandav1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
+	vectorizedv1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/vectorized/v1alpha1"
 	adminutils "github.com/redpanda-data/redpanda/src/go/k8s/pkg/admin"
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/labels"
 	res "github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources"
@@ -61,7 +61,7 @@ func TestEnsure(t *testing.T) {
 	}
 
 	noSidecarCluster := cluster.DeepCopy()
-	noSidecarCluster.Spec.Sidecars.RpkStatus = &redpandav1alpha1.Sidecar{
+	noSidecarCluster.Spec.Sidecars.RpkStatus = &vectorizedv1alpha1.Sidecar{
 		Enabled: false,
 	}
 	noSidecarSts := stsFromCluster(noSidecarCluster)
@@ -77,7 +77,7 @@ func TestEnsure(t *testing.T) {
 	tests := []struct {
 		name           string
 		existingObject client.Object
-		pandaCluster   *redpandav1alpha1.Cluster
+		pandaCluster   *vectorizedv1alpha1.Cluster
 		expectedObject *v1.StatefulSet
 		clusterHealth  bool
 		expectedError  error
@@ -97,7 +97,7 @@ func TestEnsure(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			c := fake.NewClientBuilder().Build()
 
-			err := redpandav1alpha1.AddToScheme(scheme.Scheme)
+			err := vectorizedv1alpha1.AddToScheme(scheme.Scheme)
 			assert.NoError(t, err, tt.name)
 
 			if tt.existingObject != nil {
@@ -126,7 +126,7 @@ func TestEnsure(t *testing.T) {
 					ImagePullPolicy:       "Always",
 				},
 				func(ctx context.Context) (string, error) { return hash, nil },
-				func(ctx context.Context, k8sClient client.Reader, redpandaCluster *redpandav1alpha1.Cluster, fqdn string, adminTLSProvider resourcetypes.AdminTLSConfigProvider, ordinals ...int32) (adminutils.AdminAPIClient, error) {
+				func(ctx context.Context, k8sClient client.Reader, redpandaCluster *vectorizedv1alpha1.Cluster, fqdn string, adminTLSProvider resourcetypes.AdminTLSConfigProvider, ordinals ...int32) (adminutils.AdminAPIClient, error) {
 					health := tt.clusterHealth
 					adminAPI := &adminutils.MockAdminAPI{Log: ctrl.Log.WithName("testAdminAPI").WithName("mockAdminAPI")}
 					adminAPI.SetClusterHealth(health)
@@ -171,7 +171,7 @@ func TestEnsure(t *testing.T) {
 	}
 }
 
-func stsFromCluster(pandaCluster *redpandav1alpha1.Cluster) *v1.StatefulSet {
+func stsFromCluster(pandaCluster *vectorizedv1alpha1.Cluster) *v1.StatefulSet {
 	fileSystemMode := corev1.PersistentVolumeFilesystem
 
 	sts := &v1.StatefulSet{
@@ -253,7 +253,7 @@ func stsFromCluster(pandaCluster *redpandav1alpha1.Cluster) *v1.StatefulSet {
 	return sts
 }
 
-func pandaCluster() *redpandav1alpha1.Cluster {
+func pandaCluster() *vectorizedv1alpha1.Cluster {
 	var replicas int32 = 1
 
 	resources := corev1.ResourceList{
@@ -261,7 +261,7 @@ func pandaCluster() *redpandav1alpha1.Cluster {
 		corev1.ResourceMemory: resource.MustParse("2Gi"),
 	}
 
-	return &redpandav1alpha1.Cluster{
+	return &vectorizedv1alpha1.Cluster{
 		TypeMeta: metav1.TypeMeta{
 			Kind:       "RedpandaCluster",
 			APIVersion: "core.vectorized.io/v1alpha1",
@@ -274,13 +274,13 @@ func pandaCluster() *redpandav1alpha1.Cluster {
 			},
 			UID: "ff2770aa-c919-43f0-8b4a-30cb7cfdaf79",
 		},
-		Spec: redpandav1alpha1.ClusterSpec{
+		Spec: vectorizedv1alpha1.ClusterSpec{
 			Image:    "image",
 			Version:  "v22.3.0",
 			Replicas: pointer.Int32(replicas),
-			CloudStorage: redpandav1alpha1.CloudStorageConfig{
+			CloudStorage: vectorizedv1alpha1.CloudStorageConfig{
 				Enabled: true,
-				CacheStorage: &redpandav1alpha1.StorageSpec{
+				CacheStorage: &vectorizedv1alpha1.StorageSpec{
 					Capacity:         resource.MustParse("10Gi"),
 					StorageClassName: "local",
 				},
@@ -289,19 +289,19 @@ func pandaCluster() *redpandav1alpha1.Cluster {
 					Name:      "archival",
 				},
 			},
-			Configuration: redpandav1alpha1.RedpandaConfig{
-				AdminAPI: []redpandav1alpha1.AdminAPI{{Port: 345}},
-				KafkaAPI: []redpandav1alpha1.KafkaAPI{{Port: 123, AuthenticationMethod: "none"}},
+			Configuration: vectorizedv1alpha1.RedpandaConfig{
+				AdminAPI: []vectorizedv1alpha1.AdminAPI{{Port: 345}},
+				KafkaAPI: []vectorizedv1alpha1.KafkaAPI{{Port: 123, AuthenticationMethod: "none"}},
 			},
-			Resources: redpandav1alpha1.RedpandaResourceRequirements{
+			Resources: vectorizedv1alpha1.RedpandaResourceRequirements{
 				ResourceRequirements: corev1.ResourceRequirements{
 					Limits:   resources,
 					Requests: resources,
 				},
 				Redpanda: nil,
 			},
-			Sidecars: redpandav1alpha1.Sidecars{
-				RpkStatus: &redpandav1alpha1.Sidecar{
+			Sidecars: vectorizedv1alpha1.Sidecars{
+				RpkStatus: &vectorizedv1alpha1.Sidecar{
 					Enabled: true,
 					Resources: &corev1.ResourceRequirements{
 						Limits:   resources,
@@ -309,7 +309,7 @@ func pandaCluster() *redpandav1alpha1.Cluster {
 					},
 				},
 			},
-			Storage: redpandav1alpha1.StorageSpec{
+			Storage: vectorizedv1alpha1.StorageSpec{
 				Capacity:         resource.MustParse("10Gi"),
 				StorageClassName: "storage-class",
 			},
@@ -427,7 +427,7 @@ func TestCurrentVersion(t *testing.T) {
 				ImagePullPolicy:       "Always",
 			},
 			func(ctx context.Context) (string, error) { return hash, nil },
-			func(ctx context.Context, k8sClient client.Reader, redpandaCluster *redpandav1alpha1.Cluster, fqdn string, adminTLSProvider resourcetypes.AdminTLSConfigProvider, ordinals ...int32) (adminutils.AdminAPIClient, error) {
+			func(ctx context.Context, k8sClient client.Reader, redpandaCluster *vectorizedv1alpha1.Cluster, fqdn string, adminTLSProvider resourcetypes.AdminTLSConfigProvider, ordinals ...int32) (adminutils.AdminAPIClient, error) {
 				return nil, nil
 			},
 			time.Second,

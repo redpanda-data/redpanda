@@ -1,0 +1,23 @@
+apiVersion: kuttl.dev/v1beta1
+kind: TestStep
+delete:
+  - apiVersion: redpanda.vectorized.io/v1alpha1
+    kind: Cluster
+    name: proxy-tls-client-auth
+    namespace: redpanda-system
+  - apiVersion: v1
+    kind: PersistentVolumeClaim
+    name: datadir-proxy-tls-client-auth-0
+    namespace: redpanda-system
+  - apiVersion: batch/v1
+    kind: Job
+    name: create-test-topic-with-pp-mtls
+    namespace: redpanda-system
+  - apiVersion: batch/v1
+    kind: Job
+    name: produce-message-with-pp-mtls
+    namespace: redpanda-system
+  - apiVersion: batch/v1
+    kind: Job
+    name: consume-message-with-pp-mtls
+    namespace: redpanda-system

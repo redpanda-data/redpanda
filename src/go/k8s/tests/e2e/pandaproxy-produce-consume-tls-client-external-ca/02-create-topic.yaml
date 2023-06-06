@@ -1,7 +1,7 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: create-test-topic
+  name: create-test-topic-pp-ext-mtls
 spec:
   template:
     spec:
@@ -21,6 +21,6 @@ spec:
         # Create a topic.
         - 'rpk topic create my_topic --partitions=3 --replicas=1 --brokers cluster-proxy-0.cluster-proxy.$POD_NAMESPACE.svc.cluster.local:9092'
       restartPolicy: Never
-  backoffLimit: 6
+  backoffLimit: 20
   parallelism: 1
   completions: 1

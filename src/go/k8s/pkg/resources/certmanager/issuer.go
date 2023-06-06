@@ -22,7 +22,7 @@ import (
 	k8sclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
-	redpandav1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
+	vectorizedv1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/vectorized/v1alpha1"
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/labels"
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources"
 )
@@ -34,7 +34,7 @@ var _ resources.Resource = &IssuerResource{}
 type IssuerResource struct {
 	k8sclient.Client
 	scheme       *runtime.Scheme
-	pandaCluster *redpandav1alpha1.Cluster
+	pandaCluster *vectorizedv1alpha1.Cluster
 	key          types.NamespacedName
 	secretName   string
 	logger       logr.Logger
@@ -44,13 +44,13 @@ type IssuerResource struct {
 func NewIssuer(
 	client k8sclient.Client,
 	scheme *runtime.Scheme,
-	pandaCluster *redpandav1alpha1.Cluster,
+	pandaCluster *vectorizedv1alpha1.Cluster,
 	key types.NamespacedName,
 	secretName string,
 	logger logr.Logger,
 ) *IssuerResource {
 	return &IssuerResource{
-		client, scheme, pandaCluster, key, secretName, logger.WithValues("Kind", issuerKind()),
+		client, scheme, pandaCluster, key, secretName, logger,
 	}
 }
 

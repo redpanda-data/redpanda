@@ -1,7 +1,7 @@
 apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:
-  name: schema-registry-schema-registry-client
+  name: schema-registry-sasl-schema-registry-client
 status:
   conditions:
     - reason: Ready

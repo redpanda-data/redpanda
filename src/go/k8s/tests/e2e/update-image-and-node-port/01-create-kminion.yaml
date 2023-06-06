@@ -1,7 +1,7 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: kminion
+  name: kminion-image-and-node-port
 spec:
   progressDeadlineSeconds: 600
   replicas: 1
@@ -60,7 +60,7 @@ spec:
       volumes:
         - configMap:
             defaultMode: 420
-            name: kminion
+            name: kminion-image-and-node-port
           name: config
 ---
 apiVersion: v1
@@ -123,4 +123,4 @@ data:
             - cleanup.policy
 kind: ConfigMap
 metadata:
-  name: kminion
+  name: kminion-image-and-node-port

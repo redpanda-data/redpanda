@@ -1,7 +1,7 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: delete-schema
+  name: delete-schema-rp
 status:
   conditions:
     - status: "True"

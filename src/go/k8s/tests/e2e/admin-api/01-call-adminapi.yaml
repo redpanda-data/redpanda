@@ -18,7 +18,7 @@ spec:
             - -c
             - -ex
           args:
-            - curl http://cluster-0.cluster.$POD_NAMESPACE.svc.cluster.local:9644/metrics -v
+            - curl http://cluster-admin-api-0.cluster-admin-api.$POD_NAMESPACE.svc.cluster.local:9644/metrics -v
       restartPolicy: Never
   backoffLimit: 6
   parallelism: 1

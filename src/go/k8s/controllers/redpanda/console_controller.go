@@ -15,12 +15,14 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/docker/distribution/reference"
 	"github.com/fluxcd/pkg/runtime/logger"
 	"github.com/go-logr/logr"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	netv1 "k8s.io/api/networking/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
@@ -33,7 +35,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"sigs.k8s.io/controller-runtime/pkg/source"
 
-	redpandav1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
+	vectorizedv1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/vectorized/v1alpha1"
 	adminutils "github.com/redpanda-data/redpanda/src/go/k8s/pkg/admin"
 	consolepkg "github.com/redpanda-data/redpanda/src/go/k8s/pkg/console"
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources"
@@ -63,13 +65,13 @@ const (
 	NoSubdomainEvent = "NoSubdomain"
 )
 
-//+kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;watch;create;update;patch;delete
-//+kubebuilder:rbac:groups=apps,resources=configmaps,verbs=get;list;watch;create;update;patch;delete
-//+kubebuilder:rbac:groups=core,resources=events,verbs=get;list;watch;create;update;patch
+//+kubebuilder:rbac:groups=apps,namespace=default,resources=deployments,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups=apps,namespace=default,resources=configmaps,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups=core,namespace=default,resources=events,verbs=get;list;watch;create;update;patch
 
-//+kubebuilder:rbac:groups=redpanda.vectorized.io,resources=consoles,verbs=get;list;watch;create;update;patch;delete
-//+kubebuilder:rbac:groups=redpanda.vectorized.io,resources=consoles/status,verbs=get;update;patch
-//+kubebuilder:rbac:groups=redpanda.vectorized.io,resources=consoles/finalizers,verbs=update
+//+kubebuilder:rbac:groups=redpanda.vectorized.io,namespace=default,resources=consoles,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups=redpanda.vectorized.io,namespace=default,resources=consoles/status,verbs=get;update;patch
+//+kubebuilder:rbac:groups=redpanda.vectorized.io,namespace=default,resources=consoles/finalizers,verbs=update
 
 // Reconcile handles Console reconcile requests
 func (r *ConsoleReconciler) Reconcile(
@@ -80,7 +82,7 @@ func (r *ConsoleReconciler) Reconcile(
 	log.Info("Starting reconcile loop")
 	defer log.Info("Finished reconcile loop")
 
-	console := &redpandav1alpha1.Console{}
+	console := &vectorizedv1alpha1.Console{}
 	if err := r.Get(ctx, req.NamespacedName, console); err != nil {
 		if apierrors.IsNotFound(err) {
 			return ctrl.Result{}, nil
@@ -116,9 +118,9 @@ func (r *ConsoleReconciler) Reconcile(
 				corev1.EventTypeWarning, ClusterNotFoundEvent,
 				"Unable to reconcile Console as the referenced Cluster %s is not found or is being deleted", console.GetClusterRef(),
 			)
-		case errors.Is(err, redpandav1alpha1.ErrClusterNotConfigured) && consoleIsDeleting:
+		case errors.Is(err, vectorizedv1alpha1.ErrClusterNotConfigured) && consoleIsDeleting:
 			r.Log.Info("cluster %s is not yet configured but console is deleting -> proceeding with the delete.", console.GetClusterRef())
-		case errors.Is(err, redpandav1alpha1.ErrClusterNotConfigured) && !consoleIsDeleting:
+		case errors.Is(err, vectorizedv1alpha1.ErrClusterNotConfigured):
 			r.EventRecorder.Eventf(
 				console,
 				corev1.EventTypeWarning, ClusterNotConfiguredEvent,
@@ -155,8 +157,8 @@ type Reconciling ConsoleState
 // Do handles reconciliation of Console
 func (r *Reconciling) Do(
 	ctx context.Context,
-	console *redpandav1alpha1.Console,
-	cluster *redpandav1alpha1.Cluster,
+	console *vectorizedv1alpha1.Console,
+	cluster *vectorizedv1alpha1.Cluster,
 	l logr.Logger,
 ) (ctrl.Result, error) {
 	log := l.WithName("Reconciling.Do")
@@ -222,6 +224,14 @@ func (r *Reconciling) Do(
 		}
 	}
 
+	err := r.reportDeploymentStatus(ctx, console)
+	if err != nil {
+		return ctrl.Result{}, fmt.Errorf("reporting console status: %w", err)
+	}
+	if err := r.Status().Update(ctx, console); err != nil {
+		return ctrl.Result{}, err
+	}
+
 	if !console.GenerationMatchesObserved() {
 		r.Log.Info("observed generation updating", "observed generation", console.Status.ObservedGeneration, "generation", console.GetGeneration())
 		console.Status.ObservedGeneration = console.GetGeneration()
@@ -233,14 +243,42 @@ func (r *Reconciling) Do(
 	return ctrl.Result{}, nil
 }
 
+func (r *Reconciling) reportDeploymentStatus(ctx context.Context, console *vectorizedv1alpha1.Console) error {
+	d := &appsv1.Deployment{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      console.GetName(),
+			Namespace: console.GetNamespace(),
+		},
+	}
+	err := r.Get(ctx, types.NamespacedName{Name: console.GetName(), Namespace: console.GetNamespace()}, d)
+	if err != nil {
+		return fmt.Errorf("retrieving deployment status: %w", err)
+	}
+
+	version := ""
+	for i := range d.Spec.Template.Spec.Containers {
+		matches := reference.ReferenceRegexp.FindStringSubmatch(d.Spec.Template.Spec.Containers[i].Image)
+		if matches == nil || len(matches) >= 3 {
+			version = matches[2]
+		}
+	}
+	console.Status.Version = version
+	console.Status.Replicas = d.Status.Replicas
+	console.Status.UpdatedReplicas = d.Status.UpdatedReplicas
+	console.Status.ReadyReplicas = d.Status.ReadyReplicas
+	console.Status.AvailableReplicas = d.Status.AvailableReplicas
+	console.Status.UnavailableReplicas = d.Status.UnavailableReplicas
+	return nil
+}
+
 // Deleting is the state of the Console that handles deletion
 type Deleting ConsoleState
 
 // Do handles deletion of Console
 func (r *Deleting) Do(
 	ctx context.Context,
-	console *redpandav1alpha1.Console,
-	cluster *redpandav1alpha1.Cluster,
+	console *vectorizedv1alpha1.Console,
+	cluster *vectorizedv1alpha1.Cluster,
 	l logr.Logger,
 ) (ctrl.Result, error) {
 	log := l.WithName("Deleting.Do")
@@ -260,7 +298,7 @@ func (r *Deleting) Do(
 
 // handleSpecChange is a hook to call before Reconciling
 func (r *ConsoleReconciler) handleSpecChange(
-	ctx context.Context, console *redpandav1alpha1.Console,
+	ctx context.Context, console *vectorizedv1alpha1.Console,
 ) error {
 	log := r.Log.WithName("handleSpecChange")
 	if console.Status.ConfigMapRef != nil {
@@ -279,7 +317,7 @@ func (r *ConsoleReconciler) handleSpecChange(
 // SetupWithManager sets up the controller with the Manager.
 func (r *ConsoleReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
-		For(&redpandav1alpha1.Console{}).
+		For(&vectorizedv1alpha1.Console{}).
 		Owns(&corev1.Secret{}).
 		Owns(&corev1.ServiceAccount{}).
 		Owns(&corev1.ConfigMap{}, builder.WithPredicates(utils.DeletePredicate{})).
@@ -287,7 +325,7 @@ func (r *ConsoleReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Owns(&corev1.Service{}).
 		Owns(&netv1.Ingress{}).
 		Watches(
-			&source.Kind{Type: &redpandav1alpha1.Cluster{}},
+			&source.Kind{Type: &vectorizedv1alpha1.Cluster{}},
 			handler.EnqueueRequestsFromMapFunc(r.reconcileConsoleForCluster),
 			builder.WithPredicates(predicate.ResourceVersionChangedPredicate{}),
 		).
@@ -309,7 +347,7 @@ func (r *ConsoleReconciler) reconcileConsoleForCluster(c client.Object) []reconc
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	cs := redpandav1alpha1.ConsoleList{}
+	cs := vectorizedv1alpha1.ConsoleList{}
 	err := r.Client.List(ctx, &cs) // all namespaces
 	if err != nil {
 		r.Log.Error(err, "unexpected: could not list consoles for propagating reconcile events")

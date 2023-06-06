@@ -21,7 +21,7 @@ import (
 
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/api/admin"
 
-	redpandav1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
+	vectorizedv1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/vectorized/v1alpha1"
 	adminutils "github.com/redpanda-data/redpanda/src/go/k8s/pkg/admin"
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources"
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources/certmanager"
@@ -34,7 +34,7 @@ import (
 //nolint:funlen // splitting makes it difficult to follow
 func (r *ClusterReconciler) reconcileConfiguration(
 	ctx context.Context,
-	redpandaCluster *redpandav1alpha1.Cluster,
+	redpandaCluster *vectorizedv1alpha1.Cluster,
 	configMapResource *resources.ConfigMapResource,
 	statefulSetResource *resources.StatefulSetResource,
 	pki *certmanager.PkiReconciler,
@@ -53,7 +53,7 @@ func (r *ClusterReconciler) reconcileConfiguration(
 		return err
 	}
 
-	if redpandaCluster.Status.GetConditionStatus(redpandav1alpha1.ClusterConfiguredConditionType) == corev1.ConditionTrue {
+	if redpandaCluster.Status.GetConditionStatus(vectorizedv1alpha1.ClusterConfiguredConditionType) == corev1.ConditionTrue {
 		log.Info("Cluster configuration is synchronized")
 		return nil
 	}
@@ -174,7 +174,7 @@ func (r *ClusterReconciler) getOrInitLastAppliedConfiguration(
 
 func (r *ClusterReconciler) applyPatchIfNeeded(
 	ctx context.Context,
-	redpandaCluster *redpandav1alpha1.Cluster,
+	redpandaCluster *vectorizedv1alpha1.Cluster,
 	adminAPI adminutils.AdminAPIClient,
 	cfg *configuration.GlobalConfiguration,
 	schema admin.ConfigSchema,
@@ -200,7 +200,7 @@ func (r *ClusterReconciler) applyPatchIfNeeded(
 	log.Info("Applying patch to the cluster configuration", "patch", patch.String())
 	wr, err := adminAPI.PatchClusterConfig(ctx, patch.Upsert, patch.Remove)
 	if err != nil {
-		var conditionData *redpandav1alpha1.ClusterCondition
+		var conditionData *vectorizedv1alpha1.ClusterCondition
 		conditionData, err = tryMapErrorToCondition(err)
 		if err != nil {
 			return false, errorWithContext(err, "could not patch centralized configuration")
@@ -231,7 +231,7 @@ func (r *ClusterReconciler) applyPatchIfNeeded(
 
 func (r *ClusterReconciler) retrieveClusterState(
 	ctx context.Context,
-	redpandaCluster *redpandav1alpha1.Cluster,
+	redpandaCluster *vectorizedv1alpha1.Cluster,
 	adminAPI adminutils.AdminAPIClient,
 ) (admin.ConfigSchema, admin.Config, admin.ConfigStatusResponse, error) {
 	errorWithContext := newErrorWithContext(redpandaCluster.Namespace, redpandaCluster.Name)
@@ -256,20 +256,20 @@ func (r *ClusterReconciler) retrieveClusterState(
 
 func (r *ClusterReconciler) ensureConditionPresent(
 	ctx context.Context,
-	redpandaCluster *redpandav1alpha1.Cluster,
+	redpandaCluster *vectorizedv1alpha1.Cluster,
 	l logr.Logger,
 ) (bool, error) {
 	log := l.WithName("ensureConditionPresent")
-	if condition := redpandaCluster.Status.GetCondition(redpandav1alpha1.ClusterConfiguredConditionType); condition == nil {
+	if condition := redpandaCluster.Status.GetCondition(vectorizedv1alpha1.ClusterConfiguredConditionType); condition == nil {
 		// nil condition means that no change has been detected earlier, but we can't assume that configuration is in sync
 		// because of multiple reasons, for example:
 		// - .bootstrap.yaml may contain invalid/unknown properties
 		// - The PVC may have been recycled from a previously running cluster with a different configuration
 		log.Info("Setting the condition to false until check against admin API")
 		redpandaCluster.Status.SetCondition(
-			redpandav1alpha1.ClusterConfiguredConditionType,
+			vectorizedv1alpha1.ClusterConfiguredConditionType,
 			corev1.ConditionFalse,
-			redpandav1alpha1.ClusterConfiguredReasonUpdating,
+			vectorizedv1alpha1.ClusterConfiguredReasonUpdating,
 			"Verifying configuration using cluster admin API",
 		)
 		if err := r.Status().Update(ctx, redpandaCluster); err != nil {
@@ -282,7 +282,7 @@ func (r *ClusterReconciler) ensureConditionPresent(
 
 func (r *ClusterReconciler) checkCentralizedConfigurationHashChange(
 	ctx context.Context,
-	redpandaCluster *redpandav1alpha1.Cluster,
+	redpandaCluster *vectorizedv1alpha1.Cluster,
 	config *configuration.GlobalConfiguration,
 	schema admin.ConfigSchema,
 	lastAppliedConfiguration map[string]interface{},
@@ -314,10 +314,10 @@ func (r *ClusterReconciler) checkCentralizedConfigurationHashChange(
 
 func (r *ClusterReconciler) synchronizeStatusWithCluster(
 	ctx context.Context,
-	redpandaCluster *redpandav1alpha1.Cluster,
+	redpandaCluster *vectorizedv1alpha1.Cluster,
 	adminAPI adminutils.AdminAPIClient,
 	l logr.Logger,
-) (*redpandav1alpha1.ClusterCondition, error) {
+) (*vectorizedv1alpha1.ClusterCondition, error) {
 	log := l.WithName("synchronizeStatusWithCluster")
 	errorWithContext := newErrorWithContext(redpandaCluster.Namespace, redpandaCluster.Name)
 	// Check status again on the leader using admin API
@@ -355,36 +355,36 @@ func (r *ClusterReconciler) synchronizeStatusWithCluster(
 //nolint:gocritic // I like this if else chain
 func mapStatusToCondition(
 	clusterStatus admin.ConfigStatusResponse,
-) redpandav1alpha1.ClusterCondition {
-	var condition *redpandav1alpha1.ClusterCondition
+) vectorizedv1alpha1.ClusterCondition {
+	var condition *vectorizedv1alpha1.ClusterCondition
 	var configVersion int64 = -1
 	for _, nodeStatus := range clusterStatus {
 		if len(nodeStatus.Invalid) > 0 {
-			condition = &redpandav1alpha1.ClusterCondition{
-				Type:    redpandav1alpha1.ClusterConfiguredConditionType,
+			condition = &vectorizedv1alpha1.ClusterCondition{
+				Type:    vectorizedv1alpha1.ClusterConfiguredConditionType,
 				Status:  corev1.ConditionFalse,
-				Reason:  redpandav1alpha1.ClusterConfiguredReasonError,
+				Reason:  vectorizedv1alpha1.ClusterConfiguredReasonError,
 				Message: fmt.Sprintf("Invalid value provided for properties: %s", strings.Join(nodeStatus.Invalid, ", ")),
 			}
 		} else if len(nodeStatus.Unknown) > 0 {
-			condition = &redpandav1alpha1.ClusterCondition{
-				Type:    redpandav1alpha1.ClusterConfiguredConditionType,
+			condition = &vectorizedv1alpha1.ClusterCondition{
+				Type:    vectorizedv1alpha1.ClusterConfiguredConditionType,
 				Status:  corev1.ConditionFalse,
-				Reason:  redpandav1alpha1.ClusterConfiguredReasonError,
+				Reason:  vectorizedv1alpha1.ClusterConfiguredReasonError,
 				Message: fmt.Sprintf("Unknown properties: %s", strings.Join(nodeStatus.Unknown, ", ")),
 			}
 		} else if nodeStatus.Restart {
-			condition = &redpandav1alpha1.ClusterCondition{
-				Type:    redpandav1alpha1.ClusterConfiguredConditionType,
+			condition = &vectorizedv1alpha1.ClusterCondition{
+				Type:    vectorizedv1alpha1.ClusterConfiguredConditionType,
 				Status:  corev1.ConditionFalse,
-				Reason:  redpandav1alpha1.ClusterConfiguredReasonUpdating,
+				Reason:  vectorizedv1alpha1.ClusterConfiguredReasonUpdating,
 				Message: fmt.Sprintf("Node %d needs restart", nodeStatus.NodeID),
 			}
 		} else if configVersion >= 0 && nodeStatus.ConfigVersion != configVersion {
-			condition = &redpandav1alpha1.ClusterCondition{
-				Type:    redpandav1alpha1.ClusterConfiguredConditionType,
+			condition = &vectorizedv1alpha1.ClusterCondition{
+				Type:    vectorizedv1alpha1.ClusterConfiguredConditionType,
 				Status:  corev1.ConditionFalse,
-				Reason:  redpandav1alpha1.ClusterConfiguredReasonUpdating,
+				Reason:  vectorizedv1alpha1.ClusterConfiguredReasonUpdating,
 				Message: fmt.Sprintf("Not all nodes share the same configuration version: %d / %d", nodeStatus.ConfigVersion, configVersion),
 			}
 		}
@@ -394,8 +394,8 @@ func mapStatusToCondition(
 
 	if condition == nil {
 		// Everything is ok
-		condition = &redpandav1alpha1.ClusterCondition{
-			Type:   redpandav1alpha1.ClusterConfiguredConditionType,
+		condition = &vectorizedv1alpha1.ClusterCondition{
+			Type:   vectorizedv1alpha1.ClusterConfiguredConditionType,
 			Status: corev1.ConditionTrue,
 		}
 	}
@@ -432,14 +432,14 @@ func isSafeToRestart(
 // or returns the same error if not possible.
 func tryMapErrorToCondition(
 	err error,
-) (*redpandav1alpha1.ClusterCondition, error) {
+) (*vectorizedv1alpha1.ClusterCondition, error) {
 	var httpErr *admin.HTTPResponseError
 	if errors.As(err, &httpErr) {
 		if httpErr.Response != nil && httpErr.Response.StatusCode == http.StatusBadRequest {
-			return &redpandav1alpha1.ClusterCondition{
-				Type:    redpandav1alpha1.ClusterConfiguredConditionType,
+			return &vectorizedv1alpha1.ClusterCondition{
+				Type:    vectorizedv1alpha1.ClusterConfiguredConditionType,
 				Status:  corev1.ConditionFalse,
-				Reason:  redpandav1alpha1.ClusterConfiguredReasonError,
+				Reason:  vectorizedv1alpha1.ClusterConfiguredReasonError,
 				Message: string(httpErr.Body),
 			}, nil
 		}

@@ -1,7 +1,7 @@
 apiVersion: redpanda.vectorized.io/v1alpha1
 kind: Cluster
 metadata:
-  name: cluster-tls
+  name: create-topic-with-client-auth
   labels:
     app.kubernetes.io/name: "redpanda"
     app.kubernetes.io/instance: "cluster-tls"

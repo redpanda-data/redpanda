@@ -21,7 +21,7 @@ import (
 	k8sclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
-	redpandav1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
+	vectorizedv1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/vectorized/v1alpha1"
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/labels"
 )
 
@@ -32,14 +32,14 @@ var _ Resource = &PDBResource{}
 type PDBResource struct {
 	k8sclient.Client
 	scheme       *runtime.Scheme
-	pandaCluster *redpandav1alpha1.Cluster
+	pandaCluster *vectorizedv1alpha1.Cluster
 	logger       logr.Logger
 }
 
 // NewPDB creates PDBResource that manages PodDisruptionBudget
 func NewPDB(
 	client k8sclient.Client,
-	pandaCluster *redpandav1alpha1.Cluster,
+	pandaCluster *vectorizedv1alpha1.Cluster,
 	scheme *runtime.Scheme,
 	logger logr.Logger,
 ) *PDBResource {
@@ -47,9 +47,7 @@ func NewPDB(
 		client,
 		scheme,
 		pandaCluster,
-		logger.WithValues(
-			"Kind", pdbKind(),
-		),
+		logger,
 	}
 }
 
@@ -105,9 +103,4 @@ func (r *PDBResource) obj() (k8sclient.Object, error) {
 // Key returns namespace/name object that is used to identify object.
 func (r *PDBResource) Key() types.NamespacedName {
 	return types.NamespacedName{Name: r.pandaCluster.Name, Namespace: r.pandaCluster.Namespace}
-}
-
-func pdbKind() string {
-	var obj policyv1.PodDisruptionBudget
-	return obj.Kind
 }

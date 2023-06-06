@@ -33,6 +33,6 @@ spec:
         - mountPath: /etc/tls/certs/schema-registry
           name: tlscertkey
       restartPolicy: Never
-  backoffLimit: 6
+  backoffLimit: 20
   parallelism: 1
   completions: 1

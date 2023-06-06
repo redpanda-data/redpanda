@@ -1,0 +1,23 @@
+apiVersion: kuttl.dev/v1beta1
+kind: TestStep
+delete:
+  - apiVersion: redpanda.vectorized.io/v1alpha1
+    kind: Cluster
+    name: centralized-configuration-tls
+    namespace: redpanda-system
+  - apiVersion: v1
+    kind: PersistentVolumeClaim
+    name: datadir-centralized-configuration-tls-0
+    namespace: redpanda-system
+  - apiVersion: v1
+    kind: PersistentVolumeClaim
+    name: datadir-centralized-configuration-tls-1
+    namespace: redpanda-system
+  - apiVersion: batch/v1
+    kind: Job
+    name: get-centralized-config-tls-1
+    namespace: redpanda-system
+  - apiVersion: batch/v1
+    kind: Job
+    name: get-centralized-config-tls-2
+    namespace: redpanda-system

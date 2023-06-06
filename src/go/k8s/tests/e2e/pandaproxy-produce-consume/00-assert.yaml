@@ -1,7 +1,7 @@
 apiVersion: redpanda.vectorized.io/v1alpha1
 kind: Cluster
 metadata:
-  name: cluster-proxy
+  name: proxy-test
 status:
   replicas: 1
 
@@ -10,7 +10,7 @@ status:
 apiVersion: v1
 kind: Service
 metadata:
-  name: cluster-proxy
+  name: proxy-test
 spec:
   clusterIP: None
   ports:

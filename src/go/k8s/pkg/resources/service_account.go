@@ -21,7 +21,7 @@ import (
 	k8sclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
-	redpandav1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
+	vectorizedv1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/vectorized/v1alpha1"
 )
 
 var _ Resource = &ServiceAccountResource{}
@@ -31,14 +31,14 @@ var _ Resource = &ServiceAccountResource{}
 type ServiceAccountResource struct {
 	k8sclient.Client
 	scheme       *runtime.Scheme
-	pandaCluster *redpandav1alpha1.Cluster
+	pandaCluster *vectorizedv1alpha1.Cluster
 	logger       logr.Logger
 }
 
 // NewServiceAccount creates ServiceAccountResource
 func NewServiceAccount(
 	client k8sclient.Client,
-	pandaCluster *redpandav1alpha1.Cluster,
+	pandaCluster *vectorizedv1alpha1.Cluster,
 	scheme *runtime.Scheme,
 	logger logr.Logger,
 ) *ServiceAccountResource {
@@ -46,7 +46,7 @@ func NewServiceAccount(
 		client,
 		scheme,
 		pandaCluster,
-		logger.WithValues("Kind", serviceAccountKind()),
+		logger,
 	}
 }
 
@@ -86,9 +86,4 @@ func (s *ServiceAccountResource) obj() (k8sclient.Object, error) {
 // For reference please visit types.NamespacedName docs in k8s.io/apimachinery
 func (s *ServiceAccountResource) Key() types.NamespacedName {
 	return types.NamespacedName{Name: s.pandaCluster.Name, Namespace: s.pandaCluster.Namespace}
-}
-
-func serviceAccountKind() string {
-	var sa corev1.ServiceAccount
-	return sa.Kind
 }

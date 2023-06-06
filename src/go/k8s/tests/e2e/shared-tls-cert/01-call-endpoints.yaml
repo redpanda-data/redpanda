@@ -1,7 +1,7 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: call-endpoints
+  name: call-endpoints-shared-tls
 spec:
   template:
     spec:

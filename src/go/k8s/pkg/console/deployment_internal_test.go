@@ -9,23 +9,23 @@ import (
 	"github.com/stretchr/testify/require"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	redpandav1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
+	vectorizedv1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/vectorized/v1alpha1"
 )
 
 func TestGenEnvVars(t *testing.T) { //nolint:funlen // test table is long
 	kakfaEnableAuth := true
 	table := []struct {
-		consoleSpec    redpandav1alpha1.ConsoleSpec
-		clusterSpec    redpandav1alpha1.ClusterSpec
+		consoleSpec    vectorizedv1alpha1.ConsoleSpec
+		clusterSpec    vectorizedv1alpha1.ClusterSpec
 		expectedEnvars []string
 	}{
 		{
-			consoleSpec: redpandav1alpha1.ConsoleSpec{
-				Cloud: &redpandav1alpha1.CloudConfig{
-					PrometheusEndpoint: &redpandav1alpha1.PrometheusEndpointConfig{
+			consoleSpec: vectorizedv1alpha1.ConsoleSpec{
+				Cloud: &vectorizedv1alpha1.CloudConfig{
+					PrometheusEndpoint: &vectorizedv1alpha1.PrometheusEndpointConfig{
 						Enabled: true,
-						BasicAuth: redpandav1alpha1.BasicAuthConfig{
-							PasswordRef: redpandav1alpha1.SecretKeyRef{
+						BasicAuth: vectorizedv1alpha1.BasicAuthConfig{
+							PasswordRef: vectorizedv1alpha1.SecretKeyRef{
 								Name: "any",
 								Key:  "any",
 							},
@@ -33,10 +33,10 @@ func TestGenEnvVars(t *testing.T) { //nolint:funlen // test table is long
 					},
 				},
 			},
-			clusterSpec: redpandav1alpha1.ClusterSpec{
+			clusterSpec: vectorizedv1alpha1.ClusterSpec{
 				KafkaEnableAuthorization: &kakfaEnableAuth,
-				Configuration: redpandav1alpha1.RedpandaConfig{
-					SchemaRegistry: &redpandav1alpha1.SchemaRegistryAPI{
+				Configuration: vectorizedv1alpha1.RedpandaConfig{
+					SchemaRegistry: &vectorizedv1alpha1.SchemaRegistryAPI{
 						AuthenticationMethod: "http_basic",
 					},
 				},
@@ -48,8 +48,8 @@ func TestGenEnvVars(t *testing.T) { //nolint:funlen // test table is long
 			},
 		},
 		{
-			consoleSpec: redpandav1alpha1.ConsoleSpec{},
-			clusterSpec: redpandav1alpha1.ClusterSpec{
+			consoleSpec: vectorizedv1alpha1.ConsoleSpec{},
+			clusterSpec: vectorizedv1alpha1.ClusterSpec{
 				KafkaEnableAuthorization: &kakfaEnableAuth,
 			},
 			expectedEnvars: []string{
@@ -57,10 +57,10 @@ func TestGenEnvVars(t *testing.T) { //nolint:funlen // test table is long
 			},
 		},
 		{
-			consoleSpec: redpandav1alpha1.ConsoleSpec{},
-			clusterSpec: redpandav1alpha1.ClusterSpec{
-				Configuration: redpandav1alpha1.RedpandaConfig{
-					SchemaRegistry: &redpandav1alpha1.SchemaRegistryAPI{
+			consoleSpec: vectorizedv1alpha1.ConsoleSpec{},
+			clusterSpec: vectorizedv1alpha1.ClusterSpec{
+				Configuration: vectorizedv1alpha1.RedpandaConfig{
+					SchemaRegistry: &vectorizedv1alpha1.SchemaRegistryAPI{
 						AuthenticationMethod: "http_basic",
 					},
 				},
@@ -70,12 +70,12 @@ func TestGenEnvVars(t *testing.T) { //nolint:funlen // test table is long
 			},
 		},
 		{
-			consoleSpec: redpandav1alpha1.ConsoleSpec{
-				Cloud: &redpandav1alpha1.CloudConfig{
-					PrometheusEndpoint: &redpandav1alpha1.PrometheusEndpointConfig{
+			consoleSpec: vectorizedv1alpha1.ConsoleSpec{
+				Cloud: &vectorizedv1alpha1.CloudConfig{
+					PrometheusEndpoint: &vectorizedv1alpha1.PrometheusEndpointConfig{
 						Enabled: true,
-						BasicAuth: redpandav1alpha1.BasicAuthConfig{
-							PasswordRef: redpandav1alpha1.SecretKeyRef{
+						BasicAuth: vectorizedv1alpha1.BasicAuthConfig{
+							PasswordRef: vectorizedv1alpha1.SecretKeyRef{
 								Name: "any",
 								Key:  "any",
 							},
@@ -83,7 +83,7 @@ func TestGenEnvVars(t *testing.T) { //nolint:funlen // test table is long
 					},
 				},
 			},
-			clusterSpec: redpandav1alpha1.ClusterSpec{},
+			clusterSpec: vectorizedv1alpha1.ClusterSpec{},
 			expectedEnvars: []string{
 				prometheusBasicAuthPasswordEnvVar,
 			},
@@ -95,11 +95,11 @@ func TestGenEnvVars(t *testing.T) { //nolint:funlen // test table is long
 		Namespace: "default",
 	}
 	for _, tt := range table {
-		console := &redpandav1alpha1.Console{
+		console := &vectorizedv1alpha1.Console{
 			ObjectMeta: nsn,
 			Spec:       tt.consoleSpec,
 		}
-		cluster := &redpandav1alpha1.Cluster{
+		cluster := &vectorizedv1alpha1.Cluster{
 			ObjectMeta: nsn,
 			Spec:       tt.clusterSpec,
 		}

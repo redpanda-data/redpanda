@@ -1,7 +1,7 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: get-topic-test-untrusted-ca
+  name: get-topic-test-untrusted-ca-pp-ext-mtls
 spec:
   template:
     spec:
@@ -10,7 +10,7 @@ spec:
         secret:
           # The certificate in the secret is NOT signed by the CA updated at Step 06.
           # The client using the certificate will NOT be trusted by the panda proxy.
-          secretName: client-cert
+          secretName: pp-client-cert
       containers:
       - name: rpk
         image: localhost/redpanda:dev

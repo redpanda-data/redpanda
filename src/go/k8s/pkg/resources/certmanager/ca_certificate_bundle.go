@@ -24,7 +24,7 @@ import (
 	k8sclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
-	redpandav1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
+	vectorizedv1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/vectorized/v1alpha1"
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/labels"
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources"
 )
@@ -37,7 +37,7 @@ var _ resources.Resource = &CACertificateBundleResource{}
 type CACertificateBundleResource struct {
 	k8sclient.Client
 	scheme       *runtime.Scheme
-	pandaCluster *redpandav1alpha1.Cluster
+	pandaCluster *vectorizedv1alpha1.Cluster
 	secrets      []*types.NamespacedName
 
 	certBundleSecret *types.NamespacedName
@@ -48,7 +48,7 @@ type CACertificateBundleResource struct {
 func NewCACertificateBundle(
 	client k8sclient.Client,
 	scheme *runtime.Scheme,
-	pandaCluster *redpandav1alpha1.Cluster,
+	pandaCluster *vectorizedv1alpha1.Cluster,
 	secrets []*types.NamespacedName,
 	caCertBundleSecretSuffix string,
 	logger logr.Logger,
@@ -59,7 +59,7 @@ func NewCACertificateBundle(
 		pandaCluster,
 		secrets,
 		&types.NamespacedName{Name: pandaCluster.Name + "-" + caCertBundleSecretSuffix, Namespace: pandaCluster.Namespace},
-		logger.WithValues("Kind", CACertificateBundleKind()),
+		logger,
 	}
 }
 

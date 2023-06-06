@@ -1,7 +1,7 @@
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
-  name: up-img
+  name: up-img-admin-mtls
 status:
   readyReplicas: 3
 
@@ -10,27 +10,11 @@ status:
 apiVersion: v1
 kind: Pod
 metadata:
-  name: up-img-0
+  name: up-img-admin-mtls-0
 spec:
   containers:
   - name: redpanda
     image: "localhost/redpanda:dev"
-    volumeMounts:
-    - mountPath: /etc/redpanda
-      name: config-dir
-    - mountPath: /scripts
-      name: hook-scripts-dir
-    - mountPath: /etc/tls/certs/admin
-      name: tlsadmincert
-    - mountPath: /etc/tls/certs/admin/ca
-      name: tlsadminca
-    - mountPath: /etc/redpanda/.bootstrap.yaml
-      name: configmap-dir
-      subPath: .bootstrap.yaml
-    - mountPath: /var/lib/redpanda/data
-      name: datadir
-    - mountPath: /var/run/secrets/kubernetes.io/serviceaccount
-      readOnly: true
 status:
   phase: "Running"
 
@@ -39,27 +23,11 @@ status:
 apiVersion: v1
 kind: Pod
 metadata:
-  name: up-img-1
+  name: up-img-admin-mtls-1
 spec:
   containers:
   - name: redpanda
     image: "localhost/redpanda:dev"
-    volumeMounts:
-    - mountPath: /etc/redpanda
-      name: config-dir
-    - mountPath: /scripts
-      name: hook-scripts-dir
-    - mountPath: /etc/tls/certs/admin
-      name: tlsadmincert
-    - mountPath: /etc/tls/certs/admin/ca
-      name: tlsadminca
-    - mountPath: /etc/redpanda/.bootstrap.yaml
-      name: configmap-dir
-      subPath: .bootstrap.yaml
-    - mountPath: /var/lib/redpanda/data
-      name: datadir
-    - mountPath: /var/run/secrets/kubernetes.io/serviceaccount
-      readOnly: true
 status:
   phase: "Running"
 
@@ -68,27 +36,11 @@ status:
 apiVersion: v1
 kind: Pod
 metadata:
-  name: up-img-2
+  name: up-img-admin-mtls-2
 spec:
   containers:
   - name: redpanda
     image: "localhost/redpanda:dev"
-    volumeMounts:
-    - mountPath: /etc/redpanda
-      name: config-dir
-    - mountPath: /scripts
-      name: hook-scripts-dir
-    - mountPath: /etc/tls/certs/admin
-      name: tlsadmincert
-    - mountPath: /etc/tls/certs/admin/ca
-      name: tlsadminca
-    - mountPath: /etc/redpanda/.bootstrap.yaml
-      name: configmap-dir
-      subPath: .bootstrap.yaml
-    - mountPath: /var/lib/redpanda/data
-      name: datadir
-    - mountPath: /var/run/secrets/kubernetes.io/serviceaccount
-      readOnly: true
 status:
   phase: "Running"
 
@@ -104,7 +56,7 @@ collectors:
 apiVersion: redpanda.vectorized.io/v1alpha1
 kind: Cluster
 metadata:
-  name: up-img
+  name: up-img-admin-mtls
 status:
   version: "dev"
   readyReplicas: 3

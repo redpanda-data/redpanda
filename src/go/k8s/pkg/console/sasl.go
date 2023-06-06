@@ -16,7 +16,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
-	redpandav1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
+	vectorizedv1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/vectorized/v1alpha1"
 	adminutils "github.com/redpanda-data/redpanda/src/go/k8s/pkg/admin"
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources"
 )
@@ -25,8 +25,8 @@ import (
 type KafkaSA struct {
 	client.Client
 	scheme             *runtime.Scheme
-	consoleobj         *redpandav1alpha1.Console
-	clusterobj         *redpandav1alpha1.Cluster
+	consoleobj         *vectorizedv1alpha1.Console
+	clusterobj         *vectorizedv1alpha1.Cluster
 	clusterDomain      string
 	adminAPI           adminutils.AdminAPIClientFactory
 	superUsersResource *resources.SuperUsersResource
@@ -37,8 +37,8 @@ type KafkaSA struct {
 func NewKafkaSA(
 	cl client.Client,
 	scheme *runtime.Scheme,
-	consoleobj *redpandav1alpha1.Console,
-	clusterobj *redpandav1alpha1.Cluster,
+	consoleobj *vectorizedv1alpha1.Console,
+	clusterobj *vectorizedv1alpha1.Cluster,
 	clusterDomain string,
 	adminAPI adminutils.AdminAPIClientFactory,
 	log logr.Logger,
@@ -72,7 +72,7 @@ type (
 	}
 
 	// KafkaAdminClientFactory returns a KafkaAdminClient
-	KafkaAdminClientFactory func(context.Context, client.Client, *redpandav1alpha1.Cluster, *Store) (KafkaAdminClient, error)
+	KafkaAdminClientFactory func(context.Context, client.Client, *vectorizedv1alpha1.Cluster, *Store) (KafkaAdminClient, error)
 )
 
 // GenerateSASLUsername returns username used for Kafka SASL config
@@ -81,7 +81,7 @@ func GenerateSASLUsername(name string) string {
 }
 
 // KafkaSASecretKey returns the NamespacedName of Kafka SA Secret
-func KafkaSASecretKey(console *redpandav1alpha1.Console) types.NamespacedName {
+func KafkaSASecretKey(console *vectorizedv1alpha1.Console) types.NamespacedName {
 	return types.NamespacedName{Namespace: console.GetNamespace(), Name: fmt.Sprintf("%s-%s", console.GetName(), resources.ConsoleSuffix)}
 }
 
@@ -143,7 +143,7 @@ func (k *KafkaSA) Cleanup(ctx context.Context) error {
 		return nil
 	}
 
-	if exp, err := redpandav1alpha1.FinalizersExpired(k.consoleobj); err != nil {
+	if exp, err := vectorizedv1alpha1.FinalizersExpired(k.consoleobj); err != nil {
 		log.Error(err, "invalid configuration for finalizers timeout")
 	} else if exp {
 		// Just delete the finalizers and forget
@@ -168,8 +168,8 @@ func (k *KafkaSA) Cleanup(ctx context.Context) error {
 type KafkaACL struct {
 	client.Client
 	scheme             *runtime.Scheme
-	consoleobj         *redpandav1alpha1.Console
-	clusterobj         *redpandav1alpha1.Cluster
+	consoleobj         *vectorizedv1alpha1.Console
+	clusterobj         *vectorizedv1alpha1.Cluster
 	kafkaAdmin         KafkaAdminClientFactory
 	store              *Store
 	superUsersResource *resources.SuperUsersResource
@@ -180,8 +180,8 @@ type KafkaACL struct {
 func NewKafkaACL(
 	cl client.Client,
 	scheme *runtime.Scheme,
-	consoleobj *redpandav1alpha1.Console,
-	clusterobj *redpandav1alpha1.Cluster,
+	consoleobj *vectorizedv1alpha1.Console,
+	clusterobj *vectorizedv1alpha1.Cluster,
 	kafkaAdmin KafkaAdminClientFactory,
 	store *Store,
 	log logr.Logger,
@@ -244,7 +244,7 @@ func (k *KafkaACL) Cleanup(ctx context.Context) error {
 		return nil
 	}
 
-	if exp, err := redpandav1alpha1.FinalizersExpired(k.consoleobj); err != nil {
+	if exp, err := vectorizedv1alpha1.FinalizersExpired(k.consoleobj); err != nil {
 		log.Error(err, "invalid configuration for finalizers timeout")
 	} else if exp {
 		// Just delete the finalizers and forget

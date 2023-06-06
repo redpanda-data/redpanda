@@ -21,7 +21,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	k8sclient "sigs.k8s.io/controller-runtime/pkg/client"
 
-	redpandav1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
+	vectorizedv1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/vectorized/v1alpha1"
 )
 
 var _ Resource = &ClusterRoleResource{}
@@ -31,14 +31,14 @@ var _ Resource = &ClusterRoleResource{}
 type ClusterRoleResource struct {
 	k8sclient.Client
 	scheme       *runtime.Scheme
-	pandaCluster *redpandav1alpha1.Cluster
+	pandaCluster *vectorizedv1alpha1.Cluster
 	logger       logr.Logger
 }
 
 // NewClusterRole creates ClusterRoleResource
 func NewClusterRole(
 	client k8sclient.Client,
-	pandaCluster *redpandav1alpha1.Cluster,
+	pandaCluster *vectorizedv1alpha1.Cluster,
 	scheme *runtime.Scheme,
 	logger logr.Logger,
 ) *ClusterRoleResource {
@@ -46,7 +46,7 @@ func NewClusterRole(
 		client,
 		scheme,
 		pandaCluster,
-		logger.WithValues("Kind", clusterRoleKind()),
+		logger,
 	}
 }
 
@@ -97,9 +97,4 @@ func (r *ClusterRoleResource) obj() k8sclient.Object {
 // Note that Namespace can not be set as this is cluster scoped resource
 func (r *ClusterRoleResource) Key() types.NamespacedName {
 	return types.NamespacedName{Name: "redpanda-init-configurator", Namespace: ""}
-}
-
-func clusterRoleKind() string {
-	var r v1.ClusterRole
-	return r.Kind
 }

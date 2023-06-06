@@ -1,7 +1,7 @@
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
-  name: cluster-tls
+  name: create-topic-given-issuer
 status:
   readyReplicas: 1
 
@@ -10,7 +10,7 @@ status:
 apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:
-  name: cluster-tls-redpanda
+  name: create-topic-given-issuer-redpanda
 status:
   conditions:
     - reason: Ready

@@ -1,7 +1,7 @@
 apiVersion: redpanda.vectorized.io/v1alpha1
 kind: Cluster
 metadata:
-  name: cluster-proxy
+  name: proxy-tls-client-auth
 spec:
   image: "localhost/redpanda"
   version: "dev"

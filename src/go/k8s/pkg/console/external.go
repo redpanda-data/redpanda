@@ -13,7 +13,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
-	redpandav1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
+	vectorizedv1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/vectorized/v1alpha1"
 	labels "github.com/redpanda-data/redpanda/src/go/k8s/pkg/labels"
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources"
 )
@@ -22,7 +22,7 @@ import (
 type Service struct {
 	client.Client
 	scheme        *runtime.Scheme
-	consoleobj    *redpandav1alpha1.Console
+	consoleobj    *vectorizedv1alpha1.Console
 	clusterDomain string
 	log           logr.Logger
 }
@@ -31,7 +31,7 @@ type Service struct {
 func NewService(
 	cl client.Client,
 	scheme *runtime.Scheme,
-	consoleobj *redpandav1alpha1.Console,
+	consoleobj *vectorizedv1alpha1.Console,
 	clusterDomain string,
 	log logr.Logger,
 ) *Service {
@@ -97,7 +97,7 @@ func (s *Service) Ensure(ctx context.Context) error {
 		}
 	}
 
-	s.consoleobj.Status.Connectivity = &redpandav1alpha1.Connectivity{
+	s.consoleobj.Status.Connectivity = &vectorizedv1alpha1.Connectivity{
 		Internal: fmt.Sprintf(
 			"%s.%s.svc.%s:%d",
 			obj.GetName(), obj.GetNamespace(),

@@ -40,7 +40,7 @@ import (
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/api/admin"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 
-	redpandav1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
+	vectorizedv1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/vectorized/v1alpha1"
 	adminutils "github.com/redpanda-data/redpanda/src/go/k8s/pkg/admin"
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/labels"
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/networking"
@@ -77,22 +77,23 @@ type ClusterReconciler struct {
 	allowPVCDeletion          bool
 }
 
-//+kubebuilder:rbac:groups=apps,resources=statefulsets,verbs=get;list;watch;create;update;patch;delete
-//+kubebuilder:rbac:groups=cert-manager.io,resources=issuers;certificates;clusterissuers,verbs=create;get;list;watch;patch;delete;update;
-//+kubebuilder:rbac:groups=core,resources=configmaps,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups=apps,namespace=default,resources=statefulsets,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups=cert-manager.io,namespace=default,resources=issuers;certificates,verbs=create;get;list;watch;patch;delete;update;
+//+kubebuilder:rbac:groups=cert-manager.io,resources=clusterissuers,verbs=create;get;list;watch;patch;delete;update;
+//+kubebuilder:rbac:groups=core,namespace=default,resources=configmaps,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=core,resources=nodes,verbs=get;list;watch
-//+kubebuilder:rbac:groups=core,resources=persistentvolumeclaims,verbs=get;list;watch;delete;
-//+kubebuilder:rbac:groups=core,resources=pods,verbs=get;list;watch;update;delete
-//+kubebuilder:rbac:groups=core,resources=pods/finalizers,verbs=update
-//+kubebuilder:rbac:groups=core,resources=secrets,verbs=get;list;watch;create;update;patch;
-//+kubebuilder:rbac:groups=core,resources=serviceaccounts,verbs=get;list;watch;create;update;patch;
-//+kubebuilder:rbac:groups=core,resources=services,verbs=get;list;watch;create;update;patch;
-//+kubebuilder:rbac:groups=networking.k8s.io,resources=ingresses,verbs=create;get;list;watch;patch;delete;update;
-//+kubebuilder:rbac:groups=policy,resources=poddisruptionbudgets,verbs=create;get;list;watch;patch;delete;update;
+//+kubebuilder:rbac:groups=core,namespace=default,resources=persistentvolumeclaims,verbs=get;list;watch;delete;
+//+kubebuilder:rbac:groups=core,namespace=default,resources=pods,verbs=get;list;watch;update;delete
+//+kubebuilder:rbac:groups=core,namespace=default,resources=pods/finalizers,verbs=update
+//+kubebuilder:rbac:groups=core,namespace=default,resources=secrets,verbs=get;list;watch;create;update;patch;
+//+kubebuilder:rbac:groups=core,namespace=default,resources=serviceaccounts,verbs=get;list;watch;create;update;patch;
+//+kubebuilder:rbac:groups=core,namespace=default,resources=services,verbs=get;list;watch;create;update;patch;
+//+kubebuilder:rbac:groups=networking.k8s.io,namespace=default,resources=ingresses,verbs=create;get;list;watch;patch;delete;update;
+//+kubebuilder:rbac:groups=policy,namespace=default,resources=poddisruptionbudgets,verbs=create;get;list;watch;patch;delete;update;
 //+kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=clusterroles;clusterrolebindings,verbs=get;list;watch;create;update;patch;
-//+kubebuilder:rbac:groups=redpanda.vectorized.io,resources=clusters,verbs=get;list;watch;create;update;patch;delete
-//+kubebuilder:rbac:groups=redpanda.vectorized.io,resources=clusters/finalizers,verbs=update
-//+kubebuilder:rbac:groups=redpanda.vectorized.io,resources=clusters/status,verbs=get;update;patch
+//+kubebuilder:rbac:groups=redpanda.vectorized.io,namespace=default,resources=clusters,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups=redpanda.vectorized.io,namespace=default,resources=clusters/finalizers,verbs=update
+//+kubebuilder:rbac:groups=redpanda.vectorized.io,namespace=default,resources=clusters/status,verbs=get;update;patch
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
@@ -112,7 +113,7 @@ func (r *ClusterReconciler) Reconcile(
 	log.Info("Starting reconcile loop")
 	defer log.Info("Finished reconcile loop")
 
-	var redpandaCluster redpandav1alpha1.Cluster
+	var redpandaCluster vectorizedv1alpha1.Cluster
 	crb := resources.NewClusterRoleBinding(r.Client, &redpandaCluster, r.Scheme, log)
 	if err := r.Get(ctx, req.NamespacedName, &redpandaCluster); err != nil {
 		// we'll ignore not-found errors, since they can't be fixed by an immediate
@@ -164,7 +165,7 @@ func (r *ClusterReconciler) Reconcile(
 
 	clusterSvc := resources.NewClusterService(r.Client, &redpandaCluster, r.Scheme, clusterPorts, log)
 	subdomain := ""
-	var ppIngressConfig *redpandav1alpha1.IngressConfig
+	var ppIngressConfig *vectorizedv1alpha1.IngressConfig
 	proxyAPIExternal := redpandaCluster.PandaproxyAPIExternal()
 	if proxyAPIExternal != nil {
 		subdomain = proxyAPIExternal.External.Subdomain
@@ -306,7 +307,7 @@ func (r *ClusterReconciler) Reconcile(
 	}
 
 	if featuregates.CentralizedConfiguration(redpandaCluster.Spec.Version) {
-		if cc := redpandaCluster.Status.GetCondition(redpandav1alpha1.ClusterConfiguredConditionType); cc == nil || cc.Status != corev1.ConditionTrue {
+		if cc := redpandaCluster.Status.GetCondition(vectorizedv1alpha1.ClusterConfiguredConditionType); cc == nil || cc.Status != corev1.ConditionTrue {
 			return ctrl.Result{RequeueAfter: time.Minute * 1}, nil
 		}
 	}
@@ -337,7 +338,7 @@ func (r *ClusterReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	}
 
 	return ctrl.NewControllerManagedBy(mgr).
-		For(&redpandav1alpha1.Cluster{}).
+		For(&vectorizedv1alpha1.Cluster{}).
 		Owns(&appsv1.StatefulSet{}).
 		Owns(&corev1.Service{}).
 		Watches(
@@ -366,7 +367,7 @@ func validateImagePullPolicy(imagePullPolicy corev1.PullPolicy) error {
 
 //nolint:funlen,gocyclo // refactor in the next iteration
 func (r *ClusterReconciler) handlePodFinalizer(
-	ctx context.Context, rp *redpandav1alpha1.Cluster, l logr.Logger,
+	ctx context.Context, rp *vectorizedv1alpha1.Cluster, l logr.Logger,
 ) error {
 	log := l.WithName("handlePodFinalizer")
 	pods, err := r.podList(ctx, rp)
@@ -520,7 +521,7 @@ func (r *ClusterReconciler) setPodFinalizer(
 }
 
 func (r *ClusterReconciler) setPodNodeIDAnnotation(
-	ctx context.Context, rp *redpandav1alpha1.Cluster, l logr.Logger,
+	ctx context.Context, rp *vectorizedv1alpha1.Cluster, l logr.Logger,
 ) error {
 	log := l.WithName("setPodNodeIDAnnotation")
 	log.V(logger.DebugLevel).Info("setting pod node-id annotation")
@@ -569,7 +570,7 @@ func (r *ClusterReconciler) setPodNodeIDAnnotation(
 }
 
 func (r *ClusterReconciler) decommissionBroker(
-	ctx context.Context, rp *redpandav1alpha1.Cluster, nodeID int, l logr.Logger,
+	ctx context.Context, rp *vectorizedv1alpha1.Cluster, nodeID int, l logr.Logger,
 ) error {
 	log := l.WithName("decommissionBroker").WithValues("node-id", nodeID)
 	log.V(logger.DebugLevel).Info("decommission broker")
@@ -597,7 +598,7 @@ func (r *ClusterReconciler) decommissionBroker(
 	return nil
 }
 
-func (r *ClusterReconciler) fetchAdminNodeID(ctx context.Context, rp *redpandav1alpha1.Cluster, pod *corev1.Pod, l logr.Logger) (int32, error) {
+func (r *ClusterReconciler) fetchAdminNodeID(ctx context.Context, rp *vectorizedv1alpha1.Cluster, pod *corev1.Pod, l logr.Logger) (int32, error) {
 	log := l.WithName("fetchAdminNodeID")
 	redpandaPorts := networking.NewRedpandaPorts(rp)
 	headlessPorts := collectHeadlessPorts(redpandaPorts)
@@ -628,7 +629,7 @@ func (r *ClusterReconciler) fetchAdminNodeID(ctx context.Context, rp *redpandav1
 
 func (r *ClusterReconciler) reportStatus(
 	ctx context.Context,
-	redpandaCluster *redpandav1alpha1.Cluster,
+	redpandaCluster *vectorizedv1alpha1.Cluster,
 	sts *resources.StatefulSetResource,
 	internalFQDN string,
 	clusterFQDN string,
@@ -657,8 +658,8 @@ func (r *ClusterReconciler) reportStatus(
 	}
 
 	if nodeList == nil {
-		nodeList = &redpandav1alpha1.NodesList{
-			SchemaRegistry: &redpandav1alpha1.SchemaRegistryStatus{},
+		nodeList = &vectorizedv1alpha1.NodesList{
+			SchemaRegistry: &vectorizedv1alpha1.SchemaRegistryStatus{},
 		}
 	}
 	nodeList.Internal = observedNodesInternal
@@ -674,7 +675,7 @@ func (r *ClusterReconciler) reportStatus(
 	}
 	if statusShouldBeUpdated(&redpandaCluster.Status, nodeList, sts, version, versionErr) {
 		err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
-			var cluster redpandav1alpha1.Cluster
+			var cluster vectorizedv1alpha1.Cluster
 			err := r.Get(ctx, types.NamespacedName{
 				Name:      redpandaCluster.Name,
 				Namespace: redpandaCluster.Namespace,
@@ -705,8 +706,8 @@ func (r *ClusterReconciler) reportStatus(
 }
 
 func statusShouldBeUpdated(
-	status *redpandav1alpha1.ClusterStatus,
-	nodeList *redpandav1alpha1.NodesList,
+	status *vectorizedv1alpha1.ClusterStatus,
+	nodeList *vectorizedv1alpha1.NodesList,
 	sts *resources.StatefulSetResource,
 	newVersion string,
 	versionErr error,
@@ -723,7 +724,7 @@ func statusShouldBeUpdated(
 		(versionErr == nil && status.Version != newVersion)
 }
 
-func (r *ClusterReconciler) podList(ctx context.Context, redpandaCluster *redpandav1alpha1.Cluster) (corev1.PodList, error) {
+func (r *ClusterReconciler) podList(ctx context.Context, redpandaCluster *vectorizedv1alpha1.Cluster) (corev1.PodList, error) {
 	var observedPods corev1.PodList
 
 	err := r.List(ctx, &observedPods, &client.ListOptions{
@@ -794,10 +795,10 @@ func (r *ClusterReconciler) WithAllowPVCDeletion(
 func (r *ClusterReconciler) createExternalNodesList(
 	ctx context.Context,
 	pods []corev1.Pod,
-	pandaCluster *redpandav1alpha1.Cluster,
+	pandaCluster *vectorizedv1alpha1.Cluster,
 	nodePortName types.NamespacedName,
 	bootstrapName types.NamespacedName,
-) (*redpandav1alpha1.NodesList, error) {
+) (*vectorizedv1alpha1.NodesList, error) {
 	externalKafkaListener := pandaCluster.ExternalListener()
 	externalAdminListener := pandaCluster.AdminAPIExternal()
 	externalProxyListener := pandaCluster.PandaproxyAPIExternal()
@@ -819,11 +820,11 @@ func (r *ClusterReconciler) createExternalNodesList(
 	}
 
 	var node corev1.Node
-	result := &redpandav1alpha1.NodesList{
+	result := &vectorizedv1alpha1.NodesList{
 		External:           make([]string, 0, len(pods)),
 		ExternalAdmin:      make([]string, 0, len(pods)),
 		ExternalPandaproxy: make([]string, 0, len(pods)),
-		SchemaRegistry: &redpandav1alpha1.SchemaRegistryStatus{
+		SchemaRegistry: &vectorizedv1alpha1.SchemaRegistryStatus{
 			Internal:        "",
 			External:        "",
 			ExternalNodeIPs: make([]string, 0, len(pods)),
@@ -914,7 +915,7 @@ func (r *ClusterReconciler) createExternalNodesList(
 		if err := r.Get(ctx, bootstrapName, &bootstrapSvc); err != nil {
 			return nil, fmt.Errorf("failed to retrieve bootstrap lb service %s: %w", bootstrapName, err)
 		}
-		result.ExternalBootstrap = &redpandav1alpha1.LoadBalancerStatus{
+		result.ExternalBootstrap = &vectorizedv1alpha1.LoadBalancerStatus{
 			LoadBalancerStatus: bootstrapSvc.Status.LoadBalancer,
 		}
 	}
@@ -922,7 +923,7 @@ func (r *ClusterReconciler) createExternalNodesList(
 }
 
 func (r *ClusterReconciler) handleClusterDeletion(
-	ctx context.Context, redpandaCluster *redpandav1alpha1.Cluster, l logr.Logger,
+	ctx context.Context, redpandaCluster *vectorizedv1alpha1.Cluster, l logr.Logger,
 ) (reconcile.Result, error) {
 	log := l.WithName("handleClusterDeletion")
 	log.V(logger.DebugLevel).Info("handling cluster deletion")
@@ -1032,7 +1033,7 @@ func updateUserOnAdminAPI(ctx context.Context, adminAPI adminutils.AdminAPIClien
 	return err
 }
 
-func needExternalIP(external redpandav1alpha1.ExternalConnectivityConfig) bool {
+func needExternalIP(external vectorizedv1alpha1.ExternalConnectivityConfig) bool {
 	return external.Subdomain == ""
 }
 
@@ -1132,7 +1133,7 @@ func collectLBPorts(
 
 func collectClusterPorts(
 	redpandaPorts *networking.RedpandaPorts,
-	redpandaCluster *redpandav1alpha1.Cluster,
+	redpandaCluster *vectorizedv1alpha1.Cluster,
 ) []resources.NamedServicePort {
 	clusterPorts := []resources.NamedServicePort{}
 	if redpandaPorts.PandaProxy.External != nil {
@@ -1146,10 +1147,10 @@ func collectClusterPorts(
 }
 
 func isRedpandaClusterManaged(
-	l logr.Logger, redpandaCluster *redpandav1alpha1.Cluster,
+	l logr.Logger, redpandaCluster *vectorizedv1alpha1.Cluster,
 ) bool {
 	log := l.WithName("isRedpandaClusterManaged")
-	managedAnnotationKey := redpandav1alpha1.GroupVersion.Group + "/managed"
+	managedAnnotationKey := vectorizedv1alpha1.GroupVersion.Group + "/managed"
 	if managed, exists := redpandaCluster.Annotations[managedAnnotationKey]; exists && managed == "false" {
 		log.Info(fmt.Sprintf("management is disabled; to enable it, change the '%s' annotation to true or remove it",
 			managedAnnotationKey))
@@ -1160,7 +1161,7 @@ func isRedpandaClusterManaged(
 
 func isRedpandaClusterVersionManaged(
 	l logr.Logger,
-	redpandaCluster *redpandav1alpha1.Cluster,
+	redpandaCluster *vectorizedv1alpha1.Cluster,
 	restrictToRedpandaVersion string,
 ) bool {
 	log := l.WithName("isRedpandaClusterVersionManaged").WithValues("restrictToRedpandaVersion", restrictToRedpandaVersion, "cluster spec.version", redpandaCluster.Status.Version)

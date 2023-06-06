@@ -1,7 +1,7 @@
 apiVersion: redpanda.vectorized.io/v1alpha1
 kind: Cluster
 metadata:
-  name: schema-registry-client-external-ca-mtls
+  name: sr-external-ca-mtls
 spec:
   image: "localhost/redpanda"
   version: "dev"
@@ -14,6 +14,9 @@ spec:
       cpu: 1
       memory: 500Mi
   configuration:
+    additionalCommandlineArguments:
+      default-log-level: trace
+      # logger-log-level: "exception=warn:io=warn"
     rpcServer:
       port: 33145
     kafkaApi:
@@ -28,6 +31,6 @@ spec:
         requireClientAuth: true
         clientCACertRef:
           kind: Secret
-          name: ca-cert
+          name: sr-ca-cert
           apiGroup: ""
     developerMode: true

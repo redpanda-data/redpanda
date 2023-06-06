@@ -9,7 +9,7 @@ spec:
         - name: tlsadminca
           secret:
             defaultMode: 420
-            secretName: cluster-tls-admin-api-node
+            secretName: cluster-admin-api-tls-admin-api-node
       containers:
         - name: curl
           image: curlimages/curl:latest
@@ -23,7 +23,7 @@ spec:
             - -c
             - -ex
           args:
-            - curl https://cluster-tls-0.cluster-tls.$POD_NAMESPACE.svc.cluster.local:9644/metrics -v --cacert /etc/tls/certs/admin/ca.crt
+            - curl https://cluster-admin-api-tls-0.cluster-admin-api-tls.$POD_NAMESPACE.svc.cluster.local:9644/metrics -v --cacert /etc/tls/certs/admin/ca.crt
           volumeMounts:
             - mountPath: /etc/tls/certs/admin
               name: tlsadminca

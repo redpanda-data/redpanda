@@ -1,7 +1,7 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: create-test-topic-tls
+  name: create-test-topic-long-name
 spec:
   template:
     spec:
@@ -12,7 +12,7 @@ spec:
             secretName: thisisverylongnamethatishittingthemax40c-redpanda
         - name: rpkconfig
           configMap:
-            name: rpk-config
+            name: rpk-config-subdomain
       containers:
         - name: rpk
           image: localhost/redpanda:dev

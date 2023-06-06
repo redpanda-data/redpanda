@@ -1,7 +1,7 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: retrieve-schema-with-tls
+  name: retrieve-schema-with-tls-rp
 spec:
   template:
     spec:

@@ -1,7 +1,7 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: create-schema
+  name: create-schema-rp
 spec:
   template:
     spec:

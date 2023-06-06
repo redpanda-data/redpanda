@@ -24,7 +24,7 @@ import (
 	k8sclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
-	redpandav1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
+	vectorizedv1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/vectorized/v1alpha1"
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/labels"
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources"
 )
@@ -46,7 +46,7 @@ const (
 type CertificateResource struct {
 	k8sclient.Client
 	scheme         *runtime.Scheme
-	pandaCluster   *redpandav1alpha1.Cluster
+	pandaCluster   *vectorizedv1alpha1.Cluster
 	key            types.NamespacedName
 	issuerRef      *cmetav1.ObjectReference
 	fqdn           []string
@@ -60,7 +60,7 @@ type CertificateResource struct {
 func NewCACertificate(
 	client k8sclient.Client,
 	scheme *runtime.Scheme,
-	pandaCluster *redpandav1alpha1.Cluster,
+	pandaCluster *vectorizedv1alpha1.Cluster,
 	key types.NamespacedName,
 	issuerRef *cmetav1.ObjectReference,
 	commonName CommonName,
@@ -77,7 +77,7 @@ func NewCACertificate(
 		commonName,
 		true,
 		keystoreSecret,
-		logger.WithValues("Kind", certificateKind()),
+		logger,
 	}
 }
 
@@ -85,7 +85,7 @@ func NewCACertificate(
 func NewNodeCertificate(
 	client k8sclient.Client,
 	scheme *runtime.Scheme,
-	pandaCluster *redpandav1alpha1.Cluster,
+	pandaCluster *vectorizedv1alpha1.Cluster,
 	key types.NamespacedName,
 	issuerRef *cmetav1.ObjectReference,
 	fqdn []string,
@@ -111,7 +111,7 @@ func NewNodeCertificate(
 func NewCertificate(
 	client k8sclient.Client,
 	scheme *runtime.Scheme,
-	pandaCluster *redpandav1alpha1.Cluster,
+	pandaCluster *vectorizedv1alpha1.Cluster,
 	key types.NamespacedName,
 	issuerRef *cmetav1.ObjectReference,
 	commonName CommonName,
@@ -129,7 +129,7 @@ func NewCertificate(
 		commonName,
 		isCA,
 		keystoreSecret,
-		logger.WithValues("Kind", certificateKind()),
+		logger,
 	}
 }
 
