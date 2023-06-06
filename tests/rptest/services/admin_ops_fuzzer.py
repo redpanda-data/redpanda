@@ -133,15 +133,21 @@ class DeleteTopicOperation(Operation):
         if self.topic is None:
             return False
         ctx.redpanda.logger.info(f"Validating topic {self.topic} deletion")
-
+        try:
+            brokers = ctx.admin().get_brokers()
+        except:
+            return False
         # since metadata in Redpanda and Kafka are eventually consistent
         # we must check all the nodes before proceeding
-        for n in ctx.redpanda.started_nodes():
+        for b in brokers:
+            n = ctx.redpanda.get_node_by_id(b["node_id"])
+            if n not in ctx.redpanda.started_nodes():
+                continue
             # we will check does topic_table contain any info about our topic and partition 0. If not we can assume that topic was deleted
             try:
-                info = ctx.admin().get_partitions(node=n,
-                                                  topic=self.topic,
-                                                  partition=0)
+                ctx.admin().get_partitions(node=n,
+                                           topic=self.topic,
+                                           partition=0)
                 ctx.redpanda.logger.info(
                     f"found deleted topic {self.topic} on node {n.account.hostname}"
                 )
@@ -227,7 +233,14 @@ class AddPartitionsOperation(Operation):
     def _current_partition_count(self, ctx):
 
         per_node_count = set()
-        for n in ctx.redpanda.started_nodes():
+        try:
+            brokers = ctx.admin().get_brokers()
+        except:
+            return None
+        for b in brokers:
+            n = ctx.redpanda.get_node_by_id(b['node_id'])
+            if n not in ctx.redpanda.started_nodes():
+                continue
             node_version = int_tuple(
                 VERSION_RE.findall(ctx.redpanda.get_version(n))[0])
             # do not query nodes with redpanda version prior to v23.1.x
