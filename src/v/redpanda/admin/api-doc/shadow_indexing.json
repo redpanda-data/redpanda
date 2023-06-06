@@ -117,6 +117,53 @@
           ]
         }
       ]
+    },
+    {
+      "path": "/v1/cloud_storage/lifecycle",
+      "operations": [
+        {
+          "method": "GET",
+          "summary": "Get lifecycle markers for topics pending deletion",
+          "operationId": "get_cloud_storage_lifecycle",
+          "nickname": "get_cloud_storage_lifecycle",
+          "type": "get_lifecycle_response",
+          "parameters": [],
+          "produces": [
+            "application/json"
+          ],
+          "responseMessages": [
+            {
+              "code": 200,
+              "message": "Success"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "path": "/v1/cloud_storage/lifecycle/{topic}/{revision}",
+      "operations": [
+        {
+          "method": "DELETE",
+          "summary": "Forcibly drop a lifecycle marker for a topic, this may leave data behind in the tiered storage bucket",
+          "operationId": "delete_cloud_storage_lifecycle",
+          "nickname": "delete_cloud_storage_lifecycle",
+          "parameters": [
+            {
+              "name": "topic",
+              "in": "path",
+              "required": true,
+              "type": "string"
+            },
+            {
+              "name": "revision",
+              "in": "path",
+              "required": true,
+              "type": "integer"
+            }
+          ]
+        }
+      ]
     }
   ],
   "models": {
@@ -244,6 +291,34 @@
             "type": "long",
             "nullable": true,
             "description": "The last Kafka offset accessible locally (inclusive)"
+        }
+      }
+    },
+    "lifecycle_marker": {
+      "id": "lifecycle_marker",
+      "description": "Lifecycle status of a topic (e.g. during deletion)",
+      "properties": {
+        "ns": {
+          "type": "string"
+        },
+        "topic": {
+          "type": "string"
+        },
+        "revision_id": {
+          "type": "long"
+        },
+        "status": {
+          "type": "string"
+        }
+      }
+    },
+    "get_lifecycle_response": {
+      "id": "get_lifecycle_response",
+      "description": "Response body of GET to the cloud_storage/lifecycle endpoint",
+      "properties": {
+        "markers": {
+          "type": "array",
+          "items": {"type":  "lifecycle_marker"}
         }
       }
     }

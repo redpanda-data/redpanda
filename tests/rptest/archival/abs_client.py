@@ -155,10 +155,11 @@ class ABSClient:
 
     def list_objects(self,
                      bucket: str,
-                     topic: Optional[str] = None) -> Iterator[ObjectMetadata]:
+                     topic: Optional[str] = None,
+                     prefix: Optional[str] = None) -> Iterator[ObjectMetadata]:
         container_client = ContainerClient.from_connection_string(
             self.conn_str, container_name=bucket)
-        for blob_props in container_client.list_blobs():
+        for blob_props in container_client.list_blobs(name_starts_with=prefix):
             if topic is not None and key_to_topic(blob_props.name) != topic:
                 self.logger.debug(f"Skip {blob_props.name} for {topic}")
                 continue

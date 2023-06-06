@@ -16,34 +16,31 @@ class RpStorageTool:
     def __init__(self, logger):
         self.logger = logger
 
-    def decode_partition_manifest(self, binary_data, logger) -> dict:
+    def _decode(self, binary_data, command):
         # Decode to JSON using external tool
         with tempfile.NamedTemporaryFile(mode='wb') as tmp:
             tmp.write(binary_data)
             tmp.flush()
-            cmd = [
-                "rp-storage-tool", "decode-partition-manifest",
-                f"--path={tmp.name}"
-            ]
+            cmd = ["rp-storage-tool", command, f"--path={tmp.name}"]
             self.logger.debug(
-                f"Decoding {len(binary_data)} byte binary manifest: {cmd}")
+                f"Decoding {len(binary_data)} byte binary: {cmd}")
             p = subprocess.run(cmd, capture_output=True)
             if p.returncode != 0:
                 self.logger.error(p.stderr)
                 self.logger.error(f"Binary at: {tmp.name}")
-
-                # XXX TODO
-                import time
-                time.sleep(3600)
-
-                raise RuntimeError(f"Manifest decode failed: {p.stderr}")
+                raise RuntimeError(f"{command} failed: {p.stderr}")
             else:
                 json_bytes = p.stdout
                 try:
                     return json.loads(json_bytes)
                 except Exception as e:
                     self.logger.error(
-                        f"Error loading JSON decoded from binary manifest: {e}"
-                    )
+                        f"Error loading JSON decoded with {command}: {e}")
                     self.logger.error(f"Decoded json: {json_bytes}")
                     raise
+
+    def decode_partition_manifest(self, binary_data) -> dict:
+        return self._decode(binary_data, "decode-partition-manifest")
+
+    def decode_lifecycle_marker(self, binary_data) -> dict:
+        return self._decode(binary_data, "decode-lifecycle-marker")

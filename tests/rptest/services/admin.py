@@ -417,6 +417,18 @@ class Admin:
     def get_features(self, node=None):
         return self._request("GET", "features", node=node).json()
 
+    def get_cloud_storage_lifecycle_markers(self, node=None):
+        return self._request("GET", "cloud_storage/lifecycle",
+                             node=node).json()
+
+    def delete_cloud_storage_lifecycle_marker(self,
+                                              topic,
+                                              revision,
+                                              node=None):
+        return self._request("DELETE",
+                             f"cloud_storage/lifecycle/{topic}/{revision}",
+                             node=node)
+
     def supports_feature(self, feature_name: str, nodes=None):
         """
         Returns true whether all nodes in 'nodes' support the given feature. If

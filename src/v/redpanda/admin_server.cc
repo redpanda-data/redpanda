@@ -4678,6 +4678,61 @@ admin_server::get_partition_cloud_storage_status(
     co_return map_status_to_json(*status);
 }
 
+ss::future<ss::json::json_return_type>
+admin_server::get_cloud_storage_lifecycle(
+  std::unique_ptr<ss::http::request> req) {
+    ss::httpd::shadow_indexing_json::get_lifecycle_response response;
+
+    auto& topic_table = _controller->get_topics_state().local();
+
+    cluster::topic_table::lifecycle_markers_t markers
+      = topic_table.get_lifecycle_markers();
+
+    // Hack: persuade json response to always include the field even if empty
+    response.markers._set = true;
+
+    for (auto [nt_revision, marker] : markers) {
+        ss::httpd::shadow_indexing_json::lifecycle_marker item;
+        item.ns = nt_revision.nt.ns;
+        item.topic = nt_revision.nt.tp;
+        item.revision_id = nt_revision.initial_revision_id;
+
+        // At time of writing, a lifecycle marker's existence implicitly means
+        // it is in a purging state.  In future this will change, e.g. when we
+        // use lifecycle markers to track offloaded topics that were deleted
+        // with remote.delete=false
+        item.status = "purging";
+
+        response.markers.push(item);
+    }
+
+    co_return response;
+}
+
+ss::future<ss::json::json_return_type>
+admin_server::delete_cloud_storage_lifecycle(
+  std::unique_ptr<ss::http::request> req) {
+    auto topic = model::topic(req->param["topic"]);
+
+    model::initial_revision_id revision;
+    try {
+        revision = model::initial_revision_id(
+          std::stoi(req->param["revision"]));
+    } catch (...) {
+        throw ss::httpd::bad_param_exception(fmt::format(
+          "Revision id must be an integer: {}", req->param["revision"]));
+    }
+
+    auto& tp_frontend = _controller->get_topics_frontend();
+    cluster::nt_revision ntr{
+      .nt = model::topic_namespace(model::kafka_namespace, model::topic{topic}),
+      .initial_revision_id = revision};
+    auto r = co_await tp_frontend.local().purged_topic(ntr, 5s);
+    co_await throw_on_error(*req, r.ec, model::controller_ntp);
+
+    co_return ss::json::json_return_type(ss::json::json_void());
+}
+
 ss::future<std::unique_ptr<ss::http::reply>> admin_server::get_manifest(
   std::unique_ptr<ss::http::request> req,
   std::unique_ptr<ss::http::reply> rep) {
@@ -4764,6 +4819,16 @@ void admin_server::register_shadow_indexing_routes() {
       ss::httpd::shadow_indexing_json::get_partition_cloud_storage_status,
       [this](auto req) {
           return get_partition_cloud_storage_status(std::move(req));
+      });
+
+    register_route<user>(
+      ss::httpd::shadow_indexing_json::get_cloud_storage_lifecycle,
+      [this](auto req) { return get_cloud_storage_lifecycle(std::move(req)); });
+
+    register_route<user>(
+      ss::httpd::shadow_indexing_json::delete_cloud_storage_lifecycle,
+      [this](auto req) {
+          return delete_cloud_storage_lifecycle(std::move(req));
       });
 
     register_route_raw_async<user>(

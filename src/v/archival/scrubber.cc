@@ -11,6 +11,7 @@
 #include "archival/scrubber.h"
 
 #include "archival/logger.h"
+#include "cloud_storage/lifecycle_marker.h"
 #include "cloud_storage/partition_manifest.h"
 #include "cloud_storage/remote.h"
 #include "cloud_storage/remote_partition.h"
@@ -245,6 +246,23 @@ scrubber::run(retry_chain_node& parent_rtc, run_quota_t quota) {
               marker.config.partition_count);
             auto& topic_config = marker.config;
 
+            // Persist a record that we have started purging: this is useful for
+            // anything reading from the bucket that wants to distinguish
+            // corruption from in-progress deletion.
+            auto marker_r = co_await write_remote_lifecycle_marker(
+              nt_revision,
+              bucket,
+              cloud_storage::lifecycle_status::purging,
+              parent_rtc);
+            if (marker_r != cloud_storage::upload_result::success) {
+                vlog(
+                  archival_log.warn,
+                  "Failed to write lifecycle marker, not purging {}",
+                  nt_revision);
+                result.status = run_status::failed;
+                co_return result;
+            }
+
             for (model::partition_id i = model::partition_id{0};
                  i < marker.config.partition_count;
                  ++i) {
@@ -306,6 +324,25 @@ scrubber::run(retry_chain_node& parent_rtc, run_quota_t quota) {
                 co_return result;
             }
 
+            // Before purging the topic from the controller, write a permanent
+            // lifecycle marker to object storage, enabling readers to
+            // unambiguously understand that this topic is gone due to an
+            // intentional deletion, and that any stray objects belonging to
+            // this topic may be purged.
+            marker_r = co_await write_remote_lifecycle_marker(
+              nt_revision,
+              bucket,
+              cloud_storage::lifecycle_status::purged,
+              parent_rtc);
+            if (marker_r != cloud_storage::upload_result::success) {
+                vlog(
+                  archival_log.warn,
+                  "Failed to write lifecycle marker, not purging {}",
+                  nt_revision);
+                result.status = run_status::failed;
+                co_return result;
+            }
+
             // All topic-specific bucket contents are gone, we may erase
             // our controller tombstone.
             auto purge_result = co_await _topics_frontend.local().purged_topic(
@@ -326,6 +363,30 @@ scrubber::run(retry_chain_node& parent_rtc, run_quota_t quota) {
     }
 
     co_return result;
+}
+
+ss::future<cloud_storage::upload_result>
+scrubber::write_remote_lifecycle_marker(
+  const cluster::nt_revision& nt_revision,
+  cloud_storage_clients::bucket_name& bucket,
+  cloud_storage::lifecycle_status status,
+  retry_chain_node& parent_rtc) {
+    retry_chain_node marker_rtc(5s, 1s, &parent_rtc);
+    cloud_storage::remote_nt_lifecycle_marker remote_marker{
+      .cluster_id = config::shard_local_cfg().cluster_id().value_or(""),
+      .topic = nt_revision,
+      .status = cloud_storage::lifecycle_status::purged,
+    };
+    auto marker_key = remote_marker.get_key();
+
+    co_return co_await _api.upload_object(
+      bucket,
+      marker_key,
+      serde::to_iobuf(std::move(remote_marker)),
+      marker_rtc,
+      _api.make_lifecycle_marker_tags(
+        nt_revision.nt.ns, nt_revision.nt.tp, nt_revision.initial_revision_id),
+      "remote_lifecycle_marker");
 }
 
 ss::future<> scrubber::stop() {

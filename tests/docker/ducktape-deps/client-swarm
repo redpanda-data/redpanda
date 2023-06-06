@@ -15,7 +15,7 @@ rm -rf client-swarm
 
 git clone https://github.com/jcsp/segment_toy.git
 pushd segment_toy
-git reset --hard 830a4de9ac5f1c40a52fb4fc68b91996e9e6a86c
+git reset --hard b101a31927d48e513bec21ad500c048c91e7c192
 cargo build --release
 cp target/release/rp-storage-tool /usr/local/bin
 popd

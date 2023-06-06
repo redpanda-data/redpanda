@@ -10,6 +10,7 @@
 
 #include "archival/types.h"
 #include "cloud_storage/fwd.h"
+#include "cloud_storage/lifecycle_marker.h"
 #include "cluster/fwd.h"
 #include "cluster/types.h"
 
@@ -73,6 +74,12 @@ private:
         uint32_t self;
         uint32_t total;
     };
+
+    ss::future<cloud_storage::upload_result> write_remote_lifecycle_marker(
+      const cluster::nt_revision&,
+      cloud_storage_clients::bucket_name& bucket,
+      cloud_storage::lifecycle_status status,
+      retry_chain_node& parent_rtc);
 
     /// Find our index out of all shards in the cluster
     global_position get_global_position();
