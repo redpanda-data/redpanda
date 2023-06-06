@@ -34,6 +34,7 @@ redpanda section of your redpanda.yaml.
 		newCreateUserCommand(fs, p),
 		newDeleteUserCommand(fs, p),
 		newListUsersCommand(fs, p),
+		newUpdateCommand(fs, p),
 	)
 	return cmd
 }

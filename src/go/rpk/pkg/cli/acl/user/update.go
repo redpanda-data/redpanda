@@ -1,0 +1,47 @@
+// Copyright 2023 Redpanda Data, Inc.
+//
+// Use of this software is governed by the Business Source License
+// included in the file licenses/BSL.md
+//
+// As of the Change Date specified in that file, in accordance with
+// the Business Source License, use of this software will be governed
+// by the Apache License, Version 2.0
+
+package user
+
+import (
+	"strings"
+
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/api/admin"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/out"
+	"github.com/spf13/afero"
+	"github.com/spf13/cobra"
+)
+
+func newUpdateCommand(fs afero.Fs, p *config.Params) *cobra.Command {
+	var newPass, mechanism string
+	cmd := &cobra.Command{
+		Use:   "update [USER] --new-password [PW]",
+		Short: "Update SASL user credentials",
+		Args:  cobra.ExactArgs(1),
+		Run: func(cmd *cobra.Command, args []string) {
+			p, err := p.LoadVirtualProfile(fs)
+			out.MaybeDie(err, "unable to load config: %v", err)
+
+			cl, err := admin.NewClient(fs, p)
+			out.MaybeDie(err, "unable to initialize admin client: %v", err)
+
+			user := args[0]
+			err = cl.UpdateUser(cmd.Context(), user, newPass, strings.ToUpper(mechanism))
+			out.MaybeDie(err, "unable to update the client credentials for user %q: %v", user, err)
+			out.Exit("Updated user %q successfully.", user)
+		},
+	}
+
+	cmd.Flags().StringVar(&newPass, "new-password", "", "New user's password.")
+	cmd.Flags().StringVar(&mechanism, "mechanism", admin.ScramSha256, "SASL mechanism to use for the user you are creating (scram-sha-256, scram-sha-512, case insensitive); not to be confused with the global flag --sasl-mechanism which is used for authenticating the rpk client")
+	cmd.MarkFlagRequired("new-password")
+
+	return cmd
+}
