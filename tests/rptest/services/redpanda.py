@@ -1818,7 +1818,16 @@ class RedpandaService(RedpandaServiceBase):
                             omit_seeds_on_idx_one=omit_seeds_on_idx_one,
                             override_cfg_params=node_overrides)
 
-        self._for_nodes(to_start, start_one, parallel=parallel)
+        try:
+            self._for_nodes(to_start, start_one, parallel=parallel)
+        except TimeoutError as e:
+            if expect_fail:
+                raise e
+            if "failed to start within" in str(e):
+                self.logger.debug(
+                    f"Checking for crashes after start-up error: {e}")
+                self.raise_on_crash()
+            raise e
 
         if expect_fail:
             # If we got here without an exception, it means we failed as expected
