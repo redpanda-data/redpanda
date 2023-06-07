@@ -18,6 +18,14 @@ import paramiko.channel
 
 
 class KcatConsumer(BackgroundThreadService):
+    """
+    kcat based standalone consumer service
+
+    A standalone kcat consumer allows to run consumers in dedicated nodes,
+    which is a desired layout for the tests that involve high throughput cases.
+    It is easier to manage that to spawn an instance of ducktape in a separate
+    node and still communicate to it via ssh.
+    """
     class OffsetMeta(Enum):
         beginning = "beginning"
         end = "end"
@@ -35,6 +43,15 @@ class KcatConsumer(BackgroundThreadService):
                  cgroup_name: Optional[str] = None,
                  auto_commit_interval_ms: Optional[int] = None,
                  caption: Optional[str] = None):
+        """
+        offset : int or OffsetMeta or None
+            The offset to start consuming from. Must be None if first_timestamp
+            is specified.
+        first_timestamp : int, optional
+            The timestamp to start consuming at. Must be None if offset is
+            specified.
+        """
+
         super(KcatConsumer, self).__init__(context, num_nodes=1)
         self._stopping = threading.Event()
         self._pid = None
@@ -52,12 +69,14 @@ class KcatConsumer(BackgroundThreadService):
 
         self._cmd = ["kcat", "-b", self._redpanda.brokers()]
         trailopts = ["-J"]
+
         if cgroup_name is None:
             self._cmd += ["-C", "-t", f"{topic}"]
         else:
             assert partition is None, "Partition argument is not used in high-level consumer mode"
             self._cmd += ["-G", cgroup_name]
             trailopts += [topic]
+
         if auto_commit_interval_ms is None:
             self._cmd += ["-X", "enable.auto.commit=false"]
         else:
@@ -65,11 +84,13 @@ class KcatConsumer(BackgroundThreadService):
                 "-X", "enable.auto.commit=true", "-X",
                 f"auto.commit.interval.ms={auto_commit_interval_ms}"
             ]
+
         if partition:
             self._cmd += ["-p", f"{partition}"]
         assert (offset is
                 None) or (first_timestamp is
                           None), "Cannot specify both offset and timestamp"
+
         if offset is not None:
             # <value>  (absolute offset)
             if isinstance(offset, int):
@@ -78,11 +99,13 @@ class KcatConsumer(BackgroundThreadService):
                 self._cmd += ["-o", offset.value]
             else:
                 assert False, "Offset must be an integer or an OffsetMeta"
+
         if first_timestamp is not None:
             # s@<value> (timestamp in ms to start at)
             self._cmd += ["-o", f"s@{first_timestamp}"]
         if num_msgs is not None:
             self._cmd += ["-c", f"{num_msgs}"]
+
         if getattr(self._redpanda, "sasl_enabled", lambda: False)():
             cfg = self._redpanda.security_config()
             cmd += [
@@ -96,6 +119,7 @@ class KcatConsumer(BackgroundThreadService):
                     "-X", "sasl.kerberos.service.name=redpanda",
                     '-Xsasl.kerberos.kinit.cmd=kinit client -t /var/lib/redpanda/client.keytab'
                 ]
+
         self._cmd += trailopts
 
     class SSHCapturedPipes:
