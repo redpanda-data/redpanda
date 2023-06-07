@@ -878,14 +878,13 @@ def decode_record(batch, record, bin_dump: bool):
 
 
 class ControllerLog:
-    def __init__(self, ntp):
+    def __init__(self, ntp, bin_dump: bool):
         self.ntp = ntp
-        self.records = []
+        self.bin_dump = bin_dump
 
-    def decode(self, bin_dump: bool):
+    def __iter__(self):
         for path in self.ntp.segments:
             s = Segment(path)
             for b in s:
                 for r in b:
-                    dec = decode_record(b, r, bin_dump)
-                    self.records.append(decode_record(b, r, bin_dump))
+                    yield decode_record(b, r, self.bin_dump)
