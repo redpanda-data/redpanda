@@ -28,66 +28,28 @@ namespace storage {
  */
 class node {
 public:
+    using notification_id = named_type<int32_t, struct notification_id_t>;
+    using disk_cb_t
+      = ss::noncopyable_function<void(uint64_t, uint64_t, disk_space_alert)>;
+
     enum class disk_type : uint8_t {
         data = 0,
         cache = 1,
     };
 
-    ss::future<> start() {
-        _probe.setup_node_metrics();
-        return ss::now();
-    }
-
-    ss::future<> stop() { return ss::now(); }
-
-    using notification_id = named_type<int32_t, struct notification_id_t>;
-    using disk_cb_t
-      = ss::noncopyable_function<void(uint64_t, uint64_t, disk_space_alert)>;
+    ss::future<> start();
+    ss::future<> stop();
 
     void set_disk_metrics(
       disk_type t,
       uint64_t total_bytes,
       uint64_t free_bytes,
-      disk_space_alert alert) {
-        if (t == disk_type::data) {
-            _data_watchers.notify(
-              uint64_t(total_bytes), uint64_t(free_bytes), alert);
-        } else if (t == disk_type::cache) {
-            _cache_watchers.notify(
-              uint64_t(total_bytes), uint64_t(free_bytes), alert);
-        }
-        _probe.set_disk_metrics(total_bytes, free_bytes, alert);
-    }
+      disk_space_alert alert);
 
-    const storage::disk_metrics& get_disk_metrics() const {
-        return _probe.get_disk_metrics();
-    };
+    const storage::disk_metrics& get_disk_metrics() const;
 
-    notification_id register_disk_notification(disk_type t, disk_cb_t cb) {
-        if (t == disk_type::data) {
-            return _data_watchers.register_cb(std::move(cb));
-        } else if (t == disk_type::cache) {
-            return _cache_watchers.register_cb(std::move(cb));
-        } else {
-            vassert(
-              false,
-              "Unknown disk type {}",
-              static_cast<std::underlying_type<disk_type>::type>(t));
-        }
-    }
-
-    void unregister_disk_notification(disk_type t, notification_id id) {
-        if (t == disk_type::data) {
-            return _data_watchers.unregister_cb(id);
-        } else if (t == disk_type::cache) {
-            return _cache_watchers.unregister_cb(id);
-        } else {
-            vassert(
-              false,
-              "Unknown disk type {}",
-              static_cast<std::underlying_type<disk_type>::type>(t));
-        }
-    }
+    notification_id register_disk_notification(disk_type t, disk_cb_t cb);
+    void unregister_disk_notification(disk_type t, notification_id id);
 
 private:
     storage::node_probe _probe;
