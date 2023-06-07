@@ -5,6 +5,7 @@
 !tests/python
 !tests/go
 !tools/offline_log_viewer
+!tools/rp_storage_tool
 !tools/consumer_offsets_recovery
 !tests/docker/ducktape-deps/
 !tests/rptest/remote_scripts
