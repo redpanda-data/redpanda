@@ -242,9 +242,7 @@ public:
         return _conn->server().controller_api();
     }
 
-    const replica_selector& replica_selector() const {
-        return _conn->server().get_replica_selector();
-    }
+    ss::sharded<server>& server() { return _conn->server().container(); }
 
 private:
     template<typename ResponseType>

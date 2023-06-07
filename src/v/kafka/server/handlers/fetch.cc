@@ -31,6 +31,7 @@
 #include "model/timeout_clock.h"
 #include "random/generators.h"
 #include "resource_mgmt/io_priority.h"
+#include "ssx/semaphore.h"
 #include "storage/parser_utils.h"
 #include "utils/to_string.h"
 
@@ -142,6 +143,100 @@ static ss::future<read_result> read_from_partition(
       std::move(aborted_transactions));
 }
 
+read_result::memory_units_t::~memory_units_t() noexcept {
+    if (shard == ss::this_shard_id()) {
+        return;
+    }
+    auto f = ss::smp::submit_to(
+      shard, [uk = std::move(kafka), uf = std::move(fetch)]() mutable noexcept {
+          uk.return_all();
+          uf.return_all();
+      });
+    if (!f.available()) {
+        ss::engine().run_in_background(std::move(f));
+    }
+}
+
+/**
+ * Consume proper amounts of units from memory semaphores and return them as
+ * semaphore_units. Fetch semaphore units returned are the indication of
+ * available resources: if none, there is no memory for the operation;
+ * if less than \p max_bytes, the fetch should be capped to that size.
+ *
+ * \param max_bytes The limit of how much data is going to be fetched
+ * \param obligatory_batch_read Set to true for the first ntp in the fetch
+ *   fetch request, at least one batch must be fetched for that ntp. Also it
+ *   is assumed that a batch size has already been consumed from kafka
+ *   memory semaphore for it.
+ */
+static read_result::memory_units_t reserve_memory_units(
+  ssx::semaphore& memory_sem,
+  ssx::semaphore& memory_fetch_sem,
+  const size_t max_bytes,
+  const bool obligatory_batch_read) {
+    read_result::memory_units_t memory_units;
+    const size_t memory_kafka_now = memory_sem.current();
+    const size_t memory_fetch = memory_fetch_sem.current();
+    const size_t batch_size_estimate
+      = config::shard_local_cfg().kafka_memory_batch_size_estimate_for_fetch();
+
+    if (obligatory_batch_read) {
+        // cap what we want at what we have, but no further down than a single
+        // batch size - with \ref obligatory_batch_read, it must be fetched
+        // regardless
+        const size_t fetch_size = std::max(
+          batch_size_estimate,
+          std::min({max_bytes, memory_kafka_now, memory_fetch}));
+        memory_units.fetch = ss::consume_units(memory_fetch_sem, fetch_size);
+        memory_units.kafka = ss::consume_units(memory_sem, fetch_size);
+    } else {
+        // max_bytes is how much we prepare to read from this ntp, but no less
+        // than one full batch
+        const size_t requested_fetch_size = std::max(
+          max_bytes, batch_size_estimate);
+        // cap what we want at what we have
+        const size_t fetch_size = std::min(
+          {requested_fetch_size, memory_kafka_now, memory_fetch});
+        // only reserve memory if we have space for at least one batch,
+        // otherwise this ntp will be skipped
+        if (fetch_size >= batch_size_estimate) {
+            memory_units.fetch = ss::consume_units(
+              memory_fetch_sem, fetch_size);
+            memory_units.kafka = ss::consume_units(memory_sem, fetch_size);
+        }
+    }
+
+    return memory_units;
+}
+
+/**
+ * Make the \p units hold exactly \p target_bytes, by consuming more units
+ * from \p sem or by returning extra units back.
+ */
+static void adjust_semaphore_units(
+  ssx::semaphore& sem, ssx::semaphore_units& units, const size_t target_bytes) {
+    if (target_bytes < units.count()) {
+        units.return_units(units.count() - target_bytes);
+    }
+    if (target_bytes > units.count()) {
+        units.adopt(ss::consume_units(sem, target_bytes - units.count()));
+    }
+}
+
+/**
+ * Memory units have been reserved before the read op based on an estimation.
+ * Now when we know how much data has actually been read, return any extra
+ * amount.
+ */
+static void adjust_memory_units(
+  ssx::semaphore& memory_sem,
+  ssx::semaphore& memory_fetch_sem,
+  read_result::memory_units_t& memory_units,
+  const size_t read_bytes) {
+    adjust_semaphore_units(memory_sem, memory_units.kafka, read_bytes);
+    adjust_semaphore_units(memory_fetch_sem, memory_units.fetch, read_bytes);
+}
+
 /**
  * Entry point for reading from an ntp. This is executed on NTP home core and
  * build error responses if anything goes wrong.
@@ -151,7 +246,25 @@ static ss::future<read_result> do_read_from_ntp(
   const replica_selector& replica_selector,
   ntp_fetch_config ntp_config,
   bool foreign_read,
-  std::optional<model::timeout_clock::time_point> deadline) {
+  std::optional<model::timeout_clock::time_point> deadline,
+  const bool obligatory_batch_read,
+  ssx::semaphore& memory_sem,
+  ssx::semaphore& memory_fetch_sem) {
+    // control available memory
+    read_result::memory_units_t memory_units;
+    if (!ntp_config.cfg.skip_read) {
+        memory_units = reserve_memory_units(
+          memory_sem,
+          memory_fetch_sem,
+          ntp_config.cfg.max_bytes,
+          obligatory_batch_read);
+        if (!memory_units.fetch) {
+            ntp_config.cfg.skip_read = true;
+        } else if (ntp_config.cfg.max_bytes > memory_units.fetch.count()) {
+            ntp_config.cfg.max_bytes = memory_units.fetch.count();
+        }
+    }
+
     /*
      * lookup the ntp's partition
      */
@@ -235,9 +348,16 @@ static ss::future<read_result> do_read_from_ntp(
               preferred_replica);
         }
     }
-    co_return co_await read_from_partition(
+    read_result result = co_await read_from_partition(
       std::move(*kafka_partition), ntp_config.cfg, foreign_read, deadline);
+
+    adjust_memory_units(
+      memory_sem, memory_fetch_sem, memory_units, result.data_size_bytes());
+    result.memory_units = std::move(memory_units);
+    co_return result;
 }
+
+namespace testing {
 
 ss::future<read_result> read_from_ntp(
   cluster::partition_manager& cluster_pm,
@@ -245,14 +365,31 @@ ss::future<read_result> read_from_ntp(
   const model::ktp& ktp,
   fetch_config config,
   bool foreign_read,
-  std::optional<model::timeout_clock::time_point> deadline) {
+  std::optional<model::timeout_clock::time_point> deadline,
+  const bool obligatory_batch_read,
+  ssx::semaphore& memory_sem,
+  ssx::semaphore& memory_fetch_sem) {
     return do_read_from_ntp(
       cluster_pm,
       replica_selector,
       {ktp, std::move(config)},
       foreign_read,
-      deadline);
+      deadline,
+      obligatory_batch_read,
+      memory_sem,
+      memory_fetch_sem);
 }
+
+read_result::memory_units_t reserve_memory_units(
+  ssx::semaphore& memory_sem,
+  ssx::semaphore& memory_fetch_sem,
+  const size_t max_bytes,
+  const bool obligatory_batch_read) {
+    return kafka::reserve_memory_units(
+      memory_sem, memory_fetch_sem, max_bytes, obligatory_batch_read);
+}
+
+} // namespace testing
 
 static void fill_fetch_responses(
   op_context& octx,
@@ -348,14 +485,19 @@ static ss::future<std::vector<read_result>> fetch_ntps_in_parallel(
   const replica_selector& replica_selector,
   std::vector<ntp_fetch_config> ntp_fetch_configs,
   bool foreign_read,
-  std::optional<model::timeout_clock::time_point> deadline) {
+  std::optional<model::timeout_clock::time_point> deadline,
+  const size_t bytes_left,
+  ssx::semaphore& memory_sem,
+  ssx::semaphore& memory_fetch_sem) {
     size_t total_max_bytes = 0;
     for (const auto& c : ntp_fetch_configs) {
         total_max_bytes += c.cfg.max_bytes;
     }
 
-    auto max_bytes_per_fetch
-      = config::shard_local_cfg().kafka_max_bytes_per_fetch();
+    // bytes_left comes from the fetch plan and also accounts for the max_bytes
+    // field in the fetch request
+    const size_t max_bytes_per_fetch = std::min<size_t>(
+      config::shard_local_cfg().kafka_max_bytes_per_fetch(), bytes_left);
     if (total_max_bytes > max_bytes_per_fetch) {
         auto per_partition = max_bytes_per_fetch / ntp_fetch_configs.size();
         vlog(
@@ -370,17 +512,26 @@ static ss::future<std::vector<read_result>> fetch_ntps_in_parallel(
         }
     }
 
+    const auto first_p_id = ntp_fetch_configs.front().ktp().get_partition();
     auto results = co_await ssx::parallel_transform(
       std::move(ntp_fetch_configs),
-      [&cluster_pm, &replica_selector, deadline, foreign_read](
-        const ntp_fetch_config& ntp_cfg) {
+      [&cluster_pm,
+       &replica_selector,
+       deadline,
+       foreign_read,
+       first_p_id,
+       &memory_sem,
+       &memory_fetch_sem](const ntp_fetch_config& ntp_cfg) {
           auto p_id = ntp_cfg.ktp().get_partition();
           return do_read_from_ntp(
                    cluster_pm,
                    replica_selector,
                    ntp_cfg,
                    foreign_read,
-                   deadline)
+                   deadline,
+                   first_p_id == p_id,
+                   memory_sem,
+                   memory_fetch_sem)
             .then([p_id](read_result res) {
                 res.partition = p_id;
                 return res;
@@ -429,23 +580,27 @@ handle_shard_fetch(ss::shard_id shard, op_context& octx, shard_fetch fetch) {
         return ss::now();
     }
 
-    bool foreign_read = shard != ss::this_shard_id();
+    const bool foreign_read = shard != ss::this_shard_id();
 
     // dispatch to remote core
     return octx.rctx.partition_manager()
       .invoke_on(
         shard,
         octx.ssg,
-        [foreign_read,
-         deadline = octx.deadline,
-         configs = std::move(fetch.requests),
-         &octx](cluster::partition_manager& mgr) mutable {
+        [foreign_read, configs = std::move(fetch.requests), &octx](
+          cluster::partition_manager& mgr) mutable {
+            // &octx is captured only to immediately use its accessors here so
+            // that there is a list of all objects accessed next to `invoke_on`.
+            // This is meant to help avoiding unintended cross shard access
             return fetch_ntps_in_parallel(
               mgr,
-              octx.rctx.replica_selector(),
+              octx.rctx.server().local().get_replica_selector(),
               std::move(configs),
               foreign_read,
-              deadline);
+              octx.deadline,
+              octx.bytes_left,
+              octx.rctx.server().local().memory(),
+              octx.rctx.server().local().memory_fetch_sem());
         })
       .then([responses = std::move(fetch.responses),
              start_time = fetch.start_time,

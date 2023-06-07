@@ -12,6 +12,8 @@
 #include "config/base_property.h"
 #include "config/property.h"
 
+#include <optional>
+
 namespace config {
 
 /**
@@ -24,10 +26,21 @@ namespace detail {
  * Traits required for a type to be usable with `numeric_bounds`
  */
 template<typename T>
-concept numeric = requires(const T& x) {
-    { x % x };
-    { x < x } -> std::same_as<bool>;
-    { x > x } -> std::same_as<bool>;
+concept numeric = requires(const T& x, const T& y) {
+    x - y;
+    x + y;
+    x / 2;
+    { x < y } -> std::same_as<bool>;
+    { x > y } -> std::same_as<bool>;
+};
+
+/**
+ * Traits required for a type to be usable with `numeric_integral_bounds`
+ */
+template<typename T>
+concept numeric_integral = requires(const T& x, const T& y) {
+    requires numeric<T>;
+    x % y;
 };
 
 /**
@@ -56,20 +69,36 @@ struct inner_type<T> {
     using inner = typename T::value_type;
 };
 
+/**
+ * Traits for the bounds types
+ */
+template<typename T>
+concept bounds = requires(T bounds, const typename T::underlying_t& value) {
+    {
+        bounds.min
+    } -> std::convertible_to<std::optional<typename T::underlying_t>>;
+    {
+        bounds.max
+    } -> std::convertible_to<std::optional<typename T::underlying_t>>;
+    { bounds.validate(value) } -> std::same_as<std::optional<ss::sstring>>;
+    { bounds.clamp(value) } -> std::same_as<typename T::underlying_t>;
+};
+
 } // namespace detail
 
 /**
- * Define valid bounds for a numeric configuration property.
+ * Define valid bounds for an integral numeric configuration property.
  */
 template<typename T>
-requires detail::numeric<T>
-struct numeric_bounds {
+requires detail::numeric_integral<T>
+struct numeric_integral_bounds {
+    using underlying_t = T;
     std::optional<T> min = std::nullopt;
     std::optional<T> max = std::nullopt;
     std::optional<T> align = std::nullopt;
     std::optional<odd_even_constraint> oddeven = std::nullopt;
 
-    T clamp(T& original) {
+    T clamp(const T& original) const {
         T result = original;
 
         if (align.has_value()) {
@@ -88,7 +117,7 @@ struct numeric_bounds {
         return result;
     }
 
-    std::optional<ss::sstring> validate(T& value) {
+    std::optional<ss::sstring> validate(const T& value) const {
         if (min.has_value() && value < min.value()) {
             return fmt::format("too small, must be at least {}", min.value());
         } else if (max.has_value() && value > max.value()) {
@@ -109,7 +138,48 @@ struct numeric_bounds {
     }
 };
 
-template<typename T, typename I = typename detail::inner_type<T>::inner>
+/**
+ * Define valid bounds for any numeric configuration property.
+ */
+template<detail::numeric T>
+struct numeric_bounds {
+    using underlying_t = T;
+    std::optional<T> min = std::nullopt;
+    std::optional<T> max = std::nullopt;
+
+    T clamp(T value) const {
+        if (min.has_value()) {
+            value = std::max(min.value(), value);
+        }
+        if (max.has_value()) {
+            value = std::min(max.value(), value);
+        }
+        return value;
+    }
+
+    std::optional<ss::sstring> validate(const T& value) const {
+        if (min.has_value() && value < min.value()) {
+            return fmt::format("too small, must be at least {}", min.value());
+        } else if (max.has_value() && value > max.value()) {
+            return fmt::format("too large, must be at most {}", max.value());
+        }
+        return std::nullopt;
+    }
+};
+
+/**
+ * A property that validates its value against the constraints defined by \p B
+ *
+ * \tparam T Underlying property value type
+ * \tparam B Bounds class, like \ref numeric_integral_bounds or
+ *      \ref numeric_bounds, or user defined that satisfies \ref detail::bounds
+ * \tparam I Always default
+ */
+template<
+  typename T,
+  template<typename> typename B = numeric_integral_bounds,
+  typename I = typename detail::inner_type<T>::inner>
+requires detail::bounds<B<I>>
 class bounded_property : public property<T> {
 public:
     bounded_property(
@@ -118,7 +188,7 @@ public:
       std::string_view desc,
       base_property::metadata meta,
       T def,
-      numeric_bounds<I> bounds,
+      B<I> bounds,
       std::optional<legacy_default<T>> legacy = std::nullopt)
       : property<T>(
         conf,
@@ -199,11 +269,9 @@ private:
 
         if (_bounds.min.has_value() && _bounds.max.has_value()) {
             // Take midpoint of min/max and align it.
-            guess = _bounds.min.value()
-                    + (_bounds.max.value() - _bounds.min.value()) / 2;
-            if (_bounds.align.has_value()) {
-                guess -= guess % _bounds.align.value();
-            }
+            guess = _bounds.clamp(
+              _bounds.min.value()
+              + (_bounds.max.value() - _bounds.min.value()) / 2);
         } else {
             if constexpr (reflection::is_std_optional<T>) {
                 if (property<T>::_default.has_value()) {
@@ -220,7 +288,7 @@ private:
         return fmt::format("{}", guess);
     }
 
-    numeric_bounds<I> _bounds;
+    B<I> _bounds;
 
     // The example value is stored rather than generated on the fly, to
     // satisfy the example() interface that wants a string_view: it
