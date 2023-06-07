@@ -64,7 +64,6 @@ type RedpandaClusterSpec struct {
 	Monitoring *Monitoring `json:"monitoring,omitempty"`
 }
 
-// ConfigWatcher
 type ConfigWatcher struct {
 	Enabled   bool       `json:"enabled,omitempty"`
 	Resources *Resources `json:"resources,omitempty"`
@@ -129,7 +128,7 @@ type External struct {
 	Domain      string          `json:"domain,omitempty"`
 	Enabled     bool            `json:"enabled"`
 	Type        string          `json:"type,omitempty"`
-	ExternalDns *ExternalDns    `json:"externalDns,omitempty"`
+	ExternalDNS *ExternalDNS    `json:"externalDNS,omitempty"`
 }
 
 // Logging is a top level field of the values file
@@ -235,7 +234,7 @@ type PostUpgradeJob struct {
 
 // Statefulset is a top level field of the values file
 type Statefulset struct {
-	AdditionalRedpandaCmdFlags    []interface{}              `json:"additionalRedpandaCmdFlags,omitempty"`
+	AdditionalRedpandaCmdFlags    []string                   `json:"additionalRedpandaCmdFlags,omitempty"`
 	Annotations                   map[string]string          `json:"annotations,omitempty"`
 	Budget                        *Budget                    `json:"budget,omitempty"`
 	InitContainerImage            *InitContainerImage        `json:"initContainerImage,omitempty"`
@@ -251,7 +250,7 @@ type Statefulset struct {
 	SideCars                      *SideCars                  `json:"sideCars,omitempty"`
 	SkipChown                     bool                       `json:"skipChown,omitempty"`
 	StartupProbe                  *StartupProbe              `json:"startupProbe,omitempty"`
-	Tolerations                   []string                   `json:"tolerations,omitempty"`
+	Tolerations                   []corev1.Toleration        `json:"tolerations,omitempty"`
 	TopologySpreadConstraints     *TopologySpreadConstraints `json:"topologySpreadConstraints,omitempty"`
 	UpdateStrategy                *UpdateStrategy            `json:"updateStrategy,omitempty"`
 	TerminationGracePeriodSeconds int                        `json:"terminationGracePeriodSeconds,omitempty"`
@@ -446,6 +445,6 @@ type Monitoring struct {
 	ScrapeInterval string            `json:"scrapeInterval"`
 }
 
-type ExternalDns struct {
+type ExternalDNS struct {
 	Enabled bool `json:"enabled"`
 }
