@@ -32,10 +32,7 @@ public:
     using disk_cb_t
       = ss::noncopyable_function<void(uint64_t, uint64_t, disk_space_alert)>;
 
-    enum class disk_type : uint8_t {
-        data = 0,
-        cache = 1,
-    };
+    enum class disk_type { data, cache };
 
     ss::future<> start();
     ss::future<> stop();
