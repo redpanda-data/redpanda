@@ -33,14 +33,6 @@
 
 namespace pps = pandaproxy::schema_registry;
 
-const pps::canonical_schema_definition string_def0{
-  pps::sanitize_avro_schema_definition(
-    {R"({"type":"string"})", pps::schema_type::avro})
-    .value()};
-const pps::canonical_schema_definition int_def0{
-  pps::sanitize_avro_schema_definition(
-    {R"({"type": "int"})", pps::schema_type::avro})
-    .value()};
 const pps::subject subject0{"subject0"};
 constexpr pps::topic_key_magic magic0{0};
 constexpr pps::topic_key_magic magic1{1};
@@ -49,6 +41,17 @@ constexpr pps::schema_version version0{0};
 constexpr pps::schema_version version1{1};
 constexpr pps::schema_id id0{0};
 constexpr pps::schema_id id1{1};
+
+const pps::canonical_schema_definition string_def0{
+  pps::sanitize_avro_schema_definition(
+    {R"({"type":"string"})",
+     pps::schema_type::avro,
+     {{.name{"ref"}, .sub{subject0}, .version{version0}}}})
+    .value()};
+const pps::canonical_schema_definition int_def0{
+  pps::sanitize_avro_schema_definition(
+    {R"({"type": "int"})", pps::schema_type::avro})
+    .value()};
 
 inline model::record_batch make_delete_subject_batch(pps::subject sub) {
     storage::record_batch_builder rb{
@@ -119,12 +122,9 @@ SEASTAR_THREAD_TEST_CASE(test_consume_to_store) {
                    .get();
     BOOST_REQUIRE_EQUAL(s_res.schema.def(), string_def0);
 
-    pps::canonical_schema::references refs{
-      {.name{"ref"}, .sub{subject0}, .version{version0}}};
     auto good_schema_ref_1 = pps::as_record_batch(
       pps::schema_key{sequence, node_id, subject0, version1, magic1},
-      pps::canonical_schema_value{
-        {subject0, string_def0, refs}, version1, id1});
+      pps::canonical_schema_value{{subject0, string_def0}, version1, id1});
     BOOST_REQUIRE_NO_THROW(c(good_schema_ref_1.copy()).get());
 
     auto s_ref_res = s.get_subject_schema(
@@ -134,10 +134,10 @@ SEASTAR_THREAD_TEST_CASE(test_consume_to_store) {
     BOOST_REQUIRE_EQUAL(s_ref_res.schema.sub(), subject0);
     BOOST_REQUIRE_EQUAL(s_ref_res.id, id1);
     BOOST_REQUIRE_EQUAL_COLLECTIONS(
-      s_ref_res.schema.refs().begin(),
-      s_ref_res.schema.refs().end(),
-      refs.begin(),
-      refs.end());
+      s_ref_res.schema.def().refs().begin(),
+      s_ref_res.schema.def().refs().end(),
+      string_def0.refs().begin(),
+      string_def0.refs().end());
 
     auto bad_schema_magic = pps::as_record_batch(
       pps::schema_key{sequence, node_id, subject0, version0, magic2},

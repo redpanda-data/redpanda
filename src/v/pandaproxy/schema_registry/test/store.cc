@@ -78,7 +78,7 @@ bool upsert(
   pps::is_deleted deleted) {
     store.upsert_schema(id, std::move(def));
     return store.upsert_subject(
-      pps::seq_marker{}, std::move(sub), {}, version, id, deleted);
+      pps::seq_marker{}, std::move(sub), version, id, deleted);
 }
 
 BOOST_AUTO_TEST_CASE(test_store_upsert_in_order) {
@@ -236,7 +236,6 @@ BOOST_AUTO_TEST_CASE(test_store_get_schema_subject_versions) {
     s.upsert_subject(
       dummy_marker,
       subject0,
-      {},
       pps::schema_version{1},
       pps::schema_id{1},
       pps::is_deleted::yes);
@@ -599,7 +598,6 @@ BOOST_AUTO_TEST_CASE(test_store_delete_subject_version) {
     BOOST_REQUIRE_NO_THROW(s.upsert_subject(
       dummy_marker,
       subject0,
-      {},
       pps::schema_version{1},
       pps::schema_id{1},
       pps::is_deleted::yes));
@@ -665,7 +663,6 @@ BOOST_AUTO_TEST_CASE(test_store_subject_version_latest) {
     BOOST_REQUIRE_NO_THROW(s.upsert_subject(
       dummy_marker,
       subject0,
-      {},
       pps::schema_version{2},
       pps::schema_id{1},
       pps::is_deleted::yes));
@@ -700,7 +697,6 @@ BOOST_AUTO_TEST_CASE(test_store_delete_subject_after_delete_version) {
     s.upsert_subject(
       dummy_marker,
       subject0,
-      {},
       pps::schema_version{1},
       pps::schema_id{1},
       pps::is_deleted::yes);
