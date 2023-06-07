@@ -126,7 +126,7 @@ connection::connection(
     if (in_max_buffer_size.has_value()) {
         auto in_config = ss::connected_socket_input_stream_config{};
         in_config.max_buffer_size = in_max_buffer_size.value();
-        _in = _fd.input(std::move(in_config));
+        _in = _fd.input(in_config);
     } else {
         _in = _fd.input();
     }

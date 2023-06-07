@@ -21,8 +21,6 @@
 
 #include <chrono>
 
-namespace kc = kafka::client;
-
 FIXTURE_TEST(produce_reconnect, kafka_client_fixture) {
     using namespace std::chrono_literals;
 

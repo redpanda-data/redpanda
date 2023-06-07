@@ -28,8 +28,6 @@
 
 #include <chrono>
 
-namespace kc = kafka::client;
-
 FIXTURE_TEST(fetch, kafka_client_fixture) {
     using namespace std::chrono_literals;
 

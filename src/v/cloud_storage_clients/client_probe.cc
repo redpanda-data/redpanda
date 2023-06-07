@@ -33,8 +33,6 @@ client_probe::client_probe(
   cloud_roles::aws_region_name region,
   endpoint_url endpoint)
   : http::client_probe() {
-    namespace sm = ss::metrics;
-
     std::vector<raw_label> s3_labels = {
       {endpoint_label_key, std::move(endpoint)()},
       {region_label_key, std::move(region)()}};

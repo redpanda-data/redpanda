@@ -15,8 +15,6 @@
 #include <seastar/core/future.hh>
 #include <seastar/testing/thread_test_case.hh>
 
-namespace kc = kafka::client;
-
 inline const model::topic_partition unknown_tp{
   model::topic{"unknown"}, model::partition_id{0}};
 
