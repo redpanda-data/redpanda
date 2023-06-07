@@ -14,6 +14,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/fluxcd/pkg/runtime/logger"
 	"github.com/go-logr/logr"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/api/admin"
 	appsv1 "k8s.io/api/apps/v1"
@@ -69,7 +70,8 @@ const (
 func (r *StatefulSetResource) handleScaling(ctx context.Context) error {
 	log := r.logger.WithName("handleScaling")
 
-	// decommission already in progress
+	// if a decommission is already in progress, handle it first. If it's not finished, it will return an error
+	// which will requeue the reconciliation. We can't do any further scaling until it's finished.
 	if err := r.handleDecommissionInProgress(ctx, log); err != nil {
 		return err
 	}
@@ -81,6 +83,7 @@ func (r *StatefulSetResource) handleScaling(ctx context.Context) error {
 	}
 
 	if *r.pandaCluster.Spec.Replicas == r.pandaCluster.Status.CurrentReplicas {
+		r.logger.V(logger.DebugLevel).Info("No scaling changes required", "replicas", *r.pandaCluster.Spec.Replicas)
 		// No changes to replicas, we do nothing here
 		return nil
 	}
@@ -109,24 +112,36 @@ func (r *StatefulSetResource) handleScaling(ctx context.Context) error {
 	}
 
 	// User required replicas is lower than current replicas (currentReplicas): start the decommissioning process
+	r.logger.Info("Downscaling cluster", "replicas", *r.pandaCluster.Spec.Replicas)
+
 	targetOrdinal := r.pandaCluster.Status.CurrentReplicas - 1 // Always decommission last node
 	targetBroker, err := r.getBrokerIDForPod(ctx, targetOrdinal)
 	if err != nil {
-		return err
+		return fmt.Errorf("error getting broker ID for pod with ordinal %d when downscaling cluster: %w", targetOrdinal, err)
 	}
+	nonExistantBroker := int32(-1)
 	if targetBroker == nil {
 		// The target pod isn't in the broker list. Just select a non-existing broker for decommission so the next
 		// reconcile loop will succeed.
-		nonExistantBroker := int32(-1)
 		targetBroker = &nonExistantBroker
 	}
 	log.WithValues("ordinal", targetOrdinal, "node_id", targetBroker).Info("start decommission broker")
 	r.pandaCluster.SetDecommissionBrokerID(targetBroker)
-	return r.Status().Update(ctx, r.pandaCluster)
+	err = r.Status().Update(ctx, r.pandaCluster)
+	if err != nil {
+		return err
+	}
+	if *targetBroker == nonExistantBroker {
+		return &RequeueAfterError{
+			RequeueAfter: RequeueDuration,
+			Msg:          fmt.Sprintf("the broker for pod with ordinal %d is not registered with the cluster. Requeuing.", targetOrdinal),
+		}
+	}
+	return nil
 }
 
-func (r *StatefulSetResource) handleDecommissionInProgress(ctx context.Context, logger logr.Logger) error {
-	log := logger.WithName("handleDecommissionInProgress")
+func (r *StatefulSetResource) handleDecommissionInProgress(ctx context.Context, l logr.Logger) error {
+	log := l.WithName("handleDecommissionInProgress")
 	if r.pandaCluster.GetDecommissionBrokerID() == nil {
 		return nil
 	}
@@ -407,19 +422,20 @@ func setCurrentReplicas(
 	c k8sclient.Client,
 	pandaCluster *vectorizedv1alpha1.Cluster,
 	replicas int32,
-	logger logr.Logger,
+	l logr.Logger,
 ) error {
+	log := l.WithName("setCurrentReplicas")
 	if pandaCluster.Status.CurrentReplicas == replicas {
 		// Skip if already done
 		return nil
 	}
 
-	logger.Info("Scaling StatefulSet", "replicas", replicas)
+	log.Info("Scaling StatefulSet", "replicas", replicas)
 	pandaCluster.Status.CurrentReplicas = replicas
 	if err := c.Status().Update(ctx, pandaCluster); err != nil {
 		return fmt.Errorf("could not scale cluster %s to %d replicas: %w", pandaCluster.Name, replicas, err)
 	}
-	logger.Info("StatefulSet scaled", "replicas", replicas)
+	log.Info("StatefulSet scaled", "replicas", replicas)
 	return nil
 }
 

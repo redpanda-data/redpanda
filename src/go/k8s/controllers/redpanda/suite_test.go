@@ -131,7 +131,7 @@ var _ = BeforeSuite(func(suiteCtx SpecContext) {
 	ctx = ctrl.SetupSignalHandler()
 	ctx, controllerCancel = context.WithCancel(ctx)
 
-	testAdminAPI = &adminutils.MockAdminAPI{Log: ctrl.Log.WithName("testAdminAPI").WithName("mockAdminAPI")}
+	testAdminAPI = &adminutils.MockAdminAPI{Log: logf.Log.WithName("testAdminAPI").WithName("mockAdminAPI")}
 	testAdminAPIFactory = func(
 		_ context.Context,
 		_ client.Reader,
@@ -157,7 +157,7 @@ var _ = BeforeSuite(func(suiteCtx SpecContext) {
 
 	err = (&redpandacontrollers.ClusterReconciler{
 		Client:                   k8sManager.GetClient(),
-		Log:                      ctrl.Log.WithName("controllers").WithName("core").WithName("RedpandaCluster"),
+		Log:                      logf.Log.WithName("controllers").WithName("core").WithName("RedpandaCluster"),
 		Scheme:                   k8sManager.GetScheme(),
 		AdminAPIClientFactory:    testAdminAPIFactory,
 		DecommissionWaitInterval: 100 * time.Millisecond,
@@ -171,7 +171,7 @@ var _ = BeforeSuite(func(suiteCtx SpecContext) {
 	driftCheckPeriod := 500 * time.Millisecond
 	err = (&redpandacontrollers.ClusterConfigurationDriftReconciler{
 		Client:                k8sManager.GetClient(),
-		Log:                   ctrl.Log.WithName("controllers").WithName("core").WithName("RedpandaCluster"),
+		Log:                   logf.Log.WithName("controllers").WithName("core").WithName("RedpandaCluster"),
 		Scheme:                k8sManager.GetScheme(),
 		AdminAPIClientFactory: testAdminAPIFactory,
 		DriftCheckPeriod:      &driftCheckPeriod,
@@ -181,7 +181,7 @@ var _ = BeforeSuite(func(suiteCtx SpecContext) {
 	err = (&redpandacontrollers.ConsoleReconciler{
 		Client:                  k8sManager.GetClient(),
 		Scheme:                  k8sManager.GetScheme(),
-		Log:                     ctrl.Log.WithName("controllers").WithName("redpanda").WithName("Console"),
+		Log:                     logf.Log.WithName("controllers").WithName("redpanda").WithName("Console"),
 		AdminAPIClientFactory:   testAdminAPIFactory,
 		Store:                   testStore,
 		EventRecorder:           k8sManager.GetEventRecorderFor("Console"),
@@ -190,8 +190,8 @@ var _ = BeforeSuite(func(suiteCtx SpecContext) {
 	Expect(err).ToNot(HaveOccurred())
 
 	storageAddr := ":9090"
-	storageAdvAddr := redpandacontrollers.DetermineAdvStorageAddr(storageAddr, ctrl.Log.WithName("controllers").WithName("core").WithName("Redpanda"))
-	storage := redpandacontrollers.MustInitStorage("/tmp", storageAdvAddr, 60*time.Second, 2, ctrl.Log.WithName("controllers").WithName("core").WithName("Redpanda"))
+	storageAdvAddr := redpandacontrollers.DetermineAdvStorageAddr(storageAddr, logf.Log.WithName("controllers").WithName("core").WithName("Redpanda"))
+	storage := redpandacontrollers.MustInitStorage("/tmp", storageAdvAddr, 60*time.Second, 2, logf.Log.WithName("controllers").WithName("core").WithName("Redpanda"))
 
 	metricsH := helper.MustMakeMetrics(k8sManager)
 	// TODO fill this in with options
@@ -243,7 +243,7 @@ var _ = BeforeSuite(func(suiteCtx SpecContext) {
 		// to handle that.
 		<-k8sManager.Elected()
 
-		redpandacontrollers.StartFileServer(storage.BasePath, storageAddr, ctrl.Log.WithName("controllers").WithName("core").WithName("Redpanda"))
+		redpandacontrollers.StartFileServer(storage.BasePath, storageAddr, logf.Log.WithName("controllers").WithName("core").WithName("Redpanda"))
 	}()
 
 	err = (&redpandacontrollers.RedpandaReconciler{

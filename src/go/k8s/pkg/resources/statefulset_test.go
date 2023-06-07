@@ -16,11 +16,6 @@ import (
 	"testing"
 	"time"
 
-	vectorizedv1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/vectorized/v1alpha1"
-	adminutils "github.com/redpanda-data/redpanda/src/go/k8s/pkg/admin"
-	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/labels"
-	res "github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources"
-	resourcetypes "github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources/types"
 	"github.com/stretchr/testify/assert"
 	v1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -32,6 +27,12 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+
+	vectorizedv1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/vectorized/v1alpha1"
+	adminutils "github.com/redpanda-data/redpanda/src/go/k8s/pkg/admin"
+	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/labels"
+	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources"
+	resourcetypes "github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources/types"
 )
 
 const (
@@ -87,8 +88,8 @@ func TestEnsure(t *testing.T) {
 		{"update redpanda resources", stsResource, resourcesUpdatedRedpandaCluster, resourcesUpdatedSts, true, nil},
 		{"disabled sidecar", nil, noSidecarCluster, noSidecarSts, true, nil},
 		{"cluster without shadow index cache dir", stsResource, withoutShadowIndexCacheDirectory, stsWithoutSecondPersistentVolume, true, nil},
-		{"update none healthy cluster", stsResource, unhealthyRedpandaCluster, stsResource, false, &res.RequeueAfterError{
-			RequeueAfter: res.RequeueDuration,
+		{"update none healthy cluster", stsResource, unhealthyRedpandaCluster, stsResource, false, &resources.RequeueAfterError{
+			RequeueAfter: resources.RequeueDuration,
 			Msg:          "wait for cluster to become healthy (cluster restarting)",
 		}},
 	}
@@ -110,7 +111,7 @@ func TestEnsure(t *testing.T) {
 			err = c.Create(context.Background(), tt.pandaCluster)
 			assert.NoError(t, err)
 
-			sts := res.NewStatefulSet(
+			sts := resources.NewStatefulSet(
 				c,
 				tt.pandaCluster,
 				scheme.Scheme,
@@ -120,7 +121,7 @@ func TestEnsure(t *testing.T) {
 				TestStatefulsetTLSVolumeProvider{},
 				TestAdminTLSConfigProvider{},
 				"",
-				res.ConfiguratorSettings{
+				resources.ConfiguratorSettings{
 					ConfiguratorBaseImage: "vectorized/configurator",
 					ConfiguratorTag:       "latest",
 					ImagePullPolicy:       "Always",
@@ -256,7 +257,7 @@ func stsFromCluster(pandaCluster *vectorizedv1alpha1.Cluster) *v1.StatefulSet {
 func pandaCluster() *vectorizedv1alpha1.Cluster {
 	var replicas int32 = 1
 
-	resources := corev1.ResourceList{
+	res := corev1.ResourceList{
 		corev1.ResourceCPU:    resource.MustParse("1"),
 		corev1.ResourceMemory: resource.MustParse("2Gi"),
 	}
@@ -295,8 +296,8 @@ func pandaCluster() *vectorizedv1alpha1.Cluster {
 			},
 			Resources: vectorizedv1alpha1.RedpandaResourceRequirements{
 				ResourceRequirements: corev1.ResourceRequirements{
-					Limits:   resources,
-					Requests: resources,
+					Limits:   res,
+					Requests: res,
 				},
 				Redpanda: nil,
 			},
@@ -304,8 +305,8 @@ func pandaCluster() *vectorizedv1alpha1.Cluster {
 				RpkStatus: &vectorizedv1alpha1.Sidecar{
 					Enabled: true,
 					Resources: &corev1.ResourceRequirements{
-						Limits:   resources,
-						Requests: resources,
+						Limits:   res,
+						Requests: res,
 					},
 				},
 			},
@@ -332,7 +333,7 @@ func TestVersion(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		sts := &res.StatefulSetResource{
+		sts := &resources.StatefulSetResource{
 			LastObservedState: &v1.StatefulSet{
 				Spec: v1.StatefulSetSpec{
 					Template: corev1.PodTemplateSpec{
@@ -414,14 +415,14 @@ func TestCurrentVersion(t *testing.T) {
 			pod.Labels = labels.ForCluster(redpanda)
 			assert.NoError(t, c.Create(context.TODO(), &pod))
 		}
-		sts := res.NewStatefulSet(c, redpanda, scheme.Scheme,
+		sts := resources.NewStatefulSet(c, redpanda, scheme.Scheme,
 			"cluster.local",
 			"servicename",
 			types.NamespacedName{Name: "test", Namespace: "test"},
 			TestStatefulsetTLSVolumeProvider{},
 			TestAdminTLSConfigProvider{},
 			"",
-			res.ConfiguratorSettings{
+			resources.ConfiguratorSettings{
 				ConfiguratorBaseImage: "vectorized/configurator",
 				ConfiguratorTag:       "latest",
 				ImagePullPolicy:       "Always",
@@ -460,7 +461,7 @@ func Test_GetPodByBrokerIDfromPodList(t *testing.T) {
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "pod-0",
 					Annotations: map[string]string{
-						res.PodAnnotationNodeIDKey: "3",
+						resources.PodAnnotationNodeIDKey: "3",
 					},
 				},
 			},
@@ -468,7 +469,7 @@ func Test_GetPodByBrokerIDfromPodList(t *testing.T) {
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "pod-1",
 					Annotations: map[string]string{
-						res.PodAnnotationNodeIDKey: "5",
+						resources.PodAnnotationNodeIDKey: "5",
 					},
 				},
 			},
@@ -476,7 +477,7 @@ func Test_GetPodByBrokerIDfromPodList(t *testing.T) {
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "pod-2",
 					Annotations: map[string]string{
-						res.PodAnnotationNodeIDKey: "7",
+						resources.PodAnnotationNodeIDKey: "7",
 					},
 				},
 			},
@@ -516,7 +517,7 @@ func Test_GetPodByBrokerIDfromPodList(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := res.GetPodByBrokerIDfromPodList(tt.args.brokerIDStr, tt.args.pods)
+			got := resources.GetPodByBrokerIDfromPodList(tt.args.brokerIDStr, tt.args.pods)
 			if !reflect.DeepEqual(got, tt.want) {
 				t.Errorf("GetPodByBrokerIDfromPodList() = %v, want %v", got, tt.want)
 			}
@@ -531,7 +532,7 @@ func Test_GetBrokerIDForPodFromPodList(t *testing.T) {
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "pod-0",
 					Annotations: map[string]string{
-						res.PodAnnotationNodeIDKey: "",
+						resources.PodAnnotationNodeIDKey: "",
 					},
 				},
 			},
@@ -539,7 +540,7 @@ func Test_GetBrokerIDForPodFromPodList(t *testing.T) {
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "pod-1",
 					Annotations: map[string]string{
-						res.PodAnnotationNodeIDKey: "5",
+						resources.PodAnnotationNodeIDKey: "5",
 					},
 				},
 			},
@@ -547,7 +548,7 @@ func Test_GetBrokerIDForPodFromPodList(t *testing.T) {
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "pod-2",
 					Annotations: map[string]string{
-						res.PodAnnotationNodeIDKey: "7",
+						resources.PodAnnotationNodeIDKey: "7",
 					},
 				},
 			},
@@ -605,7 +606,7 @@ func Test_GetBrokerIDForPodFromPodList(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := res.GetBrokerIDForPodFromPodList(tt.args.pods, tt.args.podName)
+			got, err := resources.GetBrokerIDForPodFromPodList(tt.args.pods, tt.args.podName)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("getBrokerIDForPodFromPodList() error = %v, wantErr %v", err, tt.wantErr)
 				return

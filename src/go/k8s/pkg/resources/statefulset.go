@@ -921,6 +921,18 @@ func (r *StatefulSetResource) CurrentVersion(ctx context.Context) (string, error
 	return stsVersion, nil
 }
 
+func (r *StatefulSetResource) IsManagedDecommission() (bool, error) {
+	t, ok := r.pandaCluster.GetAnnotations()[ManagedDecommissionAnnotation]
+	if !ok {
+		return false, nil
+	}
+	deadline, err := time.Parse(time.RFC3339, t)
+	if err != nil {
+		return false, fmt.Errorf("managed decommission annotation must be a valid RFC3339 timestamp: %w", err)
+	}
+	return deadline.After(time.Now()), nil
+}
+
 func (r *StatefulSetResource) getPodByBrokerID(ctx context.Context, brokerID *int32) (*corev1.Pod, error) {
 	if brokerID == nil {
 		return nil, nil
