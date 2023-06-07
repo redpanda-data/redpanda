@@ -308,13 +308,14 @@ class ThroughputLimitsSnc(RedpandaTest):
             "Timeout waiting for the first consumer to receive 10% of messages"
         )
 
-        consumer2 = KcatConsumer(self.test_context,
-                                 self.redpanda,
-                                 self.topic,
-                                 offset=KcatConsumer.OffsetMeta.stored,
-                                 cgroup_name="cg01",
-                                 auto_commit_interval_ms=500
-                                 )
+        consumer2 = KcatConsumer(
+            self.test_context,
+            self.redpanda,
+            self.topic,
+            offset=KcatConsumer.OffsetMeta.stored,
+            offset_default=KcatConsumer.OffsetDefaultMeta.beginning,
+            cgroup_name="cg01",
+            auto_commit_interval_ms=500)
         consumer2.set_on_message(on_message)
         consumer2.start()
         # ensure that the 2nd consumer has connected and joined the cgroup
