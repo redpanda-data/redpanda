@@ -24,14 +24,12 @@ from rptest.services.admin import Admin
 from rptest.services.cluster import cluster
 from rptest.services.kgo_verifier_services import KgoVerifierProducer, KgoVerifierRandomConsumer, KgoVerifierSeqConsumer
 from rptest.services.metrics_check import MetricCheck
-from rptest.services.redpanda import make_redpanda_service, CHAOS_LOG_ALLOW_LIST
-from rptest.services.redpanda import SISettings, get_cloud_storage_type
+from rptest.services.redpanda import SISettings, get_cloud_storage_type, make_redpanda_service, CHAOS_LOG_ALLOW_LIST
 from rptest.tests.end_to_end import EndToEndTest
 from rptest.tests.prealloc_nodes import PreallocNodesTest
 from rptest.util import Scale, wait_until_segments
 from rptest.util import (
     produce_until_segments,
-    wait_until_result,
     wait_for_removal_of_n_segments,
     wait_for_local_storage_truncate,
 )
@@ -244,9 +242,14 @@ class EndToEndShadowIndexingTest(EndToEndShadowIndexingBase):
                 node_segments
             ) >= 10, f"Expected at least 10 segments, but got {len(node_segments)} on {node}"
 
-        assert any(
-            im.evaluate([('vectorized_cloud_storage_index_uploads_total',
-                          lambda _, cnt: cnt)]) for im in index_metrics)
+        def indices_uploaded():
+            return self.redpanda.metric_sum(
+                'vectorized_cloud_storage_index_uploads_total') > 0
+
+        wait_until(indices_uploaded,
+                   timeout_sec=120,
+                   backoff_sec=1,
+                   err_msg='No indices uploaded to cloud storage')
 
         self.kafka_tools.alter_topic_config(
             self.topic,
