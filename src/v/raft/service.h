@@ -18,12 +18,16 @@
 #include "seastarx.h"
 #include "utils/copy_range.h"
 
+#include <seastar/core/chunked_fifo.hh>
 #include <seastar/core/sharded.hh>
 #include <seastar/core/shared_ptr.hh>
 #include <seastar/core/timed_out_error.hh>
 #include <seastar/core/with_timeout.hh>
 
 #include <absl/container/flat_hash_map.h>
+
+#include <memory>
+#include <vector>
 
 namespace raft {
 // clang-format off
@@ -185,8 +189,10 @@ private:
     using consensus_ptr = seastar::lw_shared_ptr<consensus>;
     using hbeats_t = std::vector<append_entries_request>;
     using hbeats_ptr = ss::foreign_ptr<std::unique_ptr<hbeats_t>>;
+    using groupped_hbeats_ptr = ss::foreign_ptr<
+      std::unique_ptr<ss::chunked_fifo<append_entries_request>>>;
     struct shard_groupped_hbeat_requests {
-        absl::flat_hash_map<ss::shard_id, hbeats_ptr> shard_requests;
+        absl::flat_hash_map<ss::shard_id, groupped_hbeats_ptr> shard_requests;
         std::vector<append_entries_request> group_missing_requests;
     };
 
@@ -250,7 +256,7 @@ private:
     }
 
     ss::future<std::vector<append_entries_reply>>
-    dispatch_hbeats_to_core(ss::shard_id shard, hbeats_ptr requests) {
+    dispatch_hbeats_to_core(ss::shard_id shard, groupped_hbeats_ptr requests) {
         return with_scheduling_group(
           get_scheduling_group(),
           [this, shard, r = std::move(requests)]() mutable {
@@ -264,7 +270,7 @@ private:
     }
 
     ss::future<std::vector<append_entries_reply>>
-    dispatch_hbeats_to_groups(ConsensusManager& m, hbeats_ptr reqs) {
+    dispatch_hbeats_to_groups(ConsensusManager& m, groupped_hbeats_ptr reqs) {
         std::vector<ss::future<append_entries_reply>> futures;
         futures.reserve(reqs->size());
         // dispatch requests in parallel
@@ -297,15 +303,18 @@ private:
             }
 
             auto shard = _shard_table.shard_for(r.meta.group);
-            if (!ret.shard_requests.contains(shard)) {
-                auto hbeats = ss::make_foreign(
-                  std::make_unique<std::vector<append_entries_request>>());
-                hbeats->push_back(std::move(r));
-                ret.shard_requests.emplace(shard, std::move(hbeats));
-                continue;
+            auto it = ret.shard_requests.find(shard);
+            if (it == ret.shard_requests.end()) {
+                auto result = ret.shard_requests.try_emplace(
+                  it,
+                  shard,
+                  ss::make_foreign(
+                    std::make_unique<
+                      ss::chunked_fifo<append_entries_request>>()));
+                it = result;
             }
 
-            ret.shard_requests.find(shard)->second->push_back(std::move(r));
+            it->second->push_back(std::move(r));
         }
         return ret;
     }
