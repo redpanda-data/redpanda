@@ -31,6 +31,11 @@ class KcatConsumer(BackgroundThreadService):
         end = "end"
         stored = "stored"
 
+    class OffsetDefaultMeta(Enum):
+        beginning = "beginning"
+        end = "end"
+        error = "error"
+
     def __init__(self,
                  context,
                  redpanda,
@@ -39,6 +44,7 @@ class KcatConsumer(BackgroundThreadService):
                  *,
                  offset: Any = None,
                  first_timestamp: Optional[int] = None,
+                 offset_default: Optional[OffsetDefaultMeta] = None,
                  num_msgs: Optional[int] = None,
                  cgroup_name: Optional[str] = None,
                  auto_commit_interval_ms: Optional[int] = None,
@@ -50,6 +56,13 @@ class KcatConsumer(BackgroundThreadService):
         first_timestamp : int, optional
             The timestamp to start consuming at. Must be None if offset is
             specified.
+        offset_default : OffsetDefaultMeta, optional
+            The offset to fallback if offset or first_timestamp have a specific
+            value or the value OffsetMeta.stored, but there is no initial offset
+            in offset store or the desired offset is out of range. When not
+            specified, the default librdkafka option is 'end'. The value of
+            OffsetDefaultMeta.error would trigger an error
+            (ERR__AUTO_OFFSET_RESET) if the default needed to be applied.
         """
 
         super(KcatConsumer, self).__init__(context, num_nodes=1)
@@ -103,6 +116,15 @@ class KcatConsumer(BackgroundThreadService):
         if first_timestamp is not None:
             # s@<value> (timestamp in ms to start at)
             self._cmd += ["-o", f"s@{first_timestamp}"]
+
+        if offset_default is not None:
+            if isinstance(offset_default, KcatConsumer.OffsetDefaultMeta):
+                self._cmd += [
+                    "-X", f"auto.offset.reset={offset_default.value}"
+                ]
+            else:
+                assert False, "offset_default must be an OffsetMeta"
+
         if num_msgs is not None:
             self._cmd += ["-c", f"{num_msgs}"]
 
