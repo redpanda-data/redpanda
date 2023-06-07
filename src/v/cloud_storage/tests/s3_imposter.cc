@@ -25,6 +25,7 @@
 #include <seastar/net/socket_defs.hh>
 #include <seastar/util/defer.hh>
 
+#include <boost/algorithm/string/predicate.hpp>
 #include <boost/core/noncopyable.hpp>
 #include <boost/property_tree/json_parser.hpp>
 #include <boost/test/tools/old/interface.hpp>
@@ -52,8 +53,11 @@ ss::sstring list_objects_resp(
     // Filter by prefix and group by the substring between the prefix and first
     // delimiter.
     for (const auto& [_, expectation] : objects) {
-        // Remove any '/' prefix before returning.
-        auto key = expectation.url.substr(1);
+        auto key = expectation.url;
+        if (!key.empty() && key[0] == '/') {
+            // Remove / character that S3 client adds
+            key = key.substr(1);
+        }
         vlog(fixt_log.trace, "Comparing {} to prefix {}", key, prefix);
         if (key.size() < prefix.size()) {
             continue;
