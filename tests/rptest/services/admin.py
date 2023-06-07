@@ -643,7 +643,7 @@ class Admin:
         Find tx coordinator by tx.id
         """
         path = f"transaction/{tid}/find_coordinator"
-        return self._request('get', path, node=node)
+        return self._request('get', path, node=node).json()
 
     def set_partition_replicas(self,
                                topic,

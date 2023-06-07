@@ -30,7 +30,23 @@ from rptest.clients.rpk import RpkTool
 from rptest.tests.cluster_features_test import FeaturesTestBase
 
 
-class TransactionsTest(RedpandaTest):
+class TransactionsMixin:
+    def find_coordinator(self, txid, node=None):
+        if node == None:
+            node = random.choice(self.redpanda.started_nodes())
+
+        def find_tx_coordinator():
+            r = self.admin.find_tx_coordinator(txid, node=node)
+            return r["ec"] == 0, r
+
+        return wait_until_result(
+            find_tx_coordinator,
+            timeout_sec=30,
+            backoff_sec=2,
+            err_msg=f"Can't find a coordinator for tx.id={txid}")
+
+
+class TransactionsTest(RedpandaTest, TransactionsMixin):
     topics = (TopicSpec(partition_count=1, replication_factor=3),
               TopicSpec(partition_count=1, replication_factor=3))
 
@@ -87,9 +103,7 @@ class TransactionsTest(RedpandaTest):
                             tx_topic)
                 assert not node.account.exists(path)
 
-        self.admin.find_tx_coordinator("tx0",
-                                       node=random.choice(
-                                           self.redpanda.started_nodes()))
+        self.find_coordinator("tx0")
 
         for node in self.redpanda.started_nodes():
             for tx_topic in ["tx", "tx_registry"]:
@@ -896,7 +910,7 @@ class GATransaction_v22_1_UpgradeTest(RedpandaTest):
         self.do_upgrade_with_tx(get_topic_leader)
 
 
-class StaticPartitioning_MixedVersionsTest(RedpandaTest):
+class StaticPartitioning_MixedVersionsTest(RedpandaTest, TransactionsMixin):
     def __init__(self, test_context):
         extra_rp_conf = {
             "enable_leader_balancer": False,
@@ -933,7 +947,7 @@ class StaticPartitioning_MixedVersionsTest(RedpandaTest):
                             tx_topic)
                 assert not node.account.exists(path)
 
-        self.admin.find_tx_coordinator("tx0", node=old_node)
+        self.find_coordinator("tx0", node=old_node)
 
         for node in self.redpanda.started_nodes():
             path = join(RedpandaService.DATA_DIR, "kafka_internal",
@@ -958,7 +972,7 @@ class StaticPartitioning_MixedVersionsTest(RedpandaTest):
                             tx_topic)
                 assert not node.account.exists(path)
 
-        self.admin.find_tx_coordinator("tx0", node=new_node)
+        self.find_coordinator("tx0", node=new_node)
 
         for node in self.redpanda.started_nodes():
             path = join(RedpandaService.DATA_DIR, "kafka_internal",
@@ -985,9 +999,7 @@ class StaticPartitioning_MixedVersionsTest(RedpandaTest):
                             tx_topic)
                 assert not node.account.exists(path)
 
-        self.admin.find_tx_coordinator("tx0",
-                                       node=random.choice(
-                                           self.redpanda.started_nodes()))
+        self.find_coordinator("tx0")
 
         for node in self.redpanda.started_nodes():
             for tx_topic in ["tx", "tx_registry"]:
