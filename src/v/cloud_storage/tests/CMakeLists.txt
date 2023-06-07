@@ -17,6 +17,7 @@ rp_test(
   UNIT_TEST
   BINARY_NAME cloud_storage_basic
   SOURCES
+    s3_imposter.cc
     directory_walker_test.cc
     partition_manifest_test.cc
     topic_manifest_test.cc
@@ -25,7 +26,6 @@ rp_test(
     recovery_request_test.cc
     segment_meta_cstore_test.cc
     segment_chunk_test.cc
-    async_manifest_view_test.cc
   DEFINITIONS BOOST_TEST_DYN_LINK
   LIBRARIES v::seastar_testing_main Boost::unit_test_framework v::cloud_storage v::storage_test_utils v::cloud_roles v::raft
   ARGS "-- -c 1"
@@ -34,15 +34,17 @@ rp_test(
 
 # Unit tests that rely on doing remote I/O via s3_imposter
 rp_test(
-  UNIT_TEST
+  FIXTURE_TEST
   BINARY_NAME cloud_storage
   SOURCES
+    util.cc
     s3_imposter.cc
     remote_test.cc
     remote_segment_test.cc
     remote_partition_test.cc
     topic_recovery_service_test.cc
     cloud_storage_e2e_test.cc
+    async_manifest_view_test.cc
   DEFINITIONS BOOST_TEST_DYN_LINK
   LIBRARIES
     Boost::unit_test_framework
@@ -60,6 +62,7 @@ rp_test(
   FIXTURE_TEST
   BINARY_NAME cloud_storage_fuzzy
   SOURCES
+    util.cc
     s3_imposter.cc
     remote_partition_fuzz_test.cc
   DEFINITIONS BOOST_TEST_DYN_LINK
