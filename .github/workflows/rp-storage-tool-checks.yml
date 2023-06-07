@@ -1,0 +1,64 @@
+
+on: [push, pull_request]
+
+name: Lint & Test rp-storage-tool
+
+jobs:
+  paths-filter:
+    runs-on: ubuntu-latest
+    outputs:
+      touched: ${{ steps.filter.outputs.touched }}
+    steps:
+    - uses: actions/checkout@v2
+    - uses: dorny/paths-filter@v2
+      id: filter
+      with:
+        filters: |
+          touched:
+            - 'tools/rp_storage_tool/**'
+    # run only if files in the rp-storage-tool dir were changed
+    - name: workflow tests
+      if: steps.filter.outputs.touched == 'true'
+      run: echo "Files touched in rp_storage_tool"
+
+  check:
+    name: Compile check
+    needs: paths-filter
+    if: needs.paths-filter.outputs.touched == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v2
+      - name: Install stable toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: stable
+          override: true
+      - name: Run cargo check
+        uses: actions-rs/cargo@v1
+        with:
+          working-directory: ./tools/rp_storage_tool
+          command: check
+
+  test:
+    name: Unit tests
+    needs: paths-filter
+    if: needs.paths-filter.outputs.touched == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v2
+
+      - name: Install stable toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: stable
+          override: true
+
+      - name: Run cargo test
+        uses: actions-rs/cargo@v1
+        with:
+          working-directory: ./tools/rp_storage_tool
+          command: test
