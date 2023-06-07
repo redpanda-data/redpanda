@@ -205,6 +205,11 @@ class EndToEndTest(Test):
 
     def await_consumed_offsets(self, last_acked_offsets, timeout_sec):
         def has_finished_consuming():
+            # if consumer was interrupted with error there is no point waiting
+            # for it to finish
+            if self.consumer.interrupted_with_error:
+                raise self.consumer.interrupted_with_error
+
             for partition, offset in last_acked_offsets.items():
                 if partition not in self.last_consumed_offsets:
                     return False
