@@ -19,8 +19,8 @@
 #include "kafka/server/handlers/topics/types.h"
 #include "kafka/server/request_context.h"
 #include "kafka/types.h"
-#include "model/schema_id_validation.h"
 #include "outcome.h"
+#include "pandaproxy/schema_registry/schema_id_validation.h"
 #include "pandaproxy/schema_registry/subject_name_strategy.h"
 #include "security/acl.h"
 
@@ -400,7 +400,7 @@ public:
 
         auto matcher = string_switch<std::optional<property_t>>(cfg.name);
         switch (config::shard_local_cfg().enable_schema_id_validation()) {
-        case model::schema_id_validation_mode::compat:
+        case pandaproxy::schema_registry::schema_id_validation_mode::compat:
             matcher
               .match(
                 topic_property_record_key_schema_id_validation_compat,
@@ -415,7 +415,7 @@ public:
                 topic_property_record_value_subject_name_strategy_compat,
                 &props.record_value_subject_name_strategy_compat);
             [[fallthrough]];
-        case model::schema_id_validation_mode::redpanda:
+        case pandaproxy::schema_registry::schema_id_validation_mode::redpanda:
             matcher
               .match(
                 topic_property_record_key_schema_id_validation,
@@ -430,7 +430,7 @@ public:
                 topic_property_record_value_subject_name_strategy,
                 &props.record_value_subject_name_strategy);
             [[fallthrough]];
-        case model::schema_id_validation_mode::none:
+        case pandaproxy::schema_registry::schema_id_validation_mode::none:
             break;
         }
         auto prop = matcher.default_match(std::nullopt);
