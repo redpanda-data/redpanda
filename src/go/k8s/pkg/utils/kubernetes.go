@@ -29,7 +29,7 @@ func IsPodReady(pod *corev1.Pod) bool {
 	return false
 }
 
-func GetPodOrdinal(podName, clusterName string) (int64, error) {
+func GetPodOrdinal(podName, clusterName string) (int32, error) {
 	// Pod name needs to have at least 2 more characters
 	if len(podName) < len(clusterName)+2 {
 		return -1, fmt.Errorf("pod name (%s) and cluster name (%s): %w", podName, clusterName, ErrInvalidInputParameters)
@@ -41,5 +41,5 @@ func GetPodOrdinal(podName, clusterName string) (int64, error) {
 	if err != nil {
 		return -1, fmt.Errorf("parsing int failed (%s): %w", ordinalStr, err)
 	}
-	return ordinal, nil
+	return int32(ordinal), nil
 }

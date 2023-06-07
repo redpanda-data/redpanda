@@ -13,7 +13,6 @@ import (
 	"context"
 	"time"
 
-	"github.com/fluxcd/pkg/runtime/logger"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"gopkg.in/yaml.v2"
@@ -38,8 +37,6 @@ var _ = Describe("Redpanda cluster scale resource", func() {
 		timeoutShort  = time.Millisecond * 100
 		intervalShort = time.Millisecond * 20
 	)
-
-	ctrl.SetLogger(logger.NewLogger(logger.Options{}))
 
 	Context("When starting up a fresh Redpanda cluster", func() {
 		It("Should wait for the first replica to come up before launching the others", func() {
