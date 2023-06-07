@@ -1077,7 +1077,7 @@ std::ostream& operator<<(std::ostream& o, const cloud_storage_mode& mode) {
 std::ostream& operator<<(std::ostream& o, const nt_revision& ntr) {
     fmt::print(
       o,
-      "{{ns: {{{}}}, topic: {{}}, revision: {{{}}}}}",
+      "{{ns: {}, topic: {}, revision: {}}}",
       ntr.nt.ns,
       ntr.nt.tp,
       ntr.initial_revision_id);
