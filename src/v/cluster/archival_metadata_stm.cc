@@ -458,7 +458,8 @@ ss::future<> archival_metadata_stm::make_snapshot(
       "archival_metadata.snapshot",
       raft_priority());
 
-    co_await persist_snapshot(tmp_snapshot_mgr, std::move(snapshot));
+    co_await file_backed_stm_snapshot::persist_snapshot(
+      tmp_snapshot_mgr, std::move(snapshot));
 }
 
 archival_metadata_stm::archival_metadata_stm(
@@ -467,7 +468,7 @@ archival_metadata_stm::archival_metadata_stm(
   features::feature_table& ft,
   ss::logger& logger,
   ss::shared_ptr<util::mem_tracker> partition_mem_tracker)
-  : cluster::persisted_stm("archival_metadata.snapshot", logger, raft)
+  : cluster::persisted_stm<>(archival_stm_snapshot, logger, raft)
   , _logger(logger, ssx::sformat("ntp: {}", raft->ntp()))
   , _manifest(ss::make_shared<cloud_storage::partition_manifest>(
       raft->ntp(),

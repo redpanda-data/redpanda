@@ -10,12 +10,14 @@
 #include "cluster/persisted_stm.h"
 
 #include "bytes/iostream.h"
+#include "cluster/cluster_utils.h"
 #include "cluster/logger.h"
 #include "raft/consensus.h"
 #include "raft/errc.h"
 #include "raft/offset_monitor.h"
 #include "raft/types.h"
 #include "ssx/sformat.h"
+#include "storage/kvstore.h"
 #include "storage/record_batch_builder.h"
 #include "storage/snapshot.h"
 
@@ -25,25 +27,78 @@
 
 #include <filesystem>
 
+namespace {
+
+std::optional<cluster::stm_snapshot_header> read_snapshot_header(
+  iobuf_parser& parser, const model::ntp& ntp, const ss::sstring& name) {
+    auto version = reflection::adl<int8_t>{}.from(parser);
+    vassert(
+      version == cluster::stm_snapshot_version
+        || version == cluster::stm_snapshot_version_v0,
+      "[{} ({})] Unsupported persisted_stm snapshot_version {}",
+      ntp,
+      name,
+      version);
+
+    if (version == cluster::stm_snapshot_version_v0) {
+        return std::nullopt;
+    }
+
+    cluster::stm_snapshot_header header;
+    header.offset = model::offset(reflection::adl<int64_t>{}.from(parser));
+    header.version = reflection::adl<int8_t>{}.from(parser);
+    header.snapshot_size = reflection::adl<int32_t>{}.from(parser);
+    return header;
+}
+
+} // namespace
 namespace cluster {
 
-persisted_stm::persisted_stm(
-  ss::sstring snapshot_mgr_name, ss::logger& logger, raft::consensus* c)
+template<supported_stm_snapshot T>
+template<typename... Args>
+persisted_stm<T>::persisted_stm(
+  ss::sstring snapshot_mgr_name,
+  ss::logger& logger,
+  raft::consensus* c,
+  Args&&... args)
   : raft::state_machine(c, logger, ss::default_priority_class())
   , _c(c)
+  , _log(logger, ssx::sformat("[{} ({})]", _c->ntp(), snapshot_mgr_name))
+  , _snapshot_backend(snapshot_mgr_name, _log, c, std::forward<Args>(args)...) {
+}
+
+template<supported_stm_snapshot T>
+ss::future<std::optional<stm_snapshot>> persisted_stm<T>::load_snapshot() {
+    return _snapshot_backend.load_snapshot();
+}
+
+template<supported_stm_snapshot T>
+ss::future<> persisted_stm<T>::remove_persistent_state() {
+    return _snapshot_backend.remove_persistent_state();
+}
+
+template<supported_stm_snapshot T>
+ss::future<> persisted_stm<T>::persist_snapshot(stm_snapshot&& snapshot) {
+    return _snapshot_backend.persist_snapshot(std::move(snapshot));
+}
+
+file_backed_stm_snapshot::file_backed_stm_snapshot(
+  ss::sstring snapshot_name, prefix_logger& log, raft::consensus* c)
+  : _ntp(c->ntp())
+  , _log(log)
   , _snapshot_mgr(
       std::filesystem::path(c->log_config().work_directory()),
-      snapshot_mgr_name,
-      ss::default_priority_class())
-  , _log(logger, ssx::sformat("[{} ({})]", _c->ntp(), name())) {}
+      snapshot_name,
+      ss::default_priority_class()) {}
 
-ss::future<> persisted_stm::remove_persistent_state() {
+ss::future<> file_backed_stm_snapshot::remove_persistent_state() {
     _snapshot_size = 0;
     co_await _snapshot_mgr.remove_snapshot();
     co_await _snapshot_mgr.remove_partial_snapshots();
 }
 
-ss::future<std::optional<stm_snapshot>> persisted_stm::load_snapshot() {
+ss::future<std::optional<stm_snapshot>>
+file_backed_stm_snapshot::load_snapshot() {
     auto maybe_reader = co_await _snapshot_mgr.open_snapshot();
     if (!maybe_reader) {
         co_return std::nullopt;
@@ -52,33 +107,17 @@ ss::future<std::optional<stm_snapshot>> persisted_stm::load_snapshot() {
     storage::snapshot_reader& reader = *maybe_reader;
     iobuf meta_buf = co_await reader.read_metadata();
     iobuf_parser meta_parser(std::move(meta_buf));
-
-    auto version = reflection::adl<int8_t>{}.from(meta_parser);
-    vassert(
-      version == snapshot_version || version == snapshot_version_v0,
-      "[{} ({})] Unsupported persisted_stm snapshot_version {}",
-      _c->ntp(),
-      name(),
-      version);
-
-    if (version == snapshot_version_v0) {
-        vlog(
-          _log.warn,
-          "Skipping snapshot {} due to old format",
-          _snapshot_mgr.snapshot_path());
+    auto header = read_snapshot_header(meta_parser, _ntp, name());
+    if (!header) {
+        vlog(_log.warn, "Skipping snapshot {} due to old format", store_path());
 
         // can't load old format of the snapshot, since snapshot is missing
         // it will be reconstructed by replaying the log
         co_await reader.close();
         co_return std::nullopt;
     }
-
     stm_snapshot snapshot;
-    snapshot.header.offset = model::offset(
-      reflection::adl<int64_t>{}.from(meta_parser));
-    snapshot.header.version = reflection::adl<int8_t>{}.from(meta_parser);
-    snapshot.header.snapshot_size = reflection::adl<int32_t>{}.from(
-      meta_parser);
+    snapshot.header = *header;
     snapshot.data = co_await read_iobuf_exactly(
       reader.input(), snapshot.header.snapshot_size);
 
@@ -89,19 +128,11 @@ ss::future<std::optional<stm_snapshot>> persisted_stm::load_snapshot() {
     co_return snapshot;
 }
 
-ss::future<> persisted_stm::wait_for_snapshot_hydrated() {
-    auto f = ss::now();
-    if (unlikely(!_resolved_when_snapshot_hydrated.available())) {
-        f = _resolved_when_snapshot_hydrated.get_shared_future();
-    }
-    return f;
-}
-
-ss::future<> persisted_stm::persist_snapshot(
+ss::future<> file_backed_stm_snapshot::persist_snapshot(
   storage::simple_snapshot_manager& snapshot_mgr, stm_snapshot&& snapshot) {
     iobuf data_size_buf;
 
-    int8_t version = snapshot_version;
+    int8_t version = stm_snapshot_version;
     int64_t offset = snapshot.header.offset();
     int8_t data_version = snapshot.header.version;
     int32_t data_size = snapshot.header.snapshot_size;
@@ -132,14 +163,125 @@ ss::future<> persisted_stm::persist_snapshot(
       });
 }
 
-ss::future<> persisted_stm::persist_snapshot(stm_snapshot&& snapshot) {
+ss::future<>
+file_backed_stm_snapshot::persist_snapshot(stm_snapshot&& snapshot) {
     return persist_snapshot(_snapshot_mgr, std::move(snapshot)).then([this] {
         return _snapshot_mgr.get_snapshot_size().then(
           [this](uint64_t size) { _snapshot_size = size; });
     });
 }
 
-ss::future<> persisted_stm::do_make_snapshot() {
+const ss::sstring& file_backed_stm_snapshot::name() {
+    return _snapshot_mgr.name();
+}
+
+ss::sstring file_backed_stm_snapshot::store_path() const {
+    return _snapshot_mgr.snapshot_path().string();
+}
+
+size_t file_backed_stm_snapshot::get_snapshot_size() const {
+    return _snapshot_size;
+}
+
+kvstore_backed_stm_snapshot::kvstore_backed_stm_snapshot(
+  ss::sstring snapshot_name,
+  prefix_logger& log,
+  raft::consensus* c,
+  storage::kvstore& kvstore)
+  : _ntp(c->ntp())
+  , _name(snapshot_name)
+  , _snapshot_key(detail::stm_snapshot_key(snapshot_name, c->ntp()))
+  , _log(log)
+  , _kvstore(kvstore) {}
+
+kvstore_backed_stm_snapshot::kvstore_backed_stm_snapshot(
+  ss::sstring snapshot_name,
+  prefix_logger& log,
+  model::ntp ntp,
+  storage::kvstore& kvstore)
+  : _ntp(ntp)
+  , _name(snapshot_name)
+  , _snapshot_key(detail::stm_snapshot_key(snapshot_name, ntp))
+  , _log(log)
+  , _kvstore(kvstore) {}
+
+bytes kvstore_backed_stm_snapshot::snapshot_key() const {
+    bytes k;
+    k.append(
+      reinterpret_cast<const uint8_t*>(_snapshot_key.begin()),
+      _snapshot_key.size());
+    return k;
+}
+
+const ss::sstring& kvstore_backed_stm_snapshot::name() { return _name; }
+
+ss::sstring kvstore_backed_stm_snapshot::store_path() const {
+    return _snapshot_key;
+}
+
+/// Serialized format of snapshots for newer format used by
+/// kvstore_backed_stm_snapshot, once deserialized struct will be decomposed
+/// into a normal stm_snapshot to keep the interface the same across impls
+struct stm_thin_snapshot
+  : serde::
+      envelope<stm_thin_snapshot, serde::version<0>, serde::compat_version<0>> {
+    model::offset offset;
+    iobuf data;
+
+    auto serde_fields() { return std::tie(offset, data); }
+};
+
+ss::future<std::optional<stm_snapshot>>
+kvstore_backed_stm_snapshot::load_snapshot() {
+    auto snapshot_blob = _kvstore.get(
+      storage::kvstore::key_space::stms, snapshot_key());
+    if (!snapshot_blob) {
+        co_return std::nullopt;
+    }
+    auto thin_snapshot = serde::from_iobuf<stm_thin_snapshot>(
+      std::move(*snapshot_blob));
+    stm_snapshot snapshot;
+    snapshot.header = stm_snapshot_header{
+      .version = stm_snapshot_version,
+      .snapshot_size = static_cast<int32_t>(thin_snapshot.data.size_bytes()),
+      .offset = thin_snapshot.offset};
+    snapshot.data = std::move(thin_snapshot.data);
+    co_return snapshot;
+}
+
+ss::future<>
+kvstore_backed_stm_snapshot::persist_snapshot(stm_snapshot&& snapshot) {
+    stm_thin_snapshot thin_snapshot{
+      .offset = snapshot.header.offset, .data = std::move(snapshot.data)};
+    auto serialized_snapshot = serde::to_iobuf(std::move(thin_snapshot));
+    co_await _kvstore.put(
+      storage::kvstore::key_space::stms,
+      snapshot_key(),
+      std::move(serialized_snapshot));
+}
+
+ss::future<> kvstore_backed_stm_snapshot::remove_persistent_state() {
+    co_await _kvstore.remove(storage::kvstore::key_space::stms, snapshot_key());
+}
+
+size_t kvstore_backed_stm_snapshot::get_snapshot_size() const {
+    /// get_snapshot_size() is used to account for total size of files across
+    /// the disk, kvstore has its own accounting method so return 0 here to not
+    /// skew the existing metrics.
+    return 0;
+}
+
+template<supported_stm_snapshot T>
+ss::future<> persisted_stm<T>::wait_for_snapshot_hydrated() {
+    auto f = ss::now();
+    if (unlikely(!_resolved_when_snapshot_hydrated.available())) {
+        f = _resolved_when_snapshot_hydrated.get_shared_future();
+    }
+    return f;
+}
+
+template<supported_stm_snapshot T>
+ss::future<> persisted_stm<T>::do_make_snapshot() {
     auto snapshot = co_await take_snapshot();
     auto offset = snapshot.header.offset;
 
@@ -147,21 +289,27 @@ ss::future<> persisted_stm::do_make_snapshot() {
     _last_snapshot_offset = std::max(_last_snapshot_offset, offset);
 }
 
-void persisted_stm::make_snapshot_in_background() {
+template<supported_stm_snapshot T>
+void persisted_stm<T>::make_snapshot_in_background() {
     ssx::spawn_with_gate(_gate, [this] { return make_snapshot(); });
 }
 
-ss::future<> persisted_stm::make_snapshot() {
+template<supported_stm_snapshot T>
+ss::future<> persisted_stm<T>::make_snapshot() {
     return _op_lock.with([this]() {
         auto f = wait_for_snapshot_hydrated();
         return f.then([this] { return do_make_snapshot(); });
     });
 }
 
-uint64_t persisted_stm::get_snapshot_size() const { return _snapshot_size; }
+template<supported_stm_snapshot T>
+uint64_t persisted_stm<T>::get_snapshot_size() const {
+    return _snapshot_backend.get_snapshot_size();
+}
 
+template<supported_stm_snapshot T>
 ss::future<>
-persisted_stm::ensure_snapshot_exists(model::offset target_offset) {
+persisted_stm<T>::ensure_snapshot_exists(model::offset target_offset) {
     return _op_lock.with([this, target_offset]() {
         auto f = wait_for_snapshot_hydrated();
 
@@ -186,16 +334,19 @@ persisted_stm::ensure_snapshot_exists(model::offset target_offset) {
     });
 }
 
-model::offset persisted_stm::max_collectible_offset() {
+template<supported_stm_snapshot T>
+model::offset persisted_stm<T>::max_collectible_offset() {
     return model::offset::max();
 }
 
+template<supported_stm_snapshot T>
 ss::future<fragmented_vector<model::tx_range>>
-persisted_stm::aborted_tx_ranges(model::offset, model::offset) {
+persisted_stm<T>::aborted_tx_ranges(model::offset, model::offset) {
     return ss::make_ready_future<fragmented_vector<model::tx_range>>();
 }
 
-ss::future<> persisted_stm::wait_offset_committed(
+template<supported_stm_snapshot T>
+ss::future<> persisted_stm<T>::wait_offset_committed(
   model::timeout_clock::duration timeout,
   model::offset offset,
   model::term_id term) {
@@ -206,7 +357,8 @@ ss::future<> persisted_stm::wait_offset_committed(
     return _c->commit_index_updated().wait(timeout, stop_cond);
 }
 
-ss::future<bool> persisted_stm::do_sync(
+template<supported_stm_snapshot T>
+ss::future<bool> persisted_stm<T>::do_sync(
   model::timeout_clock::duration timeout,
   model::offset offset,
   model::term_id term) {
@@ -278,7 +430,9 @@ ss::future<bool> persisted_stm::do_sync(
     co_return false;
 }
 
-ss::future<bool> persisted_stm::sync(model::timeout_clock::duration timeout) {
+template<supported_stm_snapshot T>
+ss::future<bool>
+persisted_stm<T>::sync(model::timeout_clock::duration timeout) {
     auto term = _c->term();
     if (!_c->is_leader()) {
         co_return false;
@@ -324,7 +478,8 @@ ss::future<bool> persisted_stm::sync(model::timeout_clock::duration timeout) {
     co_return is_synced;
 }
 
-ss::future<bool> persisted_stm::wait_no_throw(
+template<supported_stm_snapshot T>
+ss::future<bool> persisted_stm<T>::wait_no_throw(
   model::offset offset,
   model::timeout_clock::time_point deadline,
   std::optional<std::reference_wrapper<ss::abort_source>> as) {
@@ -349,7 +504,8 @@ ss::future<bool> persisted_stm::wait_no_throw(
       });
 }
 
-ss::future<> persisted_stm::start() {
+template<supported_stm_snapshot T>
+ss::future<> persisted_stm<T>::start() {
     std::optional<stm_snapshot> maybe_snapshot;
     try {
         maybe_snapshot = co_await load_snapshot();
@@ -359,7 +515,7 @@ ss::future<> persisted_stm::start() {
           "[[{}] ({})]Can't load snapshot from '{}'. Got error: {}",
           _c->ntp(),
           name(),
-          _snapshot_mgr.snapshot_path(),
+          _snapshot_backend.store_path(),
           std::current_exception());
     }
 
@@ -383,7 +539,7 @@ ss::future<> persisted_stm::start() {
             vlog(
               _log.warn,
               "Skipping snapshot {} since it's out of sync with the log",
-              _snapshot_mgr.snapshot_path());
+              _snapshot_backend.store_path());
             vlog(
               _log.debug,
               "start with non-applied snapshot, set_next {}",
@@ -405,5 +561,14 @@ ss::future<> persisted_stm::start() {
     }
     co_await state_machine::start();
 }
+
+template class persisted_stm<file_backed_stm_snapshot>;
+template class persisted_stm<kvstore_backed_stm_snapshot>;
+
+template persisted_stm<file_backed_stm_snapshot>::persisted_stm(
+  ss::sstring, seastar::logger&, raft::consensus*);
+
+template persisted_stm<kvstore_backed_stm_snapshot>::persisted_stm(
+  ss::sstring, seastar::logger&, raft::consensus*, storage::kvstore&);
 
 } // namespace cluster

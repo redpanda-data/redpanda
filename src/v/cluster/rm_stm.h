@@ -55,7 +55,7 @@ namespace cluster {
  *   - enforces monotonicity of the sequential numbers
  *   - fences against old epochs
  */
-class rm_stm final : public persisted_stm {
+class rm_stm final : public persisted_stm<> {
 public:
     using clock_type = ss::lowres_clock;
     using time_point_type = clock_type::time_point;

@@ -30,6 +30,9 @@
 
 namespace cluster {
 
+static constexpr const int8_t stm_snapshot_version_v0 = 0;
+static constexpr const int8_t stm_snapshot_version = 1;
+
 struct stm_snapshot_header {
     int8_t version{0};
     int32_t snapshot_size{0};
@@ -53,6 +56,71 @@ struct stm_snapshot {
 
         return snapshot;
     }
+};
+
+class file_backed_stm_snapshot {
+public:
+    file_backed_stm_snapshot(
+      ss::sstring snapshot_name, prefix_logger& log, raft::consensus* c);
+    ss::future<std::optional<stm_snapshot>> load_snapshot();
+    ss::future<> persist_snapshot(stm_snapshot&&);
+    const ss::sstring& name();
+    ss::sstring store_path() const;
+    ss::future<> remove_persistent_state();
+    size_t get_snapshot_size() const;
+
+    static ss::future<>
+    persist_snapshot(storage::simple_snapshot_manager&, stm_snapshot&&);
+
+private:
+    model::ntp _ntp;
+    prefix_logger& _log;
+    storage::simple_snapshot_manager _snapshot_mgr;
+    size_t _snapshot_size{0};
+};
+
+class kvstore_backed_stm_snapshot {
+public:
+    kvstore_backed_stm_snapshot(
+      ss::sstring snapshot_name,
+      prefix_logger& log,
+      raft::consensus* c,
+      storage::kvstore& kvstore);
+
+    /// For testing
+    kvstore_backed_stm_snapshot(
+      ss::sstring snapshot_name,
+      prefix_logger& log,
+      model::ntp ntp,
+      storage::kvstore& kvstore);
+
+    ss::future<std::optional<stm_snapshot>> load_snapshot();
+    ss::future<> persist_snapshot(stm_snapshot&&);
+    const ss::sstring& name();
+    ss::sstring store_path() const;
+    ss::future<> remove_persistent_state();
+    size_t get_snapshot_size() const;
+
+private:
+    bytes snapshot_key() const;
+
+    model::ntp _ntp;
+    ss::sstring _name;
+    ss::sstring _snapshot_key;
+    prefix_logger& _log;
+    storage::kvstore& _kvstore;
+};
+
+template<typename T>
+concept supported_stm_snapshot = requires(T s, stm_snapshot&& snapshot) {
+    {
+        s.load_snapshot()
+    } -> std::same_as<ss::future<std::optional<stm_snapshot>>>;
+    { s.persist_snapshot(std::move(snapshot)) } -> std::same_as<ss::future<>>;
+    { s.remove_persistent_state() } -> std::same_as<ss::future<>>;
+    { s.get_snapshot_size() } -> std::convertible_to<size_t>;
+    { s.name() } -> std::convertible_to<const ss::sstring&>;
+    { s.store_path() } -> std::convertible_to<ss::sstring>;
 };
 
 /**
@@ -79,22 +147,23 @@ struct stm_snapshot {
  * and uses it as a base for replaying the commands.
  */
 
+template<supported_stm_snapshot T = file_backed_stm_snapshot>
 class persisted_stm
   : public raft::state_machine
   , public storage::snapshotable_stm {
 public:
-    static constexpr const int8_t snapshot_version_v0 = 0;
-    static constexpr const int8_t snapshot_version = 1;
-    explicit persisted_stm(ss::sstring, ss::logger&, raft::consensus*);
+    template<typename... Args>
+    explicit persisted_stm(
+      ss::sstring, ss::logger&, raft::consensus*, Args&&...);
 
     void make_snapshot_in_background() final;
     ss::future<> ensure_snapshot_exists(model::offset) final;
     model::offset max_collectible_offset() override;
     ss::future<fragmented_vector<model::tx_range>>
       aborted_tx_ranges(model::offset, model::offset) override;
-    const ss::sstring& name() override { return _snapshot_mgr.name(); }
 
     virtual ss::future<> remove_persistent_state();
+    const ss::sstring& name() override { return _snapshot_backend.name(); }
 
     ss::future<> make_snapshot();
     virtual uint64_t get_snapshot_size() const;
@@ -158,10 +227,9 @@ protected:
     bool _is_catching_up{false};
     model::term_id _insync_term;
     model::offset _insync_offset;
-    uint64_t _snapshot_size{0};
     raft::consensus* _c;
-    storage::simple_snapshot_manager _snapshot_mgr;
     prefix_logger _log;
+    T _snapshot_backend;
 };
 
 } // namespace cluster

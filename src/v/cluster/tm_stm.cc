@@ -114,7 +114,7 @@ tm_stm::tm_stm(
   raft::consensus* c,
   ss::sharded<features::feature_table>& feature_table,
   ss::lw_shared_ptr<cluster::tm_stm_cache> tm_stm_cache)
-  : persisted_stm("tx.coordinator.snapshot", logger, c)
+  : persisted_stm<>(tm_stm_snapshot, logger, c)
   , _sync_timeout(config::shard_local_cfg().tm_sync_timeout_ms.value())
   , _transactional_id_expiration(
       config::shard_local_cfg().transactional_id_expiration_ms.value())

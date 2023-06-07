@@ -30,6 +30,14 @@
 
 namespace detail {
 
+ss::sstring stm_snapshot_key(const ss::sstring&, const model::ntp& ntp);
+
+ss::future<> move_persistent_stm_state(
+  model::ntp ntp,
+  ss::shard_id source_shard,
+  ss::shard_id target_shard,
+  ss::sharded<storage::api>&);
+
 template<typename T, typename Fn>
 std::vector<cluster::topic_result>
 create_topic_results(const std::vector<T>& topics, Fn fn) {

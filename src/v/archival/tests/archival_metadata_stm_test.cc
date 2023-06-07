@@ -552,7 +552,7 @@ class archival_metadata_stm_accessor {
 public:
     static ss::future<> persist_snapshot(
       storage::simple_snapshot_manager& mgr, cluster::stm_snapshot&& snapshot) {
-        return archival_metadata_stm::persist_snapshot(
+        return file_backed_stm_snapshot::persist_snapshot(
           mgr, std::move(snapshot));
     }
 };

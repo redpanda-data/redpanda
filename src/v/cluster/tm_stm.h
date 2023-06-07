@@ -48,7 +48,7 @@ using use_tx_version_with_last_pid_bool
  * ongoing and executed transactions and maps tx.id to its latest
  * session (producer_identity)
  */
-class tm_stm final : public persisted_stm {
+class tm_stm final : public persisted_stm<> {
 public:
     using clock_type = ss::lowres_system_clock;
 

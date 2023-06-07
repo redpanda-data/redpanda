@@ -289,7 +289,7 @@ rm_stm::rm_stm(
   ss::sharded<cluster::tx_gateway_frontend>& tx_gateway_frontend,
   ss::sharded<features::feature_table>& feature_table,
   config::binding<uint64_t> max_concurrent_producer_ids)
-  : persisted_stm("tx.snapshot", logger, c)
+  : persisted_stm<>(rm_stm_snapshot, logger, c)
   , _tx_locks(
       mt::
         map<absl::flat_hash_map, model::producer_id, ss::lw_shared_ptr<mutex>>(

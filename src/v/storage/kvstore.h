@@ -97,6 +97,7 @@ public:
         controller = 3,
         offset_translator = 4,
         usage = 5,
+        stms = 6,
         /* your sub-system here */
     };
 
