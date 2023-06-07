@@ -45,9 +45,7 @@ SEASTAR_THREAD_TEST_CASE(test_sharded_store_referenced_by) {
 
     // Insert referenced
     auto importing_schema = pps::canonical_schema{
-      pps::subject{"imported.proto"},
-      imported,
-      {{"simple", pps::subject{"simple.proto"}, ver1}}};
+      pps::subject{"imported.proto"}, imported};
 
     store
       .upsert(
@@ -64,6 +62,37 @@ SEASTAR_THREAD_TEST_CASE(test_sharded_store_referenced_by) {
 
     BOOST_REQUIRE_EQUAL(referenced_by.size(), 1);
     BOOST_REQUIRE_EQUAL(referenced_by[0], pps::schema_id{2});
+
+    BOOST_REQUIRE(
+      store.is_referenced(pps::subject{"simple.proto"}, pps::schema_version{1})
+        .get());
+
+    auto importing = store.get_schema_definition(pps::schema_id{2}).get();
+    BOOST_REQUIRE_EQUAL(importing.refs().size(), 1);
+    BOOST_REQUIRE_EQUAL(importing.refs()[0].sub, imported.refs()[0].sub);
+    BOOST_REQUIRE_EQUAL(
+      importing.refs()[0].version, imported.refs()[0].version);
+    BOOST_REQUIRE_EQUAL(importing.refs()[0].name, imported.refs()[0].name);
+
+    // soft delete subject
+    store
+      .upsert(
+        pps::seq_marker{
+          std::nullopt, std::nullopt, ver1, pps::seq_marker_key_type::schema},
+        importing_schema,
+        pps::schema_id{2},
+        ver1,
+        pps::is_deleted::yes)
+      .get();
+
+    // Soft-deleted should not partake in reference calculations
+    BOOST_REQUIRE(
+      store.referenced_by(pps::subject{"simple.proto"}, pps::schema_version{1})
+        .get()
+        .empty());
+    BOOST_REQUIRE(
+      !store.is_referenced(pps::subject{"simple.proto"}, pps::schema_version{1})
+         .get());
 }
 
 SEASTAR_THREAD_TEST_CASE(test_sharded_store_find_unordered) {

@@ -44,7 +44,11 @@ std::ostream& operator<<(
   std::ostream& os,
   const typed_schema_definition<unparsed_schema_definition::tag>& def) {
     fmt::print(
-      os, "type: {}, definition: {}", to_string_view(def.type()), def.raw());
+      os,
+      "type: {}, definition: {}, references: {}",
+      to_string_view(def.type()),
+      def.raw(),
+      def.refs());
     return os;
 }
 
@@ -52,7 +56,11 @@ std::ostream& operator<<(
   std::ostream& os,
   const typed_schema_definition<canonical_schema_definition::tag>& def) {
     fmt::print(
-      os, "type: {}, definition: {}", to_string_view(def.type()), def.raw());
+      os,
+      "type: {}, definition: {}, references: {}",
+      to_string_view(def.type()),
+      def.raw(),
+      def.refs());
     return os;
 }
 
@@ -63,14 +71,12 @@ std::ostream& operator<<(std::ostream& os, const schema_reference& ref) {
 }
 
 std::ostream& operator<<(std::ostream& os, const unparsed_schema& ref) {
-    fmt::print(
-      os, "subject: {}, {}, references: {}", ref.sub(), ref.def(), ref.refs());
+    fmt::print(os, "subject: {}, {}", ref.sub(), ref.def());
     return os;
 }
 
 std::ostream& operator<<(std::ostream& os, const canonical_schema& ref) {
-    fmt::print(
-      os, "subject: {}, {}, references: {}", ref.sub(), ref.def(), ref.refs());
+    fmt::print(os, "subject: {}, {}", ref.sub(), ref.def());
     return os;
 }
 
