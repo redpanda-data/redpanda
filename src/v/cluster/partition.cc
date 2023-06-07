@@ -841,15 +841,15 @@ partition::get_term_last_offset(model::term_id term) const {
     return model::next_offset(*o);
 }
 
-std::optional<model::offset>
+ss::future<std::optional<model::offset>>
 partition::get_cloud_term_last_offset(model::term_id term) const {
-    auto o = _cloud_storage_partition->get_term_last_offset(term);
+    auto o = co_await _cloud_storage_partition->get_term_last_offset(term);
     if (!o) {
-        return std::nullopt;
+        co_return std::nullopt;
     }
     // Kafka defines leader epoch last offset as a first offset of next
     // leader epoch
-    return model::next_offset(kafka::offset_cast(*o));
+    co_return model::next_offset(kafka::offset_cast(*o));
 }
 
 ss::future<> partition::remove_persistent_state() {

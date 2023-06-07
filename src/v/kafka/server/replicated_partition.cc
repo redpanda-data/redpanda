@@ -279,7 +279,8 @@ raft::replicate_stages replicated_partition::replicate(
     return out;
 }
 
-std::optional<model::offset> replicated_partition::get_leader_epoch_last_offset(
+ss::future<std::optional<model::offset>>
+replicated_partition::get_leader_epoch_last_offset(
   kafka::leader_epoch epoch) const {
     const model::term_id term(epoch);
     const auto first_local_offset = _partition->start_offset();
@@ -290,7 +291,7 @@ std::optional<model::offset> replicated_partition::get_leader_epoch_last_offset(
     if (term >= first_local_term) {
         auto last_offset = _partition->get_term_last_offset(term);
         if (last_offset) {
-            return _translator->from_log_offset(*last_offset);
+            co_return _translator->from_log_offset(*last_offset);
         }
     }
     // The requested term falls below our earliest local segment.
@@ -299,10 +300,10 @@ std::optional<model::offset> replicated_partition::get_leader_epoch_last_offset(
     if (
       _partition->is_remote_fetch_enabled()
       && _partition->cloud_data_available()) {
-        return _partition->get_cloud_term_last_offset(term);
+        co_return co_await _partition->get_cloud_term_last_offset(term);
     }
     // Return the offset of this next-highest term.
-    return _translator->from_log_offset(first_local_offset);
+    co_return _translator->from_log_offset(first_local_offset);
 }
 
 ss::future<error_code> replicated_partition::validate_fetch_offset(

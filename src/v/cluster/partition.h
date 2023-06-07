@@ -301,7 +301,7 @@ public:
         return _raft->get_term(o);
     }
 
-    std::optional<model::offset>
+    ss::future<std::optional<model::offset>>
     get_cloud_term_last_offset(model::term_id term) const;
 
     ss::future<std::error_code>

@@ -50,44 +50,49 @@ struct shard_op_ctx {
  * requested, or first offset of leader epoch next to the one requested
  */
 
-model::offset
+ss::future<model::offset>
 get_epoch_end_offset(kafka::leader_epoch epoch, const partition_proxy& p) {
-    return p.get_leader_epoch_last_offset(epoch).value_or(model::offset{-1});
+    auto res = co_await p.get_leader_epoch_last_offset(epoch);
+    co_return res.value_or(model::offset{-1});
+}
+
+static ss::future<std::vector<epoch_end_offset>> fetch_offsets(
+  request_context& ctx, std::vector<ntp_last_offset_request> requests) {
+    std::vector<epoch_end_offset> ret;
+    ret.reserve(requests.size());
+    for (auto& r : requests) {
+        auto p = make_partition_proxy(r.ktp, ctx.partition_manager().local());
+        // offsets_for_leader_epoch request should only be answered by
+        // leader
+        if (!p || !p->is_leader()) {
+            ret.push_back(response_t::make_epoch_end_offset(
+              r.ktp.get_partition(), error_code::not_leader_for_partition));
+            continue;
+        }
+
+        auto l_epoch_error = details::check_leader_epoch(r.current_epoch, *p);
+        if (l_epoch_error != error_code::none) {
+            ret.push_back(response_t::make_epoch_end_offset(
+              r.ktp.get_partition(), l_epoch_error));
+            continue;
+        }
+
+        ret.push_back(response_t::make_epoch_end_offset(
+          r.ktp.get_partition(),
+          co_await get_epoch_end_offset(r.requested_epoch, *p),
+          p->leader_epoch()));
+    }
+    co_return ret;
 }
 
 static ss::future<std::vector<epoch_end_offset>> fetch_offsets_from_shard(
   request_context& ctx,
   ss::shard_id shard,
   std::vector<ntp_last_offset_request> requests) {
-    return ss::smp::submit_to(shard, [&ctx, requests = std::move(requests)] {
-        std::vector<epoch_end_offset> ret;
-        ret.reserve(requests.size());
-        for (auto& r : requests) {
-            auto p = make_partition_proxy(
-              r.ktp, ctx.partition_manager().local());
-            // offsets_for_leader_epoch request should only be answered by
-            // leader
-            if (!p || !p->is_leader()) {
-                ret.push_back(response_t::make_epoch_end_offset(
-                  r.ktp.get_partition(), error_code::not_leader_for_partition));
-                continue;
-            }
-
-            auto l_epoch_error = details::check_leader_epoch(
-              r.current_epoch, *p);
-            if (l_epoch_error != error_code::none) {
-                ret.push_back(response_t::make_epoch_end_offset(
-                  r.ktp.get_partition(), l_epoch_error));
-                continue;
-            }
-
-            ret.push_back(response_t::make_epoch_end_offset(
-              r.ktp.get_partition(),
-              get_epoch_end_offset(r.requested_epoch, *p),
-              p->leader_epoch()));
-        }
-        return ret;
-    });
+    return ss::smp::submit_to(
+      shard, [&ctx, requests = std::move(requests)]() mutable {
+          return fetch_offsets(ctx, std::move(requests));
+      });
 }
 
 static ss::future<> fetch_offsets_from_shards(

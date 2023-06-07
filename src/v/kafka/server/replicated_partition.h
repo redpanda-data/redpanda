@@ -142,7 +142,7 @@ public:
 
     cluster::partition_probe& probe() final { return _partition->probe(); }
 
-    std::optional<model::offset>
+    ss::future<std::optional<model::offset>>
       get_leader_epoch_last_offset(kafka::leader_epoch) const final;
 
     kafka::leader_epoch leader_epoch() const final {

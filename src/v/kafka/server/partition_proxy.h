@@ -38,7 +38,7 @@ public:
         virtual checked<model::offset, error_code>
         last_stable_offset() const = 0;
         virtual kafka::leader_epoch leader_epoch() const = 0;
-        virtual std::optional<model::offset>
+        virtual ss::future<std::optional<model::offset>>
           get_leader_epoch_last_offset(kafka::leader_epoch) const = 0;
         virtual bool is_elected_leader() const = 0;
         virtual bool is_leader() const = 0;
@@ -107,7 +107,7 @@ public:
 
     kafka::leader_epoch leader_epoch() const { return _impl->leader_epoch(); }
 
-    std::optional<model::offset>
+    ss::future<std::optional<model::offset>>
     get_leader_epoch_last_offset(kafka::leader_epoch epoch) const {
         return _impl->get_leader_epoch_last_offset(epoch);
     }
