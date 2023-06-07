@@ -7,7 +7,7 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-from enum import IntEnum
+from enum import Enum
 import http.client
 import json
 from typing import Optional
@@ -32,9 +32,16 @@ from rptest.services.admin import Admin
 from rptest.services.cluster import cluster
 from rptest.services.redpanda import ResourceSettings, SecurityConfig, LoggingConfig, PandaproxyConfig, SchemaRegistryConfig
 from rptest.services.serde_client import SerdeClient
+from rptest.tests.cluster_config_test import wait_for_version_status_sync
 from rptest.tests.pandaproxy_test import User, PandaProxyTLSProvider
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.util import inject_remote_script, search_logs_with_timeout
+
+
+class SchemaIdValidationMode(str, Enum):
+    NONE = "none"
+    REDPANDA = "redpanda"
+    COMPAT = "compat"
 
 
 def create_topic_names(count):
@@ -1264,11 +1271,8 @@ class SchemaRegistryTestMethods(SchemaRegistryEndpoints):
                                   validate_schema_id: Optional[bool] = None,
                                   subject_name_strategy: Optional[str] = None,
                                   payload_class: str = "com.redpanda.Payload"):
-        Admin(self.redpanda).put_feature("schema_id_validation",
-                                         {"state": "active"})
-        self.redpanda.await_feature("schema_id_validation",
-                                    True,
-                                    timeout_sec=10)
+        self.redpanda.set_cluster_config(
+            {'enable_schema_id_validation': SchemaIdValidationMode.COMPAT})
 
         def get_next_strategy(subject_name_strategy):
             all_strategies = list(TopicSpec.SubjectNameStrategyCompat)
@@ -1304,12 +1308,6 @@ class SchemaRegistryTestMethods(SchemaRegistryEndpoints):
         self.logger.info(
             f"Connecting to redpanda: {self.redpanda.brokers()} schema_Reg: {schema_reg}"
         )
-
-        Admin(self.redpanda).put_feature("schema_id_validation",
-                                         {"state": "active"})
-        self.redpanda.await_feature("schema_id_validation",
-                                    True,
-                                    timeout_sec=10)
 
         # Test against misconfigered strategy
         client = self._get_serde_client(
@@ -2161,7 +2159,12 @@ class SchemaRegistryMTLSAndBasicAuthTest(SchemaRegistryMTLSBase):
 class SchemaValidationTopicPropertiesTest(RedpandaTest):
     def __init__(self, *args, **kwargs):
         super(SchemaValidationTopicPropertiesTest,
-              self).__init__(*args, **kwargs)
+              self).__init__(*args,
+                             extra_rp_conf={
+                                 'enable_schema_id_validation':
+                                 SchemaIdValidationMode.COMPAT.value
+                             },
+                             **kwargs)
         self.rpk = RpkTool(self.redpanda)
         self.admin = Admin(self.redpanda)
 
@@ -2171,10 +2174,9 @@ class SchemaValidationTopicPropertiesTest(RedpandaTest):
         When the feature is disabled, the configs should not appear
         '''
 
-        self.admin.put_feature("schema_id_validation", {"state": "disabled"})
-        self.redpanda.await_feature("schema_id_validation",
-                                    False,
-                                    timeout_sec=10)
+        self.redpanda.set_cluster_config(
+            {'enable_schema_id_validation': SchemaIdValidationMode.NONE})
+
         topic = "default-topic"
         self.rpk.create_topic(topic)
         desc = self.rpk.describe_topic_configs(topic)
@@ -2190,10 +2192,6 @@ class SchemaValidationTopicPropertiesTest(RedpandaTest):
         When the feature is active, the configs should be default
         '''
 
-        self.admin.put_feature("schema_id_validation", {"state": "active"})
-        self.redpanda.await_feature("schema_id_validation",
-                                    True,
-                                    timeout_sec=10)
         topic = "default-topic"
         self.rpk.create_topic(topic)
         desc = self.rpk.describe_topic_configs(topic)
@@ -2214,10 +2212,6 @@ class SchemaValidationTopicPropertiesTest(RedpandaTest):
         dynamic, so that tools with a reconcialiation loop aren't confused
         '''
 
-        self.admin.put_feature("schema_id_validation", {"state": "active"})
-        self.redpanda.await_feature("schema_id_validation",
-                                    True,
-                                    timeout_sec=10)
         topic = "default-topic"
         self.rpk.create_topic(
             topic,
@@ -2272,10 +2266,6 @@ class SchemaValidationTopicPropertiesTest(RedpandaTest):
         as dyamic
         '''
 
-        self.admin.put_feature("schema_id_validation", {"state": "active"})
-        self.redpanda.await_feature("schema_id_validation",
-                                    True,
-                                    timeout_sec=10)
         topic = "default-topic"
         self.rpk.create_topic(
             topic,
@@ -2309,10 +2299,6 @@ class SchemaValidationTopicPropertiesTest(RedpandaTest):
         as dyamic
         '''
 
-        self.admin.put_feature("schema_id_validation", {"state": "active"})
-        self.redpanda.await_feature("schema_id_validation",
-                                    True,
-                                    timeout_sec=10)
         topic = "default-topic"
         self.rpk.create_topic(
             topic,
@@ -2349,10 +2335,6 @@ class SchemaValidationTopicPropertiesTest(RedpandaTest):
         Test creating a topic where Redpanda and compat modes are incompatible
         '''
 
-        self.admin.put_feature("schema_id_validation", {"state": "active"})
-        self.redpanda.await_feature("schema_id_validation",
-                                    True,
-                                    timeout_sec=10)
         topic = "default-topic"
         try:
             self.rpk.create_topic(
@@ -2373,10 +2355,6 @@ class SchemaValidationTopicPropertiesTest(RedpandaTest):
         Test altering a topic where Redpanda and compat modes are incompatible
         '''
 
-        self.admin.put_feature("schema_id_validation", {"state": "active"})
-        self.redpanda.await_feature("schema_id_validation",
-                                    True,
-                                    timeout_sec=10)
         topic = "default-topic"
         self.rpk.create_topic(
             topic,

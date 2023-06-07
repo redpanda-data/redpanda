@@ -810,8 +810,9 @@ ss::future<response_ptr> describe_configs_handler::handle(
                 request.data.include_documentation,
                 config::shard_local_cfg().log_segment_ms.desc()));
 
-            if (ctx.feature_table().local().is_active(
-                  features::feature::schema_id_validation)) {
+            if (
+              config::shard_local_cfg().enable_schema_id_validation()
+              != pandaproxy::schema_registry::schema_id_validation_mode::none) {
                 constexpr std::string_view key_validation
                   = "Enable validation of the schema id for keys on a record";
                 constexpr std::string_view val_validation

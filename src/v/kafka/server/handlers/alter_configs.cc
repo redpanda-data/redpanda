@@ -232,8 +232,9 @@ create_topic_properties_update(
                   kafka::config_resource_operation::set);
                 continue;
             }
-            if (ctx.feature_table().local().is_active(
-                  features::feature::schema_id_validation)) {
+            if (
+              config::shard_local_cfg().enable_schema_id_validation()
+              != pandaproxy::schema_registry::schema_id_validation_mode::none) {
                 if (schema_id_validation_config_parser(
                       cfg, kafka::config_resource_operation::set)) {
                     continue;

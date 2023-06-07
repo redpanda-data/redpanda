@@ -24,6 +24,7 @@
 #include "pandaproxy/schema_registry/errors.h"
 #include "pandaproxy/schema_registry/protobuf.h"
 #include "pandaproxy/schema_registry/schema_id_cache.h"
+#include "pandaproxy/schema_registry/schema_id_validation.h"
 #include "pandaproxy/schema_registry/seq_writer.h"
 #include "pandaproxy/schema_registry/sharded_store.h"
 #include "pandaproxy/schema_registry/subject_name_strategy.h"
@@ -357,8 +358,9 @@ public:
             // If Schema Registry is not enabled, the safe default is to reject
             co_return kafka::error_code::invalid_record;
         }
-        if (!_api->_controller->get_feature_table().local().is_active(
-              features::feature::schema_id_validation)) {
+        if (
+          config::shard_local_cfg().enable_schema_id_validation()
+          == pandaproxy::schema_registry::schema_id_validation_mode::none) {
             co_return std::move(rbr);
         }
 

@@ -123,7 +123,7 @@ bool valid_config_resource_operation(uint8_t v) {
 
 checked<cluster::topic_properties_update, resp_resource_t>
 create_topic_properties_update(
-  request_context& ctx, incremental_alter_configs_resource& resource) {
+  request_context&, incremental_alter_configs_resource& resource) {
     model::topic_namespace tp_ns(
       model::kafka_namespace, model::topic(resource.resource_name));
     cluster::topic_properties_update update(tp_ns);
@@ -241,8 +241,9 @@ create_topic_properties_update(
                   update.properties.segment_ms, cfg.value, op);
                 continue;
             }
-            if (ctx.feature_table().local().is_active(
-                  features::feature::schema_id_validation)) {
+            if (
+              config::shard_local_cfg().enable_schema_id_validation()
+              != pandaproxy::schema_registry::schema_id_validation_mode::none) {
                 if (schema_id_validation_config_parser(cfg, op)) {
                     continue;
                 }
