@@ -87,6 +87,10 @@ public:
 
     const partition_balancer_state& state() const { return _parent._state; }
 
+    const allocation_state::underlying_t& allocation_nodes() const {
+        return _parent._partition_allocator.state().allocation_nodes();
+    }
+
     const planner_config& config() const { return _parent._config; }
 
     bool can_add_cancellation() const {
@@ -838,6 +842,15 @@ ss::future<> partition_balancer_planner::get_node_drain_actions(
   const absl::flat_hash_set<model::node_id>& nodes,
   std::string_view reason) {
     if (nodes.empty()) {
+        co_return;
+    }
+
+    if (std::all_of(nodes.begin(), nodes.end(), [&](model::node_id id) {
+            auto it = ctx.allocation_nodes().find(id);
+            return it != ctx.allocation_nodes().end()
+                   && it->second->final_partitions()() == 0;
+        })) {
+        // all nodes already drained
         co_return;
     }
 
