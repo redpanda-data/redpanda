@@ -234,8 +234,16 @@ public:
     // applying all commands in the record batch to the manifest.
     void advance_insync_offset(model::offset o);
 
-    /// Get starting offset
+    /// Return start offset that takes into account start kafka offset of the
+    /// manifest, start kafka offset override and start offset of the archive.
+    std::optional<kafka::offset> start_kafka_offset_full() const;
+
+    /// Get starting offset of the current manifest (doesn't take into account
+    /// spillover manifests)
     std::optional<model::offset> get_start_offset() const;
+
+    /// Get starting kafka offset of the current manifest (doesn't take into
+    /// account spillover manifests)
     std::optional<kafka::offset> get_start_kafka_offset() const;
 
     /// Get last uploaded compacted offset
