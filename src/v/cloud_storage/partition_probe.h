@@ -11,6 +11,7 @@
 #pragma once
 
 #include "model/fundamental.h"
+#include "utils/hdr_hist.h"
 
 #include <seastar/core/metrics_registration.hh>
 
@@ -31,6 +32,24 @@ public:
     void segment_reader_created() { ++_cur_segment_readers; }
     void segment_reader_destroyed() { --_cur_segment_readers; }
 
+    void set_spillover_manifest_bytes(int64_t total) {
+        _spillover_manifest_bytes = total;
+    }
+
+    void set_spillover_manifest_instances(int32_t num) {
+        _spillover_manifest_instances = num;
+    }
+
+    void on_spillover_manifest_hydration() { _spillover_manifest_hydrated++; }
+
+    void on_spillover_manifest_materialization() {
+        _spillover_manifest_materialized++;
+    }
+
+    auto spillover_manifest_latency() {
+        return _spillover_mat_latency.auto_measure();
+    }
+
 private:
     uint64_t _bytes_read = 0;
     uint64_t _records_read = 0;
@@ -39,6 +58,13 @@ private:
 
     int32_t _cur_readers = 0;
     int32_t _cur_segment_readers = 0;
+
+    int64_t _spillover_manifest_bytes = 0;
+    int64_t _spillover_manifest_instances = 0;
+    int64_t _spillover_manifest_materialized = 0;
+    int64_t _spillover_manifest_hydrated = 0;
+    /// Spillover manifest materialization latency
+    hdr_hist _spillover_mat_latency;
 
     ss::metrics::metric_groups _metrics;
 };

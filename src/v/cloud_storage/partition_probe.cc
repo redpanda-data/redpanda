@@ -12,6 +12,7 @@
 
 #include "config/configuration.h"
 #include "prometheus/prometheus_sanitize.h"
+#include "ssx/metrics.h"
 
 #include <seastar/core/metrics.hh>
 
@@ -54,10 +55,48 @@ partition_probe::partition_probe(const model::ntp& ntp) {
           [this] { return _cur_readers; },
           sm::description("Current number of remote partition readers"),
           labels),
+
+        sm::make_gauge(
+          "spillover_manifest_bytes",
+          [this] { return _spillover_manifest_bytes; },
+          sm::description("Total amount of memory used by spillover manifests"),
+          labels),
+
+        sm::make_gauge(
+          "spillover_manifest_instances",
+          [this] { return _spillover_manifest_instances; },
+          sm::description(
+            "Total number of spillover manifests stored in memory"),
+          labels),
+
+        sm::make_counter(
+          "spillover_manifest_hydrated",
+          [this] { return _spillover_manifest_hydrated; },
+          sm::description(
+            "Number of times spillover manifests were saved to the cache"),
+          labels),
+
+        sm::make_counter(
+          "spillover_manifest_materialized",
+          [this] { return _spillover_manifest_materialized; },
+          sm::description(
+            "Number of times spillover manifests were loaded from the cache"),
+          labels),
+
         sm::make_gauge(
           "segment_readers",
           [this] { return _cur_segment_readers; },
           sm::description("Current number of remote segment readers"),
+          labels),
+
+        sm::make_histogram(
+          "spillover_manifest_latency",
+          [this] {
+              return ssx::metrics::report_default_histogram(
+                _spillover_mat_latency);
+          },
+          sm::description(
+            "Spillover manifest materialization latency histogram"),
           labels),
       });
 }
