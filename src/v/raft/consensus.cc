@@ -533,6 +533,12 @@ void consensus::successfull_append_entries_reply(
       idx.next_index);
 }
 
+size_t consensus::estimate_recovering_followers() const {
+    return std::count_if(_fstats.begin(), _fstats.end(), [](const auto& idx) {
+        return idx.second.is_recovering;
+    });
+}
+
 bool consensus::needs_recovery(
   const follower_index_metadata& idx, model::offset dirty_offset) {
     // follower match_index is behind, we have to recover it
