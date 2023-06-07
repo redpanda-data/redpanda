@@ -14,8 +14,13 @@
 #include "kafka/protocol/produce.h"
 #include "kafka/protocol/schemata/produce_request.h"
 #include "storage/record_batch_builder.h"
+#include "vlog.h"
+
+#include <seastar/util/log.hh>
 
 namespace tests {
+
+static ss::logger test_log("produce_consume_logger");
 
 // Produces the given records per partition to the given topic.
 // NOTE: inputs must remain valid for the duration of the call.
@@ -104,28 +109,56 @@ ss::future<pid_to_kvs_map_t> kafka_consume_transport::consume(
         throw std::runtime_error(
           fmt::format("fetch error: {}", fetch_resp.data.error_code));
     }
+    vlog(test_log.debug, "Received response from the kafka api");
     pid_to_kvs_map_t ret;
     for (const auto& pid : pids) {
         ret.emplace(pid, std::vector<kv_t>{});
     }
     auto& data = fetch_resp.data;
     for (auto& topic : data.topics) {
+        vlog(
+          test_log.trace,
+          "Processing topic {} from the fetch response",
+          topic.name);
         for (auto& partition : topic.partitions) {
+            vlog(
+              test_log.trace,
+              "Processing ntp {}/{} from the fetch response",
+              topic.name,
+              partition.partition_index);
             if (!partition.records.has_value()) {
+                vlog(
+                  test_log.trace,
+                  "No data in ntp {}/{}",
+                  topic.name,
+                  partition.partition_index);
                 continue;
             }
-            auto batch_adapter = partition.records.value().consume_batch();
-            if (!batch_adapter.batch.has_value()) {
-                continue;
-            }
-            auto records = batch_adapter.batch->copy_records();
-            auto& records_for_partition = ret[partition.partition_index];
-            for (auto& r : records) {
-                iobuf_const_parser key_buf(r.key());
-                iobuf_const_parser val_buf(r.value());
-                records_for_partition.emplace_back(kv_t{
-                  key_buf.read_string(key_buf.bytes_left()),
-                  val_buf.read_string(val_buf.bytes_left())});
+            while (!partition.records->is_end_of_stream()) {
+                auto batch_adapter = partition.records.value().consume_batch();
+                if (!batch_adapter.batch.has_value()) {
+                    vlog(
+                      test_log.trace,
+                      "EOS ntp {}/{}",
+                      topic.name,
+                      partition.partition_index);
+                    break;
+                }
+                auto records = batch_adapter.batch->copy_records();
+                vlog(
+                  test_log.trace,
+                  "Reading {} records, ntp {}/{}",
+                  records.size(),
+                  topic.name,
+                  partition.partition_index);
+                auto& records_for_partition = ret[partition.partition_index];
+                for (auto& r : records) {
+                    iobuf_const_parser key_buf(r.key());
+                    iobuf_const_parser val_buf(r.value());
+                    records_for_partition.emplace_back(kv_t{
+                      key_buf.read_string(key_buf.bytes_left()),
+                      val_buf.read_string(val_buf.bytes_left())});
+                }
             }
         }
     }
