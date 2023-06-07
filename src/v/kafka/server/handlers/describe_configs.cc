@@ -810,15 +810,15 @@ ss::future<response_ptr> describe_configs_handler::handle(
                 request.data.include_documentation,
                 config::shard_local_cfg().log_segment_ms.desc()));
 
-            if (
-              config::shard_local_cfg().enable_schema_id_validation()
-              != pandaproxy::schema_registry::schema_id_validation_mode::none) {
-                constexpr std::string_view key_validation
-                  = "Enable validation of the schema id for keys on a record";
-                constexpr std::string_view val_validation
-                  = "Enable validation of the schema id for values on a record";
-                const bool hide_default_override = true;
+            constexpr std::string_view key_validation
+              = "Enable validation of the schema id for keys on a record";
+            constexpr std::string_view val_validation
+              = "Enable validation of the schema id for values on a record";
+            constexpr bool validation_hide_default_override = true;
 
+            switch (config::shard_local_cfg().enable_schema_id_validation()) {
+            case pandaproxy::schema_registry::schema_id_validation_mode::
+              compat: {
                 add_topic_config_if_requested(
                   resource,
                   result,
@@ -832,7 +832,7 @@ ss::future<response_ptr> describe_configs_handler::handle(
                   maybe_make_documentation(
                     request.data.include_documentation, key_validation),
                   &describe_as_string<bool>,
-                  hide_default_override);
+                  validation_hide_default_override);
 
                 add_topic_config_if_requested(
                   resource,
@@ -852,7 +852,7 @@ ss::future<response_ptr> describe_configs_handler::handle(
                   [](auto sns) {
                       return ss::sstring(to_string_view_compat(sns));
                   },
-                  hide_default_override);
+                  validation_hide_default_override);
 
                 add_topic_config_if_requested(
                   resource,
@@ -867,7 +867,7 @@ ss::future<response_ptr> describe_configs_handler::handle(
                   maybe_make_documentation(
                     request.data.include_documentation, val_validation),
                   &describe_as_string<bool>,
-                  hide_default_override);
+                  validation_hide_default_override);
 
                 add_topic_config_if_requested(
                   resource,
@@ -887,8 +887,11 @@ ss::future<response_ptr> describe_configs_handler::handle(
                   [](auto sns) {
                       return ss::sstring(to_string_view_compat(sns));
                   },
-                  hide_default_override);
-
+                  validation_hide_default_override);
+                [[fallthrough]];
+            }
+            case pandaproxy::schema_registry::schema_id_validation_mode::
+              redpanda: {
                 add_topic_config_if_requested(
                   resource,
                   result,
@@ -901,7 +904,7 @@ ss::future<response_ptr> describe_configs_handler::handle(
                   maybe_make_documentation(
                     request.data.include_documentation, key_validation),
                   &describe_as_string<bool>,
-                  hide_default_override);
+                  validation_hide_default_override);
 
                 add_topic_config_if_requested(
                   resource,
@@ -919,7 +922,7 @@ ss::future<response_ptr> describe_configs_handler::handle(
                       topic_property_record_key_schema_id_validation)),
                   &describe_as_string<
                     pandaproxy::schema_registry::subject_name_strategy>,
-                  hide_default_override);
+                  validation_hide_default_override);
 
                 add_topic_config_if_requested(
                   resource,
@@ -933,7 +936,7 @@ ss::future<response_ptr> describe_configs_handler::handle(
                   maybe_make_documentation(
                     request.data.include_documentation, val_validation),
                   &describe_as_string<bool>,
-                  hide_default_override);
+                  validation_hide_default_override);
 
                 add_topic_config_if_requested(
                   resource,
@@ -951,7 +954,11 @@ ss::future<response_ptr> describe_configs_handler::handle(
                       topic_property_record_value_schema_id_validation)),
                   &describe_as_string<
                     pandaproxy::schema_registry::subject_name_strategy>,
-                  hide_default_override);
+                  validation_hide_default_override);
+            }
+            case pandaproxy::schema_registry::schema_id_validation_mode::none: {
+                break;
+            }
             }
 
             break;
