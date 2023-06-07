@@ -26,7 +26,7 @@ namespace storage {
  * The disk usage stats in this class are periodically updated
  * from the code in cluster::node.
  */
-class node_api {
+class node {
 public:
     enum class disk_type : uint8_t {
         data = 0,

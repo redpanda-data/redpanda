@@ -49,7 +49,7 @@ local_monitor::local_monitor(
   config::binding<size_t> min_bytes,
   ss::sstring data_directory,
   ss::sstring cache_directory,
-  ss::sharded<storage::node_api>& node_api,
+  ss::sharded<storage::node>& node_api,
   ss::sharded<storage::api>& api)
   : _free_bytes_alert_threshold(std::move(alert_bytes))
   , _free_percent_alert_threshold(std::move(alert_percent))
@@ -239,8 +239,8 @@ void local_monitor::update_alert_state(local_state& state) {
 
 ss::future<> local_monitor::update_disk_metrics() {
     co_await _storage_node_api.invoke_on_all(
-      &storage::node_api::set_disk_metrics,
-      storage::node_api::disk_type::data,
+      &storage::node::set_disk_metrics,
+      storage::node::disk_type::data,
       _state.data_disk.total,
       _state.data_disk.free,
       _state.data_disk.alert);
@@ -249,8 +249,8 @@ ss::future<> local_monitor::update_disk_metrics() {
     // subscribers to updates on cache disk space still need to get updates.
     auto cache_disk = _state.get_cache_disk();
     co_await _storage_node_api.invoke_on_all(
-      &storage::node_api::set_disk_metrics,
-      storage::node_api::disk_type::cache,
+      &storage::node::set_disk_metrics,
+      storage::node::disk_type::cache,
       cache_disk.total,
       cache_disk.free,
       cache_disk.alert);
