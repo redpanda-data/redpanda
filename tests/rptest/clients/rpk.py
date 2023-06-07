@@ -275,6 +275,13 @@ class RpkTool:
         cmd += ["--mechanism", mechanism]
         return self._run(cmd)
 
+    def sasl_update_user(self, user, new_password):
+        cmd = [
+            "acl", "user", "update", user, "--new-password", new_password,
+            "-X", "admin.hosts=" + self._redpanda.admin_endpoints()
+        ]
+        return self._run(cmd)
+
     def delete_topic(self, topic):
         cmd = ["delete", topic]
         output = self._run_topic(cmd)
