@@ -564,7 +564,8 @@ auto setup_s3_imposter(
   cloud_storage_fixture& fixture,
   int num_segments,
   int num_batches_per_segment,
-  manifest_inconsistency inject = manifest_inconsistency::none) {
+  manifest_inconsistency inject = manifest_inconsistency::none,
+  segment_name_format sname_format = segment_name_format::v3) {
     vassert(
       inject == manifest_inconsistency::none
         || inject == manifest_inconsistency::truncated_segments,
@@ -573,7 +574,11 @@ auto setup_s3_imposter(
     auto segments = make_segments(num_segments, num_batches_per_segment);
     cloud_storage::partition_manifest manifest(manifest_ntp, manifest_revision);
     auto expectations = make_imposter_expectations(
-      manifest, segments, inject == manifest_inconsistency::truncated_segments);
+      manifest,
+      segments,
+      inject == manifest_inconsistency::truncated_segments,
+      model::offset_delta(0),
+      sname_format);
     fixture.set_expectations_and_listen(expectations);
     return segments;
 }

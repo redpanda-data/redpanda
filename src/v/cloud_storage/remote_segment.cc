@@ -1470,4 +1470,12 @@ std::exception_ptr hydration_loop_state::current_error() {
     return _current_error;
 }
 
+std::pair<size_t, bool> remote_segment::min_cache_cost() const {
+    if (is_legacy_mode_engaged()) {
+        return std::make_pair(_size, false);
+    } else {
+        return std::make_pair(_chunk_size, true);
+    }
+}
+
 } // namespace cloud_storage

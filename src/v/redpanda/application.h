@@ -138,6 +138,7 @@ public:
     ss::sharded<storage::api> storage;
     ss::sharded<storage::node_api> storage_node;
     ss::sharded<cluster::node::local_monitor> local_monitor;
+    std::unique_ptr<storage::disk_space_manager> space_manager;
 
     std::unique_ptr<cluster::controller> controller;
     std::unique_ptr<coproc::api> coprocessing;

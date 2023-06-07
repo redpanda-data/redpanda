@@ -193,6 +193,13 @@ public:
      */
     ss::future<size_t> non_log_disk_size_bytes() const;
 
+    /*
+     * Accumulates the target cache usage for all remote partitions. The result
+     * reflects partitions across all shards.
+     */
+    ss::future<cloud_storage::cache_usage_target>
+    get_cloud_cache_disk_usage_target() const;
+
 private:
     /// Download log if partition_recovery_manager is initialized.
     ///

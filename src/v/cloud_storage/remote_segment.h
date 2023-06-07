@@ -179,6 +179,11 @@ public:
         return _fallback_mode == fallback_mode::yes;
     }
 
+    // returns the minimum space required by this segment in the cloud storage
+    // cache. if ret.second is false then the returned size is based on segment
+    // granularity, otherwise the size is chunk granularity.
+    std::pair<size_t, bool> min_cache_cost() const;
+
 private:
     /// get a file offset for the corresponding kafka offset
     /// if the index is available
