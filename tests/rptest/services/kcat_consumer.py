@@ -130,14 +130,14 @@ class KcatConsumer(BackgroundThreadService):
 
         if getattr(self._redpanda, "sasl_enabled", lambda: False)():
             cfg = self._redpanda.security_config()
-            cmd += [
+            self._cmd += [
                 "-X", f"security.protocol={cfg['security_protocol']}", "-X"
                 f"sasl.mechanism={cfg['sasl_mechanism']}", "-X",
                 f"sasl.username={cfg['sasl_plain_username']}", "-X",
                 f"sasl.password={cfg['sasl_plain_password']}"
             ]
             if cfg['sasl_mechanism'] == "GSSAPI":
-                cmd += [
+                self._cmd += [
                     "-X", "sasl.kerberos.service.name=redpanda",
                     '-Xsasl.kerberos.kinit.cmd=kinit client -t /var/lib/redpanda/client.keytab'
                 ]
