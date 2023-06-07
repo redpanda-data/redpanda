@@ -888,6 +888,11 @@ ss::future<> remote_segment::hydrate_chunk(
     retry_chain_node rtc{
       cache_hydration_timeout, cache_hydration_backoff, &_rtc};
 
+    auto cache_status = co_await _cache.is_cached(get_path_to_chunk(start));
+    if (cache_status == cache_element_status::available) {
+        co_return;
+    }
+
     const auto space_required = end.value_or(_size - 1) - start + 1;
     const auto reserved = co_await _cache.reserve_space(space_required);
 
