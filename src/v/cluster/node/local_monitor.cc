@@ -16,6 +16,7 @@
 #include "config/configuration.h"
 #include "config/node_config.h"
 #include "storage/api.h"
+#include "storage/node.h"
 #include "storage/types.h"
 #include "utils/human.h"
 #include "vassert.h"
