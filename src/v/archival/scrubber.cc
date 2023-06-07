@@ -529,7 +529,7 @@ scrubber::write_remote_lifecycle_marker(
     cloud_storage::remote_nt_lifecycle_marker remote_marker{
       .cluster_id = config::shard_local_cfg().cluster_id().value_or(""),
       .topic = nt_revision,
-      .status = cloud_storage::lifecycle_status::purged,
+      .status = status,
     };
     auto marker_key = remote_marker.get_key();
 
