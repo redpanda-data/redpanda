@@ -21,6 +21,8 @@
 
 #include <boost/algorithm/string/predicate.hpp>
 
+#include <iterator>
+
 using tests::kafka_consume_transport;
 using tests::kafka_produce_transport;
 using tests::kv_t;
@@ -76,9 +78,12 @@ FIXTURE_TEST(test_produce_consume_from_cloud, e2e_fixture) {
     BOOST_REQUIRE_EQUAL(2, log->segments().size());
 
     // Upload the closed segment to object storage.
-    auto res = archiver.upload_next_candidates().get();
-    BOOST_REQUIRE_EQUAL(0, res.compacted_upload_result.num_succeeded);
-    BOOST_REQUIRE_EQUAL(1, res.non_compacted_upload_result.num_succeeded);
+    tests::cooperative_spin_wait_with_timeout(3s, [&archiver] {
+        return archiver.upload_next_candidates().then(
+          [](archival::ntp_archiver::batch_result res) {
+              return res.non_compacted_upload_result.num_succeeded == 1;
+          });
+    }).get();
     auto manifest_res = archiver.upload_manifest("test").get();
     BOOST_REQUIRE_EQUAL(manifest_res, cloud_storage::upload_result::success);
     archiver.flush_manifest_clean_offset().get();
@@ -148,20 +153,23 @@ FIXTURE_TEST(test_produce_consume_from_cloud_with_spillover, e2e_fixture) {
 
     // Produce to partition until the manifest is large enough to trigger
     // spillover
+    size_t total_records = 0;
     while (partition->archival_meta_stm()->manifest().segments_metadata_bytes()
            < 12000) {
-        std::vector<kv_t> records{
-          {"key0", "val0"},
-          {"key1", "val1"},
-          {"key2", "val2"},
-        };
         vlog(
           e2e_test_log.info,
           "manifest size: {}, producing to partition",
           partition->archival_meta_stm()->manifest().segments_metadata_bytes());
+        std::vector<kv_t> records;
+        for (size_t i = 0; i < 4; i++) {
+            records.emplace_back(
+              ssx::sformat("key{}", total_records + i),
+              ssx::sformat("val{}", total_records + i));
+        }
         producer
           .produce_to_partition(topic_name, model::partition_id(0), records)
           .get();
+        total_records += records.size();
         log->flush().get();
         log->force_roll(ss::default_priority_class()).get();
 
@@ -260,15 +268,77 @@ FIXTURE_TEST(test_produce_consume_from_cloud_with_spillover, e2e_fixture) {
     }
 
     // Consume from start offset of the partition (data available in the STM).
-    // TODO: consume from archive_start_offset
     vlog(e2e_test_log.info, "Consuming from the partition");
     kafka_consume_transport consumer(make_kafka_client().get());
     consumer.start().get();
-    auto consumed_records = consumer
-                              .consume_from_partition(
-                                topic_name,
-                                model::partition_id(0),
-                                kafka::offset_cast(ko.value()))
-                              .get();
+    std::vector<std::pair<ss::sstring, ss::sstring>> consumed_records;
+    auto next_offset = archive_ko;
+    while (consumed_records.size() < total_records) {
+        auto tmp = consumer
+                     .consume_from_partition(
+                       topic_name,
+                       model::partition_id(0),
+                       kafka::offset_cast(next_offset))
+                     .get();
+        vlog(e2e_test_log.debug, "{} records consumed", tmp.size());
+        std::copy(tmp.begin(), tmp.end(), std::back_inserter(consumed_records));
+        next_offset += model::offset((int64_t)tmp.size());
+    }
+
+    BOOST_REQUIRE_EQUAL(total_records, consumed_records.size());
+    int i = 0;
+    for (const auto& rec : consumed_records) {
+        auto expected_key = ssx::sformat("key{}", i);
+        auto expected_val = ssx::sformat("val{}", i);
+        BOOST_REQUIRE_EQUAL(rec.first, expected_key);
+        BOOST_REQUIRE_EQUAL(rec.second, expected_val);
+        i++;
+    }
+
+    // Truncate and consume again
+    const int64_t new_so = 100;
+    const auto timeout = 10s;
+    auto deadline = ss::lowres_clock::now() + timeout;
+    ss::abort_source as;
+    vlog(e2e_test_log.debug, "Truncating log up to kafka offset {}", new_so);
+    auto truncation_result = partition->archival_meta_stm()
+                               ->truncate(kafka::offset(new_so), deadline, as)
+                               .get();
+    if (!truncation_result) {
+        vlog(
+          e2e_test_log.error,
+          "Failed to replicate truncation command, {}",
+          truncation_result.message());
+    }
+
+    consumed_records.clear();
+    auto last_offset = next_offset - model::offset(1);
+    next_offset = kafka::offset(new_so);
+    while (next_offset < last_offset) {
+        auto tmp = consumer
+                     .consume_from_partition(
+                       topic_name,
+                       model::partition_id(0),
+                       kafka::offset_cast(next_offset))
+                     .get();
+        std::copy(tmp.begin(), tmp.end(), std::back_inserter(consumed_records));
+        next_offset += kafka::offset((int64_t)tmp.size());
+        vlog(
+          e2e_test_log.debug,
+          "{} records consumed, next offset: {}, target: {}",
+          tmp.size(),
+          next_offset,
+          last_offset);
+    }
+
+    BOOST_REQUIRE_EQUAL(total_records - new_so, consumed_records.size());
+    i = new_so;
+    for (const auto& rec : consumed_records) {
+        auto expected_key = ssx::sformat("key{}", i);
+        auto expected_val = ssx::sformat("val{}", i);
+        BOOST_REQUIRE_EQUAL(rec.first, expected_key);
+        BOOST_REQUIRE_EQUAL(rec.second, expected_val);
+        i++;
+    }
 #endif
 }

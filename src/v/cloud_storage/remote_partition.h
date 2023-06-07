@@ -10,8 +10,10 @@
 
 #pragma once
 
+#include "cloud_storage/fwd.h"
 #include "cloud_storage/logger.h"
 #include "cloud_storage/offset_translation_layer.h"
+#include "cloud_storage/partition_manifest.h"
 #include "cloud_storage/partition_probe.h"
 #include "cloud_storage/remote.h"
 #include "cloud_storage/remote_segment.h"
@@ -65,10 +67,11 @@ public:
     /// The manifest's lifetime should be bound to the lifetime of the owner
     /// of the remote_partition.
     remote_partition(
-      const partition_manifest& m,
+      ss::shared_ptr<async_manifest_view> m,
       remote& api,
       cache& c,
-      cloud_storage_clients::bucket_name bucket);
+      cloud_storage_clients::bucket_name bucket,
+      partition_probe& probe);
 
     /// Start remote partition
     ss::future<> start();
@@ -209,12 +212,15 @@ private:
     /// reader. Alternatively, it can materialize the segment and create a
     /// reader.
     borrow_result_t borrow_next_reader(
-      storage::log_reader_config config, model::offset hint = {});
+      const partition_manifest& manifest,
+      storage::log_reader_config config,
+      model::offset hint = {});
 
     /// Materialize new segment
     /// @return iterator that points to newly added segment (always valid
     /// iterator)
-    iterator materialize_segment(const segment_meta&);
+    iterator
+    materialize_segment(const remote_segment_path& path, const segment_meta&);
 
     retry_chain_node _rtc;
     retry_chain_logger _ctxlog;
@@ -222,7 +228,7 @@ private:
     ss::abort_source _as;
     remote& _api;
     cache& _cache;
-    const partition_manifest& _manifest;
+    ss::shared_ptr<async_manifest_view> _manifest_view;
     cloud_storage_clients::bucket_name _bucket;
 
     /// Special item in eviction_list that holds a promise and sets it
@@ -254,7 +260,7 @@ private:
     /// called before destruction
     eviction_list_t _eviction_pending;
     segment_map_t _segments;
-    partition_probe _probe;
+    partition_probe& _probe;
 };
 
 } // namespace cloud_storage

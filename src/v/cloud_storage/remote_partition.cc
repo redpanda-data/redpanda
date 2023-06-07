@@ -10,6 +10,7 @@
 
 #include "cloud_storage/remote_partition.h"
 
+#include "cloud_storage/async_manifest_view.h"
 #include "cloud_storage/logger.h"
 #include "cloud_storage/materialized_segments.h"
 #include "cloud_storage/offset_translation_layer.h"
@@ -25,6 +26,7 @@
 #include "utils/gate_guard.h"
 #include "utils/retry_chain_node.h"
 #include "utils/stream_utils.h"
+#include "vlog.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/circular_buffer.hh>
@@ -32,6 +34,7 @@
 #include <seastar/core/loop.hh>
 #include <seastar/core/lowres_clock.hh>
 #include <seastar/core/queue.hh>
+#include <seastar/core/semaphore.hh>
 #include <seastar/core/shared_ptr.hh>
 #include <seastar/core/temporary_buffer.hh>
 
@@ -40,6 +43,7 @@
 #include <chrono>
 #include <exception>
 #include <iterator>
+#include <stdexcept>
 #include <variant>
 
 using namespace std::chrono_literals;
@@ -49,13 +53,13 @@ namespace cloud_storage {
 using data_t = model::record_batch_reader::data_t;
 using storage_t = model::record_batch_reader::storage_t;
 
-remote_partition::iterator
-remote_partition::materialize_segment(const segment_meta& meta) {
+remote_partition::iterator remote_partition::materialize_segment(
+  const remote_segment_path& path, const segment_meta& meta) {
     _as.check();
     auto base_kafka_offset = meta.base_offset - meta.delta_offset;
     auto units = materialized().get_segment_units();
     auto st = std::make_unique<materialized_segment_state>(
-      meta.base_offset, *this, std::move(units));
+      meta, path, *this, std::move(units));
     auto [iter, ok] = _segments.insert(
       std::make_pair(meta.base_offset, std::move(st)));
     vassert(
@@ -72,7 +76,10 @@ remote_partition::materialize_segment(const segment_meta& meta) {
 }
 
 remote_partition::borrow_result_t remote_partition::borrow_next_reader(
-  storage::log_reader_config config, model::offset hint) {
+
+  const partition_manifest& manifest,
+  storage::log_reader_config config,
+  model::offset hint) {
     // The code find the materialized that can satisfy the reader. If the
     // segment is not materialized it materializes it.
     // The following situations are possible:
@@ -92,14 +99,14 @@ remote_partition::borrow_result_t remote_partition::borrow_next_reader(
     //   doesn't have any data. The 'segment_containing' method of the
     //   manifest takes this into account.
     // - find materialized segment or materialize the new one
-    auto mit = _manifest.end();
+    auto mit = manifest.end();
     if (hint == model::offset{}) {
         // This code path is only used for the first lookup. It
         // could be either lookup by kafka offset or by timestamp.
         if (config.first_timestamp) {
-            auto maybe_meta = _manifest.timequery(*config.first_timestamp);
+            auto maybe_meta = manifest.timequery(*config.first_timestamp);
             if (maybe_meta) {
-                mit = _manifest.segment_containing(maybe_meta->base_offset);
+                mit = manifest.segment_containing(maybe_meta->base_offset);
             }
         } else {
             // In this case the lookup is perfomed by kafka offset.
@@ -107,22 +114,22 @@ remote_partition::borrow_result_t remote_partition::borrow_next_reader(
             // partition_record_batch_reader_impl. This lookup will
             // skip segments without data batches (the logic is implemented
             // inside the partition_manifest).
-            mit = _manifest.segment_containing(ko);
+            mit = manifest.segment_containing(ko);
         }
-        if (mit == _manifest.end()) {
+        if (mit == manifest.end()) {
             // Segment that matches exactly can't be found in the manifest. In
             // this case we want to start scanning from the begining of the
             // partition if the start of the manifest is contained by the scan
             // range.
-            auto so = _manifest.get_start_kafka_offset().value_or(
+            auto so = manifest.get_start_kafka_offset().value_or(
               kafka::offset::min());
             if (config.start_offset < so && config.max_offset > so) {
-                mit = _manifest.begin();
+                mit = manifest.begin();
             }
         }
     } else {
-        mit = _manifest.segment_containing(hint);
-        while (mit != _manifest.end()) {
+        mit = manifest.segment_containing(hint);
+        while (mit != manifest.end()) {
             // The segment 'mit' points to might not have any
             // data batches. In this case we need to move iterator forward.
             // The check can only be done if we have 'delta_offset_end'.
@@ -140,7 +147,7 @@ remote_partition::borrow_result_t remote_partition::borrow_next_reader(
             ++mit;
         }
     }
-    if (mit == _manifest.end()) {
+    if (mit == manifest.end()) {
         // No such segment
         return borrow_result_t{};
     }
@@ -153,11 +160,12 @@ remote_partition::borrow_result_t remote_partition::borrow_next_reader(
         }
     }
     if (iter == _segments.end()) {
-        iter = materialize_segment(*mit);
+        auto path = manifest.generate_segment_path(*mit);
+        iter = materialize_segment(path, *mit);
     }
     auto mit_committed_offset = mit->committed_offset;
     auto next_it = std::next(std::move(mit));
-    while (next_it != _manifest.end()) {
+    while (next_it != manifest.end()) {
         // Normally, the segments in the manifest do not overlap.
         // But in some cases we may see them overlapping, for instance
         // if they were produced by older version of redpanda.
@@ -168,7 +176,7 @@ remote_partition::borrow_result_t remote_partition::borrow_next_reader(
         }
         ++next_it;
     }
-    model::offset next_offset = next_it == _manifest.end()
+    model::offset next_offset = next_it == manifest.end()
                                   ? model::offset{}
                                   : next_it->base_offset;
     return borrow_result_t{
@@ -180,7 +188,6 @@ class partition_record_batch_reader_impl final
   : public model::record_batch_reader::impl {
 public:
     explicit partition_record_batch_reader_impl(
-      const storage::log_reader_config& config,
       ss::shared_ptr<remote_partition> part,
       ss::lw_shared_ptr<storage::offset_translator_state> ot_state) noexcept
       : _rtc(part->_as)
@@ -190,6 +197,9 @@ public:
       , _gate_guard(_partition->_gate) {
         auto ntp = _partition->get_ntp();
         vlog(_ctxlog.trace, "Constructing reader {}", ntp);
+    }
+
+    ss::future<> start(storage::log_reader_config config) {
         if (config.abort_source) {
             vlog(_ctxlog.debug, "abort_source is set");
             auto sub = config.abort_source->get().subscribe([this]() noexcept {
@@ -203,7 +213,7 @@ public:
                 _reader = {};
             }
         }
-        initialize_reader_state(config);
+        co_await init_cursor(config);
         _partition->_probe.reader_created();
     }
 
@@ -435,12 +445,45 @@ private:
         }
     }
 
+    ss::future<> init_cursor(storage::log_reader_config config) {
+        int retry_quota = 4;
+        async_view_search_query_t query;
+        if (config.first_timestamp.has_value()) {
+            query = config.first_timestamp.value();
+        } else {
+            // NOTE: config.start_offset actually contains kafka offset
+            // stored using model::offset type.
+            query = model::offset_cast(config.start_offset);
+        }
+        // Find manifest that contains requested timestamp
+        while (true) {
+            auto cur = co_await _partition->_manifest_view->get_active(query);
+            if (cur.has_failure()) {
+                if (cur.error() == error_outcome::repeat && retry_quota-- > 0) {
+                    continue;
+                }
+                vlog(
+                  _ctxlog.error,
+                  "Failed to query spillover manifests: {}, query: {}",
+                  cur.error(),
+                  query);
+                co_return;
+            }
+            _view_cursor = std::move(cur.value());
+            break;
+        }
+        initialize_reader_state(_view_cursor->manifest().value(), config);
+        co_return;
+    }
+
     // Initialize object using remote_partition as a source
-    void initialize_reader_state(const storage::log_reader_config& config) {
+    void initialize_reader_state(
+      const partition_manifest& manifest,
+      const storage::log_reader_config& config) {
         vlog(
           _ctxlog.debug,
           "partition_record_batch_reader_impl initialize reader state");
-        auto [reader, next_offset] = find_cached_reader(config);
+        auto [reader, next_offset] = find_cached_reader(manifest, config);
         if (reader) {
             _reader = std::move(reader);
             _next_segment_base_offset = next_offset;
@@ -455,12 +498,13 @@ private:
         _next_segment_base_offset = {};
     }
 
-    remote_partition::borrow_result_t
-    find_cached_reader(const storage::log_reader_config& config) {
-        if (!_partition || _partition->_manifest.size() == 0) {
+    remote_partition::borrow_result_t find_cached_reader(
+      const partition_manifest& manifest,
+      const storage::log_reader_config& config) {
+        if (!_partition || _partition->_manifest_view->stm().empty()) {
             return {};
         }
-        auto res = _partition->borrow_next_reader(config);
+        auto res = _partition->borrow_next_reader(manifest, config);
         if (res.reader) {
             // Here we know the exact type of the reader_state because of
             // the invariant of the borrow_reader
@@ -478,7 +522,7 @@ private:
 
     /// Reset reader if current segment is fully consumed.
     /// The object may transition onto a next segment or
-    /// it will transtion into completed state with no reader
+    /// it will transition into completed state with no reader
     /// attached.
     ss::future<bool> maybe_reset_reader() {
         vlog(_ctxlog.debug, "maybe_reset_reader called");
@@ -527,17 +571,22 @@ private:
             _partition->evict_reader(std::move(_reader));
             vlog(
               _ctxlog.debug,
-              "initializing new segment reader {}, next offset {}",
+              "initializing new segment reader {}, next offset {}, manifest "
+              "cursor status: {}",
               config.start_offset,
-              _next_segment_base_offset);
-            if (_next_segment_base_offset != model::offset{}) {
+              _next_segment_base_offset,
+              _view_cursor->get_status());
+            auto maybe_manifest = _view_cursor->manifest();
+            if (
+              !maybe_manifest.has_value()
+              || _next_segment_base_offset != model::offset{}) {
                 auto [new_reader, new_next_offset]
                   = _partition->borrow_next_reader(
-                    config, _next_segment_base_offset);
+                    maybe_manifest.value(), config, _next_segment_base_offset);
                 _next_segment_base_offset = new_next_offset;
                 _reader = std::move(new_reader);
             }
-            if (_reader != nullptr) {
+            if (maybe_manifest.has_value() && _reader != nullptr) {
                 vassert(
                   prev_max_offset != _reader->max_rp_offset(),
                   "Progress stall detected, ntp: {}, max offset of prev "
@@ -567,13 +616,15 @@ private:
     retry_chain_logger _ctxlog;
 
     ss::shared_ptr<remote_partition> _partition;
+    /// Manifest view cursor
+    std::unique_ptr<async_manifest_view_cursor> _view_cursor;
     ss::lw_shared_ptr<storage::offset_translator_state> _ot_state;
     /// Reader state that was borrowed from the materialized_segment_state
     std::unique_ptr<remote_segment_batch_reader> _reader;
-    /// Cancelation subscription
+    /// Cancellation subscription
     ss::abort_source::subscription _as_sub;
     /// Guard for the partition gate
-    gate_guard _gate_guard;
+    ss::gate::holder _gate_guard;
     model::offset _next_segment_base_offset{};
     /// Contains offset of the first produced record batch or min()
     /// if no data were produced yet
@@ -581,17 +632,18 @@ private:
 };
 
 remote_partition::remote_partition(
-  const partition_manifest& m,
+  ss::shared_ptr<async_manifest_view> m,
   remote& api,
   cache& c,
-  cloud_storage_clients::bucket_name bucket)
+  cloud_storage_clients::bucket_name bucket,
+  partition_probe& probe)
   : _rtc(_as)
-  , _ctxlog(cst_log, _rtc, m.get_ntp().path())
+  , _ctxlog(cst_log, _rtc, m->get_ntp().path())
   , _api(api)
   , _cache(c)
-  , _manifest(m)
+  , _manifest_view(m)
   , _bucket(std::move(bucket))
-  , _probe(m.get_ntp()) {}
+  , _probe(probe) {}
 
 ss::future<> remote_partition::start() {
     // Fiber that consumers from _eviction_list and calls stop on items before
@@ -629,70 +681,80 @@ ss::future<> remote_partition::run_eviction_loop() {
 
 kafka::offset remote_partition::first_uploaded_offset() {
     vassert(
-      _manifest.size() > 0,
+      _manifest_view->stm().size() > 0,
       "The manifest for {} is not expected to be empty",
-      _manifest.get_ntp());
-    auto so = _manifest.get_start_kafka_offset().value();
+      _manifest_view->stm().get_ntp());
+    auto so = _manifest_view->stm().start_kafka_offset_full().value();
     vlog(_ctxlog.trace, "remote partition first_uploaded_offset: {}", so);
     return so;
 }
 
 kafka::offset remote_partition::next_kafka_offset() {
     vassert(
-      _manifest.size() > 0,
+      _manifest_view->stm().size() > 0,
       "The manifest for {} is not expected to be empty",
-      _manifest.get_ntp());
-    auto next = _manifest.get_next_kafka_offset().value();
+      _manifest_view->get_ntp());
+    auto next = _manifest_view->stm().get_next_kafka_offset().value();
     vlog(_ctxlog.debug, "remote partition next_kafka_offset: {}", next);
     return next;
 }
 
 const model::ntp& remote_partition::get_ntp() const {
-    return _manifest.get_ntp();
+    return _manifest_view->get_ntp();
 }
 
 bool remote_partition::is_data_available() const {
     // Only advertize data if we have segments _and_ our start offset
     // corresponds to some data (not if our start_offset points off
     // the end of the manifest, as a result of a truncation where we
-    // have not yet cleaned out the segments.
-    return _manifest.size() > 0
-           && _manifest.find(_manifest.get_start_offset().value())
-                != _manifest.end();
+    // have not yet cleaned out the segments).
+    const auto& stmm = _manifest_view->stm();
+    return stmm.size() > 0
+           && (stmm.find(stmm.get_start_offset().value())
+                != stmm.end() || stmm.get_archive_start_offset() > stmm.get_start_offset().value());
 }
 
 uint64_t remote_partition::cloud_log_size() const {
-    return _manifest.cloud_log_size();
+    return _manifest_view->stm().cloud_log_size();
 }
 
 ss::future<> remote_partition::serialize_json_manifest_to_output_stream(
   ss::output_stream<char>& output) const {
-    return _manifest.serialize_json(output);
+    return _manifest_view->stm().serialize_json(output);
 }
 
 // returns term last kafka offset
 std::optional<kafka::offset>
 remote_partition::get_term_last_offset(model::term_id term) const {
+    const auto& stmm = _manifest_view->stm();
     vassert(
-      _manifest.size() > 0,
+      stmm.size() > 0,
       "The manifest for {} is not expected to be empty",
-      _manifest.get_ntp());
+      _manifest_view->get_ntp());
 
-    // look for first segment in next term, segments are sorted by
-    // base_offset and term
-    for (auto const& p : _manifest) {
-        if (p.segment_term > term) {
-            return p.base_kafka_offset() - kafka::offset(1);
+    if (stmm.begin()->segment_term < term) {
+        // if last segment term is equal to the one we look for return it
+        auto last = stmm.last_segment();
+        vassert(
+          last.has_value(),
+          "The manifest for {} is not expected to be empty",
+          _manifest_view->get_ntp());
+
+        if (last->segment_term == term) {
+            // Fast path, most requests should query the last term
+            return last->next_kafka_offset() - kafka::offset(1);
+        } else {
+            // look for first segment in next term, segments are sorted by
+            // base_offset and term
+            for (auto const& p : stmm) {
+                if (p.segment_term > term) {
+                    return p.base_kafka_offset() - kafka::offset(1);
+                }
+            }
         }
-    }
-    // if last segment term is equal to the one we look for return it
-    auto last = _manifest.last_segment();
-    vassert(
-      last.has_value(),
-      "The manifest for {} is not expected to be empty",
-      _manifest.get_ntp());
-    if (last->segment_term == term) {
-        return last->next_kafka_offset() - kafka::offset(1);
+    } else {
+        // TODO: best effort
+        vassert(false, "Not implemented");
     }
 
     return std::nullopt;
@@ -701,26 +763,74 @@ remote_partition::get_term_last_offset(model::term_id term) const {
 ss::future<std::vector<model::tx_range>>
 remote_partition::aborted_transactions(offset_range offsets) {
     gate_guard guard(_gate);
-    // Here we have to use kafka offsets to locate the segments and
-    // redpanda offsets to extract aborted transactions metadata because
-    // tx-manifests contains redpanda offsets.
+    const auto& manifest = _manifest_view->stm();
+    const auto so = manifest.get_start_offset();
     std::vector<model::tx_range> result;
-    for (auto it = _manifest.segment_containing(offsets.begin);
-         it != _manifest.end();
-         ++it) {
-        if (it->base_offset > offsets.end_rp) {
-            break;
-        }
+    if (so.has_value() && offsets.begin > so.value()) {
+        // Here we have to use kafka offsets to locate the segments and
+        // redpanda offsets to extract aborted transactions metadata because
+        // tx-manifests contains redpanda offsets.
+        for (auto it = manifest.segment_containing(offsets.begin);
+             it != manifest.end();
+             ++it) {
+            if (it->base_offset > offsets.end_rp) {
+                break;
+            }
 
-        // Segment might be materialized, we need a
-        // second map lookup to learn if this is the case.
-        auto m = _segments.find(it->base_offset);
-        if (m == _segments.end()) {
-            m = materialize_segment(*it);
+            // Segment might be materialized, we need a
+            // second map lookup to learn if this is the case.
+            auto m = _segments.find(it->base_offset);
+            if (m == _segments.end()) {
+                auto path = manifest.generate_segment_path(*it);
+                m = materialize_segment(path, *it);
+            }
+            auto tx = co_await m->second->segment->aborted_transactions(
+              offsets.begin_rp, offsets.end_rp);
+            std::copy(tx.begin(), tx.end(), std::back_inserter(result));
         }
-        auto tx = co_await m->second->segment->aborted_transactions(
-          offsets.begin_rp, offsets.end_rp);
-        std::copy(tx.begin(), tx.end(), std::back_inserter(result));
+    } else {
+        // Target archive section of the log
+        auto cur_res = co_await _manifest_view->get_active(
+          manifest.get_archive_start_offset());
+        if (cur_res.has_failure()) {
+            vlog(
+              _ctxlog.error,
+              "Failed to traverse archive part of the log: {}",
+              cur_res.error());
+            throw std::runtime_error(fmt_with_ctx(
+              fmt::format, "Failed to get the cursor {}", cur_res.error()));
+        }
+        auto cursor = std::move(cur_res.value());
+        std::deque<std::pair<segment_meta, remote_segment_path>>
+          meta_to_materialize;
+        co_await ss::repeat([&meta_to_materialize, &cursor, offsets] {
+            const auto& manifest = cursor->manifest()->get();
+            for (auto it = manifest.segment_containing(offsets.begin);
+                 it != manifest.end();
+                 ++it) {
+                if (it->base_offset > offsets.end_rp) {
+                    break;
+                }
+                auto path = manifest.generate_segment_path(*it);
+                meta_to_materialize.push_back(std::make_pair(*it, path));
+            }
+            return cursor->next_iter();
+        });
+
+        for (const auto& [meta, path] : meta_to_materialize) {
+            // Segment might be materialized, we need a
+            // second map lookup to learn if this is the case.
+            auto m = _segments.find(meta.base_offset);
+            if (m == _segments.end()) {
+                // Here the 'manifest' might not be the one that contain 'meta'
+                // but it doesn't matter because 'materialize_segment' method is
+                // only used to generate a segment path.
+                m = materialize_segment(path, meta);
+            }
+            auto tx = co_await m->second->segment->aborted_transactions(
+              offsets.begin_rp, offsets.end_rp);
+            std::copy(tx.begin(), tx.end(), std::back_inserter(result));
+        }
     }
 
     // Adjacent segments might return the same transaction record.
@@ -731,7 +841,7 @@ remote_partition::aborted_transactions(offset_range offsets) {
     vlog(
       _ctxlog.debug,
       "found {} aborted transactions for {}-{} offset range ({}-{} before "
-      "offset translaction)",
+      "offset translation)",
       result.size(),
       offsets.begin,
       offsets.end,
@@ -817,19 +927,21 @@ ss::future<storage::translating_reader> remote_partition::make_reader(
     auto ot_state = ss::make_lw_shared<storage::offset_translator_state>(
       get_ntp());
     auto impl = std::make_unique<partition_record_batch_reader_impl>(
-      config, shared_from_this(), ot_state);
+      shared_from_this(), ot_state);
+    co_await impl->start(config);
     co_return storage::translating_reader{
       model::record_batch_reader(std::move(impl)), std::move(ot_state)};
 }
 
 ss::future<std::optional<storage::timequery_result>>
 remote_partition::timequery(storage::timequery_config cfg) {
-    if (_manifest.size() == 0) {
+    const auto& stm_manifest = _manifest_view->stm();
+    if (stm_manifest.size() == 0) {
         vlog(_ctxlog.debug, "timequery: no segments");
         co_return std::nullopt;
     }
 
-    auto start_offset = _manifest.get_start_kafka_offset().value();
+    auto start_offset = stm_manifest.get_start_kafka_offset().value();
 
     // Synthesize a log_reader_config from our timequery_config
     storage::log_reader_config config(
@@ -863,7 +975,7 @@ remote_partition::timequery(storage::timequery_config cfg) {
 }
 
 bool remote_partition::bounds_timestamp(model::timestamp t) const {
-    auto last_seg = _manifest.last_segment();
+    auto last_seg = _manifest_view->stm().last_segment();
     if (last_seg.has_value()) {
         return t <= last_seg.value().max_timestamp;
     } else {
@@ -882,9 +994,10 @@ remote_partition::finalize(ss::abort_source& as) {
     // main retry_chain_node which is bound to our abort source,
     // and construct a special one.
     retry_chain_node local_rtc(as, erase_timeout, erase_backoff);
+    const auto& stm_manifest = _manifest_view->stm();
 
     partition_manifest remote_manifest(
-      _manifest.get_ntp(), _manifest.get_revision_id());
+      stm_manifest.get_ntp(), stm_manifest.get_revision_id());
 
     auto [manifest_get_result, result_fmt]
       = co_await _api.try_download_partition_manifest(
@@ -899,7 +1012,8 @@ remote_partition::finalize(ss::abort_source& as) {
         co_return finalize_result{.get_status = manifest_get_result};
     }
 
-    if (remote_manifest.get_insync_offset() > _manifest.get_insync_offset()) {
+    if (
+      remote_manifest.get_insync_offset() > stm_manifest.get_insync_offset()) {
         // Our local manifest is behind the remote: return a copy of the
         // remote manifest for use in deletion
         vlog(
@@ -907,12 +1021,12 @@ remote_partition::finalize(ss::abort_source& as) {
           "Remote manifest has newer state than local ({} > {}), using this "
           "for deletion during finalize",
           remote_manifest.get_insync_offset(),
-          _manifest.get_insync_offset());
+          stm_manifest.get_insync_offset());
         co_return finalize_result{
           .manifest = std::move(remote_manifest),
           .get_status = manifest_get_result};
     } else if (
-      remote_manifest.get_insync_offset() < _manifest.get_insync_offset()) {
+      remote_manifest.get_insync_offset() < stm_manifest.get_insync_offset()) {
         // TODO: should this be behind a feature table check?
 
         // The remote manifest is out of date, upload a fresh one
@@ -921,13 +1035,13 @@ remote_partition::finalize(ss::abort_source& as) {
           "Remote manifest has older state than local ({} < {}), attempting to "
           "upload latest manifest",
           remote_manifest.get_insync_offset(),
-          _manifest.get_insync_offset());
+          stm_manifest.get_insync_offset());
         auto manifest_tags
           = cloud_storage::remote::make_partition_manifest_tags(
-            _manifest.get_ntp(), _manifest.get_revision_id());
+            stm_manifest.get_ntp(), stm_manifest.get_revision_id());
 
         auto manifest_put_result = co_await _api.upload_manifest(
-          _bucket, _manifest, local_rtc, manifest_tags);
+          _bucket, stm_manifest, local_rtc, manifest_tags);
 
         if (manifest_put_result != upload_result::success) {
             vlog(
@@ -945,7 +1059,7 @@ remote_partition::finalize(ss::abort_source& as) {
           _ctxlog.debug,
           "Remote manifest is in sync with local state during finalize "
           "(insync_offset={})",
-          _manifest.get_insync_offset());
+          stm_manifest.get_insync_offset());
         co_return finalize_result{
           .manifest = std::nullopt, .get_status = manifest_get_result};
     }
@@ -1061,10 +1175,11 @@ ss::future<remote_partition::erase_result> remote_partition::erase(
  *    of date if e.g. we were not the leader)
  */
 ss::future<> remote_partition::try_erase(ss::abort_source& as) {
+    const auto& stm_manifest = _manifest_view->stm();
     vlog(
       _ctxlog.info,
       "Attempting to erase remote storage content for {}",
-      _manifest.get_ntp());
+      stm_manifest.get_ntp());
 
     // This function is called after ::stop, so we may not use our
     // main retry_chain_node which is bound to our abort source,
@@ -1075,7 +1190,7 @@ ss::future<> remote_partition::try_erase(ss::abort_source& as) {
     // date node, but hopefully the latest leader will have uploaded
     // manifest in finalize().
     partition_manifest manifest(
-      _manifest.get_ntp(), _manifest.get_revision_id());
+      stm_manifest.get_ntp(), stm_manifest.get_revision_id());
     auto [manifest_get_result, result_fmt]
       = co_await _api.try_download_partition_manifest(
         _bucket, manifest, local_rtc, true);
@@ -1138,7 +1253,7 @@ cache_usage_target remote_partition::get_cache_usage_target() const {
 
     // we may not have any materialized segments, but we can decode some info
     // about them anyway from the manifest.
-    auto seg = _manifest.last_segment();
+    auto seg = _manifest_view->stm().last_segment();
     if (seg.has_value()) {
         const auto chunked
           = !config::shard_local_cfg().cloud_storage_disable_chunk_reads()

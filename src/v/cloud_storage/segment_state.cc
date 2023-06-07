@@ -27,12 +27,15 @@ void materialized_segment_state::offload(remote_partition* partition) {
 }
 
 materialized_segment_state::materialized_segment_state(
-  model::offset base_offset, remote_partition& p, ssx::semaphore_units u)
-  : segment(ss::make_lw_shared<remote_segment>(
-    p._api, p._cache, p._bucket, p._manifest, base_offset, p._rtc))
-  , atime(ss::lowres_clock::now())
+  const segment_meta& meta,
+  const remote_segment_path& path,
+  remote_partition& p,
+  ssx::semaphore_units u)
+  : atime(ss::lowres_clock::now())
   , parent(p.weak_from_this())
   , _units(std::move(u)) {
+    segment = ss::make_lw_shared<remote_segment>(
+      p._api, p._cache, p._bucket, path, p.get_ntp(), meta, p._rtc);
     p.materialized().register_segment(*this);
 }
 

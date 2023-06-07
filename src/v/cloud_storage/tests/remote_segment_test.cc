@@ -105,7 +105,14 @@ FIXTURE_TEST(
     m.add(meta);
 
     remote_segment segment(
-      api.local(), cache.local(), bucket, m, meta.base_offset, fib);
+      api.local(),
+      cache.local(),
+      bucket,
+      m.generate_segment_path(meta),
+      m.get_ntp(),
+      meta,
+      fib);
+
     auto reader_handle
       = segment.data_stream(0, ss::default_priority_class()).get();
 
@@ -124,7 +131,6 @@ FIXTURE_TEST(test_remote_segment_timeout, cloud_storage_fixture) { // NOLINT
     auto conf = get_configuration();
     partition_manifest m(manifest_ntp, manifest_revision);
     auto name = segment_name("7-8-v1.log");
-    auto key = parse_segment_name(name).value();
     m.add(
       name,
       partition_manifest::segment_meta{
@@ -138,8 +144,16 @@ FIXTURE_TEST(test_remote_segment_timeout, cloud_storage_fixture) { // NOLINT
         .ntp_revision = manifest_revision});
 
     retry_chain_node fib(never_abort, 100ms, 20ms);
+    auto meta = *m.get(name);
     remote_segment segment(
-      api.local(), cache.local(), bucket, m, key.base_offset, fib);
+      api.local(),
+      cache.local(),
+      bucket,
+      m.generate_segment_path(meta),
+      m.get_ntp(),
+      meta,
+      fib);
+
     BOOST_REQUIRE_THROW(
       segment.data_stream(0, ss::default_priority_class()).get(),
       download_exception);
@@ -212,8 +226,16 @@ FIXTURE_TEST(
 
     storage::log_reader_config reader_config(
       model::offset(1), model::offset(1), ss::default_priority_class());
+
     auto segment = ss::make_lw_shared<remote_segment>(
-      api.local(), cache.local(), bucket, m, meta.base_offset, fib);
+      api.local(),
+      cache.local(),
+      bucket,
+      m.generate_segment_path(meta),
+      m.get_ntp(),
+      meta,
+      fib);
+
     partition_probe probe(manifest_ntp);
     remote_segment_batch_reader reader(
       segment, reader_config, probe, ssx::semaphore_units());
@@ -304,13 +326,16 @@ void test_remote_segment_batch_reader(
     storage::log_reader_config reader_config(
       begin, end, ss::default_priority_class());
     reader_config.max_bytes = std::numeric_limits<size_t>::max();
+
     auto segment = ss::make_lw_shared<remote_segment>(
       fixture.api.local(),
       fixture.cache.local(),
       bucket,
-      m,
-      meta.base_offset,
+      m.generate_segment_path(meta),
+      m.get_ntp(),
+      meta,
       fib);
+
     partition_probe probe(manifest_ntp);
     remote_segment_batch_reader reader(
       segment, reader_config, probe, ssx::semaphore_units());
@@ -411,7 +436,13 @@ FIXTURE_TEST(
     m.add(meta);
 
     auto segment = ss::make_lw_shared<remote_segment>(
-      api.local(), cache.local(), bucket, m, meta.base_offset, fib);
+      api.local(),
+      cache.local(),
+      bucket,
+      m.generate_segment_path(meta),
+      m.get_ntp(),
+      meta,
+      fib);
 
     partition_probe probe(manifest_ntp);
     remote_segment_batch_reader reader(
@@ -512,7 +543,15 @@ FIXTURE_TEST(test_remote_segment_chunk_read, cloud_storage_fixture) {
     iobuf segment_bytes = generate_segment(model::offset(1), 300);
 
     auto m = chunk_read_baseline(*this, key, fib, segment_bytes.copy());
-    remote_segment segment(api.local(), cache.local(), bucket, m, key, fib);
+    auto meta = *m.get(key);
+    remote_segment segment(
+      api.local(),
+      cache.local(),
+      bucket,
+      m.generate_segment_path(meta),
+      m.get_ntp(),
+      meta,
+      fib);
 
     // The offset data stream uses an implementation which will iterate over all
     // chunks in the segment.
@@ -563,7 +602,16 @@ FIXTURE_TEST(test_remote_segment_chunk_read_fallback, cloud_storage_fixture) {
 
     auto m = chunk_read_baseline(
       *this, key, fib, segment_bytes.copy(), upload_index_t::no);
-    remote_segment segment(api.local(), cache.local(), bucket, m, key, fib);
+
+    auto meta = *m.get(key);
+    remote_segment segment(
+      api.local(),
+      cache.local(),
+      bucket,
+      m.generate_segment_path(meta),
+      m.get_ntp(),
+      meta,
+      fib);
 
     auto stream = segment
                     .offset_data_stream(
@@ -633,7 +681,16 @@ FIXTURE_TEST(test_chunks_initialization, cloud_storage_fixture) {
     iobuf segment_bytes = generate_segment(model::offset(1), 300);
 
     auto m = chunk_read_baseline(*this, key, fib, segment_bytes.copy());
-    remote_segment segment(api.local(), cache.local(), bucket, m, key, fib);
+
+    auto meta = *m.get(key);
+    remote_segment segment(
+      api.local(),
+      cache.local(),
+      bucket,
+      m.generate_segment_path(meta),
+      m.get_ntp(),
+      meta,
+      fib);
 
     segment_chunks chunk_api{segment, segment.max_hydrated_chunks()};
 
@@ -682,7 +739,16 @@ FIXTURE_TEST(test_chunk_hydration, cloud_storage_fixture) {
     iobuf segment_bytes = generate_segment(model::offset(1), 300);
 
     auto m = chunk_read_baseline(*this, key, fib, segment_bytes.copy());
-    remote_segment segment(api.local(), cache.local(), bucket, m, key, fib);
+
+    auto meta = *m.get(key);
+    remote_segment segment(
+      api.local(),
+      cache.local(),
+      bucket,
+      m.generate_segment_path(meta),
+      m.get_ntp(),
+      meta,
+      fib);
 
     segment_chunks chunk_api{segment, segment.max_hydrated_chunks()};
 
@@ -753,7 +819,17 @@ FIXTURE_TEST(test_chunk_future_reader_stats, cloud_storage_fixture) {
     iobuf segment_bytes = generate_segment(model::offset(1), 300);
 
     auto m = chunk_read_baseline(*this, key, fib, segment_bytes.copy());
-    remote_segment segment(api.local(), cache.local(), bucket, m, key, fib);
+
+    auto meta = *m.get(key);
+    remote_segment segment(
+      api.local(),
+      cache.local(),
+      bucket,
+      m.generate_segment_path(meta),
+      m.get_ntp(),
+      meta,
+      fib);
+
     segment_chunks chunk_api{segment, segment.max_hydrated_chunks()};
     auto close_segment = ss::defer([&segment] { segment.stop().get(); });
     segment.hydrate().get();
@@ -792,8 +868,15 @@ FIXTURE_TEST(test_chunk_multiple_readers, cloud_storage_fixture) {
     iobuf segment_bytes = generate_segment(model::offset(1), 300);
 
     auto m = chunk_read_baseline(*this, key, fib, segment_bytes.copy());
+    auto meta = *m.get(key);
     auto segment = ss::make_lw_shared<remote_segment>(
-      api.local(), cache.local(), bucket, m, key, fib);
+      api.local(),
+      cache.local(),
+      bucket,
+      m.generate_segment_path(meta),
+      m.get_ntp(),
+      meta,
+      fib);
 
     segment_chunks chunk_api{*segment, segment->max_hydrated_chunks()};
     auto close_segment = ss::defer([&segment] { segment->stop().get(); });

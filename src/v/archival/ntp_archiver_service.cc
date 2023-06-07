@@ -16,6 +16,7 @@
 #include "archival/retention_calculator.h"
 #include "archival/segment_reupload.h"
 #include "archival/types.h"
+#include "cloud_storage/async_manifest_view.h"
 #include "cloud_storage/partition_manifest.h"
 #include "cloud_storage/remote.h"
 #include "cloud_storage/remote_segment.h"
@@ -24,6 +25,7 @@
 #include "cloud_storage/topic_manifest.h"
 #include "cloud_storage/tx_range_manifest.h"
 #include "cloud_storage/types.h"
+#include "cloud_storage_clients/types.h"
 #include "cluster/archival_metadata_stm.h"
 #include "cluster/partition_manager.h"
 #include "config/configuration.h"
@@ -56,6 +58,7 @@
 
 #include <fmt/format.h>
 
+#include <chrono>
 #include <exception>
 #include <iterator>
 #include <numeric>
@@ -89,7 +92,8 @@ ntp_archiver::ntp_archiver(
   ss::lw_shared_ptr<const configuration> conf,
   cloud_storage::remote& remote,
   cloud_storage::cache& c,
-  cluster::partition& parent)
+  cluster::partition& parent,
+  ss::shared_ptr<cloud_storage::async_manifest_view> amv)
   : _ntp(ntp.ntp())
   , _rev(ntp.get_initial_revision())
   , _remote(remote)
@@ -121,7 +125,8 @@ ntp_archiver::ntp_archiver(
   , _manifest_upload_interval(
       config::shard_local_cfg()
         .cloud_storage_manifest_max_upload_interval_sec.bind())
-  , _feature_table(parent.feature_table()) {
+  , _feature_table(parent.feature_table())
+  , _manifest_view(std::move(amv)) {
     _start_term = _parent.term();
     // Override bucket for read-replica
     if (_parent.is_read_replica_mode_enabled()) {
@@ -1804,8 +1809,13 @@ ss::future<> ntp_archiver::housekeeping() {
             // external housekeeping jobs from upload_housekeeping_service
             // and retention/GC
             auto units = co_await ss::get_units(_mutex, 1, _as);
-            co_await apply_retention();
-            co_await garbage_collect();
+            if (stm_retention_needed()) {
+                co_await apply_retention();
+                co_await garbage_collect();
+            } else {
+                co_await apply_archive_retention();
+                co_await garbage_collect_archive();
+            }
             co_await apply_spillover();
         }
     } catch (const ss::abort_requested_exception&) {
@@ -1821,6 +1831,234 @@ ss::future<> ntp_archiver::housekeeping() {
         // want to stop who upload loop because of issues in housekeeping
         vlog(_rtclog.warn, "Error occurred during housekeeping: {}", e.what());
     }
+}
+
+ss::future<> ntp_archiver::apply_archive_retention() {
+    if (!may_begin_uploads()) {
+        co_return;
+    }
+
+    const auto& ntp_conf = _parent.get_ntp_config();
+    std::optional<size_t> retention_bytes = ntp_conf.retention_bytes();
+    std::optional<std::chrono::milliseconds> retention_ms
+      = ntp_conf.retention_duration();
+
+    auto res = co_await _manifest_view->compute_retention(
+      retention_bytes, retention_ms);
+
+    if (res.has_error()) {
+        vlog(
+          _rtclog.error,
+          "Failed to compute archive retention: {}",
+          res.error());
+        throw std::system_error(res.error());
+    }
+
+    if (
+      res.value().offset == _manifest_view->stm().get_archive_start_offset()) {
+        co_return;
+    }
+
+    // Replicate metadata
+    auto sync_timeout = config::shard_local_cfg()
+                          .cloud_storage_metadata_sync_timeout_ms.value();
+    auto deadline = ss::lowres_clock::now() + sync_timeout;
+
+    auto batch = _parent.archival_meta_stm()->batch_start(deadline, _as);
+    batch.truncate_archive_init(res.value().offset, res.value().delta);
+    auto error = co_await batch.replicate();
+
+    if (error != cluster::errc::success) {
+        vlog(
+          _rtclog.error,
+          "Failed to replicate archive truncation command: {}",
+          error.message());
+    } else {
+        vlog(
+          _rtclog.info,
+          "Archive truncated to offset {} (delta: {})",
+          res.value().offset,
+          res.value().delta);
+    }
+}
+
+ss::future<> ntp_archiver::garbage_collect_archive() {
+    if (!may_begin_uploads()) {
+        co_return;
+    }
+    auto backlog = co_await _manifest_view->get_retention_backlog();
+    if (backlog.has_failure()) {
+        vlog(
+          _rtclog.error,
+          "Failed to create GC backlog for the archive: {}",
+          backlog.error());
+        throw std::system_error(backlog.error());
+    }
+
+    std::deque<std::filesystem::path> segments_to_remove;
+    std::deque<std::filesystem::path> manifests_to_remove;
+
+    const auto clean_offset = manifest().get_archive_clean_offset();
+    const auto start_offset = manifest().get_archive_start_offset();
+    model::offset new_clean_offset;
+    // Value includes segments but doesn't include manifests
+    size_t bytes_to_remove = 0;
+
+    auto cursor = std::move(backlog.value());
+
+    while (cursor->get_status()
+           == cloud_storage::async_manifest_view_cursor_status::
+             materialized_spillover) {
+        auto stop = cursor->manifest(
+          [&](const cloud_storage::partition_manifest& manifest) {
+              for (const auto& meta : manifest) {
+                  if (meta.committed_offset < clean_offset) {
+                      // The manifest is only removed if all segments are
+                      // deleted. Because of that we may end up in a situation
+                      // when some of the segments are deleted and the rest are
+                      // not. The spillover manifest is never adjusted
+                      //  and reuploaded after GC.
+                      continue;
+                  }
+                  if (meta.committed_offset < start_offset) {
+                      auto path = manifest.generate_segment_path(meta);
+                      segments_to_remove.push_back(path());
+                      new_clean_offset = model::next_offset(
+                        meta.committed_offset);
+                      bytes_to_remove += meta.size_bytes;
+                      // Add index and tx-manifest
+                      if (
+                        meta.sname_format
+                          == cloud_storage::segment_name_format::v3
+                        && meta.metadata_size_hint != 0) {
+                          segments_to_remove.push_back(
+                            cloud_storage::generate_index_path(path));
+                      }
+                      segments_to_remove.push_back(
+                        cloud_storage::generate_remote_tx_path(path)());
+                  } else {
+                      // This indicates that we need to remove only some of the
+                      // segments from the manifest. In this case the outer loop
+                      // needs to stop and the current manifest shouldn't be
+                      // marked for deletion.
+                      return true;
+                  }
+              }
+              return false;
+          });
+
+        if (stop) {
+            break;
+        }
+        auto path = cursor->manifest()->get().get_manifest_path();
+        manifests_to_remove.push_back(path());
+        auto res = co_await cursor->next();
+        if (res.has_failure()) {
+            vlog(
+              _rtclog.error,
+              "Failed to load next spillover manifest: {}",
+              res.error());
+            break;
+        }
+    }
+
+    if (
+      _parent.archival_meta_stm()->get_dirty(_projected_manifest_clean_at)
+      != cluster::archival_metadata_stm::state_dirty::clean) {
+        auto result = co_await upload_manifest("pre-garbage-collect-archive");
+        if (result != cloud_storage::upload_result::success) {
+            co_return;
+        }
+    }
+
+    size_t successful_deletes{0};
+    const size_t batch_size = 1000;
+    std::vector<cloud_storage_clients::object_key> rem_batch;
+    for (const auto& path : segments_to_remove) {
+        vlog(_rtclog.info, "Deleting segment from cloud storage: {}", path);
+        rem_batch.emplace_back(path);
+        if (rem_batch.size() >= batch_size) {
+            auto sz = rem_batch.size();
+            std::vector<cloud_storage_clients::object_key> tmp;
+            std::swap(tmp, rem_batch);
+            if (co_await batch_delete(std::move(tmp))) {
+                successful_deletes += sz;
+            }
+        }
+    }
+    if (co_await batch_delete(rem_batch)) {
+        successful_deletes += rem_batch.size();
+    }
+    rem_batch.clear();
+
+    const auto backlog_size_exceeded = segments_to_remove.size()
+                                       > _max_segments_pending_deletion();
+    const auto all_deletes_succeeded = successful_deletes
+                                       == segments_to_remove.size();
+
+    if (!all_deletes_succeeded && backlog_size_exceeded) {
+        vlog(
+          _rtclog.warn,
+          "The current number of spillover segments pending deletion has "
+          "exceeded the configurable limit ({} > {}) and deletion of some "
+          "segments failed. Metadata for all remaining segments pending "
+          "deletion will be removed and these segments will have to be removed "
+          "manually.",
+          segments_to_remove.size(),
+          _max_segments_pending_deletion());
+    }
+    if (!all_deletes_succeeded && !backlog_size_exceeded) {
+        vlog(
+          _rtclog.info,
+          "Failed to delete all selected segments from cloud storage. Will "
+          "retry on the next housekeeping run.");
+    }
+    if (all_deletes_succeeded || backlog_size_exceeded) {
+        auto sync_timeout = config::shard_local_cfg()
+                              .cloud_storage_metadata_sync_timeout_ms.value();
+        auto deadline = ss::lowres_clock::now() + sync_timeout;
+        auto error = co_await _parent.archival_meta_stm()->cleanup_archive(
+          new_clean_offset, bytes_to_remove, deadline, _as);
+
+        if (error != cluster::errc::success) {
+            vlog(
+              _rtclog.info,
+              "Failed to clean up metadata after garbage collection: {}",
+              error);
+        } else {
+            // Remove manifests only if metadata no longer references them
+            for (const auto& path : manifests_to_remove) {
+                vlog(
+                  _rtclog.info,
+                  "Deleting spillover manifest from cloud storage: {}",
+                  path);
+                rem_batch.emplace_back(path);
+                if (rem_batch.size() >= batch_size) {
+                    std::vector<cloud_storage_clients::object_key> tmp;
+                    std::swap(tmp, rem_batch);
+                    co_await batch_delete(std::move(tmp));
+                }
+            }
+            co_await batch_delete(rem_batch);
+        }
+    }
+    _probe->segments_deleted(static_cast<int64_t>(successful_deletes));
+    vlog(
+      _rtclog.info,
+      "Deleted {} spillover segments from the cloud",
+      successful_deletes);
+}
+
+ss::future<bool> ntp_archiver::batch_delete(
+  std::vector<cloud_storage_clients::object_key> keys) {
+    // Do batch delete, the batch size should be below the limit
+    auto res = co_await _remote.delete_objects(
+      get_bucket_name(), std::move(keys), _rtcnode);
+    if (res != cloud_storage::upload_result::success) {
+        vlog(_rtclog.error, "Failed to delete objects", res);
+        co_return false;
+    }
+    co_return true;
 }
 
 ss::future<> ntp_archiver::apply_spillover() {
@@ -1929,8 +2167,33 @@ ss::future<> ntp_archiver::apply_spillover() {
     }
 }
 
+bool ntp_archiver::stm_retention_needed() const {
+    auto arch_so = manifest().get_archive_start_offset();
+    // Return true if there is no archive
+    return arch_so == model::offset{};
+}
+
 ss::future<> ntp_archiver::apply_retention() {
     if (!may_begin_uploads()) {
+        co_return;
+    }
+    auto arch_so = manifest().get_archive_start_offset();
+    auto stm_so = manifest().get_start_offset();
+    if (arch_so != model::offset{} && arch_so != stm_so) {
+        // We shouldn't do retention in the part of the log controlled by
+        // the archival STM if archive region is not empty. It's unlikely for
+        // STM retention and archive retention to work together. Most of the
+        // time either STM retention will be happening without spillover or
+        // archive retention will be happening alongside spillover from the STM.
+        // This is just a safety check that prevents situation when the method
+        // is called for log with not empty archive. In this case the retention
+        // will remove too much data from the STM region of the log.
+        vlog(
+          _rtclog.warn,
+          "Archive start offset {} is not equal to STM start offset {}, "
+          "skipping STM retention",
+          arch_so,
+          stm_so);
         co_return;
     }
 
