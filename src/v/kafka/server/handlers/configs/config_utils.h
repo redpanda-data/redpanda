@@ -400,30 +400,30 @@ public:
         auto prop
           = string_switch<std::optional<property_t>>(cfg.name)
               .match(
-                topic_property_record_key_schema_id_validation,
-                &props.record_key_schema_id_validation)
-              .match(
                 topic_property_record_key_schema_id_validation_compat,
                 &props.record_key_schema_id_validation_compat)
-              .match(
-                topic_property_record_key_subject_name_strategy,
-                &props.record_key_subject_name_strategy)
               .match(
                 topic_property_record_key_subject_name_strategy_compat,
                 &props.record_key_subject_name_strategy_compat)
               .match(
-                topic_property_record_value_schema_id_validation,
-                &props.record_value_schema_id_validation)
-              .match(
                 topic_property_record_value_schema_id_validation_compat,
                 &props.record_value_schema_id_validation_compat)
               .match(
-                topic_property_record_value_subject_name_strategy,
-                &props.record_value_subject_name_strategy)
-              .match(
                 topic_property_record_value_subject_name_strategy_compat,
                 &props.record_value_subject_name_strategy_compat)
-              .default_match(std::nullopt);
+              .match(
+                topic_property_record_key_schema_id_validation,
+                &props.record_key_schema_id_validation)
+              .match(
+                topic_property_record_key_subject_name_strategy,
+                &props.record_key_subject_name_strategy)
+              .match(
+                topic_property_record_value_schema_id_validation,
+                &props.record_value_schema_id_validation)
+              .match(
+                topic_property_record_value_subject_name_strategy,
+                &props.record_value_subject_name_strategy)
+            .default_match(std::nullopt);
         if (prop.has_value()) {
             ss::visit(
               prop.value(), [&cfg, op](auto& p) { apply(*p, cfg.value, op); });

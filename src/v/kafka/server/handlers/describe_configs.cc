@@ -818,19 +818,6 @@ ss::future<response_ptr> describe_configs_handler::handle(
                 constexpr std::string_view val_validation
                   = "Enable validation of the schema id for values on a record";
                 const bool hide_default_override = true;
-                add_topic_config_if_requested(
-                  resource,
-                  result,
-                  topic_property_record_key_schema_id_validation,
-                  ctx.metadata_cache()
-                    .get_default_record_key_schema_id_validation(),
-                  topic_property_record_key_schema_id_validation,
-                  topic_config->properties.record_key_schema_id_validation,
-                  request.data.include_synonyms,
-                  maybe_make_documentation(
-                    request.data.include_documentation, key_validation),
-                  &describe_as_string<bool>,
-                  hide_default_override);
 
                 add_topic_config_if_requested(
                   resource,
@@ -841,6 +828,75 @@ ss::future<response_ptr> describe_configs_handler::handle(
                   topic_property_record_key_schema_id_validation_compat,
                   topic_config->properties
                     .record_key_schema_id_validation_compat,
+                  request.data.include_synonyms,
+                  maybe_make_documentation(
+                    request.data.include_documentation, key_validation),
+                  &describe_as_string<bool>,
+                  hide_default_override);
+
+                add_topic_config_if_requested(
+                  resource,
+                  result,
+                  topic_property_record_key_subject_name_strategy_compat,
+                  ctx.metadata_cache()
+                    .get_default_record_key_subject_name_strategy(),
+                  topic_property_record_key_subject_name_strategy_compat,
+                  topic_config->properties
+                    .record_key_subject_name_strategy_compat,
+                  request.data.include_synonyms,
+                  maybe_make_documentation(
+                    request.data.include_documentation,
+                    fmt::format(
+                      "The subject name strategy for keys if {} is enabled",
+                      topic_property_record_key_schema_id_validation_compat)),
+                  [](auto sns) {
+                      return ss::sstring(to_string_view_compat(sns));
+                  },
+                  hide_default_override);
+
+                add_topic_config_if_requested(
+                  resource,
+                  result,
+                  topic_property_record_value_schema_id_validation_compat,
+                  ctx.metadata_cache()
+                    .get_default_record_value_schema_id_validation(),
+                  topic_property_record_value_schema_id_validation_compat,
+                  topic_config->properties
+                    .record_value_schema_id_validation_compat,
+                  request.data.include_synonyms,
+                  maybe_make_documentation(
+                    request.data.include_documentation, val_validation),
+                  &describe_as_string<bool>,
+                  hide_default_override);
+
+                add_topic_config_if_requested(
+                  resource,
+                  result,
+                  topic_property_record_value_subject_name_strategy_compat,
+                  ctx.metadata_cache()
+                    .get_default_record_value_subject_name_strategy(),
+                  topic_property_record_value_subject_name_strategy_compat,
+                  topic_config->properties
+                    .record_value_subject_name_strategy_compat,
+                  request.data.include_synonyms,
+                  maybe_make_documentation(
+                    request.data.include_documentation,
+                    fmt::format(
+                      "The subject name strategy for values if {} is enabled",
+                      topic_property_record_value_schema_id_validation_compat)),
+                  [](auto sns) {
+                      return ss::sstring(to_string_view_compat(sns));
+                  },
+                  hide_default_override);
+
+                add_topic_config_if_requested(
+                  resource,
+                  result,
+                  topic_property_record_key_schema_id_validation,
+                  ctx.metadata_cache()
+                    .get_default_record_key_schema_id_validation(),
+                  topic_property_record_key_schema_id_validation,
+                  topic_config->properties.record_key_schema_id_validation,
                   request.data.include_synonyms,
                   maybe_make_documentation(
                     request.data.include_documentation, key_validation),
@@ -868,46 +924,11 @@ ss::future<response_ptr> describe_configs_handler::handle(
                 add_topic_config_if_requested(
                   resource,
                   result,
-                  topic_property_record_key_subject_name_strategy_compat,
-                  ctx.metadata_cache()
-                    .get_default_record_key_subject_name_strategy(),
-                  topic_property_record_key_subject_name_strategy_compat,
-                  topic_config->properties
-                    .record_key_subject_name_strategy_compat,
-                  request.data.include_synonyms,
-                  maybe_make_documentation(
-                    request.data.include_documentation,
-                    fmt::format(
-                      "The subject name strategy for keys if {} is enabled",
-                      topic_property_record_key_schema_id_validation_compat)),
-                  [](auto sns) {
-                      return ss::sstring(to_string_view_compat(sns));
-                  },
-                  hide_default_override);
-
-                add_topic_config_if_requested(
-                  resource,
-                  result,
                   topic_property_record_value_schema_id_validation,
                   ctx.metadata_cache()
                     .get_default_record_value_schema_id_validation(),
                   topic_property_record_value_schema_id_validation,
                   topic_config->properties.record_value_schema_id_validation,
-                  request.data.include_synonyms,
-                  maybe_make_documentation(
-                    request.data.include_documentation, val_validation),
-                  &describe_as_string<bool>,
-                  hide_default_override);
-
-                add_topic_config_if_requested(
-                  resource,
-                  result,
-                  topic_property_record_value_schema_id_validation_compat,
-                  ctx.metadata_cache()
-                    .get_default_record_value_schema_id_validation(),
-                  topic_property_record_value_schema_id_validation_compat,
-                  topic_config->properties
-                    .record_value_schema_id_validation_compat,
                   request.data.include_synonyms,
                   maybe_make_documentation(
                     request.data.include_documentation, val_validation),
@@ -930,26 +951,6 @@ ss::future<response_ptr> describe_configs_handler::handle(
                       topic_property_record_value_schema_id_validation)),
                   &describe_as_string<
                     pandaproxy::schema_registry::subject_name_strategy>,
-                  hide_default_override);
-
-                add_topic_config_if_requested(
-                  resource,
-                  result,
-                  topic_property_record_value_subject_name_strategy_compat,
-                  ctx.metadata_cache()
-                    .get_default_record_value_subject_name_strategy(),
-                  topic_property_record_value_subject_name_strategy_compat,
-                  topic_config->properties
-                    .record_value_subject_name_strategy_compat,
-                  request.data.include_synonyms,
-                  maybe_make_documentation(
-                    request.data.include_documentation,
-                    fmt::format(
-                      "The subject name strategy for values if {} is enabled",
-                      topic_property_record_value_schema_id_validation_compat)),
-                  [](auto sns) {
-                      return ss::sstring(to_string_view_compat(sns));
-                  },
                   hide_default_override);
             }
 
