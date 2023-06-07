@@ -1920,9 +1920,27 @@ configuration::configuration()
       *this,
       "kafka_throughput_controlled_api_keys",
       "List of Kafka API keys that are subject to cluster-wide "
-      "and node-wide thoughput limit control",
+      "and node-wide throughput limit control",
       {.needs_restart = needs_restart::no, .visibility = visibility::user},
       {"produce", "fetch"})
+  , kafka_throughput_control(
+      *this,
+      "kafka_throughput_control",
+      "List of throughput control groups that define exclusions from node-wide "
+      "throughput limits. Each group consists of: (\"name\" (optional) - any "
+      "unique group name, \"client_id\" - regex to match client_id). "
+      "A connection is assigned the first matching group, then the connection "
+      "is excluded from throughput control.",
+      {
+        .needs_restart = needs_restart::no,
+        .example
+        = R"([{'name': 'first_group','client_id': 'client1'}, {'client_id': 'consumer-\d+'}, {'name': 'catch all'}])",
+        .visibility = visibility::user,
+      },
+      {},
+      [](auto& v) {
+          return validate_throughput_control_groups(v.cbegin(), v.cend());
+      })
   , node_isolation_heartbeat_timeout(
       *this,
       "node_isolation_heartbeat_timeout",

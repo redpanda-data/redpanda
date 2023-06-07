@@ -562,7 +562,7 @@ class ClusterConfigTest(RedpandaTest):
             elif p['type'] == "array" and p['items']['type'] == 'string':
                 valid_value = ["custard", "cream"]
             else:
-                raise NotImplementedError(p['type'])
+                raise NotImplementedError(f"{p['type']} in {name}")
 
             if name == 'sasl_mechanisms':
                 # The default value is ['SCRAM'], but the array cannot contain

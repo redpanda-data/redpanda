@@ -7,9 +7,7 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-import math
-import random
-import time
+import random, time, math, json, string
 from enum import Enum
 from typing import Tuple
 
@@ -65,6 +63,7 @@ class ThroughputLimitsSnc(RedpandaTest):
         QUOTA_SHARD_MIN_RATIO = "kafka_quota_balancer_min_shard_throughput_ratio"
         QUOTA_SHARD_MIN_BPS = "kafka_quota_balancer_min_shard_throughput_bps"
         CONTROLLED_API_KEYS = "kafka_throughput_controlled_api_keys"
+        THROUGHPUT_CONTROL = "kafka_throughput_control"
 
     api_names = [
         "add_offsets_to_txn", "add_partitions_to_txn", "alter_configs",
@@ -143,13 +142,31 @@ class ThroughputLimitsSnc(RedpandaTest):
                 keys.add(self.api_names[self.rnd.randrange(keys_num)])
             return list(keys)
 
+        if prop == self.ConfigProp.THROUGHPUT_CONTROL:
+            throughput_control = []
+            letters = string.digits + string.ascii_letters + ' '
+            for _ in range(self.rnd.randrange(4)):
+                tc_item = {}
+                r = self.rnd.randrange(3)
+                if r != 0:
+                    tc_item['name'] = ''.join(
+                        self.rnd.choice(letters)
+                        for _ in range(self.binexp_random(0, 512)))
+                r = self.rnd.randrange(3)
+                if r == 0:
+                    tc_item['client_id'] = 'client_id 1'
+                elif r == 2:
+                    tc_item['client_id'] = 'client_\d+'
+                throughput_control.append(tc_item)
+            return throughput_control
+
         raise Exception(f"Unsupported ConfigProp: {prop}")
 
     def current_effective_node_quota(self) -> Tuple[int, int]:
         metrics = self.redpanda.metrics_sample(
             "quotas_quota_effective", metrics_endpoint=MetricsEndpoint.METRICS)
 
-        assert metrics, "Effecive quota metric is missing"
+        assert metrics, "Effective quota metric is missing"
         self.logger.debug(f"Samples: {metrics.samples}")
 
         node_quota_in = sum(

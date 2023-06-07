@@ -18,6 +18,7 @@
 #include "config/data_directory_path.h"
 #include "config/endpoint_tls_config.h"
 #include "config/property.h"
+#include "config/throughput_control_group.h"
 #include "config/tls_config.h"
 #include "model/compression.h"
 #include "model/fundamental.h"
@@ -393,6 +394,7 @@ struct configuration final : public config_store {
     property<double> kafka_quota_balancer_min_shard_throughput_ratio;
     bounded_property<int64_t> kafka_quota_balancer_min_shard_throughput_bps;
     property<std::vector<ss::sstring>> kafka_throughput_controlled_api_keys;
+    property<std::vector<throughput_control_group>> kafka_throughput_control;
 
     bounded_property<int64_t> node_isolation_heartbeat_timeout;
 
