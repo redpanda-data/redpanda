@@ -71,7 +71,13 @@ func TestShouldUpdate_AnnotationChange(t *testing.T) {
 	}
 	stsWithAnnotation := sts.DeepCopy()
 	stsWithAnnotation.Spec.Template.Annotations = map[string]string{"test": "test2"}
-	ssres := StatefulSetResource{}
+	ssres := StatefulSetResource{
+		pandaCluster: &vectorizedv1alpha1.Cluster{
+			Status: vectorizedv1alpha1.ClusterStatus{
+				Restarting: false,
+			},
+		},
+	}
 	update, err := ssres.shouldUpdate(sts, stsWithAnnotation)
 	require.NoError(t, err)
 	require.True(t, update)
