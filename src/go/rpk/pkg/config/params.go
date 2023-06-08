@@ -754,9 +754,9 @@ func (p *Params) SugarLogger() *zap.SugaredLogger {
 // Logger parses returns the corresponding zap logger or a NopLogger.
 func (p *Params) Logger() *zap.Logger {
 	p.loggerOnce.Do(func() {
-		var level zapcore.Level
-		if p.DebugLogs {
-			level = zap.DebugLevel
+		if !p.DebugLogs {
+			p.logger = zap.NewNop()
+			return
 		}
 
 		// Now the zap config. We want to to the console and make the logs
@@ -765,7 +765,7 @@ func (p *Params) Logger() *zap.Logger {
 		// level to three letters, and we only add color if this is a
 		// terminal.
 		zcfg := zap.NewProductionConfig()
-		zcfg.Level = zap.NewAtomicLevelAt(level)
+		zcfg.Level = zap.NewAtomicLevelAt(zap.DebugLevel)
 		zcfg.DisableCaller = true
 		zcfg.DisableStacktrace = true
 		zcfg.Sampling = nil
