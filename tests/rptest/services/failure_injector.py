@@ -71,7 +71,46 @@ class FailureInjectorBase:
         self._heal_all()
 
     def inject_failure(self, spec):
-        pass
+        if spec in self._in_flight:
+            self.redpanda.logger.info(
+                f"Ignoring failure injection, already in flight {spec}")
+            return
+
+        self.redpanda.logger.info(f"injecting failure: {spec}")
+        try:
+            self._start_func(spec.type)(spec.node)
+        except Exception as e:
+            self.redpanda.logger.info(f"injecting failure error: {e}")
+            if spec.type == FailureSpec.FAILURE_TERMINATE and isinstance(
+                    e, TimeoutError):
+                # A timeout during termination indicates a shutdown hang in redpanda: this
+                # is a bug and we should fail the test on it.  Otherwise we'd leave the node
+                # in a weird state & get some non-obvious failure later in the test, such
+                # as https://github.com/redpanda-data/redpanda/issues/5178
+                raise
+        finally:
+            if spec.length is not None:
+                if spec.length == 0:
+                    self._stop_func(spec.type)(spec.node)
+                else:
+
+                    def cleanup():
+                        if spec in self._in_flight:
+                            self._stop_func(spec.type)(spec.node)
+                            self._in_flight.remove(spec)
+                        else:
+                            # The stop timers may outlive the test, handle case
+                            # where they run after we already had a heal_all call.
+                            self.redpanda.logger.warn(
+                                f"Skipping failure stop action, already cleaned up?"
+                            )
+
+                    stop_timer = threading.Timer(function=cleanup,
+                                                 args=[],
+                                                 interval=spec.length)
+                    self._in_flight.add(spec)
+                    stop_timer.start()
+
 
     def _start_func(self, tp):
         if tp == FailureSpec.FAILURE_KILL:
@@ -147,47 +186,6 @@ class FailureInjectorBase:
 class FailureInjector(FailureInjectorBase):
     def __init__(self, redpanda):
         super(FailureInjector, self).__init__(redpanda)
-
-    def inject_failure(self, spec):
-        if spec in self._in_flight:
-            self.redpanda.logger.info(
-                f"Ignoring failure injection, already in flight {spec}")
-            return
-
-        self.redpanda.logger.info(f"injecting failure: {spec}")
-        try:
-            self._start_func(spec.type)(spec.node)
-        except Exception as e:
-            self.redpanda.logger.info(f"injecting failure error: {e}")
-            if spec.type == FailureSpec.FAILURE_TERMINATE and isinstance(
-                    e, TimeoutError):
-                # A timeout during termination indicates a shutdown hang in redpanda: this
-                # is a bug and we should fail the test on it.  Otherwise we'd leave the node
-                # in a weird state & get some non-obvious failure later in the test, such
-                # as https://github.com/redpanda-data/redpanda/issues/5178
-                raise
-        finally:
-            if spec.length is not None:
-                if spec.length == 0:
-                    self._stop_func(spec.type)(spec.node)
-                else:
-
-                    def cleanup():
-                        if spec in self._in_flight:
-                            self._stop_func(spec.type)(spec.node)
-                            self._in_flight.remove(spec)
-                        else:
-                            # The stop timers may outlive the test, handle case
-                            # where they run after we already had a heal_all call.
-                            self.redpanda.logger.warn(
-                                f"Skipping failure stop action, already cleaned up?"
-                            )
-
-                    stop_timer = threading.Timer(function=cleanup,
-                                                 args=[],
-                                                 interval=spec.length)
-                    self._in_flight.add(spec)
-                    stop_timer.start()
 
     def _kill(self, node):
         self.redpanda.logger.info(
