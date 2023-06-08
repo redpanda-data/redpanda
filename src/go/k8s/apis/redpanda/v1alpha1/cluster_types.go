@@ -1263,3 +1263,11 @@ func (r *Cluster) IsSASLOnInternalEnabled() bool {
 	return r.Spec.KafkaEnableAuthorization != nil && *r.Spec.KafkaEnableAuthorization ||
 		r.Spec.EnableSASL
 }
+
+func (r *Cluster) GetDecommissionPodOrdinal() *int32 {
+	return r.Status.DecommissioningNode
+}
+
+func (r *Cluster) SetDecommissionPodOrdinal(ordinal *int32) {
+	r.Status.DecommissioningNode = ordinal
+}
