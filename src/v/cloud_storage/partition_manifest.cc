@@ -335,6 +335,11 @@ kafka::offset partition_manifest::get_start_kafka_offset_override() const {
     return _start_kafka_offset;
 }
 
+const partition_manifest::spillover_manifest_map&
+partition_manifest::get_spillover_map() const {
+    return _spillover_manifests;
+}
+
 std::optional<kafka::offset>
 partition_manifest::full_log_start_kafka_offset() const {
     if (_start_kafka_offset != kafka::offset{}) {
@@ -936,6 +941,27 @@ partition_manifest partition_manifest::spillover(model::offset start_offset) {
     // It doesn't include segments which are remaining in the
     // manifest.
     _archive_size_bytes += removed.cloud_log_size();
+
+    if (!removed.empty()) {
+        // This segment meta doesn't represent the segment but the
+        // spillover manifest. The fields in segment_meta are repurposed
+        // to store information about the spillover manifest.
+        segment_meta meta{
+          .size_bytes = removed.cloud_log_size(),
+          .base_offset = removed.get_start_offset().value(),
+          .committed_offset = removed.get_last_offset(),
+          .base_timestamp = removed.begin()->base_timestamp,
+          .max_timestamp = removed.last_segment()->max_timestamp,
+          .delta_offset = removed.begin()->delta_offset,
+          .ntp_revision = removed.get_revision_id(),
+          .archiver_term = removed.begin()->segment_term,
+          .segment_term = removed.last_segment()->segment_term,
+          .delta_offset_end = removed.last_segment()->delta_offset_end,
+          .sname_format = segment_name_format::v3,
+          .metadata_size_hint = removed.segments_metadata_bytes(),
+        };
+        _spillover_manifests.insert(meta);
+    }
     return removed;
 }
 
@@ -2064,6 +2090,7 @@ struct partition_manifest_serde
     model::offset _archive_clean_offset;
     kafka::offset _start_kafka_offset;
     size_t archive_size_bytes;
+    iobuf _spillover_manifests_serialized;
 };
 
 static_assert(
