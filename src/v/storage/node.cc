@@ -13,6 +13,12 @@
 namespace storage {
 
 ss::future<> node::start() {
+    // Intentionally undocumented environment variable, only for use
+    // in integration tests.
+    const char* test_disk_size_str = std::getenv("__REDPANDA_TEST_DISK_SIZE");
+    if (test_disk_size_str) {
+        _disk_size_for_test = std::stoul(std::string(test_disk_size_str));
+    }
     _probe.setup_node_metrics();
     co_return;
 }
@@ -62,11 +68,33 @@ void node::unregister_disk_notification(disk_type t, notification_id id) {
 }
 
 ss::future<struct statvfs> node::get_statvfs(ss::sstring path) {
+    struct statvfs stat {};
+
     if (unlikely(_statvfs_for_test)) {
-        co_return _statvfs_for_test(path);
+        stat = _statvfs_for_test(path);
     } else {
-        co_return co_await ss::engine().statvfs(path);
+        stat = co_await ss::engine().statvfs(path);
     }
+
+    if (_disk_size_for_test.has_value()) {
+        const auto used_blocks = stat.f_blocks - stat.f_bfree;
+        const auto total_blocks = std::max(
+          _disk_size_for_test.value() / stat.f_frsize, 1UL);
+
+        if (total_blocks < used_blocks) {
+            vlog(
+              stlog.error,
+              "Mocked disk has more used space {} than total space {}: "
+              "ignoring override",
+              used_blocks,
+              total_blocks);
+        } else {
+            stat.f_blocks = total_blocks;
+            stat.f_bfree = total_blocks - used_blocks;
+        }
+    }
+
+    co_return stat;
 }
 
 void node::testing_only_set_statvfs(
