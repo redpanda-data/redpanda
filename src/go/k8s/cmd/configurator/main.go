@@ -20,7 +20,6 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/hashicorp/go-multierror"
 	"github.com/moby/sys/mountinfo"
 	"gopkg.in/yaml.v3"
 	corev1 "k8s.io/api/core/v1"
@@ -471,38 +470,38 @@ func checkEnvVars() (configuratorConfig, error) {
 	for _, envVar := range envVarList {
 		v, exist := os.LookupEnv(envVar.name)
 		if !exist {
-			result = multierror.Append(result, fmt.Errorf("%s %w", envVar.name, errorMissingEnvironmentVariable))
+			result = errors.Join(result, fmt.Errorf("%s %w", envVar.name, errorMissingEnvironmentVariable))
 		}
 		*envVar.value = v
 	}
 
 	extCon, exist := os.LookupEnv(externalConnectivityEnvVar)
 	if !exist {
-		result = multierror.Append(result, fmt.Errorf("%s %w", externalConnectivityEnvVar, errorMissingEnvironmentVariable))
+		result = errors.Join(result, fmt.Errorf("%s %w", externalConnectivityEnvVar, errorMissingEnvironmentVariable))
 	}
 
 	var err error
 	c.externalConnectivity, err = strconv.ParseBool(extCon)
 	if err != nil {
-		result = multierror.Append(result, fmt.Errorf("unable to parse bool: %w", err))
+		result = errors.Join(result, fmt.Errorf("unable to parse bool: %w", err))
 	}
 
 	rackAwareness, exist := os.LookupEnv(rackAwarenessEnvVar)
 	if !exist {
-		result = multierror.Append(result, fmt.Errorf("%s %w", rackAwarenessEnvVar, errorMissingEnvironmentVariable))
+		result = errors.Join(result, fmt.Errorf("%s %w", rackAwarenessEnvVar, errorMissingEnvironmentVariable))
 	}
 	c.rackAwareness, err = strconv.ParseBool(rackAwareness)
 	if err != nil {
-		result = multierror.Append(result, fmt.Errorf("unable to parse bool: %w", err))
+		result = errors.Join(result, fmt.Errorf("unable to parse bool: %w", err))
 	}
 
 	validateMountedVolume, exist := os.LookupEnv(validateMountedVolumeEnvVar)
 	if !exist {
-		result = multierror.Append(result, fmt.Errorf("%s %w", validateMountedVolumeEnvVar, errorMissingEnvironmentVariable))
+		result = errors.Join(result, fmt.Errorf("%s %w", validateMountedVolumeEnvVar, errorMissingEnvironmentVariable))
 	}
 	c.validateMountedVolume, err = strconv.ParseBool(validateMountedVolume)
 	if err != nil {
-		result = multierror.Append(result, fmt.Errorf("unable to parse bool: %w", err))
+		result = errors.Join(result, fmt.Errorf("unable to parse bool: %w", err))
 	}
 
 	// Providing the address type is optional.
@@ -513,12 +512,12 @@ func checkEnvVars() (configuratorConfig, error) {
 
 	c.redpandaRPCPort, err = strconv.Atoi(rpcPort)
 	if err != nil {
-		result = multierror.Append(result, fmt.Errorf("unable to convert rpc port from string to int: %w", err))
+		result = errors.Join(result, fmt.Errorf("unable to convert rpc port from string to int: %w", err))
 	}
 
 	c.hostPort, err = strconv.Atoi(hostPort)
 	if err != nil && c.externalConnectivity {
-		result = multierror.Append(result, fmt.Errorf("unable to convert host port from string to int: %w", err))
+		result = errors.Join(result, fmt.Errorf("unable to convert host port from string to int: %w", err))
 	}
 
 	// Providing proxy host port is optional
@@ -526,7 +525,7 @@ func checkEnvVars() (configuratorConfig, error) {
 	if exist && proxyHostPort != "" {
 		c.proxyHostPort, err = strconv.Atoi(proxyHostPort)
 		if err != nil {
-			result = multierror.Append(result, fmt.Errorf("unable to convert proxy host port from string to int: %w", err))
+			result = errors.Join(result, fmt.Errorf("unable to convert proxy host port from string to int: %w", err))
 		}
 	}
 
