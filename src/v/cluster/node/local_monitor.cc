@@ -107,11 +107,6 @@ void local_monitor::testing_only_set_path(const ss::sstring& path) {
     _path_for_test = path;
 }
 
-void local_monitor::testing_only_set_statvfs(
-  std::function<struct statvfs(const ss::sstring)> func) {
-    _statvfs_for_test = std::move(func);
-}
-
 size_t local_monitor::alert_percent_in_bytes(
   unsigned alert_percent, size_t bytes_available) {
     long double percent_factor = alert_percent / 100.0;
@@ -144,8 +139,10 @@ storage::disk local_monitor::statvfs_to_disk(const struct statvfs& svfs) {
 ss::future<> local_monitor::update_disks(local_state& state) {
     if (_path_for_test.empty()) {
         // Normal mode
-        auto data_svfs = co_await get_statvfs(_data_directory);
-        auto cache_svfs = co_await get_statvfs(_cache_directory);
+        auto data_svfs = co_await _storage_node_api.local().get_statvfs(
+          _data_directory);
+        auto cache_svfs = co_await _storage_node_api.local().get_statvfs(
+          _cache_directory);
         state.data_disk = statvfs_to_disk(data_svfs);
         if (cache_svfs.f_fsid != data_svfs.f_fsid) {
             state.cache_disk = statvfs_to_disk(cache_svfs);
@@ -154,18 +151,10 @@ ss::future<> local_monitor::update_disks(local_state& state) {
         }
     } else {
         // Test mode
-        auto svfs = co_await get_statvfs(_path_for_test);
+        auto svfs = co_await _storage_node_api.local().get_statvfs(
+          _path_for_test);
         state.data_disk = statvfs_to_disk(svfs);
         state.cache_disk = std::nullopt;
-    }
-}
-
-// NOLINTNEXTLINE (performance-unnecessary-value-param)
-ss::future<struct statvfs> local_monitor::get_statvfs(const ss::sstring path) {
-    if (unlikely(_statvfs_for_test)) {
-        co_return _statvfs_for_test(path);
-    } else {
-        co_return co_await ss::engine().statvfs(path);
     }
 }
 

@@ -61,4 +61,17 @@ void node::unregister_disk_notification(disk_type t, notification_id id) {
     }
 }
 
+ss::future<struct statvfs> node::get_statvfs(ss::sstring path) {
+    if (unlikely(_statvfs_for_test)) {
+        co_return _statvfs_for_test(path);
+    } else {
+        co_return co_await ss::engine().statvfs(path);
+    }
+}
+
+void node::testing_only_set_statvfs(
+  std::function<struct statvfs(ss::sstring)> func) {
+    _statvfs_for_test = std::move(func);
+}
+
 } // namespace storage
