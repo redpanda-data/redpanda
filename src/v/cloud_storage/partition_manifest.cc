@@ -336,7 +336,7 @@ kafka::offset partition_manifest::get_start_kafka_offset_override() const {
 }
 
 std::optional<kafka::offset>
-partition_manifest::start_kafka_offset_full() const {
+partition_manifest::full_log_start_kafka_offset() const {
     if (_start_kafka_offset != kafka::offset{}) {
         // This offset is set by the DeleteRecords request explicitly
         // so it overrides whatever we have in the manifest (archive or
@@ -345,24 +345,14 @@ partition_manifest::start_kafka_offset_full() const {
     } else if (_archive_start_offset != model::offset{}) {
         // The archive start offset is guaranteed to be smaller than
         // the manifest start offset.
+        vassert(
+          _archive_start_offset <= _start_offset,
+          "Archive start offset {} is greater than the start offset {}",
+          _archive_start_offset,
+          _start_offset);
         return _archive_start_offset - _archive_start_offset_delta;
     } else if (_start_offset != model::offset{}) {
-        auto iter = _segments.find(_start_offset);
-        if (iter != _segments.end()) {
-            auto delta = iter->delta_offset;
-            return _start_offset - delta;
-        } else {
-            // If start offset points outside a segment, then we cannot
-            // translate it.  If there are any segments ahead of it, then
-            // those may be considered the start of the remote log.
-            if (auto front_it = _segments.begin();
-                front_it != _segments.end()
-                && front_it->base_offset >= _start_offset) {
-                return front_it->base_offset - front_it->delta_offset;
-            } else {
-                return std::nullopt;
-            }
-        }
+        return compute_start_kafka_offset_local();
     }
     return std::nullopt;
 }
@@ -371,21 +361,7 @@ std::optional<kafka::offset>
 partition_manifest::get_start_kafka_offset() const {
     std::optional<kafka::offset> local_start_offset;
     if (_start_offset != model::offset{}) {
-        auto iter = _segments.find(_start_offset);
-        if (iter != _segments.end()) {
-            auto delta = iter->delta_offset;
-            local_start_offset = _start_offset - delta;
-        } else {
-            // If start offset points outside a segment, then we cannot
-            // translate it.  If there are any segments ahead of it, then
-            // those may be considered the start of the remote log.
-            if (auto front_it = _segments.begin();
-                front_it != _segments.end()
-                && front_it->base_offset >= _start_offset) {
-                local_start_offset = front_it->base_offset
-                                     - front_it->delta_offset;
-            }
-        }
+        local_start_offset = compute_start_kafka_offset_local();
     }
     if (
       local_start_offset.has_value() && _start_kafka_offset != kafka::offset{}
@@ -393,6 +369,26 @@ partition_manifest::get_start_kafka_offset() const {
         // Apply override only if it's located inside the manifest's offset
         // range
         return _start_kafka_offset;
+    }
+    return local_start_offset;
+}
+
+std::optional<kafka::offset>
+partition_manifest::compute_start_kafka_offset_local() const {
+    std::optional<kafka::offset> local_start_offset;
+    auto iter = _segments.find(_start_offset);
+    if (iter != _segments.end()) {
+        auto delta = iter->delta_offset;
+        local_start_offset = _start_offset - delta;
+    } else {
+        // If start offset points outside a segment, then we cannot
+        // translate it.  If there are any segments ahead of it, then
+        // those may be considered the start of the remote log.
+        if (auto front_it = _segments.begin();
+            front_it != _segments.end()
+            && front_it->base_offset >= _start_offset) {
+            local_start_offset = front_it->base_offset - front_it->delta_offset;
+        }
     }
     return local_start_offset;
 }

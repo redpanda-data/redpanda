@@ -236,7 +236,7 @@ public:
 
     /// Return start offset that takes into account start kafka offset of the
     /// manifest, start kafka offset override and start offset of the archive.
-    std::optional<kafka::offset> start_kafka_offset_full() const;
+    std::optional<kafka::offset> full_log_start_kafka_offset() const;
 
     /// Get starting offset of the current manifest (doesn't take into account
     /// spillover manifests)
@@ -479,6 +479,8 @@ public:
     iobuf to_iobuf() const;
 
 private:
+    std::optional<kafka::offset> compute_start_kafka_offset_local() const;
+
     void subtract_from_cloud_log_size(size_t to_subtract);
 
     // Computes the size in bytes of all segments available to clients

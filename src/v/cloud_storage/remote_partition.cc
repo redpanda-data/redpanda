@@ -684,7 +684,7 @@ kafka::offset remote_partition::first_uploaded_offset() {
       _manifest_view->stm().size() > 0,
       "The manifest for {} is not expected to be empty",
       _manifest_view->stm().get_ntp());
-    auto so = _manifest_view->stm().start_kafka_offset_full().value();
+    auto so = _manifest_view->stm().full_log_start_kafka_offset().value();
     vlog(_ctxlog.trace, "remote partition first_uploaded_offset: {}", so);
     return so;
 }
