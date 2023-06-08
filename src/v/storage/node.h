@@ -43,8 +43,6 @@ public:
       uint64_t free_bytes,
       disk_space_alert alert);
 
-    const storage::disk_metrics& get_disk_metrics() const;
-
     notification_id register_disk_notification(disk_type t, disk_cb_t cb);
     void unregister_disk_notification(disk_type t, notification_id id);
 
