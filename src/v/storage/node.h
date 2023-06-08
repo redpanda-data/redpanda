@@ -57,6 +57,7 @@ private:
     notification_list<disk_cb_t, notification_id> _cache_watchers;
 
     std::function<struct statvfs(ss::sstring)> _statvfs_for_test;
+    std::optional<size_t> _disk_size_for_test;
 };
 
 } // namespace storage

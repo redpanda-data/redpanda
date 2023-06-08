@@ -87,8 +87,6 @@ private:
 
     ss::sharded<storage::node>& _storage_node_api; // single instance
 
-    std::optional<size_t> _disk_size_for_test;
-
     ss::gate _gate;
     ss::abort_source _abort_source;
 };

@@ -55,14 +55,7 @@ local_monitor::local_monitor(
   , _min_free_bytes(std::move(min_bytes))
   , _data_directory(std::move(data_directory))
   , _cache_directory(std::move(cache_directory))
-  , _storage_node_api(node_api) {
-    // Intentionally undocumented environment variable, only for use
-    // in integration tests.
-    const char* test_disk_size_str = std::getenv("__REDPANDA_TEST_DISK_SIZE");
-    if (test_disk_size_str) {
-        _disk_size_for_test = std::stoul(std::string(test_disk_size_str));
-    }
-}
+  , _storage_node_api(node_api) {}
 
 ss::future<> local_monitor::_update_loop() {
     while (!_abort_source.abort_requested()) {
@@ -113,17 +106,6 @@ storage::disk local_monitor::statvfs_to_disk(const struct statvfs& svfs) {
     // f_bsize is a historical linux-ism, use f_frsize
     uint64_t free = svfs.f_bfree * svfs.f_frsize;
     uint64_t total = svfs.f_blocks * svfs.f_frsize;
-
-    if (_disk_size_for_test) {
-        uint64_t used = total - free;
-        vassert(
-          used < *_disk_size_for_test,
-          "mock disk size {} must be > used size {}",
-          *_disk_size_for_test,
-          used);
-        total = *_disk_size_for_test;
-        free = total - used;
-    }
 
     return storage::disk{
       .path = _data_directory,
