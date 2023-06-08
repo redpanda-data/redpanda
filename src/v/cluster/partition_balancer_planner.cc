@@ -144,6 +144,7 @@ private:
     uint64_t _planned_moves_size_bytes = 0;
     size_t _failed_actions_count = 0;
     absl::node_hash_set<model::ntp> _cancellations;
+    bool _counts_rebalancing_finished = false;
     ss::abort_source& _as;
 };
 
@@ -1250,6 +1251,118 @@ partition_balancer_planner::get_full_node_actions(request_context& ctx) {
     }
 }
 
+ss::future<> partition_balancer_planner::get_counts_rebalancing_actions(
+  request_context& ctx) {
+    if (ctx.state().nodes_to_rebalance().empty()) {
+        co_return;
+    }
+
+    if (ctx.config().mode < model::partition_autobalancing_mode::node_add) {
+        ctx._counts_rebalancing_finished = true;
+        co_return;
+    }
+
+    if (!ctx.can_add_reassignment()) {
+        co_return;
+    }
+
+    auto scaled_count =
+      [&](model::node_id id, partition_allocation_domain domain) {
+          auto it = ctx.allocation_nodes().find(id);
+          vassert(it != ctx.allocation_nodes().end(), "node {} not found", id);
+          return double(it->second->domain_final_partitions(domain))
+                 / it->second->max_capacity();
+      };
+
+    // Reaches its minimum of 1.0 when replica counts (scaled by the node
+    // capacity) are equal across all nodes.
+    auto calc_objective = [&](partition_allocation_domain domain) {
+        double sum = 0;
+        double sum_sq = 0;
+        for (const auto& id : ctx.all_nodes) {
+            auto count = scaled_count(id, domain);
+            sum += count;
+            sum_sq += count * count;
+        }
+
+        if (sum == 0) {
+            return 1.0;
+        }
+
+        return ctx.all_nodes.size() * sum_sq / (sum * sum);
+    };
+
+    absl::flat_hash_map<partition_allocation_domain, double>
+      domain2orig_objective;
+    for (auto domain :
+         {partition_allocation_domains::common,
+          partition_allocation_domains::consumer_offsets}) {
+        domain2orig_objective[domain] = calc_objective(domain);
+    }
+
+    // The algorithm is simple: just go over all replicas and try to move them
+    // to a better node (this is driven by allocation constraints). If we
+    // haven't been able to improve the objective, this means that we've reached
+    // (local) optimum and rebalance can be finished.
+
+    bool actions_added = false;
+    co_await ctx.for_each_partition([&](partition& part) {
+        part.match_variant(
+          [&](reassignable_partition& part) {
+              // copy because replicas will change under our feet
+              auto replicas = part.replicas();
+              for (const auto& bs : replicas) {
+                  if (!part.is_original(bs.node_id)) {
+                      continue;
+                  }
+
+                  auto domain = get_allocation_domain(part.ntp());
+
+                  double count_before = scaled_count(bs.node_id, domain);
+
+                  auto res = part.move_replica(
+                    bs.node_id,
+                    ctx.config().soft_max_disk_usage_ratio,
+                    "counts rebalancing");
+                  if (!res) {
+                      continue;
+                  }
+
+                  if (res.value().current().node_id != bs.node_id) {
+                      double count_after = scaled_count(
+                        res.value().current().node_id, domain);
+
+                      if (count_after + 1e-8 > count_before) {
+                          // unnecessary move, doesn't improve the objective
+                          // (probably moved to another node with the same
+                          // number of partitions)
+                          part.revert(res.value());
+                      } else {
+                          actions_added = true;
+                      }
+                  }
+              }
+          },
+          [](auto&) {});
+
+        return ss::stop_iteration::no;
+    });
+
+    for (const auto& [domain, orig_objective] : domain2orig_objective) {
+        double cur_objective = calc_objective(domain);
+        vlog(
+          clusterlog.info,
+          "counts rebalancing objective in domain {}: {:6} -> {:6}",
+          domain,
+          orig_objective,
+          cur_objective);
+    }
+
+    if (!actions_added) {
+        ctx._counts_rebalancing_finished = true;
+    }
+}
+
 void partition_balancer_planner::request_context::collect_actions(
   partition_balancer_planner::plan_data& result) {
     result.reassignments.reserve(_reassignments.size());
@@ -1266,7 +1379,11 @@ void partition_balancer_planner::request_context::collect_actions(
       _cancellations.end(),
       std::back_inserter(result.cancellations));
 
-    if (!result.cancellations.empty() || !result.reassignments.empty()) {
+    result.counts_rebalancing_finished = _counts_rebalancing_finished;
+
+    if (
+      !result.cancellations.empty() || !result.reassignments.empty()
+      || result.counts_rebalancing_finished) {
         result.status = status::actions_planned;
     }
 }
@@ -1286,7 +1403,8 @@ partition_balancer_planner::plan_actions(
 
     if (
       result.violations.is_empty() && ctx.decommissioning_nodes.empty()
-      && _state.ntps_with_broken_rack_constraint().empty()) {
+      && _state.ntps_with_broken_rack_constraint().empty()
+      && _state.nodes_to_rebalance().empty()) {
         result.status = status::empty;
         co_return result;
     }
@@ -1306,6 +1424,8 @@ partition_balancer_planner::plan_actions(
             result.status = status::waiting_for_maintenance_end;
         }
     }
+
+    co_await get_counts_rebalancing_actions(ctx);
 
     ctx.collect_actions(result);
     co_return result;
