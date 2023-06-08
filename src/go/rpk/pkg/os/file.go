@@ -143,6 +143,9 @@ func EditTmpYAMLFile[T any](fs afero.Fs, v T) (T, error) {
 	if err != nil {
 		return update, fmt.Errorf("unable to edit: %w", err)
 	}
+	if len(read) == 0 || string(read) == "\n" {
+		return update, fmt.Errorf("no changes made")
+	}
 	if err := yaml.Unmarshal(read, &update); err != nil {
 		return update, fmt.Errorf("unable to parse edited file: %w", err)
 	}
