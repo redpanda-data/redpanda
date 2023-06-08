@@ -31,6 +31,11 @@ import (
 func NewFranzClient(fs afero.Fs, p *config.RpkProfile, extraOpts ...kgo.Opt) (*kgo.Client, error) {
 	k := &p.KafkaAPI
 
+	d := p.Defaults()
+	if len(k.Brokers) == 0 && d.NoDefaultCluster {
+		return nil, errors.New("no brokers specified and rpk.yaml is configured to not use a default cluster")
+	}
+
 	opts := []kgo.Opt{
 		kgo.SeedBrokers(k.Brokers...),
 		kgo.ClientID("rpk"),
@@ -68,6 +73,25 @@ func NewFranzClient(fs afero.Fs, p *config.RpkProfile, extraOpts ...kgo.Opt) (*k
 		kgo.MetadataMinAge(250 * time.Millisecond),
 	}
 
+	// We apply user overrides after our defaults above. Options are
+	// applied in order, so appending at the end overrides anything
+	// above.
+	if d := d.DialTimeout; d.Duration != 0 {
+		opts = append(opts, kgo.DialTimeout(d.Duration))
+	}
+	if d := d.RequestTimeoutOverhead; d.Duration != 0 {
+		opts = append(opts, kgo.RequestTimeoutOverhead(d.Duration))
+	}
+	if d := d.RetryTimeout; d.Duration != 0 {
+		opts = append(opts, kgo.RetryTimeout(d.Duration))
+	}
+	if d := d.FetchMaxWait; d.Duration != 0 {
+		opts = append(opts, kgo.FetchMaxWait(d.Duration))
+	}
+	if id := d.RedpandaClientID; id != "" {
+		opts = append(opts, kgo.ClientID(id))
+	}
+
 	if k.SASL != nil {
 		mech := scram.Auth{
 			User: k.SASL.User,
@@ -97,9 +121,7 @@ func NewFranzClient(fs afero.Fs, p *config.RpkProfile, extraOpts ...kgo.Opt) (*k
 }
 
 // NewAdmin returns a franz-go admin client.
-func NewAdmin(
-	fs afero.Fs, p *config.RpkProfile, extraOpts ...kgo.Opt,
-) (*kadm.Client, error) {
+func NewAdmin(fs afero.Fs, p *config.RpkProfile, extraOpts ...kgo.Opt) (*kadm.Client, error) {
 	cl, err := NewFranzClient(fs, p, extraOpts...)
 	if err != nil {
 		return nil, err
@@ -116,9 +138,7 @@ func MetaString(meta kgo.BrokerMetadata) string {
 
 // EachShard calls fn for each non-erroring response in shards. If some, but not
 // all, requests fail, this prints a summary message.
-func EachShard(
-	req kmsg.Request, shards []kgo.ResponseShard, fn func(kgo.ResponseShard),
-) (allFailed bool) {
+func EachShard(req kmsg.Request, shards []kgo.ResponseShard, fn func(kgo.ResponseShard)) (allFailed bool) {
 	if len(shards) == 1 && shards[0].Err != nil {
 		shard := shards[0]
 		meta := ""
