@@ -84,7 +84,8 @@ public:
     ss::future<> start();
     ss::future<> stop();
 
-    /// Get cached value as a stream if it exists on disk ///
+    /// Get cached value as a stream if it exists on disk
+    ///
     /// \param key is a cache key
     ss::future<std::optional<cache_item>> get(std::filesystem::path key);
 
