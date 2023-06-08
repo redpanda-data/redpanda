@@ -301,7 +301,6 @@ void members_backend::handle_single_update(
         return;
     case node_update_type::added:
         stop_node_decommissioning(update.id);
-        _updates.emplace_back(update);
         _raft0_updates.push_back(update);
         _new_updates.broadcast();
         return;
