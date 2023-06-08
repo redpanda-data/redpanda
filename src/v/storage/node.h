@@ -46,11 +46,17 @@ public:
     notification_id register_disk_notification(disk_type t, disk_cb_t cb);
     void unregister_disk_notification(disk_type t, notification_id id);
 
+    ss::future<struct statvfs> get_statvfs(ss::sstring path);
+
+    void testing_only_set_statvfs(std::function<struct statvfs(ss::sstring)>);
+
 private:
     storage::node_probe _probe;
 
     notification_list<disk_cb_t, notification_id> _data_watchers;
     notification_list<disk_cb_t, notification_id> _cache_watchers;
+
+    std::function<struct statvfs(ss::sstring)> _statvfs_for_test;
 };
 
 } // namespace storage

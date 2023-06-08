@@ -128,7 +128,7 @@ FIXTURE_TEST(local_monitor_inject_statvfs, local_monitor_fixture) {
     static constexpr auto free = 100UL, total = 200UL, block_size = 4096UL;
     struct statvfs stats = make_statvfs(free, total, block_size);
     auto lamb = [&](const ss::sstring& _ignore) { return stats; };
-    _local_monitor.testing_only_set_statvfs(lamb);
+    _storage_node_api.local().testing_only_set_statvfs(lamb);
 
     auto ls = update_state();
     BOOST_TEST_REQUIRE(ls.data_disk.total == total * block_size);
@@ -149,7 +149,7 @@ void local_monitor_fixture::assert_space_alert(
     struct statvfs stats = make_statvfs(
       free / block_size, volume / block_size, block_size);
     auto lamb = [&](const ss::sstring&) { return stats; };
-    _local_monitor.testing_only_set_statvfs(lamb);
+    _storage_node_api.local().testing_only_set_statvfs(lamb);
 
     auto ls = update_state();
     BOOST_TEST_REQUIRE(ls.data_disk.alert == expected);
