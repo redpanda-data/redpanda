@@ -18,6 +18,7 @@
 #include "cluster/scheduling/constraints.h"
 #include "cluster/scheduling/types.h"
 #include "model/namespace.h"
+#include "random/generators.h"
 #include "ssx/sformat.h"
 
 #include <seastar/core/sstring.hh>
@@ -81,6 +82,8 @@ public:
     absl::flat_hash_map<model::node_id, node_disk_space> node_disk_reports;
 
     ss::future<> for_each_partition(
+      ss::noncopyable_function<ss::stop_iteration(partition&)>);
+    ss::future<> for_each_partition_random_order(
       ss::noncopyable_function<ss::stop_iteration(partition&)>);
     ss::future<> with_partition(
       const model::ntp&, ss::noncopyable_function<void(partition&)>);
@@ -735,6 +738,39 @@ ss::future<> partition_balancer_planner::request_context::for_each_partition(
     }
 }
 
+ss::future<>
+partition_balancer_planner::request_context::for_each_partition_random_order(
+  ss::noncopyable_function<ss::stop_iteration(partition&)> visitor) {
+    auto start_rev = state().topics().topics_map_revision();
+
+    struct item {
+        const model::topic_namespace* tp_ns;
+        const partition_assignment* assignment;
+    };
+
+    fragmented_vector<item> partitions;
+    for (const auto& t : _parent._state.topics().topics_map()) {
+        for (const auto& a : t.second.get_assignments()) {
+            partitions.push_back(item{.tp_ns = &t.first, .assignment = &a});
+            co_await maybe_yield();
+            state().topics().check_topics_map_stable(start_rev);
+        }
+    }
+
+    std::shuffle(
+      partitions.begin(), partitions.end(), random_generators::internal::gen);
+
+    for (const auto& part : partitions) {
+        state().topics().check_topics_map_stable(start_rev);
+        model::ntp ntp(part.tp_ns->ns, part.tp_ns->tp, part.assignment->id);
+        auto stop = do_with_partition(ntp, part.assignment->replicas, visitor);
+        if (stop == ss::stop_iteration::yes) {
+            co_return;
+        }
+        co_await maybe_yield();
+    }
+}
+
 ss::future<> partition_balancer_planner::request_context::with_partition(
   const model::ntp& ntp, ss::noncopyable_function<void(partition&)> visitor) {
     auto topic = model::topic_namespace_view(ntp);
@@ -1306,7 +1342,7 @@ ss::future<> partition_balancer_planner::get_counts_rebalancing_actions(
     // (local) optimum and rebalance can be finished.
 
     bool actions_added = false;
-    co_await ctx.for_each_partition([&](partition& part) {
+    co_await ctx.for_each_partition_random_order([&](partition& part) {
         part.match_variant(
           [&](reassignable_partition& part) {
               // copy because replicas will change under our feet

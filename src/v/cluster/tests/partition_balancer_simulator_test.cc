@@ -272,6 +272,61 @@ public:
         }
     }
 
+    void validate_even_topic_distribution() {
+        size_t total_capacity = 0;
+        for (auto& [id, n] : allocation_nodes()) {
+            total_capacity += n->max_capacity();
+        }
+
+        absl::node_hash_map<
+          model::topic_namespace,
+          absl::flat_hash_map<model::node_id, size_t>>
+          topic_replica_distribution;
+
+        absl::node_hash_map<model::topic_namespace, size_t>
+          total_topic_replicas;
+
+        for (auto& [tp_ns, topic_md] :
+             _workers.table.local().all_topics_metadata()) {
+            for (auto& p_as : topic_md.get_assignments()) {
+                total_topic_replicas[tp_ns] += p_as.replicas.size();
+                for (auto& r : p_as.replicas) {
+                    topic_replica_distribution[tp_ns][r.node_id]++;
+                }
+            }
+        }
+
+        for (auto& [tp, node_replicas] : topic_replica_distribution) {
+            if (total_topic_replicas[tp] < nodes().size()) {
+                continue;
+            }
+
+            double total_replicas = static_cast<double>(
+              total_topic_replicas[tp]);
+            for (auto& [id, alloc_node] : allocation_nodes()) {
+                auto expected_replicas = ceil(
+                  total_replicas * alloc_node->max_capacity() / total_capacity);
+
+                auto it = node_replicas.find(id);
+                const auto replicas_on_node = it == node_replicas.end()
+                                                ? 0
+                                                : it->second;
+                logger.info(
+                  "topic {} has {} replicas on {}, expected: {} total "
+                  "replicas: {}",
+                  tp,
+                  replicas_on_node,
+                  id,
+                  expected_replicas,
+                  total_replicas);
+                auto err = std::abs(expected_replicas - replicas_on_node)
+                           / expected_replicas;
+                // assert that the skew is smaller than 50%
+                BOOST_REQUIRE_LE(err, 0.5);
+            }
+        }
+    }
+
     bool should_schedule_balancer_run() const {
         auto current_in_progress
           = _workers.table.local().updates_in_progress().size();
@@ -604,9 +659,17 @@ FIXTURE_TEST(test_two_decommissions, partition_balancer_sim_fixture) {
 
 FIXTURE_TEST(test_counts_rebalancing, partition_balancer_sim_fixture) {
     for (size_t i = 0; i < 3; ++i) {
-        add_node(model::node_id{i}, 100_GiB, 4);
+        add_node(model::node_id{i}, 1000_GiB, 4);
     }
-    add_topic("mytopic", 200, 3, 100_MiB);
+
+    for (int i = 0; i < 10; ++i) {
+        add_topic(
+          ssx::sformat("topic_{}", i),
+          random_generators::get_int(20, 100),
+          3,
+          100_MiB);
+    }
+
     add_node(model::node_id{3}, 100_GiB, 4);
     add_node_to_rebalance(model::node_id{3});
     add_node(model::node_id{4}, 100_GiB, 8);
@@ -614,7 +677,7 @@ FIXTURE_TEST(test_counts_rebalancing, partition_balancer_sim_fixture) {
 
     print_state();
 
-    for (size_t i = 0; i < 30000; ++i) {
+    for (size_t i = 0; i < 100000; ++i) {
         tick();
         if (should_schedule_balancer_run()) {
             print_state();
@@ -627,4 +690,5 @@ FIXTURE_TEST(test_counts_rebalancing, partition_balancer_sim_fixture) {
     }
 
     validate_even_replica_distribution();
+    validate_even_topic_distribution();
 }
