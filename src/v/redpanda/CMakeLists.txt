@@ -44,6 +44,7 @@ v_cc_library(
     cli_parser.cc
     application.cc
     monitor_unsafe_log_flag.cc
+    debug_bundle.cc
   DEPS
     Seastar::seastar
     v::cluster
