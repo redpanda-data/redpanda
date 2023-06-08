@@ -1,0 +1,9 @@
+# TODO work in progress getting clustered mode issues worked out
+partitions:
+  included:
+    - scale_tests/many_partitions_test.py
+
+  excluded:
+    - scale_tests/many_partitions_test.py::ManyPartitionsTest.test_many_partitions
+    - scale_tests/many_partitions_test.py::ManyPartitionsTest.test_many_partitions_compacted
+    - scale_tests/many_partitions_test.py::ManyPartitionsTest.test_omb
