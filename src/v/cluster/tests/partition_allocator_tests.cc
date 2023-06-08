@@ -85,7 +85,7 @@ FIXTURE_TEST(unregister_node, partition_allocator_fixture) {
     BOOST_REQUIRE_EQUAL(allocator.state().available_nodes(), 2);
 }
 
-FIXTURE_TEST(invalid_allocation_over_capacity, partition_allocator_fixture) {
+FIXTURE_TEST(allocation_over_capacity, partition_allocator_fixture) {
     register_node(0, 6);
     register_node(1, 6);
     register_node(2, 6);
@@ -96,6 +96,26 @@ FIXTURE_TEST(invalid_allocation_over_capacity, partition_allocator_fixture) {
       allocator.allocate(make_allocation_request(1, 1)).get().has_error());
     // group id hasn't changed
     BOOST_REQUIRE_EQUAL(allocator.state().last_group_id(), gr);
+
+    // Make the topic internal and retry, should work.
+    kafka_internal_topics.update({tn.tp()});
+    BOOST_REQUIRE(allocator.allocate(make_allocation_request(1, 1)).get());
+    BOOST_REQUIRE_GT(allocator.state().last_group_id(), gr);
+
+    // Undo the configuration, should fail again.
+    kafka_internal_topics.update({});
+    BOOST_REQUIRE(
+      allocator.allocate(make_allocation_request(1, 1)).get().has_error());
+
+    auto int_1 = model::topic_namespace{
+      model::ns{"redpanda"}, model::topic{"controller"}};
+    auto int_2 = model::topic_namespace{
+      model::ns{"kafka_internal"}, model::topic{"controller"}};
+    // Internal namespaces should work too.
+    BOOST_REQUIRE(
+      allocator.allocate(make_allocation_request(int_1, 1, 1)).get());
+    BOOST_REQUIRE(
+      allocator.allocate(make_allocation_request(int_2, 1, 1)).get());
 }
 
 FIXTURE_TEST(max_allocation, partition_allocator_fixture) {
