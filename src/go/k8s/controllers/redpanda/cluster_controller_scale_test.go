@@ -117,10 +117,10 @@ var _ = Describe("Redpanda cluster scale resource", func() {
 
 			By("Start decommissioning node with ordinal 2")
 			Eventually(resourceDataGetter(key, redpandaCluster, func() interface{} {
-				if redpandaCluster.GetDecommissionPodOrdinal() == nil {
+				if redpandaCluster.GetDecommissionBrokerID() == nil {
 					return nil
 				}
-				return *redpandaCluster.GetDecommissionPodOrdinal()
+				return *redpandaCluster.GetDecommissionBrokerID()
 			}), timeout, interval).Should(Equal(int32(2)), "node 2 is not decommissioning:\n%s", func() string { y, _ := yaml.Marshal(redpandaCluster); return string(y) }())
 			Eventually(testAdminAPI.BrokerStatusGetter(2), timeout, interval).Should(Equal(admin.MembershipStatusDraining))
 			Consistently(testAdminAPI.BrokerStatusGetter(1), timeoutShort, intervalShort).Should(Equal(admin.MembershipStatusActive))
@@ -170,10 +170,10 @@ var _ = Describe("Redpanda cluster scale resource", func() {
 				cluster.Spec.Replicas = pointer.Int32(2)
 			}), timeout, interval).Should(Succeed())
 			Eventually(resourceDataGetter(key, redpandaCluster, func() interface{} {
-				if redpandaCluster.GetDecommissionPodOrdinal() == nil {
+				if redpandaCluster.GetDecommissionBrokerID() == nil {
 					return nil
 				}
-				return *redpandaCluster.GetDecommissionPodOrdinal()
+				return *redpandaCluster.GetDecommissionBrokerID()
 			}), timeout, interval).Should(Equal(int32(2)), "node 2 is not decommissioning:\n%s", func() string { y, _ := yaml.Marshal(redpandaCluster); return string(y) }())
 			Eventually(testAdminAPI.BrokerStatusGetter(2), timeout, interval).Should(Equal(admin.MembershipStatusDraining))
 
@@ -188,10 +188,10 @@ var _ = Describe("Redpanda cluster scale resource", func() {
 				cluster.Spec.Replicas = pointer.Int32(2)
 			}), timeout, interval).Should(Succeed())
 			Eventually(resourceDataGetter(key, redpandaCluster, func() interface{} {
-				if redpandaCluster.GetDecommissionPodOrdinal() == nil {
+				if redpandaCluster.GetDecommissionBrokerID() == nil {
 					return nil
 				}
-				return *redpandaCluster.GetDecommissionPodOrdinal()
+				return *redpandaCluster.GetDecommissionBrokerID()
 			}), timeout, interval).Should(Equal(int32(2)))
 			Eventually(testAdminAPI.BrokerStatusGetter(2), timeout, interval).Should(Equal(admin.MembershipStatusDraining))
 
@@ -233,7 +233,7 @@ var _ = Describe("Redpanda cluster scale resource", func() {
 			}), timeout, interval).Should(Equal(int32(2)))
 			Eventually(statefulSetReplicasReconciler(key, redpandaCluster), timeout, interval).Should(Succeed())
 			Eventually(resourceDataGetter(key, redpandaCluster, func() interface{} {
-				return redpandaCluster.GetDecommissionPodOrdinal()
+				return redpandaCluster.GetDecommissionBrokerID()
 			}), timeout, interval).Should(BeNil())
 
 			By("Deleting the cluster")
@@ -267,10 +267,10 @@ var _ = Describe("Redpanda cluster scale resource", func() {
 			By("Finding out that the node was able to connect to the cluster before being terminated")
 			testAdminAPI.AddBroker(admin.Broker{NodeID: 2, MembershipStatus: admin.MembershipStatusActive})
 			Eventually(resourceDataGetter(key, redpandaCluster, func() interface{} {
-				if redpandaCluster.GetDecommissionPodOrdinal() == nil {
+				if redpandaCluster.GetDecommissionBrokerID() == nil {
 					return nil
 				}
-				return *redpandaCluster.GetDecommissionPodOrdinal()
+				return *redpandaCluster.GetDecommissionBrokerID()
 			}), timeout, interval).Should(Equal(int32(2)))
 
 			By("Scaling the cluster back and properly decommission the node")
@@ -286,7 +286,7 @@ var _ = Describe("Redpanda cluster scale resource", func() {
 			}), timeout, interval).Should(Equal(int32(2)))
 			Eventually(statefulSetReplicasReconciler(key, redpandaCluster), timeout, interval).Should(Succeed())
 			Eventually(resourceDataGetter(key, redpandaCluster, func() interface{} {
-				return redpandaCluster.GetDecommissionPodOrdinal()
+				return redpandaCluster.GetDecommissionBrokerID()
 			}), timeout, interval).Should(BeNil())
 
 			By("Deleting the cluster")

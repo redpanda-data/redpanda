@@ -63,6 +63,8 @@ const (
 	archivalCacheIndexAnchorName = "shadow-index-cache"
 	defaultDatadirCapacity       = "100Gi"
 	trueString                   = "true"
+
+	PodAnnotationNodeIDKey = "operator.redpanda.com/node-id"
 )
 
 var (
@@ -917,4 +919,52 @@ func (r *StatefulSetResource) CurrentVersion(ctx context.Context) (string, error
 		}
 	}
 	return stsVersion, nil
+}
+
+func (r *StatefulSetResource) getPodByBrokerID(ctx context.Context, brokerID *int32) (*corev1.Pod, error) {
+	if brokerID == nil {
+		return nil, nil
+	}
+	brokerIDStr := strconv.FormatInt(int64(*brokerID), 10)
+	pods, err := r.getPodList(ctx)
+	if err != nil {
+		return nil, err
+	}
+	for i := range pods.Items {
+		annotations := pods.Items[i].GetAnnotations()
+		if v, ok := annotations[PodAnnotationNodeIDKey]; ok && v == brokerIDStr {
+			return &pods.Items[i], nil
+		}
+	}
+
+	return nil, nil
+}
+
+var keyNotPresentError error
+
+func (r *StatefulSetResource) getBrokerIDForPod(ctx context.Context, ordinal int32) (*int32, error) {
+	stsName := r.LastObservedState.GetName()
+	ordinalStr := strconv.FormatInt(int64(ordinal), 10)
+	match := stsName + "-" + ordinalStr
+
+	pods, err := r.getPodList(ctx)
+	if err != nil {
+		return nil, err
+	}
+	for i := range pods.Items {
+		if pods.Items[i].GetName() != match {
+			continue
+		}
+		brokerIDStr, ok := pods.Items[i].GetAnnotations()[PodAnnotationNodeIDKey]
+		if !ok {
+			return nil, fmt.Errorf("node-id annotation is not set on pod %s %w", match, keyNotPresentError)
+		}
+		brokerIDint, err := strconv.ParseInt(brokerIDStr, 10, 32)
+		if err != nil {
+			return nil, fmt.Errorf("error converting node-id, %q, from pod annotation to integer: %w", brokerIDStr, err)
+		}
+		brokerID := int32(brokerIDint)
+		return &brokerID, nil
+	}
+	return nil, nil
 }
