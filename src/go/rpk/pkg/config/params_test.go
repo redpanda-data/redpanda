@@ -1075,3 +1075,15 @@ func TestXSetExamples(t *testing.T) {
 		t.Errorf("xflags still contains keys %v after checking all examples in this test", maps.Keys(m))
 	}
 }
+
+func TestXSetDefaultsPaths(t *testing.T) {
+	xs, paths := XRpkDefaultsFlags()
+	for i, x := range xs {
+		if paths[i] != x {
+			t.Errorf("XRpkDefaultsFlags() returned different xflag %s and path %s", x, paths[i])
+		}
+		if !strings.HasPrefix(x, "defaults.") {
+			t.Errorf("XRpkDefaultsFlags() returned xflag %s that doesn't start with defaults.", x)
+		}
+	}
+}

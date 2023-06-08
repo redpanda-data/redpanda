@@ -367,8 +367,9 @@ func XCloudAuthFlags() (xs, yamlPaths []string) {
 	return
 }
 
-// XRpkDefaultsFlags returns all X flags that modify rpk defaults, and
-// their corresponding yaml paths.
+// XRpkDefaultsFlags returns all X flags that modify rpk defaults, and their
+// corresponding yaml paths. Note that for rpk defaults, the X flags always
+// have the same name as the yaml path and always begin with "defaults.".
 func XRpkDefaultsFlags() (xs, yamlPaths []string) {
 	for k, v := range xflags {
 		if v.kind == xkindDefault {

@@ -97,36 +97,36 @@ type (
 	RpkDefaults struct {
 		// Prompt is the prompt to use for all profiles, unless the
 		// profile itself overrides it.
-		Prompt string `yaml:"prompt,omitempty"`
+		Prompt string `yaml:"prompt"`
 
 		// NoDefaultCluster disables localhost:{9092,9644} as a default
 		// profile when no other is selected.
-		NoDefaultCluster bool `yaml:"no_default_cluster,omitempty"`
+		NoDefaultCluster bool `yaml:"no_default_cluster"`
 
 		// DialTimeout is how long we allow for initiating a connection
 		// to brokers for the Admin API and Kafka API.
-		DialTimeout Duration `yaml:"dial_timeout,omitempty"`
+		DialTimeout Duration `yaml:"dial_timeout"`
 
 		// RequestTimeoutOverhead, for Kafka API requests, how long do
 		// we give the request on top of any request's timeout field.
-		RequestTimeoutOverhead Duration `yaml:"request_timeout_overhead,omitempty"`
+		RequestTimeoutOverhead Duration `yaml:"request_timeout_overhead"`
 
 		// RetryTimeout allows us to retry requests. If see we need to
 		// retry before the retry timeout has elapsed, we do -- even if
 		// backing off after we know to retry pushes us past the
 		// timeout.
-		RetryTimeout Duration `yaml:"retry_timeout,omitempty"`
+		RetryTimeout Duration `yaml:"retry_timeout"`
 
 		// FetchMaxWait is how long we give the broker to respond to
 		// fetch requests.
-		FetchMaxWait Duration `yaml:"fetch_max_wait,omitempty"`
+		FetchMaxWait Duration `yaml:"fetch_max_wait"`
 
 		// RedpandaClientID is the client ID to use for the Kafka API.
-		RedpandaClientID string `yaml:"redpanda_client_id,omitempty"`
+		RedpandaClientID string `yaml:"redpanda_client_id"`
 	}
 
 	RpkProfile struct {
-		Name         string           `yaml:"name,omitempty"`
+		Name         string           `yaml:"name"`
 		Description  string           `yaml:"description,omitempty"`
 		Prompt       string           `yaml:"prompt,omitempty"`
 		FromCloud    bool             `yaml:"from_cloud,omitempty"`
