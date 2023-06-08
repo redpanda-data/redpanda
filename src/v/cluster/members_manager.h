@@ -114,6 +114,7 @@ public:
       ss::sharded<partition_allocator>&,
       ss::sharded<storage::api>&,
       ss::sharded<drain_manager>&,
+      ss::sharded<partition_balancer_state>&,
       ss::sharded<ss::abort_source>&);
 
     /**
@@ -293,6 +294,8 @@ private:
     // node. Needs to be per-core since each shard is managed by a different
     // shard of the sharded partition_manager.
     ss::sharded<drain_manager>& _drain_manager;
+
+    ss::sharded<partition_balancer_state>& _pb_state;
 
     ss::sharded<ss::abort_source>& _as;
 

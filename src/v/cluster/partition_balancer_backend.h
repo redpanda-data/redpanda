@@ -26,6 +26,8 @@
 
 namespace cluster {
 
+struct node_health_report;
+
 class partition_balancer_backend {
 public:
     static constexpr ss::shard_id shard = 0;
@@ -34,9 +36,10 @@ public:
       consensus_ptr raft0,
       ss::sharded<controller_stm>&,
       ss::sharded<partition_balancer_state>&,
-      ss::sharded<health_monitor_frontend>&,
+      ss::sharded<health_monitor_backend>&,
       ss::sharded<partition_allocator>&,
       ss::sharded<topics_frontend>&,
+      ss::sharded<members_frontend>&,
       config::binding<model::partition_autobalancing_mode>&& mode,
       config::binding<std::chrono::seconds>&& availability_timeout,
       config::binding<unsigned>&& max_disk_usage_percent,
@@ -74,6 +77,9 @@ private:
     void maybe_rearm_timer(bool now = false);
     void on_members_update(model::node_id, model::membership_state);
     void on_topic_table_update();
+    void on_health_monitor_update(
+      node_health_report const&,
+      std::optional<std::reference_wrapper<const node_health_report>>);
     size_t get_min_partition_size_threshold() const;
 
 private:
@@ -82,9 +88,10 @@ private:
 
     controller_stm& _controller_stm;
     partition_balancer_state& _state;
-    health_monitor_frontend& _health_monitor;
+    health_monitor_backend& _health_monitor;
     partition_allocator& _partition_allocator;
     topics_frontend& _topics_frontend;
+    members_frontend& _members_frontend;
 
     config::binding<model::partition_autobalancing_mode> _mode;
     config::binding<std::chrono::seconds> _availability_timeout;
@@ -110,6 +117,7 @@ private:
     ss::timer<clock_t> _timer;
     notification_id_type _topic_table_updates;
     notification_id_type _member_updates;
+    notification_id_type _health_monitor_updates;
     std::optional<ss::abort_source> _tick_in_progress;
 };
 

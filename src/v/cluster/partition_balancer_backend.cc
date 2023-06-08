@@ -13,6 +13,7 @@
 #include "cluster/health_monitor_frontend.h"
 #include "cluster/health_monitor_types.h"
 #include "cluster/logger.h"
+#include "cluster/members_frontend.h"
 #include "cluster/members_table.h"
 #include "cluster/partition_balancer_planner.h"
 #include "cluster/partition_balancer_state.h"
@@ -44,9 +45,10 @@ partition_balancer_backend::partition_balancer_backend(
   consensus_ptr raft0,
   ss::sharded<controller_stm>& controller_stm,
   ss::sharded<partition_balancer_state>& state,
-  ss::sharded<health_monitor_frontend>& health_monitor,
+  ss::sharded<health_monitor_backend>& health_monitor,
   ss::sharded<partition_allocator>& partition_allocator,
   ss::sharded<topics_frontend>& topics_frontend,
+  ss::sharded<members_frontend>& members_frontend,
   config::binding<model::partition_autobalancing_mode>&& mode,
   config::binding<std::chrono::seconds>&& availability_timeout,
   config::binding<unsigned>&& max_disk_usage_percent,
@@ -65,6 +67,7 @@ partition_balancer_backend::partition_balancer_backend(
   , _health_monitor(health_monitor.local())
   , _partition_allocator(partition_allocator.local())
   , _topics_frontend(topics_frontend.local())
+  , _members_frontend(members_frontend.local())
   , _mode(std::move(mode))
   , _availability_timeout(std::move(availability_timeout))
   , _max_disk_usage_percent(std::move(max_disk_usage_percent))
@@ -86,6 +89,10 @@ void partition_balancer_backend::start() {
     _member_updates = _state.members().register_members_updated_notification(
       [this](model::node_id n, model::membership_state state) {
           on_members_update(n, state);
+      });
+    _health_monitor_updates = _health_monitor.register_node_callback(
+      [this](const auto& report, auto old_report) {
+          on_health_monitor_update(report, old_report);
       });
     maybe_rearm_timer();
     vlog(clusterlog.info, "partition balancer started");
@@ -118,10 +125,11 @@ void partition_balancer_backend::maybe_rearm_timer(bool now) {
 }
 
 void partition_balancer_backend::on_members_update(
-  model::node_id, model::membership_state state) {
+  model::node_id id, model::membership_state state) {
     if (!is_leader()) {
         return;
     }
+
     if (
       state == model::membership_state::active
       || state == model::membership_state::draining) {
@@ -129,8 +137,20 @@ void partition_balancer_backend::on_members_update(
             _tick_in_progress->request_abort_ex(balancer_tick_aborted_exception{
               fmt::format("new membership update: {}", state)});
         }
+    }
+
+    if (state == model::membership_state::draining) {
+        vlog(
+          clusterlog.debug,
+          "node {} state notification: {}, scheduling tick",
+          id,
+          state);
+
         maybe_rearm_timer(/*now = */ true);
     }
+    // Don't schedule tick on node addition, because the node health report
+    // won't be ready so we won't be able to do anything. Wait instead for a
+    // health monitor notification.
 }
 
 void partition_balancer_backend::on_topic_table_update() {
@@ -143,6 +163,26 @@ void partition_balancer_backend::on_topic_table_update() {
                         < (1 - _concurrent_moves_drop_threshold())
                             * double(_last_tick_in_progress_updates);
     if (schedule_now) {
+        vlog(
+          clusterlog.debug,
+          "current updates in progress: {} (after last tick: {}), "
+          "scheduling tick",
+          current_in_progress_updates,
+          _last_tick_in_progress_updates);
+
+        maybe_rearm_timer(/*now=*/true);
+    }
+}
+
+void partition_balancer_backend::on_health_monitor_update(
+  node_health_report const& report,
+  std::optional<std::reference_wrapper<const node_health_report>> old_report) {
+    if (!old_report) {
+        vlog(
+          clusterlog.debug,
+          "health report for node {} appeared, scheduling tick",
+          report.id);
+
         maybe_rearm_timer(/*now=*/true);
     }
 }
@@ -169,6 +209,7 @@ ss::future<> partition_balancer_backend::stop() {
     vlog(clusterlog.info, "stopping...");
     _state.topics().unregister_lw_notification(_topic_table_updates);
     _state.members().unregister_members_updated_notification(_member_updates);
+    _health_monitor.unregister_node_callback(_health_monitor_updates);
     _timer.cancel();
     _lock.broken();
     if (_tick_in_progress) {
@@ -262,18 +303,44 @@ ss::future<> partition_balancer_backend::do_tick() {
           clusterlog.info,
           "last status: {}; "
           "violations: unavailable nodes: {}, full nodes: {}; "
+          "counts rebalancing nodes: {}; "
           "updates in progress: {}; "
-          "action counts: reassignments: {}, cancellations: {}, failed: {}",
+          "action counts: reassignments: {}, cancellations: {}, failed: {}; "
+          "counts rebalancing finished: {}",
           _last_status,
           _last_violations.unavailable_nodes.size(),
           _last_violations.full_nodes.size(),
+          _state.nodes_to_rebalance().size(),
           _state.topics().updates_in_progress().size(),
           plan_data.reassignments.size(),
           plan_data.cancellations.size(),
-          plan_data.failed_actions_count);
+          plan_data.failed_actions_count,
+          plan_data.counts_rebalancing_finished);
     }
 
     auto moves_before = _state.topics().updates_in_progress().size();
+
+    if (moves_before == 0 && plan_data.counts_rebalancing_finished) {
+        // make a copy in case the collection is modified concurrently.
+        auto nodes_to_finish = _state.nodes_to_rebalance();
+        co_await ss::max_concurrent_for_each(
+          nodes_to_finish, 32, [this](model::node_id node) {
+              _tick_in_progress->check();
+
+              return _members_frontend
+                .finish_node_reallocations(node, _cur_term->id)
+                .then([node](auto errc) {
+                    if (errc) {
+                        vlog(
+                          clusterlog.warn,
+                          "submitting finish_reallocations for node {} failed, "
+                          "error: {}",
+                          node,
+                          errc.message());
+                    }
+                });
+          });
+    }
 
     co_await ss::max_concurrent_for_each(
       plan_data.cancellations, 32, [this, current_term](model::ntp& ntp) {
