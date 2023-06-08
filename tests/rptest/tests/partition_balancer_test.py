@@ -17,7 +17,7 @@ from rptest.util import wait_until_result
 from rptest.utils.mode_checks import skip_debug_mode
 from rptest.clients.default import DefaultClient
 from rptest.services.redpanda import make_redpanda_service, CHAOS_LOG_ALLOW_LIST, MetricsEndpoint
-from rptest.services.failure_injector import FailureInjector, FailureSpec
+from rptest.services.failure_injector import make_failure_injector, FailureSpec
 from rptest.services.admin_ops_fuzzer import AdminOperationsFuzzer
 from rptest.services.kgo_verifier_services import KgoVerifierProducer
 
@@ -212,7 +212,7 @@ class PartitionBalancerService(EndToEndTest):
         """Stop/kill/freeze one node at a time and wait for partition balancer."""
         def __init__(self, test, exclude_unavailable_nodes=False):
             self.test = test
-            self.f_injector = FailureInjector(test.redpanda)
+            self.f_injector = make_failure_injector(test.redpanda)
             self.cur_failure = None
             self.logger = test.logger
             self.exclude_unavailable_nodes = exclude_unavailable_nodes

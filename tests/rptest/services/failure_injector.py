@@ -14,6 +14,7 @@ from ducktape.utils.util import wait_until
 from ducktape.errors import TimeoutError
 from rptest.clients.kubectl import KubectlTool
 from rptest.services import tc_netem
+from rptest.services.redpanda import RedpandaServiceCloud
 
 
 class FailureSpec:
@@ -309,3 +310,11 @@ class FailureInjectorCloud(FailureInjectorBase):
     def _isolate(self, node):
         self.redpanda.logger.info(f"isolating node {node.account.hostname}")
         # TODO block port 33145 traffic on a node
+
+
+def make_failure_injector(redpanda):
+    """Factory function for instatiating the appropriate FailureInjector subclass."""
+    if RedpandaServiceCloud.GLOBAL_CLOUD_API_URL in redpanda.context.globals:
+        return FailureInjectorCloud(redpanda)
+    else:
+        return FailureInjector(redpanda)

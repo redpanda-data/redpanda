@@ -8,7 +8,7 @@ from ducktape.cluster.cluster import ClusterNode
 from ducktape.utils.util import wait_until
 
 from rptest.services.admin import Admin
-from rptest.services.failure_injector import FailureSpec, FailureInjector
+from rptest.services.failure_injector import FailureSpec, make_failure_injector
 from rptest.services.redpanda import RedpandaService
 
 
@@ -126,7 +126,7 @@ class ProcessKill(DisruptiveAction):
     def __init__(self, redpanda: RedpandaService, config: ActionConfig,
                  admin: Admin):
         super(ProcessKill, self).__init__(redpanda, config, admin)
-        self.failure_injector = FailureInjector(self.redpanda)
+        self.failure_injector = make_failure_injector(self.redpanda)
 
     def max_affected_nodes_reached(self):
         return len(self.affected_nodes) >= self.config.max_affected_nodes
