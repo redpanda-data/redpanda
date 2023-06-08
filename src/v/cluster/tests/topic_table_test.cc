@@ -8,6 +8,7 @@
 // by the Apache License, Version 2.0
 
 #include "cluster/tests/topic_table_fixture.h"
+#include "cluster/types.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "raft/types.h"
@@ -473,4 +474,47 @@ FIXTURE_TEST(test_tracking_broker_and_command_revisions, topic_table_fixture) {
       model::revision_id{16},
       model::revision_id{17},
       model::revision_id{19});
+}
+
+FIXTURE_TEST(test_topic_with_schema_id_validation_ops, topic_table_fixture) {
+    auto& topics = table.local();
+
+    // Create a topic with defaults
+    auto create = make_create_topic_cmd("test_schema_id_validation", 1, 1);
+    auto tp_ns = create.value.cfg.tp_ns;
+    auto ec = topics.apply(create, model::offset{10}).get();
+    BOOST_REQUIRE_EQUAL(ec, cluster::errc::success);
+
+    auto cfg = topics.get_topic_cfg(tp_ns);
+    BOOST_REQUIRE(cfg.has_value());
+    BOOST_REQUIRE(!cfg->properties.record_key_schema_id_validation.has_value());
+
+    // enable record_key_schema_id_validation
+    cluster::incremental_topic_updates update;
+    update.record_key_schema_id_validation.op
+      = cluster::incremental_update_operation::set;
+    update.record_key_schema_id_validation.value.emplace(true);
+    ec = topics
+           .apply(
+             cluster::update_topic_properties_cmd{tp_ns, update},
+             model::offset{11})
+           .get();
+    BOOST_REQUIRE_EQUAL(ec, cluster::errc::success);
+    cfg = topics.get_topic_cfg(tp_ns);
+    BOOST_REQUIRE(cfg.has_value());
+    BOOST_REQUIRE_EQUAL(cfg->properties.record_key_schema_id_validation, true);
+
+    // remove record_key_schema_id_validation
+    update.record_key_schema_id_validation.op
+      = cluster::incremental_update_operation::remove;
+    update.record_key_schema_id_validation.value.emplace(true);
+    ec = topics
+           .apply(
+             cluster::update_topic_properties_cmd{tp_ns, update},
+             model::offset{11})
+           .get();
+    BOOST_REQUIRE_EQUAL(ec, cluster::errc::success);
+    cfg = topics.get_topic_cfg(tp_ns);
+    BOOST_REQUIRE(cfg.has_value());
+    BOOST_REQUIRE(!cfg->properties.record_key_schema_id_validation.has_value());
 }
