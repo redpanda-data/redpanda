@@ -385,7 +385,7 @@ func listStartEndOffsets(cl *kgo.Client, topic string, numPartitions int, stable
 
 	// Finally, the HWM.
 	shards = cl.RequestSharded(context.Background(), req)
-	allFailed = kafka.EachShard(req, shards, func(shard kgo.ResponseShard) {
+	kafka.EachShard(req, shards, func(shard kgo.ResponseShard) {
 		resp := shard.Resp.(*kmsg.ListOffsetsResponse)
 		if len(resp.Topics) > 0 {
 			for _, partition := range resp.Topics[0].Partitions {

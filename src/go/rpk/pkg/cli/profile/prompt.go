@@ -84,7 +84,7 @@ Four modifiers are supported, "bold", "faint", "underline", and "invert".
 
 			y, ok := cfg.ActualRpkYaml()
 			if !ok {
-				errmsg = fmt.Sprintf("rpk.yaml file is missing or cannot be loaded")
+				errmsg = "rpk.yaml file is missing or cannot be loaded"
 				return
 			}
 			p := y.Profile(y.CurrentProfile)

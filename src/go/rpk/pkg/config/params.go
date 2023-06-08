@@ -829,11 +829,11 @@ func readFile(fs afero.Fs, path string) (string, []byte, error) {
 	return abs, file, err
 }
 
-func (p *Params) backcompatOldCloudYaml(fs afero.Fs) error {
+func (*Params) backcompatOldCloudYaml(fs afero.Fs) error {
 	def, err := DefaultRpkYamlPath()
 	if err != nil {
-		// This error only happens if the user unset $HOME, and if they
-		// do that, we will avoid failing / avoid backcompat here.
+		//nolint:nilerr // This error only happens if the user unset $HOME, and
+		// if they do that, we will avoid failing / avoid backcompat here.
 		return nil
 	}
 
@@ -913,7 +913,7 @@ func (p *Params) readRpkConfig(fs afero.Fs, c *Config) error {
 	if p.ConfigFlag != "" {
 		path = p.ConfigFlag
 	} else if err != nil {
-		// If $HOME is unset, we do not read any file. If the user
+		//nolint:nilerr // If $HOME is unset, we do not read any file. If the user
 		// eventually tries to write, we fail in Write. Allowing
 		// $HOME to not exists allows rpk to work in CI settings
 		// where all config flags are being specified.

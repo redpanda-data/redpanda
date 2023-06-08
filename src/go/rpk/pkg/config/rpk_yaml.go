@@ -323,4 +323,4 @@ func (d *Duration) UnmarshalText(text []byte) error {
 	return err
 }
 
-func (d *Duration) YamlTypeNameForTest() string { return "duration" }
+func (*Duration) YamlTypeNameForTest() string { return "duration" }
