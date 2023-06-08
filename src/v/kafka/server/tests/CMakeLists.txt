@@ -10,6 +10,7 @@ rp_test(
     quota_managers_test.cc
     validator_tests.cc
     fetch_unit_test.cc
+    config_utils_test.cc
   DEFINITIONS BOOST_TEST_DYN_LINK
   LIBRARIES Boost::unit_test_framework v::kafka v::coproc
   LABELS kafka
