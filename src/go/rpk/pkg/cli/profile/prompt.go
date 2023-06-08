@@ -93,7 +93,12 @@ Four modifiers are supported, "bold", "faint", "underline", and "invert".
 				return
 			}
 
-			parens, err := splitPromptParens(p.Prompt)
+			prompt := cfg.VirtualRpkYaml().Defaults.Prompt
+			if p.Prompt != "" {
+				prompt = p.Prompt
+			}
+
+			parens, err := splitPromptParens(prompt)
 			if err != nil {
 				errmsg = err.Error()
 				return
