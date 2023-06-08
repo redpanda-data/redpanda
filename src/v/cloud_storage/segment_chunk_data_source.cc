@@ -93,9 +93,9 @@ ss::future<> chunk_data_source_impl::load_stream_for_chunk(
     vlog(_ctxlog.debug, "loading stream for chunk starting at {}", chunk_start);
 
     co_await load_chunk_handle(chunk_start)
-      .handle_exception([this](const std::exception_ptr& ex) {
-          return maybe_close_stream().then(
-            [&ex] { std::rethrow_exception(ex); });
+      .handle_exception([this](std::exception_ptr ex) -> ss::future<> {
+          co_await maybe_close_stream();
+          std::rethrow_exception(ex);
       });
 
     // Decrement the required_by_readers_in_future count by 1, we have acquired
