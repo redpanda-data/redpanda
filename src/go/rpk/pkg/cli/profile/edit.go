@@ -35,7 +35,7 @@ If you want to edit the current raw profile as it exists in rpk.yaml, you
 can use the --raw flag.
 `,
 		Args:              cobra.MaximumNArgs(1),
-		ValidArgsFunction: validProfiles(fs, p),
+		ValidArgsFunction: ValidProfiles(fs, p),
 		Run: func(_ *cobra.Command, args []string) {
 			cfg, err := p.Load(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)

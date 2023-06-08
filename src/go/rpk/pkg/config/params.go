@@ -393,9 +393,10 @@ func XFlagYamlPath(x string) (string, bool) {
 // Params contains rpk-wide configuration parameters.
 type Params struct {
 	// ConfigFlag is any flag-specified config path.
-	//
-	// This is unused until step (2) in the refactoring process.
 	ConfigFlag string
+
+	// Profile is any flag-specified profile name.
+	Profile string
 
 	// DebugLogs opts into debug logging.
 	//
@@ -404,8 +405,6 @@ type Params struct {
 	DebugLogs bool
 
 	// FlagOverrides are any flag-specified config overrides.
-	//
-	// This is unused until step (2) in the refactoring process.
 	FlagOverrides []string
 
 	loggerOnce sync.Once
@@ -949,6 +948,13 @@ func (p *Params) readRpkConfig(fs afero.Fs, c *Config) error {
 	}
 	yaml.Unmarshal(file, &c.rpkYamlActual)
 
+	if p.Profile != "" {
+		if c.rpkYaml.Profile(p.Profile) == nil {
+			return fmt.Errorf("selected profile %q does not exist", p.Profile)
+		}
+		c.rpkYaml.CurrentProfile = p.Profile
+		c.rpkYamlActual.CurrentProfile = p.Profile
+	}
 	c.rpkYamlExists = true
 	c.rpkYaml.fileLocation = abs
 	c.rpkYamlActual.fileLocation = abs

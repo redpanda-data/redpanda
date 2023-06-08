@@ -23,7 +23,7 @@ func newUseCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 		Use:               "use [NAME]",
 		Short:             "Select the rpk profile to use",
 		Args:              cobra.ExactArgs(1),
-		ValidArgsFunction: validProfiles(fs, p),
+		ValidArgsFunction: ValidProfiles(fs, p),
 		Run: func(_ *cobra.Command, args []string) {
 			cfg, err := p.Load(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)
