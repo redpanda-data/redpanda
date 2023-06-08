@@ -44,6 +44,7 @@ ss::future<> client_pool::stop() {
     }
 
     vlog(pool_log.info, "Stopped client pool");
+    _probe = nullptr;
 }
 
 void client_pool::shutdown_connections() {
