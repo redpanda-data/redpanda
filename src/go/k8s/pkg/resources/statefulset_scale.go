@@ -67,13 +67,36 @@ const (
 //
 //nolint:nestif // for clarity
 func (r *StatefulSetResource) handleScaling(ctx context.Context) error {
-	if r.pandaCluster.Status.DecommissioningNode != nil {
-		decommissionTargetReplicas := *r.pandaCluster.Status.DecommissioningNode
+	if r.pandaCluster.GetDecommissionPodOrdinal() != nil {
+		decommissionTargetReplicas := *r.pandaCluster.GetDecommissionPodOrdinal()
 		if *r.pandaCluster.Spec.Replicas > decommissionTargetReplicas {
 			// Decommissioning can also be canceled and we need to recommission
 			return r.handleRecommission(ctx)
 		}
-		return r.handleDecommission(ctx)
+		if err := r.handleDecommission(ctx); err != nil {
+			return err
+		}
+
+		// Broker is now removed
+		r.logger.Info("Broker is not registered in the cluster: initializing downscale", "statefulset pod ordinal", *r.pandaCluster.GetDecommissionPodOrdinal())
+
+		targetReplicas := *r.pandaCluster.GetDecommissionPodOrdinal()
+
+		// We set status.currentReplicas accordingly to trigger scaling down of the statefulset
+		if err := setCurrentReplicas(ctx, r, r.pandaCluster, targetReplicas, r.logger); err != nil {
+			return err
+		}
+
+		scaledDown, err := r.verifyRunningCount(ctx, targetReplicas)
+		if err != nil {
+			return err
+		}
+		if !scaledDown {
+			return &RequeueAfterError{
+				RequeueAfter: wait.Jitter(r.decommissionWaitInterval, decommissionWaitJitterFactor),
+				Msg:          fmt.Sprintf("Waiting for statefulset to downscale to %d replicas", targetReplicas),
+			}
+		}
 	}
 
 	if r.pandaCluster.Status.CurrentReplicas == 0 {
@@ -113,14 +136,14 @@ func (r *StatefulSetResource) handleScaling(ctx context.Context) error {
 	// User required replicas is lower than current replicas (currentReplicas): start the decommissioning process
 	targetOrdinal := r.pandaCluster.Status.CurrentReplicas - 1 // Always decommission last node
 	r.logger.Info("Start decommission of last broker node", "ordinal", targetOrdinal)
-	r.pandaCluster.Status.DecommissioningNode = &targetOrdinal
+	r.pandaCluster.SetDecommissionPodOrdinal(&targetOrdinal)
 	return r.Status().Update(ctx, r.pandaCluster)
 }
 
 // handleDecommission manages the case of decommissioning of the last node of a cluster.
 //
-// When this handler is called, the `status.decommissioningNode` is populated with the pod ordinal (== nodeID) of the
-// node that needs to be decommissioned.
+// When this handler is called, the `status.decommissioningNode` is populated with the
+// pod ordinal of the node that needs to be decommissioned.
 //
 // The handler verifies that the node is not present in the list of brokers registered in the cluster, via admin API,
 // then downscales the StatefulSet via decreasing the `status.currentReplicas`.
@@ -128,15 +151,16 @@ func (r *StatefulSetResource) handleScaling(ctx context.Context) error {
 // Before completing the process, it double-checks if the node is still not registered, for handling cases where the node was
 // about to start when the decommissioning process started. If the broker is found, the process is restarted.
 func (r *StatefulSetResource) handleDecommission(ctx context.Context) error {
-	targetReplicas := *r.pandaCluster.Status.DecommissioningNode
-	r.logger.Info("Handling cluster in decommissioning phase", "target replicas", targetReplicas)
+	ordinal := *r.pandaCluster.GetDecommissionPodOrdinal()
+	targetReplicas := ordinal
+	r.logger.Info("Handling cluster in decommissioning phase", "ordinal", ordinal)
 
 	adminAPI, err := r.getAdminAPIClient(ctx)
 	if err != nil {
 		return err
 	}
 
-	broker, err := getNodeInfoFromCluster(ctx, *r.pandaCluster.Status.DecommissioningNode, adminAPI)
+	broker, err := getBrokerByBrokerID(ctx, *r.pandaCluster.Status.DecommissioningNode, adminAPI)
 	if err != nil {
 		return err
 	}
@@ -187,7 +211,8 @@ func (r *StatefulSetResource) handleDecommission(ctx context.Context) error {
 
 	// There's a chance that the node was initially not present in the broker list, but appeared after we started to scale down.
 	// Since the node may hold data that need to be propagated to other nodes, we need to restart it to let the decommission process finish.
-	broker, err = getNodeInfoFromCluster(ctx, *r.pandaCluster.Status.DecommissioningNode, adminAPI)
+	// TODO: This doesn't actually get the broker id for the pod ordinal
+	broker, err = getBrokerByBrokerID(ctx, *r.pandaCluster.GetDecommissionPodOrdinal(), adminAPI)
 	if err != nil {
 		return err
 	}
@@ -196,8 +221,8 @@ func (r *StatefulSetResource) handleDecommission(ctx context.Context) error {
 		return &NodeReappearingError{NodeID: broker.NodeID}
 	}
 
-	r.logger.Info("Decommissioning process successfully completed", "node_id", *r.pandaCluster.Status.DecommissioningNode)
-	r.pandaCluster.Status.DecommissioningNode = nil
+	r.logger.Info("Decommissioning process successfully completed", "node_id", *r.pandaCluster.GetDecommissionPodOrdinal())
+	r.pandaCluster.SetDecommissionPodOrdinal(nil)
 	return r.Status().Update(ctx, r.pandaCluster)
 }
 
@@ -214,7 +239,7 @@ func (r *StatefulSetResource) handleRecommission(ctx context.Context) error {
 	r.logger.Info("Handling cluster in recommissioning phase")
 
 	// First we ensure we've enough replicas to let the recommissioning node run
-	targetReplicas := *r.pandaCluster.Status.DecommissioningNode + 1
+	targetReplicas := *r.pandaCluster.GetDecommissionPodOrdinal() + 1
 	err := setCurrentReplicas(ctx, r, r.pandaCluster, targetReplicas, r.logger)
 	if err != nil {
 		return err
@@ -225,26 +250,28 @@ func (r *StatefulSetResource) handleRecommission(ctx context.Context) error {
 		return err
 	}
 
-	broker, err := getNodeInfoFromCluster(ctx, *r.pandaCluster.Status.DecommissioningNode, adminAPI)
+	// TODO: This doesn't get the broker id
+	broker, err := getBrokerByBrokerID(ctx, *r.pandaCluster.GetDecommissionPodOrdinal(), adminAPI)
 	if err != nil {
 		return err
 	}
 
 	if broker == nil || broker.MembershipStatus != admin.MembershipStatusActive {
-		err = adminAPI.RecommissionBroker(ctx, int(*r.pandaCluster.Status.DecommissioningNode))
+		// TODO: this doesn't recommission the right broker
+		err = adminAPI.RecommissionBroker(ctx, int(*r.pandaCluster.GetDecommissionPodOrdinal()))
 		if err != nil {
-			return fmt.Errorf("error while trying to recommission node %d in cluster %s: %w", *r.pandaCluster.Status.DecommissioningNode, r.pandaCluster.Name, err)
+			return fmt.Errorf("error while trying to recommission node %d in cluster %s: %w", *r.pandaCluster.GetDecommissionPodOrdinal(), r.pandaCluster.Name, err)
 		}
-		r.logger.Info("Node marked for being recommissioned in cluster", "node_id", *r.pandaCluster.Status.DecommissioningNode)
+		r.logger.Info("Node marked for being recommissioned in cluster", "node_id", *r.pandaCluster.GetDecommissionPodOrdinal())
 
 		return &RequeueAfterError{
 			RequeueAfter: wait.Jitter(r.decommissionWaitInterval, decommissionWaitJitterFactor),
-			Msg:          fmt.Sprintf("Waiting for node %d to be recommissioned into cluster %s", *r.pandaCluster.Status.DecommissioningNode, r.pandaCluster.Name),
+			Msg:          fmt.Sprintf("Waiting for node %d to be recommissioned into cluster %s", *r.pandaCluster.GetDecommissionPodOrdinal(), r.pandaCluster.Name),
 		}
 	}
 
-	r.logger.Info("Recommissioning process successfully completed", "node_id", *r.pandaCluster.Status.DecommissioningNode)
-	r.pandaCluster.Status.DecommissioningNode = nil
+	r.logger.Info("Recommissioning process successfully completed", "node_id", *r.pandaCluster.GetDecommissionPodOrdinal())
+	r.pandaCluster.SetDecommissionPodOrdinal(nil)
 	return r.Status().Update(ctx, r.pandaCluster)
 }
 
@@ -283,12 +310,13 @@ func (r *StatefulSetResource) disableMaintenanceModeOnDecommissionedNodes(
 		return nil
 	}
 
-	if r.pandaCluster.Status.DecommissioningNode == nil || r.pandaCluster.Status.CurrentReplicas > *r.pandaCluster.Status.DecommissioningNode {
+	// TODO: this doesn't disable maintenance on the right broker
+	if r.pandaCluster.GetDecommissionPodOrdinal() == nil || r.pandaCluster.Status.CurrentReplicas > *r.pandaCluster.GetDecommissionPodOrdinal() {
 		// Only if actually in a decommissioning phase
 		return nil
 	}
 
-	ordinal := *r.pandaCluster.Status.DecommissioningNode
+	ordinal := *r.pandaCluster.GetDecommissionPodOrdinal()
 	targetReplicas := ordinal
 
 	scaledDown, err := r.verifyRunningCount(ctx, targetReplicas)
@@ -343,8 +371,8 @@ func (r *StatefulSetResource) verifyRunningCount(
 	return len(podList.Items) == int(replicas), nil
 }
 
-// getNodeInfoFromCluster allows to get broker information using the admin API
-func getNodeInfoFromCluster(
+// getBrokerByBrokerID allows to get broker information using the admin API
+func getBrokerByBrokerID(
 	ctx context.Context, ordinal int32, adminAPI adminutils.AdminAPIClient,
 ) (*admin.Broker, error) {
 	brokers, err := adminAPI.Brokers(ctx)
