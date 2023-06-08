@@ -50,8 +50,7 @@ import (
 )
 
 const (
-	PodAnnotationNodeIDKey = "operator.redpanda.com/node-id"
-	FinalizerKey           = "operator.redpanda.com/finalizer"
+	FinalizerKey = "operator.redpanda.com/finalizer"
 
 	SecretAnnotationExternalCAKey = "operator.redpanda.com/external-ca"
 )
@@ -407,7 +406,7 @@ func (r *ClusterReconciler) handlePodFinalizer(
 			}
 		}
 		// get the node id
-		nodeIDStr, ok := pod.GetAnnotations()[PodAnnotationNodeIDKey]
+		nodeIDStr, ok := pod.GetAnnotations()[resources.PodAnnotationNodeIDKey]
 		if !ok {
 			return fmt.Errorf("cannot determine node_id for pod %s: %w. not removing finalizer", pod.Name, err)
 		}
@@ -528,7 +527,7 @@ func (r *ClusterReconciler) setPodNodeIDAnnotation(
 		if pod.Annotations == nil {
 			pod.Annotations = make(map[string]string)
 		}
-		nodeIDStr, ok := pod.Annotations[PodAnnotationNodeIDKey]
+		nodeIDStr, ok := pod.Annotations[resources.PodAnnotationNodeIDKey]
 
 		nodeID, err := r.fetchAdminNodeID(ctx, rp, pod, log)
 		if err != nil {
@@ -555,7 +554,7 @@ func (r *ClusterReconciler) setPodNodeIDAnnotation(
 		}
 
 		log.WithValues("pod-name", pod.Name, "new-node-id", nodeID).Info("setting node-id annotation")
-		pod.Annotations[PodAnnotationNodeIDKey] = realNodeIDStr
+		pod.Annotations[resources.PodAnnotationNodeIDKey] = realNodeIDStr
 		if err := r.Update(ctx, pod, &client.UpdateOptions{}); err != nil {
 			return fmt.Errorf(`unable to update pod "%s" with node-id annotation: %w`, pod.Name, err)
 		}
