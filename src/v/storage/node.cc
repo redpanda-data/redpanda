@@ -34,10 +34,6 @@ void node::set_disk_metrics(
     _probe.set_disk_metrics(total_bytes, free_bytes, alert);
 }
 
-const storage::disk_metrics& node::get_disk_metrics() const {
-    return _probe.get_disk_metrics();
-};
-
 node::notification_id
 node::register_disk_notification(disk_type t, disk_cb_t cb) {
     if (t == disk_type::data) {

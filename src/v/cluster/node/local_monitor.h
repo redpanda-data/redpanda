@@ -37,8 +37,8 @@ public:
       config::binding<size_t> min_bytes,
       ss::sstring data_directory,
       ss::sstring cache_directory,
-      ss::sharded<storage::node>&,
-      ss::sharded<storage::api>&);
+      ss::sharded<storage::node>&);
+
     local_monitor(const local_monitor&) = delete;
     local_monitor(local_monitor&&) = default;
     ~local_monitor() = default;
@@ -90,7 +90,6 @@ private:
     ss ::sstring _cache_directory;
 
     ss::sharded<storage::node>& _storage_node_api; // single instance
-    ss::sharded<storage::api>& _storage_api;
 
     // Injection points for unit tests
     ss::sstring _path_for_test;

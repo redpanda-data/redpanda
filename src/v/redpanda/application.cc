@@ -1649,8 +1649,7 @@ void application::wire_up_bootstrap_services() {
       config::shard_local_cfg().storage_min_free_bytes.bind(),
       config::node().data_directory().as_sstring(),
       config::node().cloud_storage_cache_path().string(),
-      std::ref(storage_node),
-      std::ref(storage))
+      std::ref(storage_node))
       .get();
 
     const auto sanitizer_config = read_file_sanitizer_config();

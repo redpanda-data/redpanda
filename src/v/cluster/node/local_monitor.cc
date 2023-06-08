@@ -49,15 +49,13 @@ local_monitor::local_monitor(
   config::binding<size_t> min_bytes,
   ss::sstring data_directory,
   ss::sstring cache_directory,
-  ss::sharded<storage::node>& node_api,
-  ss::sharded<storage::api>& api)
+  ss::sharded<storage::node>& node_api)
   : _free_bytes_alert_threshold(std::move(alert_bytes))
   , _free_percent_alert_threshold(std::move(alert_percent))
   , _min_free_bytes(std::move(min_bytes))
   , _data_directory(std::move(data_directory))
   , _cache_directory(std::move(cache_directory))
-  , _storage_node_api(node_api)
-  , _storage_api(api) {
+  , _storage_node_api(node_api) {
     // Intentionally undocumented environment variable, only for use
     // in integration tests.
     const char* test_disk_size_str = std::getenv("__REDPANDA_TEST_DISK_SIZE");

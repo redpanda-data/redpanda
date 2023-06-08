@@ -39,8 +39,7 @@ local_monitor_fixture::local_monitor_fixture()
     config::shard_local_cfg().storage_min_free_bytes.bind(),
     config::node_config().data_directory().as_sstring(),
     config::node_config().cloud_storage_cache_path().string(),
-    _storage_node_api,
-    _storage_api) {
+    _storage_node_api) {
     _storage_node_api.start_single().get0();
 
     auto log_conf = storage::log_config{
@@ -60,13 +59,6 @@ local_monitor_fixture::local_monitor_fixture()
       .invoke_on_all(
         [](features::feature_table& f) { f.testing_activate_all(); })
       .get();
-
-    _storage_api
-      .start(
-        [kvstore_conf]() { return kvstore_conf; },
-        [log_conf]() { return log_conf; },
-        std::ref(_feature_table))
-      .get0();
 
     clusterlog.info("{}: create", __func__);
     auto test_dir = "local_monitor_test."
@@ -93,7 +85,6 @@ local_monitor_fixture::~local_monitor_fixture() {
     if (err) {
         clusterlog.warn("Cleanup got error {} removing test dir.", err);
     }
-    _storage_api.stop().get0();
     _storage_node_api.stop().get0();
     _feature_table.stop().get();
 }
