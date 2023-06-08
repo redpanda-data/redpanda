@@ -202,7 +202,8 @@ admin_server::admin_server(
   ss::sharded<cloud_storage::topic_recovery_service>& topic_recovery_svc,
   ss::sharded<cluster::topic_recovery_status_frontend>&
     topic_recovery_status_frontend,
-  ss::sharded<cluster::tx_registry_frontend>& tx_registry_frontend)
+  ss::sharded<cluster::tx_registry_frontend>& tx_registry_frontend,
+  ss::sharded<storage::node>& storage_node)
   : _log_level_timer([this] { log_level_timer_handler(); })
   , _server("admin")
   , _cfg(std::move(cfg))
@@ -223,6 +224,7 @@ admin_server::admin_server(
   , _topic_recovery_service(topic_recovery_svc)
   , _topic_recovery_status_frontend(topic_recovery_status_frontend)
   , _tx_registry_frontend(tx_registry_frontend)
+  , _storage_node(storage_node)
   , _default_blocked_reactor_notify(
       ss::engine().get_blocked_reactor_notify_ms()) {}
 
@@ -4169,6 +4171,98 @@ void admin_server::register_debug_routes() {
     register_route<superuser>(
       ss::httpd::debug_json::unsafe_reset_metadata,
       std::move(unsafe_reset_metadata_handler));
+
+    register_route<superuser>(
+      ss::httpd::debug_json::get_disk_stat,
+      [this](std::unique_ptr<ss::http::request> request) {
+          return get_disk_stat_handler(std::move(request));
+      });
+
+    register_route<superuser>(
+      ss::httpd::debug_json::put_disk_stat,
+      [this](std::unique_ptr<ss::http::request> request) {
+          return put_disk_stat_handler(std::move(request));
+      });
+}
+
+namespace {
+storage::node::disk_type resolve_disk_type(std::string_view name) {
+    if (name == "data") {
+        return storage::node::disk_type::data;
+    } else if (name == "cache") {
+        return storage::node::disk_type::cache;
+    } else {
+        throw ss::httpd::bad_param_exception(
+          fmt::format("Unknown disk type: {}", name));
+    }
+}
+} // namespace
+
+ss::future<ss::json::json_return_type>
+admin_server::get_disk_stat_handler(std::unique_ptr<ss::http::request> req) {
+    auto type = resolve_disk_type(req->param["type"]);
+
+    // get effective disk stat
+    auto stat = co_await _storage_node.invoke_on(
+      0, [type](auto& node) { return node.get_statvfs(type); });
+
+    ss::httpd::debug_json::disk_stat disk;
+    disk.total_bytes = stat.stat.f_blocks * stat.stat.f_frsize;
+    disk.free_bytes = stat.stat.f_bfree * stat.stat.f_frsize;
+
+    co_return disk;
+}
+
+namespace {
+json::validator make_disk_stat_overrides_validator() {
+    const std::string schema = R"(
+{
+    "type": "object",
+    "properties": {
+        "total_bytes": {
+            "type": "integer"
+        },
+        "free_bytes": {
+            "type": "integer"
+        },
+        "free_bytes_delta": {
+            "type": "integer"
+        }
+    },
+    "additionalProperties": false
+}
+)";
+    return json::validator(schema);
+}
+} // namespace
+
+ss::future<ss::json::json_return_type>
+admin_server::put_disk_stat_handler(std::unique_ptr<ss::http::request> req) {
+    static thread_local auto disk_stat_validator(
+      make_disk_stat_overrides_validator());
+
+    auto doc = parse_json_body(*req);
+    apply_validator(disk_stat_validator, doc);
+    auto type = resolve_disk_type(req->param["type"]);
+
+    storage::node::statvfs_overrides overrides;
+    if (doc.HasMember("total_bytes")) {
+        overrides.total_bytes = doc["total_bytes"].GetUint64();
+    }
+    if (doc.HasMember("free_bytes")) {
+        overrides.free_bytes = doc["free_bytes"].GetUint64();
+    }
+    if (doc.HasMember("free_bytes_delta")) {
+        overrides.free_bytes_delta = doc["free_bytes_delta"].GetInt64();
+    }
+
+    co_await _storage_node.invoke_on(
+      storage::node::work_shard, [type, overrides](auto& node) {
+          node.set_statvfs_overrides(type, overrides);
+          return ss::now();
+      });
+
+    co_return ss::json::json_void();
 }
 
 ss::future<ss::json::json_return_type>

@@ -28,6 +28,8 @@ namespace storage {
  */
 class node {
 public:
+    static constexpr ss::shard_id work_shard = 0;
+
     using notification_id = named_type<int32_t, struct notification_id_t>;
     using disk_cb_t
       = ss::noncopyable_function<void(uint64_t, uint64_t, disk_space_alert)>;

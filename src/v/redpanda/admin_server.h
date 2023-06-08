@@ -20,6 +20,7 @@
 #include "pandaproxy/schema_registry/fwd.h"
 #include "rpc/connection_cache.h"
 #include "seastarx.h"
+#include "storage/node.h"
 #include "utils/request_auth.h"
 
 #include <seastar/core/scheduling.hh>
@@ -71,7 +72,8 @@ public:
       pandaproxy::schema_registry::api*,
       ss::sharded<cloud_storage::topic_recovery_service>&,
       ss::sharded<cluster::topic_recovery_status_frontend>&,
-      ss::sharded<cluster::tx_registry_frontend>&);
+      ss::sharded<cluster::tx_registry_frontend>&,
+      ss::sharded<storage::node>&);
 
     ss::future<> start();
     ss::future<> stop();
@@ -448,6 +450,10 @@ private:
       get_partition_state_handler(std::unique_ptr<ss::http::request>);
     ss::future<ss::json::json_return_type>
       get_local_storage_usage_handler(std::unique_ptr<ss::http::request>);
+    ss::future<ss::json::json_return_type>
+      get_disk_stat_handler(std::unique_ptr<ss::http::request>);
+    ss::future<ss::json::json_return_type>
+      put_disk_stat_handler(std::unique_ptr<ss::http::request>);
 
     // Debug routes
     ss::future<ss::json::json_return_type>
@@ -503,6 +509,7 @@ private:
     ss::sharded<cluster::topic_recovery_status_frontend>&
       _topic_recovery_status_frontend;
     ss::sharded<cluster::tx_registry_frontend>& _tx_registry_frontend;
+    ss::sharded<storage::node>& _storage_node;
     // Value before the temporary override
     std::chrono::milliseconds _default_blocked_reactor_notify;
     ss::timer<> _blocked_reactor_notify_reset_timer;
