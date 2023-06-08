@@ -87,6 +87,13 @@ struct archival_metadata_stm::cleanup_metadata_cmd {
     static constexpr cmd_key key{3};
 };
 
+struct archival_metadata_stm::reset_metadata_cmd {
+    static constexpr cmd_key key{8};
+
+    // Unused, left available in case it's useful to pass in further arguments.
+    using value = iobuf;
+};
+
 struct archival_metadata_stm::snapshot
   : public serde::
       envelope<snapshot, serde::version<1>, serde::compat_version<0>> {
@@ -127,6 +134,14 @@ command_batch_builder::command_batch_builder(
   , _deadline(deadline)
   , _as(as)
   , _holder(stm._gate) {}
+
+command_batch_builder& command_batch_builder::reset_metadata() {
+    iobuf key_buf = serde::to_iobuf(
+      archival_metadata_stm::reset_metadata_cmd::key);
+    iobuf empty_buf;
+    _builder.add_raw_kv(std::move(key_buf), std::move(empty_buf));
+    return *this;
+}
 
 command_batch_builder& command_batch_builder::add_segments(
   std::vector<cloud_storage::segment_meta> add_segments) {
@@ -615,6 +630,9 @@ ss::future<> archival_metadata_stm::apply(model::record_batch b) {
         case cleanup_metadata_cmd::key:
             apply_cleanup_metadata();
             break;
+        case reset_metadata_cmd::key:
+            apply_reset_metadata();
+            break;
         };
     });
 
@@ -856,6 +874,11 @@ void archival_metadata_stm::apply_update_start_offset(const start_offset& so) {
     } else {
         vlog(_logger.debug, "Start offset updated to {}", get_start_offset());
     }
+}
+
+void archival_metadata_stm::apply_reset_metadata() {
+    vlog(_logger.info, "Resetting manifest");
+    _manifest->unsafe_reset();
 }
 
 std::vector<cloud_storage::partition_manifest::lw_segment_meta>

@@ -2441,8 +2441,8 @@ void admin_server::register_broker_routes() {
 
 // Helpers for partition routes
 namespace {
-model::ntp parse_ntp_from_request(ss::httpd::parameters& param) {
-    auto ns = model::ns(param["namespace"]);
+
+model::ntp parse_ntp_from_request(ss::httpd::parameters& param, model::ns ns) {
     auto topic = model::topic(param["topic"]);
 
     model::partition_id partition;
@@ -2458,7 +2458,11 @@ model::ntp parse_ntp_from_request(ss::httpd::parameters& param) {
           fmt::format("Invalid partition id {}", partition));
     }
 
-    return model::ntp(std::move(ns), std::move(topic), partition);
+    return {std::move(ns), std::move(topic), partition};
+}
+
+model::ntp parse_ntp_from_request(ss::httpd::parameters& param) {
+    return parse_ntp_from_request(param, model::ns(param["namespace"]));
 }
 
 } // namespace
@@ -3863,6 +3867,15 @@ void admin_server::register_debug_routes() {
         -> ss::future<ss::json::json_return_type> {
           return get_partition_state_handler(std::move(req));
       });
+
+    request_handler_fn unsafe_reset_metadata_handler = [this](
+                                                         auto req, auto reply) {
+        return unsafe_reset_metadata(std::move(req), std::move(reply));
+    };
+
+    register_route<superuser>(
+      ss::httpd::debug_json::unsafe_reset_metadata,
+      std::move(unsafe_reset_metadata_handler));
 }
 
 ss::future<ss::json::json_return_type>
@@ -4093,6 +4106,55 @@ ss::future<ss::json::json_return_type> admin_server::sync_local_state_handler(
         }
     }
     co_return ss::json::json_return_type(ss::json::json_void());
+}
+
+ss::future<std::unique_ptr<ss::reply>> admin_server::unsafe_reset_metadata(
+  std::unique_ptr<ss::request> request, std::unique_ptr<ss::reply> reply) {
+    reply->set_content_type("json");
+
+    auto ntp = parse_ntp_from_request(request->param, model::kafka_namespace);
+    if (need_redirect_to_leader(ntp, _metadata_cache)) {
+        vlog(logger.info, "Need to redirect unsafe reset metadata request");
+        throw co_await redirect_to_leader(*request, ntp);
+    }
+    if (request->content_length <= 0) {
+        throw ss::httpd::bad_request_exception("Empty request content");
+    }
+
+    ss::sstring content = std::move(request->content);
+
+    const auto shard = _shard_table.local().shard_for(ntp);
+    if (!shard) {
+        throw ss::httpd::not_found_exception(fmt::format(
+          "{} could not be found on the node. Perhaps it has been moved "
+          "during the redirect.",
+          ntp));
+    }
+
+    try {
+        co_await _partition_manager.invoke_on(
+          *shard,
+          [ntp = std::move(ntp), content = std::move(content), shard](
+            auto& pm) mutable {
+              auto partition = pm.get(ntp);
+              if (!partition) {
+                  throw ss::httpd::not_found_exception(
+                    fmt::format("Could not find {} on shard {}", ntp, *shard));
+              }
+
+              iobuf buf;
+              buf.append(content.data(), content.size());
+              content = {};
+
+              return partition->unsafe_reset_remote_partition_manifest(
+                std::move(buf));
+          });
+    } catch (const std::runtime_error& err) {
+        throw ss::httpd::server_error_exception(err.what());
+    }
+
+    reply->set_status(ss::httpd::reply::status_type::ok);
+    co_return reply;
 }
 
 ss::future<std::unique_ptr<ss::reply>>

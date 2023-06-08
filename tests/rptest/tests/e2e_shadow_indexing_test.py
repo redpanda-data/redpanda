@@ -6,6 +6,7 @@
 # As of the Change Date specified in that file, in accordance with
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
+import json
 import random
 import time
 
@@ -27,6 +28,8 @@ from rptest.tests.prealloc_nodes import PreallocNodesTest
 from rptest.util import Scale, wait_until_segments
 from rptest.util import (
     produce_until_segments,
+    wait_until_result,
+    wait_for_local_storage_truncate,
     wait_for_removal_of_n_segments,
 )
 from rptest.utils.si_utils import nodes_report_cloud_segments, S3Snapshot
@@ -67,6 +70,7 @@ class EndToEndShadowIndexingBase(EndToEndTest):
                                         extra_rp_conf=extra_rp_conf,
                                         environment=environment)
         self.kafka_tools = KafkaCliTools(self.redpanda)
+        self.rpk = RpkTool(self.redpanda)
 
     def setUp(self):
         assert self.redpanda
@@ -80,6 +84,133 @@ class EndToEndShadowIndexingBase(EndToEndTest):
 
 
 class EndToEndShadowIndexingTest(EndToEndShadowIndexingBase):
+    def _all_uploads_done(self):
+        topic_description = self.rpk.describe_topic(self.topic)
+        partition = next(topic_description)
+
+        hwm = partition.high_watermark
+
+        manifest = None
+        try:
+            s3_snapshot = S3Snapshot(self.topics,
+                                     self.redpanda.cloud_storage_client,
+                                     self.s3_bucket_name, self.logger)
+            manifest = s3_snapshot.manifest_for_ntp(self.s3_topic_name, 0)
+        except Exception as e:
+            self.logger.info(
+                f"Exception thrown while retrieving the manifest: {e}")
+            return False
+
+        top_segment = max(manifest['segments'].values(),
+                          key=lambda seg: seg['base_offset'])
+        uploaded_raft_offset = top_segment['committed_offset']
+        uploaded_kafka_offset = uploaded_raft_offset - top_segment[
+            'delta_offset_end']
+        self.logger.info(
+            f"Remote HWM {uploaded_kafka_offset} (raft {uploaded_raft_offset}), local hwm {hwm}"
+        )
+
+        # -1 because uploaded offset is inclusive, hwm is exclusive
+        if uploaded_kafka_offset < (hwm - 1):
+            return False
+
+        return True
+
+    @cluster(num_nodes=4)
+    @parametrize(cloud_storage_type=CloudStorageType.ABS)
+    @parametrize(cloud_storage_type=CloudStorageType.S3)
+    def test_reset(self, cloud_storage_type):
+        brokers = self.redpanda.started_nodes()
+
+        msg_count_before_reset = 50 * (self.segment_size // 2056)
+        producer = KgoVerifierProducer(self.test_context,
+                                       self.redpanda,
+                                       self.topic,
+                                       msg_size=2056,
+                                       msg_count=msg_count_before_reset,
+                                       debug_logs=True,
+                                       trace_logs=True)
+
+        producer.start()
+        producer.wait(timeout_sec=60)
+        producer.free()
+
+        self.rpk.alter_topic_config(self.topic, 'redpanda.remote.write',
+                                    'false')
+        time.sleep(30)
+        # wait_until(lambda: self._all_uploads_done() == True,
+        #            timeout_sec=60,
+        #            backoff_sec=5)
+
+        s3_snapshot = S3Snapshot(self.topics,
+                                 self.redpanda.cloud_storage_client,
+                                 self.s3_bucket_name, self.logger)
+        manifest = s3_snapshot.manifest_for_ntp(self.s3_topic_name, 0)
+
+        self.rpk.alter_topic_config(self.topic, 'redpanda.remote.write',
+                                    'false')
+        time.sleep(1)
+
+        # Tweak the manifest as follows: remove the last 6 segments and update
+        # the last offset accordingly.
+        sorted_segments = sorted(manifest['segments'].items(),
+                                 key=lambda entry: entry[1]['base_offset'])
+
+        for name, meta in sorted_segments[-6:]:
+            manifest['segments'].pop(name)
+
+        manifest['last_offset'] = sorted_segments[-7][1]['committed_offset']
+
+        json_man = json.dumps(manifest)
+        self.logger.info(f"Re-setting manifest to:{json_man}")
+
+        self.redpanda._admin.unsafe_reset_cloud_metadata(
+            self.topic, 0, manifest)
+
+        self.rpk.alter_topic_config(self.topic, 'redpanda.remote.write',
+                                    'true')
+
+        msg_count_after_reset = 10 * (self.segment_size // 2056)
+        producer = KgoVerifierProducer(self.test_context,
+                                       self.redpanda,
+                                       self.topic,
+                                       msg_size=2056,
+                                       msg_count=msg_count_after_reset,
+                                       debug_logs=True,
+                                       trace_logs=True)
+
+        producer.start()
+        producer.wait(timeout_sec=30)
+        producer.free()
+
+        time.sleep(30)
+        # wait_until(lambda: self._all_uploads_done() == True,
+        #            timeout_sec=60,
+        #            backoff_sec=5)
+
+        # Enable aggresive local retention to test the cloud storage read path.
+        self.rpk.alter_topic_config(self.topic, 'retention.local.target.bytes',
+                                    self.segment_size * 5)
+
+        wait_for_local_storage_truncate(self.redpanda,
+                                        self.topic,
+                                        target_bytes=6 * self.segment_size,
+                                        partition_idx=0,
+                                        timeout_sec=30)
+
+        consumer = KgoVerifierSeqConsumer(self.test_context,
+                                          self.redpanda,
+                                          self.topic,
+                                          msg_size=2056,
+                                          debug_logs=True,
+                                          trace_logs=True)
+
+        consumer.start()
+        consumer.wait(timeout_sec=60)
+
+        assert consumer.consumer_status.validator.invalid_reads == 0
+        assert consumer.consumer_status.validator.valid_reads >= msg_count_before_reset + msg_count_after_reset
+
     @cluster(num_nodes=5)
     @parametrize(cloud_storage_type=CloudStorageType.ABS)
     @parametrize(cloud_storage_type=CloudStorageType.S3)
