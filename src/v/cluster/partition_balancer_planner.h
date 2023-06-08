@@ -70,6 +70,7 @@ public:
         partition_balancer_violations violations;
         std::vector<ntp_reassignment> reassignments;
         std::vector<model::ntp> cancellations;
+        bool counts_rebalancing_finished = false;
         size_t failed_actions_count = 0;
         status status = status::empty;
     };
@@ -96,6 +97,8 @@ private:
       std::string_view reason);
     static ss::future<> get_rack_constraint_repair_actions(request_context&);
     static ss::future<> get_full_node_actions(request_context&);
+    static ss::future<> get_counts_rebalancing_actions(request_context&);
+
     static size_t calculate_full_disk_partition_move_priority(
       model::node_id, const reassignable_partition&, const request_context&);
 
