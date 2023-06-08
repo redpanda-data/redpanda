@@ -738,6 +738,11 @@ func (p *Params) Load(fs afero.Fs) (*Config, error) {
 	c.fixSchemePorts()                // strip any scheme, default any missing ports
 	c.addConfigToProfiles()
 	c.parseDevOverrides()
+
+	if !c.rpkYaml.Defaults.NoDefaultCluster {
+		c.ensureBrokerAddrs()
+	}
+
 	return c, nil
 }
 
@@ -1045,6 +1050,27 @@ func (c *Config) ensureRpkCloudAuth() {
 	dst.PushAuth(def)
 }
 
+func (c *Config) ensureBrokerAddrs() {
+	{
+		dst := &c.redpandaYaml
+		if len(dst.Rpk.KafkaAPI.Brokers) == 0 {
+			dst.Rpk.KafkaAPI.Brokers = []string{net.JoinHostPort("127.0.0.1", strconv.Itoa(DefaultKafkaPort))}
+		}
+		if len(dst.Rpk.AdminAPI.Addresses) == 0 {
+			dst.Rpk.AdminAPI.Addresses = []string{net.JoinHostPort("127.0.0.1", strconv.Itoa(DefaultAdminPort))}
+		}
+	}
+	{
+		dst := c.rpkYaml.Profile(c.rpkYaml.CurrentProfile) // must exist by this function
+		if len(dst.KafkaAPI.Brokers) == 0 {
+			dst.KafkaAPI.Brokers = []string{net.JoinHostPort("127.0.0.1", strconv.Itoa(DefaultKafkaPort))}
+		}
+		if len(dst.AdminAPI.Addresses) == 0 {
+			dst.AdminAPI.Addresses = []string{net.JoinHostPort("127.0.0.1", strconv.Itoa(DefaultAdminPort))}
+		}
+	}
+}
+
 // We merge redpanda.yaml's rpk section back into rpk.yaml's profile.  This
 // picks up any extras from addUnsetRedpandaDefaults that were not set in the
 // rpk file. We call this after ensureRpkProfile, so we do not need to
@@ -1166,14 +1192,6 @@ func (c *Config) addUnsetRedpandaDefaults(actual bool) {
 			dst.Rpk.AdminAPI.Addresses = []string{host}
 			dst.Rpk.AdminAPI.TLS = dst.Rpk.KafkaAPI.TLS
 		}
-	}
-
-	if len(dst.Rpk.KafkaAPI.Brokers) == 0 {
-		dst.Rpk.KafkaAPI.Brokers = []string{net.JoinHostPort("127.0.0.1", strconv.Itoa(DefaultKafkaPort))}
-	}
-
-	if len(dst.Rpk.AdminAPI.Addresses) == 0 {
-		dst.Rpk.AdminAPI.Addresses = []string{net.JoinHostPort("127.0.0.1", strconv.Itoa(DefaultAdminPort))}
 	}
 }
 

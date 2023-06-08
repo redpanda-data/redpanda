@@ -304,21 +304,6 @@ func TestAddUnsetRedpandaDefaults(t *testing.T) {
 		expCfg *RedpandaYaml
 	}{
 		{
-			name:  "default kafka broker and default admin api",
-			inCfg: &RedpandaYaml{},
-			expCfg: &RedpandaYaml{
-				Rpk: RpkNodeConfig{
-					KafkaAPI: RpkKafkaAPI{
-						Brokers: []string{"127.0.0.1:9092"},
-					},
-					AdminAPI: RpkAdminAPI{
-						Addresses: []string{"127.0.0.1:9644"},
-					},
-				},
-			},
-		},
-
-		{
 			name: "rpk configuration left alone if present",
 			inCfg: &RedpandaYaml{
 				Redpanda: RedpandaNodeConfig{

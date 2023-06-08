@@ -248,6 +248,11 @@ func (p *RpkProfile) SugarLogger() *zap.SugaredLogger {
 	return p.Logger().Sugar()
 }
 
+// Defaults returns the virtual defaults for the rpk.yaml.
+func (p *RpkProfile) Defaults() *RpkDefaults {
+	return &p.c.rpkYaml.Defaults
+}
+
 // HasClientCredentials returns if both ClientID and ClientSecret are empty.
 func (a *RpkCloudAuth) HasClientCredentials() bool {
 	k, _ := a.Kind()
