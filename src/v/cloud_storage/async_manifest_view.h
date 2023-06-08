@@ -314,9 +314,6 @@ private:
 
     ss::future<> run_bg_loop();
 
-    /// Return true if 'maybe_scan_bucket' need to be called
-    bool scan_needed() const noexcept;
-
     /// Scan the bucket and update the list of spillover manifests in
     /// the cloud. The scan is only performed if the STM state changed.
     /// \return true if the state was updated, false otherwise
@@ -478,10 +475,6 @@ private:
     async_manifest_view& _view;
 
     manifest_section_t _current;
-
-    /// Full copy of the spillover manifests list (the assumption is that the
-    /// list is relatively small)
-    std::optional<spillover_manifest_list> _manifests;
 
     ss::lowres_clock::duration _idle_timeout;
     ss::timer<ss::lowres_clock> _timer;

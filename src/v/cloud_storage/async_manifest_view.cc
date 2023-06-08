@@ -1474,11 +1474,6 @@ async_manifest_view::materialize_manifest(
     }
 }
 
-bool async_manifest_view::scan_needed() const noexcept {
-    return _stm_manifest.get_start_offset() > _last_stm_start_offset
-           || _last_stm_start_offset == model::offset{};
-}
-
 ss::future<result<bool, error_outcome>>
 async_manifest_view::maybe_scan_bucket() noexcept {
     try {
@@ -1537,7 +1532,7 @@ async_manifest_view::maybe_scan_bucket() noexcept {
         });
         spillover_manifest_list sorted;
         for (auto i : ix) {
-            sorted.manifests.emplace_back(result.manifests[i]);
+            sorted.manifests.emplace_back(std::move(result.manifests[i]));
             sorted.components.push_back(result.components[i]);
             sorted.sizes.push_back(result.sizes[i]);
         }
