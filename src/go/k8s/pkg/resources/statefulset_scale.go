@@ -68,41 +68,10 @@ const (
 //nolint:nestif // for clarity
 func (r *StatefulSetResource) handleScaling(ctx context.Context) error {
 	log := r.logger.WithName("handleScaling")
+
 	// decommission already in progress
-	if r.pandaCluster.GetDecommissionBrokerID() != nil {
-		if *r.pandaCluster.Spec.Replicas >= r.pandaCluster.GetCurrentReplicas() {
-			// Decommissioning can also be canceled and we need to recommission
-			err := r.handleRecommission(ctx)
-			if !errors.Is(err, &RecommissionFatalError{}) {
-				return err
-			}
-			// if it's impossible to recommission, fall through and let the decommission complete
-			log.WithValues("node_id", r.pandaCluster.GetDecommissionBrokerID()).Info("cannot recommission broker", "error", err)
-		}
-		// handleDecommission will return an error until the decommission is completed
-		if err := r.handleDecommission(ctx); err != nil {
-			return err
-		}
-
-		// Broker is now removed
-		targetReplicas := r.pandaCluster.GetCurrentReplicas() - 1
-		log.WithValues("targetReplicas", targetReplicas).Info("broker decommission complete: scaling down StatefulSet")
-
-		// We set status.currentReplicas accordingly to trigger scaling down of the statefulset
-		if err := setCurrentReplicas(ctx, r, r.pandaCluster, targetReplicas, r.logger); err != nil {
-			return err
-		}
-
-		scaledDown, err := r.verifyRunningCount(ctx, targetReplicas)
-		if err != nil {
-			return err
-		}
-		if !scaledDown {
-			return &RequeueAfterError{
-				RequeueAfter: wait.Jitter(r.decommissionWaitInterval, decommissionWaitJitterFactor),
-				Msg:          fmt.Sprintf("Waiting for statefulset to downscale to %d replicas", targetReplicas),
-			}
-		}
+	if err := r.handleDecommissionInProgress(ctx, log); err != nil {
+		return err
 	}
 
 	if r.pandaCluster.Status.CurrentReplicas == 0 {
@@ -146,14 +115,56 @@ func (r *StatefulSetResource) handleScaling(ctx context.Context) error {
 		return err
 	}
 	if targetBroker == nil {
-		return &RequeueAfterError{
-			RequeueAfter: RequeueDuration,
-			Msg:          fmt.Sprintf("cannot retrieve broker id for pod %d", targetOrdinal),
-		}
+		// The target pod isn't in the broker list. Just select a non-existing broker for decommission so the next
+		// reconcile loop will succeed.
+		nonExistantBroker := int32(-1)
+		targetBroker = &nonExistantBroker
 	}
 	log.WithValues("ordinal", targetOrdinal, "node_id", targetBroker).Info("start decommission broker")
 	r.pandaCluster.SetDecommissionBrokerID(targetBroker)
 	return r.Status().Update(ctx, r.pandaCluster)
+}
+
+func (r *StatefulSetResource) handleDecommissionInProgress(ctx context.Context, logger logr.Logger) error {
+	log := logger.WithName("handleDecommissionInProgress")
+	if r.pandaCluster.GetDecommissionBrokerID() == nil {
+		return nil
+	}
+
+	if *r.pandaCluster.Spec.Replicas >= r.pandaCluster.GetCurrentReplicas() {
+		// Decommissioning can also be canceled and we need to recommission
+		err := r.handleRecommission(ctx)
+		if !errors.Is(err, &RecommissionFatalError{}) {
+			return err
+		}
+		// if it's impossible to recommission, fall through and let the decommission complete
+		log.WithValues("node_id", r.pandaCluster.GetDecommissionBrokerID()).Info("cannot recommission broker", "error", err)
+	}
+	// handleDecommission will return an error until the decommission is completed
+	if err := r.handleDecommission(ctx); err != nil {
+		return err
+	}
+
+	// Broker is now removed
+	targetReplicas := r.pandaCluster.GetCurrentReplicas() - 1
+	log.WithValues("targetReplicas", targetReplicas).Info("broker decommission complete: scaling down StatefulSet")
+
+	// We set status.currentReplicas accordingly to trigger scaling down of the statefulset
+	if err := setCurrentReplicas(ctx, r, r.pandaCluster, targetReplicas, r.logger); err != nil {
+		return err
+	}
+
+	scaledDown, err := r.verifyRunningCount(ctx, targetReplicas)
+	if err != nil {
+		return err
+	}
+	if !scaledDown {
+		return &RequeueAfterError{
+			RequeueAfter: wait.Jitter(r.decommissionWaitInterval, decommissionWaitJitterFactor),
+			Msg:          fmt.Sprintf("Waiting for statefulset to downscale to %d replicas", targetReplicas),
+		}
+	}
+	return nil
 }
 
 // handleDecommission manages the case of decommissioning of the last node of a cluster.

@@ -40,6 +40,9 @@ const (
 	// requeue resource reconciliation.
 	RequeueDuration        = time.Second * 10
 	defaultAdminAPITimeout = time.Second * 2
+
+	ManagedDecommissionAnnotation = "operator.redpanda.com/managed-decommission"
+	PodUpdateAnnotation           = "operator.redpanda.com/pending-update"
 )
 
 var (
@@ -329,7 +332,7 @@ func (r *StatefulSetResource) putInMaintenanceMode(ctx context.Context, ordinal 
 
 	br, err := adminAPIClient.Broker(ctx, nodeConf.NodeID)
 	if err != nil {
-		return fmt.Errorf("getting broker infromations: %w", err)
+		return fmt.Errorf("getting broker information: %w", err)
 	}
 
 	if br.Maintenance == nil {
