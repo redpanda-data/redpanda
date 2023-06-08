@@ -103,10 +103,6 @@ ss::future<> local_monitor::update_state() {
 
 const local_state& local_monitor::get_state_cached() const { return _state; }
 
-void local_monitor::testing_only_set_path(const ss::sstring& path) {
-    _path_for_test = path;
-}
-
 size_t local_monitor::alert_percent_in_bytes(
   unsigned alert_percent, size_t bytes_available) {
     long double percent_factor = alert_percent / 100.0;
@@ -137,23 +133,14 @@ storage::disk local_monitor::statvfs_to_disk(const struct statvfs& svfs) {
 }
 
 ss::future<> local_monitor::update_disks(local_state& state) {
-    if (_path_for_test.empty()) {
-        // Normal mode
-        auto data_svfs = co_await _storage_node_api.local().get_statvfs(
-          _data_directory);
-        auto cache_svfs = co_await _storage_node_api.local().get_statvfs(
-          _cache_directory);
-        state.data_disk = statvfs_to_disk(data_svfs);
-        if (cache_svfs.f_fsid != data_svfs.f_fsid) {
-            state.cache_disk = statvfs_to_disk(cache_svfs);
-        } else {
-            state.cache_disk = std::nullopt;
-        }
+    auto data_svfs = co_await _storage_node_api.local().get_statvfs(
+      _data_directory);
+    auto cache_svfs = co_await _storage_node_api.local().get_statvfs(
+      _cache_directory);
+    state.data_disk = statvfs_to_disk(data_svfs);
+    if (cache_svfs.f_fsid != data_svfs.f_fsid) {
+        state.cache_disk = statvfs_to_disk(cache_svfs);
     } else {
-        // Test mode
-        auto svfs = co_await _storage_node_api.local().get_statvfs(
-          _path_for_test);
-        state.data_disk = statvfs_to_disk(svfs);
         state.cache_disk = std::nullopt;
     }
 }

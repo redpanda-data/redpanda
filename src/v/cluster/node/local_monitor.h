@@ -55,8 +55,6 @@ public:
     static constexpr std::string_view stable_alert_string
       = "storage space alert"; // for those who grep the logs..
 
-    void testing_only_set_path(const ss::sstring& path);
-
 private:
     // helpers
     static size_t
@@ -88,9 +86,6 @@ private:
     ss ::sstring _cache_directory;
 
     ss::sharded<storage::node>& _storage_node_api; // single instance
-
-    // Injection points for unit tests
-    ss::sstring _path_for_test;
 
     std::optional<size_t> _disk_size_for_test;
 
