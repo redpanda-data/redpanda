@@ -32,16 +32,7 @@ using namespace cluster;
 
 using storage::disk_space_alert;
 
-local_monitor_fixture::local_monitor_fixture()
-  : _local_monitor(
-    config::shard_local_cfg().storage_space_alert_free_threshold_bytes.bind(),
-    config::shard_local_cfg().storage_space_alert_free_threshold_percent.bind(),
-    config::shard_local_cfg().storage_min_free_bytes.bind(),
-    config::node_config().data_directory().as_sstring(),
-    config::node_config().cloud_storage_cache_path().string(),
-    _storage_node_api) {
-    _storage_node_api.start_single().get0();
-
+local_monitor_fixture::local_monitor_fixture() {
     auto log_conf = storage::log_config{
       "test.dir",
       1024,
@@ -74,7 +65,27 @@ local_monitor_fixture::local_monitor_fixture()
     } else {
         clusterlog.info("{}: created test dir {}", __func__, _test_path);
     }
-    _local_monitor.testing_only_set_path(_test_path.string());
+
+    _local_monitor
+      .start(
+        ss::sharded_parameter([] {
+            return config::shard_local_cfg()
+              .storage_space_alert_free_threshold_bytes.bind();
+        }),
+        ss::sharded_parameter([] {
+            return config::shard_local_cfg()
+              .storage_space_alert_free_threshold_percent.bind();
+        }),
+        ss::sharded_parameter([] {
+            return config::shard_local_cfg().storage_min_free_bytes.bind();
+        }),
+        _test_path.string(),
+        _test_path.string(),
+        std::ref(_storage_node_api))
+      .get();
+
+    _storage_node_api.start_single().get0();
+
     BOOST_ASSERT(ss::engine_is_ready());
 }
 
@@ -86,14 +97,16 @@ local_monitor_fixture::~local_monitor_fixture() {
         clusterlog.warn("Cleanup got error {} removing test dir.", err);
     }
     _storage_node_api.stop().get0();
+    _local_monitor.stop().get();
     _feature_table.stop().get();
 }
 
 node::local_state local_monitor_fixture::update_state() {
-    _local_monitor.update_state()
+    local_monitor()
+      .update_state()
       .then([&]() { clusterlog.info("Updated local state."); })
       .get();
-    return _local_monitor.get_state_cached();
+    return local_monitor().get_state_cached();
 }
 
 struct statvfs local_monitor_fixture::make_statvfs(
