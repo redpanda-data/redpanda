@@ -63,7 +63,7 @@ can use the --raw flag.
 			out.MaybeDieErr(err)
 
 			var renamed, updatedCurrent bool
-			if update.Name != name {
+			if update.Name != name && update.Name != "" {
 				renamed = true
 				if y.CurrentProfile == name {
 					updatedCurrent = true
