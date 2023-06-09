@@ -146,6 +146,13 @@ spec:
                         type: string
                       enabled:
                         type: boolean
+                      externalDNS:
+                        properties:
+                          enabled:
+                            type: boolean
+                        required:
+                        - enabled
+                        type: object
                       type:
                         type: string
                     required:
@@ -166,6 +173,17 @@ spec:
                       tag:
                         type: string
                     type: object
+                  imagePullSecrets:
+                    items:
+                      description: LocalObjectReference contains enough information
+                        to let you locate the referenced object inside the same namespace.
+                      properties:
+                        name:
+                          description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                            TODO: Add other useful fields. apiVersion, kind, uid?'
+                          type: string
+                      type: object
+                    type: array
                   license_key:
                     type: string
                   license_secret_ref:
@@ -198,6 +216,13 @@ spec:
                                 type: string
                               enabled:
                                 type: boolean
+                              externalDNS:
+                                properties:
+                                  enabled:
+                                    type: boolean
+                                required:
+                                - enabled
+                                type: object
                               type:
                                 type: string
                             required:
@@ -214,8 +239,11 @@ spec:
                                 type: object
                               enabled:
                                 type: boolean
+                              requireClientAuth:
+                                type: boolean
                             required:
                             - enabled
+                            - requireClientAuth
                             type: object
                         required:
                         - external
@@ -225,6 +253,8 @@ spec:
                       http:
                         description: HTTP is a top level field of the values file
                         properties:
+                          authenticationMethod:
+                            type: string
                           enabled:
                             type: boolean
                           external:
@@ -242,6 +272,13 @@ spec:
                                 type: string
                               enabled:
                                 type: boolean
+                              externalDNS:
+                                properties:
+                                  enabled:
+                                    type: boolean
+                                required:
+                                - enabled
+                                type: object
                               type:
                                 type: string
                             required:
@@ -260,8 +297,11 @@ spec:
                                 type: object
                               enabled:
                                 type: boolean
+                              requireClientAuth:
+                                type: boolean
                             required:
                             - enabled
+                            - requireClientAuth
                             type: object
                         required:
                         - enabled
@@ -273,6 +313,8 @@ spec:
                       kafka:
                         description: Kafka is a top level field of the values file
                         properties:
+                          authenticationMethod:
+                            type: string
                           external:
                             description: External is a top level field of the values
                               file
@@ -288,6 +330,13 @@ spec:
                                 type: string
                               enabled:
                                 type: boolean
+                              externalDNS:
+                                properties:
+                                  enabled:
+                                    type: boolean
+                                required:
+                                - enabled
+                                type: object
                               type:
                                 type: string
                             required:
@@ -304,8 +353,11 @@ spec:
                                 type: object
                               enabled:
                                 type: boolean
+                              requireClientAuth:
+                                type: boolean
                             required:
                             - enabled
+                            - requireClientAuth
                             type: object
                         required:
                         - external
@@ -326,8 +378,11 @@ spec:
                                 type: object
                               enabled:
                                 type: boolean
+                              requireClientAuth:
+                                type: boolean
                             required:
                             - enabled
+                            - requireClientAuth
                             type: object
                         required:
                         - port
@@ -337,6 +392,8 @@ spec:
                         description: SchemaRegistry is a top level field of the values
                           file
                         properties:
+                          authenticationMethod:
+                            type: string
                           enabled:
                             type: boolean
                           external:
@@ -354,6 +411,13 @@ spec:
                                 type: string
                               enabled:
                                 type: boolean
+                              externalDNS:
+                                properties:
+                                  enabled:
+                                    type: boolean
+                                required:
+                                - enabled
+                                type: object
                               type:
                                 type: string
                             required:
@@ -372,8 +436,11 @@ spec:
                                 type: object
                               enabled:
                                 type: boolean
+                              requireClientAuth:
+                                type: boolean
                             required:
                             - enabled
+                            - requireClientAuth
                             type: object
                         required:
                         - enabled
@@ -385,6 +452,37 @@ spec:
                     type: object
                   logging:
                     description: Logging is a top level field of the values file
+                    properties:
+                      logLevel:
+                        type: string
+                      usageStats:
+                        properties:
+                          clusterId:
+                            type: string
+                          enabled:
+                            type: boolean
+                          organization:
+                            type: string
+                        required:
+                        - enabled
+                        type: object
+                    required:
+                    - logLevel
+                    - usageStats
+                    type: object
+                  monitoring:
+                    properties:
+                      commonLabels:
+                        additionalProperties:
+                          type: string
+                        type: object
+                      enabled:
+                        type: boolean
+                      scrapeInterval:
+                        type: string
+                    required:
+                    - enabled
+                    - scrapeInterval
                     type: object
                   nameOverride:
                     description: NameOverride is the override to give your redpanda
@@ -400,30 +498,44 @@ spec:
                     description: PostInstallJob is a top level field of the values
                       file
                     properties:
+                      annotations:
+                        additionalProperties:
+                          type: string
+                        type: object
                       enabled:
                         type: boolean
+                      labels:
+                        additionalProperties:
+                          type: string
+                        type: object
                       resources:
-                        description: Resources is a top level field of the values
-                          file
                         properties:
-                          limits:
-                            description: Limits is a top level field of the values
-                              file
+                          cpu:
                             properties:
-                              cpu:
-                                type: integer
-                              memory:
+                              cores:
                                 type: string
+                              overprovisioned:
+                                type: boolean
                             type: object
-                          requests:
-                            description: Requests is a top level field of the values
-                              file
+                          memory:
                             properties:
-                              cpu:
-                                type: integer
-                              memory:
-                                type: string
+                              container:
+                                properties:
+                                  max:
+                                    type: string
+                                  min:
+                                    type: string
+                                required:
+                                - max
+                                type: object
+                              enable_memory_locking:
+                                type: boolean
+                            required:
+                            - container
                             type: object
+                        required:
+                        - cpu
+                        - memory
                         type: object
                     required:
                     - enabled
@@ -432,6 +544,10 @@ spec:
                     description: PostUpgradeJob is a top level field of the values
                       file
                     properties:
+                      annotations:
+                        additionalProperties:
+                          type: string
+                        type: object
                       enabled:
                         type: boolean
                       extraEnv:
@@ -446,28 +562,38 @@ spec:
                           decoding or precompute a JSON encoding.
                         format: byte
                         type: string
+                      labels:
+                        additionalProperties:
+                          type: string
+                        type: object
                       resources:
-                        description: Resources is a top level field of the values
-                          file
                         properties:
-                          limits:
-                            description: Limits is a top level field of the values
-                              file
+                          cpu:
                             properties:
-                              cpu:
-                                type: integer
-                              memory:
+                              cores:
                                 type: string
+                              overprovisioned:
+                                type: boolean
                             type: object
-                          requests:
-                            description: Requests is a top level field of the values
-                              file
+                          memory:
                             properties:
-                              cpu:
-                                type: integer
-                              memory:
-                                type: string
+                              container:
+                                properties:
+                                  max:
+                                    type: string
+                                  min:
+                                    type: string
+                                required:
+                                - max
+                                type: object
+                              enable_memory_locking:
+                                type: boolean
+                            required:
+                            - container
                             type: object
+                        required:
+                        - cpu
+                        - memory
                         type: object
                     required:
                     - enabled
@@ -484,29 +610,67 @@ spec:
                     - enabled
                     - nodeAnnotation
                     type: object
-                  resources:
-                    description: Resources is a top level field of the values file
+                  rbac:
                     properties:
-                      limits:
-                        description: Limits is a top level field of the values file
-                        properties:
-                          cpu:
-                            type: integer
-                          memory:
-                            type: string
+                      annotations:
+                        additionalProperties:
+                          type: string
                         type: object
-                      requests:
-                        description: Requests is a top level field of the values file
+                      enabled:
+                        type: boolean
+                    required:
+                    - enabled
+                    type: object
+                  resources:
+                    properties:
+                      cpu:
                         properties:
-                          cpu:
-                            type: integer
-                          memory:
+                          cores:
                             type: string
+                          overprovisioned:
+                            type: boolean
                         type: object
+                      memory:
+                        properties:
+                          container:
+                            properties:
+                              max:
+                                type: string
+                              min:
+                                type: string
+                            required:
+                            - max
+                            type: object
+                          enable_memory_locking:
+                            type: boolean
+                        required:
+                        - container
+                        type: object
+                    required:
+                    - cpu
+                    - memory
+                    type: object
+                  serviceAccount:
+                    properties:
+                      annotations:
+                        additionalProperties:
+                          type: string
+                        type: object
+                      create:
+                        type: boolean
+                      name:
+                        type: string
+                    required:
+                    - create
+                    - name
                     type: object
                   statefulset:
                     description: Statefulset is a top level field of the values file
                     properties:
+                      additionalRedpandaCmdFlags:
+                        items:
+                          type: string
+                        type: array
                       annotations:
                         additionalProperties:
                           type: string
@@ -520,7 +684,159 @@ spec:
                         - maxUnavailable
                         type: object
                       initContainer:
-                        type: string
+                        properties:
+                          configurator:
+                            properties:
+                              resources:
+                                properties:
+                                  cpu:
+                                    properties:
+                                      cores:
+                                        type: string
+                                      overprovisioned:
+                                        type: boolean
+                                    type: object
+                                  memory:
+                                    properties:
+                                      container:
+                                        properties:
+                                          max:
+                                            type: string
+                                          min:
+                                            type: string
+                                        required:
+                                        - max
+                                        type: object
+                                      enable_memory_locking:
+                                        type: boolean
+                                    required:
+                                    - container
+                                    type: object
+                                required:
+                                - cpu
+                                - memory
+                                type: object
+                            type: object
+                          setDataDirOwnership:
+                            properties:
+                              enabled:
+                                type: boolean
+                              resources:
+                                properties:
+                                  cpu:
+                                    properties:
+                                      cores:
+                                        type: string
+                                      overprovisioned:
+                                        type: boolean
+                                    type: object
+                                  memory:
+                                    properties:
+                                      container:
+                                        properties:
+                                          max:
+                                            type: string
+                                          min:
+                                            type: string
+                                        required:
+                                        - max
+                                        type: object
+                                      enable_memory_locking:
+                                        type: boolean
+                                    required:
+                                    - container
+                                    type: object
+                                required:
+                                - cpu
+                                - memory
+                                type: object
+                            type: object
+                          setTieredStorageCacheDirOwnership:
+                            properties:
+                              resources:
+                                properties:
+                                  cpu:
+                                    properties:
+                                      cores:
+                                        type: string
+                                      overprovisioned:
+                                        type: boolean
+                                    type: object
+                                  memory:
+                                    properties:
+                                      container:
+                                        properties:
+                                          max:
+                                            type: string
+                                          min:
+                                            type: string
+                                        required:
+                                        - max
+                                        type: object
+                                      enable_memory_locking:
+                                        type: boolean
+                                    required:
+                                    - container
+                                    type: object
+                                required:
+                                - cpu
+                                - memory
+                                type: object
+                            type: object
+                          tuning:
+                            description: Tuning is a top level field of the values
+                              file
+                            properties:
+                              ballast_file_path:
+                                type: string
+                              ballast_file_size:
+                                type: string
+                              resources:
+                                properties:
+                                  cpu:
+                                    properties:
+                                      cores:
+                                        type: string
+                                      overprovisioned:
+                                        type: boolean
+                                    type: object
+                                  memory:
+                                    properties:
+                                      container:
+                                        properties:
+                                          max:
+                                            type: string
+                                          min:
+                                            type: string
+                                        required:
+                                        - max
+                                        type: object
+                                      enable_memory_locking:
+                                        type: boolean
+                                    required:
+                                    - container
+                                    type: object
+                                required:
+                                - cpu
+                                - memory
+                                type: object
+                              tune_aio_events:
+                                type: boolean
+                              tune_ballast_file:
+                                type: boolean
+                              tune_clocksource:
+                                type: boolean
+                              well_known_io:
+                                type: string
+                            type: object
+                        type: object
+                      initContainerImage:
+                        properties:
+                          repository:
+                            type: string
+                          tag:
+                            type: string
+                        type: object
                       livenessProbe:
                         description: LivenessProbe is a top level field of the values
                           file
@@ -592,11 +908,52 @@ spec:
                         properties:
                           fsGroup:
                             type: integer
+                          fsGroupChangePolicy:
+                            type: string
                           runAsUser:
                             type: integer
                         required:
                         - fsGroup
                         - runAsUser
+                        type: object
+                      sideCars:
+                        description: SideCars is a field that stores sidecars in the
+                          statefulset
+                        properties:
+                          configWatcher:
+                            properties:
+                              enabled:
+                                type: boolean
+                              resources:
+                                properties:
+                                  cpu:
+                                    properties:
+                                      cores:
+                                        type: string
+                                      overprovisioned:
+                                        type: boolean
+                                    type: object
+                                  memory:
+                                    properties:
+                                      container:
+                                        properties:
+                                          max:
+                                            type: string
+                                          min:
+                                            type: string
+                                        required:
+                                        - max
+                                        type: object
+                                      enable_memory_locking:
+                                        type: boolean
+                                    required:
+                                    - container
+                                    type: object
+                                required:
+                                - cpu
+                                - memory
+                                type: object
+                            type: object
                         type: object
                       skipChown:
                         type: boolean
@@ -615,9 +972,48 @@ spec:
                         - initialDelaySeconds
                         - periodSeconds
                         type: object
+                      terminationGracePeriodSeconds:
+                        type: integer
                       tolerations:
                         items:
-                          type: string
+                          description: The pod this Toleration is attached to tolerates
+                            any taint that matches the triple <key,value,effect> using
+                            the matching operator <operator>.
+                          properties:
+                            effect:
+                              description: Effect indicates the taint effect to match.
+                                Empty means match all taint effects. When specified,
+                                allowed values are NoSchedule, PreferNoSchedule and
+                                NoExecute.
+                              type: string
+                            key:
+                              description: Key is the taint key that the toleration
+                                applies to. Empty means match all taint keys. If the
+                                key is empty, operator must be Exists; this combination
+                                means to match all values and all keys.
+                              type: string
+                            operator:
+                              description: Operator represents a key's relationship
+                                to the value. Valid operators are Exists and Equal.
+                                Defaults to Equal. Exists is equivalent to wildcard
+                                for value, so that a pod can tolerate all taints of
+                                a particular category.
+                              type: string
+                            tolerationSeconds:
+                              description: TolerationSeconds represents the period
+                                of time the toleration (which must be of effect NoExecute,
+                                otherwise this field is ignored) tolerates the taint.
+                                By default, it is not set, which means tolerate the
+                                taint forever (do not evict). Zero and negative values
+                                will be treated as 0 (evict immediately) by the system.
+                              format: int64
+                              type: integer
+                            value:
+                              description: Value is the taint value the toleration
+                                matches to. If the operator is Exists, the value should
+                                be empty, otherwise just a regular string.
+                              type: string
+                          type: object
                         type: array
                       topologySpreadConstraints:
                         description: TopologySpreadConstraints is a top level field
@@ -762,14 +1158,53 @@ spec:
                         type: object
                       enabled:
                         type: boolean
+                      requireClientAuth:
+                        type: boolean
                     required:
                     - enabled
+                    - requireClientAuth
                     type: object
                   tolerations:
                     description: Tolerations is the override to give your redpanda
                       release
                     items:
-                      type: string
+                      description: The pod this Toleration is attached to tolerates
+                        any taint that matches the triple <key,value,effect> using
+                        the matching operator <operator>.
+                      properties:
+                        effect:
+                          description: Effect indicates the taint effect to match.
+                            Empty means match all taint effects. When specified, allowed
+                            values are NoSchedule, PreferNoSchedule and NoExecute.
+                          type: string
+                        key:
+                          description: Key is the taint key that the toleration applies
+                            to. Empty means match all taint keys. If the key is empty,
+                            operator must be Exists; this combination means to match
+                            all values and all keys.
+                          type: string
+                        operator:
+                          description: Operator represents a key's relationship to
+                            the value. Valid operators are Exists and Equal. Defaults
+                            to Equal. Exists is equivalent to wildcard for value,
+                            so that a pod can tolerate all taints of a particular
+                            category.
+                          type: string
+                        tolerationSeconds:
+                          description: TolerationSeconds represents the period of
+                            time the toleration (which must be of effect NoExecute,
+                            otherwise this field is ignored) tolerates the taint.
+                            By default, it is not set, which means tolerate the taint
+                            forever (do not evict). Zero and negative values will
+                            be treated as 0 (evict immediately) by the system.
+                          format: int64
+                          type: integer
+                        value:
+                          description: Value is the taint value the toleration matches
+                            to. If the operator is Exists, the value should be empty,
+                            otherwise just a regular string.
+                          type: string
+                      type: object
                     type: array
                   tuning:
                     description: Tuning is a top level field of the values file
@@ -778,6 +1213,35 @@ spec:
                         type: string
                       ballast_file_size:
                         type: string
+                      resources:
+                        properties:
+                          cpu:
+                            properties:
+                              cores:
+                                type: string
+                              overprovisioned:
+                                type: boolean
+                            type: object
+                          memory:
+                            properties:
+                              container:
+                                properties:
+                                  max:
+                                    type: string
+                                  min:
+                                    type: string
+                                required:
+                                - max
+                                type: object
+                              enable_memory_locking:
+                                type: boolean
+                            required:
+                            - container
+                            type: object
+                        required:
+                        - cpu
+                        - memory
+                        type: object
                       tune_aio_events:
                         type: boolean
                       tune_ballast_file:
