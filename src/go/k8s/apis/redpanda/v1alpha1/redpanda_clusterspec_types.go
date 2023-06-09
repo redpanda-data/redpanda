@@ -2,6 +2,8 @@ package v1alpha1
 
 import (
 	"encoding/json"
+
+	v1 "k8s.io/api/core/v1"
 )
 
 // RedpandaClusterSpec defines the desired state of Redpanda Cluster
@@ -22,6 +24,8 @@ type RedpandaClusterSpec struct {
 	// Image defines the container image to use for the redpanda cluster
 	Image *RedpandaImage `json:"image,omitempty"`
 
+	ImagePullSecrets []v1.LocalObjectReference `json:"imagePullSecrets,omitempty"`
+
 	LicenseKey       string            `json:"license_key,omitempty"`
 	LicenseSecretRef *LicenseSecretRef `json:"license_secret_ref,omitempty"`
 
@@ -37,7 +41,7 @@ type RedpandaClusterSpec struct {
 
 	Logging *Logging `json:"logging,omitempty"`
 
-	Resources *Resources `json:"resources,omitempty"`
+	Resources *PodResources `json:"resources,omitempty"`
 
 	Storage *Storage `json:"storage,omitempty"`
 
@@ -46,6 +50,8 @@ type RedpandaClusterSpec struct {
 	PostUpgradeJob *PostUpgradeJob `json:"post_upgrade_job,omitempty"`
 
 	Statefulset *Statefulset `json:"statefulset,omitempty"`
+
+	ServiceAccount *ServiceAccount `json:"serviceAccount,omitempty"`
 
 	Tuning *Tuning `json:"tuning,omitempty"`
 
@@ -108,14 +114,53 @@ type Certs struct{}
 
 // External is a top level field of the values file
 type External struct {
-	Addresses json.RawMessage `json:"addresses,omitempty"`
-	Domain    string          `json:"domain,omitempty"`
-	Enabled   bool            `json:"enabled"`
-	Type      string          `json:"type,omitempty"`
+	Addresses    json.RawMessage   `json:"addresses,omitempty"`
+	SourceRanges []string          `json:"sourceRanges,omitempty"`
+	Domain       string            `json:"domain,omitempty"`
+	Enabled      bool              `json:"enabled"`
+	Type         string            `json:"type,omitempty"`
+	Annotations  map[string]string `json:"annotations,omitempty"`
+	ExternalDNS  ExternalDNS       `json:"externalDNS"`
+}
+
+type ExternalDNS struct {
+	Enabled bool `json:"enabled"`
 }
 
 // Logging is a top level field of the values file
-type Logging struct{}
+type Logging struct {
+	LogLevel   string     `json:"logLevel"`
+	UsageStats UsageStats `json:"usageStats"`
+}
+
+type UsageStats struct {
+	Enabled      bool   `json:"enabled"`
+	Organization string `json:"organization,omitempty"`
+	ClusterID    string `json:"clusterId,omitempty"`
+}
+
+type CPU struct {
+	Cores           int  `json:"cores"`
+	Overprovisioned bool `json:"overprovisioned"`
+}
+
+type Container struct {
+	Max string `json:"max"`
+}
+
+type Memory struct {
+	Container              Container              `json:"container"`
+	RedpandaMemoryResource RedpandaMemoryResource `json:"redpanda"`
+}
+
+type RedpandaMemoryResource struct {
+	ReserveMemory string `json:"reserveMemory"`
+}
+
+type PodResources struct {
+	CPU    CPU    `json:"cpu"`
+	Memory Memory `json:"memory"`
+}
 
 // Resources is a top level field of the values file
 type Resources struct {
@@ -149,10 +194,16 @@ type TieredConfig struct {
 	CloudStorageAPIEndpoint                 string `json:"cloud_storage_api_endpoint,omitempty"`
 	CloudStorageAPIEndpointPort             int    `json:"cloud_storage_api_endpoint_port,omitempty"`
 	CloudStorageBucket                      string `json:"cloud_storage_bucket"`
+	CloudStorageAzureContainer              string `json:"cloud_storage_azure_container,omitempty"`
+	CloudStorageAzureStorageAccount         string `json:"cloud_storage_azure_storage_account,omitempty"`
+	CloudStorageAzureSharedKey              string `json:"cloud_storage_azure_shared_key,omitempty"`
 	CloudStorageCacheCheckInterval          int    `json:"cloud_storage_cache_check_interval,omitempty"`
 	CloudStorageCacheDirectory              string `json:"cloud_storage_cache_directory,omitempty"`
 	CloudStorageCacheSize                   int    `json:"cloud_storage_cache_size,omitempty"`
+	CloudStorageEnabled                     bool   `json:"cloud_storage_enabled,omitempty"`
 	CloudStorageCredentialsSource           string `json:"cloud_storage_credentials_source,omitempty"`
+	CloudStorageAccessKey                   string `json:"cloud_storage_access_key,omitempty,omitempty"`
+	CloudStorageSecretKey                   string `json:"cloud_storage_secret_key,omitempty,omitempty"`
 	CloudStorageDisableTLS                  bool   `json:"cloud_storage_disable_tls,omitempty"`
 	CloudStorageEnableRemoteRead            bool   `json:"cloud_storage_enable_remote_read,omitempty"`
 	CloudStorageEnableRemoteWrite           bool   `json:"cloud_storage_enable_remote_write,omitempty"`
@@ -161,7 +212,12 @@ type TieredConfig struct {
 	CloudStorageMaxConnectionIdleTimeMs     int    `json:"cloud_storage_max_connection_idle_time_ms,omitempty"`
 	CloudStorageMaxConnections              int    `json:"cloud_storage_max_connections,omitempty"`
 	CloudStorageReconciliationIntervalMs    int    `json:"cloud_storage_reconciliation_interval_ms,omitempty"`
+	CloudStorageIdleTimeoutMs               int    `json:"cloud_storage_idle_timeout_ms,omitempty"`
+	CloudStorageIdleThresholdRPS            int    `json:"cloud_storage_idle_threshold_rps,omitempty"`
+	CloudStorageEnableSegmentMerging        bool   `json:"cloud_storage_enable_segment_merging,omitempty"`
 	CloudStorageRegion                      string `json:"cloud_storage_region"`
+	CloudStorageSegmentSizeTarget           string `json:"cloud_storage_segment_size_target,omitempty"`
+	CloudStorageSegmentSizeMin              string `json:"cloud_storage_segment_size_min,omitempty"`
 	CloudStorageSegmentMaxUploadIntervalSec int    `json:"cloud_storage_segment_max_upload_interval_sec,omitempty"`
 	CloudStorageSegmentUploadTimeoutMs      int    `json:"cloud_storage_segment_upload_timeout_ms,omitempty"`
 	CloudStorageTrustFile                   string `json:"cloud_storage_trust_file,omitempty"`
@@ -191,36 +247,81 @@ type PersistentVolume struct {
 
 // PostInstallJob is a top level field of the values file
 type PostInstallJob struct {
-	Enabled   bool       `json:"enabled"`
-	Resources *Resources `json:"resources,omitempty"`
+	Resources   *Resources        `json:"resources,omitempty"`
+	Annotations map[string]string `json:"annotations,omitempty"`
+	Enabled     bool              `json:"enabled"`
+	Labels      map[string]string `json:"labels,omitempty"`
 }
 
 // PostUpgradeJob is a top level field of the values file
 type PostUpgradeJob struct {
-	Enabled      bool            `json:"enabled"`
-	ExtraEnv     json.RawMessage `json:"extraEnv,omitempty"`
-	ExtraEnvFrom json.RawMessage `json:"extraEnvFrom,omitempty"`
-	Resources    *Resources      `json:"resources,omitempty"`
+	Annotations  map[string]string `json:"annotations,omitempty"`
+	Enabled      bool              `json:"enabled"`
+	Labels       map[string]string `json:"labels,omitempty"`
+	ExtraEnv     json.RawMessage   `json:"extraEnv,omitempty"`
+	ExtraEnvFrom json.RawMessage   `json:"extraEnvFrom,omitempty"`
+	Resources    *Resources        `json:"resources,omitempty"`
+}
+
+type ServiceAccount struct {
+	// TODO
 }
 
 // Statefulset is a top level field of the values file
 type Statefulset struct {
-	Annotations               map[string]string          `json:"annotations,omitempty"`
-	Budget                    *Budget                    `json:"budget,omitempty"`
-	InitContainer             string                     `json:"initContainer,omitempty"`
-	LivenessProbe             *LivenessProbe             `json:"livenessProbe,omitempty"`
-	NodeSelector              map[string]string          `json:"nodeSelector,omitempty"`
-	PodAffinity               json.RawMessage            `json:"podAffinity,omitempty"`
-	PodAntiAffinity           *PodAntiAffinity           `json:"podAntiAffinity,omitempty"`
-	PriorityClassName         string                     `json:"priorityClassName,omitempty"`
-	ReadinessProbe            *ReadinessProbe            `json:"readinessProbe,omitempty"`
-	Replicas                  int                        `json:"replicas,omitempty"`
-	SecurityContext           *SecurityContext           `json:"securityContext,omitempty"`
-	SkipChown                 bool                       `json:"skipChown,omitempty"`
-	StartupProbe              *StartupProbe              `json:"startupProbe,omitempty"`
-	Tolerations               []string                   `json:"tolerations,omitempty"`
-	TopologySpreadConstraints *TopologySpreadConstraints `json:"topologySpreadConstraints,omitempty"`
-	UpdateStrategy            *UpdateStrategy            `json:"updateStrategy,omitempty"`
+	Annotations                   map[string]string           `json:"annotations,omitempty"`
+	AdditionalRedpandaCmdFlags    []string                    `json:"additionalRedpandaCmdFlags,omitempty"`
+	Budget                        *Budget                     `json:"budget,omitempty"`
+	InitContainers                InitContainers              `json:"initContainers,omitempty"`
+	InitContainerImage            InitContainerImage          `json:"initContainerImage,omitempty"`
+	LivenessProbe                 *LivenessProbe              `json:"livenessProbe,omitempty"`
+	NodeSelector                  map[string]string           `json:"nodeSelector,omitempty"`
+	PodAffinity                   json.RawMessage             `json:"podAffinity,omitempty"`
+	PodAntiAffinity               *PodAntiAffinity            `json:"podAntiAffinity,omitempty"`
+	PriorityClassName             string                      `json:"priorityClassName,omitempty"`
+	ReadinessProbe                *ReadinessProbe             `json:"readinessProbe,omitempty"`
+	Replicas                      int                         `json:"replicas,omitempty"`
+	SecurityContext               *SecurityContext            `json:"securityContext,omitempty"`
+	SideCars                      *SideCars                   `json:"sideCars,omitempty"`
+	SkipChown                     bool                        `json:"skipChown,omitempty"`
+	StartupProbe                  *StartupProbe               `json:"startupProbe,omitempty"`
+	TerminationGracePeriodSeconds int                         `json:"terminationGracePeriodSeconds,omitempty"`
+	Tolerations                   []string                    `json:"tolerations,omitempty"`
+	TopologySpreadConstraints     []TopologySpreadConstraints `json:"topologySpreadConstraints,omitempty"`
+	UpdateStrategy                *UpdateStrategy             `json:"updateStrategy,omitempty"`
+}
+
+type InitContainerImage struct {
+	Repository string `json:"repository,omitempty"`
+	Tag        string `json:"tag,omitempty"`
+}
+
+type InitContainers struct {
+	Tuning struct {
+		Resources Resources `json:"resources"`
+	} `json:"tuning"`
+
+	SetDataDirOwnership struct {
+		Enabled   bool      `json:"enabled"`
+		Resources Resources `json:"resources"`
+	} `json:"setDataDirOwnership"`
+
+	SetTieredStorageCacheDirOwnership struct {
+		Resources Resources `json:"resources"`
+	} `json:"setTieredStorageCacheDirOwnership"`
+
+	Configurator struct {
+		Resources Resources `json:"resources"`
+	} `json:"configurator"`
+}
+
+type SideCars struct {
+	ConfigWatcher ConfigWatcher `json:"configWatcher"`
+}
+
+type ConfigWatcher struct {
+	Enabled   bool      `json:"enabled"`
+	Resources Resources `json:"resources"`
 }
 
 // Budget is a top level field of the values file
@@ -244,8 +345,9 @@ type ReadinessProbe struct {
 
 // SecurityContext is a top level field of the values file
 type SecurityContext struct {
-	FsGroup   int `json:"fsGroup"`
-	RunAsUser int `json:"runAsUser"`
+	FsGroup             int    `json:"fsGroup"`
+	RunAsUser           int    `json:"runAsUser"`
+	FsGroupChangePolicy string `json:"fsGroupChangePolicy"`
 }
 
 // StartupProbe is a top level field of the values file
