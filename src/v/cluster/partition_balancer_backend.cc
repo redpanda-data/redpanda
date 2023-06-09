@@ -21,6 +21,7 @@
 #include "config/configuration.h"
 #include "config/property.h"
 #include "random/generators.h"
+#include "utils/gate_guard.h"
 
 #include <seastar/core/coroutine.hh>
 
@@ -96,6 +97,41 @@ void partition_balancer_backend::start() {
       });
     maybe_rearm_timer();
     vlog(clusterlog.info, "partition balancer started");
+}
+
+ss::future<std::error_code> partition_balancer_backend::request_rebalance() {
+    auto g = gate_guard(_gate);
+
+    if (!is_leader()) {
+        co_return errc::not_leader;
+    }
+
+    auto units = co_await _lock.get_units();
+
+    if (!is_leader()) {
+        co_return errc::not_leader;
+    }
+
+    if (!_cur_term || _raft0->term() != _cur_term->id) {
+        _cur_term = per_term_state(_raft0->term());
+    }
+
+    if (
+      _cur_term->_ondemand_rebalance_requested
+      || !_state.nodes_to_rebalance().empty()) {
+        vlog(
+          clusterlog.info,
+          "rebalance already in progress, "
+          "on demand: {}; nodes to rebalance count: {}",
+          _cur_term->_ondemand_rebalance_requested,
+          _state.nodes_to_rebalance().size());
+        co_return errc::update_in_progress;
+    }
+
+    vlog(clusterlog.info, "requesting on demand rebalance");
+    _cur_term->_ondemand_rebalance_requested = true;
+    maybe_rearm_timer(/*now=*/true);
+    co_return errc::success;
 }
 
 void partition_balancer_backend::maybe_rearm_timer(bool now) {
@@ -290,6 +326,8 @@ ss::future<> partition_balancer_backend::do_tick() {
             .movement_disk_size_batch = _movement_batch_size_bytes(),
             .max_concurrent_actions = _max_concurrent_actions(),
             .node_availability_timeout_sec = _availability_timeout(),
+            .ondemand_rebalance_requested
+            = _cur_term->_ondemand_rebalance_requested,
             .segment_fallocation_step = _segment_fallocation_step(),
             .min_partition_size_threshold = get_min_partition_size_threshold(),
             .node_responsiveness_timeout = node_responsiveness_timeout},
@@ -318,7 +356,7 @@ ss::future<> partition_balancer_backend::do_tick() {
           clusterlog.info,
           "last status: {}; "
           "violations: unavailable nodes: {}, full nodes: {}; "
-          "counts rebalancing nodes: {}; "
+          "nodes to rebalance count: {}; on demand rebalance requested: {}; "
           "updates in progress: {}; "
           "action counts: reassignments: {}, cancellations: {}, failed: {}; "
           "counts rebalancing finished: {}",
@@ -326,6 +364,7 @@ ss::future<> partition_balancer_backend::do_tick() {
           _cur_term->last_violations.unavailable_nodes.size(),
           _cur_term->last_violations.full_nodes.size(),
           _state.nodes_to_rebalance().size(),
+          _cur_term->_ondemand_rebalance_requested,
           _state.topics().updates_in_progress().size(),
           plan_data.reassignments.size(),
           plan_data.cancellations.size(),
@@ -336,6 +375,8 @@ ss::future<> partition_balancer_backend::do_tick() {
     auto moves_before = _state.topics().updates_in_progress().size();
 
     if (moves_before == 0 && plan_data.counts_rebalancing_finished) {
+        _cur_term->_ondemand_rebalance_requested = false;
+
         // make a copy in case the collection is modified concurrently.
         auto nodes_to_finish = _state.nodes_to_rebalance();
         co_await ss::max_concurrent_for_each(

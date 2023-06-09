@@ -1289,13 +1289,15 @@ partition_balancer_planner::get_full_node_actions(request_context& ctx) {
 
 ss::future<> partition_balancer_planner::get_counts_rebalancing_actions(
   request_context& ctx) {
-    if (ctx.state().nodes_to_rebalance().empty()) {
-        co_return;
-    }
+    if (!ctx.config().ondemand_rebalance_requested) {
+        if (ctx.state().nodes_to_rebalance().empty()) {
+            co_return;
+        }
 
-    if (ctx.config().mode < model::partition_autobalancing_mode::node_add) {
-        ctx._counts_rebalancing_finished = true;
-        co_return;
+        if (ctx.config().mode < model::partition_autobalancing_mode::node_add) {
+            ctx._counts_rebalancing_finished = true;
+            co_return;
+        }
     }
 
     if (!ctx.can_add_reassignment()) {
@@ -1440,7 +1442,8 @@ partition_balancer_planner::plan_actions(
     if (
       result.violations.is_empty() && ctx.decommissioning_nodes.empty()
       && _state.ntps_with_broken_rack_constraint().empty()
-      && _state.nodes_to_rebalance().empty()) {
+      && _state.nodes_to_rebalance().empty()
+      && !_config.ondemand_rebalance_requested) {
         result.status = status::empty;
         co_return result;
     }
