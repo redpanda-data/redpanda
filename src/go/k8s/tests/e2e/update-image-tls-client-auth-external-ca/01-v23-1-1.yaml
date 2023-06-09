@@ -32,4 +32,7 @@ spec:
       tls:
         enabled: true
         requireClientAuth: true
+        nodeSecretRef:
+          name: upd-schema-registry-secret-node-certificate
+          namespace: redpanda-system
     developerMode: true

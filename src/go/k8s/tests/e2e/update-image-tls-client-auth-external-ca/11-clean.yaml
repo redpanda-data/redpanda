@@ -5,6 +5,10 @@ delete:
     kind: Cluster
     name: update-img-external-client-ca
     namespace: redpanda-system
+  - apiVersion: redpanda.vectorized.io/v1alpha1
+    kind: Console
+    name: upd-schema-registry-mtls-console
+    namespace: redpanda-system
   - apiVersion: v1
     kind: PersistentVolumeClaim
     name: datadir-update-img-external-client-ca-0
@@ -32,4 +36,8 @@ delete:
   - apiVersion: batch/v1
     kind: Job
     name: get-schema-failure-update-img-external-client-ca
+    namespace: redpanda-system
+  - apiVersion: batch/v1
+    kind: Job
+    name: call-console-update-img-external-client-ca
     namespace: redpanda-system

@@ -8,7 +8,7 @@ spec:
       volumes:
         - name: client-cert-key
           secret:
-            secretName: client-cert-key
+            secretName: upd-mtls-client-cert-key
       containers:
         - name: rpk
           image: localhost/redpanda:dev

@@ -507,6 +507,11 @@ spec:
                 properties:
                   enabled:
                     type: boolean
+                  useSchemaRegistryCA:
+                    description: Indication on whether to use the schema registry
+                      CA as trust when connecting to the schema registry. If not set,
+                      the public CAs will be used.
+                    type: boolean
                 required:
                 - enabled
                 type: object
@@ -770,6 +775,10 @@ spec:
                 description: Total number of available pods (ready for at least minReadySeconds)
                   targeted by this deployment.
                 format: int32
+                type: integer
+              clusterGeneration:
+                description: The generation of the Repanda cluster
+                format: int64
                 type: integer
               configMapRef:
                 description: The ConfigMap used by Console This is used to pass the
