@@ -1047,4 +1047,28 @@ FIXTURE_TEST(test_async_manifest_view_retention, async_manifest_view_fixture) {
     BOOST_REQUIRE(rr5.has_value());
     BOOST_REQUIRE_EQUAL(rr5.value().offset, prefix_base_offset);
     BOOST_REQUIRE_EQUAL(rr5.value().delta, prefix_delta);
+
+    // Check case when the start offset in the archive is advanced past
+    // start kafka offset override.
+    auto cur_res = view.get_active(*view.stm().get_start_offset()).get();
+    BOOST_REQUIRE(!cur_res.has_error());
+    auto cur = std::move(cur_res.value());
+    // Set expected offset to the start of the second segment
+    cur->next().get();
+    prefix_base_offset = cur->manifest()->get().begin()->base_offset;
+    prefix_delta = cur->manifest()->get().begin()->delta_offset;
+    stm_manifest.advance_start_kafka_offset(prefix_base_offset - prefix_delta);
+    vlog(
+      test_log.info,
+      "Triggering offset-based retention, current start kafka offset override: "
+      "{}, expected offset: {}, expected delta: {}",
+      stm_manifest.get_start_kafka_offset_override(),
+      prefix_base_offset,
+      prefix_delta);
+
+    auto rr6 = view.compute_retention(total_size, storage_duration).get();
+
+    BOOST_REQUIRE(rr6.has_value());
+    BOOST_REQUIRE_EQUAL(rr6.value().offset, prefix_base_offset);
+    BOOST_REQUIRE_EQUAL(rr6.value().delta, prefix_delta);
 }

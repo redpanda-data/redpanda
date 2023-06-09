@@ -609,6 +609,14 @@ void partition_manifest::set_archive_start_offset(
     if (_archive_start_offset < start_rp_offset) {
         _archive_start_offset = start_rp_offset;
         _archive_start_offset_delta = start_delta;
+        auto new_so = _archive_start_offset - _archive_start_offset_delta;
+        if (new_so > _start_kafka_offset) {
+            // The _archive_start_offset can only be set to segment boundary
+            // but _start_kafka_offset can be inside the segment. Because of
+            // that the _archive_start_offset could be placed below the
+            // _start_kafka_offset set by the user.
+            _start_kafka_offset = kafka::offset{};
+        }
     } else {
         vlog(
           cst_log.warn,

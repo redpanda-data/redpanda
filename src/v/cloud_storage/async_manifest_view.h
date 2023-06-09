@@ -312,6 +312,9 @@ private:
     ss::future<result<archive_start_offset_advance, error_outcome>>
     size_based_retention(size_t size_limit) noexcept;
 
+    ss::future<result<archive_start_offset_advance, error_outcome>>
+    offset_based_retention() noexcept;
+
     ss::future<> run_bg_loop();
 
     /// Scan the bucket and update the list of spillover manifests in

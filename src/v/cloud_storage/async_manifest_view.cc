@@ -1043,6 +1043,65 @@ async_manifest_view::compute_retention(
     } else {
         result = time_result;
     }
+    if (
+      _stm_manifest.get_start_kafka_offset_override() != kafka::offset{}
+      && _stm_manifest.get_start_kafka_offset_override() > result.offset) {
+        // The start kafka offset is placed above the retention boundary. We
+        // need to adjust retention boundary to remove all data up to start
+        // kafka offset.
+        vlog(
+          _ctxlog.debug,
+          "Start kafka offset override {} exceeds computed retention {}",
+          _stm_manifest.get_start_kafka_offset_override(),
+          result.offset);
+        auto r = co_await offset_based_retention();
+        if (r.has_error()) {
+            vlog(
+              _ctxlog.error,
+              "Failed to compute offset-based retention",
+              r.error());
+        }
+        result = r.value();
+    }
+    co_return result;
+}
+
+ss::future<
+  result<async_manifest_view::archive_start_offset_advance, error_outcome>>
+async_manifest_view::offset_based_retention() noexcept {
+    archive_start_offset_advance result;
+    try {
+        auto boundary = _stm_manifest.get_start_kafka_offset_override();
+        auto res = co_await get_active(boundary);
+        if (res.has_failure() && res.error() != error_outcome::out_of_range) {
+            vlog(
+              _ctxlog.error,
+              "Failed to compute time-based retention {}",
+              res.error());
+            co_return res.as_failure();
+        }
+        if (res.has_failure() && res.error() == error_outcome::out_of_range) {
+            // The cutoff point is outside of the offset range, no need to
+            // do anything
+            vlog(
+              _ctxlog.debug,
+              "There is no segment old enough to be removed by retention");
+        } else {
+            const auto& manifest = res.value()->manifest()->get();
+            vassert(
+              !manifest.empty(),
+              "{} Spillover manifest can't be empty",
+              get_ntp());
+            result.offset = manifest.begin()->base_offset;
+            result.delta = manifest.begin()->delta_offset;
+        }
+    } catch (...) {
+        vlog(
+          _ctxlog.error,
+          "Failed to compute retention {}",
+          std::current_exception());
+        co_return error_outcome::failure;
+    }
     co_return result;
 }
 
