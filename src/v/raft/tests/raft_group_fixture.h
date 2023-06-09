@@ -317,7 +317,7 @@ struct raft_node {
     void
     create_connection_to(model::node_id self, const model::broker& broker) {
         for (ss::shard_id i = 0; i < ss::smp::count; ++i) {
-            auto sh = rpc::connection_cache::shard_for(self, i, broker.id());
+            auto sh = cache.local().shard_for(self, i, broker.id());
             cache
               .invoke_on(
                 sh,

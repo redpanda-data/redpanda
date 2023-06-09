@@ -99,4 +99,32 @@ ss::future<> connection_cache::stop() {
     return _gate.close();
 }
 
+ss::shard_id connection_cache::shard_for(
+  model::node_id self,
+  ss::shard_id src_shard,
+  model::node_id n,
+  ss::shard_id total_shards) const {
+    if (ss::smp::count <= 8) {
+        return src_shard;
+    }
+    static const constexpr size_t vnodes = 8;
+    /// make deterministic - choose 1 prime to mix node_id with
+    /// https://planetmath.org/goodhashtableprimes
+    static const constexpr std::array<size_t, vnodes> universe{
+      {12582917,
+       25165843,
+       50331653,
+       100663319,
+       201326611,
+       402653189,
+       805306457,
+       1610612741}};
+
+    // NOLINTNEXTLINE
+    size_t h = universe[jump_consistent_hash(src_shard, vnodes)];
+    boost::hash_combine(h, std::hash<model::node_id>{}(n));
+    boost::hash_combine(h, std::hash<model::node_id>{}(self));
+    // use self node id to shift jump_consistent_hash_assignment
+    return jump_consistent_hash(h, total_shards);
+}
 } // namespace rpc

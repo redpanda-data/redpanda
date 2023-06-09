@@ -34,11 +34,11 @@ public:
     using underlying = std::unordered_map<model::node_id, transport_ptr>;
     using iterator = typename underlying::iterator;
 
-    static inline ss::shard_id shard_for(
+    ss::shard_id shard_for(
       model::node_id self,
       ss::shard_id src,
       model::node_id node,
-      ss::shard_id max_shards = ss::smp::count);
+      ss::shard_id max_shards = ss::smp::count) const;
 
     explicit connection_cache(
       ss::sharded<ss::abort_source>&,
@@ -165,33 +165,4 @@ private:
     ss::optimized_optional<ss::abort_source::subscription> _as_subscription;
     bool _shutting_down = false;
 };
-inline ss::shard_id connection_cache::shard_for(
-  model::node_id self,
-  ss::shard_id src_shard,
-  model::node_id n,
-  ss::shard_id total_shards) {
-    if (ss::smp::count <= 8) {
-        return src_shard;
-    }
-    static const constexpr size_t vnodes = 8;
-    /// make deterministic - choose 1 prime to mix node_id with
-    /// https://planetmath.org/goodhashtableprimes
-    static const constexpr std::array<size_t, vnodes> universe{
-      {12582917,
-       25165843,
-       50331653,
-       100663319,
-       201326611,
-       402653189,
-       805306457,
-       1610612741}};
-
-    // NOLINTNEXTLINE
-    size_t h = universe[jump_consistent_hash(src_shard, vnodes)];
-    boost::hash_combine(h, std::hash<model::node_id>{}(n));
-    boost::hash_combine(h, std::hash<model::node_id>{}(self));
-    // use self node id to shift jump_consistent_hash_assignment
-    return jump_consistent_hash(h, total_shards);
-}
-
 } // namespace rpc
