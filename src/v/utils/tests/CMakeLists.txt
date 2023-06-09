@@ -45,6 +45,7 @@ rp_test(
     move_canary_test.cc
     moving_average_test.cc
     named_type_tests.cc
+    stable_iterator_test.cc
     string_switch_test.cc
     tracking_allocator_tests.cc
     tristate_test.cc
