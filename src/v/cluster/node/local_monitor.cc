@@ -47,14 +47,10 @@ local_monitor::local_monitor(
   config::binding<size_t> alert_bytes,
   config::binding<unsigned> alert_percent,
   config::binding<size_t> min_bytes,
-  ss::sstring data_directory,
-  ss::sstring cache_directory,
   ss::sharded<storage::node>& node_api)
   : _free_bytes_alert_threshold(std::move(alert_bytes))
   , _free_percent_alert_threshold(std::move(alert_percent))
   , _min_free_bytes(std::move(min_bytes))
-  , _data_directory(std::move(data_directory))
-  , _cache_directory(std::move(cache_directory))
   , _storage_node_api(node_api) {}
 
 ss::future<> local_monitor::_update_loop() {
@@ -102,25 +98,26 @@ size_t local_monitor::alert_percent_in_bytes(
     return percent_factor * bytes_available;
 }
 
-storage::disk local_monitor::statvfs_to_disk(const struct statvfs& svfs) {
+storage::disk
+local_monitor::statvfs_to_disk(const storage::node::stat_info& info) {
     // f_bsize is a historical linux-ism, use f_frsize
+    const auto& svfs = info.stat;
     uint64_t free = svfs.f_bfree * svfs.f_frsize;
     uint64_t total = svfs.f_blocks * svfs.f_frsize;
 
     return storage::disk{
-      .path = _data_directory,
+      .path = info.path,
       .free = free,
       .total = total,
     };
 }
 
 ss::future<> local_monitor::update_disks(local_state& state) {
-    auto data_svfs = co_await _storage_node_api.local().get_statvfs(
-      _data_directory);
-    auto cache_svfs = co_await _storage_node_api.local().get_statvfs(
-      _cache_directory);
+    using dt = storage::node::disk_type;
+    auto data_svfs = co_await _storage_node_api.local().get_statvfs(dt::data);
+    auto cache_svfs = co_await _storage_node_api.local().get_statvfs(dt::cache);
     state.data_disk = statvfs_to_disk(data_svfs);
-    if (cache_svfs.f_fsid != data_svfs.f_fsid) {
+    if (cache_svfs.stat.f_fsid != data_svfs.stat.f_fsid) {
         state.cache_disk = statvfs_to_disk(cache_svfs);
     } else {
         state.cache_disk = std::nullopt;

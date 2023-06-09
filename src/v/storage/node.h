@@ -34,6 +34,8 @@ public:
 
     enum class disk_type { data, cache };
 
+    node(ss::sstring data_directory, ss::sstring cache_directory);
+
     ss::future<> start();
     ss::future<> stop();
 
@@ -46,7 +48,12 @@ public:
     notification_id register_disk_notification(disk_type t, disk_cb_t cb);
     void unregister_disk_notification(disk_type t, notification_id id);
 
-    ss::future<struct statvfs> get_statvfs(ss::sstring path);
+    struct stat_info {
+        ss::sstring path;
+        struct statvfs stat;
+    };
+
+    ss::future<stat_info> get_statvfs(disk_type);
 
     void testing_only_set_statvfs(std::function<struct statvfs(ss::sstring)>);
 
@@ -58,6 +65,9 @@ private:
 
     std::function<struct statvfs(ss::sstring)> _statvfs_for_test;
     std::optional<size_t> _disk_size_for_test;
+
+    ss::sstring _data_directory;
+    ss::sstring _cache_directory;
 };
 
 } // namespace storage
