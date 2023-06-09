@@ -221,16 +221,16 @@ pub struct MetadataGap {
 #[derive(Serialize, Clone)]
 pub struct Anomalies {
     /// Segment objects not mentioned in their manifest
-    pub segments_outside_manifest: Vec<String>,
+    pub segments_outside_manifest: HashSet<String>,
 
     /// Archive manifests not referenced by a head manifest
-    pub archive_manifests_outside_manifest: Vec<String>,
+    pub archive_manifests_outside_manifest: HashSet<String>,
 
     /// PartitionManifest that could not be loaded
-    pub malformed_manifests: Vec<String>,
+    pub malformed_manifests: HashSet<String>,
 
     /// TopicManifest that could not be loaded
-    pub malformed_topic_manifests: Vec<String>,
+    pub malformed_topic_manifests: HashSet<String>,
 
     /// NTPR that had segment objects, but no partition manifest
     pub ntpr_no_manifest: HashSet<NTPR>,
@@ -239,10 +239,10 @@ pub struct Anomalies {
     pub ntr_no_topic_manifest: HashSet<NTR>,
 
     /// Keys that do not look like any object we expect
-    pub unknown_keys: Vec<String>,
+    pub unknown_keys: HashSet<String>,
 
     /// Segments referenced by a manifest, which do not exist in the bucket
-    pub missing_segments: Vec<String>,
+    pub missing_segments: HashSet<String>,
 
     /// NTPR that failed consistency checks on its segments' metadata
     pub ntpr_bad_deltas: HashSet<NTPR>,
@@ -384,14 +384,14 @@ pub enum AnomalyStatus {
 impl Anomalies {
     fn new() -> Anomalies {
         Self {
-            segments_outside_manifest: vec![],
-            archive_manifests_outside_manifest: vec![],
-            malformed_manifests: vec![],
-            malformed_topic_manifests: vec![],
+            segments_outside_manifest: HashSet::new(),
+            archive_manifests_outside_manifest: HashSet::new(),
+            malformed_manifests: HashSet::new(),
+            malformed_topic_manifests: HashSet::new(),
             ntpr_no_manifest: HashSet::new(),
             ntr_no_topic_manifest: HashSet::new(),
-            unknown_keys: vec![],
-            missing_segments: vec![],
+            unknown_keys: HashSet::new(),
+            missing_segments: HashSet::new(),
             ntpr_bad_deltas: HashSet::new(),
             ntpr_overlap_offsets: HashSet::new(),
             metadata_offset_gaps: HashMap::new(),
@@ -855,7 +855,7 @@ impl BucketReader {
                 Some(p_metadata) => {
                     for o in partition_objects.segment_objects.values() {
                         if !p_metadata.contains_segment(&o) {
-                            self.anomalies.segments_outside_manifest.push(o.key.clone());
+                            self.anomalies.segments_outside_manifest.insert(o.key.clone());
                         }
                     }
                 }
@@ -882,7 +882,7 @@ impl BucketReader {
                     for am in &partition_metadata.archive_manifests {
                         self.anomalies
                             .archive_manifests_outside_manifest
-                            .push(am.key(ntpr))
+                            .insert(am.key(ntpr));
                     }
                     continue;
                 }
@@ -925,7 +925,7 @@ impl BucketReader {
                     )
                     .await?
                     {
-                        self.anomalies.missing_segments.push(expect_key);
+                        self.anomalies.missing_segments.insert(expect_key);
                         // TODO: we should re-read manifest in case the segment
                         // was legitimately GC'd while we were scanning
                     }
@@ -1391,7 +1391,7 @@ impl BucketReader {
                 Ok(m) => m,
                 Err(e) => {
                     warn!("Error parsing partition manifest {}: {:?}", key, e);
-                    self.anomalies.malformed_manifests.push(key.to_string());
+                    self.anomalies.malformed_manifests.insert(key.to_string());
                     return Ok(());
                 }
             };
@@ -1413,7 +1413,7 @@ impl BucketReader {
             }
         } else {
             warn!("Malformed partition manifest key {}", key);
-            self.anomalies.malformed_manifests.push(key.to_string());
+            self.anomalies.malformed_manifests.insert(key.to_string());
         }
         Ok(())
     }
@@ -1458,7 +1458,7 @@ impl BucketReader {
                 Ok(m) => m,
                 Err(e) => {
                     warn!("Error parsing partition archive manifest {}: {:?}", key, e);
-                    self.anomalies.malformed_manifests.push(key.to_string());
+                    self.anomalies.malformed_manifests.insert(key.to_string());
                     // This is OK because we cleanly logged anomaly.
                     return Ok(());
                 }
@@ -1491,7 +1491,7 @@ impl BucketReader {
             }
         } else {
             warn!("Malformed partition archive manifest key {}", key);
-            self.anomalies.malformed_manifests.push(key.to_string());
+            self.anomalies.malformed_manifests.insert(key.to_string());
         }
         Ok(())
     }
@@ -1524,13 +1524,13 @@ impl BucketReader {
                 warn!("Error parsing JSON topic manifest {}", key);
                 self.anomalies
                     .malformed_topic_manifests
-                    .push(key.to_string());
+                    .insert(key.to_string());
             }
         } else {
             warn!("Malformed topic manifest key {}", key);
             self.anomalies
                 .malformed_topic_manifests
-                .push(key.to_string());
+                .insert(key.to_string());
         }
         Ok(())
     }
@@ -1630,7 +1630,7 @@ impl BucketReader {
             )
         } else {
             debug!("Ignoring non-segment-like key {}", key);
-            self.anomalies.unknown_keys.push(key.to_string());
+            self.anomalies.unknown_keys.insert(key.to_string());
             return;
         };
 
