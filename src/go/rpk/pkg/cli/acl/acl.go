@@ -12,6 +12,7 @@ package acl
 import (
 	"fmt"
 
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/acl/user"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
@@ -38,7 +39,7 @@ func NewCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	cmd.AddCommand(newCreateCommand(fs, p))
 	cmd.AddCommand(newDeleteCommand(fs, p))
 	cmd.AddCommand(newListCommand(fs, p))
-	cmd.AddCommand(newUserCommand(fs, p))
+	cmd.AddCommand(user.NewCommand(fs, p))
 	return cmd
 }
 
