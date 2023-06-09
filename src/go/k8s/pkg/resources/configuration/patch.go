@@ -13,14 +13,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
-	"reflect"
 	"sort"
 	"strconv"
 	"strings"
 
 	"github.com/go-logr/logr"
-	"gopkg.in/yaml.v3"
-
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/api/admin"
 )
 
@@ -79,8 +76,7 @@ func ThreeWayMerge(
 	}
 	for k, v := range apply {
 		if oldValue, ok := current[k]; !ok || !PropertiesEqual(log, v, oldValue, schema[k]) {
-			metadata := schema[k]
-			patch.Upsert[k] = parseConfigValueBeforeUpsert(log, v, &metadata)
+			patch.Upsert[k] = v
 		}
 	}
 	invalidSet := make(map[string]bool, len(invalidProperties))
@@ -97,44 +93,6 @@ func ThreeWayMerge(
 	}
 	sort.Strings(patch.Remove)
 	return patch
-}
-
-func parseConfigValueBeforeUpsert(log logr.Logger, value interface{}, metadata *admin.ConfigPropertyMetadata) interface{} {
-	tempValue := fmt.Sprintf("%v", value)
-
-	//nolint:gocritic // no need to be a switch case
-	if metadata.Nullable && tempValue == "null" {
-		return nil
-	} else if metadata.Type != "string" && (tempValue == "") {
-		log.Info(fmt.Sprintf("Non-string types that receive an empty string: %v", value))
-		return value
-	} else if metadata.Type == "array" { //nolint:goconst // we wish to be explicit here
-		a, err := convertStringToStringArray(tempValue)
-		if err != nil {
-			log.Info(fmt.Sprintf("could not parse: invalid list syntax: %v", value))
-			return value
-		}
-		return a
-	}
-
-	return value
-}
-
-func convertStringToStringArray(value string) ([]string, error) {
-	a := make([]string, 0)
-	err := yaml.Unmarshal([]byte(value), &a)
-
-	if len(a) == 1 {
-		// it is possible this was not comma separated, so let's make it so and retry unmarshalling
-		b := make([]string, 0)
-		errB := yaml.Unmarshal([]byte(strings.ReplaceAll(value, " ", ",")), &b)
-		if errB == nil && len(b) > len(a) {
-			sort.Strings(b)
-			return b, errB
-		}
-	}
-	sort.Strings(a)
-	return a, err
 }
 
 // PropertiesEqual tries to compare two property values using metadata information about the schema,
@@ -155,14 +113,6 @@ func PropertiesEqual(
 			return i1 == i2
 		}
 		log.Info(schemaMismatchInfoLog, "type", metadata.Type, "v1", v1, "v2", v2)
-	case "array":
-		v1Parsed, errV1 := convertStringToStringArray(fmt.Sprintf("%v", v1))
-		v2Parsed, errV2 := convertStringToStringArray(fmt.Sprintf("%v", v2))
-		if errV1 == nil && errV2 == nil {
-			// must be sorted the same way otherwise the return will be false even though they contain the same items
-			return reflect.DeepEqual(v1Parsed, v2Parsed)
-		}
-		log.Info(fmt.Sprintf("error occurred trying to parse configurations: %s, %s", errV1, errV2), "type", metadata.Type, "v1", v1, "v2", v2)
 	}
 	// Other cases are correctly managed by LooseEqual
 	return LooseEqual(v1, v2)
