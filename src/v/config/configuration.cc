@@ -130,36 +130,11 @@ configuration::configuration()
       {.example = "65536"},
       std::nullopt,
       {.min = 32_KiB, .align = 4_KiB})
-  , enable_coproc(
-      *this,
-      "enable_coproc",
-      "Enable coprocessing mode",
-      {.visibility = visibility::user},
-      false)
-  , coproc_max_inflight_bytes(
-      *this,
-      "coproc_max_inflight_bytes",
-      "Maximum amountt of inflight bytes when sending data to wasm engine",
-      {.visibility = visibility::tunable},
-      10_MiB)
-  , coproc_max_ingest_bytes(
-      *this,
-      "coproc_max_ingest_bytes",
-      "Maximum amount of data to hold from input logs in memory",
-      {.visibility = visibility::tunable},
-      640_KiB)
-  , coproc_max_batch_size(
-      *this,
-      "coproc_max_batch_size",
-      "Maximum amount of bytes to read from one topic read",
-      {.visibility = visibility::tunable},
-      32_KiB)
-  , coproc_offset_flush_interval_ms(
-      *this,
-      "coproc_offset_flush_interval_ms",
-      "Interval for which all coprocessor offsets are flushed to disk",
-      {.visibility = visibility::tunable},
-      300000ms) // five minutes
+  , enable_coproc(*this, "enable_coproc")
+  , coproc_max_inflight_bytes(*this, "coproc_max_inflight_bytes")
+  , coproc_max_ingest_bytes(*this, "coproc_max_ingest_bytes")
+  , coproc_max_batch_size(*this, "coproc_max_batch_size")
+  , coproc_offset_flush_interval_ms(*this, "coproc_offset_flush_interval_ms")
   , topic_memory_per_partition(
       *this,
       "topic_memory_per_partition",

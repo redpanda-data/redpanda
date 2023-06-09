@@ -114,12 +114,7 @@ node_config::node_config() noexcept
       {.visibility = visibility::user},
       {},
       endpoint_tls_config::validate_many)
-  , coproc_supervisor_server(
-      *this,
-      "coproc_supervisor_server",
-      "IpAddress and port for supervisor service",
-      {.visibility = visibility::user},
-      net::unresolved_address("127.0.0.1", 43189))
+  , coproc_supervisor_server(*this, "coproc_supervisor_server")
   , admin_api_doc_dir(
       *this,
       "admin_api_doc_dir",

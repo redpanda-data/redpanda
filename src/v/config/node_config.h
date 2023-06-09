@@ -49,7 +49,7 @@ public:
     one_or_many_property<endpoint_tls_config> admin_api_tls;
 
     // Coproc/wasm
-    property<net::unresolved_address> coproc_supervisor_server;
+    deprecated_property coproc_supervisor_server;
 
     // HTTP server content dirs
     property<ss::sstring> admin_api_doc_dir;

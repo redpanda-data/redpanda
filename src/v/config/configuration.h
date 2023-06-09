@@ -59,11 +59,11 @@ struct configuration final : public config_store {
     bounded_property<std::optional<int>> rpc_server_tcp_recv_buf;
     bounded_property<std::optional<int>> rpc_server_tcp_send_buf;
     // Coproc
-    property<bool> enable_coproc;
-    property<size_t> coproc_max_inflight_bytes;
-    property<size_t> coproc_max_ingest_bytes;
-    property<size_t> coproc_max_batch_size;
-    property<std::chrono::milliseconds> coproc_offset_flush_interval_ms;
+    deprecated_property enable_coproc;
+    deprecated_property coproc_max_inflight_bytes;
+    deprecated_property coproc_max_ingest_bytes;
+    deprecated_property coproc_max_batch_size;
+    deprecated_property coproc_offset_flush_interval_ms;
 
     // Controller
     bounded_property<std::optional<std::size_t>> topic_memory_per_partition;
