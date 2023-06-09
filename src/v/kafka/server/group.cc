@@ -49,7 +49,8 @@ group::group(
   kafka::group_id id,
   group_state s,
   config::configuration& conf,
-  ss::lw_shared_ptr<cluster::partition> partition,
+  ss::lw_shared_ptr<attached_partition> p,
+  model::term_id term,
   ss::sharded<cluster::tx_gateway_frontend>& tx_frontend,
   ss::sharded<features::feature_table>& feature_table,
   group_metadata_serializer serializer,
@@ -61,11 +62,13 @@ group::group(
   , _num_members_joining(0)
   , _new_member_added(false)
   , _conf(conf)
-  , _partition(std::move(partition))
+  , _p(p)
+  , _partition(p != nullptr ? p->partition : nullptr)
   , _probe(_members, _static_members, _offsets)
   , _ctxlog(klog, *this)
   , _ctx_txlog(cluster::txlog, *this)
   , _md_serializer(std::move(serializer))
+  , _term(term)
   , _enable_group_metrics(group_metrics)
   , _abort_interval_ms(config::shard_local_cfg()
                          .abort_timed_out_transactions_interval_ms.value())
@@ -82,7 +85,8 @@ group::group(
   kafka::group_id id,
   group_metadata_value& md,
   config::configuration& conf,
-  ss::lw_shared_ptr<cluster::partition> partition,
+  ss::lw_shared_ptr<attached_partition> p,
+  model::term_id term,
   ss::sharded<cluster::tx_gateway_frontend>& tx_frontend,
   ss::sharded<features::feature_table>& feature_table,
   group_metadata_serializer serializer,
@@ -100,11 +104,13 @@ group::group(
   , _leader(md.leader)
   , _new_member_added(false)
   , _conf(conf)
-  , _partition(std::move(partition))
+  , _p(p)
+  , _partition(p->partition)
   , _probe(_members, _static_members, _offsets)
   , _ctxlog(klog, *this)
   , _ctx_txlog(cluster::txlog, *this)
   , _md_serializer(std::move(serializer))
+  , _term(term)
   , _enable_group_metrics(group_metrics)
   , _abort_interval_ms(config::shard_local_cfg()
                          .abort_timed_out_transactions_interval_ms.value())
@@ -1661,8 +1667,15 @@ void group::fail_offset_commit(
 }
 
 void group::reset_tx_state(model::term_id term) {
+    // must be invoked under catchup_lock.hold_write_lock()
+    // all other tx methods should use catchup_lock.hold_read_lock()
+    // to avoid modifying the state of the executing tx methods
     _term = term;
     _volatile_txs.clear();
+    _prepared_txs.clear();
+    _expiration_info.clear();
+    _tx_data.clear();
+    _fence_pid_epoch.clear();
 }
 
 void group::insert_prepared(prepared_tx tx) {
@@ -1696,14 +1709,14 @@ group::commit_tx(cluster::commit_group_tx_request r) {
     if (fence_it == _fence_pid_epoch.end()) {
         vlog(
           _ctx_txlog.warn,
-          "Can't prepare tx: fence with pid {} isn't set",
+          "Can't commit tx: fence with pid {} isn't set",
           r.pid);
         co_return make_commit_tx_reply(cluster::tx_errc::request_rejected);
     }
     if (r.pid.get_epoch() != fence_it->second) {
         vlog(
           _ctx_txlog.trace,
-          "Can't prepare tx with pid {} - the fence doesn't match {}",
+          "Can't commit tx with pid {} - the fence doesn't match {}",
           r.pid,
           fence_it->second);
         co_return make_commit_tx_reply(cluster::tx_errc::request_rejected);
@@ -1902,17 +1915,22 @@ group::begin_tx(cluster::begin_group_tx_request r) {
 
     auto reader = model::make_memory_record_batch_reader(
       std::move(batch.value()));
-    auto e = co_await _partition->raft()->replicate(
+    auto res = co_await _partition->raft()->replicate(
       _term,
       std::move(reader),
       raft::replicate_options(raft::consistency_level::quorum_ack));
 
-    if (!e) {
+    if (!res) {
         vlog(
           _ctx_txlog.warn,
           "Error \"{}\" on replicating pid:{} fencing batch",
-          e.error(),
+          res.error(),
           r.pid);
+        if (
+          _partition->raft()->is_leader()
+          && _partition->raft()->term() == _term) {
+            co_await _partition->raft()->step_down("group begin_tx failed");
+        }
         co_return make_begin_tx_reply(cluster::tx_errc::leader_not_found);
     }
 
@@ -1923,9 +1941,9 @@ group::begin_tx(cluster::begin_group_tx_request r) {
         _volatile_txs[r.pid] = volatile_tx{.tx_seq = r.tx_seq};
     }
 
-    auto res = _expiration_info.insert_or_assign(
+    auto [it, _] = _expiration_info.insert_or_assign(
       r.pid, expiration_info(r.timeout));
-    try_arm(res.first->second.deadline());
+    try_arm(it->second.deadline());
 
     cluster::begin_group_tx_reply reply;
     reply.etag = _term;
@@ -2258,6 +2276,12 @@ group::store_txn_offsets(txn_offset_commit_request r) {
       raft::replicate_options(raft::consistency_level::quorum_ack));
 
     if (!e) {
+        if (
+          _partition->raft()->is_leader()
+          && _partition->raft()->term() == _term) {
+            co_await _partition->raft()->step_down(
+              "group store_txn_offsets failed");
+        }
         co_return txn_offset_commit_response(
           r, error_code::unknown_server_error);
     }
@@ -3210,6 +3234,8 @@ void group::maybe_rearm_timer() {
 }
 
 ss::future<> group::do_abort_old_txes() {
+    auto units = co_await _p->catchup_lock.hold_read_lock();
+
     std::vector<model::producer_identity> pids;
     for (auto& [id, _] : _prepared_txs) {
         pids.push_back(id);
