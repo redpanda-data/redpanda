@@ -68,6 +68,8 @@ public:
 
     partition_balancer_overview_reply overview() const;
 
+    ss::future<std::error_code> request_rebalance();
+
 private:
     void tick();
     ss::future<> do_tick();
@@ -130,6 +132,8 @@ private:
         partition_balancer_status last_status
           = partition_balancer_status::starting;
         size_t last_tick_in_progress_updates = 0;
+
+        bool _ondemand_rebalance_requested = false;
     };
     std::optional<per_term_state> _cur_term;
 

@@ -40,6 +40,9 @@ struct planner_config {
     // Max number of actions that can be scheduled in one planning iteration
     size_t max_concurrent_actions;
     std::chrono::seconds node_availability_timeout_sec;
+    // If the user manually requested a rebalance (not connected to node
+    // addition)
+    bool ondemand_rebalance_requested = false;
     // Fallocation step used to calculate upperbound for partition size
     size_t segment_fallocation_step;
     // Threshold for minimum size of partition that is going to be prioritized
