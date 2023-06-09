@@ -123,7 +123,7 @@ void kafka_batch_adapter::verify_crc(int32_t expected_crc, iobuf_parser in) {
     if (unlikely((uint32_t)expected_crc != crc.value())) {
         valid_crc = false;
         vlog(
-          klog.error,
+          klog.warn,
           "Cannot validate Kafka record batch. Missmatching CRC. Expected:{}, "
           "Got:{}",
           expected_crc,
