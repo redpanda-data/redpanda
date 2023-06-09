@@ -13,3 +13,4 @@ quick:
 
   excluded:
   - tests/rpk_tuner_test.py
+  - tests/rpk_cloud_test.py
