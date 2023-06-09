@@ -162,14 +162,7 @@ class CloudStorageCompactionTest(EndToEndTest):
                    timeout_sec=30,
                    backoff_sec=5)
 
-    # Permit transient CRC errors, to protect this test from incidences of
-    # https://github.com/redpanda-data/redpanda/issues/6631
-    # TODO: remove this low allow-list when that issue is resolved.
-    @cluster(num_nodes=9,
-             log_allow_list=[
-                 "Cannot validate Kafka record batch. Missmatching CRC",
-                 "batch has invalid CRC"
-             ])
+    @cluster(num_nodes=9)
     @matrix(
         cloud_storage_type=get_cloud_storage_type(docker_use_arbitrary=True))
     def test_read_from_replica(self, cloud_storage_type):
