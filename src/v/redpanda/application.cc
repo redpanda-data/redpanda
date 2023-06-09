@@ -1640,15 +1640,17 @@ void application::wire_up_bootstrap_services() {
         return storage::internal::chunks().start();
     }).get();
     syschecks::systemd_message("Constructing storage services").get();
-    construct_single_service_sharded(storage_node).get();
+    construct_single_service_sharded(
+      storage_node,
+      config::node().data_directory().as_sstring(),
+      config::node().cloud_storage_cache_path().string())
+      .get();
     construct_single_service_sharded(
       local_monitor,
       config::shard_local_cfg().storage_space_alert_free_threshold_bytes.bind(),
       config::shard_local_cfg()
         .storage_space_alert_free_threshold_percent.bind(),
       config::shard_local_cfg().storage_min_free_bytes.bind(),
-      config::node().data_directory().as_sstring(),
-      config::node().cloud_storage_cache_path().string(),
       std::ref(storage_node))
       .get();
 

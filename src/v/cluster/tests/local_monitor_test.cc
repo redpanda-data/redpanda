@@ -66,6 +66,9 @@ local_monitor_fixture::local_monitor_fixture() {
         clusterlog.info("{}: created test dir {}", __func__, _test_path);
     }
 
+    _storage_node_api.start_single(_test_path.string(), _test_path.string())
+      .get0();
+
     _local_monitor
       .start(
         ss::sharded_parameter([] {
@@ -79,12 +82,8 @@ local_monitor_fixture::local_monitor_fixture() {
         ss::sharded_parameter([] {
             return config::shard_local_cfg().storage_min_free_bytes.bind();
         }),
-        _test_path.string(),
-        _test_path.string(),
         std::ref(_storage_node_api))
       .get();
-
-    _storage_node_api.start_single().get0();
 
     BOOST_ASSERT(ss::engine_is_ready());
 }

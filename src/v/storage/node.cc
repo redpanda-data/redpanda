@@ -12,6 +12,10 @@
 
 namespace storage {
 
+node::node(ss::sstring data_directory, ss::sstring cache_directory)
+  : _data_directory(std::move(data_directory))
+  , _cache_directory(std::move(cache_directory)) {}
+
 ss::future<> node::start() {
     // Intentionally undocumented environment variable, only for use
     // in integration tests.
@@ -67,8 +71,19 @@ void node::unregister_disk_notification(disk_type t, notification_id id) {
     }
 }
 
-ss::future<struct statvfs> node::get_statvfs(ss::sstring path) {
-    struct statvfs stat {};
+ss::future<node::stat_info> node::get_statvfs(disk_type type) {
+    const auto path = [&] {
+        switch (type) {
+        case disk_type::data:
+            return _data_directory;
+        case disk_type::cache:
+            return _cache_directory;
+        }
+    }();
+
+    stat_info info{};
+    info.path = path;
+    auto& stat = info.stat;
 
     if (unlikely(_statvfs_for_test)) {
         stat = _statvfs_for_test(path);
@@ -94,7 +109,7 @@ ss::future<struct statvfs> node::get_statvfs(ss::sstring path) {
         }
     }
 
-    co_return stat;
+    co_return info;
 }
 
 void node::testing_only_set_statvfs(
