@@ -20,6 +20,7 @@
 #include "cluster/topic_table.h"
 #include "config/property.h"
 #include "model/metadata.h"
+#include "random/generators.h"
 #include "test_utils/fixture.h"
 #include "units.h"
 
@@ -109,18 +110,25 @@ struct topic_table_fixture {
                      .value()
                      ->copy_assignments();
 
-        return cluster::topic_configuration_assignment(cfg, std::move(pas));
+        return {cfg, std::move(pas)};
     }
 
     cluster::create_topic_cmd make_create_topic_cmd(
       const ss::sstring& name, int partitions, int replication_factor) {
-        return cluster::create_topic_cmd(
+        return {
           make_tp_ns(name),
-          make_tp_configuration(name, partitions, replication_factor));
+          make_tp_configuration(name, partitions, replication_factor)};
     }
 
     model::topic_namespace make_tp_ns(const ss::sstring& tp) {
-        return model::topic_namespace(test_ns, model::topic(tp));
+        return {test_ns, model::topic(tp)};
+    }
+
+    void add_random_topic() {
+        auto cmd = make_create_topic_cmd(
+          random_generators::gen_alphanum_string(5), 1, 3);
+        auto res = table.local().apply(std::move(cmd), model::offset(0)).get0();
+        BOOST_REQUIRE_EQUAL(res, cluster::errc::success);
     }
 
     void create_topics() {
