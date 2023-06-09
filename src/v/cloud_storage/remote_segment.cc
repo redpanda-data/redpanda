@@ -96,72 +96,55 @@ inline void expiry_handler_impl(ss::promise<ss::file>& pr) {
     pr.set_exception(ss::timed_out_error());
 }
 
-static ss::sstring generate_log_prefix(
-  const partition_manifest& m, const partition_manifest::key& key) {
-    auto meta = m.get(key);
-    vassert(
-      meta.has_value(),
-      "Can't find segment metadata in manifest, key: {}",
-      key);
+static ss::sstring
+generate_log_prefix(const segment_meta& meta, const model::ntp& ntp) {
     return ssx::sformat(
-      "{} [{}:{}]",
-      m.get_ntp().path(),
-      meta->base_offset,
-      meta->committed_offset);
+      "{} [{}:{}]", ntp.path(), meta.base_offset, meta.committed_offset);
 }
 
 remote_segment::remote_segment(
   remote& r,
   cache& c,
   cloud_storage_clients::bucket_name bucket,
-  const partition_manifest& m,
-  model::offset key,
+  const remote_segment_path& path,
+  const model::ntp& ntp,
+  const segment_meta& meta,
   retry_chain_node& parent)
   : _api(r)
   , _cache(c)
   , _bucket(std::move(bucket))
-  , _ntp(m.get_ntp())
+  , _ntp(ntp)
+  , _path(path)
+  , _index_path(generate_index_path(path))
+  , _chunk_root(fmt::format("{}_chunks", _path().native()))
+  , _term(meta.segment_term)
+  , _base_rp_offset(meta.base_offset)
+  , _base_offset_delta(std::clamp(
+      meta.delta_offset, model::offset_delta(0), model::offset_delta::max()))
+  , _max_rp_offset(meta.committed_offset)
+  , _size(meta.size_bytes)
   , _rtc(&parent)
-  , _ctxlog(cst_log, _rtc, generate_log_prefix(m, key))
+  , _ctxlog(cst_log, _rtc, generate_log_prefix(meta, ntp))
   , _wait_list(expiry_handler_impl)
-  , _cache_backoff_jitter(cache_thrash_backoff) {
-    auto meta = m.get(key);
-    vassert(
-      meta.has_value(),
-      "Can't find segment metadata in manifest, key: {}",
-      key);
-
-    _path = m.generate_segment_path(*meta);
-    _index_path = generate_index_path(_path);
-    _chunk_root = fmt::format("{}_chunks", _path().native());
-
-    _term = meta->segment_term;
-
-    _base_rp_offset = meta->base_offset;
-    _max_rp_offset = meta->committed_offset;
-    _base_offset_delta = std::clamp(
-      meta->delta_offset, model::offset_delta(0), model::offset_delta::max());
-    _compacted = meta->is_compacted;
-    _size = meta->size_bytes;
-    _sname_format = meta->sname_format;
-
+  , _cache_backoff_jitter(cache_thrash_backoff)
+  , _compacted(meta.is_compacted)
+  , _sname_format(meta.sname_format)
+  , _chunk_size(config::shard_local_cfg().cloud_storage_cache_chunk_size())
+  // The max hydrated chunks per segment are either 0.5 of total number of
+  // chunks possible, or in case of small segments the total number of chunks
+  // possible. In the second case we should be able to hydrate the entire
+  // segment in chunks at the same time. In the first case roughly half the
+  // segment may be hydrated at a time.
+  , _chunks_in_segment(
+      std::max(static_cast<uint64_t>(ceil(_size / _chunk_size)), 1UL)) {
     if (
-      meta->sname_format == segment_name_format::v3
-      && meta->metadata_size_hint == 0) {
+      meta.sname_format == segment_name_format::v3
+      && meta.metadata_size_hint == 0) {
         // The tx-manifest is empty, no need to download it.
         _tx_range.emplace();
     }
 
-    _chunk_size = config::shard_local_cfg().cloud_storage_cache_chunk_size();
     vassert(_chunk_size != 0, "cloud_storage_cache_chunk_size should not be 0");
-
-    // The max hydrated chunks per segment are either 0.5 of total number of
-    // chunks possible, or in case of small segments the total number of chunks
-    // possible. In the second case we should be able to hydrate the entire
-    // segment in chunks at the same time. In the first case roughly half the
-    // segment may be hydrated at a time.
-    _chunks_in_segment = std::max(
-      static_cast<uint64_t>(ceil(_size / _chunk_size)), _chunks_in_segment);
 
     if (
       _chunks_in_segment <= config::shard_local_cfg()
@@ -170,7 +153,7 @@ remote_segment::remote_segment(
     } else {
         _max_hydrated_chunks = std::max(
           static_cast<uint64_t>(
-            _chunks_in_segment
+            static_cast<double>(_chunks_in_segment)
             * config::shard_local_cfg()
                 .cloud_storage_hydrated_chunks_per_segment_ratio),
           uint64_t{1});
@@ -186,7 +169,7 @@ remote_segment::remote_segment(
       _size);
 
     vlog(
-      _ctxlog.trace,
+      _ctxlog.debug,
       "total {} chunks in segment of size {}, max hydrated chunks at a time: "
       "{}, chunk size: {}",
       _chunks_in_segment,
@@ -197,6 +180,7 @@ remote_segment::remote_segment(
     _chunks_api.emplace(*this, _max_hydrated_chunks);
 
     if (config::shard_local_cfg().cloud_storage_disable_chunk_reads) {
+        vlog(_ctxlog.debug, "fallback mode enabled");
         _fallback_mode = fallback_mode::yes;
     }
 

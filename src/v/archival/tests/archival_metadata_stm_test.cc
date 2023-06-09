@@ -788,8 +788,17 @@ FIXTURE_TEST(
     archival_stm
       ->truncate(kafka::offset(200), ss::lowres_clock::now() + 10s, never_abort)
       .get();
+    // Start kafka offset is below SO.
     BOOST_REQUIRE_EQUAL(
-      archival_stm->get_start_kafka_offset(), kafka::offset(200));
+      archival_stm->get_start_kafka_offset(), kafka::offset(1000));
+    BOOST_REQUIRE_EQUAL(archival_stm->get_start_offset(), model::offset(1000));
+
+    archival_stm
+      ->truncate(
+        kafka::offset(1200), ss::lowres_clock::now() + 10s, never_abort)
+      .get();
+    BOOST_REQUIRE_EQUAL(
+      archival_stm->get_start_kafka_offset(), kafka::offset(1200));
     BOOST_REQUIRE_EQUAL(archival_stm->get_start_offset(), model::offset(1000));
 }
 

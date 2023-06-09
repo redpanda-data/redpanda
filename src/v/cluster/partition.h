@@ -301,7 +301,7 @@ public:
         return _raft->get_term(o);
     }
 
-    std::optional<model::offset>
+    ss::future<std::optional<model::offset>>
     get_cloud_term_last_offset(model::term_id term) const;
 
     ss::future<std::error_code>
@@ -390,7 +390,9 @@ private:
     ss::lw_shared_ptr<const archival::configuration> _archival_conf;
     ss::sharded<cloud_storage::remote>& _cloud_storage_api;
     ss::sharded<cloud_storage::cache>& _cloud_storage_cache;
-
+    ss::shared_ptr<cloud_storage::partition_probe> _cloud_storage_probe;
+    ss::shared_ptr<cloud_storage::async_manifest_view>
+      _cloud_storage_manifest_view;
     ss::shared_ptr<cloud_storage::remote_partition> _cloud_storage_partition;
     std::unique_ptr<archival::ntp_archiver> _archiver;
     std::optional<cloud_storage_clients::bucket_name> _read_replica_bucket{

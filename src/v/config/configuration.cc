@@ -864,13 +864,17 @@ configuration::configuration()
       *this,
       "storage_read_buffer_size",
       "Size of each read buffer (one per in-flight read, per log segment)",
-      {.example = "31768", .visibility = visibility::tunable},
+      {.needs_restart = needs_restart::no,
+       .example = "31768",
+       .visibility = visibility::tunable},
       128_KiB)
   , storage_read_readahead_count(
       *this,
       "storage_read_readahead_count",
       "How many additional reads to issue ahead of current read location",
-      {.example = "1", .visibility = visibility::tunable},
+      {.needs_restart = needs_restart::no,
+       .example = "1",
+       .visibility = visibility::tunable},
       10)
   , segment_fallocation_step(
       *this,
@@ -1310,20 +1314,20 @@ configuration::configuration()
   , cloud_storage_initial_backoff_ms(
       *this,
       "cloud_storage_initial_backoff_ms",
-      "Initial backoff time for exponetial backoff algorithm (ms)",
-      {.visibility = visibility::tunable},
+      "Initial backoff time for exponential backoff algorithm (ms)",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       100ms)
   , cloud_storage_segment_upload_timeout_ms(
       *this,
       "cloud_storage_segment_upload_timeout_ms",
       "Log segment upload timeout (ms)",
-      {.visibility = visibility::tunable},
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       30s)
   , cloud_storage_manifest_upload_timeout_ms(
       *this,
       "cloud_storage_manifest_upload_timeout_ms",
       "Manifest upload timeout (ms)",
-      {.visibility = visibility::tunable},
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       10s)
   , cloud_storage_max_connection_idle_time_ms(
       *this,
@@ -1474,6 +1478,28 @@ configuration::configuration()
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       std::nullopt,
       {.min = 4_KiB, .max = 4_MiB})
+  , cloud_storage_manifest_cache_size(
+      *this,
+      "cloud_storage_manifest_cache_size",
+      "Amount of memory that can be used to handle tiered-storage metadata",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      1_MiB,
+      {.min = 64_KiB, .max = 64_MiB})
+  , cloud_storage_manifest_cache_ttl_ms(
+      *this,
+      "cloud_storage_materialized_manifest_ttl_ms",
+      "The time interval that determins how long the materialized manifest can "
+      "stay in cache under contention. This parameter is used for performance "
+      "tuning. "
+      "When the spillover manifest is materialized and stored in cache and the "
+      "cache needs to evict it it will use "
+      "'cloud_storage_materialized_manifest_ttl_ms' value as a timeout. "
+      "The cursor that uses the spillover manifest uses this value as a TTL "
+      "interval after which it stops referencing the manifest making it "
+      "available for eviction. This only affects spillover manifests under "
+      "contention.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      10s)
   , cloud_storage_azure_storage_account(
       *this,
       "cloud_storage_azure_storage_account",

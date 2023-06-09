@@ -10,6 +10,7 @@
 
 #pragma once
 
+#include "cloud_storage/partition_manifest.h"
 #include "model/fundamental.h"
 #include "seastar/core/weak_ptr.hh"
 #include "ssx/semaphore.h"
@@ -32,7 +33,10 @@ class partition_probe;
 /// remote segment.
 struct materialized_segment_state {
     materialized_segment_state(
-      model::offset bo, remote_partition& p, ssx::semaphore_units);
+      const segment_meta& meta,
+      const remote_segment_path& path,
+      remote_partition& p,
+      ssx::semaphore_units u);
 
     void return_reader(std::unique_ptr<remote_segment_batch_reader> reader);
 

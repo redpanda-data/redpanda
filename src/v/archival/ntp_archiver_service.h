@@ -13,6 +13,7 @@
 #include "archival/probe.h"
 #include "archival/types.h"
 #include "cloud_storage/cache_service.h"
+#include "cloud_storage/fwd.h"
 #include "cloud_storage/partition_manifest.h"
 #include "cloud_storage/remote.h"
 #include "cloud_storage/remote_segment_index.h"
@@ -76,7 +77,8 @@ public:
       ss::lw_shared_ptr<const configuration> conf,
       cloud_storage::remote& remote,
       cloud_storage::cache& c,
-      cluster::partition& parent);
+      cluster::partition& parent,
+      ss::shared_ptr<cloud_storage::async_manifest_view> amv);
 
     /// Spawn background fibers, which depending on the mode (read replica or
     /// not) will either do uploads, or periodically read back the manifest.
@@ -158,17 +160,25 @@ public:
     /// configuration. This function does *not* delete any data.
     ss::future<> apply_retention();
 
+    /// \brief Remove segments that are no longer queriable by:
+    /// segments that are below the current start offset and segments
+    /// that have been replaced with their compacted equivalent.
+    ss::future<> garbage_collect();
+
+    /// \brief Advance the archive start offset for the remote partition
+    /// according to the retention policy specified by the partition
+    /// configuration. This function does *not* delete any data.
+    ss::future<> apply_archive_retention();
+
+    /// \brief Remove segments and manifests below the archive_start_offset.
+    ss::future<> garbage_collect_archive();
+
     /// \brief If the size of the manifest exceeds the limit
     /// move some segments into a separate immutable manifest and
     /// upload it to the cloud. After that the archive_start_offset
     /// has to be advanced and segments could be removed from the
     /// STM manifest.
     ss::future<> apply_spillover();
-
-    /// \brief Remove segments that are no longer queriable by:
-    /// segments that are below the current start offset and segments
-    /// that have been replaced with their compacted equivalent.
-    ss::future<> garbage_collect();
 
     virtual ~ntp_archiver() = default;
 
@@ -294,6 +304,10 @@ private:
       = "upload_loop_prologue";
     static constexpr const char* segment_merger_ctx_label
       = "adjacent_segment_merger";
+
+    /// Delete objects, return true on success and false otherwise
+    ss::future<bool>
+    batch_delete(std::vector<cloud_storage_clients::object_key> paths);
 
     ss::future<bool> do_upload_local(
       upload_candidate_with_locks candidate,
@@ -478,6 +492,11 @@ private:
     /// not paused.
     bool may_begin_uploads() const;
 
+    /// Returns true if retention should remove data from STM
+    /// region of the log and false if it should work on archive
+    /// part.
+    bool stm_retention_needed() const;
+
     /// Helper to generate a segment path from candidate
     remote_segment_path
     segment_path_for_candidate(const upload_candidate& candidate);
@@ -580,6 +599,8 @@ private:
       _manifest_upload_interval;
 
     ss::sharded<features::feature_table>& _feature_table;
+
+    ss::shared_ptr<cloud_storage::async_manifest_view> _manifest_view;
 
     friend class archival_fixture;
 };

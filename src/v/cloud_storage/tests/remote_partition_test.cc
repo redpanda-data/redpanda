@@ -11,6 +11,7 @@
 #include "bytes/iobuf.h"
 #include "bytes/iobuf_parser.h"
 #include "bytes/iostream.h"
+#include "cloud_storage/async_manifest_view.h"
 #include "cloud_storage/offset_translation_layer.h"
 #include "cloud_storage/partition_manifest.h"
 #include "cloud_storage/remote.h"
@@ -136,15 +137,15 @@ static model::record_batch_header read_single_batch_from_remote_partition(
   bool expect_exists = true) {
     auto conf = fixture.get_configuration();
     static auto bucket = cloud_storage_clients::bucket_name("bucket");
-    auto m = ss::make_lw_shared<cloud_storage::partition_manifest>(
-      manifest_ntp, manifest_revision);
     storage::log_reader_config reader_config(
       target, target, ss::default_priority_class());
 
     auto manifest = hydrate_manifest(fixture.api.local(), bucket);
-
+    partition_probe probe(manifest.get_ntp());
+    auto manifest_view = ss::make_shared<async_manifest_view>(
+      fixture.api, fixture.cache, manifest, bucket, probe);
     auto partition = ss::make_shared<remote_partition>(
-      manifest, fixture.api.local(), fixture.cache.local(), bucket);
+      manifest_view, fixture.api.local(), fixture.cache.local(), bucket, probe);
     auto partition_stop = ss::defer([&partition] { partition->stop().get(); });
 
     auto reader = partition->make_reader(reader_config).get().reader;
@@ -205,8 +206,11 @@ FIXTURE_TEST(
     auto segments = setup_s3_imposter(*this, 0, 0);
     auto bucket = cloud_storage_clients::bucket_name("bucket");
     auto manifest = hydrate_manifest(api.local(), bucket);
+    partition_probe probe(manifest.get_ntp());
+    auto manifest_view = ss::make_shared<async_manifest_view>(
+      api, cache, manifest, bucket, probe);
     auto partition = ss::make_shared<remote_partition>(
-      manifest, api.local(), cache.local(), bucket);
+      manifest_view, api.local(), cache.local(), bucket, probe);
     auto partition_stop = ss::defer([&partition] { partition->stop().get(); });
     partition->start().get();
 
@@ -257,8 +261,11 @@ test_remote_partition_cache_size_estimate_materialized_segments_args(
       context, 3, 10, manifest_inconsistency::none, sname_format);
     auto bucket = cloud_storage_clients::bucket_name("bucket");
     auto manifest = hydrate_manifest(api.local(), bucket);
+    partition_probe probe(manifest.get_ntp());
+    auto manifest_view = ss::make_shared<async_manifest_view>(
+      api, cache, manifest, bucket, probe);
     auto partition = ss::make_shared<remote_partition>(
-      manifest, api.local(), cache.local(), bucket);
+      manifest_view, api.local(), cache.local(), bucket, probe);
     auto partition_stop = ss::defer([&partition] { partition->stop().get(); });
 
     // synchronize with remote_partition::get_cache_usage
@@ -428,7 +435,6 @@ FIXTURE_TEST(test_scan_by_kafka_offset_truncated, cloud_storage_fixture) {
       *this, model::offset(6), model::offset_delta(3), batch_types);
     print_segments(segments);
     for (int i = 0; i <= 2; i++) {
-        BOOST_REQUIRE(check_scan(*this, kafka::offset(i), 6));
         BOOST_REQUIRE(check_fetch(*this, kafka::offset(i), false));
     }
     for (int i = 3; i <= 8; i++) {
@@ -458,6 +464,7 @@ FIXTURE_TEST(test_scan_by_kafka_offset_repeats, cloud_storage_fixture) {
       *this, model::offset(0), model::offset_delta(0), batch_types);
     print_segments(segments);
     for (int i = 0; i <= 3; i++) {
+        vlog(test_log.info, "Checking offset {}, expect {} batches", i, 4 - i);
         BOOST_CHECK(check_scan(*this, kafka::offset(i), 4 - i));
         BOOST_CHECK(check_fetch(*this, kafka::offset(i), true));
     }
@@ -480,7 +487,6 @@ FIXTURE_TEST(
     auto segments = setup_s3_imposter(
       *this, model::offset(6), model::offset_delta(3), batch_types);
     print_segments(segments);
-    BOOST_REQUIRE(check_scan(*this, kafka::offset(2), 1));
     BOOST_REQUIRE(check_fetch(*this, kafka::offset(2), false));
     BOOST_REQUIRE(check_scan(*this, kafka::offset(3), 1));
     BOOST_REQUIRE(check_fetch(*this, kafka::offset(3), true));
@@ -529,7 +535,6 @@ FIXTURE_TEST(
       *this, model::offset(6), model::offset_delta(0), batch_types);
     print_segments(segments);
     for (int i = 0; i < 6; i++) {
-        BOOST_REQUIRE(check_scan(*this, kafka::offset(i), 1));
         BOOST_REQUIRE(check_fetch(*this, kafka::offset(i), false));
     }
     BOOST_REQUIRE(check_scan(*this, kafka::offset(6), 1));
@@ -1002,8 +1007,11 @@ FIXTURE_TEST(test_remote_partition_read_cached_index, cloud_storage_fixture) {
     // Read first segment using first remote_partition instance.
     // After this block finishes the segment will be hydrated.
     {
+        partition_probe probe(manifest.get_ntp());
+        auto manifest_view = ss::make_shared<async_manifest_view>(
+          api, cache, manifest, bucket, probe);
         auto partition = ss::make_shared<remote_partition>(
-          manifest, api.local(), cache.local(), bucket);
+          manifest_view, api.local(), cache.local(), bucket, probe);
         auto partition_stop = ss::defer(
           [&partition] { partition->stop().get(); });
         partition->start().get();
@@ -1023,8 +1031,11 @@ FIXTURE_TEST(test_remote_partition_read_cached_index, cloud_storage_fixture) {
     // Read first segment using second remote_partition instance.
     // This will trigger offset_index materialization from cache.
     {
+        partition_probe probe(manifest.get_ntp());
+        auto manifest_view = ss::make_shared<async_manifest_view>(
+          api, cache, manifest, bucket, probe);
         auto partition = ss::make_shared<remote_partition>(
-          manifest, api.local(), cache.local(), bucket);
+          manifest_view, api.local(), cache.local(), bucket, probe);
         auto partition_stop = ss::defer(
           [&partition] { partition->stop().get(); });
         partition->start().get();
@@ -1090,8 +1101,11 @@ FIXTURE_TEST(test_remote_partition_concurrent_truncate, cloud_storage_fixture) {
 
     auto manifest = hydrate_manifest(api.local(), bucket);
 
+    partition_probe probe(manifest.get_ntp());
+    auto manifest_view = ss::make_shared<async_manifest_view>(
+      api, cache, manifest, bucket, probe);
     auto partition = ss::make_shared<remote_partition>(
-      manifest, api.local(), cache.local(), bucket);
+      manifest_view, api.local(), cache.local(), bucket, probe);
     auto partition_stop = ss::defer([&partition] { partition->stop().get(); });
 
     partition->start().get();
@@ -1138,7 +1152,7 @@ FIXTURE_TEST(test_remote_partition_concurrent_truncate, cloud_storage_fixture) {
     {
         ss::abort_source as;
         storage::log_reader_config reader_config(
-          base,
+          model::offset(400),
           max,
           0,
           std::numeric_limits<size_t>::max(),
@@ -1191,8 +1205,11 @@ FIXTURE_TEST(
 
     auto manifest = hydrate_manifest(api.local(), bucket);
 
+    partition_probe probe(manifest.get_ntp());
+    auto manifest_view = ss::make_shared<async_manifest_view>(
+      api, cache, manifest, bucket, probe);
     auto partition = ss::make_shared<remote_partition>(
-      manifest, api.local(), cache.local(), bucket);
+      manifest_view, api.local(), cache.local(), bucket, probe);
     auto partition_stop = ss::defer([&partition] { partition->stop().get(); });
 
     partition->start().get();
@@ -1276,8 +1293,11 @@ FIXTURE_TEST(
 
     auto manifest = hydrate_manifest(api.local(), bucket);
 
+    partition_probe probe(manifest.get_ntp());
+    auto manifest_view = ss::make_shared<async_manifest_view>(
+      api, cache, manifest, bucket, probe);
     auto partition = ss::make_shared<remote_partition>(
-      manifest, api.local(), cache.local(), bucket);
+      manifest_view, api.local(), cache.local(), bucket, probe);
     auto partition_stop = ss::defer([&partition] { partition->stop().get(); });
 
     partition->start().get();

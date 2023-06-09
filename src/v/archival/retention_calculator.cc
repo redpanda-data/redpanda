@@ -59,6 +59,16 @@ std::optional<retention_calculator> retention_calculator::factory(
         return std::nullopt;
     }
 
+    auto arch_so = manifest.get_archive_start_offset();
+    auto last_so = manifest.get_start_offset();
+    if (arch_so != model::offset{} && arch_so != last_so) {
+        // Retention should be applied to the archive area of the log first
+        // otherwise we may end up with a gap in the log. If we will apply
+        // retention to the STM log there will be an offset gap between the
+        // last spillover segment and the first STM segment.
+        return std::nullopt;
+    }
+
     std::vector<std::unique_ptr<retention_strategy>> strats;
     strats.reserve(2);
 

@@ -76,8 +76,9 @@ public:
       remote& r,
       cache& cache,
       cloud_storage_clients::bucket_name bucket,
-      const partition_manifest& m,
-      model::offset base_offset,
+      const remote_segment_path& path,
+      const model::ntp& ntp,
+      const segment_meta& meta,
       retry_chain_node& parent);
 
     remote_segment(const remote_segment&) = delete;

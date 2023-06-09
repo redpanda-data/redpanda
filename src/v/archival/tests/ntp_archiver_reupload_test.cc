@@ -9,6 +9,8 @@
  */
 
 #include "archival/tests/service_fixture.h"
+#include "cloud_storage/async_manifest_view.h"
+#include "cloud_storage/partition_probe.h"
 #include "cloud_storage_clients/client_pool.h"
 #include "config/configuration.h"
 #include "storage/ntp_config.h"
@@ -232,12 +234,21 @@ struct reupload_fixture : public archiver_fixture {
     void init_archiver() {
         auto [arch_conf, remote_conf] = get_configurations();
         auto part = app.partition_manager.local().get(manifest_ntp);
+        part_probe.emplace(get_ntp_conf().ntp());
+        manifest_view = ss::make_shared<cloud_storage::async_manifest_view>(
+          remote,
+          app.shadow_index_cache,
+          part->archival_meta_stm()->manifest(),
+          arch_conf->bucket_name,
+          part_probe.value());
+
         archiver.emplace(
           get_ntp_conf(),
           arch_conf,
           remote.local(),
           app.shadow_index_cache.local(),
-          *part);
+          *part,
+          manifest_view);
     }
 
     ss::lw_shared_ptr<storage::segment> self_compact_next_segment() {
@@ -269,6 +280,8 @@ struct reupload_fixture : public archiver_fixture {
         return last_compacted_segment;
     }
 
+    std::optional<cloud_storage::partition_probe> part_probe;
+    ss::shared_ptr<cloud_storage::async_manifest_view> manifest_view;
     std::optional<archival::ntp_archiver> archiver;
     ss::abort_source abort_source;
 };
