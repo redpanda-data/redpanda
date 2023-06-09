@@ -12,9 +12,15 @@ package resources_test
 import (
 	"context"
 	"errors"
+	"reflect"
 	"testing"
 	"time"
 
+	vectorizedv1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/vectorized/v1alpha1"
+	adminutils "github.com/redpanda-data/redpanda/src/go/k8s/pkg/admin"
+	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/labels"
+	res "github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources"
+	resourcetypes "github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources/types"
 	"github.com/stretchr/testify/assert"
 	v1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -26,12 +32,6 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
-
-	vectorizedv1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/vectorized/v1alpha1"
-	adminutils "github.com/redpanda-data/redpanda/src/go/k8s/pkg/admin"
-	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/labels"
-	res "github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources"
-	resourcetypes "github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources/types"
 )
 
 const (
@@ -450,5 +450,76 @@ func TestCurrentVersion(t *testing.T) {
 		} else {
 			assert.NoError(t, err)
 		}
+	}
+}
+
+func Test_GetPodByBrokerIDfromPodList(t *testing.T) {
+	podList := &corev1.PodList{
+		Items: []corev1.Pod{
+			{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "pod-0",
+					Annotations: map[string]string{
+						res.PodAnnotationNodeIDKey: "3",
+					},
+				},
+			},
+			{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "pod-1",
+					Annotations: map[string]string{
+						res.PodAnnotationNodeIDKey: "5",
+					},
+				},
+			},
+			{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "pod-2",
+					Annotations: map[string]string{
+						res.PodAnnotationNodeIDKey: "7",
+					},
+				},
+			},
+			{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:        "pod-3",
+					Annotations: map[string]string{},
+				},
+			},
+		},
+	}
+	type args struct {
+		brokerIDStr string
+		pods        *corev1.PodList
+	}
+	tests := []struct {
+		name string
+		args args
+		want *corev1.Pod
+	}{
+		{
+			name: "broker id exists as annotation on a pod in a list",
+			args: args{
+				"5",
+				podList,
+			},
+			want: &podList.Items[1],
+		},
+		{
+			name: "broker id doesn't exist as annotation on a pod in a list",
+			args: args{
+				"1",
+				podList,
+			},
+			want: nil,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := res.GetPodByBrokerIDfromPodList(tt.args.brokerIDStr, tt.args.pods)
+			if !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("GetPodByBrokerIDfromPodList() = %v, want %v", got, tt.want)
+			}
+		})
 	}
 }

@@ -930,14 +930,18 @@ func (r *StatefulSetResource) getPodByBrokerID(ctx context.Context, brokerID *in
 	if err != nil {
 		return nil, err
 	}
+
+	return GetPodByBrokerIDfromPodList(brokerIDStr, pods), nil
+}
+
+func GetPodByBrokerIDfromPodList(brokerIDStr string, pods *corev1.PodList) *corev1.Pod {
 	for i := range pods.Items {
 		annotations := pods.Items[i].GetAnnotations()
 		if v, ok := annotations[PodAnnotationNodeIDKey]; ok && v == brokerIDStr {
-			return &pods.Items[i], nil
+			return &pods.Items[i]
 		}
 	}
-
-	return nil, nil
+	return nil
 }
 
 var keyNotPresentError error
