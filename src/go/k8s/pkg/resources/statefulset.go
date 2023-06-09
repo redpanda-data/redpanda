@@ -954,19 +954,23 @@ var keyNotPresentError error
 func (r *StatefulSetResource) getBrokerIDForPod(ctx context.Context, ordinal int32) (*int32, error) {
 	stsName := r.LastObservedState.GetName()
 	ordinalStr := strconv.FormatInt(int64(ordinal), 10)
-	match := stsName + "-" + ordinalStr
+	podName := stsName + "-" + ordinalStr
 
 	pods, err := r.getPodList(ctx)
 	if err != nil {
 		return nil, err
 	}
+	return GetBrokerIDForPodFromPodList(pods, podName)
+}
+
+func GetBrokerIDForPodFromPodList(pods *corev1.PodList, podName string) (*int32, error) {
 	for i := range pods.Items {
-		if pods.Items[i].GetName() != match {
+		if pods.Items[i].GetName() != podName {
 			continue
 		}
 		brokerIDStr, ok := pods.Items[i].GetAnnotations()[PodAnnotationNodeIDKey]
 		if !ok {
-			return nil, fmt.Errorf("node-id annotation is not set on pod %s %w", match, keyNotPresentError)
+			return nil, fmt.Errorf("node-id annotation is not set on pod %s %w", podName, keyNotPresentError)
 		}
 		brokerIDint, err := strconv.ParseInt(brokerIDStr, 10, 32)
 		if err != nil {

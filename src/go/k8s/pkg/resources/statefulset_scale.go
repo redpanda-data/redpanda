@@ -21,7 +21,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 	k8sclient "sigs.k8s.io/controller-runtime/pkg/client"
 
-	redpandav1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
+	vectorizedv1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
 	adminutils "github.com/redpanda-data/redpanda/src/go/k8s/pkg/admin"
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/labels"
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources/featuregates"
@@ -232,7 +232,6 @@ func (r *StatefulSetResource) handleRecommission(ctx context.Context) error {
 	if brokerID == nil {
 		return nil
 	}
-	r.logger.Info("handling recommissioning")
 	log := r.logger.WithName("handleRecommission").WithValues("node_id", *brokerID)
 	log.Info("handling broker recommissioning")
 
@@ -304,23 +303,25 @@ func (r *StatefulSetResource) isClusterFormed(
 func (r *StatefulSetResource) disableMaintenanceModeOnDecommissionedNodes(
 	ctx context.Context,
 ) error {
+	brokerID := r.pandaCluster.GetDecommissionBrokerID()
+	log := r.logger.WithName("disableMaintenanceModeOnDecommissionedNodes").WithValues("node_id", *brokerID)
+
 	if !featuregates.MaintenanceMode(r.pandaCluster.Status.Version) {
 		return nil
 	}
 
-	// TODO: this doesn't disable maintenance on the right broker
-	if r.pandaCluster.GetDecommissionBrokerID() == nil || r.pandaCluster.Status.CurrentReplicas > *r.pandaCluster.GetDecommissionBrokerID() {
+	if brokerID == nil {
 		// Only if actually in a decommissioning phase
 		return nil
 	}
-
-	ordinal := *r.pandaCluster.GetDecommissionBrokerID()
-	targetReplicas := ordinal
-
-	scaledDown, err := r.verifyRunningCount(ctx, targetReplicas)
-	if err != nil || !scaledDown {
-		// This should be done only when the pod disappears from the cluster
+	pod, err := r.getPodByBrokerID(ctx, brokerID)
+	if err != nil {
 		return err
+	}
+
+	// if there is a pod for this broker, it's not finished decommissioning
+	if pod != nil {
+		return nil
 	}
 
 	adminAPI, err := r.getAdminAPIClient(ctx)
@@ -328,20 +329,20 @@ func (r *StatefulSetResource) disableMaintenanceModeOnDecommissionedNodes(
 		return err
 	}
 
-	r.logger.Info("Forcing deletion of maintenance mode for the decommissioned node", "node_id", ordinal)
-	err = adminAPI.DisableMaintenanceMode(ctx, int(ordinal))
+	log.Info("Forcing deletion of maintenance mode for the decommissioned node")
+	err = adminAPI.DisableMaintenanceMode(ctx, int(*brokerID))
 	if err != nil {
 		var httpErr *admin.HTTPResponseError
 		if errors.As(err, &httpErr) {
 			if httpErr.Response != nil && httpErr.Response.StatusCode/100 == 4 {
 				// Cluster says we don't need to do it
-				r.logger.Info("No need to disable maintenance mode on the decommissioned node", "node_id", ordinal, "status_code", httpErr.Response.StatusCode)
+				log.Info("No need to disable maintenance mode on the decommissioned node", "status_code", httpErr.Response.StatusCode)
 				return nil
 			}
 		}
-		return fmt.Errorf("could not disable maintenance mode on decommissioning node %d: %w", ordinal, err)
+		return fmt.Errorf("could not disable maintenance mode on decommissioning node %d: %w", *brokerID, err)
 	}
-	r.logger.Info("Maintenance mode disabled for the decommissioned node", "node_id", ordinal)
+	log.Info("Maintenance mode disabled for the decommissioned node")
 	return nil
 }
 
@@ -371,14 +372,14 @@ func (r *StatefulSetResource) verifyRunningCount(
 
 // getBrokerByBrokerID allows to get broker information using the admin API
 func getBrokerByBrokerID(
-	ctx context.Context, ordinal int32, adminAPI adminutils.AdminAPIClient,
+	ctx context.Context, brokerID int32, adminAPI adminutils.AdminAPIClient,
 ) (*admin.Broker, error) {
 	brokers, err := adminAPI.Brokers(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("could not get the list of brokers for checking decommission: %w", err)
 	}
 	for i := range brokers {
-		if brokers[i].NodeID == int(ordinal) {
+		if brokers[i].NodeID == int(brokerID) {
 			return &brokers[i], nil
 		}
 	}
@@ -390,7 +391,7 @@ func getBrokerByBrokerID(
 func setCurrentReplicas(
 	ctx context.Context,
 	c k8sclient.Client,
-	pandaCluster *redpandav1alpha1.Cluster,
+	pandaCluster *vectorizedv1alpha1.Cluster,
 	replicas int32,
 	logger logr.Logger,
 ) error {

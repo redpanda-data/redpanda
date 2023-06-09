@@ -524,3 +524,103 @@ func Test_GetPodByBrokerIDfromPodList(t *testing.T) {
 		})
 	}
 }
+
+func Test_GetBrokerIDForPodFromPodList(t *testing.T) {
+	podList := &corev1.PodList{
+		Items: []corev1.Pod{
+			{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "pod-0",
+					Annotations: map[string]string{
+						res.PodAnnotationNodeIDKey: "",
+					},
+				},
+			},
+			{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "pod-1",
+					Annotations: map[string]string{
+						res.PodAnnotationNodeIDKey: "5",
+					},
+				},
+			},
+			{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "pod-2",
+					Annotations: map[string]string{
+						res.PodAnnotationNodeIDKey: "7",
+					},
+				},
+			},
+			{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:        "pod-3",
+					Annotations: map[string]string{},
+				},
+			},
+		},
+	}
+	seven := int32(7)
+	type args struct {
+		pods    *corev1.PodList
+		podName string
+	}
+	tests := []struct {
+		name    string
+		args    args
+		want    *int32
+		wantErr bool
+	}{
+		{
+			name: "get broker id from pod-2",
+			args: args{
+				pods:    podList,
+				podName: "pod-2",
+			},
+			want: &seven,
+		},
+		{
+			name: "get error failing to get broker id from pod-0",
+			args: args{
+				pods:    podList,
+				podName: "pod-0",
+			},
+			wantErr: true,
+		},
+		{
+			name: "get error failing to get broker id from pod-3",
+			args: args{
+				pods:    podList,
+				podName: "pod-3",
+			},
+			wantErr: true,
+		},
+		{
+			name: "fail to get broker id from non-existent pod-4",
+			args: args{
+				pods:    podList,
+				podName: "pod-4",
+			},
+			want: nil,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := res.GetBrokerIDForPodFromPodList(tt.args.pods, tt.args.podName)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("getBrokerIDForPodFromPodList() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if tt.want == nil && got != nil {
+				t.Errorf("getBrokerIDForPodFromPodList() got %v, want nil", got)
+				return
+			}
+			if tt.want == nil {
+				return
+			}
+			if *got != *tt.want {
+				t.Errorf("getBrokerIDForPodFromPodList() = %v, want %v", *got, *tt.want)
+			}
+		})
+	}
+}
