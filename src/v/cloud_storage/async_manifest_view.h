@@ -317,11 +317,6 @@ private:
 
     ss::future<> run_bg_loop();
 
-    /// Scan the bucket and update the list of spillover manifests in
-    /// the cloud. The scan is only performed if the STM state changed.
-    /// \return true if the state was updated, false otherwise
-    ss::future<result<bool, error_outcome>> maybe_scan_bucket() noexcept;
-
     /// Return true if the offset belongs to the archive
     bool is_archive(async_view_search_query_t o);
 
@@ -356,8 +351,13 @@ private:
     ///
     /// \param query is a search query, either an offset, a kafka offset or a
     ///              timestamp
-    /// \return index of the spillover manifest or -1 on error
-    int32_t search_spillover_manifests(async_view_search_query_t query) const;
+    /// \return segment_meta struct that represents a spillover manifest or null
+    std::optional<segment_meta>
+    search_spillover_manifests(async_view_search_query_t query) const;
+
+    /// Convert segment_meta to spillover manifest path
+    remote_manifest_path
+    get_spillover_manifest_path(const segment_meta& meta) const;
 
     mutable ss::gate _gate;
     ss::abort_source _as;
@@ -374,10 +374,6 @@ private:
     config::binding<size_t> _read_buffer_size;
     config::binding<int16_t> _readahead_size;
 
-    std::optional<spillover_manifest_list> _manifests;
-    model::offset _last_archive_start_offset;
-    model::offset _last_stm_start_offset;
-
     // Manifest in-memory storage
     std::unique_ptr<materialized_manifest_cache> _manifest_cache;
     config::binding<size_t> _manifest_meta_size;
@@ -387,9 +383,7 @@ private:
 
     /// Materialization request which is sent to background fiber
     struct materialization_request_t {
-        spillover_manifest_path_components search_vec;
-        remote_manifest_path path;
-        size_t size_bytes;
+        segment_meta search_vec;
         ss::promise<result<manifest_section_t, error_outcome>> promise;
         std::unique_ptr<hdr_hist::measurement> _measurement;
     };
