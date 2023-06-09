@@ -12,7 +12,6 @@
 #include "bytes/iobuf.h"
 #include "bytes/iobuf_parser.h"
 #include "bytes/iostream.h"
-#include "bytes/utils.h"
 #include "likely.h"
 #include "model/record.h"
 #include "model/record_utils.h"
@@ -183,7 +182,7 @@ static ss::future<result<model::record_batch_header>> read_header_impl(
     }
     // check if iobuf is filled is zeros, this means that we are reading
     // fallocated range filled with zeros
-    if (unlikely(is_zero(b))) {
+    if (unlikely(storage::internal::is_zero(b))) {
         // happens when we fallocate the file
         co_return parser_errc::fallocated_file_read_zero_bytes_for_header;
     }
