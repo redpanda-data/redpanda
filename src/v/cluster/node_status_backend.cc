@@ -213,7 +213,7 @@ ss::future<result<node_status>> node_status_backend::send_node_status_request(
 ss::future<ss::shard_id> node_status_backend::maybe_create_client(
   model::node_id target, net::unresolved_address address) {
     auto source_shard = target % ss::smp::count;
-    auto target_shard = rpc::connection_cache::shard_for(
+    auto target_shard = _node_connection_cache.local().shard_for(
       _self, source_shard, target);
 
     co_await add_one_tcp_client(
