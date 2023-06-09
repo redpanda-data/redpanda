@@ -318,28 +318,6 @@ ss::future<std::error_code> topic_updates_dispatcher::apply(
     }
     co_return ec;
 }
-ss::future<std::error_code> topic_updates_dispatcher::apply(
-  create_non_replicable_topic_cmd cmd, model::offset offset) {
-    auto assignments = _topic_table.local().get_topic_assignments(
-      cmd.key.source);
-    return dispatch_updates_to_cores(cmd, offset)
-      .then([this,
-             assignments = std::move(assignments),
-             allocation_domain = get_allocation_domain(cmd.key.name)](
-              std::error_code ec) {
-          if (ec == errc::success) {
-              vassert(assignments.has_value(), "null topic_metadata");
-              std::vector<partition_assignment> p_as;
-              p_as.reserve(assignments->size());
-              std::move(
-                assignments->begin(),
-                assignments->end(),
-                std::back_inserter(p_as));
-              add_allocations_for_new_partitions(p_as, allocation_domain);
-          }
-          return ec;
-      });
-}
 
 ss::future<std::error_code> topic_updates_dispatcher::apply(
   move_topic_replicas_cmd cmd, model::offset offset) {

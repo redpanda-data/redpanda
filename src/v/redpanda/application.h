@@ -23,7 +23,6 @@
 #include "cluster/self_test_frontend.h"
 #include "cluster/tx_coordinator_mapper.h"
 #include "config/node_config.h"
-#include "coproc/fwd.h"
 #include "features/fwd.h"
 #include "kafka/client/configuration.h"
 #include "kafka/client/fwd.h"
@@ -121,8 +120,6 @@ public:
     ss::sharded<cluster::tm_stm_cache_manager> tm_stm_cache_manager;
     ss::sharded<cluster::tx_gateway_frontend> tx_gateway_frontend;
 
-    ss::sharded<coproc::partition_manager> cp_partition_manager;
-
     ss::sharded<features::feature_table> feature_table;
 
     ss::sharded<kafka::coordinator_ntp_mapper> coordinator_ntp_mapper;
@@ -141,7 +138,6 @@ public:
     std::unique_ptr<storage::disk_space_manager> space_manager;
 
     std::unique_ptr<cluster::controller> controller;
-    std::unique_ptr<coproc::api> coprocessing;
 
     std::unique_ptr<ssx::thread_worker> thread_worker;
 
@@ -187,11 +183,6 @@ private:
     ss::app_template::config setup_app_config();
     void validate_arguments(const po::variables_map&);
     void hydrate_config(const po::variables_map&);
-
-    bool coproc_enabled() {
-        return config::node().developer_mode()
-               && config::shard_local_cfg().enable_coproc();
-    }
 
     bool archival_storage_enabled();
 

@@ -8,7 +8,6 @@ bytes           | Low level byte manipulations |
 config          | cluster settings |
 test_utils      | testing utilities |
 platform        | Machine dependent settings like ssse3 instructions |
-coproc          | WASM / Coprocessor engine for lambda transforms |
 resource_mgmt   | CPU and IO priority | 
 utils           | code utils |
 hashing         | hashing utility adaptors often used in cryptography or checksumming |

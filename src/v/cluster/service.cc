@@ -150,20 +150,6 @@ service::purged_topic(purged_topic_request&& r, rpc::streaming_context&) {
         [](topic_result res) { return purged_topic_reply(std::move(res)); });
 }
 
-ss::future<create_non_replicable_topics_reply>
-service::create_non_replicable_topics(
-  create_non_replicable_topics_request&& r, rpc::streaming_context&) {
-    return ss::with_scheduling_group(
-             get_scheduling_group(),
-             [this, r = std::move(r)]() mutable {
-                 return _topics_frontend.local().create_non_replicable_topics(
-                   std::move(r.topics), model::time_from_now(r.timeout));
-             })
-      .then([](std::vector<topic_result> res) {
-          return create_non_replicable_topics_reply{.results = std::move(res)};
-      });
-}
-
 std::pair<std::vector<model::topic_metadata>, std::vector<topic_configuration>>
 service::fetch_metadata_and_cfg(const std::vector<topic_result>& res) {
     std::vector<model::topic_metadata> md;

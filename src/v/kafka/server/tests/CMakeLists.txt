@@ -11,7 +11,7 @@ rp_test(
     validator_tests.cc
     fetch_unit_test.cc
   DEFINITIONS BOOST_TEST_DYN_LINK
-  LIBRARIES Boost::unit_test_framework v::kafka v::coproc
+  LIBRARIES Boost::unit_test_framework v::kafka
   LABELS kafka
 )
 

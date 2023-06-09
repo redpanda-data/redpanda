@@ -91,14 +91,6 @@ inline std::vector<topic_result> create_topic_results(
       });
 }
 
-inline std::vector<topic_result> create_topic_results(
-  const std::vector<non_replicable_topic>& requests, errc error_code) {
-    return detail::create_topic_results(
-      requests, [error_code](const non_replicable_topic& nrt) {
-          return topic_result(nrt.name, error_code);
-      });
-}
-
 ss::future<> add_one_tcp_client(
   ss::shard_id owner,
   ss::sharded<rpc::connection_cache>& clients,
@@ -264,25 +256,6 @@ ss::future<std::error_code> replicate_and_wait(
 std::vector<custom_assignable_topic_configuration>
   without_custom_assignments(std::vector<topic_configuration>);
 
-inline bool has_non_replicable_op_type(const topic_table_delta& d) {
-    using op_t = topic_table_delta::op_type;
-    switch (d.type) {
-    case op_t::add_non_replicable:
-    case op_t::del_non_replicable:
-        return true;
-    case op_t::add:
-    case op_t::del:
-    case op_t::reset:
-    case op_t::update:
-    case op_t::force_update:
-    case op_t::update_finished:
-    case op_t::update_properties:
-    case op_t::cancel_update:
-    case op_t::force_abort_update:
-        return false;
-    }
-    __builtin_unreachable();
-}
 /**
  * Subtracts second replica set from the first one. Result contains only brokers
  * shards that are present in first replica set but not in the second one.

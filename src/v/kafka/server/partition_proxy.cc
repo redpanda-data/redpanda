@@ -12,7 +12,6 @@
 #include "partition_proxy.h"
 
 #include "cluster/partition_manager.h"
-#include "coproc/partition_manager.h"
 #include "kafka/server/replicated_partition.h"
 
 namespace kafka {

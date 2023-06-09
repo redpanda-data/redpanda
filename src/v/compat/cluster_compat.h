@@ -215,22 +215,6 @@ GEN_COMPAT_CHECK(
   { json_read(results); });
 
 GEN_COMPAT_CHECK(
-  cluster::create_non_replicable_topics_request,
-  {
-      json_write(topics);
-      json_write(timeout);
-  },
-  {
-      json_read(topics);
-      json_read(timeout);
-  })
-
-GEN_COMPAT_CHECK(
-  cluster::create_non_replicable_topics_reply,
-  { json_write(results); },
-  { json_read(results); });
-
-GEN_COMPAT_CHECK(
   cluster::finish_partition_update_request,
   {
       json_write(ntp);

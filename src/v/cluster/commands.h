@@ -182,13 +182,6 @@ using create_partition_cmd = controller_command<
   model::record_batch_type::topic_management_cmd,
   serde_opts::adl_and_serde>;
 
-using create_non_replicable_topic_cmd = controller_command<
-  non_replicable_topic,
-  int8_t, // unused
-  create_non_replicable_topic_cmd_type,
-  model::record_batch_type::topic_management_cmd,
-  serde_opts::adl_and_serde>;
-
 using cancel_moving_partition_replicas_cmd = controller_command<
   model::ntp,
   cancel_moving_partition_replicas_cmd_data,

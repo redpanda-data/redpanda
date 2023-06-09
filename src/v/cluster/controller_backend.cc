@@ -340,10 +340,6 @@ create_topic_table_snapshot(
         }
         for (const auto& p : ntp_meta->get_assignments()) {
             auto ntp = model::ntp(nt.ns, nt.tp, p.id);
-            if (!ntp_meta->is_topic_replicable()) {
-                snapshot.emplace(ntp, 0);
-                continue;
-            }
             auto revision_id = ntp_meta->get_revision();
             if (cluster::contains_node(p.replicas, current_node)) {
                 snapshot.emplace(ntp, revision_id);
@@ -780,15 +776,6 @@ ss::future<> controller_backend::reconcile_ntp(deltas_t& deltas) {
     while (!(stop || it == deltas.end())) {
         // start_topics_reconciliation_loop will catch this during shutdown
         _as.local().check();
-
-        if (has_non_replicable_op_type(it->delta)) {
-            /// This if statement has nothing to do with correctness and is only
-            /// here to reduce the amount of unnecessary logging emitted by the
-            /// controller_backend for events that it eventually will not handle
-            /// anyway.
-            ++it;
-            continue;
-        }
 
         try {
             auto ec = co_await execute_partition_op(*it);

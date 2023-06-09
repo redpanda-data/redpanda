@@ -292,108 +292,6 @@ ss::future<topic_result> topics_frontend::do_update_topic_properties(
     }
 }
 
-ss::future<topic_result> topics_frontend::do_create_non_replicable_topic(
-  non_replicable_topic data, model::timeout_clock::time_point timeout) {
-    if (!validate_topic_name(data.name)) {
-        co_return topic_result(
-          topic_result(std::move(data.name), errc::invalid_topic_name));
-    }
-
-    create_non_replicable_topic_cmd cmd(data, 0);
-    try {
-        auto ec = co_await replicate_and_wait(
-          _stm, _features, _as, std::move(cmd), timeout);
-        co_return topic_result(data.name, map_errc(ec));
-    } catch (const std::exception& ex) {
-        vlog(
-          clusterlog.warn,
-          "unable to create non replicated topic {} - source topic - {} "
-          "reason: "
-          "{}",
-          data.name,
-          data.source,
-          ex.what());
-        co_return topic_result(std::move(data.name), errc::replication_error);
-    }
-}
-
-ss::future<std::vector<topic_result>>
-topics_frontend::create_non_replicable_topics(
-  std::vector<non_replicable_topic> topics,
-  model::timeout_clock::time_point timeout) {
-    vlog(clusterlog.trace, "Create non_replicable topics {}", topics);
-    std::vector<ss::future<topic_result>> futures;
-    futures.reserve(topics.size());
-
-    std::transform(
-      std::begin(topics),
-      std::end(topics),
-      std::back_inserter(futures),
-      [this, timeout](non_replicable_topic& d) {
-          return do_create_non_replicable_topic(std::move(d), timeout);
-      });
-
-    return ss::when_all_succeed(futures.begin(), futures.end())
-      .then([this, timeout](std::vector<topic_result> results) {
-          if (needs_linearizable_barrier(results)) {
-              return stm_linearizable_barrier(timeout).then(
-                [results = std::move(results)](result<model::offset>) mutable {
-                    return results;
-                });
-          }
-          return ss::make_ready_future<std::vector<topic_result>>(
-            std::move(results));
-      });
-}
-
-ss::future<std::vector<topic_result>>
-topics_frontend::dispatch_create_non_replicable_to_leader(
-  model::node_id leader,
-  std::vector<non_replicable_topic> topics,
-  model::timeout_clock::duration timeout) {
-    vlog(clusterlog.trace, "Dispatching create topics to {}", leader);
-    auto r = co_await _connections.local()
-               .with_node_client<cluster::controller_client_protocol>(
-                 _self,
-                 ss::this_shard_id(),
-                 leader,
-                 timeout,
-                 [topics, timeout](controller_client_protocol cp) mutable {
-                     return cp.create_non_replicable_topics(
-                       create_non_replicable_topics_request{
-                         .topics = std::move(topics), .timeout = timeout},
-                       rpc::client_opts(timeout));
-                 })
-               .then(&rpc::get_ctx_data<create_non_replicable_topics_reply>);
-    if (r.has_error()) {
-        co_return create_topic_results(topics, map_errc(r.error()));
-    }
-    co_return std::move(r.value().results);
-}
-
-ss::future<std::vector<topic_result>>
-topics_frontend::autocreate_non_replicable_topics(
-  std::vector<non_replicable_topic> topics,
-  model::timeout_clock::duration timeout) {
-    vlog(clusterlog.trace, "Create non_replicable topics {}", topics);
-
-    auto leader = _leaders.local().get_leader(model::controller_ntp);
-
-    // no leader available
-    if (!leader) {
-        return ss::make_ready_future<std::vector<topic_result>>(
-          create_topic_results(topics, errc::no_leader_controller));
-    }
-    // current node is a leader controller
-    if (leader == _self) {
-        return create_non_replicable_topics(
-          std::move(topics), model::time_from_now(timeout));
-    }
-    // dispatch to leader
-    return dispatch_create_non_replicable_to_leader(
-      leader.value(), std::move(topics), timeout);
-}
-
 topic_result
 make_error_result(const model::topic_namespace& tp_ns, std::error_code ec) {
     if (ec.category() == cluster::error_category()) {
@@ -1218,9 +1116,6 @@ ss::future<std::error_code> topics_frontend::change_replication_factor(
     auto tp_metadata = _topics.local().get_topic_metadata_ref(topic);
     if (!tp_metadata.has_value()) {
         co_return errc::topic_not_exists;
-    }
-    if (!tp_metadata.value().get().is_topic_replicable()) {
-        co_return errc::topic_operation_error;
     }
 
     auto current_replication_factor

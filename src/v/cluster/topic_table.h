@@ -12,7 +12,6 @@
 #pragma once
 
 #include "cluster/commands.h"
-#include "cluster/non_replicable_topics_frontend.h"
 #include "cluster/topic_table_probe.h"
 #include "cluster/types.h"
 #include "model/fundamental.h"
@@ -180,10 +179,6 @@ public:
         topic_metadata metadata;
         absl::node_hash_map<model::partition_id, partition_meta> partitions;
 
-        bool is_topic_replicable() const {
-            return metadata.is_topic_replicable();
-        }
-
         assignments_set& get_assignments() {
             return metadata.get_assignments();
         }
@@ -196,9 +191,6 @@ public:
         }
         std::optional<model::initial_revision_id> get_remote_revision() const {
             return metadata.get_remote_revision();
-        }
-        const model::topic& get_source_topic() const {
-            return metadata.get_source_topic();
         }
 
         const topic_configuration& get_configuration() const {
@@ -220,11 +212,7 @@ public:
       topic_metadata_item,
       model::topic_namespace_hash,
       model::topic_namespace_eq>;
-    using hierarchy_t = absl::node_hash_map<
-      model::topic_namespace,
-      absl::flat_hash_set<model::topic_namespace>,
-      model::topic_namespace_hash,
-      model::topic_namespace_eq>;
+
     using lifecycle_markers_t = absl::node_hash_map<
       nt_revision,
       nt_lifecycle_marker,
@@ -284,8 +272,7 @@ public:
       move_partition_replicas_cmd,
       finish_moving_partition_replicas_cmd,
       update_topic_properties_cmd,
-      create_partition_cmd,
-      create_non_replicable_topic_cmd>{};
+      create_partition_cmd>{};
 
     /// State machine applies
     ss::future<std::error_code> apply(create_topic_cmd, model::offset);
@@ -299,8 +286,6 @@ public:
     ss::future<std::error_code>
       apply(update_topic_properties_cmd, model::offset);
     ss::future<std::error_code> apply(create_partition_cmd, model::offset);
-    ss::future<std::error_code>
-      apply(create_non_replicable_topic_cmd, model::offset);
     ss::future<std::error_code>
       apply(cancel_moving_partition_replicas_cmd, model::offset);
     ss::future<std::error_code> apply(move_topic_replicas_cmd, model::offset);
@@ -407,8 +392,6 @@ public:
 
     const underlying_t& topics_map() const { return _topics; }
 
-    const hierarchy_t& hierarchy_map() const { return _topics_hierarchy; }
-
     bool is_update_in_progress(const model::ntp&) const;
 
     bool has_updates_in_progress() const {
@@ -509,7 +492,6 @@ private:
     do_local_delete(model::topic_namespace nt, model::offset offset);
 
     underlying_t _topics;
-    hierarchy_t _topics_hierarchy;
     lifecycle_markers_t _lifecycle_markers;
     size_t _partition_count{0};
 

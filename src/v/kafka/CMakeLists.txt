@@ -53,7 +53,6 @@ v_cc_library(
     Seastar::seastar
     v::bytes
     v::rpc
-    v::coproc
     v::cluster
     v::kafka_protocol
     v::security

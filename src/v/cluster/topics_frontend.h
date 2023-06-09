@@ -130,13 +130,6 @@ public:
       std::vector<create_partitions_configuration>,
       model::timeout_clock::time_point);
 
-    ss::future<std::vector<topic_result>> create_non_replicable_topics(
-      std::vector<non_replicable_topic> topics,
-      model::timeout_clock::time_point timeout);
-
-    ss::future<std::vector<topic_result>> autocreate_non_replicable_topics(
-      std::vector<non_replicable_topic>, model::timeout_clock::duration);
-
     ss::future<bool> validate_shard(model::node_id node, uint32_t shard) const;
 
     ss::future<result<std::vector<move_cancellation_result>>>
@@ -172,9 +165,6 @@ private:
     ss::future<topic_result>
       do_delete_topic(model::topic_namespace, model::timeout_clock::time_point);
 
-    ss::future<topic_result> do_create_non_replicable_topic(
-      non_replicable_topic, model::timeout_clock::time_point);
-
     ss::future<std::vector<topic_result>> dispatch_create_to_leader(
       model::node_id,
       std::vector<topic_configuration>,
@@ -182,12 +172,6 @@ private:
 
     ss::future<topic_result> dispatch_purged_topic_to_leader(
       model::node_id, nt_revision, model::timeout_clock::duration);
-
-    ss::future<std::vector<topic_result>>
-    dispatch_create_non_replicable_to_leader(
-      model::node_id leader,
-      std::vector<non_replicable_topic> topics,
-      model::timeout_clock::duration timeout);
 
     ss::future<std::error_code> do_update_replication_factor(
       topic_properties_update&, model::timeout_clock::time_point);

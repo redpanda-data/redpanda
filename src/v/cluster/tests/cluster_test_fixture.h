@@ -71,7 +71,6 @@ public:
       int16_t rpc_port,
       int16_t proxy_port,
       int16_t schema_reg_port,
-      int16_t coproc_supervisor_port,
       std::vector<config::seed_server> seeds,
       configure_node_id use_node_id = configure_node_id::yes,
       empty_seed_starts_cluster empty_seed_starts_cluster_val
@@ -84,7 +83,6 @@ public:
             rpc_port,
             proxy_port,
             schema_reg_port,
-            coproc_supervisor_port,
             seeds,
             ssx::sformat("{}.{}", _base_dir, node_id()),
             _sgroups,
@@ -119,7 +117,6 @@ public:
       int rpc_port_base = 11000,
       int proxy_port_base = 8082,
       int schema_reg_port_base = 8081,
-      int coproc_supervisor_port_base = 43189,
       configure_node_id use_node_id = configure_node_id::yes,
       empty_seed_starts_cluster empty_seed_starts_cluster_val
       = empty_seed_starts_cluster::yes) {
@@ -134,7 +131,6 @@ public:
           rpc_port_base + node_id(),
           proxy_port_base + node_id(),
           schema_reg_port_base + node_id(),
-          coproc_supervisor_port_base + node_id(),
           std::move(seeds),
           use_node_id,
           empty_seed_starts_cluster_val);
@@ -152,7 +148,6 @@ public:
           11000,
           8082,
           8081,
-          43189,
           use_node_id,
           empty_seed_starts_cluster_val);
     }

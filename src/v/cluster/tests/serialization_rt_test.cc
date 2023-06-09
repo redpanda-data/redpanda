@@ -934,13 +934,6 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
         roundtrip_test(data);
     }
     {
-        cluster::non_replicable_topic tp;
-        tp.name = model::random_topic_namespace();
-        tp.source = model::random_topic_namespace();
-
-        roundtrip_test(tp);
-    }
-    {
         cluster::config_status status;
         status.node = tests::random_named_int<model::node_id>();
         status.restart = tests::random_bool();
@@ -1398,7 +1391,7 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
     {
         cluster::topic_result data{
           model::random_topic_namespace(),
-          cluster::errc::source_topic_not_exists,
+          cluster::errc::topic_already_exists,
         };
         roundtrip_test(data);
     }
@@ -1729,32 +1722,6 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
         if (tests::random_bool()) {
             data.report = random_cluster_health_report();
         }
-        roundtrip_test(data);
-    }
-    {
-        std::vector<cluster::non_replicable_topic> topics;
-        for (auto i = 0, mi = random_generators::get_int(20); i < mi; ++i) {
-            topics.push_back(cluster::non_replicable_topic{
-              .source = model::random_topic_namespace(),
-              .name = model::random_topic_namespace()});
-        }
-        cluster::create_non_replicable_topics_request data{
-          .topics = topics,
-          .timeout = random_timeout_clock_duration(),
-        };
-        roundtrip_test(data);
-    }
-    {
-        std::vector<cluster::topic_result> results;
-        for (auto i = 0, mi = random_generators::get_int(20); i < mi; ++i) {
-            results.push_back(cluster::topic_result{
-              model::random_topic_namespace(),
-              cluster::errc::source_topic_not_exists,
-            });
-        }
-        cluster::create_non_replicable_topics_reply data{
-          .results = results,
-        };
         roundtrip_test(data);
     }
     {
@@ -2214,12 +2181,6 @@ SEASTAR_THREAD_TEST_CASE(commands_serialization_test) {
           cluster::create_partitions_configuration_assignment(
             random_create_partitions_configuration(),
             random_partition_assignments()));
-
-        roundtrip_cmd<cluster::create_non_replicable_topic_cmd>(
-          cluster::non_replicable_topic{
-            .source = model::random_topic_namespace(),
-            .name = model::random_topic_namespace()},
-          0);
 
         roundtrip_cmd<cluster::create_user_cmd>(
           tests::random_named_string<security::credential_user>(),
