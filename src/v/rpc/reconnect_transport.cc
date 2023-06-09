@@ -58,8 +58,14 @@ reconnect_transport::reconnect(clock_type::duration connection_timeout) {
 ss::future<result<reconnect_transport::underlying_transport_ptr>>
 reconnect_transport::reconnect(clock_type::time_point connection_timeout) {
     using ret_t = result<underlying_transport_ptr>;
-    if (!has_backoff_expired(
-          _stamp, _backoff_policy.current_backoff_duration())) {
+    auto current_backoff = _backoff_policy.current_backoff_duration();
+    if (!has_backoff_expired(_stamp, current_backoff)) {
+        vlog(
+          rpclog.debug,
+          "exp backoff: _stamp: {}, now: {}, current_backoff: {}",
+          _stamp.time_since_epoch().count(),
+          clock_type::now().time_since_epoch().count(),
+          current_backoff.count());
         return ss::make_ready_future<ret_t>(errc::exponential_backoff);
     }
 

@@ -207,7 +207,7 @@ ss::future<result<node_status>> node_status_backend::send_node_status_request(
             })
           .then(&rpc::get_ctx_data<node_status_reply>);
 
-    co_return process_reply(reply);
+    co_return process_reply(target, reply);
 }
 
 ss::future<ss::shard_id> node_status_backend::maybe_create_client(
@@ -222,8 +222,8 @@ ss::future<ss::shard_id> node_status_backend::maybe_create_client(
     co_return source_shard;
 }
 
-result<node_status>
-node_status_backend::process_reply(result<node_status_reply> reply) {
+result<node_status> node_status_backend::process_reply(
+  model::node_id target, result<node_status_reply> reply) {
     vassert(ss::this_shard_id() == shard, "invoked on a wrong shard");
 
     if (!reply.has_error()) {
@@ -241,23 +241,30 @@ node_status_backend::process_reply(result<node_status_reply> reply) {
                == rpc::errc::client_request_timeout) {
             _stats.rpcs_timed_out += 1;
         }
-        static constexpr auto rate_limit = std::chrono::seconds(1);
-        static ss::logger::rate_limit rate(rate_limit);
-        clusterlog.log(
-          ss::log_level::debug,
-          rate,
-          "Error occurred while sending node status request: {}",
-          err.message());
+        vlog(
+          clusterlog.debug,
+          "Error occurred while sending node status request: {} to target: {}",
+          err.message(),
+          target);
         return err;
     }
 }
 
 ss::future<node_status_reply>
-node_status_backend::process_request(node_status_request) {
+node_status_backend::process_request(node_status_request request) {
     _stats.rpcs_received += 1;
 
+    vlog(
+      clusterlog.debug,
+      "Resetting client backoff for node: {}",
+      request.sender_metadata.node_id);
+
+    auto sender = request.sender_metadata.node_id;
+    co_await _node_connection_cache.local().reset_client_backoff(
+      _self, sender % ss::smp::count, sender);
+
     node_status_reply reply = {.replier_metadata = {.node_id = _self}};
-    return ss::make_ready_future<node_status_reply>(std::move(reply));
+    co_return reply;
 }
 
 void node_status_backend::setup_metrics(

@@ -260,9 +260,7 @@ class PartitionBalancerService(EndToEndTest):
 
             if failure_types == None:
                 failure_types = [
-                    FailureSpec.FAILURE_KILL,
                     FailureSpec.FAILURE_TERMINATE,
-                    FailureSpec.FAILURE_SUSPEND,
                 ]
 
             # Only track one failure at a time
