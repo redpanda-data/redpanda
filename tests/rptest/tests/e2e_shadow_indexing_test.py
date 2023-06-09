@@ -39,6 +39,7 @@ from rptest.utils.si_utils import nodes_report_cloud_segments, BucketView
 
 class EndToEndShadowIndexingBase(EndToEndTest):
     segment_size = 1048576  # 1 Mb
+    chunk_size = segment_size * 0.75
     s3_topic_name = "panda-topic"
 
     num_brokers = 3
@@ -49,13 +50,12 @@ class EndToEndShadowIndexingBase(EndToEndTest):
         replication_factor=3,
     ), )
 
-    def __init__(self,
-                 test_context,
-                 extra_rp_conf=None,
-                 environment={'__REDPANDA_TOPIC_REC_DL_CHECK_MILLIS': 5000}):
+    def __init__(self, test_context, extra_rp_conf=None, environment=None):
         super(EndToEndShadowIndexingBase,
               self).__init__(test_context=test_context)
 
+        if environment is None:
+            environment = {'__REDPANDA_TOPIC_REC_DL_CHECK_MILLIS': 5000}
         self.test_context = test_context
         self.topic = self.s3_topic_name
 
@@ -467,6 +467,7 @@ class EndToEndShadowIndexingTestWithDisruptions(EndToEndShadowIndexingBase):
         super().__init__(test_context,
                          extra_rp_conf={
                              'default_topic_replications': self.num_brokers,
+                             'cloud_storage_cache_chunk_size': self.chunk_size,
                          })
 
     @cluster(num_nodes=5, log_allow_list=CHAOS_LOG_ALLOW_LIST)
@@ -538,6 +539,7 @@ class ShadowIndexingInfiniteRetentionTest(EndToEndShadowIndexingBase):
                 # topic.
                 "delete_retention_ms": self.small_interval_ms,
                 "retention_bytes": self.small_segment_size,
+                'cloud_storage_cache_chunk_size': self.chunk_size,
             })
 
     @cluster(num_nodes=2)
@@ -569,6 +571,7 @@ class ShadowIndexingInfiniteRetentionTest(EndToEndShadowIndexingBase):
 
 class ShadowIndexingManyPartitionsTest(PreallocNodesTest):
     small_segment_size = 4096
+    chunk_size = small_segment_size * 0.75
     topic_name = f"{EndToEndShadowIndexingBase.s3_topic_name}"
     topics = (TopicSpec(name=topic_name,
                         partition_count=128,
@@ -594,6 +597,7 @@ class ShadowIndexingManyPartitionsTest(PreallocNodesTest):
                 # quickly.
                 "cloud_storage_enable_segment_merging": False,
                 'log_segment_size_min': 1024,
+                'cloud_storage_cache_chunk_size': self.chunk_size,
             },
             environment={'__REDPANDA_TOPIC_REC_DL_CHECK_MILLIS': 5000},
             si_settings=si_settings)
@@ -687,6 +691,7 @@ class ShadowIndexingWhileBusyTest(PreallocNodesTest):
     # into ducktape.
 
     segment_size = 20 * 2**20
+    chunk_size = segment_size // 2
     topics = [TopicSpec()]
 
     def __init__(self, test_context: TestContext):
@@ -701,7 +706,11 @@ class ShadowIndexingWhileBusyTest(PreallocNodesTest):
               self).__init__(test_context=test_context,
                              node_prealloc_count=1,
                              num_brokers=7,
-                             si_settings=si_settings)
+                             si_settings=si_settings,
+                             extra_rp_conf={
+                                 'cloud_storage_cache_chunk_size':
+                                 self.chunk_size,
+                             })
 
         if not self.redpanda.dedicated_nodes:
             self.redpanda.set_extra_rp_conf(
