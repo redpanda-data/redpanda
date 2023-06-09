@@ -130,6 +130,13 @@ configuration::configuration()
       {.example = "65536"},
       std::nullopt,
       {.min = 32_KiB, .align = 4_KiB})
+  , rpc_client_max_connections(
+      *this,
+      "rpc_client_max_connections",
+      "The max client connections that will be open to a given broker.",
+      {.example = "8"},
+      8,
+      {.min = 2})
   , enable_coproc(
       *this,
       "enable_coproc",
