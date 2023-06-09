@@ -876,7 +876,9 @@ ss::future<result<std::unique_ptr<async_manifest_view_cursor>, error_outcome>>
 async_manifest_view::get_active(async_view_search_query_t query) noexcept {
     try {
         ss::gate::holder h(_gate);
-        if (!is_archive(query) && !is_stm(query)) {
+        if (
+          !is_archive(query) && !is_stm(query)
+          && !std::holds_alternative<model::timestamp>(query)) {
             // The view should contain manifest below archive start in
             // order to be able to perform retention and advance metadata.
             vlog(
@@ -1226,6 +1228,12 @@ async_manifest_view::get_materialized_manifest(
         if (is_stm(q)) {
             vlog(_ctxlog.debug, "Query {} matches with STM manifest", q);
             // Fast path for STM reads
+            co_return std::ref(_stm_manifest);
+        }
+        if (
+          !is_stm(q) && std::holds_alternative<model::timestamp>(q)
+          && _stm_manifest.get_archive_start_offset() == model::offset{}) {
+            vlog(_ctxlog.debug, "Using STM manifest for timequery {}", q);
             co_return std::ref(_stm_manifest);
         }
         // The scan is not performed every time. Nevertheless, it can take long
