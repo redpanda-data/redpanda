@@ -121,7 +121,7 @@ operator<<(std::ostream& os, const throughput_control_group& tcg) {
       os,
       "{{group_name: {}, client_id: {}, throughput_limit_node_in_bps: {}, "
       "throughput_limit_node_out_bps: {}}}",
-      tcg.name,
+      tcg.is_noname() ? ""s : fmt::format("{{{}}}", tcg.name),
       tcg.client_id_matcher,
       tcg.throughput_limit_node_in_bps,
       tcg.throughput_limit_node_out_bps);
