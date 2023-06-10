@@ -288,7 +288,7 @@ func (r *Cluster) validateDownscaling(old *Cluster) field.ErrorList {
 		allErrs = append(allErrs,
 			field.Invalid(field.NewPath("spec").Child("replicas"),
 				r.Spec.Replicas,
-				"downscaling is an alpha feature: set --allow-downscaling in the controller parameters to enable it"))
+				"downscaling is not enabled: unset --allow-downscaling=false in the controller parameters to enable it"))
 	}
 	return allErrs
 }
