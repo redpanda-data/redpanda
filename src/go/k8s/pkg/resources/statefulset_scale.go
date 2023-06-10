@@ -304,6 +304,9 @@ func (r *StatefulSetResource) disableMaintenanceModeOnDecommissionedNodes(
 	ctx context.Context,
 ) error {
 	brokerID := r.pandaCluster.GetDecommissionBrokerID()
+	if brokerID == nil {
+		return nil
+	}
 	log := r.logger.WithName("disableMaintenanceModeOnDecommissionedNodes").WithValues("node_id", *brokerID)
 
 	if !featuregates.MaintenanceMode(r.pandaCluster.Status.Version) {
