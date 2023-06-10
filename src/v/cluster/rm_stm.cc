@@ -2217,7 +2217,7 @@ ss::future<tx_errc> rm_stm::do_try_abort_old_tx(model::producer_identity pid) {
     }
 
     if (tx_seq) {
-        vlog(_ctx_log.trace, "trying to exprire pid:{} tx_seq:{}", pid, tx_seq);
+        vlog(_ctx_log.trace, "trying to expire pid:{} tx_seq:{}", pid, tx_seq);
         // It looks like a partition is fixed now but actually partitioning
         // of the tx coordinator isn't support yet so it doesn't matter see
         // https://github.com/redpanda-data/redpanda/issues/6137
