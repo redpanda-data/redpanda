@@ -13,7 +13,7 @@
 #include "bytes/iostream.h"
 #include "cloud_storage/base_manifest.h"
 #include "cloud_storage/logger.h"
-#include "cloud_storage/materialized_segments.h"
+#include "cloud_storage/materialized_resources.h"
 #include "cloud_storage/types.h"
 #include "cloud_storage_clients/client_pool.h"
 #include "cloud_storage_clients/util.h"
@@ -56,7 +56,7 @@ remote::remote(
   model::cloud_credentials_source cloud_credentials_source)
   : _pool(clients)
   , _auth_refresh_bg_op{_gate, _as, conf, cloud_credentials_source}
-  , _materialized(std::make_unique<materialized_segments>())
+  , _materialized(std::make_unique<materialized_resources>())
   , _probe(
       remote_metrics_disabled(static_cast<bool>(
         std::visit([](auto&& cfg) { return cfg.disable_metrics; }, conf))),

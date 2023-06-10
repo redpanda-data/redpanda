@@ -10,7 +10,7 @@
 
 #include "cloud_storage/probe.h"
 
-#include "cloud_storage/materialized_segments.h"
+#include "cloud_storage/materialized_resources.h"
 #include "prometheus/prometheus_sanitize.h"
 #include "ssx/metrics.h"
 
@@ -22,7 +22,7 @@ namespace cloud_storage {
 remote_probe::remote_probe(
   remote_metrics_disabled disabled,
   remote_metrics_disabled public_disabled,
-  materialized_segments& ms)
+  materialized_resources& ms)
   : _public_metrics(ssx::metrics::public_metrics_handle) {
     namespace sm = ss::metrics;
 

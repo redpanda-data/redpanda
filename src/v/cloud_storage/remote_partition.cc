@@ -12,7 +12,7 @@
 
 #include "cloud_storage/async_manifest_view.h"
 #include "cloud_storage/logger.h"
-#include "cloud_storage/materialized_segments.h"
+#include "cloud_storage/materialized_resources.h"
 #include "cloud_storage/offset_translation_layer.h"
 #include "cloud_storage/partition_manifest.h"
 #include "cloud_storage/remote_segment.h"
@@ -1245,7 +1245,7 @@ void remote_partition::offload_segment(model::offset o) {
     _segments.erase(it);
 }
 
-materialized_segments& remote_partition::materialized() {
+materialized_resources& remote_partition::materialized() {
     return _api.materialized();
 }
 

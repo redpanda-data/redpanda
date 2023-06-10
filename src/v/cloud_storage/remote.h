@@ -32,7 +32,7 @@
 
 namespace cloud_storage {
 
-class materialized_segments;
+class materialized_resources;
 
 /// \brief Predicate required to continue operation
 ///
@@ -371,7 +371,7 @@ public:
       retry_chain_node& parent,
       bool expect_missing = false);
 
-    materialized_segments& materialized() { return *_materialized; }
+    materialized_resources& materialized() { return *_materialized; }
 
     /// Event filter class.
     ///
@@ -470,7 +470,7 @@ private:
     ss::gate _gate;
     ss::abort_source _as;
     auth_refresh_bg_op _auth_refresh_bg_op;
-    std::unique_ptr<materialized_segments> _materialized;
+    std::unique_ptr<materialized_resources> _materialized;
 
     // Lifetime: probe has reference to _materialized, must be destroyed after
     remote_probe _probe;

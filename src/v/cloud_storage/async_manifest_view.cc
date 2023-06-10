@@ -12,7 +12,7 @@
 
 #include "cloud_storage/cache_service.h"
 #include "cloud_storage/logger.h"
-#include "cloud_storage/materialized_segments.h"
+#include "cloud_storage/materialized_resources.h"
 #include "cloud_storage/partition_manifest.h"
 #include "cloud_storage/partition_probe.h"
 #include "cloud_storage/remote.h"

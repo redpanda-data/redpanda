@@ -20,7 +20,7 @@
 
 namespace cloud_storage {
 
-class materialized_segments;
+class materialized_resources;
 
 /// Cloud storage endpoint level probe
 class remote_probe {
@@ -28,7 +28,7 @@ public:
     explicit remote_probe(
       remote_metrics_disabled disabled,
       remote_metrics_disabled public_disabled,
-      materialized_segments&);
+      materialized_resources&);
     remote_probe(const remote_probe&) = delete;
     remote_probe& operator=(const remote_probe&) = delete;
     remote_probe(remote_probe&&) = delete;

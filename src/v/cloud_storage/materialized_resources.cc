@@ -8,7 +8,7 @@
  * https://github.com/redpanda-data/redpanda/blob/master/licenses/rcl.md
  */
 
-#include "cloud_storage/materialized_segments.h"
+#include "cloud_storage/materialized_resources.h"
 
 #include "cloud_storage/logger.h"
 #include "cloud_storage/materialized_manifest_cache.h"
@@ -41,7 +41,7 @@ static constexpr uint32_t default_reader_factor = 1;
 // on average).
 static constexpr uint32_t default_segment_factor = 2;
 
-materialized_segments::materialized_segments()
+materialized_resources::materialized_resources()
   : _stm_jitter(stm_jitter_duration)
   , _max_partitions_per_shard(
       config::shard_local_cfg().topic_partitions_per_shard.bind())
@@ -74,7 +74,7 @@ materialized_segments::materialized_segments()
     });
 }
 
-ss::future<> materialized_segments::stop() {
+ss::future<> materialized_resources::stop() {
     cst_log.debug("Stopping materialized_segments...");
 
     co_await _manifest_cache->stop();
@@ -84,7 +84,7 @@ ss::future<> materialized_segments::stop() {
     co_await _gate.close();
     cst_log.debug("Stopped materialized_segments...");
 }
-ss::future<> materialized_segments::start() {
+ss::future<> materialized_resources::start() {
     // Timer to invoke TTL eviction of segments
     _stm_timer.set_callback([this] {
         trim_segments(std::nullopt);
@@ -98,33 +98,33 @@ ss::future<> materialized_segments::start() {
 }
 
 materialized_manifest_cache&
-materialized_segments::get_materialized_manifest_cache() {
+materialized_resources::get_materialized_manifest_cache() {
     return *_manifest_cache;
 }
 
-size_t materialized_segments::max_readers() const {
+size_t materialized_resources::max_readers() const {
     return static_cast<size_t>(_max_readers_per_shard().value_or(
       _max_partitions_per_shard() * default_reader_factor));
 }
 
-size_t materialized_segments::max_segments() const {
+size_t materialized_resources::max_segments() const {
     return static_cast<size_t>(_max_segments_per_shard().value_or(
       _max_partitions_per_shard() * default_segment_factor));
 }
 
-size_t materialized_segments::current_readers() const {
+size_t materialized_resources::current_readers() const {
     return _reader_units.outstanding();
 }
 
-size_t materialized_segments::current_segments() const {
+size_t materialized_resources::current_segments() const {
     return _segment_units.outstanding();
 }
 
-void materialized_segments::register_segment(materialized_segment_state& s) {
+void materialized_resources::register_segment(materialized_segment_state& s) {
     _materialized.push_back(s);
 }
 
-ssx::semaphore_units materialized_segments::get_reader_units() {
+ssx::semaphore_units materialized_resources::get_reader_units() {
     if (_reader_units.available_units() <= 0) {
         trim_readers(max_readers() / 2);
     }
@@ -136,7 +136,7 @@ ssx::semaphore_units materialized_segments::get_reader_units() {
     return _reader_units.take(1).units;
 }
 
-ssx::semaphore_units materialized_segments::get_segment_units() {
+ssx::semaphore_units materialized_resources::get_segment_units() {
     if (_segment_units.available_units() <= 0) {
         trim_segments(max_segments() / 2);
     }
@@ -149,7 +149,7 @@ ssx::semaphore_units materialized_segments::get_segment_units() {
     return _segment_units.take(1).units;
 }
 
-void materialized_segments::trim_readers(size_t target_free) {
+void materialized_resources::trim_readers(size_t target_free) {
     vlog(
       cst_log.debug,
       "Trimming readers until {} reader slots are free (current {})",
@@ -236,7 +236,7 @@ void materialized_segments::trim_readers(size_t target_free) {
  *        TTL is not relevant.
  *
  */
-void materialized_segments::trim_segments(std::optional<size_t> target_free) {
+void materialized_resources::trim_segments(std::optional<size_t> target_free) {
     vlog(
       cst_log.debug,
       "collecting stale materialized segments, {} segments materialized",
@@ -275,7 +275,7 @@ void materialized_segments::trim_segments(std::optional<size_t> target_free) {
  * trimmed, and if so pushes to the to_offload list for the caller
  * to later call offload_segment on the list's contents.
  */
-void materialized_segments::maybe_trim_segment(
+void materialized_resources::maybe_trim_segment(
   materialized_segment_state& st, offload_list_t& to_offload) {
     if (st.segment->is_stopped()) {
         return;

@@ -46,9 +46,9 @@ class materialized_manifest_cache;
  * also enables us to have a central fiber for background-stopping
  * evicted objects, instead of each partition doing it independently.
  */
-class materialized_segments {
+class materialized_resources {
 public:
-    materialized_segments();
+    materialized_resources();
 
     ss::future<> start();
     ss::future<> stop();
