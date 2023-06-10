@@ -11,6 +11,7 @@
 #include "cloud_storage/materialized_segments.h"
 
 #include "cloud_storage/logger.h"
+#include "cloud_storage/materialized_manifest_cache.h"
 #include "cloud_storage/remote_partition.h"
 #include "cloud_storage/remote_segment.h"
 #include "config/configuration.h"
@@ -50,17 +51,34 @@ materialized_segments::materialized_segments()
       config::shard_local_cfg()
         .cloud_storage_max_materialized_segments_per_shard.bind())
   , _reader_units(max_readers(), "cst_reader")
-  , _segment_units(max_segments(), "cst_segment") {
+  , _segment_units(max_segments(), "cst_segment")
+  , _manifest_meta_size(
+      config::shard_local_cfg().cloud_storage_manifest_cache_size.bind())
+  , _manifest_cache(ss::make_shared<materialized_manifest_cache>(
+      config::shard_local_cfg().cloud_storage_manifest_cache_size())) {
     _max_readers_per_shard.watch(
       [this]() { _reader_units.set_capacity(max_readers()); });
     _max_segments_per_shard.watch(
       [this]() { _segment_units.set_capacity(max_segments()); });
     _max_partitions_per_shard.watch(
       [this]() { _reader_units.set_capacity(max_readers()); });
+    _manifest_meta_size.watch([this] {
+        ssx::background = ss::with_gate(_gate, [this] {
+            vlog(
+              cst_log.info,
+              "Manifest cache capacity will be changed from {} to {}",
+              _manifest_cache->get_capacity(),
+              _manifest_meta_size());
+            return _manifest_cache->set_capacity(_manifest_meta_size());
+        });
+    });
 }
 
 ss::future<> materialized_segments::stop() {
     cst_log.debug("Stopping materialized_segments...");
+
+    co_await _manifest_cache->stop();
+
     _stm_timer.cancel();
 
     co_await _gate.close();
@@ -74,7 +92,14 @@ ss::future<> materialized_segments::start() {
     });
     _stm_timer.rearm(_stm_jitter());
 
-    return ss::now();
+    co_await _manifest_cache->start();
+
+    co_return;
+}
+
+materialized_manifest_cache&
+materialized_segments::get_materialized_manifest_cache() {
+    return *_manifest_cache;
 }
 
 size_t materialized_segments::max_readers() const {

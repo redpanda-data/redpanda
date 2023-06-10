@@ -55,15 +55,15 @@ SEASTAR_THREAD_TEST_CASE(test_materialized_manifest_cache_empty) {
     ss::abort_source as;
     retry_chain_node rtc(as);
     retry_chain_logger ctxlog(test_log, rtc);
-    materialized_manifest_cache cache(10, ctxlog);
+    materialized_manifest_cache cache(10);
     cache.start().get();
 
-    auto fut = cache.prepare(10);
+    auto fut = cache.prepare(10, ctxlog);
     BOOST_REQUIRE(fut.available());
     const auto expected_so = model::offset(34);
-    cache.put(std::move(fut.get()), make_manifest(expected_so));
+    cache.put(std::move(fut.get()), make_manifest(expected_so), ctxlog);
 
-    auto res = cache.get(expected_so);
+    auto res = cache.get(expected_so, ctxlog);
     BOOST_REQUIRE(res != nullptr);
     auto actual_so = res->manifest.get_start_offset();
     BOOST_REQUIRE(actual_so.has_value());
@@ -78,26 +78,26 @@ SEASTAR_THREAD_TEST_CASE(test_materialized_manifest_cache_non_empty) {
     ss::abort_source as;
     retry_chain_node rtc(as);
     retry_chain_logger ctxlog(test_log, rtc);
-    materialized_manifest_cache cache(100, ctxlog);
+    materialized_manifest_cache cache(100);
     cache.start().get();
 
-    auto fut0 = cache.prepare(20);
+    auto fut0 = cache.prepare(20, ctxlog);
     BOOST_REQUIRE(fut0.available());
-    cache.put(std::move(fut0.get()), make_manifest(model::offset(0)));
+    cache.put(std::move(fut0.get()), make_manifest(model::offset(0)), ctxlog);
 
-    auto fut1 = cache.prepare(20);
+    auto fut1 = cache.prepare(20, ctxlog);
     BOOST_REQUIRE(fut1.available());
-    cache.put(std::move(fut1.get()), make_manifest(model::offset(1)));
+    cache.put(std::move(fut1.get()), make_manifest(model::offset(1)), ctxlog);
 
-    auto fut2 = cache.prepare(20);
+    auto fut2 = cache.prepare(20, ctxlog);
     BOOST_REQUIRE(fut2.available());
-    cache.put(std::move(fut2.get()), make_manifest(model::offset(2)));
+    cache.put(std::move(fut2.get()), make_manifest(model::offset(2)), ctxlog);
 
     BOOST_REQUIRE(cache.size() == 3);
     BOOST_REQUIRE(cache.size_bytes() == 60);
 
     auto check_segment = [&](model::offset expected_so) {
-        auto res = cache.get(expected_so);
+        auto res = cache.get(expected_so, ctxlog);
         BOOST_REQUIRE(res != nullptr);
         auto actual_so = res->manifest.get_start_offset();
         BOOST_REQUIRE(actual_so.has_value());
@@ -116,23 +116,23 @@ SEASTAR_THREAD_TEST_CASE(test_materialized_manifest_cache_evict) {
     ss::abort_source as;
     retry_chain_node rtc(as);
     retry_chain_logger ctxlog(test_log, rtc);
-    materialized_manifest_cache cache(50, ctxlog);
+    materialized_manifest_cache cache(50);
     cache.start().get();
 
-    auto fut0 = cache.prepare(20);
-    cache.put(std::move(fut0.get()), make_manifest(model::offset(0)));
+    auto fut0 = cache.prepare(20, ctxlog);
+    cache.put(std::move(fut0.get()), make_manifest(model::offset(0)), ctxlog);
 
-    auto fut1 = cache.prepare(20);
-    cache.put(std::move(fut1.get()), make_manifest(model::offset(1)));
+    auto fut1 = cache.prepare(20, ctxlog);
+    cache.put(std::move(fut1.get()), make_manifest(model::offset(1)), ctxlog);
 
-    auto fut2 = cache.prepare(20);
-    cache.put(std::move(fut2.get()), make_manifest(model::offset(2)));
+    auto fut2 = cache.prepare(20, ctxlog);
+    cache.put(std::move(fut2.get()), make_manifest(model::offset(2)), ctxlog);
 
     BOOST_REQUIRE(cache.size() == 2);
     BOOST_REQUIRE(cache.size_bytes() == 40);
 
     auto check_segment = [&](model::offset expected_so) {
-        auto res = cache.get(expected_so);
+        auto res = cache.get(expected_so, ctxlog);
         BOOST_REQUIRE(res != nullptr);
         auto actual_so = res->manifest.get_start_offset();
         BOOST_REQUIRE(actual_so.has_value());
@@ -141,7 +141,7 @@ SEASTAR_THREAD_TEST_CASE(test_materialized_manifest_cache_evict) {
     };
 
     // First manifest should be missing at this point
-    auto res = cache.get(model::offset{0});
+    auto res = cache.get(model::offset{0}, ctxlog);
     BOOST_REQUIRE(res == nullptr);
     check_segment(model::offset(1));
     check_segment(model::offset(2));
@@ -155,36 +155,36 @@ SEASTAR_THREAD_TEST_CASE(test_materialized_manifest_cache_wait_evict) {
     ss::abort_source as;
     retry_chain_node rtc(as);
     retry_chain_logger ctxlog(test_log, rtc);
-    materialized_manifest_cache cache(50, ctxlog);
+    materialized_manifest_cache cache(50);
     cache.start().get();
 
     auto m0 = model::offset(0);
-    auto fut0 = cache.prepare(20);
-    cache.put(std::move(fut0.get()), make_manifest(m0));
-    auto p0 = cache.get(m0);
+    auto fut0 = cache.prepare(20, ctxlog);
+    cache.put(std::move(fut0.get()), make_manifest(m0), ctxlog);
+    auto p0 = cache.get(m0, ctxlog);
     BOOST_REQUIRE(p0);
 
     auto m1 = model::offset(1);
-    auto fut1 = cache.prepare(20);
-    cache.put(std::move(fut1.get()), make_manifest(m1));
-    auto p1 = cache.get(m1);
+    auto fut1 = cache.prepare(20, ctxlog);
+    cache.put(std::move(fut1.get()), make_manifest(m1), ctxlog);
+    auto p1 = cache.get(m1, ctxlog);
     BOOST_REQUIRE(p1);
 
     auto m2 = model::offset(2);
-    auto fut2 = cache.prepare(20);
+    auto fut2 = cache.prepare(20, ctxlog);
     // The future can't become available yet because the
     // m0 manifest is referenced through p0 shared pointer.
     ss::sleep(100ms).get();
     BOOST_REQUIRE(!fut2.available());
     // This should unstuck the 'prepare' future
     p0 = nullptr;
-    cache.put(std::move(fut2.get()), make_manifest(m2));
+    cache.put(std::move(fut2.get()), make_manifest(m2), ctxlog);
 
     BOOST_REQUIRE(cache.size() == 2);
     BOOST_REQUIRE(cache.size_bytes() == 40);
 
     auto check_segment = [&](model::offset expected_so) {
-        auto res = cache.get(expected_so);
+        auto res = cache.get(expected_so, ctxlog);
         BOOST_REQUIRE(res != nullptr);
         auto actual_so = res->manifest.get_start_offset();
         BOOST_REQUIRE(actual_so.has_value());
@@ -204,11 +204,11 @@ SEASTAR_THREAD_TEST_CASE(test_materialized_manifest_cache_wait_evict_timeout) {
     ss::abort_source as;
     retry_chain_node rtc(as);
     retry_chain_logger ctxlog(test_log, rtc);
-    materialized_manifest_cache cache(50, ctxlog);
+    materialized_manifest_cache cache(50);
     cache.start().get();
 
     auto check_segment = [&](model::offset expected_so) {
-        auto res = cache.get(expected_so);
+        auto res = cache.get(expected_so, ctxlog);
         BOOST_REQUIRE(res != nullptr);
         auto actual_so = res->manifest.get_start_offset();
         BOOST_REQUIRE(actual_so.has_value());
@@ -217,22 +217,22 @@ SEASTAR_THREAD_TEST_CASE(test_materialized_manifest_cache_wait_evict_timeout) {
     };
 
     auto m0 = model::offset(0);
-    auto fut0 = cache.prepare(20);
-    cache.put(std::move(fut0.get()), make_manifest(m0));
-    auto p0 = cache.get(m0);
+    auto fut0 = cache.prepare(20, ctxlog);
+    cache.put(std::move(fut0.get()), make_manifest(m0), ctxlog);
+    auto p0 = cache.get(m0, ctxlog);
     BOOST_REQUIRE(p0);
 
     auto m1 = model::offset(1);
-    auto fut1 = cache.prepare(20);
-    cache.put(std::move(fut1.get()), make_manifest(m1));
-    auto p1 = cache.get(m1);
+    auto fut1 = cache.prepare(20, ctxlog);
+    cache.put(std::move(fut1.get()), make_manifest(m1), ctxlog);
+    auto p1 = cache.get(m1, ctxlog);
     BOOST_REQUIRE(p1);
 
     BOOST_REQUIRE(cache.size() == 2);
     BOOST_REQUIRE(cache.size_bytes() == 40);
 
     auto m2 = model::offset(2);
-    auto fut2 = cache.prepare(20, 100ms);
+    auto fut2 = cache.prepare(20, ctxlog, 100ms);
 
     // The eviction candidate should be accessible through the
     // '_eviction_rollback' list. The 'size' and 'size_bytes' should also give
@@ -244,7 +244,8 @@ SEASTAR_THREAD_TEST_CASE(test_materialized_manifest_cache_wait_evict_timeout) {
     BOOST_REQUIRE(cache.size_bytes() == 40);
 
     BOOST_REQUIRE_THROW(
-      cache.put(std::move(fut2.get()), make_manifest(m2)), ss::timed_out_error);
+      cache.put(std::move(fut2.get()), make_manifest(m2), ctxlog),
+      ss::timed_out_error);
 
     // After the failed attempt to put new manifest the state should stay the
     // same.
@@ -260,22 +261,22 @@ SEASTAR_THREAD_TEST_CASE(test_materialized_manifest_cache_get) {
     ss::abort_source as;
     retry_chain_node rtc(as);
     retry_chain_logger ctxlog(test_log, rtc);
-    materialized_manifest_cache cache(50, ctxlog);
+    materialized_manifest_cache cache(50);
     cache.start().get();
 
     auto m0 = model::offset(0);
-    auto fut0 = cache.prepare(20);
-    cache.put(std::move(fut0.get()), make_manifest(m0));
+    auto fut0 = cache.prepare(20, ctxlog);
+    cache.put(std::move(fut0.get()), make_manifest(m0), ctxlog);
 
     auto m1 = model::offset(1);
-    auto fut1 = cache.prepare(20);
-    cache.put(std::move(fut1.get()), make_manifest(m1));
-    auto p0 = cache.get(m0);
+    auto fut1 = cache.prepare(20, ctxlog);
+    cache.put(std::move(fut1.get()), make_manifest(m1), ctxlog);
+    auto p0 = cache.get(m0, ctxlog);
     BOOST_REQUIRE(p0);
     p0 = nullptr;
 
     auto check_segment = [&](model::offset expected_so) {
-        auto res = cache.get(expected_so);
+        auto res = cache.get(expected_so, ctxlog);
         BOOST_REQUIRE(res != nullptr);
         auto actual_so = res->manifest.get_start_offset();
         BOOST_REQUIRE(actual_so.has_value());
@@ -287,14 +288,14 @@ SEASTAR_THREAD_TEST_CASE(test_materialized_manifest_cache_get) {
     BOOST_REQUIRE(cache.size_bytes() == 40);
 
     auto m2 = model::offset(2);
-    auto fut2 = cache.prepare(20);
+    auto fut2 = cache.prepare(20, ctxlog);
 
-    cache.put(std::move(fut2.get()), make_manifest(m2));
+    cache.put(std::move(fut2.get()), make_manifest(m2), ctxlog);
 
     // Element 1 should be evicted
     check_segment(m0);
     check_segment(m2);
-    auto p1 = cache.get(m1);
+    auto p1 = cache.get(m1, ctxlog);
     BOOST_REQUIRE(p1 == nullptr);
     BOOST_REQUIRE(cache.size() == 2);
     BOOST_REQUIRE(cache.size_bytes() == 40);
@@ -307,20 +308,20 @@ SEASTAR_THREAD_TEST_CASE(test_materialized_manifest_cache_promote) {
     ss::abort_source as;
     retry_chain_node rtc(as);
     retry_chain_logger ctxlog(test_log, rtc);
-    materialized_manifest_cache cache(50, ctxlog);
+    materialized_manifest_cache cache(50);
     cache.start().get();
 
     auto m0 = model::offset(0);
-    auto fut0 = cache.prepare(20);
-    cache.put(std::move(fut0.get()), make_manifest(m0));
+    auto fut0 = cache.prepare(20, ctxlog);
+    cache.put(std::move(fut0.get()), make_manifest(m0), ctxlog);
 
     auto m1 = model::offset(1);
-    auto fut1 = cache.prepare(20);
-    cache.put(std::move(fut1.get()), make_manifest(m1));
+    auto fut1 = cache.prepare(20, ctxlog);
+    cache.put(std::move(fut1.get()), make_manifest(m1), ctxlog);
     cache.promote(m0);
 
     auto check_segment = [&](model::offset expected_so) {
-        auto res = cache.get(expected_so);
+        auto res = cache.get(expected_so, ctxlog);
         BOOST_REQUIRE(res != nullptr);
         auto actual_so = res->manifest.get_start_offset();
         BOOST_REQUIRE(actual_so.has_value());
@@ -332,14 +333,14 @@ SEASTAR_THREAD_TEST_CASE(test_materialized_manifest_cache_promote) {
     BOOST_REQUIRE(cache.size_bytes() == 40);
 
     auto m2 = model::offset(2);
-    auto fut2 = cache.prepare(20);
+    auto fut2 = cache.prepare(20, ctxlog);
 
-    cache.put(std::move(fut2.get()), make_manifest(m2));
+    cache.put(std::move(fut2.get()), make_manifest(m2), ctxlog);
 
     // Element 1 should be evicted
     check_segment(m0);
     check_segment(m2);
-    auto p1 = cache.get(m1);
+    auto p1 = cache.get(m1, ctxlog);
     BOOST_REQUIRE(p1 == nullptr);
     BOOST_REQUIRE(cache.size() == 2);
     BOOST_REQUIRE(cache.size_bytes() == 40);
@@ -349,34 +350,34 @@ SEASTAR_THREAD_TEST_CASE(test_materialized_manifest_cache_remove) {
     ss::abort_source as;
     retry_chain_node rtc(as);
     retry_chain_logger ctxlog(test_log, rtc);
-    materialized_manifest_cache cache(60, ctxlog);
+    materialized_manifest_cache cache(60);
     cache.start().get();
 
     auto m0 = model::offset(0);
-    auto fut0 = cache.prepare(20);
-    cache.put(std::move(fut0.get()), make_manifest(m0));
+    auto fut0 = cache.prepare(20, ctxlog);
+    cache.put(std::move(fut0.get()), make_manifest(m0), ctxlog);
 
     auto m1 = model::offset(1);
-    auto fut1 = cache.prepare(20);
-    cache.put(std::move(fut1.get()), make_manifest(m1));
+    auto fut1 = cache.prepare(20, ctxlog);
+    cache.put(std::move(fut1.get()), make_manifest(m1), ctxlog);
 
     auto m2 = model::offset(2);
-    auto fut2 = cache.prepare(20);
-    cache.put(std::move(fut2.get()), make_manifest(m2));
+    auto fut2 = cache.prepare(20, ctxlog);
+    cache.put(std::move(fut2.get()), make_manifest(m2), ctxlog);
 
-    auto p1 = cache.get(m1);
+    auto p1 = cache.get(m1, ctxlog);
     BOOST_REQUIRE(p1 != nullptr);
 
     BOOST_REQUIRE(cache.size() == 3);
     BOOST_REQUIRE(cache.size_bytes() == 60);
 
-    cache.remove(m1);
+    cache.remove(m1, ctxlog);
 
-    p1 = cache.get(m1);
+    p1 = cache.get(m1, ctxlog);
     BOOST_REQUIRE(p1 == nullptr);
-    auto p2 = cache.get(m2);
+    auto p2 = cache.get(m2, ctxlog);
     BOOST_REQUIRE(p2 != nullptr);
-    auto p0 = cache.get(m0);
+    auto p0 = cache.get(m0, ctxlog);
     BOOST_REQUIRE(p0 != nullptr);
 
     BOOST_REQUIRE(cache.size() == 2);
@@ -389,23 +390,23 @@ SEASTAR_THREAD_TEST_CASE(test_materialized_manifest_cache_shrink) {
     ss::abort_source as;
     retry_chain_node rtc(as);
     retry_chain_logger ctxlog(test_log, rtc);
-    materialized_manifest_cache cache(60, ctxlog);
+    materialized_manifest_cache cache(60);
     cache.start().get();
 
-    auto fut0 = cache.prepare(20);
-    cache.put(std::move(fut0.get()), make_manifest(model::offset(0)));
+    auto fut0 = cache.prepare(20, ctxlog);
+    cache.put(std::move(fut0.get()), make_manifest(model::offset(0)), ctxlog);
 
-    auto fut1 = cache.prepare(20);
-    cache.put(std::move(fut1.get()), make_manifest(model::offset(1)));
+    auto fut1 = cache.prepare(20, ctxlog);
+    cache.put(std::move(fut1.get()), make_manifest(model::offset(1)), ctxlog);
 
-    auto fut2 = cache.prepare(20);
-    cache.put(std::move(fut2.get()), make_manifest(model::offset(2)));
+    auto fut2 = cache.prepare(20, ctxlog);
+    cache.put(std::move(fut2.get()), make_manifest(model::offset(2)), ctxlog);
 
     BOOST_REQUIRE(cache.size() == 3);
     BOOST_REQUIRE(cache.size_bytes() == 60);
 
     auto check_segment = [&](model::offset expected_so, bool null_expected) {
-        auto res = cache.get(expected_so);
+        auto res = cache.get(expected_so, ctxlog);
         if (null_expected) {
             BOOST_REQUIRE(res == nullptr);
         } else {
@@ -435,20 +436,20 @@ SEASTAR_THREAD_TEST_CASE(test_materialized_manifest_cache_grow) {
     ss::abort_source as;
     retry_chain_node rtc(as);
     retry_chain_logger ctxlog(test_log, rtc);
-    materialized_manifest_cache cache(40, ctxlog);
+    materialized_manifest_cache cache(40);
     cache.start().get();
 
-    auto fut0 = cache.prepare(20);
-    cache.put(std::move(fut0.get()), make_manifest(model::offset(0)));
-    auto p0 = cache.get(model::offset(0));
+    auto fut0 = cache.prepare(20, ctxlog);
+    cache.put(std::move(fut0.get()), make_manifest(model::offset(0)), ctxlog);
+    auto p0 = cache.get(model::offset(0), ctxlog);
 
-    auto fut1 = cache.prepare(20);
-    cache.put(std::move(fut1.get()), make_manifest(model::offset(1)));
-    auto p1 = cache.get(model::offset(1));
+    auto fut1 = cache.prepare(20, ctxlog);
+    cache.put(std::move(fut1.get()), make_manifest(model::offset(1)), ctxlog);
+    auto p1 = cache.get(model::offset(1), ctxlog);
 
     // Cache is full at this point
 
-    auto fut2 = cache.prepare(20);
+    auto fut2 = cache.prepare(20, ctxlog);
     ss::sleep(100ms).get();
     BOOST_REQUIRE(!fut2.available());
     BOOST_REQUIRE(cache.size() == 2);
@@ -457,13 +458,13 @@ SEASTAR_THREAD_TEST_CASE(test_materialized_manifest_cache_grow) {
     // Increase capacity and unblock 'fut2'
     cache.set_capacity(60).get();
 
-    cache.put(std::move(fut2.get()), make_manifest(model::offset(2)));
+    cache.put(std::move(fut2.get()), make_manifest(model::offset(2)), ctxlog);
 
     BOOST_REQUIRE(cache.size() == 3);
     BOOST_REQUIRE(cache.size_bytes() == 60);
 
     auto check_segment = [&](model::offset expected_so) {
-        auto res = cache.get(expected_so);
+        auto res = cache.get(expected_so, ctxlog);
         BOOST_REQUIRE(res != nullptr);
         auto actual_so = res->manifest.get_start_offset();
         BOOST_REQUIRE(actual_so.has_value());
@@ -481,9 +482,9 @@ SEASTAR_THREAD_TEST_CASE(test_materialized_manifest_cache_grow) {
     p0 = nullptr;
     p1 = nullptr;
     ss::sleep(100ms).get();
-    p0 = cache.get(model::offset(0));
+    p0 = cache.get(model::offset(0), ctxlog);
     BOOST_REQUIRE(p0 == nullptr);
-    p1 = cache.get(model::offset(1));
+    p1 = cache.get(model::offset(1), ctxlog);
     BOOST_REQUIRE(p1 != nullptr);
 }
 

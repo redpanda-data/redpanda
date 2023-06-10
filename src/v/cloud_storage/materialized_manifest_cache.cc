@@ -52,10 +52,8 @@ namespace cloud_storage {
 
 static constexpr size_t max_cache_capacity_bytes = 1_GiB;
 
-materialized_manifest_cache::materialized_manifest_cache(
-  size_t capacity_bytes, retry_chain_logger& parent_logger)
+materialized_manifest_cache::materialized_manifest_cache(size_t capacity_bytes)
   : _capacity_bytes(capacity_bytes)
-  , _ctxlog(parent_logger)
   , _sem(max_cache_capacity_bytes) {
     vassert(
       capacity_bytes > 0 && capacity_bytes < max_cache_capacity_bytes,
@@ -64,11 +62,13 @@ materialized_manifest_cache::materialized_manifest_cache(
 }
 
 ss::future<ss::semaphore_units<>> materialized_manifest_cache::prepare(
-  size_t size_bytes, std::optional<ss::lowres_clock::duration> timeout) {
+  size_t size_bytes,
+  retry_chain_logger& ctxlog,
+  std::optional<ss::lowres_clock::duration> timeout) {
     ss::gate::holder h(_gate);
     if (size_bytes > _capacity_bytes) {
         vlog(
-          _ctxlog.debug,
+          ctxlog.debug,
           "Oversized 'put' operation requested. Manifest size is {} bytes, "
           "capacity is {} bytes",
           size_bytes,
@@ -83,7 +83,7 @@ ss::future<ss::semaphore_units<>> materialized_manifest_cache::prepare(
     auto maybe_units = ss::try_get_units(_sem, size_bytes);
     if (maybe_units.has_value()) {
         vlog(
-          _ctxlog.debug,
+          ctxlog.debug,
           "{} units acquired without waiting, {} available",
           size_bytes,
           _sem.available_units());
@@ -107,7 +107,7 @@ ss::future<ss::semaphore_units<>> materialized_manifest_cache::prepare(
         evicted.push_back(so);
         // Invariant: the materialized_manifest is always linked to either
         // _access_order or _eviction_rollback list.
-        bytes_evicted += evict(cit, _eviction_rollback);
+        bytes_evicted += evict(cit, _eviction_rollback, ctxlog);
     }
     // Here the least recently used materialized manifests were evicted to
     // free up 'size_bytes' bytes. But these manifests could still be used
@@ -124,12 +124,12 @@ ss::future<ss::semaphore_units<>> materialized_manifest_cache::prepare(
         // the '_eviction_rollback' list back into '_cache'. Only
         // offsets from 'evicted' should be affected.
         vlog(
-          _ctxlog.debug,
+          ctxlog.debug,
           "Prepare operation timed out, restoring {} spillover "
           "manifest",
           evicted.size());
         for (auto eso : evicted) {
-            rollback(eso);
+            rollback(eso, ctxlog);
         }
         throw;
     } catch (...) {
@@ -137,11 +137,11 @@ ss::future<ss::semaphore_units<>> materialized_manifest_cache::prepare(
         // '_eviction_rollback' list should be evicted for real
         // (filtered by 'eviction' set).
         vlog(
-          _ctxlog.error,
+          ctxlog.error,
           "'{}' error detected, cleaning up eviction list",
           std::current_exception());
         for (auto eso : evicted) {
-            discard_rollback_manifest(eso);
+            discard_rollback_manifest(eso, ctxlog);
         }
         throw;
     }
@@ -164,18 +164,20 @@ size_t materialized_manifest_cache::size_bytes() const noexcept {
 }
 
 void materialized_manifest_cache::put(
-  ss::semaphore_units<> s, spillover_manifest manifest) {
+  ss::semaphore_units<> s,
+  spillover_manifest manifest,
+  retry_chain_logger& ctxlog) {
     vassert(
       !manifest.empty(),
       "Manifest can't be empty, ntp: {}",
       manifest.get_ntp());
     auto so = manifest.get_start_offset().value_or(model::offset{});
-    vlog(_ctxlog.debug, "Cache PUT offset {}, {} units", so, s.count());
+    vlog(ctxlog.debug, "Cache PUT offset {}, {} units", so, s.count());
     if (!_eviction_rollback.empty()) {
         auto it = lookup_eviction_rollback_list(so);
         if (it != _eviction_rollback.end()) {
             vlog(
-              _ctxlog.error,
+              ctxlog.error,
               "Manifest with base offset {} is being evicted from the "
               "cache",
               so);
@@ -192,21 +194,21 @@ void materialized_manifest_cache::put(
     if (!ok) {
         // This may indicate a race, log a warning
         vlog(
-          _ctxlog.error, "Manifest with base offset {} is already present", so);
+          ctxlog.error, "Manifest with base offset {} is already present", so);
         return;
     }
     _access_order.push_back(*it->second);
 }
 
-ss::shared_ptr<materialized_manifest>
-materialized_manifest_cache::get(model::offset base_offset) {
+ss::shared_ptr<materialized_manifest> materialized_manifest_cache::get(
+  model::offset base_offset, retry_chain_logger& ctxlog) {
     if (auto it = _cache.find(base_offset); it != _cache.end()) {
         if (promote(it->second)) {
-            vlog(_ctxlog.debug, "Cache GET will return {}", base_offset);
+            vlog(ctxlog.debug, "Cache GET will return {}", base_offset);
             return it->second;
         } else {
             vlog(
-              _ctxlog.debug,
+              ctxlog.debug,
               "Cache GET can't promote item {} because it's evicted",
               base_offset);
         }
@@ -222,14 +224,14 @@ materialized_manifest_cache::get(model::offset base_offset) {
         auto it = lookup_eviction_rollback_list(base_offset);
         if (it != _eviction_rollback.end()) {
             vlog(
-              _ctxlog.debug,
+              ctxlog.debug,
               "Cache GET will return {} from eviction rollback",
               base_offset);
             return it->shared_from_this();
         }
     }
     vlog(
-      _ctxlog.debug,
+      ctxlog.debug,
       "Cache GET will return NULL for offset {}, cache size: {}, rollback "
       "size: {}",
       base_offset,
@@ -259,15 +261,16 @@ bool materialized_manifest_cache::promote(
     return false;
 }
 
-size_t materialized_manifest_cache::remove(model::offset base) {
+size_t materialized_manifest_cache::remove(
+  model::offset base, retry_chain_logger& ctxlog) {
     access_list_t rollback;
     size_t evicted_bytes = 0;
     if (auto it = _cache.find(base); it != _cache.end()) {
-        evicted_bytes = evict(it, rollback);
+        evicted_bytes = evict(it, rollback, ctxlog);
     }
     for (auto& m : rollback) {
         vlog(
-          _ctxlog.debug,
+          ctxlog.debug,
           "Offloaded spillover manifest with offset {} from memory",
           m.manifest.get_start_offset());
         m._units.return_all();
@@ -279,7 +282,7 @@ ss::future<> materialized_manifest_cache::start() {
     auto num_reserved = max_cache_capacity_bytes - _capacity_bytes;
     if (ss::this_shard_id() == 0) {
         vlog(
-          _ctxlog.info,
+          cst_log.info,
           "Starting materialized manifest cache, capacity: {}, reserved: {}",
           human::bytes(_capacity_bytes),
           human::bytes(num_reserved));
@@ -308,15 +311,18 @@ ss::future<> materialized_manifest_cache::set_capacity(
         // the units and add them to reserved semaphore units.
         auto delta = _capacity_bytes - new_size;
         vlog(
-          _ctxlog.debug,
+          cst_log.debug,
           "Shrinking materialized manifest cache capacity from {} to {}",
           _capacity_bytes,
           new_size);
-        auto u = co_await prepare(delta, timeout);
+        ss::abort_source as;
+        retry_chain_node tmp_node(as);
+        retry_chain_logger rtc_log(cst_log, tmp_node);
+        auto u = co_await prepare(delta, rtc_log, timeout);
         _reserved.adopt(std::move(u));
     } else {
         vlog(
-          _ctxlog.debug,
+          cst_log.debug,
           "Increasing materialized manifest cache capacity from {} to {}",
           _capacity_bytes,
           new_size);
@@ -329,9 +335,9 @@ ss::future<> materialized_manifest_cache::set_capacity(
 }
 
 size_t materialized_manifest_cache::evict(
-  map_t::iterator it, access_list_t& rollback) {
+  map_t::iterator it, access_list_t& rollback, retry_chain_logger& ctxlog) {
     vlog(
-      _ctxlog.debug,
+      ctxlog.debug,
       "Requested to evict manifest with start offset: {}, use count: {}, "
       "units: {}",
       it->first,
@@ -355,11 +361,12 @@ materialized_manifest_cache::lookup_eviction_rollback_list(model::offset o) {
       });
 }
 
-void materialized_manifest_cache::rollback(model::offset so) {
+void materialized_manifest_cache::rollback(
+  model::offset so, retry_chain_logger& ctxlog) {
     auto it = lookup_eviction_rollback_list(so);
     if (it == _eviction_rollback.end()) {
         vlog(
-          _ctxlog.debug,
+          ctxlog.debug,
           "Can't rollback eviction of the manifest with start offset {}",
           so);
         return;
@@ -369,7 +376,7 @@ void materialized_manifest_cache::rollback(model::offset so) {
     auto [_, ok] = _cache.insert(std::make_pair(so, ptr));
     if (!ok) {
         vlog(
-          _ctxlog.error,
+          ctxlog.error,
           "Manifest with base offset {} has a duplicate in the log",
           so);
         return;
@@ -377,23 +384,24 @@ void materialized_manifest_cache::rollback(model::offset so) {
     ptr->evicted = false;
     _access_order.push_front(*ptr);
     vlog(
-      _ctxlog.debug,
+      ctxlog.debug,
       "Successful rollback of the manifest with start offset {}",
       so);
 }
 
-void materialized_manifest_cache::discard_rollback_manifest(model::offset so) {
+void materialized_manifest_cache::discard_rollback_manifest(
+  model::offset so, retry_chain_logger& ctxlog) {
     auto it = lookup_eviction_rollback_list(so);
     if (it == _eviction_rollback.end()) {
         vlog(
-          _ctxlog.error,
+          ctxlog.error,
           "Can't find manifest with start offset {} in the rollback list",
           so);
     }
     auto ptr = it->shared_from_this();
     ptr->_hook.unlink();
     vlog(
-      _ctxlog.debug,
+      ctxlog.debug,
       "Manifest with start offset {} removed from rollback list",
       so);
 }

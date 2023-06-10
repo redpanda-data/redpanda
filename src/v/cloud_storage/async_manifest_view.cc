@@ -12,6 +12,7 @@
 
 #include "cloud_storage/cache_service.h"
 #include "cloud_storage/logger.h"
+#include "cloud_storage/materialized_segments.h"
 #include "cloud_storage/partition_manifest.h"
 #include "cloud_storage/partition_probe.h"
 #include "cloud_storage/remote.h"
@@ -318,26 +319,12 @@ async_manifest_view::async_manifest_view(
   , _read_buffer_size(config::shard_local_cfg().storage_read_buffer_size.bind())
   , _readahead_size(
       config::shard_local_cfg().storage_read_readahead_count.bind())
-  , _manifest_cache(std::make_unique<materialized_manifest_cache>(
-      config::shard_local_cfg().cloud_storage_manifest_cache_size(), _ctxlog))
-  , _manifest_meta_size(
-      config::shard_local_cfg().cloud_storage_manifest_cache_size.bind())
   , _manifest_meta_ttl(
-      config::shard_local_cfg().cloud_storage_manifest_cache_ttl_ms.bind()) {
-    _manifest_meta_size.watch([this] {
-        ssx::background = ss::with_gate(_gate, [this] {
-            vlog(
-              _ctxlog.info,
-              "Manifest cache capacity will be changed from {} to {}",
-              _manifest_cache->get_capacity(),
-              _manifest_meta_size());
-            return _manifest_cache->set_capacity(_manifest_meta_size());
-        });
-    });
-}
+      config::shard_local_cfg().cloud_storage_manifest_cache_ttl_ms.bind())
+  , _manifest_cache(
+      _remote.local().materialized().get_materialized_manifest_cache()) {}
 
 ss::future<> async_manifest_view::start() {
-    co_await _manifest_cache->start();
     ssx::background = run_bg_loop();
     co_return;
 }
@@ -345,7 +332,6 @@ ss::future<> async_manifest_view::start() {
 ss::future<> async_manifest_view::stop() {
     _as.request_abort();
     _cvar.broken();
-    co_await _manifest_cache->stop();
     co_await _gate.close();
 }
 
@@ -378,7 +364,7 @@ ss::future<> async_manifest_view::run_bg_loop() {
                         front.promise.set_value(std::ref(_stm_manifest));
                         continue;
                     }
-                    if (!_manifest_cache->contains(
+                    if (!_manifest_cache.contains(
                           front.search_vec.base_offset)) {
                         // Manifest is not cached and has to be hydrated and/or
                         // materialized.
@@ -393,8 +379,9 @@ ss::future<> async_manifest_view::run_bg_loop() {
                         // enough because we need some time for cache to evict
                         // the item and then TTL milliseconds for the cursor
                         // timer to fire.
-                        auto u = co_await _manifest_cache->prepare(
+                        auto u = co_await _manifest_cache.prepare(
                           front.search_vec.size_bytes,
+                          _ctxlog,
                           _manifest_meta_ttl() * 2);
                         // At this point we have free memory to download the
                         // spillover manifest.
@@ -420,26 +407,26 @@ ss::future<> async_manifest_view::run_bg_loop() {
                           "{}/{}}}",
                           lso,
                           u.count(),
-                          _manifest_cache->size(),
-                          _manifest_cache->size_bytes());
-                        _manifest_cache->put(
-                          std::move(u), std::move(m_res.value()));
+                          _manifest_cache.size(),
+                          _manifest_cache.size_bytes());
+                        _manifest_cache.put(
+                          std::move(u), std::move(m_res.value()), _ctxlog);
                         _probe.set_spillover_manifest_bytes(
-                          static_cast<int64_t>(_manifest_cache->size_bytes()));
+                          static_cast<int64_t>(_manifest_cache.size_bytes()));
                         _probe.set_spillover_manifest_instances(
-                          static_cast<int32_t>(_manifest_cache->size()));
+                          static_cast<int32_t>(_manifest_cache.size()));
                         vlog(
                           _ctxlog.debug,
                           "Manifest with LSO {} is cached {{cache size: "
                           "{}/{}}}",
                           lso,
-                          _manifest_cache->size(),
-                          _manifest_cache->size_bytes());
+                          _manifest_cache.size(),
+                          _manifest_cache.size_bytes());
                     } else {
                         vlog(_ctxlog.debug, "Manifest is already materialized");
                     }
-                    auto cached = _manifest_cache->get(
-                      front.search_vec.base_offset);
+                    auto cached = _manifest_cache.get(
+                      front.search_vec.base_offset, _ctxlog);
                     front.promise.set_value(cached);
                     vlog(
                       _ctxlog.debug,
@@ -918,7 +905,7 @@ async_manifest_view::get_materialized_manifest(
             co_return error_outcome::out_of_range;
         }
         vlog(_ctxlog.debug, "Found spillover manifest meta: {}", meta);
-        auto res = _manifest_cache->get(meta->base_offset);
+        auto res = _manifest_cache.get(meta->base_offset, _ctxlog);
         if (res) {
             co_return res;
         }

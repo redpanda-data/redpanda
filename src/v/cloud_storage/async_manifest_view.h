@@ -193,10 +193,9 @@ private:
     config::binding<size_t> _read_buffer_size;
     config::binding<int16_t> _readahead_size;
 
-    // Manifest in-memory storage
-    std::unique_ptr<materialized_manifest_cache> _manifest_cache;
-    config::binding<size_t> _manifest_meta_size;
     config::binding<std::chrono::milliseconds> _manifest_meta_ttl;
+
+    materialized_manifest_cache& _manifest_cache;
 
     // BG loop state
 

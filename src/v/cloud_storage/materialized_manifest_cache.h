@@ -78,9 +78,7 @@ public:
     /// C-tor
     ///
     /// \param capacity_bytes max size of all manifests stored in the cache
-    /// \param parent_logger logger to be used by the cache
-    materialized_manifest_cache(
-      size_t capacity_bytes, retry_chain_logger& parent_logger);
+    explicit materialized_manifest_cache(size_t capacity_bytes);
 
     /// Reserve space to store next manifest.
     ///
@@ -92,10 +90,12 @@ public:
     /// \throw ss::timed_out_error if timeout expired. The evicted elements
     ///        are returned to the cache in this case.
     /// \param size_bytes is a size of the manifest in bytes
+    /// \param ctxlog logger of the caller
     /// \param timeout is a timeout for the operation
     /// \return future that result in acquired semaphore units
     ss::future<ss::semaphore_units<>> prepare(
       size_t size_bytes,
+      retry_chain_logger& ctxlog,
       std::optional<ss::lowres_clock::duration> timeout = std::nullopt);
 
     /// Return number of elements stored in the cache
@@ -112,13 +112,18 @@ public:
     ///
     /// \param s is a semaphore units acquired using 'prepare' method
     /// \param manifest is a spillover manifest to store
+    /// \param ctxlog logger provided by the caller
     /// \note if the manifest with the same start-offset is already
     ///       present the manifest won't be added. Semaphore units
     ///       will be returned.
-    void put(ss::semaphore_units<> s, spillover_manifest manifest);
+    void put(
+      ss::semaphore_units<> s,
+      spillover_manifest manifest,
+      retry_chain_logger& ctxlog);
 
     /// Find manifest by its base offset
-    ss::shared_ptr<materialized_manifest> get(model::offset base_offset);
+    ss::shared_ptr<materialized_manifest>
+    get(model::offset base_offset, retry_chain_logger& ctxlog);
 
     /// Check manifest by its base offset
     bool contains(model::offset base_offset);
@@ -145,7 +150,7 @@ public:
     ///       method doesn't guarantee that the memory consumed by the removed
     ///       manifest is freed. The user might still have a pointer to the
     ///       manifest that will prevent it from being deleted.
-    size_t remove(model::offset base);
+    size_t remove(model::offset base, retry_chain_logger& ctxlog);
 
     /// Starts the cache.
     ss::future<> start();
@@ -176,19 +181,20 @@ private:
     /// \return size of the evicted manifest in bytes
     /// \note the manifest could still be used by the cursor
     ///       after eviction.
-    size_t evict(map_t::iterator it, access_list_t& rollback);
+    size_t evict(
+      map_t::iterator it, access_list_t& rollback, retry_chain_logger& ctxlog);
 
     access_list_t::iterator lookup_eviction_rollback_list(model::offset o);
 
     /// Restore manifest temporarily stored in the _eviction_rollback list.
-    void rollback(model::offset so);
+    void rollback(model::offset so, retry_chain_logger& ctxlog);
 
     /// Remove manifest from the _eviction_rollback list.
-    void discard_rollback_manifest(model::offset so);
+    void
+    discard_rollback_manifest(model::offset so, retry_chain_logger& ctxlog);
 
     /// Current capacity of the cache in bytes
     size_t _capacity_bytes;
-    retry_chain_logger& _ctxlog;
     /// Storage for manifests
     map_t _cache;
     ss::gate _gate;
