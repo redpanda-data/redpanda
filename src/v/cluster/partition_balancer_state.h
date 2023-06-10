@@ -13,6 +13,7 @@
 #include "cluster/fwd.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
+#include "utils/stable_iterator_adaptor.h"
 
 #include <seastar/core/sharded.hh>
 
@@ -40,6 +41,22 @@ public:
     const absl::btree_set<model::ntp>&
     ntps_with_broken_rack_constraint() const {
         return _ntps_with_broken_rack_constraint;
+    }
+
+    auto ntps_with_broken_rack_constraint_it_begin() const {
+        return stable_iterator<
+          absl::btree_set<model::ntp>::const_iterator,
+          model::revision_id>(
+          [&]() { return _ntps_with_broken_rack_constraint_revision; },
+          _ntps_with_broken_rack_constraint.begin());
+    }
+
+    auto ntps_with_broken_rack_constraint_it_end() const {
+        return stable_iterator<
+          absl::btree_set<model::ntp>::const_iterator,
+          model::revision_id>(
+          [&]() { return _ntps_with_broken_rack_constraint_revision; },
+          _ntps_with_broken_rack_constraint.end());
     }
 
     /// Called when the replica set of an ntp changes. Note that this doesn't
@@ -71,6 +88,9 @@ private:
     partition_allocator& _partition_allocator;
     node_status_table& _node_status;
     absl::btree_set<model::ntp> _ntps_with_broken_rack_constraint;
+    // revision increment to be paired with all updates
+    // _ntps_with_broken_rack_constraint set. Relied upon by the iterator.
+    model::revision_id _ntps_with_broken_rack_constraint_revision;
     probe _probe;
 };
 
