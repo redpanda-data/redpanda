@@ -137,14 +137,13 @@ FIXTURE_TEST(local_state_has_single_disk, local_monitor_fixture) {
 }
 
 FIXTURE_TEST(local_monitor_inject_statvfs, local_monitor_fixture) {
-    static constexpr auto free = 100UL, total = 200UL, block_size = 4096UL;
-    struct statvfs stats = make_statvfs(free, total, block_size);
-    auto lamb = [&](const ss::sstring& _ignore) { return stats; };
-    _storage_node_api.local().testing_only_set_statvfs(lamb);
+    _storage_node_api.local().set_statvfs_overrides(
+      storage::node::disk_type::data,
+      {.total_bytes = 2 << 20, .free_bytes = 1 << 20});
 
     auto ls = update_state();
-    BOOST_TEST_REQUIRE(ls.data_disk.total == total * block_size);
-    BOOST_TEST_REQUIRE(ls.data_disk.free == free * block_size);
+    BOOST_TEST_REQUIRE(ls.data_disk.total == 2 << 20);
+    BOOST_TEST_REQUIRE(ls.data_disk.free == 1 << 20);
 }
 
 void local_monitor_fixture::assert_space_alert(
@@ -154,14 +153,12 @@ void local_monitor_fixture::assert_space_alert(
   size_t min_bytes,
   size_t free,
   disk_space_alert expected) {
-    static const size_t block_size = 1024;
-
     unsigned percent = (percent_alert_bytes * 100) / volume;
     set_config_free_thresholds(percent, bytes_alert, min_bytes);
-    struct statvfs stats = make_statvfs(
-      free / block_size, volume / block_size, block_size);
-    auto lamb = [&](const ss::sstring&) { return stats; };
-    _storage_node_api.local().testing_only_set_statvfs(lamb);
+
+    _storage_node_api.local().set_statvfs_overrides(
+      storage::node::disk_type::data,
+      {.total_bytes = volume, .free_bytes = free});
 
     auto ls = update_state();
     BOOST_TEST_REQUIRE(ls.data_disk.alert == expected);
