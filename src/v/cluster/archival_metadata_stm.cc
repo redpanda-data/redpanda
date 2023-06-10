@@ -262,7 +262,7 @@ command_batch_builder::truncate(kafka::offset start_kafka_offset) {
 
 command_batch_builder&
 command_batch_builder::spillover(model::offset start_rp_offset) {
-    iobuf key_buf = serde::to_iobuf(archival_metadata_stm::truncate_cmd::key);
+    iobuf key_buf = serde::to_iobuf(archival_metadata_stm::spillover_cmd::key);
     auto record_val = archival_metadata_stm::spillover_cmd::value{
       .start_offset = start_rp_offset};
     iobuf val_buf = serde::to_iobuf(record_val);
@@ -733,7 +733,7 @@ ss::future<> archival_metadata_stm::apply(model::record_batch b) {
             break;
         case spillover_cmd::key:
             apply_spillover(
-              serde::from_iobuf<truncate_cmd::value>(r.release_value()));
+              serde::from_iobuf<spillover_cmd::value>(r.release_value()));
             break;
         };
     });
