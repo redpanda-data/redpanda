@@ -8,10 +8,10 @@
 # by the Apache License, Version 2.0
 
 import os
-from typing import Sequence
+from typing import Optional, Sequence
 
 from ducktape.tests.test import Test
-from rptest.services.redpanda import make_redpanda_service, CloudStorageType
+from rptest.services.redpanda import CloudTierName, make_redpanda_service, CloudStorageType
 from rptest.clients.kafka_cli_tools import KafkaCliTools
 from rptest.clients.default import DefaultClient
 from rptest.util import Scale
@@ -32,7 +32,9 @@ class RedpandaTest(Test):
     def __init__(self,
                  test_context,
                  num_brokers=None,
-                 extra_rp_conf=dict(),
+                 cloud_tier: Optional[CloudTierName] = None,
+                 apply_cloud_tier_to_noncloud: bool = False,
+                 extra_rp_conf=None,
                  si_settings=None,
                  **kwargs):
         """
@@ -43,7 +45,7 @@ class RedpandaTest(Test):
         self.scale = Scale(test_context)
         self.si_settings = si_settings
 
-        if num_brokers is None:
+        if num_brokers is None and cloud_tier is None:
             # Default to a 3 node cluster if sufficient nodes are available, else
             # a single node cluster.  This is just a default: tests are welcome
             # to override constructor to pass an explicit size.  This logic makes
@@ -54,11 +56,14 @@ class RedpandaTest(Test):
             else:
                 num_brokers = 1
 
-        self.redpanda = make_redpanda_service(test_context,
-                                              num_brokers,
-                                              extra_rp_conf=extra_rp_conf,
-                                              si_settings=self.si_settings,
-                                              **kwargs)
+        self.redpanda = make_redpanda_service(
+            test_context,
+            num_brokers,
+            cloud_tier=cloud_tier,
+            apply_cloud_tier_to_noncloud=apply_cloud_tier_to_noncloud,
+            extra_rp_conf=extra_rp_conf,
+            si_settings=self.si_settings,
+            **kwargs)
         self._client = DefaultClient(self.redpanda)
 
     def early_exit_hook(self):
