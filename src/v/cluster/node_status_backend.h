@@ -88,6 +88,9 @@ private:
     };
 
 private:
+    ss::shard_id connection_source_shard(model::node_id target) const {
+        return target % ss::smp::count;
+    }
     model::node_id _self;
     ss::sharded<members_table>& _members_table;
     ss::sharded<features::feature_table>& _feature_table;
