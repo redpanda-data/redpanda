@@ -963,3 +963,33 @@ class Admin:
         """
         return self._request("get", "debug/local_storage_usage",
                              node=node).json()
+
+    def get_disk_stat(self, disk_type, node):
+        """
+        Get disk_type stat from node.
+        """
+        return self._request("get",
+                             f"debug/storage/disk_stat/{disk_type}",
+                             node=node).json()
+
+    def set_disk_stat_override(self,
+                               disk_type,
+                               node,
+                               *,
+                               total_bytes=None,
+                               free_bytes=None,
+                               free_bytes_delta=None):
+        """
+        Get disk_type stat from node.
+        """
+        json = {}
+        if total_bytes is not None:
+            json["total_bytes"] = total_bytes
+        if free_bytes is not None:
+            json["free_bytes"] = free_bytes
+        if free_bytes_delta is not None:
+            json["free_bytes_delta"] = free_bytes_delta
+        return self._request("put",
+                             f"debug/storage/disk_stat/{disk_type}",
+                             json=json,
+                             node=node)
