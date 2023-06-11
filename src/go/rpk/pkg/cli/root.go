@@ -75,9 +75,9 @@ func Execute() {
 	}
 	pf := root.PersistentFlags()
 	pf.StringVar(&p.ConfigFlag, "config", "", "Redpanda or rpk config file; default search paths are ~/.config/rpk/rpk.yaml, $PWD, and /etc/redpanda/redpanda.yaml")
+	pf.StringVar(&p.Profile, "profile", "", "rpk profile to use")
 	pf.StringArrayVarP(&p.FlagOverrides, "config-opt", "X", nil, "Override rpk configuration settings; '-X help' for detail or '-X list' for terser detail")
-	pf.StringVarP(&p.LogLevel, "verbose", "v", "none", "Log level (none, error, warn, info, debug)")
-	pf.Lookup("verbose").NoOptDefVal = "info"
+	pf.BoolVarP(&p.DebugLogs, "verbose", "v", false, "Enable verbose logging")
 
 	root.RegisterFlagCompletionFunc("config-opt", func(_ *cobra.Command, _ []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 		var opts []string
@@ -93,6 +93,7 @@ func Execute() {
 		}
 		return opts, cobra.ShellCompDirectiveNoSpace
 	})
+	root.RegisterFlagCompletionFunc("profile", profile.ValidProfiles(fs, p))
 
 	root.AddCommand(
 		acl.NewCommand(fs, p),

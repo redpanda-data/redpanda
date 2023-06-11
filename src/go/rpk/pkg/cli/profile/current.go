@@ -18,34 +18,31 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func newUseCommand(fs afero.Fs, p *config.Params) *cobra.Command {
+func newCurrentCommand(fs afero.Fs, p *config.Params) *cobra.Command {
+	var noNewline bool
 	cmd := &cobra.Command{
-		Use:               "use [NAME]",
-		Short:             "Select the rpk profile to use",
-		Args:              cobra.ExactArgs(1),
-		ValidArgsFunction: ValidProfiles(fs, p),
+		Use:   "current",
+		Short: "Print the current profile name",
+		Long: `Print the current profile name.
+
+This is a tiny command that simply prints the current profile name, which may
+be useful in scripts, or a PS1, or to confirm what you have selected.
+`,
+		Args: cobra.ExactArgs(0),
 		Run: func(_ *cobra.Command, args []string) {
 			cfg, err := p.Load(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)
 
+			if !noNewline {
+				defer fmt.Println()
+			}
 			y, ok := cfg.ActualRpkYaml()
 			if !ok {
-				out.Die("rpk.yaml file does not exist")
+				return
 			}
-
-			name := args[0]
-			p := y.Profile(name)
-			if p == nil {
-				out.Die("profile %q does not exist", name)
-			}
-			y.CurrentProfile = name
-			y.MoveProfileToFront(p)
-
-			err = y.Write(fs)
-			out.MaybeDieErr(err)
-			fmt.Printf("Set current profile to %q.\n", name)
+			fmt.Print(y.CurrentProfile)
 		},
 	}
-
+	cmd.Flags().BoolVarP(&noNewline, "no-newline", "n", false, "Do not print a newline after the profile name")
 	return cmd
 }

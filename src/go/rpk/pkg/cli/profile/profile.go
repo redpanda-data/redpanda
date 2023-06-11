@@ -33,19 +33,25 @@ your configuration in one place.
 
 	cmd.AddCommand(
 		newCreateCommand(fs, p),
+		newClearCommand(fs, p),
+		newCurrentCommand(fs, p),
 		newDeleteCommand(fs, p),
 		newEditCommand(fs, p),
+		newEditDefaultsCommand(fs, p),
 		newListCommand(fs, p),
 		newPrintCommand(fs, p),
+		newPrintDefaultsCommand(fs, p),
+		newPromptCommand(fs, p),
 		newRenameToCommand(fs, p),
 		newSetCommand(fs, p),
+		newSetDefaultsCommand(fs, p),
 		newUseCommand(fs, p),
 	)
 
 	return cmd
 }
 
-func validProfiles(fs afero.Fs, p *config.Params) func(*cobra.Command, []string, string) ([]string, cobra.ShellCompDirective) {
+func ValidProfiles(fs afero.Fs, p *config.Params) func(*cobra.Command, []string, string) ([]string, cobra.ShellCompDirective) {
 	return func(cmd *cobra.Command, _ []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 		cfg, err := p.Load(fs)
 		if err != nil {

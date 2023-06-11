@@ -15,6 +15,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"time"
 
 	"github.com/spf13/afero"
 	"go.uber.org/zap"
@@ -34,10 +35,7 @@ func DefaultRpkYamlPath() (string, error) {
 }
 
 func defaultVirtualRpkYaml() (RpkYaml, error) {
-	path, err := DefaultRpkYamlPath()
-	if err != nil {
-		return RpkYaml{}, err
-	}
+	path, _ := DefaultRpkYamlPath() // if err is non-nil, we fail in Write
 	y := RpkYaml{
 		fileLocation: path,
 		Version:      1,
@@ -88,15 +86,49 @@ type (
 		// upgrade rpk".
 		Version int `yaml:"version"`
 
+		Defaults RpkDefaults `yaml:"defaults,omitempty"`
+
 		CurrentProfile   string         `yaml:"current_profile"`
 		CurrentCloudAuth string         `yaml:"current_cloud_auth"`
 		Profiles         []RpkProfile   `yaml:"profiles,omitempty"`
 		CloudAuths       []RpkCloudAuth `yaml:"cloud_auth,omitempty"`
 	}
 
+	RpkDefaults struct {
+		// Prompt is the prompt to use for all profiles, unless the
+		// profile itself overrides it.
+		Prompt string `yaml:"prompt"`
+
+		// NoDefaultCluster disables localhost:{9092,9644} as a default
+		// profile when no other is selected.
+		NoDefaultCluster bool `yaml:"no_default_cluster"`
+
+		// DialTimeout is how long we allow for initiating a connection
+		// to brokers for the Admin API and Kafka API.
+		DialTimeout Duration `yaml:"dial_timeout"`
+
+		// RequestTimeoutOverhead, for Kafka API requests, how long do
+		// we give the request on top of any request's timeout field.
+		RequestTimeoutOverhead Duration `yaml:"request_timeout_overhead"`
+
+		// RetryTimeout allows us to retry requests. If see we need to
+		// retry before the retry timeout has elapsed, we do -- even if
+		// backing off after we know to retry pushes us past the
+		// timeout.
+		RetryTimeout Duration `yaml:"retry_timeout"`
+
+		// FetchMaxWait is how long we give the broker to respond to
+		// fetch requests.
+		FetchMaxWait Duration `yaml:"fetch_max_wait"`
+
+		// RedpandaClientID is the client ID to use for the Kafka API.
+		RedpandaClientID string `yaml:"redpanda_client_id"`
+	}
+
 	RpkProfile struct {
-		Name         string           `yaml:"name,omitempty"`
+		Name         string           `yaml:"name"`
 		Description  string           `yaml:"description,omitempty"`
+		Prompt       string           `yaml:"prompt,omitempty"`
 		FromCloud    bool             `yaml:"from_cloud,omitempty"`
 		CloudCluster *RpkCloudCluster `yaml:"cloud_cluster,omitempty"`
 		KafkaAPI     RpkKafkaAPI      `yaml:"kafka_api,omitempty"`
@@ -121,6 +153,8 @@ type (
 		ClientID     string `yaml:"client_id,omitempty"`
 		ClientSecret string `yaml:"client_secret,omitempty"`
 	}
+
+	Duration struct{ time.Duration }
 )
 
 // Profile returns the given profile, or nil if it does not exist.
@@ -214,6 +248,11 @@ func (p *RpkProfile) SugarLogger() *zap.SugaredLogger {
 	return p.Logger().Sugar()
 }
 
+// Defaults returns the virtual defaults for the rpk.yaml.
+func (p *RpkProfile) Defaults() *RpkDefaults {
+	return &p.c.rpkYaml.Defaults
+}
+
 // HasClientCredentials returns if both ClientID and ClientSecret are empty.
 func (a *RpkCloudAuth) HasClientCredentials() bool {
 	k, _ := a.Kind()
@@ -267,3 +306,21 @@ func (y *RpkYaml) WriteAt(fs afero.Fs, path string) error {
 	}
 	return rpkos.ReplaceFile(fs, path, b, 0o644)
 }
+
+////////////////
+// MISC TYPES //
+////////////////
+
+// MarshalText implements encoding.TextMarshaler.
+func (d Duration) MarshalText() ([]byte, error) {
+	return []byte(d.Duration.String()), nil
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (d *Duration) UnmarshalText(text []byte) error {
+	var err error
+	d.Duration, err = time.ParseDuration(string(text))
+	return err
+}
+
+func (*Duration) YamlTypeNameForTest() string { return "duration" }

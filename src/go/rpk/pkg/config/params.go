@@ -71,6 +71,7 @@ const (
 const (
 	xkindProfile   = iota // configuration for the current profile
 	xkindCloudAuth        // configuration for the current cloud_auth
+	xkindDefault          // configuration for rpk.yaml defaults
 )
 
 type xflag struct {
@@ -266,6 +267,73 @@ var xflags = map[string]xflag{
 			return nil
 		},
 	},
+
+	"defaults.prompt": {
+		"defaults.prompt",
+		"bg-red \"%n\"",
+		xkindDefault,
+		func(v string, y *RpkYaml) error {
+			y.Defaults.Prompt = v
+			return nil
+		},
+	},
+
+	"defaults.no_default_cluster": {
+		"defaults.no_default_cluster",
+		"false",
+		xkindDefault,
+		func(v string, y *RpkYaml) error {
+			b, err := strconv.ParseBool(v)
+			y.Defaults.NoDefaultCluster = b
+			return err
+		},
+	},
+
+	"defaults.dial_timeout": {
+		"defaults.dial_timeout",
+		"3s",
+		xkindDefault,
+		func(v string, y *RpkYaml) error {
+			return y.Defaults.DialTimeout.UnmarshalText([]byte(v))
+		},
+	},
+
+	"defaults.request_timeout_overhead": {
+		"defaults.request_timeout_overhead",
+		"10s",
+		xkindDefault,
+		func(v string, y *RpkYaml) error {
+			return y.Defaults.RequestTimeoutOverhead.UnmarshalText([]byte(v))
+		},
+	},
+
+	"defaults.retry_timeout": {
+		"defaults.retry_timeout",
+		"30s",
+		xkindDefault,
+		func(v string, y *RpkYaml) error {
+			return y.Defaults.RetryTimeout.UnmarshalText([]byte(v))
+		},
+	},
+
+	"defaults.fetch_max_wait": {
+		"defaults.fetch_max_wait",
+		"5s",
+		xkindDefault,
+		func(v string, y *RpkYaml) error {
+			return y.Defaults.FetchMaxWait.UnmarshalText([]byte(v))
+		},
+	},
+
+	"defaults.redpanda_client_id": {
+		"defaults.redpanda_client_id",
+		"rpk",
+		xkindDefault,
+		func(v string, y *RpkYaml) error {
+			y.Defaults.RedpandaClientID = v
+			return nil
+		},
+	},
 }
 
 // XFlags returns the list of -X flags that are supported by rpk.
@@ -299,6 +367,19 @@ func XCloudAuthFlags() (xs, yamlPaths []string) {
 	return
 }
 
+// XRpkDefaultsFlags returns all X flags that modify rpk defaults, and their
+// corresponding yaml paths. Note that for rpk defaults, the X flags always
+// have the same name as the yaml path and always begin with "defaults.".
+func XRpkDefaultsFlags() (xs, yamlPaths []string) {
+	for k, v := range xflags {
+		if v.kind == xkindDefault {
+			xs = append(xs, k)
+			yamlPaths = append(yamlPaths, v.path)
+		}
+	}
+	return
+}
+
 // XFlagYamlPath returns the yaml path for the given x flag, if the
 // flag exists.
 func XFlagYamlPath(x string) (string, bool) {
@@ -312,20 +393,18 @@ func XFlagYamlPath(x string) (string, bool) {
 // Params contains rpk-wide configuration parameters.
 type Params struct {
 	// ConfigFlag is any flag-specified config path.
-	//
-	// This is unused until step (2) in the refactoring process.
 	ConfigFlag string
 
-	// LogLevel can be either none (default), error, warn, info, or debug,
-	// or any prefix of those strings, upper or lower case.
+	// Profile is any flag-specified profile name.
+	Profile string
+
+	// DebugLogs opts into debug logging.
 	//
-	// This field is meant to be set, to actually get a logger after the
+	// This field only for setting, to actually get a logger after the
 	// field is set, use Logger().
-	LogLevel string
+	DebugLogs bool
 
 	// FlagOverrides are any flag-specified config overrides.
-	//
-	// This is unused until step (2) in the refactoring process.
 	FlagOverrides []string
 
 	loggerOnce sync.Once
@@ -423,6 +502,41 @@ cloud.client_id=somestring
 
 cloud.client_secret=somelongerstring
   An oauth client secret to use for authenticating with the Redpanda Cloud API.
+
+defaults.prompt="%n"
+  A format string to use for the default prompt; see 'rpk profile prompt' for
+  more information.
+
+defaults.no_default_cluster=false
+  A boolean that disables rpk from talking to localhost:9092 if no other
+  cluster is specified.
+
+defaults.dial_timeout=3s
+  A duration that rpk will wait for a connection to be established before
+  timing out.
+
+defaults.request_timeout_overhead=10s
+  A duration that limits how long rpk waits for responses, *on top* of any
+  request-internal timeout. For example, ListOffsets has no Timeout field so
+  if request_timeout_overhead is 10s, rpk will wait for 10s for a response.
+  However, JoinGroup has a RebalanceTimeoutMillis field, so the 10s is applied
+  on top of the rebalance timeout.
+
+defaults.retry_timeout=30s
+  This timeout specifies how long rpk will retry Kafka API requests. This
+  timeout is evaluated before any backoff -- if a request fails, we first check
+  if the retry timeout has elapsed and if so, we stop retrying. If not, we wait
+  for the backoff and then retry.
+
+defaults.fetch_max_wait=5s
+  This timeout specifies the maximum time that brokers will wait before
+  replying to a fetch request with whatever data is available.
+
+defaults.redpanda_client_id=rpk
+  This string value is the client ID that rpk uses when issuing Kafka protocol
+  requests to Redpanda. This client ID shows up in Redpanda logs and metrics,
+  changing it can be useful if you want to have your own rpk client stand out
+  from others that may be hitting the cluster.
 `
 }
 
@@ -443,6 +557,13 @@ admin.tls.cert=/path/to/cert.pem
 admin.tls.key=/path/to/key.pem
 cloud.client_id=somestring
 cloud.client_secret=somelongerstring
+defaults.prompt="%n"
+defaults.no_default_cluster=boolean
+defaults.dial_timeout=duration(3s,1m,2h)
+defaults.request_timeout_overhead=duration(10s,1m,2h)
+defaults.retry_timeout=duration(30s,1m,2h)
+defaults.fetch_max_wait=duration(5s,1m,2h)
+defaults.redpanda_client_id=rpk
 `
 }
 
@@ -460,7 +581,17 @@ func (p *Params) InstallKafkaFlags(cmd *cobra.Command) {
 	pf.StringVar(&p.password, "password", "", "SASL password to be used for authentication")
 	pf.StringVar(&p.saslMechanism, "sasl-mechanism", "", "The authentication mechanism to use (SCRAM-SHA-256, SCRAM-SHA-512)")
 
+	pf.MarkHidden("brokers")
+	pf.MarkHidden(FlagSASLUser)
+	pf.MarkHidden("password")
+	pf.MarkHidden("sasl-mechanism")
+
 	p.InstallTLSFlags(cmd)
+
+	pf.MarkHidden(FlagEnableTLS)
+	pf.MarkHidden(FlagTLSCA)
+	pf.MarkHidden(FlagTLSCert)
+	pf.MarkHidden(FlagTLSKey)
 }
 
 // InstallTLSFlags adds the original rpk Kafka API TLS set of flags to this
@@ -489,6 +620,14 @@ func (p *Params) InstallAdminFlags(cmd *cobra.Command) {
 	pf.StringVar(&p.adminCAFile, "admin-api-tls-truststore", "", "The CA certificate  to be used for TLS communication with the admin API")
 	pf.StringVar(&p.adminCertFile, "admin-api-tls-cert", "", "The certificate to be used for TLS authentication with the admin API")
 	pf.StringVar(&p.adminKeyFile, "admin-api-tls-key", "", "The certificate key to be used for TLS authentication with the admin API")
+
+	pf.MarkHidden("api-urls")
+	pf.MarkHidden("hosts")
+	pf.MarkHidden("admin-url")
+	pf.MarkHidden("admin-api-tls-enabled")
+	pf.MarkHidden("admin-api-tls-truststore")
+	pf.MarkHidden("admin-api-tls-cert")
+	pf.MarkHidden("admin-api-tls-key")
 }
 
 // InstallCloudFlags adds the --client-id and --client-secret flags that
@@ -599,6 +738,11 @@ func (p *Params) Load(fs afero.Fs) (*Config, error) {
 	c.fixSchemePorts()                // strip any scheme, default any missing ports
 	c.addConfigToProfiles()
 	c.parseDevOverrides()
+
+	if !c.rpkYaml.Defaults.NoDefaultCluster {
+		c.ensureBrokerAddrs()
+	}
+
 	return c, nil
 }
 
@@ -607,40 +751,12 @@ func (p *Params) SugarLogger() *zap.SugaredLogger {
 	return p.Logger().Sugar()
 }
 
-// Logger parses p.LogLevel and returns the corresponding zap logger or
-// a NopLogger if the log level is invalid.
+// Logger parses returns the corresponding zap logger or a NopLogger.
 func (p *Params) Logger() *zap.Logger {
 	p.loggerOnce.Do(func() {
-		// First we normalize the level. We support prefixes such
-		// that "w" means warn.
-		p.LogLevel = strings.TrimSpace(strings.ToLower(p.LogLevel))
-		if p.LogLevel == "" {
-			p.LogLevel = "none"
-		}
-		var ok bool
-		for _, level := range []string{"none", "error", "warn", "info", "debug"} {
-			if strings.HasPrefix(level, p.LogLevel) {
-				p.LogLevel, ok = level, true
-				break
-			}
-		}
-		if !ok {
+		if !p.DebugLogs {
 			p.logger = zap.NewNop()
 			return
-		}
-		var level zapcore.Level
-		switch p.LogLevel {
-		case "none":
-			p.logger = zap.NewNop()
-			return
-		case "error":
-			level = zap.ErrorLevel
-		case "warn":
-			level = zap.WarnLevel
-		case "info":
-			level = zap.InfoLevel
-		case "debug":
-			level = zap.DebugLevel
 		}
 
 		// Now the zap config. We want to to the console and make the logs
@@ -649,7 +765,7 @@ func (p *Params) Logger() *zap.Logger {
 		// level to three letters, and we only add color if this is a
 		// terminal.
 		zcfg := zap.NewProductionConfig()
-		zcfg.Level = zap.NewAtomicLevelAt(level)
+		zcfg.Level = zap.NewAtomicLevelAt(zap.DebugLevel)
 		zcfg.DisableCaller = true
 		zcfg.DisableStacktrace = true
 		zcfg.Sampling = nil
@@ -712,15 +828,12 @@ func readFile(fs afero.Fs, path string) (string, []byte, error) {
 	return abs, file, err
 }
 
-func (p *Params) backcompatOldCloudYaml(fs afero.Fs) error {
+func (*Params) backcompatOldCloudYaml(fs afero.Fs) error {
 	def, err := DefaultRpkYamlPath()
 	if err != nil {
-		// If the user has deliberately unset HOME and is using a --config
-		// flag, we will just avoid backcompatting the __cloud.yaml file.
-		if p.ConfigFlag != "" {
-			return nil
-		}
-		return err
+		//nolint:nilerr // This error only happens if the user unset $HOME, and
+		// if they do that, we will avoid failing / avoid backcompat here.
+		return nil
 	}
 
 	// Read and parse the old file. If it does not exist, that's great.
@@ -799,7 +912,11 @@ func (p *Params) readRpkConfig(fs afero.Fs, c *Config) error {
 	if p.ConfigFlag != "" {
 		path = p.ConfigFlag
 	} else if err != nil {
-		return err
+		//nolint:nilerr // If $HOME is unset, we do not read any file. If the user
+		// eventually tries to write, we fail in Write. Allowing
+		// $HOME to not exists allows rpk to work in CI settings
+		// where all config flags are being specified.
+		return nil
 	}
 	abs, file, err := readFile(fs, path)
 	if err != nil {
@@ -831,6 +948,13 @@ func (p *Params) readRpkConfig(fs afero.Fs, c *Config) error {
 	}
 	yaml.Unmarshal(file, &c.rpkYamlActual)
 
+	if p.Profile != "" {
+		if c.rpkYaml.Profile(p.Profile) == nil {
+			return fmt.Errorf("selected profile %q does not exist", p.Profile)
+		}
+		c.rpkYaml.CurrentProfile = p.Profile
+		c.rpkYamlActual.CurrentProfile = p.Profile
+	}
 	c.rpkYamlExists = true
 	c.rpkYaml.fileLocation = abs
 	c.rpkYamlActual.fileLocation = abs
@@ -931,6 +1055,27 @@ func (c *Config) ensureRpkCloudAuth() {
 		return
 	}
 	dst.PushAuth(def)
+}
+
+func (c *Config) ensureBrokerAddrs() {
+	{
+		dst := &c.redpandaYaml
+		if len(dst.Rpk.KafkaAPI.Brokers) == 0 {
+			dst.Rpk.KafkaAPI.Brokers = []string{net.JoinHostPort("127.0.0.1", strconv.Itoa(DefaultKafkaPort))}
+		}
+		if len(dst.Rpk.AdminAPI.Addresses) == 0 {
+			dst.Rpk.AdminAPI.Addresses = []string{net.JoinHostPort("127.0.0.1", strconv.Itoa(DefaultAdminPort))}
+		}
+	}
+	{
+		dst := c.rpkYaml.Profile(c.rpkYaml.CurrentProfile) // must exist by this function
+		if len(dst.KafkaAPI.Brokers) == 0 {
+			dst.KafkaAPI.Brokers = []string{net.JoinHostPort("127.0.0.1", strconv.Itoa(DefaultKafkaPort))}
+		}
+		if len(dst.AdminAPI.Addresses) == 0 {
+			dst.AdminAPI.Addresses = []string{net.JoinHostPort("127.0.0.1", strconv.Itoa(DefaultAdminPort))}
+		}
+	}
 }
 
 // We merge redpanda.yaml's rpk section back into rpk.yaml's profile.  This
@@ -1054,14 +1199,6 @@ func (c *Config) addUnsetRedpandaDefaults(actual bool) {
 			dst.Rpk.AdminAPI.Addresses = []string{host}
 			dst.Rpk.AdminAPI.TLS = dst.Rpk.KafkaAPI.TLS
 		}
-	}
-
-	if len(dst.Rpk.KafkaAPI.Brokers) == 0 {
-		dst.Rpk.KafkaAPI.Brokers = []string{net.JoinHostPort("127.0.0.1", strconv.Itoa(DefaultKafkaPort))}
-	}
-
-	if len(dst.Rpk.AdminAPI.Addresses) == 0 {
-		dst.Rpk.AdminAPI.Addresses = []string{net.JoinHostPort("127.0.0.1", strconv.Itoa(DefaultAdminPort))}
 	}
 }
 

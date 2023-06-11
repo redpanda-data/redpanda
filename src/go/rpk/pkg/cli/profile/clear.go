@@ -10,42 +10,31 @@
 package profile
 
 import (
-	"fmt"
-
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/out"
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
 )
 
-func newUseCommand(fs afero.Fs, p *config.Params) *cobra.Command {
-	cmd := &cobra.Command{
-		Use:               "use [NAME]",
-		Short:             "Select the rpk profile to use",
-		Args:              cobra.ExactArgs(1),
-		ValidArgsFunction: ValidProfiles(fs, p),
+func newClearCommand(fs afero.Fs, p *config.Params) *cobra.Command {
+	return &cobra.Command{
+		Use:   "clear",
+		Short: "Clear the current profile",
+		Long: `Clear the current profile
+
+This small command clears the current profile, which can be useful to unset an
+prod cluster profile.
+`,
+		Args: cobra.ExactArgs(0),
 		Run: func(_ *cobra.Command, args []string) {
 			cfg, err := p.Load(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)
-
 			y, ok := cfg.ActualRpkYaml()
 			if !ok {
-				out.Die("rpk.yaml file does not exist")
+				return
 			}
-
-			name := args[0]
-			p := y.Profile(name)
-			if p == nil {
-				out.Die("profile %q does not exist", name)
-			}
-			y.CurrentProfile = name
-			y.MoveProfileToFront(p)
-
-			err = y.Write(fs)
-			out.MaybeDieErr(err)
-			fmt.Printf("Set current profile to %q.\n", name)
+			y.CurrentProfile = ""
+			y.Write(fs)
 		},
 	}
-
-	return cmd
 }

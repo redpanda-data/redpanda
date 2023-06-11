@@ -88,9 +88,9 @@ class RpkProfileTest(RedpandaTest):
         assert "no-flag-test" in topic_list
 
     @cluster(num_nodes=3)
-    def test_create_profile_from_simple(self):
+    def test_create_profile_from_redpanda(self):
         """
-        Create redpanda.yaml, use create rpk profile --from simple
+        Create redpanda.yaml, use create rpk profile --from-redpanda
         """
         node = self.redpanda.get_node(0)
         rpk = RpkRemoteTool(self.redpanda, node)
@@ -99,8 +99,8 @@ class RpkProfileTest(RedpandaTest):
         rpk.config_set("rpk.kafka_api.brokers", self.redpanda.brokers_list())
 
         # Then we create the profile based on the redpanda.yaml
-        rpk.create_profile_simple("simple_test",
-                                  RedpandaService.NODE_CONFIG_FILE)
+        rpk.create_profile_redpanda("simple_test",
+                                    RedpandaService.NODE_CONFIG_FILE)
 
         rpk_cfg = read_rpk_cfg(node)
         redpanda_cfg = read_redpanda_cfg(node)

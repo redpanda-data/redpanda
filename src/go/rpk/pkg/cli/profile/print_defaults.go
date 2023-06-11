@@ -16,36 +16,23 @@ import (
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/out"
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
+	"gopkg.in/yaml.v3"
 )
 
-func newUseCommand(fs afero.Fs, p *config.Params) *cobra.Command {
-	cmd := &cobra.Command{
-		Use:               "use [NAME]",
-		Short:             "Select the rpk profile to use",
-		Args:              cobra.ExactArgs(1),
-		ValidArgsFunction: ValidProfiles(fs, p),
+func newPrintDefaultsCommand(fs afero.Fs, p *config.Params) *cobra.Command {
+	return &cobra.Command{
+		Use:   "print-defaults",
+		Short: "Print rpk default",
+		Long:  `Print rpk defaults.`,
+		Args:  cobra.ExactArgs(0),
 		Run: func(_ *cobra.Command, args []string) {
 			cfg, err := p.Load(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)
 
-			y, ok := cfg.ActualRpkYaml()
-			if !ok {
-				out.Die("rpk.yaml file does not exist")
-			}
-
-			name := args[0]
-			p := y.Profile(name)
-			if p == nil {
-				out.Die("profile %q does not exist", name)
-			}
-			y.CurrentProfile = name
-			y.MoveProfileToFront(p)
-
-			err = y.Write(fs)
-			out.MaybeDieErr(err)
-			fmt.Printf("Set current profile to %q.\n", name)
+			y := cfg.VirtualRpkYaml()
+			m, err := yaml.Marshal(y.Defaults)
+			out.MaybeDie(err, "unable to encode profile: %v", err)
+			fmt.Println(string(m))
 		},
 	}
-
-	return cmd
 }

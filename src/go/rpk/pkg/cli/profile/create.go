@@ -11,7 +11,9 @@ package profile
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"os"
 	"time"
 
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cloudapi"
@@ -26,10 +28,11 @@ import (
 
 func newCreateCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	var (
-		set         []string
-		fromSimple  string
-		fromCloud   string
-		description string
+		set          []string
+		fromRedpanda string
+		fromProfile  string
+		fromCloud    string
+		description  string
 	)
 
 	cmd := &cobra.Command{
@@ -40,8 +43,14 @@ func newCreateCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 There are multiple ways to create a profile. If no name is provided, the
 name "default" is used.
 
-* If you have an older redpanda.yaml, you can use --from-simple to generate
-  a new profile from the existing redpanda.yaml file.
+* You can use --from-redpanda to generate a new profile from an existing
+  redpanda.yaml file. The special values "current" create a profile from the
+  current redpanda.yaml as it is loaded within rpk.
+
+* You can use --from-profile to generate a profile from an existing profile or
+  from from a profile in a yaml file. First, the filename is checked, then an
+  existing profile name is checked. The special value "current" creates a new
+  profile from the existing profile.
 
 * You can use --from-cloud to generate a profile from an existing cloud cluster
   id. Note that you must be logged in with 'rpk cloud login' first.
@@ -53,7 +62,7 @@ name "default" is used.
   latter corresponds to the path kafka_api.tls.enabled in the profile's YAML.
 
 The --set flag is always applied last and can be used to set additional fields
-in tandem with --from-simple or --from-cloud.
+in tandem with --from-redpanda or --from-cloud.
 
 The --set flag supports autocompletion, suggesting the -X key format. If you
 begin writing a YAML path, the flag will suggest the rest of the path.
@@ -81,7 +90,7 @@ rpk always switches to the newly created profile.
 
 			ctx, cancel := context.WithTimeout(cmd.Context(), 10*time.Second)
 			defer cancel()
-			cloudMTLS, cloudSASL, err := createCtx(ctx, fs, y, cfg, fromSimple, fromCloud, set, name, description)
+			cloudMTLS, cloudSASL, err := createCtx(ctx, fs, y, cfg, fromRedpanda, fromProfile, fromCloud, set, name, description)
 			out.MaybeDieErr(err)
 
 			fmt.Printf("Created and switched to new profile %q.\n", name)
@@ -96,7 +105,8 @@ rpk always switches to the newly created profile.
 	}
 
 	cmd.Flags().StringSliceVarP(&set, "set", "s", nil, "Create and switch to a new profile, setting profile fields with key=value pairs")
-	cmd.Flags().StringVar(&fromSimple, "from-simple", "", "Create and switch to a new profile from a (simpler to define) redpanda.yaml file")
+	cmd.Flags().StringVar(&fromRedpanda, "from-redpanda", "", "Create and switch to a new profile from a redpanda.yaml file")
+	cmd.Flags().StringVar(&fromProfile, "from-profile", "", "Create and switch to a new profile from an existing profile or from a profile in a yaml file")
 	cmd.Flags().StringVar(&fromCloud, "from-cloud", "", "Create and switch to a new profile generated from a Redpanda Cloud cluster ID")
 	cmd.Flags().StringVarP(&description, "description", "d", "", "Optional description of the profile")
 
@@ -111,14 +121,15 @@ func createCtx(
 	fs afero.Fs,
 	y *config.RpkYaml,
 	cfg *config.Config,
-	fromSimple string,
+	fromRedpanda string,
+	fromProfile string,
 	fromCloud string,
 	set []string,
 	name string,
 	description string,
 ) (cloudMTLS, cloudSASL bool, err error) {
-	if fromCloud != "" && fromSimple != "" {
-		return false, false, fmt.Errorf("cannot use --from-cloud and --from-simple together")
+	if (fromCloud != "" && fromRedpanda != "") || (fromCloud != "" && fromProfile != "") || (fromRedpanda != "" && fromProfile != "") {
+		return false, false, fmt.Errorf("can only use one of --from-cloud, --from-redpanda, or --from-profile")
 	}
 	if p := y.Profile(name); p != nil {
 		return false, false, fmt.Errorf("profile %q already exists", name)
@@ -133,19 +144,43 @@ func createCtx(
 			return false, false, err
 		}
 
-	case fromSimple != "":
+	case fromProfile != "":
+		switch {
+		case fromProfile == "current":
+			p = *cfg.VirtualProfile()
+		default:
+			raw, err := afero.ReadFile(fs, fromProfile)
+			if err != nil {
+				if !errors.Is(err, os.ErrNotExist) {
+					return false, false, fmt.Errorf("unable to read file %q: %v", fromProfile, err)
+				}
+				y, err := cfg.ActualRpkYamlOrEmpty()
+				if err != nil {
+					return false, false, fmt.Errorf("file %q does not exist, and we cannot read rpk.yaml: %v", fromProfile, err)
+				}
+				src := y.Profile(fromProfile)
+				if src == nil {
+					return false, false, fmt.Errorf("unable to find profile %q", fromProfile)
+				}
+				p = *src
+			} else if err := yaml.Unmarshal(raw, &p); err != nil {
+				return false, false, fmt.Errorf("unable to yaml decode file %q: %v", fromProfile, err)
+			}
+		}
+
+	case fromRedpanda != "":
 		var nodeCfg config.RpkNodeConfig
 		switch {
-		case fromSimple == "loaded" || fromSimple == "current":
+		case fromRedpanda == "current":
 			nodeCfg = cfg.VirtualRedpandaYaml().Rpk
 		default:
-			raw, err := afero.ReadFile(fs, fromSimple)
+			raw, err := afero.ReadFile(fs, fromRedpanda)
 			if err != nil {
-				return false, false, fmt.Errorf("unable to read file %q: %v", fromSimple, err)
+				return false, false, fmt.Errorf("unable to read file %q: %v", fromRedpanda, err)
 			}
 			var rpyaml config.RedpandaYaml
 			if err := yaml.Unmarshal(raw, &rpyaml); err != nil {
-				return false, false, fmt.Errorf("unable to yaml decode file %q: %v", fromSimple, err)
+				return false, false, fmt.Errorf("unable to yaml decode file %q: %v", fromRedpanda, err)
 			}
 			nodeCfg = rpyaml.Rpk
 		}
