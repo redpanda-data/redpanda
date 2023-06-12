@@ -213,6 +213,27 @@ private:
     [[no_unique_address]] oncore _oncore;
 };
 
+/// Result of reallocating a single replica. Can be used for reverts.
+class reallocation_step {
+public:
+    const model::broker_shard& current() const { return _current; }
+
+    // nullopt if new replica
+    const std::optional<model::broker_shard>& previous() const {
+        return _previous;
+    }
+
+private:
+    friend class partition_allocator;
+    reallocation_step(
+      model::broker_shard current, std::optional<model::broker_shard> previous)
+      : _current(current)
+      , _previous(previous) {}
+
+    model::broker_shard _current;
+    std::optional<model::broker_shard> _previous;
+};
+
 /// RAII helper for incremental partition (re)allocation.
 ///
 /// Note: shard ids for original replicas are preserved.
@@ -224,6 +245,9 @@ public:
 
     bool has_changes() const;
     bool is_original(model::node_id) const;
+
+    // reverting the last step is always possible
+    errc try_revert(const reallocation_step&);
 
     allocated_partition& operator=(allocated_partition&&) = default;
     allocated_partition& operator=(const allocated_partition&) = delete;
