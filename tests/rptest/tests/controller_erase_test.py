@@ -36,7 +36,7 @@ class ControllerEraseTest(RedpandaTest):
 
         In general Redpanda doesn't handle on-disk corruption (such as selectively
         deleting segments) gracefully, but in the particular case of wiping
-        the whole controller log, or a contiguous sufffix region of the log,
+        the whole controller log, or a contiguous suffix region of the log,
         we can gracefully let raft fill in the gaps.
         """
 
@@ -64,7 +64,7 @@ class ControllerEraseTest(RedpandaTest):
             segments = storage.ns['redpanda'].topics['controller'].partitions[
                 "0_0"].segments.keys()
             # We expect that segments count for controller should be transfers_leadership_count + 1.
-            # Becasue each transfer creats one segment + initial leadership after restart creates first segment
+            # Because each transfer creates one segment + initial leadership after restart creates first segment
             return len(segments) == transfers_leadership_count + 1
 
         wait_until(
