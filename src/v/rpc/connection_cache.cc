@@ -20,7 +20,18 @@ namespace rpc {
 connection_cache::connection_cache(
   ss::sharded<ss::abort_source>& as,
   std::optional<connection_cache_label> label)
-  : _label(std::move(label)) {
+  : _max_connections(8)
+  , _label(std::move(label)) {
+    _as_subscription = as.local().subscribe(
+      [this]() mutable noexcept { shutdown(); });
+}
+
+connection_cache::connection_cache(
+  size_t max_connections,
+  ss::sharded<ss::abort_source>& as,
+  std::optional<connection_cache_label> label)
+  : _max_connections(max_connections)
+  , _label(std::move(label)) {
     _as_subscription = as.local().subscribe(
       [this]() mutable noexcept { shutdown(); });
 }
@@ -104,24 +115,13 @@ ss::shard_id connection_cache::shard_for(
   ss::shard_id src_shard,
   model::node_id n,
   ss::shard_id total_shards) const {
-    if (ss::smp::count <= 8) {
+    if (total_shards <= _max_connections) {
         return src_shard;
     }
-    static const constexpr size_t vnodes = 8;
-    /// make deterministic - choose 1 prime to mix node_id with
-    /// https://planetmath.org/goodhashtableprimes
-    static const constexpr std::array<size_t, vnodes> universe{
-      {12582917,
-       25165843,
-       50331653,
-       100663319,
-       201326611,
-       402653189,
-       805306457,
-       1610612741}};
 
     // NOLINTNEXTLINE
-    size_t h = universe[jump_consistent_hash(src_shard, vnodes)];
+    size_t h = 805306457;
+    boost::hash_combine(h, jump_consistent_hash(src_shard, _max_connections));
     boost::hash_combine(h, std::hash<model::node_id>{}(n));
     boost::hash_combine(h, std::hash<model::node_id>{}(self));
     // use self node id to shift jump_consistent_hash_assignment

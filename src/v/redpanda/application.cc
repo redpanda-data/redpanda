@@ -1072,7 +1072,11 @@ void application::wire_up_redpanda_services(
 
     // cluster
     syschecks::systemd_message("Initializing connection cache").get();
-    construct_service(_connection_cache, std::ref(_as)).get();
+    construct_service(
+      _connection_cache,
+      config::shard_local_cfg().rpc_client_connections_per_peer(),
+      std::ref(_as))
+      .get();
     syschecks::systemd_message("Building shard-lookup tables").get();
     construct_service(shard_table).get();
 

@@ -10,6 +10,7 @@
  */
 
 #pragma once
+#include "config/property.h"
 #include "hashing/jump_consistent_hash.h"
 #include "model/metadata.h"
 #include "outcome.h"
@@ -41,6 +42,11 @@ public:
       ss::shard_id max_shards = ss::smp::count) const;
 
     explicit connection_cache(
+      ss::sharded<ss::abort_source>&,
+      std::optional<connection_cache_label> label = std::nullopt);
+
+    explicit connection_cache(
+      size_t,
       ss::sharded<ss::abort_source>&,
       std::optional<connection_cache_label> label = std::nullopt);
 
@@ -157,6 +163,7 @@ public:
     }
 
 private:
+    size_t _max_connections;
     std::optional<connection_cache_label> _label;
     mutex _mutex; // to add/remove nodes
     underlying _cache;
