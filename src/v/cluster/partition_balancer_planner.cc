@@ -378,10 +378,12 @@ public:
 
     size_t size_bytes() const { return _size_bytes; }
 
-    result<model::broker_shard> move_replica(
+    result<reallocation_step> move_replica(
       model::node_id replica,
       double max_disk_usage_ratio,
       std::string_view reason);
+
+    void revert(const reallocation_step&);
 
 private:
     friend class request_context;
@@ -690,13 +692,19 @@ auto partition_balancer_planner::request_context::do_with_partition(
     auto deferred = ss::defer([&] {
         auto& reassignable = std::get<reassignable_partition>(part._variant);
         // insert or return part._reallocated to reassignments
-        if (reassignment_it != _reassignments.end()) {
-            reassignment_it->second = std::move(*reassignable._reallocated);
-        } else if (
-          reassignable._reallocated
-          && reassignable._reallocated->has_changes()) {
-            _reassignments.emplace(ntp, std::move(*reassignable._reallocated));
-            _planned_moves_size_bytes += reassignable._size_bytes;
+        if (reassignable.has_changes()) {
+            if (reassignment_it != _reassignments.end()) {
+                reassignment_it->second = std::move(*reassignable._reallocated);
+            } else {
+                _reassignments.emplace(
+                  ntp, std::move(*reassignable._reallocated));
+                _planned_moves_size_bytes += reassignable._size_bytes;
+            }
+        } else if (reassignment_it != _reassignments.end()) {
+            // We no longer need to reassign this partition (presumably due to
+            // revert)
+            _reassignments.erase(reassignment_it);
+            _planned_moves_size_bytes -= reassignable._size_bytes;
         }
     });
 
@@ -775,7 +783,7 @@ partition_balancer_planner::reassignable_partition::get_allocation_constraints(
     return constraints;
 }
 
-result<model::broker_shard>
+result<reallocation_step>
 partition_balancer_planner::reassignable_partition::move_replica(
   model::node_id replica,
   double max_disk_usage_ratio,
@@ -785,6 +793,15 @@ partition_balancer_planner::reassignable_partition::move_replica(
           = _ctx._parent._partition_allocator.make_allocated_partition(
             replicas(), get_allocation_domain(_ntp));
     }
+
+    // Verify that we are moving only original replicas. This assumption
+    // simplifies the code considerably (although in the future nothing stops us
+    // from supporting moving already moved replicas several times).
+    vassert(
+      _reallocated->is_original(replica),
+      "ntp {}: trying to move replica {} which was already reassigned earlier",
+      _ntp,
+      replica);
 
     auto constraints = get_allocation_constraints(max_disk_usage_ratio);
     auto moved = _ctx._parent._partition_allocator.reallocate_replica(
@@ -805,7 +822,8 @@ partition_balancer_planner::reassignable_partition::move_replica(
         return moved;
     }
 
-    if (moved.value().node_id != replica) {
+    model::node_id new_node = moved.value().current().node_id;
+    if (new_node != replica) {
         vlog(
           clusterlog.info,
           "ntp {} (size: {}, orig replicas: {}): scheduling replica move "
@@ -814,7 +832,7 @@ partition_balancer_planner::reassignable_partition::move_replica(
           _size_bytes,
           _orig_replicas,
           replica,
-          moved.value(),
+          new_node,
           reason);
 
         auto from_it = _ctx.node_disk_reports.find(replica);
@@ -822,15 +840,49 @@ partition_balancer_planner::reassignable_partition::move_replica(
             from_it->second.released += _size_bytes;
         }
 
-        auto to_it = _ctx.node_disk_reports.find(moved.value().node_id);
+        auto to_it = _ctx.node_disk_reports.find(new_node);
         if (to_it != _ctx.node_disk_reports.end()) {
-            to_it->second.assigned += _size_bytes;
+            if (_reallocated->is_original(new_node)) {
+                to_it->second.released -= _size_bytes;
+            } else {
+                to_it->second.assigned += _size_bytes;
+            }
         }
-    } else {
-        // TODO: revert?
     }
 
     return moved;
+}
+
+void partition_balancer_planner::reassignable_partition::revert(
+  const reallocation_step& move) {
+    vassert(_reallocated, "ntp {}: _reallocated must be present", _ntp);
+    vassert(
+      move.previous(),
+      "ntp {}: trying to revert move without previous replica",
+      _ntp);
+    vassert(
+      _reallocated->is_original(move.previous()->node_id),
+      "ntp {}: move {}->{} should have been from original node",
+      _ntp,
+      move.current(),
+      move.previous());
+
+    auto err = _reallocated->try_revert(move);
+    vassert(err == errc::success, "ntp {}: revert error: {}", _ntp, err);
+
+    auto from_it = _ctx.node_disk_reports.find(move.previous()->node_id);
+    if (from_it != _ctx.node_disk_reports.end()) {
+        from_it->second.released -= _size_bytes;
+    }
+
+    auto to_it = _ctx.node_disk_reports.find(move.current().node_id);
+    if (to_it != _ctx.node_disk_reports.end()) {
+        if (_reallocated->is_original(move.current().node_id)) {
+            to_it->second.released += _size_bytes;
+        } else {
+            to_it->second.assigned -= _size_bytes;
+        }
+    }
 }
 
 /*
