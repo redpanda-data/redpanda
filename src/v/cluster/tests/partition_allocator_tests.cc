@@ -598,6 +598,17 @@ void check_final_counts(
     BOOST_CHECK_EQUAL(counts, expected);
 };
 
+std::vector<model::node_id>
+to_node_ids(const std::vector<model::broker_shard>& replicas) {
+    std::vector<model::node_id> ids;
+    ids.reserve(replicas.size());
+    for (const auto& bs : replicas) {
+        ids.push_back(bs.node_id);
+    }
+    std::sort(ids.begin(), ids.end());
+    return ids;
+}
+
 FIXTURE_TEST(incrementally_reallocate_replicas, partition_allocator_fixture) {
     register_node(0, 1);
     register_node(1, 1);
@@ -626,7 +637,7 @@ FIXTURE_TEST(incrementally_reallocate_replicas, partition_allocator_fixture) {
         auto moved = allocator.reallocate_replica(
           reallocated, model::node_id{0}, not_on_old_nodes);
         BOOST_REQUIRE(moved.has_value());
-        BOOST_REQUIRE_EQUAL(moved.value().bs.node_id, model::node_id{3});
+        BOOST_REQUIRE_EQUAL(moved.value().current().node_id, model::node_id{3});
         BOOST_REQUIRE(reallocated.has_changes());
         BOOST_REQUIRE_EQUAL(
           reallocated.replicas().at(2).node_id, model::node_id{3});
@@ -656,7 +667,8 @@ FIXTURE_TEST(incrementally_reallocate_replicas, partition_allocator_fixture) {
         auto moved4 = allocator.reallocate_replica(
           reallocated, model::node_id{3}, not_on_old_nodes);
         BOOST_REQUIRE(moved4.has_value());
-        BOOST_REQUIRE_EQUAL(moved4.value().bs.node_id, model::node_id{3});
+        BOOST_REQUIRE_EQUAL(
+          moved4.value().current().node_id, model::node_id{3});
         BOOST_REQUIRE_EQUAL(
           reallocated.replicas().at(2).node_id, model::node_id{3});
 
@@ -671,7 +683,8 @@ FIXTURE_TEST(incrementally_reallocate_replicas, partition_allocator_fixture) {
         auto moved5 = allocator.reallocate_replica(
           reallocated, model::node_id{2}, not_on_node0);
         BOOST_REQUIRE(moved5.has_value());
-        BOOST_REQUIRE_EQUAL(moved5.value().bs.node_id, model::node_id{2});
+        BOOST_REQUIRE_EQUAL(
+          moved5.value().current().node_id, model::node_id{2});
         BOOST_REQUIRE_EQUAL(
           reallocated.replicas().at(2).node_id, model::node_id{2});
 
@@ -686,7 +699,8 @@ FIXTURE_TEST(incrementally_reallocate_replicas, partition_allocator_fixture) {
         auto moved6 = allocator.reallocate_replica(
           reallocated, model::node_id{3}, not_on_new_nodes);
         BOOST_REQUIRE(moved6.has_value());
-        BOOST_REQUIRE_EQUAL(moved6.value().bs.node_id, model::node_id{0});
+        BOOST_REQUIRE_EQUAL(
+          moved6.value().current().node_id, model::node_id{0});
         BOOST_REQUIRE(!reallocated.has_changes());
         BOOST_REQUIRE_EQUAL(
           reallocated.replicas().at(2).node_id, model::node_id{0});
@@ -698,7 +712,8 @@ FIXTURE_TEST(incrementally_reallocate_replicas, partition_allocator_fixture) {
         auto moved7 = allocator.reallocate_replica(
           reallocated, model::node_id{1}, not_on_old_nodes);
         BOOST_REQUIRE(moved7.has_value());
-        BOOST_REQUIRE_EQUAL(moved7.value().bs.node_id, model::node_id{3});
+        BOOST_REQUIRE_EQUAL(
+          moved7.value().current().node_id, model::node_id{3});
         BOOST_REQUIRE(reallocated.has_changes());
         BOOST_REQUIRE_EQUAL(
           reallocated.replicas().at(2).node_id, model::node_id{3});
@@ -827,8 +842,9 @@ FIXTURE_TEST(
     auto moved = allocator.reallocate_replica(
       reallocated, model::node_id{0}, not_on_0);
     BOOST_REQUIRE(moved);
-    BOOST_REQUIRE_EQUAL(moved.value().bs.node_id, model::node_id{3});
-    replica2shard[moved.value().bs.node_id] = moved.value().bs.shard;
+    BOOST_REQUIRE_EQUAL(moved.value().current().node_id, model::node_id{3});
+    replica2shard[moved.value().current().node_id]
+      = moved.value().current().shard;
 
     // Delete partition 1. This frees up the first shard on all nodes, making it
     // more attractive. But replicas on nodes 0, 1, and 2 should still end up on
@@ -841,28 +857,100 @@ FIXTURE_TEST(
     moved = allocator.reallocate_replica(
       reallocated, model::node_id{1}, not_on_0);
     BOOST_REQUIRE(moved);
-    BOOST_REQUIRE_EQUAL(moved.value().bs.node_id, model::node_id{1});
+    BOOST_REQUIRE_EQUAL(moved.value().current().node_id, model::node_id{1});
     BOOST_REQUIRE_EQUAL(
-      moved.value().bs.shard, replica2shard.at(moved.value().bs.node_id));
+      moved.value().current().shard,
+      replica2shard.at(moved.value().current().node_id));
 
     // Reallocate replica on node 3 to itself.
     moved = allocator.reallocate_replica(
       reallocated, model::node_id{3}, not_on_0);
     BOOST_REQUIRE(moved);
-    BOOST_REQUIRE_EQUAL(moved.value().bs.node_id, model::node_id{3});
+    BOOST_REQUIRE_EQUAL(moved.value().current().node_id, model::node_id{3});
     // Node 3 is not in the original set, so we don't care that the shard is
     // preserved.
     BOOST_REQUIRE_NE(
-      moved.value().bs.shard, replica2shard.at(moved.value().bs.node_id));
+      moved.value().current().shard,
+      replica2shard.at(moved.value().current().node_id));
 
     // Reallocate replica on node 3 back to the original node 0.
     moved = allocator.reallocate_replica(
       reallocated, model::node_id{3}, not_on_3);
     BOOST_REQUIRE(moved);
-    BOOST_REQUIRE_EQUAL(moved.value().bs.node_id, model::node_id{0});
+    BOOST_REQUIRE_EQUAL(moved.value().current().node_id, model::node_id{0});
     BOOST_REQUIRE_EQUAL(
-      moved.value().bs.shard, replica2shard.at(moved.value().bs.node_id));
+      moved.value().current().shard,
+      replica2shard.at(moved.value().current().node_id));
 
     // The end result is the same: replicas on nodes 0, 1, 2
     BOOST_REQUIRE(!reallocated.has_changes());
+}
+
+static cluster::allocation_constraints on_node(model::node_id id) {
+    class impl : public cluster::hard_constraint::impl {
+    public:
+        explicit impl(model::node_id id)
+          : _id(id) {}
+
+        cluster::hard_constraint_evaluator
+        make_evaluator(const cluster::replicas_t&) const final {
+            return [this](const cluster::allocation_node& node) {
+                return node.id() == _id;
+            };
+        }
+
+        ss::sstring name() const final {
+            return ssx::sformat("on node: {}", _id);
+        }
+
+    private:
+        model::node_id _id;
+    };
+
+    cluster::allocation_constraints ret;
+    ret.add(cluster::hard_constraint(std::make_unique<impl>(id)));
+    return ret;
+}
+
+FIXTURE_TEST(revert_allocation_step, partition_allocator_fixture) {
+    register_node(0, 1);
+    register_node(1, 1);
+    register_node(2, 1);
+
+    // allocate a partition with 3 replicas on 3 nodes
+    auto domain = cluster::partition_allocation_domains::common;
+    auto req = make_allocation_request(1, 3);
+    auto res = allocator.allocate(std::move(req)).get();
+    auto original_replicas = res.value()->get_assignments().front().replicas;
+
+    // add a couple more nodes
+    register_node(3, 1);
+    register_node(4, 1);
+
+    auto n = [](int id) { return model::node_id{id}; };
+
+    {
+        cluster::allocated_partition reallocated
+          = allocator.make_allocated_partition(original_replicas, domain);
+        auto step1 = allocator.reallocate_replica(
+          reallocated, n(0), on_node(n(3)));
+        BOOST_REQUIRE(step1);
+        BOOST_REQUIRE_EQUAL(step1.value().current().node_id, n(3));
+        BOOST_REQUIRE(step1.value().previous());
+        BOOST_REQUIRE_EQUAL(step1.value().previous()->node_id, n(0));
+
+        auto step2 = allocator.reallocate_replica(
+          reallocated, n(3), on_node(n(4)));
+        BOOST_REQUIRE(step2);
+
+        auto ec = reallocated.try_revert(step1.value());
+        BOOST_REQUIRE_EQUAL(ec, cluster::errc::node_does_not_exists);
+
+        ec = reallocated.try_revert(step2.value());
+        BOOST_REQUIRE_EQUAL(ec, cluster::errc::success);
+        BOOST_REQUIRE_EQUAL(
+          to_node_ids(reallocated.replicas()), std::vector({n(1), n(2), n(3)}));
+        check_allocated_counts(allocator, {1, 1, 1, 1, 0});
+        check_final_counts(allocator, {0, 1, 1, 1, 0});
+    }
 }
