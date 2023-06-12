@@ -91,6 +91,8 @@ ss::future<node::stat_info> node::get_statvfs(disk_type type) {
     stat = co_await ss::engine().statvfs(path);
 
     if (unlikely(overrides.has_overrides())) {
+        auto used_blocks = stat.f_blocks - stat.f_bfree;
+
         /*
          * total size
          */
@@ -103,10 +105,10 @@ ss::future<node::stat_info> node::get_statvfs(disk_type type) {
         /*
          * free space
          */
-        auto free_blocks = stat.f_bfree;
         if (overrides.free_bytes.has_value()) {
-            free_blocks = std::max(
+            const auto free_blocks = std::max(
               overrides.free_bytes.value() / stat.f_frsize, 1UL);
+            used_blocks = total_blocks - free_blocks;
         }
 
         /*
@@ -115,10 +117,9 @@ ss::future<node::stat_info> node::get_statvfs(disk_type type) {
         if (overrides.free_bytes_delta.has_value()) {
             const auto free_blocks_delta = overrides.free_bytes_delta.value()
                                            / ssize_t(stat.f_frsize);
-            free_blocks += free_blocks_delta;
+            used_blocks -= free_blocks_delta;
         }
 
-        const auto used_blocks = total_blocks - free_blocks;
         if (total_blocks < used_blocks) {
             vlog(
               stlog.error,
