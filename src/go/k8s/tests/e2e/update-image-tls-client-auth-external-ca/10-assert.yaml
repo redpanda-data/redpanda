@@ -1,12 +1,12 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: call-console-update-img-external-client-ca
+  name: get-schema-failure-update-img-external-client-ca
 status:
   conditions:
     - status: "True"
-      type: Complete
-  succeeded: 1
+      type: Failed
+  failed: 3
 
 ---
 
@@ -14,5 +14,5 @@ apiVersion: kuttl.dev/v1beta1
 kind: TestAssert
 collectors:
 - type: pod
-  selector: app.kubernetes.io/name=redpanda-console
+  selector: app.kubernetes.io/name=redpanda
   tail: -1
