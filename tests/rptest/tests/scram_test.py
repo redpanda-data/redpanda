@@ -426,7 +426,7 @@ class InvalidNewUserStrings(BaseScramTest):
     def generate_string_with_control_character(length: int):
         rv = ''.join(
             random.choices(string.ascii_letters + CONTROL_CHARS, k=length))
-        if not any(char in rv for char in CONTROL_CHARS):
+        while not any(char in rv for char in CONTROL_CHARS):
             rv = ''.join(
                 random.choices(string.ascii_letters + CONTROL_CHARS, k=length))
         return rv
