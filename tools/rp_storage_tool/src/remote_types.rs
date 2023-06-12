@@ -343,6 +343,8 @@ pub struct PartitionManifest {
     pub archive_start_offset_delta: Option<i64>,
     #[serde(skip_serializing_if = "offset_has_default_value")]
     pub archive_clean_offset: Option<i64>,
+    #[serde(skip_serializing_if = "offset_has_default_value")]
+    pub start_kafka_offset: Option<i64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub archive_size_bytes: Option<u64>, // << Since v23.2.x
 }
@@ -610,6 +612,7 @@ impl PartitionManifest {
             archive_start_offset: Some(i64::MIN),
             archive_start_offset_delta: Some(i64::MIN),
             archive_clean_offset: Some(i64::MIN),
+            start_kafka_offset: None,
             archive_size_bytes: Some(0),
         }
     }
@@ -694,7 +697,7 @@ impl PartitionManifest {
         let archive_start_offset = read_i64(&mut reader)?;
         let archive_start_offset_delta = read_i64(&mut reader)?;
         let archive_clean_offset = read_i64(&mut reader)?;
-        let _start_kafka_offset = read_i64(&mut reader)?;
+        let start_kafka_offset = read_i64(&mut reader)?;
 
         let archive_size_bytes = if (reader.position() as u32) < envelope.size {
             Some(read_u64(&mut reader)?)
@@ -718,6 +721,7 @@ impl PartitionManifest {
             archive_start_offset: Some(archive_start_offset),
             archive_start_offset_delta: Some(archive_start_offset_delta),
             archive_clean_offset: Some(archive_clean_offset),
+            start_kafka_offset: Some(start_kafka_offset),
             archive_size_bytes: archive_size_bytes,
         })
 
@@ -1048,6 +1052,11 @@ mod tests {
         assert_eq!(manifest.partition, 0);
         assert_eq!(manifest.revision, 8);
         assert_eq!(manifest.segments.len(), 3654);
+        // Sanity check some missing field serialization.
+        assert!(offset_has_default_value(&manifest.start_kafka_offset),
+                "{:?}", manifest.start_kafka_offset);
+        let json_manifest = serde_json::to_string(&manifest).unwrap();
+        assert_eq!(json_manifest.find("start_kafka_offset"), None);
     }
 
     #[test_log::test(tokio::test)]
@@ -1067,7 +1076,28 @@ mod tests {
         assert_eq!(
             manifest.segments.get("1225-1-v1.log").unwrap().size_bytes,
             1573496
-        )
+        );
+        // Sanity check some missing field serialization.
+        assert!(offset_has_default_value(&manifest.start_kafka_offset),
+                "{:?}", manifest.start_kafka_offset);
+        let json_manifest = serde_json::to_string(&manifest).unwrap();
+        assert_eq!(json_manifest.find("start_kafka_offset"), None);
+    }
+
+    #[test_log::test(tokio::test)]
+    async fn test_binary_manifest_decode_start_kafka_offset() {
+        let b = read_bytes("/resources/test/manifest_23_2_start_kafka_offset.bin").await;
+
+        let manifest = PartitionManifest::from_bytes(b).unwrap();
+        assert_eq!(manifest.namespace, "test-ns");
+        assert_eq!(manifest.topic, "test-topic");
+        assert_eq!(manifest.partition, 42);
+        assert_eq!(manifest.revision, 0);
+
+        assert_eq!(manifest.segments.len(), 4);
+        assert_eq!(Some(80), manifest.start_kafka_offset);
+        let json_manifest = serde_json::to_string(&manifest).unwrap();
+        assert_ne!(json_manifest.find("start_kafka_offset"), None);
     }
 
     #[test_log::test(tokio::test)]

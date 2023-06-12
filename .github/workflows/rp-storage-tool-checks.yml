@@ -38,8 +38,8 @@ jobs:
       - name: Run cargo check
         uses: actions-rs/cargo@v1
         with:
-          working-directory: ./tools/rp_storage_tool
           command: check
+          args: --manifest-path tools/rp_storage_tool/Cargo.toml
 
   test:
     name: Unit tests
@@ -60,5 +60,5 @@ jobs:
       - name: Run cargo test
         uses: actions-rs/cargo@v1
         with:
-          working-directory: ./tools/rp_storage_tool
           command: test
+          args: --manifest-path tools/rp_storage_tool/Cargo.toml
