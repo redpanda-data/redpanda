@@ -97,7 +97,7 @@ def cluster(log_allow_list=None, check_allowed_error_logs=True, **kwargs):
 
                     redpanda.cloud_storage_diagnostics()
 
-                    redpanda.raise_on_crash()
+                    redpanda.raise_on_crash(log_allow_list=log_allow_list)
 
                 raise
             else:
