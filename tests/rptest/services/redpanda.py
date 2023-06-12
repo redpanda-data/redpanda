@@ -1439,9 +1439,9 @@ class RedpandaServiceCloud(RedpandaServiceK8s):
 
     def start(self, **kwargs):
         cluster_id = self._cloud_cluster.create()
-        target = f'redpanda@{cluster_id}-agent'
+        remote_uri = f'redpanda@{cluster_id}-agent'
         self._kubectl = KubectlTool(self,
-                                    cmd_prefix=['tsh', 'ssh', target],
+                                    remote_uri=remote_uri,
                                     cluster_id=self._cloud_cluster.cluster_id)
 
     def stop_node(self, node, **kwargs):

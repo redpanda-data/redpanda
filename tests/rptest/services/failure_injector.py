@@ -45,7 +45,7 @@ class FailureSpec:
         self.node = node
 
     def __str__(self):
-        return f"type: {self.type}, length: {self.length} seconds, node: {self.node.account.hostname}"
+        return f"type: {self.type}, length: {self.length} seconds, node: {None if self.node is None else self.node.account.hostname}"
 
     def __repr__(self):
         return self.__str__()
@@ -305,11 +305,18 @@ class FailureInjector(FailureInjectorBase):
 class FailureInjectorCloud(FailureInjectorBase):
     def __init__(self, redpanda):
         super(FailureInjectorCloud, self).__init__(redpanda)
-        self._kubectl = KubectlTool(redpanda)
+        remote_uri = f'redpanda@{redpanda._cloud_cluster.cluster_id}-agent'
+        self._kubectl = KubectlTool(
+            redpanda,
+            remote_uri=remote_uri,
+            cluster_id=redpanda._cloud_cluster.cluster_id)
 
     def _isolate(self, node):
-        self.redpanda.logger.info(f"isolating node {node.account.hostname}")
-        # TODO block port 33145 traffic on a node
+        self.redpanda.logger.info(f'isolating node with privilaged pod')
+        cmd = 'apt update;apt install -y iptables;iptables -A OUTPUT -p tcp --destination-port 33145 -j DROP'
+        self._kubectl.exec_privileged(cmd)
+        cmd = 'apt update;apt install -y iptables;iptables -A INPUT -p tcp --destination-port 33145 -j DROP'
+        self._kubectl.exec_privileged(cmd)
 
 
 def make_failure_injector(redpanda):
