@@ -16,6 +16,7 @@
 #include "storage/disk_log_appender.h"
 #include "storage/file_sanitizer.h"
 #include "storage/log_reader.h"
+#include "storage/parser_utils.h"
 #include "storage/segment.h"
 #include "storage/segment_appender.h"
 #include "storage/segment_appender_utils.h"
@@ -290,4 +291,30 @@ SEASTAR_THREAD_TEST_CASE(test_does_not_read_past_max_offset) {
     auto res = b.consume(reader_config).get0();
     b | stop();
     check_batches(res, batches);
+}
+
+SEASTAR_THREAD_TEST_CASE(iobuf_is_zero_test) {
+    const auto a = random_generators::gen_alphanum_string(1024);
+    const auto b = bytes("abc");
+    std::array<char, 1024> zeros{0};
+    std::array<char, 1> one{1};
+
+    // non zero iobuf
+    iobuf non_zero_1;
+    non_zero_1.append(a.data(), a.size());
+    non_zero_1.append(b.data(), b.size());
+    BOOST_REQUIRE_EQUAL(storage::internal::is_zero(non_zero_1), false);
+
+    iobuf non_zero_2;
+    non_zero_2.append(zeros.data(), zeros.size());
+    non_zero_2.append(one.data(), one.size());
+    BOOST_REQUIRE_EQUAL(storage::internal::is_zero(non_zero_2), false);
+    // empty iobuf is not zero
+    iobuf empty;
+    BOOST_REQUIRE_EQUAL(storage::internal::is_zero(empty), false);
+
+    iobuf zero;
+    zero.append(zeros.data(), zeros.size());
+    zero.append(zeros.data(), zeros.size());
+    BOOST_REQUIRE_EQUAL(storage::internal::is_zero(zero), true);
 }
