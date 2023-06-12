@@ -180,7 +180,6 @@ var possibleLoggers = []string{
 	"compaction_ctrl",
 	"compression",
 	"controller_rate_limiter_log",
-	"coproc",
 	"dns_resolver",
 	"exception",
 	"fault_injector",

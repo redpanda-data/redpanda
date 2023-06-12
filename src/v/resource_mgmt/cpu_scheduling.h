@@ -27,7 +27,6 @@ public:
         _raft = co_await ss::create_scheduling_group("raft", 1000);
         _kafka = co_await ss::create_scheduling_group("kafka", 1000);
         _cluster = co_await ss::create_scheduling_group("cluster", 300);
-        _coproc = co_await ss::create_scheduling_group("coproc", 100);
         _cache_background_reclaim = co_await ss::create_scheduling_group(
           "cache_background_reclaim", 200);
         _compaction = co_await ss::create_scheduling_group(
@@ -46,7 +45,6 @@ public:
         co_await destroy_scheduling_group(_raft);
         co_await destroy_scheduling_group(_kafka);
         co_await destroy_scheduling_group(_cluster);
-        co_await destroy_scheduling_group(_coproc);
         co_await destroy_scheduling_group(_cache_background_reclaim);
         co_await destroy_scheduling_group(_compaction);
         co_await destroy_scheduling_group(_raft_learner_recovery);
@@ -61,7 +59,7 @@ public:
     ss::scheduling_group raft_sg() { return _raft; }
     ss::scheduling_group kafka_sg() { return _kafka; }
     ss::scheduling_group cluster_sg() { return _cluster; }
-    ss::scheduling_group coproc_sg() { return _coproc; }
+
     ss::scheduling_group cache_background_reclaim_sg() {
         return _cache_background_reclaim;
     }
@@ -91,7 +89,6 @@ public:
           std::cref(_raft),
           std::cref(_kafka),
           std::cref(_cluster),
-          std::cref(_coproc),
           std::cref(_cache_background_reclaim),
           std::cref(_compaction),
           std::cref(_raft_learner_recovery),
@@ -108,7 +105,6 @@ private:
     ss::scheduling_group _raft;
     ss::scheduling_group _kafka;
     ss::scheduling_group _cluster;
-    ss::scheduling_group _coproc;
     ss::scheduling_group _cache_background_reclaim;
     ss::scheduling_group _compaction;
     ss::scheduling_group _raft_learner_recovery;

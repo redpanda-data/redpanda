@@ -45,21 +45,9 @@ ss::future<> partition_leaders_table::stop() {
 std::optional<partition_leaders_table::leader_meta>
 partition_leaders_table::find_leader_meta(
   model::topic_namespace_view tp_ns, model::partition_id pid) const {
-    const auto& topics_map = _topic_table.local().topics_map();
     if (auto it = _leaders.find(leader_key_view{tp_ns, pid});
         it != _leaders.end()) {
         return it->second;
-    } else if (auto it = topics_map.find(tp_ns); it != topics_map.end()) {
-        // Possible leadership query for materialized topic, search for it
-        // in the topics table.
-        if (!it->second.is_topic_replicable()) {
-            // Leadership properties of non replicated topic are that of its
-            // parent
-            return find_leader_meta(
-              model::topic_namespace_view{
-                tp_ns.ns, it->second.get_source_topic()},
-              pid);
-        }
     }
     return std::nullopt;
 }
@@ -236,11 +224,6 @@ void partition_leaders_table::update_partition_leader(
 ss::future<> partition_leaders_table::update_with_estimates() {
     for (const auto& [ns_tp, topic] :
          _topic_table.local().all_topics_metadata()) {
-        if (!topic.is_topic_replicable()) {
-            // skip non-replicable topics
-            continue;
-        }
-
         for (const auto& part : topic.metadata.get_assignments()) {
             if (!_leaders.contains(leader_key_view{ns_tp, part.id})) {
                 model::ntp ntp{ns_tp.ns, ns_tp.tp, part.id};

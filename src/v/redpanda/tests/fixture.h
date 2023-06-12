@@ -26,7 +26,6 @@
 #include "config/broker_authn_endpoint.h"
 #include "config/mock_property.h"
 #include "config/node_config.h"
-#include "coproc/api.h"
 #include "kafka/client/transport.h"
 #include "kafka/protocol/fetch.h"
 #include "kafka/protocol/schemata/fetch_request.h"
@@ -83,7 +82,6 @@ public:
       int32_t rpc_port,
       int32_t proxy_port,
       int32_t schema_reg_port,
-      int32_t coproc_supervisor_port,
       std::vector<config::seed_server> seed_servers,
       ss::sstring base_dir,
       std::optional<scheduling_groups> sch_groups,
@@ -106,7 +104,6 @@ public:
           node_id,
           kafka_port,
           rpc_port,
-          coproc_supervisor_port,
           std::move(seed_servers),
           std::move(s3_config),
           std::move(archival_cfg),
@@ -168,7 +165,6 @@ public:
         33145,
         8082,
         8081,
-        43189,
         {},
         ssx::sformat("test.dir_{}", time(0)),
         std::nullopt,
@@ -182,7 +178,6 @@ public:
         33145,
         8082,
         8081,
-        43189,
         {},
         existing_data_dir.string(),
         std::nullopt,
@@ -199,7 +194,6 @@ public:
         33145,
         8082,
         8081,
-        43189,
         {},
         ssx::sformat("test.dir_{}", time(0)),
         std::nullopt,
@@ -222,7 +216,6 @@ public:
         33145,
         8082,
         8081,
-        43189,
         {},
         ssx::sformat("test.dir_{}", time(0)),
         std::nullopt,
@@ -287,7 +280,6 @@ public:
       model::node_id node_id,
       int32_t kafka_port,
       int32_t rpc_port,
-      int32_t coproc_supervisor_port,
       std::vector<config::seed_server> seed_servers,
       std::optional<cloud_storage_clients::s3_configuration> s3_config
       = std::nullopt,
@@ -301,7 +293,6 @@ public:
         ss::smp::invoke_on_all([node_id,
                                 kafka_port,
                                 rpc_port,
-                                coproc_supervisor_port,
                                 seed_servers = std::move(seed_servers),
                                 base_path,
                                 s3_config,
@@ -339,9 +330,6 @@ public:
                     "127.0.0.1", kafka_port)}});
             node_config.get("data_directory")
               .set_value(config::data_directory_path{.path = base_path});
-            node_config.get("coproc_supervisor_server")
-              .set_value(
-                net::unresolved_address("127.0.0.1", coproc_supervisor_port));
             if (s3_config) {
                 config.get("cloud_storage_enabled").set_value(true);
                 config.get("cloud_storage_region")
@@ -544,19 +532,6 @@ public:
                     result.tp_ns,
                     cluster::make_error_code(result.ec).message()));
               }
-              return wait_for_topics(std::move(results));
-          });
-    }
-
-    ss::future<> add_non_replicable_topic(
-      model::topic_namespace tp_ns_src, model::topic_namespace tp_ns) {
-        cluster::non_replicable_topic nrt{
-          .source = std::move(tp_ns_src), .name = std::move(tp_ns)};
-        return app.controller->get_topics_frontend()
-          .local()
-          .autocreate_non_replicable_topics(
-            {std::move(nrt)}, model::max_duration)
-          .then([this](std::vector<cluster::topic_result> results) {
               return wait_for_topics(std::move(results));
           });
     }

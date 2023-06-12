@@ -110,11 +110,6 @@ partition_balancer_state::apply_snapshot(const controller_snapshot& snap) {
 
     _ntps_with_broken_rack_constraint.clear();
     for (const auto& [ns_tp, topic] : snap.topics.topics) {
-        if (topic.metadata.source_topic) {
-            // skip non-replicable topics
-            continue;
-        }
-
         for (const auto& [p_id, partition] : topic.partitions) {
             const std::vector<model::broker_shard>* replicas
               = &partition.replicas;

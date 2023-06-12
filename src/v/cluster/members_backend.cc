@@ -564,9 +564,6 @@ void members_backend::default_reallocation_strategy::
               || tp_ns.ns == model::redpanda_ns) {
                 continue;
             }
-            if (!metadata.is_topic_replicable()) {
-                continue;
-            }
             // do not move topics that were created after node was added, they
             // are allocated with new cluster capacity
             if (meta.update) {

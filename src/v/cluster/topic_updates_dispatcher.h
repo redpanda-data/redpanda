@@ -69,7 +69,6 @@ public:
       finish_moving_partition_replicas_cmd,
       update_topic_properties_cmd,
       create_partition_cmd,
-      create_non_replicable_topic_cmd,
       cancel_moving_partition_replicas_cmd,
       move_topic_replicas_cmd,
       revert_cancel_partition_move_cmd,
@@ -97,8 +96,6 @@ private:
     ss::future<std::error_code>
       apply(update_topic_properties_cmd, model::offset);
     ss::future<std::error_code> apply(create_partition_cmd, model::offset);
-    ss::future<std::error_code>
-      apply(create_non_replicable_topic_cmd, model::offset);
     ss::future<std::error_code>
       apply(cancel_moving_partition_replicas_cmd, model::offset);
     ss::future<std::error_code> apply(move_topic_replicas_cmd, model::offset);

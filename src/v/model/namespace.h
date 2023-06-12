@@ -40,12 +40,6 @@ inline const model::topic kafka_consumer_offsets_topic("__consumer_offsets");
 inline const model::topic_namespace kafka_consumer_offsets_nt(
   model::kafka_namespace, kafka_consumer_offsets_topic);
 
-inline const model::topic
-  coprocessor_internal_topic("coprocessor_internal_topic");
-
-inline const model::topic_partition coprocessor_internal_tp{
-  coprocessor_internal_topic, model::partition_id(0)};
-
 inline const model::topic tx_manager_topic("tx");
 inline const model::topic_namespace
   tx_manager_nt(model::kafka_internal_namespace, tx_manager_topic);

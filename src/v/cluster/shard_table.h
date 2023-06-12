@@ -27,8 +27,6 @@ namespace cluster {
 class shard_table final {
     struct shard_revision {
         ss::shard_id shard;
-        /// Only used for additional sanity checks
-        bool non_replicable;
         model::revision_id revision;
     };
 
@@ -58,27 +56,6 @@ public:
         return std::nullopt;
     }
 
-    bool update_shard(
-      const model::ntp& ntp, ss::shard_id i, model::revision_id rev) {
-        if (auto it = _ntp_idx.find(ntp); it != _ntp_idx.end()) {
-            if (it->second.revision > rev) {
-                return false;
-            }
-            vassert(
-              it->second.non_replicable,
-              "Attempting to update replicable entry from non_replicable "
-              "interface");
-        }
-        vlog(
-          clusterlog.trace,
-          "[{}] (non_replicable) updating shard table, shard_id: {}, rev: {}",
-          ntp,
-          i,
-          rev);
-        _ntp_idx.insert_or_assign(ntp, shard_revision{i, true, rev});
-        return true;
-    }
-
     void update(
       const model::ntp& ntp,
       raft::group_id g,
@@ -88,19 +65,11 @@ public:
             if (it->second.revision > rev) {
                 return;
             }
-            vassert(
-              !it->second.non_replicable,
-              "Attempting to update non_replicable entry from replicable "
-              "interface");
         }
         if (auto it = _group_idx.find(g); it != _group_idx.end()) {
             if (it->second.revision > rev) {
                 return;
             }
-            vassert(
-              !it->second.non_replicable,
-              "Attempting to update non_replicable entry from replicable "
-              "interface");
         }
 
         vlog(
@@ -109,8 +78,8 @@ public:
           ntp,
           shard,
           rev);
-        _ntp_idx.insert_or_assign(ntp, shard_revision{shard, false, rev});
-        _group_idx.insert_or_assign(g, shard_revision{shard, false, rev});
+        _ntp_idx.insert_or_assign(ntp, shard_revision{shard, rev});
+        _group_idx.insert_or_assign(g, shard_revision{shard, rev});
     }
 
     void
@@ -154,40 +123,17 @@ public:
             if (it->second.revision >= rev) {
                 return;
             }
-            vassert(
-              !it->second.non_replicable,
-              "erasing non_replicable entry from replicable erase interface");
         }
         if (auto it = _group_idx.find(g); it != _group_idx.end()) {
             if (it->second.revision > rev) {
                 return;
             }
-            vassert(
-              !it->second.non_replicable,
-              "erasing non_replicable entry from replicable erase interface");
         }
 
         vlog(
           clusterlog.trace, "[{}] erasing from shard table, rev: {}", ntp, rev);
         _ntp_idx.erase(ntp);
         _group_idx.erase(g);
-    }
-
-    void erase(const model::ntp& ntp, model::revision_id rev) {
-        if (auto it = _ntp_idx.find(ntp); it != _ntp_idx.end()) {
-            if (it->second.revision >= rev) {
-                return;
-            }
-            vassert(
-              it->second.non_replicable,
-              "erasing replicable entry from non_replicable erase interface");
-            vlog(
-              clusterlog.trace,
-              "[{}] erasing from shard table, rev: {} ",
-              ntp,
-              rev);
-            _ntp_idx.erase(it);
-        }
     }
 
 private:

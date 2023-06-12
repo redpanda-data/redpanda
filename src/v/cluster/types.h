@@ -2481,24 +2481,6 @@ struct create_data_policy_cmd_data
       = default;
 };
 
-struct non_replicable_topic
-  : serde::envelope<
-      non_replicable_topic,
-      serde::version<0>,
-      serde::compat_version<0>> {
-    static constexpr int8_t current_version = 1;
-    model::topic_namespace source;
-    model::topic_namespace name;
-
-    friend bool
-    operator==(const non_replicable_topic&, const non_replicable_topic&)
-      = default;
-
-    auto serde_fields() { return std::tie(source, name); }
-
-    friend std::ostream& operator<<(std::ostream&, const non_replicable_topic&);
-};
-
 using config_version = named_type<int64_t, struct config_version_type>;
 constexpr config_version config_version_unset = config_version{-1};
 
@@ -3164,45 +3146,6 @@ struct feature_barrier_response
     auto serde_fields() { return std::tie(entered, complete); }
 };
 
-struct create_non_replicable_topics_request
-  : serde::envelope<
-      create_non_replicable_topics_request,
-      serde::version<0>,
-      serde::compat_version<0>> {
-    static constexpr int8_t current_version = 1;
-    std::vector<non_replicable_topic> topics;
-    model::timeout_clock::duration timeout;
-
-    friend bool operator==(
-      const create_non_replicable_topics_request&,
-      const create_non_replicable_topics_request&)
-      = default;
-
-    auto serde_fields() { return std::tie(topics, timeout); }
-
-    friend std::ostream&
-    operator<<(std::ostream&, const create_non_replicable_topics_request&);
-};
-
-struct create_non_replicable_topics_reply
-  : serde::envelope<
-      create_non_replicable_topics_reply,
-      serde::version<0>,
-      serde::compat_version<0>> {
-    static constexpr int8_t current_version = 1;
-    std::vector<topic_result> results;
-
-    friend bool operator==(
-      const create_non_replicable_topics_reply&,
-      const create_non_replicable_topics_reply&)
-      = default;
-
-    auto serde_fields() { return std::tie(results); }
-
-    friend std::ostream&
-    operator<<(std::ostream&, const create_non_replicable_topics_reply&);
-};
-
 struct config_update_request final
   : serde::envelope<
       config_update_request,
@@ -3345,10 +3288,8 @@ public:
 
     topic_metadata(topic_metadata_fields, assignments_set) noexcept;
 
-    bool is_topic_replicable() const;
     model::revision_id get_revision() const;
     std::optional<model::initial_revision_id> get_remote_revision() const;
-    const model::topic& get_source_topic() const;
 
     const topic_metadata_fields& get_fields() const { return _fields; }
     topic_metadata_fields& get_fields() { return _fields; }
@@ -3947,18 +3888,6 @@ struct adl<cluster::create_topics_request> {
 };
 
 template<>
-struct adl<cluster::create_non_replicable_topics_request> {
-    void to(iobuf&, cluster::create_non_replicable_topics_request&&);
-    cluster::create_non_replicable_topics_request from(iobuf_parser&);
-};
-
-template<>
-struct adl<cluster::create_non_replicable_topics_reply> {
-    void to(iobuf&, cluster::create_non_replicable_topics_reply&&);
-    cluster::create_non_replicable_topics_reply from(iobuf_parser&);
-};
-
-template<>
 struct adl<cluster::create_topics_reply> {
     void to(iobuf&, cluster::create_topics_reply&&);
     cluster::create_topics_reply from(iobuf);
@@ -4027,12 +3956,6 @@ template<>
 struct adl<cluster::create_data_policy_cmd_data> {
     void to(iobuf&, cluster::create_data_policy_cmd_data&&);
     cluster::create_data_policy_cmd_data from(iobuf_parser&);
-};
-
-template<>
-struct adl<cluster::non_replicable_topic> {
-    void to(iobuf& out, cluster::non_replicable_topic&&);
-    cluster::non_replicable_topic from(iobuf_parser&);
 };
 
 template<>

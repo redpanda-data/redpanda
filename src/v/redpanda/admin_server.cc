@@ -190,7 +190,6 @@ parse_ntp_from_query_param(const std::unique_ptr<ss::http::request>& req) {
 admin_server::admin_server(
   admin_server_cfg cfg,
   ss::sharded<cluster::partition_manager>& pm,
-  ss::sharded<coproc::partition_manager>& cpm,
   cluster::controller* controller,
   ss::sharded<cluster::shard_table>& st,
   ss::sharded<cluster::metadata_cache>& metadata_cache,
@@ -208,7 +207,6 @@ admin_server::admin_server(
   , _server("admin")
   , _cfg(std::move(cfg))
   , _partition_manager(pm)
-  , _cp_partition_manager(cpm)
   , _controller(controller)
   , _shard_table(st)
   , _metadata_cache(metadata_cache)
@@ -2996,17 +2994,13 @@ void admin_server::register_partition_routes() {
                       return acc;
                   });
             };
-          auto f1 = get_summaries(_partition_manager, false, [](const auto& p) {
-              return p->get_leader_id().value_or(model::node_id(-1))();
-          });
-          auto f2 = get_summaries(
-            _cp_partition_manager, true, [](const auto&) { return -1; });
-          return ss::when_all_succeed(std::move(f1), std::move(f2))
-            .then([](auto summaries) {
-                auto& [partitions, s2] = summaries;
-                for (auto& s : s2) {
-                    partitions.push_back(std::move(s));
-                }
+          return get_summaries(
+                   _partition_manager,
+                   false,
+                   [](const auto& p) {
+                       return p->get_leader_id().value_or(model::node_id(-1))();
+                   })
+            .then([](auto partitions) {
                 return ss::json::json_return_type(std::move(partitions));
             });
       });

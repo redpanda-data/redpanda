@@ -58,8 +58,6 @@
 #include "config/endpoint_tls_config.h"
 #include "config/node_config.h"
 #include "config/seed_server.h"
-#include "coproc/api.h"
-#include "coproc/partition_manager.h"
 #include "features/feature_table_snapshot.h"
 #include "features/fwd.h"
 #include "kafka/client/configuration.h"
@@ -238,11 +236,6 @@ void application::shutdown() {
     if (partition_manager.local_is_initialized()) {
         partition_manager
           .invoke_on_all(&cluster::partition_manager::stop_partitions)
-          .get();
-    }
-    if (cp_partition_manager.local_is_initialized()) {
-        cp_partition_manager
-          .invoke_on_all(&coproc::partition_manager::stop_partitions)
           .get();
     }
 
@@ -839,7 +832,6 @@ void application::configure_admin_server() {
       _admin,
       admin_server_cfg_from_global_cfg(sched_groups),
       std::ref(partition_manager),
-      std::ref(cp_partition_manager),
       controller.get(),
       std::ref(shard_table),
       std::ref(metadata_cache),
@@ -1176,8 +1168,6 @@ void application::wire_up_redpanda_services(model::node_id node_id) {
       .get();
     vlog(_log.info, "Partition manager started");
 
-    construct_service(cp_partition_manager, std::ref(storage)).get();
-
     construct_service(node_status_table, node_id).get();
     // controller
     syschecks::systemd_message("Creating cluster::controller").get();
@@ -1386,20 +1376,6 @@ void application::wire_up_redpanda_services(model::node_id node_id) {
       std::ref(shard_table),
       std::ref(coordinator_ntp_mapper))
       .get();
-    if (coproc_enabled()) {
-        syschecks::systemd_message("Creating coproc::api").get();
-        construct_single_service(
-          coprocessing,
-          config::node().coproc_supervisor_server(),
-          std::ref(storage),
-          std::ref(controller->get_topics_state()),
-          std::ref(shard_table),
-          std::ref(controller->get_topics_frontend()),
-          std::ref(metadata_cache),
-          std::ref(partition_manager),
-          std::ref(cp_partition_manager));
-        coprocessing->start().get();
-    }
 
     syschecks::systemd_message("Creating tx coordinator mapper").get();
     construct_service(
@@ -2081,9 +2057,6 @@ void application::start_runtime_services(
       .get();
     syschecks::systemd_message("Starting the partition manager").get();
     partition_manager.invoke_on_all(&cluster::partition_manager::start).get();
-
-    syschecks::systemd_message("Starting the coproc partition manager").get();
-    cp_partition_manager.invoke_on_all(&coproc::partition_manager::start).get();
 
     syschecks::systemd_message("Starting Raft group manager").get();
     raft_group_manager.invoke_on_all(&raft::group_manager::start).get();

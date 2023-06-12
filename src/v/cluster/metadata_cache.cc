@@ -55,16 +55,6 @@ void fill_partition_leaders(
     }
 }
 
-std::optional<model::topic>
-metadata_cache::get_source_topic(model::topic_namespace_view tp) const {
-    auto& topics_map = _topics_state.local().topics_map();
-    auto mt = topics_map.find(tp);
-    if (mt == topics_map.end() || mt->second.is_topic_replicable()) {
-        return std::nullopt;
-    }
-    return mt->second.get_source_topic();
-}
-
 std::optional<cluster::topic_metadata>
 metadata_cache::get_topic_metadata(model::topic_namespace_view tp) const {
     return _topics_state.local().get_topic_metadata(tp);

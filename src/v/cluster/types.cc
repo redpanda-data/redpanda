@@ -708,27 +708,13 @@ topic_metadata::topic_metadata(
   : _fields(std::move(fields))
   , _assignments(std::move(assignments)) {}
 
-bool topic_metadata::is_topic_replicable() const {
-    return _fields.source_topic.has_value() == false;
-}
-
 model::revision_id topic_metadata::get_revision() const {
-    vassert(
-      is_topic_replicable(), "Query for revision_id on a non-replicable topic");
     return _fields.revision;
 }
 
 std::optional<model::initial_revision_id>
 topic_metadata::get_remote_revision() const {
-    vassert(
-      is_topic_replicable(), "Query for revision_id on a non-replicable topic");
     return _fields.remote_revision;
-}
-
-const model::topic& topic_metadata::get_source_topic() const {
-    vassert(
-      !is_topic_replicable(), "Query for source_topic on a replicable topic");
-    return _fields.source_topic.value();
 }
 
 const topic_configuration& topic_metadata::get_configuration() const {
@@ -753,12 +739,6 @@ replication_factor topic_metadata::get_replication_factor() const {
     auto it = _assignments.find(model::partition_id(0));
     return replication_factor(
       static_cast<replication_factor::type>(it->replicas.size()));
-}
-
-std::ostream& operator<<(std::ostream& o, const non_replicable_topic& d) {
-    fmt::print(
-      o, "{{Source topic: {}, non replicable topic: {}}}", d.source, d.name);
-    return o;
 }
 
 std::ostream& operator<<(std::ostream& o, const reconciliation_status& s) {
@@ -868,18 +848,6 @@ std::ostream& operator<<(std::ostream& o, const feature_barrier_request& fbr) {
 
 std::ostream& operator<<(std::ostream& o, const feature_barrier_response& fbr) {
     fmt::print(o, "{{entered: {} complete: {}}}", fbr.entered, fbr.complete);
-    return o;
-}
-
-std::ostream&
-operator<<(std::ostream& o, const create_non_replicable_topics_request& r) {
-    fmt::print(o, "{{topics: {} timeout: {}}}", r.topics, r.timeout);
-    return o;
-}
-
-std::ostream&
-operator<<(std::ostream& o, const create_non_replicable_topics_reply& r) {
-    fmt::print(o, "{{results: {}}}", r.results);
     return o;
 }
 
@@ -1224,50 +1192,6 @@ adl<cluster::create_topics_request>::from(iobuf_parser& in) {
     auto timeout = adl<model::timeout_clock::duration>().from(in);
     return cluster::create_topics_request{
       .topics = std::move(configs), .timeout = timeout};
-}
-
-void adl<cluster::create_non_replicable_topics_request>::to(
-  iobuf& out, cluster::create_non_replicable_topics_request&& r) {
-    reflection::serialize(
-      out,
-      cluster::create_non_replicable_topics_request::current_version,
-      std::move(r.topics),
-      r.timeout);
-}
-
-cluster::create_non_replicable_topics_request
-adl<cluster::create_non_replicable_topics_request>::from(iobuf_parser& in) {
-    auto version = adl<int8_t>{}.from(in);
-    vassert(
-      version == cluster::create_non_replicable_topics_request::current_version,
-      "Unexpected version: {} (expected: {})",
-      version,
-      cluster::create_non_replicable_topics_request::current_version);
-    auto topics = adl<std::vector<cluster::non_replicable_topic>>().from(in);
-    auto timeout = adl<model::timeout_clock::duration>().from(in);
-    return cluster::create_non_replicable_topics_request{
-      .topics = std::move(topics), .timeout = timeout};
-}
-
-void adl<cluster::create_non_replicable_topics_reply>::to(
-  iobuf& out, cluster::create_non_replicable_topics_reply&& r) {
-    reflection::serialize(
-      out,
-      cluster::create_non_replicable_topics_reply::current_version,
-      std::move(r.results));
-}
-
-cluster::create_non_replicable_topics_reply
-adl<cluster::create_non_replicable_topics_reply>::from(iobuf_parser& in) {
-    auto version = adl<int8_t>{}.from(in);
-    vassert(
-      version == cluster::create_non_replicable_topics_reply::current_version,
-      "Unexpected version: {} (expected: {})",
-      version,
-      cluster::create_non_replicable_topics_reply::current_version);
-    auto results = adl<std::vector<cluster::topic_result>>().from(in);
-    return cluster::create_non_replicable_topics_reply{
-      .results = std::move(results)};
 }
 
 void adl<cluster::create_topics_reply>::to(
@@ -1666,29 +1590,6 @@ adl<cluster::create_data_policy_cmd_data>::from(iobuf_parser& in) {
       cluster::create_data_policy_cmd_data::current_version);
     auto dp = adl<v8_engine::data_policy>{}.from(in);
     return cluster::create_data_policy_cmd_data{.dp = std::move(dp)};
-}
-
-void adl<cluster::non_replicable_topic>::to(
-  iobuf& out, cluster::non_replicable_topic&& cm_cmd_data) {
-    return serialize(
-      out,
-      cm_cmd_data.current_version,
-      std::move(cm_cmd_data.source),
-      std::move(cm_cmd_data.name));
-}
-
-cluster::non_replicable_topic
-adl<cluster::non_replicable_topic>::from(iobuf_parser& in) {
-    auto version = adl<int8_t>{}.from(in);
-    vassert(
-      version == cluster::non_replicable_topic::current_version,
-      "Unexpected version: {} (expected: {})",
-      version,
-      cluster::non_replicable_topic::current_version);
-    auto source = adl<model::topic_namespace>{}.from(in);
-    auto name = adl<model::topic_namespace>{}.from(in);
-    return cluster::non_replicable_topic{
-      .source = std::move(source), .name = std::move(name)};
 }
 
 void adl<cluster::incremental_topic_updates>::to(

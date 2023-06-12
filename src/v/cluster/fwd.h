@@ -45,7 +45,6 @@ class config_manager;
 class members_backend;
 class tx_gateway;
 class rm_group_proxy;
-class non_replicable_topics_frontend;
 class health_manager;
 class health_monitor_frontend;
 class health_monitor_backend;

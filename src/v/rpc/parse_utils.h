@@ -90,7 +90,7 @@ inline void validate_payload_and_header(const iobuf& io, const header& h) {
  * types used in coproc which will remain in legacy adl format for now.
  *
  * we use the type system to enforce these rules and allow types to be opt-out
- * on a case-by-case basis for adl (new messages) or serde (legacy like coproc).
+ * on a case-by-case basis for adl (new messages) or serde.
  *
  * the `rpc_adl_exempt` and `rpc_serde_exempt` type trait helpers can be used to
  * opt-out a type T from adl or serde support. a type is marked exempt by

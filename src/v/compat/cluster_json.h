@@ -179,25 +179,6 @@ inline void read_value(json::Value const& v, cluster::tx_errc& obj) {
 }
 
 inline void rjson_serialize(
-  json::Writer<json::StringBuffer>& w, const cluster::non_replicable_topic& t) {
-    w.StartObject();
-    w.Key("source");
-    rjson_serialize(w, t.source);
-    w.Key("name");
-    rjson_serialize(w, t.name);
-    w.EndObject();
-}
-
-inline void
-read_value(json::Value const& rd, cluster::non_replicable_topic& obj) {
-    model::topic_namespace source;
-    model::topic_namespace name;
-    read_member(rd, "source", source);
-    read_member(rd, "name", name);
-    obj = {.source = std::move(source), .name = std::move(name)};
-}
-
-inline void rjson_serialize(
   json::Writer<json::StringBuffer>& w, const cluster::topic_result& t) {
     w.StartObject();
     w.Key("tp_ns");

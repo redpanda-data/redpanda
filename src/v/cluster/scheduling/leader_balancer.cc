@@ -593,10 +593,6 @@ leader_balancer::build_group_id_to_topic_rev() const {
 
     // for each ntp in the cluster
     for (const auto& topic : _topics.topics_map()) {
-        if (!topic.second.is_topic_replicable()) {
-            continue;
-        }
-
         for (const auto& partition : topic.second.get_assignments()) {
             if (partition.replicas.empty()) {
                 vlog(
@@ -628,9 +624,6 @@ leader_balancer::index_type leader_balancer::build_index() {
 
     // for each ntp in the cluster
     for (const auto& topic : _topics.topics_map()) {
-        if (!topic.second.is_topic_replicable()) {
-            continue;
-        }
         for (const auto& partition : topic.second.get_assignments()) {
             if (partition.replicas.empty()) {
                 vlog(

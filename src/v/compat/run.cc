@@ -99,8 +99,6 @@ using compat_checks = type_list<
   cluster::update_leadership_reply,
   cluster::get_leadership_request,
   cluster::get_leadership_reply,
-  cluster::create_non_replicable_topics_request,
-  cluster::create_non_replicable_topics_reply,
   cluster::finish_partition_update_request,
   cluster::finish_partition_update_reply,
   cluster::cancel_all_partition_movements_request,

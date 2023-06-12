@@ -30,8 +30,7 @@ public:
           = default_max_nonlocal_requests;
         uint32_t cluster_group_max_non_local_requests
           = default_max_nonlocal_requests;
-        uint32_t coproc_group_max_non_local_requests
-          = default_max_nonlocal_requests;
+
         uint32_t proxy_group_max_non_local_requests
           = default_max_nonlocal_requests;
     };
@@ -44,8 +43,6 @@ public:
           cfg.kafka_group_max_non_local_requests);
         _cluster = co_await create_service_group(
           cfg.cluster_group_max_non_local_requests);
-        _coproc = co_await create_service_group(
-          cfg.coproc_group_max_non_local_requests);
         _proxy = co_await create_service_group(
           cfg.proxy_group_max_non_local_requests);
     }
@@ -53,14 +50,12 @@ public:
     ss::smp_service_group raft_smp_sg() { return *_raft; }
     ss::smp_service_group kafka_smp_sg() { return *_kafka; }
     ss::smp_service_group cluster_smp_sg() { return *_cluster; }
-    ss::smp_service_group coproc_smp_sg() { return *_coproc; }
     ss::smp_service_group proxy_smp_sg() { return *_proxy; }
 
     ss::future<> destroy_groups() {
         return destroy_smp_service_group(*_kafka)
           .then([this] { return destroy_smp_service_group(*_raft); })
           .then([this] { return destroy_smp_service_group(*_cluster); })
-          .then([this] { return destroy_smp_service_group(*_coproc); })
           .then([this] { return destroy_smp_service_group(*_proxy); });
     }
 
@@ -101,6 +96,5 @@ private:
     std::unique_ptr<ss::smp_service_group> _raft;
     std::unique_ptr<ss::smp_service_group> _kafka;
     std::unique_ptr<ss::smp_service_group> _cluster;
-    std::unique_ptr<ss::smp_service_group> _coproc;
     std::unique_ptr<ss::smp_service_group> _proxy;
 };

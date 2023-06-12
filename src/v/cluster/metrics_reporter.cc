@@ -241,8 +241,7 @@ metrics_reporter::build_metrics_snapshot() {
         // do not include internal topics
         if (
           tp_ns.ns == model::redpanda_ns
-          || tp_ns.ns == model::kafka_internal_namespace
-          || !md.is_topic_replicable()) {
+          || tp_ns.ns == model::kafka_internal_namespace) {
             continue;
         }
 
