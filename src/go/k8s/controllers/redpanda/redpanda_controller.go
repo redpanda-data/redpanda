@@ -379,7 +379,7 @@ func (r *RedpandaReconciler) createHelmReleaseFromTemplate(ctx context.Context, 
 
 	timeout := rp.Spec.ChartRef.Timeout
 	if timeout == nil {
-		timeout = &metav1.Duration{Duration: 10 * time.Minute}
+		timeout = &metav1.Duration{Duration: 15 * time.Minute}
 	}
 
 	return &helmv2beta1.HelmRelease{
