@@ -608,6 +608,12 @@ public:
         return materialize(std::move(it));
     }
 
+    /// Get gauge column by field index
+    template<segment_meta_ix ix>
+    const auto& get_column_cref() const {
+        return std::get<static_cast<size_t>(ix)>(columns());
+    }
+
     /// Search by index
     auto at_index(size_t ix) const {
         auto it = _base_offset.at_index(ix);
@@ -834,6 +840,46 @@ class segment_meta_cstore::impl
 
 public:
     void append(const segment_meta& meta) { _col.append(meta); }
+
+    const auto& get_base_offset_column() const {
+        flush_write_buffer();
+        return _col.get_column_cref<segment_meta_ix::base_offset>();
+    }
+
+    const auto& get_committed_offset_column() const {
+        flush_write_buffer();
+        return _col.get_column_cref<segment_meta_ix::committed_offset>();
+    }
+
+    const auto& get_delta_offset_column() const {
+        flush_write_buffer();
+        return _col.get_column_cref<segment_meta_ix::delta_offset>();
+    }
+
+    const auto& get_delta_offset_end_column() const {
+        flush_write_buffer();
+        return _col.get_column_cref<segment_meta_ix::delta_offset_end>();
+    }
+
+    const auto& get_base_timestamp_column() const {
+        flush_write_buffer();
+        return _col.get_column_cref<segment_meta_ix::base_timestamp>();
+    }
+
+    const auto& get_max_timestamp_column() const {
+        flush_write_buffer();
+        return _col.get_column_cref<segment_meta_ix::max_timestamp>();
+    }
+
+    const auto& get_segment_term_column() const {
+        flush_write_buffer();
+        return _col.get_column_cref<segment_meta_ix::segment_term>();
+    }
+
+    const auto& get_archive_term_column() const {
+        flush_write_buffer();
+        return _col.get_column_cref<segment_meta_ix::archiver_term>();
+    }
 
     std::unique_ptr<segment_meta_materializing_iterator::impl> begin() const {
         flush_write_buffer();
@@ -1065,5 +1111,37 @@ iobuf segment_meta_cstore::to_iobuf() const {
 }
 
 void segment_meta_cstore::flush_write_buffer() { _impl->flush_write_buffer(); }
+
+const counter_col_t& segment_meta_cstore::get_base_offset_column() const {
+    return _impl->get_base_offset_column();
+}
+
+const gauge_col_t& segment_meta_cstore::get_committed_offset_column() const {
+    return _impl->get_committed_offset_column();
+}
+
+const gauge_col_t& segment_meta_cstore::get_delta_offset_column() const {
+    return _impl->get_delta_offset_column();
+}
+
+const gauge_col_t& segment_meta_cstore::get_delta_offset_end_column() const {
+    return _impl->get_delta_offset_end_column();
+}
+
+const gauge_col_t& segment_meta_cstore::get_base_timestamp_column() const {
+    return _impl->get_base_timestamp_column();
+}
+
+const gauge_col_t& segment_meta_cstore::get_max_timestamp_column() const {
+    return _impl->get_max_timestamp_column();
+}
+
+const gauge_col_t& segment_meta_cstore::get_segment_term_column() const {
+    return _impl->get_segment_term_column();
+}
+
+const gauge_col_t& segment_meta_cstore::get_archive_term_column() const {
+    return _impl->get_archive_term_column();
+}
 
 } // namespace cloud_storage

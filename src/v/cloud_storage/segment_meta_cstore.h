@@ -880,6 +880,11 @@ class segment_meta_cstore {
 public:
     using const_iterator = segment_meta_materializing_iterator;
 
+    using int64_delta_alg = details::delta_delta<int64_t>;
+    using int64_xor_alg = details::delta_xor;
+    using counter_col_t = segment_meta_column<int64_t, int64_delta_alg>;
+    using gauge_col_t = segment_meta_column<int64_t, int64_xor_alg>;
+
     segment_meta_cstore();
     segment_meta_cstore(segment_meta_cstore&&) noexcept;
     segment_meta_cstore& operator=(segment_meta_cstore&&) noexcept;
@@ -924,6 +929,16 @@ public:
     iobuf to_iobuf() const;
 
     void flush_write_buffer();
+
+    // Access individual columns
+    const counter_col_t& get_base_offset_column() const;
+    const gauge_col_t& get_committed_offset_column() const;
+    const gauge_col_t& get_delta_offset_end_column() const;
+    const gauge_col_t& get_base_timestamp_column() const;
+    const gauge_col_t& get_max_timestamp_column() const;
+    const gauge_col_t& get_delta_offset_column() const;
+    const gauge_col_t& get_segment_term_column() const;
+    const gauge_col_t& get_archive_term_column() const;
 
 private:
     std::unique_ptr<impl> _impl;
