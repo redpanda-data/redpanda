@@ -100,20 +100,53 @@ ss::future<> connection_cache::stop() {
 }
 
 ss::shard_id connection_cache::shard_for(
-  model::node_id self,
+  model::node_id src_node,
   ss::shard_id src_shard,
-  model::node_id n,
+  model::node_id dest_node,
   ss::shard_id total_shards) const {
     if (total_shards <= _max_connections) {
         return src_shard;
     }
 
     // NOLINTNEXTLINE
-    size_t h = 805306457;
-    boost::hash_combine(h, jump_consistent_hash(src_shard, _max_connections));
-    boost::hash_combine(h, std::hash<model::node_id>{}(n));
-    boost::hash_combine(h, std::hash<model::node_id>{}(self));
-    // use self node id to shift jump_consistent_hash_assignment
-    return jump_consistent_hash(h, total_shards);
+    uint64_t connection_hash = 201326611; // magic prime
+    boost::hash_combine(connection_hash, std::hash<model::node_id>{}(src_node));
+    boost::hash_combine(
+      connection_hash, std::hash<model::node_id>{}(dest_node));
+
+    // Find the largest ring_size s.t. ring_size <= total_shards
+    // and ring_size % connections_per_node == 0
+    uint64_t remainder = total_shards % _max_connections;
+    uint64_t ring_size = total_shards - remainder;
+
+    // Vary the starting shard of the ring depending on the connection hash.
+    uint64_t ring_start_shard = jump_consistent_hash(
+      connection_hash, remainder + 1);
+    uint64_t ring_end_shard = (ring_size - 1) + ring_start_shard;
+
+    // Hash any shards not in [ring_start_shard, ring_end_shard] to a point
+    // within the range.
+    if (src_shard > ring_end_shard || src_shard < ring_start_shard) {
+        // NOLINTNEXTLINE
+        uint64_t h = 805306457; // another magic prime
+        boost::hash_combine(h, std::hash<ss::shard_id>{}(src_shard));
+        boost::hash_combine(h, connection_hash);
+        src_shard = ring_start_shard + jump_consistent_hash(h, ring_size);
+    }
+
+    // Connections are evenly spaced within the ring. The code below determines
+    // the spacing and the closest connection to the left of the src_shard.
+    uint64_t shards_per_connection = ring_size / _max_connections;
+    uint64_t offset = jump_consistent_hash(
+      connection_hash, shards_per_connection);
+    uint64_t jump = (src_shard + offset + 1) % shards_per_connection;
+
+    // Wrap any underflow to the end of the ring.
+    if (src_shard < jump || (src_shard - jump) < ring_start_shard) {
+        jump -= (src_shard - ring_start_shard) + 1;
+        return ring_end_shard - jump;
+    }
+
+    return src_shard - jump;
 }
 } // namespace rpc
