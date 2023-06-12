@@ -253,11 +253,21 @@ node_status_backend::process_reply(result<node_status_reply> reply) {
 }
 
 ss::future<node_status_reply>
-node_status_backend::process_request(node_status_request) {
+node_status_backend::process_request(node_status_request request) {
     _stats.rpcs_received += 1;
 
-    node_status_reply reply = {.replier_metadata = {.node_id = _self}};
-    return ss::make_ready_future<node_status_reply>(std::move(reply));
+    auto sender = request.sender_metadata.node_id;
+    auto sender_md = _node_status_table.local().get_node_status(sender);
+    if (
+      sender_md
+      // Check if the peer has atleast 2 missed heart beats. This avoids
+      // a cross shard invoke in happy path when no reset is needed.
+      && ss::lowres_clock::now() - sender_md->last_seen > 2 * _period()) {
+        co_await _node_connection_cache.local().reset_client_backoff(
+          _self, connection_source_shard(sender), sender);
+    }
+
+    co_return node_status_reply{.replier_metadata = {.node_id = _self}};
 }
 
 void node_status_backend::setup_metrics(
