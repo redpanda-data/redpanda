@@ -69,7 +69,7 @@ public:
     /// Note: if after reallocation the replica ends up on a node from the
     /// original replica set (doesn't matter if the same as `previous` or a
     /// different one), its shard id is preserved.
-    result<model::broker_shard> reallocate_replica(
+    result<reallocation_step> reallocate_replica(
       allocated_partition&, model::node_id previous, allocation_constraints);
 
     // State accessors
@@ -180,7 +180,7 @@ private:
     result<allocated_partition> allocate_new_partition(
       partition_constraints, partition_allocation_domain);
 
-    result<model::broker_shard> do_allocate_replica(
+    result<reallocation_step> do_allocate_replica(
       allocated_partition&,
       std::optional<model::node_id> previous,
       const allocation_constraints&);
