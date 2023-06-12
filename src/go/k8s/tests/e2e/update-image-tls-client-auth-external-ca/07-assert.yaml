@@ -1,7 +1,7 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: produce-msg-update-img-external-client-ca
+  name: get-schema-update-img-external-client-ca
 status:
   conditions:
     - status: "True"
@@ -16,4 +16,3 @@ collectors:
 - type: pod
   selector: app.kubernetes.io/name=redpanda
   tail: -1
-

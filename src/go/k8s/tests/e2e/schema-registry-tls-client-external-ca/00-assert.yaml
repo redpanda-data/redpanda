@@ -1,17 +1,17 @@
 apiVersion: v1
 kind: Secret
 metadata:
-  name: upd-mtls-client-cert-key
+  name: sr-client-cert-key
 
 ---
 
 apiVersion: v1
 kind: Secret
 metadata:
-  name: upd-mtls-ca-cert
+  name: sr-ca-cert
   annotations:
     operator.redpanda.com/external-ca: "true"
   labels:
     app.kubernetes.io/component: redpanda
     app.kubernetes.io/name: redpanda
-    app.kubernetes.io/instance: update-img-external-client-ca
+    app.kubernetes.io/instance: schema-registry-client-external-ca-mtls
