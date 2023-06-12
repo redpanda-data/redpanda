@@ -968,33 +968,106 @@ async_manifest_view::hydrate_manifest(
     }
 }
 
-namespace {
-bool contains(
-  const segment_meta& meta, const async_view_search_query_t& query) {
-    return ss::visit(
-      query,
-      [&](model::offset o) {
-          return o >= meta.base_offset && o <= meta.committed_offset;
-      },
-      [&](kafka::offset k) {
-          return k >= meta.base_kafka_offset() && k < meta.next_kafka_offset();
-      },
-      [&](model::timestamp t) {
-          return t >= meta.base_timestamp && t <= meta.max_timestamp;
-      });
-}
-} // namespace
-
 std::optional<segment_meta> async_manifest_view::search_spillover_manifests(
   async_view_search_query_t query) const {
     const auto& manifests = _stm_manifest.get_spillover_map();
-    // TODO: implement late materialization for filtering
-    for (const auto& it : manifests) {
-        if (contains(it, query)) {
-            return it;
-        }
+    auto ix = ss::visit(
+      query,
+      [&](model::offset o) {
+          vlog(
+            _ctxlog.debug,
+            "search_spillover_manifest query: {}, num manifests: {}, first: "
+            "{}, last: {}",
+            query,
+            manifests.size(),
+            manifests.empty() ? model::offset{}
+                              : manifests.begin()->base_offset,
+            manifests.empty() ? model::offset{}
+                              : manifests.last_segment()->committed_offset);
+          const auto& bo_col = manifests.get_base_offset_column();
+          const auto& co_col = manifests.get_committed_offset_column();
+          auto co_it = co_col.lower_bound(o);
+          if (co_it.is_end()) {
+              return -1;
+          }
+          auto bo_it = bo_col.at_index(co_it.index());
+          while (!bo_it.is_end()) {
+              if (o >= *bo_it && o <= *co_it) {
+                  return static_cast<int>(bo_it.index());
+              }
+              ++bo_it;
+              ++co_it;
+          }
+          return -1;
+      },
+      [&](kafka::offset k) {
+          vlog(
+            _ctxlog.debug,
+            "search_spillover_manifest query: {}, num manifests: {}, first: "
+            "{}, last: {}",
+            query,
+            manifests.size(),
+            manifests.empty() ? kafka::offset{}
+                              : manifests.begin()->base_kafka_offset(),
+            manifests.empty() ? kafka::offset{}
+                              : manifests.last_segment()->next_kafka_offset());
+          const auto& bo_col = manifests.get_base_offset_column();
+          const auto& co_col = manifests.get_committed_offset_column();
+          const auto& do_col = manifests.get_delta_offset_column();
+          const auto& de_col = manifests.get_delta_offset_end_column();
+          auto bo_it = bo_col.begin();
+          auto co_it = co_col.begin();
+          auto do_it = do_col.begin();
+          auto de_it = de_col.begin();
+          while (!bo_it.is_end()) {
+              auto bko = kafka::offset(*bo_it - *do_it);
+              auto nko = kafka::offset(*co_it - *de_it);
+              if (k >= bko && k < nko) {
+                  return static_cast<int>(bo_it.index());
+              }
+              ++bo_it;
+              ++co_it;
+              ++do_it;
+              ++de_it;
+          }
+          return -1;
+      },
+      [&](model::timestamp t) {
+          vlog(
+            _ctxlog.debug,
+            "search_spillover_manifest query: {}, num manifests: {}, first: "
+            "{}, last: {}",
+            query,
+            manifests.size(),
+            manifests.empty() ? model::timestamp{}
+                              : manifests.begin()->base_timestamp,
+            manifests.empty() ? model::timestamp{}
+                              : manifests.last_segment()->max_timestamp);
+          const auto& bt_col = manifests.get_base_timestamp_column();
+          const auto& mt_col = manifests.get_max_timestamp_column();
+          auto mt_it = mt_col.lower_bound(t.value());
+          if (mt_it.is_end()) {
+              return -1;
+          }
+          auto bt_it = bt_col.at_index(mt_it.index());
+          while (!bt_it.is_end()) {
+              if (t.value() >= *bt_it && t.value() <= *mt_it) {
+                  return static_cast<int>(bt_it.index());
+              }
+              ++bt_it;
+              ++mt_it;
+          }
+          return -1;
+      });
+
+    if (ix < 0) {
+        return std::nullopt;
     }
-    return std::nullopt;
+    auto res = manifests.at_index(ix);
+    if (res.is_end()) {
+        return std::nullopt;
+    }
+    return *res;
 }
 
 remote_manifest_path async_manifest_view::get_spillover_manifest_path(
