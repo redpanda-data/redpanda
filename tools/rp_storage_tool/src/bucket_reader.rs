@@ -6,7 +6,7 @@ use crate::fundamental::{
 use crate::ntp_mask::NTPFilter;
 use crate::remote_types::{
     parse_segment_shortname, ArchivePartitionManifest, PartitionManifest, PartitionManifestSegment,
-    TopicManifest,
+    TopicManifest, LifecycleMarker, LifecycleStatus, RpSerde
 };
 use crate::repair::{maybe_adjust_manifest, project_repairs, RepairEdit};
 use async_stream::stream;
@@ -229,6 +229,9 @@ pub struct Anomalies {
     /// PartitionManifest that could not be loaded
     pub malformed_manifests: HashSet<String>,
 
+    /// LifecycleMarker that could not be loaded
+    pub malformed_lifecycle_markers: HashSet<String>,
+
     /// TopicManifest that could not be loaded
     pub malformed_topic_manifests: HashSet<String>,
 
@@ -268,6 +271,8 @@ pub struct PartitionMetadataSummary {
     // kafka offsets may only be reported for non-empty manifests
     pub kafka_lwm: Option<KafkaOffset>,
     pub kafka_hwm: Option<KafkaOffset>,
+
+    pub lifecycle_status: Option<LifecycleStatus>
 }
 
 /// A convenience for human beings who would like to know things like the total amount of
@@ -281,6 +286,7 @@ pub struct MetadataSummary {
 impl Anomalies {
     pub fn status(&self) -> AnomalyStatus {
         if !self.malformed_manifests.is_empty()
+            || !self.malformed_lifecycle_markers.is_empty()
             || !self.malformed_topic_manifests.is_empty()
             || !self.missing_segments.is_empty()
             || !self.ntpr_bad_deltas.is_empty()
@@ -339,6 +345,10 @@ impl Anomalies {
             &self.malformed_manifests,
         ));
         result.push_str(&Self::report_line(
+            "Malformed lifecycle markers",
+            &self.malformed_lifecycle_markers,
+        ));
+        result.push_str(&Self::report_line(
             "Malformed topic manifests",
             &self.malformed_topic_manifests,
         ));
@@ -374,6 +384,7 @@ impl Anomalies {
         self.segments_outside_manifest.extend(other.segments_outside_manifest.into_iter());
         self.archive_manifests_outside_manifest.extend(other.archive_manifests_outside_manifest.into_iter());
         self.malformed_manifests.extend(other.malformed_manifests.into_iter());
+        self.malformed_lifecycle_markers.extend(other.malformed_lifecycle_markers.into_iter());
         self.malformed_topic_manifests.extend(other.malformed_topic_manifests.into_iter());
         self.ntpr_no_manifest.extend(other.ntpr_no_manifest.into_iter());
         self.ntr_no_topic_manifest.extend(other.ntr_no_topic_manifest.into_iter());
@@ -401,6 +412,7 @@ impl Anomalies {
             segments_outside_manifest: HashSet::new(),
             archive_manifests_outside_manifest: HashSet::new(),
             malformed_manifests: HashSet::new(),
+            malformed_lifecycle_markers: HashSet::new(),
             malformed_topic_manifests: HashSet::new(),
             ntpr_no_manifest: HashSet::new(),
             ntr_no_topic_manifest: HashSet::new(),
@@ -488,6 +500,7 @@ pub struct BucketReader {
     pub partitions: HashMap<NTPR, PartitionObjects>,
     pub partition_manifests: HashMap<NTPR, PartitionMetadata>,
     pub topic_manifests: HashMap<NTR, TopicManifest>,
+    pub lifecycle_markers: HashMap<NTR, LifecycleMarker>,
     pub anomalies: Anomalies,
     pub client: Arc<dyn ObjectStore>,
 }
@@ -497,6 +510,7 @@ struct SavedBucketReader {
     pub partitions: HashMap<NTPR, PartitionObjects>,
     pub partition_manifests: HashMap<NTPR, PartitionMetadata>,
     pub topic_manifests: HashMap<NTR, TopicManifest>,
+    pub lifecycle_markers: HashMap<NTR, LifecycleMarker>,
 }
 
 pub struct SegmentStream {
@@ -520,6 +534,7 @@ enum FetchKey {
     PartitionManifest(String),
     ArchiveManifest(String),
     TopicManifest(String),
+    TopicLifecycleMarker(String),
 }
 
 impl FetchKey {
@@ -528,6 +543,7 @@ impl FetchKey {
             FetchKey::PartitionManifest(s) => s,
             FetchKey::TopicManifest(s) => s,
             FetchKey::ArchiveManifest(s) => s,
+            FetchKey::TopicLifecycleMarker(s) => s,
         }
     }
 }
@@ -545,6 +561,7 @@ impl BucketReader {
             partitions: saved_state.partitions,
             partition_manifests: saved_state.partition_manifests,
             topic_manifests: saved_state.topic_manifests,
+            lifecycle_markers: saved_state.lifecycle_markers,
             anomalies: Anomalies::new(),
             client,
         })
@@ -575,6 +592,7 @@ impl BucketReader {
             partitions: self.partitions.clone(),
             partition_manifests: self.partition_manifests.clone(),
             topic_manifests: self.topic_manifests.clone(),
+            lifecycle_markers: self.lifecycle_markers.clone(),
         };
 
         let buf = serde_json::to_vec(&saved_state).unwrap();
@@ -590,6 +608,7 @@ impl BucketReader {
             partitions: HashMap::new(),
             partition_manifests: HashMap::new(),
             topic_manifests: HashMap::new(),
+            lifecycle_markers: HashMap::new(),
             anomalies: Anomalies::new(),
             client,
         }
@@ -613,7 +632,8 @@ impl BucketReader {
                     let raw_key = match &key {
                         FetchKey::PartitionManifest(s) => s.clone(),
                         FetchKey::TopicManifest(s) => s.clone(),
-                        FetchKey::ArchiveManifest(s) =>s.clone(),
+                        FetchKey::ArchiveManifest(s) => s.clone(),
+                        FetchKey::TopicLifecycleMarker(s) => s.clone()
                     };
                     yield async move {
                         let output_key = key.clone();
@@ -688,6 +708,14 @@ impl BucketReader {
                     );
                     self.ingest_archive_manifest(&key, body).await?;
                 }
+                FetchKey::TopicLifecycleMarker(key) => {
+                    debug!(
+                        "Parsing {} bytes from lifecycle marker key {}",
+                        body.len(),
+                        key
+                    );
+                    self.ingest_topic_lifecycle_marker(&key, body).await?;
+                }
             }
         }
 
@@ -696,6 +724,7 @@ impl BucketReader {
             self.partition_manifests.len()
         );
         debug!("Loaded {} topic manifests", self.topic_manifests.len());
+        debug!("Loaded {} lifecycle markers", self.lifecycle_markers.len());
 
         Ok(())
     }
@@ -704,6 +733,12 @@ impl BucketReader {
         let mut partitions = BTreeMap::new();
         for (ntpr, partition_meta) in &self.partition_manifests {
             if let Some(manifest) = &partition_meta.head_manifest {
+                let ntr = NTR {
+                    namespace: manifest.namespace.clone(),
+                    topic: manifest.namespace.clone(),
+                    revision_id: manifest.revision
+                };
+
                 let kafka_offsets = manifest.kafka_watermarks();
                 partitions.insert(
                     ntpr.clone(),
@@ -713,6 +748,7 @@ impl BucketReader {
                         raw_last_offset: manifest.last_offset,
                         kafka_lwm: kafka_offsets.map(|x| x.0),
                         kafka_hwm: kafka_offsets.map(|x| x.1),
+                        lifecycle_status: self.lifecycle_markers.get(&ntr).and_then(|m| Some(m.status.clone()))
                     },
                 );
             } else {
@@ -1227,6 +1263,12 @@ impl BucketReader {
                 );
             } else if key.ends_with("/topic_manifest.json") {
                 maybe_stash_topic_key(&mut manifest_keys, FetchKey::TopicManifest(key), filter);
+            } else if key.ends_with("lifecycle.bin") {
+                maybe_stash_topic_key(
+                    &mut manifest_keys,
+                    FetchKey::TopicLifecycleMarker(key),
+                    filter,
+                );
             } else if key.contains("manifest.json.") || key.contains("manifest.bin.") {
                 maybe_stash_partition_key(
                     &mut manifest_keys,
@@ -1556,10 +1598,10 @@ impl BucketReader {
         body: bytes::Bytes,
     ) -> Result<(), BucketReaderError> {
         lazy_static! {
-            static ref PARTITION_MANIFEST_KEY: Regex =
+            static ref TOPIC_MANIFEST_KEY: Regex =
                 Regex::new("[a-f0-9]+/meta/([^]]+)/([^]]+)/topic_manifest.json").unwrap();
         }
-        if let Some(grps) = PARTITION_MANIFEST_KEY.captures(key) {
+        if let Some(grps) = TOPIC_MANIFEST_KEY.captures(key) {
             // Group::get calls are safe to unwrap() because regex always has those groups if it matched
             let ns = grps.get(1).unwrap().as_str().to_string();
             let topic = grps.get(2).unwrap().as_str().to_string();
@@ -1570,6 +1612,8 @@ impl BucketReader {
                     topic,
                     revision_id: manifest.revision_id as i64,
                 };
+
+                debug!("Storing topic manifest for {} from key {}", ntr, key);
 
                 if let Some(_) = self.topic_manifests.insert(ntr, manifest) {
                     warn!("Two topic manifests for same NTR seen ({})", key);
@@ -1584,6 +1628,51 @@ impl BucketReader {
             warn!("Malformed topic manifest key {}", key);
             self.anomalies
                 .malformed_topic_manifests
+                .insert(key.to_string());
+        }
+        Ok(())
+    }
+
+    async fn ingest_topic_lifecycle_marker(
+        &mut self,
+        key: &str,
+        body: bytes::Bytes,
+    ) -> Result<(), BucketReaderError> {
+        lazy_static! {
+            static ref LIFECYCLE_MARKER_KEY: Regex =
+                Regex::new("[a-f0-9]+/meta/([^]]+)/([^]]+)/(\\d+)_lifecycle.bin").unwrap();
+        }
+        if let Some(grps) = LIFECYCLE_MARKER_KEY.captures(key) {
+            // Group::get calls are safe to unwrap() because regex always has those groups if it matched
+            let ns = grps.get(1).unwrap().as_str().to_string();
+            let topic = grps.get(2).unwrap().as_str().to_string();
+            let initial_revision = grps.get(3).unwrap().as_str().to_string().parse::<u64>().unwrap();
+
+            let ntr = NTR {
+                namespace: ns,
+                topic,
+                revision_id: initial_revision as i64,
+            };
+
+            let mut cursor = std::io::Cursor::new(body.as_ref());
+            let marker = match LifecycleMarker::from_bytes(&mut cursor) {
+                Ok(m) => m,
+                Err(e) => {
+                    warn!("Error parsing lifecycle marker {}: {:?}", key, e);
+                    self.anomalies.malformed_lifecycle_markers.insert(key.to_string());
+                    return Ok(());
+                }
+            };
+
+            debug!("Storing lifecycle marker for {} from key {}", ntr, key);
+
+            if let Some(_) = self.lifecycle_markers.insert(ntr, marker) {
+                warn!("Two lifecycle markers for same NTR seen ({})", key);
+            }
+        } else {
+            warn!("Malformed lifecycle marker key {}", key);
+            self.anomalies
+                .malformed_lifecycle_markers
                 .insert(key.to_string());
         }
         Ok(())
