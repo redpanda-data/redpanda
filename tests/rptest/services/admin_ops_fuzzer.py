@@ -551,9 +551,13 @@ class AdminOperationsFuzzer():
         try:
             self.attempted += 1
             if self.execute_with_retries(op_type, op):
-                wait_until(validate_result,
-                           timeout_sec=self.operation_timeout,
-                           backoff_sec=1)
+                wait_until(
+                    validate_result,
+                    timeout_sec=self.operation_timeout,
+                    backoff_sec=1,
+                    err_msg=
+                    f"Timeout waiting for {op.describe()} operation validation"
+                )
                 self.executed += 1
                 sleep(self.operations_interval)
                 return True
@@ -563,7 +567,8 @@ class AdminOperationsFuzzer():
                 )
                 return False
         except Exception as e:
-            self.redpanda.logger.debug(f"Operation: {op_type}", exc_info=True)
+            self.redpanda.logger.error(f"Operation: {op.describe()} failed",
+                                       exc_info=True)
             raise e
 
     def execute_with_retries(self, op_type, op):
