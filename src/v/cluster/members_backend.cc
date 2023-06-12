@@ -411,20 +411,10 @@ ss::future<std::error_code> members_backend::reconcile() {
         }
         const auto is_draining = node->get().state.get_membership_state()
                                  == model::membership_state::draining;
-        const auto all_reallocations_finished = std::all_of(
-          meta.partition_reallocations.begin(),
-          meta.partition_reallocations.end(),
-          [](const auto& r) {
-              return r.second.state == reallocation_state::finished;
-          });
-        const bool updates_in_progress
-          = _topics.local().has_updates_in_progress();
 
         const auto allocator_empty = _allocator.local().is_empty(
           meta.update.id);
-        if (
-          is_draining && all_reallocations_finished && allocator_empty
-          && !updates_in_progress) {
+        if (is_draining && allocator_empty) {
             // we can safely discard the result since action is going to be
             // retried if it fails
             vlog(
@@ -437,23 +427,11 @@ ss::future<std::error_code> members_backend::reconcile() {
             // Decommissioning still in progress
             vlog(
               clusterlog.info,
-              "[update: {}] decommissioning in progress. draining: {} "
-              "all_reallocations_finished: {}, allocator_empty: {} "
-              "updates_in_progress:{}",
+              "[update: {}] decommissioning in progress. "
+              "draining: {}, allocator_empty: {}",
               meta.update,
               is_draining,
-              all_reallocations_finished,
-              allocator_empty,
-              updates_in_progress);
-            if (!allocator_empty && all_reallocations_finished) {
-                // recalculate reallocations
-                vlog(
-                  clusterlog.info,
-                  "[update: {}] decommissioning in progress. recalculating "
-                  "reallocations",
-                  meta.update);
-                co_await calculate_reallocations(meta);
-            }
+              allocator_empty);
         }
     }
     // remove finished reallocations
