@@ -364,6 +364,13 @@ public:
     /// Returns metadata of all topics.
     const underlying_t& all_topics_metadata() const;
 
+    // use this pair of methods to check if the topics map has changed (so that
+    // it is not safe to continue iterating over it).
+    model::revision_id topics_map_revision() const {
+        return _topics_map_revision;
+    }
+    void check_topics_map_stable(model::revision_id) const;
+
     /// Checks if it has given partition
     bool contains(model::topic_namespace_view, model::partition_id) const;
     /// Checks if it has given topic
