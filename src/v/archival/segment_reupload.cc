@@ -45,17 +45,42 @@ void segment_collector::collect_segments(segment_collector_mode mode) {
     // start_offset < log start due to eviction of segments before
     // they could be uploaded, skip forward to log start.
     if (_begin_inclusive < _log.offsets().start_offset) {
-        vlog(
-          archival_log.debug,
-          "Provided start offset is below the start offset of the local log: "
-          "{} < {} for ntp {}. Advancing to the beginning of the local log.",
-          _begin_inclusive,
-          _log.offsets().start_offset,
-          _manifest.get_ntp());
-        _begin_inclusive = _log.offsets().start_offset;
+        if (mode == segment_collector_mode::collect_compacted) {
+            vlog(
+              archival_log.debug,
+              "Provided start offset is below the start offset of the local "
+              "log: "
+              "{} < {} for ntp {}. Advancing to the beginning of the local "
+              "log.",
+              _begin_inclusive,
+              _log.offsets().start_offset,
+              _manifest.get_ntp());
+            _begin_inclusive = _log.offsets().start_offset;
+        } else {
+            vlog(
+              archival_log.debug,
+              "Provided start offset is below the start offset of the local "
+              "log: "
+              "{} < {} for ntp {}. Exiting early.",
+              _begin_inclusive,
+              _log.offsets().start_offset,
+              _manifest.get_ntp());
+            return;
+        }
     }
 
-    align_begin_offset_to_manifest();
+    if (mode == segment_collector_mode::collect_compacted) {
+        align_begin_offset_to_manifest();
+    } else if (_manifest.find(_begin_inclusive) == _manifest.end()) {
+        vlog(
+          archival_log.debug,
+          "Provided start offset {} is not aligned to a segment in the "
+          "manifest: "
+          "for ntp {}. Exiting early.",
+          _begin_inclusive,
+          _manifest.get_ntp());
+        return;
+    }
 
     if (_begin_inclusive >= _manifest.get_last_offset()) {
         vlog(
@@ -147,7 +172,9 @@ void segment_collector::do_collect(segment_collector_mode mode) {
 
         // For the first segment found, begin offset needs to be
         // re-aligned if it falls inside manifest segment.
-        if (_segments.empty()) {
+        if (
+          _segments.empty()
+          && mode == segment_collector_mode::collect_compacted) {
             _begin_inclusive = result.segment->offsets().base_offset;
             align_begin_offset_to_manifest();
         }
