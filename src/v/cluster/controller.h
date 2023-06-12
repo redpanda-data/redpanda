@@ -159,6 +159,10 @@ public:
         return _raft0->committed_offset();
     }
 
+    model::offset get_dirty_offset() const { return _raft0->dirty_offset(); }
+
+    static const bytes invariants_key;
+
 private:
     friend controller_probe;
 

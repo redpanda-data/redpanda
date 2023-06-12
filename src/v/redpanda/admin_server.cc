@@ -3943,15 +3943,18 @@ void admin_server::register_debug_routes() {
       seastar::httpd::debug_json::get_controller_status,
       [this](std::unique_ptr<ss::httpd::request>)
         -> ss::future<ss::json::json_return_type> {
-          return _controller->get_last_applied_offset().then(
-            [this](auto offset) {
-                using result_t = ss::httpd::debug_json::controller_status;
-                result_t ans;
-                ans.last_applied_offset = offset;
-                ans.commited_index = _controller->get_commited_index();
-                return ss::make_ready_future<ss::json::json_return_type>(
-                  ss::json::json_return_type(ans));
-            });
+          return ss::smp::submit_to(cluster::controller_stm_shard, [this] {
+              return _controller->get_last_applied_offset().then(
+                [this](auto offset) {
+                    using result_t = ss::httpd::debug_json::controller_status;
+                    result_t ans;
+                    ans.last_applied_offset = offset;
+                    ans.commited_index = _controller->get_commited_index();
+                    ans.dirty_offset = _controller->get_dirty_offset();
+                    return ss::make_ready_future<ss::json::json_return_type>(
+                      ss::json::json_return_type(ans));
+                });
+          });
       });
 
     register_route<user>(
