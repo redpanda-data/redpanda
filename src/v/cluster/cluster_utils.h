@@ -91,12 +91,18 @@ inline std::vector<topic_result> create_topic_results(
       });
 }
 
+inline rpc::backoff_policy default_backoff_policy() {
+    return rpc::make_exponential_backoff_policy<rpc::clock_type>(
+      std::chrono::seconds(1), std::chrono::seconds(15));
+}
+
 ss::future<> add_one_tcp_client(
   ss::shard_id owner,
   ss::sharded<rpc::connection_cache>& clients,
   model::node_id node,
   net::unresolved_address addr,
-  config::tls_config tls_config);
+  config::tls_config tls_config,
+  rpc::backoff_policy backoff_policy = default_backoff_policy());
 
 ss::future<> update_broker_client(
   model::node_id,

@@ -129,9 +129,15 @@ class NodeStatusTest(RedpandaTest):
             test_context=ctx,
             extra_rp_conf={"node_status_interval": NODE_STATUS_INTERVAL})
 
+    def _update_max_backoff(self):
+        self.redpanda.set_cluster_config(
+            {"node_status_reconnect_max_backoff_ms": 5000})
+
     @cluster(num_nodes=3)
     def test_all_nodes_up(self):
         status_graph = StatusGraph(self.redpanda)
+        status_graph.check_cluster_status()
+        self._update_max_backoff()
         status_graph.check_cluster_status()
 
     @cluster(num_nodes=3)

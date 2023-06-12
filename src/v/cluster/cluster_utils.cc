@@ -126,7 +126,8 @@ ss::future<> maybe_create_tcp_client(
   rpc::connection_cache& cache,
   model::node_id node,
   net::unresolved_address rpc_address,
-  config::tls_config tls_config) {
+  config::tls_config tls_config,
+  rpc::backoff_policy backoff) {
     auto f = ss::now();
     if (cache.contains(node)) {
         // client is already there, check if configuration changed
@@ -141,11 +142,15 @@ ss::future<> maybe_create_tcp_client(
     return f.then([&cache,
                    node,
                    rpc_address = std::move(rpc_address),
-                   tls_config = std::move(tls_config)]() mutable {
+                   tls_config = std::move(tls_config),
+                   backoff = std::move(backoff)]() mutable {
         return maybe_build_reloadable_certificate_credentials(
                  std::move(tls_config))
           .then(
-            [&cache, node, rpc_address = std::move(rpc_address)](
+            [&cache,
+             node,
+             rpc_address = std::move(rpc_address),
+             backoff = std::move(backoff)](
               ss::shared_ptr<ss::tls::certificate_credentials>&& cert) mutable {
                 return cache.emplace(
                   node,
@@ -155,8 +160,7 @@ ss::future<> maybe_create_tcp_client(
                     .disable_metrics = net::metrics_disabled(
                       config::shard_local_cfg().disable_metrics),
                     .version = cache.get_default_transport_version()},
-                  rpc::make_exponential_backoff_policy<rpc::clock_type>(
-                    std::chrono::seconds(1), std::chrono::seconds(15)));
+                  std::move(backoff));
             });
     });
 }
@@ -166,13 +170,20 @@ ss::future<> add_one_tcp_client(
   ss::sharded<rpc::connection_cache>& clients,
   model::node_id node,
   net::unresolved_address addr,
-  config::tls_config tls_config) {
+  config::tls_config tls_config,
+  rpc::backoff_policy backoff) {
     return clients.invoke_on(
       owner,
-      [node, rpc_address = std::move(addr), tls_config = std::move(tls_config)](
-        rpc::connection_cache& cache) mutable {
+      [node,
+       rpc_address = std::move(addr),
+       tls_config = std::move(tls_config),
+       backoff = std::move(backoff)](rpc::connection_cache& cache) mutable {
           return maybe_create_tcp_client(
-            cache, node, std::move(rpc_address), std::move(tls_config));
+            cache,
+            node,
+            std::move(rpc_address),
+            std::move(tls_config),
+            std::move(backoff));
       });
 }
 

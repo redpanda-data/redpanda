@@ -63,6 +63,16 @@ ss::future<> connection_cache::remove(model::node_id n) {
       });
 }
 
+ss::future<> connection_cache::remove_all() {
+    auto units = co_await _mutex.get_units();
+    auto cache = std::exchange(_cache, {});
+    co_await parallel_for_each(cache, [](auto& it) {
+        auto& [_, cli] = it;
+        return cli->stop();
+    });
+    cache.clear();
+}
+
 /// \brief closes all client connections
 ss::future<> connection_cache::do_shutdown() {
     auto units = co_await _mutex.get_units();

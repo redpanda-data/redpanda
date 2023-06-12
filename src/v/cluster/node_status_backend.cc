@@ -34,12 +34,14 @@ node_status_backend::node_status_backend(
   ss::sharded<features::feature_table>& feature_table,
   ss::sharded<node_status_table>& node_status_table,
   config::binding<std::chrono::milliseconds> period,
+  config::binding<std::chrono::milliseconds> max_reconnect_backoff,
   ss::sharded<ss::abort_source>& as)
   : _self(self)
   , _members_table(members_table)
   , _feature_table(feature_table)
   , _node_status_table(node_status_table)
   , _period(std::move(period))
+  , _max_reconnect_backoff(std::move(max_reconnect_backoff))
   , _rpc_tls_config(config::node().rpc_server_tls())
   , _as(as) {
     if (!config::shard_local_cfg().disable_public_metrics()) {
@@ -60,6 +62,20 @@ node_status_backend::node_status_backend(
                   _gate, [this] { return drain_notifications_queue(); });
             }
         });
+
+    _max_reconnect_backoff.watch([this]() {
+        ssx::spawn_with_gate(_gate, [this] {
+            auto new_backoff = _max_reconnect_backoff();
+            vlog(
+              clusterlog.info,
+              "Updating max reconnect backoff to: {}ms",
+              new_backoff.count());
+            // Invalidate all transports so they are created afresh with new
+            // backoff.
+            return _node_connection_cache.invoke_on_all(
+              [](rpc::connection_cache& local) { return local.remove_all(); });
+        });
+    });
 
     _timer.set_callback([this] { tick(); });
 }
@@ -217,7 +233,12 @@ ss::future<ss::shard_id> node_status_backend::maybe_create_client(
       _self, source_shard, target);
 
     co_await add_one_tcp_client(
-      target_shard, _node_connection_cache, target, address, _rpc_tls_config);
+      target_shard,
+      _node_connection_cache,
+      target,
+      address,
+      _rpc_tls_config,
+      create_backoff_policy());
 
     co_return source_shard;
 }
