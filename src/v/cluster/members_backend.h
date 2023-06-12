@@ -61,9 +61,7 @@ public:
         // on demand rebalance request
         explicit update_meta() noexcept = default;
 
-        // optional node update, if present the update comes from
-        // members_manager, otherwise it is on demand update
-        std::optional<members_manager::node_update> update;
+        members_manager::node_update update;
         // it is ok to use a flat hash map here as it it will be limited in
         // size by the max concurrent reallocations batch size
         absl::flat_hash_map<model::ntp, partition_reallocation>
@@ -91,23 +89,6 @@ public:
           = 0;
     };
 
-    class default_reallocation_strategy : public reallocation_strategy {
-        void reallocations_for_even_partition_count(
-          size_t batch_size,
-          partition_allocator&,
-          topic_table&,
-          update_meta&,
-          partition_allocation_domain) final;
-
-    private:
-        void calculate_reallocations_batch(
-          size_t batch_size,
-          partition_allocator&,
-          topic_table&,
-          update_meta&,
-          partition_allocation_domain);
-    };
-
     members_backend(
       ss::sharded<cluster::topics_frontend>&,
       ss::sharded<cluster::topic_table>&,
@@ -122,8 +103,6 @@ public:
 
     void start();
     ss::future<> stop();
-
-    ss::future<std::error_code> request_rebalance();
 
 private:
     static constexpr model::revision_id raft0_revision{0};
@@ -140,10 +119,8 @@ private:
     ss::future<> handle_updates();
     void handle_single_update(members_manager::node_update);
     void stop_node_decommissioning(model::node_id);
-    void stop_node_addition_and_ondemand_rebalance(model::node_id id);
+    void stop_node_addition(model::node_id id);
     void handle_reallocation_finished(model::node_id);
-    void reallocations_for_even_partition_count(
-      update_meta&, partition_allocation_domain);
 
     ss::future<> calculate_reallocations_after_recommissioned(update_meta&);
     std::vector<model::ntp> ntps_moving_from_node_older_than(
