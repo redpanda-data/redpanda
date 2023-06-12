@@ -209,6 +209,7 @@ class CloudStorageTimingStressTest(RedpandaTest, PartitionMovementMixin):
     mib = 1024 * 1024
     message_size = 32 * 1024  # 32KiB
     log_segment_size = 4 * mib  # 4MiB
+    chunk_size = 1 * mib
     produce_byte_rate_per_ntp = 8 * mib  # 8 MiB
     target_runtime = 60  # seconds
     check_interval = 10  # seconds
@@ -233,7 +234,8 @@ class CloudStorageTimingStressTest(RedpandaTest, PartitionMovementMixin):
             cloud_storage_segment_size_target=4 * self.log_segment_size,
             cloud_storage_segment_size_min=2 * self.log_segment_size,
             retention_local_target_bytes_default=10 * self.log_segment_size,
-            cloud_storage_enable_segment_merging=True)
+            cloud_storage_enable_segment_merging=True,
+            cloud_storage_cache_chunk_size=self.chunk_size)
 
         super(CloudStorageTimingStressTest,
               self).__init__(test_context=test_context,
