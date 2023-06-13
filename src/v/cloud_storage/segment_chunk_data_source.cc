@@ -80,7 +80,7 @@ chunk_data_source_impl::load_chunk_handle(chunk_start_offset_t chunk_start) {
         throw;
     } catch (const std::exception& ex) {
         vlog(
-          _ctxlog.error,
+          _ctxlog.warn,
           "failed to hydrate chunk starting at {}, error: {}",
           chunk_start,
           ex);
@@ -92,11 +92,18 @@ ss::future<> chunk_data_source_impl::load_stream_for_chunk(
   chunk_start_offset_t chunk_start) {
     vlog(_ctxlog.debug, "loading stream for chunk starting at {}", chunk_start);
 
-    co_await load_chunk_handle(chunk_start)
-      .handle_exception([this](const std::exception_ptr& ex) {
-          return maybe_close_stream().then(
-            [&ex] { std::rethrow_exception(ex); });
-      });
+    std::exception_ptr eptr;
+
+    try {
+        co_await load_chunk_handle(chunk_start);
+    } catch (...) {
+        eptr = std::current_exception();
+    }
+
+    if (eptr) {
+        co_await maybe_close_stream();
+        std::rethrow_exception(eptr);
+    }
 
     // Decrement the required_by_readers_in_future count by 1, we have acquired
     // the file handle here. Once we are done with this handle, if it is not
