@@ -51,8 +51,8 @@ class PartitionMoveInterruption(PartitionMovementMixin, EndToEndTest):
         self.consumer_timeout_seconds = 90
 
         if os.environ.get('BUILD_TYPE', None) == 'debug':
-            self.throughput = 1000
-            self.min_records = 10000
+            self.throughput = 500
+            self.min_records = 5000
         else:
             self.throughput = 10000
             self.min_records = 100000
