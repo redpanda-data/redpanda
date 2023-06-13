@@ -654,15 +654,14 @@ ss::future<bool> remote_segment::maybe_materialize_index() {
               "Failed to materialize index '{}'. Error: {}",
               path,
               std::current_exception());
+            co_return false;
         }
         co_await cache_item->body.close();
+        co_return true;
     } else {
         vlog(_ctxlog.info, "Index '{}' is not available", path);
+        co_return false;
     }
-
-    // TODO (abhijat) start returning false here when the index is required to
-    // be materialized.
-    co_return true;
 }
 
 // NOTE: Aborted transactions handled using tx_range manifests.
