@@ -2870,7 +2870,8 @@ class RedpandaService(RedpandaServiceBase):
 
     def redpanda_pid(self, node):
         try:
-            cmd = "ps ax | grep -i 'redpanda' | grep -v grep | grep -v 'version'| grep -v \"\[redpanda\]\" | awk '{print $1}'"
+            cmd = "pgrep --exact redpanda"
+
             for p in node.account.ssh_capture(cmd,
                                               allow_fail=True,
                                               callback=int,
