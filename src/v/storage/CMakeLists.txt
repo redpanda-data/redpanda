@@ -37,6 +37,7 @@ v_cc_library(
     fs_utils.cc
     file_sanitizer_types.cc
     api.cc
+    node.cc
   DEPS
     Seastar::seastar
     v::bytes

@@ -24,9 +24,12 @@ struct local_monitor_fixture {
 
     std::filesystem::path _test_path;
     ss::sharded<features::feature_table> _feature_table;
-    ss::sharded<storage::api> _storage_api;
-    ss::sharded<storage::node_api> _storage_node_api;
-    cluster::node::local_monitor _local_monitor;
+    ss::sharded<storage::node> _storage_node_api;
+    ss::sharded<cluster::node::local_monitor> _local_monitor;
+
+    cluster::node::local_monitor& local_monitor() {
+        return _local_monitor.local();
+    }
 
     cluster::node::local_state update_state();
     static struct statvfs

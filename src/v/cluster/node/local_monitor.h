@@ -12,6 +12,7 @@
 #include "cluster/node/types.h"
 #include "config/property.h"
 #include "resource_mgmt/storage.h"
+#include "storage/node.h"
 #include "storage/types.h"
 #include "units.h"
 
@@ -34,10 +35,8 @@ public:
       config::binding<size_t> min_bytes_alert,
       config::binding<unsigned> min_percent_alert,
       config::binding<size_t> min_bytes,
-      ss::sstring data_directory,
-      ss::sstring cache_directory,
-      ss::sharded<storage::node_api>&,
-      ss::sharded<storage::api>&);
+      ss::sharded<storage::node>&);
+
     local_monitor(const local_monitor&) = delete;
     local_monitor(local_monitor&&) = default;
     ~local_monitor() = default;
@@ -54,10 +53,6 @@ public:
     static constexpr std::string_view stable_alert_string
       = "storage space alert"; // for those who grep the logs..
 
-    void testing_only_set_path(const ss::sstring& path);
-    void testing_only_set_statvfs(
-      std::function<struct statvfs(const ss::sstring)>);
-
 private:
     // helpers
     static size_t
@@ -69,7 +64,7 @@ private:
     ss::future<struct statvfs> get_statvfs(const ss::sstring);
     ss::future<> update_disks(local_state& state);
     void update_alert_state(local_state&);
-    storage::disk statvfs_to_disk(const struct statvfs& svfs);
+    storage::disk statvfs_to_disk(const storage::node::stat_info&);
 
     ss::future<> update_disk_metrics();
     float percent_free(const storage::disk& disk);
@@ -83,19 +78,7 @@ private:
     config::binding<unsigned> _free_percent_alert_threshold;
     config::binding<size_t> _min_free_bytes;
 
-    // We must carry a copy of data dir, because fixture tests mutate the
-    // global node_config::data_directory
-    ss ::sstring _data_directory;
-    ss ::sstring _cache_directory;
-
-    ss::sharded<storage::node_api>& _storage_node_api; // single instance
-    ss::sharded<storage::api>& _storage_api;
-
-    // Injection points for unit tests
-    ss::sstring _path_for_test;
-    std::function<struct statvfs(const ss::sstring)> _statvfs_for_test;
-
-    std::optional<size_t> _disk_size_for_test;
+    ss::sharded<storage::node>& _storage_node_api; // single instance
 
     ss::gate _gate;
     ss::abort_source _abort_source;

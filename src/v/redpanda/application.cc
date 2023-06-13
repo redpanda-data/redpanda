@@ -1292,7 +1292,7 @@ void application::wire_up_redpanda_services(model::node_id node_id) {
         // changes
         auto cloud_storage_cache_disk_notification
           = storage_node.local().register_disk_notification(
-            storage::node_api::disk_type::cache,
+            storage::node::disk_type::cache,
             [this](
               uint64_t total_space,
               uint64_t free_space,
@@ -1302,7 +1302,7 @@ void application::wire_up_redpanda_services(model::node_id node_id) {
             });
         _deferred.emplace_back([this, cloud_storage_cache_disk_notification] {
             storage_node.local().unregister_disk_notification(
-              storage::node_api::disk_type::cache,
+              storage::node::disk_type::cache,
               cloud_storage_cache_disk_notification);
         });
 
@@ -1640,17 +1640,18 @@ void application::wire_up_bootstrap_services() {
         return storage::internal::chunks().start();
     }).get();
     syschecks::systemd_message("Constructing storage services").get();
-    construct_single_service_sharded(storage_node).get();
+    construct_single_service_sharded(
+      storage_node,
+      config::node().data_directory().as_sstring(),
+      config::node().cloud_storage_cache_path().string())
+      .get();
     construct_single_service_sharded(
       local_monitor,
       config::shard_local_cfg().storage_space_alert_free_threshold_bytes.bind(),
       config::shard_local_cfg()
         .storage_space_alert_free_threshold_percent.bind(),
       config::shard_local_cfg().storage_min_free_bytes.bind(),
-      config::node().data_directory().as_sstring(),
-      config::node().cloud_storage_cache_path().string(),
-      std::ref(storage_node),
-      std::ref(storage))
+      std::ref(storage_node))
       .get();
 
     const auto sanitizer_config = read_file_sanitizer_config();
@@ -1673,7 +1674,7 @@ void application::wire_up_bootstrap_services() {
     // Hook up local_monitor to update storage_resources when disk state changes
     auto storage_disk_notification
       = storage_node.local().register_disk_notification(
-        storage::node_api::disk_type::data,
+        storage::node::disk_type::data,
         [this](
           uint64_t total_space,
           uint64_t free_space,
@@ -1685,7 +1686,7 @@ void application::wire_up_bootstrap_services() {
         });
     _deferred.emplace_back([this, storage_disk_notification] {
         storage_node.local().unregister_disk_notification(
-          storage::node_api::disk_type::data, storage_disk_notification);
+          storage::node::disk_type::data, storage_disk_notification);
     });
 
     // Start empty, populated from snapshot in start_bootstrap_services
@@ -1747,7 +1748,7 @@ void application::start_bootstrap_services() {
     syschecks::systemd_message("Starting storage services").get();
 
     // single instance
-    storage_node.invoke_on_all(&storage::node_api::start).get0();
+    storage_node.invoke_on_all(&storage::node::start).get0();
     local_monitor.invoke_on_all(&cluster::node::local_monitor::start).get0();
 
     storage.invoke_on_all(&storage::api::start).get();

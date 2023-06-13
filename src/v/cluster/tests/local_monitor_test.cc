@@ -32,17 +32,7 @@ using namespace cluster;
 
 using storage::disk_space_alert;
 
-local_monitor_fixture::local_monitor_fixture()
-  : _local_monitor(
-    config::shard_local_cfg().storage_space_alert_free_threshold_bytes.bind(),
-    config::shard_local_cfg().storage_space_alert_free_threshold_percent.bind(),
-    config::shard_local_cfg().storage_min_free_bytes.bind(),
-    config::node_config().data_directory().as_sstring(),
-    config::node_config().cloud_storage_cache_path().string(),
-    _storage_node_api,
-    _storage_api) {
-    _storage_node_api.start_single().get0();
-
+local_monitor_fixture::local_monitor_fixture() {
     auto log_conf = storage::log_config{
       "test.dir",
       1024,
@@ -61,13 +51,6 @@ local_monitor_fixture::local_monitor_fixture()
         [](features::feature_table& f) { f.testing_activate_all(); })
       .get();
 
-    _storage_api
-      .start(
-        [kvstore_conf]() { return kvstore_conf; },
-        [log_conf]() { return log_conf; },
-        std::ref(_feature_table))
-      .get0();
-
     clusterlog.info("{}: create", __func__);
     auto test_dir = "local_monitor_test."
                     + random_generators::gen_alphanum_string(4);
@@ -82,7 +65,26 @@ local_monitor_fixture::local_monitor_fixture()
     } else {
         clusterlog.info("{}: created test dir {}", __func__, _test_path);
     }
-    _local_monitor.testing_only_set_path(_test_path.string());
+
+    _storage_node_api.start_single(_test_path.string(), _test_path.string())
+      .get0();
+
+    _local_monitor
+      .start(
+        ss::sharded_parameter([] {
+            return config::shard_local_cfg()
+              .storage_space_alert_free_threshold_bytes.bind();
+        }),
+        ss::sharded_parameter([] {
+            return config::shard_local_cfg()
+              .storage_space_alert_free_threshold_percent.bind();
+        }),
+        ss::sharded_parameter([] {
+            return config::shard_local_cfg().storage_min_free_bytes.bind();
+        }),
+        std::ref(_storage_node_api))
+      .get();
+
     BOOST_ASSERT(ss::engine_is_ready());
 }
 
@@ -93,16 +95,17 @@ local_monitor_fixture::~local_monitor_fixture() {
     if (err) {
         clusterlog.warn("Cleanup got error {} removing test dir.", err);
     }
-    _storage_api.stop().get0();
     _storage_node_api.stop().get0();
+    _local_monitor.stop().get();
     _feature_table.stop().get();
 }
 
 node::local_state local_monitor_fixture::update_state() {
-    _local_monitor.update_state()
+    local_monitor()
+      .update_state()
       .then([&]() { clusterlog.info("Updated local state."); })
       .get();
-    return _local_monitor.get_state_cached();
+    return local_monitor().get_state_cached();
 }
 
 struct statvfs local_monitor_fixture::make_statvfs(
@@ -137,7 +140,7 @@ FIXTURE_TEST(local_monitor_inject_statvfs, local_monitor_fixture) {
     static constexpr auto free = 100UL, total = 200UL, block_size = 4096UL;
     struct statvfs stats = make_statvfs(free, total, block_size);
     auto lamb = [&](const ss::sstring& _ignore) { return stats; };
-    _local_monitor.testing_only_set_statvfs(lamb);
+    _storage_node_api.local().testing_only_set_statvfs(lamb);
 
     auto ls = update_state();
     BOOST_TEST_REQUIRE(ls.data_disk.total == total * block_size);
@@ -158,7 +161,7 @@ void local_monitor_fixture::assert_space_alert(
     struct statvfs stats = make_statvfs(
       free / block_size, volume / block_size, block_size);
     auto lamb = [&](const ss::sstring&) { return stats; };
-    _local_monitor.testing_only_set_statvfs(lamb);
+    _storage_node_api.local().testing_only_set_statvfs(lamb);
 
     auto ls = update_state();
     BOOST_TEST_REQUIRE(ls.data_disk.alert == expected);

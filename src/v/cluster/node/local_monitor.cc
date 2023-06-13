@@ -16,6 +16,7 @@
 #include "config/configuration.h"
 #include "config/node_config.h"
 #include "storage/api.h"
+#include "storage/node.h"
 #include "storage/types.h"
 #include "utils/human.h"
 #include "vassert.h"
@@ -46,24 +47,11 @@ local_monitor::local_monitor(
   config::binding<size_t> alert_bytes,
   config::binding<unsigned> alert_percent,
   config::binding<size_t> min_bytes,
-  ss::sstring data_directory,
-  ss::sstring cache_directory,
-  ss::sharded<storage::node_api>& node_api,
-  ss::sharded<storage::api>& api)
+  ss::sharded<storage::node>& node_api)
   : _free_bytes_alert_threshold(std::move(alert_bytes))
   , _free_percent_alert_threshold(std::move(alert_percent))
   , _min_free_bytes(std::move(min_bytes))
-  , _data_directory(std::move(data_directory))
-  , _cache_directory(std::move(cache_directory))
-  , _storage_node_api(node_api)
-  , _storage_api(api) {
-    // Intentionally undocumented environment variable, only for use
-    // in integration tests.
-    const char* test_disk_size_str = std::getenv("__REDPANDA_TEST_DISK_SIZE");
-    if (test_disk_size_str) {
-        _disk_size_for_test = std::stoul(std::string(test_disk_size_str));
-    }
-}
+  , _storage_node_api(node_api) {}
 
 ss::future<> local_monitor::_update_loop() {
     while (!_abort_source.abort_requested()) {
@@ -104,69 +92,35 @@ ss::future<> local_monitor::update_state() {
 
 const local_state& local_monitor::get_state_cached() const { return _state; }
 
-void local_monitor::testing_only_set_path(const ss::sstring& path) {
-    _path_for_test = path;
-}
-
-void local_monitor::testing_only_set_statvfs(
-  std::function<struct statvfs(const ss::sstring)> func) {
-    _statvfs_for_test = std::move(func);
-}
-
 size_t local_monitor::alert_percent_in_bytes(
   unsigned alert_percent, size_t bytes_available) {
     long double percent_factor = alert_percent / 100.0;
     return percent_factor * bytes_available;
 }
 
-storage::disk local_monitor::statvfs_to_disk(const struct statvfs& svfs) {
+storage::disk
+local_monitor::statvfs_to_disk(const storage::node::stat_info& info) {
     // f_bsize is a historical linux-ism, use f_frsize
+    const auto& svfs = info.stat;
     uint64_t free = svfs.f_bfree * svfs.f_frsize;
     uint64_t total = svfs.f_blocks * svfs.f_frsize;
 
-    if (_disk_size_for_test) {
-        uint64_t used = total - free;
-        vassert(
-          used < *_disk_size_for_test,
-          "mock disk size {} must be > used size {}",
-          *_disk_size_for_test,
-          used);
-        total = *_disk_size_for_test;
-        free = total - used;
-    }
-
     return storage::disk{
-      .path = _data_directory,
+      .path = info.path,
       .free = free,
       .total = total,
     };
 }
 
 ss::future<> local_monitor::update_disks(local_state& state) {
-    if (_path_for_test.empty()) {
-        // Normal mode
-        auto data_svfs = co_await get_statvfs(_data_directory);
-        auto cache_svfs = co_await get_statvfs(_cache_directory);
-        state.data_disk = statvfs_to_disk(data_svfs);
-        if (cache_svfs.f_fsid != data_svfs.f_fsid) {
-            state.cache_disk = statvfs_to_disk(cache_svfs);
-        } else {
-            state.cache_disk = std::nullopt;
-        }
+    using dt = storage::node::disk_type;
+    auto data_svfs = co_await _storage_node_api.local().get_statvfs(dt::data);
+    auto cache_svfs = co_await _storage_node_api.local().get_statvfs(dt::cache);
+    state.data_disk = statvfs_to_disk(data_svfs);
+    if (cache_svfs.stat.f_fsid != data_svfs.stat.f_fsid) {
+        state.cache_disk = statvfs_to_disk(cache_svfs);
     } else {
-        // Test mode
-        auto svfs = co_await get_statvfs(_path_for_test);
-        state.data_disk = statvfs_to_disk(svfs);
         state.cache_disk = std::nullopt;
-    }
-}
-
-// NOLINTNEXTLINE (performance-unnecessary-value-param)
-ss::future<struct statvfs> local_monitor::get_statvfs(const ss::sstring path) {
-    if (unlikely(_statvfs_for_test)) {
-        co_return _statvfs_for_test(path);
-    } else {
-        co_return co_await ss::engine().statvfs(path);
     }
 }
 
@@ -238,8 +192,8 @@ void local_monitor::update_alert_state(local_state& state) {
 
 ss::future<> local_monitor::update_disk_metrics() {
     co_await _storage_node_api.invoke_on_all(
-      &storage::node_api::set_disk_metrics,
-      storage::node_api::disk_type::data,
+      &storage::node::set_disk_metrics,
+      storage::node::disk_type::data,
       _state.data_disk.total,
       _state.data_disk.free,
       _state.data_disk.alert);
@@ -248,8 +202,8 @@ ss::future<> local_monitor::update_disk_metrics() {
     // subscribers to updates on cache disk space still need to get updates.
     auto cache_disk = _state.get_cache_disk();
     co_await _storage_node_api.invoke_on_all(
-      &storage::node_api::set_disk_metrics,
-      storage::node_api::disk_type::cache,
+      &storage::node::set_disk_metrics,
+      storage::node::disk_type::cache,
       cache_disk.total,
       cache_disk.free,
       cache_disk.alert);
