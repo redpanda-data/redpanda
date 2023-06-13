@@ -40,10 +40,6 @@ public:
     io_fragment& operator=(const io_fragment& o) = delete;
     ~io_fragment() noexcept = default;
 
-    bool operator==(const io_fragment& o) const {
-        return _used_bytes == o._used_bytes && _buf == o._buf;
-    }
-    bool operator!=(const io_fragment& o) const { return !(*this == o); }
     bool is_empty() const { return _used_bytes == 0; }
     size_t available_bytes() const { return _buf.size() - _used_bytes; }
     void reserve(size_t reservation) {
