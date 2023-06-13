@@ -139,8 +139,11 @@ public:
      */
     void append_fragments(iobuf);
 
-    /// \brief trims the back, and appends direct.
-    void append_take_ownership(std::unique_ptr<fragment>);
+    /**
+     * Append a fragment.
+     */
+    void append(std::unique_ptr<fragment>);
+
     /// prepends the _the buffer_ as iobuf::details::io_fragment::full{}
     void prepend(ss::temporary_buffer<char>);
     /// prepends the arg to this as iobuf::details::io_fragment::full{}
@@ -220,8 +223,7 @@ inline size_t iobuf::last_allocation_size() const {
     return _frags.empty() ? details::io_allocation_size::default_chunk_size
                           : _frags.back().capacity();
 }
-/// \brief trims the back, and appends direct.
-inline void iobuf::append_take_ownership(std::unique_ptr<fragment> f) {
+inline void iobuf::append(std::unique_ptr<fragment> f) {
     if (!_frags.empty()) {
         _frags.back().trim();
     }
@@ -238,7 +240,7 @@ inline void iobuf::create_new_fragment(size_t sz) {
     oncore_debug_verify(_verify_shard);
     auto chunk_max = std::max(sz, last_allocation_size());
     auto asz = details::io_allocation_size::next_allocation_size(chunk_max);
-    append_take_ownership(std::make_unique<fragment>(asz));
+    append(std::make_unique<fragment>(asz));
 }
 /// only ensures that a segment of at least reservation is avaible
 /// as an empty details::io_fragment
@@ -316,8 +318,7 @@ inline void iobuf::reserve_memory(size_t reservation) {
             _frags.back().trim();
         }
     }
-    // intrusive list manages the lifetime
-    append_take_ownership(std::make_unique<fragment>(std::move(b)));
+    append(std::make_unique<fragment>(std::move(b)));
 }
 /// appends the contents of buffer; might pack values into existing space
 inline void iobuf::append(iobuf o) {
@@ -334,7 +335,7 @@ inline void iobuf::append_fragments(iobuf o) {
     oncore_debug_verify(_verify_shard);
     while (!o._frags.empty()) {
         o._frags.pop_front_and_dispose([this](fragment* f) {
-            append_take_ownership(std::make_unique<fragment>(f->share()));
+            append(std::make_unique<fragment>(f->share()));
             details::dispose_io_fragment(f);
         });
     }

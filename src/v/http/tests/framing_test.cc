@@ -81,7 +81,7 @@ public:
             auto fragm = std::make_unique<details::io_fragment>(std::move(buf));
             // Make sure that fragmentation is not reduced by memory opt. in
             // iobuf
-            result.append_take_ownership(std::move(fragm));
+            result.append(std::move(fragm));
         }
         return result;
     }

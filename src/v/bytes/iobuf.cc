@@ -153,7 +153,7 @@ iobuf iobuf_copy(iobuf::iterator_consumer& in, size_t len) {
         bytes_left -= buf.size();
 
         auto f = std::make_unique<iobuf::fragment>(std::move(buf));
-        ret.append_take_ownership(std::move(f));
+        ret.append(std::move(f));
     }
 
     vassert(bytes_left == 0, "Bytes remaining to be copied");
@@ -179,7 +179,7 @@ iobuf iobuf::share(size_t pos, size_t len) {
             left = 0;
         }
         auto f = std::make_unique<fragment>(frag.share(pos, left_in_frag));
-        ret.append_take_ownership(std::move(f));
+        ret.append(std::move(f));
         pos = 0;
     }
     return ret;
