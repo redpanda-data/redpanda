@@ -6,6 +6,7 @@
 # As of the Change Date specified in that file, in accordance with
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
+import os
 
 from ducktape.mark import matrix
 from ducktape.tests.test import Test
@@ -245,6 +246,15 @@ class SimpleSelfTest(Test):
     def __init__(self, test_context):
         super(SimpleSelfTest, self).__init__(test_context)
         self.redpanda = make_redpanda_service(test_context, 3)
+
+    @property
+    def debug_mode(self):
+        """
+        Useful for tests that want to change behaviour when running on
+        the much slower debug builds of redpanda, which generally cannot
+        keep up with significant quantities of data or partition counts.
+        """
+        return os.environ.get('BUILD_TYPE', None) == 'debug'
 
     def setUp(self):
         self.redpanda.start()

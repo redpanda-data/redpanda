@@ -33,7 +33,10 @@ class AvailabilityTests(EndToEndFinjectorTest):
                             producer_timeout_sec=producer_timeout_sec,
                             consumer_timeout_sec=consumer_timeout_sec)
 
-    @cluster(num_nodes=5, log_allow_list=CHAOS_LOG_ALLOW_LIST)
+    # Don't check CPU metrics if a node is down
+    @cluster(num_nodes=5,
+             log_allow_list=CHAOS_LOG_ALLOW_LIST,
+             check_cpu_idle=False)
     def test_availability_when_one_node_failed(self):
         self.redpanda = make_redpanda_service(
             self.test_context,
@@ -63,7 +66,9 @@ class AvailabilityTests(EndToEndFinjectorTest):
 
         self.validate_records()
 
-    @cluster(num_nodes=5, log_allow_list=CHAOS_LOG_ALLOW_LIST)
+    @cluster(num_nodes=5,
+             log_allow_list=CHAOS_LOG_ALLOW_LIST,
+             check_cpu_idle=False)
     def test_recovery_after_catastrophic_failure(self):
 
         self.redpanda = make_redpanda_service(

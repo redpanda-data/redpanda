@@ -8,6 +8,7 @@
 # by the Apache License, Version 2.0
 
 import re
+import os
 
 from ducktape.tests.test import Test
 from rptest.services.cluster import cluster
@@ -23,7 +24,16 @@ class RedpandaBinaryTest(Test):
         super(RedpandaBinaryTest, self).__init__(test_context=test_context)
         self.redpanda = make_redpanda_service(self.test_context, 1)
 
-    @cluster(num_nodes=1, check_allowed_error_logs=False)
+    @property
+    def debug_mode(self):
+        """
+        Useful for tests that want to change behaviour when running on
+        the much slower debug builds of redpanda, which generally cannot
+        keep up with significant quantities of data or partition counts.
+        """
+        return os.environ.get('BUILD_TYPE', None) == 'debug'
+
+    @cluster(num_nodes=1, check_allowed_error_logs=False, check_cpu_idle=False)
     def test_version(self):
         version_cmd = f"{self.redpanda.find_binary('redpanda')} --version"
         version_lines = [
