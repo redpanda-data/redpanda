@@ -16,6 +16,7 @@ from rptest.clients.rpk import RpkTool
 from rptest.services.redpanda import DEFAULT_LOG_ALLOW_LIST
 import re
 import requests
+from ducktape.utils.util import wait_until
 
 NON_EXISTENT_TID_LOG_ALLOW_LIST = [
     re.compile(
@@ -120,17 +121,23 @@ class TxAdminTest(RedpandaTest):
         abort_tx = list(expected_pids)[0]
         expected_pids.discard(abort_tx)
 
+        def mark_expired(topic, partition):
+            try:
+                self.admin.mark_transaction_expired(topic.name, partition, {
+                    "id": abort_tx[0],
+                    "epoch": abort_tx[1]
+                }, "kafka")
+            except requests.exceptions.HTTPError as e:
+                if e.response.status_code != 404:
+                    raise
+            return True
+
         for topic in self.topics:
             for partition in range(topic.partition_count):
-                try:
-                    self.admin.mark_transaction_expired(
-                        topic.name, partition, {
-                            "id": abort_tx[0],
-                            "epoch": abort_tx[1]
-                        }, "kafka")
-                except requests.exceptions.HTTPError as e:
-                    if e.response.status_code != 404:
-                        raise
+                wait_until(lambda: mark_expired(topic, partition),
+                           timeout_sec=10,
+                           backoff_sec=1,
+                           retry_on_exc=True)
 
                 txs_info = self.admin.get_transactions(topic.name, partition,
                                                        "kafka")
