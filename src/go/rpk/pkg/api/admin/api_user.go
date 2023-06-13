@@ -26,13 +26,9 @@ type newUser struct {
 }
 
 const (
-	// Redpanda supports only SCRAM at the moment, which has two varieties.
-	//
-	// Both of the below technically go against the Go naming conventions
-	// for acronyms, but 8 uppercase letters for two merged acronyms is a
-	// bit odd.
 	ScramSha256 = "SCRAM-SHA-256"
 	ScramSha512 = "SCRAM-SHA-512"
+	CloudOIDC   = "oidc_from_cloud_auth"
 )
 
 // CreateUser creates a user with the given username and password using the

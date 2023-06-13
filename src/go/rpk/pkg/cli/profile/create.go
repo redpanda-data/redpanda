@@ -16,6 +16,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/api/admin"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cloudapi"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/oauth"
@@ -250,6 +251,20 @@ func FromCloudCluster(c cloudapi.Cluster) (p config.RpkProfile, isMTLS, isSASL b
 		isSASL = l[0].SASL != nil
 	}
 	return p, isMTLS, isSASL
+}
+
+func FromVirtualCluster(vc cloudapi.VirtualCluster) (p config.RpkProfile, isMTLS, isSASL bool) {
+	p = config.RpkProfile{
+		Name:      vc.Name,
+		FromCloud: true,
+	}
+	p.KafkaAPI.Brokers = vc.Status.Listeners.SeedAddresses
+	if p.KafkaAPI.SASL == nil {
+		p.KafkaAPI.SASL = new(config.SASL)
+	}
+	p.KafkaAPI.SASL.Mechanism = admin.CloudOIDC
+	// isSASL is false here since we don't need to print the SASL-required msg.
+	return p, false, false
 }
 
 // RequiresMTLSMessage returns the message to print if the cluster requires

@@ -253,6 +253,11 @@ func (p *RpkProfile) Defaults() *RpkDefaults {
 	return &p.c.rpkYaml.Defaults
 }
 
+// CurrentAuth returns the current cloud Auth.
+func (p *RpkProfile) CurrentAuth() *RpkCloudAuth {
+	return p.c.rpkYaml.Auth(p.c.rpkYaml.CurrentCloudAuth)
+}
+
 // HasClientCredentials returns if both ClientID and ClientSecret are empty.
 func (a *RpkCloudAuth) HasClientCredentials() bool {
 	k, _ := a.Kind()
