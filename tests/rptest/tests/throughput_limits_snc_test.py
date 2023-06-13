@@ -145,18 +145,27 @@ class ThroughputLimitsSnc(RedpandaTest):
         if prop == self.ConfigProp.THROUGHPUT_CONTROL:
             throughput_control = []
             letters = string.digits + string.ascii_letters + ' '
+            group_names = set()
             for _ in range(self.rnd.randrange(4)):
                 tc_item = {}
+
                 r = self.rnd.randrange(3)
                 if r != 0:
-                    tc_item['name'] = ''.join(
-                        self.rnd.choice(letters)
-                        for _ in range(self.binexp_random(0, 512)))
+                    while True:
+                        new_name = ''.join(
+                            self.rnd.choice(letters)
+                            for _ in range(self.binexp_random(0, 512)))
+                        if new_name not in group_names:
+                            break
+                    tc_item['name'] = new_name
+                    group_names.add(new_name)
+
                 r = self.rnd.randrange(3)
                 if r == 0:
                     tc_item['client_id'] = 'client_id 1'
                 elif r == 2:
                     tc_item['client_id'] = 'client_\d+'
+
                 throughput_control.append(tc_item)
             return throughput_control
 
