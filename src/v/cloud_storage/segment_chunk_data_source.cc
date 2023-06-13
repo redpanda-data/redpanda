@@ -80,7 +80,7 @@ chunk_data_source_impl::load_chunk_handle(chunk_start_offset_t chunk_start) {
         throw;
     } catch (const std::exception& ex) {
         vlog(
-          _ctxlog.error,
+          _ctxlog.warn,
           "failed to hydrate chunk starting at {}, error: {}",
           chunk_start,
           ex);
