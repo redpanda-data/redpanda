@@ -32,6 +32,11 @@ namespace archival {
 class ntp_level_probe {
 public:
     ntp_level_probe(per_ntp_metrics_disabled disabled, const model::ntp& ntp);
+    ntp_level_probe(const ntp_level_probe&) = delete;
+    ntp_level_probe& operator=(const ntp_level_probe&) = delete;
+    ntp_level_probe(ntp_level_probe&&) = delete;
+    ntp_level_probe& operator=(ntp_level_probe&&) = delete;
+    ~ntp_level_probe() = default;
 
     void setup_ntp_metrics(const model::ntp& ntp);
 
@@ -101,6 +106,12 @@ class upload_housekeeping_probe {
 
 public:
     upload_housekeeping_probe();
+    upload_housekeeping_probe(const upload_housekeeping_probe&) = delete;
+    upload_housekeeping_probe& operator=(const upload_housekeeping_probe&)
+      = delete;
+    upload_housekeeping_probe(upload_housekeeping_probe&&) = delete;
+    upload_housekeeping_probe& operator=(upload_housekeeping_probe&&) = delete;
+    ~upload_housekeeping_probe() = default;
 
     // These metrics are updated by the service
     void housekeeping_rounds(uint64_t add) { _housekeeping_rounds += add; }

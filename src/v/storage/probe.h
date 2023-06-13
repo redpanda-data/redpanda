@@ -37,6 +37,13 @@ public:
 
     const disk_metrics& get_disk_metrics() const { return _disk; }
 
+    node_probe() = default;
+    node_probe(const node_probe&) = delete;
+    node_probe& operator=(const node_probe&) = delete;
+    node_probe(node_probe&&) = delete;
+    node_probe& operator=(node_probe&&) = delete;
+    ~node_probe() = default;
+
 private:
     disk_metrics _disk;
     ss::metrics::metric_groups _public_metrics{
@@ -46,6 +53,13 @@ private:
 // Per-NTP probe.
 class probe {
 public:
+    probe() = default;
+    probe(const probe&) = delete;
+    probe& operator=(const probe&) = delete;
+    probe(probe&&) = delete;
+    probe& operator=(probe&&) = delete;
+    ~probe() = default;
+
     void add_bytes_written(uint64_t written) {
         _partition_bytes += written;
         _bytes_written += written;

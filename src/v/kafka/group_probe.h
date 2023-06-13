@@ -29,6 +29,11 @@ public:
     explicit group_offset_probe(model::offset& offset) noexcept
       : _offset(offset)
       , _public_metrics(ssx::metrics::public_metrics_handle) {}
+    group_offset_probe(const group_offset_probe&) = delete;
+    group_offset_probe& operator=(const group_offset_probe&) = delete;
+    group_offset_probe(group_offset_probe&&) = delete;
+    group_offset_probe& operator=(group_offset_probe&&) = delete;
+    ~group_offset_probe() = default;
 
     void setup_metrics(
       const kafka::group_id& group_id, const model::topic_partition& tp) {
@@ -102,6 +107,12 @@ public:
       , _static_members(static_members)
       , _offsets(offsets)
       , _public_metrics(ssx::metrics::public_metrics_handle) {}
+
+    group_probe(const group_probe&) = delete;
+    group_probe& operator=(const group_probe&) = delete;
+    group_probe(group_probe&&) = delete;
+    group_probe& operator=(group_probe&&) = delete;
+    ~group_probe() = default;
 
     void setup_public_metrics(const kafka::group_id& group_id) {
         namespace sm = ss::metrics;

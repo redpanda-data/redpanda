@@ -20,6 +20,13 @@
 namespace raft {
 class probe {
 public:
+    probe() = default;
+    probe(const probe&) = delete;
+    probe& operator=(const probe&) = delete;
+    probe(probe&&) = delete;
+    probe& operator=(probe&&) = delete;
+    ~probe() = default;
+
     void vote_request() { ++_vote_requests; }
     void append_request() { ++_append_requests; }
 

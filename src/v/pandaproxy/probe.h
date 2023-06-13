@@ -61,6 +61,11 @@ class probe {
 public:
     probe(
       ss::httpd::path_description& path_desc, const ss::sstring& group_name);
+    probe(const probe&) = delete;
+    probe& operator=(const probe&) = delete;
+    probe(probe&&) = delete;
+    probe& operator=(probe&&) = delete;
+    ~probe() = default;
     auto auto_measure() { return _request_metrics.auto_measure(); }
 
 private:

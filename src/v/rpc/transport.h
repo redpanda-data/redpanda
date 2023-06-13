@@ -343,7 +343,7 @@ transport::send_typed_versioned(
   transport_version version) {
     using ret_t = result<result_context<Output>>;
     using ctx_t = result<std::unique_ptr<streaming_context>>;
-    _probe.request();
+    _probe->request();
 
     auto b = std::make_unique<rpc::netbuf>();
     b->set_compression(opts.compression);

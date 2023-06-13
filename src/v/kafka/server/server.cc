@@ -138,6 +138,7 @@ server::server(
         cfg->local().max_service_memory_per_core
         * config::shard_local_cfg().kafka_memory_share_for_fetch()),
       "kafka/server-mem-fetch")
+  , _probe(std::make_unique<class latency_probe>())
   , _thread_worker(tw)
   , _replica_selector(
       std::make_unique<rack_aware_replica_selector>(_metadata_cache.local()))
@@ -150,8 +151,8 @@ server::server(
         _qdc_mon.emplace(*qdc_config);
     }
     setup_metrics();
-    _probe.setup_metrics();
-    _probe.setup_public_metrics();
+    _probe->setup_metrics();
+    _probe->setup_public_metrics();
 }
 
 void server::setup_metrics() {

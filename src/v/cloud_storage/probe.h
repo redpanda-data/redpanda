@@ -29,6 +29,11 @@ public:
       remote_metrics_disabled disabled,
       remote_metrics_disabled public_disabled,
       materialized_segments&);
+    remote_probe(const remote_probe&) = delete;
+    remote_probe& operator=(const remote_probe&) = delete;
+    remote_probe(remote_probe&&) = delete;
+    remote_probe& operator=(remote_probe&&) = delete;
+    ~remote_probe() = default;
 
     /// Register topic manifest upload
     void topic_manifest_upload() { _cnt_topic_manifest_uploads++; }

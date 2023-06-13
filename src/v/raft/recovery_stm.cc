@@ -509,7 +509,7 @@ clock_type::time_point recovery_stm::append_entries_timeout() {
 
 ss::future<result<append_entries_reply>> recovery_stm::dispatch_append_entries(
   append_entries_request&& r, std::vector<ssx::semaphore_units> units) {
-    _ptr->_probe.recovery_append_request();
+    _ptr->_probe->recovery_append_request();
 
     rpc::client_opts opts(append_entries_timeout());
     opts.resource_units = ss::make_foreign(
