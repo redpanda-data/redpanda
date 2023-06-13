@@ -168,7 +168,7 @@ iobuf kafka_batch_adapter::adapt(iobuf&& kbatch) {
 
     verify_crc(header.crc, std::move(crcparser));
     if (unlikely(!valid_crc)) {
-        vlog(klog.error, "batch has invalid CRC: {}", header);
+        vlog(klog.warn, "batch has invalid CRC: {}", header);
         return remainder;
     }
 
