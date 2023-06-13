@@ -20,15 +20,20 @@
 namespace details {
 class io_fragment {
 public:
-    struct full {};
-    struct empty {};
-
-    io_fragment(ss::temporary_buffer<char> buf, full)
+    /**
+     * Initialize fragment from the provided temporary buffer.
+     */
+    explicit io_fragment(ss::temporary_buffer<char> buf)
       : _buf(std::move(buf))
       , _used_bytes(_buf.size()) {}
-    io_fragment(ss::temporary_buffer<char> buf, empty)
-      : _buf(std::move(buf))
+
+    /**
+     * Initialize an empty fragment of a given size.
+     */
+    explicit io_fragment(size_t size)
+      : _buf(size)
       , _used_bytes(0) {}
+
     io_fragment(io_fragment&& o) noexcept = delete;
     io_fragment& operator=(io_fragment&& o) noexcept = delete;
     io_fragment(const io_fragment& o) = delete;
