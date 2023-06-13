@@ -892,7 +892,7 @@ pub struct LifecycleMarker {
     // lifecycle_status status;
     cluster_id: String,
     ntr: NTR,
-    status: LifecycleStatus,
+    pub status: LifecycleStatus,
 }
 
 impl RpSerde for LifecycleMarker {
