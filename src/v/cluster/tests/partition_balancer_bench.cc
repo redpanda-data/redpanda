@@ -32,8 +32,9 @@ PERF_TEST_C(partition_balancer_planner_fixture, unavailable_nodes) {
 
     auto planner = make_planner();
 
+    abort_source as;
     perf_tests::start_measuring_time();
-    auto plan_data = planner.plan_actions(hr);
+    auto plan_data = co_await planner.plan_actions(hr, as);
     perf_tests::stop_measuring_time();
 
     const auto& reassignments = plan_data.reassignments;

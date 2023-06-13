@@ -518,3 +518,33 @@ FIXTURE_TEST(test_topic_with_schema_id_validation_ops, topic_table_fixture) {
     BOOST_REQUIRE(cfg.has_value());
     BOOST_REQUIRE(!cfg->properties.record_key_schema_id_validation.has_value());
 }
+
+FIXTURE_TEST(test_topic_table_iterator_basic, topic_table_fixture) {
+    create_topics();
+
+    const auto& topics = table.local();
+
+    auto find_tp_ns = [&](const model::topic_namespace& tp_ns) {
+        return std::find_if(
+          topics.topics_iterator_begin(),
+          topics.topics_iterator_end(),
+          [&](const auto& it) { return it.first == tp_ns; });
+    };
+
+    auto end = topics.topics_iterator_end();
+    BOOST_REQUIRE(find_tp_ns(make_tp_ns("test_tp_1")) != end);
+    BOOST_REQUIRE(find_tp_ns(make_tp_ns("test_tp_2")) != end);
+    BOOST_REQUIRE(find_tp_ns(make_tp_ns("test_tp_3")) != end);
+    BOOST_REQUIRE(find_tp_ns(make_tp_ns("abcdef")) == end);
+}
+
+FIXTURE_TEST(test_topic_table_iterator_invalidation, topic_table_fixture) {
+    create_topics();
+    const auto& topics = table.local();
+
+    auto it = topics.topics_iterator_begin();
+    BOOST_REQUIRE(it != topics.topics_iterator_end());
+    BOOST_REQUIRE_NO_THROW((void)it->first);
+    add_random_topic(); // invalidates iterator
+    BOOST_REQUIRE_THROW((void)it->first, iterator_stability_violation);
+}

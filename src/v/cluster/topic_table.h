@@ -18,6 +18,7 @@
 #include "model/limits.h"
 #include "model/metadata.h"
 #include "utils/expiring_promise.h"
+#include "utils/stable_iterator_adaptor.h"
 
 #include <absl/container/flat_hash_map.h>
 #include <absl/container/node_hash_map.h>
@@ -461,6 +462,20 @@ public:
         return _lifecycle_markers;
     }
 
+    auto topics_iterator_begin() const {
+        return stable_iterator<
+          underlying_t::const_iterator,
+          model::revision_id>(
+          [this] { return _topics_map_revision; }, _topics.begin());
+    }
+
+    auto topics_iterator_end() const {
+        return stable_iterator<
+          underlying_t::const_iterator,
+          model::revision_id>(
+          [this] { return _topics_map_revision; }, _topics.end());
+    }
+
 private:
     friend topic_table_probe;
 
@@ -497,6 +512,10 @@ private:
 
     updates_t _updates_in_progress;
     model::revision_id _last_applied_revision_id;
+    // Monotonic counter that is bumped for every addition/deletion to topics
+    // map. Unlike other revisions this does not correspond to the command
+    // revision that updated the map.
+    model::revision_id _topics_map_revision{0};
 
     fragmented_vector<delta> _pending_deltas;
     std::vector<std::unique_ptr<waiter>> _waiters;

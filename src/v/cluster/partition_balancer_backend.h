@@ -110,6 +110,7 @@ private:
     ss::timer<clock_t> _timer;
     notification_id_type _topic_table_updates;
     notification_id_type _member_updates;
+    std::optional<ss::abort_source> _tick_in_progress;
 };
 
 } // namespace cluster

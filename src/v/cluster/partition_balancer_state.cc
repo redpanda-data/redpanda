@@ -59,6 +59,7 @@ void partition_balancer_state::handle_ntp_update(
         model::ntp ntp(ns, tp, p_id);
         if (is_rack_constraint_violated) {
             auto res = _ntps_with_broken_rack_constraint.insert(ntp);
+            _ntps_with_broken_rack_constraint_revision++;
             if (res.second) {
                 vlog(
                   clusterlog.debug,
@@ -70,6 +71,7 @@ void partition_balancer_state::handle_ntp_update(
             }
         } else {
             auto erased = _ntps_with_broken_rack_constraint.erase(ntp);
+            _ntps_with_broken_rack_constraint_revision++;
             if (erased > 0) {
                 vlog(
                   clusterlog.debug,
@@ -109,6 +111,7 @@ partition_balancer_state::apply_snapshot(const controller_snapshot& snap) {
       };
 
     _ntps_with_broken_rack_constraint.clear();
+    _ntps_with_broken_rack_constraint_revision++;
     for (const auto& [ns_tp, topic] : snap.topics.topics) {
         for (const auto& [p_id, partition] : topic.partitions) {
             const std::vector<model::broker_shard>* replicas
@@ -124,6 +127,7 @@ partition_balancer_state::apply_snapshot(const controller_snapshot& snap) {
             if (!is_rack_placement_valid(*replicas)) {
                 _ntps_with_broken_rack_constraint.emplace(
                   ns_tp.ns, ns_tp.tp, p_id);
+                _ntps_with_broken_rack_constraint_revision++;
             }
 
             co_await ss::coroutine::maybe_yield();
