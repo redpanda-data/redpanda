@@ -944,10 +944,16 @@ func GetPodByBrokerIDfromPodList(brokerIDStr string, pods *corev1.PodList) *core
 	return nil
 }
 
-var keyNotPresentError error
+type KeyNotPresentError struct {
+	Key string
+}
+
+func (e *KeyNotPresentError) Error() string {
+	return fmt.Sprintf("key not present: %v", e.Key)
+}
 
 func (r *StatefulSetResource) getBrokerIDForPod(ctx context.Context, ordinal int32) (*int32, error) {
-	stsName := r.LastObservedState.GetName()
+	stsName := r.Key().Name
 	ordinalStr := strconv.FormatInt(int64(ordinal), 10)
 	podName := stsName + "-" + ordinalStr
 
@@ -965,7 +971,7 @@ func GetBrokerIDForPodFromPodList(pods *corev1.PodList, podName string) (*int32,
 		}
 		brokerIDStr, ok := pods.Items[i].GetAnnotations()[PodAnnotationNodeIDKey]
 		if !ok {
-			return nil, fmt.Errorf("node-id annotation is not set on pod %s %w", podName, keyNotPresentError)
+			return nil, fmt.Errorf("node-id annotation is not set on pod %s %w", podName, &KeyNotPresentError{Key: PodAnnotationNodeIDKey})
 		}
 		brokerIDint, err := strconv.ParseInt(brokerIDStr, 10, 32)
 		if err != nil {

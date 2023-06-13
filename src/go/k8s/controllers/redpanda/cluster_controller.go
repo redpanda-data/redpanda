@@ -152,6 +152,12 @@ func (r *ClusterReconciler) Reconcile(
 		return ctrl.Result{}, nil
 	}
 
+	if redpandaCluster.Status.CurrentReplicas >= 1 {
+		if err := r.setPodNodeIDAnnotation(ctx, &redpandaCluster, log); err != nil {
+			return ctrl.Result{}, fmt.Errorf("setting pod node_id annotation: %w", err)
+		}
+	}
+
 	redpandaPorts := networking.NewRedpandaPorts(&redpandaCluster)
 	nodeports := collectNodePorts(redpandaPorts)
 	headlessPorts := collectHeadlessPorts(redpandaPorts)
@@ -310,6 +316,7 @@ func (r *ClusterReconciler) Reconcile(
 			return ctrl.Result{RequeueAfter: time.Minute * 1}, nil
 		}
 	}
+
 	// The following should be at the last part as it requires AdminAPI to be running
 	if err := r.setPodNodeIDAnnotation(ctx, &redpandaCluster, log); err != nil {
 		return ctrl.Result{}, fmt.Errorf("setting pod node_id annotation: %w", err)
@@ -537,7 +544,8 @@ func (r *ClusterReconciler) setPodNodeIDAnnotation(
 
 		nodeID, err := r.fetchAdminNodeID(ctx, rp, pod, log)
 		if err != nil {
-			return fmt.Errorf(`cannot fetch node id for "%s" node-id annotation: %w`, pod.Name, err)
+			log.Error(err, `cannot fetch node id for node-id annotation`)
+			continue
 		}
 
 		realNodeIDStr := fmt.Sprintf("%d", nodeID)
