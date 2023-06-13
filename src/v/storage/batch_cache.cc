@@ -28,8 +28,8 @@ namespace storage {
 
 batch_cache::range::range(batch_cache_index& index)
   : _index(index) {
-    auto f = new details::io_fragment(range_size);
-    _arena.append_take_ownership(f);
+    auto f = std::make_unique<details::io_fragment>(range_size);
+    _arena.append_take_ownership(std::move(f));
 }
 
 batch_cache::range::range(

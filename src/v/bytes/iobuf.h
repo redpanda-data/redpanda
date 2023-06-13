@@ -140,7 +140,7 @@ public:
     void append_fragments(iobuf);
 
     /// \brief trims the back, and appends direct.
-    void append_take_ownership(fragment*);
+    void append_take_ownership(std::unique_ptr<fragment>);
     /// prepends the _the buffer_ as iobuf::details::io_fragment::full{}
     void prepend(ss::temporary_buffer<char>);
     /// prepends the arg to this as iobuf::details::io_fragment::full{}
@@ -221,13 +221,13 @@ inline size_t iobuf::last_allocation_size() const {
                           : _frags.back().capacity();
 }
 /// \brief trims the back, and appends direct.
-inline void iobuf::append_take_ownership(fragment* f) {
+inline void iobuf::append_take_ownership(std::unique_ptr<fragment> f) {
     if (!_frags.empty()) {
         _frags.back().trim();
     }
     // NOTE: this _must_ be size and _not_ capacity
     _size += f->size();
-    _frags.push_back(*f);
+    _frags.push_back(*f.release());
 }
 inline void iobuf::prepend_take_ownership(fragment* f) {
     _size += f->size();
@@ -238,8 +238,7 @@ inline void iobuf::create_new_fragment(size_t sz) {
     oncore_debug_verify(_verify_shard);
     auto chunk_max = std::max(sz, last_allocation_size());
     auto asz = details::io_allocation_size::next_allocation_size(chunk_max);
-    auto f = new fragment(asz);
-    append_take_ownership(f);
+    append_take_ownership(std::make_unique<fragment>(asz));
 }
 /// only ensures that a segment of at least reservation is avaible
 /// as an empty details::io_fragment
@@ -318,8 +317,7 @@ inline void iobuf::reserve_memory(size_t reservation) {
         }
     }
     // intrusive list manages the lifetime
-    auto f = new fragment(std::move(b));
-    append_take_ownership(f);
+    append_take_ownership(std::make_unique<fragment>(std::move(b)));
 }
 /// appends the contents of buffer; might pack values into existing space
 inline void iobuf::append(iobuf o) {
@@ -336,8 +334,7 @@ inline void iobuf::append_fragments(iobuf o) {
     oncore_debug_verify(_verify_shard);
     while (!o._frags.empty()) {
         o._frags.pop_front_and_dispose([this](fragment* f) {
-            auto frag = new fragment(f->share());
-            append_take_ownership(frag);
+            append_take_ownership(std::make_unique<fragment>(f->share()));
             details::dispose_io_fragment(f);
         });
     }

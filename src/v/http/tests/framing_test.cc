@@ -78,10 +78,10 @@ public:
         for (size_t fragment_size : fragmentation_hint) {
             ss::temporary_buffer<char> buf(fragment_size);
             std::generate_n(buf.get_write(), fragment_size, std::ref(*this));
-            auto fragm = new details::io_fragment(std::move(buf));
+            auto fragm = std::make_unique<details::io_fragment>(std::move(buf));
             // Make sure that fragmentation is not reduced by memory opt. in
             // iobuf
-            result.append_take_ownership(fragm);
+            result.append_take_ownership(std::move(fragm));
         }
         return result;
     }
