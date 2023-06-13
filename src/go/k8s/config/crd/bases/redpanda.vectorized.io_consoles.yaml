@@ -507,6 +507,11 @@ spec:
                 properties:
                   enabled:
                     type: boolean
+                  useSchemaRegistryCA:
+                    description: Indication on whether to use the schema registry
+                      CA as trust when connecting to the schema registry. If not set,
+                      the public CAs will be used.
+                    type: boolean
                 required:
                 - enabled
                 type: object
@@ -766,6 +771,10 @@ spec:
           status:
             description: ConsoleStatus defines the observed state of Console
             properties:
+              clusterGeneration:
+                description: The generation of the Repanda cluster
+                format: int64
+                type: integer
               configMapRef:
                 description: The ConfigMap used by Console This is used to pass the
                   ConfigMap used to mount in the Deployment Resource since Ensure()

@@ -1,12 +1,18 @@
-apiVersion: batch/v1
-kind: Job
+apiVersion: apps/v1
+kind: Deployment
 metadata:
-  name: create-topic-update-img-external-client-ca
+  name: upd-schema-registry-mtls-console
+  namespace: redpanda-system
 status:
-  conditions:
-    - status: "True"
-      type: Complete
-  succeeded: 1
+  readyReplicas: 1
+
+---
+
+apiVersion: redpanda.vectorized.io/v1alpha1
+kind: Console
+metadata:
+  name: upd-schema-registry-mtls-console
+  namespace: redpanda-system
 
 ---
 
@@ -14,5 +20,6 @@ apiVersion: kuttl.dev/v1beta1
 kind: TestAssert
 collectors:
 - type: pod
-  selector: app.kubernetes.io/name=redpanda
+  selector: app.kubernetes.io/name=redpanda-console
+  namespace: redpanda-system
   tail: -1

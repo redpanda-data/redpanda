@@ -1,7 +1,7 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: produce-msg-update-img-external-client-ca
+  name: call-console-update-img-external-client-ca
   namespace: redpanda-system
 status:
   conditions:
@@ -15,7 +15,6 @@ apiVersion: kuttl.dev/v1beta1
 kind: TestAssert
 collectors:
 - type: pod
-  selector: app.kubernetes.io/name=redpanda
+  selector: app.kubernetes.io/name=redpanda-console
   namespace: redpanda-system
   tail: -1
-

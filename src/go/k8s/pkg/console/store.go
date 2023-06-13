@@ -49,9 +49,9 @@ func NewStore(cl client.Client, scheme *runtime.Scheme) *Store {
 
 // Sync synchronizes watched resources to the store
 func (s *Store) Sync(
-	ctx context.Context, cluster *redpandav1alpha1.Cluster,
+	ctx context.Context, cluster *redpandav1alpha1.Cluster, console *redpandav1alpha1.Console,
 ) error {
-	if err := s.syncSchemaRegistry(ctx, cluster); err != nil {
+	if err := s.syncSchemaRegistry(ctx, cluster, console); err != nil {
 		return err
 	}
 	if err := s.syncKafka(ctx, cluster); err != nil {
@@ -64,7 +64,7 @@ func (s *Store) Sync(
 }
 
 func (s *Store) syncSchemaRegistry(
-	ctx context.Context, cluster *redpandav1alpha1.Cluster,
+	ctx context.Context, cluster *redpandav1alpha1.Cluster, console *redpandav1alpha1.Console,
 ) error {
 	if !cluster.IsSchemaRegistryTLSEnabled() {
 		return nil
@@ -87,7 +87,7 @@ func (s *Store) syncSchemaRegistry(
 	// Only sync CA cert if not using DefaultCaFilePath
 	ca := &SecretTLSCa{
 		NodeSecretRef:  cluster.SchemaRegistryAPITLS().TLS.NodeSecretRef,
-		UsePublicCerts: UsePublicCerts,
+		UsePublicCerts: !console.Spec.SchemaRegistry.UseSchemaRegistryCA,
 	}
 	if ca.useCaCert() {
 		nodeSecretRef := cluster.SchemaRegistryAPITLS().TLS.NodeSecretRef

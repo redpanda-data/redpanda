@@ -1,7 +1,8 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: get-topic-failure-update-img-external-client-ca
+  name: create-topic-update-img-external-client-ca
+  namespace: redpanda-system
 spec:
   template:
     spec:
@@ -18,8 +19,9 @@ spec:
         - -c
         - -ex
         args:
-        - 'curl -vvv -k --sslv2 --http2 -H "Content-Type: application/vnd.kafka.v2+json" https://update-img-external-client-ca-0.update-img-external-client-ca.$POD_NAMESPACE.svc.cluster.local:8082/topics'
+        # Create a topic.
+        - 'rpk topic create my_topic --partitions=3 --replicas=1 --brokers update-img-external-client-ca-0.update-img-external-client-ca.$POD_NAMESPACE.svc.cluster.local:9092'
       restartPolicy: Never
-  backoffLimit: 2
+  backoffLimit: 6
   parallelism: 1
   completions: 1

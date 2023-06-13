@@ -1,0 +1,48 @@
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: upd-schema-registry-secret-selfsigned-issuer
+  namespace: redpanda-system
+spec:
+  selfSigned: {}
+
+---
+
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: upd-schema-registry-secret-root-certificate
+  namespace: redpanda-system
+spec:
+  isCA: true
+  commonName: update-img-external-client-ca-cluster
+  issuerRef:
+    kind: Issuer
+    name: upd-schema-registry-secret-selfsigned-issuer
+  secretName: upd-schema-registry-secret-root-certificate
+
+---
+
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: upd-schema-registry-secret-root-issuer
+  namespace: redpanda-system
+spec:
+  ca:
+    secretName: upd-schema-registry-secret-root-certificate
+
+---
+
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: upd-schema-registry-secret-node-certificate
+  namespace: redpanda-system
+spec:
+  dnsNames:
+    - "update-img-external-client-ca-cluster.redpanda-system.svc.cluster.local"
+  issuerRef:
+    kind: Issuer
+    name: upd-schema-registry-secret-root-issuer
+  secretName: upd-schema-registry-secret-node-certificate

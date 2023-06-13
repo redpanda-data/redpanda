@@ -2,6 +2,7 @@ apiVersion: batch/v1
 kind: Job
 metadata:
   name: get-schema-update-img-external-client-ca
+  namespace: redpanda-system
 spec:
   template:
     spec:
@@ -9,11 +10,11 @@ spec:
         - name: tlscertkey
           secret:
             defaultMode: 420
-            secretName: client-cert-key
+            secretName: upd-mtls-client-cert-key
         - name: tlscacert
           secret:
             defaultMode: 420
-            secretName: update-img-external-client-ca-schema-registry-node
+            secretName: upd-schema-registry-secret-root-certificate
       containers:
         - name: rpk
           image: localhost/redpanda:dev

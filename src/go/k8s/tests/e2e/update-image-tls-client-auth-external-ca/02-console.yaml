@@ -1,0 +1,19 @@
+apiVersion: redpanda.vectorized.io/v1alpha1
+kind: Console
+metadata:
+  name: upd-schema-registry-mtls-console
+  namespace: redpanda-system
+spec:
+  server:
+    listenPort: 8080
+  schema:
+    enabled: true
+    # Use the schema registry CA instead of the public CAs since the certs are self signed.
+    useSchemaRegistryCA: true
+  clusterRef:
+    name: update-img-external-client-ca
+    namespace: redpanda-system
+  deployment:
+    image: vectorized/console:v2.2.4
+  connect:
+    enabled: false
