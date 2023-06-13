@@ -83,6 +83,11 @@ public:
     /// The actual start offset of the log with the delta factored in
     model::offset effective_start_offset() const;
 
+    /// Ensure followers have processed up until the most recent known version
+    /// of the batch representing the start offset
+    ss::future<result<model::offset, std::error_code>>
+    sync_effective_start(model::timeout_clock::duration timeout);
+
 protected:
     ss::future<> apply_snapshot(stm_snapshot_header, iobuf&&) override;
 

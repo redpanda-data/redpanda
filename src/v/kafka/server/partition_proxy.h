@@ -32,6 +32,8 @@ class partition_proxy {
 public:
     struct impl {
         virtual const model::ntp& ntp() const = 0;
+        virtual ss::future<result<model::offset, error_code>>
+          sync_effective_start(model::timeout_clock::duration) = 0;
         virtual model::offset start_offset() const = 0;
         virtual model::offset high_watermark() const = 0;
         virtual checked<model::offset, error_code>
@@ -67,6 +69,11 @@ public:
 
     explicit partition_proxy(std::unique_ptr<impl> impl) noexcept
       : _impl(std::move(impl)) {}
+
+    ss::future<result<model::offset, error_code>> sync_effective_start(
+      model::timeout_clock::duration timeout = std::chrono::seconds(5)) {
+        return _impl->sync_effective_start(timeout);
+    }
 
     model::offset start_offset() const { return _impl->start_offset(); }
 

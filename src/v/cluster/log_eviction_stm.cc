@@ -151,6 +151,23 @@ ss::future<> log_eviction_stm::do_write_raft_snapshot(model::offset index_lb) {
     _last_snapshot_monitor.notify(index_lb);
 }
 
+ss::future<result<model::offset, std::error_code>>
+log_eviction_stm::sync_effective_start(model::timeout_clock::duration timeout) {
+    /// Call this method to ensure followers have processed up until the
+    /// most recent known version of the special batch. This is particularly
+    /// useful to know if the start offset is up to date in the case
+    /// leadership has recently changed for example.
+    auto term = _raft->term();
+    if (!co_await sync(timeout)) {
+        if (term != _raft->term()) {
+            co_return errc::not_leader;
+        } else {
+            co_return errc::timeout;
+        }
+    }
+    co_return effective_start_offset();
+}
+
 model::offset log_eviction_stm::effective_start_offset() const {
     /// The start offset is the max of either the last snapshot index or the
     /// most recent delete records eviciton offset. This is because even after

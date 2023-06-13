@@ -363,17 +363,6 @@ ss::future<error_code> replicated_partition::validate_fetch_offset(
      * receive data.
      */
 
-    // Calculate log end in kafka offset domain
-    std::optional<model::offset> log_end;
-    if (_partition->dirty_offset() >= _partition->start_offset()) {
-        // Translate the raft dirty offset to find the kafka dirty offset.  This
-        // is conditional on dirty offset being ahead of start offset, because
-        // if it isn't, then the log is empty and we do not need to check for
-        // the case of a fetch between hwm and dirty offset.  (Issue #7758)
-        log_end = model::next_offset(
-          _translator->from_log_offset(_partition->dirty_offset()));
-    }
-
     // offset validation logic on follower
     if (reading_from_follower && !_partition->is_leader()) {
         if (fetch_offset < start_offset()) {
@@ -389,42 +378,20 @@ ss::future<error_code> replicated_partition::validate_fetch_offset(
         }
         co_return error_code::none;
     }
-    while (log_end.has_value() && fetch_offset > high_watermark()
-           && fetch_offset <= log_end) {
-        if (model::timeout_clock::now() > deadline) {
-            break;
-        }
-        // retry linearizable barrier to make sure node is still a leader
-        auto ec = co_await linearizable_barrier();
-        if (ec) {
-            /**
-             * when partition is shutting down we may not be able to correctly
-             * validate consumer requested offset. Return
-             * not_leader_for_partition error to force client to retry instead
-             * of out of range error that is forcing consumers to reset their
-             * offset.
-             */
-            if (
-              ec == raft::errc::shutting_down
-              || ec == cluster::errc::shutting_down) {
-                co_return error_code::not_leader_for_partition;
-            }
-            vlog(
-              klog.warn,
-              "error updating partition high watermark with linearizable "
-              "barrier - {}",
-              ec.message());
-            break;
-        }
+
+    // Grab the up to date start offset
+    auto timeout = deadline - model::timeout_clock::now();
+    auto start_offset = co_await sync_effective_start(timeout);
+    if (!start_offset) {
         vlog(
-          klog.debug,
-          "updated partition highwatermark with linearizable barrier. "
-          "start offset: {}, hight watermark: {}",
-          _partition->start_offset(),
-          _partition->high_watermark());
+          klog.warn,
+          "error obtaining latest start offset - {}",
+          start_offset.error());
+        co_return start_offset.error();
     }
 
-    co_return fetch_offset >= start_offset() && fetch_offset <= log_end_offset()
+    co_return fetch_offset >= start_offset.value()
+        && fetch_offset <= log_end_offset()
       ? error_code::none
       : error_code::offset_out_of_range;
 }
