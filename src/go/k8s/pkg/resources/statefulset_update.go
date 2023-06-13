@@ -184,34 +184,24 @@ func (r *StatefulSetResource) rollingUpdate(
 			}
 		}
 
-		headlessServiceWithPort := fmt.Sprintf("%s:%d", r.serviceFQDN,
-			r.pandaCluster.AdminAPIInternal().Port)
-
-		adminURL := url.URL{
-			Scheme: "http",
-			Host:   fmt.Sprintf("%s.%s", pod.Name, headlessServiceWithPort),
-			Path:   "v1/status/ready",
-		}
-
-		r.logger.Info("Verify that Ready endpoint returns HTTP status OK", "pod-name", pod.Name)
-		if err = r.queryRedpandaStatus(ctx, &adminURL); err != nil {
-			return fmt.Errorf("unable to query Redpanda ready status: %w", err)
-		}
-
-		adminURL.Path = "metrics"
-
-		params := url.Values{}
-		if featuregates.MetricsQueryParamName(r.pandaCluster.Spec.Version) {
-			params.Add("__name__", "cluster_partition_under_replicated_replicas*")
-		} else {
-			params.Add("name", "cluster_partition_under_replicated_replicas*")
-		}
-		adminURL.RawQuery = params.Encode()
-
-		if err = r.evaluateUnderReplicatedPartitions(ctx, &adminURL); err != nil {
+		admin, err := r.getAdminAPIClient(ctx)
+		if err != nil {
 			return &RequeueAfterError{
 				RequeueAfter: RequeueDuration,
-				Msg:          fmt.Sprintf("broker reported under replicated partitions: %v", err),
+				Msg:          fmt.Sprintf("error getting admin client: %v", err),
+			}
+		}
+		health, err := admin.GetHealthOverview(ctx)
+		if err != nil {
+			return &RequeueAfterError{
+				RequeueAfter: RequeueDuration,
+				Msg:          fmt.Sprintf("error getting health overview: %v", err),
+			}
+		}
+		if !health.IsHealthy {
+			return &RequeueAfterError{
+				RequeueAfter: RequeueDuration,
+				Msg:          "wait for cluster to become healthy",
 			}
 		}
 	}
@@ -542,45 +532,6 @@ func deleteKubernetesTokenVolumeMounts(obj []byte) ([]byte, error) {
 	}
 
 	return obj, nil
-}
-
-// Temporarily using the status/ready endpoint until we have a specific one for restarting.
-func (r *StatefulSetResource) queryRedpandaStatus(
-	ctx context.Context, adminURL *url.URL,
-) error {
-	client := &http.Client{Timeout: defaultAdminAPITimeout}
-
-	// TODO right now we support TLS only on one listener so if external
-	// connectivity is enabled, TLS is enabled only on external listener. This
-	// will be fixed by https://github.com/redpanda-data/redpanda/issues/1084
-	if r.pandaCluster.AdminAPITLS() != nil &&
-		r.pandaCluster.AdminAPIExternal() == nil {
-		tlsConfig, err := r.adminTLSConfigProvider.GetTLSConfig(ctx, r)
-		if err != nil {
-			return err
-		}
-
-		client.Transport = &http.Transport{
-			TLSClientConfig: tlsConfig,
-		}
-		adminURL.Scheme = "https"
-	}
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, adminURL.String(), http.NoBody)
-	if err != nil {
-		return err
-	}
-	resp, err := client.Do(req)
-	if err != nil {
-		return err
-	}
-	resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return errRedpandaNotReady
-	}
-
-	return nil
 }
 
 // Temporarily using the status/ready endpoint until we have a specific one for restarting.
