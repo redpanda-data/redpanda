@@ -218,7 +218,7 @@ pub struct MetadataGap {
     pub next_seg_ts: Timestamp,
 }
 
-#[derive(Serialize, Clone)]
+#[derive(Serialize, Clone, Default)]
 pub struct Anomalies {
     /// Segment objects not mentioned in their manifest
     pub segments_outside_manifest: HashSet<String>,
@@ -406,25 +406,6 @@ pub enum AnomalyStatus {
     Corrupt,
 }
 
-impl Anomalies {
-    fn new() -> Anomalies {
-        Self {
-            segments_outside_manifest: HashSet::new(),
-            archive_manifests_outside_manifest: HashSet::new(),
-            malformed_manifests: HashSet::new(),
-            malformed_lifecycle_markers: HashSet::new(),
-            malformed_topic_manifests: HashSet::new(),
-            ntpr_no_manifest: HashSet::new(),
-            ntr_no_topic_manifest: HashSet::new(),
-            unknown_keys: HashSet::new(),
-            missing_segments: HashSet::new(),
-            ntpr_bad_deltas: HashSet::new(),
-            ntpr_overlap_offsets: HashSet::new(),
-            metadata_offset_gaps: HashMap::new(),
-        }
-    }
-}
-
 #[derive(Clone, Serialize, Deserialize)]
 pub struct PartitionMetadata {
     // This field is not logically optional for a well-formed partition's metadata, but is
@@ -562,7 +543,7 @@ impl BucketReader {
             partition_manifests: saved_state.partition_manifests,
             topic_manifests: saved_state.topic_manifests,
             lifecycle_markers: saved_state.lifecycle_markers,
-            anomalies: Anomalies::new(),
+            anomalies: Default::default(),
             client,
         })
     }
@@ -609,7 +590,7 @@ impl BucketReader {
             partition_manifests: HashMap::new(),
             topic_manifests: HashMap::new(),
             lifecycle_markers: HashMap::new(),
-            anomalies: Anomalies::new(),
+            anomalies: Default::default(),
             client,
         }
     }
@@ -759,7 +740,7 @@ impl BucketReader {
 
         MetadataSummary {
             anomalies: self.anomalies.clone(),
-            partitions: partitions,
+            partitions,
         }
     }
 
@@ -861,7 +842,7 @@ impl BucketReader {
 
     pub async fn analyze_metadata(&mut self, filter: &NTPFilter) -> Result<(), BucketReaderError> {
         // In case caller calls it twice
-        self.anomalies = Anomalies::new();
+        self.anomalies = Default::default();
 
         self.filter_old_revisions();
 
@@ -919,7 +900,7 @@ impl BucketReader {
             //   in the manifest, or whichever appears to come from a newer term.
         }
 
-        let mut new_anomalies: Anomalies = Anomalies::new();
+        let mut new_anomalies: Anomalies = Default::default();
         for (ntpr, partition_metadata) in &self.partition_manifests {
             let mut raw_objects = self.partitions.get_mut(&ntpr);
 
@@ -996,7 +977,7 @@ impl BucketReader {
         raw_objects: &mut Option<&mut PartitionObjects>,
         discovered: &mut Vec<ObjectMeta>
     ) -> Result<Anomalies, BucketReaderError> {
-        let mut anomalies: Anomalies = Anomalies::new();
+        let mut anomalies: Anomalies = Default::default();
 
         // For all segments in the manifest, check they were found in the bucket
         debug!(
@@ -1713,8 +1694,8 @@ impl BucketReader {
             let ntpr = NTPR {
                 ntp: NTP {
                     namespace: ns,
-                    topic: topic,
-                    partition_id: partition_id,
+                    topic,
+                    partition_id,
                 },
                 revision_id: partition_revision,
             };
@@ -1750,8 +1731,8 @@ impl BucketReader {
             let ntpr = NTPR {
                 ntp: NTP {
                     namespace: ns,
-                    topic: topic,
-                    partition_id: partition_id,
+                    topic,
+                    partition_id,
                 },
                 revision_id: partition_revision,
             };
