@@ -24,6 +24,7 @@
 #include "pandaproxy/schema_registry/errors.h"
 #include "pandaproxy/schema_registry/protobuf.h"
 #include "pandaproxy/schema_registry/schema_id_cache.h"
+#include "pandaproxy/schema_registry/schema_id_validation.h"
 #include "pandaproxy/schema_registry/seq_writer.h"
 #include "pandaproxy/schema_registry/sharded_store.h"
 #include "pandaproxy/schema_registry/subject_name_strategy.h"
@@ -138,6 +139,22 @@ ss::future<std::optional<ss::sstring>> get_record_name(
     co_return std::nullopt;
 }
 
+template<typename T>
+T combine(
+  pandaproxy::schema_registry::schema_id_validation_mode mode,
+  std::optional<T> const& redpanda,
+  std::optional<T> const& compat,
+  T dflt) {
+    switch (mode) {
+    case pandaproxy::schema_registry::schema_id_validation_mode::none:
+        return dflt;
+    case pandaproxy::schema_registry::schema_id_validation_mode::redpanda:
+        return redpanda.value_or(dflt);
+    case pandaproxy::schema_registry::schema_id_validation_mode::compat:
+        return redpanda.value_or(compat.value_or(dflt));
+    }
+}
+
 } // namespace
 
 class schema_id_validator::impl {
@@ -149,31 +166,30 @@ public:
     impl(
       const std::unique_ptr<api>& api,
       model::topic topic,
-      const cluster::topic_properties& props)
+      const cluster::topic_properties& props,
+      pandaproxy::schema_registry::schema_id_validation_mode mode)
       : _api{api}
       , _topic{std::move(topic)}
-      , _record_key_schema_id_validation{props.record_key_schema_id_validation
-                                           .value_or(
-                                             props
-                                               .record_key_schema_id_validation_compat
-                                               .value_or(false))}
-      , _record_key_subject_name_strategy{props.record_key_subject_name_strategy
-                                            .value_or(
-                                              props
-                                                .record_key_subject_name_strategy_compat
-                                                .value_or(
-                                                  subject_name_strategy::
-                                                    topic_name))}
-      , _record_value_schema_id_validation{props
-                                             .record_value_schema_id_validation
-                                             .value_or(
-                                               props
-                                                 .record_value_schema_id_validation_compat
-                                                 .value_or(false))}
-      , _record_value_subject_name_strategy{
-          props.record_value_subject_name_strategy.value_or(
-            props.record_value_subject_name_strategy_compat.value_or(
-              subject_name_strategy::topic_name))} {}
+      , _record_key_schema_id_validation{combine(
+          mode,
+          props.record_key_schema_id_validation,
+          props.record_key_schema_id_validation_compat,
+          false)}
+      , _record_key_subject_name_strategy{combine(
+          mode,
+          props.record_key_subject_name_strategy,
+          props.record_key_subject_name_strategy_compat,
+          subject_name_strategy::topic_name)}
+      , _record_value_schema_id_validation{combine(
+          mode,
+          props.record_value_schema_id_validation,
+          props.record_value_schema_id_validation_compat,
+          false)}
+      , _record_value_subject_name_strategy{combine(
+          mode,
+          props.record_value_subject_name_strategy,
+          props.record_value_subject_name_strategy_compat,
+          subject_name_strategy::topic_name)} {}
 
     auto validate_field(
       field field, model::topic topic, subject_name_strategy sns, iobuf buf)
@@ -357,8 +373,9 @@ public:
             // If Schema Registry is not enabled, the safe default is to reject
             co_return kafka::error_code::invalid_record;
         }
-        if (!_api->_controller->get_feature_table().local().is_active(
-              features::feature::schema_id_validation)) {
+        if (
+          config::shard_local_cfg().enable_schema_id_validation()
+          == pandaproxy::schema_registry::schema_id_validation_mode::none) {
             co_return std::move(rbr);
         }
 
@@ -412,26 +429,36 @@ private:
 schema_id_validator::schema_id_validator(
   const std::unique_ptr<api>& api,
   const model::topic& topic,
-  const cluster::topic_properties& props)
-  : _impl{std::make_unique<impl>(api, topic, props)} {}
+  const cluster::topic_properties& props,
+  pandaproxy::schema_registry::schema_id_validation_mode mode)
+  : _impl{std::make_unique<impl>(api, topic, props, mode)} {}
 
 schema_id_validator::schema_id_validator(schema_id_validator&&) noexcept
   = default;
 schema_id_validator::~schema_id_validator() noexcept = default;
 
-bool should_validate_schema_id(const cluster::topic_properties& props) {
-    return props.record_key_schema_id_validation.value_or(
-             props.record_key_schema_id_validation_compat.value_or(false))
-           || props.record_value_schema_id_validation.value_or(
-             props.record_value_schema_id_validation_compat.value_or(false));
+bool should_validate_schema_id(
+  const cluster::topic_properties& props,
+  pandaproxy::schema_registry::schema_id_validation_mode mode) {
+    return combine(
+             mode,
+             props.record_key_schema_id_validation,
+             props.record_key_schema_id_validation_compat,
+             false)
+           || combine(
+             mode,
+             props.record_value_schema_id_validation,
+             props.record_value_schema_id_validation_compat,
+             false);
 }
 
 std::optional<schema_id_validator> maybe_make_schema_id_validator(
   const std::unique_ptr<api>& api,
   const model::topic& topic,
   const cluster::topic_properties& props) {
-    return api != nullptr && should_validate_schema_id(props)
-             ? std::make_optional<schema_id_validator>(api, topic, props)
+    auto mode = config::shard_local_cfg().enable_schema_id_validation();
+    return api != nullptr && should_validate_schema_id(props, mode)
+             ? std::make_optional<schema_id_validator>(api, topic, props, mode)
              : std::nullopt;
 }
 

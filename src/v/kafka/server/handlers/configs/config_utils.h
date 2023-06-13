@@ -20,6 +20,7 @@
 #include "kafka/server/request_context.h"
 #include "kafka/types.h"
 #include "outcome.h"
+#include "pandaproxy/schema_registry/schema_id_validation.h"
 #include "pandaproxy/schema_registry/subject_name_strategy.h"
 #include "security/acl.h"
 
@@ -397,33 +398,42 @@ public:
           decltype(&props.record_key_schema_id_validation),
           decltype(&props.record_key_subject_name_strategy)>;
 
-        auto prop
-          = string_switch<std::optional<property_t>>(cfg.name)
-              .match(
-                topic_property_record_key_schema_id_validation,
-                &props.record_key_schema_id_validation)
+        auto matcher = string_switch<std::optional<property_t>>(cfg.name);
+        switch (config::shard_local_cfg().enable_schema_id_validation()) {
+        case pandaproxy::schema_registry::schema_id_validation_mode::compat:
+            matcher
               .match(
                 topic_property_record_key_schema_id_validation_compat,
                 &props.record_key_schema_id_validation_compat)
               .match(
-                topic_property_record_key_subject_name_strategy,
-                &props.record_key_subject_name_strategy)
-              .match(
                 topic_property_record_key_subject_name_strategy_compat,
                 &props.record_key_subject_name_strategy_compat)
-              .match(
-                topic_property_record_value_schema_id_validation,
-                &props.record_value_schema_id_validation)
               .match(
                 topic_property_record_value_schema_id_validation_compat,
                 &props.record_value_schema_id_validation_compat)
               .match(
-                topic_property_record_value_subject_name_strategy,
-                &props.record_value_subject_name_strategy)
-              .match(
                 topic_property_record_value_subject_name_strategy_compat,
-                &props.record_value_subject_name_strategy_compat)
-              .default_match(std::nullopt);
+                &props.record_value_subject_name_strategy_compat);
+            [[fallthrough]];
+        case pandaproxy::schema_registry::schema_id_validation_mode::redpanda:
+            matcher
+              .match(
+                topic_property_record_key_schema_id_validation,
+                &props.record_key_schema_id_validation)
+              .match(
+                topic_property_record_key_subject_name_strategy,
+                &props.record_key_subject_name_strategy)
+              .match(
+                topic_property_record_value_schema_id_validation,
+                &props.record_value_schema_id_validation)
+              .match(
+                topic_property_record_value_subject_name_strategy,
+                &props.record_value_subject_name_strategy);
+            [[fallthrough]];
+        case pandaproxy::schema_registry::schema_id_validation_mode::none:
+            break;
+        }
+        auto prop = matcher.default_match(std::nullopt);
         if (prop.has_value()) {
             ss::visit(
               prop.value(), [&cfg, op](auto& p) { apply(*p, cfg.value, op); });

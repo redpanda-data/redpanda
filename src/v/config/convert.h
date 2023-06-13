@@ -15,6 +15,7 @@
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/timestamp.h"
+#include "pandaproxy/schema_registry/schema_id_validation.h"
 #include "pandaproxy/schema_registry/subject_name_strategy.h"
 #include "utils/string_switch.h"
 
@@ -465,6 +466,35 @@ struct convert<pandaproxy::schema_registry::subject_name_strategy> {
                 .match(
                   to_string_view(type::topic_record_name),
                   type::topic_record_name);
+
+        return true;
+    }
+};
+
+template<>
+struct convert<pandaproxy::schema_registry::schema_id_validation_mode> {
+    using type = pandaproxy::schema_registry::schema_id_validation_mode;
+
+    static constexpr auto acceptable_values = std::to_array(
+      {to_string_view(type::none),
+       to_string_view(type::redpanda),
+       to_string_view(type::compat)});
+
+    static Node encode(const type& rhs) { return Node(fmt::format("{}", rhs)); }
+
+    static bool decode(const Node& node, type& rhs) {
+        auto value = node.as<std::string>();
+
+        if (
+          std::find(acceptable_values.begin(), acceptable_values.end(), value)
+          == acceptable_values.end()) {
+            return false;
+        }
+
+        rhs = string_switch<type>(std::string_view{value})
+                .match(to_string_view(type::none), type::none)
+                .match(to_string_view(type::redpanda), type::redpanda)
+                .match(to_string_view(type::compat), type::compat);
 
         return true;
     }

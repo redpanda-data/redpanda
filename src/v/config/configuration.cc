@@ -14,6 +14,7 @@
 #include "config/node_config.h"
 #include "config/validators.h"
 #include "model/metadata.h"
+#include "pandaproxy/schema_registry/schema_id_validation.h"
 #include "security/gssapi_principal_mapper.h"
 #include "security/mtls.h"
 #include "storage/chunk_cache.h"
@@ -2101,6 +2102,15 @@ configuration::configuration()
       "that unsafe strings are permitted",
       {.needs_restart = needs_restart::no, .visibility = visibility::user},
       300s)
+  , enable_schema_id_validation(
+      *this,
+      "enable_schema_id_validation",
+      "Enable Server Side Schema ID Validation.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::user},
+      pandaproxy::schema_registry::schema_id_validation_mode::none,
+      {pandaproxy::schema_registry::schema_id_validation_mode::none,
+       pandaproxy::schema_registry::schema_id_validation_mode::redpanda,
+       pandaproxy::schema_registry::schema_id_validation_mode::compat})
   , kafka_schema_id_validation_cache_capacity(
       *this,
       "kafka_schema_id_validation_cache_capacity",

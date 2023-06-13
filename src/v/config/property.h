@@ -15,6 +15,7 @@
 #include "json/stringbuffer.h"
 #include "json/writer.h"
 #include "oncore.h"
+#include "pandaproxy/schema_registry/schema_id_validation.h"
 #include "pandaproxy/schema_registry/subject_name_strategy.h"
 #include "reflection/type_traits.h"
 #include "utils/intrusive_list_helpers.h"
@@ -620,6 +621,11 @@ consteval std::string_view property_type_name() {
                            type,
                            pandaproxy::schema_registry::
                              subject_name_strategy>) {
+        return "string";
+    } else if constexpr (std::is_same_v<
+                           type,
+                           pandaproxy::schema_registry::
+                             schema_id_validation_mode>) {
         return "string";
     } else {
         static_assert(dependent_false<T>::value, "Type name not defined");

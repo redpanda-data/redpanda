@@ -557,6 +557,9 @@ class ClusterConfigTest(RedpandaTest, ClusterConfigHelpersMixin):
         # Don't enable coproc: it generates log errors if its companion service isn't running
         exclude_settings.add('enable_coproc')
 
+        # Don't enable schema id validation: the interdepedencies are too complex and are tested elsewhere.
+        exclude_settings.add('enable_schema_id_validation')
+
         initial_config = self.admin.get_cluster_config()
 
         for name, p in schema_properties.items():

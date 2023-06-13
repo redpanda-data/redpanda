@@ -16,6 +16,7 @@
 #include "model/record_batch_reader.h"
 #include "outcome.h"
 #include "pandaproxy/schema_registry/api.h"
+#include "pandaproxy/schema_registry/schema_id_validation.h"
 #include "seastarx.h"
 
 #include <seastar/core/future.hh>
@@ -28,7 +29,8 @@ public:
     schema_id_validator(
       const std::unique_ptr<api>& api,
       const model::topic& topic,
-      const cluster::topic_properties& props);
+      const cluster::topic_properties& props,
+      pandaproxy::schema_registry::schema_id_validation_mode mode);
     schema_id_validator(schema_id_validator&&) noexcept;
     schema_id_validator(const schema_id_validator&) = delete;
     schema_id_validator& operator=(schema_id_validator&&) = delete;
