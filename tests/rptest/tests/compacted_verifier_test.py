@@ -45,6 +45,10 @@ class CompactedVerifierTest(RedpandaTest):
         verifier.remote_start_consumer()
         verifier.remote_wait_consumer()
 
+    @property
+    def tx100_timeout_s(self):
+        return 60 if self.debug_mode else 30
+
     @cluster(num_nodes=4)
     def test_tx(self):
         verifier = CompactedVerifier(self.test_context, self.redpanda,
@@ -54,7 +58,7 @@ class CompactedVerifierTest(RedpandaTest):
         verifier.remote_start_producer(self.redpanda.brokers(), self.topic,
                                        self.partition_count)
         self.logger.info(f"Waiting for 100 writes")
-        verifier.ensure_progress(100, 30)
+        verifier.ensure_progress(100, self.tx100_timeout_s)
         self.logger.info(f"Done")
         verifier.remote_stop_producer()
         verifier.remote_wait_producer()
@@ -70,7 +74,7 @@ class CompactedVerifierTest(RedpandaTest):
         verifier.remote_start_producer(self.redpanda.brokers(), self.topic,
                                        self.partition_count)
         self.logger.info(f"Waiting for 100 writes")
-        verifier.ensure_progress(100, 30)
+        verifier.ensure_progress(100, self.tx100_timeout_s)
         self.logger.info(f"Done")
         verifier.remote_stop_producer()
         verifier.remote_wait_producer()
