@@ -2371,7 +2371,8 @@ class RedpandaService(RedpandaServiceBase):
         assert node in self.nodes, f"where node is {node.name}"
         return node.account.monitor_log(RedpandaService.STDOUT_STDERR_CAPTURE)
 
-    def raise_on_crash(self):
+    def raise_on_crash(self,
+                       log_allow_list: list[str | re.Pattern] | None = None):
         """
         Check if any redpanda nodes are unexpectedly not running,
         or if any logs contain segfaults or assertions.
@@ -2380,6 +2381,20 @@ class RedpandaService(RedpandaServiceBase):
         error message, rather than having failures on "timeouts" which
         are actually redpanda crashes.
         """
+
+        allow_list = []
+        if log_allow_list:
+            for a in log_allow_list:
+                if not isinstance(a, re.Pattern):
+                    a = re.compile(a)
+                allow_list.append(a)
+
+        def is_allowed_log_line(line: str) -> bool:
+            for a in allow_list:
+                if a.search(line) is not None:
+                    return True
+            return False
+
         crashes = []
         for node in self.nodes:
             self.logger.info(
@@ -2387,11 +2402,16 @@ class RedpandaService(RedpandaServiceBase):
 
             crash_log = None
             for line in node.account.ssh_capture(
-                    f"grep -e SEGV -e Segmentation\ fault -e [Aa]ssert -e Sanitizer {RedpandaService.STDOUT_STDERR_CAPTURE} || true",
+                    f"grep -e SEGV -e Segmentation\\ fault -e [Aa]ssert -e Sanitizer {RedpandaService.STDOUT_STDERR_CAPTURE} || true",
                     timeout_sec=30):
                 if 'SEGV' in line and ('x-amz-id' in line
                                        or 'x-amz-request' in line):
                     # We log long encoded AWS headers that occasionally have 'SEGV' in them by chance
+                    continue
+
+                if is_allowed_log_line(line):
+                    self.logger.warn(
+                        f"Ignoring allow-listed log line '{line}'")
                     continue
 
                 if "No such file or directory" not in line:
@@ -2399,7 +2419,7 @@ class RedpandaService(RedpandaServiceBase):
                     break
 
             if crash_log:
-                crashes.append((node, line))
+                crashes.append((node, crash_log))
 
         if not crashes:
             # Even if there is no assertion or segfault, look for unexpectedly
