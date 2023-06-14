@@ -623,7 +623,7 @@ class ShadowIndexingManyPartitionsTest(PreallocNodesTest):
                                        self.redpanda,
                                        self.topic,
                                        msg_size=1024,
-                                       msg_count=1000 * 1000,
+                                       msg_count=10 * 1000 * 1000,
                                        custom_node=self.preallocated_nodes)
         producer.start()
         try:
@@ -655,7 +655,7 @@ class ShadowIndexingManyPartitionsTest(PreallocNodesTest):
                                        self.redpanda,
                                        self.topic,
                                        msg_size=1024,
-                                       msg_count=1000 * 1000,
+                                       msg_count=10 * 1000 * 1000,
                                        custom_node=self.preallocated_nodes)
         producer.start()
         try:
