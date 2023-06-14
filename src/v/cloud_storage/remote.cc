@@ -273,6 +273,9 @@ ss::future<download_result> remote::do_download_manifest(
                 case manifest_type::cluster_metadata:
                     _probe.cluster_metadata_manifest_download();
                     break;
+                case manifest_type::spillover:
+                    _probe.spillover_manifest_download();
+                    break;
                 }
                 co_return download_result::success;
             } catch (...) {
@@ -354,7 +357,11 @@ ss::future<upload_result> remote::upload_manifest(
           bucket, path, size, std::move(is), tags, fib.get_timeout());
 
         if (res) {
-            vlog(ctxlog.debug, "Successfuly uploaded manifest to {}", path);
+            vlog(
+              ctxlog.debug,
+              "Successfuly uploaded {} manifest to {}",
+              manifest.get_manifest_type(),
+              path);
             switch (manifest.get_manifest_type()) {
             case manifest_type::partition:
                 _probe.partition_manifest_upload();
@@ -367,6 +374,9 @@ ss::future<upload_result> remote::upload_manifest(
                 break;
             case manifest_type::cluster_metadata:
                 _probe.cluster_metadata_manifest_upload();
+                break;
+            case manifest_type::spillover:
+                _probe.spillover_manifest_upload();
                 break;
             }
             _probe.register_upload_size(size);

@@ -122,6 +122,14 @@ remote_probe::remote_probe(
               "failed_index_downloads",
               [this] { return get_failed_index_downloads(); },
               sm::description("Number of failed segment index downloads")),
+            sm::make_counter(
+              "spillover_manifest_uploads",
+              [this] { return get_spillover_manifest_uploads(); },
+              sm::description("Number of spillover manifest (re)uploads")),
+            sm::make_counter(
+              "spillover_manifest_downloads",
+              [this] { return get_spillover_manifest_downloads(); },
+              sm::description("Number of spillover manifest downloads")),
           });
     }
 
@@ -178,6 +186,12 @@ remote_probe::remote_probe(
               "segment_index_uploads_total",
               [this] { return get_index_uploads(); },
               sm::description("Successful segment index uploads"),
+              {})
+              .aggregate({sm::shard_label}),
+            sm::make_counter(
+              "spillover_manifest_uploads_total",
+              [this] { return get_spillover_manifest_uploads(); },
+              sm::description("Successful spillover manifest uploads"),
               {})
               .aggregate({sm::shard_label}),
           });

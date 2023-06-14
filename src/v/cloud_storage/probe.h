@@ -59,12 +59,28 @@ public:
         return _cnt_partition_manifest_uploads;
     }
 
+    /// Register manifest (re)upload
+    void spillover_manifest_upload() { _cnt_spillover_manifest_uploads++; }
+
+    /// Get manifest (re)upload
+    uint64_t get_spillover_manifest_uploads() const {
+        return _cnt_spillover_manifest_uploads;
+    }
+
     /// Register manifest download
     void partition_manifest_download() { _cnt_partition_manifest_downloads++; }
 
     /// Get manifest download
     uint64_t get_partition_manifest_downloads() const {
         return _cnt_partition_manifest_downloads;
+    }
+
+    /// Register spillover manifest download
+    void spillover_manifest_download() { _cnt_spillover_manifest_downloads++; }
+
+    /// Get manifest download
+    uint64_t get_spillover_manifest_downloads() const {
+        return _cnt_spillover_manifest_downloads;
     }
 
     void cluster_metadata_manifest_upload() {
@@ -240,6 +256,10 @@ private:
     uint64_t _cnt_failed_index_uploads{0};
     /// Number of failed index downloads
     uint64_t _cnt_failed_index_downloads{0};
+    /// Number of spillover manifest uploads
+    uint64_t _cnt_spillover_manifest_uploads{0};
+    /// Number of spillover manifest downloads
+    uint64_t _cnt_spillover_manifest_downloads{0};
 
     ss::metrics::metric_groups _metrics;
     ss::metrics::metric_groups _public_metrics;

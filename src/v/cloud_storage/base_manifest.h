@@ -28,7 +28,10 @@ enum class manifest_type {
     partition,
     tx_range,
     cluster_metadata,
+    spillover,
 };
+
+std::ostream& operator<<(std::ostream& s, manifest_type t);
 
 enum class manifest_format {
     json,

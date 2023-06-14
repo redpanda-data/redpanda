@@ -13,4 +13,26 @@
 namespace cloud_storage {
 
 base_manifest::~base_manifest() = default;
+
+std::ostream& operator<<(std::ostream& s, manifest_type t) {
+    switch (t) {
+    case manifest_type::topic:
+        s << "topic";
+        break;
+    case manifest_type::partition:
+        s << "partition";
+        break;
+    case manifest_type::tx_range:
+        s << "tx-range";
+        break;
+    case manifest_type::cluster_metadata:
+        s << "cluster-metadata";
+        break;
+    case manifest_type::spillover:
+        s << "spillover";
+        break;
+    }
+    return s;
+}
+
 } // namespace cloud_storage
