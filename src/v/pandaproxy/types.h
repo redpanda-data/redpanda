@@ -54,11 +54,13 @@ struct timestamped_user {
 struct credential_t {
     ss::sstring name;
     ss::sstring pass;
+    ss::sstring sasl_mechanism;
 
     credential_t() = default;
-    credential_t(ss::sstring n, ss::sstring p)
+    credential_t(ss::sstring n, ss::sstring p, ss::sstring sasl_mechanism)
       : name{std::move(n)}
-      , pass{std::move(p)} {}
+      , pass{std::move(p)}
+      , sasl_mechanism{std::move(sasl_mechanism)} {}
 };
 
 } // namespace pandaproxy
