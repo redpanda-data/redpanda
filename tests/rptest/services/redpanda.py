@@ -65,8 +65,6 @@ Partition = collections.namedtuple('Partition',
 MetricSample = collections.namedtuple(
     'MetricSample', ['family', 'sample', 'node', 'value', 'labels'])
 
-CpuMetric = collections.namedtuple('CpuMetric', ['shard_samples', 'timestamp'])
-
 SaslCredentials = collections.namedtuple("SaslCredentials",
                                          ["username", "password", "algorithm"])
 # Map of path -> (checksum, size)
@@ -878,7 +876,7 @@ class RedpandaServiceBase(Service):
                             == MetricsEndpoint.METRICS else "/public_metrics")
         url = f"http://{node.account.hostname}:9644{metrics_endpoint}"
         resp = requests.get(url, timeout=10)
-        assert resp.status_code == 200, f"Expected successful HTTP response: {resp.status_code}"
+        assert resp.status_code == 200
         return text_string_to_metric_families(resp.text)
 
     def metric_sum(self,
@@ -985,6 +983,8 @@ class RedpandaServiceBase(Service):
     def _for_nodes(self, nodes, cb: callable, *, parallel: bool) -> list:
         if not parallel:
             # Trivial case: just loop and call
+            for n in nodes:
+                cb(n)
             return list(map(cb, nodes))
 
         n_workers = len(nodes)
@@ -1950,24 +1950,21 @@ class RedpandaService(RedpandaServiceBase):
 
         node.account.ssh(cmd)
 
-    def _check_node(self, node):
-        pid = self.redpanda_pid(node)
-        if not pid:
-            self.logger.warn(f"No redpanda PIDs found on {node.name}")
-            return False
-
-        if not node.account.exists(f"/proc/{pid}"):
-            self.logger.warn(f"PID {pid} (node {node.name}) dead")
-            return False
-
-        # fall through
-        return True
-
     def all_up(self):
-        return all(
-            self._for_nodes(self._started,
-                            lambda n: self._check_node(n),
-                            parallel=True))
+        def check_node(node):
+            pid = self.redpanda_pid(node)
+            if not pid:
+                self.logger.warn(f"No redpanda PIDs found on {node.name}")
+                return False
+
+            if not node.account.exists(f"/proc/{pid}"):
+                self.logger.warn(f"PID {pid} (node {node.name}) dead")
+                return False
+
+            # fall through
+            return True
+
+        return all(self._for_nodes(self._started, check_node, parallel=True))
 
     def wait_until(self, fn, timeout_sec, backoff_sec, err_msg=None):
         """
@@ -3716,70 +3713,6 @@ class RedpandaService(RedpandaServiceBase):
             return sum(s.value for s in samples.samples)
         else:
             return None
-
-    def assert_cpu_not_busy(self):
-        try:
-            self._assert_cluster_cpu_utilization_over_period(
-                period_seconds=1, max_utilization=0.50)
-        except AssertionError as e:
-            # Fallback to a larger window if something like compaction was running.
-            self.logger.warn(
-                f">50% CPU utilization over 1 second window, falling back to a 5 second sample: {e}"
-            )
-            self._assert_cluster_cpu_utilization_over_period(
-                period_seconds=5, max_utilization=0.50)
-
-    def _assert_cluster_cpu_utilization_over_period(self, period_seconds: int,
-                                                    max_utilization: float):
-        # Ignore any nodes that were killed during a test run
-        nodes = [n for n in self.started_nodes() if self._check_node(n)]
-        initial_node_samples = self._for_nodes(
-            nodes, lambda n: self._cpu_busy_seconds_sample(n), parallel=True)
-        time.sleep(period_seconds)
-        node_samples = self._for_nodes(
-            nodes, lambda n: self._cpu_busy_seconds_sample(n), parallel=True)
-        for (start, end, node) in zip(initial_node_samples,
-                                      node_samples,
-                                      nodes,
-                                      strict=True):
-            for (start_sample, end_sample) in zip(start.shard_samples,
-                                                  end.shard_samples,
-                                                  strict=True):
-                self._assert_cpu_utilization(node,
-                                             start_sample,
-                                             start.timestamp.value,
-                                             end_sample,
-                                             end.timestamp.value,
-                                             max_utilization=max_utilization)
-
-    def _assert_cpu_utilization(self, node, start_sample, start_time,
-                                end_sample, end_time, max_utilization: float):
-        actual_period = end_time - start_time
-        actual_utilization = (end_sample.value -
-                              start_sample.value) / actual_period
-        shard_id = start_sample.labels["shard"]
-        assert actual_utilization < max_utilization, f"Node: {node.name} shard: {shard_id} cpu utilization too high, actual: {actual_utilization}, expected: {max_utilization}"
-
-    def _cpu_busy_seconds_sample(self, n) -> CpuMetric:
-        """
-        Extract all the cpu utilization for a node, sorted by shard.
-
-        Also includes a timestamp of the process' uptime as a way to 
-        accurately diff two samples.
-        """
-        all_metrics = self.metrics(
-            n, metrics_endpoint=MetricsEndpoint.PUBLIC_METRICS)
-        cpu_busy_seconds_metrics = []
-        process_uptime = None
-        for metric in all_metrics:
-            if metric.name == "redpanda_cpu_busy_seconds_total":
-                cpu_busy_seconds_metrics = sorted(
-                    metric.samples, key=lambda s: s.labels["shard"])
-            elif metric.name == "redpanda_application_uptime_seconds_total":
-                process_uptime = metric
-
-        assert cpu_busy_seconds_metrics and process_uptime, "Unable to find metric 'redpanda_cpu_busy_seconds_total' and 'redpanda_application_uptime_seconds_total'"
-        return CpuMetric(cpu_busy_seconds_metrics, process_uptime.samples[0])
 
 
 def make_redpanda_service(context, num_brokers, **kwargs):

@@ -6,7 +6,6 @@
 # As of the Change Date specified in that file, in accordance with
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
-import os
 
 from ducktape.tests.test import Test
 from rptest.services.cluster import cluster
@@ -20,15 +19,6 @@ class SimpleK8sTest(Test):
         """
         super(SimpleK8sTest, self).__init__(test_context)
         self.redpanda = RedpandaServiceK8s(test_context, 1)
-
-    @property
-    def debug_mode(self):
-        """
-        Useful for tests that want to change behaviour when running on
-        the much slower debug builds of redpanda, which generally cannot
-        keep up with significant quantities of data or partition counts.
-        """
-        return os.environ.get('BUILD_TYPE', None) == 'debug'
 
     @cluster(num_nodes=1, check_allowed_error_logs=False)
     def test_k8s(self):

@@ -528,8 +528,7 @@ class ClusterConfigTest(RedpandaTest, ClusterConfigHelpersMixin):
                 # Should not succeed!
                 assert False
 
-    # Disable cpu check because this test disables metrics, which that check needs
-    @cluster(num_nodes=3, check_cpu_idle=False)
+    @cluster(num_nodes=3)
     def test_valid_settings(self):
         """
         Bulk exercise of all config settings & the schema endpoint:
