@@ -1454,6 +1454,18 @@ configuration::configuration()
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       std::nullopt,
       {.min = 4_KiB, .max = 4_MiB})
+  , cloud_storage_spillover_manifest_max_segments(
+      *this,
+      "cloud_storage_spillover_manifest_max_segments",
+      "Maximum number of elements in the spillover manifest that can be "
+      "offloaded to the cloud storage. This property is similar to "
+      "'cloud_storage_spillover_manifest_size' but "
+      "it triggers spillover based on number of segments instead of the size "
+      "of the manifest in bytes. The property exists to simplify testing and "
+      "shouldn't be set in the production "
+      "environment",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      std::nullopt)
   , cloud_storage_manifest_cache_size(
       *this,
       "cloud_storage_manifest_cache_size",
