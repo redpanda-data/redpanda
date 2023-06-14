@@ -140,7 +140,7 @@ private:
     size_t _bytes_flush_pending{0};
     ssx::semaphore _concurrent_flushes;
     ss::lw_shared_ptr<chunk> _head;
-    ss::lw_shared_ptr<ssx::semaphore> _prev_head_write;
+    ss::lw_shared_ptr<ssx::semaphore> _pending_head_write;
 
     struct flush_op {
         explicit flush_op(size_t offset)
