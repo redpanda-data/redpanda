@@ -43,9 +43,11 @@ public:
     request_auth_result(
       security::credential_user username,
       security::credential_password password,
+      ss::sstring sasl_mechanism,
       superuser is_superuser)
       : _username(std::move(username))
       , _password(std::move(password))
+      , _sasl_mechanism(std::move(sasl_mechanism))
       , _authenticated(true)
       , _superuser(is_superuser){};
 
@@ -77,10 +79,12 @@ public:
 
     ss::sstring const& get_username() const { return _username; }
     ss::sstring const& get_password() const { return _password; }
+    ss::sstring const& get_sasl_mechanism() const { return _sasl_mechanism; }
 
 private:
     security::credential_user _username;
     security::credential_password _password;
+    ss::sstring _sasl_mechanism;
     bool _authenticated{false};
     bool _superuser{false};
     bool _checked{false};
