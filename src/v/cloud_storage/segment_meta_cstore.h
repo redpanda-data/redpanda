@@ -938,7 +938,7 @@ public:
     const gauge_col_t& get_max_timestamp_column() const;
     const gauge_col_t& get_delta_offset_column() const;
     const gauge_col_t& get_segment_term_column() const;
-    const gauge_col_t& get_archive_term_column() const;
+    const gauge_col_t& get_archiver_term_column() const;
 
 private:
     std::unique_ptr<impl> _impl;

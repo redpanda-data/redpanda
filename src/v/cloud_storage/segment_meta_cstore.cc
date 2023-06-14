@@ -1140,7 +1140,7 @@ const gauge_col_t& segment_meta_cstore::get_segment_term_column() const {
     return _impl->get_segment_term_column();
 }
 
-const gauge_col_t& segment_meta_cstore::get_archive_term_column() const {
+const gauge_col_t& segment_meta_cstore::get_archiver_term_column() const {
     return _impl->get_archive_term_column();
 }
 
