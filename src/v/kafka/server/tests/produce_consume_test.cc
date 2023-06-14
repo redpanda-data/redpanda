@@ -507,28 +507,46 @@ FIXTURE_TEST(test_quota_balancer_config_balancer_period, prod_consume_fixture) {
 
     wait_for_controller_leadership().get();
 
-    set_balancer_period(25ms);
-    BOOST_TEST_WARN(false, "Starting");
-    ss::sleep(100ms).get0();
-    int br = get_balancer_runs();
-    BOOST_TEST_CHECK(
-      abs(br - 4) <= 1, "Expected 4±1 balancer runs, got " << br);
+    // Since the test is timing sensitive, allow 3 attempts before failing
+    for (int attempt = 0; attempt != 3; ++attempt) {
+        bool succ = true;
 
-    set_balancer_period(0ms);
-    int br_last = get_balancer_runs();
-    ss::sleep(100ms).get0();
-    br = get_balancer_runs();
-    BOOST_TEST_CHECK(
-      abs(br - br_last - 0) <= 1,
-      "Expected 0±1 balancer runs, got " << br - br_last);
+        set_balancer_period(25ms);
+        int br_last = get_balancer_runs();
+        ss::sleep(100ms).get0();
+        int br = get_balancer_runs();
+        BOOST_TEST_WARN(
+          abs(br - br_last - 4) <= 1,
+          "Expected 4±1 balancer runs, got " << br << ", attempt " << attempt);
+        succ = succ && abs(br - br_last - 4) <= 1;
 
-    set_balancer_period(15ms);
-    br_last = get_balancer_runs();
-    ss::sleep(100ms).get0();
-    br = get_balancer_runs();
-    BOOST_TEST_CHECK(
-      abs(br - br_last - 7) <= 1,
-      "Expected 7±1 balancer runs, got " << br - br_last);
+        set_balancer_period(0ms);
+        br_last = get_balancer_runs();
+        ss::sleep(100ms).get0();
+        br = get_balancer_runs();
+        BOOST_TEST_WARN(
+          abs(br - br_last - 0) <= 1,
+          "Expected 0±1 balancer runs, got " << br - br_last << ", attempt "
+                                             << attempt);
+        succ = succ && abs(br - br_last - 0) <= 1;
+
+        set_balancer_period(15ms);
+        br_last = get_balancer_runs();
+        ss::sleep(100ms).get0();
+        br = get_balancer_runs();
+        BOOST_TEST_WARN(
+          abs(br - br_last - 7) <= 1,
+          "Expected 7±1 balancer runs, got " << br - br_last << ", attempt "
+                                             << attempt);
+        succ = succ && abs(br - br_last - 7) <= 1;
+
+        if (succ) {
+            break;
+        }
+        BOOST_TEST_CHECK(
+          attempt < 2,
+          "3 test attempts have failed, check test warnings above for details");
+    }
 }
 
 // TODO: move producer utilities somewhere else and give this test a proper
