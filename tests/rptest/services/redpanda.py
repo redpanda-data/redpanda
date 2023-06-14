@@ -2604,7 +2604,7 @@ class RedpandaService(RedpandaServiceBase):
         if allow_list is None:
             allow_list = DEFAULT_LOG_ALLOW_LIST
         else:
-            combined_allow_list = DEFAULT_LOG_ALLOW_LIST
+            combined_allow_list = DEFAULT_LOG_ALLOW_LIST.copy()
             # Accept either compiled or string regexes
             for a in allow_list:
                 if not isinstance(a, re.Pattern):
