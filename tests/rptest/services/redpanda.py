@@ -1396,7 +1396,7 @@ class RedpandaServiceCloud(RedpandaServiceK8s):
                     f'/api/v1/namespaces/{namespace_uuid}')
                 self._logger.debug(f'resp: {json.dumps(resp)}')
 
-    def __init__(self, context, num_brokers):
+    def __init__(self, context, num_brokers, tier_name: str):
         """
         Initialize a RedpandaServiceCloud object.
 
@@ -1406,8 +1406,9 @@ class RedpandaServiceCloud(RedpandaServiceK8s):
 
         super(RedpandaServiceCloud,
               self).__init__(context, None, cluster_spec=ClusterSpec.empty())
-        self.logger.info(
-            f'num_brokers is {num_brokers}, but setting to None for cloud')
+        if num_brokers is not None:
+            self.logger.info(
+                f'num_brokers is {num_brokers}, but setting to None for cloud')
 
         self._trim_logs = False
 
@@ -3715,9 +3716,136 @@ class RedpandaService(RedpandaServiceBase):
             return None
 
 
-def make_redpanda_service(context, num_brokers, **kwargs):
+class CloudTierName(Enum):
+    AWS_1 = 'tier-1-aws'
+    AWS_2 = 'tier-2-aws'
+    AWS_3 = 'tier-3-aws'
+    AWS_4 = 'tier-4-aws'
+    AWS_5 = 'tier-5-aws'
+    GCP_1 = 'tier-1-gcp'
+    GCP_2 = 'tier-2-gcp'
+    GCP_3 = 'tier-3-gcp'
+    GCP_4 = 'tier-4-gcp'
+    GCP_5 = 'tier-5-gcp'
+
+    @classmethod
+    def list(cls):
+        return list(map(lambda c: c.value, cls))
+
+
+class AdvertisedTierConfig:
+    def __init__(self, ingress_rate: float, egress_rate: float,
+                 num_brokers: int, segment_size: int, cloud_cache_size: int,
+                 partitions_min: int, partitions_max: int,
+                 connections_limit: Optional[int],
+                 memory_per_broker: int) -> None:
+        self.ingress_rate = int(ingress_rate)
+        self.egress_rate = int(egress_rate)
+        self.num_brokers = num_brokers
+        self.segment_size = segment_size
+        self.cloud_cache_size = cloud_cache_size
+        self.partitions_min = partitions_min
+        self.partitions_max = partitions_max
+        self.connections_limit = connections_limit
+        self.memory_per_broker = memory_per_broker
+
+
+kiB = 1024
+MiB = kiB * kiB
+GiB = MiB * kiB
+
+# yapf: disable
+AdvertisedTierConfigs = {
+    #   ingress|          segment size|       partitions max|
+    #             egress|       cloud cache size|connections # limit|
+    #           # of brokers|           partitions min|           memory per broker|
+    CloudTierName.AWS_1: AdvertisedTierConfig(
+         25*MiB,  75*MiB,  3,  512*MiB,  300*GiB,   20, 1000,  1500, 16*GiB
+    ),
+    CloudTierName.AWS_2: AdvertisedTierConfig(
+         50*MiB, 150*MiB,  3,  512*MiB,  500*GiB,   50, 2000,  3750, 32*GiB
+    ),
+    CloudTierName.AWS_3: AdvertisedTierConfig(
+        100*MiB, 200*MiB,  6,  512*MiB,  500*GiB,  100, 5000,  7500, 32*GiB
+    ),
+    CloudTierName.AWS_4: AdvertisedTierConfig(
+        200*MiB, 400*MiB,  6,    1*GiB, 1000*GiB,  100, 5000, 15000, 96*GiB
+    ),
+    CloudTierName.AWS_5: AdvertisedTierConfig(
+        300*MiB, 600*MiB,  9,    1*GiB, 1000*GiB,  150, 7500, 22500, 96*GiB
+    ),
+    CloudTierName.GCP_1: AdvertisedTierConfig(
+         25*MiB,  60*MiB,  3,  512*MiB,  150*GiB,   20,  500,  1500,  8*GiB
+    ),
+    CloudTierName.GCP_2: AdvertisedTierConfig(
+         50*MiB, 150*MiB,  3,  512*MiB,  300*GiB,   50, 1000,  3750, 32*GiB
+    ),
+    CloudTierName.GCP_3: AdvertisedTierConfig(
+        100*MiB, 200*MiB,  6,  512*MiB,  320*GiB,  100, 3000,  7500, 32*GiB
+    ),
+    CloudTierName.GCP_4: AdvertisedTierConfig(
+        200*MiB, 400*MiB,  9,  512*MiB,  350*GiB,  100, 5000, 15000, 32*GiB
+    ),
+    CloudTierName.GCP_5: AdvertisedTierConfig(
+        400*MiB, 600*MiB, 12,    1*GiB,  750*GiB,  100, 7500, 22500, 32*GiB
+    ),
+}
+# yapf: enable
+
+
+def make_redpanda_service(context: TestContext,
+                          num_brokers: Optional[int],
+                          *,
+                          cloud_tier: Optional[CloudTierName] = None,
+                          apply_cloud_tier_to_noncloud: bool = False,
+                          extra_rp_conf=None,
+                          **kwargs) -> RedpandaServiceBase:
     """Factory function for instatiating the appropriate RedpandaServiceBase subclass."""
+
     if RedpandaServiceCloud.GLOBAL_CLOUD_API_URL in context.globals:
-        return RedpandaServiceCloud(context, num_brokers, **kwargs)
+        if cloud_tier is None:
+            raise RuntimeError(
+                f"The test cannot be run in the cloud, cloud_tier is not specified"
+            )
+        if extra_rp_conf is not None:
+            context.logger.info(
+                f"extra_rp_conf is ignored with RedpandaServiceCloud")
+
+        service = RedpandaServiceCloud(context, num_brokers, cloud_tier.value,
+                                       **kwargs)
+
     else:
-        return RedpandaService(context, num_brokers, **kwargs)
+        if apply_cloud_tier_to_noncloud:
+            filename = "redpanda.cloud-tiers-config.yml"
+            with open(os.path.join(os.path.dirname(__file__), filename),
+                      "r") as f:
+                profiles = yaml.safe_load(f)['config_profiles']
+            if not cloud_tier.value in profiles:
+                raise RuntimeError(
+                    f"The specified cloud tier {cloud_tier} is not found in the {filename}"
+                )
+
+            new_extra_rp_conf = profiles[cloud_tier.value]['cluster_config']
+            if extra_rp_conf is not None:
+                new_extra_rp_conf |= extra_rp_conf
+            extra_rp_conf = new_extra_rp_conf
+
+            if profiles[cloud_tier.value]['nodes_count'] != num_brokers:
+                context.logger.warning(
+                    f"num_brokers requested for RedpandaService ({num_brokers}) "
+                    f"does not match the cloud profile ({profiles[cloud_tier.value]['nodes_count']})"
+                )
+
+        if num_brokers is None:
+            assert cloud_tier is not None
+            num_brokers = AdvertisedTierConfigs[cloud_tier].num_brokers
+
+        service = RedpandaService(context,
+                                  num_brokers,
+                                  extra_rp_conf=extra_rp_conf,
+                                  **kwargs)
+
+    if cloud_tier:
+        service.advertised_tier_config = AdvertisedTierConfigs[cloud_tier]
+
+    return service
