@@ -106,18 +106,33 @@ private:
     config::binding<std::chrono::milliseconds> _node_status_interval;
     config::binding<size_t> _raft_learner_recovery_rate;
 
-    model::term_id _last_leader_term;
-    clock_t::time_point _last_tick_time;
-    partition_balancer_violations _last_violations;
-    partition_balancer_status _last_status;
-    size_t _last_tick_in_progress_updates = 0;
-
     mutex _lock{};
     ss::gate _gate;
     ss::timer<clock_t> _timer;
     notification_id_type _topic_table_updates;
     notification_id_type _member_updates;
     notification_id_type _health_monitor_updates;
+
+    // Balancer runs in a series of ticks during a controller leadership term.
+    // While the term stays the same, we know that no other balancer instance
+    // runs concurrently with us, so the backend state from the previous tick
+    // remains valid. But if the term changes, this means that the backend state
+    // is obsolete and must be reset.
+    struct per_term_state {
+        explicit per_term_state(model::term_id term)
+          : id(term)
+          , term_start_time(clock_t::now()) {}
+
+        model::term_id id;
+        clock_t::time_point term_start_time;
+        clock_t::time_point last_tick_time;
+        partition_balancer_violations last_violations;
+        partition_balancer_status last_status
+          = partition_balancer_status::starting;
+        size_t last_tick_in_progress_updates = 0;
+    };
+    std::optional<per_term_state> _cur_term;
+
     std::optional<ss::abort_source> _tick_in_progress;
 };
 

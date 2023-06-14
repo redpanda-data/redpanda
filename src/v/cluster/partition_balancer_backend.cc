@@ -157,18 +157,26 @@ void partition_balancer_backend::on_topic_table_update() {
     if (!is_leader()) {
         return;
     }
+
+    if (!_cur_term || _raft0->term() != _cur_term->id) {
+        // don't try to check how in-progress updates count dropped before doing
+        // a single tick in this term.
+        return;
+    }
+    auto last_in_progress_updates = _cur_term->last_tick_in_progress_updates;
+
     auto current_in_progress_updates
       = _state.topics().updates_in_progress().size();
     auto schedule_now = double(current_in_progress_updates)
                         < (1 - _concurrent_moves_drop_threshold())
-                            * double(_last_tick_in_progress_updates);
+                            * double(last_in_progress_updates);
     if (schedule_now) {
         vlog(
           clusterlog.debug,
           "current updates in progress: {} (after last tick: {}), "
           "scheduling tick",
           current_in_progress_updates,
-          _last_tick_in_progress_updates);
+          last_in_progress_updates);
 
         maybe_rearm_timer(/*now=*/true);
     }
@@ -227,16 +235,24 @@ ss::future<> partition_balancer_backend::do_tick() {
 
     auto units = co_await _lock.get_units();
 
+    if (!_raft0->is_leader()) {
+        vlog(clusterlog.debug, "lost leadership, exiting");
+        co_return;
+    }
+
     vlog(clusterlog.debug, "tick");
 
-    auto current_term = _raft0->term();
+    if (!_cur_term || _raft0->term() != _cur_term->id) {
+        _cur_term = per_term_state(_raft0->term());
+    }
 
     co_await _controller_stm.wait(
       _raft0->committed_offset(),
       model::timeout_clock::now() + controller_stm_sync_timeout);
 
-    if (_raft0->term() != current_term) {
+    if (_raft0->term() != _cur_term->id) {
         vlog(clusterlog.debug, "lost leadership, exiting");
+        // TODO: add term checks to planner
         co_return;
     }
 
@@ -254,7 +270,7 @@ ss::future<> partition_balancer_backend::do_tick() {
         co_return;
     }
 
-    if (!_raft0->is_leader() || _raft0->term() != current_term) {
+    if (_raft0->term() != _cur_term->id) {
         vlog(clusterlog.debug, "lost leadership, exiting");
         co_return;
     }
@@ -281,24 +297,23 @@ ss::future<> partition_balancer_backend::do_tick() {
           _partition_allocator)
           .plan_actions(health_report.value(), _tick_in_progress.value());
 
-    _last_leader_term = _raft0->term();
-    _last_tick_time = clock_t::now();
-    _last_violations = std::move(plan_data.violations);
+    _cur_term->last_tick_time = clock_t::now();
+    _cur_term->last_violations = std::move(plan_data.violations);
     if (
       _state.topics().has_updates_in_progress()
       || plan_data.status == planner_status::actions_planned) {
-        _last_status = partition_balancer_status::in_progress;
+        _cur_term->last_status = partition_balancer_status::in_progress;
     } else if (plan_data.status == planner_status::waiting_for_reports) {
-        _last_status = partition_balancer_status::starting;
+        _cur_term->last_status = partition_balancer_status::starting;
     } else if (
       plan_data.failed_actions_count > 0
       || plan_data.status == planner_status::waiting_for_maintenance_end) {
-        _last_status = partition_balancer_status::stalled;
+        _cur_term->last_status = partition_balancer_status::stalled;
     } else {
-        _last_status = partition_balancer_status::ready;
+        _cur_term->last_status = partition_balancer_status::ready;
     }
 
-    if (_last_status != partition_balancer_status::ready) {
+    if (_cur_term->last_status != partition_balancer_status::ready) {
         vlog(
           clusterlog.info,
           "last status: {}; "
@@ -307,9 +322,9 @@ ss::future<> partition_balancer_backend::do_tick() {
           "updates in progress: {}; "
           "action counts: reassignments: {}, cancellations: {}, failed: {}; "
           "counts rebalancing finished: {}",
-          _last_status,
-          _last_violations.unavailable_nodes.size(),
-          _last_violations.full_nodes.size(),
+          _cur_term->last_status,
+          _cur_term->last_violations.unavailable_nodes.size(),
+          _cur_term->last_violations.full_nodes.size(),
           _state.nodes_to_rebalance().size(),
           _state.topics().updates_in_progress().size(),
           plan_data.reassignments.size(),
@@ -343,12 +358,12 @@ ss::future<> partition_balancer_backend::do_tick() {
     }
 
     co_await ss::max_concurrent_for_each(
-      plan_data.cancellations, 32, [this, current_term](model::ntp& ntp) {
+      plan_data.cancellations, 32, [this](model::ntp& ntp) {
           _tick_in_progress->check();
           auto f = _topics_frontend.cancel_moving_partition_replicas(
             ntp,
             model::timeout_clock::now() + add_move_cmd_timeout,
-            current_term);
+            _cur_term->id);
 
           return f.then([ntp = std::move(ntp)](auto errc) {
               if (errc) {
@@ -362,15 +377,13 @@ ss::future<> partition_balancer_backend::do_tick() {
       });
 
     co_await ss::max_concurrent_for_each(
-      plan_data.reassignments,
-      32,
-      [this, current_term](ntp_reassignment& reassignment) {
+      plan_data.reassignments, 32, [this](ntp_reassignment& reassignment) {
           _tick_in_progress->check();
           auto f = _topics_frontend.move_partition_replicas(
             reassignment.ntp,
             reassignment.allocated.replicas(),
             model::timeout_clock::now() + add_move_cmd_timeout,
-            current_term);
+            _cur_term->id);
           return f.then([reassignment = std::move(reassignment)](auto errc) {
               if (errc) {
                   vlog(
@@ -382,9 +395,9 @@ ss::future<> partition_balancer_backend::do_tick() {
           });
       });
 
-    _last_tick_in_progress_updates = moves_before
-                                     + plan_data.cancellations.size()
-                                     + plan_data.reassignments.size();
+    _cur_term->last_tick_in_progress_updates = moves_before
+                                               + plan_data.cancellations.size()
+                                               + plan_data.reassignments.size();
 }
 
 partition_balancer_overview_reply partition_balancer_backend::overview() const {
@@ -403,18 +416,18 @@ partition_balancer_overview_reply partition_balancer_backend::overview() const {
         return ret;
     }
 
-    if (_raft0->term() != _last_leader_term) {
+    if (!_cur_term || _raft0->term() != _cur_term->id) {
         // we haven't done a single tick in this term yet, return empty response
         ret.status = partition_balancer_status::starting;
         ret.error = errc::success;
         return ret;
     }
 
-    ret.status = _last_status;
-    ret.violations = _last_violations;
+    ret.status = _cur_term->last_status;
+    ret.violations = _cur_term->last_violations;
 
     auto now = clock_t::now();
-    auto time_since_last_tick = now - _last_tick_time;
+    auto time_since_last_tick = now - _cur_term->last_tick_time;
     ret.last_tick_time = model::to_timestamp(
       model::timestamp_clock::now()
       - std::chrono::duration_cast<model::timestamp_clock::duration>(
