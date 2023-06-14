@@ -30,7 +30,7 @@ from rptest.clients.types import TopicSpec
 from rptest.services import tls
 from rptest.services.admin import Admin
 from rptest.services.cluster import cluster
-from rptest.services.redpanda import ResourceSettings, SecurityConfig, LoggingConfig, PandaproxyConfig, SchemaRegistryConfig
+from rptest.services.redpanda import DEFAULT_LOG_ALLOW_LIST, ResourceSettings, SecurityConfig, LoggingConfig, PandaproxyConfig, SchemaRegistryConfig
 from rptest.services.serde_client import SerdeClient
 from rptest.tests.cluster_config_test import wait_for_version_status_sync
 from rptest.tests.pandaproxy_test import User, PandaProxyTLSProvider
@@ -2156,6 +2156,26 @@ class SchemaRegistryMTLSAndBasicAuthTest(SchemaRegistryMTLSBase):
         assert set(result) == {"PROTOBUF", "AVRO"}
 
 
+class SchemaValidationEnableWithoutSchemaRegistry(RedpandaTest):
+    def __init__(self, *args, **kwargs):
+        super(SchemaValidationEnableWithoutSchemaRegistry,
+              self).__init__(*args, schema_registry_config=None, **kwargs)
+        self.rpk = RpkTool(self.redpanda)
+        self.admin = Admin(self.redpanda)
+
+    @cluster(num_nodes=1)
+    @parametrize(mode=SchemaIdValidationMode.REDPANDA)
+    @parametrize(mode=SchemaIdValidationMode.COMPAT)
+    def test_enable_schema_id_validation(self, mode):
+        try:
+            self.redpanda.set_cluster_config(
+                {'enable_schema_id_validation': mode})
+            assert False, "expected failure"
+        except requests.exceptions.HTTPError as ex:
+            print(ex)
+            pass
+
+
 class SchemaValidationTopicPropertiesTest(RedpandaTest):
     def __init__(self, *args, **kwargs):
         super(SchemaValidationTopicPropertiesTest,
@@ -2164,6 +2184,7 @@ class SchemaValidationTopicPropertiesTest(RedpandaTest):
                                  'enable_schema_id_validation':
                                  SchemaIdValidationMode.COMPAT.value
                              },
+                             schema_registry_config=SchemaRegistryConfig(),
                              **kwargs)
         self.rpk = RpkTool(self.redpanda)
         self.admin = Admin(self.redpanda)
@@ -2352,6 +2373,7 @@ class SchemaRegistryLicenseTest(RedpandaTest):
                                  'enable_schema_id_validation':
                                  SchemaIdValidationMode.NONE.value
                              },
+                             schema_registry_config=SchemaRegistryConfig(),
                              **kwargs)
         self.redpanda.set_environment({
             '__REDPANDA_LICENSE_CHECK_INTERVAL_SEC':
