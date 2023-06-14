@@ -262,6 +262,9 @@ private:
     static fragmented_vector<segment> replaced_segments_from_manifest(
       const cloud_storage::partition_manifest& manifest);
 
+    static fragmented_vector<segment>
+    spillover_from_manifest(const cloud_storage::partition_manifest& manifest);
+
     void apply_add_segment(const segment& segment);
     void apply_truncate(const start_offset& so);
     void apply_cleanup_metadata();

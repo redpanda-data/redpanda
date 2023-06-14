@@ -151,7 +151,8 @@ public:
       model::offset archive_start_offset,
       model::offset_delta archive_start_offset_delta,
       model::offset archive_clean_offset,
-      uint64_t archive_size_bytes)
+      uint64_t archive_size_bytes,
+      const fragmented_vector<segment_t>& spillover)
       : _ntp(std::move(ntp))
       , _rev(rev)
       , _mem_tracker(std::move(manifest_mem_tracker))
@@ -188,6 +189,9 @@ public:
               && nm.meta.committed_offset <= _last_offset) {
                 _cloud_log_size_bytes += nm.meta.size_bytes;
             }
+        }
+        for (auto m : spillover) {
+            _spillover_manifests.insert(m.meta);
         }
     }
 
