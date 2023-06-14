@@ -25,6 +25,10 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+//////////////////////////////
+// Prometheus Scrape Config //
+//////////////////////////////
+
 type ScrapeConfig struct {
 	JobName       string         `yaml:"job_name"`
 	StaticConfigs []StaticConfig `yaml:"static_configs"`
@@ -33,7 +37,8 @@ type ScrapeConfig struct {
 }
 
 type StaticConfig struct {
-	Targets []string `yaml:"targets"`
+	Targets []string          `yaml:"targets"`
+	Labels  map[string]string `yaml:"labels,omitempty"`
 }
 
 type prometheusTLS struct {
@@ -42,49 +47,37 @@ type prometheusTLS struct {
 	KeyFile  string `yaml:"key_file,omitempty"`
 }
 
+///////////
+// Flags //
+///////////
+
 type tlsConfig struct {
 	TLS       config.TLS
 	enableTLS bool
 }
 
+type prometheusOptions struct {
+	intMetrics bool
+	jobName    string
+	labels     []string
+	nodeAddrs  []string
+	seedAddr   string
+}
+
 func newPrometheusConfigCmd(fs afero.Fs, p *config.Params) *cobra.Command {
 	var (
-		intMetrics bool
-		jobName    string
-		nodeAddrs  []string
-		seedAddr   string
-		tlsCfg     tlsConfig
+		opts   prometheusOptions
+		tlsCfg tlsConfig
 	)
 	cmd := &cobra.Command{
 		Use:   "prometheus-config",
-		Short: "Generate the Prometheus configuration to scrape redpanda nodes",
-		Long: `
-Generate the Prometheus configuration to scrape redpanda nodes. This command's
-output should be added to the 'scrape_configs' array in your Prometheus
-instance's YAML config file.
-
-If --seed-addr is passed, it will be used to discover the rest of the cluster
-hosts via Redpanda's Kafka API. If --node-addrs is passed, they will be used
-directly. Otherwise, 'rpk generate prometheus-conf' will read the redpanda
-config file and use the node IP configured there. --config may be passed to
-specify an arbitrary config file.
-
-If the node you want to scrape uses TLS, you can provide the TLS flags:
---tls-key, --tls-cert, and --tls-truststore and rpk will generate the required
-tls_config section in the scrape configuration.`,
+		Short: "Generate the Prometheus configuration to scrape Redpanda nodes",
+		Long:  prometheusHelpText,
 		Run: func(cmd *cobra.Command, args []string) {
 			y, err := p.LoadVirtualRedpandaYaml(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)
 
-			yml, err := executePrometheusConfig(
-				y,
-				jobName,
-				nodeAddrs,
-				seedAddr,
-				intMetrics,
-				tlsCfg,
-				fs,
-			)
+			yml, err := executePrometheusConfig(y, opts, tlsCfg, fs)
 			out.MaybeDieErr(err)
 			fmt.Println(string(yml))
 		},
@@ -92,10 +85,11 @@ tls_config section in the scrape configuration.`,
 
 	f := cmd.Flags()
 
-	f.StringVar(&jobName, "job-name", "redpanda", "The prometheus job name by which to identify the redpanda nodes")
-	f.StringSliceVar(&nodeAddrs, "node-addrs", nil, "Comma separated list of admin API host:ports")
-	f.StringVar(&seedAddr, "seed-addr", "", "The URL of a redpanda node with which to discover the rest")
-	f.BoolVar(&intMetrics, "internal-metrics", false, "Include scrape config for internal metrics (/metrics)")
+	f.StringVar(&opts.jobName, "job-name", "redpanda", "The prometheus job name by which to identify the Redpanda nodes")
+	f.StringSliceVar(&opts.nodeAddrs, "node-addrs", nil, "Comma-separated list of admin API host:ports")
+	f.StringVar(&opts.seedAddr, "seed-addr", "", "The URL of a Redpanda node with which to discover the rest")
+	f.BoolVar(&opts.intMetrics, "internal-metrics", false, "Include scrape config for internal metrics (/metrics)")
+	f.StringSliceVar(&opts.labels, "labels", nil, "Comma-separated labels and their target metric (int or pub): [metric|labelName:labelValue, ...]")
 
 	// Backcompat
 	f.StringVar(&tlsCfg.TLS.TruststoreFile, "ca-file", "", "CA certificate used to sign node_exporter certificate")
@@ -117,18 +111,15 @@ tls_config section in the scrape configuration.`,
 
 func executePrometheusConfig(
 	y *config.RedpandaYaml,
-	jobName string,
-	nodeAddrs []string,
-	seedAddr string,
-	intMetrics bool,
+	opts prometheusOptions,
 	tlsCfg tlsConfig,
 	fs afero.Fs,
 ) ([]byte, error) {
-	if len(nodeAddrs) > 0 {
-		return renderConfig(jobName, nodeAddrs, intMetrics, tlsCfg.TLS)
+	if len(opts.nodeAddrs) > 0 {
+		return renderConfig(opts.jobName, opts.nodeAddrs, opts.labels, opts.intMetrics, tlsCfg.TLS)
 	}
-	if seedAddr != "" {
-		host, port, err := splitAddress(seedAddr)
+	if opts.seedAddr != "" {
+		host, port, err := splitAddress(opts.seedAddr)
 		if err != nil {
 			return []byte(""), err
 		}
@@ -139,7 +130,7 @@ func executePrometheusConfig(
 		if err != nil {
 			return []byte(""), err
 		}
-		return renderConfig(jobName, hosts, intMetrics, tlsCfg.TLS)
+		return renderConfig(opts.jobName, hosts, opts.labels, opts.intMetrics, tlsCfg.TLS)
 	}
 	hosts, err := discoverHosts(
 		y.Redpanda.KafkaAPI[0].Address,
@@ -150,10 +141,15 @@ func executePrometheusConfig(
 	if err != nil {
 		return []byte(""), err
 	}
-	return renderConfig(jobName, hosts, intMetrics, tlsCfg.TLS)
+	return renderConfig(opts.jobName, hosts, opts.labels, opts.intMetrics, tlsCfg.TLS)
 }
 
-func renderConfig(jobName string, targets []string, intMetrics bool, tlsConfig config.TLS) ([]byte, error) {
+func renderConfig(jobName string, targets []string, labels []string, intMetrics bool, tlsConfig config.TLS) ([]byte, error) {
+	intLabel, pubLabel, err := parseLabels(labels)
+	if err != nil {
+		return nil, err
+	}
+
 	prometheusTLSConfig := prometheusTLS{
 		CAFile:   tlsConfig.TruststoreFile,
 		CertFile: tlsConfig.CertFile,
@@ -162,14 +158,14 @@ func renderConfig(jobName string, targets []string, intMetrics bool, tlsConfig c
 
 	scrapeConfigs := []ScrapeConfig{{
 		JobName:       jobName,
-		StaticConfigs: []StaticConfig{{Targets: targets}},
+		StaticConfigs: []StaticConfig{{Targets: targets, Labels: pubLabel}},
 		MetricsPath:   "/public_metrics",
 		TLSConfig:     prometheusTLSConfig,
 	}}
 	if intMetrics {
 		scrapeConfigs = append(scrapeConfigs, ScrapeConfig{
 			JobName:       jobName,
-			StaticConfigs: []StaticConfig{{Targets: targets}},
+			StaticConfigs: []StaticConfig{{Targets: targets, Labels: intLabel}},
 			MetricsPath:   "/metrics",
 			TLSConfig:     prometheusTLSConfig,
 		})
@@ -234,3 +230,90 @@ func createClient(fs afero.Fs, addr string, tlsCfg tlsConfig) (*kgo.Client, erro
 
 	return kgo.NewClient(opts...)
 }
+
+// parseLabels parses label strings and returns two maps (int and pub). Labels
+// should be in the format "[metric:labelName=labelValue]". 'metric' determines
+// if the label targets the public or internal metrics. It also checks for at
+// most one label per job.
+func parseLabels(labels []string) (int, pub map[string]string, err error) {
+	int = make(map[string]string)
+	pub = make(map[string]string)
+
+	for _, label := range labels {
+		if s := strings.SplitN(label, ":", 2); len(s) > 1 {
+			metric, labelFormat := s[0], s[1]
+			s = strings.SplitN(labelFormat, "=", 2)
+			if len(s) == 1 {
+				return nil, nil, fmt.Errorf("unable to parse label %q, is not in the format [metric:labelName=labelValue]", label)
+			}
+			k, v := s[0], s[1]
+			switch strings.ToLower(metric) {
+			case "public":
+				pub[k] = v
+			case "internal":
+				int[k] = v
+			default:
+				return nil, nil, fmt.Errorf("unable to parse label %q, unrecognized metric target %q; please use one of [public, internal]", label, metric)
+			}
+		} else {
+			s := strings.SplitN(label, "=", 2)
+			if len(s) == 1 {
+				return nil, nil, fmt.Errorf("unable to parse label %q, is not in the format [metric:labelName=labelValue]", label)
+			}
+			k, v := s[0], s[1]
+			pub[k] = v
+			int[k] = v
+		}
+	}
+	if len(int) > 1 || len(pub) > 1 {
+		return nil, nil, fmt.Errorf("unable to parse labels %v, you can only specify 1 label per job", labels)
+	}
+	return int, pub, err
+}
+
+const prometheusHelpText = `Generate the Prometheus configuration to scrape Redpanda nodes. 
+
+The output of this command should be included in the 'scrape_configs' array 
+within the YAML configuration file of your Prometheus instance.
+
+There are different options you can use when generating the configuration:
+
+ - If you provide the --seed-addr flag, the command will use the address to 
+   discover the rest of the cluster hosts using Redpanda's Kafka API.
+ - If you provide the --node-addrs flag, the command will directly use the 
+   provided addresses.
+ - If neither --seed-addr nor --node-addrs are passed, the command will read the 
+   redpanda config file and use the node IP configured there.
+
+If the node you want to scrape uses TLS, you can provide the TLS flags 
+(--tls-key, --tls-cert, and --tls-truststore). The command will generate the 
+required tls_config section in the scrape configuration.
+
+Additionally, you have the option to define labels for the target in the 
+static-config section by using the --labels flag. You can specify the desired 
+metric that the label should target, either internal (/metrics) or public 
+(/public_metrics).
+
+For example:
+
+  --job-name test --labels "public:group=one,internal:group=two"
+
+This will result in two separate configs for the test job, each with a 
+different label:
+
+  - job_name: test
+    static_configs:
+      - targets: [<targets>]
+        labels:
+          group: one
+    metrics_path: /public_metrics
+  - job_name: test
+    static_configs:
+      - targets: [<targets>]
+        labels:
+          group: two
+    metrics_path: /metrics
+
+You can only provide one label per job. By default, if no metric target is 
+specified, the label will be shared across the jobs.
+`
