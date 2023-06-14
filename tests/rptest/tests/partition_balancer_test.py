@@ -351,9 +351,7 @@ class PartitionBalancerTest(PartitionBalancerService):
                             consumer_timeout_sec=CONSUMER_TIMEOUT)
 
     @skip_debug_mode
-    @cluster(num_nodes=7,
-             log_allow_list=CHAOS_LOG_ALLOW_LIST,
-             check_cpu_idle=False)
+    @cluster(num_nodes=7, log_allow_list=CHAOS_LOG_ALLOW_LIST)
     def test_unavailable_nodes(self):
         self.start_redpanda(num_nodes=5)
 
@@ -404,9 +402,7 @@ class PartitionBalancerTest(PartitionBalancerService):
         wait_for_recovery_throttle_rate(self.redpanda, new_value)
 
     @skip_debug_mode
-    @cluster(num_nodes=6,
-             log_allow_list=CHAOS_LOG_ALLOW_LIST,
-             check_cpu_idle=False)
+    @cluster(num_nodes=6, log_allow_list=CHAOS_LOG_ALLOW_LIST)
     def test_movement_cancellations(self):
         self.start_redpanda(num_nodes=4)
 
@@ -462,9 +458,7 @@ class PartitionBalancerTest(PartitionBalancerService):
             ), f"bad rack placement {racks} for partition id: {p.id} (replicas: {p.replicas})"
 
     @skip_debug_mode
-    @cluster(num_nodes=8,
-             log_allow_list=CHAOS_LOG_ALLOW_LIST,
-             check_cpu_idle=False)
+    @cluster(num_nodes=8, log_allow_list=CHAOS_LOG_ALLOW_LIST)
     def test_rack_awareness(self):
         extra_rp_conf = self._extra_rp_conf | {"enable_rack_awareness": True}
         self.redpanda = make_redpanda_service(self.test_context,
@@ -571,8 +565,7 @@ class PartitionBalancerTest(PartitionBalancerService):
     @skip_debug_mode
     @cluster(num_nodes=7,
              log_allow_list=CHAOS_LOG_ALLOW_LIST +
-             RACE_BETWEEN_DELETION_AND_ADDING_PARTITION,
-             check_cpu_idle=False)
+             RACE_BETWEEN_DELETION_AND_ADDING_PARTITION)
     def test_fuzz_admin_ops(self):
         self.start_redpanda(num_nodes=5)
 
@@ -747,9 +740,7 @@ class PartitionBalancerTest(PartitionBalancerService):
             assert used_ratio < 0.81
 
     @skip_debug_mode
-    @cluster(num_nodes=7,
-             log_allow_list=CHAOS_LOG_ALLOW_LIST,
-             check_cpu_idle=False)
+    @cluster(num_nodes=7, log_allow_list=CHAOS_LOG_ALLOW_LIST)
     @matrix(kill_same_node=[True, False])
     def test_maintenance_mode(self, kill_same_node):
         """
@@ -830,8 +821,7 @@ class PartitionBalancerTest(PartitionBalancerService):
 
     @skip_debug_mode
     @cluster(num_nodes=7,
-             log_allow_list=CHAOS_LOG_ALLOW_LIST + STARTUP_SEQUENCE_ABORTED,
-             check_cpu_idle=False)
+             log_allow_list=CHAOS_LOG_ALLOW_LIST + STARTUP_SEQUENCE_ABORTED)
     @matrix(kill_same_node=[True, False], decommission_first=[True, False])
     def test_decommission(self, kill_same_node, decommission_first):
         """
@@ -948,9 +938,7 @@ class PartitionBalancerTest(PartitionBalancerService):
                             consumer_timeout_sec=CONSUMER_TIMEOUT)
 
     @skip_debug_mode
-    @cluster(num_nodes=4,
-             log_allow_list=CHAOS_LOG_ALLOW_LIST,
-             check_cpu_idle=False)
+    @cluster(num_nodes=4, log_allow_list=CHAOS_LOG_ALLOW_LIST)
     def test_transfer_controller_leadership(self):
         """
         Test that unavailability timeout is correctly restarted after controller

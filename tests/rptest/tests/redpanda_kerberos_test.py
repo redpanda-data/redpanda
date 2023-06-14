@@ -72,15 +72,6 @@ class RedpandaKerberosTestBase(Test):
 
         self.client = KrbClient(test_context, self.kdc, self.redpanda)
 
-    @property
-    def debug_mode(self):
-        """
-        Useful for tests that want to change behaviour when running on
-        the much slower debug builds of redpanda, which generally cannot
-        keep up with significant quantities of data or partition counts.
-        """
-        return os.environ.get('BUILD_TYPE', None) == 'debug'
-
     def setUp(self):
         self.redpanda.logger.info("Starting KDC")
         self.kdc.start()
