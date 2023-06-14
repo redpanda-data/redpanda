@@ -477,7 +477,6 @@ void segment_appender::dispatch_background_head_write() {
      * out) synchronously.
      */
     auto pending_write_sem = _pending_head_write;
-    auto units = ss::get_units(*pending_write_sem, 1);
 
     (void)ss::with_semaphore(
       _concurrent_flushes,
@@ -489,9 +488,8 @@ void segment_appender::dispatch_background_head_write() {
        expected,
        src,
        pending_write_sem,
-       units = std::move(units),
        full]() mutable {
-          return units
+          return ss::get_units(*pending_write_sem, 1)
             .then([this, h, w, start_offset, expected, src, full](
                     ssx::semaphore_units u) mutable {
                 return _out
