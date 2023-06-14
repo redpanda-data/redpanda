@@ -754,11 +754,25 @@ remote_partition::get_term_last_offset(model::term_id term) const {
             }
         }
     } else if (stmm.get_archive_start_offset() != model::offset{}) {
-        // The term id is not indexed in the name of the spillover manifest
-        // so we have to traverse them all. This is a worst case scenario and
-        // it will also be removed in the near future.
+        // Use column-store that contains list of spillover manifests to
+        // find a starting point for the search.
+        const auto& spillover_map
+          = _manifest_view->stm_manifest().get_spillover_map();
+        // This column contains term of the last segment in the manifest
+        const auto& term_col = spillover_map.get_segment_term_column();
+        size_t sp_index = 0;
+        for (auto t : term_col) {
+            sp_index++;
+            if (t > term()) {
+                break;
+            }
+        }
+        auto sp_start = spillover_map.get_base_offset_column().at_index(
+          sp_index);
         auto res = co_await _manifest_view->get_cursor(
-          _manifest_view->stm_manifest().get_archive_start_offset());
+          sp_start.is_end()
+            ? _manifest_view->stm_manifest().get_archive_start_offset()
+            : model::offset{*sp_start});
         if (res.has_error()) {
             vlog(_ctxlog.error, "Failed to scan metadata: {}", res.error());
             throw std::system_error(res.error());
