@@ -2083,7 +2083,8 @@ class RedpandaService(Service):
         # we need to look for redpanda pid. pids() method returns pids of both
         # nodejs server and redpanda
         try:
-            cmd = "ps ax | grep -i 'redpanda' | grep -v grep | grep -v 'version'| grep -v \"\[redpanda\]\" | awk '{print $1}'"
+            cmd = "pgrep --exact redpanda"
+
             for p in node.account.ssh_capture(cmd,
                                               allow_fail=True,
                                               callback=int):
