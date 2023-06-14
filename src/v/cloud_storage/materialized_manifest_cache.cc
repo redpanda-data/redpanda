@@ -23,6 +23,7 @@
 #include "model/timestamp.h"
 #include "resource_mgmt/io_priority.h"
 #include "ssx/future-util.h"
+#include "ssx/semaphore.h"
 #include "ssx/sformat.h"
 #include "utils/human.h"
 #include "utils/retry_chain_node.h"
@@ -54,14 +55,14 @@ static constexpr size_t max_cache_capacity_bytes = 1_GiB;
 
 materialized_manifest_cache::materialized_manifest_cache(size_t capacity_bytes)
   : _capacity_bytes(capacity_bytes)
-  , _sem(max_cache_capacity_bytes) {
+  , _sem(max_cache_capacity_bytes, "materialized-manifest-cache") {
     vassert(
       capacity_bytes > 0 && capacity_bytes < max_cache_capacity_bytes,
       "Invalid cache capacity {}, should be non-zero and below 1GiB",
       capacity_bytes);
 }
 
-ss::future<ss::semaphore_units<>> materialized_manifest_cache::prepare(
+ss::future<ssx::semaphore_units> materialized_manifest_cache::prepare(
   size_t size_bytes,
   retry_chain_logger& ctxlog,
   std::optional<ss::lowres_clock::duration> timeout) {
@@ -112,7 +113,7 @@ ss::future<ss::semaphore_units<>> materialized_manifest_cache::prepare(
     // Here the least recently used materialized manifests were evicted to
     // free up 'size_bytes' bytes. But these manifests could still be used
     // by some cursor. We need to wait for them to get released.
-    ss::semaphore_units<> u;
+    ssx::semaphore_units u;
     try {
         if (timeout.has_value()) {
             u = co_await ss::get_units(_sem, size_bytes, timeout.value());
@@ -164,7 +165,7 @@ size_t materialized_manifest_cache::size_bytes() const noexcept {
 }
 
 void materialized_manifest_cache::put(
-  ss::semaphore_units<> s,
+  ssx::semaphore_units s,
   spillover_manifest manifest,
   retry_chain_logger& ctxlog) {
     vassert(

@@ -457,7 +457,7 @@ private:
         }
         // Find manifest that contains requested timestamp
         while (true) {
-            auto cur = co_await _partition->_manifest_view->get_active(query);
+            auto cur = co_await _partition->_manifest_view->get_cursor(query);
             if (cur.has_failure()) {
                 if (cur.error() == error_outcome::repeat && retry_quota-- > 0) {
                     continue;
@@ -501,7 +501,7 @@ private:
     remote_partition::borrow_result_t find_cached_reader(
       const partition_manifest& manifest,
       const storage::log_reader_config& config) {
-        if (!_partition || _partition->_manifest_view->stm().empty()) {
+        if (!_partition || _partition->_manifest_view->stm_manifest().empty()) {
             return {};
         }
         auto res = _partition->borrow_next_reader(manifest, config);
@@ -681,20 +681,21 @@ ss::future<> remote_partition::run_eviction_loop() {
 
 kafka::offset remote_partition::first_uploaded_offset() {
     vassert(
-      _manifest_view->stm().size() > 0,
+      _manifest_view->stm_manifest().size() > 0,
       "The manifest for {} is not expected to be empty",
-      _manifest_view->stm().get_ntp());
-    auto so = _manifest_view->stm().full_log_start_kafka_offset().value();
+      _manifest_view->stm_manifest().get_ntp());
+    auto so
+      = _manifest_view->stm_manifest().full_log_start_kafka_offset().value();
     vlog(_ctxlog.trace, "remote partition first_uploaded_offset: {}", so);
     return so;
 }
 
 kafka::offset remote_partition::next_kafka_offset() {
     vassert(
-      _manifest_view->stm().size() > 0,
+      _manifest_view->stm_manifest().size() > 0,
       "The manifest for {} is not expected to be empty",
       _manifest_view->get_ntp());
-    auto next = _manifest_view->stm().get_next_kafka_offset().value();
+    auto next = _manifest_view->stm_manifest().get_next_kafka_offset().value();
     vlog(_ctxlog.debug, "remote partition next_kafka_offset: {}", next);
     return next;
 }
@@ -708,25 +709,25 @@ bool remote_partition::is_data_available() const {
     // corresponds to some data (not if our start_offset points off
     // the end of the manifest, as a result of a truncation where we
     // have not yet cleaned out the segments).
-    const auto& stmm = _manifest_view->stm();
+    const auto& stmm = _manifest_view->stm_manifest();
     return stmm.size() > 0
            && (stmm.find(stmm.get_start_offset().value())
                 != stmm.end() || stmm.get_archive_start_offset() > stmm.get_start_offset().value());
 }
 
 uint64_t remote_partition::cloud_log_size() const {
-    return _manifest_view->stm().cloud_log_size();
+    return _manifest_view->stm_manifest().cloud_log_size();
 }
 
 ss::future<> remote_partition::serialize_json_manifest_to_output_stream(
   ss::output_stream<char>& output) const {
-    return _manifest_view->stm().serialize_json(output);
+    return _manifest_view->stm_manifest().serialize_json(output);
 }
 
 // returns term last kafka offset
 ss::future<std::optional<kafka::offset>>
 remote_partition::get_term_last_offset(model::term_id term) const {
-    const auto& stmm = _manifest_view->stm();
+    const auto& stmm = _manifest_view->stm_manifest();
     vassert(
       stmm.size() > 0,
       "The manifest for {} is not expected to be empty",
@@ -756,8 +757,8 @@ remote_partition::get_term_last_offset(model::term_id term) const {
         // The term id is not indexed in the name of the spillover manifest
         // so we have to traverse them all. This is a worst case scenario and
         // it will also be removed in the near future.
-        auto res = co_await _manifest_view->get_active(
-          _manifest_view->stm().get_archive_start_offset());
+        auto res = co_await _manifest_view->get_cursor(
+          _manifest_view->stm_manifest().get_archive_start_offset());
         if (res.has_error()) {
             vlog(_ctxlog.error, "Failed to scan metadata: {}", res.error());
             throw std::system_error(res.error());
@@ -794,7 +795,7 @@ remote_partition::get_term_last_offset(model::term_id term) const {
 ss::future<std::vector<model::tx_range>>
 remote_partition::aborted_transactions(offset_range offsets) {
     gate_guard guard(_gate);
-    const auto& manifest = _manifest_view->stm();
+    const auto& manifest = _manifest_view->stm_manifest();
     const auto so = manifest.get_start_offset();
     std::vector<model::tx_range> result;
     if (so.has_value() && offsets.begin > so.value()) {
@@ -821,7 +822,7 @@ remote_partition::aborted_transactions(offset_range offsets) {
         }
     } else {
         // Target archive section of the log
-        auto cur_res = co_await _manifest_view->get_active(
+        auto cur_res = co_await _manifest_view->get_cursor(
           manifest.get_archive_start_offset());
         if (cur_res.has_failure()) {
             vlog(
@@ -966,7 +967,7 @@ ss::future<storage::translating_reader> remote_partition::make_reader(
 
 ss::future<std::optional<storage::timequery_result>>
 remote_partition::timequery(storage::timequery_config cfg) {
-    const auto& stm_manifest = _manifest_view->stm();
+    const auto& stm_manifest = _manifest_view->stm_manifest();
     if (stm_manifest.size() == 0) {
         vlog(_ctxlog.debug, "timequery: no segments");
         co_return std::nullopt;
@@ -1006,7 +1007,7 @@ remote_partition::timequery(storage::timequery_config cfg) {
 }
 
 bool remote_partition::bounds_timestamp(model::timestamp t) const {
-    auto last_seg = _manifest_view->stm().last_segment();
+    auto last_seg = _manifest_view->stm_manifest().last_segment();
     if (last_seg.has_value()) {
         return t <= last_seg.value().max_timestamp;
     } else {
@@ -1025,7 +1026,7 @@ remote_partition::finalize(ss::abort_source& as) {
     // main retry_chain_node which is bound to our abort source,
     // and construct a special one.
     retry_chain_node local_rtc(as, erase_timeout, erase_backoff);
-    const auto& stm_manifest = _manifest_view->stm();
+    const auto& stm_manifest = _manifest_view->stm_manifest();
 
     partition_manifest remote_manifest(
       stm_manifest.get_ntp(), stm_manifest.get_revision_id());
@@ -1206,7 +1207,7 @@ ss::future<remote_partition::erase_result> remote_partition::erase(
  *    of date if e.g. we were not the leader)
  */
 ss::future<> remote_partition::try_erase(ss::abort_source& as) {
-    const auto& stm_manifest = _manifest_view->stm();
+    const auto& stm_manifest = _manifest_view->stm_manifest();
     vlog(
       _ctxlog.info,
       "Attempting to erase remote storage content for {}",
@@ -1284,7 +1285,7 @@ cache_usage_target remote_partition::get_cache_usage_target() const {
 
     // we may not have any materialized segments, but we can decode some info
     // about them anyway from the manifest.
-    auto seg = _manifest_view->stm().last_segment();
+    auto seg = _manifest_view->stm_manifest().last_segment();
     if (seg.has_value()) {
         const auto chunked
           = !config::shard_local_cfg().cloud_storage_disable_chunk_reads()

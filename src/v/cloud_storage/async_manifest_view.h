@@ -95,7 +95,7 @@ public:
     ///       available.
     ss::future<
       result<std::unique_ptr<async_manifest_view_cursor>, error_outcome>>
-    get_active(async_view_search_query_t q) noexcept;
+    get_cursor(async_view_search_query_t q) noexcept;
 
     /// Get inactive spillover manifests which are waiting for
     /// retention
@@ -108,7 +108,7 @@ public:
     const model::ntp& get_ntp() const { return _stm_manifest.get_ntp(); }
 
     /// Return STM manifest
-    const partition_manifest& stm() const { return _stm_manifest; }
+    const partition_manifest& stm_manifest() const { return _stm_manifest; }
 
     /// Structure that describes how the start archive offset has
     /// to be advanced forward.
@@ -137,10 +137,10 @@ private:
     ss::future<> run_bg_loop();
 
     /// Return true if the offset belongs to the archive
-    bool is_archive(async_view_search_query_t o);
+    bool in_archive(async_view_search_query_t o);
 
     /// Returns true if the offset belongs to the archival STM manifest
-    bool is_stm(async_view_search_query_t o);
+    bool in_stm(async_view_search_query_t o);
 
     /// Get spillover manifest by offset/timestamp
     ss::future<result<manifest_section_t, error_outcome>>
@@ -275,7 +275,7 @@ public:
     /// any scheduling point. The reference will be invalidated in this
     /// case.
     template<class Fn>
-    auto manifest(Fn fn) {
+    auto with_manifest(Fn fn) {
         auto ref = manifest();
         vassert(ref.has_value(), "Invalid cursor, {}", _view.get_ntp());
         return fn(ref->get());
@@ -293,8 +293,8 @@ private:
 
     ss::lowres_clock::duration _idle_timeout;
     ss::timer<ss::lowres_clock> _timer;
-    model::offset _begin;
-    model::offset _end;
+    const model::offset _begin;
+    const model::offset _end;
 };
 
 } // namespace cloud_storage
