@@ -16,6 +16,7 @@ from ducktape.mark import matrix
 from ducktape.tests.test import TestContext
 from ducktape.utils.util import wait_until
 
+from rptest.tests.redpanda_test import RedpandaTest
 from rptest.clients.kafka_cli_tools import KafkaCliTools
 from rptest.clients.rpk import RpkTool
 from rptest.clients.types import TopicSpec
@@ -24,7 +25,7 @@ from rptest.services.admin import Admin
 from rptest.services.cluster import cluster
 from rptest.services.kgo_verifier_services import KgoVerifierProducer, KgoVerifierRandomConsumer, KgoVerifierSeqConsumer
 from rptest.services.metrics_check import MetricCheck
-from rptest.services.redpanda import SISettings, get_cloud_storage_type, make_redpanda_service, CHAOS_LOG_ALLOW_LIST
+from rptest.services.redpanda import SISettings, get_cloud_storage_type, make_redpanda_service, CHAOS_LOG_ALLOW_LIST, MetricsEndpoint
 from rptest.tests.end_to_end import EndToEndTest
 from rptest.tests.prealloc_nodes import PreallocNodesTest
 from rptest.util import Scale, wait_until_segments
@@ -34,7 +35,7 @@ from rptest.util import (
     wait_for_local_storage_truncate,
 )
 from rptest.utils.mode_checks import skip_debug_mode
-from rptest.utils.si_utils import nodes_report_cloud_segments, BucketView
+from rptest.utils.si_utils import nodes_report_cloud_segments, BucketView, NTP
 
 
 class EndToEndShadowIndexingBase(EndToEndTest):
@@ -807,3 +808,113 @@ class ShadowIndexingWhileBusyTest(PreallocNodesTest):
 
         producer.wait()
         rand_consumer.wait()
+
+
+class EndToEndSpilloverTest(RedpandaTest):
+    topics = (TopicSpec(partition_count=1,
+                        cleanup_policy=TopicSpec.CLEANUP_DELETE), )
+
+    def __init__(self, test_context):
+        self.si_settings = SISettings(
+            test_context,
+            log_segment_size=1024,
+            fast_uploads=True,
+            cloud_storage_housekeeping_interval_ms=10000)
+        super(EndToEndSpilloverTest, self).__init__(
+            test_context=test_context,
+            # Set to minimal value
+            extra_rp_conf=dict(
+                cloud_storage_spillover_manifest_max_segments=10),
+            si_settings=self.si_settings)
+
+        self.msg_size = 1024 * 256
+        self.msg_count = 1000
+
+    def produce(self):
+        topic_name = self.topics[0].name
+        producer = KgoVerifierProducer(self.test_context,
+                                       self.redpanda,
+                                       topic_name,
+                                       msg_size=self.msg_size,
+                                       msg_count=self.msg_count)
+
+        producer.start()
+        producer.wait()
+        producer.free()
+
+        def all_partitions_spilled():
+            return self.num_manifests_uploaded() > 0
+
+        wait_until(all_partitions_spilled, timeout_sec=180, backoff_sec=10)
+
+    def consume(self):
+        topic_name = self.topics[0].name
+        consumer = KgoVerifierSeqConsumer(self.test_context,
+                                          self.redpanda,
+                                          topic_name,
+                                          msg_size=self.msg_size,
+                                          debug_logs=True,
+                                          trace_logs=True)
+        consumer.start()
+
+        consumer.wait(timeout_sec=100)
+
+        assert consumer.consumer_status.validator.invalid_reads == 0
+        assert consumer.consumer_status.validator.valid_reads >= self.msg_count
+
+        consumer.free()
+
+    @cluster(num_nodes=4)
+    @matrix(cloud_storage_type=get_cloud_storage_type())
+    def test_spillover(self, cloud_storage_type):
+
+        self.logger.info("Start producer")
+        self.produce()
+
+        self.logger.info("Remove local data")
+        # Enable local retention for the topic to force reading from the 'archive'
+        # section of the log and wait for the housekeeping to finish.
+        rpk = RpkTool(self.redpanda)
+        num_partitions = self.topics[0].partition_count
+        topic_name = self.topics[0].name
+        rpk.alter_topic_config(topic_name, 'retention.local.target.bytes',
+                               0x1000)
+
+        for pix in range(0, num_partitions):
+            wait_for_local_storage_truncate(self.redpanda,
+                                            self.topic,
+                                            target_bytes=0x2000,
+                                            partition_idx=pix,
+                                            timeout_sec=30)
+
+        self.logger.info("Start consumer")
+        self.consume()
+
+        self.logger.info("Stop nodes")
+        for node in self.redpanda.nodes:
+            self.redpanda.stop_node(node, timeout=120)
+
+        self.logger.info("Start nodes")
+        for node in self.redpanda.nodes:
+            self.redpanda.start_node(node, timeout=120)
+
+        self.logger.info("Restart consumer")
+        self.consume()
+
+    def num_manifests_uploaded(self):
+        s = self.redpanda.metric_sum(
+            metric_name=
+            "redpanda_cloud_storage_spillover_manifest_uploads_total",
+            metrics_endpoint=MetricsEndpoint.PUBLIC_METRICS)
+        self.logger.info(
+            f"redpanda_cloud_storage_spillover_manifest_uploads = {s}")
+        return s
+
+    def num_manifests_downloaded(self):
+        s = self.redpanda.metric_sum(
+            metric_name=
+            "redpanda_cloud_storage_spillover_manifest_downloads_total",
+            metrics_endpoint=MetricsEndpoint.PUBLIC_METRICS)
+        self.logger.info(
+            f"redpanda_cloud_storage_spillover_manifest_downloads = {s}")
+        return s
