@@ -171,7 +171,7 @@ async_manifest_view_cursor::seek(async_view_search_query_t q) {
     auto res = co_await _view.get_materialized_manifest(q);
     if (res.has_failure()) {
         vlog(
-          _view._ctxlog.error,
+          _view._ctxlog.debug,
           "Failed to seek async_manifest_view_cursor: {}",
           res.error());
         co_return res.as_failure();
@@ -371,7 +371,7 @@ ss::future<> async_manifest_view::run_bg_loop() {
                         vlog(
                           _ctxlog.debug,
                           "Preparing cache for manifest with {} bytes, path {}",
-                          front.search_vec.size_bytes,
+                          front.search_vec.metadata_size_hint,
                           path);
                         // The timeout is TTL x2 because the cursor is allowed
                         // to hold on to the manifest for up to TTL ms. This
@@ -380,7 +380,7 @@ ss::future<> async_manifest_view::run_bg_loop() {
                         // the item and then TTL milliseconds for the cursor
                         // timer to fire.
                         auto u = co_await _manifest_cache.prepare(
-                          front.search_vec.size_bytes,
+                          front.search_vec.metadata_size_hint,
                           _ctxlog,
                           _manifest_meta_ttl() * 2);
                         // At this point we have free memory to download the
@@ -942,8 +942,10 @@ async_manifest_view::hydrate_manifest(
         spillover_manifest manifest(
           _stm_manifest.get_ntp(), _stm_manifest.get_revision_id());
         retry_chain_node fib(_timeout(), _backoff(), &_rtcnode);
+        // Spillover manifests are always serde-encoded
+        auto fk = std::make_pair(manifest_format::serde, path);
         auto res = co_await _remote.local().download_manifest(
-          _bucket, path, manifest, fib);
+          _bucket, fk, manifest, fib);
         if (res != download_result::success) {
             vlog(
               _ctxlog.error,
@@ -958,6 +960,11 @@ async_manifest_view::hydrate_manifest(
           str,
           priority_manager::local().shadow_indexing_priority());
         _probe.on_spillover_manifest_hydration();
+        vlog(
+          _ctxlog.debug,
+          "hydrated manifest {} with {} elements",
+          path,
+          manifest.size());
         co_return std::move(manifest);
     } catch (...) {
         vlog(
@@ -1022,7 +1029,7 @@ std::optional<segment_meta> async_manifest_view::search_spillover_manifests(
           while (!bo_it.is_end()) {
               auto bko = kafka::offset(*bo_it - *do_it);
               auto nko = kafka::offset(*co_it - *de_it);
-              if (k >= bko && k < nko) {
+              if (k >= bko && k <= nko) {
                   return static_cast<int>(bo_it.index());
               }
               ++bo_it;
@@ -1109,12 +1116,7 @@ async_manifest_view::materialize_manifest(
                   res.error());
                 co_return error_outcome::manifest_download_error;
             }
-            auto manifest = std::move(res.value());
-            auto [str, len] = co_await manifest.serialize();
-            co_await _cache.local().put(
-              manifest.get_manifest_path()(),
-              str,
-              priority_manager::local().shadow_indexing_priority());
+            manifest = std::move(res.value());
         } break;
         case cache_element_status::available: {
             auto res = co_await _cache.local().get(path());
