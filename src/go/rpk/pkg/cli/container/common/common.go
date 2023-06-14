@@ -132,7 +132,11 @@ func GetState(c Client, nodeID uint) (*NodeState, error) {
 	var ipAddress string
 	network, exists := containerJSON.NetworkSettings.Networks[redpandaNetwork]
 	if exists {
-		ipAddress = network.IPAMConfig.IPv4Address
+		if network.IPAMConfig != nil {
+			ipAddress = network.IPAMConfig.IPv4Address
+		} else {
+			ipAddress = network.IPAddress
+		}
 	}
 
 	hostRPCPort, err := getHostPort(
