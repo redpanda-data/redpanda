@@ -172,6 +172,8 @@ struct archival_metadata_stm::snapshot
     // Start kafka offset override (set to min() by default and to some value
     // when DeleteRecords was used to override)
     kafka::offset start_kafka_offset;
+    // List of spillover manifests
+    fragmented_vector<segment> spillover_manifests;
 };
 
 inline archival_metadata_stm::segment
@@ -353,6 +355,17 @@ archival_metadata_stm::replaced_segments_from_manifest(
     return segments;
 }
 
+fragmented_vector<archival_metadata_stm::segment>
+archival_metadata_stm::spillover_from_manifest(
+  const cloud_storage::partition_manifest& manifest) {
+    const auto& sp_list = manifest.get_spillover_map();
+    fragmented_vector<segment> res;
+    for (auto meta : sp_list) {
+        res.push_back(segment_from_meta(meta));
+    }
+    return res;
+}
+
 ss::circular_buffer<model::record_batch>
 archival_metadata_stm::serialize_manifest_as_batches(
   model::offset base_offset, const cloud_storage::partition_manifest& m) {
@@ -436,6 +449,7 @@ ss::future<> archival_metadata_stm::make_snapshot(
     // Create archival_stm_snapshot
     auto segments = segments_from_manifest(m);
     auto replaced = replaced_segments_from_manifest(m);
+    auto spillover = spillover_from_manifest(m);
     iobuf snap_data = serde::to_iobuf(snapshot{
       .segments = std::move(segments),
       .replaced = std::move(replaced),
@@ -448,6 +462,7 @@ ss::future<> archival_metadata_stm::make_snapshot(
       .archive_clean_offset = m.get_archive_clean_offset(),
       .archive_size_bytes = m.archive_size_bytes(),
       .start_kafka_offset = m.get_start_kafka_offset_override(),
+      .spillover_manifests = std::move(spillover),
     });
 
     auto snapshot = stm_snapshot::create(
