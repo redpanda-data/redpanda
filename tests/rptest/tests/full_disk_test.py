@@ -461,3 +461,62 @@ class LocalDiskReportTest(RedpandaTest):
             self.redpanda.rolling_restart_nodes(self.redpanda.nodes)
 
             wait_until(lambda: self.check(0.05), timeout_sec=10, backoff_sec=5)
+
+
+class DiskStatsOverrideTest(RedpandaTest):
+    @cluster(num_nodes=3)
+    def test_disk_stat_total_overrides(self):
+        admin = Admin(self.redpanda)
+        # current size
+        orig_stat = admin.get_disk_stat("data", self.redpanda.nodes[0])
+        # set total size to 16 KB smaller
+        admin.set_disk_stat_override("data",
+                                     self.redpanda.nodes[0],
+                                     total_bytes=orig_stat["total_bytes"] -
+                                     (16 * 1024))
+        # updated current size
+        stat = admin.get_disk_stat("data", self.redpanda.nodes[0])
+
+        # the sizes aren't exact because there are conversion that involve
+        # rounding to block size. use a 4K block threshold to test.
+        delta = abs(orig_stat["total_bytes"] - (16 * 1024) -
+                    stat["total_bytes"])
+        assert delta <= 4096
+
+    @cluster(num_nodes=3)
+    def test_disk_stat_free_overrides(self):
+        admin = Admin(self.redpanda)
+        # current size
+        orig_stat = admin.get_disk_stat("data", self.redpanda.nodes[0])
+        # set a fixed free bytes
+        admin.set_disk_stat_override("data",
+                                     self.redpanda.nodes[0],
+                                     free_bytes=orig_stat["total_bytes"])
+        # updated current size
+        stat = admin.get_disk_stat("data", self.redpanda.nodes[0])
+
+        # the sizes aren't exact because there are conversion that involve
+        # rounding to block size. use a 4K block threshold to test.
+        delta = abs(stat["free_bytes"] - stat["total_bytes"])
+        assert delta <= 4096
+
+    @cluster(num_nodes=3)
+    def test_disk_stat_free_delta_overrides(self):
+        admin = Admin(self.redpanda)
+        # current size
+        orig_stat = admin.get_disk_stat("data", self.redpanda.nodes[0])
+        # set a free bytes adjustment
+        # fix free bytes too so this works reliably with noisy neighbors
+        admin.set_disk_stat_override(
+            "data",
+            self.redpanda.nodes[0],
+            free_bytes=orig_stat["free_bytes"],
+            free_bytes_delta=(orig_stat["total_bytes"] -
+                              orig_stat["free_bytes"]))
+        # updated current size
+        stat = admin.get_disk_stat("data", self.redpanda.nodes[0])
+
+        # the sizes aren't exact because there are conversion that involve
+        # rounding to block size. use a 4K block threshold to test.
+        delta = abs(stat["free_bytes"] - stat["total_bytes"])
+        assert delta <= 4096

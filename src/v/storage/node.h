@@ -28,6 +28,8 @@ namespace storage {
  */
 class node {
 public:
+    static constexpr ss::shard_id work_shard = 0;
+
     using notification_id = named_type<int32_t, struct notification_id_t>;
     using disk_cb_t
       = ss::noncopyable_function<void(uint64_t, uint64_t, disk_space_alert)>;
@@ -55,7 +57,28 @@ public:
 
     ss::future<stat_info> get_statvfs(disk_type);
 
-    void testing_only_set_statvfs(std::function<struct statvfs(ss::sstring)>);
+    /*
+     * total_bytes: size of disk
+     *
+     * free_bytes: free space on disk. if not specified then actual free space
+     * is used so that statvfs reflects dynamic changes on the file system.
+     *
+     * free_bytes_delta: signed value applied to free_bytes, for example to
+     * simulate a separate application taking up / freeing space independent of
+     * redpanda.
+     */
+    struct statvfs_overrides {
+        std::optional<size_t> total_bytes;
+        std::optional<size_t> free_bytes;
+        std::optional<ssize_t> free_bytes_delta;
+
+        bool has_overrides() const {
+            return total_bytes.has_value() || free_bytes.has_value()
+                   || free_bytes_delta.has_value();
+        }
+    };
+
+    void set_statvfs_overrides(disk_type, statvfs_overrides);
 
 private:
     storage::node_probe _probe;
@@ -63,8 +86,8 @@ private:
     notification_list<disk_cb_t, notification_id> _data_watchers;
     notification_list<disk_cb_t, notification_id> _cache_watchers;
 
-    std::function<struct statvfs(ss::sstring)> _statvfs_for_test;
-    std::optional<size_t> _disk_size_for_test;
+    statvfs_overrides _data_overrides;
+    statvfs_overrides _cache_overrides;
 
     ss::sstring _data_directory;
     ss::sstring _cache_directory;

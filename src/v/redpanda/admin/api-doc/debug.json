@@ -395,6 +395,57 @@
               ]
             }
           ]
+        },
+        {
+          "path": "/v1/debug/storage/disk_stat/{type}",
+          "operations": [
+            {
+              "method": "GET",
+              "summary": "Return disk space statistics.",
+              "operationId": "get_disk_stat",
+              "nickname": "get_disk_stat",
+              "type": "disk_stat",
+              "produces": [
+                "application/json"
+              ],
+              "parameters": [
+                {
+                  "name": "type",
+                  "in": "path",
+                  "required": true,
+                  "type": "string"
+                }
+              ],
+              "responseMessages": [
+                {
+                  "code": 200
+                }
+              ]
+            },
+            {
+              "method": "PUT",
+              "summary": "Override disk space statistics.",
+              "operationId": "put_disk_stat",
+              "nickname": "put_disk_stat",
+              "type": "disk_stat_overrides",
+              "produces": [
+                "application/json"
+              ],
+              "parameters": [
+                {
+                  "name": "type",
+                  "in": "path",
+                  "required": true,
+                  "type": "string"
+                }
+              ],
+              "responseMessages": [
+                {
+                  "code": 200
+                }
+              ]
+            }
+          ]
         }
     ],
     "models": {
@@ -812,6 +863,38 @@
                 "target_min_capacity_wanted": {
                     "type": "long",
                     "description": "Target minimum capacity wanted"
+                }
+            }
+        },
+        "disk_stat": {
+            "id": "disk_stat",
+            "description": "Effective disk stat used by redpanda",
+            "properties": {
+                "total_bytes": {
+                    "type": "long",
+                    "description": "Total size of disk in bytes"
+                },
+                "free_bytes": {
+                    "type": "long",
+                    "description": "Free size of disk in bytes"
+                }
+            }
+        },
+        "disk_stat_overrides": {
+            "id": "disk_stat_overrides",
+            "description": "Disk stat overrides",
+            "properties": {
+                "total_bytes": {
+                    "type": "long",
+                    "description": "Total size of disk in bytes"
+                },
+                "free_bytes": {
+                    "type": "long",
+                    "description": "Free size of disk in bytes"
+                },
+                "free_bytes_delta": {
+                    "type": "long",
+                    "description": "Free size adjustment (signed)"
                 }
             }
         }

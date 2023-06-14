@@ -17,11 +17,14 @@ node::node(ss::sstring data_directory, ss::sstring cache_directory)
   , _cache_directory(std::move(cache_directory)) {}
 
 ss::future<> node::start() {
-    // Intentionally undocumented environment variable, only for use
-    // in integration tests.
+    /*
+     * Data disk override via environment variable for control in early boot.
+     * Currently restricted to data disk only.
+     */
     const char* test_disk_size_str = std::getenv("__REDPANDA_TEST_DISK_SIZE");
     if (test_disk_size_str) {
-        _disk_size_for_test = std::stoul(std::string(test_disk_size_str));
+        _data_overrides.total_bytes = std::stoul(
+          std::string(test_disk_size_str));
     }
     _probe.setup_node_metrics();
     co_return;
@@ -72,12 +75,12 @@ void node::unregister_disk_notification(disk_type t, notification_id id) {
 }
 
 ss::future<node::stat_info> node::get_statvfs(disk_type type) {
-    const auto path = [&] {
+    const auto [path, overrides] = [&] {
         switch (type) {
         case disk_type::data:
-            return _data_directory;
+            return std::make_pair(_data_directory, _data_overrides);
         case disk_type::cache:
-            return _cache_directory;
+            return std::make_pair(_cache_directory, _cache_overrides);
         }
     }();
 
@@ -85,16 +88,37 @@ ss::future<node::stat_info> node::get_statvfs(disk_type type) {
     info.path = path;
     auto& stat = info.stat;
 
-    if (unlikely(_statvfs_for_test)) {
-        stat = _statvfs_for_test(path);
-    } else {
-        stat = co_await ss::engine().statvfs(path);
-    }
+    stat = co_await ss::engine().statvfs(path);
 
-    if (_disk_size_for_test.has_value()) {
-        const auto used_blocks = stat.f_blocks - stat.f_bfree;
-        const auto total_blocks = std::max(
-          _disk_size_for_test.value() / stat.f_frsize, 1UL);
+    if (unlikely(overrides.has_overrides())) {
+        auto used_blocks = stat.f_blocks - stat.f_bfree;
+
+        /*
+         * total size
+         */
+        auto total_blocks = stat.f_blocks;
+        if (overrides.total_bytes.has_value()) {
+            total_blocks = std::max(
+              overrides.total_bytes.value() / stat.f_frsize, 1UL);
+        }
+
+        /*
+         * free space
+         */
+        if (overrides.free_bytes.has_value()) {
+            const auto free_blocks = std::max(
+              overrides.free_bytes.value() / stat.f_frsize, 1UL);
+            used_blocks = total_blocks - free_blocks;
+        }
+
+        /*
+         * free bytes delta can adjust free size up/down. it's a signed value.
+         */
+        if (overrides.free_bytes_delta.has_value()) {
+            const auto free_blocks_delta = overrides.free_bytes_delta.value()
+                                           / ssize_t(stat.f_frsize);
+            used_blocks -= free_blocks_delta;
+        }
 
         if (total_blocks < used_blocks) {
             vlog(
@@ -112,9 +136,15 @@ ss::future<node::stat_info> node::get_statvfs(disk_type type) {
     co_return info;
 }
 
-void node::testing_only_set_statvfs(
-  std::function<struct statvfs(ss::sstring)> func) {
-    _statvfs_for_test = std::move(func);
+void node::set_statvfs_overrides(disk_type type, statvfs_overrides overrides) {
+    switch (type) {
+    case disk_type::data:
+        _data_overrides = overrides;
+        break;
+    case disk_type::cache:
+        _cache_overrides = overrides;
+        break;
+    }
 }
 
 } // namespace storage
