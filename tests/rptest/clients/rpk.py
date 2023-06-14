@@ -224,7 +224,10 @@ class RpkTool:
                 self._check_stdout_success(output)
                 return (True, output)
             except RpkException as e:
+                self._redpanda.logger.debug(str(e))
                 if "Kafka replied that the controller broker is -1" in str(e):
+                    return False
+                elif "SASL authentication failed" in str(e):
                     return False
                 raise e
 
