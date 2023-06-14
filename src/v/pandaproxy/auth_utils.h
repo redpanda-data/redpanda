@@ -34,7 +34,9 @@ inline credential_t maybe_authenticate_request(
         // did not give the authorization header.
         auth_result.require_authenticated();
         user = credential_t{
-          auth_result.get_username(), auth_result.get_password()};
+          auth_result.get_username(),
+          auth_result.get_password(),
+          auth_result.get_sasl_mechanism()};
     }
 
     return user;

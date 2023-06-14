@@ -15,7 +15,10 @@
 #include "seastar/http/exception.hh"
 #include "security/credential_store.h"
 #include "security/scram_algorithm.h"
+#include "security/scram_authenticator.h"
 #include "vlog.h"
+
+#include <seastar/core/sstring.hh>
 
 static ss::logger logger{"request_auth"};
 
@@ -112,11 +115,23 @@ request_auth_result request_authenticator::do_authenticate(
               "Unauthorized", ss::http::reply::status_type::unauthorized);
         } else {
             const auto& cred = cred_opt.value();
-            bool is_valid = (
-              security::scram_sha256::validate_password(
-                password, cred.stored_key(), cred.salt(), cred.iterations())
-              || security::scram_sha512::validate_password(
-                password, cred.stored_key(), cred.salt(), cred.iterations()));
+            ss::sstring sasl_mechanism;
+            bool is_valid{false};
+            if (security::scram_sha256::validate_password(
+                  password,
+                  cred.stored_key(),
+                  cred.salt(),
+                  cred.iterations())) {
+                is_valid = true;
+                sasl_mechanism = security::scram_sha256_authenticator::name;
+            } else if (security::scram_sha512::validate_password(
+                         password,
+                         cred.stored_key(),
+                         cred.salt(),
+                         cred.iterations())) {
+                is_valid = true;
+                sasl_mechanism = security::scram_sha512_authenticator::name;
+            }
             if (!is_valid) {
                 // User found, password doesn't match
                 vlog(
@@ -134,6 +149,7 @@ request_auth_result request_authenticator::do_authenticate(
                 return request_auth_result(
                   std::move(username),
                   std::move(password),
+                  std::move(sasl_mechanism),
                   request_auth_result::superuser(superuser));
             }
         }

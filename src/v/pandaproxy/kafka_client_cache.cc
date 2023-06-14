@@ -54,7 +54,7 @@ client_ptr kafka_client_cache::make_client(
     // Set the principal when the request is using HTTP Basic AuthN
     if (authn_method == config::rest_authn_method::http_basic) {
         // Need to specify type or else bad any_cast runtime error
-        cfg.sasl_mechanism.set_value(ss::sstring{"SCRAM-SHA-256"});
+        cfg.sasl_mechanism.set_value(std::move(user.sasl_mechanism));
         cfg.scram_username.set_value(std::move(user.name));
         cfg.scram_password.set_value(std::move(user.pass));
     }
