@@ -290,6 +290,8 @@ struct configuration final : public config_store {
     property<std::optional<ss::sstring>> cloud_storage_credentials_host;
     bounded_property<std::optional<size_t>>
       cloud_storage_spillover_manifest_size;
+    property<std::optional<size_t>>
+      cloud_storage_spillover_manifest_max_segments;
     bounded_property<size_t> cloud_storage_manifest_cache_size;
     property<std::chrono::milliseconds> cloud_storage_manifest_cache_ttl_ms;
 
