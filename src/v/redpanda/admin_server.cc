@@ -63,6 +63,7 @@
 #include "net/dns.h"
 #include "pandaproxy/rest/api.h"
 #include "pandaproxy/schema_registry/api.h"
+#include "pandaproxy/schema_registry/schema_id_validation.h"
 #include "raft/types.h"
 #include "redpanda/admin/api-doc/broker.json.h"
 #include "redpanda/admin/api-doc/cluster.json.h"
@@ -86,6 +87,7 @@
 #include "security/scram_credential.h"
 #include "ssx/future-util.h"
 #include "ssx/metrics.h"
+#include "ssx/sformat.h"
 #include "utils/fragmented_vector.h"
 #include "utils/string_switch.h"
 #include "utils/utf8.h"
@@ -1244,6 +1246,7 @@ join_properties(const std::vector<std::reference_wrapper<
  */
 void config_multi_property_validation(
   ss::sstring const& username,
+  pandaproxy::schema_registry::api* schema_registry,
   cluster::config_update_request const& req,
   config::configuration const& updated_config,
   std::map<ss::sstring, ss::sstring>& errors) {
@@ -1336,6 +1339,14 @@ void config_multi_property_validation(
                 }
             }
         }
+    }
+    if (
+      updated_config.enable_schema_id_validation
+        != pandaproxy::schema_registry::schema_id_validation_mode::none
+      && !schema_registry) {
+        auto name = updated_config.enable_schema_id_validation.name();
+        errors[ss::sstring(name)] = ssx::sformat(
+          "{} requires schema_registry to be enabled in redpanda.yaml", name);
     }
 }
 
@@ -1542,7 +1553,7 @@ admin_server::patch_cluster_config_handler(
         // After checking each individual property, check for
         // any multi-property validation errors
         config_multi_property_validation(
-          auth_state.get_username(), update, cfg, errors);
+          auth_state.get_username(), _schema_registry, update, cfg, errors);
 
         if (!errors.empty()) {
             json::StringBuffer buf;
