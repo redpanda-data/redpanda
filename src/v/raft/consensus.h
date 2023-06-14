@@ -102,6 +102,8 @@ public:
       std::optional<voter_priority> = std::nullopt,
       keep_snapshotted_log = keep_snapshotted_log::no);
 
+    ~consensus() noexcept;
+
     /// Initial call. Allow for internal state recovery
     ss::future<> start();
 

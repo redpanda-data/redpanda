@@ -151,6 +151,8 @@ consensus::consensus(
     });
 }
 
+consensus::~consensus() noexcept { vlog(_ctxlog.trace, "destructor begin"); }
+
 void consensus::setup_metrics() {
     namespace sm = ss::metrics;
 
