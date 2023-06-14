@@ -713,6 +713,12 @@ private:
           estimated;
         model::offset last_end_tx{-1};
 
+        // depending on the inflight state we may use last_applied or
+        // committed_index as LSO; the alternation between them may
+        // violate LSO monotonicity so we need to explicitly maintain
+        // it with last_lso
+        model::offset last_lso{-1};
+
         // FIELDS TO GO AFTER GA
         // a map from producer_identity (a session) to the first offset of
         // the current transaction in this session
