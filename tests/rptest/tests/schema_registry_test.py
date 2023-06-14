@@ -2340,3 +2340,48 @@ class SchemaValidationTopicPropertiesTest(RedpandaTest):
             assert False, "Expected failure"
         except RpkException:
             pass
+
+
+class SchemaRegistryLicenseTest(RedpandaTest):
+    LICENSE_CHECK_INTERVAL_SEC = 1
+
+    def __init__(self, *args, **kwargs):
+        super(SchemaRegistryLicenseTest,
+              self).__init__(*args,
+                             extra_rp_conf={
+                                 'enable_schema_id_validation':
+                                 SchemaIdValidationMode.NONE.value
+                             },
+                             **kwargs)
+        self.redpanda.set_environment({
+            '__REDPANDA_LICENSE_CHECK_INTERVAL_SEC':
+            f'{self.LICENSE_CHECK_INTERVAL_SEC}'
+        })
+
+    def _has_license_nag(self):
+        return self.redpanda.search_log_any("Enterprise feature(s).*")
+
+    def _license_nag_is_set(self):
+        return self.redpanda.search_log_all(
+            f"Overriding default license log annoy interval to: {self.LICENSE_CHECK_INTERVAL_SEC}s"
+        )
+
+    @cluster(num_nodes=3)
+    @parametrize(mode=SchemaIdValidationMode.REDPANDA)
+    @parametrize(mode=SchemaIdValidationMode.COMPAT)
+    def test_license_nag(self, mode):
+        wait_until(self._license_nag_is_set,
+                   timeout_sec=30,
+                   err_msg="Failed to set license nag internal")
+
+        self.logger.debug("Ensuring no license nag")
+        time.sleep(self.LICENSE_CHECK_INTERVAL_SEC * 2)
+        assert not self._has_license_nag()
+
+        self.logger.debug("Setting cluster config")
+        self.redpanda.set_cluster_config({"enable_schema_id_validation": mode})
+
+        self.logger.debug("Waiting for license nag")
+        wait_until(self._has_license_nag,
+                   timeout_sec=self.LICENSE_CHECK_INTERVAL_SEC * 2,
+                   err_msg="License nag failed to appear")

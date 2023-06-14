@@ -19,6 +19,7 @@
 #include "config/configuration.h"
 #include "features/feature_table.h"
 #include "model/timeout_clock.h"
+#include "pandaproxy/schema_registry/schema_id_validation.h"
 #include "raft/group_manager.h"
 
 #include <absl/algorithm/container.h>
@@ -209,11 +210,16 @@ ss::future<> feature_manager::maybe_log_license_check_info() {
                 return m == "GSSAPI";
             });
         };
+        auto has_schma_id_validation = [&cfg]() {
+            return cfg.enable_schema_id_validation()
+                   != pandaproxy::schema_registry::schema_id_validation_mode::
+                     none;
+        };
         if (
           cfg.cloud_storage_enabled
           || cfg.partition_autobalancing_mode
                == model::partition_autobalancing_mode::continuous
-          || has_gssapi()) {
+          || has_gssapi() || has_schma_id_validation()) {
             const auto& license = _feature_table.local().get_license();
             if (!license || license->is_expired()) {
                 vlog(
@@ -297,16 +303,14 @@ feature_manager::auto_activate_features(
          *     is satisfied by cluster's original version.
          */
         for (const auto& fs : _feature_table.local().get_feature_state()) {
-            if (
-              (fs.get_state() == features::feature_state::state::unavailable
-               || fs.get_state() == features::feature_state::state::available)
-              && ((fs.spec.available_rule
-                   == features::feature_spec::available_policy::always
-              && effective_version >= fs.spec.require_version) || (
-                    fs.spec.available_rule == features::feature_spec::available_policy::new_clusters_only
-                    &&
-                    original_version >= fs.spec.require_version
-                    ))) {
+            if ((fs.get_state() == features::feature_state::state::unavailable ||
+           fs.get_state() == features::feature_state::state::available) &&
+          ((fs.spec.available_rule ==
+                features::feature_spec::available_policy::always &&
+            effective_version >= fs.spec.require_version) ||
+           (fs.spec.available_rule ==
+                features::feature_spec::available_policy::new_clusters_only &&
+            original_version >= fs.spec.require_version))) {
                 result.push_back(fs.spec);
             }
         }
