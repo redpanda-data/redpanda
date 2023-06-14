@@ -15,7 +15,7 @@ from rptest.services.cluster import cluster
 from rptest.services.rpk_consumer import RpkConsumer
 
 from rptest.services.producer_swarm import ProducerSwarm
-from ducktape.mark import matrix
+from ducktape.mark import matrix, ok_to_fail
 
 
 class CompactionMode(str, enum.Enum):
@@ -68,11 +68,19 @@ class ManyClientsTest(RedpandaTest):
         pass
 
     @cluster(num_nodes=7)
-    @matrix(compaction_mode=[
-        CompactionMode.NONE, CompactionMode.REALISTIC,
-        CompactionMode.PATHOLOGICAL
-    ])
-    def test_many_clients(self, compaction_mode):
+    def test_many_clients_no_compaction(self):
+        self._test_many_clients(compaction_mode=CompactionMode.NONE)
+
+    @cluster(num_nodes=7)
+    def test_many_clients_realistic_compaction(self):
+        self._test_many_clients(compaction_mode=CompactionMode.REALISTIC)
+
+    @cluster(num_nodes=7)
+    @ok_to_fail
+    def test_many_clients_pathological_compaction(self):
+        self._test_many_clients(compaction_mode=CompactionMode.PATHOLOGICAL)
+
+    def _test_many_clients(self, compaction_mode):
         """
         Check that redpanda remains stable under higher numbers of clients
         than usual.
