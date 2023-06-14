@@ -682,7 +682,7 @@ ss::future<std::error_code> controller_backend::force_replica_set_update(
  * or it's revision is less than revision it topic table
  * And it's revision is less than topic table snapshot revision
  */
-bool topic_files_are_orphan(
+static bool topic_files_are_orphan(
   const model::ntp& ntp,
   storage::partition_path::metadata ntp_directory_data,
   const absl::flat_hash_map<model::ntp, model::revision_id>&
@@ -718,8 +718,7 @@ ss::future<> controller_backend::clear_orphan_topic_files(
     return _storage.local().log_mgr().remove_orphan_files(
       _data_directory,
       std::move(namespaces),
-      [&,
-       bootstrap_revision,
+      [bootstrap_revision,
        topic_table_snapshot = std::move(topic_table_snapshot)](
         model::ntp ntp, storage::partition_path::metadata p) {
           return topic_files_are_orphan(
