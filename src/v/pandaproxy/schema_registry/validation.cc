@@ -457,9 +457,16 @@ std::optional<schema_id_validator> maybe_make_schema_id_validator(
   const model::topic& topic,
   const cluster::topic_properties& props) {
     auto mode = config::shard_local_cfg().enable_schema_id_validation();
-    return api != nullptr && should_validate_schema_id(props, mode)
-             ? std::make_optional<schema_id_validator>(api, topic, props, mode)
-             : std::nullopt;
+    if (should_validate_schema_id(props, mode)) {
+        if (!api) {
+            vlog(
+              plog.error,
+              "{} requires schema_registry to be enabled in redpanda.yaml",
+              config::shard_local_cfg().enable_schema_id_validation.name());
+        }
+        return std::make_optional<schema_id_validator>(api, topic, props, mode);
+    }
+    return std::nullopt;
 }
 
 ss::future<schema_id_validator::result>
