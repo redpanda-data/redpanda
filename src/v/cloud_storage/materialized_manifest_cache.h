@@ -42,11 +42,11 @@ struct materialized_manifest
     materialized_manifest(
       const model::ntp& ntp,
       model::initial_revision_id rev,
-      ss::semaphore_units<> u)
+      ssx::semaphore_units u)
       : manifest(ntp, rev)
       , _units(std::move(u)) {}
 
-    materialized_manifest(spillover_manifest manifest, ss::semaphore_units<> u)
+    materialized_manifest(spillover_manifest manifest, ssx::semaphore_units u)
       : manifest(std::move(manifest))
       , _units(std::move(u)) {}
 
@@ -58,7 +58,7 @@ struct materialized_manifest
     materialized_manifest& operator=(materialized_manifest&&) = delete;
 
     spillover_manifest manifest;
-    ss::semaphore_units<> _units;
+    ssx::semaphore_units _units;
     intrusive_list_hook _hook;
     /// Flag which is set to true when the manifest is being evicted
     /// from the cache.
@@ -93,7 +93,7 @@ public:
     /// \param ctxlog logger of the caller
     /// \param timeout is a timeout for the operation
     /// \return future that result in acquired semaphore units
-    ss::future<ss::semaphore_units<>> prepare(
+    ss::future<ssx::semaphore_units> prepare(
       size_t size_bytes,
       retry_chain_logger& ctxlog,
       std::optional<ss::lowres_clock::duration> timeout = std::nullopt);
@@ -117,7 +117,7 @@ public:
     ///       present the manifest won't be added. Semaphore units
     ///       will be returned.
     void put(
-      ss::semaphore_units<> s,
+      ssx::semaphore_units s,
       spillover_manifest manifest,
       retry_chain_logger& ctxlog);
 
@@ -198,7 +198,7 @@ private:
     /// Storage for manifests
     map_t _cache;
     ss::gate _gate;
-    ss::semaphore _sem;
+    ssx::semaphore _sem;
     /// LRU order list (least recently used elements are in the back of the
     /// list)
     access_list_t _access_order;
@@ -211,7 +211,7 @@ private:
     /// from '_reserved'. This solves the problem of static semaphore count
     /// which can't be changed without recreating the semaphore and makes
     /// difficult cache resizing.
-    ss::semaphore_units<> _reserved;
+    ssx::semaphore_units _reserved;
 };
 
 } // namespace cloud_storage

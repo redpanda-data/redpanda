@@ -1855,7 +1855,8 @@ ss::future<> ntp_archiver::apply_archive_retention() {
     }
 
     if (
-      res.value().offset == _manifest_view->stm().get_archive_start_offset()) {
+      res.value().offset
+      == _manifest_view->stm_manifest().get_archive_start_offset()) {
         co_return;
     }
 
@@ -1870,7 +1871,7 @@ ss::future<> ntp_archiver::apply_archive_retention() {
 
     if (error != cluster::errc::success) {
         vlog(
-          _rtclog.error,
+          _rtclog.warn,
           "Failed to replicate archive truncation command: {}",
           error.message());
     } else {
@@ -1909,7 +1910,7 @@ ss::future<> ntp_archiver::garbage_collect_archive() {
     while (cursor->get_status()
            == cloud_storage::async_manifest_view_cursor_status::
              materialized_spillover) {
-        auto stop = cursor->manifest(
+        auto stop = cursor->with_manifest(
           [&](const cloud_storage::partition_manifest& manifest) {
               for (const auto& meta : manifest) {
                   if (meta.committed_offset < clean_offset) {
@@ -2180,7 +2181,7 @@ ss::future<> ntp_archiver::apply_spillover() {
         auto error = co_await batch.replicate();
         if (error != cluster::errc::success) {
             vlog(
-              _rtclog.error,
+              _rtclog.warn,
               "Failed to replicate spillover command: {}",
               error.message());
         } else {

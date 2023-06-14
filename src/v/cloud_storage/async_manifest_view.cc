@@ -343,114 +343,114 @@ ss::future<> async_manifest_view::run_bg_loop() {
             co_await _cvar.when(
               [&] { return !_requests.empty() || _as.abort_requested(); });
             _as.check();
-            if (!_requests.empty()) {
-                auto front = std::move(_requests.front());
-                _requests.pop_front();
-                try {
-                    auto path = get_spillover_manifest_path(front.search_vec);
+            if (_requests.empty()) {
+                continue;
+            }
+            auto front = std::move(_requests.front());
+            _requests.pop_front();
+            try {
+                auto path = get_spillover_manifest_path(front.search_vec);
+                vlog(
+                  _ctxlog.debug,
+                  "Processing spillover manifest request {}, path: {}",
+                  front.search_vec,
+                  path);
+                if (in_stm(front.search_vec.base_offset)) {
+                    vlog(
+                      _ctxlog.warn,
+                      "Request {} refers to STM manifest",
+                      front.search_vec);
+                    // Normally, the request shouldn't contain the STM
+                    // request but nothing prevents us from handling this
+                    // just in case.
+                    front.promise.set_value(std::ref(_stm_manifest));
+                    continue;
+                }
+                if (!_manifest_cache.contains(front.search_vec.base_offset)) {
+                    // Manifest is not cached and has to be hydrated and/or
+                    // materialized.
                     vlog(
                       _ctxlog.debug,
-                      "Processing spillover manifest request {}, path: {}",
-                      front.search_vec,
+                      "Preparing cache for manifest with {} bytes, path {}",
+                      front.search_vec.metadata_size_hint,
                       path);
-                    if (is_stm(front.search_vec.base_offset)) {
+                    // The timeout is TTL x2 because the cursor is allowed
+                    // to hold on to the manifest for up to TTL ms. This
+                    // means that waiting exactly TTL milliseconds is not
+                    // enough because we need some time for cache to evict
+                    // the item and then TTL milliseconds for the cursor
+                    // timer to fire.
+                    auto u = co_await _manifest_cache.prepare(
+                      front.search_vec.metadata_size_hint,
+                      _ctxlog,
+                      _manifest_meta_ttl() * 2);
+                    // At this point we have free memory to download the
+                    // spillover manifest.
+                    auto m_res = co_await materialize_manifest(path);
+                    if (m_res.has_failure()) {
                         vlog(
-                          _ctxlog.warn,
-                          "Request {} refers to STM manifest",
-                          front.search_vec);
-                        // Normally, the request shouldn't contain the STM
-                        // request but nothing prevents us from handling this
-                        // just in case.
-                        front.promise.set_value(std::ref(_stm_manifest));
+                          _ctxlog.error,
+                          "Failed to materialize manifest {}, vec: {}, "
+                          "error: "
+                          "{}",
+                          path,
+                          front.search_vec,
+                          m_res.error());
+                        front.promise.set_value(m_res.as_failure());
                         continue;
                     }
-                    if (!_manifest_cache.contains(
-                          front.search_vec.base_offset)) {
-                        // Manifest is not cached and has to be hydrated and/or
-                        // materialized.
-                        vlog(
-                          _ctxlog.debug,
-                          "Preparing cache for manifest with {} bytes, path {}",
-                          front.search_vec.metadata_size_hint,
-                          path);
-                        // The timeout is TTL x2 because the cursor is allowed
-                        // to hold on to the manifest for up to TTL ms. This
-                        // means that waiting exactly TTL milliseconds is not
-                        // enough because we need some time for cache to evict
-                        // the item and then TTL milliseconds for the cursor
-                        // timer to fire.
-                        auto u = co_await _manifest_cache.prepare(
-                          front.search_vec.metadata_size_hint,
-                          _ctxlog,
-                          _manifest_meta_ttl() * 2);
-                        // At this point we have free memory to download the
-                        // spillover manifest.
-                        auto m_res = co_await materialize_manifest(path);
-                        if (m_res.has_failure()) {
-                            vlog(
-                              _ctxlog.error,
-                              "Failed to materialize manifest {}, vec: {}, "
-                              "error: "
-                              "{}",
-                              path,
-                              front.search_vec,
-                              m_res.error());
-                            front.promise.set_value(m_res.as_failure());
-                            continue;
-                        }
-                        // Put newly materialized manifest into the cache
-                        auto lso = m_res.value().get_start_offset();
-                        vlog(
-                          _ctxlog.debug,
-                          "Manifest with LSO {} is materialized, using {} "
-                          "units to put it into the cache {{cache size: "
-                          "{}/{}}}",
-                          lso,
-                          u.count(),
-                          _manifest_cache.size(),
-                          _manifest_cache.size_bytes());
-                        _manifest_cache.put(
-                          std::move(u), std::move(m_res.value()), _ctxlog);
-                        _probe.set_spillover_manifest_bytes(
-                          static_cast<int64_t>(_manifest_cache.size_bytes()));
-                        _probe.set_spillover_manifest_instances(
-                          static_cast<int32_t>(_manifest_cache.size()));
-                        vlog(
-                          _ctxlog.debug,
-                          "Manifest with LSO {} is cached {{cache size: "
-                          "{}/{}}}",
-                          lso,
-                          _manifest_cache.size(),
-                          _manifest_cache.size_bytes());
-                    } else {
-                        vlog(_ctxlog.debug, "Manifest is already materialized");
-                    }
-                    auto cached = _manifest_cache.get(
-                      front.search_vec.base_offset, _ctxlog);
-                    front.promise.set_value(cached);
+                    // Put newly materialized manifest into the cache
+                    auto lso = m_res.value().get_start_offset();
                     vlog(
                       _ctxlog.debug,
-                      "Spillover manifest request {} processed successfully, "
-                      "found manifest that contains offset range [{}:{}]",
-                      front.search_vec,
-                      cached->manifest.get_start_offset(),
-                      cached->manifest.get_last_offset());
-                } catch (const std::system_error& err) {
+                      "Manifest with LSO {} is materialized, using {} "
+                      "units to put it into the cache {{cache size: "
+                      "{}/{}}}",
+                      lso,
+                      u.count(),
+                      _manifest_cache.size(),
+                      _manifest_cache.size_bytes());
+                    _manifest_cache.put(
+                      std::move(u), std::move(m_res.value()), _ctxlog);
+                    _probe.set_spillover_manifest_bytes(
+                      static_cast<int64_t>(_manifest_cache.size_bytes()));
+                    _probe.set_spillover_manifest_instances(
+                      static_cast<int32_t>(_manifest_cache.size()));
                     vlog(
-                      _ctxlog.error,
-                      "Failed processing request {}, exception: {} : {}",
-                      front.search_vec,
-                      err.code(),
-                      err.what());
-                    front.promise.set_to_current_exception();
-                } catch (...) {
-                    vlog(
-                      _ctxlog.error,
-                      "Failed processing request {}, exception: {}",
-                      front.search_vec,
-                      std::current_exception());
-                    front.promise.set_to_current_exception();
+                      _ctxlog.debug,
+                      "Manifest with LSO {} is cached {{cache size: "
+                      "{}/{}}}",
+                      lso,
+                      _manifest_cache.size(),
+                      _manifest_cache.size_bytes());
+                } else {
+                    vlog(_ctxlog.debug, "Manifest is already materialized");
                 }
+                auto cached = _manifest_cache.get(
+                  front.search_vec.base_offset, _ctxlog);
+                front.promise.set_value(cached);
+                vlog(
+                  _ctxlog.debug,
+                  "Spillover manifest request {} processed successfully, "
+                  "found manifest that contains offset range [{}:{}]",
+                  front.search_vec,
+                  cached->manifest.get_start_offset(),
+                  cached->manifest.get_last_offset());
+            } catch (const std::system_error& err) {
+                vlog(
+                  _ctxlog.error,
+                  "Failed processing request {}, exception: {} : {}",
+                  front.search_vec,
+                  err.code(),
+                  err.what());
+                front.promise.set_to_current_exception();
+            } catch (...) {
+                vlog(
+                  _ctxlog.error,
+                  "Failed processing request {}, exception: {}",
+                  front.search_vec,
+                  std::current_exception());
+                front.promise.set_to_current_exception();
             }
         }
     } catch (const ss::broken_condition_variable&) {
@@ -477,20 +477,18 @@ ss::future<> async_manifest_view::run_bg_loop() {
 }
 
 ss::future<result<std::unique_ptr<async_manifest_view_cursor>, error_outcome>>
-async_manifest_view::get_active(async_view_search_query_t query) noexcept {
+async_manifest_view::get_cursor(async_view_search_query_t query) noexcept {
     try {
         ss::gate::holder h(_gate);
         if (
-          !is_archive(query) && !is_stm(query)
+          !in_archive(query) && !in_stm(query)
           && !std::holds_alternative<model::timestamp>(query)) {
             // The view should contain manifest below archive start in
             // order to be able to perform retention and advance metadata.
             vlog(
               _ctxlog.debug,
-              "query {} is out of valid range, is-archive: {}, is-stm: {}",
-              to_string(query),
-              is_archive(query),
-              is_stm(query));
+              "query {} is out of valid range",
+              to_string(query));
             co_return error_outcome::out_of_range;
         }
         model::offset begin;
@@ -505,30 +503,44 @@ async_manifest_view::get_active(async_view_search_query_t query) noexcept {
         // This calls 'get_materialized_manifest' internally which
         // could potentially schedule manifest hydration/materialization
         // in the background fiber.
-        auto result = co_await cursor->seek(query);
-        if (result.has_error()) {
-            vlog(
-              _ctxlog.error,
-              "failed to seek to offset {}, error: {}",
-              query,
-              result.error());
-            co_return result.as_failure();
+        int retry_quota = 4;
+        while (retry_quota-- > 0) {
+            auto result = co_await cursor->seek(query);
+            if (result.has_error()) {
+                if (result.error() == error_outcome::repeat) {
+                    vlog(_ctxlog.debug, "seek to {} need to be retried", query);
+                    continue;
+                } else if (result.error() == error_outcome::out_of_range) {
+                    vlog(
+                      _ctxlog.debug,
+                      "failed to seek to {}, out-of-range",
+                      query);
+                } else {
+                    vlog(
+                      _ctxlog.error,
+                      "failed to seek to {}, error: {}",
+                      query,
+                      result.error());
+                }
+                co_return result.as_failure();
+            }
+            if (!result.value()) {
+                vlog(
+                  _ctxlog.debug,
+                  "failed to seek to {}, offset out of valid range",
+                  query);
+                co_return error_outcome::out_of_range;
+            }
+            co_return cursor;
         }
-        if (!result.value()) {
-            vlog(
-              _ctxlog.debug,
-              "failed to seek to offset {}, offset out of valid range",
-              query);
-            co_return error_outcome::out_of_range;
-        }
-        co_return cursor;
+        vlog(_ctxlog.debug, "can't seek to {} retry quota exceeded", query);
     } catch (...) {
         vlog(
           _ctxlog.error,
           "Failed to create a cursor: {}",
           std::current_exception());
-        co_return error_outcome::failure;
     }
+    co_return error_outcome::failure;
 }
 
 ss::future<result<std::unique_ptr<async_manifest_view_cursor>, error_outcome>>
@@ -544,30 +556,39 @@ async_manifest_view::get_retention_backlog() noexcept {
         // the spillover manifest doesn't exist in the cloud. To avoid this we
         // should never delete spillover manifests above the
         auto q = _stm_manifest.get_archive_clean_offset();
-        auto result = co_await cursor->seek(q);
-        if (result.has_error()) {
-            vlog(
-              _ctxlog.error,
-              "failed to seek to offset {} in the retention backlog, error: {}",
-              q,
-              result.error());
-            co_return result.as_failure();
+        int retry_quota = 4;
+        while (retry_quota-- > 0) {
+            auto result = co_await cursor->seek(q);
+            if (result.has_error()) {
+                if (result.error() == error_outcome::repeat) {
+                    vlog(_ctxlog.debug, "seek to {} need to be retried", q);
+                    continue;
+                }
+                vlog(
+                  _ctxlog.error,
+                  "failed to seek to {} in the retention backlog, "
+                  "error: {}",
+                  q,
+                  result.error());
+                co_return result.as_failure();
+            }
+            co_return cursor;
         }
-        co_return cursor;
+        vlog(_ctxlog.debug, "can't seek to {} retry quota exceeded", q);
     } catch (...) {
         vlog(
           _ctxlog.error,
           "Failed to create a cursor: {}",
           std::current_exception());
-        co_return error_outcome::failure;
     }
+    co_return error_outcome::failure;
 }
 
 bool async_manifest_view::is_empty() const noexcept {
     return _stm_manifest.size() == 0;
 }
 
-bool async_manifest_view::is_archive(async_view_search_query_t o) {
+bool async_manifest_view::in_archive(async_view_search_query_t o) {
     if (_stm_manifest.get_archive_start_offset() == model::offset{}) {
         return false;
     }
@@ -589,7 +610,7 @@ bool async_manifest_view::is_archive(async_view_search_query_t o) {
       });
 }
 
-bool async_manifest_view::is_stm(async_view_search_query_t o) {
+bool async_manifest_view::in_stm(async_view_search_query_t o) {
     return ss::visit(
       o,
       [this](model::offset ro) {
@@ -676,7 +697,7 @@ async_manifest_view::offset_based_retention() noexcept {
     archive_start_offset_advance result;
     try {
         auto boundary = _stm_manifest.get_start_kafka_offset_override();
-        auto res = co_await get_active(boundary);
+        auto res = co_await get_cursor(boundary);
         if (res.has_failure() && res.error() != error_outcome::out_of_range) {
             vlog(
               _ctxlog.error,
@@ -725,7 +746,7 @@ async_manifest_view::time_based_retention(
           _ctxlog.debug,
           "Computing time-based retention, boundary: {}",
           boundary);
-        auto res = co_await get_active(boundary);
+        auto res = co_await get_cursor(boundary);
         if (res.has_failure() && res.error() != error_outcome::out_of_range) {
             vlog(
               _ctxlog.error,
@@ -741,7 +762,7 @@ async_manifest_view::time_based_retention(
               "There is no segment old enough to be removed by retention");
         } else {
             auto cursor = std::move(res.value());
-            auto [offset, delta] = cursor->manifest(
+            auto [offset, delta] = cursor->with_manifest(
               [boundary](const partition_manifest& manifest) {
                   model::offset prev_offset;
                   model::offset_delta prev_delta;
@@ -792,7 +813,7 @@ async_manifest_view::size_based_retention(size_t size_limit) noexcept {
               cloud_log_size,
               size_limit,
               to_remove);
-            auto res = co_await get_active(
+            auto res = co_await get_cursor(
               _stm_manifest.get_archive_start_offset());
             if (res.has_failure()) {
                 vlog(
@@ -811,7 +832,7 @@ async_manifest_view::size_based_retention(size_t size_limit) noexcept {
                 // we should keep scanning.
                 model::offset last_offset;
                 model::offset_delta last_delta;
-                auto eof = cursor->manifest(
+                auto eof = cursor->with_manifest(
                   [this, &to_remove, &last_offset, &last_delta](
                     const auto& manifest) mutable {
                       if (
@@ -888,13 +909,13 @@ async_manifest_view::get_materialized_manifest(
   async_view_search_query_t q) noexcept {
     try {
         ss::gate::holder h(_gate);
-        if (is_stm(q)) {
+        if (in_stm(q)) {
             vlog(_ctxlog.debug, "Query {} matches with STM manifest", q);
             // Fast path for STM reads
             co_return std::ref(_stm_manifest);
         }
         if (
-          !is_stm(q) && std::holds_alternative<model::timestamp>(q)
+          !in_stm(q) && std::holds_alternative<model::timestamp>(q)
           && _stm_manifest.get_archive_start_offset() == model::offset{}) {
             vlog(_ctxlog.debug, "Using STM manifest for timequery {}", q);
             co_return std::ref(_stm_manifest);
@@ -1027,8 +1048,11 @@ std::optional<segment_meta> async_manifest_view::search_spillover_manifests(
           auto do_it = do_col.begin();
           auto de_it = de_col.begin();
           while (!bo_it.is_end()) {
-              auto bko = kafka::offset(*bo_it - *do_it);
-              auto nko = kafka::offset(*co_it - *de_it);
+              static constexpr int64_t min_delta = model::offset::min()();
+              auto d_begin = *do_it == min_delta ? 0 : *do_it;
+              auto d_end = *de_it == min_delta ? d_begin : *de_it;
+              auto bko = kafka::offset(*bo_it - d_begin);
+              auto nko = kafka::offset(*co_it - d_end);
               if (k >= bko && k <= nko) {
                   return static_cast<int>(bo_it.index());
               }

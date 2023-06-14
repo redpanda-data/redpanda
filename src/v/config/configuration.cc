@@ -1476,7 +1476,8 @@ configuration::configuration()
   , cloud_storage_manifest_cache_ttl_ms(
       *this,
       "cloud_storage_materialized_manifest_ttl_ms",
-      "The time interval that determins how long the materialized manifest can "
+      "The time interval that determines how long the materialized manifest "
+      "can "
       "stay in cache under contention. This parameter is used for performance "
       "tuning. "
       "When the spillover manifest is materialized and stored in cache and the "

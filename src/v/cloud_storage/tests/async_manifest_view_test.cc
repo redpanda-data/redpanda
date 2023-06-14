@@ -652,7 +652,7 @@ FIXTURE_TEST(test_async_manifest_view_base, async_manifest_view_fixture) {
     generate_manifest_section(100);
     listen();
 
-    auto cursor = view.get_active(model::offset{0}).get();
+    auto cursor = view.get_cursor(model::offset{0}).get();
     BOOST_REQUIRE(cursor.has_value());
 }
 
@@ -670,10 +670,10 @@ FIXTURE_TEST(test_async_manifest_view_fetch, async_manifest_view_fixture) {
 
     for (auto so : spillover_start_offsets) {
         vlog(test_log.info, "Get cursor for offset {}", so);
-        auto cursor = view.get_active(so).get();
+        auto cursor = view.get_cursor(so).get();
         BOOST_REQUIRE(cursor.has_value());
 
-        cursor.value()->manifest([so](const partition_manifest& m) {
+        cursor.value()->with_manifest([so](const partition_manifest& m) {
             BOOST_REQUIRE_EQUAL(m.get_start_offset().value(), so);
         });
 
@@ -681,13 +681,13 @@ FIXTURE_TEST(test_async_manifest_view_fetch, async_manifest_view_fixture) {
           spillover_start_offsets.begin(), spillover_start_offsets.end(), so);
 
         if (next != spillover_start_offsets.end()) {
-            cursor.value()->manifest([next](const partition_manifest& m) {
+            cursor.value()->with_manifest([next](const partition_manifest& m) {
                 vlog(test_log.info, "Checking spillover manifest");
                 BOOST_REQUIRE_EQUAL(
                   model::next_offset(m.get_last_offset()), *next);
             });
         } else {
-            cursor.value()->manifest([this](const partition_manifest& m) {
+            cursor.value()->with_manifest([this](const partition_manifest& m) {
                 vlog(test_log.info, "Checking STM manifest");
                 BOOST_REQUIRE_EQUAL(
                   m.get_start_offset(),
@@ -711,14 +711,14 @@ FIXTURE_TEST(test_async_manifest_view_iter, async_manifest_view_fixture) {
 
     std::vector<segment_meta> actual;
     model::offset so = model::offset{0};
-    auto maybe_cursor = view.get_active(so).get();
+    auto maybe_cursor = view.get_cursor(so).get();
     if (maybe_cursor.has_failure()) {
         BOOST_REQUIRE(
           maybe_cursor.error() == error_outcome::manifest_not_found);
     }
     auto cursor = std::move(maybe_cursor.value());
     do {
-        cursor->manifest([&](const partition_manifest& m) {
+        cursor->with_manifest([&](const partition_manifest& m) {
             for (auto meta : m) {
                 actual.push_back(meta);
             }
@@ -752,17 +752,17 @@ FIXTURE_TEST(test_async_manifest_view_truncate, async_manifest_view_fixture) {
     stm_manifest.set_archive_start_offset(new_so, new_delta);
 
     model::offset so = model::offset{0};
-    auto maybe_cursor = view.get_active(so).get();
+    auto maybe_cursor = view.get_cursor(so).get();
     BOOST_REQUIRE(maybe_cursor.has_failure());
     BOOST_REQUIRE(maybe_cursor.error() == error_outcome::out_of_range);
 
-    maybe_cursor = view.get_active(new_so).get();
+    maybe_cursor = view.get_cursor(new_so).get();
     BOOST_REQUIRE(!maybe_cursor.has_failure());
 
     std::vector<segment_meta> actual;
     auto cursor = std::move(maybe_cursor.value());
     do {
-        cursor->manifest([&](const partition_manifest& m) {
+        cursor->with_manifest([&](const partition_manifest& m) {
             vlog(
               test_log.info,
               "Looking at the manifest [{}/{}], archive start: {}",
@@ -784,7 +784,7 @@ FIXTURE_TEST(test_async_manifest_view_truncate, async_manifest_view_fixture) {
     actual.clear();
     cursor = std::move(backlog_cursor.value());
     do {
-        cursor->manifest([&](const partition_manifest& m) {
+        cursor->with_manifest([&](const partition_manifest& m) {
             vlog(
               test_log.info,
               "Looking at the backlog manifest [{}/{}], archive start: {}",
@@ -811,7 +811,7 @@ FIXTURE_TEST(test_async_manifest_view_truncate, async_manifest_view_fixture) {
     BOOST_REQUIRE(!backlog_cursor.has_failure());
     cursor = std::move(backlog_cursor.value());
     do {
-        cursor->manifest([&](const partition_manifest& m) {
+        cursor->with_manifest([&](const partition_manifest& m) {
             vlog(
               test_log.info,
               "Looking at the backlog manifest [{}/{}], archive start: {}",
@@ -867,14 +867,14 @@ FIXTURE_TEST(
     vlog(test_log.info, "Setting archive start offset to {}", new_so);
     stm_manifest.set_archive_start_offset(new_so, new_so_delta);
 
-    auto maybe_cursor = view.get_active(new_so).get();
+    auto maybe_cursor = view.get_cursor(new_so).get();
     BOOST_REQUIRE(!maybe_cursor.has_failure());
 
     vlog(test_log.info, "Validating async_manifest_view content");
     std::vector<segment_meta> actual;
     auto cursor = std::move(maybe_cursor.value());
     do {
-        cursor->manifest([&](const partition_manifest& m) {
+        cursor->with_manifest([&](const partition_manifest& m) {
             vlog(
               test_log.info,
               "Looking at the manifest {}/{}",
@@ -905,7 +905,7 @@ FIXTURE_TEST(
     actual.clear();
     cursor = std::move(backlog_cursor.value());
     do {
-        cursor->manifest([&](const partition_manifest& m) {
+        cursor->with_manifest([&](const partition_manifest& m) {
             vlog(
               test_log.info,
               "Looking at the manifest {}/{}",
@@ -936,7 +936,7 @@ FIXTURE_TEST(test_async_manifest_view_evict, async_manifest_view_fixture) {
     listen();
 
     model::offset so = model::offset{0};
-    auto maybe_cursor = view.get_active(so).get();
+    auto maybe_cursor = view.get_cursor(so).get();
     BOOST_REQUIRE(!maybe_cursor.has_failure());
     auto stale_cursor = std::move(maybe_cursor.value());
 
@@ -949,10 +949,10 @@ FIXTURE_TEST(test_async_manifest_view_evict, async_manifest_view_fixture) {
          it++) {
         auto o = *it;
         vlog(test_log.debug, "Fetching manifest for offset {}", o);
-        auto tmp_cursor = view.get_active(o).get();
+        auto tmp_cursor = view.get_cursor(o).get();
         BOOST_REQUIRE(!tmp_cursor.has_failure());
         auto cursor = std::move(tmp_cursor.value());
-        cursor->manifest([o](const partition_manifest& m) {
+        cursor->with_manifest([o](const partition_manifest& m) {
             BOOST_REQUIRE_EQUAL(o, m.get_start_offset().value());
         });
         cursors.emplace_back(std::move(cursor));
@@ -1051,7 +1051,8 @@ FIXTURE_TEST(test_async_manifest_view_retention, async_manifest_view_fixture) {
 
     // Check case when the start offset in the archive is advanced past
     // start kafka offset override.
-    auto cur_res = view.get_active(*view.stm().get_start_offset()).get();
+    auto cur_res
+      = view.get_cursor(*view.stm_manifest().get_start_offset()).get();
     BOOST_REQUIRE(!cur_res.has_error());
     auto cur = std::move(cur_res.value());
     // Set expected offset to the start of the second segment
