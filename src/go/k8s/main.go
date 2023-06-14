@@ -23,6 +23,7 @@ import (
 	"github.com/fluxcd/pkg/runtime/logger"
 	sourcev1 "github.com/fluxcd/source-controller/api/v1beta2"
 	helmSourceController "github.com/fluxcd/source-controller/controllers"
+	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources"
 	flag "github.com/spf13/pflag"
 	"helm.sh/helm/v3/pkg/getter"
 	corev1 "k8s.io/api/core/v1"
@@ -40,7 +41,6 @@ import (
 	redpandacontrollers "github.com/redpanda-data/redpanda/src/go/k8s/controllers/redpanda"
 	adminutils "github.com/redpanda-data/redpanda/src/go/k8s/pkg/admin"
 	consolepkg "github.com/redpanda-data/redpanda/src/go/k8s/pkg/console"
-	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources"
 	redpandawebhooks "github.com/redpanda-data/redpanda/src/go/k8s/webhooks/redpanda"
 )
 
@@ -176,132 +176,138 @@ func main() {
 		ImagePullPolicy:       corev1.PullPolicy(configuratorImagePullPolicy),
 	}
 
-	if err = (&redpandacontrollers.ClusterReconciler{
-		Client:                    mgr.GetClient(),
-		Log:                       ctrl.Log.WithName("controllers").WithName("redpanda").WithName("Cluster"),
-		Scheme:                    mgr.GetScheme(),
-		AdminAPIClientFactory:     adminutils.NewInternalAdminAPI,
-		DecommissionWaitInterval:  decommissionWaitInterval,
-		MetricsTimeout:            metricsTimeout,
-		RestrictToRedpandaVersion: restrictToRedpandaVersion,
-	}).WithClusterDomain(clusterDomain).WithConfiguratorSettings(configurator).WithAllowPVCDeletion(allowPVCDeletion).SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "Unable to create controller", "controller", "Cluster")
-		os.Exit(1)
-	}
+	// we are in v2 mode if we are namespace Scoped, otherwise we are in clusterScope or v1 mode
+	if namespace != "" { // nolint:nestif // this is ok
+		ctrl.Log.Info("running in v2", "mode", "namespaced", "namespace", namespace)
+		storageAddr := ":9090"
+		storageAdvAddr = redpandacontrollers.DetermineAdvStorageAddr(storageAddr, setupLog)
+		storage := redpandacontrollers.MustInitStorage("/tmp", storageAdvAddr, 60*time.Second, 2, setupLog)
 
-	if err = (&redpandacontrollers.ClusterConfigurationDriftReconciler{
-		Client:                    mgr.GetClient(),
-		Log:                       ctrl.Log.WithName("controllers").WithName("redpanda").WithName("ClusterConfigurationDrift"),
-		Scheme:                    mgr.GetScheme(),
-		AdminAPIClientFactory:     adminutils.NewInternalAdminAPI,
-		RestrictToRedpandaVersion: restrictToRedpandaVersion,
-	}).WithClusterDomain(clusterDomain).SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "Unable to create controller", "controller", "ClusterConfigurationDrift")
-		os.Exit(1)
-	}
+		metricsH := helper.MustMakeMetrics(mgr)
 
-	if err = redpandacontrollers.NewClusterMetricsController(mgr.GetClient()).
-		SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "Unable to create controller", "controller", "ClustersMetrics")
-		os.Exit(1)
-	}
+		// TODO fill this in with options
+		helmOpts := helmController.HelmReleaseReconcilerOptions{
+			MaxConcurrentReconciles:   1,                // "The number of concurrent HelmRelease reconciles."
+			DependencyRequeueInterval: 30 * time.Second, // The interval at which failing dependencies are reevaluated.
+			HTTPRetry:                 9,                // The maximum number of retries when failing to fetch artifacts over HTTP.
+			RateLimiter:               workqueue.NewItemExponentialFailureRateLimiter(30*time.Second, 60*time.Second),
+		}
 
-	// Setup webhooks
-	if webhookEnabled {
-		setupLog.Info("Setup webhook")
-		if err = (&vectorizedv1alpha1.Cluster{}).SetupWebhookWithManager(mgr); err != nil {
-			setupLog.Error(err, "Unable to create webhook", "webhook", "RedpandaCluster")
+		// Helm Release Controller
+		helmRelease := helmController.HelmReleaseReconciler{
+			Client:         mgr.GetClient(),
+			Config:         mgr.GetConfig(),
+			Scheme:         mgr.GetScheme(),
+			EventRecorder:  mgr.GetEventRecorderFor("HelmReleaseReconciler"),
+			ClientOpts:     clientOptions,
+			KubeConfigOpts: kubeConfigOpts,
+		}
+		if err = helmRelease.SetupWithManager(mgr, helmOpts); err != nil {
+			setupLog.Error(err, "Unable to create controller", "controller", "HelmRelease")
+		}
+
+		// Helm Chart Controller
+		helmChart := helmSourceController.HelmChartReconciler{
+			Client:                  mgr.GetClient(),
+			RegistryClientGenerator: redpandacontrollers.ClientGenerator,
+			Getters:                 getters,
+			Metrics:                 metricsH,
+			Storage:                 storage,
+			EventRecorder:           mgr.GetEventRecorderFor("HelmChartReconciler"),
+		}
+		if err = helmChart.SetupWithManager(mgr); err != nil {
+			setupLog.Error(err, "Unable to create controller", "controller", "HelmChart")
+		}
+
+		// Helm Repository Controller
+		helmRepository := helmSourceController.HelmRepositoryReconciler{
+			Client:         mgr.GetClient(),
+			EventRecorder:  mgr.GetEventRecorderFor("HelmRepositoryReconciler"),
+			Getters:        getters,
+			ControllerName: "redpanda-controller",
+			TTL:            15 * time.Minute,
+			Metrics:        metricsH,
+			Storage:        storage,
+		}
+		if err = helmRepository.SetupWithManager(mgr); err != nil {
+			setupLog.Error(err, "Unable to create controller", "controller", "HelmRepository")
+		}
+
+		go func() {
+			// Block until our controller manager is elected leader. We presume our
+			// entire process will terminate if we lose leadership, so we don't need
+			// to handle that.
+			<-mgr.Elected()
+
+			redpandacontrollers.StartFileServer(storage.BasePath, storageAddr, setupLog)
+		}()
+
+		if err = (&redpandacontrollers.RedpandaReconciler{
+			Client:          mgr.GetClient(),
+			Scheme:          mgr.GetScheme(),
+			EventRecorder:   mgr.GetEventRecorderFor("RedpandaReconciler"),
+			RequeueHelmDeps: 10 * time.Second,
+		}).SetupWithManager(mgr); err != nil {
+			setupLog.Error(err, "unable to create controller", "controller", "Redpanda")
 			os.Exit(1)
 		}
-		hookServer := mgr.GetWebhookServer()
-		hookServer.Register("/mutate-redpanda-vectorized-io-v1alpha1-console", &webhook.Admission{Handler: &redpandawebhooks.ConsoleDefaulter{Client: mgr.GetClient()}})
-		hookServer.Register("/validate-redpanda-vectorized-io-v1alpha1-console", &webhook.Admission{Handler: &redpandawebhooks.ConsoleValidator{Client: mgr.GetClient()}})
-	}
+	} else {
+		ctrl.Log.Info("running in v1", "mode", "clustered")
 
-	if err = (&redpandacontrollers.ConsoleReconciler{
-		Client:                  mgr.GetClient(),
-		Scheme:                  mgr.GetScheme(),
-		Log:                     ctrl.Log.WithName("controllers").WithName("redpanda").WithName("Console"),
-		AdminAPIClientFactory:   adminutils.NewInternalAdminAPI,
-		Store:                   consolepkg.NewStore(mgr.GetClient(), mgr.GetScheme()),
-		EventRecorder:           mgr.GetEventRecorderFor("Console"),
-		KafkaAdminClientFactory: consolepkg.NewKafkaAdmin,
-	}).WithClusterDomain(clusterDomain).SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "Console")
-		os.Exit(1)
-	}
+		if err = (&redpandacontrollers.ClusterReconciler{
+			Client:                    mgr.GetClient(),
+			Log:                       ctrl.Log.WithName("controllers").WithName("redpanda").WithName("Cluster"),
+			Scheme:                    mgr.GetScheme(),
+			AdminAPIClientFactory:     adminutils.NewInternalAdminAPI,
+			DecommissionWaitInterval:  decommissionWaitInterval,
+			MetricsTimeout:            metricsTimeout,
+			RestrictToRedpandaVersion: restrictToRedpandaVersion,
+		}).WithClusterDomain(clusterDomain).WithConfiguratorSettings(configurator).WithAllowPVCDeletion(allowPVCDeletion).SetupWithManager(mgr); err != nil {
+			setupLog.Error(err, "Unable to create controller", "controller", "Cluster")
+			os.Exit(1)
+		}
 
-	storageAddr := ":9090"
-	storageAdvAddr = redpandacontrollers.DetermineAdvStorageAddr(storageAddr, setupLog)
-	storage := redpandacontrollers.MustInitStorage("/tmp", storageAdvAddr, 60*time.Second, 2, setupLog)
+		if err = (&redpandacontrollers.ClusterConfigurationDriftReconciler{
+			Client:                    mgr.GetClient(),
+			Log:                       ctrl.Log.WithName("controllers").WithName("redpanda").WithName("ClusterConfigurationDrift"),
+			Scheme:                    mgr.GetScheme(),
+			AdminAPIClientFactory:     adminutils.NewInternalAdminAPI,
+			RestrictToRedpandaVersion: restrictToRedpandaVersion,
+		}).WithClusterDomain(clusterDomain).SetupWithManager(mgr); err != nil {
+			setupLog.Error(err, "Unable to create controller", "controller", "ClusterConfigurationDrift")
+			os.Exit(1)
+		}
 
-	metricsH := helper.MustMakeMetrics(mgr)
+		if err = redpandacontrollers.NewClusterMetricsController(mgr.GetClient()).
+			SetupWithManager(mgr); err != nil {
+			setupLog.Error(err, "Unable to create controller", "controller", "ClustersMetrics")
+			os.Exit(1)
+		}
 
-	// TODO fill this in with options
-	helmOpts := helmController.HelmReleaseReconcilerOptions{
-		MaxConcurrentReconciles:   1,                // "The number of concurrent HelmRelease reconciles."
-		DependencyRequeueInterval: 30 * time.Second, // The interval at which failing dependencies are reevaluated.
-		HTTPRetry:                 9,                // The maximum number of retries when failing to fetch artifacts over HTTP.
-		RateLimiter:               workqueue.NewItemExponentialFailureRateLimiter(30*time.Second, 60*time.Second),
-	}
+		if err = (&redpandacontrollers.ConsoleReconciler{
+			Client:                  mgr.GetClient(),
+			Scheme:                  mgr.GetScheme(),
+			Log:                     ctrl.Log.WithName("controllers").WithName("redpanda").WithName("Console"),
+			AdminAPIClientFactory:   adminutils.NewInternalAdminAPI,
+			Store:                   consolepkg.NewStore(mgr.GetClient(), mgr.GetScheme()),
+			EventRecorder:           mgr.GetEventRecorderFor("Console"),
+			KafkaAdminClientFactory: consolepkg.NewKafkaAdmin,
+		}).WithClusterDomain(clusterDomain).SetupWithManager(mgr); err != nil {
+			setupLog.Error(err, "unable to create controller", "controller", "Console")
+			os.Exit(1)
+		}
 
-	// Helm Release Controller
-	helmRelease := helmController.HelmReleaseReconciler{
-		Client:         mgr.GetClient(),
-		Config:         mgr.GetConfig(),
-		Scheme:         mgr.GetScheme(),
-		EventRecorder:  mgr.GetEventRecorderFor("HelmReleaseReconciler"),
-		ClientOpts:     clientOptions,
-		KubeConfigOpts: kubeConfigOpts,
-	}
-	if err = helmRelease.SetupWithManager(mgr, helmOpts); err != nil {
-		setupLog.Error(err, "Unable to create controller", "controller", "HelmRelease")
-	}
-
-	// Helm Chart Controller
-	helmChart := helmSourceController.HelmChartReconciler{
-		Client:                  mgr.GetClient(),
-		RegistryClientGenerator: redpandacontrollers.ClientGenerator,
-		Getters:                 getters,
-		Metrics:                 metricsH,
-		Storage:                 storage,
-		EventRecorder:           mgr.GetEventRecorderFor("HelmChartReconciler"),
-	}
-	if err = helmChart.SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "Unable to create controller", "controller", "HelmChart")
-	}
-
-	// Helm Repository Controller
-	helmRepository := helmSourceController.HelmRepositoryReconciler{
-		Client:         mgr.GetClient(),
-		EventRecorder:  mgr.GetEventRecorderFor("HelmRepositoryReconciler"),
-		Getters:        getters,
-		ControllerName: "redpanda-controller",
-		TTL:            15 * time.Minute,
-		Metrics:        metricsH,
-		Storage:        storage,
-	}
-	if err = helmRepository.SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "Unable to create controller", "controller", "HelmRepository")
-	}
-
-	go func() {
-		// Block until our controller manager is elected leader. We presume our
-		// entire process will terminate if we lose leadership, so we don't need
-		// to handle that.
-		<-mgr.Elected()
-
-		redpandacontrollers.StartFileServer(storage.BasePath, storageAddr, setupLog)
-	}()
-
-	if err = (&redpandacontrollers.RedpandaReconciler{
-		Client:          mgr.GetClient(),
-		Scheme:          mgr.GetScheme(),
-		EventRecorder:   mgr.GetEventRecorderFor("RedpandaReconciler"),
-		RequeueHelmDeps: 10 * time.Second,
-	}).SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "Redpanda")
-		os.Exit(1)
+		// Setup webhooks
+		if webhookEnabled {
+			setupLog.Info("Setup webhook")
+			if err = (&vectorizedv1alpha1.Cluster{}).SetupWebhookWithManager(mgr); err != nil {
+				setupLog.Error(err, "Unable to create webhook", "webhook", "RedpandaCluster")
+				os.Exit(1)
+			}
+			hookServer := mgr.GetWebhookServer()
+			hookServer.Register("/mutate-redpanda-vectorized-io-v1alpha1-console", &webhook.Admission{Handler: &redpandawebhooks.ConsoleDefaulter{Client: mgr.GetClient()}})
+			hookServer.Register("/validate-redpanda-vectorized-io-v1alpha1-console", &webhook.Admission{Handler: &redpandawebhooks.ConsoleValidator{Client: mgr.GetClient()}})
+		}
 	}
 
 	//+kubebuilder:scaffold:builder

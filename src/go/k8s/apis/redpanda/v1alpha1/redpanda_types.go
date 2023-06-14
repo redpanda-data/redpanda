@@ -29,7 +29,7 @@ type ChartRef struct {
 	// HelmRepositoryName defines the repository to use, defaults to redpanda if not defined
 	HelmRepositoryName string `json:"helmRepositoryName,omitempty"`
 	// Timeout is the time to wait for any individual Kubernetes operation (like Jobs
-	// for hooks) during the performance of a Helm action. Defaults to '10m0s'.
+	// for hooks) during the performance of a Helm action. Defaults to '15m0s'.
 	// +kubebuilder:validation:Type=string
 	// +kubebuilder:validation:Pattern="^([0-9]+(\\.[0-9]+)?(ms|s|m|h))+$"
 	// +optional

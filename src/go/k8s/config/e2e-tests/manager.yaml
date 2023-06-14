@@ -19,7 +19,6 @@ spec:
         - "--configurator-image-pull-policy=Never"
         - "--allow-pvc-deletion=true"
         - "--superusers-prefix=__redpanda_system__"
-        - "--namespace=redpanda-system"
         - "--log-level=trace"
         livenessProbe:
           timeoutSeconds: 10
