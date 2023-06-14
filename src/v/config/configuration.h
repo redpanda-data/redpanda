@@ -388,6 +388,7 @@ struct configuration final : public config_store {
     property<bool> enable_rack_awareness;
 
     property<std::chrono::milliseconds> node_status_interval;
+    property<std::chrono::milliseconds> node_status_reconnect_max_backoff_ms;
     // controller log limitng
     property<bool> enable_controller_log_rate_limiting;
     property<size_t> rps_limit_topic_operations;

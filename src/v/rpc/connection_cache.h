@@ -57,6 +57,9 @@ public:
     /// \brief removes the node *and* closes the connection
     ss::future<> remove(model::node_id n);
 
+    /// \brief similar to remove but removes all nodes.
+    ss::future<> remove_all();
+
     /// \brief closes all connections
     ss::future<> do_shutdown();
     void shutdown();

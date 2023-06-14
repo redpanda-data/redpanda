@@ -1241,6 +1241,10 @@ void application::wire_up_redpanda_services(model::node_id node_id) {
       std::ref(node_status_table),
       ss::sharded_parameter(
         [] { return config::shard_local_cfg().node_status_interval.bind(); }),
+      ss::sharded_parameter([] {
+          return config::shard_local_cfg()
+            .node_status_reconnect_max_backoff_ms.bind();
+      }),
       std::ref(_as))
       .get();
 

@@ -34,12 +34,14 @@ node_status_backend::node_status_backend(
   ss::sharded<features::feature_table>& feature_table,
   ss::sharded<node_status_table>& node_status_table,
   config::binding<std::chrono::milliseconds> period,
+  config::binding<std::chrono::milliseconds> max_reconnect_backoff,
   ss::sharded<ss::abort_source>& as)
   : _self(self)
   , _members_table(members_table)
   , _feature_table(feature_table)
   , _node_status_table(node_status_table)
   , _period(std::move(period))
+  , _max_reconnect_backoff(std::move(max_reconnect_backoff))
   , _rpc_tls_config(config::node().rpc_server_tls())
   , _as(as) {
     if (!config::shard_local_cfg().disable_public_metrics()) {
@@ -60,6 +62,20 @@ node_status_backend::node_status_backend(
                   _gate, [this] { return drain_notifications_queue(); });
             }
         });
+
+    _max_reconnect_backoff.watch([this]() {
+        ssx::spawn_with_gate(_gate, [this] {
+            auto new_backoff = _max_reconnect_backoff();
+            vlog(
+              clusterlog.info,
+              "Updating max reconnect backoff to: {}ms",
+              new_backoff.count());
+            // Invalidate all transports so they are created afresh with new
+            // backoff.
+            return _node_connection_cache.invoke_on_all(
+              [](rpc::connection_cache& local) { return local.remove_all(); });
+        });
+    });
 
     _timer.set_callback([this] { tick(); });
 }
@@ -212,12 +228,17 @@ ss::future<result<node_status>> node_status_backend::send_node_status_request(
 
 ss::future<ss::shard_id> node_status_backend::maybe_create_client(
   model::node_id target, net::unresolved_address address) {
-    auto source_shard = target % ss::smp::count;
+    auto source_shard = connection_source_shard(target);
     auto target_shard = rpc::connection_cache::shard_for(
       _self, source_shard, target);
 
     co_await add_one_tcp_client(
-      target_shard, _node_connection_cache, target, address, _rpc_tls_config);
+      target_shard,
+      _node_connection_cache,
+      target,
+      address,
+      _rpc_tls_config,
+      create_backoff_policy());
 
     co_return source_shard;
 }
@@ -253,11 +274,21 @@ node_status_backend::process_reply(result<node_status_reply> reply) {
 }
 
 ss::future<node_status_reply>
-node_status_backend::process_request(node_status_request) {
+node_status_backend::process_request(node_status_request request) {
     _stats.rpcs_received += 1;
 
-    node_status_reply reply = {.replier_metadata = {.node_id = _self}};
-    return ss::make_ready_future<node_status_reply>(std::move(reply));
+    auto sender = request.sender_metadata.node_id;
+    auto sender_md = _node_status_table.local().get_node_status(sender);
+    if (
+      sender_md
+      // Check if the peer has atleast 2 missed heart beats. This avoids
+      // a cross shard invoke in happy path when no reset is needed.
+      && ss::lowres_clock::now() - sender_md->last_seen > 2 * _period()) {
+        co_await _node_connection_cache.local().reset_client_backoff(
+          _self, connection_source_shard(sender), sender);
+    }
+
+    co_return node_status_reply{.replier_metadata = {.node_id = _self}};
 }
 
 void node_status_backend::setup_metrics(

@@ -1925,6 +1925,13 @@ configuration::configuration()
       "establish liveness status outside of the Raft protocol.",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       100ms)
+  , node_status_reconnect_max_backoff_ms(
+      *this,
+      "node_status_reconnect_max_backoff_ms",
+      "Maximum backoff (in ms) to reconnect to an unresponsive peer during "
+      "node status liveness checks.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::user},
+      15s)
   , enable_controller_log_rate_limiting(
       *this,
       "enable_controller_log_rate_limiting",
