@@ -86,6 +86,87 @@ static constexpr std::string_view manifest_with_gaps = R"json({
     }
 })json";
 
+static constexpr std::string_view test_manifest = R"json({
+  "version": 2,
+  "namespace": "test-ns",
+  "topic": "test-topic",
+  "partition": 1,
+  "revision": 21,
+  "last_offset": 211,
+  "segments": {
+    "0-1-v1.log": {
+      "base_offset": 0,
+      "committed_offset": 1,
+      "is_compacted": false,
+      "size_bytes": 200,
+      "archiver_term": 2,
+      "delta_offset": 0,
+      "base_timestamp": 1686389191244,
+      "max_timestamp": 1686389191244,
+      "ntp_revision": 21,
+      "sname_format": 3,
+      "segment_term": 1,
+      "delta_offset_end": 0
+    },
+    "2-2-v1.log": {
+      "base_offset": 2,
+      "committed_offset": 103,
+      "is_compacted": false,
+      "size_bytes": 98014783,
+      "archiver_term": 2,
+      "delta_offset": 0,
+      "base_timestamp": 1686389202577,
+      "max_timestamp": 1686389230060,
+      "ntp_revision": 21,
+      "sname_format": 3,
+      "segment_term": 2,
+      "delta_offset_end": 0
+    },
+    "104-2-v1.log": {
+      "base_offset": 104,
+      "committed_offset": 113,
+      "is_compacted": false,
+      "size_bytes": 10001460,
+      "archiver_term": 2,
+      "delta_offset": 0,
+      "base_timestamp": 1686389230182,
+      "max_timestamp": 1686389233222,
+      "ntp_revision": 21,
+      "sname_format": 3,
+      "segment_term": 2,
+      "delta_offset_end": 0
+    },
+    "113-2-v1.log": {
+      "base_offset": 113,
+      "committed_offset": 115,
+      "is_compacted": false,
+      "size_bytes": 10001460,
+      "archiver_term": 2,
+      "delta_offset": 0,
+      "base_timestamp": 1686389230182,
+      "max_timestamp": 1686389233222,
+      "ntp_revision": 21,
+      "sname_format": 3,
+      "segment_term": 2,
+      "delta_offset_end": 0
+    },
+    "116-2-v1.log": {
+      "base_offset": 116,
+      "committed_offset": 211,
+      "is_compacted": false,
+      "size_bytes": 10001460,
+      "archiver_term": 2,
+      "delta_offset": 0,
+      "base_timestamp": 1686389230182,
+      "max_timestamp": 1686389233222,
+      "ntp_revision": 21,
+      "sname_format": 3,
+      "segment_term": 2,
+      "delta_offset_end": 0
+    }
+  }
+})json";
+
 static constexpr size_t max_upload_size{4096_KiB};
 static constexpr ss::lowres_clock::duration segment_lock_timeout{60s};
 
@@ -1010,4 +1091,51 @@ SEASTAR_THREAD_TEST_CASE(test_do_not_reupload_self_concatenated) {
         BOOST_REQUIRE_EQUAL(collector.segments().size(), 0);
         BOOST_REQUIRE(!collector.should_replace_manifest_segment());
     }
+}
+
+SEASTAR_THREAD_TEST_CASE(test_adjacent_segment_collection) {
+    auto ntp = model::ntp{"test_ns", "test_tpc", 0};
+    temporary_dir tmp_dir("concat_segment_read");
+    auto data_path = tmp_dir.get_path();
+    using namespace storage;
+
+    auto b = make_log_builder(data_path.string());
+
+    auto o = std::make_unique<ntp_config::default_overrides>();
+    b | start(ntp_config{ntp, {data_path}, std::move(o)});
+    auto defer = ss::defer([&b] { b.stop().get(); });
+
+    /*
+          +-----------------------------------++------------------------------+
+  Local   |2                               115||116                        211|
+          +-----------------------------------++------------------------------+
+          +----------++----------++-----------++------------------------------+
+  Cloud   |2      103||104    113||114     115||116                        211|
+          +----------++----------++-----------++------------------------------+
+    */
+
+    b | storage::add_segment(0) | storage::add_random_batch(0, 2)
+      | storage::add_segment(2) | storage::add_random_batch(2, 113)
+      | storage::add_segment(115) | storage::add_random_batch(115, 96);
+
+    cloud_storage::partition_manifest m;
+    m.update(
+       cloud_storage::manifest_format::json,
+       make_manifest_stream(test_manifest))
+      .get();
+
+    archival::segment_collector collector{
+      model::offset{104},
+      m,
+      b.get_disk_log_impl(),
+      12001752,
+      model::offset{115}};
+
+    collector.collect_segments(segment_collector_mode::collect_non_compacted);
+    auto candidate = collector
+                       .make_upload_candidate(ss::default_priority_class(), 10s)
+                       .get();
+    BOOST_REQUIRE_EQUAL(
+      candidate.candidate.starting_offset, model::offset{104});
+    BOOST_REQUIRE_EQUAL(candidate.candidate.final_offset, model::offset{115});
 }
