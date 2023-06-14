@@ -433,14 +433,14 @@ func renderClusterInteract(nodes []*common.NodeState) {
 	m := `
 You can use rpk to interact with this cluster. E.g:
 
-    rpk cluster info --brokers %s
-    rpk cluster health --api-urls %s
+    rpk cluster info -X brokers=%s
+    rpk cluster health -X admin.hosts=%s
 
 You may also set an environment variable with the comma-separated list of
 broker and admin API addresses:
 
-    export REDPANDA_BROKERS="%s"
-    export REDPANDA_API_ADMIN_ADDRS="%s"
+    export RPK_BROKERS="%s"
+    export RPK_ADMIN_HOSTS="%s"
     rpk cluster info
     rpk cluster health
 

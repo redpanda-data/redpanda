@@ -112,7 +112,7 @@ acl help text for more info.
 	cmd.Flags().StringVarP(&newPass, "new-password", "p", "", "")
 	cmd.Flags().MarkHidden("new-password")
 
-	cmd.Flags().StringVar(&mechanism, "mechanism", strings.ToLower(admin.ScramSha256), "SASL mechanism to use for the user you are creating (scram-sha-256, scram-sha-512, case insensitive); not to be confused with the global flag --sasl-mechanism which is used for authenticating the rpk client")
+	cmd.Flags().StringVar(&mechanism, "mechanism", strings.ToLower(admin.ScramSha256), "SASL mechanism to use for the user you are creating (scram-sha-256, scram-sha-512, case insensitive)")
 
 	return cmd
 }

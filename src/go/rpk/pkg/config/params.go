@@ -710,8 +710,30 @@ func (p *Params) Load(fs afero.Fs) (*Config, error) {
 		redpandaYaml: *DevDefault(),
 		rpkYaml:      defRpk,
 	}
-	c.rpkYaml.Profiles[0].KafkaAPI = c.redpandaYaml.Rpk.KafkaAPI
-	c.rpkYaml.Profiles[0].AdminAPI = c.redpandaYaml.Rpk.AdminAPI
+
+	// For Params, we clear the KafkaAPI and AdminAPI -- they are used to
+	// fill in rpk sections by default. These sections are *also* filled in
+	// in ensureBrokerAddrs, but only if we want a default cluster. At the
+	// end, if these two values are still nil AND there is no actual
+	// redpanda.yaml file with empty sections, we fill back in our old
+	// defaults.
+	{
+		oldKafka := c.redpandaYaml.Redpanda.KafkaAPI
+		oldAdmin := c.redpandaYaml.Redpanda.AdminAPI
+		c.redpandaYaml.Redpanda.KafkaAPI = nil
+		c.redpandaYaml.Redpanda.AdminAPI = nil
+		defer func() {
+			if c.redpandaYamlExists {
+				return
+			}
+			if c.redpandaYaml.Redpanda.KafkaAPI == nil {
+				c.redpandaYaml.Redpanda.KafkaAPI = oldKafka
+			}
+			if c.redpandaYaml.Redpanda.AdminAPI == nil {
+				c.redpandaYaml.Redpanda.AdminAPI = oldAdmin
+			}
+		}()
+	}
 
 	if err := p.backcompatOldCloudYaml(fs); err != nil {
 		return nil, err
