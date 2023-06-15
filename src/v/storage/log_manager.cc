@@ -622,8 +622,13 @@ ss::future<> log_manager::remove_orphan_files(
                 })
                 .handle_exception_type(
                   [](std::filesystem::filesystem_error const& err) {
-                      vlog(
-                        stlog.error,
+                      auto lvl = err.code()
+                                     == std::errc::no_such_file_or_directory
+                                   ? ss::log_level::trace
+                                   : ss::log_level::info;
+                      vlogl(
+                        stlog,
+                        lvl,
                         "Exception while cleaning orphan files {}",
                         err);
                   });
