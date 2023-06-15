@@ -200,6 +200,19 @@ private:
     void detach_partition(const model::ntp&);
     ss::future<> do_detach_partition(model::ntp);
 
+    struct attached_partition {
+        bool loading;
+        ssx::semaphore sem{1, "k/group-mgr"};
+        ss::abort_source as;
+        ss::lw_shared_ptr<cluster::partition> partition;
+        ss::basic_rwlock<> catchup_lock;
+        model::term_id term{-1};
+
+        explicit attached_partition(ss::lw_shared_ptr<cluster::partition> p)
+          : loading(true)
+          , partition(std::move(p)) {}
+    };
+
     cluster::notification_id_type _leader_notify_handle;
     cluster::notification_id_type _topic_table_notify_handle;
 

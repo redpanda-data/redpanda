@@ -437,7 +437,7 @@ ss::future<> group_manager::do_recover_group(
               group_id,
               group_stm.get_metadata(),
               _conf,
-              p,
+              p->partition,
               term,
               _tx_frontend,
               _feature_table,
@@ -539,7 +539,7 @@ group::join_group_stages group_manager::join_group(join_group_request&& r) {
             return group::join_group_stages(
               make_join_error(r.data.member_id, error_code::not_coordinator));
         }
-        auto p = it->second;
+        auto p = it->second->partition;
         group = ss::make_lw_shared<kafka::group>(
           r.data.group_id,
           group_state::empty,
@@ -692,7 +692,7 @@ group_manager::txn_offset_commit(txn_offset_commit_request&& r) {
                 r.data.group_id,
                 group_state::empty,
                 _conf,
-                p,
+                p->partition,
                 p->term,
                 _tx_frontend,
                 _feature_table,
@@ -778,7 +778,7 @@ group_manager::begin_tx(cluster::begin_group_tx_request&& r) {
                 r.group_id,
                 group_state::empty,
                 _conf,
-                p,
+                p->partition,
                 p->term,
                 _tx_frontend,
                 _feature_table,
@@ -886,7 +886,7 @@ group_manager::offset_commit(offset_commit_request&& r) {
               r.data.group_id,
               group_state::empty,
               _conf,
-              p,
+              p->partition,
               p->term,
               _tx_frontend,
               _feature_table,
