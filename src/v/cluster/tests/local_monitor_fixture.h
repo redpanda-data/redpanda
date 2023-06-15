@@ -11,9 +11,11 @@
 
 #pragma once
 #include "cluster/node/local_monitor.h"
+#include "resource_mgmt/memory_sampling.h"
 #include "storage/api.h"
 
 #include <seastar/core/sstring.hh>
+#include <seastar/util/log.hh>
 
 #include <string_view>
 

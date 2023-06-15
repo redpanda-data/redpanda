@@ -16,6 +16,7 @@
 #include "raft/consensus_utils.h"
 #include "random/generators.h"
 #include "resource_mgmt/io_priority.h"
+#include "resource_mgmt/memory_sampling.h"
 #include "storage/api.h"
 #include "storage/log.h"
 #include "storage/log_manager.h"
@@ -49,11 +50,15 @@ struct bootstrap_fixture : raft::simple_record_fixture {
               storage::with_cache::no,
               storage::make_sanitized_file_config());
         },
-        _feature_table) {
+        _feature_table,
+        _memory_sampling_service) {
         _feature_table.start().get();
         _feature_table
           .invoke_on_all(
             [](features::feature_table& f) { f.testing_activate_all(); })
+          .get();
+        _memory_sampling_service
+          .start(std::ref(_test_logger), config::mock_binding<bool>(false))
           .get();
         _storage.start().get();
         // ignore the get_log()
@@ -81,10 +86,13 @@ struct bootstrap_fixture : raft::simple_record_fixture {
 
     ~bootstrap_fixture() {
         _storage.stop().get();
+        _memory_sampling_service.stop().get();
         _feature_table.stop().get();
     }
 
+    seastar::logger _test_logger{"bootstrap-test-logger"};
     ss::sharded<features::feature_table> _feature_table;
+    ss::sharded<memory_sampling> _memory_sampling_service;
     storage::api _storage;
     ss::abort_source _as;
 };

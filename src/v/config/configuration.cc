@@ -1881,6 +1881,19 @@ configuration::configuration()
       "exception is thrown instead.",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       true)
+  , sampled_memory_profile(
+      *this,
+      "memory_enable_memory_sampling",
+      "If true, memory allocations will be sampled and tracked. A sampled live "
+      "set of allocations can then be retrieved from the Admin API. "
+      "Additionally, we will periodically log the top-n allocation sites",
+      {// Enabling/Disabling this dynamically doesn't make much sense as for the
+       // memory profile to be meaning full you'll want to have this on from the
+       // beginning. However, we still provide the option to be able to disable
+       // it dynamically in case something goes wrong
+       .needs_restart = needs_restart::no,
+       .visibility = visibility::tunable},
+      true)
   , enable_metrics_reporter(
       *this,
       "enable_metrics_reporter",

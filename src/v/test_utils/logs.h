@@ -12,6 +12,7 @@
 #pragma once
 #include "model/fundamental.h"
 #include "model/record_batch_reader.h"
+#include "resource_mgmt/memory_sampling.h"
 #include "seastarx.h"
 #include "storage/api.h"
 
@@ -37,24 +38,35 @@ static inline ss::future<> persist_log_file(
             [](features::feature_table& f) { f.testing_activate_all(); })
           .get();
 
-        storage::api storage(
-          [base_dir]() {
-              return storage::kvstore_config(
-                1_MiB,
-                config::mock_binding(10ms),
-                base_dir,
-                storage::make_sanitized_file_config());
-          },
-          [base_dir]() {
-              return storage::log_config(
-                base_dir,
-                1_GiB,
-                ss::default_priority_class(),
-                storage::make_sanitized_file_config());
-          },
-          feature_table);
-        storage.start().get();
-        auto& mgr = storage.log_mgr();
+        seastar::logger test_logger("test");
+        ss::sharded<memory_sampling> memory_sampling_service;
+        memory_sampling_service
+          .start(std::ref(test_logger), config::mock_binding<bool>(false))
+          .get();
+
+        ss::sharded<storage::api> storage;
+        storage
+          .start(
+            [base_dir]() {
+                return storage::kvstore_config(
+                  1_MiB,
+                  config::mock_binding(10ms),
+                  base_dir,
+                  storage::make_sanitized_file_config());
+            },
+            [base_dir]() {
+                return storage::log_config(
+                  base_dir,
+                  1_GiB,
+                  ss::default_priority_class(),
+                  storage::make_sanitized_file_config());
+            },
+            std::ref(feature_table),
+            std::ref(memory_sampling_service))
+          .get();
+        storage.invoke_on_all(&storage::api::start).get();
+
+        auto& mgr = storage.local().log_mgr();
         try {
             mgr.manage(storage::ntp_config(file_ntp, mgr.config().base_dir))
               .then([b = std::move(batches)](storage::log log) mutable {
@@ -73,9 +85,11 @@ static inline ss::future<> persist_log_file(
               })
               .get();
             storage.stop().get();
+            memory_sampling_service.stop().get();
             feature_table.stop().get();
         } catch (...) {
             storage.stop().get();
+            memory_sampling_service.stop().get();
             feature_table.stop().get();
             throw;
         }
@@ -108,24 +122,34 @@ read_log_file(ss::sstring base_dir, model::ntp file_ntp) {
             [](features::feature_table& f) { f.testing_activate_all(); })
           .get();
 
-        storage::api storage(
-          [base_dir]() {
-              return storage::kvstore_config(
-                1_MiB,
-                config::mock_binding(10ms),
-                base_dir,
-                storage::make_sanitized_file_config());
-          },
-          [base_dir]() {
-              return storage::log_config(
-                base_dir,
-                1_GiB,
-                ss::default_priority_class(),
-                storage::make_sanitized_file_config());
-          },
-          feature_table);
-        storage.start().get();
-        auto& mgr = storage.log_mgr();
+        seastar::logger test_logger("test");
+        ss::sharded<memory_sampling> memory_sampling_service;
+        memory_sampling_service
+          .start(std::ref(test_logger), config::mock_binding<bool>(false))
+          .get();
+
+        ss::sharded<storage::api> storage;
+        storage
+          .start(
+            [base_dir]() {
+                return storage::kvstore_config(
+                  1_MiB,
+                  config::mock_binding(10ms),
+                  base_dir,
+                  storage::make_sanitized_file_config());
+            },
+            [base_dir]() {
+                return storage::log_config(
+                  base_dir,
+                  1_GiB,
+                  ss::default_priority_class(),
+                  storage::make_sanitized_file_config());
+            },
+            std::ref(feature_table),
+            std::ref(memory_sampling_service))
+          .get();
+        storage.invoke_on_all(&storage::api::start).get();
+        auto& mgr = storage.local().log_mgr();
         try {
             auto batches
               = mgr.manage(storage::ntp_config(file_ntp, mgr.config().base_dir))
@@ -142,10 +166,12 @@ read_log_file(ss::sstring base_dir, model::ntp file_ntp) {
                   })
                   .get0();
             storage.stop().get();
+            memory_sampling_service.stop().get();
             feature_table.stop().get();
             return batches;
         } catch (...) {
             storage.stop().get();
+            memory_sampling_service.stop().get();
             feature_table.stop().get();
             throw;
         }

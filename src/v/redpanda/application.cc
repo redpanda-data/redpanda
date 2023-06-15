@@ -82,6 +82,7 @@
 #include "raft/service.h"
 #include "redpanda/admin_server.h"
 #include "resource_mgmt/io_priority.h"
+#include "resource_mgmt/memory_sampling.h"
 #include "ssx/thread_worker.h"
 #include "storage/backlog_controller.h"
 #include "storage/chunk_cache.h"
@@ -111,6 +112,7 @@
 #include <sys/resource.h>
 #include <sys/utsname.h>
 
+#include <algorithm>
 #include <chrono>
 #include <exception>
 #include <memory>
@@ -396,6 +398,13 @@ void application::initialize(
   std::optional<YAML::Node> schema_reg_cfg,
   std::optional<YAML::Node> schema_reg_client_cfg,
   std::optional<scheduling_groups> groups) {
+    construct_service(
+      _memory_sampling, std::ref(_log), ss::sharded_parameter([]() {
+          return config::shard_local_cfg().sampled_memory_profile.bind();
+      }))
+      .get();
+    _memory_sampling.invoke_on_all(&memory_sampling::start).get();
+
     // Set up the abort_on_oom value based on the associated cluster config
     // property, and watch for changes.
     _abort_on_oom
@@ -844,7 +853,8 @@ void application::configure_admin_server() {
       std::ref(topic_recovery_service),
       std::ref(topic_recovery_status_frontend),
       std::ref(tx_registry_frontend),
-      std::ref(storage_node))
+      std::ref(storage_node),
+      std::ref(_memory_sampling))
       .get();
 }
 
@@ -1673,7 +1683,8 @@ void application::wire_up_bootstrap_services() {
             = sched_groups.cache_background_reclaim_sg();
           return log_cfg;
       },
-      std::ref(feature_table))
+      std::ref(feature_table),
+      std::ref(_memory_sampling))
       .get();
 
     // Hook up local_monitor to update storage_resources when disk state changes

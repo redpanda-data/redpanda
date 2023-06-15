@@ -21,6 +21,7 @@
 #include "model/tests/random_batch.h"
 #include "random/generators.h"
 #include "reflection/adl.h"
+#include "resource_mgmt/memory_sampling.h"
 #include "seastarx.h"
 #include "storage/kvstore.h"
 #include "storage/log_manager.h"
@@ -188,6 +189,7 @@ public:
     storage::kvstore kvstore;
     storage::storage_resources resources;
     ss::sharded<features::feature_table> feature_table;
+    ss::sharded<memory_sampling> memory_sampling_service;
 
     std::optional<model::timestamp> ts_cursor;
 
@@ -200,7 +202,8 @@ public:
             test_dir,
             storage::make_sanitized_file_config()),
           resources,
-          feature_table) {
+          feature_table)
+      , memory_sampling_service() {
         configure_unit_test_logging();
         // avoid double metric registrations
         ss::smp::invoke_on_all([] {
@@ -214,12 +217,16 @@ public:
           .invoke_on_all(
             [](features::feature_table& f) { f.testing_activate_all(); })
           .get();
+        memory_sampling_service
+          .start(std::ref(tlog), config::mock_binding<bool>(false))
+          .get();
 
         kvstore.start().get();
     }
 
     ~storage_test_fixture() {
         kvstore.stop().get();
+        memory_sampling_service.stop().get();
         feature_table.stop().get();
     }
 
@@ -234,13 +241,21 @@ public:
     /// Creates a log manager in test directory
     storage::log_manager make_log_manager(storage::log_config cfg) {
         return storage::log_manager(
-          std::move(cfg), kvstore, resources, feature_table);
+          std::move(cfg),
+          kvstore,
+          resources,
+          feature_table,
+          memory_sampling_service);
     }
 
     /// Creates a log manager in test directory with default config
     storage::log_manager make_log_manager() {
         return storage::log_manager(
-          default_log_config(test_dir), kvstore, resources, feature_table);
+          default_log_config(test_dir),
+          kvstore,
+          resources,
+          feature_table,
+          memory_sampling_service);
     }
 
     /// \brief randomizes the configuration options

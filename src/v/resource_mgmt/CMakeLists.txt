@@ -2,6 +2,7 @@ v_cc_library(
   NAME resource_mgmt
   SRCS
     available_memory.cc
+    memory_sampling.cc
   DEPS
     Seastar::seastar
   )

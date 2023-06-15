@@ -375,6 +375,7 @@ struct configuration final : public config_store {
 
     // memory related settings
     property<bool> memory_abort_on_alloc_failure;
+    property<bool> sampled_memory_profile;
 
     // metrics reporter
     property<bool> enable_metrics_reporter;

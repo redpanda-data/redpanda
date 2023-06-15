@@ -206,6 +206,32 @@
             ]
         },
         {
+            "path": "/v1/debug/sampled_memory_profile",
+            "operations": [
+                {
+                    "method": "GET",
+                    "summary": "Get the currently sampled live memory set for the specified or all shards",
+                    "nickname": "sampled_memory_profile",
+                    "produces": [
+                        "application/json"
+                    ],
+                    "type": "array",
+                    "items": {
+                        "type": "memory_profile"
+                    },
+                    "parameters": [
+                        {
+                            "name": "shard",
+                            "in": "query",
+                            "required": false,
+                            "allowMultiple": false,
+                            "type": "long"
+                        }
+                    ]
+                }
+            ]
+        },
+        {
             "path": "/v1/debug/refresh_disk_health_info",
             "operations": [
                 {
@@ -494,6 +520,40 @@
                 "since_last_status": {
                     "type": "long",
                     "description": "Milliseconds since last update from peer"
+                }
+            }
+        },
+        "memory_profile": {
+            "id": "memory_profile",
+            "description": "Sampled memory profile of a shard",
+            "properties": {
+                "shard": {
+                    "type": "long",
+                    "description": "Id of the shard the profile is from"
+                },
+                "allocation_sites": {
+                    "type": "array",
+                    "items": {
+                        "type": "allocation_site"
+                    }
+                }
+            }
+        },
+        "allocation_site": {
+            "id": "allocation_site",
+            "description": "A single allocation site with backtrace, size and count",
+            "properties": {
+                "size": {
+                    "type": "long",
+                    "description": "Current bytes allocated at this allocation site (note this is the upscaled size and not the sampled one)"
+                },
+                "count": {
+                    "type": "long",
+                    "description": "Live allocations at this site"
+                },
+                "backtrace": {
+                    "type": "string",
+                    "description": "Backtrace of this allocation site"
                 }
             }
         },

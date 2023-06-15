@@ -19,6 +19,7 @@
 #include "raft/mux_state_machine.h"
 #include "raft/types.h"
 #include "random/generators.h"
+#include "resource_mgmt/memory_sampling.h"
 #include "rpc/connection_cache.h"
 #include "storage/api.h"
 #include "storage/kvstore.h"
@@ -57,7 +58,8 @@ struct mux_state_machine_fixture {
           .start(
             [kv_conf]() { return kv_conf; },
             [this]() { return default_log_cfg(); },
-            std::ref(_feature_table))
+            std::ref(_feature_table),
+            std::ref(_memory_sampling_service))
           .get0();
         _storage.invoke_on_all(&storage::api::start).get0();
         _as.start().get();
@@ -72,6 +74,10 @@ struct mux_state_machine_fixture {
         _feature_table
           .invoke_on_all(
             [](features::feature_table& f) { f.testing_activate_all(); })
+          .get();
+
+        _memory_sampling_service
+          .start(std::ref(_test_logger), config::mock_binding<bool>(false))
           .get();
 
         _group_mgr
@@ -139,9 +145,10 @@ struct mux_state_machine_fixture {
             if (_raft) {
                 _raft.release();
             }
-            _connections.stop().get0();
-            _feature_table.stop().get0();
-            _storage.stop().get0();
+            _connections.stop().get();
+            _storage.stop().get();
+            _memory_sampling_service.stop().get();
+            _feature_table.stop().get();
             _as.stop().get();
         }
     }
@@ -189,11 +196,13 @@ struct mux_state_machine_fixture {
     model::ntp _ntp = model::ntp(
       model::ns("default"), model::topic("test"), model::partition_id(0));
 
+    ss::logger _test_logger{"mux-test-logger"};
     ss::sstring _data_dir;
     cluster::consensus_ptr _raft;
     ss::sharded<ss::abort_source> _as;
     ss::sharded<rpc::connection_cache> _connections;
     ss::sharded<storage::api> _storage;
+    ss::sharded<memory_sampling> _memory_sampling_service;
     ss::sharded<features::feature_table> _feature_table;
     ss::sharded<raft::group_manager> _group_mgr;
     ss::sharded<raft::coordinated_recovery_throttle> _recovery_throttle;

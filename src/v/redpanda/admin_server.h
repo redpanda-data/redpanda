@@ -18,12 +18,14 @@
 #include "model/metadata.h"
 #include "pandaproxy/rest/fwd.h"
 #include "pandaproxy/schema_registry/fwd.h"
+#include "resource_mgmt/memory_sampling.h"
 #include "rpc/connection_cache.h"
 #include "seastarx.h"
 #include "storage/node.h"
 #include "utils/request_auth.h"
 
 #include <seastar/core/scheduling.hh>
+#include <seastar/core/sharded.hh>
 #include <seastar/core/sstring.hh>
 #include <seastar/http/exception.hh>
 #include <seastar/http/file_handler.hh>
@@ -73,7 +75,8 @@ public:
       ss::sharded<cloud_storage::topic_recovery_service>&,
       ss::sharded<cluster::topic_recovery_status_frontend>&,
       ss::sharded<cluster::tx_registry_frontend>&,
-      ss::sharded<storage::node>&);
+      ss::sharded<storage::node>&,
+      ss::sharded<memory_sampling>&);
 
     ss::future<> start();
     ss::future<> stop();
@@ -460,6 +463,8 @@ private:
       cloud_storage_usage_handler(std::unique_ptr<ss::http::request>);
     ss::future<ss::json::json_return_type>
       restart_service_handler(std::unique_ptr<ss::http::request>);
+    ss::future<ss::json::json_return_type>
+      sampled_memory_profile_handler(std::unique_ptr<ss::http::request>);
 
     ss::future<> throw_on_error(
       ss::http::request& req,
@@ -510,6 +515,7 @@ private:
       _topic_recovery_status_frontend;
     ss::sharded<cluster::tx_registry_frontend>& _tx_registry_frontend;
     ss::sharded<storage::node>& _storage_node;
+    ss::sharded<memory_sampling>& _memory_sampling_service;
     // Value before the temporary override
     std::chrono::milliseconds _default_blocked_reactor_notify;
     ss::timer<> _blocked_reactor_notify_reset_timer;

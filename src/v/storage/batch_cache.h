@@ -12,6 +12,7 @@
 #pragma once
 #include "model/record.h"
 #include "resource_mgmt/available_memory.h"
+#include "resource_mgmt/memory_sampling.h"
 #include "ssx/semaphore.h"
 #include "units.h"
 #include "utils/intrusive_list_helpers.h"
@@ -226,7 +227,9 @@ public:
         range_ptr _range;
     };
 
-    explicit batch_cache(const reclaim_options& opts);
+    explicit batch_cache(
+      const reclaim_options& opts,
+      ss::sharded<memory_sampling>& memory_sampling_service);
 
     batch_cache(const batch_cache&) = delete;
     batch_cache& operator=(const batch_cache&) = delete;
@@ -384,6 +387,7 @@ private:
     size_t _reclaim_size;
     background_reclaimer _background_reclaimer;
     resources::available_memory::deregister_holder _available_mem_deregister;
+    ss::sharded<memory_sampling>& _memory_sampling_service;
 
     friend std::ostream& operator<<(std::ostream&, const reclaim_options&);
     friend std::ostream& operator<<(std::ostream&, const batch_cache&);

@@ -16,6 +16,7 @@
 #include "model/record_batch_reader.h"
 #include "model/tests/random_batch.h"
 #include "random/generators.h"
+#include "resource_mgmt/memory_sampling.h"
 #include "seastarx.h"
 #include "ssx/sformat.h"
 #include "storage/api.h"
@@ -404,7 +405,9 @@ private:
       const log_append_config& config,
       should_flush_after flush);
 
+    ss::logger _test_logger{"disk-log-test-logger"};
     ss::sharded<features::feature_table> _feature_table;
+    ss::sharded<memory_sampling> _memory_sampling_service;
     storage::log_config _log_config;
     storage::api _storage;
     std::optional<log> _log;

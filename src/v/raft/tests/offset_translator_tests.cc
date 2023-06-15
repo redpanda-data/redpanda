@@ -10,6 +10,7 @@
 #include "model/fundamental.h"
 #include "raft/offset_translator.h"
 #include "random/generators.h"
+#include "resource_mgmt/memory_sampling.h"
 #include "storage/api.h"
 #include "storage/fwd.h"
 #include "storage/kvstore.h"
@@ -50,11 +51,15 @@ struct base_fixture {
           .invoke_on_all(
             [](features::feature_table& f) { f.testing_activate_all(); })
           .get();
+        _memory_sampling_service
+          .start(std::ref(_test_logger), config::mock_binding<bool>(false))
+          .get();
         _api
           .start(
             [this]() { return make_kv_cfg(); },
             [this]() { return make_log_cfg(); },
-            std::ref(_feature_table))
+            std::ref(_feature_table),
+            std::ref(_memory_sampling_service))
           .get();
         _api.invoke_on_all(&storage::api::start).get();
     }
@@ -87,11 +92,14 @@ struct base_fixture {
     model::ntp test_ntp = model::ntp(
       model::ns("test"), model::topic("tp"), model::partition_id(0));
     ss::sstring _test_dir;
+    ss::logger _test_logger{"offset-test-logger"};
     ss::sharded<features::feature_table> _feature_table;
+    ss::sharded<memory_sampling> _memory_sampling_service;
     ss::sharded<storage::api> _api;
 
     ~base_fixture() {
         _api.stop().get();
+        _memory_sampling_service.stop().get();
         _feature_table.stop().get();
     }
 };

@@ -45,7 +45,13 @@ class fixture {};
 FIXTURE_TEST(reclaim, fixture) {
     using namespace std::chrono_literals;
 
-    storage::batch_cache cache(opts);
+    seastar::logger test_logger("test");
+    ss::sharded<memory_sampling> memory_sampling_service;
+    memory_sampling_service
+      .start(std::ref(test_logger), config::mock_binding<bool>(false))
+      .get();
+
+    storage::batch_cache cache(opts, memory_sampling_service);
     storage::batch_cache_index index(cache);
     std::vector<storage::batch_cache::entry> cache_entries;
     cache_entries.reserve(30);
