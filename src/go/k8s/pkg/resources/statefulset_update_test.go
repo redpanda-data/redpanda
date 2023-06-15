@@ -7,7 +7,8 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
-package resources //nolint:testpackage // needed to test private method
+//nolint:testpackage // the tests use private methods
+package resources
 
 import (
 	"context"
@@ -17,9 +18,9 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"reflect"
 	"testing"
 
-	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/api/admin"
 	"github.com/stretchr/testify/require"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -30,6 +31,7 @@ import (
 	vectorizedv1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/vectorized/v1alpha1"
 	adminutils "github.com/redpanda-data/redpanda/src/go/k8s/pkg/admin"
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources/types"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/api/admin"
 )
 
 func TestShouldUpdate_AnnotationChange(t *testing.T) {
@@ -257,4 +259,139 @@ vectorized_cluster_partition_under_replicated_replicas{namespace="kafka",partiti
 
 	err := ssres.evaluateUnderReplicatedPartitions(context.Background(), &adminURL)
 	require.NoError(t, err)
+}
+
+//nolint:funlen // the test data doesn't count
+func Test_sortPodList(t *testing.T) {
+	const clusterName = "sortPodListCluster"
+	cluster := vectorizedv1alpha1.Cluster{ObjectMeta: metav1.ObjectMeta{Name: clusterName}}
+
+	emptyPodList := corev1.PodList{
+		Items: []corev1.Pod{},
+	}
+
+	//nolint:dupl // not duplicate
+	orderedPodList := corev1.PodList{
+		Items: []corev1.Pod{
+			{
+				ObjectMeta: metav1.ObjectMeta{Name: clusterName + "-0"},
+			},
+			{
+				ObjectMeta: metav1.ObjectMeta{Name: clusterName + "-1"},
+			},
+			{
+				ObjectMeta: metav1.ObjectMeta{Name: clusterName + "-2"},
+			},
+			{
+				ObjectMeta: metav1.ObjectMeta{Name: clusterName + "-3"},
+			},
+			{
+				ObjectMeta: metav1.ObjectMeta{Name: clusterName + "-4"},
+			},
+			{
+				ObjectMeta: metav1.ObjectMeta{Name: clusterName + "-5"},
+			},
+			{
+				ObjectMeta: metav1.ObjectMeta{Name: clusterName + "-6"},
+			},
+			{
+				ObjectMeta: metav1.ObjectMeta{Name: clusterName + "-7"},
+			},
+			{
+				ObjectMeta: metav1.ObjectMeta{Name: clusterName + "-8"},
+			},
+			{
+				ObjectMeta: metav1.ObjectMeta{Name: clusterName + "-9"},
+			},
+			{
+				ObjectMeta: metav1.ObjectMeta{Name: clusterName + "-10"},
+			},
+			{
+				ObjectMeta: metav1.ObjectMeta{Name: clusterName + "-11"},
+			},
+		},
+	}
+
+	//nolint:dupl // not duplicate
+	unorderedPodList := corev1.PodList{
+		Items: []corev1.Pod{
+			{
+				ObjectMeta: metav1.ObjectMeta{Name: clusterName + "-11"},
+			},
+			{
+				ObjectMeta: metav1.ObjectMeta{Name: clusterName + "-4"},
+			},
+			{
+				ObjectMeta: metav1.ObjectMeta{Name: clusterName + "-1"},
+			},
+			{
+				ObjectMeta: metav1.ObjectMeta{Name: clusterName + "-10"},
+			},
+			{
+				ObjectMeta: metav1.ObjectMeta{Name: clusterName + "-0"},
+			},
+			{
+				ObjectMeta: metav1.ObjectMeta{Name: clusterName + "-2"},
+			},
+			{
+				ObjectMeta: metav1.ObjectMeta{Name: clusterName + "-3"},
+			},
+			{
+				ObjectMeta: metav1.ObjectMeta{Name: clusterName + "-5"},
+			},
+			{
+				ObjectMeta: metav1.ObjectMeta{Name: clusterName + "-9"},
+			},
+			{
+				ObjectMeta: metav1.ObjectMeta{Name: clusterName + "-6"},
+			},
+			{
+				ObjectMeta: metav1.ObjectMeta{Name: clusterName + "-8"},
+			},
+			{
+				ObjectMeta: metav1.ObjectMeta{Name: clusterName + "-7"},
+			},
+		},
+	}
+	type args struct {
+		podList *corev1.PodList
+		cluster *vectorizedv1alpha1.Cluster
+	}
+	tests := []struct {
+		name string
+		args args
+		want *corev1.PodList
+	}{
+		{
+			name: "empty pod list says empty",
+			args: args{
+				podList: &emptyPodList,
+				cluster: &cluster,
+			},
+			want: &emptyPodList,
+		},
+		{
+			name: "ordered pod list stays ordered",
+			args: args{
+				podList: &orderedPodList,
+				cluster: &cluster,
+			},
+			want: &orderedPodList,
+		},
+		{
+			name: "unordered pod list is sorted",
+			args: args{
+				podList: &unorderedPodList,
+				cluster: &cluster,
+			},
+			want: &orderedPodList,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := sortPodList(tt.args.podList, tt.args.cluster); !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("sortPodList() = %v, want %v", got, tt.want)
+			}
+		})
+	}
 }

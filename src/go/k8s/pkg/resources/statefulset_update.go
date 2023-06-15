@@ -29,6 +29,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	k8sclient "sigs.k8s.io/controller-runtime/pkg/client"
 
+	vectorizedv1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/vectorized/v1alpha1"
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/labels"
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources/featuregates"
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/utils"
@@ -144,13 +145,20 @@ func (r *StatefulSetResource) getPodList(ctx context.Context) (*corev1.PodList, 
 		LabelSelector: labels.ForCluster(r.pandaCluster).AsClientSelector(),
 	})
 	if err != nil {
-		return nil, fmt.Errorf("unable to list panda pods: %w", err)
+		return nil, fmt.Errorf("unable to list pods: %w", err)
 	}
 
+	return sortPodList(&podList, r.pandaCluster), nil
+}
+
+func sortPodList(podList *corev1.PodList, cluster *vectorizedv1alpha1.Cluster) *corev1.PodList {
 	sort.Slice(podList.Items, func(i, j int) bool {
-		return podList.Items[i].Name < podList.Items[j].Name
+		iOrdinal, _ := utils.GetPodOrdinal(podList.Items[i].GetName(), cluster.GetName())
+		jOrdinal, _ := utils.GetPodOrdinal(podList.Items[j].GetName(), cluster.GetName())
+
+		return iOrdinal < jOrdinal
 	})
-	return &podList, nil
+	return podList
 }
 
 func (r *StatefulSetResource) rollingUpdate(
