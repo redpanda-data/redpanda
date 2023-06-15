@@ -106,6 +106,8 @@ public:
     ~segment_reader_handle() override;
 };
 
+using segment_reader_ptr = std::unique_ptr<segment_reader>;
+
 class segment_reader {
 public:
     segment_reader(
@@ -115,8 +117,8 @@ public:
       std::optional<ntp_sanitizer_config> ntp_sanitizer_config
       = std::nullopt) noexcept;
     ~segment_reader() noexcept;
-    segment_reader(segment_reader&&) noexcept;
-    segment_reader& operator=(segment_reader&&) noexcept;
+    segment_reader(segment_reader&&) = delete;
+    segment_reader& operator=(segment_reader&&) = delete;
     segment_reader(const segment_reader&) = delete;
     segment_reader& operator=(const segment_reader&) = delete;
 
@@ -179,10 +181,6 @@ private:
     friend class segment_reader_handle;
     friend std::ostream& operator<<(std::ostream&, const segment_reader&);
 };
-
-using segment_reader_ptr = ss::lw_shared_ptr<segment_reader>;
-
-std::ostream& operator<<(std::ostream&, segment_reader_ptr);
 
 /**
  * Enables reading from a series of segments sequentially using a single data

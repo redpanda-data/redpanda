@@ -74,7 +74,7 @@ public:
 public:
     segment(
       offset_tracker tracker,
-      segment_reader,
+      segment_reader_ptr,
       segment_index,
       segment_appender_ptr,
       std::optional<compacted_index_writer>,
@@ -125,9 +125,11 @@ public:
     // low level api's are discouraged and might be deprecated
     // please use higher level API's when possible
     segment_reader& reader();
-    size_t file_size() const { return _reader.file_size(); }
-    const ss::sstring filename() const { return _reader.filename(); }
-    const segment_full_path& path() const { return _reader.path(); }
+    segment_reader_ptr release_segment_reader();
+    void swap_reader(segment_reader_ptr);
+    size_t file_size() const { return _reader->file_size(); }
+    const ss::sstring filename() const { return _reader->filename(); }
+    const segment_full_path& path() const { return _reader->path(); }
     segment_index& index();
     const segment_index& index() const;
     segment_appender_ptr release_appender();
@@ -244,7 +246,7 @@ private:
     generation_id _generation_id;
 
     offset_tracker _tracker;
-    segment_reader _reader;
+    segment_reader_ptr _reader;
     segment_index _idx;
     bitflags _flags{bitflags::none};
     segment_appender_ptr _appender;
@@ -340,13 +342,13 @@ inline bool segment::empty() const {
     if (_appender) {
         return _appender->file_byte_offset() == 0;
     }
-    return _reader.empty();
+    return _reader->empty();
 }
 inline size_t segment::size_bytes() const {
     if (_appender) {
         return _appender->file_byte_offset();
     }
-    return _reader.file_size();
+    return _reader->file_size();
 }
 inline bool segment::has_compaction_index() const {
     return _compaction_index != std::nullopt;
@@ -428,7 +430,13 @@ inline bool segment::has_outstanding_locks() const {
 inline bool segment::is_closed() const {
     return (_flags & bitflags::closed) == bitflags::closed;
 }
-inline segment_reader& segment::reader() { return _reader; }
+inline segment_reader& segment::reader() { return *_reader; }
+inline void segment::swap_reader(segment_reader_ptr new_reader) {
+    std::swap(new_reader, _reader);
+}
+inline segment_reader_ptr segment::release_segment_reader() {
+    return std::move(_reader);
+}
 inline segment_index& segment::index() { return _idx; }
 inline const segment_index& segment::index() const { return _idx; }
 inline segment_appender_ptr segment::release_appender() {

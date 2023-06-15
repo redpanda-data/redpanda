@@ -44,7 +44,7 @@ namespace storage {
 
 segment::segment(
   segment::offset_tracker tkr,
-  segment_reader r,
+  segment_reader_ptr r,
   segment_index i,
   segment_appender_ptr a,
   std::optional<compacted_index_writer> ci,
@@ -120,7 +120,7 @@ ss::future<usage> segment::persistent_size() {
     } else {
         try {
             _data_disk_usage_size = co_await ss::file_size(
-              _reader.path().string());
+              _reader->path().string());
             u.data = _data_disk_usage_size.value();
         } catch (...) {
         }
@@ -210,7 +210,7 @@ ss::future<size_t> segment::remove_persistent_state() {
 }
 
 ss::future<> segment::do_close() {
-    auto f = _reader.close();
+    auto f = _reader->close();
     if (_appender) {
         f = f.then([this] { return _appender->close(); });
     }
@@ -340,7 +340,7 @@ ss::future<> segment::do_flush() {
         // finishes we guarantee that all previous flushes finished.
         _tracker.committed_offset = std::max(o, _tracker.committed_offset);
         _tracker.stable_offset = _tracker.committed_offset;
-        _reader.set_file_size(std::max(fsize, _reader.file_size()));
+        _reader->set_file_size(std::max(fsize, _reader->file_size()));
         clear_cached_disk_usage();
     });
 }
@@ -381,11 +381,11 @@ ss::future<> segment::do_truncate(
     _tracker.committed_offset = prev_last_offset;
     _tracker.stable_offset = prev_last_offset;
     _tracker.dirty_offset = prev_last_offset;
-    _reader.set_file_size(physical);
+    _reader->set_file_size(physical);
     vlog(
       stlog.trace,
       "truncating segment {} at {}",
-      _reader.filename(),
+      _reader->filename(),
       prev_last_offset);
     _generation_id++;
     cache_truncate(prev_last_offset + model::offset(1));
@@ -400,7 +400,7 @@ ss::future<> segment::do_truncate(
               });
         }
         // always remove compaction index when truncating compacted segments
-        f = f.then([this] { return remove_compacted_index(_reader.path()); });
+        f = f.then([this] { return remove_compacted_index(_reader->path()); });
     }
 
     f = f.then([this, prev_last_offset, new_max_timestamp] {
@@ -421,7 +421,7 @@ ss::future<> segment::do_truncate(
             });
         }
     } else {
-        f = f.then([this, physical] { return _reader.truncate(physical); });
+        f = f.then([this, physical] { return _reader->truncate(physical); });
     }
 
     return f;
@@ -618,7 +618,7 @@ segment::offset_data_stream(model::offset o, ss::io_priority_class iopc) {
     // size) (https://github.com/redpanda-data/redpanda/issues/2101)
     vassert(position < size_bytes(), "Index points beyond file size");
 
-    return _reader.data_stream(position, iopc);
+    return _reader->data_stream(position, iopc);
 }
 
 void segment::advance_stable_offset(size_t offset) {
@@ -635,7 +635,7 @@ void segment::advance_stable_offset(size_t offset) {
         return;
     }
 
-    _reader.set_file_size(it->first);
+    _reader->set_file_size(it->first);
     _tracker.stable_offset = it->second;
     _inflight.erase(_inflight.begin(), std::next(it));
 
@@ -658,8 +658,14 @@ std::ostream& operator<<(std::ostream& o, const segment& h) {
     o << "{offset_tracker:" << h._tracker
       << ", compacted_segment=" << h.is_compacted_segment()
       << ", finished_self_compaction=" << h.finished_self_compaction()
-      << ", generation=" << h.get_generation_id() << ", reader=" << h._reader
-      << ", writer=";
+      << ", generation=" << h.get_generation_id() << ", reader=";
+    if (h._reader) {
+        o << *h._reader;
+    } else {
+        o << "nullptr";
+    }
+
+    o << ", writer=";
     if (h.has_appender()) {
         o << *h._appender;
     } else {
@@ -729,7 +735,7 @@ ss::future<ss::lw_shared_ptr<segment>> open_segment(
 
     co_return ss::make_lw_shared<segment>(
       segment::offset_tracker(path.get_term(), path.get_base_offset()),
-      std::move(*rdr),
+      std::move(rdr),
       std::move(idx),
       nullptr,
       std::nullopt,
@@ -776,7 +782,7 @@ ss::future<ss::lw_shared_ptr<segment>> make_segment(
                       return ss::make_ready_future<ss::lw_shared_ptr<segment>>(
                         ss::make_lw_shared<segment>(
                           seg->offsets(),
-                          std::move(seg->reader()),
+                          seg->release_segment_reader(),
                           std::move(seg->index()),
                           std::move(a),
                           std::nullopt,
@@ -806,7 +812,7 @@ ss::future<ss::lw_shared_ptr<segment>> make_segment(
                       return ss::make_ready_future<ss::lw_shared_ptr<segment>>(
                         ss::make_lw_shared<segment>(
                           seg->offsets(),
-                          std::move(seg->reader()),
+                          seg->release_segment_reader(),
                           std::move(seg->index()),
                           seg->release_appender(),
                           std::move(compact),
