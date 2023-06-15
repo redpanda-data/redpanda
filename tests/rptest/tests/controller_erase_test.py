@@ -14,6 +14,7 @@ from rptest.services.admin import Admin
 from rptest.clients.types import TopicSpec
 from ducktape.mark import parametrize
 from ducktape.utils.util import wait_until
+from rptest.util import wait_until_result
 
 ERASE_ERROR_MSG = "Inconsistency detected between KVStore last_applied"
 ERASE_LOG_ALLOW_LIST = RESTART_LOG_ALLOW_LIST + [ERASE_ERROR_MSG]
@@ -57,7 +58,14 @@ class ControllerEraseTest(RedpandaTest):
 
         # Stop the node we will intentionally damage
         victim_node = self.redpanda.nodes[1]
-        bystander_node = self.redpanda.controller()
+
+        def controller_elected():
+            ctrl = self.redpanda.controller()
+            return (ctrl is not None, ctrl)
+
+        bystander_node = wait_until_result(controller_elected,
+                                           timeout_sec=15,
+                                           backoff_sec=1)
 
         def wait_all_segments():
             storage = self.redpanda.node_storage(victim_node)
