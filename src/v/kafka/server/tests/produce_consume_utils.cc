@@ -121,6 +121,10 @@ ss::future<pid_to_kvs_map_t> kafka_consume_transport::consume(
           "Processing topic {} from the fetch response",
           topic.name);
         for (auto& partition : topic.partitions) {
+            if (partition.error_code != kafka::error_code::none) {
+                throw std::runtime_error(fmt::format(
+                  "fetch partition error: {}", partition.error_code));
+            }
             vlog(
               test_log.trace,
               "Processing ntp {}/{} from the fetch response",
