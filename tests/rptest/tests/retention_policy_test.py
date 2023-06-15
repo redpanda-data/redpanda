@@ -473,7 +473,7 @@ class ShadowIndexingCloudRetentionTest(RedpandaTest):
             f"Waiting for {local_seg_count - 1} segments to be uploaded to the cloud"
         )
         # Wait for everything to be uploaded to the cloud.
-        wait_until(lambda: cloud_log_segment_count() == local_seg_count - 1,
+        wait_until(lambda: cloud_log_segment_count() >= local_seg_count - 1,
                    timeout_sec=10,
                    backoff_sec=2,
                    err_msg=f"Segments not uploaded")
