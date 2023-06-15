@@ -79,10 +79,7 @@ FIXTURE_TEST(test_produce_consume_from_cloud, e2e_fixture) {
 
     // Upload the closed segment to object storage.
     tests::cooperative_spin_wait_with_timeout(3s, [&archiver] {
-        return archiver.upload_next_candidates().then(
-          [](archival::ntp_archiver::batch_result res) {
-              return res.non_compacted_upload_result.num_succeeded == 1;
-          });
+        return archiver.manifest().size() == 1;
     }).get();
     auto manifest_res = archiver.upload_manifest("test").get();
     BOOST_REQUIRE_EQUAL(manifest_res, cloud_storage::upload_result::success);
