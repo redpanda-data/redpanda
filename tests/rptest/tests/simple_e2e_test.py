@@ -67,4 +67,5 @@ class SimpleEndToEndTest(EndToEndTest):
             error = e
 
         assert error is not None
-        assert "Consumed from an unexpected" in str(error)
+        assert "Consumed from an unexpected" in str(
+            error) or "is behind the current committed offset" in str(error)
