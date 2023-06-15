@@ -1,0 +1,21 @@
+name: Alert on Abandoned Backports
+on:
+  schedule:
+    - cron: '*/10 * * * 4'
+env: 
+  OUTPUT: $(gh search issues --label "kind/backport" --state open --repo "redpanda-data/redpanda" --updated "<`date --date="15 days ago" +"%Y"-"%m"-"%d"`" --sort updated --order asc --limit 15 --json "assignees,updatedAt,url" --jq '.[] | "@" + (.assignees[] | {login} | .login), .url, .updatedAt,"----"')
+  
+jobs:
+  alert-on-abandoned-backports:
+    name: Post Slack Message
+    runs-on: ubuntu-latest
+    steps:
+
+    - name: "Post to a test channel (temporary)"
+      id: shtokman
+      uses: slackapi/slack-github-action@v1.18.0
+      with:
+        channel-id: "D04M3NZ1WE8"
+        slack-message: "Test: ${{env.MESSAGE }}"
+      env:
+        SLACK_BOT_TOKEN: ${{ secrets.VBOTBUILDOVICH_SLACK_BOT_TOKEN }}
