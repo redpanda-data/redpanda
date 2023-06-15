@@ -14,6 +14,7 @@
 #include "bytes/iostream.h"
 #include "bytes/scattered_message.h"
 #include "kafka/protocol/api_versions.h"
+#include "kafka/protocol/delete_records.h"
 #include "kafka/protocol/flex_versions.h"
 #include "kafka/protocol/fwd.h"
 #include "kafka/server/protocol_utils.h"
@@ -205,6 +206,8 @@ public:
             return dispatch(std::move(r), api_version(6));
         } else if constexpr (std::is_same_v<type, sasl_handshake_request>) {
             return dispatch(std::move(r), api_version(1));
+        } else if constexpr (std::is_same_v<type, delete_records_request>) {
+            return dispatch(std::move(r), api_version(2));
         } else if constexpr (std::is_same_v<type, sasl_authenticate_request>) {
             return dispatch(std::move(r), api_version(1));
         }
