@@ -429,7 +429,7 @@ ss::future<> segment::do_truncate(
 
 ss::future<bool> segment::materialize_index() {
     vassert(
-      _tracker.base_offset == _tracker.dirty_offset,
+      _tracker.base_offset == model::next_offset(_tracker.dirty_offset),
       "Materializing the index must happen before tracking any data. {}",
       *this);
     return _idx.materialize_index().then([this](bool yn) {
