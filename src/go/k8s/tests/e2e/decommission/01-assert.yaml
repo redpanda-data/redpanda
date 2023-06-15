@@ -5,6 +5,7 @@ metadata:
 status:
   replicas: 2
   currentReplicas: 2
+  readyReplicas: 2
   conditions:
   - type: ClusterConfigured
     status: "True"

@@ -669,7 +669,7 @@ func (r *ClusterReconciler) reportStatus(
 		// this is non-fatal error, it will return error even if e.g.
 		// the rollout is not finished because then the currentversion
 		// of the cluster cannot be determined
-		r.Log.Info(fmt.Sprintf("cannot get CurrentVersion of statefulset, %s", err))
+		r.Log.Info(fmt.Sprintf("cannot get CurrentVersion of statefulset, %s", versionErr))
 	}
 	if statusShouldBeUpdated(&redpandaCluster.Status, nodeList, sts, version, versionErr) {
 		err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
