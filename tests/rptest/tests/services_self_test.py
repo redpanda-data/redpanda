@@ -13,7 +13,7 @@ from ducktape.tests.test import Test
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.services.cluster import cluster
 from rptest.clients.types import TopicSpec
-
+from rptest.services.failure_injector import FailureSpec, make_failure_injector
 from rptest.services.openmessaging_benchmark import OpenMessagingBenchmark
 from rptest.services.kgo_repeater_service import repeater_traffic
 from rptest.services.kgo_verifier_services import KgoVerifierRandomConsumer, KgoVerifierSeqConsumer, KgoVerifierConsumerGroupConsumer, KgoVerifierProducer
@@ -263,3 +263,20 @@ class SimpleSelfTest(Test):
 
         node_disk_free = self.redpanda.get_node_disk_free()
         assert node_disk_free > 0
+
+
+class FailureInjectorSelfTest(Test):
+    """
+    Verify instantiation of a FailureInjectorBase subclass through the factory method.
+    """
+    def __init__(self, test_context):
+        super(FailureInjectorSelfTest, self).__init__(test_context)
+        self.redpanda = make_redpanda_service(test_context, 3)
+
+    def setUp(self):
+        self.redpanda.start()
+
+    @cluster(num_nodes=3, check_allowed_error_logs=False)
+    def test_finjector(self):
+        fi = make_failure_injector(self.redpanda)
+        fi.inject_failure(FailureSpec(FailureSpec.FAILURE_ISOLATE, None))
