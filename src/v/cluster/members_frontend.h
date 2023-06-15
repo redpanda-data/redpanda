@@ -41,21 +41,27 @@ public:
 
     ss::future<std::error_code> decommission_node(model::node_id);
     ss::future<std::error_code> recommission_node(model::node_id);
-    ss::future<std::error_code> finish_node_reallocations(model::node_id);
     ss::future<std::error_code> remove_node(model::node_id);
+
+    /// Must be called on the controller leader. Optionally check the current
+    /// controller leadership term.
+    ss::future<std::error_code> finish_node_reallocations(
+      model::node_id, std::optional<model::term_id> = std::nullopt);
 
     ss::future<std::error_code>
     set_maintenance_mode(model::node_id, bool enabled);
 
 private:
     template<typename T>
-    ss::future<std::error_code> do_replicate_node_command(model::node_id id) {
+    ss::future<std::error_code> do_replicate_node_command(
+      model::node_id id, std::optional<model::term_id> term = std::nullopt) {
         return replicate_and_wait(
           _stm,
           _feature_table,
           _as,
           T(id, 0),
-          _node_op_timeout + model::timeout_clock::now());
+          _node_op_timeout + model::timeout_clock::now(),
+          term);
     }
 
     model::node_id _self;
