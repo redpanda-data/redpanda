@@ -50,19 +50,6 @@ struct configuration;
 namespace kafka {
 struct group_log_group_metadata;
 
-struct attached_partition {
-    bool loading;
-    ssx::semaphore sem{1, "k/group-mgr"};
-    ss::abort_source as;
-    ss::lw_shared_ptr<cluster::partition> partition;
-    ss::basic_rwlock<> catchup_lock;
-    model::term_id term{-1};
-
-    explicit attached_partition(ss::lw_shared_ptr<cluster::partition> p)
-      : loading(true)
-      , partition(std::move(p)) {}
-};
-
 /**
  * \defgroup kafka-groups Kafka group membership API
  *
@@ -209,7 +196,7 @@ public:
       kafka::group_id id,
       group_state s,
       config::configuration& conf,
-      ss::lw_shared_ptr<attached_partition>,
+      ss::lw_shared_ptr<cluster::partition> partition,
       model::term_id,
       ss::sharded<cluster::tx_gateway_frontend>& tx_frontend,
       ss::sharded<features::feature_table>&,
@@ -221,7 +208,7 @@ public:
       kafka::group_id id,
       group_metadata_value& md,
       config::configuration& conf,
-      ss::lw_shared_ptr<attached_partition>,
+      ss::lw_shared_ptr<cluster::partition> partition,
       model::term_id,
       ss::sharded<cluster::tx_gateway_frontend>& tx_frontend,
       ss::sharded<features::feature_table>&,
@@ -913,7 +900,6 @@ private:
     ss::timer<clock_type> _join_timer;
     bool _new_member_added;
     config::configuration& _conf;
-    ss::lw_shared_ptr<attached_partition> _p;
     ss::lw_shared_ptr<cluster::partition> _partition;
     absl::node_hash_map<
       model::topic_partition,

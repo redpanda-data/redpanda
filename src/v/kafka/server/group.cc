@@ -48,7 +48,7 @@ group::group(
   kafka::group_id id,
   group_state s,
   config::configuration& conf,
-  ss::lw_shared_ptr<attached_partition> p,
+  ss::lw_shared_ptr<cluster::partition> partition,
   model::term_id term,
   ss::sharded<cluster::tx_gateway_frontend>& tx_frontend,
   ss::sharded<features::feature_table>& feature_table,
@@ -61,8 +61,7 @@ group::group(
   , _num_members_joining(0)
   , _new_member_added(false)
   , _conf(conf)
-  , _p(p)
-  , _partition(p != nullptr ? p->partition : nullptr)
+  , _partition(std::move(partition))
   , _probe(_members, _static_members, _offsets)
   , _ctxlog(klog, *this)
   , _ctx_txlog(cluster::txlog, *this)
@@ -84,7 +83,7 @@ group::group(
   kafka::group_id id,
   group_metadata_value& md,
   config::configuration& conf,
-  ss::lw_shared_ptr<attached_partition> p,
+  ss::lw_shared_ptr<cluster::partition> partition,
   model::term_id term,
   ss::sharded<cluster::tx_gateway_frontend>& tx_frontend,
   ss::sharded<features::feature_table>& feature_table,
@@ -103,8 +102,7 @@ group::group(
   , _leader(md.leader)
   , _new_member_added(false)
   , _conf(conf)
-  , _p(p)
-  , _partition(p->partition)
+  , _partition(std::move(partition))
   , _probe(_members, _static_members, _offsets)
   , _ctxlog(klog, *this)
   , _ctx_txlog(cluster::txlog, *this)
@@ -1657,9 +1655,6 @@ void group::fail_offset_commit(
 }
 
 void group::reset_tx_state(model::term_id term) {
-    // must be invoked under catchup_lock.hold_write_lock()
-    // all other tx methods should use catchup_lock.hold_read_lock()
-    // to avoid modifying the state of the executing tx methods
     _term = term;
     _volatile_txs.clear();
     _prepared_txs.clear();
@@ -3210,8 +3205,6 @@ void group::maybe_rearm_timer() {
 }
 
 ss::future<> group::do_abort_old_txes() {
-    auto units = co_await _p->catchup_lock.hold_read_lock();
-
     std::vector<model::producer_identity> pids;
     for (auto& [id, _] : _prepared_txs) {
         pids.push_back(id);
