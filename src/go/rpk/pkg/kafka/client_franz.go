@@ -17,12 +17,14 @@ import (
 	"strings"
 	"time"
 
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/api/admin"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/spf13/afero"
 	"github.com/twmb/franz-go/pkg/kadm"
 	"github.com/twmb/franz-go/pkg/kerr"
 	"github.com/twmb/franz-go/pkg/kgo"
 	"github.com/twmb/franz-go/pkg/kmsg"
+	"github.com/twmb/franz-go/pkg/sasl/oauth"
 	"github.com/twmb/franz-go/pkg/sasl/scram"
 	"github.com/twmb/franz-go/plugin/kzap"
 )
@@ -93,17 +95,27 @@ func NewFranzClient(fs afero.Fs, p *config.RpkProfile, extraOpts ...kgo.Opt) (*k
 	}
 
 	if k.SASL != nil {
-		mech := scram.Auth{
-			User: k.SASL.User,
-			Pass: k.SASL.Password,
-		}
-		switch name := strings.ToUpper(k.SASL.Mechanism); name {
-		case "SCRAM-SHA-256", "": // we default to SCRAM-SHA-256 -- people commonly specify user & pass without --sasl-mechanism
-			opts = append(opts, kgo.SASL(mech.AsSha256Mechanism()))
-		case "SCRAM-SHA-512":
-			opts = append(opts, kgo.SASL(mech.AsSha512Mechanism()))
-		default:
-			return nil, fmt.Errorf("unknown SASL mechanism %q, supported: [SCRAM-SHA-256, SCRAM-SHA-512]", name)
+		if k.SASL.Mechanism == admin.CloudOIDC {
+			a := p.CurrentAuth()
+			if a == nil || a.AuthToken == "" {
+				return nil, fmt.Errorf("please login to our cloud using 'rpk cloud login'") // TODO
+			}
+			opts = append(opts, kgo.SASL((oauth.Auth{
+				Token: a.AuthToken,
+			}).AsMechanism()))
+		} else {
+			a := scram.Auth{
+				User: k.SASL.User,
+				Pass: k.SASL.Password,
+			}
+			switch name := strings.ToUpper(k.SASL.Mechanism); name {
+			case "SCRAM-SHA-256", "": // we default to SCRAM-SHA-256 -- people commonly specify user & pass without --sasl-mechanism
+				opts = append(opts, kgo.SASL(a.AsSha256Mechanism()))
+			case "SCRAM-SHA-512":
+				opts = append(opts, kgo.SASL(a.AsSha512Mechanism()))
+			default:
+				return nil, fmt.Errorf("unknown SASL mechanism %q, supported: [SCRAM-SHA-256, SCRAM-SHA-512]", name)
+			}
 		}
 	}
 

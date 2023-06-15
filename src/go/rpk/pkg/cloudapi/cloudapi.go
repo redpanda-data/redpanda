@@ -38,7 +38,7 @@ func NewClient(host, authToken string, hopts ...httpapi.Opt) *Client {
 	return &Client{cl: httpapi.NewClient(opts...)}
 }
 
-// NameID is a common type used in may endpoints / many structs.
+// NameID is a common type used in many endpoints / many structs.
 type NameID struct {
 	ID   string `json:"id,omitempty"`
 	Name string `json:"name,omitempty"`
