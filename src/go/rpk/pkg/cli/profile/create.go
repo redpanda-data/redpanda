@@ -257,14 +257,15 @@ func FromVirtualCluster(vc cloudapi.VirtualCluster) (p config.RpkProfile, isMTLS
 	p = config.RpkProfile{
 		Name:      vc.Name,
 		FromCloud: true,
+		KafkaAPI: config.RpkKafkaAPI{
+			Brokers: vc.Status.Listeners.SeedAddresses,
+			TLS:     new(config.TLS),
+			SASL: &config.SASL{
+				Mechanism: admin.CloudOIDC,
+			},
+		},
 	}
-	p.KafkaAPI.Brokers = vc.Status.Listeners.SeedAddresses
-	if p.KafkaAPI.SASL == nil {
-		p.KafkaAPI.SASL = new(config.SASL)
-	}
-	p.KafkaAPI.SASL.Mechanism = admin.CloudOIDC
-	// isSASL is false here since we don't need to print the SASL-required msg.
-	return p, false, false
+	return p, false, false // we do not need to print any required message; we generate the config in full
 }
 
 // RequiresMTLSMessage returns the message to print if the cluster requires

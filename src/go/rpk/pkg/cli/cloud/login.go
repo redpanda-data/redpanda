@@ -119,9 +119,8 @@ and then re-specify the client credentials next time you log in.`)
 	return cmd
 }
 
-// nameAndCluster it's a temporary type used to describe a cluster name in the
-// form of <namespace>/<cluster-name> and the cluster content (either a virtual
-// cluster or a normal cluster).
+// nameAndCluster describes a cluster name in the form of
+// <namespace>/<cluster-name> and the cluster type (virtual, normal).
 type nameAndCluster struct {
 	name string
 	c    *cloudapi.Cluster
