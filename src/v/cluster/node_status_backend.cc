@@ -93,7 +93,9 @@ ss::future<> node_status_backend::drain_notifications_queue() {
 
 ss::future<> node_status_backend::handle_members_updated_notification(
   model::node_id node_id, model::membership_state state) {
-    if (state == model::membership_state::active) {
+    switch (state) {
+    case model::membership_state::active:
+    case model::membership_state::draining:
         if (node_id != _self && !_discovered_peers.contains(node_id)) {
             vlog(
               clusterlog.info,
@@ -109,17 +111,21 @@ ss::future<> node_status_backend::handle_members_updated_notification(
                   }});
               });
         }
-    } else if (
-      state == model::membership_state::removed
-      && _discovered_peers.contains(node_id)) {
-        vlog(
-          clusterlog.info,
-          "Node {} has been removed via members table",
-          node_id);
-        _discovered_peers.erase(node_id);
+        break;
+    case model::membership_state::removed:
+        if (_discovered_peers.contains(node_id)) {
+            vlog(
+              clusterlog.info,
+              "Node {} has been removed via members table",
+              node_id);
+            _discovered_peers.erase(node_id);
 
-        co_await _node_status_table.invoke_on_all(
-          [node_id](node_status_table& table) { table.remove_peer(node_id); });
+            co_await _node_status_table.invoke_on_all(
+              [node_id](node_status_table& table) {
+                  table.remove_peer(node_id);
+              });
+        }
+        break;
     }
 }
 
