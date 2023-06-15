@@ -366,7 +366,8 @@ ss::future<> async_manifest_view::run_bg_loop() {
                     front.promise.set_value(std::ref(_stm_manifest));
                     continue;
                 }
-                if (!_manifest_cache.contains(front.search_vec.base_offset)) {
+                if (!_manifest_cache.contains(std::make_tuple(
+                      get_ntp(), front.search_vec.base_offset))) {
                     // Manifest is not cached and has to be hydrated and/or
                     // materialized.
                     vlog(
@@ -427,7 +428,8 @@ ss::future<> async_manifest_view::run_bg_loop() {
                     vlog(_ctxlog.debug, "Manifest is already materialized");
                 }
                 auto cached = _manifest_cache.get(
-                  front.search_vec.base_offset, _ctxlog);
+                  std::make_tuple(get_ntp(), front.search_vec.base_offset),
+                  _ctxlog);
                 front.promise.set_value(cached);
                 vlog(
                   _ctxlog.debug,
@@ -926,7 +928,8 @@ async_manifest_view::get_materialized_manifest(
             co_return error_outcome::out_of_range;
         }
         vlog(_ctxlog.debug, "Found spillover manifest meta: {}", meta);
-        auto res = _manifest_cache.get(meta->base_offset, _ctxlog);
+        auto res = _manifest_cache.get(
+          std::make_tuple(get_ntp(), meta->base_offset), _ctxlog);
         if (res) {
             co_return res;
         }

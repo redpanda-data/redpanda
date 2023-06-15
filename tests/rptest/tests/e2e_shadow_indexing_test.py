@@ -811,7 +811,7 @@ class ShadowIndexingWhileBusyTest(PreallocNodesTest):
 
 
 class EndToEndSpilloverTest(RedpandaTest):
-    topics = (TopicSpec(partition_count=1,
+    topics = (TopicSpec(partition_count=3,
                         cleanup_policy=TopicSpec.CLEANUP_DELETE), )
 
     def __init__(self, test_context):
@@ -828,7 +828,7 @@ class EndToEndSpilloverTest(RedpandaTest):
             si_settings=self.si_settings)
 
         self.msg_size = 1024 * 256
-        self.msg_count = 1000
+        self.msg_count = 3000
 
     def produce(self):
         topic_name = self.topics[0].name

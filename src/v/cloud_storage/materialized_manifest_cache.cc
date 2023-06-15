@@ -41,6 +41,7 @@
 #include <boost/algorithm/string/split.hpp>
 #include <boost/lexical_cast.hpp>
 #include <boost/outcome/success_failure.hpp>
+#include <fmt/format.h>
 
 #include <exception>
 #include <functional>
@@ -48,6 +49,16 @@
 #include <regex>
 #include <system_error>
 #include <variant>
+
+template<>
+struct fmt::formatter<cloud_storage::manifest_cache_key>
+  : public fmt::formatter<std::string_view> {
+    auto format(const cloud_storage::manifest_cache_key& key, auto& ctx) const {
+        const auto& [ntp, o] = key;
+        return formatter<std::string_view>::format(
+          fmt::format("[{}:{}]", ntp, o), ctx);
+    }
+};
 
 namespace cloud_storage {
 
@@ -95,17 +106,17 @@ ss::future<ssx::semaphore_units> materialized_manifest_cache::prepare(
     // The cache is full, try to free up some space. Free at least
     // 'size_bytes' bytes.
     size_t bytes_evicted = 0;
-    std::deque<model::offset> evicted;
+    std::deque<manifest_cache_key> evicted;
     while (bytes_evicted < size_bytes && !_cache.empty()) {
         auto it = _access_order.begin();
         vassert(
           !it->manifest.empty(),
           "Manifest can't be empty, ntp: {}",
           it->manifest.get_ntp());
-        auto so = it->manifest.get_start_offset().value_or(model::offset{});
-        auto cit = _cache.find(so);
-        vassert(cit != _cache.end(), "Manifest at {} already evicted", so);
-        evicted.push_back(so);
+        auto key = it->get_key();
+        auto cit = _cache.find(key);
+        vassert(cit != _cache.end(), "Manifest at {} already evicted", key);
+        evicted.push_back(key);
         // Invariant: the materialized_manifest is always linked to either
         // _access_order or _eviction_rollback list.
         bytes_evicted += evict(cit, _eviction_rollback, ctxlog);
@@ -172,46 +183,47 @@ void materialized_manifest_cache::put(
       !manifest.empty(),
       "Manifest can't be empty, ntp: {}",
       manifest.get_ntp());
-    auto so = manifest.get_start_offset().value_or(model::offset{});
-    vlog(ctxlog.debug, "Cache PUT offset {}, {} units", so, s.count());
+    const model::ntp& ntp = manifest.get_ntp();
+    auto key = manifest_cache_key(
+      ntp, manifest.get_start_offset().value_or(model::offset{}));
+    vlog(ctxlog.debug, "Cache PUT key {}, {} units", key, s.count());
     if (!_eviction_rollback.empty()) {
-        auto it = lookup_eviction_rollback_list(so);
+        auto it = lookup_eviction_rollback_list(key);
         if (it != _eviction_rollback.end()) {
             vlog(
               ctxlog.error,
-              "Manifest with base offset {} is being evicted from the "
+              "Manifest with key {} is being evicted from the "
               "cache",
-              so);
+              key);
             throw std::runtime_error(fmt_with_ctx(
               fmt::format,
-              "Manifest with start offset {} is being evicted from the "
+              "Manifest with key {} is being evicted from the "
               "cache",
-              so));
+              key));
         }
     }
     auto item = ss::make_shared<materialized_manifest>(
       std::move(manifest), std::move(s));
-    auto [it, ok] = _cache.insert(std::make_pair(so, std::move(item)));
+    auto [it, ok] = _cache.insert(std::make_pair(key, std::move(item)));
     if (!ok) {
         // This may indicate a race, log a warning
-        vlog(
-          ctxlog.error, "Manifest with base offset {} is already present", so);
+        vlog(ctxlog.error, "Manifest with key {} is already present", key);
         return;
     }
     _access_order.push_back(*it->second);
 }
 
 ss::shared_ptr<materialized_manifest> materialized_manifest_cache::get(
-  model::offset base_offset, retry_chain_logger& ctxlog) {
-    if (auto it = _cache.find(base_offset); it != _cache.end()) {
+  const manifest_cache_key& key, retry_chain_logger& ctxlog) {
+    if (auto it = _cache.find(key); it != _cache.end()) {
         if (promote(it->second)) {
-            vlog(ctxlog.debug, "Cache GET will return {}", base_offset);
+            vlog(ctxlog.debug, "Cache GET will return {}", key);
             return it->second;
         } else {
             vlog(
               ctxlog.debug,
               "Cache GET can't promote item {} because it's evicted",
-              base_offset);
+              key);
         }
     }
     if (!_eviction_rollback.empty()) {
@@ -222,12 +234,12 @@ ss::shared_ptr<materialized_manifest> materialized_manifest_cache::get(
         // possible. Otherwise, the fiber may re-create the manifest and the
         // other fiber may restore evicted manifest (if the wait on a
         // semaphore will timeout) which will result in conflict.
-        auto it = lookup_eviction_rollback_list(base_offset);
+        auto it = lookup_eviction_rollback_list(key);
         if (it != _eviction_rollback.end()) {
             vlog(
               ctxlog.debug,
               "Cache GET will return {} from eviction rollback",
-              base_offset);
+              key);
             return it->shared_from_this();
         }
     }
@@ -235,18 +247,18 @@ ss::shared_ptr<materialized_manifest> materialized_manifest_cache::get(
       ctxlog.debug,
       "Cache GET will return NULL for offset {}, cache size: {}, rollback "
       "size: {}",
-      base_offset,
+      key,
       _cache.size(),
       _eviction_rollback.size());
     return nullptr;
 }
 
-bool materialized_manifest_cache::contains(model::offset base_offset) {
-    return _cache.contains(base_offset);
+bool materialized_manifest_cache::contains(const manifest_cache_key& key) {
+    return _cache.contains(key);
 }
 
-bool materialized_manifest_cache::promote(model::offset base) {
-    if (auto it = _cache.find(base); it != _cache.end()) {
+bool materialized_manifest_cache::promote(const manifest_cache_key& key) {
+    if (auto it = _cache.find(key); it != _cache.end()) {
         return promote(it->second);
     }
     return false;
@@ -263,10 +275,10 @@ bool materialized_manifest_cache::promote(
 }
 
 size_t materialized_manifest_cache::remove(
-  model::offset base, retry_chain_logger& ctxlog) {
+  const manifest_cache_key& key, retry_chain_logger& ctxlog) {
     access_list_t rollback;
     size_t evicted_bytes = 0;
-    if (auto it = _cache.find(base); it != _cache.end()) {
+    if (auto it = _cache.find(key); it != _cache.end()) {
         evicted_bytes = evict(it, rollback, ctxlog);
     }
     for (auto& m : rollback) {
@@ -353,58 +365,49 @@ size_t materialized_manifest_cache::evict(
 }
 
 materialized_manifest_cache::access_list_t::iterator
-materialized_manifest_cache::lookup_eviction_rollback_list(model::offset o) {
+materialized_manifest_cache::lookup_eviction_rollback_list(
+  const manifest_cache_key& key) {
     return std::find_if(
       _eviction_rollback.begin(),
       _eviction_rollback.end(),
-      [o](const materialized_manifest& m) {
-          return m.manifest.get_start_offset() == o;
-      });
+      [key](const materialized_manifest& m) { return m.get_key() == key; });
 }
 
 void materialized_manifest_cache::rollback(
-  model::offset so, retry_chain_logger& ctxlog) {
-    auto it = lookup_eviction_rollback_list(so);
+  const manifest_cache_key& key, retry_chain_logger& ctxlog) {
+    auto it = lookup_eviction_rollback_list(key);
     if (it == _eviction_rollback.end()) {
         vlog(
           ctxlog.debug,
-          "Can't rollback eviction of the manifest with start offset {}",
-          so);
+          "Can't rollback eviction of the manifest with key {}",
+          key);
         return;
     }
     auto ptr = it->shared_from_this();
     ptr->_hook.unlink();
-    auto [_, ok] = _cache.insert(std::make_pair(so, ptr));
+    auto [_, ok] = _cache.insert(std::make_pair(key, ptr));
     if (!ok) {
         vlog(
-          ctxlog.error,
-          "Manifest with base offset {} has a duplicate in the log",
-          so);
+          ctxlog.error, "Manifest with key {} has a duplicate in the log", key);
         return;
     }
     ptr->evicted = false;
     _access_order.push_front(*ptr);
-    vlog(
-      ctxlog.debug,
-      "Successful rollback of the manifest with start offset {}",
-      so);
+    vlog(ctxlog.debug, "Successful rollback of the manifest with key {}", key);
 }
 
 void materialized_manifest_cache::discard_rollback_manifest(
-  model::offset so, retry_chain_logger& ctxlog) {
-    auto it = lookup_eviction_rollback_list(so);
+  const manifest_cache_key& key, retry_chain_logger& ctxlog) {
+    auto it = lookup_eviction_rollback_list(key);
     if (it == _eviction_rollback.end()) {
         vlog(
           ctxlog.error,
-          "Can't find manifest with start offset {} in the rollback list",
-          so);
+          "Can't find manifest with {} in the rollback list",
+          key);
     }
     auto ptr = it->shared_from_this();
     ptr->_hook.unlink();
-    vlog(
-      ctxlog.debug,
-      "Manifest with start offset {} removed from rollback list",
-      so);
+    vlog(ctxlog.debug, "Manifest with key {} removed from rollback list", key);
 }
 
 } // namespace cloud_storage

@@ -33,6 +33,8 @@
 
 namespace cloud_storage {
 
+using manifest_cache_key = std::tuple<model::ntp, model::offset>;
+
 /// Materialized spillover manifest
 ///
 /// The object contains the manifest, semaphore units,
@@ -49,6 +51,12 @@ struct materialized_manifest
     materialized_manifest(spillover_manifest manifest, ssx::semaphore_units u)
       : manifest(std::move(manifest))
       , _units(std::move(u)) {}
+
+    manifest_cache_key get_key() const {
+        return std::make_tuple(
+          manifest.get_ntp(),
+          manifest.get_start_offset().value_or(model::offset{}));
+    }
 
     materialized_manifest() = delete;
     ~materialized_manifest() = default;
@@ -121,18 +129,18 @@ public:
       spillover_manifest manifest,
       retry_chain_logger& ctxlog);
 
-    /// Find manifest by its base offset
+    /// Find manifest by its key
     ss::shared_ptr<materialized_manifest>
-    get(model::offset base_offset, retry_chain_logger& ctxlog);
+    get(const manifest_cache_key& key, retry_chain_logger& ctxlog);
 
     /// Check manifest by its base offset
-    bool contains(model::offset base_offset);
+    bool contains(const manifest_cache_key& key);
 
     /// Move element forward to avoid its eviction
     ///
-    /// \param base is a start offset of the manifest
+    /// \param key is ntp + start offset of the manifest
     /// \returns true on success, false if the manifest is evicted
-    bool promote(model::offset base);
+    bool promote(const manifest_cache_key& key);
 
     /// Shift element one step forward to avoid eviction
     ///
@@ -142,7 +150,7 @@ public:
 
     /// Remove element from cache
     ///
-    /// \param base is a start offset of the manifest
+    /// \param key is ntp + start offset of the manifest
     /// \return size of the removed manifest in bytes or 0 if manifest wasn't
     ///         found
     /// \note The method removes the manifest from the cache and releases
@@ -150,7 +158,7 @@ public:
     ///       method doesn't guarantee that the memory consumed by the removed
     ///       manifest is freed. The user might still have a pointer to the
     ///       manifest that will prevent it from being deleted.
-    size_t remove(model::offset base, retry_chain_logger& ctxlog);
+    size_t remove(const manifest_cache_key& key, retry_chain_logger& ctxlog);
 
     /// Starts the cache.
     ss::future<> start();
@@ -172,7 +180,7 @@ public:
 
 private:
     using map_t
-      = std::map<model::offset, ss::shared_ptr<materialized_manifest>>;
+      = std::map<manifest_cache_key, ss::shared_ptr<materialized_manifest>>;
 
     /// Evict manifest pointed by the iterator
     ///
@@ -184,14 +192,15 @@ private:
     size_t evict(
       map_t::iterator it, access_list_t& rollback, retry_chain_logger& ctxlog);
 
-    access_list_t::iterator lookup_eviction_rollback_list(model::offset o);
+    access_list_t::iterator
+    lookup_eviction_rollback_list(const manifest_cache_key& key);
 
     /// Restore manifest temporarily stored in the _eviction_rollback list.
-    void rollback(model::offset so, retry_chain_logger& ctxlog);
+    void rollback(const manifest_cache_key& key, retry_chain_logger& ctxlog);
 
     /// Remove manifest from the _eviction_rollback list.
-    void
-    discard_rollback_manifest(model::offset so, retry_chain_logger& ctxlog);
+    void discard_rollback_manifest(
+      const manifest_cache_key& key, retry_chain_logger& ctxlog);
 
     /// Current capacity of the cache in bytes
     size_t _capacity_bytes;
