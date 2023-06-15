@@ -1253,21 +1253,28 @@ while(num_tags-- > 0) {
 {%- endif %}
 {%- endmacro %}
 
-{% macro conditional_tag_encode(tdef, vec) %}
+{% macro conditional_tag_encode(tdef, vec, obj = "") %}
+{%- if obj %}
+{%- set fname = obj + "." + tdef.name %}
+{%- else %}
+{%- set fname = tdef.name %}
+{%- endif %}
 {%- if tdef.nullable() %}
-if ({{ tdef.name }}) {
+if ({{ fname }}) {
     {{ vec }}.push_back({{ tdef.tag() }});
 }
 {%- elif tdef.is_array %}
-if (!{{ tdef.name }}.empty()) {
+if (!{{ fname }}.empty()) {
     {{ vec }}.push_back({{ tdef.tag() }});
 }
 {%- elif tdef.default_value() != "" %}
-if ({{ tdef.name }} != {{ tdef.default_value() }}) {
+if ({{ fname }} != {{ tdef.default_value() }}) {
     {{ vec }}.push_back({{ tdef.tag() }});
 }
 {%- else %}
-{{ vec }}.push_back({{ tdef.tag() }});
+if ({{ fname }} != {{ tdef.type_name.0 }}{0}) {
+    {{ vec }}.push_back({{ tdef.tag() }});
+}
 {%- endif %}
 {%- endmacro %}
 
@@ -1276,7 +1283,7 @@ if ({{ tdef.name }} != {{ tdef.default_value() }}) {
 std::vector<uint32_t> to_encode;
 {%- for tdef in tag_definitions -%}
 {%- call tag_version_guard(tdef) %}
-{{- conditional_tag_encode(tdef, "to_encode") }}
+{{- conditional_tag_encode(tdef, "to_encode", obj) }}
 {%- endcall %}
 {%- endfor %}
 {%- set tf = "unknown_tags" %}
