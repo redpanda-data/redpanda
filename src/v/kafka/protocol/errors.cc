@@ -196,7 +196,7 @@ std::string_view error_code_to_str(error_code error) {
     case error_code::transactional_id_not_found:
         return "transactional_id_not_found";
     default:
-        std::terminate(); // make gcc happy
+        return "unknown_error_code";
     }
 }
 
