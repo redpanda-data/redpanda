@@ -44,23 +44,23 @@ class SimpleEndToEndTest(EndToEndTest):
         '''
         This test validates if verifiable consumer is exiting early when consumed from unexpected offset
         '''
-        # use small segment size to enable log eviction
+
         self.start_redpanda(num_nodes=3)
 
         spec = TopicSpec(partition_count=1, replication_factor=3)
         self.client().create_topic(spec)
         self.topic = spec.name
 
-        self.start_producer(1, throughput=10000)
+        self.start_producer(1, throughput=1000)
         self.start_consumer(1)
-        self.await_startup()
-        #
+        # wait for at least 15000 records to be consumed
+        self.await_startup(min_records=15000)
         self.client().delete_topic(spec.name)
 
         self.client().create_topic(spec)
         error = None
         try:
-            self.run_validation(min_records=100000,
+            self.run_validation(min_records=30000,
                                 producer_timeout_sec=300,
                                 consumer_timeout_sec=300)
         except AssertionError as e:
