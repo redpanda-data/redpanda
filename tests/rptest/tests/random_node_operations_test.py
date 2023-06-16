@@ -230,15 +230,17 @@ class RandomNodeOperationsTest(PreallocNodesTest):
             enable_controller_snapshots=[True, False])
     def test_node_operations(self, enable_failures, num_to_upgrade,
                              enable_controller_snapshots):
-        if not enable_controller_snapshots:
-            # Without snapshots, there is not bound on how large
-            # the controller log may grow.
-            self.redpanda.set_expected_controller_records(None)
 
         lock = threading.Lock()
 
         # setup test case scale parameters
         self._setup_test_scale(num_to_upgrade)
+
+        if not enable_controller_snapshots:
+            # Without snapshots, there is not bound on how large
+            # the controller log may grow.
+            self.redpanda.set_expected_controller_records(None)
+
         if self.should_skip:
             cleanup_on_early_exit(self)
             return
