@@ -23,6 +23,10 @@
 
 #include <absl/container/btree_map.h>
 #include <boost/range/irange.hpp>
+#include <fmt/ostream.h>
+
+#include <iterator>
+#include <utility>
 
 namespace raft {
 
@@ -499,13 +503,31 @@ ss::future<> configuration_manager::adjust_configuration_idx(
 }
 
 std::ostream& operator<<(std::ostream& o, const configuration_manager& m) {
-    o << "{configurations: ";
-    for (const auto& p : m._configurations) {
-        o << "{ offset: " << p.first << ", idx: " << p.second.idx
-          << ",cfg: " << p.second.cfg << " } " << std::endl;
-    }
+    fmt::print(o, "{{configurations: [");
 
-    return o << " }";
+    static auto print_cfg =
+      [](
+        std::ostream& o,
+        const configuration_manager::underlying_t::value_type& p) {
+          fmt::print(
+            o,
+            "{{offset: {}, index: {}, cfg: {}}}",
+            p.first,
+            p.second.idx,
+            p.second.cfg);
+      };
+
+    if (!m._configurations.empty()) {
+        auto it = m._configurations.begin();
+        print_cfg(o, *it);
+        ++it;
+        for (; it != m._configurations.end(); ++it) {
+            fmt::print(o, ",");
+            print_cfg(o, *it);
+        }
+    }
+    fmt::print(o, "]}}");
+    return o;
 }
 
 } // namespace raft
