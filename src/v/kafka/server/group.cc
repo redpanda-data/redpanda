@@ -1915,22 +1915,17 @@ group::begin_tx(cluster::begin_group_tx_request r) {
 
     auto reader = model::make_memory_record_batch_reader(
       std::move(batch.value()));
-    auto res = co_await _partition->raft()->replicate(
+    auto e = co_await _partition->raft()->replicate(
       _term,
       std::move(reader),
       raft::replicate_options(raft::consistency_level::quorum_ack));
 
-    if (!res) {
+    if (!e) {
         vlog(
           _ctx_txlog.warn,
           "Error \"{}\" on replicating pid:{} fencing batch",
-          res.error(),
+          e.error(),
           r.pid);
-        if (
-          _partition->raft()->is_leader()
-          && _partition->raft()->term() == _term) {
-            co_await _partition->raft()->step_down("group begin_tx failed");
-        }
         co_return make_begin_tx_reply(cluster::tx_errc::leader_not_found);
     }
 
@@ -1941,9 +1936,9 @@ group::begin_tx(cluster::begin_group_tx_request r) {
         _volatile_txs[r.pid] = volatile_tx{.tx_seq = r.tx_seq};
     }
 
-    auto [it, _] = _expiration_info.insert_or_assign(
+    auto res = _expiration_info.insert_or_assign(
       r.pid, expiration_info(r.timeout));
-    try_arm(it->second.deadline());
+    try_arm(res.first->second.deadline());
 
     cluster::begin_group_tx_reply reply;
     reply.etag = _term;
@@ -2276,12 +2271,6 @@ group::store_txn_offsets(txn_offset_commit_request r) {
       raft::replicate_options(raft::consistency_level::quorum_ack));
 
     if (!e) {
-        if (
-          _partition->raft()->is_leader()
-          && _partition->raft()->term() == _term) {
-            co_await _partition->raft()->step_down(
-              "group store_txn_offsets failed");
-        }
         co_return txn_offset_commit_response(
           r, error_code::unknown_server_error);
     }
