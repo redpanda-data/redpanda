@@ -21,6 +21,7 @@ import (
 	"math/rand"
 	"net/http"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -41,10 +42,29 @@ type HTTPResponseError struct {
 	Response *http.Response
 	Body     []byte
 }
-type BasicCredentials struct {
-	Username string
-	Password string
+
+type (
+	// Auth affixes auth to an http request.
+	Auth      interface{ apply(req *http.Request) }
+	BasicAuth struct {
+		Username string
+		Password string
+	}
+	BearerToken struct {
+		Token string
+	}
+	NopAuth struct{}
+)
+
+func (a *BasicAuth) apply(req *http.Request) {
+	req.SetBasicAuth(a.Username, a.Password)
 }
+
+func (a *BearerToken) apply(req *http.Request) {
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", a.Token))
+}
+
+func (*NopAuth) apply(*http.Request) {}
 
 // GenericErrorBody is the JSON decodable body that is produced by generic error
 // handling in the admin server when a seastar http exception is thrown.
@@ -60,15 +80,22 @@ type AdminAPI struct {
 	brokerIDToUrls      map[int]string
 	retryClient         *pester.Client
 	oneshotClient       *http.Client
-	basicCredentials    BasicCredentials
+	auth                Auth
 	tlsConfig           *tls.Config
 }
 
-func getBasicCredentials(p *config.RpkProfile) BasicCredentials {
-	if p.KafkaAPI.SASL != nil {
-		return BasicCredentials{Username: p.KafkaAPI.SASL.User, Password: p.KafkaAPI.SASL.Password}
-	} else {
-		return BasicCredentials{Username: "", Password: ""}
+func getAuth(p *config.RpkProfile) (Auth, error) {
+	switch {
+	case p.KafkaAPI.SASL != nil && p.KafkaAPI.SASL.Mechanism != CloudOIDC:
+		return &BasicAuth{Username: p.KafkaAPI.SASL.User, Password: p.KafkaAPI.SASL.Password}, nil
+	case p.KafkaAPI.SASL != nil && p.KafkaAPI.SASL.Mechanism == CloudOIDC:
+		a := p.CurrentAuth()
+		if a == nil {
+			return nil, errors.New("no current auth found, please login with 'rpk cloud login'")
+		}
+		return &BearerToken{Token: a.AuthToken}, nil
+	default:
+		return &NopAuth{}, nil
 	}
 }
 
@@ -76,20 +103,23 @@ func getBasicCredentials(p *config.RpkProfile) BasicCredentials {
 // the rpk.admin_api section of the config.
 func NewClient(fs afero.Fs, p *config.RpkProfile) (*AdminAPI, error) {
 	a := &p.AdminAPI
+
 	addrs := a.Addresses
 	tc, err := a.TLS.Config(fs)
 	if err != nil {
 		return nil, fmt.Errorf("unable to create admin api tls config: %v", err)
 	}
-	return NewAdminAPI(addrs, getBasicCredentials(p), tc)
+	auth, err := getAuth(p)
+	if err != nil {
+		return nil, err
+	}
+	return NewAdminAPI(addrs, auth, tc)
 }
 
 // NewHostClient returns an AdminAPI that talks to the given host, which is
 // either an int index into the rpk.admin_api section of the config, or a
 // hostname.
-func NewHostClient(
-	fs afero.Fs, p *config.RpkProfile, host string,
-) (*AdminAPI, error) {
+func NewHostClient(fs afero.Fs, p *config.RpkProfile, host string) (*AdminAPI, error) {
 	if host == "" {
 		return nil, errors.New("invalid empty admin host")
 	}
@@ -111,18 +141,19 @@ func NewHostClient(
 		addrs = []string{host} // trust input is hostname (validate below)
 	}
 
-	return NewAdminAPI(addrs, getBasicCredentials(p), tc)
+	auth, err := getAuth(p)
+	if err != nil {
+		return nil, err
+	}
+
+	return NewAdminAPI(addrs, auth, tc)
 }
 
-func NewAdminAPI(
-	urls []string, creds BasicCredentials, tlsConfig *tls.Config,
-) (*AdminAPI, error) {
-	return newAdminAPI(urls, creds, tlsConfig)
+func NewAdminAPI(urls []string, auth Auth, tlsConfig *tls.Config) (*AdminAPI, error) {
+	return newAdminAPI(urls, auth, tlsConfig)
 }
 
-func newAdminAPI(
-	urls []string, creds BasicCredentials, tlsConfig *tls.Config,
-) (*AdminAPI, error) {
+func newAdminAPI(urls []string, auth Auth, tlsConfig *tls.Config) (*AdminAPI, error) {
 	// General purpose backoff, includes 503s and other errors
 	const retryBackoffMs = 1500
 
@@ -158,12 +189,12 @@ func newAdminAPI(
 	client.Timeout = 10 * time.Second
 
 	a := &AdminAPI{
-		urls:             make([]string, len(urls)),
-		retryClient:      client,
-		oneshotClient:    &http.Client{Timeout: 10 * time.Second},
-		basicCredentials: creds,
-		tlsConfig:        tlsConfig,
-		brokerIDToUrls:   make(map[int]string),
+		urls:           make([]string, len(urls)),
+		retryClient:    client,
+		oneshotClient:  &http.Client{Timeout: 10 * time.Second},
+		auth:           auth,
+		tlsConfig:      tlsConfig,
+		brokerIDToUrls: make(map[int]string),
 	}
 	if tlsConfig != nil {
 		a.retryClient.Transport = &http.Transport{TLSClientConfig: tlsConfig}
@@ -192,7 +223,7 @@ func newAdminAPI(
 }
 
 func (a *AdminAPI) newAdminForSingleHost(host string) (*AdminAPI, error) {
-	return newAdminAPI([]string{host}, a.basicCredentials, a.tlsConfig)
+	return newAdminAPI([]string{host}, a.auth, a.tlsConfig)
 }
 
 func (a *AdminAPI) urlsWithPath(path string) []string {
@@ -484,9 +515,7 @@ func (a *AdminAPI) eachBroker(fn func(aa *AdminAPI) error) error {
 // * If into is a *[]byte, the raw response put directly into `into`.
 // * If into is a *string, the raw response put directly into `into` as a string.
 // * Otherwise, the response is json unmarshaled into `into`.
-func maybeUnmarshalRespInto(
-	method, url string, resp *http.Response, into interface{},
-) error {
+func maybeUnmarshalRespInto(method, url string, resp *http.Response, into interface{}) error {
 	defer resp.Body.Close()
 	if into == nil {
 		return nil
@@ -534,9 +563,7 @@ func (a *AdminAPI) sendAndReceive(
 		return nil, err
 	}
 
-	if a.basicCredentials.Username != "" {
-		req.SetBasicAuth(a.basicCredentials.Username, a.basicCredentials.Password)
-	}
+	a.auth.apply(req)
 
 	const applicationJSON = "application/json"
 	req.Header.Set("Content-Type", applicationJSON)
@@ -544,6 +571,9 @@ func (a *AdminAPI) sendAndReceive(
 
 	// Issue request to the appropriate client, depending on retry behaviour
 	var res *http.Response
+	bearer := strings.Contains(req.Header.Get("Authorization"), "Bearer ")
+	basic := strings.Contains(req.Header.Get("Authorization"), "Basic ")
+	zap.L().Debug("Sending request", zap.String("method", method), zap.String("url", url), zap.Bool("bearer", bearer), zap.Bool("basic", basic))
 	if retryable {
 		res, err = a.retryClient.Do(req)
 	} else {
