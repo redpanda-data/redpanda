@@ -117,6 +117,21 @@ namespace kafka {
  */
 class group_manager {
 public:
+    struct attached_partition {
+        bool loading;
+        ssx::semaphore sem{1, "k/group-mgr"};
+        ss::abort_source as;
+        ss::lw_shared_ptr<cluster::partition> partition;
+        ss::lw_shared_ptr<ss::basic_rwlock<>> catchup_lock;
+        model::term_id term{-1};
+
+        explicit attached_partition(ss::lw_shared_ptr<cluster::partition> p)
+          : loading(true)
+          , partition(std::move(p)) {
+            catchup_lock = ss::make_lw_shared<ss::basic_rwlock<>>();
+        }
+    };
+
     group_manager(
       model::topic_namespace,
       ss::sharded<raft::group_manager>& gm,
@@ -130,7 +145,6 @@ public:
     ss::future<> start();
     ss::future<> stop();
 
-public:
     /// \brief Handle a JoinGroup request
     group::join_group_stages join_group(join_group_request&& request);
 
@@ -179,7 +193,6 @@ public:
 
     ss::future<> reload_groups();
 
-public:
     error_code validate_group_status(
       const model::ntp& ntp, const group_id& group, api_key api);
 
@@ -202,19 +215,6 @@ private:
     void attach_partition(ss::lw_shared_ptr<cluster::partition>);
     void detach_partition(const model::ntp&);
     ss::future<> do_detach_partition(model::ntp);
-
-    struct attached_partition {
-        bool loading;
-        ssx::semaphore sem{1, "k/group-mgr"};
-        ss::abort_source as;
-        ss::lw_shared_ptr<cluster::partition> partition;
-        ss::basic_rwlock<> catchup_lock;
-        model::term_id term{-1};
-
-        explicit attached_partition(ss::lw_shared_ptr<cluster::partition> p)
-          : loading(true)
-          , partition(std::move(p)) {}
-    };
 
     cluster::notification_id_type _leader_notify_handle;
     cluster::notification_id_type _topic_table_notify_handle;
