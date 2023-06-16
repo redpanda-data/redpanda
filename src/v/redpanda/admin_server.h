@@ -24,6 +24,7 @@
 #include "storage/node.h"
 #include "utils/request_auth.h"
 
+#include <seastar/core/do_with.hh>
 #include <seastar/core/scheduling.hh>
 #include <seastar/core/sharded.hh>
 #include <seastar/core/sstring.hh>
@@ -147,27 +148,32 @@ private:
           [this, handler](std::unique_ptr<ss::http::request> req)
             -> ss::future<ss::json::json_return_type> {
               auto auth_state = apply_auth<required_auth>(*req);
+              return ss::do_with(
+                std::move(auth_state),
+                [this, handler, req = std::move(req)](
+                  const auto& auth_state) mutable {
+                    // Note: a request is only logged if it does not throw
+                    // from authenticate().
+                    log_request(*req, auth_state);
 
-              // Note: a request is only logged if it does not throw
-              // from authenticate().
-              log_request(*req, auth_state);
+                    // Intercept exceptions
+                    const auto url = req->get_url();
+                    if constexpr (peek_auth) {
+                        return ss::futurize_invoke(
+                                 handler, std::move(req), auth_state)
+                          .handle_exception(
+                            exception_intercepter<
+                              decltype(handler(std::move(req), auth_state)
+                                         .get0())>(url, auth_state));
 
-              // Intercept exceptions
-              const auto url = req->get_url();
-              if constexpr (peek_auth) {
-                  return ss::futurize_invoke(
-                           handler, std::move(req), auth_state)
-                    .handle_exception(
-                      exception_intercepter<
-                        decltype(handler(std::move(req), auth_state).get0())>(
-                        url, auth_state));
-
-              } else {
-                  return ss::futurize_invoke(handler, std::move(req))
-                    .handle_exception(exception_intercepter<
-                                      decltype(handler(std::move(req)).get0())>(
-                      url, auth_state));
-              }
+                    } else {
+                        return ss::futurize_invoke(handler, std::move(req))
+                          .handle_exception(
+                            exception_intercepter<
+                              decltype(handler(std::move(req)).get0())>(
+                              url, auth_state));
+                    }
+                });
           });
     }
 
