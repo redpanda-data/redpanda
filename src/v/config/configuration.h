@@ -126,6 +126,9 @@ struct configuration final : public config_store {
     property<size_t> fetch_max_bytes;
     property<bool> use_fetch_scheduler_group;
     property<std::chrono::milliseconds> metadata_status_wait_timeout_ms;
+    property<std::chrono::seconds> kafka_tcp_keepalive_idle_timeout_seconds;
+    property<std::chrono::seconds> kafka_tcp_keepalive_probe_interval_seconds;
+    property<uint32_t> kafka_tcp_keepalive_probes;
     bounded_property<std::optional<int64_t>> kafka_connection_rate_limit;
     property<std::vector<ss::sstring>> kafka_connection_rate_limit_overrides;
     // same as transactional.id.expiration.ms in kafka

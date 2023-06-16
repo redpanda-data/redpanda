@@ -71,6 +71,12 @@ struct config_connection_rate_bindings {
     config::binding<std::vector<ss::sstring>> config_overrides_rate;
 };
 
+struct tcp_keepalive_bindings {
+    config::binding<std::chrono::seconds> keepalive_idle_time;
+    config::binding<std::chrono::seconds> keepalive_interval;
+    config::binding<uint32_t> keepalive_probes;
+};
+
 struct server_configuration {
     std::vector<server_endpoint> addrs;
     int64_t max_service_memory_per_core = 0;
@@ -83,6 +89,7 @@ struct server_configuration {
       = net::public_metrics_disabled::no;
     ss::sstring name;
     std::optional<config_connection_rate_bindings> connection_rate_bindings;
+    std::optional<tcp_keepalive_bindings> tcp_keepalive_bindings;
     // we use the same default as seastar for load balancing algorithm
     ss::server_socket::load_balancing_algorithm load_balancing_algo
       = ss::server_socket::load_balancing_algorithm::connection_distribution;
