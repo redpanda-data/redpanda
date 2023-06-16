@@ -13,7 +13,7 @@ import (
 	"fmt"
 	"path/filepath"
 
-	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/api/admin"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/adminapi"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/out"
 	"github.com/spf13/afero"
@@ -55,7 +55,7 @@ central configuration store (and via 'rpk cluster config edit').
 			cfg, err := p.Load(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)
 
-			client, err := admin.NewClient(fs, cfg.VirtualProfile())
+			client, err := adminapi.NewClient(fs, cfg.VirtualProfile())
 			out.MaybeDie(err, "unable to initialize admin client: %v", err)
 
 			schema, err := client.ClusterConfigSchema(cmd.Context())

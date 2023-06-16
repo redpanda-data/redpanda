@@ -4,7 +4,7 @@ import (
 	"errors"
 	"strconv"
 
-	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/api/admin"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/adminapi"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/out"
 	"github.com/spf13/afero"
@@ -26,11 +26,11 @@ func newDecommissionBrokerStatus(fs afero.Fs, p *config.Params) *cobra.Command {
 			p, err := p.LoadVirtualProfile(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)
 
-			cl, err := admin.NewClient(fs, p)
+			cl, err := adminapi.NewClient(fs, p)
 			out.MaybeDie(err, "unable to initialize admin client: %v", err)
 
 			dbs, err := cl.DecommissionBrokerStatus(cmd.Context(), broker)
-			if he := (*admin.HTTPResponseError)(nil); errors.As(err, &he) {
+			if he := (*adminapi.HTTPResponseError)(nil); errors.As(err, &he) {
 				// Special case 400 (validation) errors with friendly output
 				// about the node is not decommissioning
 				if he.Response.StatusCode == 400 {
@@ -54,7 +54,7 @@ func newDecommissionBrokerStatus(fs afero.Fs, p *config.Params) *cobra.Command {
 			if detailed {
 				headers = append(headers, "Bytes-moved", "Bytes-remaining")
 			}
-			f := func(p *admin.DecommissionPartitions) interface{} {
+			f := func(p *adminapi.DecommissionPartitions) interface{} {
 				nt := p.Ns + "/" + p.Topic
 				if p.PartitionSize > 0 {
 					completion = p.BytesMoved * 100 / p.PartitionSize

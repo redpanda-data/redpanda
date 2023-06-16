@@ -16,7 +16,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/api/admin"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/adminapi"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cloudapi"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/oauth"
@@ -261,7 +261,7 @@ func FromVirtualCluster(vc cloudapi.VirtualCluster) (p config.RpkProfile, isMTLS
 			Brokers: vc.Status.Listeners.SeedAddresses,
 			TLS:     new(config.TLS),
 			SASL: &config.SASL{
-				Mechanism: admin.CloudOIDC,
+				Mechanism: adminapi.CloudOIDC,
 			},
 		},
 	}

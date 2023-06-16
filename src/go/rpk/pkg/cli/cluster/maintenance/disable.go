@@ -14,7 +14,7 @@ import (
 	"fmt"
 	"strconv"
 
-	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/api/admin"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/adminapi"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/out"
 	"github.com/spf13/afero"
@@ -40,7 +40,7 @@ func newDisableCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 			p, err := p.LoadVirtualProfile(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)
 
-			client, err := admin.NewClient(fs, p)
+			client, err := adminapi.NewClient(fs, p)
 			out.MaybeDie(err, "unable to initialize admin client: %v", err)
 
 			b, err := client.Broker(cmd.Context(), nodeID)
@@ -51,7 +51,7 @@ func newDisableCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 			}
 
 			err = client.DisableMaintenanceMode(cmd.Context(), nodeID, true)
-			if he := (*admin.HTTPResponseError)(nil); errors.As(err, &he) {
+			if he := (*adminapi.HTTPResponseError)(nil); errors.As(err, &he) {
 				if he.Response.StatusCode == 404 {
 					body, bodyErr := he.DecodeGenericErrorBody()
 					if bodyErr == nil {

@@ -17,7 +17,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/api/admin"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/adminapi"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/spf13/afero"
 	"github.com/twmb/franz-go/pkg/kadm"
@@ -95,7 +95,7 @@ func NewFranzClient(fs afero.Fs, p *config.RpkProfile, extraOpts ...kgo.Opt) (*k
 	}
 
 	if k.SASL != nil {
-		if k.SASL.Mechanism == admin.CloudOIDC {
+		if k.SASL.Mechanism == adminapi.CloudOIDC {
 			a := p.CurrentAuth()
 			if a == nil || a.AuthToken == "" {
 				return nil, fmt.Errorf("please login to our cloud using 'rpk cloud login'") // TODO

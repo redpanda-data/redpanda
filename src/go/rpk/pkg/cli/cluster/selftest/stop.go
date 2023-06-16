@@ -12,7 +12,7 @@ package selftest
 import (
 	"fmt"
 
-	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/api/admin"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/adminapi"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/out"
 
@@ -36,7 +36,7 @@ success when all jobs have been stopped or reports errors if broker timeouts hav
 			out.MaybeDie(err, "unable to load config: %v", err)
 
 			// Create new HTTP client for communication w/ admin server
-			cl, err := admin.NewClient(fs, p)
+			cl, err := adminapi.NewClient(fs, p)
 			out.MaybeDie(err, "unable to initialize admin client: %v", err)
 
 			// Make HTTP POST request to leader that stops all self tests on all nodes

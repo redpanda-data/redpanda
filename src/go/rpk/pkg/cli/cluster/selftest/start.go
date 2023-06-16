@@ -12,7 +12,7 @@ package selftest
 import (
 	"fmt"
 
-	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/api/admin"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/adminapi"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/out"
 
@@ -67,7 +67,7 @@ command.`,
 			}
 
 			// Create new HTTP client for communication w/ admin server
-			cl, err := admin.NewClient(fs, p)
+			cl, err := adminapi.NewClient(fs, p)
 			out.MaybeDie(err, "unable to initialize admin client: %v", err)
 
 			// Using cmd line args, assemble self_test_start_request body
@@ -101,7 +101,7 @@ command.`,
 func assembleTests(onlyDisk bool, onlyNetwork bool, durationDisk uint, durationNet uint) []any {
 	diskcheck := []any{
 		// One test weighted for better throughput results
-		admin.DiskcheckParameters{
+		adminapi.DiskcheckParameters{
 			Name:        "512KB sequential r/w throughput disk test",
 			DSync:       true,
 			SkipWrite:   false,
@@ -110,10 +110,10 @@ func assembleTests(onlyDisk bool, onlyNetwork bool, durationDisk uint, durationN
 			RequestSize: 512 * units.KiB,
 			DurationMs:  durationDisk,
 			Parallelism: 4,
-			Type:        admin.DiskcheckTagIdentifier,
+			Type:        adminapi.DiskcheckTagIdentifier,
 		},
 		// .. and another for better latency/iops results
-		admin.DiskcheckParameters{
+		adminapi.DiskcheckParameters{
 			Name:        "4KB sequential r/w latency/iops disk test",
 			DSync:       true,
 			SkipWrite:   false,
@@ -122,16 +122,16 @@ func assembleTests(onlyDisk bool, onlyNetwork bool, durationDisk uint, durationN
 			RequestSize: 4 * units.KiB,
 			DurationMs:  durationDisk,
 			Parallelism: 2,
-			Type:        admin.DiskcheckTagIdentifier,
+			Type:        adminapi.DiskcheckTagIdentifier,
 		},
 	}
 	netcheck := []any{
-		admin.NetcheckParameters{
+		adminapi.NetcheckParameters{
 			Name:        "8Kb Network Throughput Test",
 			RequestSize: 8192,
 			DurationMs:  durationNet,
 			Parallelism: 10,
-			Type:        admin.NetcheckTagIdentifier,
+			Type:        adminapi.NetcheckTagIdentifier,
 		},
 	}
 	switch {

@@ -13,7 +13,7 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/api/admin"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/adminapi"
 	"github.com/stretchr/testify/require"
 )
 
@@ -103,7 +103,7 @@ func TestClusterStatus(t *testing.T) {
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			var reports []admin.SelfTestNodeReport
+			var reports []adminapi.SelfTestNodeReport
 			json.Unmarshal([]byte(test.serverResponse), &reports)
 			running := runningNodes(reports)
 			uninited := isUninitialized(reports)
@@ -220,7 +220,7 @@ func TestSelfTestResults(t *testing.T) {
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			var reports []admin.SelfTestNodeReport
+			var reports []adminapi.SelfTestNodeReport
 			json.Unmarshal([]byte(test.serverResponse), &reports)
 			require.Equal(t, len(reports), len(test.expectedHeadings))
 			for _, report := range reports {

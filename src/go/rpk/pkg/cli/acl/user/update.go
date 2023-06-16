@@ -12,7 +12,7 @@ package user
 import (
 	"strings"
 
-	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/api/admin"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/adminapi"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/out"
 	"github.com/spf13/afero"
@@ -29,7 +29,7 @@ func newUpdateCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 			p, err := p.LoadVirtualProfile(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)
 
-			cl, err := admin.NewClient(fs, p)
+			cl, err := adminapi.NewClient(fs, p)
 			out.MaybeDie(err, "unable to initialize admin client: %v", err)
 
 			user := args[0]
@@ -40,7 +40,7 @@ func newUpdateCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	}
 
 	cmd.Flags().StringVar(&newPass, "new-password", "", "New user's password.")
-	cmd.Flags().StringVar(&mechanism, "mechanism", admin.ScramSha256, "SASL mechanism to use for the user you are creating (scram-sha-256, scram-sha-512, case insensitive)")
+	cmd.Flags().StringVar(&mechanism, "mechanism", adminapi.ScramSha256, "SASL mechanism to use for the user you are creating (scram-sha-256, scram-sha-512, case insensitive)")
 	cmd.MarkFlagRequired("new-password")
 
 	return cmd

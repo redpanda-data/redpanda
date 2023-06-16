@@ -16,7 +16,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/api/admin"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/adminapi"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/out"
 	"github.com/spf13/afero"
@@ -24,7 +24,7 @@ import (
 )
 
 func exportConfig(
-	file *os.File, schema admin.ConfigSchema, config admin.Config, all bool,
+	file *os.File, schema adminapi.ConfigSchema, config adminapi.Config, all bool,
 ) (err error) {
 	// Present properties in alphabetical order, providing some pseudo-grouping based on common prefixes
 	keys := make([]string, 0, len(schema))
@@ -146,7 +146,7 @@ to include all properties including these low level tunables.
 			p, err := p.LoadVirtualProfile(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)
 
-			client, err := admin.NewClient(fs, p)
+			client, err := adminapi.NewClient(fs, p)
 			out.MaybeDie(err, "unable to initialize admin client: %v", err)
 
 			// GET the schema
@@ -154,7 +154,7 @@ to include all properties including these low level tunables.
 			out.MaybeDie(err, "unable to query config schema: %v", err)
 
 			// GET current config
-			var currentConfig admin.Config
+			var currentConfig adminapi.Config
 			currentConfig, err = client.Config(cmd.Context(), true)
 			out.MaybeDie(err, "unable to query current config: %v", err)
 

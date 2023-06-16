@@ -3,7 +3,7 @@ package partitions
 import (
 	"fmt"
 
-	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/api/admin"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/adminapi"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/out"
 	"github.com/spf13/afero"
@@ -37,10 +37,10 @@ occurring in the specified node:
 			p, err := p.LoadVirtualProfile(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)
 
-			cl, err := admin.NewClient(fs, p)
+			cl, err := adminapi.NewClient(fs, p)
 			out.MaybeDie(err, "unable to initialize admin client: %v", err)
 
-			var movements []admin.PartitionsMovementResult
+			var movements []adminapi.PartitionsMovementResult
 			if node >= 0 {
 				if !noConfirm {
 					confirmed, err := out.Confirm("Confirm cancellation of partition movements in node %v?", node)
@@ -75,7 +75,7 @@ occurring in the specified node:
 	return cmd
 }
 
-func printMovementsResult(movements []admin.PartitionsMovementResult) {
+func printMovementsResult(movements []adminapi.PartitionsMovementResult) {
 	headers := []string{
 		"NAMESPACE",
 		"TOPIC",

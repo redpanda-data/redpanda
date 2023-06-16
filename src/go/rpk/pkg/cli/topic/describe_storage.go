@@ -19,7 +19,7 @@ import (
 
 	"github.com/docker/go-units"
 	"github.com/hashicorp/go-multierror"
-	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/api/admin"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/adminapi"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/kafka"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/out"
@@ -30,7 +30,7 @@ import (
 
 type Status struct {
 	Partition   int32
-	CloudStatus admin.CloudStorageStatus
+	CloudStatus adminapi.CloudStorageStatus
 }
 
 const (
@@ -60,7 +60,7 @@ func newDescribeStorageCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 			out.MaybeDie(err, "unable to initialize kafka client: %v", err)
 			defer cl.Close()
 
-			adminCl, err := admin.NewClient(fs, p)
+			adminCl, err := adminapi.NewClient(fs, p)
 			out.MaybeDie(err, "unable to initialize admin client: %v", err)
 
 			topic := args[0]
