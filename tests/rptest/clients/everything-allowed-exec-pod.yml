@@ -1,0 +1,43 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: everything-allowed-exec-pod
+spec:
+  selector:
+    matchLabels:
+      name: privileged-pod
+  template:
+    metadata:
+      labels:
+        name: privileged-pod
+    spec:
+      hostNetwork: true
+      hostPID: true
+      hostIPC: true
+      nodeSelector:
+        redpanda-node: "true"
+      tolerations:
+      - effect: NoSchedule
+        key: redpanda-node
+        operator: Equal
+        value: "true"
+      containers:
+        - name: everything-allowed-pod
+          image: ubuntu
+          securityContext:
+            privileged: true
+          volumeMounts:
+            - mountPath: /host
+              name: noderoot
+          command: [ "/bin/bash" ]
+          tty: true
+          stdin: true
+          env:
+          - name: DOCKER_HOST
+            value: unix:///host/var/run/docker.sock
+          - name: PATH
+            value: "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/host/usr/local/sbin:/host/usr/local/bin:/host/usr/sbin:/host/usr/bin:/host/sbin:/host/bin:"
+      volumes:
+        - name: noderoot
+          hostPath:
+            path: /

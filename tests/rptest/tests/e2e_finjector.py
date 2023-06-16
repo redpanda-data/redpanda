@@ -11,7 +11,7 @@ import random
 import time
 import threading
 
-from rptest.services.failure_injector import FailureInjector, FailureSpec
+from rptest.services.failure_injector import make_failure_injector, FailureSpec
 from rptest.tests.end_to_end import EndToEndTest
 from rptest.util import Scale
 
@@ -70,7 +70,7 @@ class EndToEndFinjectorTest(EndToEndTest):
         return FailureSpec(node=node, type=f_type, length=length)
 
     def inject_failure(self, spec):
-        f_injector = FailureInjector(self.redpanda)
+        f_injector = make_failure_injector(self.redpanda)
         f_injector.inject_failure(spec)
 
     def _next_failure(self):
@@ -82,7 +82,7 @@ class EndToEndFinjectorTest(EndToEndTest):
     def _failure_injector_loop(self):
 
         while self.enable_failures:
-            f_injector = FailureInjector(self.redpanda)
+            f_injector = make_failure_injector(self.redpanda)
             f_injector.inject_failure(self._next_failure())
 
             delay = self.failure_delay_provier()
@@ -94,4 +94,4 @@ class EndToEndFinjectorTest(EndToEndTest):
         self.enable_failures = False
         if self.finjector_thread:
             self.finjector_thread.join()
-        FailureInjector(self.redpanda)._heal_all()
+        make_failure_injector(self.redpanda)._heal_all()

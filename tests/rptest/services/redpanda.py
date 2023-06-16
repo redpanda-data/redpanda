@@ -1439,9 +1439,9 @@ class RedpandaServiceCloud(RedpandaServiceK8s):
 
     def start(self, **kwargs):
         cluster_id = self._cloud_cluster.create()
-        target = f'redpanda@{cluster_id}-agent'
+        remote_uri = f'redpanda@{cluster_id}-agent'
         self._kubectl = KubectlTool(self,
-                                    cmd_prefix=['tsh', 'ssh', target],
+                                    remote_uri=remote_uri,
                                     cluster_id=self._cloud_cluster.cluster_id)
 
     def stop_node(self, node, **kwargs):
@@ -3827,9 +3827,7 @@ def make_redpanda_service(context: TestContext,
 
     if RedpandaServiceCloud.GLOBAL_CLOUD_API_URL in context.globals:
         if cloud_tier is None:
-            raise RuntimeError(
-                f"The test cannot be run in the cloud, cloud_tier is not specified"
-            )
+            cloud_tier = CloudTierName.AWS_1
         if extra_rp_conf is not None:
             context.logger.info(
                 f"extra_rp_conf is ignored with RedpandaServiceCloud")

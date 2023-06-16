@@ -12,8 +12,9 @@ import signal
 import threading
 from ducktape.utils.util import wait_until
 from ducktape.errors import TimeoutError
-
+from rptest.clients.kubectl import KubectlTool
 from rptest.services import tc_netem
+from rptest.services.redpanda import RedpandaServiceCloud
 
 
 class FailureSpec:
@@ -44,7 +45,7 @@ class FailureSpec:
         self.node = node
 
     def __str__(self):
-        return f"type: {self.type}, length: {self.length} seconds, node: {self.node.account.hostname}"
+        return f"type: {self.type}, length: {self.length} seconds, node: {None if self.node is None else self.node.account.hostname}"
 
     def __repr__(self):
         return self.__str__()
@@ -59,7 +60,7 @@ class FailureSpec:
         return (self.type, self.length, self.node)
 
 
-class FailureInjector:
+class FailureInjectorBase:
     def __init__(self, redpanda):
         self.redpanda = redpanda
         self._in_flight = set()
@@ -138,6 +139,53 @@ class FailureInjector:
             return self._heal
         else:
             return self._delete_netem
+
+    def _kill(self, node):
+        pass
+
+    def _isolate(self, node):
+        pass
+
+    def _heal(self, node):
+        pass
+
+    def _delete_netem(self, node):
+        pass
+
+    def _heal_all(self):
+        pass
+
+    def _suspend(self, node):
+        pass
+
+    def _terminate(self, node):
+        pass
+
+    def _continue(self, node):
+        pass
+
+    def _start(self, node):
+        pass
+
+    def _netem(self, node, op):
+        pass
+
+    def _netem_delay(self, node):
+        pass
+
+    def _netem_loss(self, node):
+        pass
+
+    def _netem_corrupt(self, node):
+        pass
+
+    def _netem_duplicate(self, node):
+        pass
+
+
+class FailureInjector(FailureInjectorBase):
+    def __init__(self, redpanda):
+        super(FailureInjector, self).__init__(redpanda)
 
     def _kill(self, node):
         self.redpanda.logger.info(
@@ -252,3 +300,28 @@ class FailureInjector:
     def _netem_duplicate(self, node):
         op = tc_netem.NetemDuplicate(random.randint(1, 60), correlation=None)
         self._netem(node, op=op)
+
+
+class FailureInjectorCloud(FailureInjectorBase):
+    def __init__(self, redpanda):
+        super(FailureInjectorCloud, self).__init__(redpanda)
+        remote_uri = f'redpanda@{redpanda._cloud_cluster.cluster_id}-agent'
+        self._kubectl = KubectlTool(
+            redpanda,
+            remote_uri=remote_uri,
+            cluster_id=redpanda._cloud_cluster.cluster_id)
+
+    def _isolate(self, node):
+        self.redpanda.logger.info(f'isolating node with privilaged pod')
+        cmd = 'apt update;apt install -y iptables;iptables -A OUTPUT -p tcp --destination-port 33145 -j DROP'
+        self._kubectl.exec_privileged(cmd)
+        cmd = 'apt update;apt install -y iptables;iptables -A INPUT -p tcp --destination-port 33145 -j DROP'
+        self._kubectl.exec_privileged(cmd)
+
+
+def make_failure_injector(redpanda):
+    """Factory function for instatiating the appropriate FailureInjector subclass."""
+    if RedpandaServiceCloud.GLOBAL_CLOUD_API_URL in redpanda.context.globals:
+        return FailureInjectorCloud(redpanda)
+    else:
+        return FailureInjector(redpanda)
