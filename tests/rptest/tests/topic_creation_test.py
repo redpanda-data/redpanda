@@ -514,7 +514,7 @@ class CreateTopicUpgradeTest(RedpandaTest):
         bytes = local_retention * 3
         msg_size = 131072
         msg_count = bytes // msg_size
-        for n in range(0, msg_count):
+        for _ in range(0, msg_count):
             self.rpk.produce(topic_name, "key", "b" * msg_size)
 
         wait_for_local_storage_truncate(self.redpanda,
