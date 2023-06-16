@@ -20,7 +20,6 @@ class CloudStorageChunkReadTest(PreallocNodesTest):
         self.si_settings = SISettings(
             test_context=test_context,
             log_segment_size=self.log_segment_size,
-            fast_uploads=True,
         )
         self.si_settings.load_context(self.logger, test_context=test_context)
 
@@ -218,7 +217,6 @@ class CloudStorageChunkReadTest(PreallocNodesTest):
 
     @cluster(num_nodes=4)
     def test_read_when_segment_size_smaller_than_chunk_size(self):
-        self.topics[0].segment_bytes = 512 * 1024
         self._set_params_and_start_redpanda(cloud_storage_cache_chunk_size=16 *
                                             1024 * 1024)
 
