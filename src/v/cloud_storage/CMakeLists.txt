@@ -27,7 +27,7 @@ v_cc_library(
     remote_partition.cc
     remote_segment_index.cc
     tx_range_manifest.cc
-    materialized_segments.cc
+    materialized_resources.cc
     segment_state.cc
     recovery_errors.cc
     recovery_request.cc
@@ -37,6 +37,7 @@ v_cc_library(
     segment_chunk_api.cc
     segment_chunk_data_source.cc
     async_manifest_view.cc
+    materialized_manifest_cache.cc
   DEPS
     Seastar::seastar
     v::bytes

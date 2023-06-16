@@ -89,6 +89,10 @@ public:
         return generate_spillover_manifest_path(
           get_ntp(), get_revision_id(), smc);
     }
+
+    manifest_type get_manifest_type() const override {
+        return manifest_type::spillover;
+    }
 };
 
 } // namespace cloud_storage

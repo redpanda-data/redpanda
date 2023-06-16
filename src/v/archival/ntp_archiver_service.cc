@@ -1855,7 +1855,8 @@ ss::future<> ntp_archiver::apply_archive_retention() {
     }
 
     if (
-      res.value().offset == _manifest_view->stm().get_archive_start_offset()) {
+      res.value().offset
+      == _manifest_view->stm_manifest().get_archive_start_offset()) {
         co_return;
     }
 
@@ -1870,7 +1871,7 @@ ss::future<> ntp_archiver::apply_archive_retention() {
 
     if (error != cluster::errc::success) {
         vlog(
-          _rtclog.error,
+          _rtclog.warn,
           "Failed to replicate archive truncation command: {}",
           error.message());
     } else {
@@ -1909,7 +1910,7 @@ ss::future<> ntp_archiver::garbage_collect_archive() {
     while (cursor->get_status()
            == cloud_storage::async_manifest_view_cursor_status::
              materialized_spillover) {
-        auto stop = cursor->manifest(
+        auto stop = cursor->with_manifest(
           [&](const cloud_storage::partition_manifest& manifest) {
               for (const auto& meta : manifest) {
                   if (meta.committed_offset < clean_offset) {
@@ -2064,7 +2065,12 @@ ss::future<bool> ntp_archiver::batch_delete(
 ss::future<> ntp_archiver::apply_spillover() {
     const auto manifest_size_limit
       = config::shard_local_cfg().cloud_storage_spillover_manifest_size.value();
-    if (manifest_size_limit.has_value() == false) {
+    const auto manifest_max_segments
+      = config::shard_local_cfg()
+          .cloud_storage_spillover_manifest_max_segments.value();
+    if (
+      manifest_size_limit.has_value() == false
+      && manifest_max_segments.has_value() == false) {
         co_return;
     }
 
@@ -2077,13 +2083,37 @@ ss::future<> ntp_archiver::apply_spillover() {
           .cloud_storage_manifest_upload_timeout_ms.value();
     const auto manifest_upload_backoff
       = config::shard_local_cfg().cloud_storage_initial_backoff_ms.value();
-    vlog(
-      _rtclog.debug,
-      "Manifest size: {}, manifest size limit (x2): {}",
-      manifest().segments_metadata_bytes(),
-      manifest_size_limit.value() * 2);
-    while (manifest().segments_metadata_bytes()
-           > manifest_size_limit.value() * 2) {
+    if (manifest_size_limit.has_value()) {
+        vlog(
+          _rtclog.debug,
+          "Manifest size: {}, manifest size limit (x2): {}",
+          manifest().segments_metadata_bytes(),
+          manifest_size_limit.value() * 2);
+    } else {
+        vlog(
+          _rtclog.debug,
+          "Manifest size: {}, manifest number of segments limit (x2): {}",
+          manifest().size(),
+          manifest_max_segments.value() * 2);
+    }
+    auto stop_condition = [&] {
+        if (manifest_size_limit.has_value()) {
+            return manifest().segments_metadata_bytes()
+                   < manifest_size_limit.value() * 2;
+        }
+        return manifest().size() < manifest_max_segments.value() * 2;
+    };
+    auto spillover_complete = [&](
+                                const cloud_storage::spillover_manifest& tail) {
+        // Don't allow empty spillover manifests even if the limit
+        // is too low.
+        if (manifest_size_limit.has_value()) {
+            return tail.segments_metadata_bytes() >= manifest_size_limit.value()
+                   && tail.size() > 0;
+        }
+        return tail.size() >= manifest_max_segments.value() && tail.size() > 0;
+    };
+    while (!stop_condition()) {
         auto tail = [&]() {
             cloud_storage::spillover_manifest tail(_ntp, _rev);
             for (const auto& meta : manifest()) {
@@ -2091,11 +2121,7 @@ ss::future<> ntp_archiver::apply_spillover() {
                 // No performance impact since all writes here are
                 // sequential.
                 tail.flush_write_buffer();
-                if (
-                  tail.segments_metadata_bytes() >= manifest_size_limit
-                  && tail.size() > 0) {
-                    // Don't allow empty spillover manifests even if the limit
-                    // is too low.
+                if (spillover_complete(tail)) {
                     break;
                 }
             }
@@ -2155,7 +2181,7 @@ ss::future<> ntp_archiver::apply_spillover() {
         auto error = co_await batch.replicate();
         if (error != cluster::errc::success) {
             vlog(
-              _rtclog.error,
+              _rtclog.warn,
               "Failed to replicate spillover command: {}",
               error.message());
         } else {

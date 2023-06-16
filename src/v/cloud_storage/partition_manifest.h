@@ -113,6 +113,7 @@ public:
     using key = model::offset;
     using value = segment_meta;
     using segment_map = segment_meta_cstore;
+    using spillover_manifest_map = segment_meta_cstore;
     using replaced_segments_list = std::vector<lw_segment_meta>;
     using const_iterator = segment_map::const_iterator;
 
@@ -150,7 +151,8 @@ public:
       model::offset archive_start_offset,
       model::offset_delta archive_start_offset_delta,
       model::offset archive_clean_offset,
-      uint64_t archive_size_bytes)
+      uint64_t archive_size_bytes,
+      const fragmented_vector<segment_t>& spillover)
       : _ntp(std::move(ntp))
       , _rev(rev)
       , _mem_tracker(std::move(manifest_mem_tracker))
@@ -187,6 +189,9 @@ public:
               && nm.meta.committed_offset <= _last_offset) {
                 _cloud_log_size_bytes += nm.meta.size_bytes;
             }
+        }
+        for (auto m : spillover) {
+            _spillover_manifests.insert(m.meta);
         }
     }
 
@@ -263,9 +268,11 @@ public:
     /// exists, return the end iterator.
     const_iterator first_addressable_segment() const;
 
-    /// Return iterator to the begining(end) of the segments list
+    /// Return iterator to the beginning of the segments list
     const_iterator begin() const;
+    /// Return iterator to the end of the segments list
     const_iterator end() const;
+    /// Return last segment in the list
     std::optional<segment_meta> last_segment() const;
     size_t size() const;
     bool empty() const;
@@ -273,6 +280,26 @@ public:
     // Return the tracked amount of memory associated with the segments in this
     // manifest, or 0 if the memory is not being tracked.
     size_t segments_metadata_bytes() const;
+
+    /// Return map that contains spillover manifests.
+    /// It stores 'segment_meta' objects but the meaning of fields are
+    /// different.
+    ///
+    /// is_compacted - not used
+    /// size_bytes - size of all segments in the manifests
+    /// base_offset - start_offset of the manifest
+    /// committed_offset - last offset of the manifest
+    /// base_timestamp - first timestamp stored in the manifest
+    /// max_timestamp - last timestamp stored in the manifest
+    /// delta_offset - number of config records in all previous
+    ///                segments (in prev. manifests)
+    /// ntp_revision - initial revision of the partition
+    /// archiver_term - term of the first segment stored in the manifest
+    /// segment_term - term of the last segment stored in the manifest
+    /// delta_offset_end - num. of config records including this manifest
+    /// sname_format - always v3
+    /// metadata_size_hint - size estimate of the manifest
+    const spillover_manifest_map& get_spillover_map() const;
 
     // Flush c-store write buffer
     void flush_write_buffer();
@@ -448,7 +475,8 @@ public:
           _archive_start_offset_delta,
           _archive_clean_offset,
           _start_kafka_offset,
-          _archive_size_bytes);
+          _archive_size_bytes,
+          _spillover_manifests);
     }
     auto serde_fields() const {
         // this list excludes _mem_tracker, which is not serialized
@@ -466,7 +494,8 @@ public:
           _archive_start_offset_delta,
           _archive_clean_offset,
           _start_kafka_offset,
-          _archive_size_bytes);
+          _archive_size_bytes,
+          _spillover_manifests);
     }
 
     /// Compare two manifests for equality. Don't compare the mem_tracker.
@@ -547,6 +576,8 @@ private:
     kafka::offset _start_kafka_offset;
     // Total size of the archive (excluding this manifest)
     uint64_t _archive_size_bytes{0};
+    /// Map of spillover manifests that were uploaded to S3
+    spillover_manifest_map _spillover_manifests;
 };
 
 } // namespace cloud_storage

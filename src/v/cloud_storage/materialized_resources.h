@@ -10,6 +10,7 @@
 
 #pragma once
 
+#include "cloud_storage/materialized_manifest_cache.h"
 #include "cloud_storage/remote_partition.h"
 #include "cloud_storage/segment_state.h"
 #include "config/property.h"
@@ -29,6 +30,7 @@ namespace cloud_storage {
 class remote_segment;
 class remote_segment_batch_reader;
 class remote_probe;
+class materialized_manifest_cache;
 
 /**
  * This class tracks:
@@ -37,15 +39,16 @@ class remote_probe;
  * - The readers within them, to globally limit concurrent
  *   readers instantiated, as each reader has a memory+fd
  *   impact.
+ * - Instances of spillover_manifest used by async_manifest_view.
  *
  * It is important to have shard-global visibility of materialized
  * segment state, in order to apply resources.  As a bonus, this
  * also enables us to have a central fiber for background-stopping
  * evicted objects, instead of each partition doing it independently.
  */
-class materialized_segments {
+class materialized_resources {
 public:
-    materialized_segments();
+    materialized_resources();
 
     ss::future<> start();
     ss::future<> stop();
@@ -55,6 +58,8 @@ public:
     ssx::semaphore_units get_reader_units();
 
     ssx::semaphore_units get_segment_units();
+
+    materialized_manifest_cache& get_materialized_manifest_cache();
 
 private:
     /// Timer use to periodically evict stale readers
@@ -73,6 +78,26 @@ private:
 
     /// How many materialized_segment_state instances exist
     size_t current_segments() const;
+
+    /// Consume from _eviction_list
+    ss::future<> run_eviction_loop();
+
+    /// Try to evict readers until `target_free` units are available in
+    /// _reader_units, i.e. available for new readers to be created.
+    void trim_readers(size_t target_free);
+
+    /// Synchronous scan of segments for eviction, reads+modifies _materialized
+    /// and writes victims to _eviction_list
+    void trim_segments(std::optional<size_t>);
+
+    // List of segments to offload, accumulated during trim_segments
+    using offload_list_t
+      = std::vector<std::pair<remote_partition*, model::offset>>;
+
+    void maybe_trim_segment(materialized_segment_state&, offload_list_t&);
+
+    // Permit probe to query object counts
+    friend class remote_probe;
 
     // We need to quickly look up readers by segment, to find any readers
     // for a segment that is targeted by a read.  Within those readers,
@@ -94,25 +119,11 @@ private:
     /// once: this will trigger faster trimming under pressure.
     adjustable_semaphore _segment_units;
 
-    /// Consume from _eviction_list
-    ss::future<> run_eviction_loop();
+    /// Size of the materialized_manifest_cache
+    config::binding<size_t> _manifest_meta_size;
 
-    /// Try to evict readers until `target_free` units are available in
-    /// _reader_units, i.e. available for new readers to be created.
-    void trim_readers(size_t target_free);
-
-    /// Synchronous scan of segments for eviction, reads+modifies _materialized
-    /// and writes victims to _eviction_list
-    void trim_segments(std::optional<size_t>);
-
-    // List of segments to offload, accumulated during trim_segments
-    using offload_list_t
-      = std::vector<std::pair<remote_partition*, model::offset>>;
-
-    void maybe_trim_segment(materialized_segment_state&, offload_list_t&);
-
-    // Permit probe to query object counts
-    friend class remote_probe;
+    /// Cache used to store materialized spillover manifests
+    ss::shared_ptr<materialized_manifest_cache> _manifest_cache;
 };
 
 } // namespace cloud_storage

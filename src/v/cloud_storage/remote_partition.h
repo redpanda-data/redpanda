@@ -179,7 +179,7 @@ private:
     using iterator = segment_map_t::iterator;
 
     /// This is exposed for the benefit of the materialized_segment_state
-    materialized_segments& materialized();
+    materialized_resources& materialized();
 
     ss::future<> run_eviction_loop();
 

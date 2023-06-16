@@ -10,7 +10,7 @@
 
 #include "cloud_storage/segment_state.h"
 
-#include "cloud_storage/materialized_segments.h"
+#include "cloud_storage/materialized_resources.h"
 #include "cloud_storage/remote_partition.h"
 #include "cloud_storage/remote_segment.h"
 #include "utils/retry_chain_node.h"

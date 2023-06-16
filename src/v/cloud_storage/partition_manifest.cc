@@ -335,6 +335,11 @@ kafka::offset partition_manifest::get_start_kafka_offset_override() const {
     return _start_kafka_offset;
 }
 
+const partition_manifest::spillover_manifest_map&
+partition_manifest::get_spillover_map() const {
+    return _spillover_manifests;
+}
+
 std::optional<kafka::offset>
 partition_manifest::full_log_start_kafka_offset() const {
     if (_start_kafka_offset != kafka::offset{}) {
@@ -936,6 +941,27 @@ partition_manifest partition_manifest::spillover(model::offset start_offset) {
     // It doesn't include segments which are remaining in the
     // manifest.
     _archive_size_bytes += removed.cloud_log_size();
+
+    if (!removed.empty()) {
+        // This segment meta doesn't represent the segment but the
+        // spillover manifest. The fields in segment_meta are repurposed
+        // to store information about the spillover manifest.
+        segment_meta meta{
+          .size_bytes = removed.cloud_log_size(),
+          .base_offset = removed.get_start_offset().value(),
+          .committed_offset = removed.get_last_offset(),
+          .base_timestamp = removed.begin()->base_timestamp,
+          .max_timestamp = removed.last_segment()->max_timestamp,
+          .delta_offset = removed.begin()->delta_offset,
+          .ntp_revision = removed.get_revision_id(),
+          .archiver_term = removed.begin()->segment_term,
+          .segment_term = removed.last_segment()->segment_term,
+          .delta_offset_end = removed.last_segment()->delta_offset_end,
+          .sname_format = segment_name_format::v3,
+          .metadata_size_hint = removed.segments_metadata_bytes(),
+        };
+        _spillover_manifests.insert(meta);
+    }
     return removed;
 }
 
@@ -1975,67 +2001,18 @@ partition_manifest::timequery(model::timestamp t) const {
       base_t,
       max_t);
 
-    // From this point on, we have finite positive differences between
-    // base and max for both offset and time.
-    model::offset interpolated_offset = model::offset{std::lerp(
-      base_offset(),
-      max_offset(),
-      float(t() - base_t()) / float(max_t() - base_t()))};
-
-    vlog(
-      cst_log.debug, "timequery t={} offset guess {}", t, interpolated_offset);
-
-    // 2. Convert offset guess into segment guess.  This is not a strictly
-    // correct offset lookup, we just want something close.
-    auto segment_iter = [&] {
-        auto candidate = _segments.lower_bound(interpolated_offset);
-        if (candidate != _segments.end()) {
-            return candidate;
+    auto base_timestamp = _segments.get_base_timestamp_column().begin();
+    auto max_timestamp = _segments.get_max_timestamp_column().begin();
+    size_t target_ix = 0;
+    while (!base_timestamp.is_end()) {
+        if (*max_timestamp >= t.value() || *base_timestamp > t.value()) {
+            target_ix = base_timestamp.index();
+            break;
         }
-        return _segments.at_index(_segments.size() - 1);
-    }();
-    vlog(
-      cst_log.debug,
-      "timequery t={} segment initial guess {}",
-      t,
-      *segment_iter);
-
-    // 3. Do linear search backward or forward from the location
-    //    we probed, to find the right segment.
-    if (segment_iter->base_timestamp < t) {
-        // Our guess's base_timestamp is before the search point, so our
-        // result must be this segment or a later one: search forward
-        const auto& end = _segments.at_index(_segments.size() - 1);
-        for (; segment_iter != end; ++segment_iter) {
-            const auto& s = *segment_iter;
-            // We found a segment bounding the search point - or -
-            // We found the first segment after the search point
-            if (s.max_timestamp >= t || s.base_timestamp > t) {
-                return s;
-            }
-        }
-        vassert(
-          end != _segments.end(), "Trying to dereference invalid iterator");
-        return *end;
-    } else {
-        // Search backwards: we must peek at each preceding segment
-        // to see if its max_timestamp is >= the query t, before
-        // deciding whether to walk back to it.
-        vlog(cst_log.debug, "timequery t={} reverse {}", t, *segment_iter);
-
-        while (segment_iter != _segments.begin()) {
-            vlog(cst_log.debug, "timequery t={} reverse {}", t, *segment_iter);
-            // NOTE segment_iter is a ForwardIterator. backward walking is
-            // implemented in this slightly awkward way
-            auto prev = _segments.prev(segment_iter);
-            if (prev->max_timestamp >= t) {
-                segment_iter = std::move(prev);
-            } else {
-                break;
-            }
-        }
-        return *segment_iter;
+        ++base_timestamp;
+        ++max_timestamp;
     }
+    return *_segments.at_index(target_ix);
 }
 
 // this class is a serde-enabled version of partition_manifest. it's needed
@@ -2064,6 +2041,7 @@ struct partition_manifest_serde
     model::offset _archive_clean_offset;
     kafka::offset _start_kafka_offset;
     size_t archive_size_bytes;
+    iobuf _spillover_manifests_serialized;
 };
 
 static_assert(
