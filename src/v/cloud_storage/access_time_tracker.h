@@ -70,6 +70,12 @@ public:
     size_t size() const { return _table.size(); }
 
 private:
+    /// Returns true if the key's access time should be tracked.
+    /// We do not wish to track index files and transaction manifests
+    /// as they are just an appendage to segment/chunk files and are
+    /// purged along with them.
+    bool should_track(std::string_view key) const;
+
     /// Drain _pending_upserts for any writes made while table lock was held
     void on_released_table_lock();
 

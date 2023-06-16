@@ -30,32 +30,39 @@
 namespace cloud_storage {
 
 struct walk_accumulator {
-    walk_accumulator(ss::sstring start_dir, const access_time_tracker& t)
+    walk_accumulator(
+      ss::sstring start_dir,
+      const access_time_tracker& t,
+      std::optional<recursive_directory_walker::filter_type> collect_filter)
       : tracker(t)
-      , dirlist({start_dir}) {}
+      , dirlist({std::move(start_dir)})
+      , filter(std::move(collect_filter)) {}
 
     ss::future<> visit(ss::sstring const& target, ss::directory_entry entry) {
         seen_dentries = true;
-        auto entry_path = std::filesystem::path(target)
-                          / std::filesystem::path(entry.name);
+        auto entry_path = fmt::format("{}/{}", target, entry.name);
         if (entry.type && entry.type == ss::directory_entry_type::regular) {
             vlog(cst_log.debug, "Regular file found {}", entry_path);
 
-            auto file_stats = co_await ss::file_stat(entry_path.string());
+            auto file_stats = co_await ss::file_stat(entry_path);
 
-            auto last_access_timepoint
-              = tracker.estimate_timestamp(entry_path.native())
-                  .value_or(file_stats.time_accessed);
+            auto last_access_timepoint = tracker.estimate_timestamp(entry_path)
+                                           .value_or(file_stats.time_accessed);
 
             current_cache_size += static_cast<uint64_t>(file_stats.size);
-            files.push_back(
-              {last_access_timepoint,
-               (std::filesystem::path(target) / entry.name.data()).native(),
-               static_cast<uint64_t>(file_stats.size)});
+
+            if (!filter || filter.value()(entry_path)) {
+                files.push_back(
+                  {last_access_timepoint,
+                   (std::filesystem::path(target) / entry.name.data()).native(),
+                   static_cast<uint64_t>(file_stats.size)});
+            } else if (filter) {
+                ++filtered_out_files;
+            }
         } else if (
           entry.type && entry.type == ss::directory_entry_type::directory) {
             vlog(cst_log.debug, "Dir found {}", entry_path);
-            dirlist.push_front(entry_path.string());
+            dirlist.push_front(entry_path);
         }
     }
 
@@ -72,16 +79,20 @@ struct walk_accumulator {
     const access_time_tracker& tracker;
     bool seen_dentries{false};
     std::deque<ss::sstring> dirlist;
+    std::optional<recursive_directory_walker::filter_type> filter;
     fragmented_vector<file_list_item> files;
     uint64_t current_cache_size{0};
+    size_t filtered_out_files{0};
 };
 
 ss::future<walk_result> recursive_directory_walker::walk(
-  ss::sstring start_dir, const access_time_tracker& tracker) {
+  ss::sstring start_dir,
+  const access_time_tracker& tracker,
+  std::optional<filter_type> collect_filter) {
     gate_guard guard{_gate};
 
     // Object to accumulate data as we walk directories
-    walk_accumulator state(start_dir, tracker);
+    walk_accumulator state(start_dir, tracker, std::move(collect_filter));
 
     std::vector<ss::sstring> empty_dirs;
 
@@ -118,6 +129,7 @@ ss::future<walk_result> recursive_directory_walker::walk(
 
     co_return walk_result{
       .cache_size = state.current_cache_size,
+      .filtered_out_files = state.filtered_out_files,
       .regular_files = std::move(state.files),
       .empty_dirs = std::move(empty_dirs)};
 }

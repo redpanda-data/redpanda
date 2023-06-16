@@ -90,6 +90,14 @@ ss::future<> access_time_tracker::write(ss::output_stream<char>& out) {
     on_released_table_lock();
 }
 
+bool access_time_tracker::should_track(std::string_view key) const {
+    if (key.ends_with(".tx") || key.ends_with(".index")) {
+        return false;
+    }
+
+    return true;
+}
+
 void access_time_tracker::on_released_table_lock() {
     // When dropping lock, drain any pending upserts that came in via
     // add/remove calls while we were locking the main table.
@@ -156,9 +164,14 @@ ss::future<> access_time_tracker::read(ss::input_stream<char>& in) {
 
 void access_time_tracker::add_timestamp(
   std::string_view key, std::chrono::system_clock::time_point ts) {
+    if (!should_track(key)) {
+        return;
+    }
+
     uint32_t seconds = std::chrono::time_point_cast<std::chrono::seconds>(ts)
                          .time_since_epoch()
                          .count();
+
     uint32_t hash = xxhash_32(key.data(), key.size());
 
     auto units = seastar::try_get_units(_table_lock, 1);
