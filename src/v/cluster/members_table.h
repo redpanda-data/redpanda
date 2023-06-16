@@ -70,6 +70,11 @@ public:
         }
     }
 
+    // NOTE: these are level-triggered (as opposed to edge-triggered)
+    // notifications. So for example if you get a members_updated notification
+    // with membership_state::draining, this means "there is a node and its
+    // current state is draining", not "node state switched to draining".
+
     using maintenance_state_cb_t = ss::noncopyable_function<void(
       model::node_id, model::maintenance_state)>;
 
