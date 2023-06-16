@@ -113,6 +113,7 @@
 #include <seastar/json/json_elements.hh>
 #include <seastar/util/later.hh>
 #include <seastar/util/log.hh>
+#include <seastar/util/short_streams.hh>
 #include <seastar/util/variant_utils.hh>
 
 #include <boost/algorithm/string/classification.hpp>
@@ -235,7 +236,9 @@ admin_server::admin_server(
   , _storage_node(storage_node)
   , _memory_sampling_service(memory_sampling_service)
   , _default_blocked_reactor_notify(
-      ss::engine().get_blocked_reactor_notify_ms()) {}
+      ss::engine().get_blocked_reactor_notify_ms()) {
+    _server.set_content_streaming(true);
+}
 
 ss::future<> admin_server::start() {
     _blocked_reactor_notify_reset_timer.set_callback([this] {
@@ -342,14 +345,16 @@ static json::validator make_set_replicas_validator() {
  * as an empty request body causes a redpanda crash via a rapidjson
  * assertion when trying to GetObject on the resulting document.
  */
-static json::Document parse_json_body(ss::http::request const& req) {
+ss::future<json::Document> parse_json_body(ss::http::request* req) {
     json::Document doc;
-    doc.Parse(req.content.data());
-    if (doc.Parse(req.content.data()).HasParseError()) {
+    auto content = co_await ss::util::read_entire_stream_contiguous(
+      *req->content_stream);
+    doc.Parse(content);
+    if (doc.HasParseError()) {
         throw ss::httpd::bad_request_exception(
           fmt::format("JSON parse error: {}", doc.GetParseError()));
     } else {
-        return doc;
+        co_return doc;
     }
 }
 
@@ -1417,7 +1422,7 @@ admin_server::patch_cluster_config_handler(
   request_auth_result const& auth_state) {
     static thread_local auto cluster_config_validator(
       make_cluster_config_validator());
-    auto doc = parse_json_body(*req);
+    auto doc = co_await parse_json_body(req.get());
     apply_validator(cluster_config_validator, doc);
 
     cluster::config_update_request update;
@@ -1783,7 +1788,7 @@ admin_server::create_user_handler(std::unique_ptr<ss::http::request> req) {
         throw co_await redirect_to_leader(*req, model::controller_ntp);
     }
 
-    auto doc = parse_json_body(*req);
+    auto doc = co_await parse_json_body(req.get());
 
     auto credential = parse_scram_credential(doc);
 
@@ -1863,7 +1868,7 @@ admin_server::update_user_handler(std::unique_ptr<ss::http::request> req) {
 
     auto user = security::credential_user(req->param["user"]);
 
-    auto doc = parse_json_body(*req);
+    auto doc = co_await parse_json_body(req.get());
 
     auto credential = parse_scram_credential(doc);
 
@@ -2048,13 +2053,14 @@ feature_state_to_high_level(features::feature_state::state state) {
         // Exhaustive match
     }
 }
+} // namespace
 
 ss::future<ss::json::json_return_type>
 admin_server::put_feature_handler(std::unique_ptr<ss::http::request> req) {
     static thread_local auto feature_put_validator(
       make_feature_put_validator());
 
-    auto doc = parse_json_body(*req);
+    auto doc = co_await parse_json_body(req.get());
     apply_validator(feature_put_validator, doc);
 
     auto feature_name = req->param["feature_name"];
@@ -2119,7 +2125,8 @@ admin_server::put_feature_handler(std::unique_ptr<ss::http::request> req) {
 
 ss::future<ss::json::json_return_type>
 admin_server::put_license_handler(std::unique_ptr<ss::http::request> req) {
-    auto& raw_license = req->content;
+    auto raw_license = co_await ss::util::read_entire_stream_contiguous(
+      *req->content_stream);
     if (raw_license.empty()) {
         throw ss::httpd::bad_request_exception(
           "Missing redpanda license from request body");
@@ -2871,7 +2878,7 @@ admin_server::force_set_partition_replicas_handler(
           fmt::format("Can't reconfigure a controller"));
     }
 
-    auto doc = parse_json_body(*req);
+    auto doc = co_await parse_json_body(req.get());
     auto replicas = co_await validate_set_replicas(
       doc, _controller->get_topics_frontend().local());
 
@@ -2942,7 +2949,7 @@ admin_server::set_partition_replicas_handler(
           fmt::format("Can't reconfigure a controller"));
     }
 
-    auto doc = parse_json_body(*req);
+    auto doc = co_await parse_json_body(req.get());
     auto replicas = co_await validate_set_replicas(
       doc, _controller->get_topics_frontend().local());
     auto current_assignment
@@ -3632,7 +3639,7 @@ admin_server::self_test_start_handler(std::unique_ptr<ss::http::request> req) {
         vlog(logger.debug, "Need to redirect self_test_start request");
         throw co_await redirect_to_leader(*req, model::controller_ntp);
     }
-    auto doc = parse_json_body(*req);
+    auto doc = co_await parse_json_body(req.get());
     apply_validator(self_test_start_validator, doc);
     std::vector<model::node_id> ids;
     cluster::start_test_request r;
@@ -4269,7 +4276,7 @@ admin_server::put_disk_stat_handler(std::unique_ptr<ss::http::request> req) {
     static thread_local auto disk_stat_validator(
       make_disk_stat_overrides_validator());
 
-    auto doc = parse_json_body(*req);
+    auto doc = co_await parse_json_body(req.get());
     apply_validator(disk_stat_validator, doc);
     auto type = resolve_disk_type(req->param["type"]);
 
@@ -4569,7 +4576,8 @@ admin_server::unsafe_reset_metadata(
         throw ss::httpd::bad_request_exception("Empty request content");
     }
 
-    ss::sstring content = std::move(request->content);
+    ss::sstring content = co_await ss::util::read_entire_stream_contiguous(
+      *request->content_stream);
 
     const auto shard = _shard_table.local().shard_for(ntp);
     if (!shard) {
