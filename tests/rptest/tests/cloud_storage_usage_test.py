@@ -6,23 +6,23 @@
 #
 # https://github.com/redpanda-data/redpanda/blob/master/licenses/rcl.md
 
+import random
+import time
+from collections import defaultdict
+from collections import deque
+
+from ducktape.utils.util import wait_until
+
 from rptest.clients.rpk import RpkTool
+from rptest.clients.types import TopicSpec
 from rptest.services.admin import Admin
 from rptest.services.cluster import cluster
 from rptest.services.kgo_verifier_services import KgoVerifierProducer
-from rptest.tests.redpanda_test import RedpandaTest
 from rptest.services.redpanda import MetricsEndpoint, SISettings
-from rptest.util import firewall_blocked
-from rptest.utils.si_utils import BucketView, NTP, quiesce_uploads
-from rptest.clients.types import TopicSpec
 from rptest.tests.partition_movement import PartitionMovementMixin
+from rptest.tests.redpanda_test import RedpandaTest
 from rptest.utils.mode_checks import skip_debug_mode
-from ducktape.utils.util import wait_until
-from collections import defaultdict
-
-import random
-import time
-from collections import deque
+from rptest.utils.si_utils import BucketView, NTP, quiesce_uploads
 
 
 class CloudStorageUsageTest(RedpandaTest, PartitionMovementMixin):
@@ -131,7 +131,7 @@ class CloudStorageUsageTest(RedpandaTest, PartitionMovementMixin):
                         timeout_sec=30)
 
         describe_items = self.rpk.describe_log_dirs()
-        by_ntp = defaultdict(list)
+        by_ntp: defaultdict[NTP, list] = defaultdict(list)
         for i in describe_items:
             ntp = NTP(ns='kafka', topic=i.topic, partition=i.partition)
             by_ntp[ntp].append(i)
@@ -145,7 +145,9 @@ class CloudStorageUsageTest(RedpandaTest, PartitionMovementMixin):
             ntp_remote_size = max(i.size
                                   for i in remote_items) if remote_items else 0
             actual_size = bucket_view.cloud_log_size_for_ntp(
-                ntp.topic, ntp.partition)
+                ntp.topic,
+                ntp.partition,
+                include_size_below_start_offset=False)
 
             assert ntp_remote_size == actual_size
 
