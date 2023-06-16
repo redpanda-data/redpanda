@@ -1000,6 +1000,7 @@ func (p *Params) readRedpandaConfig(fs afero.Fs, c *Config) error {
 			if errors.Is(err, afero.ErrFileNotFound) {
 				continue
 			}
+			return fmt.Errorf("unable to read file in %v: %v", path, err)
 		}
 
 		if err := yaml.Unmarshal(file, &c.redpandaYaml); err != nil {
