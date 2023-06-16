@@ -37,7 +37,7 @@ void probe::setup_metrics() {
         return;
     }
 
-    auto operation_label = sm::label("operation");
+    auto operation_label = ssx::metrics::internal_labels::operation_label;
     std::vector<sm::label_instance> labels{
       operation_label(_path.operations.nickname)};
 
@@ -66,7 +66,7 @@ void probe::setup_public_metrics() {
         return;
     }
 
-    auto operation_label = ssx::metrics::make_namespaced_label("operation");
+    auto operation_label = ssx::metrics::public_labels::operation_label;
     auto status_label = ssx::metrics::make_namespaced_label("status");
 
     std::vector<sm::label_instance> labels{

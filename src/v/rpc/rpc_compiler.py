@@ -36,6 +36,7 @@ RPC_TEMPLATE = """
 #include "outcome.h"
 #include "prometheus/prometheus_sanitize.h"
 #include "seastarx.h"
+#include "ssx/metrics.h"
 
 // extra includes
 {%- for include in includes %}
@@ -82,7 +83,7 @@ public:
     void setup_metrics() final {
         namespace sm = ss::metrics;
         auto service_label = sm::label("service");
-        auto method_label = sm::label("method");
+        auto method_label = ssx::metrics::internal_labels::method_label;
       {%- for method in methods %}
         {
             std::vector<ss::metrics::label_instance> labels{

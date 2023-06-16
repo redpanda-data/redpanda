@@ -3253,18 +3253,16 @@ void rm_stm::setup_metrics() {
         return;
     }
     namespace sm = ss::metrics;
-    auto ns_label = sm::label("namespace");
-    auto topic_label = sm::label("topic");
-    auto partition_label = sm::label("partition");
+
     auto aggregate_labels = config::shard_local_cfg().aggregate_metrics()
                               ? std::vector<sm::label>{sm::shard_label}
                               : std::vector<sm::label>{};
 
     const auto& ntp = _c->ntp();
     const std::vector<sm::label_instance> labels = {
-      ns_label(ntp.ns()),
-      topic_label(ntp.tp.topic()),
-      partition_label(ntp.tp.partition()),
+      ssx::metrics::internal_labels::ns_label(ntp.ns()),
+      ssx::metrics::internal_labels::topic_label(ntp.tp.topic()),
+      ssx::metrics::internal_labels::partition_label(ntp.tp.partition()),
     };
 
     _metrics.add_group(

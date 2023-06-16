@@ -12,6 +12,7 @@
 
 #include "config/configuration.h"
 #include "prometheus/prometheus_sanitize.h"
+#include "ssx/metrics.h"
 
 #include <seastar/core/metrics.hh>
 #include <seastar/core/smp.hh>
@@ -32,13 +33,10 @@ ntp_level_probe::ntp_level_probe(
 void ntp_level_probe::setup_ntp_metrics(const model::ntp& ntp) {
     namespace sm = ss::metrics;
 
-    auto ns_label = sm::label("namespace");
-    auto topic_label = sm::label("topic");
-    auto partition_label = sm::label("partition");
     const std::vector<sm::label_instance> labels = {
-      ns_label(ntp.ns()),
-      topic_label(ntp.tp.topic()),
-      partition_label(ntp.tp.partition()),
+      ssx::metrics::internal_labels::ns_label(ntp.ns()),
+      ssx::metrics::internal_labels::topic_label(ntp.tp.topic()),
+      ssx::metrics::internal_labels::partition_label(ntp.tp.partition()),
     };
     auto aggregate_labels = config::shard_local_cfg().aggregate_metrics()
                               ? std::vector<sm::label>{sm::shard_label}
@@ -77,17 +75,14 @@ void ntp_level_probe::setup_ntp_metrics(const model::ntp& ntp) {
 void ntp_level_probe::setup_public_metrics(const model::ntp& ntp) {
     namespace sm = ss::metrics;
 
-    auto ns_label = ssx::metrics::make_namespaced_label("namespace");
-    auto topic_label = ssx::metrics::make_namespaced_label("topic");
-    auto partition_label = ssx::metrics::make_namespaced_label("partition");
     const std::vector<sm::label_instance> labels = {
-      ns_label(ntp.ns()),
-      topic_label(ntp.tp.topic()),
-      partition_label(ntp.tp.partition()),
+      ssx::metrics::public_labels::ns_label(ntp.ns()),
+      ssx::metrics::public_labels::topic_label(ntp.tp.topic()),
+      ssx::metrics::public_labels::partition_label(ntp.tp.partition()),
     };
 
     auto aggregate_labels = std::vector<sm::label>{
-      sm::shard_label, partition_label};
+      sm::shard_label, ssx::metrics::public_labels::partition_label};
 
     _public_metrics.add_group(
       prometheus_sanitize::metrics_name("cloud_storage"),
