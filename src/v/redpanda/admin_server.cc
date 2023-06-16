@@ -314,7 +314,8 @@ void admin_server::configure_admin_routes() {
     register_shadow_indexing_routes();
 }
 
-static json::validator make_set_replicas_validator() {
+namespace {
+json::validator make_set_replicas_validator() {
     const std::string schema = R"(
 {
     "type": "array",
@@ -363,8 +364,7 @@ ss::future<json::Document> parse_json_body(ss::http::request* req) {
  * string-ize any schema errors in the 400 response to help
  * caller see what went wrong.
  */
-static void
-apply_validator(json::validator& validator, json::Document const& doc) {
+void apply_validator(json::validator& validator, json::Document const& doc) {
     try {
         json::validate(validator, doc);
     } catch (json::json_validation_error& err) {
@@ -373,7 +373,7 @@ apply_validator(json::validator& validator, json::Document const& doc) {
     }
 }
 
-static ss::future<std::vector<model::broker_shard>> validate_set_replicas(
+ss::future<std::vector<model::broker_shard>> validate_set_replicas(
   const json::Document& doc, const cluster::topics_frontend& topic_fe) {
     static thread_local json::validator set_replicas_validator(
       make_set_replicas_validator());
@@ -429,8 +429,8 @@ static ss::future<std::vector<model::broker_shard>> validate_set_replicas(
  * Helper for requests with boolean URL query parameters that should
  * be treated as false if absent, or true if "true" (case insensitive) or "1"
  */
-static bool
-get_boolean_query_param(const ss::http::request& req, std::string_view name) {
+bool get_boolean_query_param(
+  const ss::http::request& req, std::string_view name) {
     auto key = ss::sstring(name);
     if (!req.query_parameters.contains(key)) {
         return false;
@@ -440,6 +440,7 @@ get_boolean_query_param(const ss::http::request& req, std::string_view name) {
     return ss::http::request::case_insensitive_cmp()(str_param, "true")
            || str_param == "1";
 }
+} // namespace
 
 void admin_server::configure_metrics_route() {
     ss::prometheus::add_prometheus_routes(
@@ -1210,7 +1211,8 @@ void admin_server::register_config_routes() {
       });
 }
 
-static json::validator make_cluster_config_validator() {
+namespace {
+json::validator make_cluster_config_validator() {
     const std::string schema = R"(
 {
     "type": "object",
@@ -1361,6 +1363,7 @@ void config_multi_property_validation(
           "{} requires schema_registry to be enabled in redpanda.yaml", name);
     }
 }
+} // namespace
 
 void admin_server::register_cluster_config_routes() {
     register_route<superuser>(
@@ -1708,9 +1711,9 @@ void admin_server::register_raft_routes() {
       });
 }
 
+namespace {
 // TODO: factor out generic serialization from seastar http exceptions
-static security::scram_credential
-parse_scram_credential(const json::Document& doc) {
+security::scram_credential parse_scram_credential(const json::Document& doc) {
     if (!doc.IsObject()) {
         throw ss::httpd::bad_request_exception(fmt::format("Not an object"));
     }
@@ -1748,7 +1751,7 @@ parse_scram_credential(const json::Document& doc) {
     return credential;
 }
 
-static bool match_scram_credential(
+bool match_scram_credential(
   const json::Document& doc, const security::scram_credential& creds) {
     // Document is pre-validated via earlier parse_scram_credential call
     const auto password = ss::sstring(doc["password"].GetString());
@@ -1779,6 +1782,7 @@ bool is_no_op_user_write(
         return false;
     }
 }
+} // namespace
 
 ss::future<ss::json::json_return_type>
 admin_server::create_user_handler(std::unique_ptr<ss::http::request> req) {
@@ -2004,7 +2008,8 @@ void admin_server::register_status_routes() {
       });
 }
 
-static json::validator make_feature_put_validator() {
+namespace {
+json::validator make_feature_put_validator() {
     const std::string schema = R"(
 {
     "type": "object",
@@ -3600,7 +3605,8 @@ void admin_server::register_transaction_routes() {
       });
 }
 
-static json::validator make_self_test_start_validator() {
+namespace {
+json::validator make_self_test_start_validator() {
     const std::string schema = R"(
 {
     "type": "object",
@@ -3630,6 +3636,7 @@ static json::validator make_self_test_start_validator() {
 )";
     return json::validator(schema);
 }
+} // namespace
 
 ss::future<ss::json::json_return_type>
 admin_server::self_test_start_handler(std::unique_ptr<ss::http::request> req) {
@@ -3710,7 +3717,8 @@ admin_server::self_test_stop_handler(std::unique_ptr<ss::http::request> req) {
     co_return ss::json::json_void();
 }
 
-static ss::httpd::debug_json::self_test_result
+namespace {
+ss::httpd::debug_json::self_test_result
 self_test_result_to_json(const cluster::self_test_result& str) {
     ss::httpd::debug_json::self_test_result r;
     r.test_id = ss::sstring(str.test_id);
@@ -3737,6 +3745,7 @@ self_test_result_to_json(const cluster::self_test_result& str) {
     r.bps = str.bps;
     return r;
 }
+} // namespace
 
 ss::future<ss::json::json_return_type>
 admin_server::self_test_get_results_handler(
@@ -3828,7 +3837,8 @@ admin_server::cloud_storage_usage_handler(
     }
 }
 
-static ss::json::json_return_type raw_data_to_usage_response(
+namespace {
+ss::json::json_return_type raw_data_to_usage_response(
   const std::vector<kafka::usage_window>& total_usage, bool include_open) {
     std::vector<ss::httpd::usage_json::usage_response> resp;
     resp.reserve(total_usage.size());
@@ -3857,6 +3867,7 @@ static ss::json::json_return_type raw_data_to_usage_response(
     }
     return resp;
 }
+} // namespace
 
 void admin_server::register_usage_routes() {
     register_route<user>(
@@ -4643,7 +4654,8 @@ admin_server::initiate_topic_scan_and_recovery(
     co_return reply;
 }
 
-static ss::httpd::shadow_indexing_json::topic_recovery_status
+namespace {
+ss::httpd::shadow_indexing_json::topic_recovery_status
 map_status_to_json(cluster::single_status status) {
     ss::httpd::shadow_indexing_json::topic_recovery_status status_json;
     status_json.state = fmt::format("{}", status.state);
@@ -4666,7 +4678,7 @@ map_status_to_json(cluster::single_status status) {
     return status_json;
 }
 
-static ss::json::json_return_type serialize_topic_recovery_status(
+ss::json::json_return_type serialize_topic_recovery_status(
   const cluster::status_response& cluster_status, bool extended) {
     if (!extended) {
         return map_status_to_json(cluster_status.status_log.back());
@@ -4681,6 +4693,7 @@ static ss::json::json_return_type serialize_topic_recovery_status(
 
     return status_log;
 }
+} // namespace
 
 ss::future<ss::json::json_return_type>
 admin_server::query_automated_recovery(std::unique_ptr<ss::http::request> req) {
@@ -4719,7 +4732,8 @@ admin_server::query_automated_recovery(std::unique_ptr<ss::http::request> req) {
     co_return ret;
 }
 
-static ss::httpd::shadow_indexing_json::partition_cloud_storage_status
+namespace {
+ss::httpd::shadow_indexing_json::partition_cloud_storage_status
 map_status_to_json(cluster::partition_cloud_storage_status status) {
     ss::httpd::shadow_indexing_json::partition_cloud_storage_status json;
 
@@ -4761,6 +4775,7 @@ map_status_to_json(cluster::partition_cloud_storage_status status) {
 
     return json;
 }
+} // namespace
 
 ss::future<ss::json::json_return_type>
 admin_server::get_partition_cloud_storage_status(
