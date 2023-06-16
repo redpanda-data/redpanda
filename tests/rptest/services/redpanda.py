@@ -1771,13 +1771,17 @@ class RedpandaService(Service):
         # we need to look for redpanda pid. pids() method returns pids of both
         # nodejs server and redpanda
         try:
-            cmd = "pgrep --exact redpanda"
-
-            for p in node.account.ssh_capture(cmd,
-                                              allow_fail=True,
-                                              callback=int):
-                return p
-
+            cmd = "pgrep --list-full --exact redpanda"
+            for line in node.account.ssh_capture(cmd,
+                                                 allow_fail=True,
+                                                 timeout_sec=10):
+                # Ignore SSH commands that lookup the version of redpanda
+                # by running `redpanda --version` like in `self.get_version(node)`
+                if "--version" in line:
+                    continue
+                # The pid is listed first, that's all we need
+                return int(line.split()[0])
+            return None
         except (RemoteCommandError, ValueError):
             return None
 
