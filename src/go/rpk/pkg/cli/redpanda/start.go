@@ -700,12 +700,12 @@ func check(
 			if action, exists := checkFailedActions[result.CheckerID]; exists {
 				action(&result)
 			}
-			msg := fmt.Sprintf("System check '%s' failed. Required: %v, Current %v, Error: %v",
-				result.Desc, result.Required, result.Current, result.Err)
+			msg := fmt.Sprintf("System check '%s' failed. Required: %v, Current %v, Error: %v, Severity: %v",
+				result.Desc, result.Required, result.Current, result.Err, result.Severity)
 			if result.Severity == tuners.Fatal {
 				return errors.New(msg)
 			}
-			fmt.Println(msg)
+			zap.L().Sugar().Warn(msg)
 		}
 	}
 	return nil
