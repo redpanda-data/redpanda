@@ -8,11 +8,11 @@ spec:
   replicas: 1
   resources:
     requests:
-      cpu: 100m
-      memory: 100Mi
+      cpu: 1
+      memory: 1Gi
     limits:
       cpu: 1
-      memory: 500Mi
+      memory: 1Gi
   configuration:
     rpcServer:
       port: 33145
@@ -23,6 +23,9 @@ spec:
     pandaproxyApi:
       - port: 8082
     developerMode: true
+    additionalCommandlineArguments:
+      dump-memory-diagnostics-on-alloc-failure-kind: all
+      reserve-memory: 100M
   additionalConfiguration:
     redpanda.enable_idempotence: "true"
     redpanda.default_topic_partitions: "3"

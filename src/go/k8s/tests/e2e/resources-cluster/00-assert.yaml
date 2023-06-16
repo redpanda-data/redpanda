@@ -4,7 +4,7 @@ metadata:
   name: update-cluster-resources
   labels:
     app.kubernetes.io/name: "redpanda"
-    app.kubernetes.io/instance: "update-cluster-resources"
+    app.kubernetes.io/instance: update-cluster-resources
     app.kubernetes.io/managed-by: redpanda-operator
     app.kubernetes.io/part-of: redpanda
 status:

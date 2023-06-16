@@ -39,11 +39,11 @@ spec:
             timeoutSeconds: 1
           resources:
             limits:
-              cpu: 100m
-              memory: 256Mi
+              cpu: 1
+              memory: 1Gi
             requests:
-              cpu: 100m
-              memory: 128Mi
+              cpu: 1
+              memory: 1Gi
           securityContext: {}
           terminationMessagePath: /dev/termination-log
           terminationMessagePolicy: File
@@ -65,62 +65,22 @@ spec:
 ---
 apiVersion: v1
 data:
-  config.yaml: |
-    exporter:
-      host: ""
-      namespace: test_sla
-      port: 8080
-    kafka:
-      brokers:
-        - update-image-cluster-and-node-port-0.update-image-cluster-and-node-port:9092
-        - update-image-cluster-and-node-port-1.update-image-cluster-and-node-port:9092
-        - update-image-cluster-and-node-port-2.update-image-cluster-and-node-port:9092
-      clientId: kminion
-      rackId: ""
-      sasl:
-        enabled: false
-      tls:
-        caFilepath: ""
-        certFilepath: ""
-        enabled: false
-        insecureSkipTlsVerify: false
-        keyFilepath: ""
-        passphrase: ""
-    logger:
-      level: info
-    minion:
-      consumerGroups:
-        allowedGroups: []
-        enabled: false
-        granularity: partition
-        ignoredGroups: []
-        scrapeMode: adminApi
-      endToEnd:
-        consumer:
-          commitSla: 2s
-          deleteStaleConsumerGroups: false
-          groupIdPrefix: test
-          roundtripSla: 2s
-        enabled: true
-        probeInterval: 3ns
-        producer:
-          ackSla: 1s
-          requiredAcks: all
-        topicManagement:
-          enabled: true
-          name: test_e2e_probe
-          partitionsPerBroker: 5
-          reconciliationInterval: 1m
-          replicationFactor: 3
-      logDirs:
-        enabled: false
-      topics:
-        allowedTopics: []
-        granularity: partition
-        ignoredTopics: []
-        infoMetric:
-          configKeys:
-            - cleanup.policy
+  config.yaml: "exporter:\n  host: \"\"\n  namespace: test_sla\n  port: 8080\nkafka:\n\
+    \  brokers:\n    - update-image-cluster-and-node-port-0.update-image-cluster-and-node-port:9092\n\
+    \    - update-image-cluster-and-node-port-1.update-image-cluster-and-node-port:9092\n\
+    \    - update-image-cluster-and-node-port-2.update-image-cluster-and-node-port:9092\n\
+    \  clientId: kminion\n  rackId: \"\"\n  sasl:\n    enabled: false\n  tls:\n  \
+    \  caFilepath: \"\"\n    certFilepath: \"\"\n    enabled: false\n    insecureSkipTlsVerify:\
+    \ false\n    keyFilepath: \"\"\n    passphrase: \"\"\nlogger:\n  level: info\n\
+    minion:\n  consumerGroups:\n    allowedGroups: []\n    enabled: false\n    granularity:\
+    \ partition\n    ignoredGroups: []\n    scrapeMode: adminApi\n  endToEnd:\n  \
+    \  consumer:\n      commitSla: 2s\n      deleteStaleConsumerGroups: false\n  \
+    \    groupIdPrefix: test\n      roundtripSla: 2s\n    enabled: true\n    probeInterval:\
+    \ 3ns\n    producer:\n      ackSla: 1s\n      requiredAcks: all\n    topicManagement:\n\
+    \      enabled: true\n      name: test_e2e_probe\n      partitionsPerBroker: 5\n\
+    \      reconciliationInterval: 1m\n      replicationFactor: 3\n  logDirs:\n  \
+    \  enabled: false\n  topics:\n    allowedTopics: []\n    granularity: partition\n\
+    \    ignoredTopics: []\n    infoMetric:\n      configKeys:\n        - cleanup.policy\n"
 kind: ConfigMap
 metadata:
   name: kminion-image-and-node-port

@@ -17,7 +17,7 @@ spec:
             - /bin/bash
             - -c
           args:
-            - 'curl -vv --silent -k https://update-img-external-client-ca-cluster.$POD_NAMESPACE.svc.cluster.local.:8081/subjects/Kafka-value/versions/1'
+            - curl -vv --silent -k https://update-img-external-client-ca-cluster.$POD_NAMESPACE.svc.cluster.local.:8081/subjects/Kafka-value/versions/1
       restartPolicy: Never
   backoffLimit: 2
   parallelism: 1

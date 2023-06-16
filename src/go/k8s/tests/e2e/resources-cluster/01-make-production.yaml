@@ -3,12 +3,13 @@ kind: Cluster
 metadata:
   name: update-cluster-resources
 spec:
+  replicas: 2
   resources:
     requests:
-      cpu: 2
-      memory: 4Gi
+      cpu: 1
+      memory: 2Gi
     limits:
-      cpu: 2
-      memory: 4Gi
+      cpu: 1
+      memory: 2Gi
   configuration:
     developerMode: false

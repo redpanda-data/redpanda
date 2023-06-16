@@ -8,8 +8,8 @@ kind: Secret
 metadata:
   name: pp-ca-cert
   annotations:
-    operator.redpanda.com/external-ca: "true"
+    operator.redpanda.com/external-ca: 'true'
   labels:
     app.kubernetes.io/component: redpanda
-    app.kubernetes.io/name: redpanda
+    app.kubernetes.io/name: "redpanda"
     app.kubernetes.io/instance: cluster-proxy

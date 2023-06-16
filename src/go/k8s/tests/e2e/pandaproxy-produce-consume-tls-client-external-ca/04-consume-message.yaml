@@ -27,7 +27,7 @@ spec:
               -H "Accept: application/vnd.kafka.json.v2+json" --cert /tmp/client/client.crt
               --key /tmp/client/client.key --sslv2 --http2
           volumeMounts:
-            - mountPath: "/tmp/client"
+            - mountPath: /tmp/client
               name: client-cert
               readOnly: true
       restartPolicy: Never

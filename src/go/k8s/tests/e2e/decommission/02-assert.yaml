@@ -12,7 +12,6 @@ status:
           reason: Completed
   phase: Succeeded
 ---
-
 apiVersion: kuttl.dev/v1beta1
 kind: TestAssert
 collectors:

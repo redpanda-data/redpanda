@@ -18,7 +18,7 @@ spec:
                 fieldRef:
                   fieldPath: metadata.namespace
           volumeMounts:
-            - mountPath: "/tmp/client"
+            - mountPath: /tmp/client
               name: client-cert-key
               readOnly: true
           command:
@@ -26,11 +26,18 @@ spec:
             - -c
             - -ex
           args:
-            - |
-              curl -skv -X POST "https://update-img-external-client-ca-0.update-img-external-client-ca.$POD_NAMESPACE.svc.cluster.local:8082/topics/my_topic" \
+            - 'curl -skv -X POST "https://update-img-external-client-ca-0.update-img-external-client-ca.$POD_NAMESPACE.svc.cluster.local:8082/topics/my_topic"
+              \
+
               -H "Content-Type: application/vnd.kafka.json.v2+json" \
-              --cert /tmp/client/tls.crt --key /tmp/client/tls.key --sslv2 --http2 \
-              -d '{"records":[{"value":"Vectorized"},{"value":"Pandaproxy"},{"value":"JSON Demo"}]}'
+
+              --cert /tmp/client/tls.crt --key /tmp/client/tls.key --sslv2 --http2
+              \
+
+              -d ''{"records":[{"value":"Vectorized"},{"value":"Pandaproxy"},{"value":"JSON
+              Demo"}]}''
+
+              '
       restartPolicy: Never
   backoffLimit: 20
   parallelism: 1

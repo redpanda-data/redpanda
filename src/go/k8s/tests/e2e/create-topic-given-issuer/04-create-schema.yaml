@@ -33,5 +33,3 @@ spec:
   backoffLimit: 6
   parallelism: 1
   completions: 1
---- null
-...

@@ -7,12 +7,10 @@ status:
   currentReplicas: 2
   readyReplicas: 2
   conditions:
-  - type: ClusterConfigured
-    status: "True"
+    - type: ClusterConfigured
+      status: "True"
 ---
-
 apiVersion: kuttl.dev/v1beta1
 kind: TestAssert
 collectors:
-- command: ../../../hack/get-redpanda-info.sh
-
+  - command: ../../../hack/get-redpanda-info.sh

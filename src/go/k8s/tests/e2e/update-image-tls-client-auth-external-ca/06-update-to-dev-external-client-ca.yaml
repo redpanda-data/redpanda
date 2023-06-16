@@ -25,4 +25,4 @@ spec:
         clientCACertRef:
           kind: Secret
           name: upd-mtls-ca-cert
-          apiGroup: ""
+          apiGroup: ''

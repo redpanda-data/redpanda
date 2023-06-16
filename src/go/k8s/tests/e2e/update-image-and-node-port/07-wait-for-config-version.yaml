@@ -24,12 +24,13 @@ spec:
               for i in 0 1 2
               do
                 ADMIN_API_PATH="http://update-image-cluster-and-node-port-${i}.update-image-cluster-and-node-port.${POD_NAMESPACE}.svc.cluster.local.:9644"
-                CLUSTER_VERSION=$(curl -s ${ADMIN_API_PATH}/${CONFIG_VERSION_PATH} | jq -r .cluster_version)
+                CLUSTER_VERSION=$(curl -s ${ADMIN_API_PATH}/${CONFIG_VERSION_PATH} |
+                  jq -r .cluster_version)
+                NODE_LATEST_VERSION=$(curl -s ${ADMIN_API_PATH}/${CONFIG_VERSION_PATH} |
+                  jq -r .node_latest_version)
 
-                NODE_LATEST_VERSION=$(curl -s ${ADMIN_API_PATH}/${CONFIG_VERSION_PATH} | jq -r .node_latest_version)
-
-                if [ "$CLUSTER_VERSION" -gt "$NODE_LATEST_VERSION" ]; then
-                  echo "failed: Cluster version is ${CLUSTER_VERSION} is greater than ${NODE_LATEST_VERSION}"
+                if [ "${CLUSTER_VERSION}" -gt "${NODE_LATEST_VERSION}" ]; then
+                  echo "failed: Cluster version ${CLUSTER_VERSION} is greater than ${NODE_LATEST_VERSION}"
                   exit 1
                 fi
               done

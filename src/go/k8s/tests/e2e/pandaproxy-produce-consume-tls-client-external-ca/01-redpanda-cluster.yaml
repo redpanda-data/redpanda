@@ -9,10 +9,10 @@ spec:
   resources:
     requests:
       cpu: 1
-      memory: 500Mi
+      memory: 1Gi
     limits:
       cpu: 1
-      memory: 500Mi
+      memory: 1Gi
   configuration:
     rpcServer:
       port: 33145
@@ -31,3 +31,7 @@ spec:
             name: pp-ca-cert
             apiGroup: ""
     developerMode: true
+    additionalCommandlineArguments:
+      dump-memory-diagnostics-on-alloc-failure-kind: all
+      abort-on-seastar-bad-alloc: ''
+      reserve-memory: 100M

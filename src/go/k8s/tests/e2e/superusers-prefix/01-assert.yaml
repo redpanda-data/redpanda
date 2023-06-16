@@ -10,7 +10,7 @@ kind: Console
 metadata:
   name: console-superusers-prefix
 status:
-  version: v2.2.4
+  version: "v2.2.4"
   replicas: 1
   updatedReplicas: 1
   readyReplicas: 1

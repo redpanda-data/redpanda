@@ -21,7 +21,7 @@ spec:
   selector:
     matchLabels:
       app.kubernetes.io/name: "redpanda"
-      app.kubernetes.io/instance: "update-cluster"
+      app.kubernetes.io/instance: update-cluster
       app.kubernetes.io/component: redpanda
 ---
 apiVersion: kuttl.dev/v1beta1

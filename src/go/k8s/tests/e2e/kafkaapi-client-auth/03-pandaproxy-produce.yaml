@@ -18,10 +18,15 @@ spec:
             - -c
             - -ex
           args:
-            - |
-              curl -s -v -X POST "http://kafkaapi-client-auth-0.kafkaapi-client-auth.$POD_NAMESPACE.svc.cluster.local:8082/topics/test" \
+            - 'curl -s -v -X POST "http://kafkaapi-client-auth-0.kafkaapi-client-auth.$POD_NAMESPACE.svc.cluster.local:8082/topics/test"
+              \
+
               -H "Content-Type: application/vnd.kafka.json.v2+json" \
-              -d '{"records":[{"value":"Vectorized"},{"value":"Pandaproxy"},{"value":"JSON Demo"}]}' \
+
+              -d ''{"records":[{"value":"Vectorized"},{"value":"Pandaproxy"},{"value":"JSON
+              Demo"}]}'' \
+
+              '
       restartPolicy: Never
   backoffLimit: 6
   parallelism: 1

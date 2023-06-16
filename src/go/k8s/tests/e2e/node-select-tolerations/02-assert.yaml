@@ -12,7 +12,7 @@ metadata:
 spec:
   nodeName: kind-worker
   nodeSelector:
-    redpanda-node: "true"
+    redpanda-node: 'true'
 status:
   phase: "Running"
 ---

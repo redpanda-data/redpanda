@@ -5,8 +5,8 @@ metadata:
 data:
   redpanda.yaml: |
     redpanda:
-    rpk:
-      tls:
-        key_file: /etc/tls/certs/tls.key
-        cert_file: /etc/tls/certs/tls.crt
-        truststore_file: /etc/tls/certs/ca.crt
+      rpk:
+        tls:
+          key_file: /etc/tls/certs/tls.key
+          cert_file: /etc/tls/certs/tls.crt
+          truststore_file: /etc/tls/certs/ca.crt

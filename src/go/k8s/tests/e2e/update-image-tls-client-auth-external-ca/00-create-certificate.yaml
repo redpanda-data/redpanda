@@ -31,7 +31,7 @@ metadata:
   name: upd-schema-registry-secret-node-certificate
 spec:
   dnsNames:
-    - "update-img-external-client-ca-cluster.redpanda-system.svc.cluster.local"
+    - update-img-external-client-ca-cluster.redpanda-system.svc.cluster.local
   issuerRef:
     kind: Issuer
     name: upd-schema-registry-secret-root-issuer
