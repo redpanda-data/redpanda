@@ -37,6 +37,8 @@ class PartitionBalancerScaleTest(PreallocNodesTest, PartitionMovementMixin):
                 "members_backend_retry_ms": 1000,
                 "raft_learner_recovery_rate": 1073741824,
             },
+            # If set to trace, these tests produce 10s of GBs of logs
+            log_config=redpanda.LoggingConfig('info'),
             *args,
             **kwargs)
 
