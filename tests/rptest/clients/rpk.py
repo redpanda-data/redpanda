@@ -353,7 +353,10 @@ class RpkTool:
         # Run remote process with a slightly higher timeout than the
         # rpk delivery timeout, so that we get a clean-ish rpk timeout
         # message rather than sigkilling the remote process.
-        out = self._run_topic(cmd, stdin=msg, timeout=timeout + 0.5)
+        out = self._run_topic(cmd,
+                              stdin=msg,
+                              timeout=timeout + 0.5,
+                              log_cmd=True)
 
         m = re.search(r"at offset (\d+)", out)
         assert m, f"Reported offset not found in: {out}"
