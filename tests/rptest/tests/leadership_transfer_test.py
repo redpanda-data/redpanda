@@ -186,7 +186,14 @@ class MultiTopicAutomaticLeadershipBalancingTest(RedpandaTest):
         # optimizations
         time.sleep(60)
 
-        self.redpanda.start_node(node)
+        start_timeout = None
+        if self.debug_mode:
+            # Due to the high partition count in this test Redpanda
+            # can take longer than the default 20s to start on a debug
+            # release.
+            start_timeout = 60
+        self.redpanda.start_node(node, timeout=start_timeout)
+
         self.logger.info("stabilization post start")
         wait_until(lambda: topic_leadership_evenly_distributed(),
                    timeout_sec=300,
