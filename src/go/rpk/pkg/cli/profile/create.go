@@ -199,8 +199,7 @@ func createCtx(
 
 	p.Name = name
 	p.Description = description
-	y.CurrentProfile = name
-	y.Profiles = append([]config.RpkProfile{p}, y.Profiles...)
+	y.CurrentProfile = y.PushProfile(p)
 	if err := y.Write(fs); err != nil {
 		return false, false, fmt.Errorf("unable to write rpk file: %v", err)
 	}

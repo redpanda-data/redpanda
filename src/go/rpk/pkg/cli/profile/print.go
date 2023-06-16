@@ -20,16 +20,13 @@ import (
 )
 
 func newPrintCommand(fs afero.Fs, p *config.Params) *cobra.Command {
-	var raw bool
-	cmd := &cobra.Command{
+	return &cobra.Command{
 		Use:   "print [NAME]",
 		Short: "Print rpk profile configuration",
 		Long: `Print rpk profile configuration.
 
-If no name is specified, this command prints the current profile as it is
-loaded in rpk with internal defaults, user specified flags, and environment
-variables applied. If you wish to print the current raw profile as it exists
-in rpk.yaml, you can use the --raw flag.
+If no name is specified, this command prints the current profile as it exists
+in the rpk.yaml file.
 `,
 		Args:              cobra.MaximumNArgs(1),
 		ValidArgsFunction: ValidProfiles(fs, p),
@@ -37,13 +34,9 @@ in rpk.yaml, you can use the --raw flag.
 			cfg, err := p.Load(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)
 
-			y := cfg.VirtualRpkYaml()
-			if raw {
-				var ok bool
-				y, ok = cfg.ActualRpkYaml()
-				if !ok {
-					out.Die("rpk.yaml file does not exist")
-				}
+			y, ok := cfg.ActualRpkYaml()
+			if !ok {
+				out.Die("rpk.yaml file does not exist")
 			}
 
 			if len(args) == 0 {
@@ -59,6 +52,4 @@ in rpk.yaml, you can use the --raw flag.
 			fmt.Println(string(m))
 		},
 	}
-	cmd.Flags().BoolVar(&raw, "raw", false, "Print raw configuration from rpk.yaml, without environment variables nor flags applied")
-	return cmd
 }
