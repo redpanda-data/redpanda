@@ -401,7 +401,7 @@ ss::future<> group_manager::do_detach_partition(model::ntp ntp) {
         co_return;
     }
     auto p = it->second;
-    auto units = co_await p->catchup_lock.hold_write_lock();
+    auto units = co_await p->catchup_lock->hold_write_lock();
 
     // Becasue shutdown group is async operation we should run it after
     // rehash for groups map
@@ -557,8 +557,7 @@ group_manager::gc_partition_state(ss::lw_shared_ptr<attached_partition> p) {
      * since this operation is destructive for partitions group we hold a
      * catchup write lock
      */
-
-    auto units = co_await p->catchup_lock.hold_write_lock();
+    auto units = co_await p->catchup_lock->hold_write_lock();
 
     // Becasue shutdown group is async operation we should run it after rehash
     // for groups map
@@ -615,8 +614,8 @@ ss::future<> group_manager::handle_partition_leader_change(
      * is rarely contended we take a writer lock only when leadership
      * changes (infrequent event)
      */
-    return p->catchup_lock.hold_write_lock()
-      .then([this, term, timeout, p](ss::basic_rwlock<>::holder unit) {
+    return p->catchup_lock->hold_write_lock().then(
+      [this, term, timeout, p](ss::basic_rwlock<>::holder unit) {
           return inject_noop(p->partition, timeout)
             .then([this, term, timeout, p] {
                 /*
@@ -655,8 +654,7 @@ ss::future<> group_manager::handle_partition_leader_change(
                   });
             })
             .finally([unit = std::move(unit)] {});
-      })
-      .finally([p] {});
+      });
 }
 
 /*
@@ -715,6 +713,7 @@ ss::future<> group_manager::do_recover_group(
               group_id,
               group_stm.get_metadata(),
               _conf,
+              p->catchup_lock,
               p->partition,
               term,
               _tx_frontend,
@@ -915,6 +914,7 @@ group::join_group_stages group_manager::join_group(join_group_request&& r) {
           r.data.group_id,
           group_state::empty,
           _conf,
+          it->second->catchup_lock,
           p,
           it->second->term,
           _tx_frontend,
@@ -1031,7 +1031,7 @@ group_manager::leave_group(leave_group_request&& r) {
 ss::future<txn_offset_commit_response>
 group_manager::txn_offset_commit(txn_offset_commit_request&& r) {
     auto p = get_attached_partition(r.ntp);
-    if (!p || !p->catchup_lock.try_read_lock()) {
+    if (!p || !p->catchup_lock->try_read_lock()) {
         // transaction operations can't run in parallel with loading
         // state from the log (happens once per term change)
         vlog(
@@ -1041,9 +1041,9 @@ group_manager::txn_offset_commit(txn_offset_commit_request&& r) {
           txn_offset_commit_response(
             r, error_code::coordinator_load_in_progress));
     }
-    p->catchup_lock.read_unlock();
+    p->catchup_lock->read_unlock();
 
-    return p->catchup_lock.hold_read_lock().then(
+    return p->catchup_lock->hold_read_lock().then(
       [this, p, r = std::move(r)](ss::basic_rwlock<>::holder unit) mutable {
           // TODO: use correct key instead of offset_commit_api::key
           // check other txn places
@@ -1056,13 +1056,14 @@ group_manager::txn_offset_commit(txn_offset_commit_request&& r) {
 
           auto group = get_group(r.data.group_id);
           if (!group) {
-              // <kafka>the group is not relying on Kafka for group management,
-              // so allow the commit</kafka>
+              // <kafka>the group is not relying on Kafka for group
+              // management, so allow the commit</kafka>
 
               group = ss::make_lw_shared<kafka::group>(
                 r.data.group_id,
                 group_state::empty,
                 _conf,
+                p->catchup_lock,
                 p->partition,
                 p->term,
                 _tx_frontend,
@@ -1081,7 +1082,7 @@ group_manager::txn_offset_commit(txn_offset_commit_request&& r) {
 ss::future<cluster::commit_group_tx_reply>
 group_manager::commit_tx(cluster::commit_group_tx_request&& r) {
     auto p = get_attached_partition(r.ntp);
-    if (!p || !p->catchup_lock.try_read_lock()) {
+    if (!p || !p->catchup_lock->try_read_lock()) {
         // transaction operations can't run in parallel with loading
         // state from the log (happens once per term change)
         vlog(
@@ -1090,10 +1091,10 @@ group_manager::commit_tx(cluster::commit_group_tx_request&& r) {
         return ss::make_ready_future<cluster::commit_group_tx_reply>(
           make_commit_tx_reply(cluster::tx_errc::coordinator_load_in_progress));
     }
-    p->catchup_lock.read_unlock();
+    p->catchup_lock->read_unlock();
 
-    return p->catchup_lock.hold_read_lock().then(
-      [this, r = std::move(r)](ss::basic_rwlock<>::holder unit) mutable {
+    return p->catchup_lock->hold_read_lock().then(
+      [this, p, r = std::move(r)](ss::basic_rwlock<>::holder unit) mutable {
           auto error = validate_group_status(
             r.ntp, r.group_id, offset_commit_api::key);
           if (error != error_code::none) {
@@ -1120,7 +1121,7 @@ group_manager::commit_tx(cluster::commit_group_tx_request&& r) {
 ss::future<cluster::begin_group_tx_reply>
 group_manager::begin_tx(cluster::begin_group_tx_request&& r) {
     auto p = get_attached_partition(r.ntp);
-    if (!p || !p->catchup_lock.try_read_lock()) {
+    if (!p || !p->catchup_lock->try_read_lock()) {
         // transaction operations can't run in parallel with loading
         // state from the log (happens once per term change)
         vlog(
@@ -1129,9 +1130,9 @@ group_manager::begin_tx(cluster::begin_group_tx_request&& r) {
         return ss::make_ready_future<cluster::begin_group_tx_reply>(
           make_begin_tx_reply(cluster::tx_errc::coordinator_load_in_progress));
     }
-    p->catchup_lock.read_unlock();
+    p->catchup_lock->read_unlock();
 
-    return p->catchup_lock.hold_read_lock().then(
+    return p->catchup_lock->hold_read_lock().then(
       [this, p, r = std::move(r)](ss::basic_rwlock<>::holder unit) mutable {
           auto error = validate_group_status(
             r.ntp, r.group_id, offset_commit_api::key);
@@ -1149,6 +1150,7 @@ group_manager::begin_tx(cluster::begin_group_tx_request&& r) {
                 r.group_id,
                 group_state::empty,
                 _conf,
+                p->catchup_lock,
                 p->partition,
                 p->term,
                 _tx_frontend,
@@ -1167,7 +1169,7 @@ group_manager::begin_tx(cluster::begin_group_tx_request&& r) {
 ss::future<cluster::prepare_group_tx_reply>
 group_manager::prepare_tx(cluster::prepare_group_tx_request&& r) {
     auto p = get_attached_partition(r.ntp);
-    if (!p || !p->catchup_lock.try_read_lock()) {
+    if (!p || !p->catchup_lock->try_read_lock()) {
         // transaction operations can't run in parallel with loading
         // state from the log (happens once per term change)
         vlog(
@@ -1177,10 +1179,10 @@ group_manager::prepare_tx(cluster::prepare_group_tx_request&& r) {
           make_prepare_tx_reply(
             cluster::tx_errc::coordinator_load_in_progress));
     }
-    p->catchup_lock.read_unlock();
+    p->catchup_lock->read_unlock();
 
-    return p->catchup_lock.hold_read_lock().then(
-      [this, r = std::move(r)](ss::basic_rwlock<>::holder unit) mutable {
+    return p->catchup_lock->hold_read_lock().then(
+      [this, p, r = std::move(r)](ss::basic_rwlock<>::holder unit) mutable {
           auto error = validate_group_status(
             r.ntp, r.group_id, offset_commit_api::key);
           if (error != error_code::none) {
@@ -1205,7 +1207,7 @@ group_manager::prepare_tx(cluster::prepare_group_tx_request&& r) {
 ss::future<cluster::abort_group_tx_reply>
 group_manager::abort_tx(cluster::abort_group_tx_request&& r) {
     auto p = get_attached_partition(r.ntp);
-    if (!p || !p->catchup_lock.try_read_lock()) {
+    if (!p || !p->catchup_lock->try_read_lock()) {
         // transaction operations can't run in parallel with loading
         // state from the log (happens once per term change)
         vlog(
@@ -1214,10 +1216,10 @@ group_manager::abort_tx(cluster::abort_group_tx_request&& r) {
         return ss::make_ready_future<cluster::abort_group_tx_reply>(
           make_abort_tx_reply(cluster::tx_errc::coordinator_load_in_progress));
     }
-    p->catchup_lock.read_unlock();
+    p->catchup_lock->read_unlock();
 
-    return p->catchup_lock.hold_read_lock().then(
-      [this, r = std::move(r)](ss::basic_rwlock<>::holder unit) mutable {
+    return p->catchup_lock->hold_read_lock().then(
+      [this, p, r = std::move(r)](ss::basic_rwlock<>::holder unit) mutable {
           auto error = validate_group_status(
             r.ntp, r.group_id, offset_commit_api::key);
           if (error != error_code::none) {
@@ -1257,6 +1259,7 @@ group_manager::offset_commit(offset_commit_request&& r) {
               r.data.group_id,
               group_state::empty,
               _conf,
+              p->catchup_lock,
               p->partition,
               p->term,
               _tx_frontend,
