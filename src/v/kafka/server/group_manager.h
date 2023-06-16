@@ -208,12 +208,14 @@ private:
         ssx::semaphore sem{1, "k/group-mgr"};
         ss::abort_source as;
         ss::lw_shared_ptr<cluster::partition> partition;
-        ss::basic_rwlock<> catchup_lock;
+        ss::lw_shared_ptr<ss::basic_rwlock<>> catchup_lock;
         model::term_id term{-1};
 
         explicit attached_partition(ss::lw_shared_ptr<cluster::partition> p)
           : loading(true)
-          , partition(std::move(p)) {}
+          , partition(std::move(p)) {
+            catchup_lock = ss::make_lw_shared<ss::basic_rwlock<>>();
+        }
     };
 
     cluster::notification_id_type _leader_notify_handle;

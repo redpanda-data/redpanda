@@ -49,6 +49,7 @@ group::group(
   kafka::group_id id,
   group_state s,
   config::configuration& conf,
+  ss::lw_shared_ptr<ss::basic_rwlock<>> catchup_lock,
   ss::lw_shared_ptr<cluster::partition> partition,
   model::term_id term,
   ss::sharded<cluster::tx_gateway_frontend>& tx_frontend,
@@ -62,6 +63,7 @@ group::group(
   , _num_members_joining(0)
   , _new_member_added(false)
   , _conf(conf)
+  , _catchup_lock(std::move(catchup_lock))
   , _partition(std::move(partition))
   , _probe(_members, _static_members, _offsets)
   , _ctxlog(klog, *this)
@@ -84,6 +86,7 @@ group::group(
   kafka::group_id id,
   group_metadata_value& md,
   config::configuration& conf,
+  ss::lw_shared_ptr<ss::basic_rwlock<>> catchup_lock,
   ss::lw_shared_ptr<cluster::partition> partition,
   model::term_id term,
   ss::sharded<cluster::tx_gateway_frontend>& tx_frontend,
@@ -103,6 +106,7 @@ group::group(
   , _leader(md.leader)
   , _new_member_added(false)
   , _conf(conf)
+  , _catchup_lock(std::move(catchup_lock))
   , _partition(std::move(partition))
   , _probe(_members, _static_members, _offsets)
   , _ctxlog(klog, *this)
@@ -1244,16 +1248,37 @@ void group::remove_pending_member(kafka::member_id member_id) {
 
 ss::future<> group::shutdown() {
     _auto_abort_timer.cancel();
+    vlog(
+      _ctxlog.trace,
+      "catchup_lock: canceled _auto_abort_timer (shutdown) of {}",
+      _partition->ntp());
     co_await _gate.close();
+    vlog(
+      _ctxlog.trace,
+      "catchup_lock: closed _gate (shutdown) of {}",
+      _partition->ntp());
     // cancel join timer
     _join_timer.cancel();
+    vlog(
+      _ctxlog.trace,
+      "catchup_lock: canceled _join_timer (shutdown) of {}",
+      _partition->ntp());
     // cancel pending members timers
     for (auto& [_, timer] : _pending_members) {
         timer.cancel();
+        vlog(
+          _ctxlog.trace,
+          "catchup_lock: canceled _pending_members (shutdown) of {}",
+          _partition->ntp());
     }
 
     for (auto& [member_id, member] : _members) {
         member->expire_timer().cancel();
+        vlog(
+          _ctxlog.trace,
+          "catchup_lock: canceled expire_timer of {} (shutdown) of {}",
+          member_id,
+          _partition->ntp());
         if (member->is_syncing()) {
             member->set_sync_response(sync_group_response(
               error_code::not_coordinator, member->assignment()));
@@ -1262,6 +1287,9 @@ ss::future<> group::shutdown() {
               member, make_join_error(member_id, error_code::not_coordinator));
         }
     }
+
+    vlog(
+      _ctxlog.trace, "catchup_lock: done (shutdown) of {}", _partition->ntp());
 }
 
 void group::remove_member(member_ptr member) {
@@ -3229,6 +3257,24 @@ void group::maybe_rearm_timer() {
 }
 
 ss::future<> group::do_abort_old_txes() {
+    if (!_catchup_lock->try_read_lock()) {
+        vlog(
+          _ctx_txlog.trace,
+          "catchup_lock: throttling (do_abort_old_txes) of {}",
+          _partition->ntp());
+        co_return;
+    }
+    _catchup_lock->read_unlock();
+
+    vlog(
+      _ctx_txlog.trace,
+      "catchup_lock: getting hold_read_lock (do_abort_old_txes) of {}",
+      _partition->ntp());
+    auto units = co_await _catchup_lock->hold_read_lock();
+    vlog(
+      _ctx_txlog.trace,
+      "catchup_lock: got hold_read_lock (do_abort_old_txes) of {}",
+      _partition->ntp());
     std::vector<model::producer_identity> pids;
     for (auto& [id, _] : _prepared_txs) {
         pids.push_back(id);
@@ -3259,6 +3305,12 @@ ss::future<> group::do_abort_old_txes() {
     }
 
     maybe_rearm_timer();
+
+    units.return_all();
+    vlog(
+      _ctx_txlog.trace,
+      "catchup_lock: released hold_read_lock (do_abort_old_txes) of {}",
+      _partition->ntp());
 }
 
 ss::future<> group::try_abort_old_tx(model::producer_identity pid) {
