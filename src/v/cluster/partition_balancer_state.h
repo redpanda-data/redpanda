@@ -69,6 +69,16 @@ public:
       const std::vector<model::broker_shard>& prev,
       const std::vector<model::broker_shard>& next);
 
+    void add_node_to_rebalance(model::node_id id) {
+        _nodes_to_rebalance.insert(id);
+    }
+
+    void remove_node_to_rebalance(model::node_id id) {
+        _nodes_to_rebalance.erase(id);
+    }
+
+    const auto& nodes_to_rebalance() const { return _nodes_to_rebalance; }
+
     ss::future<> apply_snapshot(const controller_snapshot&);
 
 private:
@@ -91,6 +101,7 @@ private:
     // revision increment to be paired with all updates
     // _ntps_with_broken_rack_constraint set. Relied upon by the iterator.
     model::revision_id _ntps_with_broken_rack_constraint_revision;
+    absl::flat_hash_set<model::node_id> _nodes_to_rebalance;
     probe _probe;
 };
 

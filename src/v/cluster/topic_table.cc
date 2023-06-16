@@ -1344,6 +1344,16 @@ const topic_table::underlying_t& topic_table::all_topics_metadata() const {
     return _topics;
 }
 
+void topic_table::check_topics_map_stable(model::revision_id start_rev) const {
+    if (_topics_map_revision != start_rev) {
+        throw std::runtime_error(fmt::format(
+          "topic table modified, aborting iteration "
+          "(start revision: {}, current revision: {})",
+          start_rev,
+          _topics_map_revision));
+    }
+}
+
 bool topic_table::contains(
   model::topic_namespace_view topic, model::partition_id pid) const {
     if (auto it = _topics.find(topic); it != _topics.end()) {

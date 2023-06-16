@@ -26,6 +26,8 @@
 
 namespace cluster {
 
+struct node_health_report;
+
 class partition_balancer_backend {
 public:
     static constexpr ss::shard_id shard = 0;
@@ -34,9 +36,10 @@ public:
       consensus_ptr raft0,
       ss::sharded<controller_stm>&,
       ss::sharded<partition_balancer_state>&,
-      ss::sharded<health_monitor_frontend>&,
+      ss::sharded<health_monitor_backend>&,
       ss::sharded<partition_allocator>&,
       ss::sharded<topics_frontend>&,
+      ss::sharded<members_frontend>&,
       config::binding<model::partition_autobalancing_mode>&& mode,
       config::binding<std::chrono::seconds>&& availability_timeout,
       config::binding<unsigned>&& max_disk_usage_percent,
@@ -65,6 +68,8 @@ public:
 
     partition_balancer_overview_reply overview() const;
 
+    ss::future<std::error_code> request_rebalance();
+
 private:
     void tick();
     ss::future<> do_tick();
@@ -74,6 +79,9 @@ private:
     void maybe_rearm_timer(bool now = false);
     void on_members_update(model::node_id, model::membership_state);
     void on_topic_table_update();
+    void on_health_monitor_update(
+      node_health_report const&,
+      std::optional<std::reference_wrapper<const node_health_report>>);
     size_t get_min_partition_size_threshold() const;
 
 private:
@@ -82,9 +90,10 @@ private:
 
     controller_stm& _controller_stm;
     partition_balancer_state& _state;
-    health_monitor_frontend& _health_monitor;
+    health_monitor_backend& _health_monitor;
     partition_allocator& _partition_allocator;
     topics_frontend& _topics_frontend;
+    members_frontend& _members_frontend;
 
     config::binding<model::partition_autobalancing_mode> _mode;
     config::binding<std::chrono::seconds> _availability_timeout;
@@ -99,17 +108,35 @@ private:
     config::binding<std::chrono::milliseconds> _node_status_interval;
     config::binding<size_t> _raft_learner_recovery_rate;
 
-    model::term_id _last_leader_term;
-    clock_t::time_point _last_tick_time;
-    partition_balancer_violations _last_violations;
-    partition_balancer_status _last_status;
-    size_t _last_tick_in_progress_updates = 0;
-
     mutex _lock{};
     ss::gate _gate;
     ss::timer<clock_t> _timer;
     notification_id_type _topic_table_updates;
     notification_id_type _member_updates;
+    notification_id_type _health_monitor_updates;
+
+    // Balancer runs in a series of ticks during a controller leadership term.
+    // While the term stays the same, we know that no other balancer instance
+    // runs concurrently with us, so the backend state from the previous tick
+    // remains valid. But if the term changes, this means that the backend state
+    // is obsolete and must be reset.
+    struct per_term_state {
+        explicit per_term_state(model::term_id term)
+          : id(term)
+          , term_start_time(clock_t::now()) {}
+
+        model::term_id id;
+        clock_t::time_point term_start_time;
+        clock_t::time_point last_tick_time;
+        partition_balancer_violations last_violations;
+        partition_balancer_status last_status
+          = partition_balancer_status::starting;
+        size_t last_tick_in_progress_updates = 0;
+
+        bool _ondemand_rebalance_requested = false;
+    };
+    std::optional<per_term_state> _cur_term;
+
     std::optional<ss::abort_source> _tick_in_progress;
 };
 

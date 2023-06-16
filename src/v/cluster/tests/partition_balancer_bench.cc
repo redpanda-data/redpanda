@@ -43,3 +43,39 @@ PERF_TEST_C(partition_balancer_planner_fixture, unavailable_nodes) {
       "unexpected reassignments size: {}",
       reassignments.size());
 }
+
+PERF_TEST_C(partition_balancer_planner_fixture, counts_rebalancing) {
+    static bool initialized = false;
+    if (!initialized) {
+        ss::thread_attributes thread_attr;
+        co_await ss::async(thread_attr, [this] {
+            allocator_register_nodes(3);
+            allocator_register_nodes(2);
+            // worst case: balanced partition distribution
+            create_topic(
+              "really_long_topic_name_to_force_sstring_allocations", 10000, 3);
+            // id doesn't matter
+            workers.state.local().add_node_to_rebalance(model::node_id{123});
+        });
+
+        initialized = true;
+    }
+
+    uint64_t local_partition_size = 10_KiB;
+    auto hr = create_health_report({}, {}, local_partition_size);
+
+    co_await populate_node_status_table();
+
+    auto planner = make_planner();
+
+    abort_source as;
+    perf_tests::start_measuring_time();
+    auto plan_data = co_await planner.plan_actions(hr, as);
+    perf_tests::stop_measuring_time();
+
+    const auto& reassignments = plan_data.reassignments;
+    vassert(
+      reassignments.size() == 0,
+      "unexpected reassignments size: {}",
+      reassignments.size());
+}

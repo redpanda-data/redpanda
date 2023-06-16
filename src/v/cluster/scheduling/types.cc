@@ -222,6 +222,43 @@ bool allocated_partition::is_original(model::node_id node) const {
            != _replicas.end();
 }
 
+errc allocated_partition::try_revert(const reallocation_step& step) {
+    if (!_original_node2shard || !_state) {
+        return errc::no_update_in_progress;
+    }
+
+    auto it = std::find(_replicas.begin(), _replicas.end(), step.current());
+    if (it == _replicas.end()) {
+        return errc::node_does_not_exists;
+    }
+
+    if (step.previous()) {
+        auto prev_it = std::find(
+          _replicas.begin(), _replicas.end(), *step.previous());
+        if (prev_it != _replicas.end()) {
+            return errc::invalid_request;
+        }
+        *it = *step.previous();
+    } else {
+        std::swap(*it, _replicas.back());
+        _replicas.pop_back();
+    }
+
+    _state->remove_final_count(step.current(), _domain);
+    if (!_original_node2shard->contains(step.current().node_id)) {
+        _state->remove_allocation(step.current(), _domain);
+    }
+
+    if (step.previous()) {
+        _state->add_final_count(*step.previous(), _domain);
+        if (!_original_node2shard->contains(step.previous()->node_id)) {
+            _state->add_allocation(*step.previous(), _domain);
+        }
+    }
+
+    return errc::success;
+}
+
 allocated_partition::~allocated_partition() {
     oncore_debug_verify(_oncore);
 

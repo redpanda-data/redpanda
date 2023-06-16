@@ -345,7 +345,7 @@ allocated_partition partition_allocator::make_allocated_partition(
     return allocated_partition{std::move(replicas), domain, *_state};
 }
 
-result<model::broker_shard> partition_allocator::reallocate_replica(
+result<reallocation_step> partition_allocator::reallocate_replica(
   allocated_partition& partition,
   model::node_id prev_node,
   allocation_constraints constraints) {
@@ -363,7 +363,7 @@ result<model::broker_shard> partition_allocator::reallocate_replica(
     return do_allocate_replica(partition, prev_node, effective_constraints);
 }
 
-result<model::broker_shard> partition_allocator::do_allocate_replica(
+result<reallocation_step> partition_allocator::do_allocate_replica(
   allocated_partition& partition,
   std::optional<model::node_id> prev_node,
   const allocation_constraints& effective_constraints) {
@@ -387,7 +387,12 @@ result<model::broker_shard> partition_allocator::do_allocate_replica(
     }
 
     revert.cancel();
-    return partition.add_replica(node.value(), prev);
+    auto new_replica = partition.add_replica(node.value(), prev);
+    std::optional<model::broker_shard> prev_replica;
+    if (prev) {
+        prev_replica = prev->bs;
+    }
+    return reallocation_step(new_replica, prev_replica);
 }
 
 void partition_allocator::add_allocations(

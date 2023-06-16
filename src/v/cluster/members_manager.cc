@@ -19,6 +19,7 @@
 #include "cluster/fwd.h"
 #include "cluster/logger.h"
 #include "cluster/members_table.h"
+#include "cluster/partition_balancer_state.h"
 #include "cluster/scheduling/partition_allocator.h"
 #include "cluster/types.h"
 #include "config/configuration.h"
@@ -57,6 +58,7 @@ members_manager::members_manager(
   ss::sharded<partition_allocator>& allocator,
   ss::sharded<storage::api>& storage,
   ss::sharded<drain_manager>& drain_manager,
+  ss::sharded<partition_balancer_state>& pb_state,
   ss::sharded<ss::abort_source>& as)
   : _seed_servers(config::node().seed_servers())
   , _self(make_self_broker(config::node()))
@@ -70,6 +72,7 @@ members_manager::members_manager(
   , _allocator(allocator)
   , _storage(storage)
   , _drain_manager(drain_manager)
+  , _pb_state(pb_state)
   , _as(as)
   , _rpc_tls_config(config::node().rpc_server_tls())
   , _update_queue(max_updates_queue_size)
@@ -386,6 +389,9 @@ members_manager::apply_update(model::record_batch b) {
                   _in_progress_updates.erase(it);
               }
           }
+
+          _pb_state.local().remove_node_to_rebalance(id);
+
           return _update_queue
             .push_eventually(node_update{
               .id = id,
@@ -520,6 +526,9 @@ ss::future<std::error_code> members_manager::do_apply_add_node(
                            >= _first_node_operation_command_offset,
     };
     _in_progress_updates[update.id] = update;
+
+    _pb_state.local().add_node_to_rebalance(update.id);
+
     co_await _update_queue.push_eventually(std::move(update));
 
     co_return errc::success;
@@ -740,13 +749,19 @@ ss::future<> members_manager::apply_snapshot(
                 updates.push_back(new_update);
             }
         }
+
+        if (update.type == node_update_type::added) {
+            _pb_state.local().add_node_to_rebalance(id);
+        }
     }
 
     for (auto old_it = _in_progress_updates.begin();
          old_it != _in_progress_updates.end();) {
         auto it_copy = old_it++;
-        if (!snap.in_progress_updates.contains(it_copy->first)) {
-            interrupt_previous_update(it_copy->first);
+        model::node_id node_id = it_copy->first;
+        if (!snap.in_progress_updates.contains(node_id)) {
+            interrupt_previous_update(node_id);
+            _pb_state.local().remove_node_to_rebalance(node_id);
             _in_progress_updates.erase(it_copy);
         }
     }

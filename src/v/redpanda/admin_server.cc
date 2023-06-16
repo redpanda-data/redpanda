@@ -3285,9 +3285,10 @@ admin_server::get_topic_partitions_handler(
 ss::future<ss::json::json_return_type>
 admin_server::trigger_on_demand_rebalance_handler(
   std::unique_ptr<ss::http::request> req) {
-    auto ec = co_await _controller->get_members_backend().invoke_on(
-      cluster::controller_stm_shard, [](cluster::members_backend& backend) {
-          return backend.request_rebalance();
+    auto ec = co_await _controller->get_partition_balancer().invoke_on(
+      cluster::controller_stm_shard,
+      [](cluster::partition_balancer_backend& pb) {
+          return pb.request_rebalance();
       });
 
     co_await throw_on_error(*req, ec, model::controller_ntp);
