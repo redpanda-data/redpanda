@@ -48,6 +48,7 @@ group::group(
   kafka::group_id id,
   group_state s,
   config::configuration& conf,
+  ss::lw_shared_ptr<ssx::rwlock> catchup_lock,
   ss::lw_shared_ptr<cluster::partition> partition,
   model::term_id term,
   ss::sharded<cluster::tx_gateway_frontend>& tx_frontend,
@@ -61,6 +62,7 @@ group::group(
   , _num_members_joining(0)
   , _new_member_added(false)
   , _conf(conf)
+  , _catchup_lock(std::move(catchup_lock))
   , _partition(std::move(partition))
   , _probe(_members, _static_members, _offsets)
   , _ctxlog(klog, *this)
@@ -83,6 +85,7 @@ group::group(
   kafka::group_id id,
   group_metadata_value& md,
   config::configuration& conf,
+  ss::lw_shared_ptr<ssx::rwlock> catchup_lock,
   ss::lw_shared_ptr<cluster::partition> partition,
   model::term_id term,
   ss::sharded<cluster::tx_gateway_frontend>& tx_frontend,
@@ -99,6 +102,7 @@ group::group(
   , _leader(md.leader)
   , _new_member_added(false)
   , _conf(conf)
+  , _catchup_lock(std::move(catchup_lock))
   , _partition(std::move(partition))
   , _probe(_members, _static_members, _offsets)
   , _ctxlog(klog, *this)
@@ -3164,6 +3168,11 @@ void group::maybe_rearm_timer() {
 }
 
 ss::future<> group::do_abort_old_txes() {
+    auto unit = _catchup_lock->attempt_read_lock();
+    if (!unit) {
+        co_return;
+    }
+
     std::vector<model::producer_identity> pids;
     for (auto& [id, _] : _prepared_txs) {
         pids.push_back(id);
