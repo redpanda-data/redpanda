@@ -744,9 +744,12 @@ class RpkTool:
         output = self._execute(cmd)
         return json.loads(output) if output_format == 'json' else output
 
-    def _run_topic(self, cmd, stdin=None, timeout=None):
+    def _run_topic(self, cmd, stdin=None, timeout=None, log_cmd=None):
         cmd = [self._rpk_binary(), "topic"] + self._kafka_conn_settings() + cmd
-        return self._execute(cmd, stdin=stdin, timeout=timeout)
+        return self._execute(cmd,
+                             stdin=stdin,
+                             timeout=timeout,
+                             log_cmd=log_cmd)
 
     def _run_group(self, cmd, stdin=None, timeout=None):
         cmd = [self._rpk_binary(), "group"] + self._kafka_conn_settings() + cmd
