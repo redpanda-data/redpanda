@@ -190,7 +190,7 @@ std::string_view error_code_to_str(error_code error) {
     case error_code::throttling_quota_exceeded:
         return "throttling_quota_exceeded";
     default:
-        std::terminate(); // make gcc happy
+        return "unknown_error_code";
     }
 }
 
