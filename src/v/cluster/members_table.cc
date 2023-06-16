@@ -301,7 +301,7 @@ void members_table::apply_snapshot(
         notify_member_updated(id, model::membership_state::removed);
     }
 
-    // notify for changes in broker state
+    // notify for changes in broker maintenance state
 
     auto maybe_notify = [&](const node_metadata& new_node) {
         model::node_id id = new_node.broker.id();
