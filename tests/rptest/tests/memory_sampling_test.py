@@ -38,7 +38,8 @@ class MemorySamplingTestTest(RedpandaTest):
         admin = Admin(self.redpanda)
         profile = admin.get_sampled_memory_profile()
 
-        assert len(profile) == 2
+        num_shards = self.redpanda.shards()[1] + 1
+        assert len(profile) == num_shards
         assert 'shard' in profile[0]
         assert 'allocation_sites' in profile[0]
         assert len(profile[0]['allocation_sites']) > 0
