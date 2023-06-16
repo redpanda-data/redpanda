@@ -66,7 +66,7 @@ SEASTAR_THREAD_TEST_CASE(test_no_allocs_in_oom_callback) {
     BOOST_REQUIRE_EQUAL(before.mallocs(), after.mallocs());
 
     // confirm an average allocation site fits into the oom writer line buffer
-    auto allocation_site_needle = fmt::format("{}", allocation_sites[0]);
+    auto allocation_site_needle = fmt::format("{}\n", allocation_sites[0]);
     BOOST_REQUIRE_NE(
       std::string_view(output_buffer.data(), output_buffer.size())
         .find(allocation_site_needle),
