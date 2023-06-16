@@ -584,11 +584,13 @@ class NodesDecommissioningTest(EndToEndTest):
         to_decommission = random.choice(self.redpanda.nodes)
         node_id = self.redpanda.node_id(to_decommission)
 
+        # throttle recovery
+        self._set_recovery_rate(100)
+
         survivor_node = self._not_decommissioned_node(node_id)
         self.logger.info(f"decommissioning node: {node_id}", )
         self._decommission(node_id)
 
-        self._set_recovery_rate(100)
         # wait for some partitions to start moving
         wait_until(lambda: self._partitions_moving(node=survivor_node),
                    timeout_sec=15,
