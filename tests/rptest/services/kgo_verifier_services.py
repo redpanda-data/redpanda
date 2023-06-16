@@ -460,7 +460,7 @@ class KgoVerifierSeqConsumer(KgoVerifierService):
             self.clean_node(node)
 
         loop = "--loop" if self._loop else ""
-        cmd = f"{TESTS_DIR}/kgo-verifier --brokers {self._redpanda.brokers()} --topic {self._topic} --produce_msgs 0 --rand_read_msgs 0 --seq_read=1 {loop} --client-name {self.who_am_i()}"
+        cmd = f"{TESTS_DIR}/kgo-verifier --trace --brokers {self._redpanda.brokers()} --topic {self._topic} --produce_msgs 0 --rand_read_msgs 0 --seq_read=1 {loop} --client-name {self.who_am_i()}"
         if self._max_msgs is not None:
             cmd += f" --seq_read_msgs {self._max_msgs}"
         if self._max_throughput_mb is not None:
