@@ -4,7 +4,6 @@ metadata:
   name: rpk-config-given-issuer
 data:
   redpanda.yaml: |
-    redpanda:
-      rpk:
-        tls:
-          truststore_file: /etc/tls/certs/ca.crt"
+    rpk:
+      tls:
+        truststore_file: /etc/tls/certs/ca.crt
