@@ -1038,19 +1038,9 @@ void archival_metadata_stm::apply_update_start_kafka_offset(kafka::offset so) {
     if (!_manifest->advance_start_kafka_offset(so)) {
         vlog(
           _logger.error,
-          "Can't truncate manifest up to kafka offset {}, offset out of range, "
-          "current start kafka offset: {}, start offset: {}, archive start "
-          "offset: {}",
+          "Can't apply override to kafka start offset {}, currently {}",
           so,
-          get_start_kafka_offset(),
-          get_start_offset(),
-          get_archive_start_offset());
-    } else {
-        vlog(
-          _logger.debug,
-          "Start kafka offset updated to {}, start offset updated to {}",
-          get_start_kafka_offset(),
-          get_start_offset());
+          manifest().get_start_kafka_offset_override());
     }
 }
 
