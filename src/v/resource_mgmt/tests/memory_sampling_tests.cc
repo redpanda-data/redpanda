@@ -134,6 +134,8 @@ SEASTAR_THREAD_TEST_CASE(test_low_watermark_logging) {
         auto buf = output_buf.str();
         BOOST_REQUIRE_EQUAL(buf.size(), old_size);
     }
+
+    sampling.stop().get();
 }
 
 #endif // SEASTAR_DEFAULT_ALLOCATOR

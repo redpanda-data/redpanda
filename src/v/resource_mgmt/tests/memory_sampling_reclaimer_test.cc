@@ -77,6 +77,9 @@ SEASTAR_THREAD_TEST_CASE(reclaim_notifies_memory_sampling) {
         auto view = std::string_view{buf};
         return view.find(needle) != std::string_view::npos;
     }).get(); // will throw if false at timeout
+
+    cache.stop().get();
+    memory_sampling_service.stop().get();
 }
 
 #endif // SEASTAR_DEFAULT_ALLOCATOR
