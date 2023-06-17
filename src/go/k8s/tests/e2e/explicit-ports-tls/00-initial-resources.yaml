@@ -4,7 +4,6 @@ metadata:
   name: explicit-port-tls-issuer
 spec:
   selfSigned: {}
-
 ---
 apiVersion: redpanda.vectorized.io/v1alpha1
 kind: Cluster
@@ -16,40 +15,40 @@ spec:
   replicas: 1
   resources:
     requests:
-      cpu: 100m
-      memory: 100Mi
+      cpu: 1
+      memory: 1Gi
     limits:
       cpu: 1
-      memory: 500Mi
+      memory: 1Gi
   configuration:
     rpcServer:
       port: 33145
     adminApi:
-    - port: 9644
+      - port: 9644
     kafkaApi:
-    - port: 9092
-    - port: 30092
-      external:
-        enabled: true
-        subdomain: cluster.com
-        endpointTemplate: "kafka-{{ .Index }}"
-      tls:
-        enabled: true
-        issuerRef:
-          kind: Issuer
-          name: explicit-port-tls-issuer
+      - port: 9092
+      - port: 30092
+        external:
+          enabled: true
+          subdomain: cluster.com
+          endpointTemplate: "kafka-{{ .Index }}"
+        tls:
+          enabled: true
+          issuerRef:
+            kind: Issuer
+            name: explicit-port-tls-issuer
     pandaproxyApi:
-     - port: 8082
-     - port: 30088
-       external:
-         enabled: true
-         subdomain: cluster.com
-         endpointTemplate: "panda-proxy-{{ .Index }}"
-       tls:
-         enabled: true
-         issuerRef:
-           kind: Issuer
-           name: explicit-port-tls-issuer
+      - port: 8082
+      - port: 30088
+        external:
+          enabled: true
+          subdomain: cluster.com
+          endpointTemplate: "panda-proxy-{{ .Index }}"
+        tls:
+          enabled: true
+          issuerRef:
+            kind: Issuer
+            name: explicit-port-tls-issuer
     schemaRegistry:
       port: 30087
       external:
@@ -63,3 +62,7 @@ spec:
           kind: Issuer
           name: explicit-port-tls-issuer
     developerMode: true
+    additionalCommandlineArguments:
+      dump-memory-diagnostics-on-alloc-failure-kind: all
+      abort-on-seastar-bad-alloc: ''
+      reserve-memory: 100M

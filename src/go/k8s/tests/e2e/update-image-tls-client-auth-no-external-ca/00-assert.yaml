@@ -4,75 +4,62 @@ metadata:
   name: up-img-admin-mtls
 status:
   readyReplicas: 3
-
 ---
-
 apiVersion: cert-manager.io/v1
 kind: Issuer
 metadata:
-  name:  up-img-admin-mtls-admin-selfsigned-issuer
+  name: up-img-admin-mtls-admin-selfsigned-issuer
 status:
   conditions:
     - reason: IsReady
       status: "True"
       type: Ready
-
 ---
-
 apiVersion: cert-manager.io/v1
 kind: Issuer
 metadata:
-  name:  up-img-admin-mtls-admin-root-issuer
+  name: up-img-admin-mtls-admin-root-issuer
 status:
   conditions:
     - reason: KeyPairVerified
       status: "True"
       type: Ready
 ---
-
 apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:
-  name:  up-img-admin-mtls-admin-root-certificate
+  name: up-img-admin-mtls-admin-root-certificate
 status:
   conditions:
     - reason: Ready
       status: "True"
       type: Ready
-
 ---
-
 apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:
-  name:  up-img-admin-mtls-admin-api-node
+  name: up-img-admin-mtls-admin-api-node
 status:
   conditions:
     - reason: Ready
       status: "True"
       type: Ready
-
 ---
-
 apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:
-  name:  up-img-admin-mtls-admin-api-client
+  name: up-img-admin-mtls-admin-api-client
 status:
   conditions:
     - reason: Ready
       status: "True"
       type: Ready
-
 ---
-
 apiVersion: kuttl.dev/v1beta1
 kind: TestAssert
 collectors:
   - command: ../../../hack/get-redpanda-info.sh
-
 ---
-
 apiVersion: redpanda.vectorized.io/v1alpha1
 kind: Cluster
 metadata:
@@ -84,5 +71,5 @@ status:
   upgrading: false
   restarting: false
   conditions:
-  - type: ClusterConfigured
-    status: "True"
+    - type: ClusterConfigured
+      status: "True"

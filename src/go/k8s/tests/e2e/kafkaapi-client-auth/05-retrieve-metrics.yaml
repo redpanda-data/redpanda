@@ -28,11 +28,8 @@ spec:
             - -ex
           args:
             - >
-              curl -vv --silent
-              --cacert /etc/tls/certs/admin/ca/ca.crt
-              --cert /etc/tls/certs/admin/tls.crt 
-              --key /etc/tls/certs/admin/tls.key
-              https://kafkaapi-client-auth-0.kafkaapi-client-auth.$POD_NAMESPACE.svc.cluster.local:9644/metrics
+              curl -vv --silent --cacert /etc/tls/certs/admin/ca/ca.crt --cert /etc/tls/certs/admin/tls.crt  --key
+              /etc/tls/certs/admin/tls.key https://kafkaapi-client-auth-0.kafkaapi-client-auth.$POD_NAMESPACE.svc.cluster.local:9644/metrics
           volumeMounts:
             - mountPath: /etc/tls/certs/admin
               name: tlsadmin

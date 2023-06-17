@@ -8,24 +8,28 @@ spec:
   replicas: 2
   resources:
     requests:
-      cpu: 100m
-      memory: 100Mi
+      cpu: 1
+      memory: 1Gi
     limits:
       cpu: 1
-      memory: 500Mi
+      memory: 1Gi
   configuration:
     rpcServer:
       port: 33145
     kafkaApi:
-    - port: 9092
+      - port: 9092
     adminApi:
-    - port: 9644
-      tls:
-        enabled: true
+      - port: 9644
+        tls:
+          enabled: true
     pandaproxyApi:
-     - port: 8082
-       tls:
-         enabled: true
+      - port: 8082
+        tls:
+          enabled: true
     developerMode: true
+    additionalCommandlineArguments:
+      dump-memory-diagnostics-on-alloc-failure-kind: all
+      abort-on-seastar-bad-alloc: ''
+      reserve-memory: 100M
   additionalConfiguration:
     redpanda.segment_appender_flush_timeout_ms: "1003"

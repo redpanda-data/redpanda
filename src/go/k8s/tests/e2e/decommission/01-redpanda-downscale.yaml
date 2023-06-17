@@ -1,6 +1,6 @@
 apiVersion: redpanda.vectorized.io/v1alpha1
 kind: Cluster
 metadata:
-  name: decommissioning
+  name: decommission
 spec:
   replicas: 2

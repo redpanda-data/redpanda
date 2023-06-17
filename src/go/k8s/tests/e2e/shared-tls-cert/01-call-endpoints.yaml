@@ -24,10 +24,12 @@ spec:
             - -ex
           args:
             - >
-              echo "Checking that the shared certificate is used for both pandaproxy and schema registry" && 
-              sr_res=$(curl --silent -o /dev/null -w "%{http_code}" -k -i -v --cacert /etc/tls/certs/shared/ca.crt https://shared-tls-cert-0.shared-tls-cert.$POD_NAMESPACE.svc.cluster.local:8081) &&
-              pp_res=$(curl --silent -o /dev/null -w "%{http_code}" -k -i -v --cacert /etc/tls/certs/shared/ca.crt https://shared-tls-cert-0.shared-tls-cert.$POD_NAMESPACE.svc.cluster.local:8080) &&
-              if [[ "$sr_res" != "404" ]] || [[ "$pp_res" != "404" ]]; then
+              echo "Checking that the shared certificate is used for both pandaproxy
+              and schema registry" &&  sr_res=$(curl --silent -o /dev/null -w "%{http_code}"
+              -k -i -v --cacert /etc/tls/certs/shared/ca.crt https://shared-tls-cert-0.shared-tls-cert.$POD_NAMESPACE.svc.cluster.local:8081)
+              && pp_res=$(curl --silent -o /dev/null -w "%{http_code}" -k -i -v --cacert
+              /etc/tls/certs/shared/ca.crt https://shared-tls-cert-0.shared-tls-cert.$POD_NAMESPACE.svc.cluster.local:8080)
+              && if [[ "$sr_res" != "404" ]] || [[ "$pp_res" != "404" ]]; then
                 exit 1;
               fi
           volumeMounts:

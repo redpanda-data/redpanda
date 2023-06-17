@@ -9,20 +9,22 @@ spec:
   resources:
     requests:
       cpu: 1
-      memory: 500Mi
+      memory: 1Gi
     limits:
       cpu: 1
-      memory: 500Mi
+      memory: 1Gi
   configuration:
     additionalCommandlineArguments:
       default-log-level: trace
-      # logger-log-level: "exception=warn:io=warn"
+      dump-memory-diagnostics-on-alloc-failure-kind: all
+      abort-on-seastar-bad-alloc: ''
+      reserve-memory: 100M
     rpcServer:
       port: 33145
     kafkaApi:
-    - port: 9092
+      - port: 9092
     adminApi:
-    - port: 9644
+      - port: 9644
     schemaRegistry:
       port: 8081
       external: {}
@@ -32,5 +34,5 @@ spec:
         clientCACertRef:
           kind: Secret
           name: sr-ca-cert
-          apiGroup: ""
+          apiGroup: ''
     developerMode: true

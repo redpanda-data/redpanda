@@ -5,9 +5,7 @@ metadata:
 status:
   replicas: 1
   restarting: false
-
 ---
-
 apiVersion: kuttl.dev/v1beta1
 kind: TestAssert
 collectors:

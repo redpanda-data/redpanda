@@ -27,7 +27,7 @@ spec:
             - -c
             - -ex
           args:
-            - | 
+            - |
               curl -s -v https://proxy-tls-client-auth-0.proxy-tls-client-auth.$POD_NAMESPACE.svc.cluster.local:8082/topics/test/partitions/0/records?offset=0\&timeout=1000\&max_bytes=100000 \
               -H "Accept: application/vnd.kafka.json.v2+json" \
               --cacert /etc/tls/certs/pandaproxy/ca/ca.crt \

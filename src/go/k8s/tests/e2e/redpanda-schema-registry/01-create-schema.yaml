@@ -15,7 +15,7 @@ spec:
             - -X
             - POST
             - -H
-            - "Content-Type: application/vnd.schemaregistry.v1+json"
+            - 'Content-Type: application/vnd.schemaregistry.v1+json'
             - --data
             - '{"schema": "{\"type\": \"string\"}" }'
             - http://schema-registry-cluster:8081/subjects/Kafka-value/versions

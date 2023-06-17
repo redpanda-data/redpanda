@@ -5,9 +5,7 @@ metadata:
 status:
   readyReplicas: 1
   observedGeneration: 2
-
 ---
-
 apiVersion: kuttl.dev/v1beta1
 kind: TestAssert
 collectors:

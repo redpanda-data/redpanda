@@ -14,9 +14,7 @@ spec:
     image: redpandadata/console:v2.2.4
   connect:
     enabled: false
-
 ---
-
 apiVersion: v1
 data:
   password: a2Rhb3cyM2tqYWRhOWFrczI=
@@ -24,9 +22,7 @@ data:
 kind: Secret
 metadata:
   name: cluster-superusers-prefix-superuser
-
 ---
-
 apiVersion: batch/v1
 kind: Job
 metadata:
@@ -48,9 +44,8 @@ spec:
             - -ex
           args:
             - >
-              curl -vv -X POST
-              --data '{"username": "sd23Kj2odi9", "password": "kdaow23kjada9aks2", "algorithm": "SCRAM-SHA-256"}'
-              http://cluster-superusers-prefix-0.cluster-superusers-prefix.$POD_NAMESPACE.svc.cluster.local:9644/v1/security/users
+              curl -vv -X POST --data '{"username": "sd23Kj2odi9", "password": "kdaow23kjada9aks2",
+              "algorithm": "SCRAM-SHA-256"}' http://cluster-superusers-prefix-0.cluster-superusers-prefix.$POD_NAMESPACE.svc.cluster.local:9644/v1/security/users
       restartPolicy: Never
   backoffLimit: 6
   parallelism: 1

@@ -25,7 +25,8 @@ spec:
             - /bin/bash
             - -c
           args:
-            - rpk topic create test --brokers create-topic-given-issuer-0.create-topic-given-issuer.$POD_NAMESPACE.svc.cluster.local:9092 -v
+            - rpk topic create test --brokers create-topic-given-issuer-0.create-topic-given-issuer.$POD_NAMESPACE.svc.cluster.local:9092
+              -v
           volumeMounts:
             - mountPath: /etc/tls/certs
               name: tlscert

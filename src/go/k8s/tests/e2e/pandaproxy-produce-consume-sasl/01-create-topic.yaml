@@ -28,12 +28,17 @@ spec:
             - -c
             - -ex
           args:
-            - |
-              rpk -v topic create test \
+            - 'rpk -v topic create test \
+
               --user $SCRAM_USERNAME \
+
               --password $SCRAM_PASSWORD \
+
               --sasl-mechanism SCRAM-SHA-256 \
+
               --brokers proxy-sasl-0.proxy-sasl.$POD_NAMESPACE.svc.cluster.local:9092
+
+              '
       restartPolicy: Never
   backoffLimit: 6
   parallelism: 1

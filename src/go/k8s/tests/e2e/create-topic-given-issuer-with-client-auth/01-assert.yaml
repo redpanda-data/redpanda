@@ -10,9 +10,7 @@ status:
   conditions:
     - type: ClusterConfigured
       status: "True"
-
 ---
-
 apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:
@@ -22,9 +20,7 @@ status:
     - reason: Ready
       status: "True"
       type: Ready
-
 ---
-
 apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:
@@ -34,9 +30,7 @@ status:
     - reason: Ready
       status: "True"
       type: Ready
-
 ---
-
 apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:
@@ -46,16 +40,12 @@ status:
     - reason: Ready
       status: "True"
       type: Ready
-
-
 ---
-
 apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:
   name: create-topic-with-client-auth-schema-registry-client
 spec:
-  # Always issued by internal issuer for mTLS certs
   issuerRef:
     name: create-topic-with-client-auth-schema-registry-root-issuer
 status:
@@ -63,15 +53,12 @@ status:
     - reason: Ready
       status: "True"
       type: Ready
-
 ---
-
 apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:
   name: create-topic-with-client-auth-schema-registry-node
 spec:
-  # Issued by the issuer passed to the CR
   issuerRef:
     kind: ClusterIssuer
     name: cluster-tls-root-issuer
@@ -80,9 +67,7 @@ status:
     - reason: Ready
       status: "True"
       type: Ready
-
 ---
-
 apiVersion: kuttl.dev/v1beta1
 kind: TestAssert
 collectors:

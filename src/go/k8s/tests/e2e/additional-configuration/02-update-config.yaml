@@ -6,5 +6,5 @@ spec:
   additionalConfiguration:
     redpanda.enable_idempotence: "true"
     redpanda.default_topic_partitions: "3"
-    pandaproxy_client.retries: "11" # this is the change
+    pandaproxy_client.retries: "11"
     schema_registry.schema_registry_api: "[{'name':'external','address':'0.0.0.0','port':8081}]"

@@ -8,6 +8,7 @@ require (
 	github.com/cert-manager/cert-manager v1.11.0
 	github.com/cisco-open/k8s-objectmatcher v1.9.0
 	github.com/cloudhut/common v0.7.0
+	github.com/docker/distribution v2.8.1+incompatible
 	github.com/fluxcd/helm-controller v0.30.0
 	github.com/fluxcd/helm-controller/api v0.30.0
 	github.com/fluxcd/pkg/apis/meta v0.19.1
@@ -123,7 +124,6 @@ require (
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/dimchansky/utfbom v1.1.1 // indirect
 	github.com/docker/cli v23.0.1+incompatible // indirect
-	github.com/docker/distribution v2.8.1+incompatible // indirect
 	github.com/docker/docker v23.0.0+incompatible // indirect
 	github.com/docker/docker-credential-helpers v0.7.0 // indirect
 	github.com/docker/go-connections v0.4.0 // indirect

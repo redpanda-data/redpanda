@@ -23,7 +23,8 @@ spec:
             - -c
             - -ex
           args:
-            - curl https://cluster-admin-api-tls-0.cluster-admin-api-tls.$POD_NAMESPACE.svc.cluster.local:9644/metrics -v --cacert /etc/tls/certs/admin/ca.crt
+            - curl https://cluster-admin-api-tls-0.cluster-admin-api-tls.$POD_NAMESPACE.svc.cluster.local:9644/metrics
+              -v --cacert /etc/tls/certs/admin/ca.crt
           volumeMounts:
             - mountPath: /etc/tls/certs/admin
               name: tlsadminca

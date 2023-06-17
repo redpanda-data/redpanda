@@ -8,26 +8,26 @@ spec:
   replicas: 1
   resources:
     requests:
-      cpu: 100m
-      memory: 100Mi
+      cpu: 1
+      memory: 1Gi
     limits:
       cpu: 1
-      memory: 100Mi
+      memory: 1Gi
   configuration:
     rpcServer:
       port: 33145
     kafkaApi:
-    - port: 9092
-      tls:
-        enabled: true
+      - port: 9092
+        tls:
+          enabled: true
     adminApi:
-    - port: 9644
+      - port: 9644
     pandaproxyApi:
-    - port: 8080
-      tls:
-        enabled: true
-        nodeSecretRef:
-          name: shared-tls-cert-redpanda
+      - port: 8080
+        tls:
+          enabled: true
+          nodeSecretRef:
+            name: shared-tls-cert-redpanda
     schemaRegistry:
       port: 8081
       tls:
@@ -35,3 +35,7 @@ spec:
         nodeSecretRef:
           name: shared-tls-cert-redpanda
     developerMode: true
+    additionalCommandlineArguments:
+      dump-memory-diagnostics-on-alloc-failure-kind: all
+      abort-on-seastar-bad-alloc: ''
+      reserve-memory: 100M

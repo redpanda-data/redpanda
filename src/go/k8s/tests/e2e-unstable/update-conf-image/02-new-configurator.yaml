@@ -1,4 +1,5 @@
 apiVersion: kuttl.dev/v1beta1
 kind: TestStep
 commands:
-- command: "sh -c 'kustomize build ../../../config/e2e-tests | kubectl apply -f -'"
+  - command: "sh -c 'kustomize build ../../../config/e2e-tests | kubectl apply -f\
+      \ -'"

@@ -18,7 +18,8 @@ spec:
             - -c
             - -ex
           args:
-            - curl http://upd-schema-registry-mtls-console.$POD_NAMESPACE.svc.cluster.local:8080/admin/health -v
+            - curl http://upd-schema-registry-mtls-console.$POD_NAMESPACE.svc.cluster.local:8080/admin/health
+              -v
       restartPolicy: Never
   backoffLimit: 20
   parallelism: 1

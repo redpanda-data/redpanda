@@ -4,7 +4,6 @@ metadata:
   name: rpk-config-kafka-mtls
 data:
   redpanda.yaml: |
-    redpanda:
     rpk:
       tls:
         key_file: /etc/tls/certs/tls.key

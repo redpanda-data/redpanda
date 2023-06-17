@@ -26,7 +26,7 @@ spec:
             - -X
             - DELETE
             - -u
-            - "$SCRAM_USERNAME:$SCRAM_PASSWORD"
+            - $SCRAM_USERNAME:$SCRAM_PASSWORD
             - http://schema-registry-sasl-cluster:8081/subjects/Kafka-value/versions/1
       restartPolicy: Never
   backoffLimit: 6

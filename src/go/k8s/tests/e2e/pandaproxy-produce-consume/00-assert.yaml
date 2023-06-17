@@ -4,9 +4,7 @@ metadata:
   name: proxy-test
 status:
   replicas: 1
-
 ---
-
 apiVersion: v1
 kind: Service
 metadata:
@@ -27,9 +25,7 @@ spec:
       protocol: TCP
       targetPort: 8082
   type: ClusterIP
-
 ---
-
 apiVersion: kuttl.dev/v1beta1
 kind: TestAssert
 collectors:

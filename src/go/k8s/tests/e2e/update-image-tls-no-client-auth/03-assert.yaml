@@ -4,55 +4,45 @@ metadata:
   name: up-img-admin-tls
 status:
   readyReplicas: 3
-
 ---
-
 apiVersion: v1
 kind: Pod
 metadata:
   name: up-img-admin-tls-0
 spec:
   containers:
-  - name: redpanda
-    image: "vectorized/redpanda:v22.3.13"
+    - name: redpanda
+      image: "vectorized/redpanda:v22.3.13"
 status:
   phase: "Running"
-
 ---
-
 apiVersion: v1
 kind: Pod
 metadata:
   name: up-img-admin-tls-1
 spec:
   containers:
-  - name: redpanda
-    image: "vectorized/redpanda:v22.3.13"
+    - name: redpanda
+      image: "vectorized/redpanda:v22.3.13"
 status:
   phase: "Running"
-
 ---
-
 apiVersion: v1
 kind: Pod
 metadata:
   name: up-img-admin-tls-2
 spec:
   containers:
-  - name: redpanda
-    image: "vectorized/redpanda:v22.3.13"
+    - name: redpanda
+      image: "vectorized/redpanda:v22.3.13"
 status:
   phase: "Running"
-
 ---
-
 apiVersion: kuttl.dev/v1beta1
 kind: TestAssert
 collectors:
   - command: ../../../hack/get-redpanda-info.sh
-
 ---
-
 apiVersion: redpanda.vectorized.io/v1alpha1
 kind: Cluster
 metadata:
@@ -64,5 +54,5 @@ status:
   upgrading: false
   restarting: false
   conditions:
-  - type: ClusterConfigured
-    status: "True"
+    - type: ClusterConfigured
+      status: "True"

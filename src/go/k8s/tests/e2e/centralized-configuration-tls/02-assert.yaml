@@ -11,9 +11,7 @@ status:
           message: |
             1003
   phase: Succeeded
-
 ---
-
 apiVersion: kuttl.dev/v1beta1
 kind: TestAssert
 collectors:

@@ -8,9 +8,8 @@ status:
   upgrading: false
   restarting: false
   conditions:
-  - type: ClusterConfigured
-    status: "True"
-
+    - type: ClusterConfigured
+      status: "True"
 ---
 apiVersion: kuttl.dev/v1beta1
 kind: TestAssert

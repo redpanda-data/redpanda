@@ -8,27 +8,31 @@ spec:
   replicas: 1
   resources:
     requests:
-      cpu: 100m
-      memory: 100Mi
+      cpu: 1
+      memory: 1Gi
     limits:
       cpu: 1
-      memory: 100Mi
+      memory: 1Gi
   configuration:
     rpcServer:
       port: 33145
     kafkaApi:
-    - port: 9092
-    - external:
-        enabled: true
-        subdomain: "test.subdomain.com"
+      - port: 9092
+      - external:
+          enabled: true
+          subdomain: "test.subdomain.com"
     adminApi:
-    - port: 9644
-    - external:
-        enabled: true
-        subdomain: "test.subdomain.com"
+      - port: 9644
+      - external:
+          enabled: true
+          subdomain: "test.subdomain.com"
     pandaproxyApi:
-    - port: 8082
-    - external:
-        enabled: true
-        subdomain: "test.subdomain.com"
+      - port: 8082
+      - external:
+          enabled: true
+          subdomain: "test.subdomain.com"
     developerMode: true
+    additionalCommandlineArguments:
+      dump-memory-diagnostics-on-alloc-failure-kind: all
+      abort-on-seastar-bad-alloc: ''
+      reserve-memory: 100M

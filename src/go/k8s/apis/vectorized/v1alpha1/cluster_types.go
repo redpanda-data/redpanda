@@ -1321,3 +1321,11 @@ func (r *Cluster) IsSASLOnInternalEnabled() bool {
 	return r != nil && r.Spec.KafkaEnableAuthorization != nil && *r.Spec.KafkaEnableAuthorization ||
 		r.Spec.EnableSASL
 }
+
+func (r *Cluster) GetDecommissionBrokerID() *int32 {
+	return r.Status.DecommissioningNode
+}
+
+func (r *Cluster) SetDecommissionBrokerID(id *int32) {
+	r.Status.DecommissioningNode = id
+}

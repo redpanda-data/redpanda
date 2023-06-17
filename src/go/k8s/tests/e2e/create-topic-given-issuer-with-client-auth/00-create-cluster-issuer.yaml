@@ -1,23 +1,18 @@
 apiVersion: cert-manager.io/v1
 kind: Issuer
 metadata:
-  name: cluster-tls-selfsigned-issuer 
+  name: cluster-tls-selfsigned-issuer
   namespace: cert-manager
 spec:
   selfSigned: {}
-
 ---
-
 apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:
   name: cluster-tls-root-certificate
-  namespace: cert-manager # ns allows us to generate ClusterIssuer
+  namespace: cert-manager
 spec:
   isCA: true
-  # Needed because certs signed by this CA get the `issuer` field filed based on this.
-  # If issuer field is empty, curl will complain with `SSL: couldn't get X509-issuer name`
-  # To verify issuer of a cert use: `openssl x509 -noout -issuer`
   subject:
     organizations:
       - vectorized-test.io
@@ -26,10 +21,8 @@ spec:
   issuerRef:
     kind: Issuer
     name: cluster-tls-selfsigned-issuer
-  secretName: cluster-tls-root-certificate 
-
+  secretName: cluster-tls-root-certificate
 ---
-
 apiVersion: cert-manager.io/v1
 kind: ClusterIssuer
 metadata:

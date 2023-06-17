@@ -4,9 +4,7 @@ metadata:
   name: update-img-external-client-ca
 status:
   readyReplicas: 1
-
 ---
-
 apiVersion: cert-manager.io/v1
 kind: Issuer
 metadata:
@@ -16,9 +14,7 @@ status:
     - reason: IsReady
       status: "True"
       type: Ready
-
 ---
-
 apiVersion: cert-manager.io/v1
 kind: Issuer
 metadata:
@@ -28,9 +24,7 @@ status:
     - reason: KeyPairVerified
       status: "True"
       type: Ready
-
 ---
-
 apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:
@@ -40,9 +34,7 @@ status:
     - reason: Ready
       status: "True"
       type: Ready
-
 ---
-
 apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:
@@ -52,9 +44,7 @@ status:
     - reason: Ready
       status: "True"
       type: Ready
-
 ---
-
 apiVersion: cert-manager.io/v1
 kind: Issuer
 metadata:
@@ -64,9 +54,7 @@ status:
     - reason: IsReady
       status: "True"
       type: Ready
-
 ---
-
 apiVersion: cert-manager.io/v1
 kind: Issuer
 metadata:
@@ -76,9 +64,7 @@ status:
     - reason: KeyPairVerified
       status: "True"
       type: Ready
-
 ---
-
 apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:
@@ -88,9 +74,7 @@ status:
     - reason: Ready
       status: "True"
       type: Ready
-
 ---
-
 apiVersion: redpanda.vectorized.io/v1alpha1
 kind: Cluster
 metadata:
@@ -102,14 +86,12 @@ status:
   upgrading: false
   restarting: false
   conditions:
-  - type: ClusterConfigured
-    status: "True"
-
+    - type: ClusterConfigured
+      status: "True"
 ---
-
 apiVersion: kuttl.dev/v1beta1
 kind: TestAssert
 collectors:
-- type: pod
-  selector: app.kubernetes.io/name=redpanda
-  tail: -1
+  - type: pod
+    selector: app.kubernetes.io/name=redpanda
+    tail: -1

@@ -20,9 +20,9 @@ spec:
           args:
             - >
               url=http://console-admin-api.$POD_NAMESPACE.svc.cluster.local:8080/api/cluster
-              res=$(curl --silent -L $url | grep -o '\"kafkaVersion\":[^,}]*' | grep -o '[^:]*$') &&
-              echo $res > /dev/termination-log &&
-              if [[ "$res" != '"Redpanda v'* ]]; then
+              res=$(curl --silent -L $url | grep -o '\"kafkaVersion\":[^,}]*' | grep
+              -o '[^:]*$') && echo $res > /dev/termination-log && if [[ "$res" !=
+              '"Redpanda v'* ]]; then
                 exit 1;
               fi
       restartPolicy: Never

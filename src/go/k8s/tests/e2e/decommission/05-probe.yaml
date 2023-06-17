@@ -1,7 +1,7 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: wait-for-3-brokers
+  name: get-broker-count-again
 spec:
   backoffLimit: 10
   template:
@@ -9,7 +9,7 @@ spec:
       activeDeadlineSeconds: 90
       containers:
         - name: curl
-          image: curlimages/curl:latest
+          image: apteno/alpine-jq:latest
           env:
             - name: NAMESPACE
               valueFrom:
@@ -20,11 +20,11 @@ spec:
             - -c
             - -ex
           args:
-            - >
-              url=http://decommissioning-0.decommissioning.$NAMESPACE.svc.cluster.local:9644/v1/brokers
-              res=$(curl --silent -L $url | tr '{' '\n' | grep node_id | wc -l) &&
-              echo $res > /dev/termination-log &&
-              if [[ "$res" != "3" ]]; then
+            - |
+              url=http://decommission-0.decommission.$NAMESPACE.svc.cluster.local:9644/v1/brokers
+              res=$(curl --silent -L $url | jq '. | length')
+
+              if [[ "$res" != "2" ]]; then
                 exit 1;
               fi
       restartPolicy: Never

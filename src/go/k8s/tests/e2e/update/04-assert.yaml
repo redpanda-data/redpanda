@@ -14,9 +14,7 @@ spec:
       protocol: TCP
       targetPort: 9093
   type: ClusterIP
-
 ---
-
 apiVersion: redpanda.vectorized.io/v1alpha1
 kind: Cluster
 metadata:
@@ -30,9 +28,7 @@ status:
   conditions:
     - type: ClusterConfigured
       status: "True"
-
 ---
-
 apiVersion: kuttl.dev/v1beta1
 kind: TestAssert
 collectors:

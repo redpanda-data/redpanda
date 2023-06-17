@@ -9,7 +9,6 @@ spec:
         - name: tlscertkey
           secret:
             defaultMode: 420
-            # The cert issued by the updated CA at Step 05.
             secretName: sr-client-cert-key1
         - name: tlscacert
           secret:
@@ -28,12 +27,8 @@ spec:
             - -c
           args:
             - >
-              curl -vv
-              --cacert /etc/tls/certs/schema-registry/ca/ca.crt
-              --cert /etc/tls/certs/schema-registry/tls.crt
-              --key /etc/tls/certs/schema-registry/tls.key
-              -X GET
-              https://sr-external-ca-mtls-cluster.$POD_NAMESPACE.svc.cluster.local.:8081/subjects/Kafka-value/versions/1
+              curl -vv --cacert /etc/tls/certs/schema-registry/ca/ca.crt --cert /etc/tls/certs/schema-registry/tls.crt
+              --key /etc/tls/certs/schema-registry/tls.key -X GET https://sr-external-ca-mtls-cluster.$POD_NAMESPACE.svc.cluster.local.:8081/subjects/Kafka-value/versions/1
           volumeMounts:
             - mountPath: /etc/tls/certs/schema-registry
               name: tlscertkey
@@ -43,7 +38,6 @@ spec:
   backoffLimit: 20
   parallelism: 1
   completions: 1
-
 ---
 apiVersion: kuttl.dev/v1beta1
 kind: TestStep

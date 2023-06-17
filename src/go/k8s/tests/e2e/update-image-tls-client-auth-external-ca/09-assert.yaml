@@ -7,12 +7,10 @@ status:
     - status: "True"
       type: Failed
   failed: 3
-
 ---
-
 apiVersion: kuttl.dev/v1beta1
 kind: TestAssert
 collectors:
-- type: pod
-  selector: app.kubernetes.io/name=redpanda
-  tail: -1
+  - type: pod
+    selector: app.kubernetes.io/name=redpanda
+    tail: -1

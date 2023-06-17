@@ -8,16 +8,20 @@ spec:
   replicas: 1
   resources:
     requests:
-      cpu: 100m
-      memory: 100M
+      cpu: 1
+      memory: 1Gi
     limits:
       cpu: 1
-      memory: 100M
+      memory: 1Gi
   configuration:
     rpcServer:
       port: 33145
     kafkaApi:
-    - port: 9092
+      - port: 9092
     adminApi:
-    - port: 9644
+      - port: 9644
     developerMode: true
+    additionalCommandlineArguments:
+      dump-memory-diagnostics-on-alloc-failure-kind: all
+      abort-on-seastar-bad-alloc: ''
+      reserve-memory: 100M

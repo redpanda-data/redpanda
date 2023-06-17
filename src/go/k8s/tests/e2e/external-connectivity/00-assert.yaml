@@ -28,11 +28,11 @@ metadata:
   name: external-connectivity-external
 spec:
   ports:
-  - name: kafka-external
-    port: 30001
-    protocol: TCP
-    targetPort: 30001
-    nodePort: 30001
+    - name: kafka-external
+      port: 30001
+      protocol: TCP
+      targetPort: 30001
+      nodePort: 30001
   type: NodePort
 ---
 apiVersion: cert-manager.io/v1
@@ -71,16 +71,16 @@ metadata:
   name: external-connectivity-redpanda
 spec:
   dnsNames:
-  - "test.subdomain.com"
-  - "*.test.subdomain.com"
+    - "test.subdomain.com"
+    - "*.test.subdomain.com"
   issuerRef:
     name: external-connectivity-kafka-root-issuer
   secretName: external-connectivity-redpanda
 status:
   conditions:
-  - reason: Ready
-    status: "True"
-    type: Ready
+    - reason: Ready
+      status: "True"
+      type: Ready
 ---
 apiVersion: kuttl.dev/v1beta1
 kind: TestAssert

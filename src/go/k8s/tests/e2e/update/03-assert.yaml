@@ -6,26 +6,24 @@ spec:
   template:
     spec:
       volumes:
-      - configMap:
-          defaultMode: 420
-          name: update-cluster-base
-        name: configmap-dir
-      - emptyDir: {}
-        name: config-dir
-      - secret:
-          defaultMode: 365
-          secretName: update-cluster-lifecycle
-        name: hook-scripts-dir
-      - name: tlscert
-        secret:
-          defaultMode: 420
-          secretName: update-cluster-redpanda
-      - name: datadir
-        persistentVolumeClaim:
-          claimName: datadir
-
+        - configMap:
+            defaultMode: 420
+            name: update-cluster-base
+          name: configmap-dir
+        - emptyDir: {}
+          name: config-dir
+        - secret:
+            defaultMode: 365
+            secretName: update-cluster-lifecycle
+          name: hook-scripts-dir
+        - name: tlscert
+          secret:
+            defaultMode: 420
+            secretName: update-cluster-redpanda
+        - name: datadir
+          persistentVolumeClaim:
+            claimName: datadir
 ---
-
 apiVersion: redpanda.vectorized.io/v1alpha1
 kind: Cluster
 metadata:
@@ -39,9 +37,7 @@ status:
   conditions:
     - type: ClusterConfigured
       status: "True"
-
 ---
-
 apiVersion: kuttl.dev/v1beta1
 kind: TestAssert
 collectors:

@@ -37,14 +37,10 @@ spec:
             - -c
           args:
             - >
-              curl -vv --silent
-              --cacert /etc/tls/certs/schema-registry/ca/ca.crt
-              --cert /etc/tls/certs/schema-registry/tls.crt
-              --key /etc/tls/certs/schema-registry/tls.key
-              -u "$SCRAM_USERNAME:$SCRAM_PASSWORD"
-              -X POST -H "Content-Type: application/vnd.schemaregistry.v1+json"
-              --data '{"schema": "{\"type\": \"string\"}" }'
-              https://schema-registry-sasl-cluster.$POD_NAMESPACE.svc.cluster.local.:8081/subjects/Kafka-value/versions
+              curl -vv --silent --cacert /etc/tls/certs/schema-registry/ca/ca.crt
+              --cert /etc/tls/certs/schema-registry/tls.crt --key /etc/tls/certs/schema-registry/tls.key
+              -u "$SCRAM_USERNAME:$SCRAM_PASSWORD" -X POST -H "Content-Type: application/vnd.schemaregistry.v1+json"
+              --data '{"schema": "{\"type\": \"string\"}" }' https://schema-registry-sasl-cluster.$POD_NAMESPACE.svc.cluster.local.:8081/subjects/Kafka-value/versions
           volumeMounts:
             - mountPath: /etc/tls/certs/schema-registry
               name: tlscert

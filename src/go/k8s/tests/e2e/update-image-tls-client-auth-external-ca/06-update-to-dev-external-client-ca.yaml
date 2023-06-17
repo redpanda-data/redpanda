@@ -1,4 +1,3 @@
-# Set external client CA with clientCACertRef
 apiVersion: redpanda.vectorized.io/v1alpha1
 kind: Cluster
 metadata:
@@ -8,15 +7,15 @@ spec:
   version: "dev"
   configuration:
     pandaproxyApi:
-    - port: 8082
-      external: {}
-      tls:
-        enabled: true
-        requireClientAuth: true
-        clientCACertRef:
-          kind: Secret
-          name: upd-mtls-ca-cert
-          apiGroup: ""
+      - port: 8082
+        external: {}
+        tls:
+          enabled: true
+          requireClientAuth: true
+          clientCACertRef:
+            kind: Secret
+            name: upd-mtls-ca-cert
+            apiGroup: ""
     schemaRegistry:
       port: 8081
       external: {}
@@ -26,4 +25,4 @@ spec:
         clientCACertRef:
           kind: Secret
           name: upd-mtls-ca-cert
-          apiGroup: ""
+          apiGroup: ''

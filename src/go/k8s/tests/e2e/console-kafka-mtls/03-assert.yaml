@@ -7,13 +7,11 @@ status:
     - status: "True"
       type: Complete
   succeeded: 1
-
 ---
-
 apiVersion: kuttl.dev/v1beta1
 kind: TestAssert
 collectors:
-- type: pod
-  selector: app.kubernetes.io/name=redpanda-console
-  tail: -1
-- command: ../../../hack/get-redpanda-info.sh
+  - type: pod
+    selector: app.kubernetes.io/name=redpanda-console
+    tail: -1
+  - command: ../../../hack/get-redpanda-info.sh

@@ -8,9 +8,13 @@ spec:
       cpu: 2
     requests:
       cpu: 500m
-      memory: 512Mi
+      memory: 1Gi
     limits:
       cpu: 500m
-      memory: 512Mi
+      memory: 1Gi
   configuration:
     developerMode: true
+    additionalCommandlineArguments:
+      dump-memory-diagnostics-on-alloc-failure-kind: all
+      abort-on-seastar-bad-alloc: ''
+      reserve-memory: 100M

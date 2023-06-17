@@ -4,9 +4,7 @@ metadata:
   name: create-topic-given-issuer
 status:
   readyReplicas: 1
-
 ---
-
 apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:
@@ -16,9 +14,7 @@ status:
     - reason: Ready
       status: "True"
       type: Ready
-
 ---
-
 apiVersion: kuttl.dev/v1beta1
 kind: TestAssert
 collectors:

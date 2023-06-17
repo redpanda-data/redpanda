@@ -4,9 +4,8 @@ metadata:
   name: rpk-config-client-auth
 data:
   redpanda.yaml: |
-    redpanda:
     rpk:
       tls:
         key_file: /etc/tls/certs/tls.key
-        cert_file: /etc/tls/certs/tls.crt 
+        cert_file: /etc/tls/certs/tls.crt
         truststore_file: /etc/tls/certs/ca/ca.crt
