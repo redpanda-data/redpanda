@@ -368,11 +368,11 @@ public:
     /// \brief Set start kafka offset without removing any data from the
     /// manifest.
     ///
-    /// Allows to move start_kafka_offset forward
-    /// freely. The corresponding start_offset value is moved
-    /// to the closest aligned offset.
-    /// \returns true if start_offset was moved
-    bool advance_start_kafka_offset(kafka::offset start_offset);
+    /// Allows start_kafka_offset to move forward freely, without changing
+    /// start_offset.
+    ///
+    /// \returns true if start_kafka_offset was moved
+    bool advance_start_kafka_offset(kafka::offset new_start_offset);
 
     /// \brief Resets the state of the manifest to the default constructed
     /// state.

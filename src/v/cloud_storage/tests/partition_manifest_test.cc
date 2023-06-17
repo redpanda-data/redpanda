@@ -1343,34 +1343,67 @@ SEASTAR_THREAD_TEST_CASE(test_partition_manifest_start_kafka_offset_advance) {
       });
 
     BOOST_REQUIRE(m.advance_start_kafka_offset(kafka::offset(80)));
-    BOOST_REQUIRE_EQUAL(m.get_start_kafka_offset(), kafka::offset(80));
+    BOOST_REQUIRE_EQUAL(m.get_start_kafka_offset_override(), kafka::offset(80));
+    BOOST_REQUIRE_EQUAL(m.get_start_kafka_offset(), model::offset(0));
     BOOST_REQUIRE_EQUAL(m.get_start_offset(), model::offset(0));
 
+    // Moving the start offset ahead of the kafka override removes the
+    // override.
     BOOST_REQUIRE(m.advance_start_offset(model::offset(100)));
+    BOOST_REQUIRE_EQUAL(m.get_start_kafka_offset_override(), kafka::offset{});
+    BOOST_REQUIRE_EQUAL(m.get_start_kafka_offset(), model::offset(90));
+    BOOST_REQUIRE_EQUAL(m.get_start_offset(), model::offset(100));
+
+    BOOST_REQUIRE(m.advance_start_kafka_offset(kafka::offset(180)));
+    BOOST_REQUIRE_EQUAL(
+      m.get_start_kafka_offset_override(), kafka::offset(180));
     BOOST_REQUIRE_EQUAL(m.get_start_offset(), model::offset(100));
     BOOST_REQUIRE_EQUAL(m.get_start_kafka_offset(), kafka::offset(90));
 
-    BOOST_REQUIRE(m.advance_start_kafka_offset(kafka::offset(180)));
+    BOOST_REQUIRE(m.advance_start_kafka_offset(kafka::offset(200)));
+    BOOST_REQUIRE_EQUAL(
+      m.get_start_kafka_offset_override(), kafka::offset(200));
+    BOOST_REQUIRE_EQUAL(m.get_start_offset(), model::offset(100));
+    BOOST_REQUIRE_EQUAL(m.get_start_kafka_offset(), kafka::offset(90));
+
+    BOOST_REQUIRE(m.advance_start_kafka_offset(kafka::offset(370)));
+    BOOST_REQUIRE_EQUAL(
+      m.get_start_kafka_offset_override(), kafka::offset(370));
+    BOOST_REQUIRE_EQUAL(m.get_start_offset(), model::offset(100));
+    BOOST_REQUIRE_EQUAL(m.get_start_kafka_offset(), kafka::offset(90));
+
+    // If trying to move back, it should no-op.
+    BOOST_REQUIRE(!m.advance_start_kafka_offset(kafka::offset(370)));
+    BOOST_REQUIRE(!m.advance_start_kafka_offset(kafka::offset(369)));
+    BOOST_REQUIRE_EQUAL(
+      m.get_start_kafka_offset_override(), kafka::offset(370));
+    BOOST_REQUIRE_EQUAL(m.get_start_offset(), model::offset(100));
+    BOOST_REQUIRE_EQUAL(m.get_start_kafka_offset(), kafka::offset(90));
+
+    // Truncating should clean up any out-of-bounds segments, but shouldn't
+    // affected the override.
+    BOOST_REQUIRE_EQUAL(4, m.size());
+    m.truncate();
+    BOOST_REQUIRE_EQUAL(3, m.size());
+    BOOST_REQUIRE_EQUAL(
+      m.get_start_kafka_offset_override(), kafka::offset(370));
+
+    // When we truncate at a specific offset, it shouldn't take into account
+    // the override (callers may, but the manifest itself shouldn't).
+    m.truncate(model::offset(200));
+    BOOST_REQUIRE_EQUAL(2, m.size());
+    BOOST_REQUIRE_EQUAL(
+      m.get_start_kafka_offset_override(), kafka::offset(370));
     BOOST_REQUIRE_EQUAL(m.get_start_offset(), model::offset(200));
     BOOST_REQUIRE_EQUAL(m.get_start_kafka_offset(), kafka::offset(180));
 
-    BOOST_REQUIRE(m.advance_start_kafka_offset(kafka::offset(200)));
-    BOOST_REQUIRE_EQUAL(m.get_start_offset(), model::offset(200));
-    BOOST_REQUIRE_EQUAL(m.get_start_kafka_offset(), kafka::offset(200));
-
-    BOOST_REQUIRE(m.advance_start_kafka_offset(kafka::offset(370)));
-    BOOST_REQUIRE_EQUAL(m.get_start_offset(), model::offset(300));
-    BOOST_REQUIRE_EQUAL(m.get_start_kafka_offset(), kafka::offset(370));
-
-    m.truncate();
-    BOOST_REQUIRE_EQUAL(m.get_start_offset(), model::offset(300));
-    BOOST_REQUIRE_EQUAL(m.get_start_kafka_offset(), kafka::offset(370));
-
+    // When we truncate past the override, the override is removed.
     auto m2 = m.truncate(model::offset(400));
-    BOOST_REQUIRE(m2.size() == 1);
-    BOOST_REQUIRE(m.size() == 0);
+    BOOST_REQUIRE_EQUAL(2, m2.size());
+    BOOST_REQUIRE_EQUAL(0, m.size());
     BOOST_REQUIRE(m.get_start_offset() == std::nullopt);
     BOOST_REQUIRE(m.get_start_kafka_offset() == std::nullopt);
+    BOOST_REQUIRE_EQUAL(m.get_start_kafka_offset_override(), kafka::offset{});
 }
 
 SEASTAR_THREAD_TEST_CASE(

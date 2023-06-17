@@ -342,12 +342,7 @@ partition_manifest::get_spillover_map() const {
 
 std::optional<kafka::offset>
 partition_manifest::full_log_start_kafka_offset() const {
-    if (_start_kafka_offset != kafka::offset{}) {
-        // This offset is set by the DeleteRecords request explicitly
-        // so it overrides whatever we have in the manifest (archive or
-        // not).
-        return _start_kafka_offset;
-    } else if (_archive_start_offset != model::offset{}) {
+    if (_archive_start_offset != model::offset{}) {
         // The archive start offset is guaranteed to be smaller than
         // the manifest start offset.
         vassert(
@@ -364,18 +359,10 @@ partition_manifest::full_log_start_kafka_offset() const {
 
 std::optional<kafka::offset>
 partition_manifest::get_start_kafka_offset() const {
-    std::optional<kafka::offset> local_start_offset;
-    if (_start_offset != model::offset{}) {
-        local_start_offset = compute_start_kafka_offset_local();
+    if (_start_offset == model::offset{}) {
+        return std::nullopt;
     }
-    if (
-      local_start_offset.has_value() && _start_kafka_offset != kafka::offset{}
-      && _start_kafka_offset > local_start_offset.value()) {
-        // Apply override only if it's located inside the manifest's offset
-        // range
-        return _start_kafka_offset;
-    }
-    return local_start_offset;
+    return compute_start_kafka_offset_local();
 }
 
 std::optional<kafka::offset>
@@ -620,10 +607,8 @@ void partition_manifest::set_archive_start_offset(
         _archive_start_offset_delta = start_delta;
         auto new_so = _archive_start_offset - _archive_start_offset_delta;
         if (new_so > _start_kafka_offset) {
-            // The _archive_start_offset can only be set to segment boundary
-            // but _start_kafka_offset can be inside the segment. Because of
-            // that the _archive_start_offset could be placed below the
-            // _start_kafka_offset set by the user.
+            // The new archive start has moved past the user-requested start
+            // offset, so there's no point in tracking it further.
             _start_kafka_offset = kafka::offset{};
         }
     } else {
@@ -694,47 +679,15 @@ void partition_manifest::set_archive_clean_offset(
 
 bool partition_manifest::advance_start_kafka_offset(
   kafka::offset new_start_offset) {
-    auto prev_kso = get_start_kafka_offset();
-    if (
-      _archive_start_offset != model::offset{} && new_start_offset < prev_kso) {
-        // Special case. If the archive is enabled and contains some data
-        // the offset could be placed anywhere in the archive. The archive
-        // housekeeping should take this into account.
-        if (new_start_offset < get_archive_start_kafka_offset()) {
-            return false;
-        }
-        _start_kafka_offset = std::max(new_start_offset, _start_kafka_offset);
-        return true;
-    }
-    auto it = segment_containing(new_start_offset);
-    if (it == end()) {
-        vlog(
-          cst_log.debug,
-          "{} start kafka offset not moved to {}, no such segment",
-          _ntp,
-          _start_kafka_offset);
+    if (_start_kafka_offset >= new_start_offset) {
         return false;
-    } else if (it == begin()) {
-        _start_kafka_offset = std::max(new_start_offset, _start_kafka_offset);
-        vlog(
-          cst_log.debug,
-          "{} start kafka offset moved to {}, start offset stayed at {}",
-          _ntp,
-          _start_kafka_offset,
-          _start_offset);
-        return true;
     }
-    auto moved = advance_start_offset(it->base_offset);
-    // 'advance_start_offset' resets _start_kafka_offset value
-    // so it's important to set it after this call.
-    _start_kafka_offset = std::max(new_start_offset, _start_kafka_offset);
+    _start_kafka_offset = new_start_offset;
     vlog(
       cst_log.info,
-      "{} start kafka offset moved to {}, start offset {} {}",
+      "{} start kafka offset override set to {}",
       _ntp,
-      _start_kafka_offset,
-      moved ? "moved to" : "stayed at",
-      _start_offset);
+      _start_kafka_offset);
     return true;
 }
 
@@ -795,14 +748,21 @@ bool partition_manifest::advance_start_offset(model::offset new_start_offset) {
         // the case when two `truncate` commands are applied sequentially,
         // without a `cleanup_metadata` command in between to trim the list of
         // segments.
+        kafka::offset highest_removed_offset{};
         for (auto it = std::move(previous_head_segment); it != new_head_segment;
              ++it) {
+            highest_removed_offset = std::max(
+              highest_removed_offset, it->last_kafka_offset());
             subtract_from_cloud_log_size(it->size_bytes);
         }
 
-        // Reset start kafka offset so it will be aligned by segment boundary
-        _start_kafka_offset = kafka::offset{};
-
+        // The new start offset has moved past the user-requested start offset,
+        // so there's no point in tracking it further.
+        if (
+          highest_removed_offset != kafka::offset{}
+          && highest_removed_offset >= _start_kafka_offset) {
+            _start_kafka_offset = kafka::offset{};
+        }
         return true;
     }
     return false;

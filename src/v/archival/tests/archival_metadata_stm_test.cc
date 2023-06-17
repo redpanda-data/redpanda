@@ -37,6 +37,10 @@
 
 using namespace std::chrono_literals;
 
+namespace {
+ss::logger logger{"archival_metadata_stm_test"};
+} // namespace
+
 static ss::abort_source never_abort;
 
 struct archival_metadata_stm_base_fixture
@@ -119,7 +123,6 @@ struct archival_metadata_stm_base_fixture
     ss::sharded<cloud_storage::configuration> cloud_cfg;
     ss::sharded<cloud_storage_clients::client_pool> cloud_conn_pool;
     ss::sharded<cloud_storage::remote> cloud_api;
-    ss::logger logger{"archival_metadata_stm_test"};
 };
 
 struct archival_metadata_stm_fixture : archival_metadata_stm_base_fixture {
@@ -795,7 +798,10 @@ FIXTURE_TEST(
     archival_stm
       ->truncate(kafka::offset(200), ss::lowres_clock::now() + 10s, never_abort)
       .get();
-    // Start kafka offset is below SO.
+    // The start kafka offset doesn't change, only the override changes.
+    BOOST_REQUIRE_EQUAL(
+      archival_stm->manifest().get_start_kafka_offset_override(),
+      model::offset(200));
     BOOST_REQUIRE_EQUAL(
       archival_stm->get_start_kafka_offset(), kafka::offset(1000));
     BOOST_REQUIRE_EQUAL(archival_stm->get_start_offset(), model::offset(1000));
@@ -805,8 +811,21 @@ FIXTURE_TEST(
         kafka::offset(1200), ss::lowres_clock::now() + 10s, never_abort)
       .get();
     BOOST_REQUIRE_EQUAL(
-      archival_stm->get_start_kafka_offset(), kafka::offset(1200));
+      archival_stm->get_start_kafka_offset(), kafka::offset(1000));
+    BOOST_REQUIRE_EQUAL(
+      archival_stm->manifest().get_start_kafka_offset_override(),
+      model::offset(1200));
     BOOST_REQUIRE_EQUAL(archival_stm->get_start_offset(), model::offset(1000));
+
+    // Advancing the start offset past the override resets the override.
+    archival_stm
+      ->truncate(
+        model::offset(2000), ss::lowres_clock::now() + 10s, never_abort)
+      .get();
+    BOOST_REQUIRE_EQUAL(
+      archival_stm->manifest().get_start_kafka_offset_override(),
+      kafka::offset{});
+    BOOST_REQUIRE_EQUAL(archival_stm->get_start_offset(), model::offset(2000));
 }
 
 FIXTURE_TEST(test_reset_metadata, archival_metadata_stm_fixture) {
