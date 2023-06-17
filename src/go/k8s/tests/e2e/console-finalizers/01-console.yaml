@@ -16,4 +16,3 @@ spec:
     image: redpandadata/console:v2.2.4
   connect:
     enabled: false
-

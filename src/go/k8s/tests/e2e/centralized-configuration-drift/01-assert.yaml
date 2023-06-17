@@ -5,9 +5,7 @@ metadata:
     job-name: external-change
 status:
   phase: Succeeded
-
 ---
-
 apiVersion: kuttl.dev/v1beta1
 kind: TestAssert
 collectors:

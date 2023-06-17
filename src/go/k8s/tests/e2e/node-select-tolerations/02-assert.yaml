@@ -4,9 +4,7 @@ metadata:
   name: node-select-tolerations-cluster
 status:
   readyReplicas: 1
-
 ---
-
 apiVersion: v1
 kind: Pod
 metadata:
@@ -17,9 +15,7 @@ spec:
     redpanda-node: "true"
 status:
   phase: "Running"
-
 ---
-
 apiVersion: kuttl.dev/v1beta1
 kind: TestAssert
 collectors:

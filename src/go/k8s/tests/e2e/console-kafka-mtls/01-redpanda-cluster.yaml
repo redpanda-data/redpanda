@@ -17,15 +17,15 @@ spec:
     rpcServer:
       port: 33145
     kafkaApi:
-    - port: 9092
-      tls:
-        enabled: true
-        requireClientAuth: true
-        nodeSecretRef:
-          name: cluster-tls-secret-node-certificate
-          namespace: redpanda-system
+      - port: 9092
+        tls:
+          enabled: true
+          requireClientAuth: true
+          nodeSecretRef:
+            name: cluster-tls-secret-node-certificate
+            namespace: redpanda-system
     adminApi:
-    - port: 9644
+      - port: 9644
     schemaRegistry:
       port: 8081
       tls:
@@ -35,7 +35,7 @@ spec:
           name: cluster-kafka-mtls-schema-registry-node
           namespace: redpanda-system
     pandaproxyApi:
-     - port: 8082
+      - port: 8082
     developerMode: true
   additionalConfiguration:
     redpanda.append_chunk_size: "40960"

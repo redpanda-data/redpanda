@@ -17,15 +17,15 @@ spec:
     rpcServer:
       port: 33145
     kafkaApi:
-    - port: 9092
+      - port: 9092
     adminApi:
-    - port: 9644
-      tls:
-        enabled: true
+      - port: 9644
+        tls:
+          enabled: true
     pandaproxyApi:
-     - port: 8082
-       tls:
-         enabled: true
+      - port: 8082
+        tls:
+          enabled: true
     developerMode: true
   additionalConfiguration:
     redpanda.segment_appender_flush_timeout_ms: "1003"

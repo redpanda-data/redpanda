@@ -33,9 +33,8 @@ spec:
             - -c
           args:
             - >
-              curl -vv --silent --cacert /etc/tls/certs/schema-registry/ca.crt
-              -X DELETE -u "$SCRAM_USERNAME:$SCRAM_PASSWORD"
-              https://schema-registry-sasl-cluster.$POD_NAMESPACE.svc.cluster.local.:8081/subjects/Kafka-value/versions/1
+              curl -vv --silent --cacert /etc/tls/certs/schema-registry/ca.crt -X
+              DELETE -u "$SCRAM_USERNAME:$SCRAM_PASSWORD" https://schema-registry-sasl-cluster.$POD_NAMESPACE.svc.cluster.local.:8081/subjects/Kafka-value/versions/1
           volumeMounts:
             - mountPath: /etc/tls/certs/schema-registry
               name: tlscert

@@ -4,16 +4,12 @@ metadata:
   name: update-image-cluster-and-node-port
 status:
   readyReplicas: 3
-
 ---
-
 apiVersion: kuttl.dev/v1beta1
 kind: TestAssert
 collectors:
   - command: ../../../hack/get-redpanda-info.sh
-
 ---
-
 apiVersion: v1
 kind: Service
 metadata:
@@ -32,9 +28,7 @@ spec:
       protocol: TCP
       targetPort: 9645
   type: NodePort
-
 ---
-
 apiVersion: redpanda.vectorized.io/v1alpha1
 kind: Cluster
 metadata:
@@ -46,5 +40,5 @@ status:
   upgrading: false
   restarting: false
   conditions:
-  - type: ClusterConfigured
-    status: "True"
+    - type: ClusterConfigured
+      status: "True"

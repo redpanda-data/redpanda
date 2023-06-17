@@ -28,9 +28,9 @@ spec:
           args:
             - >
               curl -skv -X POST "https://cluster-proxy-0.cluster-proxy.$POD_NAMESPACE.svc.cluster.local:8082/topics/my_topic"
-              -H "Content-Type: application/vnd.kafka.json.v2+json"
-              --cert /tmp/client/client.crt --key /tmp/client/client.key --sslv2 --http2
-              -d '{"records":[{"value":"Vectorized"},{"value":"Pandaproxy"},{"value":"JSON Demo"}]}'
+              -H "Content-Type: application/vnd.kafka.json.v2+json" --cert /tmp/client/client.crt
+              --key /tmp/client/client.key --sslv2 --http2 -d '{"records":[{"value":"Vectorized"},{"value":"Pandaproxy"},{"value":"JSON
+              Demo"}]}'
       restartPolicy: Never
   backoffLimit: 20
   parallelism: 1

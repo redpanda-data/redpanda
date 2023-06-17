@@ -19,21 +19,21 @@ spec:
     adminApi:
       - port: 9644
     kafkaApi:
-    - port: 9092
-    - external:
-        enabled: true
-        subdomain: example.com
-        endpointTemplate: "{{.Index}}-{{.HostIP | sha256sum | substr 0 10}}-kafka"
-      tls:
-        enabled: true
-        requireClientAuth: true
+      - port: 9092
+      - external:
+          enabled: true
+          subdomain: example.com
+          endpointTemplate: "{{.Index}}-{{.HostIP | sha256sum | substr 0 10}}-kafka"
+        tls:
+          enabled: true
+          requireClientAuth: true
     pandaproxyApi:
-     - port: 8082
-     - external:
-         enabled: true
-         subdomain: example.com
-         endpointTemplate: "{{.Index}}-{{.HostIP | sha256sum | substr 0 10}}-pandaproxy"
-       tls:
-         enabled: true
-         requireClientAuth: true
+      - port: 8082
+      - external:
+          enabled: true
+          subdomain: example.com
+          endpointTemplate: "{{.Index}}-{{.HostIP | sha256sum | substr 0 10}}-pandaproxy"
+        tls:
+          enabled: true
+          requireClientAuth: true
     developerMode: true

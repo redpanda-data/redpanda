@@ -10,9 +10,9 @@ spec:
           secret:
             defaultMode: 420
             secretName: thisisverylongnamethatishittingthemax40c-redpanda
-            items: # TODO should we explicitly limit visibility to ca.crt?
-            - key: ca.crt
-              path: ca.crt
+            items:
+              - key: ca.crt
+                path: ca.crt
         - name: rpkconfig
           configMap:
             name: rpk-config-subdomain
@@ -29,8 +29,7 @@ spec:
             - -c
           args:
             - >
-              echo {"test":"message"} |
-              rpk topic produce test --brokers thisisverylongnamethatishittingthemax40c-0.thisisverylongnamethatishittingthemax40c.$POD_NAMESPACE.svc.cluster.local:9092
+              echo {"test":"message"} | rpk topic produce test --brokers thisisverylongnamethatishittingthemax40c-0.thisisverylongnamethatishittingthemax40c.$POD_NAMESPACE.svc.cluster.local:9092
               -v -n 1 -k "test-key"
           volumeMounts:
             - mountPath: /etc/tls/certs

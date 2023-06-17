@@ -6,16 +6,14 @@ spec:
   template:
     spec:
       initContainers:
-      - name: redpanda-configurator
-        image: "vectorized/configurator:v22.1.3"
+        - name: redpanda-configurator
+          image: "vectorized/configurator:v22.1.3"
       containers:
-      - name: redpanda
-        image: "vectorized/redpanda:v22.1.3"
+        - name: redpanda
+          image: "vectorized/redpanda:v22.1.3"
 status:
   readyReplicas: 2
-
 ---
-
 apiVersion: kuttl.dev/v1beta1
 kind: TestAssert
 collectors:

@@ -6,7 +6,6 @@ status:
   replicas: 3
   currentReplicas: 3
 ---
-
 apiVersion: kuttl.dev/v1beta1
 kind: TestAssert
 collectors:

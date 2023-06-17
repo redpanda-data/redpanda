@@ -17,13 +17,13 @@ spec:
     rpcServer:
       port: 33145
     kafkaApi:
-    - port: 9092
+      - port: 9092
     adminApi:
-    - port: 9644
+      - port: 9644
     schemaRegistry:
       port: 8081
     pandaproxyApi:
-     - port: 8082
+      - port: 8082
     developerMode: true
   additionalConfiguration:
     redpanda.append_chunk_size: "40960"

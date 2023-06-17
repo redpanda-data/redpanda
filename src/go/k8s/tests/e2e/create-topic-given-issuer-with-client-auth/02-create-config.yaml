@@ -3,10 +3,5 @@ kind: ConfigMap
 metadata:
   name: rpk-config-client-auth
 data:
-  redpanda.yaml: |
-    redpanda:
-    rpk:
-      tls:
-        key_file: /etc/tls/certs/tls.key
-        cert_file: /etc/tls/certs/tls.crt 
-        truststore_file: /etc/tls/certs/ca/ca.crt
+  redpanda.yaml: "redpanda:\nrpk:\n  tls:\n    key_file: /etc/tls/certs/tls.key\n\
+    \    cert_file: /etc/tls/certs/tls.crt \n    truststore_file: /etc/tls/certs/ca/ca.crt\n"

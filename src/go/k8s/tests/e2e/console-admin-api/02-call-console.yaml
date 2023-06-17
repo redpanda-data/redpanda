@@ -18,11 +18,9 @@ spec:
             - -c
             - -ex
           args:
-            - echo "Checking that the console is up" &&
-              res=$(curl --silent -o /dev/null -w "%{http_code}" -k http://console-admin-api.$POD_NAMESPACE.svc.cluster.local:8080/admin/health) &&
-              if [[ "$res" != "200" ]]; then
-                exit 1;
-              fi
+            - echo "Checking that the console is up" && res=$(curl --silent -o /dev/null
+              -w "%{http_code}" -k http://console-admin-api.$POD_NAMESPACE.svc.cluster.local:8080/admin/health)
+              && if [[ "$res" != "200" ]]; then exit 1; fi
       restartPolicy: Never
   backoffLimit: 6
   parallelism: 1

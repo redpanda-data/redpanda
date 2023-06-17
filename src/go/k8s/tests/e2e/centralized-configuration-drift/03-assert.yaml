@@ -12,7 +12,6 @@ status:
             true
   phase: Succeeded
 ---
-
 apiVersion: redpanda.vectorized.io/v1alpha1
 kind: Cluster
 metadata:
@@ -23,7 +22,6 @@ status:
     - type: ClusterConfigured
       status: "True"
 ---
-
 apiVersion: kuttl.dev/v1beta1
 kind: TestAssert
 collectors:

@@ -23,8 +23,7 @@ spec:
             - >
               url=http://decommissioning-0.decommissioning.$NAMESPACE.svc.cluster.local:9644/v1/brokers
               res=$(curl --silent -L $url | tr '{' '\n' | grep node_id | wc -l) &&
-              echo $res > /dev/termination-log &&
-              if [[ "$res" != "2" ]]; then
+              echo $res > /dev/termination-log && if [[ "$res" != "2" ]]; then
                 exit 1;
               fi
       restartPolicy: Never

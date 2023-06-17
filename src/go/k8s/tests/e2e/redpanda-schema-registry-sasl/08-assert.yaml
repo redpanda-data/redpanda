@@ -7,9 +7,7 @@ status:
     - reason: Ready
       status: "True"
       type: Ready
-
 ---
-
 apiVersion: kuttl.dev/v1beta1
 kind: TestAssert
 collectors:

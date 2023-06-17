@@ -17,11 +17,11 @@ spec:
     rpcServer:
       port: 33145
     kafkaApi:
-    - port: 9092
-      tls:
-        enabled: true
+      - port: 9092
+        tls:
+          enabled: true
     adminApi:
-    - port: 9644
+      - port: 9644
     developerMode: true
     autoCreateTopics: true
   dnsTrailingDotDisabled: true

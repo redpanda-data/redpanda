@@ -17,12 +17,12 @@ spec:
     rpcServer:
       port: 33145
     kafkaApi:
-    - port: 9092
+      - port: 9092
     adminApi:
-    - port: 9644
+      - port: 9644
     pandaproxyApi:
-    - port: 8082
-      tls:
-        enabled: true
-        requireClientAuth: true
+      - port: 8082
+        tls:
+          enabled: true
+          requireClientAuth: true
     developerMode: true

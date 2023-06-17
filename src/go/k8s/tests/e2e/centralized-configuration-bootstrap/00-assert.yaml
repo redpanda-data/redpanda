@@ -6,16 +6,15 @@ status:
   replicas: 2
   restarting: false
   conditions:
-  - type: ClusterConfigured
-    status: "False"
+    - type: ClusterConfigured
+      status: "False"
 ---
-
 apiVersion: kuttl.dev/v1beta1
 kind: TestAssert
 commands:
-  - command: hack/verify-condition-message.sh centralized-configuration-bootstrap append_chunk_size
+  - command: hack/verify-condition-message.sh centralized-configuration-bootstrap
+      append_chunk_size
 ---
-
 apiVersion: kuttl.dev/v1beta1
 kind: TestAssert
 collectors:

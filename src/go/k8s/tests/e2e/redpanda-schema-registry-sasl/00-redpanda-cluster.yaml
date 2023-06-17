@@ -18,12 +18,12 @@ spec:
     rpcServer:
       port: 33145
     kafkaApi:
-    - port: 9092
-      authenticationMethod: sasl
-      tls:
-        enabled: true
+      - port: 9092
+        authenticationMethod: sasl
+        tls:
+          enabled: true
     adminApi:
-    - port: 9644
+      - port: 9644
     schemaRegistry:
       port: 8081
       authenticationMethod: http_basic

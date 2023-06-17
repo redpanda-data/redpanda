@@ -20,13 +20,13 @@ spec:
     rpcServer:
       port: 33145
     kafkaApi:
-    - port: 9092
-      tls:
-        enabled: true
-        requireClientAuth: true
-        issuerRef:
-          name: cluster-tls-root-issuer
-          kind: ClusterIssuer
+      - port: 9092
+        tls:
+          enabled: true
+          requireClientAuth: true
+          issuerRef:
+            name: cluster-tls-root-issuer
+            kind: ClusterIssuer
     schemaRegistry:
       port: 8081
       tls:
@@ -36,5 +36,5 @@ spec:
           name: cluster-tls-root-issuer
           kind: ClusterIssuer
     adminApi:
-    - port: 9644
+      - port: 9644
     developerMode: true

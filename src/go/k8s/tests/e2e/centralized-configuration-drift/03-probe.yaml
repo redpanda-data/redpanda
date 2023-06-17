@@ -22,9 +22,9 @@ spec:
           args:
             - >
               url=http://centralized-configuration-drift-0.centralized-configuration-drift.$NAMESPACE.svc.cluster.local:9644/v1/config
-              res=$(curl --silent -L $url | grep -o '\"release_cache_on_segment_roll\":[^,}]*' | grep -o '[^:]*$') &&
-              echo $res > /dev/termination-log &&
-              if [[ "$res" != "true" ]]; then
+              res=$(curl --silent -L $url | grep -o '\"release_cache_on_segment_roll\":[^,}]*'
+              | grep -o '[^:]*$') && echo $res > /dev/termination-log && if [[ "$res"
+              != "true" ]]; then
                 exit 1;
               fi
       restartPolicy: Never

@@ -4,10 +4,8 @@ metadata:
   name: cluster-admin-api
 status:
   readyReplicas: 1
-
 ---
-
 apiVersion: kuttl.dev/v1beta1
 kind: TestAssert
 collectors:
-- command: ../../../hack/get-redpanda-info.sh
+  - command: ../../../hack/get-redpanda-info.sh

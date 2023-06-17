@@ -9,9 +9,7 @@ status:
   conditions:
     - type: ClusterConfigured
       status: "True"
-
 ---
-
 apiVersion: cert-manager.io/v1
 kind: Issuer
 metadata:
@@ -21,9 +19,7 @@ status:
     - reason: IsReady
       status: "True"
       type: Ready
-
 ---
-
 apiVersion: cert-manager.io/v1
 kind: Issuer
 metadata:
@@ -34,7 +30,6 @@ status:
       status: "True"
       type: Ready
 ---
-
 apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:
@@ -44,9 +39,7 @@ status:
     - reason: Ready
       status: "True"
       type: Ready
-
 ---
-
 apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:
@@ -57,7 +50,6 @@ status:
       status: "True"
       type: Ready
 ---
-
 apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:
@@ -68,7 +60,6 @@ status:
       status: "True"
       type: Ready
 ---
-
 apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:
@@ -79,7 +70,6 @@ status:
       status: "True"
       type: Ready
 ---
-
 apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:
@@ -89,9 +79,7 @@ status:
     - reason: Ready
       status: "True"
       type: Ready
-
 ---
-
 apiVersion: cert-manager.io/v1
 kind: Issuer
 metadata:
@@ -101,9 +89,7 @@ status:
     - reason: IsReady
       status: "True"
       type: Ready
-
 ---
-
 apiVersion: cert-manager.io/v1
 kind: Issuer
 metadata:
@@ -114,7 +100,6 @@ status:
       status: "True"
       type: Ready
 ---
-
 apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:
@@ -124,9 +109,7 @@ status:
     - reason: Ready
       status: "True"
       type: Ready
-
 ---
-
 apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:
@@ -136,9 +119,7 @@ status:
     - reason: Ready
       status: "True"
       type: Ready
-
 ---
-
 apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:
@@ -149,7 +130,6 @@ status:
       status: "True"
       type: Ready
 ---
-
 apiVersion: kuttl.dev/v1beta1
 kind: TestAssert
 collectors:

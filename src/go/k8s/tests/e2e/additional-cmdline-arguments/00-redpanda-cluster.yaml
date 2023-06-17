@@ -19,7 +19,7 @@ spec:
     kafkaApi:
       - port: 9092
     adminApi:
-    - port: 9644
+      - port: 9644
     developerMode: true
     additionalCommandlineArguments:
       dump-memory-diagnostics-on-alloc-failure-kind: all

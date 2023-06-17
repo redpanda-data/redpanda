@@ -8,18 +8,14 @@ status:
   upgrading: false
   restarting: false
   conditions:
-  - type: ClusterConfigured
-    status: "True"
-
+    - type: ClusterConfigured
+      status: "True"
 ---
-
 apiVersion: v1
 kind: Secret
 metadata:
   name: sr-external-ca-mtls-schema-registry-trusted-client-ca
-
 ---
-
 apiVersion: cert-manager.io/v1
 kind: Issuer
 metadata:
@@ -29,9 +25,7 @@ status:
     - reason: IsReady
       status: "True"
       type: Ready
-
 ---
-
 apiVersion: cert-manager.io/v1
 kind: Issuer
 metadata:
@@ -41,22 +35,17 @@ status:
     - reason: KeyPairVerified
       status: "True"
       type: Ready
-
 ---
-
 apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:
-  #name: schema-registry-client-external-ca-mtls-schema-registry-root-certificate
   name: sr-external-ca-mtls-schema-registry-root-certificate
 status:
   conditions:
     - reason: Ready
       status: "True"
       type: Ready
-
 ---
-
 apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:
@@ -66,9 +55,7 @@ status:
     - reason: Ready
       status: "True"
       type: Ready
-
 ---
-
 apiVersion: kuttl.dev/v1beta1
 kind: TestAssert
 collectors:

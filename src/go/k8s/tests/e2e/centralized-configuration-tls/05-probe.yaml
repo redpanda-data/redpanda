@@ -27,9 +27,9 @@ spec:
           args:
             - >
               url=https://centralized-configuration-tls-0.centralized-configuration-tls.$NAMESPACE.svc.cluster.local:9644/v1/config
-              res=$(curl --cacert /etc/tls/certs/admin/ca/ca.crt --silent -L $url | grep -o '\"segment_appender_flush_timeout_ms\":[^,}]*' | grep -o '[^:]*$') &&
-              echo $res > /dev/termination-log &&
-              if [[ "$res" != "2003" ]]; then
+              res=$(curl --cacert /etc/tls/certs/admin/ca/ca.crt --silent -L $url
+              | grep -o '\"segment_appender_flush_timeout_ms\":[^,}]*' | grep -o '[^:]*$')
+              && echo $res > /dev/termination-log && if [[ "$res" != "2003" ]]; then
                 exit 1;
               fi
           volumeMounts:

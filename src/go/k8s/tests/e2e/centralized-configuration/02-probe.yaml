@@ -22,9 +22,9 @@ spec:
           args:
             - >
               url=http://centralized-configuration-0.centralized-configuration.$NAMESPACE.svc.cluster.local:9644/v1/config
-              res=$(curl --silent -L $url | grep -o '\"segment_appender_flush_timeout_ms\":[^,}]*' | grep -o '[^:]*$') &&
-              echo $res > /dev/termination-log &&
-              if [[ "$res" != "1003" ]]; then
+              res=$(curl --silent -L $url | grep -o '\"segment_appender_flush_timeout_ms\":[^,}]*'
+              | grep -o '[^:]*$') && echo $res > /dev/termination-log && if [[ "$res"
+              != "1003" ]]; then
                 exit 1;
               fi
       restartPolicy: Never

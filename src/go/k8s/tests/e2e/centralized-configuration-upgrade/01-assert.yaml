@@ -5,19 +5,17 @@ metadata:
 status:
   readyReplicas: 2
 ---
-
 apiVersion: v1
 kind: Pod
 metadata:
   name: centralized-configuration-upgrade-0
 spec:
   containers:
-  - name: redpanda
-    image: "vectorized/redpanda:v22.1.11"
+    - name: redpanda
+      image: "vectorized/redpanda:v22.1.11"
 status:
   phase: "Running"
 ---
-
 apiVersion: v1
 kind: Pod
 metadata:
@@ -29,7 +27,6 @@ spec:
 status:
   phase: "Running"
 ---
-
 apiVersion: kuttl.dev/v1beta1
 kind: TestAssert
 collectors:

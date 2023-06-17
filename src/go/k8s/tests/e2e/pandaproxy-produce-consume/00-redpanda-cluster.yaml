@@ -17,18 +17,18 @@ spec:
     rpcServer:
       port: 33145
     kafkaApi:
-    - port: 9092
-    - external:
-        enabled: true
-        subdomain: "test.subdomain.com"
+      - port: 9092
+      - external:
+          enabled: true
+          subdomain: "test.subdomain.com"
     adminApi:
-    - port: 9644
-    - external:
-        enabled: true
-        subdomain: "test.subdomain.com"
+      - port: 9644
+      - external:
+          enabled: true
+          subdomain: "test.subdomain.com"
     pandaproxyApi:
-    - port: 8082
-    - external:
-        enabled: true
-        subdomain: "test.subdomain.com"
+      - port: 8082
+      - external:
+          enabled: true
+          subdomain: "test.subdomain.com"
     developerMode: true

@@ -26,7 +26,7 @@ spec:
   version: "v22.1.11"
   replicas: 3
   restartConfig:
-    underReplicatedPartitionThreshold: 0.00
+    underReplicatedPartitionThreshold: 0
   resources:
     requests:
       cpu: 1
@@ -38,11 +38,11 @@ spec:
     rpcServer:
       port: 33145
     kafkaApi:
-    - port: 9092
-    - external:
-        enabled: true
+      - port: 9092
+      - external:
+          enabled: true
     adminApi:
-    - port: 9644
-    - external:
-        enabled: true
+      - port: 9644
+      - external:
+          enabled: true
     developerMode: true

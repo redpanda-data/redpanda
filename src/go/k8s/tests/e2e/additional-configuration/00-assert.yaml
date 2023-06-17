@@ -5,10 +5,8 @@ metadata:
 status:
   replicas: 1
   restarting: false
-
 ---
-
 apiVersion: kuttl.dev/v1beta1
 kind: TestAssert
 collectors:
-- command: ../../../hack/get-redpanda-info.sh
+  - command: ../../../hack/get-redpanda-info.sh

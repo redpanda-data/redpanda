@@ -12,7 +12,6 @@ status:
             1003
   phase: Succeeded
 ---
-
 apiVersion: v1
 kind: Pod
 metadata:
@@ -26,9 +25,7 @@ status:
           message: |
             40960
   phase: Succeeded
-
 ---
-
 apiVersion: kuttl.dev/v1beta1
 kind: TestAssert
 collectors:

@@ -17,9 +17,9 @@ spec:
     rpcServer:
       port: 33145
     kafkaApi:
-    - port: 9092
+      - port: 9092
     adminApi:
-    - port: 9644
-      tls:
-        enabled: true
+      - port: 9644
+        tls:
+          enabled: true
     developerMode: true

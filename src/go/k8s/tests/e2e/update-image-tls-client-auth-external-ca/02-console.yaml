@@ -7,7 +7,6 @@ spec:
     listenPort: 8080
   schema:
     enabled: true
-    # Use the schema registry CA instead of the public CAs since the certs are self signed.
     useSchemaRegistryCA: true
   clusterRef:
     name: update-img-external-client-ca

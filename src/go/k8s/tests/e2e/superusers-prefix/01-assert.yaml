@@ -3,10 +3,8 @@ kind: Secret
 metadata:
   name: console-superusers-prefix-console-sasl
 data:
-  username: X19yZWRwYW5kYV9zeXN0ZW1fX2NvbnNvbGUtc3VwZXJ1c2Vycy1wcmVmaXhfY29uc29sZV9jbGllbnQ= # __redpanda_system__console-superusers-prefix_console_client base64 encoded
-
+  username: X19yZWRwYW5kYV9zeXN0ZW1fX2NvbnNvbGUtc3VwZXJ1c2Vycy1wcmVmaXhfY29uc29sZV9jbGllbnQ=
 ---
-
 apiVersion: redpanda.vectorized.io/v1alpha1
 kind: Console
 metadata:
@@ -17,9 +15,7 @@ status:
   updatedReplicas: 1
   readyReplicas: 1
   availableReplicas: 1
-
 ---
-
 apiVersion: batch/v1
 kind: Job
 metadata:
@@ -29,9 +25,7 @@ status:
     - status: "True"
       type: Complete
   succeeded: 1
-
 ---
-
 apiVersion: kuttl.dev/v1beta1
 kind: TestAssert
 collectors:

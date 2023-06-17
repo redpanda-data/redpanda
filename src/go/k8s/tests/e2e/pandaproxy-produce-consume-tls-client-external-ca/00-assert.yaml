@@ -2,9 +2,7 @@ apiVersion: v1
 kind: Secret
 metadata:
   name: pp-client-cert
-
 ---
-
 apiVersion: v1
 kind: Secret
 metadata:

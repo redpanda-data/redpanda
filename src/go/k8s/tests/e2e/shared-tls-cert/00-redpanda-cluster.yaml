@@ -17,17 +17,17 @@ spec:
     rpcServer:
       port: 33145
     kafkaApi:
-    - port: 9092
-      tls:
-        enabled: true
+      - port: 9092
+        tls:
+          enabled: true
     adminApi:
-    - port: 9644
+      - port: 9644
     pandaproxyApi:
-    - port: 8080
-      tls:
-        enabled: true
-        nodeSecretRef:
-          name: shared-tls-cert-redpanda
+      - port: 8080
+        tls:
+          enabled: true
+          nodeSecretRef:
+            name: shared-tls-cert-redpanda
     schemaRegistry:
       port: 8081
       tls:

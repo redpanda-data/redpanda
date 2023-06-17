@@ -18,7 +18,8 @@ spec:
             - -c
             - -ex
           args:
-            - curl http://console-dedicated.$POD_NAMESPACE.svc.cluster.local:8080/admin/health -v
+            - curl http://console-dedicated.$POD_NAMESPACE.svc.cluster.local:8080/admin/health
+              -v
       restartPolicy: Never
   backoffLimit: 6
   parallelism: 1

@@ -10,7 +10,6 @@ status:
     - type: ClusterConfigured
       status: "True"
 ---
-
 apiVersion: v1
 kind: Pod
 metadata:
@@ -18,7 +17,6 @@ metadata:
 status:
   phase: "Running"
 ---
-
 apiVersion: v1
 kind: Pod
 metadata:
@@ -26,7 +24,6 @@ metadata:
 status:
   phase: "Running"
 ---
-
 apiVersion: v1
 kind: Pod
 metadata:
@@ -34,7 +31,6 @@ metadata:
 status:
   phase: "Running"
 ---
-
 apiVersion: kuttl.dev/v1beta1
 kind: TestAssert
 collectors:
