@@ -389,7 +389,7 @@ partition_state get_partition_state(ss::lw_shared_ptr<partition> partition) {
     if (unlikely(!partition)) {
         return state;
     }
-    state.start_offset = partition->start_offset();
+    state.start_offset = partition->raft_start_offset();
     state.committed_offset = partition->committed_offset();
     state.last_stable_offset = partition->last_stable_offset();
     state.high_water_mark = partition->high_watermark();

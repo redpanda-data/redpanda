@@ -97,10 +97,10 @@ public:
         if (_log_eviction_stm) {
             co_return co_await _log_eviction_stm->sync_effective_start(timeout);
         }
-        co_return start_offset();
+        co_return raft_start_offset();
     }
 
-    model::offset start_offset() const {
+    model::offset raft_start_offset() const {
         if (_log_eviction_stm) {
             return _log_eviction_stm->effective_start_offset();
         }
