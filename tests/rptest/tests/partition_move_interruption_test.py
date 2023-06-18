@@ -20,7 +20,7 @@ from rptest.tests.end_to_end import EndToEndTest
 from rptest.services.admin import Admin
 from rptest.tests.partition_movement import PartitionMovementMixin
 from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST, SISettings, MetricsEndpoint
-from rptest.utils.mode_checks import cleanup_on_early_exit
+from rptest.utils.mode_checks import cleanup_on_early_exit, skip_debug_mode
 
 NO_RECOVERY = "no_recovery"
 RESTART_RECOVERY = "restart_recovery"
@@ -601,6 +601,8 @@ class PartitionMoveInterruption(PartitionMovementMixin, EndToEndTest):
 
         wait_until(move_finished, 30, backoff_sec=1)
 
+    #TODO: investigate slow startups in debug mode
+    @skip_debug_mode
     @cluster(num_nodes=7, log_allow_list=RESTART_LOG_ALLOW_LIST)
     @matrix(replication_factor=[1, 3])
     def test_cancellations_interrupted_with_restarts(self, replication_factor):
