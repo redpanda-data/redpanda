@@ -304,12 +304,6 @@ size_t batch_cache::reclaim(size_t size) {
         }
     });
 
-    // so that memory_sampling service can print top memory allocation sites for
-    // this shard
-    if (_memory_sampling_service.local_is_initialized()) {
-        _memory_sampling_service.local().notify_of_reclaim();
-    }
-
     _last_reclaim = ss::lowres_clock::now();
     _size_bytes -= reclaimed;
     return reclaimed;
