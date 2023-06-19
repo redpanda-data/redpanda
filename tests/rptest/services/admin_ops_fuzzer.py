@@ -20,6 +20,7 @@ from ducktape.utils.util import wait_until
 from rptest.clients.kafka_cli_tools import KafkaCliTools
 from rptest.clients.types import TopicSpec
 from time import sleep
+from confluent_kafka import Producer
 
 from rptest.clients.rpk import RpkTool
 from rptest.services.admin import Admin
@@ -63,6 +64,7 @@ class RedpandaAdminOperation(Enum):
     DELETE_USER = auto()
     CREATE_ACLS = auto()
     UPDATE_CONFIG = auto()
+    PRODUCE_TO_TOPIC = auto()
 
 
 def _random_choice(prefix, collection):
@@ -436,6 +438,63 @@ class UpdateConfigOperation(Operation):
         }
 
 
+class ProduceToTopic(Operation):
+    def __init__(self, prefix):
+        self.prefix = prefix
+        self.topic = None
+        self.msg_cnt = random.randint(50, 500)
+        self.delivery_offsets = {}
+        self.produce_err = None
+
+    def execute(self, ctx):
+        if self.topic is None:
+            self.topic = _choice_random_topic(ctx, prefix=self.prefix)
+
+        if self.topic is None:
+            return False
+
+        producer = Producer({'bootstrap.servers': ctx.redpanda.brokers()})
+        for i in range(self.msg_cnt):
+            producer.produce(self.topic,
+                             f"admin-ops-fuzzer-{self.topic}-{i}",
+                             callback=lambda err, metadata: self.
+                             _records_delivered(err, metadata))
+        producer.flush()
+
+        return True
+
+    def _records_delivered(self, err, metadata):
+        self.produce_err = err
+        self.delivery_offsets[metadata.partition()] = metadata.offset()
+
+    def validate(self, ctx):
+        if self.produce_err:
+            ctx.redpanda.logger.info(
+                f"Produce operation returned an error: {self.produce_err}")
+            return True
+
+        partitions = ctx.rpk().describe_topic(self.topic)
+        for p in partitions:
+            if p.id in self.delivery_offsets:
+                batch_offset = self.delivery_offsets[p.id]
+                ctx.redpanda.logger.debug(
+                    f"Last produced record offset: {self.delivery_offsets[p.id]}, topic high watermark: {p.high_watermark}"
+                )
+                if batch_offset > p.high_watermark:
+                    return False
+
+        return True
+
+    def describe(self):
+        return {
+            "type": "produce_to_topic",
+            "properties": {
+                "topic": self.topic,
+                "msg_cnt": self.msg_cnt
+            }
+        }
+
+
 class AdminOperationsFuzzer():
     def __init__(self,
                  redpanda,
@@ -613,6 +672,8 @@ class AdminOperationsFuzzer():
             lambda: CreateAclOperation(self.prefix),
             RedpandaAdminOperation.UPDATE_CONFIG:
             lambda: UpdateConfigOperation(),
+            RedpandaAdminOperation.PRODUCE_TO_TOPIC:
+            lambda: ProduceToTopic(self.prefix),
         }
         return (op, actions[op]())
 
