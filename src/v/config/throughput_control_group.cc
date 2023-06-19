@@ -58,6 +58,9 @@ constexpr const char* tp_limit_node_in = "throughput_limit_node_in_bps";
 constexpr const char* tp_limit_node_out = "throughput_limit_node_out_bps";
 constexpr const char* principals = "principals";
 constexpr const char* user = "user";
+constexpr const char* service = "service";
+constexpr const char* panda_proxy = "panda proxy";
+constexpr const char* schema_registry = "schema registry";
 } // namespace ids
 
 constexpr char selector_prefix = '+';
@@ -238,7 +241,16 @@ Node convert<security::acl_principal>::encode(const type& principal) {
         break;
     }
     case security::principal_type::ephemeral_user: {
-        // not supported yet, invalid config produced if it appears
+        // TBD: how to define the PP/SR ephemeral principal in one place
+        // and avoid dependency of `config` on `pandaproxy`?
+        YAML::Node service_node = node[ids::service];
+        if (principal.name() == "__pandaproxy") {
+            service_node = ids::panda_proxy;
+        } else if (principal.name() == "__schema_registry") {
+            service_node = ids::schema_registry;
+        }
+        // else an invalid config produced:
+        //   - service:
         break;
     }
     }
@@ -270,6 +282,23 @@ bool convert<security::acl_principal>::decode(
         principal = security::acl_principal(
           security::principal_type::user, std::move(el_value));
         return true;
+    }
+
+    if (el_name == ids::service) {
+        if (el_value == ids::panda_proxy) {
+            // TBD: how to define the PP ephemeral principal in one place
+            // and avoid dependency of `config` on `pandaproxy`?
+            principal = security::acl_principal{
+              security::principal_type::ephemeral_user, "__pandaproxy"};
+            return true;
+        }
+        if (el_value == ids::schema_registry) {
+            // TBD: how to define the SR ephemeral principal in one place
+            // and avoid dependency of `config` on `pandaproxy`?
+            principal = security::acl_principal{
+              security::principal_type::ephemeral_user, "__schema_registry"};
+            return true;
+        }
     }
     return false;
 }
@@ -405,7 +434,16 @@ void rjson_serialize(
         break;
     }
     case security::principal_type::ephemeral_user: {
-        // not supported yet, invalid config produced if it appears
+        // TBD: how to define the PP/SR ephemeral principal in one place
+        // and avoid dependency of `config` on `pandaproxy`?
+        w.Key(ids::service);
+        if (principal.name() == "__pandaproxy") {
+            w.String(ids::panda_proxy);
+        } else if (principal.name() == "__schema_registry") {
+            w.String(ids::schema_registry);
+        }
+        // else an invalid config produced:
+        //   - service:
         break;
     }
     }

@@ -192,17 +192,17 @@ cgroups:
 #    - name: (future) match a group (principal 'group')
 #      principals:
 #        - group: greek_letters
-#    - name: (future) match schema registry (principal 'ephemeral user')
-#      principals:
-#        - service: schema registry
-#    - name: (future) match PP (principal 'ephemeral user')
-#      principals:
-#        - service: panda proxy
-#    - name: (future) match heterogeneous set of principals
-#      principals:
-#        - user: servicebot
-#        - service: schema registry
-#        - service: panda proxy
+    - name: match schema registry (principal 'ephemeral user')
+      principals:
+        - service: schema registry
+    - name: match PP (principal 'ephemeral user')
+      principals:
+        - service: panda proxy
+    - name: match heterogeneous set of principals
+      principals:
+        - user: servicebot
+        - service: schema registry
+        - service: panda proxy
     - name: match _any_ authenticated user
       principals:
         - user: "*"
@@ -215,7 +215,7 @@ cgroups:
     BOOST_TEST(
       YAML::Dump(config::to_yaml(cfg, config::redact_secrets{false}))
       == YAML::Dump(cfg_node));
-    BOOST_REQUIRE(cfg.cgroups().size() == 5);
+    BOOST_REQUIRE(cfg.cgroups().size() == 8);
     for (auto& cg : cfg.cgroups()) {
         BOOST_TEST(!cg.throughput_limit_node_in_bps);
         BOOST_TEST(!cg.throughput_limit_node_out_bps);
@@ -235,13 +235,17 @@ cgroups:
 
     // Matches
     using pt = security::principal_type;
-    BOOST_TEST(cfg.get_match_index(std::nullopt) == 4);
+    BOOST_TEST(cfg.get_match_index(std::nullopt) == 7);
     BOOST_TEST(cfg.get_match_index(pt::user, "alpha") == 1);
     BOOST_TEST(cfg.get_match_index(pt::user, "beta") == 2);
     BOOST_TEST(cfg.get_match_index(pt::user, "gamma") == 2);
     BOOST_TEST(cfg.get_match_index(pt::user, "delta") == 2);
-    BOOST_TEST(cfg.get_match_index(pt::user, "epsilon") == 3);
-    BOOST_TEST(cfg.get_match_index(pt::user, "zeta") == 3);
+    BOOST_TEST(cfg.get_match_index(pt::user, "epsilon") == 6);
+    BOOST_TEST(cfg.get_match_index(pt::user, "zeta") == 6);
+    BOOST_TEST(
+      cfg.get_match_index(pt::ephemeral_user, "__schema_registry") == 3);
+    BOOST_TEST(cfg.get_match_index(pt::ephemeral_user, "__pandaproxy") == 4);
+    BOOST_TEST(cfg.get_match_index(pt::user, "servicebot") == 5);
 
     // Copying
     config::throughput_control_group p4 = cfg.cgroups()[1];
@@ -262,6 +266,12 @@ cgroups:
                     R"(cgroups: [{principals: [{invalid_key: value}]}])"s))
                   .empty());
 
+    // Invalid service name
+    BOOST_TEST(!cfg
+                  .read_yaml(YAML::Load(
+                    R"(cgroups: [{principals: [{service: sepulkarium}]}])"s))
+                  .empty());
+
     // Control characters
     BOOST_TEST(!cfg
                   .read_yaml(YAML::Load(
@@ -270,5 +280,9 @@ cgroups:
     BOOST_TEST(!cfg
                   .read_yaml(YAML::Load(
                     "cgroups: [{principals: [{user: tarantoga\001}]}]"s))
+                  .empty());
+    BOOST_TEST(!cfg
+                  .read_yaml(YAML::Load(
+                    "cgroups: [{principals: [{service: panda proxy\002}]}]"s))
                   .empty());
 }
