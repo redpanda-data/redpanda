@@ -197,3 +197,74 @@ class SegmentMsTest(RedpandaTest):
         wait_until(lambda: self._total_segments_count(topic) > middle_count,
                    timeout_sec=SERVER_HOUSEKEEPING_LOOP * 2,
                    err_msg=f"failed to roll a segment in a timely manner")
+
+    @cluster(num_nodes=3)
+    def test_segment_rolling_with_retention(self):
+        self.redpanda.set_cluster_config({
+            "log_segment_ms": None,
+            "log_segment_ms_min": 10000
+        })
+        topic = TopicSpec(segment_bytes=(1024 * 1024),
+                          replication_factor=1,
+                          partition_count=1)
+        self.client().create_topic(topic)
+
+        producer = VerifiableProducer(context=self.test_context,
+                                      num_nodes=1,
+                                      redpanda=self.redpanda,
+                                      topic=topic.name,
+                                      throughput=10000)
+
+        producer.start()
+        wait_until(
+            lambda: self._total_segments_count(topic) >= 5,
+            timeout_sec=120,
+            err_msg=
+            "producer failed to produce enough messages to create 5 segments")
+        # stop producer
+        producer.stop()
+        producer.clean()
+        producer.free()
+        del producer
+        start_count = self._total_segments_count(topic)
+        self.client().alter_topic_config(topic.name, "segment.ms", "15000")
+
+        # wait for the segment.ms policy to roll the segment
+        wait_until(lambda: self._total_segments_count(topic) > start_count,
+                   timeout_sec=60,
+                   err_msg=f"failed waiting for the segment to roll")
+
+        self.client().alter_topic_config(topic.name,
+                                         "retention.local.target.ms", "10000")
+        self.client().alter_topic_config(topic.name, "retention.ms", "10000")
+
+        # wait for retention policy to trigger
+        wait_until(lambda: self._total_segments_count(topic) <= 1,
+                   timeout_sec=60,
+                   err_msg=f"failed waiting for retention policy")
+
+        producer = VerifiableProducer(context=self.test_context,
+                                      num_nodes=1,
+                                      redpanda=self.redpanda,
+                                      topic=topic.name,
+                                      throughput=10000)
+        producer.start()
+        wait_until(
+            lambda: self._total_segments_count(topic) >= 2,
+            timeout_sec=120,
+            err_msg=
+            f"producer failed to produce enough messages to create 5 segments")
+        producer.stop()
+
+        consumer = VerifiableConsumer(context=self.test_context,
+                                      num_nodes=1,
+                                      redpanda=self.redpanda,
+                                      topic=topic.name,
+                                      group_id="test-group")
+        consumer.start()
+        # Wait for any messages to be consumed,
+        # (if there is an issue in the offsets handling it will result in consumer being stuck)
+        wait_until(lambda: consumer.total_consumed() >= 1000,
+                   timeout_sec=120,
+                   err_msg=f"Failed to consume messages")
+        consumer.stop()
