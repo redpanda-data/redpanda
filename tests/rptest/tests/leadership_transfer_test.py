@@ -196,7 +196,7 @@ class MultiTopicAutomaticLeadershipBalancingTest(RedpandaTest):
 
         self.logger.info("stabilization post start")
         wait_until(lambda: topic_leadership_evenly_distributed(),
-                   timeout_sec=300,
+                   timeout_sec=600,
                    backoff_sec=10,
                    err_msg="Leadership did not stablize")
 
