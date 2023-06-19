@@ -48,37 +48,6 @@ segment_reader::~segment_reader() noexcept {
     _streams.clear();
 }
 
-segment_reader::segment_reader(segment_reader&& rhs) noexcept
-  : _path(std::move(rhs._path))
-  , _data_file(std::move(rhs._data_file))
-  , _data_file_refcount(rhs._data_file_refcount)
-  , _streams(std::move(rhs._streams))
-  , _file_size(rhs._file_size)
-  , _buffer_size(rhs._buffer_size)
-  , _read_ahead(rhs._read_ahead)
-  , _sanitizer_config(std::move(rhs._sanitizer_config))
-  , _gate(std::move(rhs._gate)) {
-    for (auto& i : _streams) {
-        i._parent = this;
-    }
-}
-
-segment_reader& segment_reader::operator=(segment_reader&& rhs) noexcept {
-    _path = std::move(rhs._path);
-    _data_file = std::move(rhs._data_file);
-    _data_file_refcount = rhs._data_file_refcount;
-    _file_size = rhs._file_size;
-    _buffer_size = rhs._buffer_size;
-    _read_ahead = rhs._read_ahead;
-    _sanitizer_config = std::move(rhs._sanitizer_config);
-    _gate = std::move(rhs._gate);
-    _streams = std::move(rhs._streams);
-    for (auto& i : _streams) {
-        i._parent = this;
-    }
-    return *this;
-}
-
 ss::future<> segment_reader::load_size() {
     ss::gate::holder guard{_gate};
 

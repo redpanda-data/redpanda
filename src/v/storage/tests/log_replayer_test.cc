@@ -72,9 +72,9 @@ public:
           base,
           4096,
           _feature_table);
-        auto reader = segment_reader(
+        auto reader = std::make_unique<segment_reader>(
           segment_full_path::mock(base_name), 128_KiB, 10);
-        reader.load_size().get();
+        reader->load_size().get();
         _seg = ss::make_lw_shared<segment>(
           segment::offset_tracker(model::term_id(0), base),
           std::move(reader),

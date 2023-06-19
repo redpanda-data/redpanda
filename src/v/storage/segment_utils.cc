@@ -476,16 +476,16 @@ ss::future<> do_swap_data_file_handles(
     // the on disk file is changing so clear the size cache
     s->clear_cached_disk_usage();
 
-    auto r = segment_reader(
+    auto r = std::make_unique<segment_reader>(
       s->reader().path(),
       config::shard_local_cfg().storage_read_buffer_size(),
       config::shard_local_cfg().storage_read_readahead_count(),
       cfg.sanitizer_config);
-    co_await r.load_size();
+    co_await r->load_size();
 
     // update partition size probe
     pb.delete_segment(*s.get());
-    std::swap(s->reader(), r);
+    s->swap_reader(std::move(r));
     pb.add_initial_segment(*s.get());
 }
 
@@ -725,12 +725,12 @@ make_concatenated_segment(
     offsets.stable_offset = std::max(front.stable_offset, back.stable_offset);
 
     // build segment reader over combined data
-    segment_reader reader(
+    auto reader = std::make_unique<segment_reader>(
       path,
       config::shard_local_cfg().storage_read_buffer_size(),
       config::shard_local_cfg().storage_read_readahead_count(),
       cfg.sanitizer_config);
-    co_await reader.load_size();
+    co_await reader->load_size();
 
     // build an empty index for the segment
     auto index_name = path.to_index();
