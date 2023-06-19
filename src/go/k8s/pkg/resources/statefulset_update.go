@@ -204,9 +204,42 @@ func (r *StatefulSetResource) rollingUpdate(
 				Msg:          "wait for cluster to become healthy",
 			}
 		}
+
+		headlessServiceWithPort := fmt.Sprintf("%s:%d", r.serviceFQDN,
+			r.pandaCluster.AdminAPIInternal().Port)
+
+		adminURL := url.URL{
+			Scheme: "http",
+			Host:   hostOverwrite(&pod, headlessServiceWithPort),
+			Path:   "metrics",
+		}
+
+		params := url.Values{}
+		if featuregates.MetricsQueryParamName(r.pandaCluster.Spec.Version) {
+			params.Add("__name__", "cluster_partition_under_replicated_replicas*")
+		} else {
+			params.Add("name", "cluster_partition_under_replicated_replicas*")
+		}
+		adminURL.RawQuery = params.Encode()
+
+		if err = r.evaluateUnderReplicatedPartitions(ctx, &adminURL); err != nil {
+			return &RequeueAfterError{
+				RequeueAfter: RequeueDuration,
+				Msg:          fmt.Sprintf("broker reported under replicated partitions: %v", err),
+			}
+		}
 	}
 
 	return nil
+}
+
+var UnderReplicatedPartitionsHostOverwrite string
+
+func hostOverwrite(pod *corev1.Pod, headlessServiceWithPort string) string {
+	if UnderReplicatedPartitionsHostOverwrite != "" {
+		return UnderReplicatedPartitionsHostOverwrite
+	}
+	return fmt.Sprintf("%s.%s", pod.Name, headlessServiceWithPort)
 }
 
 func (r *StatefulSetResource) podEviction(ctx context.Context, pod, artificialPod *corev1.Pod, newVolumes map[string]interface{}) error {
