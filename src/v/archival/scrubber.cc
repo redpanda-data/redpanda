@@ -346,9 +346,6 @@ scrubber::run(retry_chain_node& parent_rtc, run_quota_t quota) {
 
     const auto my_global_position = get_global_position();
 
-    // TODO: grace period to let individual cluster::partitions finish
-    // deleting their own partitions under normal circumstances.
-
     vlog(
       archival_log.info,
       "Running with {} quota, {} topic lifecycle markers",
@@ -363,6 +360,22 @@ scrubber::run(retry_chain_node& parent_rtc, run_quota_t quota) {
               marker.config.tp_ns);
 
             co_await _topics_frontend.local().purged_topic(nt_revision, 5s);
+            continue;
+        }
+
+        // Check if the grace period has elapsed. The intent here is to
+        // avoid races with `remote_partition::finalize`.
+        const auto now = ss::lowres_system_clock::now();
+        if (
+          marker.timestamp.has_value()
+          && now - marker.timestamp.value()
+               < config::shard_local_cfg()
+                   .cloud_storage_topic_purge_grace_period_ms()) {
+            vlog(
+              archival_log.debug,
+              "Grace period for {} is still in effect for. Skipping scrub.",
+              marker.config.tp_ns);
+
             continue;
         }
 

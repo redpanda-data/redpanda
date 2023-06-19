@@ -155,7 +155,8 @@ topic_table::apply(topic_lifecycle_transition soft_del, model::offset offset) {
         auto tombstone = nt_lifecycle_marker{
           .config = tp->second.get_configuration(),
           .initial_revision_id = tp->second.get_remote_revision().value_or(
-            model::initial_revision_id(tp->second.get_revision()))};
+            model::initial_revision_id(tp->second.get_revision())),
+          .timestamp = ss::lowres_system_clock::now()};
 
         _lifecycle_markers.emplace(soft_del.topic, tombstone);
         vlog(
