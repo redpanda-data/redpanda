@@ -252,7 +252,9 @@ snc_quota_manager::calc_node_quota_default() const {
 
 void snc_quota_manager::get_or_create_quota_context(
   std::unique_ptr<snc_quota_context>& ctx,
-  std::optional<std::string_view> client_id) {
+  std::optional<std::string_view> client_id,
+  const ss::net::inet_address& client_addr,
+  const uint16_t client_port) {
     if (likely(ctx)) {
         // note: comparing sstring (the lefthand _client_id) to string_view
         // (the righthand client_id) is only possible by converting the former
@@ -268,33 +270,51 @@ void snc_quota_manager::get_or_create_quota_context(
         // this should not happen. If it does happen with a supported client, we
         // probably should start supporting multiple quota contexts per
         // connection
-        vlog(
-          klog.warn,
-          "qm - client_id has changed on the connection. Quotas are reset now. "
-          "Old client_id: {}, new client_id: {}",
-          ctx->_client_id,
-          client_id);
+        if (ctx->_client_id != client_id) {
+            vlog(
+              klog.warn,
+              "{}:{} - qm - client_id has changed on the connection. "
+              "Quotas are reset now. Old client_id: {}, new client_id: {}",
+              client_addr,
+              client_port,
+              ctx->_client_id,
+              client_id);
+        }
     }
 
     ctx = std::make_unique<snc_quota_context>(client_id);
+    vlog(
+      klog.trace,
+      "{}:{} - qm - Matching client_id: {}",
+      client_addr,
+      client_port,
+      ctx->_client_id);
     const auto tcgroup_it = config::find_throughput_control_group(
       _kafka_throughput_control().cbegin(),
       _kafka_throughput_control().cend(),
       client_id);
     if (tcgroup_it == _kafka_throughput_control().cend()) {
         ctx->_exempt = false;
-        vlog(klog.debug, "qm - No throughput control group assigned");
+        vlog(
+          klog.debug,
+          "{}:{} - qm - No throughput control group assigned",
+          client_addr,
+          client_port);
     } else {
         ctx->_exempt = true;
         if (tcgroup_it->is_noname()) {
             vlog(
               klog.debug,
-              "qm - Assigned throughput control group #{}",
+              "{}:{} - qm - Assigned throughput control group #{}",
+              client_addr,
+              client_port,
               std::distance(_kafka_throughput_control().cbegin(), tcgroup_it));
         } else {
             vlog(
               klog.debug,
-              "qm - Assigned throughput control group: {}",
+              "{}:{} - qm - Assigned throughput control group: '{}'",
+              client_addr,
+              client_port,
               tcgroup_it->name);
         }
     }
