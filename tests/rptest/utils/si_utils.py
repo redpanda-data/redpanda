@@ -10,19 +10,18 @@ import collections
 import json
 import pprint
 import struct
-from collections import defaultdict, namedtuple
-from typing import Sequence, Optional, NewType, NamedTuple
-from enum import Enum
 import time
+from collections import defaultdict, namedtuple
+from enum import Enum
+from typing import Sequence, Optional, NewType, NamedTuple
 
 import xxhash
 
 from rptest.archival.s3_client import ObjectMetadata
-from rptest.clients.types import TopicSpec
-from rptest.clients.rpk import RpkTool
-from rptest.services.admin import Admin
-from rptest.services.redpanda import MetricsEndpoint, RESTART_LOG_ALLOW_LIST
 from rptest.clients.rp_storage_tool import RpStorageTool
+from rptest.clients.rpk import RpkTool
+from rptest.clients.types import TopicSpec
+from rptest.services.redpanda import MetricsEndpoint, RESTART_LOG_ALLOW_LIST
 
 EMPTY_SEGMENT_SIZE = 4096
 
@@ -877,16 +876,20 @@ class BucketView:
 
         return len(manifest['segments'])
 
-    def cloud_log_size_for_ntp(self,
-                               topic: str,
-                               partition: int,
-                               ns: str = 'kafka') -> int:
+    def cloud_log_size_for_ntp(
+            self,
+            topic: str,
+            partition: int,
+            ns: str = 'kafka',
+            include_size_below_start_offset: bool = True) -> int:
         try:
             manifest = self.manifest_for_ntp(topic, partition, ns)
         except KeyError:
             return 0
         else:
-            return BucketView.cloud_log_size_from_ntp_manifest(manifest)
+            return BucketView.cloud_log_size_from_ntp_manifest(
+                manifest,
+                include_below_start_offset=include_size_below_start_offset)
 
     def assert_at_least_n_uploaded_segments_compacted(self,
                                                       topic: str,
