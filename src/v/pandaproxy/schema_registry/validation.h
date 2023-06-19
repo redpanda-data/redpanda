@@ -21,6 +21,10 @@
 
 #include <seastar/core/future.hh>
 
+namespace cluster {
+class partition_probe;
+}
+
 namespace pandaproxy::schema_registry {
 
 class schema_id_validator {
@@ -38,7 +42,8 @@ public:
     ~schema_id_validator() noexcept;
 
     using result = ::result<model::record_batch_reader, kafka::error_code>;
-    ss::future<result> operator()(model::record_batch_reader&&);
+    ss::future<result>
+    operator()(model::record_batch_reader&&, cluster::partition_probe* probe);
 
 private:
     std::unique_ptr<impl> _impl;
@@ -51,9 +56,10 @@ std::optional<schema_id_validator> maybe_make_schema_id_validator(
 
 ss::future<schema_id_validator::result> inline maybe_validate_schema_id(
   std::optional<schema_id_validator> validator,
-  model::record_batch_reader rbr) {
+  model::record_batch_reader rbr,
+  cluster::partition_probe* probe) {
     if (validator) {
-        co_return co_await (*validator)(std::move(rbr));
+        co_return co_await (*validator)(std::move(rbr), probe);
     }
     co_return std::move(rbr);
 }

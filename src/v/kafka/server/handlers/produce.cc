@@ -343,8 +343,9 @@ static partition_produce_stages produce_topic_partition(
                       source_shard);
                 }
 
+                auto probe = std::addressof(partition->probe());
                 return pandaproxy::schema_registry::maybe_validate_schema_id(
-                         std::move(validator), std::move(reader))
+                         std::move(validator), std::move(reader), probe)
                   .then([ntp{std::move(ntp)},
                          partition{std::move(partition)},
                          dispatch = std::move(dispatch),
