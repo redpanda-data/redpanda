@@ -292,7 +292,8 @@ void snc_quota_manager::get_or_create_quota_context(
     const auto tcgroup_it = config::find_throughput_control_group(
       _kafka_throughput_control().cbegin(),
       _kafka_throughput_control().cend(),
-      client_id);
+      client_id,
+      nullptr);
     if (tcgroup_it == _kafka_throughput_control().cend()) {
         ctx->_exempt = false;
         vlog(

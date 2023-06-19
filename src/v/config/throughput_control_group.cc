@@ -12,6 +12,7 @@
 #include "throughput_control_group.h"
 
 #include "config/convert.h"
+#include "security/acl.h"
 #include "ssx/sformat.h"
 #include "utils/functional.h"
 #include "utils/to_string.h"
@@ -22,6 +23,7 @@
 #include <fmt/core.h>
 #include <re2/re2.h>
 #include <re2/stringpiece.h>
+#include <yaml-cpp/node/detail/iterator_fwd.h>
 #include <yaml-cpp/node/node.h>
 
 #include <algorithm>
@@ -29,6 +31,7 @@
 #include <optional>
 #include <string>
 #include <type_traits>
+#include <utility>
 #include <variant>
 
 using namespace std::string_literals;
@@ -53,6 +56,8 @@ constexpr const char* name = "name";
 constexpr const char* client_id = "client_id";
 constexpr const char* tp_limit_node_in = "throughput_limit_node_in_bps";
 constexpr const char* tp_limit_node_out = "throughput_limit_node_out_bps";
+constexpr const char* principals = "principals";
+constexpr const char* user = "user";
 } // namespace ids
 
 constexpr char selector_prefix = '+';
@@ -116,6 +121,7 @@ throughput_control_group::throughput_control_group(
       other.client_id_matcher
         ? std::make_unique<client_id_matcher_type>(*other.client_id_matcher)
         : std::unique_ptr<client_id_matcher_type>{})
+  , acl_principals(other.acl_principals)
   , throughput_limit_node_in_bps(other.throughput_limit_node_in_bps)
   , throughput_limit_node_out_bps(other.throughput_limit_node_out_bps) {}
 
@@ -130,6 +136,7 @@ bool operator==(
            && (lhs.client_id_matcher == rhs.client_id_matcher
                  || (lhs.client_id_matcher && rhs.client_id_matcher
                      && *lhs.client_id_matcher == *rhs.client_id_matcher))
+           && lhs.acl_principals == rhs.acl_principals
            && lhs.throughput_limit_node_in_bps == rhs.throughput_limit_node_in_bps
            && lhs.throughput_limit_node_out_bps == rhs.throughput_limit_node_out_bps;
 }
@@ -138,10 +145,11 @@ std::ostream&
 operator<<(std::ostream& os, const throughput_control_group& tcg) {
     fmt::print(
       os,
-      "{{group_name: {}, client_id_matcher: {}, "
+      "{{group_name: {}, client_id_matcher: {}, acl_principals: {}, "
       "throughput_limit_node_in_bps: {}, throughput_limit_node_out_bps: {}}}",
       tcg.is_noname() ? ""s : fmt::format("{{{}}}", tcg.name),
       tcg.client_id_matcher,
+      tcg.acl_principals,
       tcg.throughput_limit_node_in_bps,
       tcg.throughput_limit_node_out_bps);
     return os;
@@ -163,6 +171,25 @@ bool throughput_control_group::match_client_id(
     return client_id_to_match
            && re2::RE2::FullMatch(
              re2::StringPiece(*client_id_to_match), *client_id_matcher->v);
+}
+
+bool throughput_control_group::match_acl_principal(
+  const security::acl_principal* const principal_to_match) const {
+    if (!acl_principals) {
+        // omitted match criterion means "always match"
+        return true;
+    }
+    if (!principal_to_match) {
+        // no other way to match unauthenticated case
+        return false;
+    }
+    return std::any_of(
+      acl_principals->begin(),
+      acl_principals->end(),
+      [principal_to_match](const security::acl_principal& p) {
+          return (p == *principal_to_match)
+                 || (p.wildcard() && p.type() == principal_to_match->type());
+      });
 }
 
 bool throughput_control_group::is_noname() const noexcept {
@@ -194,6 +221,59 @@ ss::sstring throughput_control_group::validate() const {
 
 namespace YAML {
 
+template<>
+struct convert<security::acl_principal> {
+    using type = security::acl_principal;
+    static Node encode(const type& rhs);
+    static bool decode(const Node& node, type& rhs);
+};
+
+Node convert<security::acl_principal>::encode(const type& principal) {
+    using namespace config;
+    Node node;
+
+    switch (principal.type()) {
+    case security::principal_type::user: {
+        node[ids::user] = principal.name();
+        break;
+    }
+    case security::principal_type::ephemeral_user: {
+        // not supported yet, invalid config produced if it appears
+        break;
+    }
+    }
+
+    return node;
+}
+
+bool convert<security::acl_principal>::decode(
+  const Node& node, type& principal) {
+    using namespace config;
+
+    // always a single element map
+    if (node.IsNull() || !node.IsMap()) {
+        return false;
+    }
+    if (node.size() != 1) {
+        return false;
+    }
+    const detail::iterator_value& el = *node.begin();
+    const auto el_name = el.first.as<ss::sstring>();
+    auto el_value = el.second.as<ss::sstring>();
+    if (
+      contains_control_characters(el_name)
+      || contains_control_characters(el_value)) {
+        return false;
+    }
+
+    if (el_name == ids::user) {
+        principal = security::acl_principal(
+          security::principal_type::user, std::move(el_value));
+        return true;
+    }
+    return false;
+}
+
 Node convert<config::throughput_control_group>::encode(const type& tcg) {
     using namespace config;
     Node node;
@@ -211,6 +291,14 @@ Node convert<config::throughput_control_group>::encode(const type& tcg) {
         } else {
             // regex
             client_id_node = tcg.client_id_matcher->v->pattern();
+        }
+    }
+
+    if (tcg.acl_principals) {
+        YAML::Node principals_node = node[ids::principals];
+        for (const security::acl_principal& p : *tcg.acl_principals) {
+            principals_node.push_back(
+              convert<security::acl_principal>::encode(p));
         }
     }
 
@@ -262,6 +350,26 @@ bool convert<config::throughput_control_group>::decode(
         res.client_id_matcher.reset();
     }
 
+    // principals
+    if (const auto& n = node[ids::principals]; n) {
+        std::vector<security::acl_principal> res_principals;
+        if (!n.IsNull()) {
+            if (!n.IsSequence()) {
+                return false;
+            }
+            res_principals.reserve(n.size());
+            for (const_iterator i = n.begin(); i != n.end(); ++i) {
+                if (!convert<security::acl_principal>::decode(
+                      *i, res_principals.emplace_back())) {
+                    return false;
+                }
+            }
+        }
+        res.acl_principals = std::move(res_principals);
+    } else {
+        res.acl_principals = std::nullopt;
+    }
+
     // tp_limit_node_in/out
     if (const auto& n = node[ids::tp_limit_node_in]; n) {
         // only the no-limit option is supported yet
@@ -286,6 +394,27 @@ namespace json {
 
 void rjson_serialize(
   json::Writer<json::StringBuffer>& w,
+  const security::acl_principal& principal) {
+    using namespace config;
+    w.StartObject();
+
+    switch (principal.type()) {
+    case security::principal_type::user: {
+        w.Key(ids::user);
+        w.String(principal.name());
+        break;
+    }
+    case security::principal_type::ephemeral_user: {
+        // not supported yet, invalid config produced if it appears
+        break;
+    }
+    }
+
+    w.EndObject();
+}
+
+void rjson_serialize(
+  json::Writer<json::StringBuffer>& w,
   const config::throughput_control_group& tcg) {
     using namespace config;
     w.StartObject();
@@ -303,6 +432,19 @@ void rjson_serialize(
         } else {
             // regex match
             w.String(tcg.client_id_matcher->v->pattern());
+        }
+    }
+
+    if (tcg.acl_principals) {
+        w.Key(ids::principals);
+        if (tcg.acl_principals->empty()) {
+            w.Null();
+        } else {
+            w.StartArray();
+            for (const security::acl_principal& p : *tcg.acl_principals) {
+                rjson_serialize(w, p);
+            }
+            w.EndArray(tcg.acl_principals->size());
         }
     }
 

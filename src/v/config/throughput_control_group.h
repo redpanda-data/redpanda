@@ -16,6 +16,7 @@
 #include "json/stringbuffer.h"
 #include "json/writer.h"
 #include "seastarx.h"
+#include "security/fwd.h"
 
 #include <seastar/core/print.hh>
 #include <seastar/core/sstring.hh>
@@ -26,6 +27,7 @@
 #include <cstddef>
 #include <iterator>
 #include <string_view>
+#include <vector>
 
 namespace re2 {
 class RE2;
@@ -48,11 +50,14 @@ struct throughput_control_group {
     operator<<(std::ostream& os, const throughput_control_group& tcg);
 
     bool match_client_id(std::optional<std::string_view> client_id) const;
+    bool match_acl_principal(const security::acl_principal* principal) const;
     bool is_noname() const noexcept;
     ss::sstring validate() const;
 
     ss::sstring name;
+    // nullptr and nullopt mean the filter is omitted (matches any)
     std::unique_ptr<struct client_id_matcher_type> client_id_matcher;
+    std::optional<std::vector<security::acl_principal>> acl_principals;
     // nuillopt means unlimited:
     std::optional<int64_t> throughput_limit_node_in_bps;
     std::optional<int64_t> throughput_limit_node_out_bps;
@@ -68,10 +73,14 @@ template<class InputIt>
 InputIt find_throughput_control_group(
   const InputIt first,
   const InputIt last,
-  const std::optional<std::string_view> client_id) {
+  const std::optional<std::string_view> client_id,
+  const security::acl_principal* const principal) {
     return std::find_if(
-      first, last, [&client_id](const config::throughput_control_group& cg) {
-          return cg.match_client_id(client_id);
+      first,
+      last,
+      [&client_id, principal](const config::throughput_control_group& cg) {
+          return cg.match_client_id(client_id)
+                 && cg.match_acl_principal(principal);
       });
 }
 
