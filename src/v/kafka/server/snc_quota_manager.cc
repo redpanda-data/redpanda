@@ -254,13 +254,15 @@ void snc_quota_manager::get_or_create_quota_context(
   std::unique_ptr<snc_quota_context>& ctx,
   std::optional<std::string_view> client_id) {
     if (likely(ctx)) {
-        // NB: comparing string_view to sstring might be suboptimal
+        // note: comparing sstring (the lefthand _client_id) to string_view
+        // (the righthand client_id) is only possible by converting the former
+        // to string_view, or with the sstring::operator<=>, => no perf penalty
         if (likely(ctx->_client_id == client_id)) {
             // the context is the right one
             return;
         }
 
-        // either of the context indexing propeties have changed on the client
+        // either of the context indexing properties have changed on the client
         // within the same connection. This is an unexpected path, quotas may
         // misbehave if we ever get here. The design is based on assumption that
         // this should not happen. If it does happen with a supported client, we
@@ -525,7 +527,7 @@ namespace detail {
 /// Split \p value between the elements of vector \p target in full, adding them
 /// to the elements already in the vector.
 /// If \p value is not a multiple of target.size(), the entire \p value
-/// is still dispensed in full. Quotinents rounded towards infinity
+/// is still dispensed in full. Quotients rounded towards infinity
 /// are added to the front elements of the \p target, and those rounded
 /// towards zero are added to the back elements.
 void dispense_equally(std::vector<quota_t>& target, const quota_t value) {
@@ -636,7 +638,7 @@ void dispense_negative_deltas(
     if (unlikely(quotas_left == 0)) {
         vlog(
           klog.error,
-          "qb - No shards to distribute the remianing delta: {}",
+          "qb - No shards to distribute the remaining delta: {}",
           delta);
         return;
     }
@@ -753,7 +755,7 @@ ss::future<> snc_quota_manager::quota_balancer_update(
         dispense_negative_deltas(
           schedule.eg, deltas.eg, std::move(quotas_soa.eg));
     }
-    // postive deltas are disensed equally
+    // positive deltas are dispensed equally
     if (deltas.in > 0) {
         dispense_equally(schedule.in, deltas.in);
     }

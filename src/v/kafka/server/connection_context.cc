@@ -366,8 +366,8 @@ connection_context::dispatch_method_once(request_header hdr, size_t size) {
               // snc_quota_mgr().get_or_create_quota_context() in
               // record_tp_and_calculate_throttle(), but there is possibility
               // that the changing configuration could still take us into this
-              // branch with unmatching (and even null) _snc_quota_context.
-              // Simply an unmatching _snc_quota_context is no big deal because
+              // branch with nonmatching (and even null) _snc_quota_context.
+              // Simply a nonmatching _snc_quota_context is no big deal because
               // it is a one off event, but we need protection from it being
               // nullptr
               if (likely(_snc_quota_context)) {

@@ -68,6 +68,7 @@ struct copyable_RE2 : re2::RE2 {
     copyable_RE2& operator=(copyable_RE2&&) noexcept = delete;
     explicit copyable_RE2(const std::string& s)
       : RE2(s) {}
+
     friend std::ostream& operator<<(std::ostream& os, const copyable_RE2& re) {
         fmt::print(os, "{}", re.pattern());
         return os;
@@ -77,9 +78,11 @@ struct copyable_RE2 : re2::RE2 {
 struct client_id_matcher_type {
     // nullopt stands for the empty client_id value
     std::optional<copyable_RE2> v;
+
     client_id_matcher_type() = default;
     explicit client_id_matcher_type(const copyable_RE2& d)
       : v(d) {}
+
     friend std::ostream& operator<<(
       std::ostream& os, const std::unique_ptr<client_id_matcher_type>& mt) {
         if (mt) {
@@ -119,8 +122,8 @@ std::ostream&
 operator<<(std::ostream& os, const throughput_control_group& tcg) {
     fmt::print(
       os,
-      "{{group_name: {}, client_id: {}, throughput_limit_node_in_bps: {}, "
-      "throughput_limit_node_out_bps: {}}}",
+      "{{group_name: {}, client_id_matcher: {}, "
+      "throughput_limit_node_in_bps: {}, throughput_limit_node_out_bps: {}}}",
       tcg.is_noname() ? ""s : fmt::format("{{{}}}", tcg.name),
       tcg.client_id_matcher,
       tcg.throughput_limit_node_in_bps,
@@ -129,7 +132,7 @@ operator<<(std::ostream& os, const throughput_control_group& tcg) {
 }
 
 bool throughput_control_group::match_client_id(
-  const std::optional<std::string_view> client_id) const {
+  const std::optional<std::string_view> client_id_to_match) const {
     if (!client_id_matcher) {
         // omitted match criterion means "always match"
         return true;
@@ -137,13 +140,13 @@ bool throughput_control_group::match_client_id(
     if (!client_id_matcher->v) {
         // empty client_id match
         // only missing client_id matches the empty
-        return !client_id;
+        return !client_id_to_match;
     }
     // regex match
     // missing client_id never matches a re
-    return client_id
+    return client_id_to_match
            && re2::RE2::FullMatch(
-             re2::StringPiece(*client_id), *client_id_matcher->v);
+             re2::StringPiece(*client_id_to_match), *client_id_matcher->v);
 }
 
 bool throughput_control_group::is_noname() const noexcept {
@@ -203,6 +206,7 @@ bool convert<config::throughput_control_group>::decode(
     using namespace config;
     throughput_control_group res;
 
+    // name
     if (const auto& n = node[ids::name]; n) {
         res.name = n.as<ss::sstring>();
         if (contains_control_characters(res.name)) {
@@ -212,6 +216,7 @@ bool convert<config::throughput_control_group>::decode(
         res.name = noname;
     }
 
+    // client_id
     if (const auto& n = node[ids::client_id]; n) {
         const auto s = n.as<std::string>();
         if (contains_control_characters(s)) {
@@ -241,13 +246,13 @@ bool convert<config::throughput_control_group>::decode(
         res.client_id_matcher.reset();
     }
 
+    // tp_limit_node_in/out
     if (const auto& n = node[ids::tp_limit_node_in]; n) {
         // only the no-limit option is supported yet
         return false;
     } else {
         res.throughput_limit_node_in_bps = std::nullopt;
     }
-
     if (const auto& n = node[ids::tp_limit_node_out]; n) {
         // only the no-limit option is supported yet
         return false;
