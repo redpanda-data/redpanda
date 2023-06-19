@@ -277,10 +277,14 @@ partition_cloud_storage_status partition::get_cloud_storage_status() const {
           = _archival_meta_stm->get_dirty()
             == archival_metadata_stm::state_dirty::dirty;
         status.cloud_log_size_bytes = manifest.cloud_log_size();
-        status.cloud_log_segment_count = manifest.size();
+        status.stm_region_size_bytes = manifest.stm_region_size_bytes();
+        status.archive_size_bytes = manifest.archive_size_bytes();
+        status.stm_region_segment_count = manifest.size();
 
         if (manifest.size() > 0) {
-            status.cloud_log_start_offset = manifest.get_start_kafka_offset();
+            status.cloud_log_start_offset
+              = manifest.full_log_start_kafka_offset();
+            status.stm_region_start_offset = manifest.get_start_kafka_offset();
             status.cloud_log_last_offset = manifest.get_last_kafka_offset();
         }
 

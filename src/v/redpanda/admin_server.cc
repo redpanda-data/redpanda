@@ -4757,12 +4757,17 @@ map_status_to_json(cluster::partition_cloud_storage_status status) {
 
     json.total_log_size_bytes = status.total_log_size_bytes;
     json.cloud_log_size_bytes = status.cloud_log_size_bytes;
+    json.stm_region_size_bytes = status.stm_region_size_bytes;
+    json.archive_size_bytes = status.archive_size_bytes;
     json.local_log_size_bytes = status.local_log_size_bytes;
-    json.cloud_log_segment_count = status.cloud_log_segment_count;
+    json.stm_region_segment_count = status.stm_region_segment_count;
     json.local_log_segment_count = status.local_log_segment_count;
 
     if (status.cloud_log_start_offset) {
         json.cloud_log_start_offset = status.cloud_log_start_offset.value()();
+    }
+    if (status.stm_region_start_offset) {
+        json.stm_region_start_offset = status.stm_region_start_offset.value()();
     }
     if (status.cloud_log_last_offset) {
         json.cloud_log_last_offset = status.cloud_log_last_offset.value()();
