@@ -13,6 +13,7 @@
 
 namespace security {
 
+class acl_principal;
 class authorizer;
 class credential_store;
 class ephemeral_credential_store;
