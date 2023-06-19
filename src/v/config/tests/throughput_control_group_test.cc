@@ -44,7 +44,7 @@ cgroups:
     - name: ""
       client_id: client_id-1
     - client_id: cli.+_id-\d+
-    - client_id: another unnamed group indended to verify this passes validation
+    - client_id: another unnamed group intended to verify this passes validation
     - name: match-nothing-group
       client_id: ""
     - name: unspecified client_id
@@ -113,7 +113,7 @@ cgroups:
       !cfg.read_yaml(YAML::Load(R"(cgroups: [{name: n, client_id: "*"}])"s))
          .empty());
 
-    // Specify any throupghput limit
+    // Specify any throughput limit
     BOOST_TEST(
       !cfg
          .read_yaml(YAML::Load(
