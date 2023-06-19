@@ -2257,6 +2257,15 @@ ss::future<> ntp_archiver::apply_retention() {
         co_return;
     }
 
+    if (manifest().archive_size_bytes() != 0) {
+        vlog(
+          _rtclog.error,
+          "Size of the archive is not 0, but archival and STM start offsets "
+          "are equal ({}). Skipping retention within STM region.",
+          arch_so);
+        co_return;
+    }
+
     auto retention_calculator = retention_calculator::factory(
       manifest(), _parent.get_ntp_config());
     if (!retention_calculator) {
