@@ -899,6 +899,7 @@ ss::future<stm_snapshot> archival_metadata_stm::take_snapshot() {
       .archive_start_offset = _manifest->get_archive_start_offset(),
       .archive_start_offset_delta = _manifest->get_archive_start_offset_delta(),
       .archive_clean_offset = _manifest->get_archive_clean_offset(),
+      .archive_size_bytes = _manifest->archive_size_bytes(),
       .start_kafka_offset = _manifest->get_start_kafka_offset_override(),
       .spillover_manifests = std::move(spillover)});
 
