@@ -12,6 +12,7 @@
 #include "cluster/partition.h"
 #include "config/configuration.h"
 #include "model/metadata.h"
+#include "pandaproxy/schema_registry/schema_id_validation.h"
 #include "prometheus/prometheus_sanitize.h"
 #include "ssx/metrics.h"
 
@@ -147,6 +148,22 @@ void replicated_partition_probe::setup_internal_metrics(const model::ntp& ntp) {
           labels)
           .aggregate(aggregate_labels),
       });
+
+    if (
+      config::shard_local_cfg().enable_schema_id_validation()
+      != pandaproxy::schema_registry::schema_id_validation_mode::none) {
+        _metrics.add_group(
+          prometheus_sanitize::metrics_name("cluster:partition"),
+          {
+            sm::make_counter(
+              "schema_id_validation_records_failed",
+              [this] { return _schema_id_validation_records_failed; },
+              sm::description(
+                "Number of records that failed schema ID validation"),
+              labels)
+              .aggregate({sm::shard_label, partition_label}),
+          });
+    }
 }
 
 void replicated_partition_probe::setup_public_metrics(const model::ntp& ntp) {
