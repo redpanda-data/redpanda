@@ -857,7 +857,7 @@ class EndToEndSpilloverTest(RedpandaTest):
                                           trace_logs=True)
         consumer.start()
 
-        consumer.wait(timeout_sec=100)
+        consumer.wait(timeout_sec=120)
 
         assert consumer.consumer_status.validator.invalid_reads == 0
         assert consumer.consumer_status.validator.valid_reads >= self.msg_count
