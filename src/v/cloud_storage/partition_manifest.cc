@@ -928,41 +928,124 @@ partition_manifest partition_manifest::truncate() {
     return removed;
 }
 
-partition_manifest partition_manifest::spillover(model::offset start_offset) {
-    if (!advance_start_offset(start_offset)) {
-        throw std::runtime_error(fmt_with_ctx(
-          fmt::format,
-          "{} can't apply spillover to manifest, offset: {}",
-          _ntp,
-          start_offset));
+void partition_manifest::spillover(const segment_meta& spillover_meta) {
+    auto start_offset = model::next_offset(spillover_meta.committed_offset);
+    auto append_tx = _spillover_manifests.append(spillover_meta);
+    partition_manifest removed;
+    auto num_segments = _segments.size();
+    try {
+        removed = truncate(start_offset);
+    } catch (...) {
+        if (_segments.size() < num_segments) {
+            // If the segments list was actually truncated we
+            // need to commit the changes to the _spillover_manifests
+            // collection. Otherwise it will be inconsistent with the _segments.
+            _spillover_manifests.flush_write_buffer();
+        }
+        throw;
     }
-    auto removed = truncate();
+    // Commit changes to the spillover manifest list so they won't
+    // be rolled back if any code below throws an exception.
+    _spillover_manifests.flush_write_buffer();
+
+    auto expected_meta = removed.make_manifest_metadata();
+
+    if (expected_meta != spillover_meta) {
+        vlog(
+          cst_log.error,
+          "{} Expected spillover metadata {} doesn't match actual spillover "
+          "metadata {}",
+          _ntp,
+          expected_meta,
+          spillover_meta);
+    } else {
+        vlog(
+          cst_log.debug,
+          "{} Applying spillover metadata {}",
+          _ntp,
+          spillover_meta);
+    }
     // Update size of the archived part of the log.
     // It doesn't include segments which are remaining in the
     // manifest.
     _archive_size_bytes += removed.cloud_log_size();
+}
 
-    if (!removed.empty()) {
-        // This segment meta doesn't represent the segment but the
-        // spillover manifest. The fields in segment_meta are repurposed
-        // to store information about the spillover manifest.
-        segment_meta meta{
-          .size_bytes = removed.cloud_log_size(),
-          .base_offset = removed.get_start_offset().value(),
-          .committed_offset = removed.get_last_offset(),
-          .base_timestamp = removed.begin()->base_timestamp,
-          .max_timestamp = removed.last_segment()->max_timestamp,
-          .delta_offset = removed.begin()->delta_offset,
-          .ntp_revision = removed.get_revision_id(),
-          .archiver_term = removed.begin()->segment_term,
-          .segment_term = removed.last_segment()->segment_term,
-          .delta_offset_end = removed.last_segment()->delta_offset_end,
-          .sname_format = segment_name_format::v3,
-          .metadata_size_hint = removed.segments_metadata_bytes(),
-        };
-        _spillover_manifests.insert(meta);
+segment_meta partition_manifest::make_manifest_metadata() const {
+    return segment_meta{
+      .size_bytes = cloud_log_size(),
+      .base_offset = get_start_offset().value(),
+      .committed_offset = get_last_offset(),
+      .base_timestamp = begin()->base_timestamp,
+      .max_timestamp = last_segment()->max_timestamp,
+      .delta_offset = begin()->delta_offset,
+      .ntp_revision = get_revision_id(),
+      .archiver_term = begin()->segment_term,
+      .segment_term = last_segment()->segment_term,
+      .delta_offset_end = last_segment()->delta_offset_end,
+      .sname_format = segment_name_format::v3,
+      .metadata_size_hint = segments_metadata_bytes(),
+    };
+}
+
+bool partition_manifest::safe_spillover_manifest(const segment_meta& meta) {
+    // New spillover manifest should connect with previous spillover manifests
+    // and *this manifest. The manifest is not truncated yet so meta.base_offset
+    // should be equal to start offset and the meta.committed_offset + 1 should
+    // be aligned with one of the segments.
+    auto so = get_start_offset();
+    if (!so.has_value()) {
+        vlog(
+          cst_log.warn,
+          "{} Can't apply spillover manifest because the manifest is empty, {}",
+          _ntp,
+          meta);
+        return false;
     }
-    return removed;
+    // Invariant: 'meta' contains the tail of the log stored in this manifest
+    if (so.value() != meta.base_offset) {
+        vlog(
+          cst_log.warn,
+          "{} Can't apply spillover manifest because the start offsets are not "
+          "aligned: {} vs {}, {}",
+          _ntp,
+          so.value(),
+          meta.base_offset,
+          meta);
+        return false;
+    }
+    auto next_so = model::next_offset(meta.committed_offset);
+    auto it = find(next_so);
+    if (it == end()) {
+        // The end of the spillover manifest is not aligned with the segment
+        // correctly.
+        vlog(
+          cst_log.warn,
+          "{} Can't apply spillover manifest because the end of the manifest "
+          "is not aligned, {}",
+          _ntp,
+          meta);
+        return false;
+    }
+    // Invariant: 'meta' should be aligned perfectly with the previous spillover
+    // manifest.
+    if (_spillover_manifests.empty()) {
+        return true;
+    }
+    if (
+      model::next_offset(_spillover_manifests.last_segment()->committed_offset)
+      == meta.base_offset) {
+        return true;
+    }
+    vlog(
+      cst_log.warn,
+      "{} Can't apply spillover manifest because the end of the previous "
+      "manifest {} "
+      "is not aligned with the new one {}",
+      _ntp,
+      _spillover_manifests.last_segment(),
+      meta);
+    return false;
 }
 
 std::optional<partition_manifest::segment_meta>

@@ -64,7 +64,7 @@ public:
     command_batch_builder& truncate(model::offset start_rp_offset);
     command_batch_builder& truncate(kafka::offset start_kafka_offset);
     /// Add spillover command to the batch
-    command_batch_builder& spillover(model::offset start_rp_offset);
+    command_batch_builder& spillover(const cloud_storage::segment_meta& meta);
     /// Add truncate-archive-init command to the batch
     command_batch_builder& truncate_archive_init(
       model::offset start_rp_offset, model::offset_delta delta);
@@ -129,7 +129,7 @@ public:
     /// start_rp_offset forward. The entries are supposed to be moved to archive
     /// by the caller.
     ss::future<std::error_code> spillover(
-      model::offset start_rp_offset,
+      const cloud_storage::segment_meta& manifest_meta,
       ss::lowres_clock::time_point deadline,
       ss::abort_source&);
 
@@ -275,7 +275,7 @@ private:
     apply_truncate_archive_commit(model::offset co, uint64_t bytes_removed);
     void apply_update_start_kafka_offset(kafka::offset so);
     void apply_reset_metadata();
-    void apply_spillover(const start_offset& so);
+    void apply_spillover(const spillover_cmd& so);
 
 private:
     prefix_logger _logger;
