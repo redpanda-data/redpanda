@@ -21,6 +21,7 @@
 #include <seastar/core/sharded.hh>
 #include <seastar/core/sstring.hh>
 #include <seastar/core/timer.hh>
+#include <seastar/net/inet_address.hh>
 
 #include <chrono>
 #include <optional>
@@ -117,7 +118,9 @@ public:
     /// \post (bool)ctx == true
     void get_or_create_quota_context(
       std::unique_ptr<snc_quota_context>& ctx,
-      std::optional<std::string_view> client_id);
+      std::optional<std::string_view> client_id,
+      const ss::net::inet_address& client_addr,
+      uint16_t client_port);
 
     /// Determine throttling required by shard level TP quotas.
     delays_t get_shard_delays(snc_quota_context&, clock::time_point now) const;
