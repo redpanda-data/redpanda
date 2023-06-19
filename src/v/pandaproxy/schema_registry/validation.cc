@@ -16,6 +16,7 @@
 #include "cluster/types.h"
 #include "config/configuration.h"
 #include "features/feature_table.h"
+#include "kafka/protocol/errors.h"
 #include "model/record.h"
 #include "model/record_batch_reader.h"
 #include "model/timeout_clock.h"
@@ -471,7 +472,11 @@ std::optional<schema_id_validator> maybe_make_schema_id_validator(
 
 ss::future<schema_id_validator::result>
 schema_id_validator::operator()(model::record_batch_reader&& rbr) {
-    return (*_impl)(std::move(rbr));
+    using futurator = ss::futurize<schema_id_validator::result>;
+    return (*_impl)(std::move(rbr)).handle_exception([](std::exception_ptr e) {
+        vlog(plog.warn, "Invalid record due to exception: {}", e);
+        return futurator::convert(kafka::error_code::invalid_record);
+    });
 }
 
 } // namespace pandaproxy::schema_registry
