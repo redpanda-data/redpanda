@@ -15,12 +15,8 @@
 #include <boost/test/unit_test.hpp>
 
 BOOST_AUTO_TEST_CASE(recovery_request_invalid_json) {
-    ss::http::request r;
-    r.content = "-";
-    r.content_length = 1;
-    r._headers = {{"Content-Type", "application/json"}};
     BOOST_REQUIRE_EXCEPTION(
-      cloud_storage::recovery_request{r},
+      cloud_storage::recovery_request::parse_from_string("-"),
       cloud_storage::bad_request,
       [](const auto& ex) {
           return std::string_view{ex.what()} == "Invalid value.";
@@ -28,12 +24,8 @@ BOOST_AUTO_TEST_CASE(recovery_request_invalid_json) {
 }
 
 BOOST_AUTO_TEST_CASE(recovery_request_missing_fields) {
-    ss::http::request r;
-    r.content = "{}";
-    r.content_length = 1;
-    r._headers = {{"Content-Type", "application/json"}};
     BOOST_REQUIRE_EXCEPTION(
-      cloud_storage::recovery_request{r},
+      cloud_storage::recovery_request::parse_from_string("{}"),
       cloud_storage::bad_request,
       [](const auto& ex) {
           const std::string_view s{ex.what()};
@@ -47,7 +39,9 @@ BOOST_AUTO_TEST_CASE(recovery_request_missing_content_type) {
     r.content = "{}";
     r.content_length = 1;
     BOOST_REQUIRE_EXCEPTION(
-      cloud_storage::recovery_request{r},
+      // NB: this test relies that we validate the headers before any suspension
+      // points.
+      cloud_storage::recovery_request::parse_from_http(r).get(),
       cloud_storage::bad_request,
       [](const auto& ex) {
           return std::string_view{ex.what()} == "missing content type";
@@ -55,43 +49,29 @@ BOOST_AUTO_TEST_CASE(recovery_request_missing_content_type) {
 }
 
 BOOST_AUTO_TEST_CASE(recovery_request_pattern) {
-    ss::http::request r;
-    r.content = R"JSON({"topic_names_pattern": "asdf"})JSON";
-    r.content_length = 1;
-    r._headers = {{"Content-Type", "application/json"}};
-    cloud_storage::recovery_request rec_req{r};
+    auto rec_req = cloud_storage::recovery_request::parse_from_string(
+      R"JSON({"topic_names_pattern": "asdf"})JSON");
     BOOST_REQUIRE_EQUAL(rec_req.topic_names_pattern().value(), "asdf");
 }
 
 BOOST_AUTO_TEST_CASE(recovery_request_pattern_and_bytes) {
-    ss::http::request r;
-    r.content
-      = R"JSON({"topic_names_pattern": "asdf", "retention_bytes": 1})JSON";
-    r.content_length = 1;
-    r._headers = {{"Content-Type", "application/json"}};
-    cloud_storage::recovery_request rec_req{r};
+    auto rec_req = cloud_storage::recovery_request::parse_from_string(
+      R"JSON({"topic_names_pattern": "asdf", "retention_bytes": 1})JSON");
     BOOST_REQUIRE_EQUAL(rec_req.topic_names_pattern().value(), "asdf");
     BOOST_REQUIRE_EQUAL(rec_req.retention_bytes().value(), 1);
 }
 
 BOOST_AUTO_TEST_CASE(recovery_request_pattern_and_ms) {
-    ss::http::request r;
-    r.content = R"JSON({"topic_names_pattern": "asdf", "retention_ms": 1})JSON";
-    r.content_length = 1;
-    r._headers = {{"Content-Type", "application/json"}};
-    cloud_storage::recovery_request rec_req{r};
+    auto rec_req = cloud_storage::recovery_request::parse_from_string(
+      R"JSON({"topic_names_pattern": "asdf", "retention_ms": 1})JSON");
     BOOST_REQUIRE_EQUAL(rec_req.topic_names_pattern().value(), "asdf");
     BOOST_REQUIRE_EQUAL(rec_req.retention_ms().value().count(), 1);
 }
 
 BOOST_AUTO_TEST_CASE(recovery_request_invalid_combination) {
-    ss::http::request r;
-    r.content
-      = R"JSON({"topic_names_pattern": "asdf", "retention_ms": 1, "retention_bytes": 1})JSON";
-    r.content_length = 1;
-    r._headers = {{"Content-Type", "application/json"}};
     BOOST_REQUIRE_EXCEPTION(
-      cloud_storage::recovery_request rec_req{r},
+      cloud_storage::recovery_request::parse_from_string(
+        R"JSON({"topic_names_pattern": "asdf", "retention_ms": 1, "retention_bytes": 1})JSON"),
       cloud_storage::bad_request,
       [](const auto& ex) {
           const std::string_view s{ex.what()};

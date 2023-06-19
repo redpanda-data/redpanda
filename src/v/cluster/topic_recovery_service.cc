@@ -11,11 +11,13 @@
 #include "cluster/topic_recovery_service.h"
 
 #include "cloud_storage/logger.h"
+#include "cloud_storage/recovery_request.h"
 #include "cloud_storage/recovery_utils.h"
 #include "cloud_storage/topic_manifest.h"
 #include "cluster/topic_recovery_status_frontend.h"
 #include "cluster/topics_frontend.h"
 
+#include <seastar/http/request.hh>
 #include <seastar/util/defer.hh>
 
 #include <boost/algorithm/string/classification.hpp>
@@ -146,17 +148,18 @@ ss::future<> topic_recovery_service::shutdown_recovery() {
     co_return;
 }
 
-init_recovery_result
+ss::future<init_recovery_result>
 topic_recovery_service::start_recovery(const ss::http::request& req) {
     try {
         if (is_active()) {
             vlog(cst_log.warn, "A recovery is already active");
-            return {
+            co_return init_recovery_result{
               .status_code = ss::http::reply::status_type::conflict,
               .message = "A recovery is already active"};
         }
 
-        recovery_request request(req);
+        auto request = co_await recovery_request::parse_from_http(req);
+
         _state = state::starting;
         ssx::spawn_with_gate(_gate, [this, r = std::move(request)]() mutable {
             return start_bg_recovery_task(std::move(r)).then([](auto result) {
@@ -172,16 +175,16 @@ topic_recovery_service::start_recovery(const ss::http::request& req) {
                 }
             });
         });
-        return {
+        co_return init_recovery_result{
           .status_code = ss::http::reply::status_type::accepted,
           .message = "recovery started"};
     } catch (const bad_request& ex) {
-        return {
+        co_return init_recovery_result{
           .status_code = ss::http::reply::status_type::bad_request,
           .message = fmt::format(
             "bad recovery request payload: {}", ex.what())};
     } catch (const std::exception& ex) {
-        return {
+        co_return init_recovery_result{
           .status_code = ss::http::reply::status_type::internal_server_error,
           .message = fmt::format(
             "recovery init failed with error: {}", ex.what())};

@@ -14,6 +14,10 @@
 #include "json/validator.h"
 #include "json/writer.h"
 
+#include <seastar/core/coroutine.hh>
+#include <seastar/util/short_streams.hh>
+
+namespace cloud_storage {
 namespace {
 constexpr std::string_view request_schema = R"(
 {
@@ -42,12 +46,48 @@ constexpr std::string_view request_schema = R"(
     }
 }
 )";
+template<typename headers>
+std::optional<ss::sstring> find_content_type(const headers& h) {
+    if (h.contains("Content-Type")) {
+        return h.at("Content-Type");
+    }
+
+    if (h.contains("content-type")) {
+        return h.at("content-type");
+    }
+
+    return std::nullopt;
 }
 
-namespace cloud_storage {
+void validate_headers(const ss::http::request& request) {
+    if (request.content_length == 0) {
+        // Don't validate the content type if there is no body.
+        return;
+    }
+    auto content_type = find_content_type(request._headers);
+    if (!content_type) {
+        throw bad_request{"missing content type"};
+    }
+    if (content_type.value() != "application/json") {
+        throw bad_request{
+          fmt::format("invalid content type {}", content_type.value())};
+    }
+}
+} // namespace
 
-recovery_request::recovery_request(const ss::http::request& req) {
-    parse_request_body(req);
+ss::future<recovery_request>
+recovery_request::parse_from_http(const ss::http::request& http_req) {
+    validate_headers(http_req);
+    ss::sstring body = co_await ss::util::read_entire_stream_contiguous(
+      *http_req.content_stream);
+    co_return parse_from_string(body);
+}
+recovery_request recovery_request::parse_from_string(const ss::sstring& body) {
+    recovery_request r;
+    if (!body.empty()) {
+        r.parse_request_body(body);
+    }
+    return r;
 }
 
 std::optional<ss::sstring> recovery_request::topic_names_pattern() const {
@@ -63,59 +103,34 @@ recovery_request::retention_ms() const {
     return _retention_ms;
 }
 
-template<typename headers>
-static std::optional<ss::sstring> find_content_type(const headers& h) {
-    if (h.contains("Content-Type")) {
-        return h.at("Content-Type");
+void recovery_request::parse_request_body(const ss::sstring& body) {
+    json::Document document;
+    document.Parse(body.data(), body.size());
+    if (document.HasParseError()) {
+        throw bad_request{fmt::format(
+          "{}", rapidjson::GetParseError_En(document.GetParseError()))};
     }
 
-    if (h.contains("content-type")) {
-        return h.at("content-type");
+    auto validator = json::validator(std::string{request_schema});
+    if (!document.Accept(validator.schema_validator)) {
+        json::StringBuffer sbuf;
+        json::Writer<json::StringBuffer> w{sbuf};
+        validator.schema_validator.GetError().Accept(w);
+        throw bad_request{
+          fmt::format("invalid request body '{}': {}", body, sbuf.GetString())};
     }
 
-    return std::nullopt;
-}
+    if (document.HasMember("topic_names_pattern")) {
+        _topic_names_pattern = document["topic_names_pattern"].GetString();
+    }
 
-void recovery_request::parse_request_body(const ss::http::request& request) {
-    if (request.content_length > 0) {
-        auto content_type = find_content_type(request._headers);
-        if (!content_type) {
-            throw bad_request{"missing content type"};
-        }
-        if (content_type.value() != "application/json") {
-            throw bad_request{
-              fmt::format("invalid content type {}", content_type.value())};
-        }
-        json::Document document;
-        document.Parse(request.content.data());
-        if (document.HasParseError()) {
-            throw bad_request{fmt::format(
-              "{}", rapidjson::GetParseError_En(document.GetParseError()))};
-        }
+    if (document.HasMember("retention_bytes")) {
+        _retention_bytes = document["retention_bytes"].GetInt64();
+    }
 
-        auto validator = json::validator(std::string{request_schema});
-        if (!document.Accept(validator.schema_validator)) {
-            json::StringBuffer sbuf;
-            json::Writer<json::StringBuffer> w{sbuf};
-            validator.schema_validator.GetError().Accept(w);
-            throw bad_request{fmt::format(
-              "invalid request body '{}': {}",
-              request.content.data(),
-              sbuf.GetString())};
-        }
-
-        if (document.HasMember("topic_names_pattern")) {
-            _topic_names_pattern = document["topic_names_pattern"].GetString();
-        }
-
-        if (document.HasMember("retention_bytes")) {
-            _retention_bytes = document["retention_bytes"].GetInt64();
-        }
-
-        if (document.HasMember("retention_ms")) {
-            _retention_ms = std::chrono::milliseconds{
-              document["retention_ms"].GetInt64()};
-        }
+    if (document.HasMember("retention_ms")) {
+        _retention_ms = std::chrono::milliseconds{
+          document["retention_ms"].GetInt64()};
     }
 }
 
