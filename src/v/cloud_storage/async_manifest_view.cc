@@ -672,7 +672,8 @@ async_manifest_view::compute_retention(
     }
     if (
       _stm_manifest.get_start_kafka_offset_override() != kafka::offset{}
-      && _stm_manifest.get_start_kafka_offset_override() > result.offset) {
+      && _stm_manifest.get_start_kafka_offset_override()
+           > result.offset - result.delta) {
         // The start kafka offset is placed above the retention boundary. We
         // need to adjust retention boundary to remove all data up to start
         // kafka offset.
