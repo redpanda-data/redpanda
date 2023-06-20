@@ -61,7 +61,7 @@ memory_sampling::get_oom_diagnostics_callback() {
             auto bytes_written = fmt::format_to_n(
                                    format_buf.begin(),
                                    format_buf.size(),
-                                   "{}",
+                                   "{}\n",
                                    allocation_sites[i])
                                    .size;
 
