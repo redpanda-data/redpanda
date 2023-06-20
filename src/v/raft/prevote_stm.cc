@@ -183,7 +183,11 @@ ss::future<bool> prevote_stm::do_prevote() {
 
     // process results
     return process_replies().then([this]() {
-        if (_success && _ptr->_node_priority_override == zero_voter_priority) {
+        const auto only_voter = _config->unique_voter_count() == 1
+                                && _config->is_voter(_ptr->self());
+        if (
+          _success && !only_voter
+          && _ptr->_node_priority_override == zero_voter_priority) {
             vlog(
               _ctxlog.debug,
               "Ignoring successful pre-vote. Node priority too low: {}",

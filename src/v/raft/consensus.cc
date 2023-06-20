@@ -883,10 +883,10 @@ void consensus::dispatch_vote(bool leadership_transfer) {
     // lower our required priority for next time.
     _target_priority = next_target_priority();
 
+    const auto& latest_config = _configuration_manager.get_latest();
     // skip sending vote request if current node is not a voter in current
     // configuration
-    if (!_configuration_manager.get_latest().is_allowed_to_request_votes(
-          _self)) {
+    if (!latest_config.is_allowed_to_request_votes(_self)) {
         arm_vote_timeout();
         return;
     }
@@ -894,14 +894,24 @@ void consensus::dispatch_vote(bool leadership_transfer) {
     // if priority is to low, skip dispatching votes, do not take priority into
     // account when we transfer leadership
     if (current_priority_to_low && !leadership_transfer) {
+        const bool is_only_voter = latest_config.unique_voter_count() == 1
+                                   && latest_config.is_voter(_self);
+        if (!is_only_voter) {
+            vlog(
+              _ctxlog.trace,
+              "current node priority {} is lower than target {} (next vote {})",
+              self_priority,
+              cur_target_priority,
+              _target_priority);
+            arm_vote_timeout();
+            return;
+        }
         vlog(
-          _ctxlog.trace,
-          "current node priority {} is lower than target {} (next vote {})",
+          _ctxlog.info,
+          "current node priority {} is lower than target {}, however the node "
+          "is the only voter, continue with dispatching vote",
           self_priority,
-          cur_target_priority,
-          _target_priority);
-        arm_vote_timeout();
-        return;
+          cur_target_priority);
     }
     // background, acquire lock, transition state
     ssx::background
