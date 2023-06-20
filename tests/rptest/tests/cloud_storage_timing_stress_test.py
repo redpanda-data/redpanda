@@ -88,10 +88,12 @@ class PartitionStatusValidator:
             PartitionStatusValidator._validate_cloud_log_offsets
         ]
 
-    def is_valid(self, status, manifest) -> bool:
-        return all([v(self, status, manifest) for v in self._validators])
+    def is_valid(self, status, bucket_view: BucketView, ntpr: NTPR) -> bool:
+        return all(
+            [v(self, status, bucket_view, ntpr) for v in self._validators])
 
-    def _validate_status_shape(self, status, manifest) -> bool:
+    def _validate_status_shape(self, status, bucket_view: BucketView,
+                               ntpr: NTPR) -> bool:
         expected_keys = [
             "cloud_storage_mode", "total_log_size_bytes",
             "cloud_log_size_bytes", "local_log_size_bytes",
@@ -118,9 +120,10 @@ class PartitionStatusValidator:
 
         return True
 
-    def _validate_cloud_log_size_bytes(self, status, manifest) -> bool:
-        manifest_cloud_log_size = BucketView.cloud_log_size_from_ntp_manifest(
-            manifest, include_below_start_offset=False)
+    def _validate_cloud_log_size_bytes(self, status, bucket_view: BucketView,
+                                       ntpr: NTPR) -> bool:
+        manifest_cloud_log_size = bucket_view.cloud_log_size_for_ntp(
+            ntpr.topic, ntpr.partition, ntpr.ns).accessible(no_archive=True)
 
         reported = status["cloud_log_size_bytes"]
         if reported != manifest_cloud_log_size:
@@ -131,7 +134,10 @@ class PartitionStatusValidator:
 
         return True
 
-    def _validate_cloud_log_offsets(self, status, manifest) -> bool:
+    def _validate_cloud_log_offsets(self, status, bucket_view: BucketView,
+                                    ntpr: NTPR) -> bool:
+        manifest = bucket_view.get_partition_manifest(ntpr)
+
         if not manifest:
             return "cloud_log_start_offset" not in status and "cloud_log_last_offset" not in status
 
@@ -164,20 +170,18 @@ def cloud_storage_status_endpoint_check(test):
     def check():
         try:
             bucket_view.reset()
+            bucket_view._do_listing()
 
             status = test.admin.get_partition_cloud_storage_status(
                 test.topic, 0)
             reported_status_sliding_window.append(status)
 
-            manifest = None
-            try:
-                manifest = bucket_view.manifest_for_ntpr(
-                    test.topic, 0, test._initial_revision)
-            except KeyError:
-                pass
-
+            ntpr = NTPR(ns="kafka",
+                        topic=test.topic,
+                        partition=0,
+                        revivions_id=test._initial_revision)
             for status in reported_status_sliding_window:
-                if validator.is_valid(status, manifest):
+                if validator.is_valid(status, manifest, bucket_view, ntpr):
                     return True
 
             return False

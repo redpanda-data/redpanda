@@ -784,23 +784,6 @@ class BucketView:
         return self._state.partition_manifests
 
     @staticmethod
-    def cloud_log_size_from_ntp_manifest(manifest,
-                                         include_below_start_offset=True
-                                         ) -> int:
-        if 'segments' not in manifest or len(manifest['segments']) == 0:
-            return 0
-
-        start_offset = 0
-        if not include_below_start_offset:
-            start_offset = manifest['start_offset']
-
-        res = sum(seg_meta['size_bytes']
-                  for seg_meta in manifest['segments'].values()
-                  if seg_meta['base_offset'] >= start_offset)
-
-        return res
-
-    @staticmethod
     def kafka_start_offset(manifest) -> Optional[int]:
         if 'segments' not in manifest or len(manifest['segments']) == 0:
             return None
