@@ -32,6 +32,8 @@ for cl in $(kubectl -n $script_namespace get cluster --output=jsonpath='{.items.
   i=0
   while [[ $i -lt $replication_factor ]]; do
     kubectl -n $script_namespace exec -c redpanda $cl-$i -- curl $curl_arguments://$cl-$i.$cl.$script_namespace.svc.cluster.local.:9644/v1/brokers >$ARTIFACTS_PATH/brokers-from-pod-$cl-$i.json || true
+    kubectl -n $script_namespace exec -c redpanda $cl-$i -- curl $curl_arguments://$cl-$i.$cl.$script_namespace.svc.cluster.local.:9644/v1/brokers/$i >$ARTIFACTS_PATH/broker-$i-from-pod-$cl-$i.json || true
+    kubectl -n $script_namespace exec -c redpanda $cl-$i -- curl $curl_arguments://$cl-$i.$cl.$script_namespace.svc.cluster.local.:9644/v1/node_config >$ARTIFACTS_PATH/node-config-from-pod-$cl-$i.json || true
     kubectl -n $script_namespace exec -c redpanda $cl-$i -- curl $curl_arguments://$cl-$i.$cl.$script_namespace.svc.cluster.local.:9644/v1/cluster_config/status >$ARTIFACTS_PATH/config-status-from-pod-$cl-$i.json || true
     kubectl -n $script_namespace exec -c redpanda $cl-$i -- curl $curl_arguments://$cl-$i.$cl.$script_namespace.svc.cluster.local.:9644/v1/status/ready >$ARTIFACTS_PATH/status-ready-pod-$cl-$i.json || true
     kubectl -n $script_namespace exec -c redpanda $cl-$i -- curl $curl_arguments://$cl-$i.$cl.$script_namespace.svc.cluster.local.:9644/v1/features >$ARTIFACTS_PATH/features-from-pod-$cl-$i.json || true
