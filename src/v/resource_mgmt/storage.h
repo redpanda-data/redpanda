@@ -37,6 +37,8 @@ class node;
  *
  */
 class disk_space_manager {
+    static constexpr ss::shard_id run_loop_core = 0;
+
 public:
     disk_space_manager(
       config::binding<bool> enabled,
