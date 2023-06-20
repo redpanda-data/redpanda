@@ -242,6 +242,18 @@ void replicated_partition_probe::setup_public_metrics(const model::ntp& ntp) {
            topic_label(ntp.tp.topic()),
            partition_label(ntp.tp.partition())})
           .aggregate({sm::shard_label, partition_label}),
+        sm::make_counter(
+          "records_produced_total",
+          [this] { return _records_produced; },
+          sm::description("Total number of records produced"),
+          labels)
+          .aggregate({sm::shard_label, partition_label}),
+        sm::make_counter(
+          "records_fetched_total",
+          [this] { return _records_fetched; },
+          sm::description("Total number of records fetched"),
+          labels)
+          .aggregate({sm::shard_label, partition_label}),
       });
 }
 
