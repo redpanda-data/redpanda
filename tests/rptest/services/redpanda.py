@@ -2556,11 +2556,12 @@ class RedpandaService(RedpandaServiceBase):
         nodes = [(n, None) for n in self.nodes]
         for _ in range(3):
             retries = []
-            for node, _ in nodes:
-                pct_diff, reclaimable_diff, *deets = inspect_node(node)
+            results = self.for_nodes(nodes, lambda n: (n, inspect_node(n)))
+            for (node, (pct_diff, reclaimable_diff, *deets)) in results:
                 if pct_diff > 0.05 + reclaimable_diff:
                     retries.append(
                         (node, (pct_diff, reclaimable_diff, *deets)))
+
             if not retries:
                 # all good
                 return
