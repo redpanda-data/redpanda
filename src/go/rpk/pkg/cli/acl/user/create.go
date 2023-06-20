@@ -125,8 +125,7 @@ func generatePassword(passLength int) (string, error) {
 	lowercase := "abcdefghijklmnopqrstuvwxyz"
 	uppercase := strings.ToUpper(lowercase)
 	numbers := "0123456789"
-	special := ".,&_+|[]/-()"
-	allCharSet := lowercase + uppercase + numbers + special
+	allCharSet := lowercase + uppercase + numbers
 
 	randSize := big.NewInt(int64(len(allCharSet)))
 	var pass string

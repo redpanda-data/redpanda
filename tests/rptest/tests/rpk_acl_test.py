@@ -74,3 +74,38 @@ class RpkACLTest(RedpandaTest):
 
         # We check that we can list the topics with the new password:
         assert topic in topic_list_two
+
+    @cluster(num_nodes=1)
+    def test_create_user_no_pass(self):
+        # No password
+        out = self._rpk.sasl_create_user(new_username="foo_1",
+                                         mechanism=self.mechanism)
+        assert "Automatically generated password" in out
+
+        # with --new-password
+        out = self._rpk.sasl_create_user(new_username="foo_2",
+                                         new_password="any-pass",
+                                         mechanism=self.mechanism)
+        assert "Automatically generated password" not in out
+
+        # with --user and --password, NO --new-password
+        out = self._rpk.sasl_create_user_basic(new_username="foo_3",
+                                               auth_user="anyUser",
+                                               auth_password="any_pw",
+                                               mechanism=self.mechanism)
+        assert "Automatically generated password" in out
+
+        # with --password AND --new-password, NO --user
+        out = self._rpk.sasl_create_user_basic(new_username="foo_4",
+                                               new_password="my_pass",
+                                               auth_password="any_pw",
+                                               mechanism=self.mechanism)
+        assert "Automatically generated password" not in out
+
+        # with --new-password, --user, and --password
+        out = self._rpk.sasl_create_user_basic(new_username="foo_5",
+                                               new_password="my_pass",
+                                               auth_user="anyUser",
+                                               auth_password="any_pw",
+                                               mechanism=self.mechanism)
+        assert "Automatically generated password" not in out
