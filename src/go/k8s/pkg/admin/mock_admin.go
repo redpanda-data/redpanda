@@ -381,7 +381,7 @@ func (m *MockAdminAPI) RemoveBroker(id int) bool {
 }
 
 func (m *MockAdminAPI) Brokers(_ context.Context) ([]admin.Broker, error) {
-	m.Log.WithName("RemoveBroker").Info("called")
+	m.Log.WithName("Brokers").Info("called")
 	m.monitor.Lock()
 	defer m.monitor.Unlock()
 
