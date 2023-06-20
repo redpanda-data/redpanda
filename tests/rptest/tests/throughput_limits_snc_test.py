@@ -177,6 +177,10 @@ class ThroughputLimitsSnc(RedpandaTest):
                         principals.append({'user': 'admin'})
                     elif r == 1:
                         principals.append({'user': '*'})
+                    elif r == 2:
+                        principals.append({'service': 'schema registry'})
+                    elif r == 3:
+                        principals.append({'service': 'panda proxy'})
                 if len(principals) != 0:
                     tc_item['principals'] = principals
 
