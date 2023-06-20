@@ -785,6 +785,10 @@ class BucketView:
 
     @staticmethod
     def kafka_start_offset(manifest) -> Optional[int]:
+        if "archive_start_offset" in manifest:
+            return manifest["archive_start_offset"] - manifest[
+                "archive_start_offset_delta"]
+
         if 'segments' not in manifest or len(manifest['segments']) == 0:
             return None
 
