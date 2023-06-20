@@ -404,7 +404,7 @@ class ShadowIndexingCloudRetentionTest(RedpandaTest):
         # the bandwidth time for the amount of data we produced, plus the segment
         # upload interval (set to 10s via fast_uploads), plus the manifest upload
         # interval (set to 1s via fast_uploads).
-        wait_until(lambda: cloud_log_size() >= total_bytes,
+        wait_until(lambda: cloud_log_size().total() >= total_bytes,
                    timeout_sec=30,
                    backoff_sec=2,
                    err_msg=f"Segments not uploaded")
@@ -416,7 +416,7 @@ class ShadowIndexingCloudRetentionTest(RedpandaTest):
 
         # Test that the size of the cloud log is below the retention threshold
         # by querying the manifest.
-        wait_until(lambda: cloud_log_size() <= retention_bytes,
+        wait_until(lambda: cloud_log_size().total() <= retention_bytes,
                    timeout_sec=10,
                    backoff_sec=2,
                    err_msg=f"Too many bytes in the cloud")
@@ -563,7 +563,7 @@ class ShadowIndexingCloudRetentionTest(RedpandaTest):
             return cloud_log_size
 
         # Wait for everything to be uploaded to the cloud.
-        wait_until(lambda: cloud_log_size() >= total_bytes,
+        wait_until(lambda: cloud_log_size().total() >= total_bytes,
                    timeout_sec=10,
                    backoff_sec=2,
                    err_msg=f"Segments not uploaded")
@@ -574,7 +574,7 @@ class ShadowIndexingCloudRetentionTest(RedpandaTest):
 
         # Assert that retention policy has kicked in and with the desired
         # effect, i.e. total bytes is <= retention settings applied
-        wait_until(lambda: cloud_log_size() <= retention_bytes,
+        wait_until(lambda: cloud_log_size().total() <= retention_bytes,
                    timeout_sec=10,
                    backoff_sec=2,
                    err_msg=f"Too many bytes in the cloud")

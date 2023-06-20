@@ -166,8 +166,11 @@ class CloudRetentionTest(PreallocNodesTest):
         def check_total_size(include_below_start_offset):
             try:
                 view = BucketView(self.redpanda)
-                size = view.total_cloud_log_size(
-                    include_below_start_offset=include_below_start_offset)
+                if include_below_start_offset:
+                    size = view.cloud_log_sizes_sum().total(no_archive=True)
+                else:
+                    size = view.cloud_log_sizes_sum().accessible(
+                        no_archive=True)
                 self.logger.info(f"all partitions size: {size}")
                 # check that for each partition there is more than 1
                 # and less than 10 segments in the cloud (generous limits)
@@ -245,7 +248,7 @@ class CloudRetentionTest(PreallocNodesTest):
             s3_snapshot = BucketView(self.redpanda, topics=topics)
             for partition in range(0, num_partitions):
                 size = s3_snapshot.cloud_log_size_for_ntp(
-                    self.topic_name, partition)
+                    self.topic_name, partition).total(no_archive=True)
                 if size == 0:
                     self.logger.info(f"Partition {partition} has size 0")
                     return False
@@ -370,7 +373,8 @@ class CloudRetentionTimelyGCTest(RedpandaTest):
                 self.logger.debug(f"Manifest not prefix-truncated yet")
                 return
 
-            cloud_log_size = s3_snapshot.cloud_log_size_for_ntp(self.topic, 0)
+            cloud_log_size = s3_snapshot.cloud_log_size_for_ntp(
+                self.topic, 0).total(no_archive=True)
             ratio = cloud_log_size / self.retention_bytes
             overshoot_percentage = max(ratio - 1, 0) * 100
 

@@ -282,7 +282,8 @@ class UsageTestCloudStorageMetrics(RedpandaTest):
 
         def check_usage():
             # Check that the usage reporting system has reported correct values
-            manifest_usage = bucket_view.total_cloud_log_size()
+            manifest_usage = bucket_view.cloud_log_sizes_sum().total(
+                no_archive=True)
             reported_usage = self.admin.get_usage(
                 random.choice(self.redpanda.nodes))
             reported_usages = [
