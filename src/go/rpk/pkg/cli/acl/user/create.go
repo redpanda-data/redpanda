@@ -83,9 +83,10 @@ acl help text for more info.
 			// Better long term is for people to use -X.
 			userFlag := cmd.Flag(config.FlagSASLUser).Value.String()
 			if userFlag != "" && newPass == "" {
-				out.Die("unable to create user with when using basic auth, use --new-password to specify the new user's password")
+				out.Die("unable to create user when using basic auth, use --new-password to specify the new user's password")
 			}
 
+			pass = cmd.Flag("password").Value.String()
 			if newPass != "" {
 				pass = newPass
 			}
@@ -108,7 +109,13 @@ acl help text for more info.
 	cmd.Flags().StringVar(&userOld, "new-username", "", "")
 	cmd.Flags().MarkHidden("new-username")
 
-	cmd.Flags().StringVar(&pass, "password", "", "New user's password (NOTE: if using --password for the admin API, use --new-password)")
+	// This is needed here in order to show the password flag with a different
+	// usage text for this command only.
+	p.InstallKafkaFlags(cmd)
+	passwordFlag := cmd.PersistentFlags().Lookup("password")
+	passwordFlag.Usage = "New user's password (NOTE: if using --password for the admin API, use --new-password)"
+	passwordFlag.Hidden = false
+
 	cmd.Flags().StringVarP(&newPass, "new-password", "p", "", "")
 	cmd.Flags().MarkHidden("new-password")
 
