@@ -158,7 +158,8 @@ ss::future<> log_eviction_stm::do_write_raft_snapshot(model::offset index_lb) {
 }
 
 ss::future<result<model::offset, std::error_code>>
-log_eviction_stm::sync_effective_start(model::timeout_clock::duration timeout) {
+log_eviction_stm::sync_start_offset_override(
+  model::timeout_clock::duration timeout) {
     /// Call this method to ensure followers have processed up until the
     /// most recent known version of the special batch. This is particularly
     /// useful to know if the start offset is up to date in the case
@@ -171,7 +172,7 @@ log_eviction_stm::sync_effective_start(model::timeout_clock::duration timeout) {
             co_return errc::timeout;
         }
     }
-    co_return effective_start_offset();
+    co_return start_offset_override();
 }
 
 model::offset log_eviction_stm::effective_start_offset() const {

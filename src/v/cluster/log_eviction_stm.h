@@ -85,8 +85,18 @@ public:
 
     /// Ensure followers have processed up until the most recent known version
     /// of the batch representing the start offset
+    /// This only returns the start override, if one exists. It does not take
+    /// into account local storage, and may not even point to an offset that
+    /// exists in local storage (e.g. if we have locally truncated).
     ss::future<result<model::offset, std::error_code>>
-    sync_effective_start(model::timeout_clock::duration timeout);
+    sync_start_offset_override(model::timeout_clock::duration timeout);
+
+    model::offset start_offset_override() const {
+        if (_delete_records_eviction_offset == model::offset{}) {
+            return model::offset{};
+        }
+        return model::next_offset(_delete_records_eviction_offset);
+    }
 
 protected:
     ss::future<> apply_snapshot(stm_snapshot_header, iobuf&&) override;
