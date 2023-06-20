@@ -16,6 +16,6 @@ jobs:
       uses: slackapi/slack-github-action@v1.24.0
       with:
         channel-id: "C05DHDW4VCL"
-        slack-message: "Test: ${{env.MESSAGE }}"
+        slack-message: "Test: ${{ env.OUTPUT }}"
       env:
         SLACK_BOT_TOKEN: ${{ secrets.VBOTBUILDOVICH_SLACK_BOT_TOKEN }}
