@@ -13,6 +13,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/go-logr/logr"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -101,7 +102,7 @@ func consoleUpdater(
 }
 
 func statefulSetReplicasReconciler(
-	key types.NamespacedName, cluster *v1alpha1.Cluster,
+	log logr.Logger, key types.NamespacedName, cluster *v1alpha1.Cluster,
 ) func() error {
 	return func() error {
 		var sts appsv1.StatefulSet
@@ -133,11 +134,13 @@ func statefulSetReplicasReconciler(
 					pod = podList.Items[j].DeepCopy()
 				}
 				delete(pods, pod.GetName())
+				log.Info("update pod", "pod", *pod)
 				err = k8sClient.Update(context.Background(), pod)
 				if err != nil {
 					return err
 				}
 			} else {
+				log.Info("create pod", "pod", *pod)
 				err = k8sClient.Create(context.Background(), pod)
 				if err != nil {
 					return err
@@ -149,6 +152,7 @@ func statefulSetReplicasReconciler(
 
 		for i := range podList.Items {
 			if _, ok := pods[podList.Items[i].Name]; ok {
+				log.Info("delete pod", "pod", podList.Items[i])
 				err = k8sClient.Delete(context.Background(), &podList.Items[i])
 				if err != nil {
 					return err
@@ -159,6 +163,7 @@ func statefulSetReplicasReconciler(
 		// Aligning StatefulSet
 		sts.Status.Replicas = *sts.Spec.Replicas
 		sts.Status.ReadyReplicas = sts.Status.Replicas
+		log.Info("update sts", "sts", sts)
 		return k8sClient.Status().Update(context.Background(), &sts)
 	}
 }
