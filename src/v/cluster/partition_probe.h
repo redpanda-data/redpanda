@@ -77,6 +77,7 @@ public:
     };
 
 private:
+    void reconfigure_metrics();
     void setup_public_metrics(const model::ntp&);
     void setup_internal_metrics(const model::ntp&);
 

@@ -23,7 +23,16 @@ namespace cluster {
 replicated_partition_probe::replicated_partition_probe(
   const partition& p) noexcept
   : _partition(p)
-  , _public_metrics(ssx::metrics::public_metrics_handle) {}
+  , _public_metrics(ssx::metrics::public_metrics_handle) {
+    config::shard_local_cfg().enable_schema_id_validation.bind().watch(
+      [this]() { reconfigure_metrics(); });
+}
+
+void replicated_partition_probe::reconfigure_metrics() {
+    _metrics.clear();
+    _public_metrics.clear();
+    setup_metrics(_partition.ntp());
+}
 
 void replicated_partition_probe::setup_metrics(const model::ntp& ntp) {
     setup_internal_metrics(ntp);
