@@ -16,7 +16,6 @@
 #include "model/record.h"
 #include "model/timeout_clock.h"
 #include "model/timestamp.h"
-#include "resource_mgmt/storage.h"
 #include "storage/file_sanitizer_types.h"
 #include "storage/fwd.h"
 #include "tristate.h"
@@ -33,6 +32,27 @@
 namespace storage {
 using log_clock = ss::lowres_clock;
 using jitter_percents = named_type<int, struct jitter_percents_tag>;
+
+enum class disk_space_alert { ok = 0, low_space = 1, degraded = 2 };
+
+inline disk_space_alert max_severity(disk_space_alert a, disk_space_alert b) {
+    return std::max(a, b);
+}
+
+inline std::ostream& operator<<(std::ostream& o, const disk_space_alert d) {
+    switch (d) {
+    case disk_space_alert::ok:
+        o << "ok";
+        break;
+    case disk_space_alert::low_space:
+        o << "low_space";
+        break;
+    case disk_space_alert::degraded:
+        o << "degraded";
+        break;
+    }
+    return o;
+}
 
 struct disk
   : serde::envelope<disk, serde::version<1>, serde::compat_version<0>> {

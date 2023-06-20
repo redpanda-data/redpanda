@@ -10,9 +10,9 @@
  */
 #pragma once
 
-#include "resource_mgmt/storage.h"
 #include "seastarx.h"
 #include "storage/probe.h"
+#include "storage/types.h"
 #include "utils/named_type.h"
 #include "utils/notification_list.h"
 

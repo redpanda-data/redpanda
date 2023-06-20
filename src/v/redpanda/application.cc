@@ -1357,6 +1357,7 @@ void application::wire_up_redpanda_services(model::node_id node_id) {
       space_manager,
       config::shard_local_cfg().enable_storage_space_manager.bind(),
       &storage,
+      &storage_node,
       &shadow_index_cache,
       &partition_manager);
 
