@@ -160,6 +160,8 @@ public:
     virtual ss::future<run_result>
     run(retry_chain_node& rtc, run_quota_t quota) = 0;
 
+    virtual ss::sstring name() const = 0;
+
 private:
     friend class housekeeping_workflow;
     intrusive_list_hook _hook{};

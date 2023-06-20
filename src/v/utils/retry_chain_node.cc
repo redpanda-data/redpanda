@@ -55,12 +55,31 @@ retry_chain_node::retry_chain_node(
 
 retry_chain_node::retry_chain_node(
   ss::abort_source& as,
+  ss::lowres_clock::time_point deadline,
+  ss::lowres_clock::duration backoff,
+  retry_strategy retry_strategy)
+  : retry_chain_node(as, deadline, backoff) {
+    _retry_strategy = retry_strategy;
+}
+
+retry_chain_node::retry_chain_node(
+  ss::abort_source& as,
   ss::lowres_clock::duration timeout,
   ss::lowres_clock::duration backoff)
   : retry_chain_node(as, ss::lowres_clock::now() + timeout, backoff) {}
 
+retry_chain_node::retry_chain_node(
+  ss::abort_source& as,
+  ss::lowres_clock::duration timeout,
+  ss::lowres_clock::duration backoff,
+  retry_strategy retry_strategy)
+  : retry_chain_node(as, timeout, backoff) {
+    _retry_strategy = retry_strategy;
+}
+
 retry_chain_node::retry_chain_node(retry_chain_node* parent)
-  : _id(parent->add_child())
+  : _retry_strategy{parent->_retry_strategy}
+  , _id(parent->add_child())
   , _backoff{parent->_backoff}
   , _deadline{parent->_deadline}
   , _parent{parent} {
@@ -70,8 +89,15 @@ retry_chain_node::retry_chain_node(retry_chain_node* parent)
 }
 
 retry_chain_node::retry_chain_node(
+  retry_strategy retry_strategy, retry_chain_node* parent)
+  : retry_chain_node(parent) {
+    _retry_strategy = retry_strategy;
+}
+
+retry_chain_node::retry_chain_node(
   ss::lowres_clock::duration backoff, retry_chain_node* parent)
-  : _id(parent->add_child())
+  : _retry_strategy{parent->_retry_strategy}
+  , _id(parent->add_child())
   , _backoff{std::chrono::duration_cast<std::chrono::milliseconds>(backoff)}
   , _deadline{parent->_deadline}
   , _parent{parent} {
@@ -85,10 +111,19 @@ retry_chain_node::retry_chain_node(
 }
 
 retry_chain_node::retry_chain_node(
+  ss::lowres_clock::duration backoff,
+  retry_strategy retry_strategy,
+  retry_chain_node* parent)
+  : retry_chain_node(backoff, parent) {
+    _retry_strategy = retry_strategy;
+}
+
+retry_chain_node::retry_chain_node(
   ss::lowres_clock::time_point deadline,
   ss::lowres_clock::duration backoff,
   retry_chain_node* parent)
-  : _id(parent->add_child())
+  : _retry_strategy{parent->_retry_strategy}
+  , _id(parent->add_child())
   , _backoff{std::chrono::duration_cast<std::chrono::milliseconds>(backoff)}
   , _deadline{deadline}
   , _parent{parent} {
@@ -106,11 +141,30 @@ retry_chain_node::retry_chain_node(
     vassert(
       len < max_retry_chain_depth, "Retry chain is too deep, {} >= 8", len);
 }
+
+retry_chain_node::retry_chain_node(
+  ss::lowres_clock::time_point deadline,
+  ss::lowres_clock::duration backoff,
+  retry_strategy retry_strategy,
+  retry_chain_node* parent)
+  : retry_chain_node(deadline, backoff, parent) {
+    _retry_strategy = retry_strategy;
+}
+
 retry_chain_node::retry_chain_node(
   ss::lowres_clock::duration timeout,
   ss::lowres_clock::duration backoff,
   retry_chain_node* parent)
   : retry_chain_node(ss::lowres_clock::now() + timeout, backoff, parent) {}
+
+retry_chain_node::retry_chain_node(
+  ss::lowres_clock::duration timeout,
+  ss::lowres_clock::duration backoff,
+  retry_strategy retry_strategy,
+  retry_chain_node* parent)
+  : retry_chain_node(timeout, backoff, parent) {
+    _retry_strategy = retry_strategy;
+}
 
 retry_chain_node* retry_chain_node::get_parent() {
     if (std::holds_alternative<retry_chain_node*>(_parent)) {
@@ -173,7 +227,7 @@ bool retry_chain_node::same_root(const retry_chain_node& other) const {
     return get_root() == other.get_root();
 }
 
-retry_permit retry_chain_node::retry(retry_strategy st) {
+retry_permit retry_chain_node::retry() {
     auto& as = root_abort_source();
     as.check();
 
@@ -185,8 +239,22 @@ retry_permit retry_chain_node::retry(retry_strategy st) {
         // will lead to 0ms backoff time) retries are not allowed
         return {.is_allowed = false, .abort_source = &as, .delay = 0ms};
     }
-    auto required_delay = st == retry_strategy::backoff ? get_backoff()
-                                                        : get_poll_interval();
+
+    if (_retry_strategy == retry_strategy::disallow && _retry != 0) {
+        return {.is_allowed = false, .abort_source = &as, .delay = 0ms};
+    }
+
+    auto required_delay = [this]() -> ss::lowres_clock::duration {
+        switch (_retry_strategy) {
+        case retry_strategy::backoff:
+            return get_backoff();
+        case retry_strategy::polling:
+            return get_poll_interval();
+        case retry_strategy::disallow:
+            return 0ms;
+        }
+    }();
+
     _retry++;
     return {
       .is_allowed = (now + required_delay) < _deadline,

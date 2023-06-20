@@ -293,7 +293,7 @@ public:
       std::optional<model::timeout_clock::time_point> deadline = std::nullopt);
 
     ss::future<> remove_persistent_state();
-    ss::future<> remove_remote_persistent_state(ss::abort_source& as);
+    ss::future<> finalize_remote_partition(ss::abort_source& as);
 
     std::optional<model::offset> get_term_last_offset(model::term_id) const;
 

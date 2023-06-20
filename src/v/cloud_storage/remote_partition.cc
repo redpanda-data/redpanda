@@ -1022,17 +1022,16 @@ bool remote_partition::bounds_timestamp(model::timestamp t) const {
     }
 }
 
-static constexpr ss::lowres_clock::duration erase_timeout = 60s;
-static constexpr ss::lowres_clock::duration erase_backoff = 1s;
+static constexpr ss::lowres_clock::duration finalize_timeout = 20s;
+static constexpr ss::lowres_clock::duration finalize_backoff = 1s;
 
-ss::future<remote_partition::finalize_result>
-remote_partition::finalize(ss::abort_source& as) {
+ss::future<> remote_partition::finalize(ss::abort_source& as) {
     vlog(_ctxlog.info, "Finalizing remote storage state...");
 
     // This function is called after ::stop, so we may not use our
     // main retry_chain_node which is bound to our abort source,
     // and construct a special one.
-    retry_chain_node local_rtc(as, erase_timeout, erase_backoff);
+    retry_chain_node local_rtc(as, finalize_timeout, finalize_backoff);
     const auto& stm_manifest = _manifest_view->stm_manifest();
 
     partition_manifest remote_manifest(
@@ -1044,11 +1043,10 @@ remote_partition::finalize(ss::abort_source& as) {
 
     if (manifest_get_result != download_result::success) {
         vlog(
-          _ctxlog.debug,
-          "Failed to fetch manifest during finalize(), maybe another node "
-          "already completed deletion. Error: {}",
+          _ctxlog.error,
+          "Failed to fetch manifest during finalize(). Error: {}",
           manifest_get_result);
-        co_return finalize_result{.get_status = manifest_get_result};
+        co_return;
     }
 
     if (
@@ -1061,16 +1059,11 @@ remote_partition::finalize(ss::abort_source& as) {
           "for deletion during finalize",
           remote_manifest.get_insync_offset(),
           stm_manifest.get_insync_offset());
-        co_return finalize_result{
-          .manifest = std::move(remote_manifest),
-          .get_status = manifest_get_result};
     } else if (
       remote_manifest.get_insync_offset() < stm_manifest.get_insync_offset()) {
-        // TODO: should this be behind a feature table check?
-
         // The remote manifest is out of date, upload a fresh one
         vlog(
-          _ctxlog.debug,
+          _ctxlog.info,
           "Remote manifest has older state than local ({} < {}), attempting to "
           "upload latest manifest",
           remote_manifest.get_insync_offset(),
@@ -1089,9 +1082,6 @@ remote_partition::finalize(ss::abort_source& as) {
               "be left in incomplete state after topic deletion. Error: {}",
               manifest_put_result);
         }
-
-        co_return finalize_result{
-          .manifest = std::nullopt, .get_status = manifest_get_result};
     } else {
         // Remote and local state is in sync, no action required.
         vlog(
@@ -1099,20 +1089,29 @@ remote_partition::finalize(ss::abort_source& as) {
           "Remote manifest is in sync with local state during finalize "
           "(insync_offset={})",
           stm_manifest.get_insync_offset());
-        co_return finalize_result{
-          .manifest = std::nullopt, .get_status = manifest_get_result};
     }
 }
 
+/**
+ * The caller is responsible for determining whether it is appropriate
+ * to delete data in S3, for example it is not appropriate if this is
+ * a read replica topic.
+ *
+ * Q: Why is erase() part of remote_partition, when in general writes
+ *    flow through the archiver and remote_partition is mainly for
+ *    reads?
+ * A: Because the erase operation works in terms of what it reads from
+ *    S3, not the state of the archival metadata stm (which can be out
+ *    of date if e.g. we were not the leader)
+ */
 ss::future<remote_partition::erase_result> remote_partition::erase(
   cloud_storage::remote& api,
   cloud_storage_clients::bucket_name bucket,
   partition_manifest manifest,
-  ss::abort_source& as) {
-    // This function is called after ::stop, so we may not use our
-    // main retry_chain_node which is bound to our abort source,
-    // and construct a special one.
-    retry_chain_node local_rtc(as, erase_timeout, erase_backoff);
+  remote_manifest_path manifest_path,
+  retry_chain_node& parent_rtc) {
+    retry_chain_node local_rtc(&parent_rtc);
+    retry_chain_logger ctxlog(cst_log, local_rtc);
 
     auto replaced_segments = manifest.replaced_segments();
 
@@ -1158,19 +1157,22 @@ ss::future<remote_partition::erase_result> remote_partition::erase(
         }
 
         vlog(
-          cst_log.info,
+          ctxlog.info,
           "[{}] Erasing segments {}-{}",
           manifest.get_ntp(),
           *(batch_keys.begin()),
           *(--batch_keys.end()));
 
-        for (const auto& object_set : {batch_keys, tx_batch_keys, index_keys}) {
+        for (auto& object_set : std::vector{
+               std::move(batch_keys),
+               std::move(tx_batch_keys),
+               std::move(index_keys)}) {
             if (
               co_await api.delete_objects(
                 bucket, std::move(object_set), local_rtc)
               != upload_result::success) {
                 vlog(
-                  cst_log.info,
+                  ctxlog.info,
                   "[{}] Failed to erase some segments, deferring deletion",
                   manifest.get_ntp());
                 co_return erase_result::failed;
@@ -1180,9 +1182,8 @@ ss::future<remote_partition::erase_result> remote_partition::erase(
 
     // If we got this far, we succeeded deleting all objects referenced by
     // the manifest, so many delete the manifest itself.
-    auto manifest_path = manifest.get_manifest_path();
     vlog(
-      cst_log.debug,
+      ctxlog.debug,
       "[{}] Erasing partition manifest {}",
       manifest.get_ntp(),
       manifest_path);
@@ -1191,7 +1192,7 @@ ss::future<remote_partition::erase_result> remote_partition::erase(
         bucket, cloud_storage_clients::object_key(manifest_path), local_rtc)
       != upload_result::success) {
         vlog(
-          cst_log.info,
+          ctxlog.info,
           "[{}] Failed to erase {}, deferring deletion",
           manifest.get_ntp(),
           manifest_path);
@@ -1199,50 +1200,6 @@ ss::future<remote_partition::erase_result> remote_partition::erase(
     };
 
     co_return erase_result::erased;
-}
-
-/**
- * The caller is responsible for determining whether it is appropriate
- * to delete data in S3, for example it is not appropriate if this is
- * a read replica topic.
- *
- * Q: Why is try_erase() part of remote_partition, when in general writes
- *    flow through the archiver and remote_partition is mainly for
- *    reads?
- * A: Because the erase operation works in terms of what it reads from
- *    S3, not the state of the archival metadata stm (which can be out
- *    of date if e.g. we were not the leader)
- */
-ss::future<> remote_partition::try_erase(ss::abort_source& as) {
-    const auto& stm_manifest = _manifest_view->stm_manifest();
-    vlog(
-      _ctxlog.info,
-      "Attempting to erase remote storage content for {}",
-      stm_manifest.get_ntp());
-
-    // This function is called after ::stop, so we may not use our
-    // main retry_chain_node which is bound to our abort source,
-    // and construct a special one.
-    retry_chain_node local_rtc(as, erase_timeout, erase_backoff);
-
-    // Download manifest because we may not be running on the most up to
-    // date node, but hopefully the latest leader will have uploaded
-    // manifest in finalize().
-    partition_manifest manifest(
-      stm_manifest.get_ntp(), stm_manifest.get_revision_id());
-    auto [manifest_get_result, result_fmt]
-      = co_await _api.try_download_partition_manifest(
-        _bucket, manifest, local_rtc, true);
-
-    if (manifest_get_result != download_result::success) {
-        vlog(
-          _ctxlog.info,
-          "Failed to fetch manifest {}, deferring cleanup on topic erase",
-          manifest.get_manifest_path(result_fmt));
-        co_return;
-    }
-
-    co_await erase(_api, _bucket, std::move(manifest), as);
 }
 
 void remote_partition::offload_segment(model::offset o) {

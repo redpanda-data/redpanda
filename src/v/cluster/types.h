@@ -1964,6 +1964,9 @@ struct nt_lifecycle_marker
 
     model::initial_revision_id initial_revision_id;
 
+    std::optional<ss::lowres_system_clock::time_point> timestamp;
+
+    // Note that the serialisation of `timestamp` is explicitly avoided.
     auto serde_fields() { return std::tie(config, initial_revision_id); }
 };
 

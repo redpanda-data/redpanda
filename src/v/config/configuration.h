@@ -294,6 +294,8 @@ struct configuration final : public config_store {
       cloud_storage_spillover_manifest_max_segments;
     bounded_property<size_t> cloud_storage_manifest_cache_size;
     property<std::chrono::milliseconds> cloud_storage_manifest_cache_ttl_ms;
+    property<std::chrono::milliseconds>
+      cloud_storage_topic_purge_grace_period_ms;
 
     // Azure Blob Storage
     property<std::optional<ss::sstring>> cloud_storage_azure_storage_account;

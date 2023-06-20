@@ -1489,6 +1489,12 @@ configuration::configuration()
       "contention.",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       10s)
+  , cloud_storage_topic_purge_grace_period_ms(
+      *this,
+      "cloud_storage_topic_purge_grace_period_ms",
+      "Grace period during which the scrubber will refuse to purge the topic.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      30s)
   , cloud_storage_azure_storage_account(
       *this,
       "cloud_storage_azure_storage_account",
