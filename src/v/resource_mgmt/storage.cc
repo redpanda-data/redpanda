@@ -46,7 +46,9 @@ ss::future<> disk_space_manager::start() {
       rlog.info,
       "Starting disk space manager service ({})",
       _enabled() ? "enabled" : "disabled");
-    ssx::spawn_with_gate(_gate, [this] { return run_loop(); });
+    if (ss::this_shard_id() == run_loop_core) {
+        ssx::spawn_with_gate(_gate, [this] { return run_loop(); });
+    }
     co_return;
 }
 
@@ -57,6 +59,8 @@ ss::future<> disk_space_manager::stop() {
 }
 
 ss::future<> disk_space_manager::run_loop() {
+    vassert(ss::this_shard_id() == run_loop_core, "Run on wrong core");
+
     /*
      * we want the code here to actually run a little, but the final shape of
      * configuration options is not yet known.
