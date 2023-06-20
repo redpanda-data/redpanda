@@ -980,13 +980,7 @@ class RedpandaServiceBase(Service):
     def si_settings(self):
         return self._si_settings
 
-    def _for_nodes(self, nodes, cb: callable, *, parallel: bool) -> list:
-        if not parallel:
-            # Trivial case: just loop and call
-            for n in nodes:
-                cb(n)
-            return list(map(cb, nodes))
-
+    def for_nodes(self, nodes, cb: callable) -> list:
         n_workers = len(nodes)
         if n_workers > 0:
             with concurrent.futures.ThreadPoolExecutor(
@@ -1009,7 +1003,7 @@ class RedpandaServiceBase(Service):
                 f"sed -i -E -e '/TRACE|DEBUG/d' {RedpandaService.STDOUT_STDERR_CAPTURE} || true"
             )
 
-        self._for_nodes(self.nodes, prune, parallel=True)
+        self.for_nodes(self.nodes, prune)
 
     def node_id(self, node, force_refresh=False, timeout_sec=30):
         """
@@ -1744,13 +1738,12 @@ class RedpandaService(RedpandaServiceBase):
             node.account.copy_to(tmpfile, f"/etc/hosts")
 
         # Edit /etc/hosts on Redpanda nodes
-        self._for_nodes(self.nodes, setup_node_dns, parallel=True)
+        self.for_nodes(self.nodes, setup_node_dns)
 
     def start(self,
               nodes=None,
               clean_nodes=True,
               start_si=True,
-              parallel: bool = True,
               expect_fail: bool = False,
               auto_assign_node_id: bool = False,
               omit_seeds_on_idx_one: bool = True,
@@ -1758,12 +1751,6 @@ class RedpandaService(RedpandaServiceBase):
         """
         Start the service on all nodes.
 
-        By default, nodes are started in serial: this makes logs easier to
-        read and simplifies debugging.  For tests starting larger numbers of
-        nodes where serialized startup becomes annoying, pass parallel=True.
-
-        :param parallel: if true, run clean and start operations in parallel
-                         for the nodes being started.
         :param expect_fail: if true, expect redpanda nodes to terminate shortly
                             after starting.  Raise exception if they don't.
         """
@@ -1802,7 +1789,7 @@ class RedpandaService(RedpandaServiceBase):
                     f"Error cleaning node {node.account.hostname}:")
                 raise
 
-        self._for_nodes(to_start, clean_one, parallel=parallel)
+        self.for_nodes(to_start, clean_one)
 
         if first_start:
             self.write_tls_certs()
@@ -1820,7 +1807,7 @@ class RedpandaService(RedpandaServiceBase):
                             override_cfg_params=node_overrides)
 
         try:
-            self._for_nodes(to_start, start_one, parallel=parallel)
+            self.for_nodes(to_start, start_one)
         except TimeoutError as e:
             if expect_fail:
                 raise e
@@ -1965,7 +1952,7 @@ class RedpandaService(RedpandaServiceBase):
             # fall through
             return True
 
-        return all(self._for_nodes(self._started, check_node, parallel=True))
+        return all(self.for_nodes(self._started, check_node))
 
     def wait_until(self, fn, timeout_sec, backoff_sec, err_msg=None):
         """
@@ -2781,9 +2768,7 @@ class RedpandaService(RedpandaServiceBase):
 
         self.logger.info("%s: stopping service" % self.who_am_i())
 
-        self._for_nodes(self.nodes,
-                        lambda n: self.stop_node(n, **kwargs),
-                        parallel=True)
+        self.for_nodes(self.nodes, lambda n: self.stop_node(n, **kwargs))
 
         self._stop_duration_seconds = time.time() - self._stop_time
 
@@ -3245,7 +3230,7 @@ class RedpandaService(RedpandaServiceBase):
             s = self.node_storage(node, sizes=sizes)
             store.add_node(s)
 
-        self._for_nodes(nodes, compute_node_storage, parallel=True)
+        self.for_nodes(nodes, compute_node_storage)
         self.logger.debug(
             f"Finished storage checks all_nodes={all_nodes} sizes={sizes}")
         return store

@@ -94,9 +94,7 @@ class RpkRedpandaStartTest(RedpandaTest):
 
         # Seed nodes need to be started in parallel because they need to be
         # able to form a quorum before they become ready.
-        self.redpanda._for_nodes(self.redpanda.nodes,
-                                 start_with_rpk,
-                                 parallel=True)
+        self.redpanda.for_nodes(self.redpanda.nodes, start_with_rpk)
         for node in self.redpanda.nodes:
             node_ids.add(self.redpanda.node_id(node))
         assert len(node_ids) == 3, f"Node IDs: {node_ids}"
@@ -125,16 +123,13 @@ class RpkRedpandaStartTest(RedpandaTest):
                     f"{rpk} redpanda config set redpanda.rpc_server " \
                     f"'{{\"address\":\"{node.account.hostname}\",\"port\":33145}}'")
 
-        self.redpanda._for_nodes(self.redpanda.nodes,
-                                 config_bootstrap_with_rpk,
-                                 parallel=True)
+        self.redpanda.for_nodes(self.redpanda.nodes, config_bootstrap_with_rpk)
 
         # Run a start with no arguments, as is done when Redpanda is run by a
         # systemd service.
-        self.redpanda._for_nodes(
+        self.redpanda.for_nodes(
             self.redpanda.nodes,
-            lambda n: self.redpanda.start_node_with_rpk(n, clean_node=False),
-            parallel=True)
+            lambda n: self.redpanda.start_node_with_rpk(n, clean_node=False))
         node_ids = set()
         for node in self.redpanda.nodes:
             node_ids.add(self.redpanda.node_id(node))
@@ -265,9 +260,7 @@ class RpkRedpandaStartTest(RedpandaTest):
             # the limits when TLS is enabled.
             node.account.ssh("sysctl fs.inotify.max_user_instances=512")
 
-        self.redpanda._for_nodes(self.redpanda.nodes,
-                                 setup_cluster,
-                                 parallel=True)
+        self.redpanda.for_nodes(self.redpanda.nodes, setup_cluster)
 
         seeds_str = ",".join(
             [f"{n.account.hostname}" for n in self.redpanda.nodes])
@@ -285,9 +278,7 @@ class RpkRedpandaStartTest(RedpandaTest):
             assert self.redpanda.search_log_node(
                 node, "redpanda.rpc_server_tls:{ enabled: 1")
 
-        self.redpanda._for_nodes(self.redpanda.nodes,
-                                 start_cluster,
-                                 parallel=True)
+        self.redpanda.for_nodes(self.redpanda.nodes, start_cluster)
 
         # To validate that everything works fine we check that
         # formed a cluster and we can produce and consume from it
@@ -306,9 +297,7 @@ class RpkRedpandaStartTest(RedpandaTest):
             pass
 
         self.redpanda.stop()
-        self.redpanda._for_nodes(self.redpanda.nodes,
-                                 start_cluster,
-                                 parallel=True)
+        self.redpanda.for_nodes(self.redpanda.nodes, start_cluster)
         try:
             for i in range(50, 100):
                 self.rpk.produce(topic, f"k-{i}", f"v-test-{i}", timeout=5)
@@ -337,9 +326,7 @@ class RpkRedpandaStartTest(RedpandaTest):
 
             self.redpanda.start_node_with_rpk(node, clean_node=False)
 
-        self.redpanda._for_nodes(self.redpanda.nodes,
-                                 setup_and_start,
-                                 parallel=True)
+        self.redpanda.for_nodes(self.redpanda.nodes, setup_and_start)
 
         # Check that we don't enable rpc and print a warning
         assert self.redpanda.search_log_all(
@@ -368,9 +355,7 @@ class RpkRedpandaStartTest(RedpandaTest):
                            f"[{self.rpc_server_tls()}]")
             node.account.ssh("sysctl fs.inotify.max_user_instances=512")
 
-        self.redpanda._for_nodes(self.redpanda.nodes,
-                                 setup_cluster,
-                                 parallel=True)
+        self.redpanda.for_nodes(self.redpanda.nodes, setup_cluster)
 
         seeds_str = ",".join(
             [f"{n.account.hostname}" for n in self.redpanda.nodes])
@@ -385,9 +370,7 @@ class RpkRedpandaStartTest(RedpandaTest):
 
         # On first start we validate that TLS is disabled and produce
         # to a topic.
-        self.redpanda._for_nodes(self.redpanda.nodes,
-                                 start_cluster,
-                                 parallel=True)
+        self.redpanda.for_nodes(self.redpanda.nodes, start_cluster)
         assert self.redpanda.search_log_all(
             "redpanda.rpc_server_tls:{ enabled: 0", self.redpanda.nodes)
 
@@ -414,9 +397,7 @@ class RpkRedpandaStartTest(RedpandaTest):
 
         # Restart and validate rpc_server_tls is enabled.
         self.redpanda.stop()
-        self.redpanda._for_nodes(self.redpanda.nodes,
-                                 start_cluster,
-                                 parallel=True)
+        self.redpanda.for_nodes(self.redpanda.nodes, start_cluster)
         assert self.redpanda.search_log_all(
             "redpanda.rpc_server_tls:{ enabled: 1", self.redpanda.nodes)
 
