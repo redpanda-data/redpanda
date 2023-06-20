@@ -1,16 +1,13 @@
-apiVersion: v1
-kind: Pod
+apiVersion: redpanda.vectorized.io/v1alpha1
+kind: Cluster
 metadata:
-  labels:
-    job-name: get-broker-count-again
+  name: decommission
 status:
-  containerStatuses:
-    - name: curl
-      state:
-        terminated:
-          exitCode: 0
-          reason: Completed
-  phase: Succeeded
+  replicas: 2
+  currentReplicas: 2
+  conditions:
+    - type: ClusterConfigured
+      status: "True"
 ---
 
 apiVersion: kuttl.dev/v1beta1
