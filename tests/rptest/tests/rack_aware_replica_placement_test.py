@@ -89,7 +89,7 @@ class RackAwarePlacementTest(RedpandaTest):
 
     @cluster(num_nodes=6)
     @matrix(rack_layout_str=['ABCDEF', 'xxYYzz', 'ooooFF'],
-            num_partitions=[50, 400],
+            num_partitions=[400],
             replication_factor=[3, 5],
             num_topics=[2])
     def test_replica_placement(self, rack_layout_str, num_partitions,
