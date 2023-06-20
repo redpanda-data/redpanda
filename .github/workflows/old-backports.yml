@@ -13,7 +13,7 @@ jobs:
 
     - name: "Post to a test channel (temporary)"
       id: shtokman
-      uses: slackapi/slack-github-action@v1.18.0
+      uses: slackapi/slack-github-action@v1.24.0
       with:
         channel-id: "D04M3NZ1WE8"
         slack-message: "Test: ${{env.MESSAGE }}"
