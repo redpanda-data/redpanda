@@ -1052,24 +1052,16 @@ ss::future<result<kafka_result>> rm_stm::do_replicate(
   model::record_batch_reader b,
   raft::replicate_options opts,
   ss::lw_shared_ptr<available_promise<>> enqueued) {
-    return _state_lock.hold_read_lock().then(
-      [this, enqueued, bid, opts, b = std::move(b)](
-        ss::basic_rwlock<>::holder unit) mutable {
-          if (bid.is_transactional) {
-              auto pid = bid.pid.get_id();
-              return get_tx_lock(pid)
-                ->with([this, bid, b = std::move(b)]() mutable {
-                    return replicate_tx(bid, std::move(b));
-                })
-                .finally([u = std::move(unit)] {});
-          } else if (bid.has_idempotent()) {
-              return replicate_seq(bid, std::move(b), opts, enqueued)
-                .finally([u = std::move(unit)] {});
-          }
+    auto unit = co_await _state_lock.hold_read_lock();
+    if (bid.is_transactional) {
+        auto pid = bid.pid.get_id();
+        auto tx_units = co_await get_tx_lock(pid)->get_units();
+        co_return co_await replicate_tx(bid, std::move(b));
+    } else if (bid.has_idempotent()) {
+        co_return co_await replicate_seq(bid, std::move(b), opts, enqueued);
+    }
 
-          return replicate_msg(std::move(b), opts, enqueued)
-            .finally([u = std::move(unit)] {});
-      });
+    co_return co_await replicate_msg(std::move(b), opts, enqueued);
 }
 
 ss::future<> rm_stm::stop() {
