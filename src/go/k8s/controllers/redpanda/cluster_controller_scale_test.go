@@ -22,6 +22,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/utils/pointer"
+	ctrl "sigs.k8s.io/controller-runtime"
 
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/api/admin"
 
@@ -109,7 +110,7 @@ var _ = Describe("Redpanda cluster scale resource", func() {
 			Eventually(resourceDataGetter(key, redpandaCluster, func() interface{} {
 				return redpandaCluster.Status.CurrentReplicas
 			}), timeout, interval).Should(Equal(int32(3)), "CurrentReplicas should be 3, got %d", redpandaCluster.Status.CurrentReplicas)
-			Eventually(statefulSetReplicasReconciler(key, redpandaCluster), timeout, interval).Should(Succeed())
+			Eventually(statefulSetReplicasReconciler(ctrl.Log.WithName("statefulSetReplicasReconciler"), key, redpandaCluster), timeout, interval).Should(Succeed())
 
 			By("Decommissioning the last node when scaling down by 2")
 			Eventually(clusterUpdater(key, func(cluster *vectorizedv1alpha1.Cluster) {
@@ -134,7 +135,7 @@ var _ = Describe("Redpanda cluster scale resource", func() {
 			Eventually(resourceDataGetter(key, &sts, func() interface{} {
 				return *sts.Spec.Replicas
 			}), timeout, interval).Should(Equal(int32(2)))
-			Eventually(statefulSetReplicasReconciler(key, redpandaCluster), timeout, interval).Should(Succeed())
+			Eventually(statefulSetReplicasReconciler(ctrl.Log.WithName("statefulSetReplicasReconciler"), key, redpandaCluster), timeout, interval).Should(Succeed())
 
 			By("Start decommissioning the other node")
 			Eventually(testAdminAPI.BrokerStatusGetter(1), timeout, interval).Should(Equal(admin.MembershipStatusDraining))
@@ -165,7 +166,7 @@ var _ = Describe("Redpanda cluster scale resource", func() {
 			Eventually(resourceDataGetter(key, redpandaCluster, func() interface{} {
 				return redpandaCluster.Status.CurrentReplicas
 			}), timeout, interval).Should(Equal(int32(3)), "CurrentReplicas should be 3, got %d", redpandaCluster.Status.CurrentReplicas)
-			Eventually(statefulSetReplicasReconciler(key, redpandaCluster), timeout, interval).Should(Succeed())
+			Eventually(statefulSetReplicasReconciler(ctrl.Log.WithName("statefulSetReplicasReconciler"), key, redpandaCluster), timeout, interval).Should(Succeed())
 
 			By("Start decommissioning node 2")
 			Eventually(clusterUpdater(key, func(cluster *vectorizedv1alpha1.Cluster) {

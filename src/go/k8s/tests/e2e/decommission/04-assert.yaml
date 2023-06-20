@@ -3,8 +3,9 @@ kind: Cluster
 metadata:
   name: decommission
 status:
-  replicas: 2
-  currentReplicas: 2
+  replicas: 3
+  currentReplicas: 3
+  readyReplicas: 3
   conditions:
     - type: ClusterConfigured
       status: "True"

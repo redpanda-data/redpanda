@@ -11,6 +11,10 @@ package redpanda_test
 
 import (
 	"context"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -57,6 +61,7 @@ var (
 	testStore             *consolepkg.Store
 	testKafkaAdmin        *mockKafkaAdmin
 	testKafkaAdminFactory consolepkg.KafkaAdminClientFactory
+	ts                    *httptest.Server
 
 	ctx              context.Context
 	controllerCancel context.CancelFunc
@@ -86,6 +91,18 @@ var _ = BeforeSuite(func(done Done) {
 	testEnv = &envtest.Environment{
 		CRDDirectoryPaths: []string{filepath.Join("..", "..", "config", "crd", "bases")},
 	}
+
+	ts = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		f, err := os.Open("testdata/metrics.golden.txt")
+		Expect(err).NotTo(HaveOccurred())
+		Expect(cfg).NotTo(BeNil())
+
+		_, err = io.Copy(w, f)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(cfg).NotTo(BeNil())
+	}))
+
+	resources.UnderReplicatedPartitionsHostOverwrite = ts.Listener.Addr().String()
 
 	var err error
 	cfg, err = testEnv.Start()
@@ -271,6 +288,7 @@ var _ = AfterSuite(func() {
 	// kube-apiserver hanging during cleanup
 	// stopping the controllers prevents the hang
 	controllerCancel()
+	ts.Close()
 	gexec.KillAndWait(5 * time.Second)
 	err := testEnv.Stop()
 	Expect(err).NotTo(HaveOccurred())
