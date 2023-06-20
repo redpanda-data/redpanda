@@ -21,7 +21,6 @@
 #include "raft/types.h"
 #include "random/generators.h"
 #include "resource_mgmt/io_priority.h"
-#include "resource_mgmt/memory_sampling.h"
 #include "storage/api.h"
 #include "storage/log.h"
 #include "storage/log_manager.h"
@@ -62,15 +61,11 @@ struct foreign_entry_fixture {
               ss::default_priority_class(),
               storage::make_sanitized_file_config());
         },
-        _feature_table,
-        _memory_sampling_service) {
+        _feature_table) {
         _feature_table.start().get();
         _feature_table
           .invoke_on_all(
             [](features::feature_table& f) { f.testing_activate_all(); })
-          .get();
-        _memory_sampling_service
-          .start(std::ref(_test_logger), config::mock_binding<bool>(false))
           .get();
         _storage.start().get();
         (void)_storage.log_mgr()
@@ -141,13 +136,11 @@ struct foreign_entry_fixture {
     }
     ~foreign_entry_fixture() {
         _storage.stop().get();
-        _memory_sampling_service.stop().get();
         _feature_table.stop().get();
     }
     model::offset _base_offset{0};
     ss::logger _test_logger{"foreign-test-logger"};
     ss::sharded<features::feature_table> _feature_table;
-    ss::sharded<memory_sampling> _memory_sampling_service;
     storage::api _storage;
     storage::log get_log() { return _storage.log_mgr().get(_ntp).value(); }
     model::ntp _ntp{

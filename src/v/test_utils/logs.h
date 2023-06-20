@@ -12,7 +12,6 @@
 #pragma once
 #include "model/fundamental.h"
 #include "model/record_batch_reader.h"
-#include "resource_mgmt/memory_sampling.h"
 #include "seastarx.h"
 #include "storage/api.h"
 
@@ -39,10 +38,6 @@ static inline ss::future<> persist_log_file(
           .get();
 
         seastar::logger test_logger("test");
-        ss::sharded<memory_sampling> memory_sampling_service;
-        memory_sampling_service
-          .start(std::ref(test_logger), config::mock_binding<bool>(false))
-          .get();
 
         ss::sharded<storage::api> storage;
         storage
@@ -61,8 +56,7 @@ static inline ss::future<> persist_log_file(
                   ss::default_priority_class(),
                   storage::make_sanitized_file_config());
             },
-            std::ref(feature_table),
-            std::ref(memory_sampling_service))
+            std::ref(feature_table))
           .get();
         storage.invoke_on_all(&storage::api::start).get();
 
@@ -85,11 +79,9 @@ static inline ss::future<> persist_log_file(
               })
               .get();
             storage.stop().get();
-            memory_sampling_service.stop().get();
             feature_table.stop().get();
         } catch (...) {
             storage.stop().get();
-            memory_sampling_service.stop().get();
             feature_table.stop().get();
             throw;
         }
@@ -123,10 +115,6 @@ read_log_file(ss::sstring base_dir, model::ntp file_ntp) {
           .get();
 
         seastar::logger test_logger("test");
-        ss::sharded<memory_sampling> memory_sampling_service;
-        memory_sampling_service
-          .start(std::ref(test_logger), config::mock_binding<bool>(false))
-          .get();
 
         ss::sharded<storage::api> storage;
         storage
@@ -145,8 +133,7 @@ read_log_file(ss::sstring base_dir, model::ntp file_ntp) {
                   ss::default_priority_class(),
                   storage::make_sanitized_file_config());
             },
-            std::ref(feature_table),
-            std::ref(memory_sampling_service))
+            std::ref(feature_table))
           .get();
         storage.invoke_on_all(&storage::api::start).get();
         auto& mgr = storage.local().log_mgr();
@@ -166,12 +153,10 @@ read_log_file(ss::sstring base_dir, model::ntp file_ntp) {
                   })
                   .get0();
             storage.stop().get();
-            memory_sampling_service.stop().get();
             feature_table.stop().get();
             return batches;
         } catch (...) {
             storage.stop().get();
-            memory_sampling_service.stop().get();
             feature_table.stop().get();
             throw;
         }

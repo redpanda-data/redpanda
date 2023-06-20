@@ -17,7 +17,6 @@
 #include "model/metadata.h"
 #include "model/timestamp.h"
 #include "resource_mgmt/io_priority.h"
-#include "resource_mgmt/memory_sampling.h"
 #include "ssx/async-clear.h"
 #include "ssx/future-util.h"
 #include "storage/batch_cache.h"
@@ -134,14 +133,13 @@ log_manager::log_manager(
   log_config config,
   kvstore& kvstore,
   storage_resources& resources,
-  ss::sharded<features::feature_table>& feature_table,
-  ss::sharded<memory_sampling>& memory_sampling) noexcept
+  ss::sharded<features::feature_table>& feature_table) noexcept
   : _config(std::move(config))
   , _kvstore(kvstore)
   , _resources(resources)
   , _feature_table(feature_table)
   , _jitter(_config.compaction_interval())
-  , _batch_cache(config.reclaim_opts, memory_sampling) {
+  , _batch_cache(config.reclaim_opts) {
     _config.compaction_interval.watch([this]() {
         _jitter = simple_time_jitter<ss::lowres_clock>{
           _config.compaction_interval()};

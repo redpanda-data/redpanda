@@ -12,7 +12,6 @@
 #include "bytes/iobuf_parser.h"
 #include "model/adl_serde.h"
 #include "resource_mgmt/available_memory.h"
-#include "resource_mgmt/memory_sampling.h"
 #include "ssx/future-util.h"
 #include "storage/logger.h"
 #include "utils/gate_guard.h"
@@ -126,17 +125,14 @@ register_memory_reporter(const batch_cache& bc) {
       "batch_cache", [&bc] { return bc.size_bytes(); });
 }
 
-batch_cache::batch_cache(
-  const reclaim_options& opts,
-  ss::sharded<memory_sampling>& memory_sampling_service)
+batch_cache::batch_cache(const reclaim_options& opts)
   : _reclaimer(
     [this](reclaimer::request r) { return reclaim(r); }, reclaim_scope::sync)
   , _reclaim_opts(opts)
   , _reclaim_size(_reclaim_opts.min_size)
   , _background_reclaimer(
       *this, opts.min_free_memory, opts.background_reclaimer_sg)
-  , _available_mem_deregister(register_memory_reporter(*this))
-  , _memory_sampling_service(memory_sampling_service) {
+  , _available_mem_deregister(register_memory_reporter(*this)) {
     _background_reclaimer.start();
 }
 

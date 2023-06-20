@@ -16,7 +16,6 @@
 #include "raft/logger.h"
 #include "raft/types.h"
 #include "random/generators.h"
-#include "resource_mgmt/memory_sampling.h"
 #include "storage/api.h"
 #include "storage/kvstore.h"
 #include "storage/log_manager.h"
@@ -53,8 +52,7 @@ struct config_manager_fixture {
               ss::default_priority_class(),
               storage::make_sanitized_file_config());
         },
-        _feature_table,
-        _memory_sampling_service))
+        _feature_table))
       , _logger(
           raft::group_id(1),
           model::ntp(model::ns("t"), model::topic("t"), model::partition_id(0)))
@@ -69,9 +67,6 @@ struct config_manager_fixture {
           .invoke_on_all(
             [](features::feature_table& f) { f.testing_activate_all(); })
           .get();
-        _memory_sampling_service
-          .start(std::ref(_test_logger), config::mock_binding<bool>(false))
-          .get();
         _storage.start().get0();
     }
 
@@ -79,14 +74,12 @@ struct config_manager_fixture {
                            + random_generators::gen_alphanum_string(6);
     ss::logger _test_logger{"config-mgmr-test-logger"};
     ss::sharded<features::feature_table> _feature_table;
-    ss::sharded<memory_sampling> _memory_sampling_service;
     storage::api _storage;
     raft::ctx_log _logger;
     raft::configuration_manager _cfg_mgr;
 
     ~config_manager_fixture() {
         _storage.stop().get0();
-        _memory_sampling_service.stop().get();
         _feature_table.stop().get();
     }
 

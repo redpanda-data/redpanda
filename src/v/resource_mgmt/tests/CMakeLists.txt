@@ -21,16 +21,3 @@ rp_test(
         SKIP_BUILD_TYPES "Debug"
         ARGS "-- -c1 -m1G"
 )
-
-# Disabled: notification from the batch temporarily removed as it was allocating
-# from reclaim. Will need to be reworked, test disabled until then.
-# rp_test(
-#         UNIT_TEST
-#         BINARY_NAME test_memory_sampling_reclaimer
-#         SOURCES memory_sampling_reclaimer_test.cc
-#         DEFINITIONS BOOST_TEST_DYN_LINK
-#         LIBRARIES v::seastar_testing_main v::application
-#         LABELS memory_sampling
-#         SKIP_BUILD_TYPES "Debug"
-#         ARGS "-- -c1 -m1G"
-# )
