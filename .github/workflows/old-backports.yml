@@ -1,7 +1,7 @@
-name: Alert on Abandoned Backports
+name: old-backports
 on:
   schedule:
-    - cron: '*/10 * * * 4'
+    - cron: '*/10 * * * *'
 env: 
   OUTPUT: $(gh search issues --label "kind/backport" --state open --repo "redpanda-data/redpanda" --updated "<`date --date="15 days ago" +"%Y"-"%m"-"%d"`" --sort updated --order asc --limit 15 --json "assignees,updatedAt,url" --jq '.[] | "@" + (.assignees[] | {login} | .login), .url, .updatedAt,"----"')
   
@@ -12,7 +12,7 @@ jobs:
     steps:
 
     - name: "Post to a test channel (temporary)"
-      id: shtokman
+      id: send-slack-message
       uses: slackapi/slack-github-action@v1.24.0
       with:
         channel-id: "D04M3NZ1WE8"
