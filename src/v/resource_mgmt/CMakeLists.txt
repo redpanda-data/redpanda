@@ -13,6 +13,7 @@ v_cc_library(
     storage.cc
   DEPS
     Seastar::seastar
+    v::cloud_storage
   )
 
 add_subdirectory(tests)

@@ -10,6 +10,8 @@
  */
 #include "storage/node.h"
 
+#include <seastar/core/reactor.hh>
+
 namespace storage {
 
 node::node(ss::sstring data_directory, ss::sstring cache_directory)
