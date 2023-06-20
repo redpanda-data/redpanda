@@ -166,6 +166,16 @@ class ThroughputLimitsSnc(RedpandaTest):
                 elif r == 2:
                     tc_item['client_id'] = 'client_\d+'
 
+                principals = []
+                for _ in range(self.rnd.randrange(3)):
+                    r = self.rnd.randrange(5)
+                    if r == 0:
+                        principals.append({'user': 'admin'})
+                    elif r == 1:
+                        principals.append({'user': '*'})
+                if len(principals) != 0:
+                    tc_item['principals'] = principals
+
                 throughput_control.append(tc_item)
             return throughput_control
 
