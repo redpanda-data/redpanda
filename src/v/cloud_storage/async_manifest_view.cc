@@ -743,20 +743,14 @@ async_manifest_view::time_based_retention(
         const auto delta
           = std::chrono::duration_cast<model::timestamp_clock::duration>(
             time_limit);
-        const auto earliest_ts_in_spill
-          = _stm_manifest.get_spillover_map().begin()->base_timestamp;
         const auto boundary = model::to_timestamp(now - delta);
         vlog(
           _ctxlog.debug,
-          "Computing time-based retention, boundary: {} retention_limit: {}",
-          boundary,
-          time_limit);
-        // The cursor search for timestamps is inclusive, so if the computed
-        // timestamp is ahead of the earliest timestamp in the archive, use the
-        // later.
-        const auto spill_search_query = std::min(
-          boundary, earliest_ts_in_spill);
-        auto res = co_await get_cursor(spill_search_query);
+          "Computing time-based retention, boundary: {}, now: {}",
+          now - delta,
+          now);
+        auto res = co_await get_cursor(
+          _stm_manifest.get_archive_start_offset());
         if (res.has_failure() && res.error() != error_outcome::out_of_range) {
             vlog(
               _ctxlog.error,
@@ -771,53 +765,61 @@ async_manifest_view::time_based_retention(
               _ctxlog.debug,
               "There is no segment old enough to be removed by retention");
         } else {
-            std::optional<archive_start_offset_advance> truncation_point;
-            bool eof = false;
-
             auto cursor = std::move(res.value());
-            while (!truncation_point && !eof) {
-                cursor->with_manifest([this, boundary, &truncation_point](
-                                        const partition_manifest& manifest) {
-                    for (const auto& meta : manifest) {
-                        if (
-                          meta.base_offset > _stm_manifest.get_start_offset()) {
-                            break;
-                        }
+            while (
+              cursor->get_status()
+              == async_manifest_view_cursor_status::materialized_spillover) {
+                auto eof = cursor->with_manifest(
+                  [boundary, &result](const partition_manifest& manifest) {
+                      for (const auto& meta : manifest) {
+                          if (meta.max_timestamp > boundary) {
+                              return true;
+                          }
+                          result.offset = model::next_offset(
+                            meta.committed_offset);
+                          result.delta = meta.delta_offset;
+                      }
+                      return false;
+                  });
+                vlog(
+                  _ctxlog.debug,
+                  "Updated last offset to {}, delta {}",
+                  result.offset,
+                  result.delta);
 
-                        if (meta.base_timestamp > boundary) {
-                            truncation_point = archive_start_offset_advance{
-                              meta.base_offset, meta.delta_offset};
-                            break;
-                        }
+                if (!eof) {
+                    auto r = co_await cursor->next();
+                    if (
+                      r.has_failure()
+                      && r.error() == error_outcome::out_of_range) {
+                        vlog(
+                          _ctxlog.info,
+                          "Entire archive is removed by the time-based "
+                          "retention");
+                    } else if (r.has_failure()) {
+                        vlog(
+                          _ctxlog.error,
+                          "Failed to scan manifest while computing retention "
+                          "{}",
+                          r.error());
+                        co_return r.as_failure();
                     }
-                });
-
-                if (truncation_point) {
+                } else {
+                    vlog(
+                      _ctxlog.debug,
+                      "Retention found offset {} with delta {}",
+                      result.offset,
+                      result.delta);
                     break;
                 }
-
-                auto res = co_await cursor->next();
-                if (res.has_value() && res.value() == false) {
-                    eof = true;
-                } else if (res.has_failure()) {
-                    vlog(
-                      _ctxlog.error,
-                      "Failed to scan manifest while computing retention "
-                      "{}",
-                      res.error());
-                    co_return res.as_failure();
-                }
             }
-
-            if (!truncation_point.has_value()) {
+            if (result.offset == model::offset{}) {
                 vlog(
                   _ctxlog.debug,
                   "Failed to find the retention boundary, the manifest {} "
                   "doesn't "
                   "have any matching segment",
                   cursor->manifest()->get().get_manifest_path());
-            } else {
-                result = truncation_point.value();
             }
         }
     } catch (...) {
@@ -856,24 +858,18 @@ async_manifest_view::size_based_retention(size_t size_limit) noexcept {
                 co_return res.as_failure();
             }
             auto cursor = std::move(res.value());
-            while (to_remove != 0) {
+            while (to_remove != 0
+                   && cursor->get_status()
+                        == async_manifest_view_cursor_status::
+                          materialized_spillover) {
                 // We are reading from the spillover manifests until
                 // the 'to_remove' value is zero. Every time we read
                 // we're advancing the last_* values. The scan shouldn't
                 // go to the STM manifest and should only include archive.
                 // The end condition is the lambda returned true, otherwise
                 // we should keep scanning.
-                model::offset last_offset;
-                model::offset_delta last_delta;
                 auto eof = cursor->with_manifest(
-                  [this, &to_remove, &last_offset, &last_delta](
-                    const auto& manifest) mutable {
-                      if (
-                        _stm_manifest.get_start_offset()
-                        == manifest.get_start_offset()) {
-                          // We reached the STM manifest
-                          return true;
-                      }
+                  [this, &to_remove, &result](const auto& manifest) mutable {
                       for (const auto& meta : manifest) {
                           if (meta.size_bytes > to_remove) {
                               vlog(_ctxlog.debug, "Retention stop at {}", meta);
@@ -881,8 +877,8 @@ async_manifest_view::size_based_retention(size_t size_limit) noexcept {
                               return true;
                           } else {
                               to_remove -= meta.size_bytes;
-                              last_offset = meta.base_offset;
-                              last_delta = meta.delta_offset;
+                              result.offset = meta.base_offset;
+                              result.delta = meta.delta_offset;
                               vlog(
                                 _ctxlog.debug,
                                 "Retention consume {}, remaining bytes: {}",
@@ -892,8 +888,11 @@ async_manifest_view::size_based_retention(size_t size_limit) noexcept {
                       }
                       return false;
                   });
-                result.offset = last_offset;
-                result.delta = last_delta;
+                vlog(
+                  _ctxlog.debug,
+                  "Updated last offset to {}, delta {}",
+                  result.offset,
+                  result.delta);
                 if (!eof) {
                     auto r = co_await cursor->next();
                     if (
