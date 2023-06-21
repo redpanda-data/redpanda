@@ -3055,6 +3055,7 @@ class RedpandaService(RedpandaServiceBase):
             conf.update(dict(sasl_mechanisms=self._security.sasl_mechanisms))
 
         conf_yaml = yaml.dump(conf)
+        self.logger.debug(conf_yaml)
         for node in self.nodes:
             self.logger.info(
                 "Writing bootstrap cluster config file {}:{}".format(
