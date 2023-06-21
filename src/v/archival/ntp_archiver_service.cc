@@ -1911,6 +1911,13 @@ ss::future<> ntp_archiver::garbage_collect_archive() {
 
     const auto clean_offset = manifest().get_archive_clean_offset();
     const auto start_offset = manifest().get_archive_start_offset();
+
+    vlog(
+      _rtclog.info,
+      "Garbage collecting archive segments in offest range [{}, {})",
+      clean_offset,
+      start_offset);
+
     model::offset new_clean_offset;
     // Value includes segments but doesn't include manifests
     size_t bytes_to_remove = 0;
