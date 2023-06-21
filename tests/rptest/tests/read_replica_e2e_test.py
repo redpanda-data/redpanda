@@ -6,10 +6,12 @@
 # As of the Change Date specified in that file, in accordance with
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
+from re import T
 from typing import NamedTuple, Optional
 from rptest.services.cluster import cluster
 
 from rptest.clients.default import DefaultClient
+from rptest.clients.kcl import KCL
 from rptest.services.redpanda import SISettings
 from rptest.clients.rpk import RpkTool, RpkException
 from rptest.clients.types import TopicSpec
@@ -41,6 +43,34 @@ READ_REPLICA_LOG_ALLOW_LIST = [
     "Failed to download partition manifest",
     "Failed to download manifest",
 ]
+
+
+def get_lwm_per_partition(cluster: RedpandaService, topic_name,
+                          partition_count):
+    id_to_lwm = dict()
+    rpk = RpkTool(cluster)
+    for prt in rpk.describe_topic(topic_name):
+        id_to_lwm[prt.id] = prt.start_offset
+    if len(id_to_lwm) != partition_count:
+        return False, None
+    return True, id_to_lwm
+
+
+def lwms_are_identical(logger, src_cluster, dst_cluster, topic_name,
+                       partition_count):
+    # Collect the HWMs for each partition before stopping.
+    src_lwms = wait_until_result(lambda: get_lwm_per_partition(
+        src_cluster, topic_name, partition_count),
+                                 timeout_sec=30,
+                                 backoff_sec=1)
+
+    # Ensure that our HWMs on the destination are the same.
+    rr_lwms = wait_until_result(lambda: get_lwm_per_partition(
+        dst_cluster, topic_name, partition_count),
+                                timeout_sec=30,
+                                backoff_sec=1)
+    logger.info(f"{src_lwms} vs {rr_lwms}")
+    return src_lwms == rr_lwms
 
 
 def get_hwm_per_partition(cluster: RedpandaService, topic_name,
@@ -223,6 +253,62 @@ class TestReadReplicaService(EndToEndTest):
             return BucketUsage(obj_delta, bytes_delta, keys_delta)
         else:
             return None
+
+    @cluster(num_nodes=7, log_allow_list=READ_REPLICA_LOG_ALLOW_LIST)
+    @matrix(partition_count=[5], cloud_storage_type=[CloudStorageType.S3])
+    def test_identical_lwms_after_delete_records(
+            self, partition_count: int,
+            cloud_storage_type: CloudStorageType) -> None:
+        self._setup_read_replica(partition_count=partition_count,
+                                 num_messages=1000)
+        kcl = KCL(self.redpanda)
+
+        def set_lwm(new_lwm):
+            response = kcl.delete_records({self.topic_name: {0: new_lwm}})
+            assert response[0].error == 'OK', response[0].error
+            assert response[0].new_low_watermark == new_lwm
+
+        rpk = RpkTool(self.redpanda)
+
+        def check_lwm(new_lwm):
+            topics_info = list(rpk.describe_topic(self.topic_name))
+            topic_info = topics_info[0]
+            for t in topics_info:
+                if t.id == 0:
+                    topic_info = t
+                    break
+            assert topic_info.start_offset == new_lwm, topic_info
+
+        check_lwm(0)
+        set_lwm(5)
+        check_lwm(5)
+
+        def clusters_report_identical_lwms():
+            return lwms_are_identical(self.logger, self.redpanda,
+                                      self.second_cluster, self.topic_name,
+                                      partition_count)
+
+        wait_until(clusters_report_identical_lwms,
+                   timeout_sec=30,
+                   backoff_sec=1)
+
+        # As a sanity check, ensure the same is true after a restart.
+        self.redpanda.restart_nodes(self.redpanda.nodes)
+        wait_until(clusters_report_identical_lwms,
+                   timeout_sec=30,
+                   backoff_sec=1)
+
+        check_lwm(5)
+        set_lwm(6)
+        check_lwm(6)
+
+        self.second_cluster.restart_nodes(self.second_cluster.nodes)
+        wait_until(clusters_report_identical_lwms,
+                   timeout_sec=30,
+                   backoff_sec=1)
+        check_lwm(6)
+        set_lwm(7)
+        check_lwm(7)
 
     @cluster(num_nodes=8, log_allow_list=READ_REPLICA_LOG_ALLOW_LIST)
     @matrix(partition_count=[5], cloud_storage_type=[CloudStorageType.S3])

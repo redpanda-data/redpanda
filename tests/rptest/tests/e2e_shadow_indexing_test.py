@@ -18,6 +18,7 @@ from ducktape.utils.util import wait_until
 
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.clients.kafka_cli_tools import KafkaCliTools
+from rptest.clients.kcl import KCL
 from rptest.clients.rpk import RpkTool
 from rptest.clients.types import TopicSpec
 from rptest.services.action_injector import random_process_kills
@@ -296,9 +297,6 @@ class EndToEndShadowIndexingTest(EndToEndShadowIndexingBase):
     @skip_debug_mode
     @cluster(num_nodes=4)
     def test_recover(self):
-        # Recovery will leave behind results files, which aren't tracked.
-        # TODO: remove when recovery is controller-driven instead of using
-        # results objects.
         self.start_producer()
         produce_until_segments(
             redpanda=self.redpanda,
@@ -336,6 +334,62 @@ class EndToEndShadowIndexingTest(EndToEndShadowIndexingBase):
         wait_until(lambda: len(set(rpk.list_topics())) == 1,
                    timeout_sec=30,
                    backoff_sec=1)
+
+    @skip_debug_mode
+    @cluster(num_nodes=4)
+    def test_recover_after_delete_records(self):
+        self.start_producer()
+        produce_until_segments(
+            redpanda=self.redpanda,
+            topic=self.topic,
+            partition_idx=0,
+            count=10,
+        )
+        original_snapshot = self.redpanda.storage(
+            all_nodes=True).segments_by_node("kafka", self.topic, 0)
+        self.kafka_tools.alter_topic_config(
+            self.topic,
+            {
+                TopicSpec.PROPERTY_RETENTION_LOCAL_TARGET_BYTES:
+                5 * self.segment_size,
+            },
+        )
+
+        wait_for_removal_of_n_segments(redpanda=self.redpanda,
+                                       topic=self.topic,
+                                       partition_idx=0,
+                                       n=6,
+                                       original_snapshot=original_snapshot)
+        kcl = KCL(self.redpanda)
+        new_lwm = 2
+        response = kcl.delete_records({self.topic: {0: new_lwm}})
+        assert len(response) == 1
+        assert response[0].topic == self.topic
+        assert response[0].partition == 0
+        assert response[0].error == 'OK', f"Err msg: {response[0].error}"
+        assert new_lwm == response[0].new_low_watermark, response[
+            0].new_low_watermark
+        rpk = RpkTool(self.redpanda)
+        topics_info = list(rpk.describe_topic(self.topic))
+        assert len(topics_info) == 1
+        assert topics_info[0].start_offset == new_lwm, topics_info
+
+        self.redpanda.stop()
+        self.redpanda.remove_local_data(self.redpanda.nodes[0])
+        self.redpanda.restart_nodes(self.redpanda.nodes)
+        self.redpanda._admin.await_stable_leader("controller",
+                                                 partition=0,
+                                                 namespace='redpanda',
+                                                 timeout_s=60,
+                                                 backoff_s=2)
+
+        rpk.cluster_recovery_start(wait=True)
+        wait_until(lambda: len(set(rpk.list_topics())) == 1,
+                   timeout_sec=30,
+                   backoff_sec=1)
+        topics_info = list(rpk.describe_topic(self.topic))
+        assert len(topics_info) == 1
+        assert topics_info[0].start_offset == new_lwm, topics_info
 
 
 class EndToEndShadowIndexingTestCompactedTopic(EndToEndShadowIndexingBase):
