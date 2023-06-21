@@ -2063,8 +2063,13 @@ ss::future<> ntp_archiver::garbage_collect_archive() {
 ss::future<bool> ntp_archiver::batch_delete(
   std::vector<cloud_storage_clients::object_key> keys) {
     // Do batch delete, the batch size should be below the limit
+    auto timeout = config::shard_local_cfg()
+                     .cloud_storage_segment_upload_timeout_ms.value();
+    auto backoff
+      = config::shard_local_cfg().cloud_storage_initial_backoff_ms.value();
+    retry_chain_node fib(timeout, backoff, &_rtcnode);
     auto res = co_await _remote.delete_objects(
-      get_bucket_name(), std::move(keys), _rtcnode);
+      get_bucket_name(), std::move(keys), fib);
     if (res != cloud_storage::upload_result::success) {
         vlog(_rtclog.error, "Failed to delete objects", res);
         co_return false;
