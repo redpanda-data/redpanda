@@ -73,8 +73,8 @@ public:
 
     /// Truncate the beginning of the log up until a given offset
     /// Can only be performed on logs that are deletable and non internal
-    ss::future<std::error_code>
-    prefix_truncate(model::offset o, ss::lowres_clock::time_point deadline);
+    ss::future<std::error_code> prefix_truncate(
+      model::offset o, kafka::offset ko, ss::lowres_clock::time_point deadline);
 
     kafka_stages replicate_in_stages(
       model::batch_identity,
