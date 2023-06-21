@@ -87,6 +87,21 @@ static void log_segment_set(storage::log_manager& lm) {
     }
 }
 
+static remote_manifest_path generate_spill_manifest_path(
+  model::ntp ntp,
+  model::initial_revision_id rev_id,
+  const cloud_storage::segment_meta& meta) {
+    cloud_storage::spillover_manifest_path_components comp{
+      .base = meta.base_offset,
+      .last = meta.committed_offset,
+      .base_kafka = meta.base_kafka_offset(),
+      .next_kafka = meta.next_kafka_offset(),
+      .base_ts = meta.base_timestamp,
+      .last_ts = meta.max_timestamp,
+    };
+    return cloud_storage::generate_spillover_manifest_path(ntp, rev_id, comp);
+}
+
 void log_upload_candidate(const archival::upload_candidate& up) {
     auto first_source = up.sources.front();
     vlog(
@@ -136,7 +151,10 @@ FIXTURE_TEST(test_upload_segments, archiver_fixture) {
       app.shadow_index_cache.local(),
       *part,
       amv);
-    auto action = ss::defer([&archiver] { archiver.stop().get(); });
+    auto action = ss::defer([&archiver, &amv] {
+        archiver.stop().get();
+        amv->stop().get();
+    });
 
     retry_chain_node fib(never_abort);
     auto res = upload_next_with_retries(archiver).get0();
@@ -267,7 +285,10 @@ FIXTURE_TEST(test_upload_after_failure, archiver_fixture) {
       *part,
       amv);
 
-    auto action = ss::defer([&archiver] { archiver.stop().get(); });
+    auto action = ss::defer([&archiver, &amv] {
+        archiver.stop().get();
+        amv->stop().get();
+    });
 
     retry_chain_node fib(never_abort);
     auto res = upload_next_with_retries(archiver).get0();
@@ -360,7 +381,10 @@ FIXTURE_TEST(
       *part,
       amv);
 
-    auto action = ss::defer([&archiver] { archiver.stop().get(); });
+    auto action = ss::defer([&archiver, &amv] {
+        archiver.stop().get();
+        amv->stop().get();
+    });
 
     retry_chain_node fib(never_abort);
     auto res = archiver.upload_next_candidates().get0();
@@ -434,7 +458,10 @@ FIXTURE_TEST(test_retention, archiver_fixture) {
       app.shadow_index_cache.local(),
       *part,
       amv);
-    auto action = ss::defer([&archiver] { archiver.stop().get(); });
+    auto action = ss::defer([&archiver, &amv] {
+        archiver.stop().get();
+        amv->stop().get();
+    });
 
     retry_chain_node fib(never_abort);
     auto res = upload_next_with_retries(archiver).get0();
@@ -481,6 +508,168 @@ FIXTURE_TEST(test_retention, archiver_fixture) {
             BOOST_REQUIRE(entity_deleted == deletion_expected);
         }
     }
+}
+
+FIXTURE_TEST(test_archive_retention, archiver_fixture) {
+    /*
+     * Test retention within the archive focusing on the specific
+     * case where archive garbage collection needs to remove the contents
+     * of the entire spillover manifest.
+     */
+
+    config::shard_local_cfg()
+      .cloud_storage_spillover_manifest_max_segments.set_value(
+        std::optional<size_t>{2});
+
+    // Write segments to local log
+    auto old_stamp = model::timestamp{
+      model::timestamp::now().value()
+      - std::chrono::milliseconds{10min}.count()};
+
+    std::vector<segment_desc> segments = {
+      {.ntp = manifest_ntp,
+       .base_offset = model::offset(0),
+       .term = model::term_id(1),
+       .num_records = 1000,
+       .timestamp = old_stamp},
+      {.ntp = manifest_ntp,
+       .base_offset = model::offset(1000),
+       .term = model::term_id(2),
+       .num_records = 1000,
+       .timestamp = old_stamp},
+      {.ntp = manifest_ntp,
+       .base_offset = model::offset(2000),
+       .term = model::term_id(3),
+       .num_records = 1000},
+      {.ntp = manifest_ntp,
+       .base_offset = model::offset(3000),
+       .term = model::term_id(4),
+       .num_records = 1000}};
+
+    init_storage_api_local(segments);
+    vlog(test_log.info, "Initialized, start waiting for partition leadership");
+
+    wait_for_partition_leadership(manifest_ntp);
+    auto part = app.partition_manager.local().get(manifest_ntp);
+    tests::cooperative_spin_wait_with_timeout(10s, [part]() mutable {
+        return part->last_stable_offset() >= model::offset(1);
+    }).get();
+
+    vlog(
+      test_log.info,
+      "Partition is a leader, HW {}, CO {}, partition: {}",
+      part->high_watermark(),
+      part->committed_offset(),
+      *part);
+
+    listen();
+
+    // Instantiate archiver
+    auto [arch_conf, remote_conf] = get_configurations();
+    cloud_storage::partition_probe probe(manifest_ntp);
+    auto amv = ss::make_shared<cloud_storage::async_manifest_view>(
+      remote,
+      app.shadow_index_cache,
+      part->archival_meta_stm()->manifest(),
+      arch_conf->bucket_name,
+      probe);
+    archival::ntp_archiver archiver(
+      get_ntp_conf(),
+      arch_conf,
+      remote.local(),
+      app.shadow_index_cache.local(),
+      *part,
+      amv);
+    amv->start().get();
+    auto action = ss::defer([&archiver, &amv] {
+        archiver.stop().get();
+        amv->stop().get();
+    });
+
+    // Wait for uploads to complete
+    retry_chain_node fib(never_abort);
+    auto res = upload_next_with_retries(archiver).get0();
+    BOOST_REQUIRE_EQUAL(res.non_compacted_upload_result.num_succeeded, 4);
+    BOOST_REQUIRE_EQUAL(res.non_compacted_upload_result.num_failed, 0);
+
+    // We generate the path here as we need the segment to be in the
+    // manifest for this. After retention and/or spillover are applied
+    // that's not the case anymore.
+    std::vector<std::pair<remote_segment_path, bool>> segment_urls;
+    for (const auto& seg : segments) {
+        auto name = cloud_storage::generate_local_segment_name(
+          seg.base_offset, seg.term);
+        auto path = get_segment_path(
+          part->archival_meta_stm()->manifest(), name);
+
+        bool deletion_expected = seg.timestamp == old_stamp;
+        segment_urls.emplace_back(path, deletion_expected);
+    }
+
+    // Trigger spillover
+    archiver.apply_spillover().get();
+
+    const auto& spills
+      = part->archival_meta_stm()->manifest().get_spillover_map();
+    BOOST_REQUIRE_EQUAL(spills.size(), 1);
+    BOOST_REQUIRE_EQUAL(spills.begin()->base_offset, model::offset{0});
+    BOOST_REQUIRE_EQUAL(spills.begin()->committed_offset, model::offset{1999});
+    auto spill_path = generate_spill_manifest_path(
+      manifest_ntp, manifest_revision, *(spills.begin()));
+
+    config::shard_local_cfg().delete_retention_ms.set_value(
+      std::chrono::milliseconds{5min});
+
+    // Apply retention within the archive.
+    archiver.apply_archive_retention().get();
+    BOOST_REQUIRE_EQUAL(
+      part->archival_meta_stm()->manifest().get_archive_start_offset(),
+      model::offset{2000});
+    BOOST_REQUIRE_EQUAL(
+      part->archival_meta_stm()->manifest().get_archive_clean_offset(),
+      model::offset{0});
+
+    // Trigger garbage collection within the archive. This should
+    // remove segments in the [0, 2000) offset interval.
+    ssx::background = archiver.garbage_collect_archive();
+    tests::cooperative_spin_wait_with_timeout(5s, [this, part]() mutable {
+        const auto& manifest = part->archival_meta_stm()->manifest();
+        bool archive_clean_moved = manifest.get_archive_clean_offset()
+                                   == model::offset{2000};
+        bool deletes_sent = std::count_if(
+                              get_targets().begin(),
+                              get_targets().end(),
+                              [](auto it) { return it.second.has_q_delete; })
+                            == 2;
+        return archive_clean_moved && deletes_sent;
+    }).get();
+
+    ss::sstring delete_payloads;
+    for (const auto& [url, req] : get_targets()) {
+        if (req.has_q_delete) {
+            delete_payloads += req.content;
+        }
+    }
+
+    for (auto [url, req] : get_targets()) {
+        vlog(test_log.info, "{} {}", req.method, req.url);
+    }
+
+    // Validate the contents of plural delete requests
+    vlog(test_log.info, "Delete payloads: {}", delete_payloads);
+    for (const auto& [url, deletion_expected] : segment_urls) {
+        auto urlstr = url().string();
+        auto expected_delete_paths = {urlstr, urlstr + ".index"};
+        for (const auto& p : expected_delete_paths) {
+            bool deleted = delete_payloads.find(p) != ss::sstring::npos;
+            vlog(test_log.info, "Object {} deleted={}", p, deleted);
+            BOOST_REQUIRE_EQUAL(deleted, deletion_expected);
+        }
+    }
+
+    bool spill_manifest_deleted = delete_payloads.find(spill_path().string())
+                                  != ss::sstring::npos;
+    BOOST_REQUIRE_EQUAL(true, spill_manifest_deleted);
 }
 
 FIXTURE_TEST(test_segments_pending_deletion_limit, archiver_fixture) {
