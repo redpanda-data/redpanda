@@ -314,7 +314,6 @@ rm_stm::rm_stm(
                          .abort_timed_out_transactions_interval_ms.value())
   , _abort_index_segment_size(
       config::shard_local_cfg().abort_index_segment_size.value())
-  , _seq_table_min_size(config::shard_local_cfg().seq_table_min_size.value())
   , _transactional_id_expiration(
       config::shard_local_cfg().transactional_id_expiration_ms.value())
   , _is_tx_enabled(config::shard_local_cfg().enable_transactions.value())
