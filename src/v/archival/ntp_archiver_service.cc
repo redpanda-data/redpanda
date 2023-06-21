@@ -1970,6 +1970,9 @@ ss::future<> ntp_archiver::garbage_collect_archive() {
               "Failed to load next spillover manifest: {}",
               res.error());
             break;
+        } else if (res.value() == false) {
+            // End of stream
+            break;
         }
     }
 
