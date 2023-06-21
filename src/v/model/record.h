@@ -509,7 +509,7 @@ struct batch_identity {
           .last_seq = increment_sequence(
             hdr.base_sequence, hdr.last_offset_delta),
           .record_count = hdr.record_count,
-          .first_timestamp = hdr.first_timestamp,
+          .max_timestamp = hdr.max_timestamp,
           .is_transactional = hdr.attrs.is_transactional()};
     }
 
@@ -517,7 +517,7 @@ struct batch_identity {
     int32_t first_seq{0};
     int32_t last_seq{0};
     int32_t record_count;
-    timestamp first_timestamp;
+    timestamp max_timestamp;
     bool is_transactional{false};
 
     bool has_idempotent() { return pid.id >= 0; }
