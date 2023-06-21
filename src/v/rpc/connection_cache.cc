@@ -76,6 +76,7 @@ ss::future<> connection_cache::remove_all() {
 /// \brief closes all client connections
 ss::future<> connection_cache::do_shutdown() {
     auto units = co_await _mutex.get_units();
+    _shutting_down = true;
     // Exchange ensures the cache is invalidated and concurrent
     // accesses wait on the mutex to populate new entries.
     auto cache = std::exchange(_cache, {});
