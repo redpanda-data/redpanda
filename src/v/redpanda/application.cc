@@ -1308,12 +1308,9 @@ void application::wire_up_redpanda_services(model::node_id node_id) {
         auto cloud_storage_cache_disk_notification
           = storage_node.local().register_disk_notification(
             storage::node::disk_type::cache,
-            [this](
-              uint64_t total_space,
-              uint64_t free_space,
-              storage::disk_space_alert alert) {
+            [this](storage::node::disk_space_info info) {
                 return shadow_index_cache.local().notify_disk_status(
-                  total_space, free_space, alert);
+                  info.total, info.free, info.alert);
             });
         _deferred.emplace_back([this, cloud_storage_cache_disk_notification] {
             storage_node.local().unregister_disk_notification(
@@ -1691,14 +1688,10 @@ void application::wire_up_bootstrap_services() {
     auto storage_disk_notification
       = storage_node.local().register_disk_notification(
         storage::node::disk_type::data,
-        [this](
-          uint64_t total_space,
-          uint64_t free_space,
-          storage::disk_space_alert alert) {
-            return storage.invoke_on_all(
-              [total_space, free_space, alert](storage::api& api) {
-                  api.handle_disk_notification(total_space, free_space, alert);
-              });
+        [this](storage::node::disk_space_info info) {
+            return storage.invoke_on_all([info](storage::api& api) {
+                api.handle_disk_notification(info.total, info.free, info.alert);
+            });
         });
     _deferred.emplace_back([this, storage_disk_notification] {
         storage_node.local().unregister_disk_notification(
