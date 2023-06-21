@@ -253,13 +253,22 @@ snc_quota_manager::calc_node_quota_default() const {
 void snc_quota_manager::get_or_create_quota_context(
   std::unique_ptr<snc_quota_context>& ctx,
   std::optional<std::string_view> client_id,
+  const security::acl_principal* const principal,
   const ss::net::inet_address& client_addr,
   const uint16_t client_port) {
     if (likely(ctx)) {
+        bool principal_match = false;
+        if (principal) {
+            principal_match = ctx->_acl_principal
+                              && *ctx->_acl_principal == *principal;
+        } else {
+            principal_match = !ctx->_acl_principal;
+        }
+
         // note: comparing sstring (the lefthand _client_id) to string_view
         // (the righthand client_id) is only possible by converting the former
         // to string_view, or with the sstring::operator<=>, => no perf penalty
-        if (likely(ctx->_client_id == client_id)) {
+        if (likely(principal_match && ctx->_client_id == client_id)) {
             // the context is the right one
             return;
         }
@@ -270,6 +279,16 @@ void snc_quota_manager::get_or_create_quota_context(
         // this should not happen. If it does happen with a supported client, we
         // probably should start supporting multiple quota contexts per
         // connection
+        if (!principal_match) {
+            vlog(
+              klog.warn,
+              "{}:{} - qm - acl_principal has changed on the connection. "
+              "Quotas are reset now. Old: {}, new: {}",
+              client_addr,
+              client_port,
+              ctx->_acl_principal,
+              principal ? std::make_optional(*principal) : std::nullopt);
+        }
         if (ctx->_client_id != client_id) {
             vlog(
               klog.warn,
@@ -282,18 +301,20 @@ void snc_quota_manager::get_or_create_quota_context(
         }
     }
 
-    ctx = std::make_unique<snc_quota_context>(client_id);
+    ctx = std::make_unique<snc_quota_context>(
+      client_id, principal ? std::make_optional(*principal) : std::nullopt);
     vlog(
       klog.trace,
-      "{}:{} - qm - Matching client_id: {}",
+      "{}:{} - qm - Matching client_id: {}, principal: {}",
       client_addr,
       client_port,
-      ctx->_client_id);
+      ctx->_client_id,
+      ctx->_acl_principal);
     const auto tcgroup_it = config::find_throughput_control_group(
       _kafka_throughput_control().cbegin(),
       _kafka_throughput_control().cend(),
       client_id,
-      nullptr);
+      principal);
     if (tcgroup_it == _kafka_throughput_control().cend()) {
         ctx->_exempt = false;
         vlog(

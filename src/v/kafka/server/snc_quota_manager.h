@@ -13,6 +13,7 @@
 #include "config/property.h"
 #include "config/throughput_control_group.h"
 #include "seastarx.h"
+#include "security/acl.h"
 #include "utils/bottomless_token_bucket.h"
 #include "utils/mutex.h"
 
@@ -26,6 +27,8 @@
 #include <chrono>
 #include <optional>
 #include <string_view>
+#include <utility>
+#include <variant>
 
 namespace kafka {
 
@@ -63,14 +66,18 @@ private:
 
 class snc_quota_context {
 public:
-    explicit snc_quota_context(std::optional<std::string_view> client_id)
-      : _client_id(client_id) {}
+    snc_quota_context(
+      std::optional<std::string_view> client_id,
+      std::optional<security::acl_principal> acl_principal)
+      : _client_id(client_id)
+      , _acl_principal(std::move(acl_principal)) {}
 
 private:
     friend class snc_quota_manager;
 
     // Indexing
     std::optional<ss::sstring> _client_id;
+    std::optional<security::acl_principal> _acl_principal;
 
     // Configuration
 
@@ -119,6 +126,7 @@ public:
     void get_or_create_quota_context(
       std::unique_ptr<snc_quota_context>& ctx,
       std::optional<std::string_view> client_id,
+      const security::acl_principal* principal,
       const ss::net::inet_address& client_addr,
       uint16_t client_port);
 
