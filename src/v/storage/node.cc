@@ -34,17 +34,9 @@ ss::future<> node::stop() { co_return; }
 
 void node::set_disk_metrics(disk_type t, disk_space_info info) {
     if (t == disk_type::data) {
-        _data_watchers.notify(disk_space_info{
-          .total = info.total,
-          .free = info.free,
-          .alert = info.alert,
-        });
+        _data_watchers.notify(info);
     } else if (t == disk_type::cache) {
-        _cache_watchers.notify(disk_space_info{
-          .total = info.total,
-          .free = info.free,
-          .alert = info.alert,
-        });
+        _cache_watchers.notify(info);
     }
     _probe.set_disk_metrics(info.total, info.free, info.alert);
 }
