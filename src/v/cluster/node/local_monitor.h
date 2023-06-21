@@ -54,10 +54,6 @@ public:
       = "storage space alert"; // for those who grep the logs..
 
 private:
-    // helpers
-    static size_t
-    alert_percent_in_bytes(unsigned alert_percent, size_t bytes_available);
-
     /// Periodically check node status until stopped by abort source
     ss::future<> _update_loop();
 

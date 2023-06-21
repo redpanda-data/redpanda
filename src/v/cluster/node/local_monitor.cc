@@ -92,11 +92,30 @@ ss::future<> local_monitor::update_state() {
 
 const local_state& local_monitor::get_state_cached() const { return _state; }
 
-size_t local_monitor::alert_percent_in_bytes(
-  unsigned alert_percent, size_t bytes_available) {
+namespace {
+size_t alert_percent_in_bytes(unsigned alert_percent, size_t bytes_available) {
     long double percent_factor = alert_percent / 100.0;
     return percent_factor * bytes_available;
 }
+
+/*
+ * calculcate the free disk space alert thresholds
+ *
+ * <low_space, degraded>
+ */
+std::pair<size_t, size_t> calc_alert_thresholds(const storage::disk& d) {
+    auto& cfg = config::shard_local_cfg();
+    unsigned alert_percent
+      = cfg.storage_space_alert_free_threshold_percent.value();
+    size_t alert_bytes = cfg.storage_space_alert_free_threshold_bytes.value();
+    size_t min_bytes = cfg.storage_min_free_bytes();
+
+    size_t min_by_percent = alert_percent_in_bytes(alert_percent, d.total);
+    auto alert_min = std::max(min_by_percent, alert_bytes);
+
+    return std::make_pair(alert_min, min_bytes);
+}
+} // namespace
 
 storage::disk
 local_monitor::statvfs_to_disk(const storage::node::stat_info& info) {
@@ -157,20 +176,13 @@ void local_monitor::maybe_log_space_error(const storage::disk& disk) {
 }
 
 void local_monitor::update_alert(storage::disk& d) {
-    auto& cfg = config::shard_local_cfg();
-    unsigned alert_percent
-      = cfg.storage_space_alert_free_threshold_percent.value();
-    size_t alert_bytes = cfg.storage_space_alert_free_threshold_bytes.value();
-    size_t min_bytes = cfg.storage_min_free_bytes();
-
     if (unlikely(d.total == 0.0)) {
         vlog(
           clusterlog.error,
           "Disk reported zero total bytes, ignoring free space.");
         d.alert = storage::disk_space_alert::ok;
     } else {
-        size_t min_by_percent = alert_percent_in_bytes(alert_percent, d.total);
-        auto alert_min = std::max(min_by_percent, alert_bytes);
+        const auto [alert_min, min_bytes] = calc_alert_thresholds(d);
         if (unlikely(d.free <= min_bytes)) {
             d.alert = storage::disk_space_alert::degraded;
         } else if (unlikely(d.free <= alert_min)) {
