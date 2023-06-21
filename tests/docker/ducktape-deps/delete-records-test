@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+set -e
+set -x
+
+pushd /tmp
+git clone https://github.com/redpanda-data/delete-records-test.git
+
+pushd delete-records-test
+git reset --hard 6c7356e1ef9b4a876862935e1bf1b489e3cda304
+cargo build --release
+cp target/release/delete-records-test /usr/local/bin
+popd
+
+rm -rf delete-records-test
+popd

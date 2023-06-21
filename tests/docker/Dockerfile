@@ -132,6 +132,14 @@ RUN /rp-storage-tool && \
 
 #################################
 
+FROM rust as delete-records-test
+
+COPY --chown=0:0 --chmod=0755 tests/docker/ducktape-deps/delete-records-test /
+RUN /delete-records-test && \
+    rm /delete-records-test
+
+#################################
+
 FROM golang as sarama-examples
 
 COPY --chown=0:0 --chmod=0755 tests/docker/ducktape-deps/sarama-examples /
@@ -251,6 +259,7 @@ COPY --from=k8s /usr/local/bin/kubectl /usr/local/bin/helm /usr/local/bin/
 COPY --from=kaf /usr/local/bin/kaf /usr/local/bin/
 COPY --from=kcl /usr/local/bin/kcl /usr/local/bin/
 COPY --from=kgo-verifier /opt/kgo-verifier /opt/kgo-verifier
+COPY --from=delete-records-test /usr/local/bin/delete-records-test /usr/local/bin
 
 RUN ldconfig
 
