@@ -16,6 +16,7 @@
 #include "kafka/protocol/wire.h"
 #include "model/fundamental.h"
 #include "model/record.h"
+#include "model/timestamp.h"
 #include "prometheus/prometheus_sanitize.h"
 #include "raft/consensus_utils.h"
 #include "raft/errc.h"
@@ -2515,8 +2516,10 @@ void rm_stm::apply_data(model::batch_identity bid, model::offset last_offset) {
               rm_stm::clear_type::idempotent_pids);
         }
 
-        seq_it->second.entry.last_write_timestamp = bid.first_timestamp.value();
-        _oldest_session = std::min(_oldest_session, bid.first_timestamp);
+        seq_it->second.entry.last_write_timestamp = bid.max_timestamp.value();
+        if (bid.max_timestamp != model::timestamp::missing()) {
+            _oldest_session = std::min(_oldest_session, bid.max_timestamp);
+        }
     }
 
     if (bid.is_transactional) {
