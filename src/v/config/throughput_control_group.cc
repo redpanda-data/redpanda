@@ -69,6 +69,9 @@ struct copyable_RE2 : re2::RE2 {
     explicit copyable_RE2(const std::string& s)
       : RE2(s) {}
 
+    friend bool operator==(const copyable_RE2& lhs, const copyable_RE2& rhs) {
+        return lhs.pattern() == rhs.pattern();
+    }
     friend std::ostream& operator<<(std::ostream& os, const copyable_RE2& re) {
         fmt::print(os, "{}", re.pattern());
         return os;
@@ -83,6 +86,9 @@ struct client_id_matcher_type {
     explicit client_id_matcher_type(const copyable_RE2& d)
       : v(d) {}
 
+    friend bool
+    operator==(const client_id_matcher_type&, const client_id_matcher_type&)
+      = default;
     friend std::ostream& operator<<(
       std::ostream& os, const std::unique_ptr<client_id_matcher_type>& mt) {
         if (mt) {
@@ -116,6 +122,16 @@ throughput_control_group::throughput_control_group(
 throughput_control_group&
 throughput_control_group::operator=(const throughput_control_group& other) {
     return *this = throughput_control_group(other);
+}
+
+bool operator==(
+  const throughput_control_group& lhs, const throughput_control_group& rhs) {
+    return lhs.name == rhs.name
+           && (lhs.client_id_matcher == rhs.client_id_matcher
+                 || (lhs.client_id_matcher && rhs.client_id_matcher
+                     && *lhs.client_id_matcher == *rhs.client_id_matcher))
+           && lhs.throughput_limit_node_in_bps == rhs.throughput_limit_node_in_bps
+           && lhs.throughput_limit_node_out_bps == rhs.throughput_limit_node_out_bps;
 }
 
 std::ostream&

@@ -36,7 +36,7 @@ SEASTAR_THREAD_TEST_CASE(throughput_control_group_test) {
     struct test_config : public config::config_store {
         config::property<std::vector<config::throughput_control_group>> cgroups;
         test_config()
-          : cgroups(*this, "cgroups", "") {}
+          : cgroups(*this, "cgroups", "", {.needs_restart = config::needs_restart::no}) {}
     };
 
     auto cfg_node = YAML::Load(R"(
@@ -58,7 +58,7 @@ cgroups:
     BOOST_TEST(
       YAML::Dump(config::to_yaml(cfg, config::redact_secrets{false}))
       == YAML::Dump(cfg_node));
-    BOOST_TEST(cfg.cgroups().size() == 6);
+    BOOST_REQUIRE(cfg.cgroups().size() == 6);
     for (auto& cg : cfg.cgroups()) {
         BOOST_TEST(!cg.throughput_limit_node_in_bps);
         BOOST_TEST(!cg.throughput_limit_node_out_bps);
@@ -71,6 +71,15 @@ cgroups:
     BOOST_TEST(cfg.cgroups()[3].name == "match-nothing-group");
     BOOST_TEST(!validate_throughput_control_groups(
       cfg.cgroups().cbegin(), cfg.cgroups().cend()));
+
+    // Equality
+    for (size_t k = 0; k != cfg.cgroups().size(); ++k) {
+        for (size_t l = 0; l != cfg.cgroups().size(); ++l) {
+            BOOST_TEST(
+              (cfg.cgroups()[k] == cfg.cgroups()[l]) == (k == l),
+              "k=" << k << " l=" << l);
+        }
+    }
 
     // Matches
     const auto get_match_index =
@@ -88,6 +97,17 @@ cgroups:
     BOOST_TEST(get_match_index("") == 3);
     BOOST_TEST(get_match_index(std::nullopt) == 4);
     BOOST_TEST(get_match_index("nonclient_id") == 5);
+
+    // Copying
+    config::throughput_control_group p4 = cfg.cgroups()[0];
+    BOOST_TEST(p4 == cfg.cgroups()[0]);
+    BOOST_TEST(fmt::format("{}", p4) == fmt::format("{}", cfg.cgroups()[0]));
+
+    // Binding a property of
+    auto binding = cfg.cgroups.bind();
+    BOOST_TEST(binding() == cfg.cgroups());
+    BOOST_TEST(
+      fmt::format("{}", binding()) == fmt::format("{}", cfg.cgroups()));
 
     // Failure cases
 
