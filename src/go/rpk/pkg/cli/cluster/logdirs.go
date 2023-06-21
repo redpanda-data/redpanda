@@ -14,8 +14,10 @@ import (
 	"fmt"
 	"os"
 	"sort"
+	"strconv"
 	"strings"
 
+	"github.com/docker/go-units"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/kafka"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/out"
@@ -39,10 +41,11 @@ func newLogdirsCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 
 func newLogdirsDescribeCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	var (
+		aggregateInto string
 		broker        int32
+		human         bool
 		sortBySize    bool
 		topics        []string
-		aggregateInto string
 	)
 
 	cmd := &cobra.Command{
@@ -147,6 +150,13 @@ where revision is a Redpanda internal concept.
 				rows = append(keep, prior)
 			}
 
+			sizeFn := func(size int64) string {
+				if human {
+					return units.HumanSize(float64(size))
+				}
+				return strconv.Itoa(int(size))
+			}
+
 			var headers []string
 			var rowfn func(*out.TabWriter, row)
 			switch strings.ToLower(aggregateInto) {
@@ -156,23 +166,23 @@ where revision is a Redpanda internal concept.
 			case "broker":
 				headers = []string{"broker", "size", "error"}
 				collapse(func(prior, current row) bool { return prior.Broker != current.Broker })
-				rowfn = func(tw *out.TabWriter, r row) { tw.Print(r.Broker, r.Size, r.Err) }
+				rowfn = func(tw *out.TabWriter, r row) { tw.Print(r.Broker, sizeFn(r.Size), r.Err) }
 
 			case "dir":
 				headers = []string{"broker", "dir", "size", "error"}
 				collapse(func(prior, current row) bool { return prior.Broker != current.Broker || prior.Dir != current.Dir })
-				rowfn = func(tw *out.TabWriter, r row) { tw.Print(r.Broker, r.Dir, r.Size, r.Err) }
+				rowfn = func(tw *out.TabWriter, r row) { tw.Print(r.Broker, r.Dir, sizeFn(r.Size), r.Err) }
 
 			case "topic":
 				headers = []string{"broker", "dir", "topic", "size", "error"}
 				collapse(func(prior, current row) bool {
 					return prior.Broker != current.Broker || prior.Dir != current.Dir || prior.Topic != current.Topic
 				})
-				rowfn = func(tw *out.TabWriter, r row) { tw.Print(r.Broker, r.Dir, r.Topic, r.Size, r.Err) }
+				rowfn = func(tw *out.TabWriter, r row) { tw.Print(r.Broker, r.Dir, r.Topic, sizeFn(r.Size), r.Err) }
 
 			case "", "partition":
 				headers = []string{"broker", "dir", "topic", "partition", "size", "error"}
-				rowfn = func(tw *out.TabWriter, r row) { tw.PrintStructFields(r) }
+				rowfn = func(tw *out.TabWriter, r row) { tw.Print(r.Broker, r.Dir, r.Topic, r.Partition, sizeFn(r.Size), r.Err) }
 			}
 
 			// Finally, if we are sorting by size, we perform a
@@ -196,5 +206,6 @@ where revision is a Redpanda internal concept.
 	cmd.Flags().BoolVar(&sortBySize, "sort-by-size", false, "If true, sort by size")
 	cmd.Flags().StringSliceVar(&topics, "topics", nil, "Specific topics to describe")
 	cmd.Flags().StringVar(&aggregateInto, "aggregate-into", "", "If non-empty, what column to aggregate into starting from the partition column (broker, dir, topic)")
+	cmd.Flags().BoolVarP(&human, "human-readable", "H", false, "Print the logdirs size in a human-readable form")
 	return cmd
 }
