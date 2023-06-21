@@ -23,6 +23,7 @@
 #include <seastar/core/sstring.hh>
 #include <seastar/util/memory_diagnostics.hh>
 
+#include <chrono>
 #include <limits>
 #include <vector>
 
@@ -77,14 +78,20 @@ void setup_additional_oom_diagnostics() {
       memory_sampling::get_oom_diagnostics_callback());
 }
 
-void memory_sampling::notify_of_reclaim() { _low_watermark_cond.signal(); }
-
-ss::future<> memory_sampling::start_low_available_memory_logging() {
+void memory_sampling::start_low_available_memory_logging() {
     // We want some periodic logging "on the way" to OOM. At the same time we
     // don't want to spam the logs. Hence, we periodically look at the available
-    // memory low watermark (this is without the batch cache). If we see that we
-    // have crossed the 10% and 20% marks we log the allocation sites. We stop
-    // afterwards.
+    // memory low watermark (free seastar memory plus what's reclaimable from
+    // the batch cache). If we see that we have crossed the 10% and 20% marks we
+    // log the allocation sites. We stop afterwards.
+
+    // The periodic check is implemented using a timer. This is a very simple
+    // approach which potentially might miss steps if we are consuming memory
+    // very quickly. An alternative approach that was tested was to hook this
+    // into the batch cache. However, doing this in reclaim is tricky as you
+    // want to avoid allocating there.  Equally, it's not entirely clear whether
+    // that is the right place as reclaim just "moves" memory from "reclaimable"
+    // to "free".
 
     size_t first_log_limit = _first_log_limit_fraction
                              * seastar::memory::stats().total_memory();
@@ -92,51 +99,53 @@ ss::future<> memory_sampling::start_low_available_memory_logging() {
                               * seastar::memory::stats().total_memory();
     size_t next_log_limit = first_log_limit;
 
-    while (true) {
-        try {
-            co_await _low_watermark_cond.wait([&next_log_limit]() {
-                auto current_low_water_mark
-                  = resources::available_memory::local()
-                      .available_low_water_mark();
+    _logging_timer.set_callback(
+      [this, first_log_limit, second_log_limit, next_log_limit]() mutable {
+          auto current_low_water_mark
+            = resources::available_memory::local().available_low_water_mark();
 
-                return current_low_water_mark <= next_log_limit;
-            });
-        } catch (const ss::broken_condition_variable&) {
-            co_return;
-        }
+          if (current_low_water_mark > next_log_limit) {
+              return;
+          }
 
-        auto allocation_sites = ss::memory::sampled_memory_profile();
-        const size_t top_n = std::min(size_t(5), allocation_sites.size());
-        top_n_allocation_sites(allocation_sites, top_n);
+          auto allocation_sites = ss::memory::sampled_memory_profile();
+          const size_t top_n = std::min(size_t(5), allocation_sites.size());
+          top_n_allocation_sites(allocation_sites, top_n);
 
-        vlog(
-          _logger.info,
-          "{} {}",
-          diagnostics_header(),
-          fmt::join(
-            allocation_sites.begin(), allocation_sites.begin() + top_n, "|"));
+          vlog(
+            _logger.info,
+            "{} bytes of available memory left - {} {}",
+            next_log_limit,
+            diagnostics_header(),
+            fmt::join(
+              allocation_sites.begin(), allocation_sites.begin() + top_n, "|"));
 
-        if (next_log_limit == first_log_limit) {
-            next_log_limit = second_log_limit;
-        } else {
-            co_return;
-        }
-    }
+          if (next_log_limit == first_log_limit) {
+              next_log_limit = second_log_limit;
+          } else {
+              _logging_timer.cancel();
+          }
+      });
+
+    _logging_timer.arm_periodic(_log_check_frequency);
 }
 
 memory_sampling::memory_sampling(
   ss::logger& logger, config::binding<bool> enabled)
-  : memory_sampling(logger, std::move(enabled), 0.2, 0.1) {}
+  : memory_sampling(
+    logger, std::move(enabled), std::chrono::seconds(60), 0.2, 0.1) {}
 
 memory_sampling::memory_sampling(
   ss::logger& logger,
   config::binding<bool> enabled,
+  std::chrono::seconds log_check_frequency,
   double first_log_limit_fraction,
   double second_log_limit_fraction)
   : _logger(logger)
   , _enabled(std::move(enabled))
   , _first_log_limit_fraction(first_log_limit_fraction)
-  , _second_log_limit_fraction(second_log_limit_fraction) {
+  , _second_log_limit_fraction(second_log_limit_fraction)
+  , _log_check_frequency(log_check_frequency) {
     _enabled.watch([this]() { on_enabled_change(); });
 }
 
@@ -169,15 +178,12 @@ void memory_sampling::start() {
     // start now if enabled
     on_enabled_change();
 
-    ssx::spawn_with_gate(_low_watermark_gate, [this]() {
-        return start_low_available_memory_logging();
-    });
+    start_low_available_memory_logging();
 }
 
 ss::future<> memory_sampling::stop() {
-    _low_watermark_cond.broken();
-
-    co_await _low_watermark_gate.close();
+    _logging_timer.cancel();
+    co_return;
 }
 
 memory_sampling::serialized_memory_profile

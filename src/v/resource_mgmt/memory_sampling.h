@@ -28,6 +28,7 @@
 #include <fmt/core.h>
 #include <fmt/format.h>
 
+#include <chrono>
 #include <optional>
 
 template<>
@@ -80,10 +81,6 @@ public:
     ss::future<std::vector<serialized_memory_profile>>
     get_sampled_memory_profiles(std::optional<size_t> shard_id);
 
-    /// Notify the memory sampling service that a memory reclaim from the
-    /// seastar allocator has happened. Used by the batch_cache
-    void notify_of_reclaim();
-
     /// Constructs the service. Logger will be used to log top stacks under high
     /// memory pressure
     explicit memory_sampling(ss::logger& logger, config::binding<bool> enabled);
@@ -93,6 +90,7 @@ public:
     explicit memory_sampling(
       ss::logger& logger,
       config::binding<bool> enabled,
+      std::chrono::seconds log_check_frequency,
       double first_log_limit_fraction,
       double second_log_limit_fraction);
 
@@ -104,7 +102,7 @@ public:
 private:
     /// Starts the background future running the allocation site logging on low
     /// available memory
-    ss::future<> start_low_available_memory_logging();
+    void start_low_available_memory_logging();
 
     /// Returns the serialized memory_profile for the current shard
     static memory_sampling::serialized_memory_profile
@@ -117,12 +115,12 @@ private:
     /// Are we currently sampling memory
     config::binding<bool> _enabled;
 
-    // When a memory reclaim from the seastar allocator happens the batch_cache
-    // notifies us via below condvar. If we see a new low watermark that's and
-    // we are below 20% then we log once and a second time the first time we saw
-    // a 10% lower watermark. Values are overridable for tests
+    // We periodically check the last seen low watermark of available memory.
+    // The first time we are below 20% of available memory left we log the top
+    // alloc sites once and a second time once we reach the 10% watermark.
+    // Values are overridable for tests
     double _first_log_limit_fraction;
     double _second_log_limit_fraction;
-    ss::condition_variable _low_watermark_cond;
-    ss::gate _low_watermark_gate;
+    std::chrono::seconds _log_check_frequency;
+    ss::timer<ss::lowres_clock> _logging_timer;
 };

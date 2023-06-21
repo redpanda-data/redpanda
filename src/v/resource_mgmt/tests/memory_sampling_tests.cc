@@ -84,6 +84,7 @@ SEASTAR_THREAD_TEST_CASE(test_low_watermark_logging) {
     memory_sampling sampling(
       dummy_logger,
       config::mock_binding<bool>(true),
+      std::chrono::seconds(1),
       first_log_limit,
       second_log_limit);
     sampling.start();
@@ -92,7 +93,6 @@ SEASTAR_THREAD_TEST_CASE(test_low_watermark_logging) {
 
     {
         // notification shouldn't do anything
-        sampling.notify_of_reclaim();
         auto buf = output_buf.str();
         auto view = std::string_view{buf};
         BOOST_REQUIRE_EQUAL(view.find(needle), std::string_view::npos);
@@ -108,7 +108,6 @@ SEASTAR_THREAD_TEST_CASE(test_low_watermark_logging) {
     };
 
     allocate_till_limit(first_log_limit * total_memory);
-    sampling.notify_of_reclaim();
 
     tests::cooperative_spin_wait_with_timeout(std::chrono::seconds(10), [&]() {
         auto buf = output_buf.str();
@@ -117,7 +116,6 @@ SEASTAR_THREAD_TEST_CASE(test_low_watermark_logging) {
     }).get(); // will throw if false at timeout
 
     allocate_till_limit(second_log_limit * total_memory);
-    sampling.notify_of_reclaim();
 
     tests::cooperative_spin_wait_with_timeout(std::chrono::seconds(10), [&]() {
         auto buf = output_buf.str();
@@ -126,8 +124,6 @@ SEASTAR_THREAD_TEST_CASE(test_low_watermark_logging) {
     }).get(); // will throw if false at timeout
 
     auto old_size = output_buf.str().size();
-
-    sampling.notify_of_reclaim();
 
     {
         // no more notifications should happen

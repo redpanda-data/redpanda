@@ -17,7 +17,6 @@
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "random/simple_time_jitter.h"
-#include "resource_mgmt/memory_sampling.h"
 #include "seastarx.h"
 #include "storage/batch_cache.h"
 #include "storage/file_sanitizer_types.h"
@@ -167,8 +166,7 @@ public:
       log_config,
       kvstore& kvstore,
       storage_resources&,
-      ss::sharded<features::feature_table>&,
-      ss::sharded<memory_sampling>&) noexcept;
+      ss::sharded<features::feature_table>&) noexcept;
 
     ss::future<log> manage(ntp_config);
 
