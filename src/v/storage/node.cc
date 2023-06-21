@@ -38,11 +38,17 @@ void node::set_disk_metrics(
   uint64_t free_bytes,
   disk_space_alert alert) {
     if (t == disk_type::data) {
-        _data_watchers.notify(
-          uint64_t(total_bytes), uint64_t(free_bytes), alert);
+        _data_watchers.notify(disk_space_info{
+          .total = total_bytes,
+          .free = free_bytes,
+          .alert = alert,
+        });
     } else if (t == disk_type::cache) {
-        _cache_watchers.notify(
-          uint64_t(total_bytes), uint64_t(free_bytes), alert);
+        _cache_watchers.notify(disk_space_info{
+          .total = total_bytes,
+          .free = free_bytes,
+          .alert = alert,
+        });
     }
     _probe.set_disk_metrics(total_bytes, free_bytes, alert);
 }
