@@ -14,7 +14,7 @@ import typing
 import time
 import itertools
 from collections import namedtuple
-from typing import Optional
+from typing import List, Optional
 from ducktape.cluster.cluster import ClusterNode
 from rptest.util import wait_until_result
 from rptest.services import tls
@@ -993,20 +993,9 @@ class RpkTool:
 
         return output
 
-    def acl_create_allow_cluster(self, username, op):
-        """
-        Add allow+describe+cluster ACL
-        """
-        cmd = [
-            self._rpk_binary(),
-            "acl",
-            "create",
-            "--allow-principal",
-            f"User:{username}",
-            "--operation",
-            op,
-            "--cluster",
-        ] + self._kafka_conn_settings()
+    def _acl_create(self, params: List[str]) -> str:
+        cmd = [self._rpk_binary(), "acl", "create"
+               ] + params + self._kafka_conn_settings()
         output = self._execute(cmd)
         table = parse_rpk_table(output)
         expected_columns = [
@@ -1024,9 +1013,35 @@ class RpkTool:
 
         if table.rows[0][-1] != "":
             raise RpkException(
-                f"acl_create_allow_cluster failed with {table.rows[0][-1]}")
+                f"_acl_create({params}) failed with {table.rows[0][-1]}")
 
         return output
+
+    def acl_create_allow_cluster(self, username: str, op: str) -> str:
+        """
+        Add allow+cluster ACL
+        """
+        return self._acl_create([
+            "--allow-principal",
+            f"User:{username}",
+            "--operation",
+            op,
+            "--cluster",
+        ])
+
+    def acl_create_allow_topic(self, username: str, topic: str,
+                               op: str) -> str:
+        """
+        Add an allow+topic ACL
+        """
+        return self._acl_create([
+            "--allow-principal",
+            f"User:{username}",
+            "--operation",
+            op,
+            "--topic",
+            topic,
+        ])
 
     def cluster_metadata_id(self):
         """
