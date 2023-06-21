@@ -5,8 +5,8 @@ use crate::fundamental::{
 };
 use crate::ntp_mask::NTPFilter;
 use crate::remote_types::{
-    parse_segment_shortname, ArchivePartitionManifest, PartitionManifest, PartitionManifestSegment,
-    TopicManifest, LifecycleMarker, LifecycleStatus, RpSerde
+    parse_segment_shortname, ArchivePartitionManifest, LifecycleMarker, LifecycleStatus,
+    PartitionManifest, PartitionManifestSegment, RpSerde, TopicManifest,
 };
 use crate::repair::{maybe_adjust_manifest, project_repairs, RepairEdit};
 use async_stream::stream;
@@ -272,7 +272,7 @@ pub struct PartitionMetadataSummary {
     pub kafka_lwm: Option<KafkaOffset>,
     pub kafka_hwm: Option<KafkaOffset>,
 
-    pub lifecycle_status: Option<LifecycleStatus>
+    pub lifecycle_status: Option<LifecycleStatus>,
 }
 
 /// A convenience for human beings who would like to know things like the total amount of
@@ -381,18 +381,29 @@ impl Anomalies {
     }
 
     pub fn merge(&mut self, other: Anomalies) {
-        self.segments_outside_manifest.extend(other.segments_outside_manifest.into_iter());
-        self.archive_manifests_outside_manifest.extend(other.archive_manifests_outside_manifest.into_iter());
-        self.malformed_manifests.extend(other.malformed_manifests.into_iter());
-        self.malformed_lifecycle_markers.extend(other.malformed_lifecycle_markers.into_iter());
-        self.malformed_topic_manifests.extend(other.malformed_topic_manifests.into_iter());
-        self.ntpr_no_manifest.extend(other.ntpr_no_manifest.into_iter());
-        self.ntr_no_topic_manifest.extend(other.ntr_no_topic_manifest.into_iter());
+        self.segments_outside_manifest
+            .extend(other.segments_outside_manifest.into_iter());
+        self.archive_manifests_outside_manifest
+            .extend(other.archive_manifests_outside_manifest.into_iter());
+        self.malformed_manifests
+            .extend(other.malformed_manifests.into_iter());
+        self.malformed_lifecycle_markers
+            .extend(other.malformed_lifecycle_markers.into_iter());
+        self.malformed_topic_manifests
+            .extend(other.malformed_topic_manifests.into_iter());
+        self.ntpr_no_manifest
+            .extend(other.ntpr_no_manifest.into_iter());
+        self.ntr_no_topic_manifest
+            .extend(other.ntr_no_topic_manifest.into_iter());
         self.unknown_keys.extend(other.unknown_keys.into_iter());
-        self.missing_segments.extend(other.missing_segments.into_iter());
-        self.ntpr_bad_deltas.extend(other.ntpr_bad_deltas.into_iter());
-        self.ntpr_overlap_offsets.extend(other.ntpr_overlap_offsets.into_iter());
-        self.metadata_offset_gaps.extend(other.metadata_offset_gaps.into_iter());
+        self.missing_segments
+            .extend(other.missing_segments.into_iter());
+        self.ntpr_bad_deltas
+            .extend(other.ntpr_bad_deltas.into_iter());
+        self.ntpr_overlap_offsets
+            .extend(other.ntpr_overlap_offsets.into_iter());
+        self.metadata_offset_gaps
+            .extend(other.metadata_offset_gaps.into_iter());
     }
 }
 
@@ -717,7 +728,7 @@ impl BucketReader {
                 let ntr = NTR {
                     namespace: manifest.namespace.clone(),
                     topic: manifest.namespace.clone(),
-                    revision_id: manifest.revision
+                    revision_id: manifest.revision,
                 };
 
                 let kafka_offsets = manifest.kafka_watermarks();
@@ -729,7 +740,10 @@ impl BucketReader {
                         raw_last_offset: manifest.last_offset,
                         kafka_lwm: kafka_offsets.map(|x| x.0),
                         kafka_hwm: kafka_offsets.map(|x| x.1),
-                        lifecycle_status: self.lifecycle_markers.get(&ntr).and_then(|m| Some(m.status.clone()))
+                        lifecycle_status: self
+                            .lifecycle_markers
+                            .get(&ntr)
+                            .and_then(|m| Some(m.status.clone())),
                     },
                 );
             } else {
@@ -886,7 +900,9 @@ impl BucketReader {
                 Some(p_metadata) => {
                     for o in partition_objects.segment_objects.values() {
                         if !p_metadata.contains_segment(&o) {
-                            self.anomalies.segments_outside_manifest.insert(o.key.clone());
+                            self.anomalies
+                                .segments_outside_manifest
+                                .insert(o.key.clone());
                         }
                     }
                 }
@@ -909,7 +925,9 @@ impl BucketReader {
             }
 
             // We will validate the manifest.  If there is no head manifest, that is an anomaly.
-            if partition_metadata.head_manifest.is_none() && partition_metadata.archive_manifests.len() > 0 {
+            if partition_metadata.head_manifest.is_none()
+                && partition_metadata.archive_manifests.len() > 0
+            {
                 for am in &partition_metadata.archive_manifests {
                     self.anomalies
                         .archive_manifests_outside_manifest
@@ -923,7 +941,10 @@ impl BucketReader {
                     &ntpr,
                     partition_metadata.head_manifest.as_ref().unwrap(),
                     &mut raw_objects,
-                    &mut discovered_objects).await?;
+                    &mut discovered_objects,
+                    None,
+                )
+                .await?;
                 new_anomalies.merge(anomalies);
             }
 
@@ -931,9 +952,12 @@ impl BucketReader {
                 let anomalies = Self::analyze_archive_manifest(
                     self.client.clone(),
                     &ntpr,
+                    partition_metadata.head_manifest.as_ref().unwrap(),
                     archive_manifest,
                     &mut raw_objects,
-                    &mut discovered_objects).await?;
+                    &mut discovered_objects,
+                )
+                .await?;
                 new_anomalies.merge(anomalies);
             }
         }
@@ -963,11 +987,21 @@ impl BucketReader {
     async fn analyze_archive_manifest(
         client: Arc<dyn object_store::ObjectStore>,
         ntpr: &NTPR,
+        head_manifest: &PartitionManifest,
         archive_manifest: &ArchivePartitionManifest,
         raw_objects: &mut Option<&mut PartitionObjects>,
-        discovered: &mut Vec<ObjectMeta>) -> Result <Anomalies, BucketReaderError> {
+        discovered: &mut Vec<ObjectMeta>,
+    ) -> Result<Anomalies, BucketReaderError> {
         // TODO(vlad): validate parsed name against contents
-        Self::analyze_manifest(client, ntpr, &archive_manifest.manifest, raw_objects, discovered).await
+        Self::analyze_manifest(
+            client,
+            ntpr,
+            &archive_manifest.manifest,
+            raw_objects,
+            discovered,
+            head_manifest.archive_start_offset,
+        )
+        .await
     }
 
     async fn analyze_manifest(
@@ -975,7 +1009,8 @@ impl BucketReader {
         ntpr: &NTPR,
         partition_manifest: &PartitionManifest,
         raw_objects: &mut Option<&mut PartitionObjects>,
-        discovered: &mut Vec<ObjectMeta>
+        discovered: &mut Vec<ObjectMeta>,
+        archive_start_offset: Option<RawOffset>,
     ) -> Result<Anomalies, BucketReaderError> {
         let mut anomalies: Anomalies = Default::default();
 
@@ -1005,14 +1040,17 @@ impl BucketReader {
             );
             if let Some(expect_key) = partition_manifest.segment_key(segment) {
                 debug!("Calculated segment {}", expect_key);
-                if !Self::check_existence(
-                    client.clone(),
-                    raw_objects,
-                    segment.base_offset as RawOffset,
-                    &expect_key,
-                    discovered,
-                )
-                .await?
+                let so = archive_start_offset.unwrap_or(RawOffset::MIN);
+                let bo = segment.base_offset;
+                if bo >= so
+                    && !Self::check_existence(
+                        client.clone(),
+                        raw_objects,
+                        segment.base_offset as RawOffset,
+                        &expect_key,
+                        discovered,
+                    )
+                    .await?
                 {
                     anomalies.missing_segments.insert(expect_key.to_string());
                     // TODO: we should re-read manifest in case the segment
@@ -1117,7 +1155,7 @@ impl BucketReader {
             last_committed_offset = Some(segment.committed_offset as RawOffset);
             last_max_timestamp = segment.max_timestamp;
         }
-        
+
         Ok(anomalies)
     }
 
@@ -1627,7 +1665,13 @@ impl BucketReader {
             // Group::get calls are safe to unwrap() because regex always has those groups if it matched
             let ns = grps.get(1).unwrap().as_str().to_string();
             let topic = grps.get(2).unwrap().as_str().to_string();
-            let initial_revision = grps.get(3).unwrap().as_str().to_string().parse::<u64>().unwrap();
+            let initial_revision = grps
+                .get(3)
+                .unwrap()
+                .as_str()
+                .to_string()
+                .parse::<u64>()
+                .unwrap();
 
             let ntr = NTR {
                 namespace: ns,
@@ -1640,7 +1684,9 @@ impl BucketReader {
                 Ok(m) => m,
                 Err(e) => {
                     warn!("Error parsing lifecycle marker {}: {:?}", key, e);
-                    self.anomalies.malformed_lifecycle_markers.insert(key.to_string());
+                    self.anomalies
+                        .malformed_lifecycle_markers
+                        .insert(key.to_string());
                     return Ok(());
                 }
             };
