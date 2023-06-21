@@ -207,5 +207,10 @@ where revision is a Redpanda internal concept.
 	cmd.Flags().StringSliceVar(&topics, "topics", nil, "Specific topics to describe")
 	cmd.Flags().StringVar(&aggregateInto, "aggregate-into", "", "If non-empty, what column to aggregate into starting from the partition column (broker, dir, topic)")
 	cmd.Flags().BoolVarP(&human, "human-readable", "H", false, "Print the logdirs size in a human-readable form")
+
+	cmd.RegisterFlagCompletionFunc("aggregate-into", func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+		opts := []string{"broker", "dir", "topic"}
+		return opts, cobra.ShellCompDirectiveDefault
+	})
 	return cmd
 }
