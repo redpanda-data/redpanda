@@ -81,7 +81,7 @@ ss::future<> batched_output_stream::stop() {
     }
 
     return ss::with_semaphore(*_write_sem, 1, [this] {
-        return do_flush().then([this] { return _out.close(); });
+        return do_flush().finally([this] { return _out.close(); });
     });
 }
 
