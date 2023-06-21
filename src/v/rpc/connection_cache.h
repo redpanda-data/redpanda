@@ -92,6 +92,10 @@ public:
           shard,
           [node_id, f = std::forward<Func>(f), connection_timeout](
             rpc::connection_cache& cache) mutable {
+              if (cache._shutting_down) {
+                  return ss::futurize<ret_t>::convert(
+                    rpc::make_error_code(errc::shutting_down));
+              }
               if (!cache.contains(node_id)) {
                   // No client available
                   return ss::futurize<ret_t>::convert(
@@ -159,6 +163,7 @@ private:
     transport_version _default_transport_version{transport_version::v2};
     ss::gate _gate;
     ss::optimized_optional<ss::abort_source::subscription> _as_subscription;
+    bool _shutting_down = false;
 };
 inline ss::shard_id connection_cache::shard_for(
   model::node_id self,

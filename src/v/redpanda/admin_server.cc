@@ -1009,8 +1009,8 @@ ss::future<> admin_server::throw_on_error(
         case rpc::errc::success:
             co_return;
         case rpc::errc::disconnected_endpoint:
-            [[fallthrough]];
         case rpc::errc::exponential_backoff:
+        case rpc::errc::shutting_down:
             throw ss::httpd::base_exception(
               fmt::format("Not ready: {}", ec.message()),
               ss::http::reply::status_type::service_unavailable);
