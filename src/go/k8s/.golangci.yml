@@ -1,3 +1,6 @@
+run:
+  skip-files:
+    - internal/util/pod/pod.go
 linters-settings:
   dupl:
     threshold: 100

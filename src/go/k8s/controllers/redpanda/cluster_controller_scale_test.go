@@ -22,10 +22,11 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/utils/pointer"
+	ctrl "sigs.k8s.io/controller-runtime"
 
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/api/admin"
 
-	"github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
+	vectorizedv1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources/featuregates"
 )
 
@@ -80,7 +81,7 @@ var _ = Describe("Redpanda cluster scale resource", func() {
 			}), timeout, interval).Should(Equal(int32(2)), "CurrentReplicas should be 2, got %d", redpandaCluster.Status.CurrentReplicas)
 
 			By("Scaling up when replicas increase")
-			Eventually(clusterUpdater(key, func(cluster *v1alpha1.Cluster) {
+			Eventually(clusterUpdater(key, func(cluster *vectorizedv1alpha1.Cluster) {
 				cluster.Spec.Replicas = pointer.Int32(5)
 			}), timeout, interval).Should(Succeed())
 			Eventually(resourceDataGetter(key, &sts, func() interface{} {
@@ -93,7 +94,7 @@ var _ = Describe("Redpanda cluster scale resource", func() {
 	})
 
 	Context("When scaling down a cluster", func() {
-		It("Should always decommission the last nodes of a cluster one at time", func() {
+		It("Should always decommission the last pods of a cluster one at time", func() {
 			By("Allowing creation of a new cluster with 3 replicas")
 			key, redpandaCluster := getClusterWithReplicas("decommission", 3)
 			Expect(k8sClient.Create(context.Background(), redpandaCluster)).Should(Succeed())
@@ -109,18 +110,19 @@ var _ = Describe("Redpanda cluster scale resource", func() {
 			Eventually(resourceDataGetter(key, redpandaCluster, func() interface{} {
 				return redpandaCluster.Status.CurrentReplicas
 			}), timeout, interval).Should(Equal(int32(3)), "CurrentReplicas should be 3, got %d", redpandaCluster.Status.CurrentReplicas)
+			Eventually(statefulSetReplicasReconciler(ctrl.Log.WithName("statefulSetReplicasReconciler"), key, redpandaCluster), timeout, interval).Should(Succeed())
 
 			By("Decommissioning the last node when scaling down by 2")
-			Eventually(clusterUpdater(key, func(cluster *v1alpha1.Cluster) {
+			Eventually(clusterUpdater(key, func(cluster *vectorizedv1alpha1.Cluster) {
 				cluster.Spec.Replicas = pointer.Int32(1)
 			}), timeout, interval).Should(Succeed())
 
 			By("Start decommissioning node with ordinal 2")
 			Eventually(resourceDataGetter(key, redpandaCluster, func() interface{} {
-				if redpandaCluster.Status.DecommissioningNode == nil {
+				if redpandaCluster.GetDecommissionBrokerID() == nil {
 					return nil
 				}
-				return *redpandaCluster.Status.DecommissioningNode
+				return *redpandaCluster.GetDecommissionBrokerID()
 			}), timeout, interval).Should(Equal(int32(2)), "node 2 is not decommissioning:\n%s", func() string { y, _ := yaml.Marshal(redpandaCluster); return string(y) }())
 			Eventually(testAdminAPI.BrokerStatusGetter(2), timeout, interval).Should(Equal(admin.MembershipStatusDraining))
 			Consistently(testAdminAPI.BrokerStatusGetter(1), timeoutShort, intervalShort).Should(Equal(admin.MembershipStatusActive))
@@ -133,7 +135,7 @@ var _ = Describe("Redpanda cluster scale resource", func() {
 			Eventually(resourceDataGetter(key, &sts, func() interface{} {
 				return *sts.Spec.Replicas
 			}), timeout, interval).Should(Equal(int32(2)))
-			Eventually(statefulSetReplicasReconciler(key, redpandaCluster), timeout, interval).Should(Succeed())
+			Eventually(statefulSetReplicasReconciler(ctrl.Log.WithName("statefulSetReplicasReconciler"), key, redpandaCluster), timeout, interval).Should(Succeed())
 
 			By("Start decommissioning the other node")
 			Eventually(testAdminAPI.BrokerStatusGetter(1), timeout, interval).Should(Equal(admin.MembershipStatusDraining))
@@ -164,39 +166,40 @@ var _ = Describe("Redpanda cluster scale resource", func() {
 			Eventually(resourceDataGetter(key, redpandaCluster, func() interface{} {
 				return redpandaCluster.Status.CurrentReplicas
 			}), timeout, interval).Should(Equal(int32(3)), "CurrentReplicas should be 3, got %d", redpandaCluster.Status.CurrentReplicas)
+			Eventually(statefulSetReplicasReconciler(ctrl.Log.WithName("statefulSetReplicasReconciler"), key, redpandaCluster), timeout, interval).Should(Succeed())
 
 			By("Start decommissioning node 2")
-			Eventually(clusterUpdater(key, func(cluster *v1alpha1.Cluster) {
+			Eventually(clusterUpdater(key, func(cluster *vectorizedv1alpha1.Cluster) {
 				cluster.Spec.Replicas = pointer.Int32(2)
 			}), timeout, interval).Should(Succeed())
 			Eventually(resourceDataGetter(key, redpandaCluster, func() interface{} {
-				if redpandaCluster.Status.DecommissioningNode == nil {
+				if redpandaCluster.GetDecommissionBrokerID() == nil {
 					return nil
 				}
-				return *redpandaCluster.Status.DecommissioningNode
+				return *redpandaCluster.GetDecommissionBrokerID()
 			}), timeout, interval).Should(Equal(int32(2)), "node 2 is not decommissioning:\n%s", func() string { y, _ := yaml.Marshal(redpandaCluster); return string(y) }())
 			Eventually(testAdminAPI.BrokerStatusGetter(2), timeout, interval).Should(Equal(admin.MembershipStatusDraining))
 
 			By("Recommissioning the node by restoring replicas")
-			Eventually(clusterUpdater(key, func(cluster *v1alpha1.Cluster) {
+			Eventually(clusterUpdater(key, func(cluster *vectorizedv1alpha1.Cluster) {
 				cluster.Spec.Replicas = pointer.Int32(3)
 			}), timeout, interval).Should(Succeed())
 			Eventually(testAdminAPI.BrokerStatusGetter(2), timeout, interval).Should(Equal(admin.MembershipStatusActive))
 
 			By("Start decommissioning node 2 again")
-			Eventually(clusterUpdater(key, func(cluster *v1alpha1.Cluster) {
+			Eventually(clusterUpdater(key, func(cluster *vectorizedv1alpha1.Cluster) {
 				cluster.Spec.Replicas = pointer.Int32(2)
 			}), timeout, interval).Should(Succeed())
 			Eventually(resourceDataGetter(key, redpandaCluster, func() interface{} {
-				if redpandaCluster.Status.DecommissioningNode == nil {
+				if redpandaCluster.GetDecommissionBrokerID() == nil {
 					return nil
 				}
-				return *redpandaCluster.Status.DecommissioningNode
+				return *redpandaCluster.GetDecommissionBrokerID()
 			}), timeout, interval).Should(Equal(int32(2)))
 			Eventually(testAdminAPI.BrokerStatusGetter(2), timeout, interval).Should(Equal(admin.MembershipStatusDraining))
 
 			By("Recommissioning the node also when scaling to more replicas")
-			Eventually(clusterUpdater(key, func(cluster *v1alpha1.Cluster) {
+			Eventually(clusterUpdater(key, func(cluster *vectorizedv1alpha1.Cluster) {
 				cluster.Spec.Replicas = pointer.Int32(4)
 			}), timeout, interval).Should(Succeed())
 			Eventually(testAdminAPI.BrokerStatusGetter(2), timeout, interval).Should(Equal(admin.MembershipStatusActive))
@@ -207,123 +210,38 @@ var _ = Describe("Redpanda cluster scale resource", func() {
 			By("Deleting the cluster")
 			Expect(k8sClient.Delete(context.Background(), redpandaCluster)).Should(Succeed())
 		})
-
-		It("Can decommission nodes that never started", func() {
-			By("Allowing creation of a new cluster with 3 replicas")
-			key, redpandaCluster := getClusterWithReplicas("direct-decommission", 3)
-			Expect(k8sClient.Create(context.Background(), redpandaCluster)).Should(Succeed())
-
-			By("Scaling to 3 replicas, but have last one not registered")
-			testAdminAPI.AddBroker(admin.Broker{NodeID: 0, MembershipStatus: admin.MembershipStatusActive})
-			testAdminAPI.AddBroker(admin.Broker{NodeID: 1, MembershipStatus: admin.MembershipStatusActive})
-			var sts appsv1.StatefulSet
-			Eventually(resourceDataGetter(key, &sts, func() interface{} {
-				return *sts.Spec.Replicas
-			}), timeout, interval).Should(Equal(int32(3)))
-			Eventually(resourceDataGetter(key, redpandaCluster, func() interface{} {
-				return redpandaCluster.Status.CurrentReplicas
-			}), timeout, interval).Should(Equal(int32(3)), "CurrentReplicas should be 3, got %d", redpandaCluster.Status.CurrentReplicas)
-
-			By("Doing direct scale down of node 2")
-			Eventually(clusterUpdater(key, func(cluster *v1alpha1.Cluster) {
-				cluster.Spec.Replicas = pointer.Int32(2)
-			}), timeout, interval).Should(Succeed())
-			Eventually(resourceDataGetter(key, &sts, func() interface{} {
-				return *sts.Spec.Replicas
-			}), timeout, interval).Should(Equal(int32(2)))
-			Eventually(statefulSetReplicasReconciler(key, redpandaCluster), timeout, interval).Should(Succeed())
-			Eventually(resourceDataGetter(key, redpandaCluster, func() interface{} {
-				return redpandaCluster.Status.DecommissioningNode
-			}), timeout, interval).Should(BeNil())
-
-			By("Deleting the cluster")
-			Expect(k8sClient.Delete(context.Background(), redpandaCluster)).Should(Succeed())
-		})
-
-		It("Can decommission nodes that were lazy to start", func() {
-			By("Allowing creation of a new cluster with 3 replicas")
-			key, redpandaCluster := getClusterWithReplicas("direct-decommission-lazy", 3)
-			Expect(k8sClient.Create(context.Background(), redpandaCluster)).Should(Succeed())
-
-			By("Scaling to 3 replicas, but have last one not registered")
-			testAdminAPI.AddBroker(admin.Broker{NodeID: 0, MembershipStatus: admin.MembershipStatusActive})
-			testAdminAPI.AddBroker(admin.Broker{NodeID: 1, MembershipStatus: admin.MembershipStatusActive})
-			var sts appsv1.StatefulSet
-			Eventually(resourceDataGetter(key, &sts, func() interface{} {
-				return *sts.Spec.Replicas
-			}), timeout, interval).Should(Equal(int32(3)))
-			Eventually(resourceDataGetter(key, redpandaCluster, func() interface{} {
-				return redpandaCluster.Status.CurrentReplicas
-			}), timeout, interval).Should(Equal(int32(3)), "CurrentReplicas should be 3, got %d", redpandaCluster.Status.CurrentReplicas)
-
-			By("Doing direct scale down of node 2")
-			Eventually(clusterUpdater(key, func(cluster *v1alpha1.Cluster) {
-				cluster.Spec.Replicas = pointer.Int32(2)
-			}), timeout, interval).Should(Succeed())
-			Eventually(resourceDataGetter(key, &sts, func() interface{} {
-				return *sts.Spec.Replicas
-			}), timeout, interval).Should(Equal(int32(2)))
-
-			By("Finding out that the node was able to connect to the cluster before being terminated")
-			testAdminAPI.AddBroker(admin.Broker{NodeID: 2, MembershipStatus: admin.MembershipStatusActive})
-			Eventually(resourceDataGetter(key, redpandaCluster, func() interface{} {
-				if redpandaCluster.Status.DecommissioningNode == nil {
-					return nil
-				}
-				return *redpandaCluster.Status.DecommissioningNode
-			}), timeout, interval).Should(Equal(int32(2)))
-
-			By("Scaling the cluster back and properly decommission the node")
-			Eventually(resourceDataGetter(key, &sts, func() interface{} {
-				return *sts.Spec.Replicas
-			}), timeout, interval).Should(Equal(int32(3)))
-			Eventually(testAdminAPI.BrokerStatusGetter(2), timeout, interval).Should(Equal(admin.MembershipStatusDraining))
-
-			By("Complete downscale after decommission")
-			Expect(testAdminAPI.RemoveBroker(2)).To(BeTrue())
-			Eventually(resourceDataGetter(key, &sts, func() interface{} {
-				return *sts.Spec.Replicas
-			}), timeout, interval).Should(Equal(int32(2)))
-			Eventually(statefulSetReplicasReconciler(key, redpandaCluster), timeout, interval).Should(Succeed())
-			Eventually(resourceDataGetter(key, redpandaCluster, func() interface{} {
-				return redpandaCluster.Status.DecommissioningNode
-			}), timeout, interval).Should(BeNil())
-
-			By("Deleting the cluster")
-			Expect(k8sClient.Delete(context.Background(), redpandaCluster)).Should(Succeed())
-		})
 	})
 })
 
 func getClusterWithReplicas(
 	name string, replicas int32,
-) (key types.NamespacedName, cluster *v1alpha1.Cluster) {
+) (key types.NamespacedName, cluster *vectorizedv1alpha1.Cluster) {
 	key = types.NamespacedName{
 		Name:      name,
 		Namespace: "default",
 	}
 
-	cluster = &v1alpha1.Cluster{
+	cluster = &vectorizedv1alpha1.Cluster{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      key.Name,
 			Namespace: key.Namespace,
 		},
-		Spec: v1alpha1.ClusterSpec{
+		Spec: vectorizedv1alpha1.ClusterSpec{
 			Image:    "vectorized/redpanda",
 			Version:  "dev",
 			Replicas: pointer.Int32(replicas),
-			Configuration: v1alpha1.RedpandaConfig{
-				KafkaAPI: []v1alpha1.KafkaAPI{
+			Configuration: vectorizedv1alpha1.RedpandaConfig{
+				KafkaAPI: []vectorizedv1alpha1.KafkaAPI{
 					{
 						Port: 9092,
 					},
 				},
-				AdminAPI: []v1alpha1.AdminAPI{{Port: 9644}},
-				RPCServer: v1alpha1.SocketAddress{
+				AdminAPI: []vectorizedv1alpha1.AdminAPI{{Port: 9644}},
+				RPCServer: vectorizedv1alpha1.SocketAddress{
 					Port: 33145,
 				},
 			},
-			Resources: v1alpha1.RedpandaResourceRequirements{
+			Resources: vectorizedv1alpha1.RedpandaResourceRequirements{
 				ResourceRequirements: corev1.ResourceRequirements{
 					Limits: corev1.ResourceList{
 						corev1.ResourceCPU:    resource.MustParse("1"),

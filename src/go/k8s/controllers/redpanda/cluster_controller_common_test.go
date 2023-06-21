@@ -13,12 +13,15 @@ import (
 	"context"
 	"fmt"
 
-	v1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
-	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/labels"
+	"github.com/go-logr/logr"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+
+	"github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
+	podutils "github.com/redpanda-data/redpanda/src/go/k8s/internal/util/pod"
+	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/labels"
 )
 
 func resourceGetter(key client.ObjectKey, res client.Object) func() error {
@@ -99,7 +102,7 @@ func consoleUpdater(
 }
 
 func statefulSetReplicasReconciler(
-	key types.NamespacedName, cluster *v1alpha1.Cluster,
+	log logr.Logger, key types.NamespacedName, cluster *v1alpha1.Cluster,
 ) func() error {
 	return func() error {
 		var sts appsv1.StatefulSet
@@ -118,43 +121,38 @@ func statefulSetReplicasReconciler(
 			return err
 		}
 
-		pods := make(map[string]bool, len(podList.Items))
+		pods := make(map[string]int, len(podList.Items))
 		for i := range podList.Items {
-			pods[podList.Items[i].Name] = true
+			pods[podList.Items[i].Name] = i
 		}
 
 		for i := int32(0); i < *sts.Spec.Replicas; i++ {
-			podName := fmt.Sprintf("%s-%d", key.Name, i)
-			var pod corev1.Pod
-			if pods[podName] {
-				for j := range podList.Items {
-					if podList.Items[j].Name == podName {
-						pod = *podList.Items[j].DeepCopy()
-					}
+			pod := generatePodFromStatefulSet(&sts, i, labels.ForCluster(cluster))
+			j, ok := pods[pod.GetName()]
+			if ok {
+				if podList.Items[j].Name == pod.GetName() {
+					pod = podList.Items[j].DeepCopy()
 				}
-			}
-			pod.Name = podName
-			pod.Namespace = key.Namespace
-			pod.Labels = labels.ForCluster(cluster)
-			pod.Annotations = sts.Spec.Template.Annotations
-			pod.Spec = sts.Spec.Template.Spec
-
-			if pods[podName] {
-				delete(pods, podName)
-				err = k8sClient.Update(context.Background(), &pod)
+				delete(pods, pod.GetName())
+				log.Info("update pod", "pod", *pod)
+				err = k8sClient.Update(context.Background(), pod)
 				if err != nil {
 					return err
 				}
 			} else {
-				err = k8sClient.Create(context.Background(), &pod)
+				log.Info("create pod", "pod", *pod)
+				err = k8sClient.Create(context.Background(), pod)
 				if err != nil {
 					return err
 				}
 			}
+			pod.Status.Conditions = podutils.ReplaceOrAppendPodCondition(pod.Status.Conditions, &corev1.PodCondition{Type: corev1.PodReady, Status: corev1.ConditionTrue})
+			_ = k8sClient.Status().Update(context.Background(), pod)
 		}
 
 		for i := range podList.Items {
-			if pods[podList.Items[i].Name] {
+			if _, ok := pods[podList.Items[i].Name]; ok {
+				log.Info("delete pod", "pod", podList.Items[i])
 				err = k8sClient.Delete(context.Background(), &podList.Items[i])
 				if err != nil {
 					return err
@@ -165,6 +163,18 @@ func statefulSetReplicasReconciler(
 		// Aligning StatefulSet
 		sts.Status.Replicas = *sts.Spec.Replicas
 		sts.Status.ReadyReplicas = sts.Status.Replicas
+		log.Info("update sts", "sts", sts)
 		return k8sClient.Status().Update(context.Background(), &sts)
 	}
+}
+
+func generatePodFromStatefulSet(sts *appsv1.StatefulSet, ordinal int32, l labels.CommonLabels) *corev1.Pod {
+	pod := &corev1.Pod{}
+
+	pod.Name = fmt.Sprintf("%s-%d", sts.GetName(), ordinal)
+	pod.Namespace = sts.GetNamespace()
+	pod.Labels = l
+	pod.Annotations = sts.Spec.Template.Annotations
+	pod.Spec = sts.Spec.Template.Spec
+	return pod
 }

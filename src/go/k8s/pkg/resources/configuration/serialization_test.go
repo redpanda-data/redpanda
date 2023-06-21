@@ -15,6 +15,7 @@ import (
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"k8s.io/utils/pointer"
 
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources/configuration"
 )
@@ -22,7 +23,9 @@ import (
 func TestSerde(t *testing.T) {
 	conf := configuration.GlobalConfiguration{
 		NodeConfiguration: config.Config{
-			NodeUUID: "uuid",
+			Redpanda: config.RedpandaNodeConfig{
+				ID: pointer.Int(3),
+			},
 		},
 		ClusterConfiguration: map[string]interface{}{
 			"a": "b",
@@ -34,7 +37,7 @@ func TestSerde(t *testing.T) {
 	conf2, err := ser.Deserialize(configuration.GlobalConfigurationModeCentralized)
 	require.NoError(t, err)
 	require.NotNil(t, conf2)
-	assert.Equal(t, "uuid", conf2.NodeConfiguration.NodeUUID)
+	assert.Equal(t, 3, *conf2.NodeConfiguration.Redpanda.ID)
 	assert.Equal(t, "b", conf2.ClusterConfiguration["a"])
 	ser2, err := conf.Serialize()
 	require.NoError(t, err)

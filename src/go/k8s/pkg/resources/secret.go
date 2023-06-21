@@ -158,19 +158,25 @@ func (r *PreStartStopScriptResource) getPostStartScript() string {
 	// in the StatefulSet otherwise a race condition could occur where the mounted script could be updated before
 	// the new setting has been configured on the pod's redpanda node.
 	return fmt.Sprintf(`#!/usr/bin/env bash
-set -e
+set -x
 
-until NODE_ID=$(%s | grep -o '\"node_id\":[^,}]*' | grep -o '[^: ]*$'); do
-	sleep 0.5
-done
-echo "Clearing maintenance mode on node ${NODE_ID}"
-until [ "${status:-}" = "200" ] || [ "${status:-}" = "400" ]; do
-	status=$(%s)
-	sleep 0.5
-done`, curlNodeIDCommand, curlCommand)
+postStartHook () {
+	until NODE_ID=$(%s | grep -o '\"node_id\":[^,}]*' | grep -o '[^: ]*$'); do
+		sleep 0.5
+	done
+	echo "Clearing maintenance mode on node ${NODE_ID}"
+	until [ "${status:-}" = "200" ] || [ "${status:-}" = "400" ]; do
+		status=$(%s)
+		sleep 0.5
+	done
 }
 
-// getPrestopScript creates a script that drains the node before shutting down.
+timeout %d postStartHook
+true
+`, curlNodeIDCommand, curlCommand, terminationGracePeriodSeconds/2)
+}
+
+// getPreStopScript creates a script that drains the node before shutting down.
 func (r *PreStartStopScriptResource) getPreStopScript() string {
 	// TODO replace scripts with proper RPK calls
 	curlNodeIDCommand := r.composeCURLGetNodeIDCommand("--silent --fail")
@@ -181,22 +187,28 @@ func (r *PreStartStopScriptResource) getPreStopScript() string {
 	// in the StatefulSet otherwise a race condition could occur where the mounted script could be updated before
 	// the new setting has been configured on the pod's redpanda node.
 	return fmt.Sprintf(`#!/usr/bin/env bash
-set -e
+set -x
 
-until NODE_ID=$(%s | grep -o '\"node_id\":[^,}]*' | grep -o '[^: ]*$'); do
-	sleep 0.5
-done
-echo "Setting maintenance mode on node ${NODE_ID}"
-until [ "${status:-}" = "200" ]; do
-	status=$(%s)
-	sleep 0.5
-done
-until [ "${finished:-}" = "true" ] || [ "${draining:-}" = "false" ]; do
-	res=$(%s)
-	finished=$(echo $res | grep -o '\"finished\":[^,}]*' | grep -o '[^: ]*$')
-	draining=$(echo $res | grep -o '\"draining\":[^,}]*' | grep -o '[^: ]*$')
-	sleep 0.5
-done`, curlNodeIDCommand, curlMaintenanceCommand, curlGetMaintenanceCommand)
+preStopHook () {
+	until NODE_ID=$(%s | grep -o '\"node_id\":[^,}]*' | grep -o '[^: ]*$'); do
+		sleep 0.5
+	done
+	echo "Setting maintenance mode on node ${NODE_ID}"
+	until [ "${status:-}" = "200" ]; do
+		status=$(%s)
+		sleep 0.5
+	done
+	until [ "${finished:-}" = "true" ] || [ "${draining:-}" = "false" ]; do
+		res=$(%s)
+		finished=$(echo $res | grep -o '\"finished\":[^,}]*' | grep -o '[^: ]*$')
+		draining=$(echo $res | grep -o '\"draining\":[^,}]*' | grep -o '[^: ]*$')
+		sleep 0.5
+	done
+}
+
+timeout %d preStopHook
+true
+`, curlNodeIDCommand, curlMaintenanceCommand, curlGetMaintenanceCommand, terminationGracePeriodSeconds/2)
 }
 
 //nolint:goconst // no need

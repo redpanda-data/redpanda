@@ -8,11 +8,11 @@ spec:
   replicas: 1
   resources:
     requests:
-      cpu: 100m
-      memory: 100Mi
+      cpu: 1
+      memory: 1Gi
     limits:
       cpu: 1
-      memory: 100Mi
+      memory: 1Gi
   configuration:
     rpcServer:
       port: 33145
@@ -32,3 +32,7 @@ spec:
         enabled: true
         subdomain: "test.subdomain.com"
     developerMode: true
+    additionalCommandlineArguments:
+      dump-memory-diagnostics-on-alloc-failure-kind: all
+      abort-on-seastar-bad-alloc: ''
+      reserve-memory: 100M

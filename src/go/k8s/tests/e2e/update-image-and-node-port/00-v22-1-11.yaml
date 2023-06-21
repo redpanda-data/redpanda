@@ -46,3 +46,6 @@ spec:
     - external:
         enabled: true
     developerMode: true
+    additionalCommandlineArguments:
+      dump-memory-diagnostics-on-alloc-failure-kind: all
+      reserve-memory: 100M

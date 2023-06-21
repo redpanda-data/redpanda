@@ -381,7 +381,7 @@ func (m *MockAdminAPI) RemoveBroker(id int) bool {
 }
 
 func (m *MockAdminAPI) Brokers(_ context.Context) ([]admin.Broker, error) {
-	m.Log.WithName("RemoveBroker").Info("called")
+	m.Log.WithName("Brokers").Info("called")
 	m.monitor.Lock()
 	defer m.monitor.Unlock()
 
@@ -420,7 +420,7 @@ func (m *MockAdminAPI) EnableMaintenanceMode(_ context.Context, _ int) error {
 	return nil
 }
 
-func (m *MockAdminAPI) DisableMaintenanceMode(_ context.Context, _ int) error {
+func (m *MockAdminAPI) DisableMaintenanceMode(_ context.Context, _ int, _ bool) error {
 	m.Log.WithName("DisableMaintenanceMode").Info("called")
 	return nil
 }

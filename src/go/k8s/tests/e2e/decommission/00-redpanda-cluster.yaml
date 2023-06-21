@@ -1,18 +1,18 @@
 apiVersion: redpanda.vectorized.io/v1alpha1
 kind: Cluster
 metadata:
-  name: decommissioning
+  name: decommission
 spec:
   image: "localhost/redpanda"
   version: "dev"
   replicas: 3
   resources:
     requests:
-      cpu: 100m
-      memory: 100Mi
+      cpu: 1
+      memory: 1Gi
     limits:
       cpu: 1
-      memory: 500Mi
+      memory: 1Gi
   configuration:
     rpcServer:
       port: 33145
@@ -23,3 +23,7 @@ spec:
     pandaproxyApi:
      - port: 8082
     developerMode: true
+    additionalCommandlineArguments:
+      dump-memory-diagnostics-on-alloc-failure-kind: all
+      abort-on-seastar-bad-alloc: ''
+      reserve-memory: 100M

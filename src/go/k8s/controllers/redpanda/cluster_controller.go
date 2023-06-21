@@ -50,8 +50,7 @@ import (
 )
 
 const (
-	PodAnnotationNodeIDKey = "operator.redpanda.com/node-id"
-	FinalizerKey           = "operator.redpanda.com/finalizer"
+	FinalizerKey = "operator.redpanda.com/finalizer"
 
 	SecretAnnotationExternalCAKey = "operator.redpanda.com/external-ca"
 )
@@ -149,6 +148,12 @@ func (r *ClusterReconciler) Reconcile(
 
 	if !isRedpandaClusterVersionManaged(log, &redpandaCluster, r.RestrictToRedpandaVersion) {
 		return ctrl.Result{}, nil
+	}
+
+	if redpandaCluster.Status.CurrentReplicas >= 1 {
+		if err := r.setPodNodeIDAnnotation(ctx, &redpandaCluster, log); err != nil {
+			return ctrl.Result{}, fmt.Errorf("setting pod node_id annotation: %w", err)
+		}
 	}
 
 	redpandaPorts := networking.NewRedpandaPorts(&redpandaCluster)
@@ -309,6 +314,7 @@ func (r *ClusterReconciler) Reconcile(
 			return ctrl.Result{RequeueAfter: time.Minute * 1}, nil
 		}
 	}
+
 	// The following should be at the last part as it requires AdminAPI to be running
 	if err := r.setPodNodeIDAnnotation(ctx, &redpandaCluster, log); err != nil {
 		return ctrl.Result{}, fmt.Errorf("setting pod node_id annotation: %w", err)
@@ -407,7 +413,7 @@ func (r *ClusterReconciler) handlePodFinalizer(
 			}
 		}
 		// get the node id
-		nodeIDStr, ok := pod.GetAnnotations()[PodAnnotationNodeIDKey]
+		nodeIDStr, ok := pod.GetAnnotations()[resources.PodAnnotationNodeIDKey]
 		if !ok {
 			return fmt.Errorf("cannot determine node_id for pod %s: %w. not removing finalizer", pod.Name, err)
 		}
@@ -528,11 +534,12 @@ func (r *ClusterReconciler) setPodNodeIDAnnotation(
 		if pod.Annotations == nil {
 			pod.Annotations = make(map[string]string)
 		}
-		nodeIDStr, ok := pod.Annotations[PodAnnotationNodeIDKey]
+		nodeIDStr, ok := pod.Annotations[resources.PodAnnotationNodeIDKey]
 
 		nodeID, err := r.fetchAdminNodeID(ctx, rp, pod, log)
 		if err != nil {
-			return fmt.Errorf(`cannot fetch node id for "%s" node-id annotation: %w`, pod.Name, err)
+			log.Error(err, `cannot fetch node id for node-id annotation`)
+			continue
 		}
 
 		realNodeIDStr := fmt.Sprintf("%d", nodeID)
@@ -555,7 +562,7 @@ func (r *ClusterReconciler) setPodNodeIDAnnotation(
 		}
 
 		log.WithValues("pod-name", pod.Name, "new-node-id", nodeID).Info("setting node-id annotation")
-		pod.Annotations[PodAnnotationNodeIDKey] = realNodeIDStr
+		pod.Annotations[resources.PodAnnotationNodeIDKey] = realNodeIDStr
 		if err := r.Update(ctx, pod, &client.UpdateOptions{}); err != nil {
 			return fmt.Errorf(`unable to update pod "%s" with node-id annotation: %w`, pod.Name, err)
 		}
@@ -662,7 +669,7 @@ func (r *ClusterReconciler) reportStatus(
 		// this is non-fatal error, it will return error even if e.g.
 		// the rollout is not finished because then the currentversion
 		// of the cluster cannot be determined
-		r.Log.Info(fmt.Sprintf("cannot get CurrentVersion of statefulset, %s", err))
+		r.Log.Info(fmt.Sprintf("cannot get CurrentVersion of statefulset, %s", versionErr))
 	}
 	if statusShouldBeUpdated(&redpandaCluster.Status, nodeList, sts, version, versionErr) {
 		err := retry.RetryOnConflict(retry.DefaultRetry, func() error {

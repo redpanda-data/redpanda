@@ -1,9 +1,11 @@
 apiVersion: redpanda.vectorized.io/v1alpha1
 kind: Cluster
 metadata:
-  name: centralized-configuration-upgrade
+  name: decommission
 status:
-  restarting: false
+  replicas: 2
+  currentReplicas: 2
+  readyReplicas: 2
   conditions:
   - type: ClusterConfigured
     status: "True"
@@ -12,4 +14,5 @@ status:
 apiVersion: kuttl.dev/v1beta1
 kind: TestAssert
 collectors:
-  - command: ../../../hack/get-redpanda-info.sh
+- command: ../../../hack/get-redpanda-info.sh
+
