@@ -188,14 +188,6 @@ ss::future<std::error_code> partition::prefix_truncate(
           _raft->ntp());
         co_return make_error_code(errc::topic_invalid_config);
     }
-    if (_archival_meta_stm) {
-        vlog(
-          clusterlog.info,
-          "Cannot prefix-truncate topic/partition {} cloud settings are "
-          "applied",
-          _raft->ntp());
-        co_return make_error_code(errc::topic_invalid_config);
-    }
     if (!feature_table().local().is_active(features::feature::delete_records)) {
         vlog(
           clusterlog.info,
