@@ -22,7 +22,9 @@ class RpkProducer(BackgroundThreadService):
                  produce_timeout: Optional[int] = None,
                  *,
                  partition: Optional[int] = None,
-                 max_message_bytes: Optional[int] = None):
+                 max_message_bytes: Optional[int] = None,
+                 user: Optional[str] = None,
+                 password: Optional[str] = None):
         super(RpkProducer, self).__init__(context, num_nodes=1)
         self._redpanda = redpanda
         self._topic = topic
@@ -35,6 +37,8 @@ class RpkProducer(BackgroundThreadService):
         self._output_line_count = 0
         self._partition = partition
         self._max_message_bytes = max_message_bytes
+        self._user = user
+        self._password = password
 
         if produce_timeout is None:
             produce_timeout = 10
@@ -68,11 +72,17 @@ class RpkProducer(BackgroundThreadService):
         if self._max_message_bytes is not None:
             cmd += f" --max-message-bytes {self._max_message_bytes}"
 
+        if self._user is not None:
+            cmd += f" --user '{self._user}'"
+
+        if self._password is not None:
+            cmd += f" --password '{self._password}'"
+
         self._stopping.clear()
         try:
             for line in node.account.ssh_capture(
                     cmd, timeout_sec=self._produce_timeout):
-                self.logger.debug(line.rstrip())
+                self.logger.debug(f"{self.service_id}: {line.rstrip()}")
                 self._output_line_count += 1
         except RemoteCommandError:
             if self._stopping.is_set():
@@ -90,3 +100,7 @@ class RpkProducer(BackgroundThreadService):
     def stop_node(self, node):
         self._stopping.set()
         node.account.kill_process("rpk", clean_shutdown=False)
+
+    def is_running(self) -> bool:
+        return any(worker.is_alive()
+                   for worker in self.worker_threads.values())
