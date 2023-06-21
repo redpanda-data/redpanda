@@ -9,11 +9,16 @@ spec:
   resources:
     requests:
       cpu: 1
-      memory: 500Mi
+      memory: 1Gi
     limits:
       cpu: 1
-      memory: 500Mi
+      memory: 1Gi
   configuration:
+    additionalCommandlineArguments:
+      default-log-level: trace
+      dump-memory-diagnostics-on-alloc-failure-kind: all
+      abort-on-seastar-bad-alloc: ''
+      reserve-memory: 100M
     rpcServer:
       port: 33145
     kafkaApi:

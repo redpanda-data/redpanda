@@ -8,11 +8,11 @@ spec:
   replicas: 1
   resources:
     requests:
-      cpu: 100m
-      memory: 100Mi
+      cpu: 1
+      memory: 1Gi
     limits:
       cpu: 1
-      memory: 100Mi
+      memory: 1Gi
   configuration:
     rpcServer:
       port: 33145
@@ -21,6 +21,10 @@ spec:
     adminApi:
     - port: 9644
     developerMode: true
+    additionalCommandlineArguments:
+      dump-memory-diagnostics-on-alloc-failure-kind: all
+      abort-on-seastar-bad-alloc: ''
+      reserve-memory: 100M
   nodeSelector:
     redpanda-node: "true"
   tolerations:

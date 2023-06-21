@@ -7,10 +7,10 @@ spec:
     redpanda:
       cpu: 2
     requests:
-      cpu: 500m
-      memory: 512Mi
+      cpu: 1
+      memory: 1Gi
     limits:
-      cpu: 500m
-      memory: 512Mi
+      cpu: 1
+      memory: 1Gi
   configuration:
     developerMode: true

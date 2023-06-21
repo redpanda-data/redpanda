@@ -1,7 +1,7 @@
 apiVersion: redpanda.vectorized.io/v1alpha1
 kind: Cluster
 metadata:
-  name: centralized-configuration-tls
+  name: centralized-configuration-upgrade
 spec:
   additionalConfiguration:
     redpanda.segment_appender_flush_timeout_ms: "1003"
