@@ -119,3 +119,56 @@ FIXTURE_TEST(test_read_replica_basic_sync, read_replica_e2e_fixture) {
         }
     }
 }
+
+FIXTURE_TEST(test_read_replica_delete_records, read_replica_e2e_fixture) {
+    const model::topic topic_name("tapioca");
+    model::ntp ntp(model::kafka_namespace, topic_name, 0);
+    cluster::topic_properties props;
+    props.shadow_indexing = model::shadow_indexing_mode::full;
+    props.retention_local_target_bytes = tristate<size_t>(1);
+    add_topic({model::kafka_namespace, topic_name}, 1, props).get();
+    wait_for_leader(ntp).get();
+
+    // Produce records to the source.
+    auto partition = app.partition_manager.local().get(ntp).get();
+    auto& archiver = partition->archiver()->get();
+    BOOST_REQUIRE(archiver.sync_for_tests().get());
+    archiver.upload_topic_manifest().get();
+    tests::remote_segment_generator gen(make_kafka_client().get(), *partition);
+    BOOST_REQUIRE_EQUAL(
+      30, gen.records_per_batch(10).num_segments(3).produce().get());
+    BOOST_REQUIRE_EQUAL(3, archiver.manifest().size());
+
+    // Create the read replica application, now that we've initialized things
+    // that rely globals (e.g. configs, etc).
+    auto rr_rp = start_read_replica_fixture();
+
+    cluster::topic_properties read_replica_props;
+    read_replica_props.shadow_indexing = model::shadow_indexing_mode::fetch;
+    read_replica_props.read_replica = true;
+    read_replica_props.read_replica_bucket = "test-bucket";
+    rr_rp
+      ->add_topic({model::kafka_namespace, topic_name}, 1, read_replica_props)
+      .get();
+    rr_rp->wait_for_leader(ntp).get();
+    auto rr_partition = rr_rp->app.partition_manager.local().get(ntp).get();
+    auto& rr_archiver = rr_partition->archiver()->get();
+    BOOST_REQUIRE(rr_archiver.sync_for_tests().get());
+    rr_archiver.sync_manifest().get();
+    BOOST_REQUIRE_EQUAL(3, rr_archiver.manifest().size());
+
+    kafka_consume_transport consumer(rr_rp->make_kafka_client().get());
+    consumer.start().get();
+    model::offset next(0);
+    while (next < model::offset(30)) {
+        auto consumed_records = consumer
+                                  .consume_from_partition(
+                                    topic_name, model::partition_id(0), next)
+                                  .get();
+        BOOST_REQUIRE(!consumed_records.empty());
+        for (const auto& [k, v] : consumed_records) {
+            BOOST_REQUIRE_EQUAL(k, ssx::sformat("key{}", next()));
+            next += model::offset(1);
+        }
+    }
+}

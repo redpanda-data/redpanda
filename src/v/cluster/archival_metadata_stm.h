@@ -62,7 +62,9 @@ public:
     command_batch_builder& mark_clean(model::offset);
     /// Add truncate command to the batch
     command_batch_builder& truncate(model::offset start_rp_offset);
-    command_batch_builder& truncate(kafka::offset start_kafka_offset);
+    /// Update the kafka start offset override.
+    command_batch_builder&
+    update_start_kafka_offset(kafka::offset start_kafka_offset);
     /// Add spillover command to the batch
     command_batch_builder& spillover(const cloud_storage::segment_meta& meta);
     /// Add truncate-archive-init command to the batch

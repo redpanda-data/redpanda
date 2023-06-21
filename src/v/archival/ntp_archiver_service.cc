@@ -648,6 +648,12 @@ ss::future<cloud_storage::download_result> ntp_archiver::sync_manifest() {
         auto builder = _parent.archival_meta_stm()->batch_start(deadline, _as);
         builder.add_segments(std::move(mdiff));
         if (
+          m.get_start_kafka_offset_override()
+          > manifest().get_start_kafka_offset_override()) {
+            builder.update_start_kafka_offset(
+              m.get_start_kafka_offset_override());
+        }
+        if (
           new_start_offset.has_value() && old_start_offset.has_value()
           && old_start_offset.value() != new_start_offset.value()) {
             builder.truncate(new_start_offset.value());
