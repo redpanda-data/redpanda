@@ -71,6 +71,37 @@ valid, but does not apply it.
 			subtractKVs, err := parseKVs(subtracts)
 			out.MaybeDie(err, "unable to parse --subtract: %v", err)
 
+			// Redpanda fails to set both remote.read and write when passed
+			// at the same time, so we issue first the set request for write,
+			// then the rest of the requests.
+			// See https://github.com/redpanda-data/redpanda/issues/9191
+			_, isRRR := setKVs["redpanda.remote.read"]
+			wv, isRRW := setKVs["redpanda.remote.write"]
+			rrwErrors := make(map[string]int16)
+			if isRRR && isRRW {
+				req := kmsg.NewPtrIncrementalAlterConfigsRequest()
+				req.ValidateOnly = dry
+				cfg := kmsg.NewIncrementalAlterConfigsRequestResourceConfig()
+				cfg.Name = "redpanda.remote.write"
+				cfg.Op = kmsg.IncrementalAlterConfigOpSet
+				cfg.Value = kmsg.StringPtr(wv)
+
+				for _, topic := range topics {
+					reqTopic := kmsg.NewIncrementalAlterConfigsRequestResource()
+					reqTopic.ResourceType = kmsg.ConfigResourceTypeTopic
+					reqTopic.ResourceName = topic
+					reqTopic.Configs = []kmsg.IncrementalAlterConfigsRequestResourceConfig{cfg}
+					req.Resources = append(req.Resources, reqTopic)
+				}
+				resp, err := req.RequestWith(context.Background(), cl)
+				out.MaybeDie(err, "unable to incrementally update configs: %v", err)
+				for _, resource := range resp.Resources {
+					rrwErrors[resource.ResourceName] = resource.ErrorCode
+				}
+
+				delete(setKVs, "redpanda.remote.write")
+			}
+
 			req := kmsg.NewPtrIncrementalAlterConfigsRequest()
 			req.ValidateOnly = dry
 
@@ -118,8 +149,12 @@ valid, but does not apply it.
 
 			for _, resource := range resp.Resources {
 				msg := "OK"
-				if err := kerr.TypedErrorForCode(resource.ErrorCode); err != nil {
-					msg = err.Message
+				if rrwErrorCode := rrwErrors[resource.ResourceName]; resource.ErrorCode != 0 || rrwErrorCode != 0 {
+					if err := kerr.TypedErrorForCode(resource.ErrorCode); err != nil {
+						msg = err.Message
+					} else if err := kerr.TypedErrorForCode(rrwErrorCode); err != nil {
+						msg = err.Message
+					}
 				}
 				tw.Print(resource.ResourceName, msg)
 			}
