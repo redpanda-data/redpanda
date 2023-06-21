@@ -2014,50 +2014,56 @@ rm_stm::do_aborted_transactions(model::offset from, model::offset to) {
     co_return result;
 }
 
+bool rm_stm::is_producer_expired(
+  model::timestamp now, const seq_entry& entry) const {
+    /**
+     * Producer is expired if it has no ongoing transactions and its last write
+     * timestamp is older than requested producer id
+     */
+    auto lock_it = _tx_locks.find(entry.pid.get_id());
+    /**
+     * If there are ongoing transactions we must keep the producer state alive
+     */
+    if (lock_it != _tx_locks.end() && !lock_it->second->ready()) {
+        return false;
+    }
+
+    if (_log_state.current_txes.contains(entry.pid)) {
+        return false;
+    }
+
+    return now.value() - entry.last_write_timestamp
+           > _transactional_id_expiration.count();
+}
+
 void rm_stm::compact_snapshot() {
-    auto cutoff_timestamp = model::timestamp::now().value()
-                            - _transactional_id_expiration.count();
-    if (cutoff_timestamp <= _oldest_session.value()) {
+    if (_log_state.seq_table.empty()) {
+        return;
+    }
+    const auto now = model::timestamp::now();
+    const auto expiration_ms_count = _transactional_id_expiration.count();
+    if ((now - _oldest_session).value() < expiration_ms_count) {
         return;
     }
 
-    if (_log_state.seq_table.size() <= _seq_table_min_size) {
-        return;
-    }
+    model::timestamp::type oldest_preserved_session = now.value();
 
-    if (_log_state.seq_table.size() == 0) {
-        return;
-    }
-
-    fragmented_vector<model::timestamp::type> lw_tss;
-    for (const auto& it : _log_state.seq_table) {
-        lw_tss.push_back(it.second.entry.last_write_timestamp);
-    }
-    std::sort(lw_tss.begin(), lw_tss.end());
-    auto pivot = lw_tss[lw_tss.size() - 1 - _seq_table_min_size];
-
-    if (pivot < cutoff_timestamp) {
-        cutoff_timestamp = pivot;
-    }
-
-    auto next_oldest_session = model::timestamp::now();
-    auto size = _log_state.seq_table.size();
     for (auto it = _log_state.seq_table.cbegin();
          it != _log_state.seq_table.cend();) {
-        if (
-          size > _seq_table_min_size
-          && it->second.entry.last_write_timestamp <= cutoff_timestamp) {
-            size--;
-            _log_state.erase_pid_from_seq_table(it->first);
-            it++;
+        if (is_producer_expired(now, it->second.entry)) {
+            _log_state.erase_seq(it++);
         } else {
-            next_oldest_session = std::min(
-              next_oldest_session,
-              model::timestamp(it->second.entry.last_write_timestamp));
+            if (
+              it->second.entry.last_write_timestamp
+              != model::timestamp::missing().value()) {
+                oldest_preserved_session = std::min(
+                  it->second.entry.last_write_timestamp,
+                  oldest_preserved_session);
+            }
             ++it;
         }
     }
-    _oldest_session = next_oldest_session;
+    _oldest_session = model::timestamp(oldest_preserved_session);
 }
 
 ss::future<bool> rm_stm::sync(model::timeout_clock::duration timeout) {

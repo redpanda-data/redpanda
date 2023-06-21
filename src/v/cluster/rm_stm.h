@@ -15,6 +15,7 @@
 #include "cluster/tx_utils.h"
 #include "cluster/types.h"
 #include "config/configuration.h"
+#include "config/property.h"
 #include "features/feature_table.h"
 #include "model/fundamental.h"
 #include "model/record.h"
@@ -673,6 +674,10 @@ private:
             if (it == seq_table.end()) {
                 return;
             }
+            erase_seq(it);
+        }
+
+        void erase_seq(seq_map::const_iterator it) {
             unlink_lru_pid(it->second);
             seq_table.erase(it);
         }
@@ -913,6 +918,9 @@ private:
     ss::future<> maybe_log_tx_stats();
     void log_tx_stats();
 
+    bool
+    is_producer_expired(model::timestamp now, const seq_entry& entry) const;
+
     // Defines the commit offset range for the stm bootstrap.
     // Set on first apply upcall and used to identify if the
     // stm is still replaying the log.
@@ -942,7 +950,6 @@ private:
     std::chrono::milliseconds _tx_timeout_delay;
     std::chrono::milliseconds _abort_interval_ms;
     uint32_t _abort_index_segment_size;
-    uint32_t _seq_table_min_size;
     std::chrono::milliseconds _transactional_id_expiration;
     bool _is_autoabort_enabled{true};
     bool _is_autoabort_active{false};
