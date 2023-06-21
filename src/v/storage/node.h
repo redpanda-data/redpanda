@@ -46,11 +46,7 @@ public:
     ss::future<> start();
     ss::future<> stop();
 
-    void set_disk_metrics(
-      disk_type t,
-      uint64_t total_bytes,
-      uint64_t free_bytes,
-      disk_space_alert alert);
+    void set_disk_metrics(disk_type t, disk_space_info);
 
     notification_id register_disk_notification(disk_type t, disk_cb_t cb);
     void unregister_disk_notification(disk_type t, notification_id id);
