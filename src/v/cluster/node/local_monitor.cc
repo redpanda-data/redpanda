@@ -203,6 +203,8 @@ void local_monitor::update_alert_state(local_state& state) {
 }
 
 ss::future<> local_monitor::update_disk_metrics() {
+    const auto [data_low, data_degraded] = calc_alert_thresholds(
+      _state.data_disk);
     co_await _storage_node_api.invoke_on_all(
       &storage::node::set_disk_metrics,
       storage::node::disk_type::data,
@@ -210,11 +212,14 @@ ss::future<> local_monitor::update_disk_metrics() {
         .total = _state.data_disk.total,
         .free = _state.data_disk.free,
         .alert = _state.data_disk.alert,
+        .degraded_threshold = data_degraded,
+        .low_space_threshold = data_low,
       });
 
     // Always notify for cache disk, even if it's the same underlying drive:
     // subscribers to updates on cache disk space still need to get updates.
     auto cache_disk = _state.get_cache_disk();
+    const auto [cache_low, cache_degraded] = calc_alert_thresholds(cache_disk);
     co_await _storage_node_api.invoke_on_all(
       &storage::node::set_disk_metrics,
       storage::node::disk_type::cache,
@@ -222,6 +227,8 @@ ss::future<> local_monitor::update_disk_metrics() {
         .total = cache_disk.total,
         .free = cache_disk.free,
         .alert = cache_disk.alert,
+        .degraded_threshold = cache_degraded,
+        .low_space_threshold = cache_low,
       });
 }
 

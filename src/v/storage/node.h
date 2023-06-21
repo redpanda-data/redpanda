@@ -34,6 +34,8 @@ public:
         size_t total;
         size_t free;
         disk_space_alert alert;
+        size_t degraded_threshold;
+        size_t low_space_threshold;
     };
 
     using notification_id = named_type<int32_t, struct notification_id_t>;
