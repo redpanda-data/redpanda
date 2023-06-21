@@ -41,9 +41,8 @@ struct throughput_control_group {
     throughput_control_group& operator=(throughput_control_group&&) noexcept;
     ~throughput_control_group() noexcept;
 
-    friend bool
-    operator==(const throughput_control_group&, const throughput_control_group&)
-      = default;
+    friend bool operator==(
+      const throughput_control_group&, const throughput_control_group&);
 
     friend std::ostream&
     operator<<(std::ostream& os, const throughput_control_group& tcg);
