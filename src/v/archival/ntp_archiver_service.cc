@@ -1950,10 +1950,10 @@ ss::future<> ntp_archiver::garbage_collect_archive() {
                           == cloud_storage::segment_name_format::v3
                         && meta.metadata_size_hint != 0) {
                           segments_to_remove.push_back(
-                            cloud_storage::generate_index_path(path));
+                            cloud_storage::generate_remote_tx_path(path)());
                       }
                       segments_to_remove.push_back(
-                        cloud_storage::generate_remote_tx_path(path)());
+                        cloud_storage::generate_index_path(path));
                   } else {
                       // This indicates that we need to remove only some of the
                       // segments from the manifest. In this case the outer loop
