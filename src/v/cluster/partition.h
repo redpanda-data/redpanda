@@ -73,8 +73,8 @@ public:
 
     /// Truncate the beginning of the log up until a given offset
     /// Can only be performed on logs that are deletable and non internal
-    ss::future<std::error_code>
-    prefix_truncate(model::offset o, ss::lowres_clock::time_point deadline);
+    ss::future<std::error_code> prefix_truncate(
+      model::offset o, kafka::offset ko, ss::lowres_clock::time_point deadline);
 
     kafka_stages replicate_in_stages(
       model::batch_identity,
@@ -103,8 +103,9 @@ public:
             // The eviction STM only keeps track of DeleteRecords truncations
             // as Raft offsets. Translate if possible.
             auto offset_translator_state = get_offset_translator_state();
-            if (offset_res.value() != model::offset{} &&
-                _raft->start_offset() < offset_res.value()) {
+            if (
+              offset_res.value() != model::offset{}
+              && _raft->start_offset() < offset_res.value()) {
                 auto start_kafka_offset
                   = offset_translator_state->from_log_offset(
                     offset_res.value());

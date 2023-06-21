@@ -314,10 +314,17 @@ ss::future<error_code> replicated_partition::prefix_truncate(
       || kafka_truncation_offset > high_watermark()) {
         co_return error_code::offset_out_of_range;
     }
-    const auto rp_truncate_offset = _translator->to_log_offset(
-      kafka_truncation_offset);
+    model::offset rp_truncate_offset{};
+    auto local_kafka_start_offset = _translator->from_log_offset(
+      _partition->raft_start_offset());
+    if (kafka_truncation_offset > local_kafka_start_offset) {
+        rp_truncate_offset = _translator->to_log_offset(
+          kafka_truncation_offset);
+    }
     auto errc = co_await _partition->prefix_truncate(
-      rp_truncate_offset, deadline);
+      rp_truncate_offset,
+      model::offset_cast(kafka_truncation_offset),
+      deadline);
 
     /// Translate any std::error_codes into proper kafka error codes
     auto kerr = error_code::unknown_server_error;
