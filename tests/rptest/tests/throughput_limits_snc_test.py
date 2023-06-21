@@ -8,6 +8,7 @@
 # by the Apache License, Version 2.0
 
 import random, time, math, json, string
+import socket
 from enum import Enum
 from typing import Tuple
 
@@ -16,11 +17,13 @@ from ducktape.utils.util import wait_until
 from rptest.clients.rpk import RpkTool
 from rptest.clients.types import TopicSpec
 from rptest.services.cluster import cluster
-from rptest.services.redpanda import MetricsEndpoint
+from rptest.services.redpanda import MetricsEndpoint, SaslCredentials, SecurityConfig
 from rptest.services.rpk_producer import RpkProducer
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.services.kcat_consumer import KcatConsumer
 from rptest.clients.kafka_cat import KafkaCat
+from rptest.services import tls
+from rptest.services.admin import Admin
 
 # This file is about throughput limiting that works at shard/node/cluster (SNC)
 # levels, like cluster-wide and node-wide throughput limits
@@ -39,6 +42,7 @@ class ThroughputLimitsSnc(RedpandaTest):
                                                   num_brokers=3,
                                                   *args,
                                                   **kwargs)
+        self.superuser: SaslCredentials = self.redpanda.SUPERUSER_CREDENTIALS
         rnd_seed_override = test_ctx.globals.get("random_seed")
         if rnd_seed_override is None:
             # default seed value is composed from
@@ -342,3 +346,141 @@ class ThroughputLimitsSnc(RedpandaTest):
         producer.stop()
         consumer.stop()
         consumer2.stop()
+
+    @cluster(num_nodes=5)
+    def test_throughput_groups_exemptions(self):
+        """
+        Clients with configured tput exemptions are not limited.
+        This includes configuration by
+        - client_id (TBD)
+        - auth user
+        """
+
+        security = SecurityConfig()
+        security.enable_sasl = True
+        self.redpanda.set_security_settings(security)
+        self.topics = [
+            TopicSpec(partition_count=1),
+            TopicSpec(partition_count=1)
+        ]
+        super(ThroughputLimitsSnc, self).setUp()
+
+        # run a producer for the admin user, measure tput using the 1st topic
+        topic = self.topics[0].name
+        msg_size = 6 * kiB
+        msg_count = 60
+        producer_ref = RpkProducer(self.test_context,
+                                   self.redpanda,
+                                   topic,
+                                   msg_size=msg_size,
+                                   msg_count=msg_count,
+                                   max_message_bytes=3 * msg_size,
+                                   sasl_cred=(self.superuser.username,
+                                              self.superuser.password),
+                                   produce_timeout=20)
+        producer_ref.start()
+        producer_ref.wait()
+        producer_ref.stop()
+        producer_ref.free()
+
+        # this is the reference rate with 1 producer
+        rate_ref = msg_count * msg_size / producer_ref.time_elapsed
+        self.logger.info(
+            f"Reference producer: {producer_ref.time_elapsed:.3f} s, {rate_ref:.0f} B/s"
+        )
+
+        # (2) Set up another user, global tput limits, and tput exemptions for
+        # the superuser. Then run 2 producers, one for each user, and compare
+        # their effective tputs. The superuser's tput is expected to be significantly
+        # over the threshold, while the restricted user's tput should be under
+        # the threshold.
+
+        # this will be the limited tput rate; together with the unlimited producer
+        # they will make about the reference rate. The unlimited one should then
+        # make about rate_ref * 0.9.
+        tp_limit = int(round(rate_ref * 0.1))
+
+        # adjust message count so that the entire limited traffic
+        # would go through in no more than 15s
+        msg_count = max(15, min(150, 15 * tp_limit // msg_size))
+
+        # use the empty topic
+        topic = self.topics[1].name
+
+        # set tput limits and exemptions
+        self.redpanda.set_cluster_config({
+            self.ConfigProp.THROUGHPUT_CONTROL.value: [{
+                'principals': [{
+                    'user': self.superuser.username
+                }]
+            }],
+            self.ConfigProp.QUOTA_NODE_MAX_IN.value:
+            tp_limit,
+            self.ConfigProp.QUOTA_NODE_MAX_EG.value:
+            tp_limit,
+        })
+
+        # create restricted used
+        admin = Admin(self.redpanda)
+        user = SaslCredentials("user2", "password2", "SCRAM-SHA-256")
+        admin.create_user(user.username, user.password, user.algorithm)
+
+        # enable cluster and topic access for the new user
+        rpk = RpkTool(self.redpanda,
+                      username=self.superuser.username,
+                      password=self.superuser.password,
+                      sasl_mechanism=self.superuser.algorithm)
+        rpk.acl_create_allow_cluster(user.username, 'ALL')
+        rpk.acl_create_allow_topic(user.username, topic, 'ALL')
+
+        # allow thrice the expected timeout to the limited producer
+        producer1_timeout = 3 * msg_count * msg_size // tp_limit
+
+        # run the producers
+        self.logger.info(
+            f"Running the producers. tp_limit={tp_limit}, msg_size={msg_size}, "
+            f"msg_count={msg_count}, producer1_timeout={producer1_timeout}")
+        producer0 = RpkProducer(self.test_context,
+                                self.redpanda,
+                                topic,
+                                msg_size=msg_size,
+                                msg_count=msg_count,
+                                max_message_bytes=3 * msg_size,
+                                sasl_cred=(self.superuser.username,
+                                           self.superuser.password))
+        producer1 = RpkProducer(self.test_context,
+                                self.redpanda,
+                                topic,
+                                msg_size=msg_size,
+                                msg_count=msg_count,
+                                max_message_bytes=3 * msg_size,
+                                sasl_cred=(user.username, user.password),
+                                produce_timeout=producer1_timeout)
+        producer0.start()
+        producer1.start()
+        producer0.wait()
+        producer1.wait()
+        producer0.stop()
+        producer1.stop()
+        producer0.free()
+        producer1.free()
+
+        # measure and compare
+        rate0 = msg_count * msg_size / producer0.time_elapsed
+        rate1 = msg_count * msg_size / producer1.time_elapsed
+        self.logger.info(
+            f"Non-throttled producer: {producer0.time_elapsed:.3f} s, {rate0:.0f} B/s"
+        )
+        self.logger.info(
+            f"Producer throttled at {tp_limit} B/s: {producer1.time_elapsed:.3f} s, {rate1:.0f} B/s"
+        )
+        self.logger.info(
+            f"Total rate: {rate0+rate1:.0f}, reference rate: {rate_ref:.0f}")
+        assert rate0 / rate1 > 5, \
+            f"Exempt clients's rate ({rate0:.0f} B/s) must be much larger than "\
+            f"the limited ({rate1:.0f} B/s), only {rate0/rate1:.1f} times yet (expected: 5)"
+        # because the test is short, peaks in tput can render limited tput
+        # slightly bigger than the limit
+        assert rate1 / tp_limit < 1.2, \
+            f"Non-exempt clients's rate ({rate1:.0f} B/s) must be lower than "\
+            f"the limit ({tp_limit:.0f} B/s)"
