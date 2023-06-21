@@ -133,7 +133,8 @@ transport::send(netbuf b, rpc::client_opts opts) {
 }
 
 ss::future<result<std::unique_ptr<streaming_context>>>
-transport::make_response_handler(netbuf& b, rpc::client_opts& opts) {
+transport::make_response_handler(
+  netbuf& b, rpc::client_opts& opts) {
     if (_correlations.find(_correlation_idx + 1) != _correlations.end()) {
         _probe->client_correlation_error();
         vlog(
@@ -168,48 +169,50 @@ transport::make_response_handler(netbuf& b, rpc::client_opts& opts) {
         throw std::logic_error(
           fmt::format("Tried to reuse correlation id: {}", idx));
     }
-    handler_raw_ptr->with_timeout(opts.timeout, [this, method = b.name(), idx] {
-        auto format_ms = [](clock_type::duration d) {
-            auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(d);
-            return fmt::format("{} ms", ms.count());
-        };
+    handler_raw_ptr->with_timeout(
+      opts.timeout, [this, method = b.name(), idx] {
+          auto format_ms = [](clock_type::duration d) {
+              auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                d);
+              return fmt::format("{} ms", ms.count());
+          };
 
-        auto from_now =
-          [now = timing_info::clock_type::now(), format_ms](
-            timing_info::clock_type::time_point earlier) -> std::string {
-            if (earlier == timing_info::unset) {
-                return "unset";
-            }
-            return format_ms(now - earlier);
-        };
-        auto it = _correlations.find(idx);
-        // The timeout may race with the completion of the request (and
-        // removal from _correlations map) in which case we treat this as a
-        // not-timed-out request.
-        if (likely(it != _correlations.end())) {
-            auto& timing = it->second->timing;
-            vlog(
-              rpclog.info,
-              "RPC timeout ({}) to {}, method: {}, correlation id: {}, {} "
-              "in flight, time since: {{init: {}, enqueue: {}, "
-              "memory_reserved: {} dispatch: "
-              "{}, written: {}}}, flushed: {}",
-              format_ms(timing.timeout.timeout_period),
-              server_address(),
-              method,
-              idx,
-              _correlations.size(),
-              from_now(
-                timing.timeout.timeout_at() - timing.timeout.timeout_period),
-              from_now(timing.enqueued_at),
-              from_now(timing.memory_reserved_at),
-              from_now(timing.dispatched_at),
-              from_now(timing.written_at),
-              timing.flushed);
-            _probe->request_timeout();
-            _correlations.erase(it);
-        }
-    });
+          auto from_now =
+            [now = timing_info::clock_type::now(), format_ms](
+              timing_info::clock_type::time_point earlier) -> std::string {
+              if (earlier == timing_info::unset) {
+                  return "unset";
+              }
+              return format_ms(now - earlier);
+          };
+          auto it = _correlations.find(idx);
+          // The timeout may race with the completion of the request (and
+          // removal from _correlations map) in which case we treat this as a
+          // not-timed-out request.
+          if (likely(it != _correlations.end())) {
+              auto& timing = it->second->timing;
+              vlog(
+                rpclog.info,
+                "RPC timeout ({}) to {}, method: {}, correlation id: {}, {} "
+                "in flight, time since: {{init: {}, enqueue: {}, "
+                "memory_reserved: {} dispatch: "
+                "{}, written: {}}}, flushed: {}",
+                format_ms(timing.timeout.timeout_period),
+                server_address(),
+                method,
+                idx,
+                _correlations.size(),
+                from_now(
+                  timing.timeout.timeout_at() - timing.timeout.timeout_period),
+                from_now(timing.enqueued_at),
+                from_now(timing.memory_reserved_at),
+                from_now(timing.dispatched_at),
+                from_now(timing.written_at),
+                timing.flushed);
+              _probe->request_timeout();
+              _correlations.erase(it);
+          }
+      });
 
     return response_future;
 }
