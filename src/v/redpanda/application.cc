@@ -600,7 +600,15 @@ ss::app_template::config application::setup_app_config() {
 }
 
 void application::hydrate_config(const po::variables_map& cfg) {
-    std::filesystem::path cfg_path(cfg["redpanda-cfg"].as<std::string>());
+    auto raw_cfg_path = cfg["redpanda-cfg"].as<std::string>();
+    // Expand ~/redpanda.yaml to the full path
+    if (raw_cfg_path.starts_with("~")) {
+        const char* home = std::getenv("HOME");
+        if (home) {
+            raw_cfg_path = fmt::format("{}{}", home, raw_cfg_path.substr(1));
+        }
+    }
+    std::filesystem::path cfg_path(raw_cfg_path);
 
     // Retain the original bytes loaded so that we can hexdump them later
     // if YAML Parse fails.
