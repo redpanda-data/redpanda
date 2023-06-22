@@ -2761,6 +2761,7 @@ rm_stm::apply_snapshot(stm_snapshot_header hdr, iobuf&& tx_ss_buf) {
         _log_state.lru_idempotent_pids.push_back(it->second);
     }
 
+    _bootstrap_committed_offset = data.offset;
     _last_snapshot_offset = data.offset;
     _insync_offset = data.offset;
 }

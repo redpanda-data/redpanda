@@ -157,7 +157,7 @@ public:
       ss::sstring, ss::logger&, raft::consensus*, Args&&...);
 
     void make_snapshot_in_background() final;
-    ss::future<> ensure_snapshot_exists(model::offset) final;
+    ss::future<> ensure_snapshot_exists(model::offset) override;
     model::offset max_collectible_offset() override;
     ss::future<fragmented_vector<model::tx_range>>
       aborted_tx_ranges(model::offset, model::offset) override;

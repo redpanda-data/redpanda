@@ -73,6 +73,8 @@ set(schemata
   add_offsets_to_txn_response.json
   offset_delete_request.json
   offset_delete_response.json
+  delete_records_request.json
+  delete_records_response.json
   offset_for_leader_epoch_request.json
   offset_for_leader_epoch_response.json
   alter_partition_reassignments_request.json

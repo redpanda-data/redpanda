@@ -81,6 +81,8 @@ public:
         virtual std::optional<model::term_id> get_term(model::offset) const = 0;
         virtual std::optional<model::offset>
           get_term_last_offset(model::term_id) const = 0;
+        virtual std::optional<model::offset>
+        index_lower_bound(model::offset o) const = 0;
 
         virtual ss::future<model::offset>
         monitor_eviction(ss::abort_source&) = 0;
@@ -170,6 +172,10 @@ public:
         return _impl->get_term_last_offset(term);
     }
 
+    std::optional<model::offset> index_lower_bound(model::offset o) const {
+        return _impl->index_lower_bound(o);
+    }
+
     ss::future<std::optional<timequery_result>>
     timequery(timequery_config cfg) {
         return _impl->timequery(cfg);
@@ -231,5 +237,7 @@ log make_disk_backed_log(
   segment_set,
   kvstore&,
   ss::sharded<features::feature_table>& feature_table);
+
+bool deletion_exempt(const model::ntp& ntp);
 
 } // namespace storage

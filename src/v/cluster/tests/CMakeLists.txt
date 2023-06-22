@@ -45,6 +45,7 @@ rp_test(
 endforeach()
 
 set(srcs
+        manual_log_deletion_test.cc
         cluster_tests.cc
         configuration_change_test.cc
         autocreate_test.cc

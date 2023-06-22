@@ -48,6 +48,7 @@ partition::partition(
   ss::sharded<features::feature_table>& feature_table,
   ss::sharded<cluster::tm_stm_cache_manager>& tm_stm_cache_manager,
   ss::sharded<archival::upload_housekeeping_service>& upload_hks,
+  storage::kvstore& kvstore,
   config::binding<uint64_t> max_concurrent_producer_ids,
   std::optional<cloud_storage_clients::bucket_name> read_replica_bucket)
   : _raft(r)
@@ -65,16 +66,20 @@ partition::partition(
   , _cloud_storage_cache(cloud_storage_cache)
   , _cloud_storage_probe(
       ss::make_shared<cloud_storage::partition_probe>(_raft->ntp()))
-  , _upload_housekeeping(upload_hks) {
+  , _upload_housekeeping(upload_hks)
+  , _kvstore(kvstore) {
     auto stm_manager = _raft->log().stm_manager();
 
     if (is_id_allocator_topic(_raft->ntp())) {
         _id_allocator_stm = ss::make_shared<cluster::id_allocator_stm>(
           clusterlog, _raft.get());
     } else if (is_tx_manager_topic(_raft->ntp())) {
-        if (_raft->log_config().is_collectable()) {
-            _log_eviction_stm = ss::make_lw_shared<raft::log_eviction_stm>(
-              _raft.get(), clusterlog, stm_manager, _as);
+        if (
+          _raft->log_config().is_collectable()
+          && !storage::deletion_exempt(_raft->ntp())) {
+            _log_eviction_stm = ss::make_shared<cluster::log_eviction_stm>(
+              _raft.get(), clusterlog, _as, _kvstore);
+            stm_manager->add_stm(_log_eviction_stm);
         }
 
         if (_is_tx_enabled) {
@@ -85,9 +90,12 @@ partition::partition(
             stm_manager->add_stm(_tm_stm);
         }
     } else {
-        if (_raft->log_config().is_collectable()) {
-            _log_eviction_stm = ss::make_lw_shared<raft::log_eviction_stm>(
-              _raft.get(), clusterlog, stm_manager, _as);
+        if (
+          _raft->log_config().is_collectable()
+          && !storage::deletion_exempt(_raft->ntp())) {
+            _log_eviction_stm = ss::make_shared<cluster::log_eviction_stm>(
+              _raft.get(), clusterlog, _as, _kvstore);
+            stm_manager->add_stm(_log_eviction_stm);
         }
         const model::topic_namespace tp_ns(
           _raft->ntp().ns, _raft->ntp().tp.topic);
@@ -167,6 +175,36 @@ partition::partition(
 }
 
 partition::~partition() {}
+
+ss::future<std::error_code> partition::prefix_truncate(
+  model::offset truncation_offset, ss::lowres_clock::time_point deadline) {
+    if (!_log_eviction_stm) {
+        vlog(
+          clusterlog.info,
+          "Cannot prefix-truncate topic/partition {} retention settings not "
+          "applied",
+          _raft->ntp());
+        co_return make_error_code(errc::topic_invalid_config);
+    }
+    if (_archival_meta_stm) {
+        vlog(
+          clusterlog.info,
+          "Cannot prefix-truncate topic/partition {} cloud settings are "
+          "applied",
+          _raft->ntp());
+        co_return make_error_code(errc::topic_invalid_config);
+    }
+    if (!feature_table().local().is_active(features::feature::delete_records)) {
+        vlog(
+          clusterlog.info,
+          "Cannot prefix-truncate topic/partition {} feature is currently "
+          "disabled",
+          _raft->ntp());
+        co_return make_error_code(cluster::errc::feature_disabled);
+    }
+    co_return co_await _log_eviction_stm->truncate(
+      truncation_offset, deadline, _as);
+}
 
 ss::future<std::vector<rm_stm::tx_range>> partition::aborted_transactions_cloud(
   const cloud_storage::offset_range& offsets) {
@@ -864,6 +902,9 @@ ss::future<> partition::remove_persistent_state() {
     }
     if (_id_allocator_stm) {
         co_await _id_allocator_stm->remove_persistent_state();
+    }
+    if (_log_eviction_stm) {
+        co_await _log_eviction_stm->remove_persistent_state();
     }
 }
 

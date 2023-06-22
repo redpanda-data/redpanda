@@ -42,7 +42,8 @@ enum class record_batch_type : int8_t {
     cluster_bootstrap_cmd = 22,      // cluster bootsrap command
     version_fence = 23,              // version fence/epoch
     tx_tm_hosted_trasactions = 24,   // tx_tm_hosted_trasactions_batch_type
-    MAX = tx_tm_hosted_trasactions
+    prefix_truncate = 25,            // log prefix truncation type
+    MAX = prefix_truncate
 };
 
 std::ostream& operator<<(std::ostream& o, record_batch_type bt);

@@ -22,7 +22,6 @@
 #include "raft/consensus.h"
 #include "raft/consensus_client_protocol.h"
 #include "raft/heartbeat_manager.h"
-#include "raft/log_eviction_stm.h"
 #include "raft/rpc_client_protocol.h"
 #include "raft/service.h"
 #include "random/generators.h"
@@ -221,14 +220,6 @@ struct raft_node {
         hbeats->register_group(consensus).get();
         started = true;
         consensus->start().get0();
-        if (log->config().is_collectable()) {
-            _nop_stm = std::make_unique<raft::log_eviction_stm>(
-              consensus.get(),
-              tstlog,
-              ss::make_lw_shared<storage::stm_manager>(),
-              _as);
-            _nop_stm->start().get0();
-        }
     }
 
     ss::future<> stop_node() {
@@ -261,8 +252,9 @@ struct raft_node {
               return consensus->stop();
           })
           .then([this] {
-              if (_nop_stm != nullptr) {
-                  return _nop_stm->stop();
+              if (kill_eviction_stm_cb) {
+                  return (*kill_eviction_stm_cb)().then(
+                    [this] { kill_eviction_stm_cb = nullptr; });
               }
               return ss::now();
           })
@@ -356,11 +348,12 @@ struct raft_node {
     ss::sharded<rpc::connection_cache> cache;
     ss::sharded<rpc::rpc_server> server;
     ss::sharded<test_raft_manager> raft_manager;
+    std::unique_ptr<ss::noncopyable_function<ss::future<>()>>
+      kill_eviction_stm_cb;
     leader_clb_t leader_callback;
     raft::recovery_memory_quota recovery_mem_quota;
     std::unique_ptr<raft::heartbeat_manager> hbeats;
     consensus_ptr consensus;
-    std::unique_ptr<raft::log_eviction_stm> _nop_stm;
     ss::sharded<features::feature_table> feature_table;
     ss::abort_source _as;
 };
@@ -918,6 +911,8 @@ struct raft_test_fixture {
               .set_value((size_t)0);
         }).get();
     }
+
+    virtual ~raft_test_fixture(){};
 
     consensus_ptr get_leader_raft(raft_group& gr) {
         auto leader_id = gr.get_leader_id();

@@ -235,6 +235,7 @@ ss::future<consensus_ptr> partition_manager::manage(
       _feature_table,
       _tm_stm_cache_manager,
       _upload_hks,
+      _storage.kvs(),
       _max_concurrent_producer_ids,
       read_replica_bucket);
 

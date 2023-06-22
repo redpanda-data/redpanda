@@ -15,6 +15,7 @@
 #include "cloud_storage/fwd.h"
 #include "cluster/archival_metadata_stm.h"
 #include "cluster/id_allocator_stm.h"
+#include "cluster/log_eviction_stm.h"
 #include "cluster/partition_probe.h"
 #include "cluster/rm_stm.h"
 #include "cluster/tm_stm.h"
@@ -29,7 +30,6 @@
 #include "raft/consensus.h"
 #include "raft/consensus_utils.h"
 #include "raft/group_configuration.h"
-#include "raft/log_eviction_stm.h"
 #include "raft/types.h"
 #include "storage/translating_reader.h"
 #include "storage/types.h"
@@ -53,6 +53,7 @@ public:
       ss::sharded<features::feature_table>&,
       ss::sharded<cluster::tm_stm_cache_manager>&,
       ss::sharded<archival::upload_housekeeping_service>&,
+      storage::kvstore&,
       config::binding<uint64_t>,
       std::optional<cloud_storage_clients::bucket_name> read_replica_bucket
       = std::nullopt);
@@ -70,6 +71,11 @@ public:
     ss::future<result<kafka_result>>
     replicate(model::record_batch_reader&&, raft::replicate_options);
 
+    /// Truncate the beginning of the log up until a given offset
+    /// Can only be performed on logs that are deletable and non internal
+    ss::future<std::error_code>
+    prefix_truncate(model::offset o, ss::lowres_clock::time_point deadline);
+
     kafka_stages replicate_in_stages(
       model::batch_identity,
       model::record_batch_reader&&,
@@ -86,7 +92,20 @@ public:
         return _raft->make_reader(std::move(config), deadline);
     }
 
-    model::offset start_offset() const { return _raft->start_offset(); }
+    ss::future<result<model::offset, std::error_code>>
+    sync_effective_start(model::timeout_clock::duration timeout) {
+        if (_log_eviction_stm) {
+            co_return co_await _log_eviction_stm->sync_effective_start(timeout);
+        }
+        co_return start_offset();
+    }
+
+    model::offset start_offset() const {
+        if (_log_eviction_stm) {
+            return _log_eviction_stm->effective_start_offset();
+        }
+        return _raft->start_offset();
+    }
 
     /**
      * The returned value of last committed offset should not be used to
@@ -375,7 +394,7 @@ private:
 
     consensus_ptr _raft;
     ss::shared_ptr<util::mem_tracker> _partition_mem_tracker;
-    ss::lw_shared_ptr<raft::log_eviction_stm> _log_eviction_stm;
+    ss::shared_ptr<cluster::log_eviction_stm> _log_eviction_stm;
     ss::shared_ptr<cluster::id_allocator_stm> _id_allocator_stm;
     ss::shared_ptr<cluster::rm_stm> _rm_stm;
     ss::shared_ptr<cluster::tm_stm> _tm_stm;
@@ -404,6 +423,8 @@ private:
     std::unique_ptr<cluster::topic_configuration> _topic_cfg;
 
     ss::sharded<archival::upload_housekeeping_service>& _upload_housekeeping;
+
+    storage::kvstore& _kvstore;
 
     friend std::ostream& operator<<(std::ostream& o, const partition& x);
 };

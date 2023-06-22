@@ -13,6 +13,7 @@
 #include "cluster/partition_manager.h"
 #include "cluster/shard_table.h"
 #include "kafka/protocol/errors.h"
+#include "kafka/server/errors.h"
 #include "kafka/server/handlers/details/leader_epoch.h"
 #include "kafka/server/partition_proxy.h"
 #include "kafka/server/replicated_partition.h"
@@ -106,10 +107,18 @@ static ss::future<list_offset_partition_response> list_offsets_partition(
      * that the actual timestamp be returned. only the offset is required.
      */
     if (timestamp == list_offsets_request::earliest_timestamp) {
+        // verify that the leader is up to date so that it is guaranteed to be
+        // working with the most up to date value of start offset
+        auto maybe_start_ofs = co_await kafka_partition->sync_effective_start();
+        if (!maybe_start_ofs) {
+            co_return list_offsets_response::make_partition(
+              ktp.get_partition(), maybe_start_ofs.error());
+        }
+
         co_return list_offsets_response::make_partition(
           ktp.get_partition(),
           model::timestamp(-1),
-          kafka_partition->start_offset(),
+          maybe_start_ofs.value(),
           kafka_partition->leader_epoch());
 
     } else if (timestamp == list_offsets_request::latest_timestamp) {

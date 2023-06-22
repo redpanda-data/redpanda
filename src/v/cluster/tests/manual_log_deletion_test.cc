@@ -7,6 +7,7 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
+#include "cluster/log_eviction_stm.h"
 #include "config/configuration.h"
 #include "finjector/hbadger.h"
 #include "model/fundamental.h"
@@ -35,6 +36,49 @@ struct manual_deletion_fixture : public raft_test_fixture {
         config::shard_local_cfg().log_segment_size_min.set_value(
           std::optional<uint64_t>());
         gr.enable_all();
+        auto& members = gr.get_members();
+        for (auto& [id, member] : members) {
+            maybe_init_eviction_stm(id);
+        }
+    }
+
+    virtual ~manual_deletion_fixture() {
+        std::vector<model::node_id> to_delete;
+        for (auto& [id, _] : gr.get_members()) {
+            to_delete.push_back(id);
+        }
+        for (auto id : to_delete) {
+            auto& member = gr.get_member(id);
+            if (member.started) {
+                gr.disable_node(id);
+            }
+        }
+    }
+
+    void maybe_init_eviction_stm(model::node_id id) {
+        auto& member = gr.get_member(id);
+        if (member.log->config().is_collectable()) {
+            auto& kvstore = member.storage.local().kvs();
+            auto eviction_stm = std::make_unique<cluster::log_eviction_stm>(
+              member.consensus.get(), tstlog, member._as, kvstore);
+            eviction_stm->start().get0();
+            eviction_stms.emplace(id, std::move(eviction_stm));
+            member.kill_eviction_stm_cb
+              = std::make_unique<ss::noncopyable_function<ss::future<>()>>(
+                [this, id = id]() {
+                    tstlog.info("Stopping eviction stm: {}", id);
+                    auto found = eviction_stms.find(id);
+                    if (found != eviction_stms.end()) {
+                        if (found->second != nullptr) {
+                            return found->second->stop().then([this, id]() {
+                                tstlog.info("eviction stm stopped: {}", id);
+                                eviction_stms.erase(id);
+                            });
+                        }
+                    }
+                    return ss::now();
+                });
+        }
     }
 
     void prepare_raft_group() {
@@ -84,6 +128,7 @@ struct manual_deletion_fixture : public raft_test_fixture {
             to_delete.push_back(std::filesystem::path(
               gr.get_member(id).log->config().topic_directory()));
             gr.disable_node(id);
+            tstlog.info("node disabled: {}", id);
         }
         for (auto& path : to_delete) {
             std::filesystem::remove_all(path);
@@ -91,6 +136,7 @@ struct manual_deletion_fixture : public raft_test_fixture {
         // enable back
         for (auto id : nodes) {
             gr.enable_node(id);
+            maybe_init_eviction_stm(id);
         }
     }
 
@@ -102,9 +148,12 @@ struct manual_deletion_fixture : public raft_test_fixture {
         remove_data(nodes);
     }
 
+    using stm_map_t = std::
+      unordered_map<model::node_id, std::unique_ptr<cluster::log_eviction_stm>>;
     raft_group gr;
     model::timestamp retention_timestamp;
     ss::abort_source as;
+    stm_map_t eviction_stms;
 };
 
 FIXTURE_TEST(

@@ -32,6 +32,8 @@ class partition_proxy {
 public:
     struct impl {
         virtual const model::ntp& ntp() const = 0;
+        virtual ss::future<result<model::offset, error_code>>
+          sync_effective_start(model::timeout_clock::duration) = 0;
         virtual model::offset start_offset() const = 0;
         virtual model::offset high_watermark() const = 0;
         virtual checked<model::offset, error_code>
@@ -42,6 +44,8 @@ public:
         virtual bool is_elected_leader() const = 0;
         virtual bool is_leader() const = 0;
         virtual ss::future<std::error_code> linearizable_barrier() = 0;
+        virtual ss::future<error_code>
+          prefix_truncate(model::offset, ss::lowres_clock::time_point) = 0;
         virtual ss::future<storage::translating_reader> make_reader(
           storage::log_reader_config,
           std::optional<model::timeout_clock::time_point>)
@@ -66,6 +70,11 @@ public:
     explicit partition_proxy(std::unique_ptr<impl> impl) noexcept
       : _impl(std::move(impl)) {}
 
+    ss::future<result<model::offset, error_code>> sync_effective_start(
+      model::timeout_clock::duration timeout = std::chrono::seconds(5)) {
+        return _impl->sync_effective_start(timeout);
+    }
+
     model::offset start_offset() const { return _impl->start_offset(); }
 
     model::offset high_watermark() const { return _impl->high_watermark(); }
@@ -76,6 +85,11 @@ public:
 
     ss::future<std::error_code> linearizable_barrier() {
         return _impl->linearizable_barrier();
+    }
+
+    ss::future<error_code>
+    prefix_truncate(model::offset o, ss::lowres_clock::time_point deadline) {
+        return _impl->prefix_truncate(o, deadline);
     }
 
     bool is_elected_leader() const { return _impl->is_elected_leader(); }

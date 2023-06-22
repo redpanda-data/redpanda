@@ -51,7 +51,7 @@
 
 using namespace std::literals::chrono_literals;
 
-namespace {
+namespace storage {
 /*
  * Some logs must be exempt from the cleanup=delete policy such that their full
  * history is retained. This function explicitly protects against any accidental
@@ -68,9 +68,6 @@ bool deletion_exempt(const model::ntp& ntp) {
                              && ntp.tp.topic == model::tx_manager_topic;
     return !is_tx_manager_ntp && is_internal_namespace;
 }
-} // namespace
-
-namespace storage {
 
 disk_log_impl::disk_log_impl(
   ntp_config cfg,
@@ -1315,6 +1312,26 @@ disk_log_impl::get_term_last_offset(model::term_id term) const {
         return (*it)->offsets().dirty_offset;
     }
 
+    return std::nullopt;
+}
+
+std::optional<model::offset>
+disk_log_impl::index_lower_bound(model::offset o) const {
+    if (unlikely(_segs.empty())) {
+        return std::nullopt;
+    }
+    auto it = _segs.lower_bound(o);
+    if (it == _segs.end()) {
+        return std::nullopt;
+    }
+    auto& idx = (*it)->index();
+    if (idx.max_offset() == o) {
+        // input already lies on a boundary
+        return o;
+    }
+    if (auto entry = idx.find_nearest(o)) {
+        return model::prev_offset(entry->offset);
+    }
     return std::nullopt;
 }
 

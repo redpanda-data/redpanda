@@ -37,6 +37,46 @@ public:
 
     const model::ntp& ntp() const final { return _partition->ntp(); }
 
+    ss::future<result<model::offset, error_code>>
+    sync_effective_start(model::timeout_clock::duration timeout) final {
+        if (
+          _partition->is_read_replica_mode_enabled()
+          && _partition->cloud_data_available()) {
+            // Always assume remote read in this case.
+            co_return _partition->start_cloud_offset();
+        }
+
+        auto synced_local_start_offset
+          = co_await _partition->sync_effective_start(timeout);
+        if (!synced_local_start_offset) {
+            auto err = synced_local_start_offset.error();
+            auto error_code = error_code::unknown_server_error;
+            if (err.category() == cluster::error_category()) {
+                switch (cluster::errc(err.value())) {
+                case cluster::errc::shutting_down:
+                case cluster::errc::not_leader:
+                    error_code = error_code::not_leader_for_partition;
+                    break;
+                case cluster::errc::timeout:
+                    error_code = error_code::request_timed_out;
+                    break;
+                default:
+                    error_code = error_code::unknown_server_error;
+                }
+            }
+            co_return error_code;
+        }
+        auto local_kafka_start_offset = _translator->from_log_offset(
+          synced_local_start_offset.value());
+        if (
+          _partition->is_remote_fetch_enabled()
+          && _partition->cloud_data_available()
+          && (_partition->start_cloud_offset() < local_kafka_start_offset)) {
+            co_return _partition->start_cloud_offset();
+        }
+        co_return local_kafka_start_offset;
+    }
+
     model::offset start_offset() const final {
         if (
           _partition->is_read_replica_mode_enabled()
@@ -111,6 +151,9 @@ public:
     }
 
     bool is_leader() const final { return _partition->is_leader(); }
+
+    ss::future<error_code>
+      prefix_truncate(model::offset, ss::lowres_clock::time_point) final;
 
     ss::future<std::error_code> linearizable_barrier() final {
         auto r = co_await _partition->linearizable_barrier();
