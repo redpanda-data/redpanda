@@ -680,9 +680,9 @@ FIXTURE_TEST(test_counts_rebalancing, partition_balancer_sim_fixture) {
           100_MiB);
     }
 
-    add_node(model::node_id{3}, 100_GiB, 4);
+    add_node(model::node_id{3}, 1000_GiB, 4);
     add_node_to_rebalance(model::node_id{3});
-    add_node(model::node_id{4}, 100_GiB, 8);
+    add_node(model::node_id{4}, 1000_GiB, 8);
     add_node_to_rebalance(model::node_id{4});
 
     print_state();
