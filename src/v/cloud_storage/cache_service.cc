@@ -937,12 +937,17 @@ ss::future<> cache::initialize(std::filesystem::path cache_dir) {
 
 uint64_t cache::max_bytes() const {
     vassert(ss::this_shard_id() == 0, "Called on wrong shard");
-    return target_max_bytes();
+    return _max_bytes_override.value_or(target_max_bytes());
 }
 
 uint64_t cache::target_max_bytes() const {
     vassert(ss::this_shard_id() == 0, "Called on wrong shard");
     return _max_bytes();
+}
+
+void cache::set_max_bytes_override(std::optional<uint64_t> val) {
+    vassert(ss::this_shard_id() == 0, "Called on wrong shard");
+    _max_bytes_override = val;
 }
 
 } // namespace cloud_storage

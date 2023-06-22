@@ -144,6 +144,10 @@ public:
     // Shard 0 only. The target max bytes configuration.
     uint64_t target_max_bytes() const;
 
+    // Shard 0 only. Set or clear the effecitve max bytes. When cleared, the
+    // cache's target max bytes setting becomes the effective max bytes.
+    void set_max_bytes_override(std::optional<uint64_t> val = std::nullopt);
+
 private:
     /// Load access time tracker from file
     ss::future<> load_access_time_tracker();
@@ -198,6 +202,7 @@ private:
 
     std::filesystem::path _cache_dir;
     config::binding<uint64_t> _max_bytes;
+    std::optional<uint64_t> _max_bytes_override;
 
     ss::abort_source _as;
     ss::gate _gate;
