@@ -12,6 +12,8 @@
 #include "net/exceptions.h"
 #include "rpc/service.h"
 
+#include <seastar/core/future.hh>
+
 #include <gnutls/gnutls.h>
 
 namespace net {
@@ -87,6 +89,11 @@ std::optional<ss::sstring> is_disconnect_exception(std::exception_ptr e) {
             return fmt::format("invalid request: {}", e.what());
         }
         return "invalid request";
+    } catch (const ss::nested_exception& e) {
+        if (auto err = is_disconnect_exception(e.inner)) {
+            return err;
+        }
+        return is_disconnect_exception(e.outer);
     } catch (...) {
         // Global catch-all prevents stranded/non-handled exceptional futures.
         // In all other non-explicity handled cases, the exception will not be
