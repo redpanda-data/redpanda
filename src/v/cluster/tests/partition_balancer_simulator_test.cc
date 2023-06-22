@@ -319,10 +319,12 @@ public:
                   id,
                   expected_replicas,
                   total_replicas);
+                // Expected variance should be proportional to
+                // sqrt(expected_replicas). Assert that it is not more than 3x
+                // that.
                 auto err = std::abs(expected_replicas - replicas_on_node)
-                           / expected_replicas;
-                // assert that the skew is smaller than 50%
-                BOOST_REQUIRE_LE(err, 0.5);
+                           / sqrt(expected_replicas);
+                BOOST_REQUIRE_LE(err, 3.0);
             }
         }
     }
