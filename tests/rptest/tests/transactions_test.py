@@ -7,6 +7,8 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
+from collections import defaultdict
+import random
 from rptest.services.cluster import cluster
 from rptest.util import wait_until_result
 from rptest.clients.types import TopicSpec
@@ -543,6 +545,110 @@ class TransactionsTest(RedpandaTest):
                 total += len(self.consume(consumer))
 
         consume_records(consumer, 200)
+
+    @cluster(num_nodes=3)
+    def check_sequence_table_cleaning_after_eviction_test(self):
+        segment_size = 1024 * 1024
+        topic_spec = TopicSpec(partition_count=1, segment_bytes=segment_size)
+        topic = topic_spec.name
+
+        # make segments small
+        self.client().create_topic(topic_spec)
+
+        producers_count = 20
+
+        message_size = 128
+        segments_per_producer = 5
+        message_count = int(segments_per_producer * segment_size /
+                            message_size)
+        msg_body = random.randbytes(message_size)
+
+        producers = []
+        self.logger.info(f"producing {message_count} messages per producer")
+        for i in range(producers_count):
+            p = ck.Producer({
+                'bootstrap.servers': self.redpanda.brokers(),
+                'enable.idempotence': True,
+            })
+            producers.append(p)
+            for m in range(message_count):
+                p.produce(topic,
+                          str(f"p-{i}-{m}"),
+                          msg_body,
+                          partition=0,
+                          on_delivery=self.on_delivery)
+            p.flush()
+
+        def get_tx_metrics():
+            return self.redpanda.metrics_sample(
+                "tx_mem_tracker_consumption_bytes",
+                self.redpanda.started_nodes())
+
+        metrics = get_tx_metrics()
+        consumed_per_node = defaultdict(int)
+        for m in metrics.samples:
+            id = self.redpanda.node_id(m.node)
+            consumed_per_node[id] += int(m.value)
+        self.logger.info(
+            f"Bytes consumed by transactional subsystem: {consumed_per_node}")
+
+        self.client().alter_topic_config(
+            topic=topic, key=TopicSpec.PROPERTY_RETENTION_BYTES, value=128)
+        self.client().alter_topic_config(
+            topic=topic,
+            key=TopicSpec.PROPERTY_RETENTION_LOCAL_TARGET_BYTES,
+            value=128)
+
+        def segments_removed():
+            removed_per_node = defaultdict(int)
+            metric_sample = self.redpanda.metrics_sample(
+                "log_segments_removed", self.redpanda.started_nodes())
+            metric = metric_sample.label_filter(
+                dict(namespace="kafka", topic=topic))
+            for m in metric.samples:
+                removed_per_node[m.node] += m.value
+            return all([v > 0 for v in removed_per_node.values()])
+
+        wait_until(segments_removed, timeout_sec=60, backoff_sec=1)
+        # produce until next segment roll
+        #
+        # TODO: change this when we will implement cleanup on current,
+        # not the next eviction
+        last_producer = ck.Producer({
+            'bootstrap.servers':
+            self.redpanda.brokers(),
+            'enable.idempotence':
+            False,
+        })
+
+        message_count_to_roll_segment = int(
+            message_count / segments_per_producer) + 100
+        # produce enough data to roll the single segment
+        for m in range(message_count_to_roll_segment):
+            last_producer.produce(topic,
+                                  str(f"last-mile-{m}"),
+                                  msg_body,
+                                  partition=0,
+                                  on_delivery=self.on_delivery)
+            last_producer.flush()
+        # restart redpanda to make sure rm_stm recovers state from snapshot,
+        # which should be now cleaned and do not contain expired producer ids
+        self.redpanda.restart_nodes(self.redpanda.nodes)
+
+        metrics = get_tx_metrics()
+        consumed_per_node_after = defaultdict(int)
+        for m in metrics.samples:
+            id = self.redpanda.node_id(m.node)
+            consumed_per_node_after[id] += int(m.value)
+
+        self.logger.info(
+            f"Bytes consumed by transactional subsystem before eviction: {consumed_per_node}, after eviction: {consumed_per_node_after}"
+        )
+
+        assert all([
+            consumed_bytes > consumed_per_node_after[n]
+            for n, consumed_bytes in consumed_per_node.items()
+        ])
 
     @cluster(num_nodes=3)
     def check_pids_overflow_test(self):
