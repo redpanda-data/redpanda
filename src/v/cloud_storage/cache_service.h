@@ -138,6 +138,10 @@ public:
       uint64_t free_space,
       storage::disk_space_alert alert);
 
+    // Space management interface. The following sub-section of interfaces are
+    // used by the free space management control loop. This loop may adjust the
+    // maximum cache size and trigger trimming when free disk spsace is low.
+public:
     // Shard 0 only. The effective max bytes configuration.
     uint64_t max_bytes() const;
 
@@ -147,6 +151,16 @@ public:
     // Shard 0 only. Set or clear the effecitve max bytes. When cleared, the
     // cache's target max bytes setting becomes the effective max bytes.
     void set_max_bytes_override(std::optional<uint64_t> val = std::nullopt);
+
+    // Shard 0 only. Return the current amount of data in the cache.
+    uint64_t current_size() const;
+
+    // Shard 0 only. The effective maximum cache size that would cause cache put
+    // operations to trigger trimming action to free space.
+    uint64_t max_bytes_trim_threshold() const;
+
+    // Shard 0 only. Trim the cache.
+    ss::future<> trim();
 
 private:
     /// Load access time tracker from file
@@ -161,7 +175,7 @@ private:
 
     /// Triggers directory walker, creates a list of files to delete and deletes
     /// them until cache size <= _cache_size_low_watermark * max_bytes
-    ss::future<> trim();
+    ss::future<> do_trim();
 
     /// Invoke trim, waiting if not enough time passed since the last trim
     ss::future<> trim_throttled();

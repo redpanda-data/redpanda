@@ -228,10 +228,15 @@ ss::future<> cache::trim_throttled() {
         co_await ss::sleep_abortable(delay, _as);
     }
 
-    co_await trim();
+    co_await do_trim();
 }
 
 ss::future<> cache::trim() {
+    auto units = co_await ss::get_units(_cleanup_sm, 1);
+    co_await do_trim();
+}
+
+ss::future<> cache::do_trim() {
     vassert(ss::this_shard_id() == 0, "Method can only be invoked on shard 0");
     gate_guard guard{_gate};
     auto [walked_cache_size, filtered_out_files, candidates_for_deletion, _]
@@ -789,6 +794,7 @@ void cache::do_reserve_space_release(size_t bytes) {
 }
 
 bool cache::may_reserve_space(size_t bytes) {
+    // See related cache::max_bytes_trim_threshold
     return _current_cache_size + _reserved_cache_size + bytes <= max_bytes();
 }
 
@@ -948,6 +954,17 @@ uint64_t cache::target_max_bytes() const {
 void cache::set_max_bytes_override(std::optional<uint64_t> val) {
     vassert(ss::this_shard_id() == 0, "Called on wrong shard");
     _max_bytes_override = val;
+}
+
+uint64_t cache::current_size() const {
+    vassert(ss::this_shard_id() == 0, "Called on wrong shard");
+    return _current_cache_size;
+}
+
+uint64_t cache::max_bytes_trim_threshold() const {
+    vassert(ss::this_shard_id() == 0, "Called on wrong shard");
+    // See related cache::may_reserve_space
+    return _current_cache_size + _reserved_cache_size;
 }
 
 } // namespace cloud_storage
