@@ -649,6 +649,7 @@ private:
             for (const auto& entry : seq_table) {
                 unlink_lru_pid(entry.second);
             }
+            seq_table.clear();
             // Checks the 1:1 invariant between seq_table entries and
             // lru_idempotent_pids If every element from seq_table is unlinked,
             // the resulting intrusive list should be empty.
