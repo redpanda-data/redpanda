@@ -8,15 +8,21 @@
  * https://github.com/redpanda-data/redpanda/blob/master/licenses/rcl.md
  */
 
+#include "cloud_storage/recovery_request.h"
 #include "cloud_storage/tests/s3_imposter.h"
 #include "cluster/topic_recovery_service.h"
 #include "redpanda/tests/fixture.h"
 #include "test_utils/fixture.h"
+#include "utils/memory_data_source.h"
 
+#include <seastar/core/iostream.hh>
+#include <seastar/core/simple-stream.hh>
+#include <seastar/core/sstring.hh>
 #include <seastar/http/request.hh>
 #include <seastar/testing/thread_test_case.hh>
 #include <seastar/util/defer.hh>
 
+#include <memory>
 #include <utility>
 
 inline ss::logger test_log("test"); // NOLINT
@@ -154,15 +160,35 @@ public:
             }
         }).get();
     }
+
+    cloud_storage::init_recovery_result
+    start_recovery(const ss::sstring& payload = "") {
+        return app.topic_recovery_service.local()
+          .start_recovery(make_request(payload))
+          .get();
+    }
+
+private:
+    ss::http::request make_request(const ss::sstring& payload) {
+        ss::http::request r;
+        memory_data_source::vector_type v;
+        v.emplace_back(payload.data(), payload.size());
+        ss::data_source ds(std::make_unique<memory_data_source>(std::move(v)));
+        _request_streams.emplace_back(std::move(ds));
+        r.content_stream = &_request_streams.back();
+        r.content_length = payload.size();
+        r._headers["Content-Type"] = "application/json";
+        return r;
+    }
+    // These are here to be cleaned up properly at the end of the test.
+    //
+    // We use a std::list to keep pointer stability, so streams don't move and
+    // pointers stay valid.
+    std::list<ss::input_stream<char>> _request_streams;
 };
 
 FIXTURE_TEST(start_with_bad_request, fixture) {
-    ss::http::request r;
-    r.content = "++";
-    r.content_length = 2;
-    r._headers["Content-Type"] = "application/json";
-
-    auto result = app.topic_recovery_service.local().start_recovery(r);
+    auto result = start_recovery("++");
     auto expected = cloud_storage::init_recovery_result{
       .status_code = ss::http::reply::status_type::bad_request,
       .message = "bad recovery request payload: Invalid value."};
@@ -170,7 +196,7 @@ FIXTURE_TEST(start_with_bad_request, fixture) {
 }
 
 FIXTURE_TEST(start_with_good_request, fixture) {
-    auto result = app.topic_recovery_service.local().start_recovery({});
+    auto result = start_recovery();
     auto expected = cloud_storage::init_recovery_result{
       .status_code = ss::http::reply::status_type::accepted,
       .message = "recovery started"};
@@ -182,7 +208,7 @@ FIXTURE_TEST(recovery_with_no_topics_exits_early, fixture) {
     set_expectations_and_listen({});
 
     auto& service = app.topic_recovery_service;
-    auto result = service.local().start_recovery({});
+    auto result = start_recovery();
 
     auto expected = cloud_storage::init_recovery_result{
       .status_code = ss::http::reply::status_type::accepted,
@@ -207,7 +233,7 @@ FIXTURE_TEST(recovery_with_no_topics_exits_early, fixture) {
 
 void do_test(fixture& f) {
     auto& service = f.app.topic_recovery_service;
-    auto result = service.local().start_recovery({});
+    auto result = f.start_recovery();
 
     auto expected = cloud_storage::init_recovery_result{
       .status_code = ss::http::reply::status_type::accepted,
@@ -258,7 +284,7 @@ FIXTURE_TEST(recovery_with_existing_topic, fixture) {
       generate_no_manifests_expectations({meta_level}));
 
     auto& service = app.topic_recovery_service;
-    auto result = service.local().start_recovery({});
+    auto result = start_recovery();
 
     auto expected = cloud_storage::init_recovery_result{
       .status_code = ss::http::reply::status_type::accepted,
@@ -279,7 +305,7 @@ FIXTURE_TEST(recovery_where_topic_is_created, fixture) {
       {meta_level, manifest, recovery_state}));
 
     auto& service = app.topic_recovery_service;
-    auto result = service.local().start_recovery({});
+    auto result = start_recovery();
 
     auto expected = cloud_storage::init_recovery_result{
       .status_code = ss::http::reply::status_type::accepted,
@@ -322,8 +348,7 @@ FIXTURE_TEST(recovery_result_clear_before_start, fixture) {
     set_expectations_and_listen(generate_no_manifests_expectations(
       {meta_level, manifest, recovery_state}));
 
-    auto& service = app.topic_recovery_service;
-    service.local().start_recovery({});
+    start_recovery();
     wait_for_n_requests(22);
 
     // 16 to check each manifest prefix, 1 to download the topic manifest, 1 to
@@ -337,11 +362,11 @@ FIXTURE_TEST(recovery_download_tracking, fixture) {
     set_expectations_and_listen(generate_no_manifests_expectations(
       {meta_level, manifest, recovery_state}));
 
-    auto& service = app.topic_recovery_service;
-    service.local().start_recovery({});
+    start_recovery();
     wait_for_n_requests(3);
     wait_for_topic(tp_ns);
 
+    auto& service = app.topic_recovery_service;
     tests::cooperative_spin_wait_with_timeout(10s, [&service] {
         return service.local().current_state()
                == cloud_storage::topic_recovery_service::state::recovering_data;
@@ -361,15 +386,11 @@ FIXTURE_TEST(recovery_with_topic_name_pattern_without_match, fixture) {
       meta_level,
     }));
 
-    ss::http::request r;
-    r._headers = {{"Content-Type", "application/json"}};
-    r.content = R"JSON({"topic_names_pattern": "abc*"})JSON";
-    r.content_length = 1;
-    auto& service = app.topic_recovery_service;
-    service.local().start_recovery(r);
+    start_recovery(R"JSON({"topic_names_pattern": "abc*"})JSON");
 
     wait_for_n_requests(16, equals::yes);
 
+    auto& service = app.topic_recovery_service;
     tests::cooperative_spin_wait_with_timeout(10s, [&service] {
         return !service.local().is_active();
     }).get();
@@ -381,12 +402,7 @@ FIXTURE_TEST(recovery_with_topic_name_pattern_with_match, fixture) {
     set_expectations_and_listen(generate_no_manifests_expectations(
       {meta_level, manifest, recovery_state}));
 
-    ss::http::request r;
-    r._headers = {{"Content-Type", "application/json"}};
-    r.content_length = 1;
-    r.content = R"JSON({"topic_names_pattern": ".*es*"})JSON";
-    auto& service = app.topic_recovery_service;
-    service.local().start_recovery(r);
+    start_recovery(R"JSON({"topic_names_pattern": ".*es*"})JSON");
 
     wait_for_n_requests(19);
     wait_for_topic(tp_ns);
@@ -396,13 +412,8 @@ FIXTURE_TEST(recovery_with_retention_ms_override, fixture) {
     set_expectations_and_listen(generate_no_manifests_expectations(
       {meta_level, manifest, recovery_state}));
 
-    ss::http::request r;
-    r._headers = {{"Content-Type", "application/json"}};
-    r.content_length = 1;
-    r.content
-      = R"JSON({"topic_names_pattern": ".*es*", "retention_ms": 10000})JSON";
-    auto& service = app.topic_recovery_service;
-    service.local().start_recovery(r);
+    start_recovery(
+      R"JSON({"topic_names_pattern": ".*es*", "retention_ms": 10000})JSON");
 
     wait_for_n_requests(19);
     wait_for_topic(tp_ns);
@@ -418,13 +429,8 @@ FIXTURE_TEST(recovery_with_retention_ms_override, fixture) {
 FIXTURE_TEST(recovery_with_retention_bytes_override, fixture) {
     set_expectations_and_listen(generate_no_manifests_expectations(
       {meta_level, manifest, recovery_state}));
-    ss::http::request r;
-    r._headers = {{"Content-Type", "application/json"}};
-    r.content_length = 1;
-    r.content
-      = R"JSON({"topic_names_pattern": ".*es*", "retention_bytes": 10000})JSON";
-    auto& service = app.topic_recovery_service;
-    service.local().start_recovery(r);
+    start_recovery(
+      R"JSON({"topic_names_pattern": ".*es*", "retention_bytes": 10000})JSON");
 
     wait_for_n_requests(5);
     wait_for_topic(tp_ns);
@@ -441,17 +447,13 @@ FIXTURE_TEST(recovery_status, fixture) {
     set_expectations_and_listen(generate_no_manifests_expectations(
       {meta_level, manifest, recovery_state}));
 
-    ss::http::request r;
-    r._headers = {{"Content-Type", "application/json"}};
-    r.content_length = 1;
-    r.content
-      = R"JSON({"topic_names_pattern": ".*es*", "retention_bytes": 10000})JSON";
-    auto& service = app.topic_recovery_service;
-    service.local().start_recovery(r);
+    start_recovery(
+      R"JSON({"topic_names_pattern": ".*es*", "retention_bytes": 10000})JSON");
 
     // capture a status where the recovery is running. if the recovery finishes
     // too fast the test may miss it.
     cloud_storage::topic_recovery_service::recovery_status status;
+    auto& service = app.topic_recovery_service;
     tests::cooperative_spin_wait_with_timeout(60s, [&service, &status] {
         status = service.local().current_recovery_status();
         return service.local().current_recovery_status().request.has_value();
@@ -460,7 +462,6 @@ FIXTURE_TEST(recovery_status, fixture) {
     BOOST_REQUIRE_NE(
       status.state, cloud_storage::topic_recovery_service::state::inactive);
 
-    cloud_storage::recovery_request rr{r};
     BOOST_REQUIRE(status.request.has_value());
     BOOST_REQUIRE_EQUAL(status.request.value().topic_names_pattern(), ".*es*");
     BOOST_REQUIRE_EQUAL(status.request.value().retention_bytes(), 10000);

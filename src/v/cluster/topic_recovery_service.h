@@ -97,7 +97,7 @@ struct topic_recovery_service
     /// recovery process is initiated.
     /// \return A result object with an HTTP status code and a message string,
     /// suitable for being returned as response to an HTTP call.
-    init_recovery_result start_recovery(const ss::http::request&);
+    ss::future<init_recovery_result> start_recovery(const ss::http::request&);
 
     /// \brief Stops the download check task. Intended to be stopped before the
     /// cloud storage API is stopped, so that any HTTP calls are not made using

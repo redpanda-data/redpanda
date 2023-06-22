@@ -19,13 +19,16 @@ namespace cloud_storage {
 
 class bad_request : public std::invalid_argument {
 public:
-    explicit bad_request(ss::sstring msg)
+    explicit bad_request(const ss::sstring& msg)
       : std::invalid_argument(msg) {}
 };
 
 struct recovery_request {
 public:
-    explicit recovery_request(const ss::http::request&);
+    static ss::future<recovery_request>
+    parse_from_http(const ss::http::request&);
+
+    static recovery_request parse_from_string(const ss::sstring&);
 
     std::optional<ss::sstring> topic_names_pattern() const;
 
@@ -34,9 +37,10 @@ public:
     std::optional<std::chrono::milliseconds> retention_ms() const;
 
 private:
-    void parse_request_body(const ss::http::request&);
+    recovery_request() = default;
 
-private:
+    void parse_request_body(const ss::sstring&);
+
     std::optional<ss::sstring> _topic_names_pattern;
     std::optional<size_t> _retention_bytes;
     std::optional<std::chrono::milliseconds> _retention_ms;
