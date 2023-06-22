@@ -6,10 +6,13 @@
 # As of the Change Date specified in that file, in accordance with
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
+import time
 
 from ducktape.mark import matrix
 from ducktape.tests.test import Test
+from ducktape.utils.util import wait_until
 
+from rptest.services.delete_records_service import DeleteRecordsService, DeleteRecordsStatus
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.services.cluster import cluster
 from rptest.clients.types import TopicSpec
@@ -280,3 +283,69 @@ class FailureInjectorSelfTest(Test):
     def test_finjector(self):
         fi = make_failure_injector(self.redpanda)
         fi.inject_failure(FailureSpec(FailureSpec.FAILURE_ISOLATE, None))
+
+
+class DeleteRecordsSelfTest(PreallocNodesTest):
+    """Tests used to verify that the delete records service works"""
+    def __init__(self, test_context, *args, **kwargs):
+        super().__init__(test_context=test_context,
+                         node_prealloc_count=1,
+                         *args,
+                         **kwargs)
+
+    @cluster(num_nodes=4)
+    def test_delete_records_producer(self):
+        """
+        Validates that the delete records service will produce data to the
+        specified topic and that status can be obtained from the service
+        """
+        topic = 'test'
+        self.client().create_topic(
+            TopicSpec(name=topic,
+                      partition_count=16,
+                      retention_bytes=16 * 1024 * 1024,
+                      segment_bytes=1024 * 1024))
+
+        self.logger.debug("Waiting 5 seconds for leadership to happen")
+        time.sleep(5)
+
+        delete_records_tester = DeleteRecordsService(
+            self.test_context,
+            self.redpanda,
+            custom_node=self.preallocated_nodes,
+            topic=topic,
+            trace_logs=True)
+
+        delete_records_tester.start()
+
+        def produced_enough_records(status: DeleteRecordsStatus,
+                                    expected_hwm: int, topic: str):
+            # If no status is present, then we haven't yet
+            if status.updated_at is None:
+                return False
+
+            if topic not in status.tp_info:
+                return False
+
+            partitions = status.tp_info[topic]
+
+            all_above_expected = True
+
+            for info in partitions.values():
+                if info['hwm'] < expected_hwm:
+                    all_above_expected = False
+
+            return all_above_expected
+
+        self.logger.info("Waiting for 400 records in each partition")
+        wait_until(
+            lambda: produced_enough_records(delete_records_tester.status, 400,
+                                            topic),
+            timeout_sec=60,
+            backoff_sec=1,
+            err_msg=
+            f"Timed out waiting for topic {topic} to be filled with 1000 messages in each partition"
+        )
+        delete_records_tester.stop()
+
+        self.logger.debug("Stopped it")
