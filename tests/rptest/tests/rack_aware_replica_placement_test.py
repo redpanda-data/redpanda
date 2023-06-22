@@ -9,16 +9,16 @@
 
 import random
 import os
+from collections import defaultdict
 from ducktape.utils.util import wait_until
 from ducktape.mark import matrix
 from rptest.clients.types import TopicSpec
 from rptest.clients.rpk import RpkTool
 from rptest.services.admin import Admin
-
 from rptest.clients.default import DefaultClient
 from rptest.services.cluster import cluster
 from rptest.tests.redpanda_test import RedpandaTest
-from collections import defaultdict
+from rptest.utils.mode_checks import cleanup_on_early_exit
 
 
 class RackAwarePlacementTest(RedpandaTest):
@@ -113,6 +113,14 @@ class RackAwarePlacementTest(RedpandaTest):
         @param num_partitions defines number of partitions that needs to be created.
         @param replication_factor defines recplication factor of all partitions.
         """
+
+        # https://github.com/redpanda-data/redpanda/issues/11276
+        if self.debug_mode and num_partitions == 400:
+            self.logger.info(
+                "Disabling test in debug mode due to slowness/timeouts with large number of partitions."
+            )
+            cleanup_on_early_exit(self)
+            return
 
         rack_layout = [str(i) for i in rack_layout_str]
         assert len(rack_layout) == 6
