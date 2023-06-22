@@ -1934,15 +1934,7 @@ void adl<cluster::topic_properties>::to(
       p.shadow_indexing,
       p.read_replica,
       p.read_replica_bucket,
-      p.remote_topic_properties,
-      p.record_key_schema_id_validation,
-      p.record_key_schema_id_validation_compat,
-      p.record_key_subject_name_strategy,
-      p.record_key_subject_name_strategy_compat,
-      p.record_value_schema_id_validation,
-      p.record_value_schema_id_validation_compat,
-      p.record_value_subject_name_strategy,
-      p.record_value_subject_name_strategy_compat);
+      p.remote_topic_properties);
 }
 
 cluster::topic_properties
