@@ -495,13 +495,11 @@ ss::future<> remote_segment::do_hydrate_segment() {
       _bucket,
       _path,
       [this, &reservation](uint64_t size_bytes, ss::input_stream<char> s) {
-          if (is_legacy_mode_engaged()) {
-              return put_segment_in_cache_and_create_index(
-                size_bytes, reservation, std::move(s));
-          } else {
-              return put_segment_in_cache(
-                size_bytes, reservation, std::move(s));
-          }
+          // Always create the index because we are in legacy mode if we ended
+          // up hydrating the segment. Legacy mode indicates a missing index, so
+          // we create it here on the fly using the downloaded segment.
+          return put_segment_in_cache_and_create_index(
+            size_bytes, reservation, std::move(s));
       },
       local_rtc);
 
