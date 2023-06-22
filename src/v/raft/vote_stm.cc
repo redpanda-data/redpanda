@@ -235,8 +235,9 @@ ss::future<> vote_stm::update_vote_state(ssx::semaphore_units u) {
         _ptr->_vstate = consensus::vote_state::follower;
         co_return;
     }
-
-    if (_ptr->_node_priority_override == zero_voter_priority) {
+    const auto only_voter = _config->unique_voter_count() == 1
+                            && _config->is_voter(_ptr->self());
+    if (!only_voter && _ptr->_node_priority_override == zero_voter_priority) {
         vlog(
           _ctxlog.debug,
           "Ignoring successful vote. Node priority too low: {}",
