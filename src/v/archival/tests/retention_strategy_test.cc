@@ -27,6 +27,7 @@ struct size_based_retention_test_spec {
     std::vector<segment_spec> remote_segments;
     tristate<size_t> retention_bytes;
     tristate<std::chrono::milliseconds> retention_duration;
+    tristate<kafka::offset> desired_start_offset;
     std::optional<model::offset> next_start_offset;
 };
 
@@ -40,6 +41,7 @@ const std::vector<size_based_retention_test_spec> retention_tests{
     = {{0, 9, 1024}, {10, 19, 1024}, {20, 29, 1024}, {30, 39, 1024}},
     .retention_bytes = tristate<size_t>{},
     .retention_duration = tristate<std::chrono::milliseconds>{},
+    .desired_start_offset = tristate<kafka::offset>{},
     .next_start_offset = std::nullopt},
 
   // retention limit is already met
@@ -48,6 +50,7 @@ const std::vector<size_based_retention_test_spec> retention_tests{
     = {{0, 9, 1024}, {10, 19, 1024}, {20, 29, 1024}, {30, 39, 1024}},
     .retention_bytes = tristate<size_t>{1024 * 5},
     .retention_duration = tristate<std::chrono::milliseconds>{},
+    .desired_start_offset = tristate<kafka::offset>{},
     .next_start_offset = std::nullopt},
 
   // retention limit lines up with segment end
@@ -64,6 +67,7 @@ const std::vector<size_based_retention_test_spec> retention_tests{
     = {{0, 9, 1024}, {10, 19, 1024}, {20, 29, 1024}, {30, 39, 1024}},
     .retention_bytes = tristate<size_t>{1024 * 2 - 42},
     .retention_duration = tristate<std::chrono::milliseconds>{},
+    .desired_start_offset = tristate<kafka::offset>{},
     .next_start_offset = model::offset{30}},
 
   // only collect the first segment based on size
@@ -72,7 +76,89 @@ const std::vector<size_based_retention_test_spec> retention_tests{
     = {{0, 9, 1024}, {10, 19, 1024}, {20, 29, 1024}, {30, 39, 1024}},
     .retention_bytes = tristate<size_t>{1024 * 3 + 42},
     .retention_duration = tristate<std::chrono::milliseconds>{},
+    .desired_start_offset = tristate<kafka::offset>{},
     .next_start_offset = model::offset{10}},
+
+  // offset in the middle of the first segment
+  size_based_retention_test_spec{
+    .remote_segments
+    = {{0, 9, 1024}, {10, 19, 1024}, {20, 29, 1024}, {30, 39, 1024}},
+    .retention_bytes = tristate<size_t>{},
+    .retention_duration = tristate<std::chrono::milliseconds>{},
+    .desired_start_offset = tristate<kafka::offset>(kafka::offset(5)),
+    .next_start_offset = std::nullopt},
+
+  // offset at the end of segment
+  size_based_retention_test_spec{
+    .remote_segments
+    = {{0, 9, 1024}, {10, 19, 1024}, {20, 29, 1024}, {30, 39, 1024}},
+    .retention_bytes = tristate<size_t>{},
+    .retention_duration = tristate<std::chrono::milliseconds>{},
+    .desired_start_offset = tristate<kafka::offset>(kafka::offset(9)),
+    .next_start_offset = std::nullopt},
+
+  // offset at the beginning of next of segment
+  size_based_retention_test_spec{
+    .remote_segments
+    = {{0, 9, 1024}, {10, 19, 1024}, {20, 29, 1024}, {30, 39, 1024}},
+    .retention_bytes = tristate<size_t>{},
+    .retention_duration = tristate<std::chrono::milliseconds>{},
+    .desired_start_offset = tristate<kafka::offset>(kafka::offset(10)),
+    .next_start_offset = model::offset(10)},
+
+  // offset in the middle of next of segment
+  size_based_retention_test_spec{
+    .remote_segments
+    = {{0, 9, 1024}, {10, 19, 1024}, {20, 29, 1024}, {30, 39, 1024}},
+    .retention_bytes = tristate<size_t>{},
+    .retention_duration = tristate<std::chrono::milliseconds>{},
+    .desired_start_offset = tristate<kafka::offset>(kafka::offset(15)),
+    .next_start_offset = model::offset(10)},
+
+  // offset past the end of the log
+  size_based_retention_test_spec{
+    .remote_segments
+    = {{0, 9, 1024}, {10, 19, 1024}, {20, 29, 1024}, {30, 39, 1024}},
+    .retention_bytes = tristate<size_t>{},
+    .retention_duration = tristate<std::chrono::milliseconds>{},
+    .desired_start_offset = tristate<kafka::offset>(kafka::offset(50)),
+    .next_start_offset = model::offset(40)},
+
+  // with kafka offsets
+  size_based_retention_test_spec{
+    .remote_segments
+    = {{0, 9, 1024, std::nullopt, 0, 1}, {10, 19, 1024, std::nullopt, 2, 2}, {20, 29, 1024, std::nullopt, 2, 3}, {30, 39, 1024, std::nullopt, 4, 5}},
+    .retention_bytes = tristate<size_t>{},
+    .retention_duration = tristate<std::chrono::milliseconds>{},
+    .desired_start_offset = tristate<kafka::offset>(kafka::offset(1)),
+    .next_start_offset = std::nullopt},
+
+  // with kafka offsets, we should keep offsets even if the start kafka offset
+  // "exists" in multiple segments
+  size_based_retention_test_spec{
+    .remote_segments
+    = {{0, 9, 1024, std::nullopt, 0, 1}, {10, 19, 1024, std::nullopt, 2, 2}, {20, 29, 1024, std::nullopt, 2, 3}, {30, 39, 1024, std::nullopt, 4, 5}},
+    .retention_bytes = tristate<size_t>{},
+    .retention_duration = tristate<std::chrono::milliseconds>{},
+    .desired_start_offset = tristate<kafka::offset>(kafka::offset(2)),
+    .next_start_offset = model::offset(10)},
+
+  // with kafka offsets, truncate mid-segment
+  size_based_retention_test_spec{
+    .remote_segments
+    = {{0, 9, 1024, std::nullopt, 0, 1}, {10, 19, 1024, std::nullopt, 2, 2}, {20, 29, 1024, std::nullopt, 2, 3}, {30, 39, 1024, std::nullopt, 4, 5}},
+    .retention_bytes = tristate<size_t>{},
+    .retention_duration = tristate<std::chrono::milliseconds>{},
+    .desired_start_offset = tristate<kafka::offset>(kafka::offset(3)),
+    .next_start_offset = model::offset(20)},
+
+  // with kafka offsets, truncate to the end
+  size_based_retention_test_spec{
+    .remote_segments = {{0, 9, 1024, std::nullopt, 0, 1}, {10, 19, 1024, std::nullopt, 2, 2}, {20, 29, 1024, std::nullopt, 2, 3}, {30, 39, 1024, std::nullopt, 4, 5}},
+    .retention_bytes = tristate<size_t>{},
+    .retention_duration = tristate<std::chrono::milliseconds>{},
+    .desired_start_offset = tristate<kafka::offset>(kafka::offset(6)),
+    .next_start_offset = model::offset(40)},
 
   // time based retention
   size_based_retention_test_spec{
@@ -80,6 +166,7 @@ const std::vector<size_based_retention_test_spec> retention_tests{
     = {{0, 9, 1024, delta_10_min}, {10, 19, 1024, delta_10_min}, {20, 29, 1024}, {30, 39, 1024}},
     .retention_bytes = tristate<size_t>{},
     .retention_duration = tristate<std::chrono::milliseconds>{5min},
+    .desired_start_offset = tristate<kafka::offset>{},
     .next_start_offset = model::offset{20}},
 
   // mixed retention
@@ -88,7 +175,27 @@ const std::vector<size_based_retention_test_spec> retention_tests{
     = {{0, 9, 1024, delta_10_min}, {10, 19, 1024, delta_10_min}, {20, 29, 1024}, {30, 39, 1024}},
     .retention_bytes = tristate<size_t>{1024 * 2 - 42},
     .retention_duration = tristate<std::chrono::milliseconds>{5min},
+    .desired_start_offset = tristate<kafka::offset>{},
     .next_start_offset = model::offset{30}},
+
+  // mixed retention with offset-based retention, no-op
+  size_based_retention_test_spec{
+    .remote_segments
+    = {{0, 9, 1024, delta_10_min}, {10, 19, 1024, delta_10_min}, {20, 29, 1024}, {30, 39, 1024}},
+    .retention_bytes = tristate<size_t>{1024 * 2 - 42},
+    .retention_duration = tristate<std::chrono::milliseconds>{5min},
+    .desired_start_offset = tristate<kafka::offset>{kafka::offset(32)},
+    .next_start_offset = model::offset{30}},
+
+  // mixed retention with offset-based retention, truncate past size- or
+  // time-based result
+  size_based_retention_test_spec{
+    .remote_segments
+    = {{0, 9, 1024, delta_10_min}, {10, 19, 1024, delta_10_min}, {20, 29, 1024}, {30, 39, 1024}},
+    .retention_bytes = tristate<size_t>{1024 * 2 - 42},
+    .retention_duration = tristate<std::chrono::milliseconds>{5min},
+    .desired_start_offset = tristate<kafka::offset>{kafka::offset(42)},
+    .next_start_offset = model::offset{40}},
 };
 
 SEASTAR_THREAD_TEST_CASE(test_retention_strategies) {
@@ -98,7 +205,8 @@ SEASTAR_THREAD_TEST_CASE(test_retention_strategies) {
     for (const auto& test : retention_tests) {
         // clang-format off
         const auto& [remote_segments, retention_bytes,
-                     retention_duration, next_start_offset] = test;
+                     retention_duration, desired_start_offset,
+                     next_start_offset] = test;
         // clang-format on
 
         vlog(
@@ -117,6 +225,10 @@ SEASTAR_THREAD_TEST_CASE(test_retention_strategies) {
 
         cloud_storage::partition_manifest m;
         populate_manifest(m, remote_segments);
+        if (desired_start_offset.has_optional_value()) {
+            BOOST_REQUIRE(
+              m.advance_start_kafka_offset(desired_start_offset.value()));
+        }
 
         auto retention_calculator = retention_calculator::factory(m, config);
         if (next_start_offset.has_value()) {
@@ -125,6 +237,14 @@ SEASTAR_THREAD_TEST_CASE(test_retention_strategies) {
             BOOST_REQUIRE(next_so.has_value());
             BOOST_REQUIRE(next_so == next_start_offset);
         } else {
+            if (
+              retention_calculator
+              && retention_calculator->next_start_offset().has_value()) {
+                vlog(
+                  test_log.error,
+                  "next offset computed: {}",
+                  retention_calculator->next_start_offset());
+            }
             BOOST_REQUIRE(
               !retention_calculator
               || !retention_calculator->next_start_offset());
