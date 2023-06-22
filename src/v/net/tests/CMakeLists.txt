@@ -18,3 +18,13 @@ rp_test(
         ARGS "-- -c 8"
         LABELS net
 )
+
+rp_test(
+        UNIT_TEST
+        BINARY_NAME net_connection
+        SOURCES
+        connection.cc
+        DEFINITIONS BOOST_TEST_DYN_LINK
+        LIBRARIES v::seastar_testing_main Boost::unit_test_framework v::net
+        LABELS net
+)
