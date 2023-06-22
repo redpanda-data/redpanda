@@ -822,3 +822,7 @@ class CreateTopicUpgradeTest(RedpandaTest):
             assert config["retention.local.target.bytes"] == (
                 "10000", "DYNAMIC_TOPIC_CONFIG")
             assert config["retention.local.target.ms"][1] == "DEFAULT_CONFIG"
+
+        # The ntp manifest may not have been uploaded yet, but that's fine
+        # since this test focuses on the topic config change.
+        self.redpanda.si_settings.set_expected_damage({"ntpr_no_manifest"})
