@@ -45,6 +45,19 @@ struct cloud_storage_fixture : s3_imposter_fixture {
         cache.invoke_on_all([](cloud_storage::cache& c) { return c.start(); })
           .get();
 
+        // Supply some phony disk stats so that the cache doesn't panic and
+        // think it has zero bytes of space
+        cache
+          .invoke_on(
+            ss::shard_id{0},
+            [](cloud_storage::cache& c) {
+                c.notify_disk_status(
+                  100ULL * 1024 * 1024 * 1024,
+                  50ULL * 1024 * 1024 * 1024,
+                  storage::disk_space_alert::ok);
+            })
+          .get();
+
         auto conf = get_configuration();
         pool
           .start(

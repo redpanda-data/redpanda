@@ -89,8 +89,10 @@ public:
         auto path = spm.get_manifest_path();
         if (hydrate) {
             auto stream = spm.serialize().get();
+            auto reservation = cache.local().reserve_space(123, 1).get();
             cache.local()
-              .put(path, stream.stream, ss::default_priority_class())
+              .put(
+                path, stream.stream, reservation, ss::default_priority_class())
               .get();
             stream.stream.close().get();
         }

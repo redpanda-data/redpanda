@@ -130,42 +130,6 @@ cache::delete_file_and_empty_parents(const std::string_view& key) {
 
 uint64_t cache::get_total_cleaned() { return _total_cleaned; }
 
-void cache::consume_cache_space(uint64_t sz, uint64_t objects) {
-    vassert(ss::this_shard_id() == 0, "This method can only run on shard 0");
-    vlog(
-      cst_log.trace,
-      "consume_cache_space: {} += {} ({} += {})",
-      _current_cache_size,
-      sz,
-      _current_cache_objects,
-      objects);
-    _current_cache_size += sz;
-    _current_cache_objects += objects;
-    probe.set_size(_current_cache_size);
-    probe.set_num_files(_current_cache_objects);
-    if (
-      _current_cache_size > _max_bytes()
-      || _current_cache_objects > _max_objects()) {
-        // This should not happen, because callers to put() should have used
-        // reserve_space() to ensure they stay within the cache size limit. This
-        // is not a fatal error in itself, so we do not assert, but emitting as
-        // an ERROR log ensures detection if we hit this path in our integration
-        // tests.
-        vlog(
-          cst_log.warn,
-          "Exceeded cache size limit!  (size={}/{} reserved={}/{} "
-          "pending={}/{} max={}/{})",
-          _current_cache_size,
-          _current_cache_objects,
-          _reserved_cache_size,
-          _reserved_cache_objects,
-          _reservations_pending,
-          _reservations_pending_objects,
-          _max_bytes(),
-          _max_objects());
-    }
-}
-
 ss::future<> cache::clean_up_at_start() {
     gate_guard guard{_gate};
     auto [walked_size, filtered_out_files, candidates_for_deletion, empty_dirs]
@@ -353,7 +317,8 @@ ss::future<> cache::trim() {
           "{}",
           size_to_delete,
           objects_to_delete,
-          (size_to_delete * 100) / _current_cache_size,
+          _current_cache_size > 0 ? (size_to_delete * 100) / _current_cache_size
+                                  : 0,
           target_size);
 
         // Sort by atime for the subsequent LRU trimming loop
@@ -679,6 +644,7 @@ ss::future<std::optional<cache_item>> cache::get(std::filesystem::path key) {
 ss::future<> cache::put(
   std::filesystem::path key,
   ss::input_stream<char>& data,
+  space_reservation_guard& reservation,
   ss::io_priority_class io_priority,
   size_t write_buffer_size,
   unsigned int write_behind) {
@@ -802,20 +768,8 @@ ss::future<> cache::put(
 
     co_await ss::rename_file(src, dest);
 
-    // Update housekeeping state on shard 0
-    if (ss::this_shard_id() == 0) {
-        _access_time_tracker.add_timestamp(
-          dest, std::chrono::system_clock::now());
-        consume_cache_space(put_size, 1);
-    } else {
-        ssx::spawn_with_gate(_gate, [this, dest, put_size] {
-            return container().invoke_on(0, [dest, put_size](cache& c) {
-                c.consume_cache_space(put_size, 1);
-                return c._access_time_tracker.add_timestamp(
-                  dest, std::chrono::system_clock::now());
-            });
-        });
-    }
+    // We will now update
+    reservation.wrote_data(put_size, 1);
 }
 
 ss::future<cache_element_status>
@@ -885,29 +839,66 @@ cache::reserve_space(uint64_t bytes, size_t objects) {
     co_return space_reservation_guard(*this, bytes, objects);
 }
 
-void cache::reserve_space_release(uint64_t bytes, size_t objects) {
+void cache::reserve_space_release(
+  uint64_t bytes,
+  size_t objects,
+  uint64_t wrote_bytes,
+  uint64_t wrote_objects) {
     vlog(
       cst_log.trace,
-      "reserve_space_release: releasing {}/{} reserved bytes/objects",
+      "reserve_space_release: releasing {}/{} reserved bytes/objects (wrote "
+      "{}/{})",
       bytes,
-      objects);
+      objects,
+      wrote_bytes,
+      wrote_objects);
 
     if (ss::this_shard_id() == ss::shard_id{0}) {
-        do_reserve_space_release(bytes, objects);
+        do_reserve_space_release(bytes, objects, wrote_bytes, wrote_objects);
     } else {
-        ssx::spawn_with_gate(_gate, [this, bytes, objects]() {
-            return container().invoke_on(0, [bytes, objects](cache& c) {
-                return c.do_reserve_space_release(bytes, objects);
-            });
-        });
+        ssx::spawn_with_gate(
+          _gate, [this, bytes, objects, wrote_bytes, wrote_objects]() {
+              return container().invoke_on(
+                0, [bytes, objects, wrote_bytes, wrote_objects](cache& c) {
+                    return c.do_reserve_space_release(
+                      bytes, objects, wrote_bytes, wrote_objects);
+                });
+          });
     }
 }
 
-void cache::do_reserve_space_release(uint64_t bytes, size_t objects) {
+void cache::do_reserve_space_release(
+  uint64_t bytes, size_t objects, uint64_t wrote_bytes, size_t wrote_objects) {
     vassert(ss::this_shard_id() == ss::shard_id{0}, "Only call on shard 0");
     vassert(_reserved_cache_size >= bytes, "Double free of reserved bytes?");
     _reserved_cache_size -= bytes;
     _reserved_cache_objects -= objects;
+
+    _current_cache_size += wrote_bytes;
+    _current_cache_objects += wrote_objects;
+    probe.set_size(_current_cache_size);
+    probe.set_num_files(_current_cache_objects);
+    if (
+      _current_cache_size > _max_bytes()
+      || _current_cache_objects > _max_objects()) {
+        // This should not happen, because callers to put() should have used
+        // reserve_space() to ensure they stay within the cache size limit. This
+        // is not a fatal error in itself, so we do not assert, but emitting as
+        // an ERROR log ensures detection if we hit this path in our integration
+        // tests.
+        vlog(
+          cst_log.warn,
+          "Exceeded cache size limit!  (size={}/{} reserved={}/{} "
+          "pending={}/{} max={}/{})",
+          _current_cache_size,
+          _current_cache_objects,
+          _reserved_cache_size,
+          _reserved_cache_objects,
+          _reservations_pending,
+          _reservations_pending_objects,
+          _max_bytes(),
+          _max_objects());
+    }
 }
 
 bool cache::may_reserve_space(uint64_t bytes, size_t objects) {
@@ -1096,9 +1087,24 @@ void cache::notify_disk_status(
     }
 }
 
+void space_reservation_guard::wrote_data(
+  uint64_t written_bytes, size_t written_objects) {
+    // Release the reservation, and update usage stats for how much we actually
+    // wrote.
+    _cache.reserve_space_release(
+      _bytes, _objects, written_bytes, written_objects);
+
+    // This reservation is now used up.
+    _bytes = 0;
+    _objects = 0;
+}
+
 space_reservation_guard::~space_reservation_guard() {
-    if (_bytes) {
-        _cache.reserve_space_release(_bytes, _objects);
+    if (_bytes || _objects) {
+        // This is the case of a failed write, where wrote_data was never
+        // called: release the reservation and do not acquire any space
+        // usage for the written data (there should be none).
+        _cache.reserve_space_release(_bytes, _objects, 0, 0);
     }
 }
 

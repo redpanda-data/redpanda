@@ -72,10 +72,20 @@ public:
 
     ~space_reservation_guard();
 
+    /// After completing the write operation that this space reservation
+    /// protected, indicate how many bytes were really written: this is used to
+    /// atomically update cache usage stats to free the reservation and update
+    /// the bytes used stats together.
+    ///
+    /// May only be called once per reservation.
+    void wrote_data(uint64_t, size_t);
+
 private:
     cache& _cache;
-    uint64_t _bytes;
-    size_t _objects;
+
+    // Size acquired at time of reservation
+    uint64_t _bytes{0};
+    size_t _objects{0};
 };
 
 class cache : public ss::peering_sharded_service<cache> {
@@ -106,9 +116,12 @@ public:
     /// \param data is an input stream containing data
     /// \param write_buffer_size is a write buffer size for disk write
     /// \param write_behind number of pages that can be written asynchronously
+    /// \param reservation caller must have reserved cache space before
+    /// proceeding with put
     ss::future<> put(
       std::filesystem::path key,
       ss::input_stream<char>& data,
+      space_reservation_guard& reservation,
       ss::io_priority_class io_priority
       = priority_manager::local().shadow_indexing_priority(),
       size_t write_buffer_size = default_write_buffer_size,
@@ -137,7 +150,7 @@ public:
 
     // Release capacity acquired via `reserve_space`.  This spawns
     // a background fiber in order to be callable from the guard destructor.
-    void reserve_space_release(uint64_t, size_t);
+    void reserve_space_release(uint64_t, size_t, uint64_t, size_t);
 
     static ss::future<> initialize(std::filesystem::path);
 
@@ -186,10 +199,6 @@ private:
     /// \return true if any parents were deleted
     ss::future<bool> delete_file_and_empty_parents(const std::string_view& key);
 
-    /// This method is called on shard 0 by other shards to report disk
-    /// space changes.
-    void consume_cache_space(uint64_t, size_t);
-
     /// Block until enough space is available to commit to a reservation
     /// (only runs on shard 0)
     ss::future<> do_reserve_space(uint64_t, size_t);
@@ -207,7 +216,7 @@ private:
     /// Release units from _reserved_cache_size: the inner part of
     /// `reserve_space_release`
     /// (only runs on shard 0)
-    void do_reserve_space_release(uint64_t, size_t);
+    void do_reserve_space_release(uint64_t, size_t, uint64_t, size_t);
 
     /// Update _block_puts and kick _block_puts_cond if necessary.  This is
     /// called on all shards by shard 0 when handling a disk space status

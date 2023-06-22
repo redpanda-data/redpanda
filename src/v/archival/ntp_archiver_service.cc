@@ -2184,8 +2184,12 @@ ss::future<> ntp_archiver::apply_spillover() {
         }
         auto [str, len] = co_await tail.serialize();
         // Put manifest into cache to avoid roundtrip to the cloud storage
+        auto reservation = co_await _cache.reserve_space(len, 1);
         co_await _cache.put(
-          tail.get_manifest_path()(), str, _conf->upload_io_priority);
+          tail.get_manifest_path()(),
+          str,
+          reservation,
+          _conf->upload_io_priority);
 
         // Spillover manifests were uploaded to S3
         // Replicate metadata
