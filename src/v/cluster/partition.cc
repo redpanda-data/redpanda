@@ -177,8 +177,8 @@ partition::partition(
 partition::~partition() {}
 
 ss::future<std::error_code> partition::prefix_truncate(
-  model::offset truncation_offset,
-  kafka::offset kafka_truncation_offset,
+  model::offset rp_start_offset,
+  kafka::offset kafka_start_offset,
   ss::lowres_clock::time_point deadline) {
     if (!_log_eviction_stm) {
         vlog(
@@ -208,21 +208,26 @@ ss::future<std::error_code> partition::prefix_truncate(
       clusterlog.info,
       "Truncating {} to redpanda offset {} kafka offset {}",
       _raft->ntp(),
-      truncation_offset,
-      kafka_truncation_offset);
-    if (truncation_offset != model::offset{}) {
-        auto err = co_await _log_eviction_stm->truncate(
-          truncation_offset, deadline, _as);
-        if (err) {
-            co_return err;
-        }
+      rp_start_offset,
+      kafka_start_offset);
+    auto err = co_await _log_eviction_stm->truncate(
+      rp_start_offset, kafka_start_offset, deadline, _as);
+    if (err) {
+        co_return err;
     }
-    // TODO(awong): have archival listen on log_eviction_stm.
     if (_archival_meta_stm) {
-        co_return co_await _archival_meta_stm->truncate(
-          kafka_truncation_offset, deadline, _as);
+        // The archival metadata stm also listens for prefix_truncate batches.
+        auto applied = co_await _archival_meta_stm->wait_no_throw(
+          _raft->committed_offset(), deadline, _as);
+        if (applied) {
+            co_return errc::success;
+        }
+        if (_as.abort_requested()) {
+            co_return errc::shutting_down;
+        }
+        co_return errc::timeout;
     }
-    co_return cluster::errc::success;
+    co_return errc::success;
 }
 
 ss::future<std::vector<rm_stm::tx_range>> partition::aborted_transactions_cloud(

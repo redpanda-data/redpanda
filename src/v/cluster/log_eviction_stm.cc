@@ -10,8 +10,10 @@
 #include "cluster/log_eviction_stm.h"
 
 #include "bytes/iostream.h"
+#include "cluster/prefix_truncate_record.h"
 #include "raft/consensus.h"
 #include "raft/types.h"
+#include "serde/serde.h"
 #include "utils/gate_guard.h"
 
 #include <seastar/core/future-util.hh>
@@ -191,7 +193,8 @@ model::offset log_eviction_stm::effective_start_offset() const {
 }
 
 ss::future<std::error_code> log_eviction_stm::truncate(
-  model::offset rp_truncate_offset,
+  model::offset rp_start_offset,
+  kafka::offset kafka_start_offset,
   ss::lowres_clock::time_point deadline,
   std::optional<std::reference_wrapper<ss::abort_source>> as) {
     /// Create the special prefix_truncate batch, it is a model::record_batch
@@ -200,19 +203,22 @@ ss::future<std::error_code> log_eviction_stm::truncate(
       model::record_batch_type::prefix_truncate, model::offset(0));
     /// Everything below the requested offset should be truncated, requested
     /// offset itself will be the new low_watermark (readable)
-    auto key = serde::to_iobuf(rp_truncate_offset - model::offset{1});
-    builder.add_raw_kv(std::move(key), iobuf());
+    prefix_truncate_record val;
+    val.rp_start_offset = rp_start_offset;
+    val.kafka_start_offset = kafka_start_offset;
+    builder.add_raw_kv(
+      serde::to_iobuf(prefix_truncate_key), serde::to_iobuf(std::move(val)));
     auto batch = std::move(builder).build();
 
     /// After command replication all that can be guaranteed is that the command
     /// was replicated
     vlog(
       _logger.info,
-      "Replicating prefix_truncate command, truncate_offset: {} current "
-      "start offset: {}, current last snapshot offset: {}, current last "
-      "visible offset: {}",
-      rp_truncate_offset,
-      effective_start_offset(),
+      "Replicating prefix_truncate command, redpanda start offset: {}, kafka "
+      "start offset: {}"
+      "current last snapshot offset: {}, current last visible offset: {}",
+      val.rp_start_offset,
+      val.kafka_start_offset,
       _raft->last_snapshot_index(),
       _raft->last_visible_index());
 
@@ -275,34 +281,58 @@ ss::future<std::error_code> log_eviction_stm::replicate_command(
 }
 
 ss::future<> log_eviction_stm::apply(model::record_batch batch) {
+    if (batch.header().type != model::record_batch_type::prefix_truncate) {
+        co_return;
+    }
     /// The work done within apply() must be deterministic that way the start
     /// offset will always be the same value across all replicas
     ///
     /// Here all apply() does is move forward the in memory start offset, a
     /// background fiber is responsible for evicting as much as possible
-    if (unlikely(
-          batch.header().type == model::record_batch_type::prefix_truncate)) {
-        /// record_batches of type ::prefix_truncate are always of size 1
-        const auto truncate_offset = serde::from_iobuf<model::offset>(
-          batch.copy_records().begin()->release_key());
-        if (truncate_offset > _delete_records_eviction_offset) {
-            vlog(
-              _logger.info,
-              "Moving effective start offset to "
-              "truncate_point: {} last_applied: {} ntp: {}",
-              truncate_offset,
-              last_applied_offset(),
-              _raft->ntp());
+    /// record_batches of type ::prefix_truncate are always of size 1
+    const auto batch_type = serde::from_iobuf<uint8_t>(
+      batch.copy_records().begin()->release_key());
+    if (batch_type != prefix_truncate_key) {
+        vlog(
+          _logger.error,
+          "Unknown prefix_truncate batch type for {} at offset {}: {}",
+          _raft->ntp(),
+          batch.header().base_offset(),
+          batch_type);
+        co_return;
+    }
+    const auto record = serde::from_iobuf<prefix_truncate_record>(
+      batch.copy_records().begin()->release_value());
+    if (record.rp_start_offset == model::offset{}) {
+        // This may happen if the requested offset was not in the local log at
+        // time of replicating. We still need to have replicated it though so
+        // other STMs can honor it (e.g. archival).
+        vlog(
+          _logger.info,
+          "Replicated prefix_truncate batch for {} with no redpanda offset. "
+          "Requested "
+          "start Kafka offset {}",
+          _raft->ntp(),
+          record.kafka_start_offset);
+        co_return;
+    }
+    auto truncate_offset = record.rp_start_offset - model::offset(1);
+    if (truncate_offset > _delete_records_eviction_offset) {
+        vlog(
+          _logger.debug,
+          "Moving local to truncate_point: {} last_applied: {} ntp: {}",
+          truncate_offset,
+          last_applied_offset(),
+          _raft->ntp());
 
-            /// Set the new in memory start offset
-            _delete_records_eviction_offset = truncate_offset;
-            /// Wake up the background reaping thread
-            _reap_condition.signal();
-            /// Writing a local snapshot is just an optimization, delete-records
-            /// is infrequently called and theres no better time to persist the
-            /// fact that a new start offset has been written to disk
-            co_await make_snapshot();
-        }
+        /// Set the new in memory start offset
+        _delete_records_eviction_offset = truncate_offset;
+        /// Wake up the background reaping thread
+        _reap_condition.signal();
+        /// Writing a local snapshot is just an optimization, delete-records
+        /// is infrequently called and theres no better time to persist the
+        /// fact that a new start offset has been written to disk
+        co_await make_snapshot();
     }
 }
 
