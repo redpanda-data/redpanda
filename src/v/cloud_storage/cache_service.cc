@@ -231,22 +231,33 @@ ss::future<> cache::clean_up_at_start() {
       _current_cache_objects);
 }
 
+std::optional<std::chrono::milliseconds> cache::get_trim_delay() const {
+    auto now = ss::lowres_clock::now();
+    std::chrono::milliseconds interval
+      = config::shard_local_cfg().cloud_storage_cache_check_interval_ms();
+    if (now - _last_clean_up >= interval) {
+        return std::nullopt;
+    } else {
+        auto delta = std::chrono::duration_cast<std::chrono::milliseconds>(
+          now - _last_clean_up);
+        return interval - delta;
+    }
+}
+
 ss::future<> cache::trim_throttled() {
     // If we trimmed very recently then do not do it immediately:
     // this reduces load and improves chance of currently promoted
     // segments finishing their read work before we demote their
     // data from cache.
-    auto now = ss::lowres_clock::now();
-    auto interval
-      = config::shard_local_cfg().cloud_storage_cache_check_interval_ms();
+    auto trim_delay = get_trim_delay();
 
-    if (now - _last_clean_up < interval) {
-        auto delay = interval - (now - _last_clean_up);
+    if (trim_delay.has_value()) {
         vlog(
           cst_log.info,
           "Cache trimming throttled, waiting {}ms",
-          std::chrono::duration_cast<std::chrono::milliseconds>(delay).count());
-        co_await ss::sleep_abortable(delay, _as);
+          std::chrono::duration_cast<std::chrono::milliseconds>(*trim_delay)
+            .count());
+        co_await ss::sleep_abortable(*trim_delay, _as);
     }
 
     co_await trim();
@@ -338,8 +349,10 @@ ss::future<> cache::trim() {
 
         vlog(
           cst_log.debug,
-          "trim: removing {} bytes ({}% of cache) to reach target {}",
+          "trim: removing {} bytes, {} objects ({}% of cache) to reach target "
+          "{}",
           size_to_delete,
+          objects_to_delete,
           (size_to_delete * 100) / _current_cache_size,
           target_size);
 
@@ -509,6 +522,10 @@ ss::future<> cache::trim() {
     }
 
     _last_clean_up = ss::lowres_clock::now();
+
+    // It is up to callers to set this to true if they determine that after
+    // trim, we did not free as much space as they needed.
+    _last_trim_failed = false;
 }
 
 ss::future<> cache::load_access_time_tracker() {
@@ -903,6 +920,21 @@ bool cache::may_reserve_space(uint64_t bytes, size_t objects) {
     return bytes_available && objects_available;
 }
 
+bool cache::may_exceed_limits(uint64_t bytes, size_t objects) {
+    // We may overshoot the configured *bytes* limit if there is plenty of
+    // disk space available.  However, we may never overshoot the configured
+    // object count limit, because this exists to control size of metadata and
+    // keep trim runtime bounded.
+    //
+    // Conditions:
+    // - puts must not be blocked (i.e. disk is not critically low)
+    // - allowing the put must not consume more than 10% of free space
+    // - allowing the put must not violate the object count limit
+    return !_block_puts && _free_space > bytes * 10
+           && _current_cache_objects + _reserved_cache_objects + objects
+                < _max_objects();
+}
+
 ss::future<> cache::do_reserve_space(uint64_t bytes, size_t objects) {
     vassert(ss::this_shard_id() == ss::shard_id{0}, "Only call on shard 0");
 
@@ -934,12 +966,37 @@ ss::future<> cache::do_reserve_space(uint64_t bytes, size_t objects) {
     try {
         auto units = co_await ss::get_units(_cleanup_sm, 1);
         while (!may_reserve_space(bytes, objects)) {
-            // After taking lock, there still isn't space: means someone else
-            // didn't take it and free space for us already, so we will do
-            // the trim.
-            co_await trim_throttled();
+            bool may_exceed = may_exceed_limits(bytes, objects)
+                              && _last_trim_failed;
+            bool may_trim_now = !get_trim_delay().has_value();
+
+            // We will attempt trimming (including waiting for trim throttle)
+            // if:
+            //  - may_trim_now: we haven't trimmed recently
+            //  - !may_exceed: we absolutely must trim before reserving the
+            //  space
+            //
+            // The purpose of this logic is to enforce blocking on trim when
+            // space is low, but enable reservations to proceed without throttle
+            // delay if trimming is failing to clear enough space but the disk
+            // free space is plentiful.
+            bool did_trim = false;
+            if (may_trim_now || !may_exceed) {
+                // After taking lock, there still isn't space: means someone
+                // else didn't take it and free space for us already, so we will
+                // do the trim.
+                co_await trim_throttled();
+                did_trim = true;
+
+                // Recalculate: things may have changed significantly during
+                // trim and/or trim throttle delay
+                may_exceed = may_exceed_limits(bytes, objects);
+            }
 
             if (!may_reserve_space(bytes, objects)) {
+                if (did_trim) {
+                    _last_trim_failed = true;
+                }
                 // Even after trimming, the reservation cannot be accommodated.
                 // This is unexpected: either something is wrong with the trim,
                 // or the requested bytes cannot fit into the max cache size.
@@ -959,7 +1016,7 @@ ss::future<> cache::do_reserve_space(uint64_t bytes, size_t objects) {
                 // tried our best to trim, then we may exceed the cache size
                 // limit. Approximate "a lot" of free disk space as 10x the size
                 // of what we're trying to promote.
-                if (_free_space > bytes * 10) {
+                if (may_exceed) {
                     vlog(
                       cst_log.info,
                       "Intentionally exceeding cache size limit {},"

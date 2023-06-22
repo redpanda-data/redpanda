@@ -167,6 +167,11 @@ private:
     /// them until cache size <= _cache_size_low_watermark * max_bytes
     ss::future<> trim();
 
+    /// If trimming may proceed immediately, return nullopt.  Else return
+    /// how long the caller should wait before trimming to respect the
+    /// rate limit.
+    std::optional<std::chrono::milliseconds> get_trim_delay() const;
+
     /// Invoke trim, waiting if not enough time passed since the last trim
     ss::future<> trim_throttled();
 
@@ -193,6 +198,11 @@ private:
     /// below max size to accommodate a new reservation of `bytes`
     /// (only runs on shard 0)
     bool may_reserve_space(uint64_t, size_t);
+
+    /// Return true if it is safe to overshoot the configured limits, even if
+    /// may_reserve_space returned false.  This enables selectively exceeding
+    /// our configured limits to enable progress if trimming is not possible.
+    bool may_exceed_limits(uint64_t, size_t);
 
     /// Release units from _reserved_cache_size: the inner part of
     /// `reserve_space_release`
@@ -249,6 +259,10 @@ private:
     /// Remember when we last finished clean_up_cache, in order to
     /// avoid wastefully running it again soon after.
     ss::lowres_clock::time_point _last_clean_up;
+
+    /// 'failed' in the sense that we were unable to release sufficient space to
+    /// enable a may_reserve_space() call to return true.
+    bool _last_trim_failed{false};
 
     // If true, no space reservation requests will be granted: this is used to
     // block cache promotions when critically low on disk space.
