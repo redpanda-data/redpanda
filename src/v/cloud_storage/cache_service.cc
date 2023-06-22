@@ -71,9 +71,9 @@ cache::cache(
             vlog(
               cst_log.info,
               "Cache max_bytes adjusted to {} (current size {})",
-              _max_bytes(),
+              this->max_bytes(),
               _current_cache_size);
-            if (_current_cache_size > _max_bytes()) {
+            if (_current_cache_size > this->max_bytes()) {
                 ssx::spawn_with_gate(_gate, [this]() {
                     return ss::with_semaphore(
                       _cleanup_sm, 1, [this]() { return trim_throttled(); });
@@ -133,7 +133,7 @@ void cache::consume_cache_space(size_t sz) {
       cst_log.trace, "consume_cache_space: {} += {}", _current_cache_size, sz);
     _current_cache_size += sz;
     probe.set_size(_current_cache_size);
-    if (_current_cache_size > _max_bytes()) {
+    if (_current_cache_size > max_bytes()) {
         // This should not happen, because callers to put() should have used
         // reserve_space() to ensure they stay within the cache size limit. This
         // is not a fatal error in itself, so we do not assert, but emitting as
@@ -145,7 +145,7 @@ void cache::consume_cache_space(size_t sz) {
           _current_cache_size,
           _reserved_cache_size,
           _reservations_pending,
-          _max_bytes());
+          max_bytes());
     }
 }
 
@@ -249,7 +249,7 @@ ss::future<> cache::trim() {
     // We aim to trim to within the upper size limit, and additionally
     // free enough space for anyone waiting in `reserve_space` to proceed
     auto target_size = uint64_t(
-      (_max_bytes() - std::min(_reservations_pending, _max_bytes()))
+      (max_bytes() - std::min(_reservations_pending, max_bytes()))
       * _cache_size_low_watermark);
 
     // Calculate total space used by tmp files: we will use this later
@@ -268,7 +268,7 @@ ss::future<> cache::trim() {
       target_size,
       _current_cache_size,
       walked_cache_size,
-      _max_bytes(),
+      max_bytes(),
       _reservations_pending);
 
     uint64_t deleted_size = 0;
@@ -789,7 +789,7 @@ void cache::do_reserve_space_release(size_t bytes) {
 }
 
 bool cache::may_reserve_space(size_t bytes) {
-    return _current_cache_size + _reserved_cache_size + bytes <= _max_bytes();
+    return _current_cache_size + _reserved_cache_size + bytes <= max_bytes();
 }
 
 ss::future<> cache::do_reserve_space(size_t bytes) {
@@ -848,7 +848,7 @@ ss::future<> cache::do_reserve_space(size_t bytes) {
                       cst_log.info,
                       "Intentionally exceeding cache size limit {},"
                       "there are {} bytes of free space on the cache disk",
-                      _max_bytes(),
+                      max_bytes(),
                       _free_space);
 
                     // Deduct the amount by which we're about to violate the
@@ -933,6 +933,16 @@ ss::future<> cache::initialize(std::filesystem::path cache_dir) {
         vlog(cst_log.info, "Creating cache directory {}", cache_dir);
         co_await ss::recursive_touch_directory(cache_dir.string());
     }
+}
+
+uint64_t cache::max_bytes() const {
+    vassert(ss::this_shard_id() == 0, "Called on wrong shard");
+    return target_max_bytes();
+}
+
+uint64_t cache::target_max_bytes() const {
+    vassert(ss::this_shard_id() == 0, "Called on wrong shard");
+    return _max_bytes();
 }
 
 } // namespace cloud_storage

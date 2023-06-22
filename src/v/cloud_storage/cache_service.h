@@ -138,6 +138,12 @@ public:
       uint64_t free_space,
       storage::disk_space_alert alert);
 
+    // Shard 0 only. The effective max bytes configuration.
+    uint64_t max_bytes() const;
+
+    // Shard 0 only. The target max bytes configuration.
+    uint64_t target_max_bytes() const;
+
 private:
     /// Load access time tracker from file
     ss::future<> load_access_time_tracker();
