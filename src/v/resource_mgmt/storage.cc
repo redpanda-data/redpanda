@@ -48,12 +48,19 @@ ss::future<> disk_space_manager::start() {
       _enabled() ? "enabled" : "disabled");
     if (ss::this_shard_id() == run_loop_core) {
         ssx::spawn_with_gate(_gate, [this] { return run_loop(); });
+        _cache_disk_nid = _storage_node->local().register_disk_notification(
+          node::disk_type::cache,
+          [this](node::disk_space_info info) { _cache_disk_info = info; });
     }
     co_return;
 }
 
 ss::future<> disk_space_manager::stop() {
     vlog(rlog.info, "Stopping disk space manager service");
+    if (ss::this_shard_id() == run_loop_core) {
+        _storage_node->local().unregister_disk_notification(
+          node::disk_type::cache, _cache_disk_nid);
+    }
     _control_sem.broken();
     co_await _gate.close();
 }
