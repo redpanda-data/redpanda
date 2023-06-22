@@ -58,7 +58,8 @@ public:
     /// when read by brokers, will invoke a routine that will perform the
     /// deletion
     ss::future<std::error_code> truncate(
-      model::offset kafka_offset,
+      model::offset rp_start_offset,
+      kafka::offset kafka_start_offset,
       ss::lowres_clock::time_point deadline,
       std::optional<std::reference_wrapper<ss::abort_source>> as
       = std::nullopt);

@@ -16,6 +16,7 @@
 #include "cluster/errc.h"
 #include "cluster/logger.h"
 #include "cluster/persisted_stm.h"
+#include "cluster/prefix_truncate_record.h"
 #include "config/configuration.h"
 #include "features/feature_table.h"
 #include "model/fundamental.h"
@@ -694,6 +695,27 @@ ss::future<std::error_code> archival_metadata_stm::do_add_segments(
 }
 
 ss::future<> archival_metadata_stm::apply(model::record_batch b) {
+    if (b.header().type == model::record_batch_type::prefix_truncate) {
+        // Special case handling for prefix_truncate batches: these originate
+        // in log_eviction_stm, but affect the entire partition, local and
+        // cloud storage alike. Despite the record originating elsewhere, note
+        // that the STM is still deterministic, as records are applied in
+        // order and are not allowed to fail.
+        b.for_each_record(
+          [this, base_offset = b.base_offset()](model::record&& r) {
+              _last_dirty_at = base_offset + model::offset{r.offset_delta()};
+              auto key = serde::from_iobuf<uint8_t>(r.release_key());
+              auto val = serde::from_iobuf<prefix_truncate_record>(
+                r.release_value());
+              if (key == prefix_truncate_key) {
+                  // The archival layer can't translate arbitrary redpanda
+                  // offsets, so just pass through the Kafka offset as is.
+                  apply_update_start_kafka_offset(val.kafka_start_offset);
+              }
+          });
+        _insync_offset = b.last_offset();
+        co_return;
+    }
     if (b.header().type != model::record_batch_type::archival_metadata) {
         _insync_offset = b.last_offset();
         co_return;
