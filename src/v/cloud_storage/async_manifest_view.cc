@@ -739,16 +739,24 @@ async_manifest_view::time_based_retention(
     archive_start_offset_advance result;
 
     try {
-        auto now = model::timestamp_clock::now();
-        auto delta
+        const auto now = model::timestamp_clock::now();
+        const auto delta
           = std::chrono::duration_cast<model::timestamp_clock::duration>(
             time_limit);
-        auto boundary = model::to_timestamp(now - delta);
+        const auto earliest_ts_in_spill
+          = _stm_manifest.get_spillover_map().begin()->base_timestamp;
+        const auto boundary = model::to_timestamp(now - delta);
         vlog(
           _ctxlog.debug,
-          "Computing time-based retention, boundary: {}",
-          boundary);
-        auto res = co_await get_cursor(boundary);
+          "Computing time-based retention, boundary: {} retention_limit: {}",
+          boundary,
+          time_limit);
+        // The cursor search for timestamps is inclusive, so if the computed
+        // timestamp is ahead of the earliest timestamp in the archive, use the
+        // later.
+        const auto spill_search_query = std::min(
+          boundary, earliest_ts_in_spill);
+        auto res = co_await get_cursor(spill_search_query);
         if (res.has_failure() && res.error() != error_outcome::out_of_range) {
             vlog(
               _ctxlog.error,
@@ -763,30 +771,53 @@ async_manifest_view::time_based_retention(
               _ctxlog.debug,
               "There is no segment old enough to be removed by retention");
         } else {
+            std::optional<archive_start_offset_advance> truncation_point;
+            bool eof = false;
+
             auto cursor = std::move(res.value());
-            auto [offset, delta] = cursor->with_manifest(
-              [boundary](const partition_manifest& manifest) {
-                  model::offset prev_offset;
-                  model::offset_delta prev_delta;
-                  for (const auto& meta : manifest) {
-                      if (meta.base_timestamp > boundary) {
-                          return std::make_tuple(prev_offset, prev_delta);
-                      }
-                      prev_offset = meta.base_offset;
-                      prev_delta = meta.delta_offset;
-                  }
-                  return std::make_tuple(
-                    model::offset{}, model::offset_delta{});
-              });
-            result.offset = offset;
-            result.delta = delta;
-            if (result.offset == model::offset{}) {
+            while (!truncation_point && !eof) {
+                cursor->with_manifest([this, boundary, &truncation_point](
+                                        const partition_manifest& manifest) {
+                    for (const auto& meta : manifest) {
+                        if (
+                          meta.base_offset > _stm_manifest.get_start_offset()) {
+                            break;
+                        }
+
+                        if (meta.base_timestamp > boundary) {
+                            truncation_point = archive_start_offset_advance{
+                              meta.base_offset, meta.delta_offset};
+                            break;
+                        }
+                    }
+                });
+
+                if (truncation_point) {
+                    break;
+                }
+
+                auto res = co_await cursor->next();
+                if (res.has_value() && res.value() == false) {
+                    eof = true;
+                } else if (res.has_failure()) {
+                    vlog(
+                      _ctxlog.error,
+                      "Failed to scan manifest while computing retention "
+                      "{}",
+                      res.error());
+                    co_return res.as_failure();
+                }
+            }
+
+            if (!truncation_point.has_value()) {
                 vlog(
                   _ctxlog.debug,
                   "Failed to find the retention boundary, the manifest {} "
                   "doesn't "
                   "have any matching segment",
                   cursor->manifest()->get().get_manifest_path());
+            } else {
+                result = truncation_point.value();
             }
         }
     } catch (...) {

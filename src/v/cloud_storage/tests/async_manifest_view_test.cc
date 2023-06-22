@@ -559,7 +559,7 @@ FIXTURE_TEST(test_async_manifest_view_retention, async_manifest_view_fixture) {
     model::offset_delta prefix_delta;
     for (const auto& meta : expected) {
         prefix_size += meta.size_bytes;
-        prefix_timestamp = meta.base_timestamp;
+        prefix_timestamp = model::timestamp{meta.base_timestamp.value() - 1};
         prefix_base_offset = meta.base_offset;
         prefix_delta = meta.delta_offset;
         quota--;

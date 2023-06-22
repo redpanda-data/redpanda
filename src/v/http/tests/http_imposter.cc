@@ -126,10 +126,13 @@ void http_imposter_fixture::set_routes(ss::httpd::routes& r) {
               when().request(req._url).then_reply_with(req.content);
               repl.set_status(ss::http::reply::status_type::ok);
               return "";
-          }
-          if (req._method == "DELETE") {
+          } else if (req._method == "DELETE") {
               repl.set_status(ss::http::reply::status_type::no_content);
               return "";
+          } else if (
+            req._method == "POST" && req.query_parameters.contains("delete")) {
+              // Delete objects
+              return R"xml(<DeleteResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/"></DeleteResult>)xml";
           } else {
               auto lookup_r = ri;
               lookup_r.url = remove_query_params(req._url);
