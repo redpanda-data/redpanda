@@ -2801,16 +2801,30 @@ ss::future<stm_snapshot> rm_stm::take_snapshot() {
               });
         });
     }
-
-    return f.then([this]() mutable {
-        return ss::do_with(iobuf{}, [this](iobuf& tx_ss_buf) mutable {
+    kafka::offset start_kafka_offset = from_log_offset(start_offset);
+    return f.then([this, start_kafka_offset]() mutable {
+        return ss::do_with(iobuf{}, [this, start_kafka_offset](iobuf& tx_ss_buf) mutable {
             auto version = active_snapshot_version();
             auto fut_serialize = ss::now();
             if (version == tx_snapshot::version) {
                 tx_snapshot tx_ss;
                 fill_snapshot_wo_seqs(tx_ss);
                 for (const auto& entry : _log_state.seq_table) {
-                    tx_ss.seqs.push_back(entry.second.entry.copy());
+                    /**
+                     * Only store those producer id sequences which offset is
+                     * greater than log start offset. This way a snapshot will
+                     * not retain producers ids for which all the batches were
+                     * removed with log cleanup policy.
+                     *
+                     * Note that we are not removing producer ids from the in
+                     * memory state but rather relay on the expiration policy
+                     * to do it, however when recovering state from the
+                     * snapshot removed producers will be gone.
+                     */
+                    if (
+                    entry.second.entry.last_offset >= start_kafka_offset) {
+                        tx_ss.seqs.push_back(entry.second.entry.copy());
+                    }
                 }
                 tx_ss.offset = _insync_offset;
 
