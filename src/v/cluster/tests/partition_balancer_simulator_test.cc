@@ -267,8 +267,16 @@ public:
               double(total_replicas) * capacity / total_capacity);
             logger.info(
               "node {} has {} replicas, expected: {}", id, replicas, expected);
-            BOOST_REQUIRE_GE(replicas, expected - ceil(max_skew * expected));
-            BOOST_REQUIRE_LE(replicas, expected + ceil(max_skew * expected));
+            auto expected_min = expected - ceil(max_skew * expected);
+            auto expected_max = expected + ceil(max_skew * expected);
+            if (replicas < expected_min || replicas > expected_max) {
+                print_replica_map();
+                BOOST_REQUIRE_MESSAGE(
+                  false,
+                  "node " << id << ": unexpected replicas count: " << replicas
+                          << "(expected interval: [" << expected_min << ", "
+                          << expected_max << "]");
+            }
         }
     }
 
@@ -691,6 +699,7 @@ FIXTURE_TEST(test_counts_rebalancing, partition_balancer_sim_fixture) {
         }
     }
 
+    print_state();
     validate_even_replica_distribution();
     validate_even_topic_distribution();
 }
