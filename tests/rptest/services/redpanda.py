@@ -768,6 +768,8 @@ class RedpandaServiceBase(Service):
                  si_settings: Optional[SISettings] = None,
                  superuser: Optional[SaslCredentials] = None,
                  disable_cloud_storage_diagnostics=True):
+
+        self.advertised_tier_config: AdvertisedTierConfig = None
         super(RedpandaServiceBase, self).__init__(context,
                                                   num_nodes=num_brokers,
                                                   cluster_spec=cluster_spec)
