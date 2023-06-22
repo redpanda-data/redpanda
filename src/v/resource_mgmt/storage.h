@@ -63,6 +63,10 @@ private:
     ss::sharded<cloud_storage::cache>* _cache;
     ss::sharded<cluster::partition_manager>* _pm;
 
+    node::notification_id _cache_disk_nid;
+    // details from last disk notification
+    node::disk_space_info _cache_disk_info{};
+
     ss::gate _gate;
     ss::future<> run_loop();
     ssx::semaphore _control_sem{0, "resource_mgmt::space_manager"};
