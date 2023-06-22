@@ -8,17 +8,19 @@
 # by the Apache License, Version 2.0
 import collections
 import json
+import io
 import pprint
 import struct
 import time
 from dataclasses import dataclass
 from collections import defaultdict, namedtuple
 from enum import Enum
-from typing import Sequence, Optional, NewType, NamedTuple
+from typing import Sequence, Optional, NewType, NamedTuple, Iterator
 
 import xxhash
 
-from rptest.archival.s3_client import ObjectMetadata
+from rptest.archival.s3_client import ObjectMetadata, S3Client
+from rptest.archival.abs_client import ABSClient
 from rptest.clients.rp_storage_tool import RpStorageTool
 from rptest.clients.rpk import RpkTool
 from rptest.clients.types import TopicSpec
@@ -78,6 +80,23 @@ TRANSIENT_ERRORS = RESTART_LOG_ALLOW_LIST + [
 ]
 
 
+class SegmentSummary(NamedTuple):
+    ns: str
+    topic: str
+    partition: int
+    revision: int
+    epoch: int
+    base_offset: int
+    last_offset: int
+    base_timestamp: int
+    last_timestamp: int
+    num_data_batches: int
+    num_conf_batches: int
+    num_data_records: int
+    num_conf_records: int
+    size_bytes: int
+
+
 class SegmentReader:
     HDR_FMT_RP = "<IiqbIhiqqqhii"
     HEADER_SIZE = struct.calcsize(HDR_FMT_RP)
@@ -99,16 +118,69 @@ class SegmentReader:
             data = self.stream.read(records_size)
             if len(data) < records_size:
                 return None
-            assert len(data) == records_size
+            assert len(
+                data
+            ) == records_size, f"data len is {len(data)} but the expected records size is {records_size}"
             return header
         return None
 
-    def __iter__(self):
+    def __iter__(self) -> Iterator[Header]:
         while True:
             it = self.read_batch()
             if it is None:
                 return
             yield it
+
+
+def make_segment_summary(ntpr: NTPR, reader: SegmentReader) -> SegmentSummary:
+    """Read/parse segment and produce the summary"""
+    epoch: int = 0
+    max_int = int(2**63 - 1)
+    min_int = -1 * (max_int - 1)
+    base_offset = max_int
+    last_offset = min_int
+    base_timestamp = max_int
+    last_timestamp = min_int
+    num_data_batches = 0
+    num_conf_batches = 0
+    num_data_records = 0
+    num_conf_records = 0
+    size_bytes = 0
+    for header in reader:
+        base_offset = min(base_offset, header.base_offset)
+        last_offset = max(last_offset,
+                          header.base_offset + header.record_count - 1)
+        base_timestamp = min(base_timestamp, header.first_ts)
+        last_timestamp = max(last_timestamp, header.max_ts)
+        epoch = header.producer_epoch
+        filters = [
+            19,  # archival
+            2,  # raft_configuration
+            23,  # version_fence
+            25  # prefix_truncate
+        ]
+
+        if header.type in filters:
+            num_conf_batches += 1
+            num_conf_records += header.record_count
+        else:
+            num_data_batches += 1
+            num_data_records += header.record_count
+        size_bytes += header.batch_size
+    return SegmentSummary(ns=ntpr.ns,
+                          topic=ntpr.topic,
+                          revision=ntpr.revision,
+                          partition=ntpr.partition,
+                          epoch=epoch,
+                          base_offset=base_offset,
+                          last_offset=last_offset,
+                          base_timestamp=base_timestamp,
+                          last_timestamp=last_timestamp,
+                          num_data_batches=num_data_batches,
+                          num_conf_batches=num_conf_batches,
+                          num_data_records=num_data_records,
+                          num_conf_records=num_conf_records,
+                          size_bytes=size_bytes)
 
 
 def parse_s3_manifest_path(path: str) -> NTPR:
@@ -414,8 +486,38 @@ class PathMatcher:
     def is_topic_manifest(self, o: ObjectMetadata) -> bool:
         return self._match_topic_manifest(o.key)
 
+    def is_segment_index(self, o: ObjectMetadata) -> bool:
+        if not o.key.endswith(".index"):
+            return False
+        try:
+            parsed = parse_s3_segment_path(o.key[0:-6])
+        except Exception:
+            return False
+        else:
+            if self.topic_names is not None:
+                return parsed.ntpr.topic in self.topic_names
+            else:
+                return True
+
+    def is_tx_manifest(self, o: ObjectMetadata) -> bool:
+        if not o.key.endswith(".tx"):
+            return False
+        try:
+            parsed = parse_s3_segment_path(o.key[0:-3])
+        except Exception:
+            return False
+        else:
+            if self.topic_names is not None:
+                return parsed.ntpr.topic in self.topic_names
+            else:
+                return True
+
     def is_segment(self, o: ObjectMetadata) -> bool:
         try:
+            if o.key.endswith(".index"):
+                return False
+            if o.key.endswith(".tx"):
+                return False
             parsed = parse_s3_segment_path(o.key)
         except Exception:
             return False
@@ -507,6 +609,12 @@ class SpillMeta:
         self.base, self.last, self.base_kafka, self.last_kafka, self.base_ts, self.last_ts = self.parse_path(
         )
 
+    def __eq__(self, other):
+        return self.path == other.path
+
+    def __hash__(self):
+        return hash(self.path)
+
     def parse_path(self) -> list[str]:
         """
         Extract metadata from spillover manifest path.
@@ -535,9 +643,14 @@ class BucketViewState:
         self.listed: bool = False
         self.segment_objects: int = 0
         self.ignored_objects: int = 0
+        self.tx_manifests: int = 0
+        self.segment_indexes: int = 0
         self.topic_manifests: dict[NT, dict] = {}
         self.partition_manifests: dict[NTP, dict] = {}
         self.spillover_manifests: dict[NTP, dict[SpillMeta, dict]] = {}
+        # List of summaries for all segments. These summaries refer
+        # to data in the bucket and not segments in the manifests.
+        self.segment_summaries: dict[NTP, list[SegmentSummary]] = {}
 
 
 class ManifestFormat(Enum):
@@ -561,7 +674,10 @@ class BucketView:
     object listings (like the object counts) will list the bucket and then cache
     the result.
     """
-    def __init__(self, redpanda, topics: Optional[Sequence[TopicSpec]] = None):
+    def __init__(self,
+                 redpanda,
+                 topics: Optional[Sequence[TopicSpec]] = None,
+                 scan_segments: bool = False):
         """
         Always construct this with a `redpanda` -- the explicit logger/bucket/client
         arguments are only here to enable the structure of topic_recovery_test.py to work,
@@ -569,11 +685,12 @@ class BucketView:
 
         :param redpanda: a RedpandaService, whose SISettings we will use
         :param topics: optional list of topics to filter result to
+        :param scan_segments: optional flag that indicates that segments has to be parsed
         """
         self.redpanda = redpanda
         self.logger = redpanda.logger
         self.bucket = redpanda.si_settings.cloud_storage_bucket
-        self.client = redpanda.cloud_storage_client
+        self.client: S3Client | ABSClient = redpanda.cloud_storage_client
 
         self.path_matcher = PathMatcher(topics)
 
@@ -581,6 +698,7 @@ class BucketView:
         self._ntp_to_revision = {}
 
         self._state = BucketViewState()
+        self._scan_segments = scan_segments
 
     def reset(self):
         """
@@ -692,6 +810,7 @@ class BucketView:
 
     def _do_listing(self):
         for o in self.client.list_objects(self.bucket):
+            self.logger.debug(f"Loading object {o.key}")
             if self.path_matcher.is_partition_manifest(o):
                 ntpr = parse_s3_manifest_path(o.key)
                 self._load_manifest(ntpr, o.key)
@@ -699,11 +818,29 @@ class BucketView:
                 ntpr = parse_s3_manifest_path(o.key)
                 self._load_spillover_manifest(ntpr, o.key)
             elif self.path_matcher.is_segment(o):
+                self.logger.debug(f"Object {o.key} is a segment")
                 self._state.segment_objects += 1
+                if self._scan_segments:
+                    spc = parse_s3_segment_path(o.key)
+                    self._add_segment_metadata(o.key, spc)
             elif self.path_matcher.is_topic_manifest(o):
                 pass
+            elif self.path_matcher.is_tx_manifest(o):
+                self._state.tx_manifests += 1
+            elif self.path_matcher.is_segment_index(o):
+                self._state.segment_indexes += 1
             else:
                 self._state.ignored_objects += 1
+        if self._scan_segments:
+            self._sort_segment_summaries()
+
+    def _sort_segment_summaries(self):
+        """Sort segment summary lists by base offset"""
+        res = {}
+        for ntp, lst in self._state.segment_summaries.items():
+            self.logger.debug(f"Sorting segment summaries for {ntp}")
+            res[ntp] = sorted(lst, key=lambda x: x.base_offset)
+        self._state.segment_summaries = res
 
     def _get_manifest(self, ntpr: NTPR, path: Optional[str] = None) -> dict:
         """
@@ -770,16 +907,30 @@ class BucketView:
         ntp = ntpr.to_ntp()
 
         if ntp not in self._state.spillover_manifests:
-            self._state.spillover_manifest[ntp] = {}
+            self._state.spillover_manifests[ntp] = {}
 
         meta = SpillMeta(ntpr, path)
-        self._state.spillover_manifest[ntp][meta] = manifest
+        self._state.spillover_manifests[ntp][meta] = manifest
 
         self.logger.debug(
             f"Loaded spillover manifest for {ntpr}: {pprint.pformat(manifest, indent=2)}"
         )
 
         return meta, manifest
+
+    def _add_segment_metadata(self, path, spc: SegmentPathComponents):
+        if path.endswith(".index"):
+            return
+        if path.endswith(".tx"):
+            return
+        self.logger.debug(f"Parsing segment {spc} at {path}")
+        ntp = spc.ntpr.to_ntp()
+        if ntp not in self._state.segment_summaries:
+            self._state.segment_summaries[ntp] = []
+        payload = self.client.get_object_data(self.bucket, path)
+        reader = SegmentReader(io.BytesIO(payload))
+        summary = make_segment_summary(spc.ntpr, reader)
+        self._state.segment_summaries[ntp].append(summary)
 
     def _discover_spillover_manifests(self, ntpr: NTPR) -> list[SpillMeta]:
         list_res = self.client.list_objects(
@@ -1053,3 +1204,46 @@ class BucketView:
         first_segment = min(manifest['segments'].values(),
                             key=lambda seg: seg['base_offset'])
         assert first_segment['base_offset'] > 0
+
+    def segment_summaries(self, ntp: NTP):
+        self._ensure_listing()
+        return self._state.segment_summaries[ntp]
+
+    def is_archive_cleanup_complete(self, ntp: NTP):
+        self._ensure_listing()
+        manifest = self.manifest_for_ntp(ntp.topic, ntp.partition)
+        aso = manifest.get('archive_start_offset')
+        aco = manifest.get('archive_clean_offset')
+        summaries = self.segment_summaries(ntp)
+        num = len(summaries)
+        if aso > 0 and aco < aso:
+            self.logger.debug(
+                f"archive cleanup is not complete, start: {aso}, clean: {aco}, len: {num}"
+            )
+            return False
+
+        if len(summaries) == 0:
+            self.logger.debug(
+                f"archive is empty, start: {aso}, clean: {aco}, len: {num}")
+            return False
+
+        first_segment = min(summaries, key=lambda seg: seg.base_offset)
+
+        if first_segment.base_offset != aso:
+            self.logger.debug(
+                f"segments are not deleted, start: {aso}, clean: {aco}, first segment: {first_segment}"
+            )
+            return False
+
+        return True
+
+    def check_archive_integrity(self, ntp: NTP):
+        self._ensure_listing()
+        manifest = self.manifest_for_ntp(ntp.topic, ntp.partition)
+        next_base_offset = manifest.get('archive_start_offset')
+        expected_last = manifest.get('last_offset')
+        for summary in self.segment_summaries(ntp):
+            assert next_base_offset == summary.base_offset, f"Unexpected segment {summary}, expected base offset {next_base_offset}"
+            next_base_offset = summary.last_offset + 1
+        else:
+            assert expected_last == summary.last_offset, f"Unexpected last offset {summary.last_offset}, expected: {expected_last}"
