@@ -1,10 +1,10 @@
 use crate::batch_crc::batch_body_crc;
+use crate::error::DecodeError;
+use crate::util::from_adl_bytes;
 use log::{debug, info, trace};
 use redpanda_records::{Record, RecordBatchHeader, RecordBatchType};
 use std::io;
 use tokio::io::AsyncReadExt;
-use crate::error::DecodeError;
-use crate::util::from_adl_bytes;
 
 use crate::varint::VarIntDecoder;
 

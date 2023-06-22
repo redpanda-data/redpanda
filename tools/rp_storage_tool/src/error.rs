@@ -1,12 +1,9 @@
-
 use std;
 use std::array::TryFromSliceError;
 use std::fmt::{self, Display};
 
 use serde::de::StdError;
 use serde::{de, ser};
-
-
 
 /// General purpose error class for code that does I/O to remote storage.
 /// TODO: clean up naming, this may be used in circumstances other than reading from a bucket

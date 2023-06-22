@@ -11,8 +11,8 @@ mod ntp_mask;
 mod remote_types;
 mod repair;
 mod segment_writer;
-mod varint;
 mod util;
+mod varint;
 
 use crate::segment_writer::SegmentWriter;
 use bytes::Bytes;
