@@ -67,6 +67,7 @@ private:
     // details from last disk notification
     node::disk_space_info _cache_disk_info;
 
+    void maybe_signal_run_loop();
 
     ss::gate _gate;
     ss::future<> run_loop();
