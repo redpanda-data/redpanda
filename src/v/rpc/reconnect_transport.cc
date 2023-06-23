@@ -88,7 +88,8 @@ reconnect_transport::reconnect(clock_type::time_point connection_timeout) {
                          .then_wrapped([this](ss::future<> f) {
                              try {
                                  f.get();
-                                 rpclog.debug(
+                                 vlog(
+                                   rpclog.debug,
                                    "connected to {}",
                                    _transport->server_address());
                                  _backoff_policy.reset();
@@ -96,7 +97,8 @@ reconnect_transport::reconnect(clock_type::time_point connection_timeout) {
                                    _transport);
                              } catch (...) {
                                  _backoff_policy.next_backoff();
-                                 rpclog.trace(
+                                 vlog(
+                                   rpclog.trace,
                                    "error reconnecting {}",
                                    std::current_exception());
                                  return ss::make_ready_future<ret_t>(
@@ -106,7 +108,8 @@ reconnect_transport::reconnect(clock_type::time_point connection_timeout) {
                    })
             .handle_exception_type([connection_timeout_duration](
                                      const ss::named_semaphore_timed_out&) {
-                rpclog.trace(
+                vlog(
+                  rpclog.trace,
                   "timeout waiting for RPC reconnect semaphore. timeout "
                   "duration: {}",
                   connection_timeout_duration);
