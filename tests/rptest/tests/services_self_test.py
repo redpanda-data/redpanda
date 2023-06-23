@@ -7,12 +7,14 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 import time
+import typing
 
 from ducktape.mark import matrix
 from ducktape.tests.test import Test
 from ducktape.utils.util import wait_until
 
-from rptest.services.delete_records_service import DeleteRecordsService, DeleteRecordsStatus
+from rptest.services.delete_records_service import DeleteRecordsService, DeleteRecordsStatus, DeleteRecordPosition, \
+    DeleteSpecificRecords
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.services.cluster import cluster
 from rptest.clients.types import TopicSpec
@@ -349,3 +351,201 @@ class DeleteRecordsSelfTest(PreallocNodesTest):
         delete_records_tester.stop()
 
         self.logger.debug("Stopped it")
+
+    @cluster(num_nodes=4)
+    def test_delete_records_relative(self):
+        """
+        Attempts to delete all records
+        """
+        topic = "test-dr"
+        self.client().create_topic(
+            TopicSpec(name=topic,
+                      partition_count=16,
+                      retention_bytes=16 * 1024 * 1024,
+                      segment_bytes=1024 * 1024))
+
+        self.logger.debug("Waiting 5 seconds for leadership to happen")
+        time.sleep(5)
+
+        delete_records_tester = DeleteRecordsService(
+            self.test_context,
+            self.redpanda,
+            custom_node=self.preallocated_nodes,
+            topic=topic,
+            trace_logs=True)
+
+        delete_records_tester.start()
+
+        def produced_enough_records(status: DeleteRecordsStatus,
+                                    expected_hwm: int, topic: str):
+            # If no status is present, then we haven't yet
+            if status.updated_at is None:
+                return False
+
+            if topic not in status.tp_info:
+                return False
+
+            partitions = status.tp_info[topic]
+
+            all_above_expected = True
+
+            for info in partitions.values():
+                if info['hwm'] < expected_hwm:
+                    all_above_expected = False
+
+            return all_above_expected
+
+        wait_for_record_count = 400
+        self.logger.info(
+            f"Waiting for {wait_for_record_count} records in each partition")
+        wait_until(
+            lambda: produced_enough_records(delete_records_tester.status,
+                                            wait_for_record_count, topic),
+            timeout_sec=60,
+            backoff_sec=1,
+            err_msg=
+            f"Timed out waiting for topic {topic} to be filled with 1000 messages in each partition"
+        )
+
+        # After running this, all LWM should be 1
+        delete_records_tester.delete_records_relative(
+            DeleteRecordPosition.Single)
+
+        def validate_lwm(status: DeleteRecordsStatus, expected_lwm: int,
+                         topic: str):
+            if status.updated_at is None:
+                return False
+
+            if topic not in status.tp_info:
+                return False
+
+            partitions = status.tp_info[topic]
+
+            all_at_expected = True
+
+            for info in partitions.values():
+                if info['lwm'] != expected_lwm:
+                    all_at_expected = False
+
+            return all_at_expected
+
+        wait_until(
+            lambda: validate_lwm(delete_records_tester.status, 1, topic),
+            timeout_sec=10,
+            backoff_sec=1,
+            err_msg=
+            f"Timed out waiting for topic {topic} to have deleted records.  Current status: {delete_records_tester.status}"
+        )
+
+        delete_records_tester.stop()
+
+    @cluster(num_nodes=4)
+    def test_delete_records_specific(self):
+        """
+        Attempts to delete offset 100 at 2 partitions
+        """
+        topic = "test-dr"
+        self.client().create_topic(
+            TopicSpec(name=topic,
+                      partition_count=16,
+                      retention_bytes=16 * 1024 * 1024,
+                      segment_bytes=1024 * 1024))
+
+        self.logger.debug("Waiting 5 seconds for leadership to happen")
+        time.sleep(5)
+
+        delete_records_tester = DeleteRecordsService(
+            self.test_context,
+            self.redpanda,
+            custom_node=self.preallocated_nodes,
+            topic=topic,
+            trace_logs=True)
+
+        delete_records_tester.start()
+
+        def produced_enough_records(status: DeleteRecordsStatus,
+                                    expected_hwm: int, topic: str):
+            # If no status is present, then we haven't yet
+            if status.updated_at is None:
+                return False
+
+            if topic not in status.tp_info:
+                return False
+
+            partitions = status.tp_info[topic]
+
+            all_above_expected = True
+
+            for info in partitions.values():
+                if info['hwm'] < expected_hwm:
+                    all_above_expected = False
+
+            return all_above_expected
+
+        wait_for_record_count = 100
+        self.logger.info(
+            f"Waiting for {wait_for_record_count} records in each partition")
+        wait_until(
+            lambda: produced_enough_records(delete_records_tester.status,
+                                            wait_for_record_count, topic),
+            timeout_sec=60,
+            backoff_sec=1,
+            err_msg=
+            f"Timed out waiting for topic {topic} to be filled with 1000 messages in each partition"
+        )
+
+        delete_records_tester.delete_records_specific(
+            DeleteSpecificRecords(offsets={
+                0: 100,
+                1: 100
+            }))
+
+        def validate_lwm(status: DeleteRecordsStatus,
+                         expected_lwm: typing.Dict[int, int], topic: str):
+            if status.updated_at is None:
+                return False
+
+            if topic not in status.tp_info:
+                return False
+
+            partitions = status.tp_info[topic]
+
+            all_at_expected = True
+
+            for p, o in expected_lwm.items():
+                if f'{p}' not in partitions:
+                    all_at_expected = False
+                elif partitions[f'{p}']['lwm'] != o:
+                    all_at_expected = False
+
+            return all_at_expected
+
+        expected_lwms = {
+            0: 100,
+            1: 100,
+            2: 0,
+            3: 0,
+            4: 0,
+            5: 0,
+            6: 0,
+            7: 0,
+            8: 0,
+            9: 0,
+            10: 0,
+            11: 0,
+            12: 0,
+            13: 0,
+            14: 0,
+            15: 0,
+        }
+
+        wait_until(
+            lambda: validate_lwm(delete_records_tester.status, expected_lwms,
+                                 topic),
+            timeout_sec=10,
+            backoff_sec=1,
+            err_msg=
+            f"Timed out waiting for topic {topic} to have deleted records.  Current status: {delete_records_tester.status}"
+        )
+
+        delete_records_tester.stop()
