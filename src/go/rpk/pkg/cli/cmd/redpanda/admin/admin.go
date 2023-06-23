@@ -35,6 +35,9 @@ func NewCommand(fs afero.Fs) *cobra.Command {
 		adminCertFile  string
 		adminKeyFile   string
 		adminCAFile    string
+		user           string
+		password       string
+		mechanism      string
 	)
 
 	cmd.PersistentFlags().StringVar(
@@ -59,6 +62,13 @@ func NewCommand(fs afero.Fs) *cobra.Command {
 		&adminCertFile,
 		&adminKeyFile,
 		&adminCAFile,
+	)
+
+	common.AddSASLFlags(
+		cmd,
+		&user,
+		&password,
+		&mechanism,
 	)
 
 	cmd.AddCommand(
