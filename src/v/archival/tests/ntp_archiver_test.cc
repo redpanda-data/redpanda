@@ -631,7 +631,7 @@ FIXTURE_TEST(test_archive_retention, archiver_fixture) {
 
     // Trigger garbage collection within the archive. This should
     // remove segments in the [0, 2000) offset interval.
-    ssx::background = archiver.garbage_collect_archive();
+    auto fut = archiver.garbage_collect_archive();
     tests::cooperative_spin_wait_with_timeout(5s, [this, part]() mutable {
         const auto& manifest = part->archival_meta_stm()->manifest();
         bool archive_clean_moved = manifest.get_archive_clean_offset()
@@ -643,6 +643,7 @@ FIXTURE_TEST(test_archive_retention, archiver_fixture) {
                             == 2;
         return archive_clean_moved && deletes_sent;
     }).get();
+    fut.get();
 
     ss::sstring delete_payloads;
     for (const auto& [url, req] : get_targets()) {
