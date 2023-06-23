@@ -887,7 +887,7 @@ void cache::do_reserve_space_release(
         // an ERROR log ensures detection if we hit this path in our integration
         // tests.
         vlog(
-          cst_log.warn,
+          cst_log.error,
           "Exceeded cache size limit!  (size={}/{} reserved={}/{} "
           "pending={}/{} max={}/{})",
           _current_cache_size,

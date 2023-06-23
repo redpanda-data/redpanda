@@ -201,7 +201,7 @@ class CloudStorageChunkReadTest(PreallocNodesTest):
         self._assert_files_in_cache(fr'.*kafka/{self.topic}/.*\.log\.[0-9]+$')
         self._assert_files_in_cache(f'.*kafka/{self.topic}/.*index$')
 
-    @cluster(num_nodes=4)
+    @cluster(num_nodes=4, log_allow_list=["Exceeded cache size limit"])
     def test_read_when_cache_smaller_than_segment_size(self):
         self.si_settings.cloud_storage_cache_size = 1048576 * 4
         self.redpanda.set_si_settings(self.si_settings)

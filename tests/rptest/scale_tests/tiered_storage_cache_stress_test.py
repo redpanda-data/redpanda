@@ -94,9 +94,6 @@ class TieredStorageCacheStressTest(RedpandaTest):
         else:
             raise NotImplementedError(limit_mode)
 
-        assert not self.redpanda.search_log_node(node,
-                                                 "Exceeded cache size limit!")
-
         return any_cache_usage
 
     @cluster(num_nodes=4)
