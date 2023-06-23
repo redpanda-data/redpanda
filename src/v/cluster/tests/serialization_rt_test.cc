@@ -11,6 +11,7 @@
 #include "cluster/controller_snapshot.h"
 #include "cluster/health_monitor_types.h"
 #include "cluster/metadata_dissemination_types.h"
+#include "cluster/tests/randoms.h"
 #include "cluster/tests/utils.h"
 #include "cluster/types.h"
 #include "compat/check.h"
@@ -2069,6 +2070,61 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
               cluster::partition_move_direction::all}),
         };
         roundtrip_test(request);
+    }
+    {
+        // Test schema ID validation topic_create
+        auto key_validation = tests::random_bool();
+        auto key_strategy = model::random_subject_name_strategy();
+        auto val_validation = tests::random_bool();
+        auto val_strategy = model::random_subject_name_strategy();
+
+        cluster::topic_properties props{};
+
+        props.record_key_schema_id_validation = tests::random_optional(
+          [=] { return key_validation; });
+        props.record_key_schema_id_validation_compat = tests::random_optional(
+          [=] { return key_validation; });
+        props.record_key_subject_name_strategy = tests::random_optional(
+          [=] { return key_strategy; });
+        props.record_key_subject_name_strategy_compat = tests::random_optional(
+          [=] { return key_strategy; });
+        props.record_value_schema_id_validation = tests::random_optional(
+          [=] { return val_validation; });
+        props.record_value_schema_id_validation_compat = tests::random_optional(
+          [=] { return val_validation; });
+        props.record_value_subject_name_strategy = tests::random_optional(
+          [=] { return val_strategy; });
+        props.record_value_subject_name_strategy_compat
+          = tests::random_optional([=] { return val_strategy; });
+
+        roundtrip_test(props);
+    }
+    {
+        // Test schema ID validation incremental_topic_updates
+        auto key_validation = tests::random_bool();
+        auto key_strategy = model::random_subject_name_strategy();
+        auto val_validation = tests::random_bool();
+        auto val_strategy = model::random_subject_name_strategy();
+
+        cluster::incremental_topic_updates updates{
+          .record_key_schema_id_validation = random_property_update(
+            tests::random_optional([=] { return key_validation; })),
+          .record_key_schema_id_validation_compat = random_property_update(
+            tests::random_optional([=] { return key_validation; })),
+          .record_key_subject_name_strategy = random_property_update(
+            tests::random_optional([=] { return key_strategy; })),
+          .record_key_subject_name_strategy_compat = random_property_update(
+            tests::random_optional([=] { return key_strategy; })),
+          .record_value_schema_id_validation = random_property_update(
+            tests::random_optional([=] { return val_validation; })),
+          .record_value_schema_id_validation_compat = random_property_update(
+            tests::random_optional([=] { return val_validation; })),
+          .record_value_subject_name_strategy = random_property_update(
+            tests::random_optional([=] { return val_strategy; })),
+          .record_value_subject_name_strategy_compat = random_property_update(
+            tests::random_optional([=] { return val_strategy; }))};
+
+        roundtrip_test(updates);
     }
 }
 

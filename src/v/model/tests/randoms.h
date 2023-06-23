@@ -16,6 +16,7 @@
 #include "model/metadata.h"
 #include "model/record.h"
 #include "model/timestamp.h"
+#include "pandaproxy/schema_registry/subject_name_strategy.h"
 #include "random/generators.h"
 #include "test_utils/randoms.h"
 
@@ -161,6 +162,15 @@ inline model::broker_shard random_broker_shard() {
       tests::random_named_int<model::node_id>(),
       random_generators::get_int(std::numeric_limits<uint32_t>::max()),
     };
+}
+
+inline pandaproxy::schema_registry::subject_name_strategy
+random_subject_name_strategy() {
+    return random_generators::random_choice(
+      std::vector<pandaproxy::schema_registry::subject_name_strategy>{
+        pandaproxy::schema_registry::subject_name_strategy::topic_name,
+        pandaproxy::schema_registry::subject_name_strategy::record_name,
+        pandaproxy::schema_registry::subject_name_strategy::topic_record_name});
 }
 
 } // namespace model

@@ -13,6 +13,7 @@
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/timestamp.h"
+#include "pandaproxy/schema_registry/subject_name_strategy.h"
 #include "reflection/adl.h"
 #include "test_utils/randoms.h"
 #include "test_utils/rpc.h"
@@ -752,6 +753,34 @@ T make_incremental_topic_properties() {
     if constexpr (std::is_same<T, cluster::incremental_topic_updates>::value) {
         upd.shadow_indexing.op = cluster::incremental_update_operation::set;
         upd.shadow_indexing.value = model::shadow_indexing_mode::archival;
+        upd.record_key_schema_id_validation.op
+          = cluster::incremental_update_operation::set;
+        upd.record_key_schema_id_validation.value = true;
+        upd.record_key_schema_id_validation_compat.op
+          = cluster::incremental_update_operation::set;
+        upd.record_key_schema_id_validation_compat.value = true;
+        upd.record_key_subject_name_strategy.op
+          = cluster::incremental_update_operation::set;
+        upd.record_key_subject_name_strategy.value = pandaproxy::
+          schema_registry::subject_name_strategy::topic_record_name;
+        upd.record_key_subject_name_strategy_compat.op
+          = cluster::incremental_update_operation::set;
+        upd.record_key_subject_name_strategy_compat.value = pandaproxy::
+          schema_registry::subject_name_strategy::topic_record_name;
+        upd.record_value_schema_id_validation.op
+          = cluster::incremental_update_operation::set;
+        upd.record_value_schema_id_validation.value = true;
+        upd.record_value_schema_id_validation_compat.op
+          = cluster::incremental_update_operation::set;
+        upd.record_value_schema_id_validation_compat.value = true;
+        upd.record_value_subject_name_strategy.op
+          = cluster::incremental_update_operation::set;
+        upd.record_value_subject_name_strategy.value
+          = pandaproxy::schema_registry::subject_name_strategy::record_name;
+        upd.record_value_subject_name_strategy_compat.op
+          = cluster::incremental_update_operation::set;
+        upd.record_value_subject_name_strategy_compat.value
+          = pandaproxy::schema_registry::subject_name_strategy::record_name;
     }
     if constexpr (std::is_same<T, old::incremental_topic_updates_1>::value) {
         upd.data_policy.op = cluster::incremental_update_operation::set;
@@ -783,6 +812,54 @@ void compare_incremental_topic_updates(const UpdIn& upd, const UpdOut& res) {
                     value) {
         BOOST_REQUIRE(upd.shadow_indexing.op == res.shadow_indexing.op);
         BOOST_REQUIRE(upd.shadow_indexing.value == res.shadow_indexing.value);
+        BOOST_REQUIRE(
+          upd.record_key_schema_id_validation.op
+          == res.record_key_schema_id_validation.op);
+        BOOST_REQUIRE(
+          upd.record_key_schema_id_validation.value
+          == res.record_key_schema_id_validation.value);
+        BOOST_REQUIRE(
+          upd.record_key_schema_id_validation_compat.op
+          == res.record_key_schema_id_validation_compat.op);
+        BOOST_REQUIRE(
+          upd.record_key_schema_id_validation_compat.value
+          == res.record_key_schema_id_validation_compat.value);
+        BOOST_REQUIRE(
+          upd.record_key_subject_name_strategy.op
+          == res.record_key_subject_name_strategy.op);
+        BOOST_REQUIRE(
+          upd.record_key_subject_name_strategy.value
+          == res.record_key_subject_name_strategy.value);
+        BOOST_REQUIRE(
+          upd.record_key_subject_name_strategy_compat.op
+          == res.record_key_subject_name_strategy_compat.op);
+        BOOST_REQUIRE(
+          upd.record_key_subject_name_strategy_compat.value
+          == res.record_key_subject_name_strategy_compat.value);
+        BOOST_REQUIRE(
+          upd.record_value_schema_id_validation.op
+          == res.record_value_schema_id_validation.op);
+        BOOST_REQUIRE(
+          upd.record_value_schema_id_validation.value
+          == res.record_value_schema_id_validation.value);
+        BOOST_REQUIRE(
+          upd.record_value_schema_id_validation_compat.op
+          == res.record_value_schema_id_validation_compat.op);
+        BOOST_REQUIRE(
+          upd.record_value_schema_id_validation_compat.value
+          == res.record_value_schema_id_validation_compat.value);
+        BOOST_REQUIRE(
+          upd.record_value_subject_name_strategy.op
+          == res.record_value_subject_name_strategy.op);
+        BOOST_REQUIRE(
+          upd.record_value_subject_name_strategy.value
+          == res.record_value_subject_name_strategy.value);
+        BOOST_REQUIRE(
+          upd.record_value_subject_name_strategy_compat.op
+          == res.record_value_subject_name_strategy_compat.op);
+        BOOST_REQUIRE(
+          upd.record_value_subject_name_strategy_compat.value
+          == res.record_value_subject_name_strategy_compat.value);
     }
 }
 
