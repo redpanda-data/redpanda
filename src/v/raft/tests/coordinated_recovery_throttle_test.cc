@@ -21,7 +21,11 @@ using throttler = raft::coordinated_recovery_throttle;
 
 /// Boiler plate for starting and cleaning up a sharded throttler.
 struct test_fixture {
-    static constexpr size_t initial_rate_per_shard = 10;
+    // This value is carefully chosen to be lcm[0,,,num_shard-1].
+    // An lcm guarantees that there are no rounding issues in
+    // coordination ticks when distributing bandwidth, making the
+    // test logic simple.
+    static constexpr size_t initial_rate_per_shard = 420;
     static constexpr std::chrono::seconds timeout{5};
 
     test_fixture() {
@@ -119,24 +123,26 @@ FIXTURE_TEST(throttler_test_simple, test_fixture) {
     BOOST_REQUIRE_EQUAL(local().waiting_bytes(), 0);
     BOOST_REQUIRE_EQUAL(local().admitted_bytes(), 0);
 
-    // consume 5 of 10
-    local().throttle(5, _as.local()).get();
+    // consume half
+    auto half = initial_rate_per_shard / 2;
+    local().throttle(half, _as.local()).get();
 
     BOOST_REQUIRE_EQUAL(local().waiting_bytes(), 0);
-    BOOST_REQUIRE_EQUAL(local().admitted_bytes(), 5);
+    BOOST_REQUIRE_EQUAL(local().admitted_bytes(), half);
 
-    // consume 5 more, bucket is empty at this point.
-    local().throttle(5, _as.local()).get();
+    // consume second half, bucket is empty at this point.
+    local().throttle(half, _as.local()).get();
 
     BOOST_REQUIRE_EQUAL(local().waiting_bytes(), 0);
-    BOOST_REQUIRE_EQUAL(local().admitted_bytes(), 10);
+    BOOST_REQUIRE_EQUAL(local().admitted_bytes(), 2 * half);
 
-    // 5 more, not enough bytes left, should block until the capacity is
+    // half more, not enough bytes left, should block until the capacity is
     // refilled.
-    auto f = local().throttle(5, _as.local());
+    auto f = local().throttle(half, _as.local());
 
-    wait_until([this] {
-        return local().waiting_bytes() == 5 && local().admitted_bytes() == 10;
+    wait_until([this, half] {
+        return local().waiting_bytes() == half
+               && local().admitted_bytes() == 2 * half;
     });
 
     // force a tick, this refills the bucket.
@@ -147,7 +153,7 @@ FIXTURE_TEST(throttler_test_simple, test_fixture) {
     f.get();
 
     BOOST_REQUIRE_EQUAL(local().waiting_bytes(), 0);
-    BOOST_REQUIRE_EQUAL(local().admitted_bytes(), 5);
+    BOOST_REQUIRE_EQUAL(local().admitted_bytes(), half);
 
     // Multiple ticks to reset the state.
     wait_until([this] {

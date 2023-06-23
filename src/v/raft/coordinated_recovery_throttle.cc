@@ -171,6 +171,7 @@ ss::future<> coordinated_recovery_throttle::do_coordinate_tick() {
     }
 
     // Any updates to the rate are picked up in the next tick.
+    auto total_rate = _rate_binding();
     auto fair_shard_rate = fair_rate_per_shard();
 
     if (unlikely(_use_static_allocation())) {
@@ -215,6 +216,7 @@ ss::future<> coordinated_recovery_throttle::do_coordinate_tick() {
     // deficit.
     std::vector<ss::future<>> futures;
     futures.reserve(ss::smp::count);
+    auto remaining_rate = total_rate;
     for (auto shard : boost::irange(ss::smp::count)) {
         auto req = capacity_requirements.at(shard);
         auto rate = fair_shard_rate;
@@ -226,6 +228,11 @@ ss::future<> coordinated_recovery_throttle::do_coordinate_tick() {
             rate = fair_shard_rate
                    + static_cast<size_t>(
                      deficit_share * total_bandwidth_unused);
+        }
+        remaining_rate -= rate;
+        if (shard == ss::smp::count - 1) {
+            // Assign any unused rate due to rounding of deficit share.
+            rate = std::max(0UL, rate + remaining_rate);
         }
         futures.emplace_back(reset_capacity_on_shard(shard, rate));
     }
