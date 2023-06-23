@@ -12,6 +12,7 @@
 #include "cluster/partition.h"
 #include "config/configuration.h"
 #include "model/metadata.h"
+#include "pandaproxy/schema_registry/schema_id_validation.h"
 #include "prometheus/prometheus_sanitize.h"
 #include "ssx/metrics.h"
 
@@ -22,7 +23,16 @@ namespace cluster {
 replicated_partition_probe::replicated_partition_probe(
   const partition& p) noexcept
   : _partition(p)
-  , _public_metrics(ssx::metrics::public_metrics_handle) {}
+  , _public_metrics(ssx::metrics::public_metrics_handle) {
+    config::shard_local_cfg().enable_schema_id_validation.bind().watch(
+      [this]() { reconfigure_metrics(); });
+}
+
+void replicated_partition_probe::reconfigure_metrics() {
+    _metrics.clear();
+    _public_metrics.clear();
+    setup_metrics(_partition.ntp());
+}
 
 void replicated_partition_probe::setup_metrics(const model::ntp& ntp) {
     setup_internal_metrics(ntp);
@@ -147,6 +157,22 @@ void replicated_partition_probe::setup_internal_metrics(const model::ntp& ntp) {
           labels)
           .aggregate(aggregate_labels),
       });
+
+    if (
+      config::shard_local_cfg().enable_schema_id_validation()
+      != pandaproxy::schema_registry::schema_id_validation_mode::none) {
+        _metrics.add_group(
+          prometheus_sanitize::metrics_name("cluster:partition"),
+          {
+            sm::make_counter(
+              "schema_id_validation_records_failed",
+              [this] { return _schema_id_validation_records_failed; },
+              sm::description(
+                "Number of records that failed schema ID validation"),
+              labels)
+              .aggregate({sm::shard_label, partition_label}),
+          });
+    }
 }
 
 void replicated_partition_probe::setup_public_metrics(const model::ntp& ntp) {
@@ -225,7 +251,34 @@ void replicated_partition_probe::setup_public_metrics(const model::ntp& ntp) {
            topic_label(ntp.tp.topic()),
            partition_label(ntp.tp.partition())})
           .aggregate({sm::shard_label, partition_label}),
+        sm::make_counter(
+          "records_produced_total",
+          [this] { return _records_produced; },
+          sm::description("Total number of records produced"),
+          labels)
+          .aggregate({sm::shard_label, partition_label}),
+        sm::make_counter(
+          "records_fetched_total",
+          [this] { return _records_fetched; },
+          sm::description("Total number of records fetched"),
+          labels)
+          .aggregate({sm::shard_label, partition_label}),
       });
+    if (
+      config::shard_local_cfg().enable_schema_id_validation()
+      != pandaproxy::schema_registry::schema_id_validation_mode::none) {
+        _public_metrics.add_group(
+          prometheus_sanitize::metrics_name("cluster:partition"),
+          {
+            sm::make_counter(
+              "schema_id_validation_records_failed",
+              [this] { return _schema_id_validation_records_failed; },
+              sm::description(
+                "Number of records that failed schema ID validation"),
+              labels)
+              .aggregate({sm::shard_label, partition_label}),
+          });
+    }
 }
 
 } // namespace cluster

@@ -28,6 +28,7 @@ public:
         virtual void add_records_fetched(uint64_t) = 0;
         virtual void add_bytes_produced(uint64_t) = 0;
         virtual void add_bytes_fetched(uint64_t) = 0;
+        virtual void add_schema_id_validation_failed() = 0;
         virtual void setup_metrics(const model::ntp&) = 0;
         virtual ~impl() noexcept = default;
     };
@@ -54,6 +55,10 @@ public:
         return _impl->add_bytes_fetched(bytes);
     }
 
+    void add_schema_id_validation_failed() {
+        _impl->add_schema_id_validation_failed();
+    }
+
 private:
     std::unique_ptr<impl> _impl;
 };
@@ -67,8 +72,12 @@ public:
     void add_records_produced(uint64_t cnt) final { _records_produced += cnt; }
     void add_bytes_fetched(uint64_t cnt) final { _bytes_fetched += cnt; }
     void add_bytes_produced(uint64_t cnt) final { _bytes_produced += cnt; }
+    void add_schema_id_validation_failed() final {
+        ++_schema_id_validation_records_failed;
+    };
 
 private:
+    void reconfigure_metrics();
     void setup_public_metrics(const model::ntp&);
     void setup_internal_metrics(const model::ntp&);
 
@@ -78,6 +87,7 @@ private:
     uint64_t _records_fetched{0};
     uint64_t _bytes_produced{0};
     uint64_t _bytes_fetched{0};
+    uint64_t _schema_id_validation_records_failed{0};
     ss::metrics::metric_groups _metrics;
     ss::metrics::metric_groups _public_metrics;
 };

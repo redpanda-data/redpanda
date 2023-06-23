@@ -13,9 +13,11 @@
 #include "bytes/bytes.h"
 #include "bytes/iobuf_parser.h"
 #include "cluster/controller.h"
+#include "cluster/partition_probe.h"
 #include "cluster/types.h"
 #include "config/configuration.h"
 #include "features/feature_table.h"
+#include "kafka/protocol/errors.h"
 #include "model/record.h"
 #include "model/record_batch_reader.h"
 #include "model/timeout_clock.h"
@@ -469,9 +471,20 @@ std::optional<schema_id_validator> maybe_make_schema_id_validator(
     return std::nullopt;
 }
 
-ss::future<schema_id_validator::result>
-schema_id_validator::operator()(model::record_batch_reader&& rbr) {
-    return (*_impl)(std::move(rbr));
+ss::future<schema_id_validator::result> schema_id_validator::operator()(
+  model::record_batch_reader&& rbr, cluster::partition_probe* probe) {
+    using futurator = ss::futurize<schema_id_validator::result>;
+    return (*_impl)(std::move(rbr))
+      .handle_exception([](std::exception_ptr e) {
+          vlog(plog.warn, "Invalid record due to exception: {}", e);
+          return futurator::convert(kafka::error_code::invalid_record);
+      })
+      .then([probe](futurator::value_type res) {
+          if (!res.has_value()) {
+              probe->add_schema_id_validation_failed();
+          }
+          return futurator::convert(std::move(res));
+      });
 }
 
 } // namespace pandaproxy::schema_registry
