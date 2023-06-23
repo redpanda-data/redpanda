@@ -267,8 +267,16 @@ public:
               double(total_replicas) * capacity / total_capacity);
             logger.info(
               "node {} has {} replicas, expected: {}", id, replicas, expected);
-            BOOST_REQUIRE_GE(replicas, expected - ceil(max_skew * expected));
-            BOOST_REQUIRE_LE(replicas, expected + ceil(max_skew * expected));
+            auto expected_min = expected - ceil(max_skew * expected);
+            auto expected_max = expected + ceil(max_skew * expected);
+            if (replicas < expected_min || replicas > expected_max) {
+                print_replica_map();
+                BOOST_REQUIRE_MESSAGE(
+                  false,
+                  "node " << id << ": unexpected replicas count: " << replicas
+                          << "(expected interval: [" << expected_min << ", "
+                          << expected_max << "]");
+            }
         }
     }
 
@@ -319,10 +327,12 @@ public:
                   id,
                   expected_replicas,
                   total_replicas);
+                // Expected variance should be proportional to
+                // sqrt(expected_replicas). Assert that it is not more than 3x
+                // that.
                 auto err = std::abs(expected_replicas - replicas_on_node)
-                           / expected_replicas;
-                // assert that the skew is smaller than 50%
-                BOOST_REQUIRE_LE(err, 0.5);
+                           / sqrt(expected_replicas);
+                BOOST_REQUIRE_LE(err, 3.0);
             }
         }
     }
@@ -670,9 +680,9 @@ FIXTURE_TEST(test_counts_rebalancing, partition_balancer_sim_fixture) {
           100_MiB);
     }
 
-    add_node(model::node_id{3}, 100_GiB, 4);
+    add_node(model::node_id{3}, 1000_GiB, 4);
     add_node_to_rebalance(model::node_id{3});
-    add_node(model::node_id{4}, 100_GiB, 8);
+    add_node(model::node_id{4}, 1000_GiB, 8);
     add_node_to_rebalance(model::node_id{4});
 
     print_state();
@@ -689,6 +699,7 @@ FIXTURE_TEST(test_counts_rebalancing, partition_balancer_sim_fixture) {
         }
     }
 
+    print_state();
     validate_even_replica_distribution();
     validate_even_topic_distribution();
 }
