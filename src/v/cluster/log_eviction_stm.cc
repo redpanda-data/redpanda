@@ -69,24 +69,22 @@ ss::future<> log_eviction_stm::write_raft_snapshots_in_background() {
         }
         auto evict_until = std::max(
           _delete_records_eviction_offset, _storage_eviction_offset);
-        if (evict_until > model::offset{}) {
-            auto index_lb = _raft->log().index_lower_bound(evict_until);
-            if (index_lb) {
-                vassert(
-                  index_lb <= evict_until,
-                  "Calculated boundary {} must be <= effective_start {} ",
-                  index_lb,
-                  evict_until);
-                try {
-                    co_await do_write_raft_snapshot(*index_lb);
-                } catch (const std::exception& e) {
-                    vlog(
-                      _logger.error,
-                      "Error occurred when attempting to write snapshot: "
-                      "{}, ntp: {}",
-                      e,
-                      _raft->ntp());
-                }
+        auto index_lb = _raft->log().index_lower_bound(evict_until);
+        if (index_lb) {
+            vassert(
+              index_lb <= evict_until,
+              "Calculated boundary {} must be <= effective_start {} ",
+              index_lb,
+              evict_until);
+            try {
+                co_await do_write_raft_snapshot(*index_lb);
+            } catch (const std::exception& e) {
+                vlog(
+                  _logger.error,
+                  "Error occurred when attempting to write snapshot: "
+                  "{}, ntp: {}",
+                  e,
+                  _raft->ntp());
             }
         }
     }
