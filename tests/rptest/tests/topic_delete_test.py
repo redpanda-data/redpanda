@@ -30,7 +30,7 @@ from rptest.services.kgo_verifier_services import KgoVerifierProducer
 from rptest.util import wait_for_local_storage_truncate, firewall_blocked
 from rptest.services.admin import Admin
 from rptest.tests.partition_movement import PartitionMovementMixin
-from rptest.utils.si_utils import BucketView, NTP, NT, LifecycleMarkerStatus
+from rptest.utils.si_utils import BucketView, NTP, NT, LifecycleMarkerStatus, quiesce_uploads
 
 
 def get_kvstore_topic_key_counts(redpanda):
@@ -470,10 +470,9 @@ class TopicDeleteCloudStorageTest(RedpandaTest):
         else:
             self._produce_until_spillover(topic_name, local_retention)
 
-        # Confirm objects in remote storage
-        objects = self.cloud_storage_client.list_objects(
-            self.si_settings.cloud_storage_bucket, topic=topic_name)
-        assert sum(1 for _ in objects) > 0
+        # Wait for everything to be uploaded: this avoids tests potentially trying
+        # to delete topics mid-uploads, which can leave orphan segments.
+        quiesce_uploads(self.redpanda, topic_name, timeout_sec=60)
 
     @skip_debug_mode  # Rely on timely uploads during leader transfers
     @cluster(num_nodes=3,
