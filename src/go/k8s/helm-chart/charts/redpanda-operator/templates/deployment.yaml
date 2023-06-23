@@ -61,10 +61,14 @@ spec:
         - --configurator-base-image={{ .Values.configurator.repository }}
         - --configurator-image-pull-policy={{ .Values.configurator.pullPolicy }}
         - --cluster-domain={{ .Values.clusterDomain }}
-        {{- if .Values.webhook.enabled }}
+        {{- if and .Values.webhook.enabled (eq .Values.scope "Cluster" ) }}
         - --webhook-enabled=true
         {{- else }}
         - --webhook-enabled=false
+        {{- end }}
+        {{- if eq .Values.scope "Namespace" }}
+        - --namespace={{ .Release.Namespace }}
+        - --log-level=debug
         {{- end }}
         command:
         - /manager

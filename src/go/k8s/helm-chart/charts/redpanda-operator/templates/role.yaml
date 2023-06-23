@@ -38,4 +38,241 @@ rules:
   verbs:
   - create
   - patch
+  {{- if ( eq .Values.scope "Cluster" ) }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "redpanda-operator.fullname" . }}
+  labels:
+{{ include "redpanda-operator.labels" . | indent 4 }}
+rules:
+  - apiGroups:
+      - apps
+    resources:
+      - replicasets
+    verbs:
+      - create
+      - delete
+      - get
+      - list
+      - patch
+      - update
+      - watch
+  - apiGroups:
+      - batch
+    resources:
+      - jobs
+    verbs:
+      - create
+      - delete
+      - get
+      - list
+      - patch
+      - update
+      - watch
+  - apiGroups:
+      - cluster.redpanda.com
+    resources:
+      - redpandas
+    verbs:
+      - create
+      - delete
+      - get
+      - list
+      - patch
+      - update
+      - watch
+  - apiGroups:
+      - cluster.redpanda.com
+    resources:
+      - redpandas/finalizers
+    verbs:
+      - update
+  - apiGroups:
+      - cluster.redpanda.com
+    resources:
+      - redpandas/status
+    verbs:
+      - get
+      - patch
+      - update
+  - apiGroups:
+      - coordination.k8s.io
+    resources:
+      - leases
+    verbs:
+      - create
+      - delete
+      - get
+      - list
+      - patch
+      - update
+      - watch
+  - apiGroups:
+      - ""
+    resources:
+      - configmaps
+    verbs:
+      - create
+      - delete
+      - get
+      - list
+      - patch
+      - update
+      - watch
+  - apiGroups:
+      - ""
+    resources:
+      - events
+    verbs:
+      - create
+      - patch
+  - apiGroups:
+      - ""
+    resources:
+      - secrets
+    verbs:
+      - create
+      - delete
+      - get
+      - list
+      - patch
+      - update
+      - watch
+  - apiGroups:
+      - ""
+    resources:
+      - serviceaccounts
+    verbs:
+      - create
+      - delete
+      - get
+      - list
+      - patch
+      - update
+      - watch
+  - apiGroups:
+      - ""
+    resources:
+      - services
+    verbs:
+      - create
+      - delete
+      - get
+      - list
+      - patch
+      - update
+      - watch
+  - apiGroups:
+      - helm.toolkit.fluxcd.io
+    resources:
+      - helmreleases
+    verbs:
+      - create
+      - delete
+      - get
+      - list
+      - patch
+      - update
+      - watch
+  - apiGroups:
+      - helm.toolkit.fluxcd.io
+    resources:
+      - helmreleases/finalizers
+    verbs:
+      - update
+  - apiGroups:
+      - helm.toolkit.fluxcd.io
+    resources:
+      - helmreleases/status
+    verbs:
+      - get
+      - patch
+      - update
+  - apiGroups:
+      - source.toolkit.fluxcd.io
+    resources:
+      - buckets
+    verbs:
+      - create
+      - delete
+      - get
+      - list
+      - patch
+      - update
+      - watch
+  - apiGroups:
+      - source.toolkit.fluxcd.io
+    resources:
+      - gitrepositories
+    verbs:
+      - create
+      - delete
+      - get
+      - list
+      - patch
+      - update
+      - watch
+  - apiGroups:
+      - source.toolkit.fluxcd.io
+    resources:
+      - helmcharts
+    verbs:
+      - create
+      - delete
+      - get
+      - list
+      - patch
+      - update
+      - watch
+  - apiGroups:
+      - source.toolkit.fluxcd.io
+    resources:
+      - helmcharts/finalizers
+    verbs:
+      - create
+      - delete
+      - get
+      - patch
+      - update
+  - apiGroups:
+      - source.toolkit.fluxcd.io
+    resources:
+      - helmcharts/status
+    verbs:
+      - get
+      - patch
+      - update
+  - apiGroups:
+      - source.toolkit.fluxcd.io
+    resources:
+      - helmrepositories
+    verbs:
+      - create
+      - delete
+      - get
+      - list
+      - patch
+      - update
+      - watch
+  - apiGroups:
+      - source.toolkit.fluxcd.io
+    resources:
+      - helmrepositories/finalizers
+    verbs:
+      - create
+      - delete
+      - get
+      - patch
+      - update
+  - apiGroups:
+      - source.toolkit.fluxcd.io
+    resources:
+      - helmrepositories/status
+    verbs:
+      - get
+      - patch
+      - update
+  {{- end }}
 {{- end}}

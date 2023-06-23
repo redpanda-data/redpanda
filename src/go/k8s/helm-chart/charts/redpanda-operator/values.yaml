@@ -98,3 +98,5 @@ monitoring:
   enabled: false
 
 webhookSecretName: webhook-server-cert
+
+scope: Cluster
