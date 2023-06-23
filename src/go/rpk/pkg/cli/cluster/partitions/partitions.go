@@ -13,6 +13,7 @@ func NewPartitionsCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 		Short: "Manage cluster partitions",
 	}
 	p.InstallAdminFlags(cmd)
+	p.InstallSASLFlags(cmd)
 	cmd.AddCommand(
 		newBalancerStatusCommand(fs, p),
 		newMovementCancelCommand(fs, p),

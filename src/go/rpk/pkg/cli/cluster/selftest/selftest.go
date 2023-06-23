@@ -24,6 +24,7 @@ func NewSelfTestCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 		Args:  cobra.ExactArgs(0),
 	}
 	p.InstallAdminFlags(cmd)
+	p.InstallSASLFlags(cmd)
 	cmd.AddCommand(
 		newStartCommand(fs, p),
 		newStopCommand(fs, p),

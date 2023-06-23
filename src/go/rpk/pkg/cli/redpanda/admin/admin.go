@@ -27,6 +27,7 @@ func NewCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 		Args:  cobra.ExactArgs(0),
 	}
 	p.InstallAdminFlags(cmd)
+	p.InstallSASLFlags(cmd)
 	cmd.AddCommand(
 		brokers.NewCommand(fs, p),
 		partitions.NewCommand(fs, p),

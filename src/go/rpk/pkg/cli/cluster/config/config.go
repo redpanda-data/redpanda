@@ -48,6 +48,7 @@ different redpanda version that does not recognize certain properties.`,
 		"Include all properties, including tunables",
 	)
 	p.InstallAdminFlags(cmd)
+	p.InstallSASLFlags(cmd)
 
 	cmd.AddCommand(
 		newImportCommand(fs, p, &all),
