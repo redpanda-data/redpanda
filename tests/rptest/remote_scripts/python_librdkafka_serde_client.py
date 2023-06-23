@@ -40,6 +40,8 @@ ProtobuPayloadClasses = {
     "com.redpanda.CompressiblePayload": payload_pb2.CompressiblePayload
 }
 
+CompressionTypes = {"none", "producer", "gzip", "lz4", "snappy", "zstd"}
+
 
 class AvroPayload(OrderedDict):
     def __init__(self, val: int):
@@ -130,7 +132,8 @@ class SerdeClient:
                  security_config: dict = None,
                  skip_known_types: Optional[bool] = None,
                  subject_name_strategy: Optional[str] = None,
-                 payload_class: str = "com.redpanda.Payload"):
+                 payload_class: str = "com.redpanda.Payload",
+                 compression_type: Optional[str] = None):
         self.logger = logger
         self.brokers = brokers
         self.sr_client = SchemaRegistryClient({'url': schema_registry_url})
@@ -139,6 +142,7 @@ class SerdeClient:
         self.group = group
         self.protobuf_payload_class = ProtobuPayloadClasses[payload_class]
         self.avro_schema = AvroSchemas[payload_class]
+        self.compression_type = compression_type
 
         self.produced = 0
         self.acked = 0
@@ -212,12 +216,22 @@ class SerdeClient:
             self.logger.debug("Acked offset %d", msg.offset())
             self.acked += 1
 
+        def get_producer_options():
+            self.logger.debug("self.compression_type: %s",
+                              self.compression_type)
+            if self.compression_type is None:
+                return {}
+            else:
+                return {'compression.type': self.compression_type}
+
         producer = SerializingProducer(
             {
                 'bootstrap.servers': self.brokers,
                 'key.serializer': StringSerializer('utf_8'),
-                'value.serializer': self._make_serializer()
-            } | self._get_security_options())
+                'value.serializer': self._make_serializer(),
+                'compression.type': 'zstd'
+            } | self._get_security_options()
+            | get_producer_options())
 
         self.logger.info("Producing %d %s records to topic %s", count,
                          self.schema_type.name, self.topic)
@@ -294,7 +308,8 @@ def main(args):
                     security_config=security_dict,
                     skip_known_types=args.skip_known_types,
                     subject_name_strategy=args.subject_name_strategy,
-                    payload_class=args.payload_class)
+                    payload_class=args.payload_class,
+                    compression_type=args.compression_type)
     p.run(args.count)
 
 
@@ -350,5 +365,11 @@ if __name__ == '__main__':
         choices=subject_name_strategies.keys(),
         dest="subject_name_strategy",
         help="Subject Name Strategy")
+    parser.add_argument(
+        '--compression-type',
+        default=None,
+        choices=list(CompressionTypes),
+        dest="compression_type",
+        help="compression codec to use for compressing message sets")
 
     main(parser.parse_args())
