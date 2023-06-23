@@ -48,7 +48,7 @@ void coordinated_recovery_throttle::token_bucket::reset_capacity(
     vlog(
       raftlog.debug,
       "Throttler bucket capacity reset to: {}, waiting bytes: {}",
-      _sem.current(),
+      new_capacity,
       _waiting_bytes);
 }
 
