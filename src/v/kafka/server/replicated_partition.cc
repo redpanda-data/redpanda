@@ -129,10 +129,10 @@ replicated_partition::aborted_transactions_local(
     // We trim beginning of aborted ranges to `trim_at` because we don't have
     // offset translation info for earlier offsets.
     model::offset trim_at;
-    if (offsets.begin_rp >= _partition->start_offset()) {
+    if (offsets.begin_rp >= _partition->raft_start_offset()) {
         // Local fetch. Trim to start of the log - it is safe because clients
         // can't read earlier offsets.
-        trim_at = _partition->start_offset();
+        trim_at = _partition->raft_start_offset();
     } else {
         // Fetch from cloud data. Trim to start of the read range - this is
         // incorrect because clients can still see earlier offsets but will work
@@ -177,7 +177,7 @@ replicated_partition::aborted_transactions_remote(
 bool replicated_partition::may_read_from_cloud(kafka::offset start_offset) {
     return _partition->is_remote_fetch_enabled()
            && _partition->cloud_data_available()
-           && (start_offset < _translator->from_log_offset(_partition->start_offset()));
+           && (start_offset < _translator->from_log_offset(_partition->raft_start_offset()));
 }
 
 ss::future<std::vector<cluster::rm_stm::tx_range>>
@@ -283,7 +283,7 @@ ss::future<std::optional<model::offset>>
 replicated_partition::get_leader_epoch_last_offset(
   kafka::leader_epoch epoch) const {
     const model::term_id term(epoch);
-    const auto first_local_offset = _partition->start_offset();
+    const auto first_local_offset = _partition->raft_start_offset();
     const auto first_local_term = _partition->get_term(first_local_offset);
     // Look for the highest offset in the requested term, or the first offset
     // in the next term. This mirrors behavior in Kafka, see
@@ -406,7 +406,7 @@ result<partition_info> replicated_partition::get_partition_info() const {
     if (followers.has_error()) {
         return followers.error();
     }
-    auto start_offset = _partition->start_offset();
+    auto start_offset = _partition->raft_start_offset();
 
     auto clamped_translate = [this, start_offset](model::offset to_translate) {
         return to_translate >= start_offset

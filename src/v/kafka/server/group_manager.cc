@@ -634,7 +634,7 @@ ss::future<> group_manager::handle_partition_leader_change(
                  * key-based compaction in the future.
                  */
                 storage::log_reader_config reader_config(
-                  p->partition->start_offset(),
+                  p->partition->raft_start_offset(),
                   model::model_limits<model::offset>::max(),
                   0,
                   std::numeric_limits<size_t>::max(),

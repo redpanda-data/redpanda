@@ -2451,7 +2451,7 @@ ntp_archiver::find_reupload_candidate(manifest_scanner_t scanner) {
     if (!may_begin_uploads()) {
         co_return std::make_pair(std::nullopt, std::nullopt);
     }
-    auto run = scanner(_parent.start_offset(), manifest());
+    auto run = scanner(_parent.raft_start_offset(), manifest());
     if (!run.has_value()) {
         vlog(_rtclog.debug, "Scan didn't resulted in upload candidate");
         co_return std::make_pair(std::nullopt, std::nullopt);
@@ -2459,7 +2459,7 @@ ntp_archiver::find_reupload_candidate(manifest_scanner_t scanner) {
         vlog(_rtclog.debug, "Scan result: {}", run);
     }
     auto units = co_await ss::get_units(_mutex, 1, _as);
-    if (run->meta.base_offset >= _parent.start_offset()) {
+    if (run->meta.base_offset >= _parent.raft_start_offset()) {
         auto log_generic = _parent.log();
         auto& log = dynamic_cast<storage::disk_log_impl&>(
           *log_generic.get_impl());

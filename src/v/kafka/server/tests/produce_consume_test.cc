@@ -15,6 +15,8 @@
 #include "kafka/protocol/wire.h"
 #include "kafka/server/handlers/produce.h"
 #include "kafka/server/snc_quota_manager.h"
+#include "kafka/server/tests/delete_records_utils.h"
+#include "kafka/server/tests/produce_consume_utils.h"
 #include "model/fundamental.h"
 #include "random/generators.h"
 #include "redpanda/tests/fixture.h"
@@ -24,7 +26,11 @@
 
 #include <boost/test/tools/old/interface.hpp>
 
+#include <vector>
+
 using namespace std::chrono_literals;
+using std::vector;
+using tests::kv_t;
 
 struct prod_consume_fixture : public redpanda_thread_fixture {
     void start() {
@@ -648,4 +654,135 @@ FIXTURE_TEST(test_offset_for_leader_epoch, prod_consume_fixture) {
             })
           .get();
     BOOST_REQUIRE_EQUAL(earliest_kafka_offset, partition_resp.end_offset);
+}
+
+FIXTURE_TEST(test_basic_delete_around_batch, prod_consume_fixture) {
+    wait_for_controller_leadership().get0();
+    start();
+    const model::topic_namespace tp_ns(model::ns("kafka"), test_topic);
+    const model::partition_id pid(0);
+    const model::ntp ntp(tp_ns.ns, tp_ns.tp, pid);
+    auto partition = app.partition_manager.local().get(ntp);
+    auto* log = dynamic_cast<storage::disk_log_impl*>(
+      partition->log().get_impl());
+
+    tests::kafka_produce_transport producer(make_kafka_client().get());
+    producer.start().get();
+    producer
+      .produce_to_partition(
+        test_topic,
+        model::partition_id(0),
+        vector<kv_t>{
+          {"key0", "val0"},
+          {"key1", "val1"},
+          {"key2", "val2"},
+        })
+      .get();
+    producer
+      .produce_to_partition(
+        test_topic,
+        model::partition_id(0),
+        vector<kv_t>{
+          {"key3", "val3"},
+          {"key4", "val4"},
+        })
+      .get();
+    producer
+      .produce_to_partition(
+        test_topic,
+        model::partition_id(0),
+        vector<kv_t>{
+          {"key5", "val5"},
+          {"key6", "val6"},
+        })
+      .get();
+    log->flush().get();
+    log->force_roll(ss::default_priority_class()).get();
+    BOOST_REQUIRE_EQUAL(2, log->segments().size());
+
+    tests::kafka_consume_transport consumer(make_kafka_client().get());
+    consumer.start().get();
+    tests::kafka_delete_records_transport deleter(make_kafka_client().get());
+    deleter.start().get();
+
+    // At this point, we have three batches:
+    //  [0, 2] [3, 4], [5, 6]
+    const auto check_consume_out_of_range = [&](model::offset kafka_offset) {
+        BOOST_REQUIRE_EXCEPTION(
+          consumer.consume_from_partition(test_topic, pid, kafka_offset).get(),
+          std::runtime_error,
+          [](std::runtime_error e) {
+              return std::string(e.what()).find("out_of_range")
+                     != std::string::npos;
+          });
+    };
+    {
+        // Delete in the middle of an offset.
+        auto lwm = deleter
+                     .delete_records_from_partition(
+                       test_topic, pid, model::offset(1), 5s)
+                     .get();
+        BOOST_CHECK_EQUAL(model::offset(1), lwm);
+        // We should fail to consume below the start offset.
+        check_consume_out_of_range(model::offset(0));
+        // But the data may still be returned, and is expected to be filtered
+        // client-side.
+        auto consumed_records
+          = consumer.consume_from_partition(test_topic, pid, model::offset(1))
+              .get();
+        BOOST_REQUIRE(!consumed_records.empty());
+        BOOST_REQUIRE_EQUAL("key0", consumed_records[0].first);
+    }
+
+    {
+        // Delete at the start of a batch boundary.
+        auto lwm = deleter
+                     .delete_records_from_partition(
+                       test_topic, pid, model::offset(3), 5s)
+                     .get();
+        BOOST_CHECK_EQUAL(model::offset(3), lwm);
+        check_consume_out_of_range(model::offset(2));
+        // No extraneous data should exist.
+        auto consumed_records
+          = consumer.consume_from_partition(test_topic, pid, model::offset(3))
+              .get();
+        BOOST_REQUIRE(!consumed_records.empty());
+        BOOST_REQUIRE_EQUAL("key3", consumed_records[0].first);
+    }
+
+    {
+        // Delete near the end.
+        auto lwm = deleter
+                     .delete_records_from_partition(
+                       test_topic, pid, model::offset(6), 5s)
+                     .get();
+        BOOST_CHECK_EQUAL(model::offset(6), lwm);
+        check_consume_out_of_range(model::offset(5));
+        // The entire batch is read.
+        auto consumed_records
+          = consumer.consume_from_partition(test_topic, pid, model::offset(6))
+              .get();
+        BOOST_REQUIRE(!consumed_records.empty());
+        BOOST_REQUIRE_EQUAL("key5", consumed_records[0].first);
+    }
+    auto lwm = deleter
+                 .delete_records_from_partition(
+                   test_topic, pid, model::offset(7), 5s)
+                 .get();
+    BOOST_REQUIRE_EQUAL(model::offset(7), lwm);
+    producer
+      .produce_to_partition(
+        test_topic,
+        model::partition_id(0),
+        vector<kv_t>{
+          {"key7", "val7"},
+        })
+      .get();
+    log->flush().get();
+    check_consume_out_of_range(model::offset(6));
+    auto consumed_records
+      = consumer.consume_from_partition(test_topic, pid, model::offset(7))
+          .get();
+    BOOST_REQUIRE(!consumed_records.empty());
+    BOOST_REQUIRE_EQUAL("key7", consumed_records[0].first);
 }

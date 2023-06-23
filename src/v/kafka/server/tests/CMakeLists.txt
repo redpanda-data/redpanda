@@ -21,8 +21,10 @@ v_cc_library(
   NAME
     kafka_test_utils
   HDRS
+    "delete_records_utils.h"
     "produce_consume_utils.h"
   SRCS
+    "delete_records_utils.cc"
     "produce_consume_utils.cc"
   DEPS
     v::bytes
@@ -54,7 +56,7 @@ rp_test(
   FIXTURE_TEST
   BINARY_NAME kafka_server
   SOURCES ${srcs}
-  LIBRARIES v::seastar_testing_main v::application v::raft v::kafka v::config v::storage_test_utils
+  LIBRARIES v::seastar_testing_main v::application v::raft v::kafka v::config v::storage_test_utils v::kafka_test_utils
   ARGS "-- -c 1"
   LABELS kafka
 )
