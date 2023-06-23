@@ -824,19 +824,23 @@ ss::future<> s3_client::do_delete_object(
     vlog(s3_log.trace, "send https request:\n{}", header.value());
     return _client.request(std::move(header.value()), timeout)
       .then([](const http::client::response_stream_ref& ref) {
-          return util::drain_response_stream(ref).then([ref](iobuf&& res) {
-              auto status = ref->get_headers().result();
-              if (
-                status != boost::beast::http::status::ok
-                && status
-                     != boost::beast::http::status::no_content) { // expect 204
-                  vlog(
-                    s3_log.warn,
-                    "S3 replied with error: {:l}",
-                    ref->get_headers());
-                  return parse_rest_error_response<>(status, std::move(res));
-              }
-              return ss::now();
+          return ref->prefetch_headers().then([ref] {
+              return util::drain_response_stream(ref).then([ref](iobuf&& res) {
+                  auto status = ref->get_headers().result();
+                  if (
+                    status != boost::beast::http::status::ok
+                    && status
+                         != boost::beast::http::status::no_content) { // expect
+                                                                      // 204
+                      vlog(
+                        s3_log.warn,
+                        "S3 replied with error: {:l}",
+                        ref->get_headers());
+                      return parse_rest_error_response<>(
+                        status, std::move(res));
+                  }
+                  return ss::now();
+              });
           });
       });
 }
@@ -902,16 +906,18 @@ auto s3_client::do_delete_objects(
                    .finally([&] { return to_delete.close(); });
              })
       .then([](http::client::response_stream_ref const& response) {
-          return util::drain_response_stream(response).then(
-            [response](iobuf&& res) {
-                auto status = response->get_headers().result();
-                if (status != boost::beast::http::status::ok) {
-                    return parse_rest_error_response<delete_objects_result>(
-                      status, std::move(res));
-                }
-                return ss::make_ready_future<delete_objects_result>(
-                  iobuf_to_delete_objects_result(std::move(res)));
-            });
+          return response->prefetch_headers().then([response] {
+              return util::drain_response_stream(response).then(
+                [response](iobuf&& res) {
+                    auto status = response->get_headers().result();
+                    if (status != boost::beast::http::status::ok) {
+                        return parse_rest_error_response<delete_objects_result>(
+                          status, std::move(res));
+                    }
+                    return ss::make_ready_future<delete_objects_result>(
+                      iobuf_to_delete_objects_result(std::move(res)));
+                });
+          });
       });
 }
 
