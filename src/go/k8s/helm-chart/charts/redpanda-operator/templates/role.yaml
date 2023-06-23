@@ -38,7 +38,7 @@ rules:
   verbs:
   - create
   - patch
-  {{- if ( eq .Values.scope "Cluster" ) }}
+  {{- if eq .Values.scope "Namespace" }}
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role

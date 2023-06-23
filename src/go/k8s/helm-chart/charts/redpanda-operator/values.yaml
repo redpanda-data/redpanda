@@ -99,4 +99,9 @@ monitoring:
 
 webhookSecretName: webhook-server-cert
 
+# scope -- change the scope and therefore the resource the controller will manage
+# only "Cluster" and "Namespace" supported
 scope: Cluster
+
+# installCRDs -- to be deprecated, for now allowing you to install crds
+installCRDs: false
