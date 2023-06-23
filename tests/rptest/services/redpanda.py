@@ -2844,7 +2844,15 @@ class RedpandaService(RedpandaServiceBase):
     def clean(self, **kwargs):
         super().clean(**kwargs)
         if self.cloud_storage_client:
-            self.delete_bucket_from_si()
+            try:
+                self.delete_bucket_from_si()
+            except Exception as e:
+                self.logger.error(
+                    f"Failed to remove bucket {self._si_settings.cloud_storage_bucket}."
+                    f" This may cause running out of quota in the cloud env. Please investigate: {e}"
+                )
+
+                raise e
 
     def clean_node(self,
                    node,
