@@ -78,6 +78,14 @@ ss::future<> log_eviction_stm::write_raft_snapshots_in_background() {
               evict_until);
             try {
                 co_await do_write_raft_snapshot(*index_lb);
+            } catch (const ss::abort_requested_exception&) {
+                // ignore abort requested exception, shutting down
+            } catch (const ss::gate_closed_exception&) {
+                // ignore gate closed exception, shutting down
+            } catch (const ss::broken_semaphore&) {
+                // ignore broken sem exception, shutting down
+            } catch (const ss::broken_named_semaphore&) {
+                // ignore broken named sem exception, shutting down
             } catch (const std::exception& e) {
                 vlog(
                   _logger.error,
