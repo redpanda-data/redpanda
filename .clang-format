@@ -35,6 +35,7 @@ IndentCaseLabels: false
 IndentRequires: false
 IndentRequiresClause: false
 IndentWidth: 4
+InsertNewlineAtEOF: true
 KeepEmptyLinesAtTheStartOfBlocks: false
 PenaltyBreakAssignment: 80
 PenaltyBreakBeforeFirstCallParameter: 10
