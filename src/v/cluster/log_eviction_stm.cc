@@ -99,11 +99,6 @@ ss::future<> log_eviction_stm::monitor_log_eviction() {
         try {
             _storage_eviction_offset = co_await _raft->monitor_log_eviction(
               _as);
-            vlog(
-              _logger.trace,
-              "Handling log deletion notification for offset: {}, ntp: {}",
-              _storage_eviction_offset,
-              _raft->ntp());
             const auto max_collectible_offset
               = _raft->log().stm_manager()->max_collectible_offset();
             const auto next_eviction_offset = std::min(
@@ -145,6 +140,11 @@ ss::future<> log_eviction_stm::do_write_raft_snapshot(model::offset index_lb) {
           _raft->ntp());
         index_lb = max_collectible_offset;
     }
+    vlog(
+      _logger.debug,
+      "Truncating data up until offset: {} for ntp: {}",
+      index_lb,
+      _raft->ntp());
     co_await _raft->write_snapshot(raft::write_snapshot_cfg(index_lb, iobuf()));
     _last_snapshot_monitor.notify(index_lb);
 }
@@ -201,8 +201,7 @@ ss::future<std::error_code> log_eviction_stm::truncate(
       _logger.info,
       "Replicating prefix_truncate command, truncate_offset: {} current "
       "start offset: {}, current last snapshot offset: {}, current last "
-      "visible "
-      "offset: {}",
+      "visible offset: {}",
       rp_truncate_offset,
       effective_start_offset(),
       _raft->last_snapshot_index(),
@@ -279,7 +278,7 @@ ss::future<> log_eviction_stm::apply(model::record_batch batch) {
           batch.copy_records().begin()->release_key());
         if (truncate_offset > _delete_records_eviction_offset) {
             vlog(
-              _logger.debug,
+              _logger.info,
               "Moving effective start offset to "
               "truncate_point: {} last_applied: {} ntp: {}",
               truncate_offset,
