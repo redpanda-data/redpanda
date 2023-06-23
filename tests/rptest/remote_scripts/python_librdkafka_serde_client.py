@@ -36,7 +36,8 @@ class SchemaType(IntEnum):
 
 ProtobuPayloadClasses = {
     "com.redpanda.Payload": payload_pb2.Payload,
-    "com.redpanda.A.B.C.D.NestedPayload": payload_pb2.A.B.C.D.NestedPayload
+    "com.redpanda.A.B.C.D.NestedPayload": payload_pb2.A.B.C.D.NestedPayload,
+    "com.redpanda.CompressiblePayload": payload_pb2.CompressiblePayload
 }
 
 
@@ -44,10 +45,15 @@ class AvroPayload(OrderedDict):
     def __init__(self, val: int):
         OrderedDict.__init__(OrderedDict([('val', int)]))
         self['val'] = val
+        self['message'] = ''.join('*' for _ in range(1024))
 
     @property
     def val(self):
         return self['val']
+
+    @property
+    def message(self):
+        return self['message']
 
 
 AVRO_SCHEMA_PAYLOAD = '''{
@@ -70,9 +76,21 @@ AVRO_SCHEMA_NESTED_PAYLOAD = '''{
 }
 '''
 
+AVRO_SCHEMA_COMPRESSIBLE_PAYLOAD = '''{
+"type": "record",
+"name": "CompressiblePayload",
+"namespace": "com.redpanda",
+  "fields": [
+    {"name": "val", "type": "int"},
+    {"name": "message", "type": "string"}
+  ]
+}
+'''
+
 AvroSchemas = {
     "com.redpanda.Payload": AVRO_SCHEMA_PAYLOAD,
-    "com.redpanda.A.B.C.D.NestedPayload": AVRO_SCHEMA_NESTED_PAYLOAD
+    "com.redpanda.A.B.C.D.NestedPayload": AVRO_SCHEMA_NESTED_PAYLOAD,
+    "com.redpanda.CompressiblePayload": AVRO_SCHEMA_COMPRESSIBLE_PAYLOAD
 }
 
 
@@ -80,6 +98,8 @@ def make_protobuf_payload(payload_class, val: int):
     p = payload_class()
     p.val = val
     p.timestamp.FromDatetime(datetime.now())
+    if hasattr(p, 'message'):
+        p.message = ''.join('*' for _ in range(1024))
     return p
 
 

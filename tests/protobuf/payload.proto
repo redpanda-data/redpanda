@@ -53,3 +53,9 @@ message A {
         }
     }
 }
+
+message CompressiblePayload {
+    int32 val = 1;
+    google.protobuf.Timestamp timestamp = 2;
+    string message = 3;
+}
