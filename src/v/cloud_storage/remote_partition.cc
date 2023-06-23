@@ -1119,7 +1119,8 @@ ss::future<remote_partition::erase_result> remote_partition::erase(
     // Loop over normal segments and replaced (pending deletion) segments
     // at the same time, to batch them together into as few DeleteObjects
     // requests as possible
-    const size_t batch_size = 1000;
+    constexpr size_t batch_size = 1000;
+    constexpr uint8_t entities_per_segment = 3;
     auto segment_i = manifest.begin();
     auto replaced_i = replaced_segments.begin();
 
@@ -1128,32 +1129,28 @@ ss::future<remote_partition::erase_result> remote_partition::erase(
         std::vector<cloud_storage_clients::object_key> batch_keys;
         batch_keys.reserve(batch_size);
 
-        std::vector<cloud_storage_clients::object_key> tx_batch_keys;
-        tx_batch_keys.reserve(batch_size);
-
-        std::vector<cloud_storage_clients::object_key> index_keys;
-        index_keys.reserve(batch_size);
-
         for (
           size_t k = 0;
-          k < batch_size
+          k + entities_per_segment <= batch_size
           && (segment_i != manifest.end() || replaced_i != replaced_segments.end());
-          ++k) {
-            remote_segment_path segment_path;
+          k += entities_per_segment) {
+            segment_meta meta;
             if (segment_i != manifest.end()) {
-                segment_path = manifest.generate_segment_path(*segment_i);
+                meta = *segment_i;
                 ++segment_i;
             } else {
                 vassert(
                   replaced_i != replaced_segments.end(),
                   "Loop condition should ensure one iterator is always valid");
-                segment_path = manifest.generate_segment_path(*replaced_i);
+                meta = *replaced_i;
                 ++replaced_i;
             }
-            batch_keys.emplace_back(segment_path);
-            tx_batch_keys.emplace_back(
-              tx_range_manifest(segment_path).get_manifest_path());
-            index_keys.emplace_back(generate_index_path(segment_path));
+
+            auto seg_path = manifest.generate_segment_path(meta);
+            batch_keys.emplace_back(seg_path);
+            batch_keys.emplace_back(generate_index_path(seg_path));
+            batch_keys.emplace_back(
+              tx_range_manifest(seg_path).get_manifest_path());
         }
 
         vlog(
@@ -1163,20 +1160,15 @@ ss::future<remote_partition::erase_result> remote_partition::erase(
           *(batch_keys.begin()),
           *(--batch_keys.end()));
 
-        for (auto& object_set : std::vector{
-               std::move(batch_keys),
-               std::move(tx_batch_keys),
-               std::move(index_keys)}) {
-            if (
-              co_await api.delete_objects(
-                bucket, std::move(object_set), local_rtc)
-              != upload_result::success) {
-                vlog(
-                  ctxlog.info,
-                  "[{}] Failed to erase some segments, deferring deletion",
-                  manifest.get_ntp());
-                co_return erase_result::failed;
-            }
+        auto res = co_await api.delete_objects(
+          bucket, std::move(batch_keys), local_rtc);
+
+        if (res != upload_result::success) {
+            vlog(
+              ctxlog.info,
+              "[{}] Failed to erase some segments, deferring deletion",
+              manifest.get_ntp());
+            co_return erase_result::failed;
         }
     }
 
