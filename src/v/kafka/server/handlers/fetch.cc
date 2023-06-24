@@ -114,6 +114,18 @@ static ss::future<read_result> read_from_partition(
               result.first_tx_batch_offset.value(),
               result.last_offset,
               std::move(rdr.ot_state));
+
+            // Check that the underlying data did not get truncated while
+            // consuming. If so, it's possible the search for aborted
+            // transactions missed out on transactions that correspond to the
+            // read batches.
+            auto start_o = part.start_offset();
+            if (config.start_offset < start_o) {
+                co_return read_result(
+                  error_code::offset_out_of_range,
+                  start_o,
+                  part.high_watermark());
+            }
         }
 
     } catch (...) {
