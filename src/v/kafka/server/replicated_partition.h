@@ -60,17 +60,17 @@ public:
             }
             co_return error_code;
         }
-        co_return std::max(
-          partition_kafka_start_offset(), synced_start_offset_override.value());
+        co_return kafka_start_offset_with_override(
+          synced_start_offset_override.value());
     }
 
     model::offset start_offset() const final {
-        auto start_offset_override = _partition->kafka_start_offset_override();
+        const auto start_offset_override
+          = _partition->kafka_start_offset_override();
         if (!start_offset_override.has_value()) {
             return partition_kafka_start_offset();
         }
-        return std::max(
-          partition_kafka_start_offset(), start_offset_override.value());
+        return kafka_start_offset_with_override(start_offset_override.value());
     }
 
     model::offset high_watermark() const final {
@@ -195,6 +195,25 @@ private:
             return _partition->start_cloud_offset();
         }
         return local_kafka_start_offset;
+    }
+
+    model::offset kafka_start_offset_with_override(
+      model::offset start_kafka_offset_override) const {
+        if (start_kafka_offset_override == model::offset{}) {
+            return partition_kafka_start_offset();
+        }
+        if (_partition->is_read_replica_mode_enabled()) {
+            // The start override may fall ahead of the HWM since read replicas
+            // compute HWM based on uploaded segments, and the override may
+            // appear in the manifest before uploading corresponding segments.
+            // Clamp down to the HWM.
+            const auto hwm = high_watermark();
+            if (hwm <= start_kafka_offset_override) {
+                return hwm;
+            }
+        }
+        return std::max(
+          partition_kafka_start_offset(), start_kafka_offset_override);
     }
 
     ss::future<std::vector<cluster::rm_stm::tx_range>>
