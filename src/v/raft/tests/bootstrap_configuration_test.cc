@@ -49,7 +49,8 @@ struct bootstrap_fixture : raft::simple_record_fixture {
               storage::with_cache::no,
               storage::make_sanitized_file_config());
         },
-        _feature_table) {
+        _feature_table,
+        config::mock_binding<std::optional<uint64_t>>(std::nullopt)) {
         _feature_table.start().get();
         _feature_table
           .invoke_on_all(

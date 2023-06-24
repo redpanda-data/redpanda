@@ -61,7 +61,8 @@ struct foreign_entry_fixture {
               ss::default_priority_class(),
               storage::make_sanitized_file_config());
         },
-        _feature_table) {
+        _feature_table,
+        config::mock_binding<std::optional<uint64_t>>(std::nullopt)) {
         _feature_table.start().get();
         _feature_table
           .invoke_on_all(

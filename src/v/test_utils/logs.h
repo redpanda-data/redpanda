@@ -56,7 +56,8 @@ static inline ss::future<> persist_log_file(
                   ss::default_priority_class(),
                   storage::make_sanitized_file_config());
             },
-            std::ref(feature_table))
+            std::ref(feature_table),
+            config::mock_binding<std::optional<uint64_t>>(std::nullopt))
           .get();
         storage.invoke_on_all(&storage::api::start).get();
 
@@ -133,7 +134,8 @@ read_log_file(ss::sstring base_dir, model::ntp file_ntp) {
                   ss::default_priority_class(),
                   storage::make_sanitized_file_config());
             },
-            std::ref(feature_table))
+            std::ref(feature_table),
+            config::mock_binding<std::optional<uint64_t>>(std::nullopt))
           .get();
         storage.invoke_on_all(&storage::api::start).get();
         auto& mgr = storage.local().log_mgr();

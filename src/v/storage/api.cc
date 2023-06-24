@@ -10,6 +10,9 @@
  */
 #include "storage/api.h"
 
+#include "storage/log.h"
+#include "utils/human.h"
+
 namespace storage {
 
 ss::future<> api::start() {
@@ -19,9 +22,17 @@ ss::future<> api::start() {
     _log_mgr = std::make_unique<log_manager>(
       _log_conf_cb(), kvs(), _resources, _feature_table);
     co_await _log_mgr->start();
+
+    if (ss::this_shard_id() == 0) {
+        ssx::spawn_with_gate(_gate, [this] { return monitor(); });
+        _log_storage_max_size.watch([this] { _monitor_sem.signal(); });
+    }
 }
 
 ss::future<> api::stop() {
+    _monitor_sem.broken();
+    co_await _gate.close();
+
     if (_log_mgr) {
         co_await _log_mgr->stop();
     }
@@ -51,5 +62,62 @@ void api::handle_disk_notification(
         _log_mgr->handle_disk_notification(alert);
     }
 }
+
+ss::future<> api::monitor() {
+    vassert(ss::this_shard_id() == 0, "Run on wrong core");
+
+    /*
+     * The control loop should run periodically, but the current setting of 2
+     * seconds which provides decent responsiveness is too low to be used in
+     * practice long term. A follow up change will increase this setting and
+     * then allow cores to wake up this thread on demand to provide reactivity
+     * without frequent polling.
+     */
+    constexpr auto frequency = std::chrono::seconds(2);
+
+    while (true) {
+        try {
+            if (_log_storage_max_size().has_value()) {
+                co_await _monitor_sem.wait(
+                  frequency, std::max(_monitor_sem.current(), size_t(1)));
+            } else {
+                co_await _monitor_sem.wait();
+            }
+        } catch (const ss::semaphore_timed_out&) {
+            // time for some controlling
+        }
+
+        if (!_log_storage_max_size().has_value()) {
+            continue;
+        }
+
+        auto usage = co_await disk_usage();
+
+        const auto max_exceeded = _log_storage_max_size().has_value()
+                                  && usage.usage.total()
+                                       > _log_storage_max_size().value();
+
+        // broadcast if state changed
+        if (max_exceeded != _max_size_exceeded) {
+            co_await container().invoke_on_all([max_exceeded](api& api) {
+                vlog(
+                  stlog.info,
+                  "{} maximum size exceeded flag",
+                  max_exceeded ? "Setting" : "Clearing");
+                api._max_size_exceeded = max_exceeded;
+            });
+        }
+
+        if (_max_size_exceeded) {
+            vlog(
+              stlog.warn,
+              "Log storage usage {} exceeds configured max {}",
+              human::bytes(usage.usage.total()),
+              human::bytes(_log_storage_max_size().value()));
+        }
+    }
+}
+
+bool api::max_size_exceeded() const { return _max_size_exceeded; }
 
 } // namespace storage

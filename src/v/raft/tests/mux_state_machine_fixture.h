@@ -57,7 +57,8 @@ struct mux_state_machine_fixture {
           .start(
             [kv_conf]() { return kv_conf; },
             [this]() { return default_log_cfg(); },
-            std::ref(_feature_table))
+            std::ref(_feature_table),
+            config::mock_binding<std::optional<uint64_t>>(std::nullopt))
           .get0();
         _storage.invoke_on_all(&storage::api::start).get0();
         _as.start().get();

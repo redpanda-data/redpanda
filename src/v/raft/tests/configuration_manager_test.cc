@@ -52,7 +52,8 @@ struct config_manager_fixture {
               ss::default_priority_class(),
               storage::make_sanitized_file_config());
         },
-        _feature_table))
+        _feature_table,
+        config::mock_binding<std::optional<uint64_t>>(std::nullopt)))
       , _logger(
           raft::group_id(1),
           model::ntp(model::ns("t"), model::topic("t"), model::partition_id(0)))

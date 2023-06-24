@@ -54,7 +54,8 @@ struct base_fixture {
           .start(
             [this]() { return make_kv_cfg(); },
             [this]() { return make_log_cfg(); },
-            std::ref(_feature_table))
+            std::ref(_feature_table),
+            config::mock_binding<std::optional<uint64_t>>(std::nullopt))
           .get();
         _api.invoke_on_all(&storage::api::start).get();
     }

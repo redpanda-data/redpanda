@@ -129,7 +129,8 @@ struct raft_node {
                   ss::default_priority_class(),
                   storage::make_sanitized_file_config());
             },
-            std::ref(feature_table))
+            std::ref(feature_table),
+            config::mock_binding<std::optional<uint64_t>>(std::nullopt))
           .get();
         storage.invoke_on_all(&storage::api::start).get();
 

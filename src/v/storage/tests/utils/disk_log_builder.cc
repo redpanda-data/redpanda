@@ -32,7 +32,8 @@ disk_log_builder::disk_log_builder(storage::log_config config)
             storage::make_sanitized_file_config());
       },
       [this]() { return _log_config; },
-      _feature_table) {}
+      _feature_table,
+      config::mock_binding<std::optional<uint64_t>>(std::nullopt)) {}
 
 // Batch generation
 ss::future<> disk_log_builder::add_random_batch(

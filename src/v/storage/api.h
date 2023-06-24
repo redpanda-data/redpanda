@@ -28,10 +28,12 @@ public:
     explicit api(
       std::function<kvstore_config()> kv_conf_cb,
       std::function<log_config()> log_conf_cb,
-      ss::sharded<features::feature_table>& feature_table) noexcept
+      ss::sharded<features::feature_table>& feature_table,
+      config::binding<std::optional<uint64_t>> log_storage_max_size) noexcept
       : _kv_conf_cb(std::move(kv_conf_cb))
       , _log_conf_cb(std::move(log_conf_cb))
-      , _feature_table(feature_table) {}
+      , _feature_table(feature_table)
+      , _log_storage_max_size(std::move(log_storage_max_size)) {}
 
     ss::future<> start();
     ss::future<> stop();
@@ -67,6 +69,8 @@ public:
       uint64_t free_space,
       storage::disk_space_alert alert);
 
+    bool max_size_exceeded() const;
+
 private:
     storage_resources _resources;
 
@@ -83,6 +87,13 @@ private:
     model::node_uuid _node_uuid;
 
     std::optional<model::cluster_uuid> _cluster_uuid;
+
+    ss::gate _gate;
+    ss::future<> monitor();
+    ssx::semaphore _monitor_sem{0, "storage::api::monitor"};
+    config::binding<std::optional<uint64_t>> _log_storage_max_size;
+    // updated lazily by monitor on core 0
+    bool _max_size_exceeded{false};
 };
 
 } // namespace storage

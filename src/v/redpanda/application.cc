@@ -1683,7 +1683,9 @@ void application::wire_up_bootstrap_services() {
             = sched_groups.cache_background_reclaim_sg();
           return log_cfg;
       },
-      std::ref(feature_table))
+      std::ref(feature_table),
+      ss::sharded_parameter(
+        [] { return config::shard_local_cfg().log_storage_max_size.bind(); }))
       .get();
 
     // Hook up local_monitor to update storage_resources when disk state changes

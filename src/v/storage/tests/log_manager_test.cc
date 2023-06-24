@@ -78,7 +78,8 @@ SEASTAR_THREAD_TEST_CASE(test_can_load_logs) {
             storage::make_sanitized_file_config());
       },
       [conf]() { return conf; },
-      feature_table);
+      feature_table,
+      config::mock_binding<std::optional<uint64_t>>(std::nullopt));
     store.start().get();
     auto stop_kvstore = ss::defer([&store, &feature_table] {
         store.stop().get();
