@@ -65,12 +65,24 @@ public:
     }
 
     model::offset start_offset() const final {
-        auto start_offset_override = _partition->kafka_start_offset_override();
+        const auto start_offset_override
+          = _partition->kafka_start_offset_override();
+        const auto actual_start_kafka_offset = partition_kafka_start_offset();
         if (!start_offset_override.has_value()) {
-            return partition_kafka_start_offset();
+            return actual_start_kafka_offset;
+        }
+        if (_partition->is_read_replica_mode_enabled()) {
+            // The start override may fall ahead of the HWM since read replicas
+            // compute HWM based on uploaded segments, and the override may
+            // appear in the manifest before uploading corresponding segments.
+            // Clamp down to the HWM.
+            const auto hwm = high_watermark();
+            if (hwm <= start_offset_override.value()) {
+                return hwm;
+            }
         }
         return std::max(
-          partition_kafka_start_offset(), start_offset_override.value());
+          actual_start_kafka_offset, start_offset_override.value());
     }
 
     model::offset high_watermark() const final {
