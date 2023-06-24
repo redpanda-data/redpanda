@@ -14,6 +14,7 @@
 #include "cloud_storage/tests/s3_imposter.h"
 #include "config/configuration.h"
 #include "kafka/server/tests/delete_records_utils.h"
+#include "kafka/server/tests/list_offsets_utils.h"
 #include "kafka/server/tests/produce_consume_utils.h"
 #include "model/fundamental.h"
 #include "redpanda/tests/fixture.h"
@@ -107,6 +108,77 @@ public:
     storage::disk_log_impl* log;
     archival::ntp_archiver* archiver;
 };
+
+FIXTURE_TEST(test_timequery_below_deleted_offset, delete_records_e2e_fixture) {
+    tests::remote_segment_generator gen(make_kafka_client().get(), *partition);
+    // Use a starting timestamp and make sure each batch gets a different
+    // timestamp.
+    BOOST_REQUIRE_EQUAL(
+      12,
+      gen.num_segments(3)
+        .batches_per_segment(3)
+        .additional_local_segments(1)
+        .base_timestamp(model::timestamp::now())
+        .batch_time_delta_ms(10)
+        .produce()
+        .get());
+
+    auto& stm_manifest = archiver->manifest();
+    auto first_seg = stm_manifest.first_addressable_segment();
+    auto first_seg_max_ts = first_seg->max_timestamp;
+    tests::kafka_list_offsets_transport lister(make_kafka_client().get());
+    lister.start().get();
+
+    // Sanity check: timequery the end of the first cloud segment.
+    auto offset = lister
+                    .list_offset_for_partition(
+                      topic_name, model::partition_id(0), first_seg_max_ts)
+                    .get();
+    BOOST_REQUIRE_EQUAL(first_seg->last_kafka_offset(), offset);
+    auto second_seg = stm_manifest.segment_containing(
+      first_seg->next_kafka_offset());
+
+    // Delete into the second segment.
+    kafka_delete_records_transport deleter(make_kafka_client("deleter").get());
+    deleter.start().get();
+    auto second_seg_end_offset = kafka::offset_cast(
+      second_seg->last_kafka_offset());
+    auto lwm
+      = deleter
+          .delete_records_from_partition(
+            topic_name, model::partition_id(0), second_seg_end_offset, 5s)
+          .get();
+    BOOST_REQUIRE_EQUAL(second_seg_end_offset, lwm);
+
+    // Timequeries into the first cloud segment should be bumped up.
+    auto post_delete_offset = lister
+                                .list_offset_for_partition(
+                                  topic_name,
+                                  model::partition_id(0),
+                                  first_seg_max_ts)
+                                .get();
+    BOOST_REQUIRE_EQUAL(second_seg_end_offset, post_delete_offset);
+
+    // Now trim again, but this time, trim the entire cloud range.
+    auto first_local_offset = stm_manifest.last_segment()->next_kafka_offset();
+    lwm = deleter
+            .delete_records_from_partition(
+              topic_name,
+              model::partition_id(0),
+              kafka::offset_cast(first_local_offset),
+              5s)
+            .get();
+    BOOST_REQUIRE_EQUAL(first_local_offset, lwm);
+
+    // Timequeries into the cloud region should be bumped up.
+    post_delete_offset = lister
+                           .list_offset_for_partition(
+                             topic_name,
+                             model::partition_id(0),
+                             first_seg_max_ts)
+                           .get();
+    BOOST_REQUIRE_EQUAL(first_local_offset, post_delete_offset);
+}
 
 // Test consuming after truncating the STM manifest.
 FIXTURE_TEST(test_delete_from_stm_consume, delete_records_e2e_fixture) {
