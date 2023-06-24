@@ -209,6 +209,11 @@ private:
         return local_kafka_start_offset;
     }
 
+    // Returns the highest offset in the given term, without considering
+    // overrides of the starting offset.
+    ss::future<std::optional<model::offset>>
+      get_leader_epoch_last_offset_unbounded(kafka::leader_epoch) const;
+
     ss::future<std::vector<cluster::rm_stm::tx_range>>
       aborted_transactions_local(
         cloud_storage::offset_range,

@@ -319,6 +319,23 @@ raft::replicate_stages replicated_partition::replicate(
 ss::future<std::optional<model::offset>>
 replicated_partition::get_leader_epoch_last_offset(
   kafka::leader_epoch epoch) const {
+    auto offset_unbounded = co_await get_leader_epoch_last_offset_unbounded(
+      epoch);
+    if (!offset_unbounded.has_value()) {
+        co_return std::nullopt;
+    }
+    if (!_partition->kafka_start_offset_override().has_value()) {
+        co_return offset_unbounded;
+    }
+    // If the requested term falls below our earliest consumable segment as
+    // bounded by a start override, return the offset of the next-highest term
+    // (the new start offset).
+    co_return std::max(offset_unbounded.value(), start_offset());
+}
+
+ss::future<std::optional<model::offset>>
+replicated_partition::get_leader_epoch_last_offset_unbounded(
+  kafka::leader_epoch epoch) const {
     const model::term_id term(epoch);
     const auto first_local_offset = _partition->raft_start_offset();
     const auto first_local_term = _partition->get_term(first_local_offset);
