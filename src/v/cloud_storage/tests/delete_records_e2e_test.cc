@@ -15,6 +15,7 @@
 #include "config/configuration.h"
 #include "kafka/server/tests/delete_records_utils.h"
 #include "kafka/server/tests/list_offsets_utils.h"
+#include "kafka/server/tests/offset_for_leader_epoch_utils.h"
 #include "kafka/server/tests/produce_consume_utils.h"
 #include "model/fundamental.h"
 #include "redpanda/tests/fixture.h"
@@ -178,6 +179,47 @@ FIXTURE_TEST(test_timequery_below_deleted_offset, delete_records_e2e_fixture) {
                              first_seg_max_ts)
                            .get();
     BOOST_REQUIRE_EQUAL(first_local_offset, post_delete_offset);
+}
+
+FIXTURE_TEST(
+  test_leader_epoch_below_deleted_offset, delete_records_e2e_fixture) {
+    // Step down some to have more than one term in the log.
+    // In each term, we'll write three segments.
+    for (int i = 0; i < 3; i++) {
+        partition->raft()->step_down("test_stepdown").get();
+        wait_for_leader(ntp, 10s).get();
+        tests::remote_segment_generator gen(
+          make_kafka_client().get(), *partition);
+        BOOST_REQUIRE_EQUAL(
+          9,
+          // 3 segments each with 3 batches, + 1 segment for the leadership
+          // change.
+          gen.num_segments(4 * (i + 1)).batches_per_segment(3).produce().get());
+    }
+    tests::kafka_offset_for_epoch_transport offer(make_kafka_client().get());
+    offer.start().get();
+    auto last_in_term_2 = offer
+                            .offset_for_leader_partition(
+                              topic_name,
+                              model::partition_id(0),
+                              model::term_id(2))
+                            .get();
+    BOOST_REQUIRE_EQUAL(model::offset(9), last_in_term_2);
+    kafka_delete_records_transport deleter(make_kafka_client().get());
+    deleter.start().get();
+    auto lwm = deleter
+                 .delete_records_from_partition(
+                   topic_name, model::partition_id(0), model::offset(13), 5s)
+                 .get();
+    BOOST_CHECK_EQUAL(model::offset(13), lwm);
+
+    // After deleting the last offset in the term, the same query gets bumped
+    // to the new start offset.
+    last_in_term_2 = offer
+                       .offset_for_leader_partition(
+                         topic_name, model::partition_id(0), model::term_id(2))
+                       .get();
+    BOOST_REQUIRE_EQUAL(model::offset(13), last_in_term_2);
 }
 
 // Test consuming after truncating the STM manifest.
