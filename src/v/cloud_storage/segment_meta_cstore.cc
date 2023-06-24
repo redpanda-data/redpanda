@@ -149,9 +149,7 @@ class column_store
     // assertion. To prevent this we need to insert a nullopt when the
     // frame starts.
 
-    using greater = std::greater<int64_t>;
-    using hint_map_t
-      = absl::btree_map<int64_t, std::optional<hint_vec_t>, greater>;
+    using hint_map_t = absl::btree_map<int64_t, std::optional<hint_vec_t>>;
 
     auto columns() {
         return std::tie(
@@ -360,30 +358,22 @@ public:
 
         // extract the end iterator for hints, to cover only the frames that
         // will be cloned
-        auto last_hint_tosave = [&] {
+        auto end_hint_tosave = [&] {
             auto frame_it = _base_offset.get_frame_iterator_by_element_index(
               first_replacement_index);
             if (frame_it == _base_offset._frames.begin()) {
                 // no hint will be saved
-                return _hints.end();
+                return _hints.begin();
             }
             --frame_it; // go back to last frame that will be cloned
             for (; frame_it != _base_offset._frames.begin(); --frame_it) {
                 // go back until we have a non-empty frame. this should be just
                 // an iteration
                 if (auto frame_max_offset = frame_it->last_value()) {
-                    auto to_clone_hint = _hints.lower_bound(
-                      frame_max_offset.value());
-                    vassert(
-                      to_clone_hint == _hints.end()
-                        || to_clone_hint->first <= frame_max_offset.value(),
-                      "to_clone_hint out of range: hint-{} frame_max_offset-{}",
-                      to_clone_hint->first,
-                      frame_max_offset.value());
-                    return to_clone_hint;
+                    return _hints.upper_bound(frame_max_offset.value());
                 }
             }
-            return _hints.end();
+            return _hints.begin();
         }();
 
         // this column_store is initialized with the run of segments that are
@@ -391,8 +381,8 @@ public:
         auto replacement_store = column_store{
           share_frame,
           std::move(to_clone_frames),
-          last_hint_tosave,
-          _hints.end()};
+          _hints.begin(),
+          end_hint_tosave};
 
         auto unchanged_committed_offset
           = replacement_store.last_committed_offset().value_or(
@@ -639,17 +629,15 @@ public:
         // belong to it are no longer valid.
         const auto& frame = _base_offset.get_frame_by_element_index(ix).get();
         auto frame_max_offset = frame.last_value();
-        auto it = _hints.lower_bound(frame_max_offset.value_or(bo));
-
+        // find first _hint that that is after the soon-to-be-reconstructed
+        // frame
+        auto it = _hints.upper_bound(frame_max_offset.value_or(bo));
         // Truncate columns
         std::apply(
           [ix](auto&&... col) { (col.prefix_truncate_ix(ix), ...); },
           columns());
 
-        // The elements are ordered by base offset from large to small
-        // so the hints that belong to removed and truncated frames are
-        // at the end.
-        _hints.erase(it, _hints.end());
+        _hints.erase(_hints.begin(), it);
     }
 
     /// Return two values: inflated size (size without compression) followed

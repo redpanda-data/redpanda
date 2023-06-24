@@ -18,6 +18,7 @@
 #include "utils/human.h"
 #include "vlog.h"
 
+#include <seastar/testing/perf_tests.hh>
 #include <seastar/testing/test_case.hh>
 #include <seastar/testing/thread_test_case.hh>
 
@@ -1088,4 +1089,42 @@ BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_insert_replacements) {
       store_result.end(),
       merged_result.begin(),
       merged_result.end()));
+}
+
+BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_stress_truncate) {
+    // Repeatedly execute segment_meta_cstore::prefix_truncate while accessing
+    // the iterators to the "erased" section. This test verifies that the
+    // internal implementation is correct and generates valid indexes
+
+    // generate random data
+    auto cstore = segment_meta_cstore{};
+    auto max_committed_offset = random_generators::get_int(0, 100000);
+    auto all_bo = std::vector<model::offset>{};
+    for (int i = 0; i < max_committed_offset;) {
+        auto co = random_generators::get_int(1, 100);
+        cstore.insert({
+          .base_offset = model::offset{i},
+          .committed_offset = model::offset{i + co},
+        });
+        i += co;
+        all_bo.emplace_back(i);
+    }
+
+    // truncate while accessing the erased elements
+    for (auto o : all_bo) {
+        auto b = cstore.begin();
+        auto e = cstore.end();
+        cstore.prefix_truncate(o);
+        // execute some computation to ensure that the compiler do not optimize
+        // away this part
+        model::offset sum{0};
+        size_t size_sum{0};
+        for (; b != e; ++b) {
+            auto t = *b;
+            sum = sum + t.base_offset;
+            size_sum += cstore.size();
+        }
+        perf_tests::do_not_optimize(sum);
+        perf_tests::do_not_optimize(size_sum);
+    }
 }
