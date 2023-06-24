@@ -93,6 +93,9 @@ public:
     sync_start_offset_override(model::timeout_clock::duration timeout);
 
     model::offset start_offset_override() const {
+        if (_delete_records_eviction_offset == model::offset{}) {
+            return model::offset{};
+        }
         return model::next_offset(_delete_records_eviction_offset);
     }
 
