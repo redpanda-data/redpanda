@@ -32,3 +32,20 @@ rp_test(
   LIBRARIES Seastar::seastar_perf_testing v::ssx
   LABELS ssx
 )
+
+set(HANDLE_SIGTERM_SCRIPT "${CMAKE_CURRENT_SOURCE_DIR}/handle-sigterm.sh")
+set(TIMED_LOOP_SCRIPT "${CMAKE_CURRENT_SOURCE_DIR}/timed-loop.sh")
+
+rp_test(
+  UNIT_TEST
+  BINARY_NAME ssx_single_thread
+  SOURCES
+    process_spawn_tests.cc
+  DEFINITIONS BOOST_TEST_DYN_LINK
+  LIBRARIES v::seastar_testing_main v::ssx
+  ARGS "-- -c 1"
+  LABELS ssx
+  ENV
+    "HANDLE_SIGTERM_SCRIPT=${HANDLE_SIGTERM_SCRIPT}"
+    "TIMED_LOOP_SCRIPT=${TIMED_LOOP_SCRIPT}"
+)

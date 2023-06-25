@@ -1,4 +1,3 @@
-
 rp_test(
   UNIT_TEST
   BINARY_NAME utils_single_thread

@@ -4,6 +4,8 @@ v_cc_library(
   HDRS
     "future-util.h"
     "metrics.h"
+  SRCS
+    process.cc
   DEPS
     Seastar::seastar
   )
