@@ -15,22 +15,19 @@ namespace storage {
 ss::future<> api::start() {
     _kvstore = std::make_unique<kvstore>(
       _kv_conf_cb(), _resources, _feature_table);
-    return _kvstore->start().then([this] {
-        _log_mgr = std::make_unique<log_manager>(
-          _log_conf_cb(), kvs(), _resources, _feature_table);
-        return _log_mgr->start();
-    });
+    co_await _kvstore->start();
+    _log_mgr = std::make_unique<log_manager>(
+      _log_conf_cb(), kvs(), _resources, _feature_table);
+    co_await _log_mgr->start();
 }
 
 ss::future<> api::stop() {
-    auto f = ss::now();
     if (_log_mgr) {
-        f = _log_mgr->stop();
+        co_await _log_mgr->stop();
     }
     if (_kvstore) {
-        return f.then([this] { return _kvstore->stop(); });
+        co_await _kvstore->stop();
     }
-    return f;
 }
 
 ss::future<usage_report> api::disk_usage() {
