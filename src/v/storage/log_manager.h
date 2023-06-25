@@ -48,6 +48,8 @@
 
 namespace storage {
 
+class api;
+
 // class log_config {
 struct log_config {
     log_config(
@@ -159,6 +161,10 @@ struct log_config {
  * where each core manages a distinct set of logs. When the service is
  * shut down, calling `stop` on the log manager will close all of the
  * logs currently being managed.
+ *
+ * The storage::api reference may be nullptr (e.g. in tests). It is used to
+ * provide a way for the storage layer to wake up the space management control
+ * loop with lower latency than normal monitoring frequency.
  */
 class log_manager {
 public:
@@ -166,7 +172,8 @@ public:
       log_config,
       kvstore& kvstore,
       storage_resources&,
-      ss::sharded<features::feature_table>&) noexcept;
+      ss::sharded<features::feature_table>&,
+      ss::sharded<storage::api>*) noexcept;
 
     ss::future<log> manage(ntp_config);
 
@@ -232,6 +239,8 @@ public:
 
     void handle_disk_notification(storage::disk_space_alert);
 
+    void trigger_housekeeping();
+
 private:
     using logs_type
       = absl::flat_hash_map<model::ntp, std::unique_ptr<log_housekeeping_meta>>;
@@ -261,6 +270,7 @@ private:
     kvstore& _kvstore;
     storage_resources& _resources;
     ss::sharded<features::feature_table>& _feature_table;
+    ss::sharded<storage::api>* _storage;
     simple_time_jitter<ss::lowres_clock> _jitter;
     logs_type _logs;
     compaction_list_type _logs_list;

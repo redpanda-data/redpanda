@@ -133,11 +133,13 @@ log_manager::log_manager(
   log_config config,
   kvstore& kvstore,
   storage_resources& resources,
-  ss::sharded<features::feature_table>& feature_table) noexcept
+  ss::sharded<features::feature_table>& feature_table,
+  ss::sharded<storage::api>* storage) noexcept
   : _config(std::move(config))
   , _kvstore(kvstore)
   , _resources(resources)
   , _feature_table(feature_table)
+  , _storage(storage)
   , _jitter(_config.compaction_interval())
   , _batch_cache(config.reclaim_opts) {
     _config.compaction_interval.watch([this]() {
@@ -240,6 +242,11 @@ log_manager::housekeeping_scan(model::timestamp collection_threshold) {
         if (_logs_list.empty()) {
             co_return;
         }
+
+        // priortize reclaims over compactions in a low space scenario.
+        if (_storage && _storage->local().max_size_exceeded()) {
+            co_return;
+        }
     }
 }
 
@@ -286,7 +293,8 @@ ss::future<> log_manager::housekeeping() {
          * interface.
          */
         if (
-          _disk_space_alert == disk_space_alert::degraded
+          (_storage && _storage->local().max_size_exceeded())
+          || _disk_space_alert == disk_space_alert::degraded
           || _disk_space_alert == disk_space_alert::low_space) {
             /*
              * build a schedule of partitions to gc ordered by amount of
@@ -760,5 +768,7 @@ void log_manager::handle_disk_notification(storage::disk_space_alert alert) {
         }
     }
 }
+
+void log_manager::trigger_housekeeping() { _housekeeping_sem.signal(); }
 
 } // namespace storage

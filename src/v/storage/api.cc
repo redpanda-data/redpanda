@@ -20,7 +20,7 @@ ss::future<> api::start() {
       _kv_conf_cb(), _resources, _feature_table);
     co_await _kvstore->start();
     _log_mgr = std::make_unique<log_manager>(
-      _log_conf_cb(), kvs(), _resources, _feature_table);
+      _log_conf_cb(), kvs(), _resources, _feature_table, &container());
     co_await _log_mgr->start();
 
     if (ss::this_shard_id() == 0) {
@@ -114,6 +114,10 @@ ss::future<> api::monitor() {
               "Log storage usage {} exceeds configured max {}",
               human::bytes(usage.usage.total()),
               human::bytes(_log_storage_max_size().value()));
+
+            // wake up housekeeping on every core to run garbage collection
+            co_await container().invoke_on_all(
+              [](auto& api) { api._log_mgr->trigger_housekeeping(); });
         }
     }
 }

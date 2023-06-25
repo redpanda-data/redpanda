@@ -234,13 +234,17 @@ public:
     /// Creates a log manager in test directory
     storage::log_manager make_log_manager(storage::log_config cfg) {
         return storage::log_manager(
-          std::move(cfg), kvstore, resources, feature_table);
+          std::move(cfg), kvstore, resources, feature_table, nullptr);
     }
 
     /// Creates a log manager in test directory with default config
     storage::log_manager make_log_manager() {
         return storage::log_manager(
-          default_log_config(test_dir), kvstore, resources, feature_table);
+          default_log_config(test_dir),
+          kvstore,
+          resources,
+          feature_table,
+          nullptr);
     }
 
     /// \brief randomizes the configuration options
