@@ -65,7 +65,8 @@ public:
       ss::sharded<cluster::tx_registry_frontend>&,
       std::optional<qdc_monitor::config>,
       ssx::thread_worker&,
-      const std::unique_ptr<pandaproxy::schema_registry::api>&) noexcept;
+      const std::unique_ptr<pandaproxy::schema_registry::api>&,
+      const std::unique_ptr<storage::disk_space_manager>&) noexcept;
 
     ~server() noexcept override = default;
     server(const server&) = delete;
@@ -166,6 +167,10 @@ public:
         return _schema_registry;
     }
 
+    const std::unique_ptr<storage::disk_space_manager>& space_manager() {
+        return _space_manager;
+    }
+
     /**
      * \param api_names list of Kafka API names
      * \return std::vector<bool> always sized to index the entire Kafka API key
@@ -223,6 +228,7 @@ private:
     ssx::thread_worker& _thread_worker;
     std::unique_ptr<replica_selector> _replica_selector;
     const std::unique_ptr<pandaproxy::schema_registry::api>& _schema_registry;
+    const std::unique_ptr<storage::disk_space_manager>& _space_manager;
 };
 
 } // namespace kafka

@@ -151,7 +151,8 @@ public:
             std::ref(app.tx_registry_frontend),
             std::nullopt,
             std::ref(*app.thread_worker),
-            std::ref(app.schema_registry()))
+            std::ref(app.schema_registry()),
+            std::ref(app.space_manager))
           .get();
 
         configs.stop().get();

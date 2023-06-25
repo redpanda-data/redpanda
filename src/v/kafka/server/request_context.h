@@ -244,6 +244,10 @@ public:
 
     ss::sharded<server>& server() { return _conn->server().container(); }
 
+    const std::unique_ptr<storage::disk_space_manager>& space_manager() const {
+        return _conn->server().space_manager();
+    }
+
 private:
     template<typename ResponseType>
     void update_usage_stats(const ResponseType& r, size_t response_size) {

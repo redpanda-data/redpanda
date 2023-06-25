@@ -72,6 +72,8 @@ public:
     ss::future<> start();
     ss::future<> stop();
 
+    bool should_block_writes() const;
+
 private:
     config::binding<bool> _enabled;
     ss::sharded<storage::api>* _storage;

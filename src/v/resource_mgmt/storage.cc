@@ -132,4 +132,8 @@ ss::future<> disk_space_manager::run_loop() {
     }
 }
 
+bool disk_space_manager::should_block_writes() const {
+    return _storage->local().max_size_exceeded();
+}
+
 } // namespace storage

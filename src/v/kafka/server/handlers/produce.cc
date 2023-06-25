@@ -558,7 +558,9 @@ produce_handler::handle(request_context ctx, ss::smp_service_group ssg) {
     produce_request request;
     request.decode(ctx.reader(), ctx.header().version);
     log_request(ctx.header(), request);
-    if (ctx.metadata_cache().should_reject_writes()) {
+    if (
+      ctx.metadata_cache().should_reject_writes()
+      || ctx.space_manager()->should_block_writes()) {
         thread_local static ss::logger::rate_limit rate(despam_interval);
         klog.log(
           ss::log_level::warn,

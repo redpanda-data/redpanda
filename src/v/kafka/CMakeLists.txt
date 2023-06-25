@@ -58,6 +58,7 @@ v_cc_library(
     v::kafka_protocol
     v::security
     v::pandaproxy_schema_registry
+    v::storage_resource_mgmt
     absl::flat_hash_map
     absl::flat_hash_set
 )
