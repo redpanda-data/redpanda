@@ -74,7 +74,7 @@ struct fmt::formatter<raft::consensus::vote_state> final
 
 namespace raft {
 
-static std::vector<model::record_batch_type>
+std::vector<model::record_batch_type>
 offset_translator_batch_types(const model::ntp& ntp) {
     if (ntp.ns == model::kafka_namespace) {
         return {

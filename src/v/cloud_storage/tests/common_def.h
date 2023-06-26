@@ -14,6 +14,7 @@
 #include "cloud_storage/tests/s3_imposter.h"
 #include "cloud_storage/types.h"
 #include "model/fundamental.h"
+#include "model/namespace.h"
 #include "model/record_batch_types.h"
 #include "model/tests/random_batch.h"
 #include "storage/parser.h"
@@ -23,7 +24,7 @@
 #include <boost/test/tools/interface.hpp>
 
 namespace cloud_storage {
-static const auto manifest_namespace = model::ns("test-ns");    // NOLINT
+static const auto manifest_namespace = model::kafka_namespace;  // NOLINT
 static const auto manifest_topic = model::topic("test-topic");  // NOLINT
 static const auto manifest_partition = model::partition_id(42); // NOLINT
 static const auto manifest_ntp = model::ntp(                    // NOLINT
@@ -33,11 +34,11 @@ static const auto manifest_ntp = model::ntp(                    // NOLINT
 static const auto manifest_revision = model::initial_revision_id(0); // NOLINT
 static const auto archiver_term = model::term_id{123};
 static const ss::sstring manifest_url = ssx::sformat( // NOLINT
-  "20000000/meta/{}_{}/manifest.json",
+  "10000000/meta/{}_{}/manifest.json",
   manifest_ntp.path(),
   manifest_revision());
 static const ss::sstring manifest_serde_url = ssx::sformat(
-  "20000000/meta/{}_{}/manifest.bin", manifest_ntp.path(), manifest_revision());
+  "10000000/meta/{}_{}/manifest.bin", manifest_ntp.path(), manifest_revision());
 
 static const auto json_manifest_format_path = std::pair{
   manifest_format::json,

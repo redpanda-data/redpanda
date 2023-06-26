@@ -23,6 +23,7 @@
 #include "model/fundamental.h"
 #include "model/record.h"
 #include "model/record_batch_types.h"
+#include "raft/consensus.h"
 #include "resource_mgmt/io_priority.h"
 #include "ssx/future-util.h"
 #include "ssx/sformat.h"
@@ -1003,7 +1004,8 @@ public:
       , _parent(parent)
       , _term(term)
       , _rtc(&rtc)
-      , _ctxlog(cst_log, _rtc, ntp.path()) {}
+      , _ctxlog(cst_log, _rtc, ntp.path())
+      , _filtered_types(raft::offset_translator_batch_types(ntp)) {}
 
     /// Translate redpanda offset to kafka offset
     ///
@@ -1127,8 +1129,9 @@ public:
           _ctxlog.debug, "skip_batch_start called for {}", header.base_offset);
         advance_config_offsets(header);
         if (
-          header.type == model::record_batch_type::raft_configuration
-          || header.type == model::record_batch_type::archival_metadata) {
+          std::count(
+            _filtered_types.begin(), _filtered_types.end(), header.type)
+          > 0) {
             vassert(
               _parent._cur_ot_state,
               "ntp {}: offset translator state for "
@@ -1193,6 +1196,7 @@ private:
     model::term_id _term;
     retry_chain_node _rtc;
     retry_chain_logger _ctxlog;
+    std::vector<model::record_batch_type> _filtered_types;
 };
 
 remote_segment_batch_reader::remote_segment_batch_reader(
