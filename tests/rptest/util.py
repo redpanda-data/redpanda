@@ -252,8 +252,13 @@ def wait_for_local_storage_truncate(redpanda,
             # removal would exceed the retention target. so for the comparison
             # to determine if we reached the goal we subtract off the size of
             # the oldest segment
-            first_segment = min(node_partition.segments.values(),
-                                key=lambda s: s.offset)
+            try:
+                first_segment = min(node_partition.segments.values(),
+                                    key=lambda s: s.offset)
+            except ValueError:
+                # Segment list is empty
+                first_segment = None
+
             first_segment_size = first_segment.size if first_segment.size else 0
             sizes.append(total_size - first_segment_size)
 
