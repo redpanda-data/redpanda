@@ -295,6 +295,13 @@ ss::future<iobuf> client::response_stream::recv_some() {
     return _client->receive()
       .then([this](ss::temporary_buffer<char> chunk) mutable {
           vlog(_ctxlog.trace, "chunk received, chunk length {}", chunk.size());
+          if (_parser.is_header_done()) {
+              vlog(
+                _ctxlog.info,
+                "chunked={}",
+                _parser.chunked());
+          }
+
           if (chunk.empty()) {
               // NOTE: to make the parser stop we need to use the 'put_eof'
               // method, because it will handle situation when the data is
