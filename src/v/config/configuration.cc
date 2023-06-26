@@ -110,6 +110,15 @@ configuration::configuration()
        .example = "31536000000",
        .visibility = visibility::tunable},
       24h * 365)
+  , log_storage_target_size(
+      *this,
+      "log_storage_target_size",
+      "The target size in bytes that log storage will try meet. When no target "
+      "is specified storage usage is unbounded.",
+      {.needs_restart = needs_restart::no,
+       .example = "2147483648000",
+       .visibility = visibility::tunable},
+      std::nullopt)
   , rpc_server_listen_backlog(
       *this,
       "rpc_server_listen_backlog",
