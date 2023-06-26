@@ -406,7 +406,6 @@ class RpkTool:
             self._redpanda.logger.error(f"Missing columns: {missing_columns}")
             raise RpkException(f"Missing columns: {missing_columns}")
 
-        partitions = []
         for row in table.rows:
             obj = dict()
             obj["LAST-STABLE-OFFSET"] = "-"
@@ -440,9 +439,7 @@ class RpkTool:
                                      start_offset=obj["LOG-START-OFFSET"])
 
             if initialized or tolerant:
-                partitions.append(partition)
-
-        return iter(partitions)
+                yield partition
 
     def describe_topic_configs(self, topic):
         cmd = ['describe', topic, '-c']

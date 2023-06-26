@@ -472,7 +472,7 @@ class TopicDeleteCloudStorageTest(RedpandaTest):
 
         # Wait for everything to be uploaded: this avoids tests potentially trying
         # to delete topics mid-uploads, which can leave orphan segments.
-        quiesce_uploads(self.redpanda, topic_name, timeout_sec=60)
+        quiesce_uploads(self.redpanda, [topic_name], timeout_sec=60)
 
     @skip_debug_mode  # Rely on timely uploads during leader transfers
     @cluster(num_nodes=3,
