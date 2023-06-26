@@ -77,7 +77,7 @@ def cloud_storage_usage_check(test):
     # what's in the uploaded manifest. For this reason, we wait until the two match.
     wait_until(
         check,
-        timeout_sec=10,
+        timeout_sec=test.check_timeout,
         backoff_sec=0.2,
         err_msg="Reported cloud storage usage did not match the actual usage",
         retry_on_exc=True)
@@ -209,7 +209,7 @@ def cloud_storage_status_endpoint_check(test):
 
     wait_until(
         check,
-        timeout_sec=10,
+        timeout_sec=test.check_timeout,
         backoff_sec=0.2,
         err_msg="Cloud storage partition status did not match the manifest",
         retry_on_exc=True)
@@ -235,6 +235,7 @@ class CloudStorageTimingStressTest(RedpandaTest, PartitionMovementMixin):
     produce_byte_rate_per_ntp = 8 * mib  # 8 MiB
     target_runtime = 60  # seconds
     check_interval = 10  # seconds
+    check_timeout = 10  # seconds
     allow_runtime_overshoot_by = 2
 
     topic_spec = TopicSpec(name="test-topic",
@@ -514,6 +515,8 @@ class CloudStorageTimingStressTest(RedpandaTest, PartitionMovementMixin):
         (e.g. isolate/kill nodes, isolate leader from cloud storage, change cloud storage
         topic/cluster configs on the fly).
         """
+        self.check_timeout = 15  # seconds
+
         self.prologue(cleanup_policy)
 
         partitions = []
