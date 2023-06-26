@@ -93,27 +93,55 @@ ss::future<> api::monitor() {
 
         auto usage = co_await disk_usage();
 
+        // when low watermark is exceeded we'll begin trying to reduce storage
+        // usage in order to avoid blocking writes
+        const auto hwm_exceeded
+          = _log_storage_max_size().has_value()
+            && usage.usage.total() > uint64_t(
+                 config::shard_local_cfg().log_storage_max_size_high_watermark()
+                 * _log_storage_max_size().value());
+
+        // when the max is actually exceeded we'll begin blocking writes
         const auto max_exceeded = _log_storage_max_size().has_value()
                                   && usage.usage.total()
                                        > _log_storage_max_size().value();
 
         // broadcast if state changed
-        if (max_exceeded != _max_size_exceeded) {
-            co_await container().invoke_on_all([max_exceeded](api& api) {
-                vlog(
-                  stlog.info,
-                  "{} maximum size exceeded flag",
-                  max_exceeded ? "Setting" : "Clearing");
-                api._max_size_exceeded = max_exceeded;
-            });
+        if (
+          max_exceeded != _max_size_exceeded
+          || hwm_exceeded != _high_watermark_exceeded) {
+            co_await container().invoke_on_all(
+              [max_exceeded, hwm_exceeded](api& api) {
+                  vlog(
+                    stlog.info,
+                    "{} maximum size exceeded flag, and {} low watermark "
+                    "exceeded flag.",
+                    max_exceeded ? "Setting" : "Clearing",
+                    hwm_exceeded ? "Setting" : "Clearing");
+                  api._max_size_exceeded = max_exceeded;
+                  api._high_watermark_exceeded = hwm_exceeded;
+              });
         }
 
-        if (_max_size_exceeded) {
-            vlog(
-              stlog.warn,
-              "Log storage usage {} exceeds configured max {}",
-              human::bytes(usage.usage.total()),
-              human::bytes(_log_storage_max_size().value()));
+        if (_high_watermark_exceeded || _max_size_exceeded) {
+            if (_high_watermark_exceeded) {
+                vlog(
+                  stlog.warn,
+                  "Log storage usage {} exceeds configured low watermark {}",
+                  human::bytes(usage.usage.total()),
+                  uint64_t(
+                    config::shard_local_cfg()
+                      .log_storage_max_size_high_watermark()
+                    * _log_storage_max_size().value()));
+            }
+
+            if (_max_size_exceeded) {
+                vlog(
+                  stlog.warn,
+                  "Log storage usage {} exceeds configured max {}",
+                  human::bytes(usage.usage.total()),
+                  human::bytes(_log_storage_max_size().value()));
+            }
 
             // wake up housekeeping on every core to run garbage collection
             co_await container().invoke_on_all(
@@ -123,5 +151,6 @@ ss::future<> api::monitor() {
 }
 
 bool api::max_size_exceeded() const { return _max_size_exceeded; }
+bool api::high_watermark_exceeded() const { return _high_watermark_exceeded; }
 
 } // namespace storage

@@ -55,6 +55,7 @@ struct configuration final : public config_store {
     property<std::chrono::milliseconds> log_segment_ms_min;
     property<std::chrono::milliseconds> log_segment_ms_max;
     property<std::optional<uint64_t>> log_storage_max_size;
+    property<double> log_storage_max_size_high_watermark;
 
     // Network
     bounded_property<std::optional<int>> rpc_server_listen_backlog;

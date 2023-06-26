@@ -243,8 +243,8 @@ log_manager::housekeeping_scan(model::timestamp collection_threshold) {
             co_return;
         }
 
-        // priortize reclaims over compactions in a low space scenario.
-        if (_storage && _storage->local().max_size_exceeded()) {
+        // priortize reclaims over compactions in a low disk space scenario.
+        if (_storage && _storage->local().high_watermark_exceeded()) {
             co_return;
         }
     }
@@ -293,7 +293,7 @@ ss::future<> log_manager::housekeeping() {
          * interface.
          */
         if (
-          (_storage && _storage->local().max_size_exceeded())
+          (_storage && _storage->local().high_watermark_exceeded())
           || _disk_space_alert == disk_space_alert::degraded
           || _disk_space_alert == disk_space_alert::low_space) {
             /*

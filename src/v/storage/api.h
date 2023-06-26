@@ -70,6 +70,7 @@ public:
       storage::disk_space_alert alert);
 
     bool max_size_exceeded() const;
+    bool high_watermark_exceeded() const;
 
 private:
     storage_resources _resources;
@@ -94,6 +95,7 @@ private:
     config::binding<std::optional<uint64_t>> _log_storage_max_size;
     // updated lazily by monitor on core 0
     bool _max_size_exceeded{false};
+    bool _high_watermark_exceeded{false};
 };
 
 } // namespace storage

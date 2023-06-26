@@ -118,6 +118,16 @@ configuration::configuration()
        .example = "31536000000",
        .visibility = visibility::tunable},
       std::nullopt)
+  , log_storage_max_size_high_watermark(
+      *this,
+      "log_storage_max_size_high_watermark",
+      "The percentage of the max size at which action will be taken to begin "
+      "reducing the amount of storage used in an effort to stay below the "
+      "configured max size.",
+      {.needs_restart = needs_restart::no,
+       .example = "0.8",
+       .visibility = visibility::tunable},
+      0.8)
   , rpc_server_listen_backlog(
       *this,
       "rpc_server_listen_backlog",

@@ -552,7 +552,10 @@ class LogStorageMaxSizeTest(RedpandaTest):
             # test for lack of a better word. we need the system to have reclaim
             # opportunities and so we want to avoid data being stuck in the
             # active head segment.
-            log_segment_size=1 << 18)
+            log_segment_size=1 << 18,
+
+            # wait until reaching the max size before trying to run GC
+            log_storage_max_size_low_watermark=1.0)
         super().__init__(test_context=test_ctx, extra_rp_conf=extra_rp_conf)
 
     @cluster(num_nodes=3)
@@ -565,3 +568,36 @@ class LogStorageMaxSizeTest(RedpandaTest):
             "Setting maximum size exceeded flag")
         assert self.redpanda.search_log_any(
             "Clearing maximum size exceeded flag")
+
+
+class LogStorageLowWatermarkTest(RedpandaTest):
+    """
+    Test that GC runs before reaching the max size at which point produce api
+    woudl be blocked. Very similar to the max size test above, except we reduce
+    the low watermark and write at a slower rate to give the system time to
+    respond before blocking without having to have a "larger" test.
+    """
+    topics = (TopicSpec(partition_count=1,
+                        retention_bytes=1,
+                        retention_ms=1,
+                        cleanup_policy=TopicSpec.CLEANUP_DELETE), )
+
+    def __init__(self, test_ctx):
+        extra_rp_conf = dict(log_storage_max_size=20 * 1 << 20,
+                             log_compaction_interval_ms=24 * 60 * 60 * 1000,
+                             log_segment_size=1 << 18,
+                             log_storage_max_size_low_watermark=0.5)
+        super().__init__(test_context=test_ctx, extra_rp_conf=extra_rp_conf)
+
+    @cluster(num_nodes=3)
+    def test(self):
+        kafka_tools = KafkaCliTools(self.redpanda)
+        kafka_tools.produce(self.topic, 60 * 1024, 1024, throughput=1024)
+        # should not see anything that would indicate we reached the max size
+        assert not self.redpanda.search_log_any(
+            "rejecting produce request: no disk space")
+        assert not self.redpanda.search_log_any(
+            "Setting maximum size exceeded flag")
+        # should see that cross the low watermark
+        assert self.redpanda.search_log_any(
+            "Clearing low watermark exceeded flag")
