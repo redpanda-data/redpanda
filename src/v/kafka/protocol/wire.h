@@ -175,50 +175,89 @@ public:
     }
 
     template<
+      bool is_fragmented,
       typename ElementParser,
       typename T = std::invoke_result_t<ElementParser, decoder&>>
-    std::vector<T> read_array(ElementParser&& parser) {
+    auto read_array(ElementParser&& parser) {
         auto len = read_int32();
         if (len < 0) {
             throw std::out_of_range(
               "Attempt to read array with negative length");
         }
-        return do_read_array(len, std::forward<ElementParser>(parser));
+        if constexpr (is_fragmented) {
+            return do_read_array<large_fragment_vector<T>>(
+              len, std::forward<ElementParser>(parser));
+        } else {
+            return do_read_array<std::vector<T>>(
+              len, std::forward<ElementParser>(parser));
+        }
     }
 
     template<
+      bool is_fragmented,
       typename ElementParser,
       typename T = std::invoke_result_t<ElementParser, decoder&>>
-    std::vector<T> read_flex_array(ElementParser&& parser) {
+    auto read_flex_array(ElementParser&& parser) {
         auto len = read_unsigned_varint();
         if (len == 0) {
             throw std::out_of_range(
               "Attempt to read non-null flex array with 0 length");
         }
-        return do_read_array(len - 1, std::forward<ElementParser>(parser));
+        if constexpr (is_fragmented) {
+            return do_read_array<large_fragment_vector<T>>(
+              len - 1, std::forward<ElementParser>(parser));
+        } else {
+            return do_read_array<std::vector<T>>(
+              len - 1, std::forward<ElementParser>(parser));
+        }
     }
 
     template<
+      bool is_fragmented,
       typename ElementParser,
       typename T = std::invoke_result_t<ElementParser, decoder&>>
-    std::optional<std::vector<T>> read_nullable_array(ElementParser&& parser) {
+    auto read_nullable_array(ElementParser&& parser) {
         auto len = read_int32();
         if (len < 0) {
-            return std::nullopt;
+            if constexpr (is_fragmented) {
+                return std::optional<large_fragment_vector<T>>();
+            } else {
+                return std::optional<std::vector<T>>();
+            }
         }
-        return do_read_array(len, std::forward<ElementParser>(parser));
+        if constexpr (is_fragmented) {
+            return std::make_optional<large_fragment_vector<T>>(
+              do_read_array<large_fragment_vector<T>>(
+                len, std::forward<ElementParser>(parser)));
+        } else {
+            return std::make_optional<std::vector<T>>(
+              do_read_array<std::vector<T>>(
+                len, std::forward<ElementParser>(parser)));
+        }
     }
 
     template<
+      bool is_fragmented,
       typename ElementParser,
       typename T = std::invoke_result_t<ElementParser, decoder&>>
-    std::optional<std::vector<T>>
-    read_nullable_flex_array(ElementParser&& parser) {
+    auto read_nullable_flex_array(ElementParser&& parser) {
         auto len = read_unsigned_varint();
         if (len == 0) {
-            return std::nullopt;
+            if constexpr (is_fragmented) {
+                return std::optional<large_fragment_vector<T>>();
+            } else {
+                return std::optional<std::vector<T>>();
+            }
         }
-        return do_read_array(len - 1, std::forward<ElementParser>(parser));
+        if constexpr (is_fragmented) {
+            return std::make_optional<large_fragment_vector<T>>(
+              do_read_array<large_fragment_vector<T>>(
+                len - 1, std::forward<ElementParser>(parser)));
+        } else {
+            return std::make_optional<std::vector<T>>(
+              do_read_array<std::vector<T>>(
+                len - 1, std::forward<ElementParser>(parser)));
+        }
     }
 
     // Only relevent when reading flex requests
@@ -270,17 +309,21 @@ private:
     }
 
     template<
+      typename Container,
       typename ElementParser,
       typename T = std::invoke_result_t<ElementParser, decoder&>>
     requires requires(ElementParser parser, decoder& rr) {
         { parser(rr) } -> std::same_as<T>;
     }
-    std::vector<T> do_read_array(int32_t len, ElementParser&& parser) {
+    Container do_read_array(int32_t len, ElementParser&& parser) {
         if (len < 0) {
             throw std::out_of_range("Attempt to parse array w/ negative len");
         }
-        std::vector<T> res;
-        res.reserve(len);
+        Container res;
+        if constexpr (std::is_same_v<std::vector<T>, Container>) {
+            res.reserve(len);
+        }
+
         while (len-- > 0) {
             res.push_back(parser(*this));
         }

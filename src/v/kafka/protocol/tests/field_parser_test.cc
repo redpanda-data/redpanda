@@ -123,17 +123,18 @@ T read_flex(iobuf buf) {
     } else if constexpr (std::is_same_v<T, bytes>) {
         return reader.read_flex_bytes();
     } else if constexpr (std::is_same_v<T, std::vector<test_struct>>) {
-        return reader.read_flex_array([](kafka::protocol::decoder& reader) {
-            test_struct v;
-            v.field_a = reader.read_flex_string();
-            v.field_b = reader.read_int32();
-            (void)reader.read_tags();
-            return v;
-        });
+        return reader.read_flex_array<false>(
+          [](kafka::protocol::decoder& reader) {
+              test_struct v;
+              v.field_a = reader.read_flex_string();
+              v.field_b = reader.read_int32();
+              (void)reader.read_tags();
+              return v;
+          });
     } else if constexpr (std::is_same_v<
                            T,
                            std::optional<std::vector<test_struct>>>) {
-        return reader.read_nullable_flex_array(
+        return reader.read_nullable_flex_array<false>(
           [](kafka::protocol::decoder& reader) {
               test_struct v;
               v.field_a = reader.read_flex_string();

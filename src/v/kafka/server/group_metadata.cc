@@ -171,7 +171,7 @@ group_metadata_value group_metadata_value::decode(protocol::decoder& reader) {
         ret.state_timestamp = model::timestamp(reader.read_int64());
     }
 
-    ret.members = reader.read_array(
+    ret.members = reader.read_array<false>(
       [](protocol::decoder& reader) { return member_state::decode(reader); });
 
     return ret;

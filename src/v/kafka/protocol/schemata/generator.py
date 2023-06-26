@@ -1019,6 +1019,12 @@ class Field:
         return isinstance(self._type, ArrayType)
 
     @property
+    def is_fragmented(self):
+        assert self.is_array, "fragmented types must be an array"
+        name, _ = self._redpanda_type()
+        return name in enable_fragmentation_resistance
+
+    @property
     def potentially_flexible_type(self):
         return self._type.potentially_flexible_type
 
@@ -1276,15 +1282,15 @@ if ({{ cond }}) {
 {%- if field.is_array %}
 {%- if field.nullable() %}
 {%- if flex %}
-{{ fname }} = reader.read_nullable_flex_array([version](protocol::decoder& reader) {
+{{ fname }} = reader.read_nullable_flex_array<{{'true' if field.is_fragmented else 'false'}}>([version](protocol::decoder& reader) {
 {%- else %}
-{{ fname }} = reader.read_nullable_array([version](protocol::decoder& reader) {
+{{ fname }} = reader.read_nullable_array<{{'true' if field.is_fragmented else 'false'}}>([version](protocol::decoder& reader) {
 {%- endif %}
 {%- else %}
 {%- if flex %}
-{{ fname }} = reader.read_flex_array([version](protocol::decoder& reader) {
+{{ fname }} = reader.read_flex_array<{{ 'true' if field.is_fragmented else 'false'}}>([version](protocol::decoder& reader) {
 {%- else %}
-{{ fname }} = reader.read_array([version](protocol::decoder& reader) {
+{{ fname }} = reader.read_array<{{'true' if field.is_fragmented else 'false'}}>([version](protocol::decoder& reader) {
 {%- endif %}
 {%- endif %}
     (void)version;

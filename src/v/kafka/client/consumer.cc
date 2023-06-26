@@ -226,7 +226,7 @@ void consumer::on_leader_join(const join_group_response& res) {
     _subscribed_topics.clear();
     for (auto const& m : res.data.members) {
         protocol::decoder r(bytes_to_iobuf(m.metadata));
-        auto topics = r.read_array([](protocol::decoder& reader) {
+        auto topics = r.read_array<false>([](protocol::decoder& reader) {
             return model::topic(reader.read_string());
         });
         std::copy(
