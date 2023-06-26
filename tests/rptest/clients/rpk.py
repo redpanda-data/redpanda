@@ -272,10 +272,33 @@ class RpkTool:
         ]
         return self._run(cmd)
 
-    def sasl_create_user(self, new_username, new_password, mechanism):
-        cmd = ["acl", "user", "create", new_username, "-p", new_password]
+    def _sasl_create_user_cmd(self, new_username, new_password, mechanism):
+        cmd = ["acl", "user", "create", new_username]
         cmd += ["--api-urls", self._redpanda.admin_endpoints()]
         cmd += ["--mechanism", mechanism]
+
+        if new_password != "":
+            cmd += ["-p", new_password]
+
+        return cmd
+
+    def sasl_create_user(self,
+                         new_username,
+                         new_password="",
+                         mechanism="SCRAM-SHA-256"):
+        cmd = self._sasl_create_user_cmd(new_username, new_password, mechanism)
+
+        return self._run(cmd)
+
+    def sasl_create_user_basic(self,
+                               new_username,
+                               auth_user="",
+                               auth_password="",
+                               new_password="",
+                               mechanism="SCRAM-SHA-256"):
+        cmd = self._sasl_create_user_cmd(new_username, new_password, mechanism)
+        cmd += ["--user", auth_user, "--password", auth_password]
+
         return self._run(cmd)
 
     def sasl_update_user(self, user, new_password):
