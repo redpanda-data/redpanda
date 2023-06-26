@@ -182,6 +182,11 @@ void ntp_archiver::notify_leadership(std::optional<model::node_id> leader_id) {
 }
 
 ss::future<> ntp_archiver::upload_until_abort() {
+    if (unlikely(config::shard_local_cfg()
+                   .cloud_storage_disable_upload_loop_for_tests.value())) {
+        vlog(_rtclog.warn, "Skipping upload loop start");
+        co_return;
+    }
     if (!_probe) {
         _probe.emplace(_conf->ntp_metrics_disabled, _ntp);
     }
@@ -244,6 +249,12 @@ ss::future<> ntp_archiver::upload_until_abort() {
 }
 
 ss::future<> ntp_archiver::sync_manifest_until_abort() {
+    if (unlikely(
+          config::shard_local_cfg()
+            .cloud_storage_disable_read_replica_loop_for_tests.value())) {
+        vlog(_rtclog.warn, "Skipping read replica sync loop start");
+        co_return;
+    }
     if (!_probe) {
         _probe.emplace(_conf->ntp_metrics_disabled, _ntp);
     }
