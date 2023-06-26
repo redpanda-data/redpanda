@@ -230,3 +230,11 @@ type TopicList struct {
 func init() {
 	SchemeBuilder.Register(&Topic{}, &TopicList{})
 }
+
+func (t *Topic) GetName() string {
+	topicName := t.Name
+	if t.Spec.OverwriteTopicName != nil && *t.Spec.OverwriteTopicName != "" {
+		topicName = *t.Spec.OverwriteTopicName
+	}
+	return topicName
+}

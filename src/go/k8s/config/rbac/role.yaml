@@ -367,8 +367,6 @@ rules:
   resources:
   - topics
   verbs:
-  - create
-  - delete
   - get
   - list
   - patch
