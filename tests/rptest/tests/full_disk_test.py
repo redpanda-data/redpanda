@@ -520,3 +520,48 @@ class DiskStatsOverrideTest(RedpandaTest):
         # rounding to block size. use a 4K block threshold to test.
         delta = abs(stat["free_bytes"] - stat["total_bytes"])
         assert delta <= 4096
+
+
+class LogStorageMaxSizeTest(RedpandaTest):
+    """
+    Test that when storage exceeds the configured max size that produce api is
+    blocked. After blocking GC will be immediately invoked and making additional
+    space available for all the data to continue to be produced.
+    """
+
+    # data in the test topic is effectively reclaimable immediately by gc
+    topics = (TopicSpec(partition_count=1,
+                        retention_bytes=1,
+                        retention_ms=1,
+                        cleanup_policy=TopicSpec.CLEANUP_DELETE), )
+
+    def __init__(self, test_ctx):
+        extra_rp_conf = dict(
+            # when log storage exceeds 5 MB then kafka produce api is going to
+            # be blocked
+            log_storage_max_size=5 * 1 << 20,
+
+            # the test is intended to show that GC will occur immediately
+            # when a low disk space situation arises. to test this, we want
+            # to avoid any automatic / scheduled GC so we set a housekeeping
+            # interval that ensures that housekeeping won't run a scheduled
+            # job during the test.
+            log_compaction_interval_ms=24 * 60 * 60 * 1000,
+
+            # using a small 0.25 mb log segment size provides "liquidity" to the
+            # test for lack of a better word. we need the system to have reclaim
+            # opportunities and so we want to avoid data being stuck in the
+            # active head segment.
+            log_segment_size=1 << 18)
+        super().__init__(test_context=test_ctx, extra_rp_conf=extra_rp_conf)
+
+    @cluster(num_nodes=3)
+    def test(self):
+        kafka_tools = KafkaCliTools(self.redpanda)
+        kafka_tools.produce(self.topic, 40 * 1024, 1024, throughput=2048)
+        assert self.redpanda.search_log_any(
+            "rejecting produce request: no disk space")
+        assert self.redpanda.search_log_any(
+            "Setting maximum size exceeded flag")
+        assert self.redpanda.search_log_any(
+            "Clearing maximum size exceeded flag")
