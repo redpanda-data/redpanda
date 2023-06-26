@@ -1657,6 +1657,14 @@ int64_t disk_log_impl::compaction_backlog() const {
     int64_t backlog = 0;
     std::vector<ss::lw_shared_ptr<segment>> segments_this_term;
 
+    // Limit how large we will try to allocate the sgements_this_term vector:
+    // this protects us against corner cases where a term has a really large
+    // number of segments.  Typical compaction use cases will have many fewer
+    // segments per term than this (because segments are continuously compacted
+    // away).  Corner cases include non-compactible data in a compacted topic,
+    // or enabling compaction on a previously non-compacted topic.
+    static constexpr size_t limit_segments_this_term = 1024;
+
     for (auto& s : _segs) {
         if (!s->finished_self_compaction()) {
             backlog += static_cast<int64_t>(s->size_bytes());
@@ -1672,7 +1680,10 @@ int64_t disk_log_impl::compaction_backlog() const {
               std::move(segments_this_term), cf);
             segments_this_term.clear();
         }
-        segments_this_term.push_back(s);
+
+        if (segments_this_term.size() < limit_segments_this_term) {
+            segments_this_term.push_back(s);
+        }
     }
 
     // Consume segments from last term in the log after falling out of loop
