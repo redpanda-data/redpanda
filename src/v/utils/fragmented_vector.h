@@ -242,6 +242,8 @@ public:
             return tmp;
         }
 
+        pointer operator->() const { return &_vec->operator[](_index); }
+
         iter operator+(difference_type offset) { return iter{*this} += offset; }
         iter operator-(difference_type offset) { return iter{*this} -= offset; }
 
