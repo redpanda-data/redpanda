@@ -20,6 +20,7 @@
 #include "seastarx.h"
 
 #include <seastar/core/abort_source.hh>
+#include <seastar/core/chunked_fifo.hh>
 #include <seastar/core/sharded.hh>
 
 #include <absl/container/node_hash_map.h>
@@ -88,7 +89,7 @@ public:
     std::optional<ss::shard_id> shard_for(const model::ntp& ntp) const;
 
 private:
-    ss::future<std::vector<controller_backend::delta_metadata>>
+    ss::future<ss::chunked_fifo<controller_backend::delta_metadata>>
       get_remote_core_deltas(model::ntp, ss::shard_id);
 
     model::node_id _self;

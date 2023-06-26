@@ -23,6 +23,7 @@
 #include "storage/api.h"
 
 #include <seastar/core/abort_source.hh>
+#include <seastar/core/chunked_fifo.hh>
 #include <seastar/core/gate.hh>
 #include <seastar/core/sharded.hh>
 
@@ -247,7 +248,7 @@ public:
     ss::future<> stop();
     ss::future<> start();
 
-    std::vector<delta_metadata> list_ntp_deltas(const model::ntp&) const;
+    ss::chunked_fifo<delta_metadata> list_ntp_deltas(const model::ntp&) const;
 
 private:
     struct cross_shard_move_request {

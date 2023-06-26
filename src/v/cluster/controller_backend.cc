@@ -1804,10 +1804,10 @@ ss::future<> controller_backend::delete_partition(
     co_await _partition_manager.local().remove(ntp, mode);
 }
 
-std::vector<controller_backend::delta_metadata>
+ss::chunked_fifo<controller_backend::delta_metadata>
 controller_backend::list_ntp_deltas(const model::ntp& ntp) const {
     if (auto it = _topic_deltas.find(ntp); it != _topic_deltas.end()) {
-        std::vector<controller_backend::delta_metadata> ret;
+        ss::chunked_fifo<controller_backend::delta_metadata> ret;
         ret.reserve(it->second.size());
         std::copy(
           it->second.begin(), it->second.end(), std::back_inserter(ret));

@@ -214,14 +214,14 @@ topic_table_delta::topic_table_delta(
 
 ntp_reconciliation_state::ntp_reconciliation_state(
   model::ntp ntp,
-  std::vector<backend_operation> ops,
+  ss::chunked_fifo<backend_operation> ops,
   reconciliation_status status)
   : ntp_reconciliation_state(
     std::move(ntp), std::move(ops), status, errc::success) {}
 
 ntp_reconciliation_state::ntp_reconciliation_state(
   model::ntp ntp,
-  std::vector<backend_operation> ops,
+  ss::chunked_fifo<backend_operation> ops,
   reconciliation_status status,
   errc ec)
   : _ntp(std::move(ntp))
@@ -1533,12 +1533,11 @@ void adl<cluster::ntp_reconciliation_state>::to(
 cluster::ntp_reconciliation_state
 adl<cluster::ntp_reconciliation_state>::from(iobuf_parser& in) {
     auto ntp = adl<model::ntp>{}.from(in);
-    auto ops = adl<std::vector<cluster::backend_operation>>{}.from(in);
+    auto ops = adl<ss::chunked_fifo<cluster::backend_operation>>{}.from(in);
     auto status = adl<cluster::reconciliation_status>{}.from(in);
     auto error = adl<cluster::errc>{}.from(in);
 
-    return cluster::ntp_reconciliation_state(
-      std::move(ntp), std::move(ops), status, error);
+    return {std::move(ntp), std::move(ops), status, error};
 }
 
 void adl<cluster::create_partitions_configuration>::to(

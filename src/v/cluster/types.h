@@ -2400,23 +2400,23 @@ public:
 
     // success case
     ntp_reconciliation_state(
-      model::ntp, std::vector<backend_operation>, reconciliation_status);
+      model::ntp, ss::chunked_fifo<backend_operation>, reconciliation_status);
 
     // error
     ntp_reconciliation_state(model::ntp, cluster::errc);
 
     ntp_reconciliation_state(
       model::ntp,
-      std::vector<backend_operation>,
+      ss::chunked_fifo<backend_operation>,
       reconciliation_status,
       cluster::errc);
 
     const model::ntp& ntp() const { return _ntp; }
-    const std::vector<backend_operation>& pending_operations() const {
+    const ss::chunked_fifo<backend_operation>& pending_operations() const {
         return _backend_operations;
     }
 
-    std::vector<backend_operation>& pending_operations() {
+    ss::chunked_fifo<backend_operation>& pending_operations() {
         return _backend_operations;
     }
 
@@ -2425,9 +2425,28 @@ public:
     std::error_code error() const { return make_error_code(_error); }
     errc cluster_errc() const { return _error; }
 
-    friend bool
-    operator==(const ntp_reconciliation_state&, const ntp_reconciliation_state&)
-      = default;
+    friend bool operator==(
+      const ntp_reconciliation_state& lhs,
+      const ntp_reconciliation_state& rhs) {
+        return lhs._ntp == rhs._ntp && lhs._status == rhs._status
+               && lhs._error == rhs._error
+               && lhs._backend_operations.size()
+                    == rhs._backend_operations.size()
+               && std::equal(
+                 lhs._backend_operations.begin(),
+                 lhs._backend_operations.end(),
+                 rhs._backend_operations.begin());
+    };
+
+    ntp_reconciliation_state copy() const {
+        ss::chunked_fifo<backend_operation> backend_operations;
+        backend_operations.reserve(_backend_operations.size());
+        std::copy(
+          _backend_operations.begin(),
+          _backend_operations.end(),
+          std::back_inserter(backend_operations));
+        return {_ntp, std::move(backend_operations), _status, _error};
+    }
 
     friend std::ostream&
     operator<<(std::ostream&, const ntp_reconciliation_state&);
@@ -2438,19 +2457,29 @@ public:
 
 private:
     model::ntp _ntp;
-    std::vector<backend_operation> _backend_operations;
+    ss::chunked_fifo<backend_operation> _backend_operations;
     reconciliation_status _status;
     errc _error;
 };
 
 struct node_backend_operations {
     node_backend_operations(
-      model::node_id id, std::vector<backend_operation> ops)
+      model::node_id id, ss::chunked_fifo<backend_operation> ops)
       : node_id(id)
       , backend_operations(std::move(ops)) {}
 
     model::node_id node_id;
-    std::vector<backend_operation> backend_operations;
+    ss::chunked_fifo<backend_operation> backend_operations;
+
+    node_backend_operations copy() const {
+        ss::chunked_fifo<backend_operation> b_ops;
+        b_ops.reserve(backend_operations.size());
+        std::copy(
+          backend_operations.begin(),
+          backend_operations.end(),
+          std::back_inserter(b_ops));
+        return {node_id, std::move(b_ops)};
+    }
 };
 
 struct node_error {
@@ -2463,7 +2492,7 @@ struct node_error {
 };
 
 struct global_reconciliation_state {
-    absl::node_hash_map<model::ntp, std::vector<node_backend_operations>>
+    absl::node_hash_map<model::ntp, ss::chunked_fifo<node_backend_operations>>
       ntp_backend_operations;
     std::vector<node_error> node_errors;
 };
@@ -2503,6 +2532,16 @@ struct reconciliation_state_reply
     operator<<(std::ostream& o, const reconciliation_state_reply& rep) {
         fmt::print(o, "{{ results {} }}", rep.results);
         return o;
+    }
+
+    reconciliation_state_reply copy() const {
+        std::vector<ntp_reconciliation_state> results_cp;
+        results_cp.reserve(results.size());
+        for (auto& r : results) {
+            results_cp.push_back(r.copy());
+        }
+
+        return reconciliation_state_reply{.results = std::move(results_cp)};
     }
 
     auto serde_fields() { return std::tie(results); }
