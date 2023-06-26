@@ -1320,6 +1320,9 @@ disk_log_impl::index_lower_bound(model::offset o) const {
     if (unlikely(_segs.empty())) {
         return std::nullopt;
     }
+    if (o == model::offset{}) {
+        return std::nullopt;
+    }
     auto it = _segs.lower_bound(o);
     if (it == _segs.end()) {
         return std::nullopt;
