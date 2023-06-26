@@ -128,6 +128,7 @@ local_monitor::statvfs_to_disk(const storage::node::stat_info& info) {
       .path = info.path,
       .free = free,
       .total = total,
+      .fsid = svfs.f_fsid,
     };
 }
 
@@ -214,6 +215,7 @@ ss::future<> local_monitor::update_disk_metrics() {
         .alert = _state.data_disk.alert,
         .degraded_threshold = data_degraded,
         .low_space_threshold = data_low,
+        .fsid = _state.data_disk.fsid,
       });
 
     // Always notify for cache disk, even if it's the same underlying drive:
@@ -229,6 +231,7 @@ ss::future<> local_monitor::update_disk_metrics() {
         .alert = cache_disk.alert,
         .degraded_threshold = cache_degraded,
         .low_space_threshold = cache_low,
+        .fsid = cache_disk.fsid,
       });
 }
 
