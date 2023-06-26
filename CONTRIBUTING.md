@@ -441,6 +441,19 @@ Backport of PR #999234
 Fixes #999123
 ```
 
+#### Example Backport PR Body of Multiple PRs
+
+An example of a PR to a release branch containing multiple backports:
+
+```
+Backport of PRs
+- #999234
+- #999456
+- #999678
+
+Fixes #999123
+```
+
 #### Example Backport PR Body with Release Notes override
 
 An example of a PR to a release branch with override of the release notes.
