@@ -466,7 +466,10 @@ def quiesce_uploads(redpanda, topic_names: list[str], timeout_sec):
     rpk = RpkTool(redpanda)
     for topic_name in topic_names:
         described = rpk.describe_topic(topic_name)
+        p_count = 0
         for p in described:
+            p_count += 1
+
             ntp = NTP(ns='kafka', topic=topic_name, partition=p.id)
             hwm = p.high_watermark
 
@@ -478,6 +481,11 @@ def quiesce_uploads(redpanda, topic_names: list[str], timeout_sec):
                                 timeout_sec=timeout,
                                 backoff_sec=1)
             redpanda.logger.debug(f"Partition {ntp} ready (reached HWM {hwm})")
+
+        if p_count == 0:
+            # We expect to be called on a topic where `rpk topic describe` returns
+            # some data, otherwise we can't check that against cloud storage content
+            raise RuntimeError(f"Found 0 partitions for topic '{topic_name}'")
 
 
 @dataclass(order=True)
