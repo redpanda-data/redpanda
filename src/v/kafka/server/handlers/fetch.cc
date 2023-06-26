@@ -859,9 +859,6 @@ op_context::op_context(request_context&& ctx, ss::smp_service_group ssg)
      * decode request and prepare the inital response
      */
     request.decode(rctx.reader(), rctx.header().version);
-    if (likely(!request.data.topics.empty())) {
-        response.data.topics.reserve(request.data.topics.size());
-    }
 
     if (auto delay = request.debounce_delay(); delay) {
         deadline = model::timeout_clock::now() + delay.value();

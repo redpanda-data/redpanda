@@ -76,10 +76,10 @@ struct partition_comp {
 fetch_response
 reduce_fetch_response(fetch_response result, fetch_response val) {
     result.data.throttle_time_ms += val.data.throttle_time_ms;
-    result.data.topics.insert(
-      result.data.topics.end(),
-      std::make_move_iterator(val.data.topics.begin()),
-      std::make_move_iterator(val.data.topics.end()));
+    std::move(
+      val.data.topics.begin(),
+      val.data.topics.end(),
+      std::back_inserter(result.data.topics));
 
     return result;
 };
