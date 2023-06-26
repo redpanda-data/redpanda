@@ -79,7 +79,7 @@ ss::future<> disk_space_manager::run_loop() {
      */
     constexpr auto frequency = std::chrono::seconds(30);
 
-    while (true) {
+    while (!_gate.is_closed()) {
         try {
             if (_enabled()) {
                 co_await _control_sem.wait(
