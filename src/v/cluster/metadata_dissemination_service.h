@@ -153,7 +153,7 @@ private:
     model::broker _self;
     std::chrono::milliseconds _dissemination_interval;
     config::tls_config _rpc_tls_config;
-    std::vector<ntp_leader_revision> _requests;
+    ss::chunked_fifo<ntp_leader_revision> _requests;
     std::vector<net::unresolved_address> _seed_servers;
     broker_updates_t _pending_updates;
     mutex _lock;
