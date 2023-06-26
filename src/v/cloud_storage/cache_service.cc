@@ -254,11 +254,11 @@ ss::future<> cache::trim() {
 
     // Apply _cache_size_low_watermark to the size and/or the object count,
     // depending on which is currently the limiting factor for the trim.
-    if (_current_cache_objects > target_objects) {
+    if (_current_cache_objects + _reserved_cache_objects > target_objects) {
         target_objects *= _cache_size_low_watermark;
     }
 
-    if (_current_cache_size > target_size) {
+    if (_current_cache_size + _reserved_cache_size > target_size) {
         target_size *= _cache_size_low_watermark;
     }
 
@@ -289,7 +289,7 @@ ss::future<> cache::trim() {
     vlog(
       cst_log.debug,
       "trim: set target_size {}/{}, size {}/{}, walked size {} (max {}/{}), "
-      "pending {}/{})",
+      " reserved {}/{}, pending {}/{})",
       target_size,
       target_objects,
       _current_cache_size,
@@ -297,6 +297,8 @@ ss::future<> cache::trim() {
       walked_cache_size,
       _max_bytes(),
       _max_objects(),
+      _reserved_cache_size,
+      _reserved_cache_objects,
       _reservations_pending,
       _reservations_pending_objects);
 
@@ -305,11 +307,13 @@ ss::future<> cache::trim() {
     if (
       _current_cache_size >= target_size
       || _current_cache_objects >= target_objects) {
-        auto size_to_delete = _current_cache_size
-                              - std::min(target_size, _current_cache_size);
-        auto objects_to_delete = _current_cache_objects
-                                 - std::min(
-                                   target_objects, _current_cache_objects);
+        auto size_to_delete
+          = (_current_cache_size + _reserved_cache_size)
+            - std::min(target_size, _current_cache_size + _reserved_cache_size);
+        auto objects_to_delete
+          = _current_cache_objects + _reserved_cache_objects
+            - std::min(
+              target_objects, _current_cache_objects + _reserved_cache_objects);
 
         vlog(
           cst_log.debug,
