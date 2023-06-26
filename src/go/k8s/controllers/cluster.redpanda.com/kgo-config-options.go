@@ -2,13 +2,13 @@ package clusterredpandacom
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/jcmturner/gokrb5/v8/client"
 	krbconfig "github.com/jcmturner/gokrb5/v8/config"
 	"github.com/jcmturner/gokrb5/v8/keytab"
 	"github.com/redpanda-data/console/backend/pkg/config"
-	"github.com/redpanda-data/redpanda/src/go/k8s/apis/cluster.redpanda.com/v1alpha1"
 	"github.com/twmb/franz-go/pkg/kgo"
 	"github.com/twmb/franz-go/pkg/sasl"
 	"github.com/twmb/franz-go/pkg/sasl/aws"
@@ -17,7 +17,11 @@ import (
 	"github.com/twmb/franz-go/pkg/sasl/plain"
 	"github.com/twmb/franz-go/pkg/sasl/scram"
 	ctrl "sigs.k8s.io/controller-runtime"
+
+	"github.com/redpanda-data/redpanda/src/go/k8s/apis/cluster.redpanda.com/v1alpha1"
 )
+
+var ErrEmptyBrokerList = errors.New("empty broker list")
 
 // Reference implementation https://github.com/redpanda-data/console/blob/0ba44b236b6ddd7191da015f44a9302fc13665ec/backend/pkg/kafka/config_helper.go#L44
 
@@ -31,7 +35,7 @@ func newKgoConfig(ctx context.Context, topic *v1alpha1.Topic) ([]kgo.Opt, error)
 	}
 
 	if len(topic.Spec.KafkaAPISpec.Brokers) == 0 {
-		return nil, fmt.Errorf("empty broker list")
+		return nil, ErrEmptyBrokerList
 	}
 	opts := []kgo.Opt{
 		kgo.SeedBrokers(topic.Spec.KafkaAPISpec.Brokers...),

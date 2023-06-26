@@ -204,8 +204,8 @@ func (in *TopicSpec) DeepCopyInto(out *TopicSpec) {
 		*out = new(string)
 		**out = **in
 	}
-	if in.AdditionalConfig != nil {
-		in, out := &in.AdditionalConfig, &out.AdditionalConfig
+	if in.AdditionalConfigSingleValue != nil {
+		in, out := &in.AdditionalConfigSingleValue, &out.AdditionalConfigSingleValue
 		*out = make(map[string]*string, len(*in))
 		for key, val := range *in {
 			var outVal *string

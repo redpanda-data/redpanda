@@ -342,8 +342,9 @@ func main() {
 	}
 
 	if err = (&clusterredpandacomcontrollers.TopicReconciler{
-		Client: mgr.GetClient(),
-		Scheme: mgr.GetScheme(),
+		Client:        mgr.GetClient(),
+		Scheme:        mgr.GetScheme(),
+		EventRecorder: mgr.GetEventRecorderFor("TopicReconciler"),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "Topic")
 		os.Exit(1)

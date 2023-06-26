@@ -31,14 +31,14 @@ type TopicSpec struct {
 	ReplicationFactor *int `json:"replicationFactor,omitempty"`
 	// OverwriteTopicName will change the topic name from the `metadata.name` to `OverwriteTopicName`
 	OverwriteTopicName *string `json:"overwriteTopicName,omitempty"`
-	// AdditionalConfig is free form map of any configuration option that topic can have.
+	// AdditionalConfigSingleValue is free form map of any configuration option that topic can have with single string value.
 	// Examples:
 	// cleanup.policy=compact
 	// redpanda.remote.write=true
 	// redpanda.remote.read=true
 	// redpanda.remote.recovery=true
 	// redpanda.remote.delete=true
-	AdditionalConfig map[string]*string `json:"additionalConfig,omitempty"`
+	AdditionalConfigSingleValue map[string]*string `json:"additionalConfigSingleValue,omitempty"`
 
 	KafkaAPISpec *KafkaAPISpec `json:"kafkaApiSpec,omitempty"`
 
@@ -166,4 +166,12 @@ type TopicList struct {
 
 func init() {
 	SchemeBuilder.Register(&Topic{}, &TopicList{})
+}
+
+func (t *Topic) GetName() string {
+	topicName := t.Name
+	if t.Spec.OverwriteTopicName != nil && *t.Spec.OverwriteTopicName != "" {
+		topicName = *t.Spec.OverwriteTopicName
+	}
+	return topicName
 }

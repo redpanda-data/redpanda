@@ -36,12 +36,13 @@ spec:
           spec:
             description: TopicSpec defines the desired state of Topic
             properties:
-              additionalConfig:
+              additionalConfigSingleValue:
                 additionalProperties:
                   type: string
-                description: 'AdditionalConfig is free form map of any configuration
-                  option that topic can have. Examples: cleanup.policy=compact redpanda.remote.write=true
-                  redpanda.remote.read=true redpanda.remote.recovery=true redpanda.remote.delete=true'
+                description: 'AdditionalConfigSingleValue is free form map of any
+                  configuration option that topic can have with single string value.
+                  Examples: cleanup.policy=compact redpanda.remote.write=true redpanda.remote.read=true
+                  redpanda.remote.recovery=true redpanda.remote.delete=true'
                 type: object
               clientId:
                 description: ClientID can be set to identify connection performed
