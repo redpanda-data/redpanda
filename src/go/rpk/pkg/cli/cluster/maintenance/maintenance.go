@@ -41,7 +41,7 @@ Currently leadership is not transferred for partitions with one replica.
 `,
 	}
 	p.InstallAdminFlags(cmd)
-
+	p.InstallSASLFlags(cmd)
 	cmd.AddCommand(
 		newEnableCommand(fs, p),
 		newDisableCommand(fs, p),

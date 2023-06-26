@@ -577,21 +577,29 @@ func (p *Params) InstallKafkaFlags(cmd *cobra.Command) {
 	pf := cmd.PersistentFlags()
 
 	pf.StringSliceVar(&p.brokers, "brokers", nil, "Comma separated list of broker host:ports")
-	pf.StringVar(&p.user, FlagSASLUser, "", "SASL user to be used for authentication")
-	pf.StringVar(&p.password, "password", "", "SASL password to be used for authentication")
-	pf.StringVar(&p.saslMechanism, "sasl-mechanism", "", "The authentication mechanism to use (SCRAM-SHA-256, SCRAM-SHA-512)")
-
 	pf.MarkHidden("brokers")
-	pf.MarkHidden(FlagSASLUser)
-	pf.MarkHidden("password")
-	pf.MarkHidden("sasl-mechanism")
 
+	p.InstallSASLFlags(cmd)
 	p.InstallTLSFlags(cmd)
 
 	pf.MarkHidden(FlagEnableTLS)
 	pf.MarkHidden(FlagTLSCA)
 	pf.MarkHidden(FlagTLSCert)
 	pf.MarkHidden(FlagTLSKey)
+}
+
+// InstallSASLFlags adds the original rpk Kafka SASL flags that are also used
+// by the admin API for authentication.
+func (p *Params) InstallSASLFlags(cmd *cobra.Command) {
+	pf := cmd.PersistentFlags()
+
+	pf.StringVar(&p.user, FlagSASLUser, "", "SASL user to be used for authentication")
+	pf.StringVar(&p.password, "password", "", "SASL password to be used for authentication")
+	pf.StringVar(&p.saslMechanism, "sasl-mechanism", "", "The authentication mechanism to use (SCRAM-SHA-256, SCRAM-SHA-512)")
+
+	pf.MarkHidden(FlagSASLUser)
+	pf.MarkHidden("password")
+	pf.MarkHidden("sasl-mechanism")
 }
 
 // InstallTLSFlags adds the original rpk Kafka API TLS set of flags to this

@@ -13,6 +13,7 @@ func NewLicenseCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 		Short: "Manage cluster license",
 	}
 	p.InstallAdminFlags(cmd)
+	p.InstallSASLFlags(cmd)
 	cmd.AddCommand(
 		newInfoCommand(fs, p),
 		newSetCommand(fs, p),

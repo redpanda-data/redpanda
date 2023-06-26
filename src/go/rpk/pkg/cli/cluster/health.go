@@ -61,6 +61,7 @@ following conditions are met:
 		},
 	}
 	p.InstallAdminFlags(cmd)
+	p.InstallSASLFlags(cmd)
 
 	cmd.Flags().BoolVarP(&watch, "watch", "w", false, "Blocks and writes out all cluster health changes")
 	cmd.Flags().BoolVarP(&exit, "exit-when-healthy", "e", false, "When used with watch, exits after cluster is back in healthy state")

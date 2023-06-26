@@ -34,6 +34,7 @@ command after it has been started.
 `,
 	}
 	p.InstallAdminFlags(cmd)
+	p.InstallSASLFlags(cmd)
 	cmd.AddCommand(
 		newStartCommand(fs, p),
 		newStatusCommand(fs, p),
