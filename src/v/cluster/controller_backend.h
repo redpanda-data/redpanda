@@ -29,6 +29,7 @@
 #include <absl/container/node_hash_map.h>
 
 #include <cstdint>
+#include <deque>
 #include <ostream>
 
 namespace cluster {
@@ -230,7 +231,7 @@ public:
         friend std::ostream& operator<<(std::ostream&, const delta_metadata&);
     };
 
-    using deltas_t = std::vector<delta_metadata>;
+    using deltas_t = std::deque<delta_metadata>;
     using results_t = std::vector<std::error_code>;
     controller_backend(
       ss::sharded<cluster::topic_table>&,
@@ -408,6 +409,6 @@ private:
     ss::metrics::metric_groups _metrics;
 };
 
-std::vector<controller_backend::delta_metadata> calculate_bootstrap_deltas(
-  model::node_id self, const std::vector<controller_backend::delta_metadata>&);
+controller_backend::deltas_t calculate_bootstrap_deltas(
+  model::node_id self, const controller_backend::deltas_t&);
 } // namespace cluster
