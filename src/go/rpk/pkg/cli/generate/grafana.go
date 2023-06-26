@@ -794,7 +794,7 @@ func newPercentilePanel(
 	panel.SteppedLine = true
 	panel.NullPointMode = "null as zero"
 	panel.Tooltip.ValueType = "individual"
-	panel.Tooltip.Sort = 0
+	panel.Tooltip.Sort = 2 // decreasing
 	panel.Interval = "1m"
 	return panel
 }
@@ -819,6 +819,7 @@ func newCounterPanel(m *dto.MetricFamily, isPublicMetrics bool, datasource strin
 	}
 	panel := newGraphPanel("Rate - "+m.GetHelp(), target, format, datasource)
 	panel.Lines = true
+	panel.Tooltip.Sort = 2 // decreasing
 	panel.Interval = "1m"
 	return panel
 }
@@ -841,6 +842,7 @@ func newGaugePanel(m *dto.MetricFamily, isPublicMetrics bool, datasource string)
 	}
 	panel := newGraphPanel(m.GetHelp(), target, format, datasource)
 	panel.Lines = true
+	panel.Tooltip.Sort = 2 // decreasing
 	panel.SteppedLine = true
 	return panel
 }
