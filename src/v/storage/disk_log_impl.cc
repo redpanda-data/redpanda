@@ -1558,6 +1558,11 @@ int64_t compaction_backlog_term(
   std::vector<ss::lw_shared_ptr<segment>> segs, double cf) {
     int64_t backlog = 0;
 
+    // Only compare each segment to a limited number of other segments, to
+    // avoid the loop below blowing up in runtime when there are many segments
+    // in the same term.
+    static constexpr size_t limit_lookahead = 8;
+
     auto segment_count = segs.size();
     if (segment_count <= 1) {
         return 0;
@@ -1567,7 +1572,7 @@ int64_t compaction_backlog_term(
         auto& s = segs[n - 1];
         auto sz = s->finished_self_compaction() ? s->size_bytes()
                                                 : s->size_bytes() * cf;
-        for (size_t k = 0; k <= segment_count - n; ++k) {
+        for (size_t k = 0; k <= segment_count - n && k < limit_lookahead; ++k) {
             if (k == segment_count - 1) {
                 continue;
             }
