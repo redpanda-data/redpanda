@@ -463,7 +463,9 @@ extra_headers = {
 
 # These types, when they appear as the member type of an array, will use
 # a vector implementation which resists fragmentation.
-enable_fragmentation_resistance = {'metadata_response_partition'}
+enable_fragmentation_resistance = {
+    'metadata_response_partition', 'fetchable_partition_response'
+}
 
 
 def make_context_field(path):

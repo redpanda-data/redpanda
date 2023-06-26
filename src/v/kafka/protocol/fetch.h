@@ -20,6 +20,7 @@
 #include "model/metadata.h"
 #include "model/timeout_clock.h"
 #include "seastarx.h"
+#include "utils/fragmented_vector.h"
 
 #include <seastar/core/future.hh>
 
@@ -213,7 +214,7 @@ struct fetch_response final {
     public:
         using partition_iterator = std::vector<partition>::iterator;
         using partition_response_iterator
-          = std::vector<partition_response>::iterator;
+          = large_fragment_vector<partition_response>::iterator;
 
         struct value_type {
             partition_iterator partition;

@@ -881,9 +881,8 @@ op_context::op_context(request_context&& ctx, ss::smp_service_group ssg)
 
 // insert and reserve space for a new topic in the response
 void op_context::start_response_topic(const fetch_request::topic& topic) {
-    auto& p = response.data.topics.emplace_back(
+    response.data.topics.emplace_back(
       fetchable_topic_response{.name = topic.name});
-    p.partitions.reserve(topic.fetch_partitions.size());
 }
 
 void op_context::start_response_partition(const fetch_request::partition& p) {
@@ -1002,8 +1001,6 @@ ss::future<response_ptr> op_context::send_response() && {
         if (it->is_new_topic) {
             final_response.data.topics.emplace_back(
               fetchable_topic_response{.name = it->partition->name});
-            final_response.data.topics.back().partitions.reserve(
-              it->partition->partitions.size());
         }
 
         fetch_response::partition_response r{
