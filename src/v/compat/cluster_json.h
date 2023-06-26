@@ -529,7 +529,7 @@ inline void rjson_serialize(
 inline void
 read_value(json::Value const& rd, cluster::ntp_reconciliation_state& obj) {
     model::ntp ntp;
-    std::vector<cluster::backend_operation> operations;
+    ss::chunked_fifo<cluster::backend_operation> operations;
     cluster::reconciliation_status status;
     cluster::errc error;
 

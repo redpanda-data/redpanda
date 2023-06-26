@@ -2775,9 +2775,14 @@ admin_server::get_reconfigurations_handler(std::unique_ptr<ss::http::request>) {
             reconfiguration_states.error()),
           ss::http::reply::status_type::service_unavailable);
     }
+    // we are forced to use shared pointer as underlying chunked_fifo is not
+    // copyable
+    auto reconciliations_ptr
+      = ss::make_lw_shared<cluster::global_reconciliation_state>(
+        std::move(reconciliations));
     co_return ss::json::json_return_type(ss::json::stream_range_as_array(
       std::move(reconfiguration_states.value()),
-      [reconciliations = std::move(reconciliations)](auto& s) {
+      [reconciliations = std::move(reconciliations_ptr)](auto& s) {
           reconfiguration r;
           r.ns = s.ntp.ns;
           r.topic = s.ntp.tp.topic;
@@ -2812,8 +2817,8 @@ admin_server::get_reconfigurations_handler(std::unique_ptr<ss::http::request>) {
               r.bytes_left_to_move = s.current_partition_size;
           }
 
-          auto it = reconciliations.ntp_backend_operations.find(s.ntp);
-          if (it != reconciliations.ntp_backend_operations.end()) {
+          auto it = reconciliations->ntp_backend_operations.find(s.ntp);
+          if (it != reconciliations->ntp_backend_operations.end()) {
               for (auto& node_ops : it->second) {
                   seastar::httpd::partition_json::
                     partition_reconciliation_status per_node_status;

@@ -27,6 +27,7 @@
 #include "rpc/connection_cache.h"
 #include "ssx/future-util.h"
 
+#include <seastar/core/chunked_fifo.hh>
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/future.hh>
 #include <seastar/core/loop.hh>
@@ -142,7 +143,7 @@ controller_api::get_reconciliation_state(model::topic_namespace_view tp_ns) {
     co_return co_await get_reconciliation_state(std::move(ntps));
 }
 
-ss::future<std::vector<controller_backend::delta_metadata>>
+ss::future<ss::chunked_fifo<controller_backend::delta_metadata>>
 controller_api::get_remote_core_deltas(model::ntp ntp, ss::shard_id shard) {
     return _backend.invoke_on(
       shard, [ntp = std::move(ntp)](controller_backend& backend) {
@@ -164,7 +165,7 @@ controller_api::get_reconciliation_state(model::ntp ntp) {
           std::move(ntp), errc::partition_not_exists);
     }
     // query controller backends for in progress operations
-    std::vector<backend_operation> ops;
+    ss::chunked_fifo<backend_operation> ops;
     const auto shards = boost::irange<ss::shard_id>(0, ss::smp::count);
     for (auto shard : shards) {
         auto local_deltas = co_await get_remote_core_deltas(ntp, shard);
@@ -268,7 +269,7 @@ controller_api::get_reconciliation_state(
           }
           vassert(result.value().size() == 1, "result MUST contain single ntp");
 
-          return ret_t(result.value().front());
+          return ret_t(std::move(result.value().front()));
       });
 }
 

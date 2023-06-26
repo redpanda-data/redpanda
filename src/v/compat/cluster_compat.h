@@ -209,10 +209,37 @@ GEN_COMPAT_CHECK(
   { json_write(ntps); },
   { json_read(ntps); });
 
-GEN_COMPAT_CHECK(
-  cluster::reconciliation_state_reply,
-  { json_write(results); },
-  { json_read(results); });
+template<>
+struct compat_check<cluster::reconciliation_state_reply> {
+    static constexpr std::string_view name = "reconciliation_state_reply";
+
+    static std::vector<cluster::reconciliation_state_reply>
+    create_test_cases() {
+        return generate_instances<cluster::reconciliation_state_reply>();
+    }
+
+    static void to_json(
+      cluster::reconciliation_state_reply obj,
+      json::Writer<json::StringBuffer>& wr) {
+        json::write_member(wr, "results", obj.results);
+    }
+
+    static cluster::reconciliation_state_reply from_json(json::Value& rd) {
+        cluster::reconciliation_state_reply obj;
+        json::read_member(rd, "results", obj.results);
+        return obj;
+    }
+
+    static std::vector<compat_binary>
+    to_binary(cluster::reconciliation_state_reply obj) {
+        return compat_binary::serde_and_adl(std::move(obj));
+    }
+
+    static void
+    check(cluster::reconciliation_state_reply obj, compat_binary test) {
+        verify_adl_or_serde(std::move(obj), std::move(test));
+    }
+};
 
 GEN_COMPAT_CHECK(
   cluster::finish_partition_update_request,
