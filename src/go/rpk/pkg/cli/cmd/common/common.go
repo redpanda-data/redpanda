@@ -78,6 +78,29 @@ func AddKafkaFlags(
 	return command
 }
 
+func AddSASLFlags(command *cobra.Command, user, password, saslMechanism *string) *cobra.Command {
+	command.PersistentFlags().StringVar(
+		user,
+		"user",
+		"",
+		"SASL user to be used for authentication",
+	)
+	command.PersistentFlags().StringVar(
+		password,
+		"password",
+		"",
+		"SASL password to be used for authentication",
+	)
+	command.PersistentFlags().StringVar(
+		saslMechanism,
+		config.FlagSASLMechanism,
+		"",
+		"The authentication mechanism to use. Supported values: SCRAM-SHA-256, SCRAM-SHA-512",
+	)
+
+	return command
+}
+
 func AddTLSFlags(
 	command *cobra.Command,
 	enableTLS *bool,
