@@ -402,7 +402,7 @@ def wait_for_recovery_throttle_rate(redpanda, new_rate: int):
                     f"Error getting throttle rate for {node}", exc_info=True)
                 return False
 
-        brokers = redpanda._admin.get_brokers(node=redpanda.controller())
+        brokers = redpanda._admin.get_brokers()
         active_brokers = set([b['node_id'] for b in brokers])
         assert active_brokers
         filtered = [
