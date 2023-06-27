@@ -44,7 +44,7 @@ if [[ $FIXING_ISSUE_URLS != "" ]]; then
         --milestone "$TARGET_MILESTONE" \
         --body "Backport $FIXING_ISSUE_URL to branch $BACKPORT_BRANCH. Requested by PR $ORIG_PR_URL")
     fi
-    backport_issue_urls+="Fixes $backport_issue_url, "
+    backport_issue_urls+="Fixes: $backport_issue_url, "
   done
   # shellcheck disable=SC2001
   backport_issue_urls=$(echo "$backport_issue_urls" | sed 's/.$//')
