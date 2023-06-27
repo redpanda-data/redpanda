@@ -3485,7 +3485,9 @@ class RedpandaService(RedpandaServiceBase):
 
         return False
 
-    def search_log_any(self, pattern: str, nodes: list[ClusterNode] = None):
+    def search_log_any(self,
+                       pattern: str,
+                       nodes: Optional[list[ClusterNode]] = None):
         """
         Test helper for grepping the redpanda log.
         The design follows python's built-in any() function.
@@ -3505,7 +3507,9 @@ class RedpandaService(RedpandaServiceBase):
         # Fall through, no matches
         return False
 
-    def search_log_all(self, pattern: str, nodes: list[ClusterNode] = None):
+    def search_log_all(self,
+                       pattern: str,
+                       nodes: Optional[list[ClusterNode]] = None):
         # Test helper for grepping the redpanda log
         # The design follows python's  built-in all() function.
         # https://docs.python.org/3/library/functions.html#all

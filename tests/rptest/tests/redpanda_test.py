@@ -16,7 +16,7 @@ from rptest.clients.kafka_cli_tools import KafkaCliTools
 from rptest.clients.default import DefaultClient
 from rptest.util import Scale
 from rptest.clients.types import TopicSpec
-from rptest.services.redpanda_installer import RedpandaInstaller
+from rptest.services.redpanda_installer import RedpandaInstaller, RedpandaVersion, RedpandaVersionTriple
 from rptest.clients.rpk import RpkTool
 
 
@@ -122,7 +122,7 @@ class RedpandaTest(Test):
             self.logger.debug(f"Creating initial topic {spec}")
             client.create_topic(spec)
 
-    def load_version_range(self, initial_version):
+    def load_version_range(self, initial_version: RedpandaVersion):
         """
         For tests that do upgrades: find all the latest versions from feature branches
         between the initial version and the head version.  Result is a list, inclusive of both initial
@@ -156,7 +156,7 @@ class RedpandaTest(Test):
             self.redpanda._installer.install(self.redpanda.nodes, v)
             return v
 
-        def logical_version_stable(old_logical_version):
+        def logical_version_stable(old_logical_version: int):
             """Assuming all nodes have been updated to a particular version,
             check that the cluster's active version has advanced to match the
             logical version of the node we are talking to.

@@ -92,6 +92,14 @@ class InstallOptions:
         self.num_to_upgrade = num_to_upgrade
 
 
+REDPANDA_INSTALLER_HEAD_TAG = "head"
+
+RedpandaVersionTriple = tuple[int, int, int]
+RedpandaVersionLine = tuple[int, int]
+RedpandaVersion = typing.Literal[
+    'head'] | RedpandaVersionLine | RedpandaVersionTriple
+
+
 class RedpandaInstaller:
     """
     Provides mechanisms to install multiple Redpanda binaries on a cluster.
@@ -105,7 +113,7 @@ class RedpandaInstaller:
     """
     # Represents the binaries installed at the time of the call to start(). It
     # is expected that this is identical across all nodes initially.
-    HEAD = "head"
+    HEAD = REDPANDA_INSTALLER_HEAD_TAG
 
     # Directory to which binaries are downloaded.
     #
@@ -121,7 +129,7 @@ class RedpandaInstaller:
 
     # Class member for caching the results of a github query to fetch the released
     # version list once per process lifetime of ducktape.
-    _released_versions: list[tuple] = []
+    _released_versions: list[RedpandaVersionTriple] = []
     _released_versions_lock = threading.Lock()
 
     @staticmethod
@@ -293,7 +301,7 @@ class RedpandaInstaller:
         # use it to get older versions relative to the head version.
         # NOTE: installing this version may not yield the same binaries being
         # as 'head', e.g. if an unreleased source is checked out.
-        self._head_version: tuple = int_tuple(
+        self._head_version: RedpandaVersionTriple = int_tuple(
             VERSION_RE.findall(initial_version)[0])
 
         self._started = True
@@ -400,8 +408,13 @@ class RedpandaInstaller:
         which might exist in github but not yet fave all their artifacts
         """
         r = requests.head(self._version_package_url(version))
-        if r.status_code not in (200, 404):
+        # allow 403 ClientError, it usually indicates Unauthorized get and can happen on S3 while dealing with old releases
+        if r.status_code not in (200, 403, 404):
             r.raise_for_status()
+
+        if r.status_code == 403:
+            self._redpanda.logger.warn(
+                f"request failed with {r.status_code=}: {r.reason=}")
 
         return r.status_code == 200
 
@@ -449,7 +462,9 @@ class RedpandaInstaller:
         )
         return result
 
-    def latest_for_line(self, release_line: tuple[int, int]):
+    def latest_for_line(
+        self, release_line: RedpandaVersionLine
+    ) -> tuple[RedpandaVersionTriple, bool]:
         """
         Returns the most recent version of redpanda from a release line, or HEAD if asking for a yet-to-be released version
         the return type is a tuple (version, is_head), where is_head is True if the version is from dev tip
@@ -487,8 +502,8 @@ class RedpandaInstaller:
 
         assert False, f"no downloadable versions in {versions_in_line[0:2]} for {release_line=}"
 
-    def install(self, nodes, version: typing.Union[str, tuple[int, int],
-                                                   tuple[int, int, int]]):
+    def install(self, nodes: list[typing.Any],
+                version: RedpandaVersion) -> tuple[RedpandaVersionTriple, str]:
         """
         Installs the release on the given nodes such that the next time the
         nodes are restarted, they will use the newly installed bits.
