@@ -878,6 +878,18 @@ ss::future<upload_result> remote::delete_objects(
           bucket, keys, fib.get_timeout());
 
         if (res) {
+            if (!res.value().undeleted_keys.empty()) {
+                vlog(
+                  ctxlog.debug,
+                  "{} objects were not deleted by plural delete; first "
+                  "failure: {{key: {}, reason:{}}}",
+                  res.value().undeleted_keys.size(),
+                  res.value().undeleted_keys.front().key,
+                  res.value().undeleted_keys.front().reason);
+
+                co_return upload_result::failed;
+            }
+
             co_return upload_result::success;
         }
 
