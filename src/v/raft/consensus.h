@@ -52,6 +52,10 @@ class replicate_entries_stm;
 class vote_stm;
 class prevote_stm;
 class recovery_stm;
+
+std::vector<model::record_batch_type>
+offset_translator_batch_types(const model::ntp& ntp);
+
 /// consensus for one raft group
 class consensus {
 public:

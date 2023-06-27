@@ -131,10 +131,12 @@ struct archival_metadata_stm::reset_metadata_cmd {
     using value = iobuf;
 };
 
-struct archival_metadata_stm::spillover_cmd {
+struct archival_metadata_stm::spillover_cmd
+  : public serde::
+      envelope<spillover_cmd, serde::version<0>, serde::compat_version<0>> {
     static constexpr cmd_key key{9};
 
-    using value = start_offset;
+    cloud_storage::segment_meta manifest_meta;
 };
 
 struct archival_metadata_stm::snapshot
@@ -263,10 +265,11 @@ command_batch_builder::truncate(kafka::offset start_kafka_offset) {
 }
 
 command_batch_builder&
-command_batch_builder::spillover(model::offset start_rp_offset) {
+command_batch_builder::spillover(const cloud_storage::segment_meta& meta) {
     iobuf key_buf = serde::to_iobuf(archival_metadata_stm::spillover_cmd::key);
-    auto record_val = archival_metadata_stm::spillover_cmd::value{
-      .start_offset = start_rp_offset};
+    auto record_val = archival_metadata_stm::spillover_cmd{
+      .manifest_meta = meta,
+    };
     iobuf val_buf = serde::to_iobuf(record_val);
     _builder.add_raw_kv(std::move(key_buf), std::move(val_buf));
     return *this;
@@ -515,14 +518,15 @@ ss::future<std::error_code> archival_metadata_stm::truncate(
 }
 
 ss::future<std::error_code> archival_metadata_stm::spillover(
-  model::offset start_rp_offset,
+  const cloud_storage::segment_meta& manifest_meta,
   ss::lowres_clock::time_point deadline,
   ss::abort_source& as) {
+    auto start_rp_offset = model::next_offset(manifest_meta.committed_offset);
     if (start_rp_offset < get_start_offset()) {
         co_return errc::success;
     }
     auto builder = batch_start(deadline, as);
-    builder.spillover(start_rp_offset);
+    builder.spillover(manifest_meta);
     co_return co_await builder.replicate();
 }
 
@@ -748,7 +752,7 @@ ss::future<> archival_metadata_stm::apply(model::record_batch b) {
             break;
         case spillover_cmd::key:
             apply_spillover(
-              serde::from_iobuf<spillover_cmd::value>(r.release_value()));
+              serde::from_iobuf<spillover_cmd>(r.release_value()));
             break;
         };
     });
@@ -1074,13 +1078,18 @@ void archival_metadata_stm::apply_truncate_archive_commit(
     _manifest->set_archive_clean_offset(co, bytes_removed);
 }
 
-void archival_metadata_stm::apply_spillover(const start_offset& so) {
-    auto removed = _manifest->spillover(so.start_offset);
-    vlog(
-      _logger.debug,
-      "Spillover command applied, new start offset: {}, new last offset: {}",
-      get_start_offset(),
-      get_last_offset());
+void archival_metadata_stm::apply_spillover(const spillover_cmd& so) {
+    if (_manifest->safe_spillover_manifest(so.manifest_meta)) {
+        _manifest->spillover(so.manifest_meta);
+        vlog(
+          _logger.debug,
+          "Spillover command applied, new start offset: {}, new last offset: "
+          "{}",
+          get_start_offset(),
+          get_last_offset());
+    } else {
+        vlog(_logger.warn, "Can't apply spillover_cmd: {}", so.manifest_meta);
+    }
 }
 
 std::vector<cloud_storage::partition_manifest::lw_segment_meta>

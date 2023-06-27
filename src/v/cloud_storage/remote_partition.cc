@@ -755,10 +755,10 @@ remote_partition::get_term_last_offset(model::term_id term) const {
         const auto& term_col = spillover_map.get_segment_term_column();
         size_t sp_index = 0;
         for (auto t : term_col) {
-            sp_index++;
             if (t > term()) {
                 break;
             }
+            sp_index++;
         }
         auto sp_start = spillover_map.get_base_offset_column().at_index(
           sp_index);

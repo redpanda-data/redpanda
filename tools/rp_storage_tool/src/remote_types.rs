@@ -1053,8 +1053,11 @@ mod tests {
         assert_eq!(manifest.revision, 8);
         assert_eq!(manifest.segments.len(), 3654);
         // Sanity check some missing field serialization.
-        assert!(offset_has_default_value(&manifest.start_kafka_offset),
-                "{:?}", manifest.start_kafka_offset);
+        assert!(
+            offset_has_default_value(&manifest.start_kafka_offset),
+            "{:?}",
+            manifest.start_kafka_offset
+        );
         let json_manifest = serde_json::to_string(&manifest).unwrap();
         assert_eq!(json_manifest.find("start_kafka_offset"), None);
     }
@@ -1078,8 +1081,11 @@ mod tests {
             1573496
         );
         // Sanity check some missing field serialization.
-        assert!(offset_has_default_value(&manifest.start_kafka_offset),
-                "{:?}", manifest.start_kafka_offset);
+        assert!(
+            offset_has_default_value(&manifest.start_kafka_offset),
+            "{:?}",
+            manifest.start_kafka_offset
+        );
         let json_manifest = serde_json::to_string(&manifest).unwrap();
         assert_eq!(json_manifest.find("start_kafka_offset"), None);
     }

@@ -48,6 +48,7 @@ v_cc_library(
     v::rphashing
     v::cloud_roles
     v::segment_meta_cstore
+    v::raft
     # NOTE: do not add v::cloud as a dependency
 )
 add_subdirectory(tests)

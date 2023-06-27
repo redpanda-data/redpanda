@@ -80,11 +80,14 @@ public:
         }
         auto so = model::next_offset(stm_manifest.get_last_offset());
         add_random_segments(stm_manifest, num_segments);
-        auto tmp = stm_manifest.spillover(so);
         spillover_manifest spm(manifest_ntp, manifest_rev);
-        for (const auto& meta : tmp) {
+        for (const auto& meta : stm_manifest) {
+            if (meta.committed_offset >= so) {
+                break;
+            }
             spm.add(meta);
         }
+        stm_manifest.spillover(spm.make_manifest_metadata());
         // update cache
         auto path = spm.get_manifest_path();
         if (hydrate) {

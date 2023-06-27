@@ -1631,7 +1631,7 @@ FIXTURE_TEST(
 FIXTURE_TEST(test_remote_partition_scan_after_recovery, cloud_storage_fixture) {
     const char* manifest_json = R"json({
       "version": 1,
-      "namespace": "test-ns",
+      "namespace": "kafka",
       "topic": "test-topic",
       "partition": 42,
       "revision": 0,

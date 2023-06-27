@@ -9,8 +9,8 @@ mod fundamental;
 mod ntp_mask;
 mod remote_types;
 mod repair;
-mod varint;
 mod util;
+mod varint;
 
 use log::{debug, error, info, trace, warn};
 use remote_types::RpSerde;

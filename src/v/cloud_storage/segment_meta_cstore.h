@@ -943,6 +943,27 @@ public:
 
     void insert(const segment_meta&);
 
+    class [[nodiscard]] append_tx {
+    public:
+        explicit append_tx(segment_meta_cstore&, const segment_meta&);
+        ~append_tx();
+        append_tx(const append_tx&) = delete;
+        append_tx(append_tx&&) = delete;
+        append_tx& operator=(const append_tx&) = delete;
+        append_tx& operator=(append_tx&&) = delete;
+
+        void rollback() noexcept;
+
+    private:
+        segment_meta _meta;
+        segment_meta_cstore& _parent;
+    };
+
+    /// Add element to the c-store without flushing the
+    /// write buffer. The new element can't replace any
+    /// existing element in the write buffer.
+    append_tx append(const segment_meta&);
+
     std::pair<size_t, size_t> inflated_actual_size() const;
 
     /// Removes all values up to the offset. The provided offset is

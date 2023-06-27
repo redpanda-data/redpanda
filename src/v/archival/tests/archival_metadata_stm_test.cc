@@ -714,14 +714,21 @@ FIXTURE_TEST(test_archival_stm_spillover, archival_metadata_stm_fixture) {
 
     // unaligned spillover command shouldn't remove segment
     archival_stm
-      ->spillover(model::offset{1}, ss::lowres_clock::now() + 10s, never_abort)
+      ->spillover(
+        cloud_storage::segment_meta{
+          .base_offset = model::offset{0},
+          .committed_offset = model::offset{1}},
+        ss::lowres_clock::now() + 10s,
+        never_abort)
       .get();
+    // the start offset remains unchanged
     BOOST_REQUIRE_EQUAL(archival_stm->get_start_offset(), model::offset(0));
 
     // aligned spillover command should remove segment
     auto batcher2 = archival_stm->batch_start(
       ss::lowres_clock::now() + 10s, never_abort);
-    batcher2.spillover(model::offset(1000));
+    batcher2.spillover(cloud_storage::segment_meta{
+      .base_offset = model::offset(0), .committed_offset = model::offset(999)});
     batcher2.truncate_archive_init(model::offset(200), model::offset_delta(0));
     batcher2.cleanup_archive(model::offset(100), 0);
     batcher2.replicate().get();

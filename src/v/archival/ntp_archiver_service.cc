@@ -1865,8 +1865,9 @@ ss::future<> ntp_archiver::apply_archive_retention() {
     }
 
     if (
-      res.value().offset
-      == _manifest_view->stm_manifest().get_archive_start_offset()) {
+      res.value().offset == model::offset{}
+      || res.value().offset
+           == _manifest_view->stm_manifest().get_archive_start_offset()) {
         co_return;
     }
 
@@ -2166,13 +2167,15 @@ ss::future<> ntp_archiver::apply_spillover() {
 
         const auto first = *tail.begin();
         const auto last = tail.last_segment();
+        const auto spillover_meta = tail.make_manifest_metadata();
         vassert(last.has_value(), "Spillover manifest can't be empty");
         vlog(
           _rtclog.info,
           "First batch of the spillover manifest: {}, Last batch of the "
-          "spillover manifest: {}",
+          "spillover manifest: {}, spillover metadata: {}",
           first,
-          last);
+          last,
+          spillover_meta);
 
         retry_chain_node upload_rtc(
           manifest_upload_timeout, manifest_upload_backoff, &_rtcnode);
@@ -2194,8 +2197,14 @@ ss::future<> ntp_archiver::apply_spillover() {
         auto deadline = ss::lowres_clock::now() + sync_timeout;
 
         auto batch = _parent.archival_meta_stm()->batch_start(deadline, _as);
-        batch.spillover(model::next_offset(last->committed_offset));
+        batch.spillover(spillover_meta);
         if (manifest().get_archive_start_offset() == model::offset{}) {
+            vlog(
+              _rtclog.debug,
+              "Archive is empty, have to set start archive/clean offset: {}, "
+              "and delta: {}",
+              first.base_offset,
+              first.delta_offset);
             // Enable archive if this is the first spillover manifest. In this
             // case we need to set initial values for
             // archive_start_offset/archive_clean_offset which will be advanced

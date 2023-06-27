@@ -161,23 +161,23 @@ pub fn read_index_header(
 pub struct OffsetIndex {
     pub min_file_pos_step: i64,
     pub num_elements: u64,
-    #[serde(rename="base_offset")]
+    #[serde(rename = "base_offset")]
     pub base_rp: i64,
-    #[serde(rename="last_offset")]
+    #[serde(rename = "last_offset")]
     pub last_rp: i64,
-    #[serde(rename="base_kafka_offset")]
+    #[serde(rename = "base_kafka_offset")]
     pub base_kaf: i64,
-    #[serde(rename="last_kafka_offset")]
+    #[serde(rename = "last_kafka_offset")]
     pub last_kaf: i64,
-    #[serde(rename="base_file_offset")]
+    #[serde(rename = "base_file_offset")]
     pub base_file: i64,
-    #[serde(rename="last_file_offset")]
+    #[serde(rename = "last_file_offset")]
     pub last_file: i64,
-    #[serde(rename="redpanda_offsets")]
+    #[serde(rename = "redpanda_offsets")]
     pub rp_offsets: Vec<i64>,
-    #[serde(rename="kafka_offsets")]
+    #[serde(rename = "kafka_offsets")]
     pub kaf_offsets: Vec<i64>,
-    #[serde(rename="file_offsets")]
+    #[serde(rename = "file_offsets")]
     pub file_offsets: Vec<i64>,
 }
 

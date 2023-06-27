@@ -337,9 +337,19 @@ public:
     ///
     /// \note this works the same way as 'truncate' but the 'archive' size
     ///       gets correctly updated.
-    /// \param starting_rp_offset is a new starting offset of the manifest
-    /// \return manifest that contains only removed segments
-    partition_manifest spillover(model::offset starting_rp_offset);
+    /// \param spillover_manifest_meta is a new spillover manifest to add
+    void spillover(const segment_meta& spillover_manifest_meta);
+
+    /// Pack manifest metadata into the 'segment_meta' struct
+    ///
+    /// This mechanism is used by the 'spillover' mechanism. The 'segment_meta'
+    /// instances that describe spillover manifests are stored using this
+    /// format.
+    segment_meta make_manifest_metadata() const;
+
+    /// Return 'true' if the spillover manifest can be added to
+    /// the manifest without creating a gap
+    bool safe_spillover_manifest(const segment_meta& meta);
 
     /// \brief Set start offset without removing any data from the
     /// manifest.
