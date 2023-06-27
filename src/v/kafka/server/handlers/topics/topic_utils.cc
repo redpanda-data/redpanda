@@ -65,8 +65,9 @@ ss::future<> wait_for_topics(
     return ss::do_with(
       std::move(results),
       [&md_cache, &api, timeout](std::vector<cluster::topic_result>& results) {
-          return ss::parallel_for_each(
+          return ss::max_concurrent_for_each(
                    results,
+                   5,
                    [&api, timeout](cluster::topic_result& r) {
                        if (r.ec != cluster::errc::success) {
                            return ss::now();
