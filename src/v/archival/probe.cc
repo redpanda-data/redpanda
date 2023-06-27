@@ -31,6 +31,9 @@ ntp_level_probe::ntp_level_probe(
 
 void ntp_level_probe::setup_ntp_metrics(const model::ntp& ntp) {
     namespace sm = ss::metrics;
+    if (config::shard_local_cfg().disable_metrics()) {
+        return;
+    }
 
     auto ns_label = sm::label("namespace");
     auto topic_label = sm::label("topic");
@@ -76,6 +79,9 @@ void ntp_level_probe::setup_ntp_metrics(const model::ntp& ntp) {
 
 void ntp_level_probe::setup_public_metrics(const model::ntp& ntp) {
     namespace sm = ss::metrics;
+    if (config::shard_local_cfg().disable_public_metrics()) {
+        return;
+    }
 
     auto ns_label = ssx::metrics::make_namespaced_label("namespace");
     auto topic_label = ssx::metrics::make_namespaced_label("topic");
@@ -124,6 +130,9 @@ void ntp_level_probe::setup_public_metrics(const model::ntp& ntp) {
 
 upload_housekeeping_probe::upload_housekeeping_probe() {
     namespace sm = ss::metrics;
+    if (config::shard_local_cfg().disable_metrics()) {
+        return;
+    }
 
     auto aggregate_labels = std::vector<sm::label>{sm::shard_label};
 
