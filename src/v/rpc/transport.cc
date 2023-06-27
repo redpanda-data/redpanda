@@ -217,37 +217,41 @@ transport::do_send(sequence_t seq, netbuf b, rpc::client_opts opts) {
       });
 }
 
+ss::future<> transport::do_dispatch_send() {
+    return ss::do_until(
+      [this] {
+          return _requests_queue.empty()
+                 || _requests_queue.begin()->first
+                      > (_last_seq + sequence_t(1));
+      },
+      [this] {
+          auto it = _requests_queue.begin();
+          _last_seq = it->first;
+          auto buffer = std::move(it->second->buffer).get();
+          // These units are released once we are out of scope here
+          // and that is intentional because the underlying write call
+          // to the batched output stream guarantees us the in-order
+          // delivery of the dispatched write calls, which is the intent
+          // of holding on to the units up until this point.
+          auto units = std::move(it->second->resource_units);
+          auto v = std::move(*buffer).as_scattered();
+          auto msg_size = v.size();
+          _requests_queue.erase(it->first);
+          auto f = _out.write(std::move(v));
+          return std::move(f).finally(
+            [this, msg_size] { _probe.add_bytes_sent(msg_size); });
+      });
+}
+
 void transport::dispatch_send() {
-    ssx::background
-      = ssx::spawn_with_gate_then(_dispatch_gate, [this]() mutable {
-            return ss::do_until(
-              [this] {
-                  return _requests_queue.empty()
-                         || _requests_queue.begin()->first
-                              > (_last_seq + sequence_t(1));
-              },
-              [this] {
-                  auto it = _requests_queue.begin();
-                  _last_seq = it->first;
-                  auto buffer = std::move(it->second->buffer).get();
-                  // These units are released once we are out of scope here
-                  // and that is intentional because the underlying write call
-                  // to the batched output stream guarantees us the in-order
-                  // delivery of the dispatched write calls, which is the intent
-                  // of holding on to the units up until this point.
-                  auto units = std::move(it->second->resource_units);
-                  auto v = std::move(*buffer).as_scattered();
-                  auto msg_size = v.size();
-                  _requests_queue.erase(it->first);
-                  auto f = _out.write(std::move(v));
-                  return std::move(f).finally(
-                    [this, msg_size] { _probe.add_bytes_sent(msg_size); });
-              });
-        }).handle_exception([this](std::exception_ptr e) {
-            vlog(rpclog.info, "Error dispatching socket write:{}", e);
-            _probe.request_error();
-            fail_outstanding_futures();
-        });
+    ssx::spawn_with_gate(_dispatch_gate, [this]() mutable {
+        return ssx::ignore_shutdown_exceptions(do_dispatch_send())
+          .handle_exception([this](std::exception_ptr e) {
+              vlog(rpclog.info, "Error dispatching socket write:{}", e);
+              _probe.request_error();
+              fail_outstanding_futures();
+          });
+    });
 }
 
 ss::future<> transport::do_reads() {
@@ -280,14 +284,15 @@ ss::future<> transport::dispatch(header h) {
           rpclog.debug,
           "Unable to find handler for correlation {}",
           h.correlation_id);
-        // we have to skip received bytes to make input stream state correct
+        // we have to skip received bytes to make input stream
+        // state correct
         return _in.skip(h.payload_size);
     }
     _probe.add_bytes_received(size_of_rpc_header + h.payload_size);
     auto ctx = std::make_unique<client_context_impl>(*this, h);
     auto fut = ctx->pr.get_future();
-    // delete before setting value so that we don't run into nested exceptions
-    // of broken promises
+    // delete before setting value so that we don't run into nested
+    // exceptions of broken promises
     auto pr = std::move(it->second);
     _correlations.erase(it);
     pr->set_value(std::move(ctx));
@@ -303,7 +308,8 @@ transport::~transport() {
     vlog(rpclog.debug, "RPC Client probes: {}", _probe);
     vassert(
       !is_valid(),
-      "connection '{}' is still valid. must call stop() before destroying",
+      "connection '{}' is still valid. must call stop() before "
+      "destroying",
       *this);
 }
 
