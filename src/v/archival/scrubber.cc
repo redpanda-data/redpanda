@@ -54,10 +54,7 @@ ss::future<scrubber::purge_result> scrubber::purge_partition(
   model::initial_revision_id remote_revision,
   retry_chain_node& parent_rtc) {
     retry_chain_node partition_purge_rtc(
-      partition_purge_timeout,
-      1s /* unused */,
-      retry_strategy::disallow,
-      &parent_rtc);
+      partition_purge_timeout, 100ms, &parent_rtc);
     retry_chain_logger ctxlog(archival_log, partition_purge_rtc);
 
     if (lifecycle_marker.config.is_read_replica()) {
