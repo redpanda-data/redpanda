@@ -50,7 +50,7 @@ public:
 
     ss::future<ntp_reconciliation_state> get_reconciliation_state(model::ntp);
 
-    ss::future<result<bool>> all_reconciliations_done(std::vector<model::ntp>);
+    ss::future<result<bool>> all_reconciliations_done(std::deque<model::ntp>);
 
     /**
      * API to access both remote and local state
@@ -88,10 +88,6 @@ public:
     std::optional<ss::shard_id> shard_for(const model::ntp& ntp) const;
 
 private:
-    ss::future<result<bool>> are_ntps_ready(
-      absl::node_hash_map<model::node_id, std::vector<model::ntp>>,
-      model::timeout_clock::time_point);
-
     ss::future<std::vector<controller_backend::delta_metadata>>
       get_remote_core_deltas(model::ntp, ss::shard_id);
 
