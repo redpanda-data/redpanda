@@ -64,8 +64,10 @@ private:
     ss::sharded<cluster::partition_manager>* _pm;
 
     node::notification_id _cache_disk_nid;
+    node::notification_id _data_disk_nid;
     // details from last disk notification
     node::disk_space_info _cache_disk_info{};
+    node::disk_space_info _data_disk_info{};
 
     ss::gate _gate;
     ss::future<> run_loop();

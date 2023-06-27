@@ -65,6 +65,11 @@ struct disk
 
     auto serde_fields() { return std::tie(path, free, total, alert); }
 
+    // this value is _not_ serialized, but having it in this structure is useful
+    // for passing the filesystem id around as the structure is used internally
+    // to represent a disk not only for marshalling data to disk/network.
+    unsigned long int fsid;
+
     friend std::ostream& operator<<(std::ostream&, const disk&);
     friend bool operator==(const disk&, const disk&) = default;
 };
