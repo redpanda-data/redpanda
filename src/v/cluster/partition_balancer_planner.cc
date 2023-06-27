@@ -140,7 +140,7 @@ private:
     bool increment_failure_count();
 
     partition_balancer_planner& _parent;
-    absl::node_hash_map<model::ntp, size_t> _ntp2size;
+    absl::btree_map<model::ntp, size_t> _ntp2size;
     absl::node_hash_map<model::ntp, absl::flat_hash_map<model::node_id, size_t>>
       _moving_ntp2replica_sizes;
     absl::node_hash_map<model::ntp, allocated_partition> _reassignments;
