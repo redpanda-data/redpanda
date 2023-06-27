@@ -343,6 +343,22 @@ public:
         }
     }
 
+    /// Returns a deltafor_encoder that shares the underlying iobuf
+    /// The method itself is not unsafe, but the returned object can modify the
+    /// original object, so users need to think about the use case
+    auto unsafe_alias() const -> deltafor_encoder {
+        auto tmp = deltafor_encoder{};
+        tmp._initial = _initial;
+        tmp._last = _last;
+        tmp._data = share();
+        tmp._cnt = _cnt;
+
+        if constexpr (!use_nttp_deltastep) {
+            tmp._delta = _delta;
+        }
+        return tmp;
+    }
+
 private:
     template<typename T>
     void _pack_as(const row_t& input) {

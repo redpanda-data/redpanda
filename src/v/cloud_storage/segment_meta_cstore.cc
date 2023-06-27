@@ -14,6 +14,7 @@
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/timestamp.h"
+#include "serde/serde.h"
 #include "utils/delta_for.h"
 
 #include <bitset>
@@ -739,6 +740,16 @@ public:
           member_fields());
     }
 
+    auto unsafe_alias() const -> column_store {
+        auto tmp = column_store{};
+        details::tuple_map(
+          [](auto& lhs, auto const& rhs) { lhs = rhs.unsafe_alias(); },
+          tmp.columns(),
+          columns());
+        tmp._hints = _hints;
+        return tmp;
+    }
+
 private:
     gauge_col_t _is_compacted{};
     gauge_col_t _size_bytes{};
@@ -1005,6 +1016,17 @@ public:
         _col = serde::read_nested<column_store>(in, h._bytes_left_limit);
     }
 
+    auto to_iobuf() const {
+        flush_write_buffer();
+        auto tmp = impl{};
+        tmp._col = _col.unsafe_alias();
+        return serde::to_iobuf(std::move(tmp));
+    }
+
+    void from_iobuf(iobuf in) {
+        *this = serde::from_iobuf<impl>(std::move(in));
+    }
+
     void flush_write_buffer() const {
         if (_write_buffer.empty()) {
             return;
@@ -1098,17 +1120,10 @@ void segment_meta_cstore::from_iobuf(iobuf in) {
     // NOTE: this process is not optimal memory-wise, but it's simple and
     // correct. It would require some rewrite on serde to accept a type& out
     // parameter.
-    *_impl = serde::from_iobuf<segment_meta_cstore::impl>(std::move(in));
+    _impl->from_iobuf(std::move(in));
 }
 
-iobuf segment_meta_cstore::to_iobuf() const {
-    impl tmp;
-    for (auto s : *this) {
-        tmp.append(s);
-    }
-
-    return serde::to_iobuf(std::move(tmp));
-}
+iobuf segment_meta_cstore::to_iobuf() const { return _impl->to_iobuf(); }
 
 void segment_meta_cstore::flush_write_buffer() { _impl->flush_write_buffer(); }
 

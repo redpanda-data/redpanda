@@ -18,6 +18,7 @@
  * ../src/v/bytes/iobuf.cc > cov.html
  */
 
+#include "bytes/iobuf.h"
 #include "cloud_storage/segment_meta_cstore.h"
 #include "cloud_storage/types.h"
 #include "model/fundamental.h"
@@ -48,8 +49,14 @@ class cstore_ops {
     cloud_storage::segment_meta_cstore::const_iterator reader_end
       = cstore.end();
 
+    // invariant: this contains a valid cstore binary image
+    iobuf serialized_cstore{};
+
 public:
-    void moves() {
+    cstore_ops()
+      : serialized_cstore{cstore.to_iobuf()} {}
+
+    void self_moves() {
         auto tmp = cloud_storage::segment_meta_cstore{
           std::move(cstore)};    // move constructor
         cstore = std::move(tmp); // move assignment
@@ -185,7 +192,7 @@ public:
         cstore.prefix_truncate(new_start_offset);
     }
 
-    void serialize() {
+    void self_serialize() {
         auto buf = cstore.to_iobuf();
         auto tmp = cloud_storage::segment_meta_cstore{};
         tmp.from_iobuf(std::move(buf));
@@ -196,11 +203,23 @@ public:
         }
     }
 
+    void serialize() { serialized_cstore = cstore.to_iobuf(); }
+
+    auto deserialize() {
+        cstore.from_iobuf(
+          serialized_cstore.share(0, serialized_cstore.size_bytes()));
+
+        reference.clear();
+        for (auto seg : cstore) {
+            reference[seg.base_offset] = seg;
+        }
+    }
+
 public:
     /*
      * Check consistency of cstore with reference.
      */
-    void check() const {
+    void check() {
         if (reference.size() != cstore.size()) {
             throw std::runtime_error{fmt::format(
               "reference size {} != cstore size {}",
@@ -228,6 +247,11 @@ public:
             auto _ = *reader_it;
             (void)_;
         }
+
+        // this verifies that serialized_cstore is valid
+        auto tmp = cloud_storage::segment_meta_cstore{};
+        tmp.from_iobuf(
+          serialized_cstore.share(0, serialized_cstore.size_bytes()));
     }
 };
 
@@ -306,8 +330,8 @@ public:
 struct noop {
     auto operator()(cstore_ops& ops) const {}
 };
-struct move_op {
-    auto operator()(cstore_ops& ops) const { ops.moves(); }
+struct self_move_op {
+    auto operator()(cstore_ops& ops) const { ops.self_moves(); }
 };
 
 struct append_segment_op {
@@ -358,8 +382,8 @@ struct truncate_op {
     auto operator()(cstore_ops& ops) const { ops.truncate(new_start_offset); }
 };
 
-struct serialize_op {
-    auto operator()(cstore_ops& ops) const { ops.serialize(); }
+struct self_serialize_op {
+    auto operator()(cstore_ops& ops) const { ops.self_serialize(); }
 };
 
 struct reset_reader_op {
@@ -374,18 +398,28 @@ struct consume_reader_op {
     auto operator()(cstore_ops& ops) const { ops.consume_reader(quantity); }
 };
 
+struct serialize_op {
+    auto operator()(cstore_ops& ops) const { ops.serialize(); }
+};
+
+struct deserialize_op {
+    auto operator()(cstore_ops& ops) const { ops.deserialize(); }
+};
+
 using cstore_operation = std::variant<
   noop,
-  move_op,
+  self_move_op,
   append_segment_op,
   replace_segment_clean_op,
   replace_segment_clean_in_front_op,
   prepend_segment_op,
   clear_op,
   truncate_op,
-  serialize_op,
+  self_serialize_op,
   reset_reader_op,
-  consume_reader_op>;
+  consume_reader_op,
+  serialize_op,
+  deserialize_op>;
 
 // SIN SECTION
 // this is a sections of ODR sins to appease the daemons of the linker
@@ -504,7 +538,7 @@ public:
         return true;
     }
 
-    void check() const { m_.check(); }
+    void check() { m_.check(); }
 };
 
 extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
