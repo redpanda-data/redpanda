@@ -417,4 +417,7 @@ def wait_for_recovery_throttle_rate(redpanda, new_rate: int):
         assert filtered
         return all([check_throttle_rate(n) for n in filtered])
 
-    wait_until(wait_for_throttle_update, timeout_sec=90, backoff_sec=1)
+    wait_until(wait_for_throttle_update,
+               timeout_sec=90,
+               backoff_sec=1,
+               err_msg=f"Timed out waiting recovery rate to reach: {new_rate}")
