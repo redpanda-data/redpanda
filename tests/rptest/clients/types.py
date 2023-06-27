@@ -35,13 +35,24 @@ class TopicSpec:
     PROPERTY_REMOTE_DELETE = "redpanda.remote.delete"
     PROPERTY_SEGMENT_MS = "segment.ms"
 
+    class CompressionTypes(str, Enum):
+        """
+        compression types
+        """
+        NONE = "none"
+        PRODUCER = "producer"
+        GZIP = "gzip"
+        LZ4 = "lz4"
+        SNAPPY = "snappy"
+        ZSTD = "zstd"
+
     # compression types
-    COMPRESSION_NONE = "none"
-    COMPRESSION_PRODUCER = "producer"
-    COMPRESSION_GZIP = "gzip"
-    COMPRESSION_LZ4 = "lz4"
-    COMPRESSION_SNAPPY = "snappy"
-    COMPRESSION_ZSTD = "zstd"
+    COMPRESSION_NONE = CompressionTypes.NONE
+    COMPRESSION_PRODUCER = CompressionTypes.PRODUCER
+    COMPRESSION_GZIP = CompressionTypes.GZIP
+    COMPRESSION_LZ4 = CompressionTypes.LZ4
+    COMPRESSION_SNAPPY = CompressionTypes.SNAPPY
+    COMPRESSION_ZSTD = CompressionTypes.ZSTD
 
     # timestamp types
     TIMESTAMP_CREATE_TIME = "CreateTime"

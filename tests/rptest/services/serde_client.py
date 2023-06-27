@@ -15,6 +15,7 @@ from typing import Optional
 from ducktape.cluster.cluster import ClusterNode
 from ducktape.services.background_thread import BackgroundThreadService
 from ducktape.tests.test import TestContext
+from rptest.clients.types import TopicSpec
 from rptest.clients.serde_client_utils import SchemaType, SerdeClientType
 from rptest.util import inject_remote_script
 
@@ -34,22 +35,24 @@ class SerdeClient(BackgroundThreadService):
         '/opt/redpanda-tests/go/go-kafka-serde/go-kafka-serde'
     })
 
-    def __init__(self,
-                 context: TestContext,
-                 brokers: list[str],
-                 schema_registry_url: str,
-                 schema_type: SchemaType,
-                 serde_client_type: SerdeClientType,
-                 count: int,
-                 *,
-                 nodes: Optional[list[ClusterNode]] = None,
-                 num_nodes: Optional[int] = None,
-                 topic=str(uuid4()),
-                 group=str(uuid4()),
-                 security_config: Optional[dict] = None,
-                 skip_known_types: Optional[bool] = None,
-                 subject_name_strategy: Optional[str] = None,
-                 payload_class: Optional[str] = None):
+    def __init__(
+            self,
+            context: TestContext,
+            brokers: list[str],
+            schema_registry_url: str,
+            schema_type: SchemaType,
+            serde_client_type: SerdeClientType,
+            count: int,
+            *,
+            nodes: Optional[list[ClusterNode]] = None,
+            num_nodes: Optional[int] = None,
+            topic=str(uuid4()),
+            group=str(uuid4()),
+            security_config: Optional[dict] = None,
+            skip_known_types: Optional[bool] = None,
+            subject_name_strategy: Optional[str] = None,
+            payload_class: Optional[str] = None,
+            compression_type: Optional[TopicSpec.CompressionTypes] = None):
 
         if num_nodes is None and nodes is None:
             num_nodes = 1
@@ -82,6 +85,10 @@ class SerdeClient(BackgroundThreadService):
         if payload_class is not None:
             assert self._serde_client_type == SerdeClientType.Python
             self._cmd_args += f" --payload-class {payload_class}"
+
+        if compression_type is not None:
+            assert self._serde_client_type == SerdeClientType.Python
+            self._cmd_args += f" --compression-type {compression_type}"
 
         if self._serde_client_type == SerdeClientType.Golang:
             self._cmd_args += f" --debug"

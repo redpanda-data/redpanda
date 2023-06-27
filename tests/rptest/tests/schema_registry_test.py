@@ -31,7 +31,7 @@ from rptest.clients.types import TopicSpec
 from rptest.services import tls
 from rptest.services.admin import Admin
 from rptest.services.cluster import cluster
-from rptest.services.redpanda import DEFAULT_LOG_ALLOW_LIST, ResourceSettings, SecurityConfig, LoggingConfig, PandaproxyConfig, SchemaRegistryConfig
+from rptest.services.redpanda import DEFAULT_LOG_ALLOW_LIST, MetricsEndpoint, ResourceSettings, SecurityConfig, LoggingConfig, PandaproxyConfig, SchemaRegistryConfig
 from rptest.services.serde_client import SerdeClient
 from rptest.tests.cluster_config_test import wait_for_version_status_sync
 from rptest.tests.pandaproxy_test import User, PandaProxyTLSProvider
@@ -195,14 +195,16 @@ class SchemaRegistryEndpoints(RedpandaTest):
                        password=cfg.get('sasl_plain_password'),
                        sasl_mechanism=cfg.get('sasl_mechanism'))
 
-    def _get_serde_client(self,
-                          schema_type: SchemaType,
-                          client_type: SerdeClientType,
-                          topic: str,
-                          count: int,
-                          skip_known_types: Optional[bool] = None,
-                          subject_name_strategy: Optional[str] = None,
-                          payload_class: Optional[str] = None):
+    def _get_serde_client(
+            self,
+            schema_type: SchemaType,
+            client_type: SerdeClientType,
+            topic: str,
+            count: int,
+            skip_known_types: Optional[bool] = None,
+            subject_name_strategy: Optional[str] = None,
+            payload_class: Optional[str] = None,
+            compression_type: Optional[TopicSpec.CompressionTypes] = None):
         schema_reg = self.redpanda.schema_reg().split(',', 1)[0]
         sasl_enabled = self.redpanda.sasl_enabled()
         sec_cfg = self.redpanda.security_config() if sasl_enabled else None
@@ -217,7 +219,8 @@ class SchemaRegistryEndpoints(RedpandaTest):
                            security_config=sec_cfg,
                            skip_known_types=skip_known_types,
                            subject_name_strategy=subject_name_strategy,
-                           payload_class=payload_class)
+                           payload_class=payload_class,
+                           compression_type=compression_type)
 
     def _get_topics(self):
         return requests.get(
@@ -1263,15 +1266,22 @@ class SchemaRegistryTestMethods(SchemaRegistryEndpoints):
             validate_schema_id=[True],
             subject_name_strategy=list(TopicSpec.SubjectNameStrategyCompat),
             payload_class=[
-                "com.redpanda.Payload", "com.redpanda.A.B.C.D.NestedPayload"
+                "com.redpanda.Payload", "com.redpanda.A.B.C.D.NestedPayload",
+                "com.redpanda.CompressiblePayload"
+            ],
+            compression_type=[
+                TopicSpec.CompressionTypes.NONE,
+                TopicSpec.CompressionTypes.ZSTD
             ])
-    def test_schema_id_validation(self,
-                                  protocol: SchemaType,
-                                  client_type: SerdeClientType,
-                                  skip_known_types: Optional[bool] = None,
-                                  validate_schema_id: Optional[bool] = None,
-                                  subject_name_strategy: Optional[str] = None,
-                                  payload_class: str = "com.redpanda.Payload"):
+    def test_schema_id_validation(
+            self,
+            protocol: SchemaType,
+            client_type: SerdeClientType,
+            skip_known_types: Optional[bool] = None,
+            validate_schema_id: Optional[bool] = None,
+            subject_name_strategy: Optional[str] = None,
+            payload_class: str = "com.redpanda.Payload",
+            compression_type: Optional[TopicSpec.CompressionTypes] = None):
         self.redpanda.set_cluster_config(
             {'enable_schema_id_validation': SchemaIdValidationMode.COMPAT})
 
@@ -1303,7 +1313,9 @@ class SchemaRegistryTestMethods(SchemaRegistryEndpoints):
                 TopicSpec.PROPERTY_RECORD_VALUE_SCHEMA_ID_VALIDATION_COMPAT:
                 bool_alpha(validate_schema_id),
                 TopicSpec.PROPERTY_RECORD_VALUE_SUBJECT_NAME_STRATEGY_COMPAT:
-                get_next_strategy(subject_name_strategy)
+                get_next_strategy(subject_name_strategy),
+                TopicSpec.PROPERTY_COMPRESSSION:
+                TopicSpec.COMPRESSION_PRODUCER,
             })
         schema_reg = self.redpanda.schema_reg().split(',', 1)[0]
         self.logger.info(
@@ -1318,7 +1330,8 @@ class SchemaRegistryTestMethods(SchemaRegistryEndpoints):
             2,
             skip_known_types,
             subject_name_strategy=subject_name_strategy,
-            payload_class=payload_class)
+            payload_class=payload_class,
+            compression_type=compression_type)
 
         self.logger.debug("Running client, expecting failure")
         try:
@@ -1345,6 +1358,16 @@ class SchemaRegistryTestMethods(SchemaRegistryEndpoints):
 
         self.logger.debug("Running client, expecting success")
         client.run()
+
+        batches_decompressed = self.redpanda.metric_sum(
+            metric_name=
+            "vectorized_kafka_schema_id_cache_batches_decompressed_total",
+            metrics_endpoint=MetricsEndpoint.METRICS)
+
+        if compression_type != TopicSpec.CompressionTypes.NONE and payload_class == "com.redpanda.CompressiblePayload":
+            assert batches_decompressed > 0
+        if compression_type == TopicSpec.CompressionTypes.NONE:
+            assert batches_decompressed == 0
 
         self.logger.debug("Client completed")
 
