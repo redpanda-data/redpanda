@@ -418,7 +418,35 @@ class RedpandaInstaller:
 
         return r.status_code == 200
 
-    def highest_from_prior_feature_version(self, version):
+    def head_version(self) -> tuple[int, int, int]:
+        """
+        version compiled from current head of repository
+        """
+        self.start()
+        return self._head_version
+
+    def oldest_version(self) -> tuple[int, int, int]:
+        """
+        oldest version downloadable
+        """
+        self.start()
+        return self.released_versions[-1]
+
+    def latest_unsupported_line(self) -> tuple[int, int]:
+        """
+        compute the release from one year ago, go back one line, this is the latest_unsupported_line
+        """
+        head_line = self.head_version()[0:2]
+        oldest_supported_line = (head_line[0] - 1, head_line[1])
+        latest_unsupported_line = (oldest_supported_line[0],
+                                   oldest_supported_line[1] - 1)
+        if latest_unsupported_line[1] == 0:
+            # if going back, version vX.0 is v(X-1).3
+            latest_unsupported_line = (latest_unsupported_line[0] - 1, 3)
+        return latest_unsupported_line
+
+    def highest_from_prior_feature_version(
+            self, version: RedpandaVersion) -> RedpandaVersionTriple:
         """
         Returns the highest version that is of a lower feature version than the
         given version, or None if one does not exist.
@@ -521,13 +549,20 @@ class RedpandaInstaller:
             self.start()
 
         # version can be HEAD, a specific release, or a release_line. first two will go through, last one will be converted to a specific release
-        install_target = version
-        actual_version = version if version != RedpandaInstaller.HEAD else self._head_version
-        # requested a line, find the most recent release
-        if version != RedpandaInstaller.HEAD and len(version) == 2:
-            actual_version, is_head = self.latest_for_line(install_target)
-            # update install_target only if is not head. later code handles HEAD as a special case
-            install_target = actual_version if not is_head else RedpandaInstaller.HEAD
+        if version == RedpandaInstaller.HEAD:
+            actual_version = self._head_version
+            install_target = RedpandaInstaller.HEAD
+        elif len(version) == 2:
+            # requested a line, find the most recent release
+            actual_version, _ = self.latest_for_line(version)
+            install_target = actual_version
+        else:
+            actual_version = version
+            install_target = version
+
+        # later code handles HEAD as a special case, so convert _head_version to it
+        if install_target == self._head_version:
+            install_target = RedpandaInstaller.HEAD
 
         self._redpanda.logger.info(
             f"got {version=} will install {actual_version=}")

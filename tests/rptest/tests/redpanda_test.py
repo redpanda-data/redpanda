@@ -8,7 +8,7 @@
 # by the Apache License, Version 2.0
 
 import os
-from typing import Optional, Sequence
+from typing import Any, Callable, Optional, Sequence
 
 from ducktape.tests.test import Test
 from rptest.services.redpanda import CloudTierName, make_redpanda_service, CloudStorageType
@@ -16,7 +16,7 @@ from rptest.clients.kafka_cli_tools import KafkaCliTools
 from rptest.clients.default import DefaultClient
 from rptest.util import Scale
 from rptest.clients.types import TopicSpec
-from rptest.services.redpanda_installer import RedpandaInstaller, RedpandaVersion, RedpandaVersionTriple
+from rptest.services.redpanda_installer import RedpandaInstaller, RedpandaVersion, RedpandaVersionLine, RedpandaVersionTriple
 from rptest.clients.rpk import RpkTool
 
 
@@ -130,7 +130,7 @@ class RedpandaTest(Test):
         """
 
         k = 0
-        v = RedpandaInstaller.HEAD
+        v = self.redpanda._installer.head_version()
         versions = [v]
         while (v[0], v[1]) != initial_version[0:2]:
             k += 1
@@ -145,11 +145,23 @@ class RedpandaTest(Test):
 
         return versions
 
-    def upgrade_through_versions(self, versions, already_running=False):
+    def upgrade_through_versions(
+        self,
+        versions_in: list[RedpandaVersion],
+        already_running: bool = False,
+        mid_upgrade_check: Callable[[dict[Any, RedpandaVersion]],
+                                    None] = lambda x: None):
         """
         Step the cluster through all the versions in `versions`, at each stage
         yielding the version of the cluster.
         """
+
+        # replace all the instances of RedpandaInstaller.HEAD with the head_version
+        versions: list[RedpandaVersionTriple | RedpandaVersionLine] = [
+            v if v != RedpandaInstaller.HEAD else
+            self.redpanda._installer.head_version() for v in versions_in
+        ]
+
         def install_next():
             v = versions.pop(0)
             self.logger.info(f"Installing version {v}...")
@@ -208,33 +220,47 @@ class RedpandaTest(Test):
                                      backoff_sec=3)
 
         if already_running:
-            old_logical_version = self.redpanda._admin.get_features(
-            )['cluster_version']
+            old_logical_version:int =  \
+                self.redpanda._admin.get_features()['cluster_version']
         else:
             old_logical_version = -1
 
         # If we are starting from scratch, then install the initial version and yield
         if not already_running:
             current_version = install_next()
+            old_version = current_version
             self.logger.info("Installed initial version, calling setUp...")
             RedpandaTest.setUp(self)
             yield current_version
+        else:
+            old_version = self.redpanda.get_version_int_tuple(
+                self.redpanda.nodes[0])
 
         # Install subsequent versions
         while len(versions) != 0:
             current_version = install_next()
 
-            use_maintenance_mode = current_version[0:2] >= (
-                22, 2) if current_version != RedpandaInstaller.HEAD else True
+            use_maintenance_mode = current_version[0:2] >= (22, 2)
             if not use_maintenance_mode:
                 self.logger.info(
                     f"Upgrading to {current_version}, skipping maintenance mode"
                 )
 
-            self.redpanda._installer.install(self.redpanda.nodes,
-                                             current_version)
+            # restarts the nodes in two batches, to run mid_upgrade_check with a mixed-version cluster
+            rp_nodes: list[Any] = self.redpanda.nodes
+            canary_nodes, rest_nodes = \
+                    rp_nodes[0:len(rp_nodes) //  2], rp_nodes[len(rp_nodes) // 2:]
             self.redpanda.rolling_restart_nodes(
-                self.redpanda.nodes,
+                canary_nodes,
+                start_timeout=90,
+                stop_timeout=90,
+                use_maintenance_mode=use_maintenance_mode)
+            mid_upgrade_check({n: current_version
+                               for n in canary_nodes}
+                              | {n: old_version
+                                 for n in rest_nodes})
+            self.redpanda.rolling_restart_nodes(
+                rest_nodes,
                 start_timeout=90,
                 stop_timeout=90,
                 use_maintenance_mode=use_maintenance_mode)
@@ -245,13 +271,17 @@ class RedpandaTest(Test):
                     "Upgraded to 22.1.x, waiting for consumer_offsets...")
                 await_consumer_offsets()
 
-            # After doing a rolling restart with the new version, let the cluster's
-            # logical version and associated feature flag state stabilize.  This avoids
-            # upgrading "too fast" such that the cluster thinks we skipped a version.
-            self.redpanda.wait_until(
-                lambda: logical_version_stable(old_logical_version),
-                timeout_sec=30,
-                backoff_sec=1)
+            if current_version[0:2] > old_version[0:2]:
+                # Do this operation only when upgrading to a new major version:
+                # After doing a rolling restart with the new version, let the cluster's
+                # logical version and associated feature flag state stabilize.  This avoids
+                # upgrading "too fast" such that the cluster thinks we skipped a version.
+                self.redpanda.wait_until(
+                    lambda: logical_version_stable(old_logical_version),
+                    timeout_sec=30,
+                    backoff_sec=1)
+
+            old_version = current_version
 
             # For use next time around the loop
             old_logical_version = self.redpanda._admin.get_features(
