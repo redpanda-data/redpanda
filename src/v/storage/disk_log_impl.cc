@@ -1919,7 +1919,9 @@ disk_log_impl::disk_usage_and_reclaimable_space(gc_config cfg) {
           retention_offset.has_value()
           && seg->offsets().dirty_offset <= retention_offset.value()) {
             retention_segments.push_back(seg);
-        } else if (seg->offsets().dirty_offset <= max_collectible) {
+        } else if (
+          is_cloud_retention_active()
+          && seg->offsets().dirty_offset <= max_collectible) {
             available_segments.push_back(seg);
         } else {
             remaining_segments.push_back(seg);
