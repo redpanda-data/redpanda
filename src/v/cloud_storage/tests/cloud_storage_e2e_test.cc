@@ -112,8 +112,8 @@ FIXTURE_TEST(test_produce_consume_from_cloud, e2e_fixture) {
                               .get();
     BOOST_CHECK_EQUAL(records.size(), consumed_records.size());
     for (int i = 0; i < records.size(); ++i) {
-        BOOST_CHECK_EQUAL(records[i].first, consumed_records[i].first);
-        BOOST_CHECK_EQUAL(records[i].second, consumed_records[i].second);
+        BOOST_CHECK_EQUAL(records[i].key, consumed_records[i].key);
+        BOOST_CHECK_EQUAL(records[i].val, consumed_records[i].val);
     }
 }
 
@@ -268,7 +268,7 @@ FIXTURE_TEST(test_produce_consume_from_cloud_with_spillover, e2e_fixture) {
     vlog(e2e_test_log.info, "Consuming from the partition");
     kafka_consume_transport consumer(make_kafka_client().get());
     consumer.start().get();
-    std::vector<std::pair<ss::sstring, ss::sstring>> consumed_records;
+    std::vector<kv_t> consumed_records;
     auto next_offset = archive_ko;
     while (consumed_records.size() < total_records) {
         auto tmp = consumer
@@ -287,8 +287,8 @@ FIXTURE_TEST(test_produce_consume_from_cloud_with_spillover, e2e_fixture) {
     for (const auto& rec : consumed_records) {
         auto expected_key = ssx::sformat("key{}", i);
         auto expected_val = ssx::sformat("val{}", i);
-        BOOST_REQUIRE_EQUAL(rec.first, expected_key);
-        BOOST_REQUIRE_EQUAL(rec.second, expected_val);
+        BOOST_REQUIRE_EQUAL(rec.key, expected_key);
+        BOOST_REQUIRE_EQUAL(rec.val, expected_val);
         i++;
     }
 
@@ -333,8 +333,8 @@ FIXTURE_TEST(test_produce_consume_from_cloud_with_spillover, e2e_fixture) {
     for (const auto& rec : consumed_records) {
         auto expected_key = ssx::sformat("key{}", i);
         auto expected_val = ssx::sformat("val{}", i);
-        BOOST_REQUIRE_EQUAL(rec.first, expected_key);
-        BOOST_REQUIRE_EQUAL(rec.second, expected_val);
+        BOOST_REQUIRE_EQUAL(rec.key, expected_key);
+        BOOST_REQUIRE_EQUAL(rec.val, expected_val);
         i++;
     }
 #endif
