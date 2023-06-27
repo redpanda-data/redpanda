@@ -387,6 +387,36 @@ ss::future<> ntp_archiver::upload_topic_manifest() {
     }
 }
 
+ss::future<bool> ntp_archiver::sync_for_tests() {
+    while (!_as.abort_requested()) {
+        if (!_parent.is_leader()) {
+            bool shutdown = false;
+            try {
+                vlog(_rtclog.debug, "test waiting for leadership");
+                co_await _leader_cond.wait();
+            } catch (const ss::broken_condition_variable&) {
+                // stop() was called
+                shutdown = true;
+            }
+
+            if (shutdown || _as.abort_requested()) {
+                vlog(_rtclog.trace, "sync_for_tests shutting down");
+                co_return false;
+            }
+        }
+        _start_term = _parent.term();
+        if (!can_update_archival_metadata()) {
+            co_return false;
+        }
+        auto sync_timeout = config::shard_local_cfg()
+                              .cloud_storage_metadata_sync_timeout_ms.value();
+        if (co_await _parent.archival_meta_stm()->sync(sync_timeout)) {
+            co_return true;
+        }
+    }
+    co_return false;
+}
+
 ss::future<> ntp_archiver::upload_until_term_change() {
     ss::lowres_clock::duration backoff = _conf->upload_loop_initial_backoff;
 
