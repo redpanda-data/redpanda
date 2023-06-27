@@ -8,6 +8,8 @@
  * https://github.com/redpanda-data/redpanda/blob/master/licenses/rcl.md
  */
 
+#define BOOST_TEST_MODULE net_connection
+
 #include "net/connection.h"
 
 #include <seastar/core/future.hh>
