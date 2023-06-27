@@ -41,7 +41,7 @@ using index_type = absl::node_hash_map<
   absl::btree_map<raft::group_id, std::vector<model::broker_shard>>>;
 
 using group_id_to_topic_revision_t
-  = absl::flat_hash_map<raft::group_id, model::revision_id>;
+  = absl::btree_map<raft::group_id, model::revision_id>;
 
 /*
  * Leaders per shard.
