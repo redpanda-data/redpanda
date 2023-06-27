@@ -554,6 +554,35 @@ class TopicDeleteCloudStorageTest(RedpandaTest):
                 node=controller_node)['markers']
             assert len(controller_markers) == 0
 
+            def update_propagated():
+                """
+                :return: True if our marker deletion has propagated to all non-controller nodes
+                """
+                nodes = [
+                    n for n in self.redpanda.nodes if n != controller_node
+                ]
+                return all(
+                    len(
+                        admin.get_cloud_storage_lifecycle_markers(
+                            node=n)['markers']) == 0 for n in nodes)
+
+            # Ensure the marker deletion has propagated to all nodes (we don't know
+            # which node would actually have been doing the scrubbing for our topic)
+            self.redpanda.wait_until(update_propagated,
+                                     timeout_sec=10,
+                                     backoff_sec=0.5)
+
+            # At this point, although we have deleted the controller
+            # lifecycle marker, it is possible that Redpanda is still
+            # in the middle of trying to delete the topic because it is
+            # inside a scrubber run.
+            #
+            # To avoid leaving storage in a non-deterministic state,
+            # restart redpanda before unblocking the firewall, so that we
+            # don't end up maybe-sometimes partially deleting upon
+            # unblocking the firewall.
+            self.redpanda.restart_nodes(self.redpanda.nodes)
+
     @skip_debug_mode  # Rely on timely uploads during leader transfers
     @cluster(
         num_nodes=5,
