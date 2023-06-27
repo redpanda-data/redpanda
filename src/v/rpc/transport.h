@@ -155,6 +155,7 @@ private:
     ss::future<result<std::unique_ptr<streaming_context>>>
       do_send(sequence_t, netbuf, rpc::client_opts);
     void dispatch_send();
+    ss::future<> do_dispatch_send();
 
     ss::future<result<std::unique_ptr<streaming_context>>>
     make_response_handler(netbuf&, const rpc::client_opts&, sequence_t);
