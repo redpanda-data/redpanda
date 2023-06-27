@@ -24,6 +24,17 @@ struct kv_t {
     kv_t(ss::sstring k, ss::sstring v)
       : key(std::move(k))
       , val(std::move(v)) {}
+
+    static std::vector<kv_t> sequence(size_t start, size_t num_records) {
+        std::vector<kv_t> records;
+        records.reserve(num_records);
+        for (size_t i = 0; i < num_records; i++) {
+            records.emplace_back(
+              ssx::sformat("key{}", start + i),
+              ssx::sformat("val{}", start + i));
+        }
+        return records;
+    }
 };
 using pid_to_kvs_map_t
   = absl::flat_hash_map<model::partition_id, std::vector<kv_t>>;
