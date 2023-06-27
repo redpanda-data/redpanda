@@ -289,6 +289,11 @@ public:
       std::optional<std::reference_wrapper<retry_chain_node>> source_rtc
       = std::nullopt);
 
+    /// Waits for this node to become leader, syncing archival metadata within
+    /// the current term. Returns false if the sync was not successful.
+    /// Must be called before updating archival metadata.
+    ss::future<bool> sync_for_tests();
+
 private:
     // Labels for contexts in which manifest uploads occur. Used for logging.
     static constexpr const char* housekeeping_ctx_label = "housekeeping";
