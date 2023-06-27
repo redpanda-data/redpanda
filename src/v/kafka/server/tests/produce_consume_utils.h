@@ -17,7 +17,14 @@
 
 namespace tests {
 
-using kv_t = std::pair<ss::sstring, ss::sstring>;
+struct kv_t {
+    ss::sstring key;
+    ss::sstring val;
+
+    kv_t(ss::sstring k, ss::sstring v)
+      : key(std::move(k))
+      , val(std::move(v)) {}
+};
 using pid_to_kvs_map_t
   = absl::flat_hash_map<model::partition_id, std::vector<kv_t>>;
 
