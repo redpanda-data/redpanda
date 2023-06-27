@@ -10,6 +10,8 @@
  */
 #include "storage/node.h"
 
+#include <seastar/core/reactor.hh>
+
 namespace storage {
 
 node::node(ss::sstring data_directory, ss::sstring cache_directory)
@@ -32,19 +34,13 @@ ss::future<> node::start() {
 
 ss::future<> node::stop() { co_return; }
 
-void node::set_disk_metrics(
-  disk_type t,
-  uint64_t total_bytes,
-  uint64_t free_bytes,
-  disk_space_alert alert) {
+void node::set_disk_metrics(disk_type t, disk_space_info info) {
     if (t == disk_type::data) {
-        _data_watchers.notify(
-          uint64_t(total_bytes), uint64_t(free_bytes), alert);
+        _data_watchers.notify(info);
     } else if (t == disk_type::cache) {
-        _cache_watchers.notify(
-          uint64_t(total_bytes), uint64_t(free_bytes), alert);
+        _cache_watchers.notify(info);
     }
-    _probe.set_disk_metrics(total_bytes, free_bytes, alert);
+    _probe.set_disk_metrics(info.total, info.free, info.alert);
 }
 
 node::notification_id

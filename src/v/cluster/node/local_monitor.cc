@@ -92,11 +92,30 @@ ss::future<> local_monitor::update_state() {
 
 const local_state& local_monitor::get_state_cached() const { return _state; }
 
-size_t local_monitor::alert_percent_in_bytes(
-  unsigned alert_percent, size_t bytes_available) {
+namespace {
+size_t alert_percent_in_bytes(unsigned alert_percent, size_t bytes_available) {
     long double percent_factor = alert_percent / 100.0;
     return percent_factor * bytes_available;
 }
+
+/*
+ * calculcate the free disk space alert thresholds
+ *
+ * <low_space, degraded>
+ */
+std::pair<size_t, size_t> calc_alert_thresholds(const storage::disk& d) {
+    auto& cfg = config::shard_local_cfg();
+    unsigned alert_percent
+      = cfg.storage_space_alert_free_threshold_percent.value();
+    size_t alert_bytes = cfg.storage_space_alert_free_threshold_bytes.value();
+    size_t min_bytes = cfg.storage_min_free_bytes();
+
+    size_t min_by_percent = alert_percent_in_bytes(alert_percent, d.total);
+    auto alert_min = std::max(min_by_percent, alert_bytes);
+
+    return std::make_pair(alert_min, min_bytes);
+}
+} // namespace
 
 storage::disk
 local_monitor::statvfs_to_disk(const storage::node::stat_info& info) {
@@ -157,20 +176,13 @@ void local_monitor::maybe_log_space_error(const storage::disk& disk) {
 }
 
 void local_monitor::update_alert(storage::disk& d) {
-    auto& cfg = config::shard_local_cfg();
-    unsigned alert_percent
-      = cfg.storage_space_alert_free_threshold_percent.value();
-    size_t alert_bytes = cfg.storage_space_alert_free_threshold_bytes.value();
-    size_t min_bytes = cfg.storage_min_free_bytes();
-
     if (unlikely(d.total == 0.0)) {
         vlog(
           clusterlog.error,
           "Disk reported zero total bytes, ignoring free space.");
         d.alert = storage::disk_space_alert::ok;
     } else {
-        size_t min_by_percent = alert_percent_in_bytes(alert_percent, d.total);
-        auto alert_min = std::max(min_by_percent, alert_bytes);
+        const auto [alert_min, min_bytes] = calc_alert_thresholds(d);
         if (unlikely(d.free <= min_bytes)) {
             d.alert = storage::disk_space_alert::degraded;
         } else if (unlikely(d.free <= alert_min)) {
@@ -191,22 +203,33 @@ void local_monitor::update_alert_state(local_state& state) {
 }
 
 ss::future<> local_monitor::update_disk_metrics() {
+    const auto [data_low, data_degraded] = calc_alert_thresholds(
+      _state.data_disk);
     co_await _storage_node_api.invoke_on_all(
       &storage::node::set_disk_metrics,
       storage::node::disk_type::data,
-      _state.data_disk.total,
-      _state.data_disk.free,
-      _state.data_disk.alert);
+      storage::node::disk_space_info{
+        .total = _state.data_disk.total,
+        .free = _state.data_disk.free,
+        .alert = _state.data_disk.alert,
+        .degraded_threshold = data_degraded,
+        .low_space_threshold = data_low,
+      });
 
     // Always notify for cache disk, even if it's the same underlying drive:
     // subscribers to updates on cache disk space still need to get updates.
     auto cache_disk = _state.get_cache_disk();
+    const auto [cache_low, cache_degraded] = calc_alert_thresholds(cache_disk);
     co_await _storage_node_api.invoke_on_all(
       &storage::node::set_disk_metrics,
       storage::node::disk_type::cache,
-      cache_disk.total,
-      cache_disk.free,
-      cache_disk.alert);
+      storage::node::disk_space_info{
+        .total = cache_disk.total,
+        .free = cache_disk.free,
+        .alert = cache_disk.alert,
+        .degraded_threshold = cache_degraded,
+        .low_space_threshold = cache_low,
+      });
 }
 
 } // namespace cluster::node

@@ -11,6 +11,7 @@
 
 #include "storage.h"
 
+#include "cloud_storage/cache_service.h"
 #include "cluster/partition_manager.h"
 #include "vlog.h"
 
@@ -23,10 +24,12 @@ namespace storage {
 disk_space_manager::disk_space_manager(
   config::binding<bool> enabled,
   ss::sharded<storage::api>* storage,
+  ss::sharded<storage::node>* storage_node,
   ss::sharded<cloud_storage::cache>* cache,
   ss::sharded<cluster::partition_manager>* pm)
   : _enabled(std::move(enabled))
   , _storage(storage)
+  , _storage_node(storage_node)
   , _cache(cache->local_is_initialized() ? cache : nullptr)
   , _pm(pm) {
     _enabled.watch([this] {
@@ -43,17 +46,28 @@ ss::future<> disk_space_manager::start() {
       rlog.info,
       "Starting disk space manager service ({})",
       _enabled() ? "enabled" : "disabled");
-    ssx::spawn_with_gate(_gate, [this] { return run_loop(); });
+    if (ss::this_shard_id() == run_loop_core) {
+        ssx::spawn_with_gate(_gate, [this] { return run_loop(); });
+        _cache_disk_nid = _storage_node->local().register_disk_notification(
+          node::disk_type::cache,
+          [this](node::disk_space_info info) { _cache_disk_info = info; });
+    }
     co_return;
 }
 
 ss::future<> disk_space_manager::stop() {
     vlog(rlog.info, "Stopping disk space manager service");
+    if (ss::this_shard_id() == run_loop_core) {
+        _storage_node->local().unregister_disk_notification(
+          node::disk_type::cache, _cache_disk_nid);
+    }
     _control_sem.broken();
     co_await _gate.close();
 }
 
 ss::future<> disk_space_manager::run_loop() {
+    vassert(ss::this_shard_id() == run_loop_core, "Run on wrong core");
+
     /*
      * we want the code here to actually run a little, but the final shape of
      * configuration options is not yet known.

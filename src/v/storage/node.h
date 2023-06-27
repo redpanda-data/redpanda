@@ -10,9 +10,9 @@
  */
 #pragma once
 
-#include "resource_mgmt/storage.h"
 #include "seastarx.h"
 #include "storage/probe.h"
+#include "storage/types.h"
 #include "utils/named_type.h"
 #include "utils/notification_list.h"
 
@@ -30,9 +30,16 @@ class node {
 public:
     static constexpr ss::shard_id work_shard = 0;
 
+    struct disk_space_info {
+        size_t total;
+        size_t free;
+        disk_space_alert alert;
+        size_t degraded_threshold;
+        size_t low_space_threshold;
+    };
+
     using notification_id = named_type<int32_t, struct notification_id_t>;
-    using disk_cb_t
-      = ss::noncopyable_function<void(uint64_t, uint64_t, disk_space_alert)>;
+    using disk_cb_t = ss::noncopyable_function<void(disk_space_info)>;
 
     enum class disk_type { data, cache };
 
@@ -41,11 +48,7 @@ public:
     ss::future<> start();
     ss::future<> stop();
 
-    void set_disk_metrics(
-      disk_type t,
-      uint64_t total_bytes,
-      uint64_t free_bytes,
-      disk_space_alert alert);
+    void set_disk_metrics(disk_type t, disk_space_info);
 
     notification_id register_disk_notification(disk_type t, disk_cb_t cb);
     void unregister_disk_notification(disk_type t, notification_id id);
