@@ -11,10 +11,8 @@
 #include "bytes/iobuf.h"
 #include "bytes/iostream.h"
 #include "cloud_storage/remote_segment_index.h"
-#include "common_def.h"
-#include "model/record_batch_types.h"
+#include "cloud_storage/tests/common_def.h"
 #include "random/generators.h"
-#include "vlog.h"
 
 #include <seastar/testing/test_case.hh>
 #include <seastar/testing/thread_test_case.hh>
@@ -155,8 +153,8 @@ SEASTAR_THREAD_TEST_CASE(test_remote_segment_index_builder) {
 }
 
 SEASTAR_THREAD_TEST_CASE(test_remote_segment_build_coarse_index) {
-    static const model::offset base_offset{100};
-    static const kafka::offset kbase_offset{100};
+    const model::offset base_offset{100};
+    const kafka::offset kbase_offset{100};
     std::vector<batch_t> batches;
     for (int i = 0; i < 1000; i++) {
         auto num_records = random_generators::get_int(1, 20);
@@ -191,13 +189,94 @@ SEASTAR_THREAD_TEST_CASE(test_remote_segment_build_coarse_index) {
       [](auto pair) { return std::make_pair(pair.second, pair.first); });
 
     // Assert that all entries in the mini-map are approximately as far away as
-    // step size. We cannot be sure that entries are exactly as far away,
-    // because of the way the entries are recorded using mod. Additionally all
-    // kafka offsets should be ascending.
+    // step size. Additionally all kafka offsets should be ascending.
     for (auto it_a = file_to_koffset.cbegin(), it_b = std::next(it_a);
          it_b != file_to_koffset.cend();
          ++it_a, ++it_b) {
-        BOOST_REQUIRE_GE(it_b->first - it_a->first, 90_KiB);
+        BOOST_REQUIRE_GE(it_b->first - it_a->first, 100_KiB);
+        BOOST_REQUIRE_GT(it_b->second, it_a->second);
+    }
+}
+
+namespace cloud_storage {
+class offset_index_accessor {
+public:
+    explicit offset_index_accessor(const offset_index& ix)
+      : _ix{ix} {}
+
+    size_t file_offset_index_size() const {
+        return _ix._file_index.get_row_count();
+    }
+
+    size_t file_offset_array_size() const {
+        auto sz = 0;
+        for (const auto& offset : _ix._file_offsets) {
+            if (offset != 0) {
+                ++sz;
+            }
+        }
+        return sz;
+    }
+
+private:
+    const offset_index& _ix;
+};
+} // namespace cloud_storage
+
+SEASTAR_THREAD_TEST_CASE(
+  test_remote_segment_build_coarse_index_from_offset_fields) {
+    // This test asserts that for an index where all the data is contained in
+    // the `_offsets` arrays and the `_index` fields are empty, the coarse index
+    // is still generated correctly.
+    const model::offset base_offset{100};
+    const kafka::offset kbase_offset{100};
+
+    std::vector<batch_t> batches;
+    // Create only 10 batches, so that the index fields in remote segment index
+    // remain empty
+    for (int i = 0; i < 10; i++) {
+        auto num_records = random_generators::get_int(10, 20);
+        std::vector<size_t> record_sizes;
+        record_sizes.reserve(num_records);
+        for (int i = 0; i < num_records; i++) {
+            // The record size is large enough that we exceed the coarse
+            // index threshold
+            record_sizes.push_back(random_generators::get_int(950, 1000));
+        }
+        batch_t batch = {
+          .num_records = num_records,
+          .type = model::record_batch_type::raft_data,
+          .record_sizes = std::move(record_sizes),
+        };
+        batches.push_back(std::move(batch));
+    }
+    auto segment = generate_segment(base_offset, batches);
+    auto is = make_iobuf_input_stream(std::move(segment));
+    offset_index ix(base_offset, kbase_offset, 0, 0);
+    auto parser = make_remote_segment_index_builder(
+      std::move(is), ix, model::offset_delta(0), 0);
+    auto pclose = ss::defer([&parser] { parser->close().get(); });
+    auto result = parser->consume().get();
+    BOOST_REQUIRE(result.has_value());
+    BOOST_REQUIRE_NE(result.value(), 0);
+
+    offset_index_accessor acc{ix};
+    BOOST_REQUIRE_EQUAL(acc.file_offset_index_size(), 0);
+    BOOST_REQUIRE_GT(acc.file_offset_array_size(), 0);
+
+    auto mini_ix = ix.build_coarse_index(70_KiB);
+    absl::btree_map<int64_t, kafka::offset> file_to_koffset;
+    std::transform(
+      std::make_move_iterator(mini_ix.begin()),
+      std::make_move_iterator(mini_ix.end()),
+      std::inserter(file_to_koffset, file_to_koffset.end()),
+      [](auto pair) { return std::make_pair(pair.second, pair.first); });
+
+    BOOST_REQUIRE_GT(file_to_koffset.size(), 0);
+    for (auto it_a = file_to_koffset.cbegin(), it_b = std::next(it_a);
+         it_b != file_to_koffset.cend();
+         ++it_a, ++it_b) {
+        BOOST_REQUIRE_GE(it_b->first - it_a->first, 70_KiB);
         BOOST_REQUIRE_GT(it_b->second, it_a->second);
     }
 }

@@ -155,6 +155,8 @@ private:
     encoder_t _kaf_index;
     foffset_encoder_t _file_index;
     int64_t _min_file_pos_step;
+
+    friend class offset_index_accessor;
 };
 
 class remote_segment_index_builder : public storage::batch_consumer {
