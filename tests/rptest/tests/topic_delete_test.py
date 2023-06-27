@@ -370,8 +370,9 @@ class TopicDeleteCloudStorageTest(RedpandaTest):
         super().__init__(
             test_context=test_context,
             # Use all nodes as brokers: enables each test to set num_nodes
-            # and get a cluster of that size
-            num_brokers=min(test_context.cluster.available().size(), 4),
+            # and get a cluster of that size.  Subtract one to leave a node
+            # for use by producer.
+            num_brokers=min(test_context.cluster.available().size() - 1, 4),
             extra_rp_conf={
                 # Tests validating deletion _not_ happening can be failed if
                 # segments are deleted in the background by adjacent segment
@@ -400,15 +401,11 @@ class TopicDeleteCloudStorageTest(RedpandaTest):
         })
 
         # Write more than 20MiB per partition to trigger spillover
-        producer = KgoVerifierProducer(self.test_context,
-                                       self.redpanda,
-                                       topic_name,
-                                       msg_size=1024 * 512,
-                                       msg_count=200)
-
-        producer.start()
-        producer.wait()
-        producer.free()
+        KgoVerifierProducer.oneshot(self.test_context,
+                                    self.redpanda,
+                                    topic_name,
+                                    msg_size=1024 * 512,
+                                    msg_count=200)
 
         view = BucketView(self.redpanda)
 
@@ -445,9 +442,11 @@ class TopicDeleteCloudStorageTest(RedpandaTest):
 
         if not spillover:
             # Write out 10MB per partition
-            self.kafka_tools.produce(topic_name,
-                                     record_size=4096,
-                                     num_records=2560 * self.partition_count)
+            KgoVerifierProducer.oneshot(self.test_context,
+                                        self.redpanda,
+                                        topic_name,
+                                        msg_size=4096,
+                                        msg_count=2560 * self.partition_count)
 
             # Wait for segments evicted from local storage
             timeout = 120
@@ -475,7 +474,7 @@ class TopicDeleteCloudStorageTest(RedpandaTest):
         quiesce_uploads(self.redpanda, [topic_name], timeout_sec=60)
 
     @skip_debug_mode  # Rely on timely uploads during leader transfers
-    @cluster(num_nodes=3,
+    @cluster(num_nodes=4,
              log_allow_list=['Failed to fetch manifest during finalize()'])
     def topic_delete_installed_snapshots_test(self):
         """
@@ -516,7 +515,7 @@ class TopicDeleteCloudStorageTest(RedpandaTest):
 
     @ok_to_fail
     @cluster(
-        num_nodes=3,
+        num_nodes=4,
         log_allow_list=[
             'exception while executing partition operation: {type: deletion'
         ])
@@ -777,7 +776,7 @@ class TopicDeleteCloudStorageTest(RedpandaTest):
         # manifest.
 
     @skip_debug_mode  # Rely on timely uploads during leader transfers
-    @cluster(num_nodes=4)
+    @cluster(num_nodes=5)
     @matrix(cloud_storage_type=get_cloud_storage_type())
     def partition_movement_test(self, cloud_storage_type):
         """
