@@ -14,7 +14,7 @@ from typing import Optional
 
 from ducktape.utils.util import wait_until
 
-from ducktape.mark import matrix, parametrize, ok_to_fail
+from ducktape.mark import matrix, parametrize
 from requests.exceptions import HTTPError
 
 from rptest.utils.mode_checks import skip_debug_mode
@@ -370,8 +370,9 @@ class TopicDeleteCloudStorageTest(RedpandaTest):
         super().__init__(
             test_context=test_context,
             # Use all nodes as brokers: enables each test to set num_nodes
-            # and get a cluster of that size
-            num_brokers=min(test_context.cluster.available().size(), 4),
+            # and get a cluster of that size.  Subtract one to leave a node
+            # for use by producer.
+            num_brokers=min(test_context.cluster.available().size() - 1, 4),
             extra_rp_conf={
                 # Tests validating deletion _not_ happening can be failed if
                 # segments are deleted in the background by adjacent segment
@@ -400,15 +401,11 @@ class TopicDeleteCloudStorageTest(RedpandaTest):
         })
 
         # Write more than 20MiB per partition to trigger spillover
-        producer = KgoVerifierProducer(self.test_context,
-                                       self.redpanda,
-                                       topic_name,
-                                       msg_size=1024 * 512,
-                                       msg_count=200)
-
-        producer.start()
-        producer.wait()
-        producer.free()
+        KgoVerifierProducer.oneshot(self.test_context,
+                                    self.redpanda,
+                                    topic_name,
+                                    msg_size=1024 * 512,
+                                    msg_count=200)
 
         view = BucketView(self.redpanda)
 
@@ -445,9 +442,11 @@ class TopicDeleteCloudStorageTest(RedpandaTest):
 
         if not spillover:
             # Write out 10MB per partition
-            self.kafka_tools.produce(topic_name,
-                                     record_size=4096,
-                                     num_records=2560 * self.partition_count)
+            KgoVerifierProducer.oneshot(self.test_context,
+                                        self.redpanda,
+                                        topic_name,
+                                        msg_size=4096,
+                                        msg_count=2560 * self.partition_count)
 
             # Wait for segments evicted from local storage
             timeout = 120
@@ -475,7 +474,7 @@ class TopicDeleteCloudStorageTest(RedpandaTest):
         quiesce_uploads(self.redpanda, [topic_name], timeout_sec=60)
 
     @skip_debug_mode  # Rely on timely uploads during leader transfers
-    @cluster(num_nodes=3,
+    @cluster(num_nodes=4,
              log_allow_list=['Failed to fetch manifest during finalize()'])
     def topic_delete_installed_snapshots_test(self):
         """
@@ -514,9 +513,8 @@ class TopicDeleteCloudStorageTest(RedpandaTest):
 
         self._validate_topic_deletion(self.topic, CloudStorageType.S3)
 
-    @ok_to_fail
     @cluster(
-        num_nodes=3,
+        num_nodes=4,
         log_allow_list=[
             'exception while executing partition operation: {type: deletion'
         ])
@@ -555,6 +553,35 @@ class TopicDeleteCloudStorageTest(RedpandaTest):
             controller_markers = admin.get_cloud_storage_lifecycle_markers(
                 node=controller_node)['markers']
             assert len(controller_markers) == 0
+
+            def update_propagated():
+                """
+                :return: True if our marker deletion has propagated to all non-controller nodes
+                """
+                nodes = [
+                    n for n in self.redpanda.nodes if n != controller_node
+                ]
+                return all(
+                    len(
+                        admin.get_cloud_storage_lifecycle_markers(
+                            node=n)['markers']) == 0 for n in nodes)
+
+            # Ensure the marker deletion has propagated to all nodes (we don't know
+            # which node would actually have been doing the scrubbing for our topic)
+            self.redpanda.wait_until(update_propagated,
+                                     timeout_sec=10,
+                                     backoff_sec=0.5)
+
+            # At this point, although we have deleted the controller
+            # lifecycle marker, it is possible that Redpanda is still
+            # in the middle of trying to delete the topic because it is
+            # inside a scrubber run.
+            #
+            # To avoid leaving storage in a non-deterministic state,
+            # restart redpanda before unblocking the firewall, so that we
+            # don't end up maybe-sometimes partially deleting upon
+            # unblocking the firewall.
+            self.redpanda.restart_nodes(self.redpanda.nodes)
 
     @skip_debug_mode  # Rely on timely uploads during leader transfers
     @cluster(
@@ -777,7 +804,7 @@ class TopicDeleteCloudStorageTest(RedpandaTest):
         # manifest.
 
     @skip_debug_mode  # Rely on timely uploads during leader transfers
-    @cluster(num_nodes=4)
+    @cluster(num_nodes=5)
     @matrix(cloud_storage_type=get_cloud_storage_type())
     def partition_movement_test(self, cloud_storage_type):
         """
