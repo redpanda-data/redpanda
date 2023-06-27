@@ -14,7 +14,7 @@ from typing import Optional
 
 from ducktape.utils.util import wait_until
 
-from ducktape.mark import matrix, parametrize, ok_to_fail
+from ducktape.mark import matrix, parametrize
 from requests.exceptions import HTTPError
 
 from rptest.utils.mode_checks import skip_debug_mode
@@ -513,7 +513,6 @@ class TopicDeleteCloudStorageTest(RedpandaTest):
 
         self._validate_topic_deletion(self.topic, CloudStorageType.S3)
 
-    @ok_to_fail
     @cluster(
         num_nodes=4,
         log_allow_list=[
