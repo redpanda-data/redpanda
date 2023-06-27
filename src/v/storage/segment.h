@@ -44,9 +44,9 @@ public:
         offset_tracker(model::term_id t, model::offset base)
           : term(t)
           , base_offset(base)
-          , committed_offset(base)
-          , dirty_offset(base)
-          , stable_offset(base) {}
+          , committed_offset(model::prev_offset(base))
+          , dirty_offset(model::prev_offset(base))
+          , stable_offset(model::prev_offset(base)) {}
         model::term_id term;
         model::offset base_offset;
 

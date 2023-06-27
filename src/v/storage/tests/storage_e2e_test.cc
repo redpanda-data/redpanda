@@ -3048,6 +3048,7 @@ do_compact_test(const compact_test_args args, storage_test_fixture& f) {
     append_batch(log, model::term_id(0)); // write single message for final
                                           // segment after last roll
 
+    log.flush().get();
     auto pre_gaps = analyze(*disk_log);
     auto pre_stats = log.offsets();
     BOOST_REQUIRE_EQUAL(
