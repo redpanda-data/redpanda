@@ -1546,7 +1546,7 @@ ss::future<vote_reply> consensus::do_vote(vote_request&& r) {
     auto last_log_index = lstats.dirty_offset;
     _probe.vote_request();
     auto last_entry_term = get_last_entry_term(lstats);
-    vlog(_ctxlog.trace, "Vote request: {}", r);
+    vlog(_ctxlog.trace, "Received vote request: {}", r);
 
     if (unlikely(is_request_target_node_invalid("vote", r))) {
         reply.log_ok = false;
@@ -1633,8 +1633,7 @@ ss::future<vote_reply> consensus::do_vote(vote_request&& r) {
     if (r.term > _term) {
         vlog(
           _ctxlog.info,
-          "Received vote request with larger term from node {}, received "
-          "{}, "
+          "Received vote request with larger term from node {}, received {}, "
           "current {}",
           r.node_id,
           r.term,
@@ -1718,7 +1717,7 @@ consensus::do_append_entries(append_entries_request&& r) {
         return ss::make_ready_future<append_entries_reply>(reply);
     }
     // no need to trigger timeout
-    vlog(_ctxlog.trace, "Append entries request: {}", r.meta);
+    vlog(_ctxlog.trace, "Received append entries request: {}", r.meta);
 
     // raft.pdf: Reply false if term < currentTerm (§5.1)
     if (r.meta.term < _term) {
