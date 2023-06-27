@@ -187,9 +187,11 @@ public:
 
     // Start redpanda with shadow indexing enabled
     explicit redpanda_thread_fixture(
-      init_cloud_storage_tag, std::optional<uint16_t> port = std::nullopt)
+      init_cloud_storage_tag,
+      std::optional<uint16_t> port = std::nullopt,
+      model::node_id node_id = model::node_id(1))
       : redpanda_thread_fixture(
-        model::node_id(1),
+        node_id,
         9092,
         33145,
         8082,
