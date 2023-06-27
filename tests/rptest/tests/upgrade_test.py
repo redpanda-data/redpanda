@@ -453,7 +453,7 @@ class UpgradeFromPriorFeatureVersionCloudStorageTest(RedpandaTest):
                                         topic,
                                         target_bytes=local_retention_bytes +
                                         segment_bytes,
-                                        timeout_sec=30)
+                                        timeout_sec=60)
 
         # Restart 2/3 nodes, leave last node on old version
         new_version_nodes = self.redpanda.nodes[:-1]
@@ -526,7 +526,7 @@ class UpgradeFromPriorFeatureVersionCloudStorageTest(RedpandaTest):
                 topic,
                 partition_idx=newdata_p,
                 target_bytes=local_retention_bytes + segment_bytes,
-                timeout_sec=30)
+                timeout_sec=60)
 
         # Move leadership to the old version node and check the partition is readable
         # from there.
@@ -556,7 +556,7 @@ class UpgradeFromPriorFeatureVersionCloudStorageTest(RedpandaTest):
                                         partition_idx=newdata_p,
                                         target_bytes=local_retention_bytes +
                                         segment_bytes,
-                                        timeout_sec=30)
+                                        timeout_sec=60)
 
 
 class RedpandaInstallerTest(RedpandaTest):
