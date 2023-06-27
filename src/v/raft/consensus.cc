@@ -1512,6 +1512,7 @@ ss::future<vote_reply> consensus::do_vote(vote_request r) {
     auto last_log_index = lstats.dirty_offset;
     _probe.vote_request();
     auto last_entry_term = get_last_entry_term(lstats);
+    bool term_changed = false;
     vlog(_ctxlog.trace, "Received vote request: {}", r);
 
     if (unlikely(is_request_target_node_invalid("vote", r))) {
@@ -1605,6 +1606,7 @@ ss::future<vote_reply> consensus::do_vote(vote_request r) {
         reply.term = r.term;
         _term = r.term;
         _voted_for = {};
+        term_changed = true;
         do_step_down("voter_term_greater");
         if (_leader_id) {
             _leader_id = std::nullopt;
@@ -1644,8 +1646,11 @@ ss::future<vote_reply> consensus::do_vote(vote_request r) {
     } else {
         reply.granted = (r.node_id == _voted_for);
     }
-
-    if (reply.granted) {
+    /**
+     * Only update last heartbeat value, indicating existence of a leader if a
+     * term change i.e. a node is not processing prevote_request.
+     */
+    if (reply.granted && term_changed) {
         _hbeat = clock_type::now();
     }
 
