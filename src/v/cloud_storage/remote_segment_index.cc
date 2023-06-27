@@ -175,6 +175,10 @@ offset_index::find_kaf_offset(kafka::offset upper_bound) {
 
 offset_index::coarse_index_t
 offset_index::build_coarse_index(uint64_t step_size) const {
+    vlog(
+      cst_log.trace,
+      "building coarse index from file offset index with {} rows",
+      _file_index.get_row_count());
     vassert(
       step_size > static_cast<uint64_t>(_min_file_pos_step),
       "step size {} cannot be less than or equal to index step size {}",
@@ -195,28 +199,39 @@ offset_index::build_coarse_index(uint64_t step_size) const {
     std::array<int64_t, buffer_depth> kafka_row{};
 
     coarse_index_t index;
-    size_t curr_mod_step_sz{0};
-    while (file_dec.read(file_row) && kaf_dec.read(kafka_row)) {
-        for (auto it = file_row.cbegin(), kit = kafka_row.cbegin();
-             it != file_row.cend() && kit != kafka_row.cend();
+    auto populate_index = [step_size, &index](
+                            const auto& file_offsets,
+                            const auto& kafka_offsets,
+                            auto& span_start,
+                            auto& span_end) {
+        for (auto it = file_offsets.cbegin(), kit = kafka_offsets.cbegin();
+             it != file_offsets.cend() && kit != kafka_offsets.cend();
              ++it, ++kit) {
-            auto curr_fpos = *it;
-            auto crossed_step_sz = curr_fpos % step_size;
-            if (crossed_step_sz < curr_mod_step_sz) {
+            span_end = *it;
+            auto delta = span_end - span_start + 1;
+            if (span_end > span_start && delta >= step_size) {
                 vlog(
                   cst_log.trace,
                   "adding entry to coarse index, current file pos: {}, step "
-                  "size: {}, curr mod step size: {}",
-                  curr_fpos,
+                  "size: {}, span size: {}",
+                  span_end,
                   step_size,
-                  curr_mod_step_sz);
-                index[kafka::offset{*kit}] = curr_fpos;
+                  delta);
+                index[kafka::offset{*kit}] = span_end;
+                span_start = span_end + 1;
             }
-            curr_mod_step_sz = crossed_step_sz;
         }
+    };
+
+    size_t start{0};
+    size_t end{0};
+    while (file_dec.read(file_row) && kaf_dec.read(kafka_row)) {
+        populate_index(file_row, kafka_row, start, end);
         file_row = {};
         kafka_row = {};
     }
+
+    populate_index(_file_offsets, _kaf_offsets, start, end);
     return index;
 }
 
