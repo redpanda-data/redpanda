@@ -31,6 +31,11 @@ constexpr std::string_view diagnostics_header() {
     return "Top-N alloc sites - size count stack:";
 }
 
+constexpr std::string_view confluence_reference() {
+    return "If you work at Redpanda please refer to "
+           "https://vectorizedio.atlassian.net/l/cp/iuEMd2NN\n";
+}
+
 /// Put `top_n` allocation sites into the front of `allocation_sites`
 static void top_n_allocation_sites(
   std::vector<ss::memory::allocation_site>& allocation_sites, size_t top_n) {
@@ -68,6 +73,8 @@ memory_sampling::get_oom_diagnostics_callback() {
 
             writer(std::string_view(format_buf.data(), bytes_written));
         }
+
+        writer(confluence_reference());
     };
 }
 
