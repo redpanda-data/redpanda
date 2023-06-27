@@ -173,7 +173,7 @@ void upload_housekeeping_service::epoch_timer_callback() {
 void upload_housekeeping_service::register_jobs(
   std::vector<std::reference_wrapper<housekeeping_job>> jobs) {
     for (auto ref : jobs) {
-        vlog(_ctxlog.info, "Registering job: {}", ref.get().name());
+        vlog(_ctxlog.debug, "Registering job: {}", ref.get().name());
         _workflow.register_job(ref.get());
     }
 }
@@ -181,7 +181,7 @@ void upload_housekeeping_service::register_jobs(
 void upload_housekeeping_service::deregister_jobs(
   std::vector<std::reference_wrapper<housekeeping_job>> jobs) {
     for (auto ref : jobs) {
-        vlog(_ctxlog.info, "Deregistering job: {}", ref.get().name());
+        vlog(_ctxlog.debug, "Deregistering job: {}", ref.get().name());
         _workflow.deregister_job(ref.get());
     }
 }
