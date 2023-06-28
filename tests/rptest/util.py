@@ -257,10 +257,10 @@ def wait_for_local_storage_truncate(redpanda,
                                     key=lambda s: s.offset)
             except ValueError:
                 # Segment list is empty
-                first_segment = None
-
-            first_segment_size = first_segment.size if first_segment.size else 0
-            sizes.append(total_size - first_segment_size)
+                continue
+            else:
+                first_segment_size = first_segment.size if first_segment.size else 0
+                sizes.append(total_size - first_segment_size)
 
         # The segment which is open for appends will differ in Redpanda's internal
         # sizing (exact) vs. what the filesystem reports for a falloc'd file (to the
