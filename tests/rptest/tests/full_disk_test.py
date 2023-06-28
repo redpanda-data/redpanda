@@ -593,4 +593,4 @@ class LogStorageMaxSizeSI(RedpandaTest):
             return total < (15 * 2**20 + 2 * self.log_segment_size)
 
         # give it plenty of time. on debug it is hella slow
-        wait_until(target_size_reached, timeout_sec=240, backoff_sec=5)
+        wait_until(target_size_reached, timeout_sec=120, backoff_sec=5)

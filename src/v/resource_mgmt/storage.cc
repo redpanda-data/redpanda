@@ -84,7 +84,7 @@ ss::future<> disk_space_manager::run_loop() {
      * upcall to start the monitor loop when it appears that we are getting
      * close to an important threshold.
      */
-    constexpr auto frequency = std::chrono::seconds(5);
+    constexpr auto frequency = std::chrono::seconds(20);
 
     while (!_gate.is_closed()) {
         try {
