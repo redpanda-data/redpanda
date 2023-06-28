@@ -19,6 +19,7 @@ from kafka import KafkaProducer
 from kafka.errors import BrokerNotAvailableError, NotLeaderForPartitionError
 from rptest.clients.kafka_cli_tools import KafkaCliTools
 from rptest.clients.default import DefaultClient
+from rptest.services.redpanda import SISettings
 from rptest.clients.kafka_cli_tools import KafkaCliTools
 from rptest.clients.types import TopicSpec
 from rptest.services.admin import Admin
@@ -30,6 +31,7 @@ from rptest.tests.redpanda_test import RedpandaTest
 from rptest.util import search_logs_with_timeout, produce_total_bytes
 from rptest.utils.full_disk import FullDiskHelper
 from rptest.utils.partition_metrics import PartitionMetrics
+from rptest.utils.si_utils import BucketView, quiesce_uploads
 from rptest.utils.expect_rate import ExpectRate, RateTarget
 
 # reduce this?
@@ -520,3 +522,75 @@ class DiskStatsOverrideTest(RedpandaTest):
         # rounding to block size. use a 4K block threshold to test.
         delta = abs(stat["free_bytes"] - stat["total_bytes"])
         assert delta <= 4096
+
+
+class LogStorageMaxSizeSI(RedpandaTest):
+    topics = (TopicSpec(name='log-storage-max-size-si-topic'), )
+    log_segment_size = 1 * 2**20
+
+    def __init__(self, test_context):
+        self.si_settings = SISettings(
+            test_context,
+            log_segment_size=self.log_segment_size,
+            cloud_storage_housekeeping_interval_ms=2000,
+            fast_uploads=True)
+
+        extra_rp_conf = {}
+
+        super(LogStorageMaxSizeSI, self).__init__(test_context=test_context,
+                                                  extra_rp_conf=extra_rp_conf,
+                                                  si_settings=self.si_settings)
+
+    def _kafka_size_on_disk(self, node):
+        total_bytes = 0
+        observed = list(self.redpanda.data_stat(node))
+        for file, size in observed:
+            if len(file.parents) == 1:
+                continue
+            if file.parents[-2].name == "kafka":
+                total_bytes += size
+        return total_bytes
+
+    @cluster(num_nodes=3)
+    def test_stay_below_target_size(self):
+        """
+        Tests that when a log storage target size is specified that data
+        uploaded into s3 will become eligible for forced GC in order to meet the
+        target size.
+        """
+        # write 20mb into topic
+        mb_to_write = 20
+        kafka_tools = KafkaCliTools(self.redpanda)
+        kafka_tools.produce(self.topic, (mb_to_write + 1) * 1024,
+                            1024,
+                            acks=-1)
+
+        quiesce_uploads(self.redpanda, [t.name for t in self.topics],
+                        timeout_sec=30)
+
+        # verify approx same amount of data on disk
+        node = self.redpanda.nodes[0]
+        total = self._kafka_size_on_disk(node)
+        assert total > (mb_to_write * 2**20)
+
+        # set the log storage target size to 10 mb
+        self.redpanda.set_cluster_config(
+            dict(log_storage_target_size=15 * 2**20, ))
+
+        # now go ahead and write another 20mb
+        kafka_tools.produce(self.topic, (mb_to_write + 1) * 1024,
+                            1024,
+                            acks=-1)
+
+        # wait until space management kicks in. after data is uploaded into s3
+        # it will become eligible for forced gc by space management despite
+        # having infinte retention, at which point we should see the storage
+        # usage drop back down. the target size is set to 15 and we've written
+        # 40 mb. we'll wait until size drops below 15 + 2 segment sizes for some
+        # wiggle room.
+        def target_size_reached():
+            total = self._kafka_size_on_disk(node)
+            return total < (15 * 2**20 + 2 * self.log_segment_size)
+
+        # give it plenty of time. on debug it is hella slow
+        wait_until(target_size_reached, timeout_sec=240, backoff_sec=5)
