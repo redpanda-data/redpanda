@@ -11,7 +11,7 @@
 
 #pragma once
 
-#include "cloud_storage/types.h"
+#include "cloud_storage/fwd.h"
 #include "cluster/fwd.h"
 #include "cluster/types.h"
 #include "config/endpoint_tls_config.h"
