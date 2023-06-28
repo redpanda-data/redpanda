@@ -9,6 +9,7 @@
 
 import random
 import string
+import time
 from ducktape.mark import matrix
 from rptest.clients.rpk import RpkTool
 from rptest.clients.types import TopicSpec
@@ -19,6 +20,10 @@ from rptest.services.kgo_verifier_services import KgoVerifierProducer
 from rptest.services.redpanda import SISettings
 from rptest.tests.prealloc_nodes import PreallocNodesTest
 from rptest.util import wait_for_local_storage_truncate
+
+from ducktape.utils.util import wait_until
+
+from rptest.utils.mode_checks import skip_debug_mode
 
 
 class FollowerFetchingTest(PreallocNodesTest):
@@ -164,3 +169,79 @@ class FollowerFetchingTest(PreallocNodesTest):
                     assert current_bytes_fetched > 0
                 else:
                     assert current_bytes_fetched == 0
+
+
+class IncrementalFollowerFetchingTest(PreallocNodesTest):
+    def __init__(self, test_context):
+        super(IncrementalFollowerFetchingTest,
+              self).__init__(test_context=test_context,
+                             num_brokers=3,
+                             node_prealloc_count=1,
+                             extra_rp_conf={
+                                 'enable_rack_awareness': True,
+                             })
+
+    @skip_debug_mode
+    @cluster(num_nodes=5)
+    def test_incremental_fetch_from_follower(self):
+        rack_layout_str = "ABC"
+        rack_layout = [str(i) for i in rack_layout_str]
+
+        for ix, node in enumerate(self.redpanda.nodes):
+            extra_node_conf = {
+                'rack': rack_layout[ix],
+                'enable_rack_awareness': True,
+            }
+            self.redpanda.set_extra_node_conf(node, extra_node_conf)
+
+        self.redpanda.start()
+        topic = TopicSpec(partition_count=12, replication_factor=3)
+
+        self.client().create_topic(topic)
+        msg_size = 512
+
+        producer = KgoVerifierProducer(self.test_context,
+                                       self.redpanda,
+                                       topic,
+                                       msg_size,
+                                       1000000,
+                                       self.preallocated_nodes,
+                                       rate_limit_bps=256 * 1024)
+
+        producer.start()
+        consumer_group = "kafka-cli-group"
+
+        # We are using kafka cli consumer to control metadata, age and client rack id consumer properties
+        cli_consumer = KafkaCliConsumer(self.test_context,
+                                        self.redpanda,
+                                        topic.name,
+                                        group="kafka-cli-group",
+                                        consumer_properties={
+                                            "client.rack": "A",
+                                            "metadata.max.age.ms": 10000
+                                        })
+        cli_consumer.start()
+        cli_consumer.wait_for_messages(100)
+        # sleep long enough to cause metadata refresh on the consumer
+        time.sleep(30)
+        # stop the producer
+        producer.stop()
+        rpk = RpkTool(self.redpanda)
+
+        def no_lag():
+            gr = rpk.group_describe(consumer_group)
+            if gr.state != "Stable":
+                return False
+
+            return all([p.lag == 0 for p in gr.partitions])
+
+        # wait for consumer to clear the backlog
+        wait_until(
+            no_lag,
+            60,
+            backoff_sec=3,
+            err_msg=
+            "Consumer did not finish consuming topic. Lag exists on some of the partitions"
+        )
+
+        cli_consumer.stop()
