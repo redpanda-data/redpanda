@@ -11,6 +11,7 @@ import os
 import time
 import threading
 import requests
+from typing import Optional
 
 from ducktape.services.service import Service
 from ducktape.utils.util import wait_until
@@ -313,6 +314,7 @@ class StatusThread(threading.Thread):
             return r.status_code == 200
 
     def _ingest_status(self, worker_statuses):
+        self.logger.debug(f"{self.who_am_i} status: {worker_statuses}")
         reduced = self._status_cls(**worker_statuses[0])
         for s in worker_statuses[1:]:
             reduced.merge(self._status_cls(**s))
@@ -399,7 +401,7 @@ class ValidatorStatus:
     differ per-worker, although at time of writing they don't.
     """
     def __init__(self, name, valid_reads, invalid_reads,
-                 out_of_scope_invalid_reads):
+                 out_of_scope_invalid_reads, max_offsets_consumed):
         # Validator name is just a unique name per worker thread in kgo-verifier: useful in logging
         # but we mostly don't care
         self.name = name
@@ -407,6 +409,7 @@ class ValidatorStatus:
         self.valid_reads = valid_reads
         self.invalid_reads = invalid_reads
         self.out_of_scope_invalid_reads = out_of_scope_invalid_reads
+        self.max_offsets_consumed = max_offsets_consumed
 
     @property
     def total_reads(self):
@@ -427,7 +430,7 @@ class ValidatorStatus:
 
 
 class ConsumerStatus:
-    def __init__(self, validator=None, errors=0, active=True):
+    def __init__(self, topic=None, validator=None, errors=0, active=True):
         """
         `active` defaults to True, because we use it for deciding when to drop out in `wait()` -- the initial
         state of a worker should be presumed that it is busy, and we must wait to see it go `active=False`
@@ -438,7 +441,8 @@ class ConsumerStatus:
                 'valid_reads': 0,
                 'invalid_reads': 0,
                 'out_of_scope_invalid_reads': 0,
-                'name': ""
+                'name': "",
+                'max_offsets_consumed': dict()
             }
 
         self.validator = ValidatorStatus(**validator)
@@ -452,148 +456,6 @@ class ConsumerStatus:
 
     def __str__(self):
         return f"ConsumerStatus<{self.active}, {self.errors}, {self.validator}>"
-
-
-class KgoVerifierSeqConsumer(KgoVerifierService):
-    def __init__(
-            self,
-            context,
-            redpanda,
-            topic,
-            msg_size=None,  # TODO: redundant, remove
-            max_msgs=None,
-            max_throughput_mb=None,
-            nodes=None,
-            debug_logs=False,
-            trace_logs=False,
-            loop=True):
-        super(KgoVerifierSeqConsumer,
-              self).__init__(context, redpanda, topic, msg_size, nodes,
-                             debug_logs, trace_logs)
-        self._max_msgs = max_msgs
-        self._max_throughput_mb = max_throughput_mb
-        self._status = ConsumerStatus()
-        self._loop = loop
-
-    @property
-    def consumer_status(self):
-        return self._status
-
-    def start_node(self, node, clean=False):
-        if clean:
-            self.clean_node(node)
-
-        loop = "--loop" if self._loop else ""
-        cmd = f"{TESTS_DIR}/kgo-verifier --brokers {self._redpanda.brokers()} --topic {self._topic} --produce_msgs 0 --rand_read_msgs 0 --seq_read=1 {loop} --client-name {self.who_am_i()}"
-        if self._max_msgs is not None:
-            cmd += f" --seq_read_msgs {self._max_msgs}"
-        if self._max_throughput_mb is not None:
-            cmd += f" --consume-throughput-mb {self._max_throughput_mb}"
-        self.spawn(cmd, node)
-
-        self._status_thread = StatusThread(self, node, ConsumerStatus)
-        self._status_thread.start()
-
-
-class KgoVerifierRandomConsumer(KgoVerifierService):
-    def __init__(self,
-                 context,
-                 redpanda,
-                 topic,
-                 msg_size,
-                 rand_read_msgs,
-                 parallel,
-                 nodes=None,
-                 debug_logs=False,
-                 trace_logs=False):
-        super().__init__(context, redpanda, topic, msg_size, nodes, debug_logs,
-                         trace_logs)
-        self._rand_read_msgs = rand_read_msgs
-        self._parallel = parallel
-        self._status = ConsumerStatus()
-
-    @property
-    def consumer_status(self):
-        return self._status
-
-    def start_node(self, node, clean=False):
-        if clean:
-            self.clean_node(node)
-
-        cmd = f"{TESTS_DIR}/kgo-verifier --brokers {self._redpanda.brokers()} --topic {self._topic} --produce_msgs 0 --rand_read_msgs {self._rand_read_msgs} --parallel {self._parallel} --seq_read=0 --loop --client-name {self.who_am_i()}"
-        self.spawn(cmd, node)
-
-        self._status_thread = StatusThread(self, node, ConsumerStatus)
-        self._status_thread.start()
-
-
-class KgoVerifierConsumerGroupConsumer(KgoVerifierService):
-    def __init__(self,
-                 context,
-                 redpanda,
-                 topic,
-                 msg_size,
-                 readers,
-                 loop=False,
-                 max_msgs=None,
-                 max_throughput_mb=None,
-                 nodes=None,
-                 debug_logs=False,
-                 trace_logs=False):
-        super().__init__(context, redpanda, topic, msg_size, nodes, debug_logs,
-                         trace_logs)
-
-        self._readers = readers
-        self._loop = loop
-        self._max_msgs = max_msgs
-        self._max_throughput_mb = max_throughput_mb
-        self._status = ConsumerStatus()
-
-    @property
-    def consumer_status(self):
-        return self._status
-
-    def start_node(self, node, clean=False):
-        if clean:
-            self.clean_node(node)
-
-        cmd = f"{TESTS_DIR}/kgo-verifier --brokers {self._redpanda.brokers()} --topic {self._topic} --produce_msgs 0 --rand_read_msgs 0 --seq_read=0 --consumer_group_readers={self._readers} --client-name {self.who_am_i()}"
-        if self._loop:
-            cmd += " --loop"
-        if self._max_msgs is not None:
-            cmd += f" --seq_read_msgs {self._max_msgs}"
-        if self._max_throughput_mb is not None:
-            cmd += f" --consume-throughput-mb {self._max_throughput_mb}"
-        self.spawn(cmd, node)
-
-        self._status_thread = StatusThread(self, node, ConsumerStatus)
-        self._status_thread.start()
-
-
-class ProduceStatus:
-    def __init__(self,
-                 sent=0,
-                 acked=0,
-                 bad_offsets=0,
-                 restarts=0,
-                 latency=None,
-                 active=False,
-                 failed_transactions=0,
-                 aborted_transaction_msgs=0):
-        self.sent = sent
-        self.acked = acked
-        self.bad_offsets = bad_offsets
-        self.restarts = restarts
-        if latency is None:
-            latency = {'p50': 0, 'p90': 0, 'p99': 0}
-        self.latency = latency
-        self.active = active
-        self.failed_transactions = failed_transactions
-        self.aborted_transaction_messages = aborted_transaction_msgs
-
-    def __str__(self):
-        l = self.latency
-        return f"ProduceStatus<{self.sent} {self.acked} {self.bad_offsets} {self.restarts} {self.failed_transactions} {self.aborted_transaction_messages} {l['p50']}/{l['p90']}/{l['p99']}>"
 
 
 class KgoVerifierProducer(KgoVerifierService):
@@ -706,3 +568,181 @@ class KgoVerifierProducer(KgoVerifierService):
 
         self._status_thread = StatusThread(self, node, ProduceStatus)
         self._status_thread.start()
+
+
+class KgoVerifierSeqConsumer(KgoVerifierService):
+    def __init__(
+            self,
+            context,
+            redpanda,
+            topic,
+            msg_size=None,  # TODO: redundant, remove
+            max_msgs=None,
+            max_throughput_mb=None,
+            nodes=None,
+            debug_logs=False,
+            trace_logs=False,
+            loop=True,
+            producer: Optional[KgoVerifierProducer] = None):
+        super(KgoVerifierSeqConsumer,
+              self).__init__(context, redpanda, topic, msg_size, nodes,
+                             debug_logs, trace_logs)
+        self._max_msgs = max_msgs
+        self._max_throughput_mb = max_throughput_mb
+        self._status = ConsumerStatus()
+        self._loop = loop
+        self._producer = producer
+
+    @property
+    def consumer_status(self):
+        return self._status
+
+    def start_node(self, node, clean=False):
+        if clean:
+            self.clean_node(node)
+
+        loop = "--loop" if self._loop else ""
+        cmd = f"{TESTS_DIR}/kgo-verifier --brokers {self._redpanda.brokers()} --topic {self._topic} --produce_msgs 0 --rand_read_msgs 0 --seq_read=1 {loop} --client-name {self.who_am_i()}"
+        if self._max_msgs is not None:
+            cmd += f" --seq_read_msgs {self._max_msgs}"
+        if self._max_throughput_mb is not None:
+            cmd += f" --consume-throughput-mb {self._max_throughput_mb}"
+        self.spawn(cmd, node)
+
+        self._status_thread = StatusThread(self, node, ConsumerStatus)
+        self._status_thread.start()
+
+    def wait_node(self, node, timeout_sec=None):
+        if self._producer:
+
+            def consumed_whole_log():
+                producer_done = self._producer._status.sent == self._producer._msg_count
+                if not producer_done:
+                    self.logger.debug(
+                        f"Producer {self._producer.who_am_i()} hasn't finished yet"
+                    )
+                    return False
+
+                consumed = self._status.validator.max_offsets_consumed
+                produced = self._producer._status.max_offsets_produced
+                if consumed != produced:
+                    self.logger.debug(
+                        f"Consumer {self.who_am_i()} hasn't read all produced data yet: {consumed=} {produced=}"
+                    )
+                    return False
+                return True
+
+            wait_until(
+                consumed_whole_log,
+                timeout_sec=timeout_sec,
+                backoff_sec=2,
+                err_msg=
+                f"Consumer hasn't read all produced data: consumed={self._status.validator.max_offsets_consumed} produced={self._producer._status.max_offsets_produced}"
+            )
+
+        return super().wait_node(node, timeout_sec=timeout_sec)
+
+
+class KgoVerifierRandomConsumer(KgoVerifierService):
+    def __init__(self,
+                 context,
+                 redpanda,
+                 topic,
+                 msg_size,
+                 rand_read_msgs,
+                 parallel,
+                 nodes=None,
+                 debug_logs=False,
+                 trace_logs=False):
+        super().__init__(context, redpanda, topic, msg_size, nodes, debug_logs,
+                         trace_logs)
+        self._rand_read_msgs = rand_read_msgs
+        self._parallel = parallel
+        self._status = ConsumerStatus()
+
+    @property
+    def consumer_status(self):
+        return self._status
+
+    def start_node(self, node, clean=False):
+        if clean:
+            self.clean_node(node)
+
+        cmd = f"{TESTS_DIR}/kgo-verifier --brokers {self._redpanda.brokers()} --topic {self._topic} --produce_msgs 0 --rand_read_msgs {self._rand_read_msgs} --parallel {self._parallel} --seq_read=0 --loop --client-name {self.who_am_i()}"
+        self.spawn(cmd, node)
+
+        self._status_thread = StatusThread(self, node, ConsumerStatus)
+        self._status_thread.start()
+
+
+class KgoVerifierConsumerGroupConsumer(KgoVerifierService):
+    def __init__(self,
+                 context,
+                 redpanda,
+                 topic,
+                 msg_size,
+                 readers,
+                 loop=False,
+                 max_msgs=None,
+                 max_throughput_mb=None,
+                 nodes=None,
+                 debug_logs=False,
+                 trace_logs=False):
+        super().__init__(context, redpanda, topic, msg_size, nodes, debug_logs,
+                         trace_logs)
+
+        self._readers = readers
+        self._loop = loop
+        self._max_msgs = max_msgs
+        self._max_throughput_mb = max_throughput_mb
+        self._status = ConsumerStatus()
+
+    @property
+    def consumer_status(self):
+        return self._status
+
+    def start_node(self, node, clean=False):
+        if clean:
+            self.clean_node(node)
+
+        cmd = f"{TESTS_DIR}/kgo-verifier --brokers {self._redpanda.brokers()} --topic {self._topic} --produce_msgs 0 --rand_read_msgs 0 --seq_read=0 --consumer_group_readers={self._readers} --client-name {self.who_am_i()}"
+        if self._loop:
+            cmd += " --loop"
+        if self._max_msgs is not None:
+            cmd += f" --seq_read_msgs {self._max_msgs}"
+        if self._max_throughput_mb is not None:
+            cmd += f" --consume-throughput-mb {self._max_throughput_mb}"
+        self.spawn(cmd, node)
+
+        self._status_thread = StatusThread(self, node, ConsumerStatus)
+        self._status_thread.start()
+
+
+class ProduceStatus:
+    def __init__(self,
+                 topic=None,
+                 sent=0,
+                 acked=0,
+                 bad_offsets=0,
+                 max_offsets_produced=dict(),
+                 restarts=0,
+                 latency=None,
+                 active=False,
+                 failed_transactions=0,
+                 aborted_transaction_msgs=0):
+        self.topic = topic
+        self.sent = sent
+        self.acked = acked
+        self.bad_offsets = bad_offsets
+        self.max_offsets_produced = max_offsets_produced
+        self.restarts = restarts
+        if latency is None:
+            latency = {'p50': 0, 'p90': 0, 'p99': 0}
+        self.latency = latency
+        self.active = active
+        self.failed_transactions = failed_transactions
+        self.aborted_transaction_messages = aborted_transaction_msgs
+
+    def __str__(self):
+        l = self.latency
+        return f"ProduceStatus<{self.sent} {self.acked} {self.bad_offsets} {self.restarts} {self.failed_transactions} {self.aborted_transaction_messages} {l['p50']}/{l['p90']}/{l['p99']}>"
