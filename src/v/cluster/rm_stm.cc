@@ -2043,7 +2043,8 @@ void rm_stm::compact_snapshot() {
     }
     auto pivot_idx = static_cast<ssize_t>(lw_tss.size()) - 1
                      - _seq_table_min_size;
-    std::nth_element(lw_tss.begin(), lw_tss.end(), lw_tss.begin() + pivot_idx);
+    auto b = lw_tss.begin_unchecked(), e = lw_tss.end_unchecked();
+    std::nth_element(b, e, b + pivot_idx);
     auto pivot = lw_tss[pivot_idx];
 
     if (pivot < cutoff_timestamp) {
