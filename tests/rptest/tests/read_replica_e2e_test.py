@@ -107,6 +107,10 @@ class TestReadReplicaService(EndToEndTest):
                 log_segment_size=TestReadReplicaService.log_segment_size,
                 cloud_storage_readreplica_manifest_sync_timeout_ms=500,
                 cloud_storage_segment_max_upload_interval_sec=5,
+                # Ensure that the replica can read from spilled metadata
+                cloud_storage_spillover_manifest_max_segments=4,
+                # Ensure metadata spilling happens promptly
+                cloud_storage_housekeeping_interval_ms=100,
                 fast_uploads=True))
 
         # Read reaplica shouldn't have it's own bucket.
@@ -166,7 +170,13 @@ class TestReadReplicaService(EndToEndTest):
         else:
             return True
 
-    def _setup_read_replica(self, num_messages=0, partition_count=3) -> None:
+    def _setup_read_replica(self,
+                            num_messages=0,
+                            partition_count=3,
+                            producer_timeout=None) -> None:
+        if producer_timeout is None:
+            producer_timeout = 30
+
         self.logger.info(f"Setup read replica \"{self.topic_name}\", : "
                          f"{num_messages} msg, {partition_count} "
                          "partitions.")
@@ -180,10 +190,12 @@ class TestReadReplicaService(EndToEndTest):
 
         if num_messages > 0:
             self.start_producer()
-            wait_until(lambda: self.producer.num_acked > num_messages,
-                           timeout_sec=30,
-                           err_msg="Producer failed to produce messages for %ds." %\
-                           30)
+            wait_until(
+                lambda: self.producer.num_acked > num_messages,
+                timeout_sec=producer_timeout,
+                err_msg=
+                f"Producer only produced {self.producer.num_acked}/{num_messages} messages in {producer_timeout}"
+            )
             self.logger.info("Stopping producer after writing up to offsets %s" %\
                             str(self.producer.last_acked_offsets))
             self.producer.stop()
@@ -290,18 +302,20 @@ class TestReadReplicaService(EndToEndTest):
             assert len(objects_after) >= len(objects_before)
 
     @cluster(num_nodes=9, log_allow_list=READ_REPLICA_LOG_ALLOW_LIST)
-    @matrix(partition_count=[10],
-            min_records=[10000],
-            cloud_storage_type=get_cloud_storage_type())
-    def test_simple_end_to_end(self, partition_count: int, min_records: int,
+    @matrix(partition_count=[10], cloud_storage_type=get_cloud_storage_type())
+    def test_simple_end_to_end(self, partition_count: int,
                                cloud_storage_type: CloudStorageType) -> None:
 
-        self._setup_read_replica(num_messages=min_records,
-                                 partition_count=partition_count)
+        data_timeout = 300
+
+        self._setup_read_replica(num_messages=100000,
+                                 partition_count=partition_count,
+                                 producer_timeout=300)
 
         # Consume from read replica topic and validate
         self.start_consumer()
-        self.run_validation()  # calls self.consumer.stop()
+        self.run_validation(
+            consumer_timeout_sec=data_timeout)  # calls self.consumer.stop()
 
         # Run consumer again, this time with source cluster stopped.
         # Now we can test that replicas do not write to s3.
@@ -322,7 +336,7 @@ class TestReadReplicaService(EndToEndTest):
         self.logger.info(f"pre_usage {pre_usage}")
 
         # Let replica consumer run to completion, assert no s3 writes
-        self.run_consumer_validation()
+        self.run_consumer_validation(consumer_timeout_sec=data_timeout)
 
         post_usage = self._bucket_usage()
         self.logger.info(f"post_usage {post_usage}")
