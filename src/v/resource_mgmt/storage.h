@@ -42,6 +42,7 @@ class disk_space_manager {
 public:
     disk_space_manager(
       config::binding<bool> enabled,
+      config::binding<std::optional<uint64_t>> log_storage_target_size,
       ss::sharded<storage::api>* storage,
       ss::sharded<storage::node>* storage_node,
       ss::sharded<cloud_storage::cache>* cache,
@@ -68,6 +69,9 @@ private:
     // details from last disk notification
     node::disk_space_info _cache_disk_info{};
     node::disk_space_info _data_disk_info{};
+
+    ss::future<> manage_data_disk(uint64_t target_size);
+    config::binding<std::optional<uint64_t>> _log_storage_target_size;
 
     ss::gate _gate;
     ss::future<> run_loop();

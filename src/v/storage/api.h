@@ -85,6 +85,11 @@ public:
       uint64_t free_space,
       storage::disk_space_alert alert);
 
+    /*
+     * ask local log manager to trigger gc
+     */
+    void trigger_gc();
+
 private:
     storage_resources _resources;
 
