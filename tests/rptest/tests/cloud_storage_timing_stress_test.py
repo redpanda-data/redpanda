@@ -288,7 +288,8 @@ class CloudStorageTimingStressTest(RedpandaTest, PartitionMovementMixin):
                                    debug_logs=True,
                                    trace_logs=True)
 
-    def _create_consumer(self) -> KgoVerifierSeqConsumer:
+    def _create_consumer(
+            self, producer: KgoVerifierProducer) -> KgoVerifierSeqConsumer:
         bps = self.produce_byte_rate_per_ntp * self.topics[0].partition_count
         bytes_count = bps * self.target_runtime
         msg_count = bytes_count // self.message_size
@@ -302,7 +303,8 @@ class CloudStorageTimingStressTest(RedpandaTest, PartitionMovementMixin):
                                       msg_size=self.message_size,
                                       max_throughput_mb=int(bps // self.mib),
                                       debug_logs=True,
-                                      trace_logs=True)
+                                      trace_logs=True,
+                                      producer=producer)
 
     def _all_uploads_done(self):
         topic_description = self.rpk.describe_topic(self.topic)
@@ -398,7 +400,7 @@ class CloudStorageTimingStressTest(RedpandaTest, PartitionMovementMixin):
                             cloud_storage_status_endpoint_check)
 
         self.producer = self._create_producer()
-        self.consumer = self._create_consumer()
+        self.consumer = self._create_consumer(self.producer)
 
         self.producer.start()
 
