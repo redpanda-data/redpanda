@@ -139,6 +139,12 @@ struct archival_metadata_stm::spillover_cmd
     cloud_storage::segment_meta manifest_meta;
 };
 
+struct archival_metadata_stm::replace_manifest_cmd {
+    static constexpr cmd_key key{10};
+
+    using value = iobuf;
+};
+
 struct archival_metadata_stm::snapshot
   : public serde::
       envelope<snapshot, serde::version<3>, serde::compat_version<0>> {
@@ -230,6 +236,14 @@ command_batch_builder& command_batch_builder::cleanup_metadata() {
       archival_metadata_stm::cleanup_metadata_cmd::key);
     iobuf empty_body;
     _builder.add_raw_kv(std::move(key_buf), std::move(empty_body));
+    return *this;
+}
+
+command_batch_builder&
+command_batch_builder::replace_manifest(iobuf replacement) {
+    iobuf key_buf = serde::to_iobuf(
+      archival_metadata_stm::replace_manifest_cmd::key);
+    _builder.add_raw_kv(std::move(key_buf), std::move(replacement));
     return *this;
 }
 
@@ -754,6 +768,9 @@ ss::future<> archival_metadata_stm::apply(model::record_batch b) {
             apply_spillover(
               serde::from_iobuf<spillover_cmd>(r.release_value()));
             break;
+        case replace_manifest_cmd::key:
+            apply_replace_manifest(r.release_value());
+            break;
         };
     });
 
@@ -1091,6 +1108,16 @@ void archival_metadata_stm::apply_spillover(const spillover_cmd& so) {
     } else {
         vlog(_logger.warn, "Can't apply spillover_cmd: {}", so.manifest_meta);
     }
+}
+
+void archival_metadata_stm::apply_replace_manifest(iobuf val) {
+    _manifest->from_iobuf(std::move(val));
+
+    vlog(
+      _logger.debug,
+      "Replace command applied, new start offset: {}, new last offset: {}",
+      get_start_offset(),
+      get_last_offset());
 }
 
 std::vector<cloud_storage::partition_manifest::lw_segment_meta>

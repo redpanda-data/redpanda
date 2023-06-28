@@ -70,7 +70,9 @@ public:
       model::offset start_rp_offset, model::offset_delta delta);
     /// Add truncate-archive-commit command to the batch
     command_batch_builder&
+    /// Totally replace the manifest
     cleanup_archive(model::offset start_rp_offset, uint64_t removed_size_bytes);
+    command_batch_builder& replace_manifest(iobuf);
     /// Replicate the configuration batch
     ss::future<std::error_code> replicate();
 
@@ -252,6 +254,7 @@ private:
     struct truncate_archive_commit_cmd;
     struct reset_metadata_cmd;
     struct spillover_cmd;
+    struct replace_manifest_cmd;
     struct snapshot;
 
     friend segment segment_from_meta(const cloud_storage::segment_meta& meta);
@@ -276,6 +279,7 @@ private:
     void apply_update_start_kafka_offset(kafka::offset so);
     void apply_reset_metadata();
     void apply_spillover(const spillover_cmd& so);
+    void apply_replace_manifest(iobuf);
 
 private:
     prefix_logger _logger;
