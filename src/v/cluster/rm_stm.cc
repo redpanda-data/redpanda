@@ -16,6 +16,7 @@
 #include "kafka/protocol/wire.h"
 #include "model/fundamental.h"
 #include "model/record.h"
+#include "prometheus/aggregate_labels.h"
 #include "prometheus/prometheus_sanitize.h"
 #include "raft/consensus_utils.h"
 #include "raft/errc.h"
@@ -3254,9 +3255,7 @@ void rm_stm::setup_metrics() {
     }
     namespace sm = ss::metrics;
 
-    auto aggregate_labels = config::shard_local_cfg().aggregate_metrics()
-                              ? std::vector<sm::label>{sm::shard_label}
-                              : std::vector<sm::label>{};
+    auto aggregate_labels = prometheus::aggregate_labels({sm::shard_label});
 
     const auto& ntp = _c->ntp();
     const std::vector<sm::label_instance> labels = {

@@ -17,6 +17,7 @@
 #include "model/namespace.h"
 #include "model/record_batch_reader.h"
 #include "model/timeout_clock.h"
+#include "prometheus/aggregate_labels.h"
 #include "prometheus/prometheus_sanitize.h"
 #include "raft/consensus_client_protocol.h"
 #include "raft/consensus_utils.h"
@@ -161,9 +162,7 @@ void consensus::setup_metrics() {
 
     _probe->setup_metrics(_log.config().ntp());
     auto labels = probe::create_metric_labels(_log.config().ntp());
-    auto aggregate_labels = config::shard_local_cfg().aggregate_metrics()
-                              ? std::vector<sm::label>{sm::shard_label}
-                              : std::vector<sm::label>{};
+    auto aggregate_labels = prometheus::aggregate_labels({sm::shard_label});
 
     _metrics.add_group(
       prometheus_sanitize::metrics_name("raft"),

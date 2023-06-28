@@ -11,6 +11,7 @@
 
 #include "config/configuration.h"
 #include "kafka/server/logger.h"
+#include "prometheus/aggregate_labels.h"
 #include "prometheus/prometheus_sanitize.h"
 #include "tristate.h"
 
@@ -71,9 +72,9 @@ void snc_quotas_probe::setup_metrics() {
         return;
     }
 
-    const auto aggregate_labels = config::shard_local_cfg().aggregate_metrics()
-                                    ? std::vector<sm::label>{sm::shard_label}
-                                    : std::vector<sm::label>{};
+    const auto aggregate_labels = prometheus::aggregate_labels(
+      {sm::shard_label});
+
     std::vector<ss::metrics::metric_definition> metric_defs;
     static const auto direction_label = ss::metrics::label("direction");
     static const auto label_ingress = direction_label("ingress");

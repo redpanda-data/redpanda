@@ -11,6 +11,7 @@
 #pragma once
 
 #include "config/configuration.h"
+#include "prometheus/aggregate_labels.h"
 
 #include <seastar/core/metrics.hh>
 #include <seastar/core/metrics_registration.hh>
@@ -26,9 +27,7 @@ public:
             return;
         }
 
-        auto aggregate_labels = config::shard_local_cfg().aggregate_metrics()
-                                  ? std::vector<sm::label>{sm::shard_label}
-                                  : std::vector<sm::label>{};
+        auto aggregate_labels = prometheus::aggregate_labels({sm::shard_label});
 
         _metrics.add_group(
           "kafka_schema_id_cache",

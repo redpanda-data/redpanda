@@ -13,6 +13,7 @@
 #include "config/configuration.h"
 #include "model/metadata.h"
 #include "pandaproxy/schema_registry/schema_id_validation.h"
+#include "prometheus/aggregate_labels.h"
 #include "prometheus/prometheus_sanitize.h"
 #include "ssx/metrics.h"
 
@@ -50,9 +51,7 @@ void replicated_partition_probe::setup_internal_metrics(const model::ntp& ntp) {
     const auto& topic_label = ssx::metrics::internal_labels::topic_label;
     const auto& partition_label
       = ssx::metrics::internal_labels::partition_label;
-    auto aggregate_labels = config::shard_local_cfg().aggregate_metrics()
-                              ? std::vector<sm::label>{sm::shard_label}
-                              : std::vector<sm::label>{};
+    auto aggregate_labels = prometheus::aggregate_labels({sm::shard_label});
 
     const std::vector<sm::label_instance> labels = {
       ns_label(ntp.ns()),

@@ -11,6 +11,7 @@
 #include "archival/probe.h"
 
 #include "config/configuration.h"
+#include "prometheus/aggregate_labels.h"
 #include "prometheus/prometheus_sanitize.h"
 #include "ssx/metrics.h"
 
@@ -38,9 +39,7 @@ void ntp_level_probe::setup_ntp_metrics(const model::ntp& ntp) {
       ssx::metrics::internal_labels::topic_label(ntp.tp.topic()),
       ssx::metrics::internal_labels::partition_label(ntp.tp.partition()),
     };
-    auto aggregate_labels = config::shard_local_cfg().aggregate_metrics()
-                              ? std::vector<sm::label>{sm::shard_label}
-                              : std::vector<sm::label>{};
+    auto aggregate_labels = prometheus::aggregate_labels({sm::shard_label});
 
     _metrics.add_group(
       prometheus_sanitize::metrics_name("ntp_archiver"),

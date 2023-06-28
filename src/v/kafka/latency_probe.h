@@ -12,6 +12,7 @@
 #pragma once
 
 #include "config/configuration.h"
+#include "prometheus/aggregate_labels.h"
 #include "prometheus/prometheus_sanitize.h"
 #include "ssx/metrics.h"
 #include "utils/hdr_hist.h"
@@ -36,9 +37,8 @@ public:
         }
         std::vector<sm::label_instance> labels{
           sm::label("latency_metric")("microseconds")};
-        auto aggregate_labels = config::shard_local_cfg().aggregate_metrics()
-                                  ? std::vector<sm::label>{sm::shard_label}
-                                  : std::vector<sm::label>{};
+        auto aggregate_labels = prometheus::aggregate_labels({sm::shard_label});
+
         _metrics.add_group(
           prometheus_sanitize::metrics_name("kafka:latency"),
           {sm::make_histogram(

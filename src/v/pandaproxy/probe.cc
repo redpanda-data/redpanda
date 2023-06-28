@@ -10,6 +10,7 @@
 #include "pandaproxy/probe.h"
 
 #include "config/configuration.h"
+#include "prometheus/aggregate_labels.h"
 #include "prometheus/prometheus_sanitize.h"
 #include "ssx/metrics.h"
 #include "ssx/sformat.h"
@@ -44,10 +45,8 @@ void probe::setup_metrics() {
     auto aggregate_labels = std::vector<sm::label>{
       sm::shard_label, operation_label};
 
-    auto internal_aggregate_labels
-      = config::shard_local_cfg().aggregate_metrics()
-          ? aggregate_labels
-          : std::vector<sm::label>{};
+    auto internal_aggregate_labels = prometheus::aggregate_labels(
+      aggregate_labels);
 
     _metrics.add_group(
       "pandaproxy",
