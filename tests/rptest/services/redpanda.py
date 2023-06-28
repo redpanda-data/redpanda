@@ -371,6 +371,8 @@ class SISettings:
                      int] = None,
                  bypass_bucket_creation: bool = False,
                  cloud_storage_housekeeping_interval_ms: Optional[int] = None,
+                 cloud_storage_spillover_manifest_max_segments: Optional[
+                     int] = None,
                  fast_uploads=False):
         """
         :param fast_uploads: if true, set low upload intervals to help tests run
@@ -419,6 +421,7 @@ class SISettings:
         self.endpoint_url = f'http://{self.cloud_storage_api_endpoint}:{self.cloud_storage_api_endpoint_port}'
         self.bypass_bucket_creation = bypass_bucket_creation
         self.cloud_storage_housekeeping_interval_ms = cloud_storage_housekeeping_interval_ms
+        self.cloud_storage_spillover_manifest_max_segments = cloud_storage_spillover_manifest_max_segments
 
         if fast_uploads:
             self.cloud_storage_segment_max_upload_interval_sec = 10
@@ -546,6 +549,9 @@ class SISettings:
         if self.cloud_storage_housekeeping_interval_ms:
             conf[
                 'cloud_storage_housekeeping_interval_ms'] = self.cloud_storage_housekeeping_interval_ms
+        if self.cloud_storage_spillover_manifest_max_segments:
+            conf[
+                'cloud_storage_spillover_manifest_max_segments'] = self.cloud_storage_spillover_manifest_max_segments
         return conf
 
     def set_expected_damage(self, damage_types: set[str]):

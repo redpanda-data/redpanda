@@ -13,7 +13,7 @@ from rptest.services.kgo_verifier_services import KgoVerifierProducer, KgoVerifi
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.services.redpanda import MetricsEndpoint, SISettings
 from rptest.util import firewall_blocked, wait_until_result
-from rptest.utils.si_utils import BucketView
+from rptest.utils.si_utils import BucketView, NTPR
 from rptest.clients.types import TopicSpec
 from rptest.tests.partition_movement import PartitionMovementMixin
 from ducktape.utils.util import wait_until
@@ -43,8 +43,6 @@ class CloudStorageCheck:
 
 
 def cloud_storage_usage_check(test):
-    bucket_view = BucketView(test.redpanda)
-
     # The usage inferred from the uploaded manifest
     # lags behind the actual reported usage. For this reason,
     # we maintain a sliding window of reported usages and check whether
@@ -52,17 +50,25 @@ def cloud_storage_usage_check(test):
     reported_usage_sliding_window = deque(maxlen=10)
 
     def check():
-        manifest_usage = bucket_view.total_cloud_log_size()
+        try:
+            bucket_view = BucketView(test.redpanda)
+            manifest_usage = bucket_view.cloud_log_size_for_ntp(test.topic, 0)
+            test.logger.debug(
+                f"Cloud log usage inferred from manifests: {manifest_usage}")
 
-        reported_usage = test.admin.cloud_storage_usage()
-        reported_usage_sliding_window.append(reported_usage)
+            reported_usage = test.admin.cloud_storage_usage()
+            reported_usage_sliding_window.append(reported_usage)
 
-        test.logger.info(
-            f"Expected {manifest_usage} bytes of cloud storage usage")
-        test.logger.info(
-            f"Reported usages in sliding window: {reported_usage_sliding_window}"
-        )
-        return manifest_usage in reported_usage_sliding_window
+            test.logger.info(
+                f"Expected {manifest_usage.total()} bytes of cloud storage usage"
+            )
+            test.logger.info(
+                f"Reported usages in sliding window: {reported_usage_sliding_window}"
+            )
+            return manifest_usage.total() in reported_usage_sliding_window
+        except Exception as e:
+            test.logger.info(f"usage check exception: {e}")
+            raise e
 
     # Manifests are not immediately uploaded after they are mutated locally.
     # For example, during cloud storage housekeeping, the manifest is not uploaded
@@ -71,7 +77,7 @@ def cloud_storage_usage_check(test):
     # what's in the uploaded manifest. For this reason, we wait until the two match.
     wait_until(
         check,
-        timeout_sec=10,
+        timeout_sec=test.check_timeout,
         backoff_sec=0.2,
         err_msg="Reported cloud storage usage did not match the actual usage",
         retry_on_exc=True)
@@ -88,10 +94,12 @@ class PartitionStatusValidator:
             PartitionStatusValidator._validate_cloud_log_offsets
         ]
 
-    def is_valid(self, status, manifest) -> bool:
-        return all([v(self, status, manifest) for v in self._validators])
+    def is_valid(self, status, bucket_view: BucketView, ntpr: NTPR) -> bool:
+        return all(
+            [v(self, status, bucket_view, ntpr) for v in self._validators])
 
-    def _validate_status_shape(self, status, manifest) -> bool:
+    def _validate_status_shape(self, status, bucket_view: BucketView,
+                               ntpr: NTPR) -> bool:
         expected_keys = [
             "cloud_storage_mode", "total_log_size_bytes",
             "cloud_log_size_bytes", "local_log_size_bytes",
@@ -109,7 +117,8 @@ class PartitionStatusValidator:
 
         return len(not_present) == 0
 
-    def _validate_mode(self, status, manifest) -> bool:
+    def _validate_mode(self, status, bucket_view: BucketView,
+                       ntpr: NTPR) -> bool:
         if status["cloud_storage_mode"] != "full":
             self._logger.info(
                 f"Unexpected for cloud_storage_mode: {status['cloud_storage_mode']}"
@@ -118,38 +127,53 @@ class PartitionStatusValidator:
 
         return True
 
-    def _validate_cloud_log_size_bytes(self, status, manifest) -> bool:
-        manifest_cloud_log_size = BucketView.cloud_log_size_from_ntp_manifest(
-            manifest, include_below_start_offset=False)
+    def _validate_cloud_log_size_bytes(self, status, bucket_view: BucketView,
+                                       ntpr: NTPR) -> bool:
+        # bucket_view.evict_ntp(ntpr.to_ntp)
+        cloud_log_size = bucket_view.cloud_log_size_for_ntp(
+            ntpr.topic, ntpr.partition, ntpr.ns)
 
-        reported = status["cloud_log_size_bytes"]
-        if reported != manifest_cloud_log_size:
+        stm_region = cloud_log_size.stm.accessible
+        archive_region = cloud_log_size.archive.total
+
+        reported_stm = status["stm_region_size_bytes"]
+        if reported_stm != stm_region:
             self._logger.info(
-                f"Reported cloud log size does not match manifest: {reported} != {manifest_cloud_log_size}"
+                f"Reported cloud log size for stm region does not match manifest: {reported_stm}!={stm_region}"
+            )
+            return False
+
+        reported_archive = status["archive_size_bytes"]
+        if reported_stm != stm_region:
+            self._logger.info(
+                f"Reported cloud log size for archive region does not match manifest: {reported_archive}!={archive_region}"
             )
             return False
 
         return True
 
-    def _validate_cloud_log_offsets(self, status, manifest) -> bool:
+    def _validate_cloud_log_offsets(self, status, bucket_view: BucketView,
+                                    ntpr: NTPR) -> bool:
+        manifest = bucket_view.get_partition_manifest(ntpr)
+
         if not manifest:
             return "cloud_log_start_offset" not in status and "cloud_log_last_offset" not in status
 
-        manifest_start = BucketView.kafka_start_offset(manifest)
+        cloud_log_start = BucketView.kafka_start_offset(manifest)
         reported_start = status.get("cloud_log_start_offset", None)
 
-        if manifest_start != reported_start:
+        if cloud_log_start != reported_start:
             self._logger.info(
-                f"Reported cloud log start does not match manifest: {reported_start} != {manifest_start}"
+                f"Reported cloud log start does not match manifest: {reported_start} != {cloud_log_start}"
             )
             return False
 
-        manifest_last = BucketView.kafka_last_offset(manifest)
+        cloud_log_last = BucketView.kafka_last_offset(manifest)
         reported_last = status.get("cloud_log_last_offset", None)
 
-        if manifest_last != reported_last:
+        if cloud_log_last != reported_last:
             self._logger.info(
-                f"Reported cloud log end does not match manifest: {reported_last} != {manifest_last}"
+                f"Reported cloud log end does not match manifest: {reported_last} != {cloud_log_last}"
             )
             return False
 
@@ -158,26 +182,24 @@ class PartitionStatusValidator:
 
 def cloud_storage_status_endpoint_check(test):
     bucket_view = BucketView(test.redpanda)
-    reported_status_sliding_window = deque(maxlen=10)
+    reported_status_sliding_window = deque(maxlen=5)
     validator = PartitionStatusValidator(test)
 
     def check():
         try:
             bucket_view.reset()
+            bucket_view._do_listing()
 
             status = test.admin.get_partition_cloud_storage_status(
                 test.topic, 0)
             reported_status_sliding_window.append(status)
 
-            manifest = None
-            try:
-                manifest = bucket_view.manifest_for_ntpr(
-                    test.topic, 0, test._initial_revision)
-            except KeyError:
-                pass
-
+            ntpr = NTPR(ns="kafka",
+                        topic=test.topic,
+                        partition=0,
+                        revision=test._initial_revision)
             for status in reported_status_sliding_window:
-                if validator.is_valid(status, manifest):
+                if validator.is_valid(status, bucket_view, ntpr):
                     return True
 
             return False
@@ -187,7 +209,7 @@ def cloud_storage_status_endpoint_check(test):
 
     wait_until(
         check,
-        timeout_sec=10,
+        timeout_sec=test.check_timeout,
         backoff_sec=0.2,
         err_msg="Cloud storage partition status did not match the manifest",
         retry_on_exc=True)
@@ -213,6 +235,7 @@ class CloudStorageTimingStressTest(RedpandaTest, PartitionMovementMixin):
     produce_byte_rate_per_ntp = 8 * mib  # 8 MiB
     target_runtime = 60  # seconds
     check_interval = 10  # seconds
+    check_timeout = 10  # seconds
     allow_runtime_overshoot_by = 2
 
     topic_spec = TopicSpec(name="test-topic",
@@ -225,6 +248,7 @@ class CloudStorageTimingStressTest(RedpandaTest, PartitionMovementMixin):
             test_context,
             log_segment_size=self.log_segment_size,
             cloud_storage_housekeeping_interval_ms=1000,
+            cloud_storage_spillover_manifest_max_segments=10,
             fast_uploads=True)
 
         extra_rp_conf = dict(
@@ -391,6 +415,10 @@ class CloudStorageTimingStressTest(RedpandaTest, PartitionMovementMixin):
         assert self.redpanda.metric_sum(
             "vectorized_cloud_storage_successful_downloads_total") > 0
 
+        assert self.redpanda.metric_sum(
+            "redpanda_cloud_storage_spillover_manifest_uploads_total",
+            metrics_endpoint=MetricsEndpoint.PUBLIC_METRICS) > 0
+
         bucket_view = BucketView(self.redpanda)
         bucket_view.assert_segments_deleted(self.topic, partition=0)
 
@@ -487,6 +515,8 @@ class CloudStorageTimingStressTest(RedpandaTest, PartitionMovementMixin):
         (e.g. isolate/kill nodes, isolate leader from cloud storage, change cloud storage
         topic/cluster configs on the fly).
         """
+        self.check_timeout = 15  # seconds
+
         self.prologue(cleanup_policy)
 
         partitions = []

@@ -825,8 +825,8 @@ class TopicDeleteCloudStorageTest(RedpandaTest):
         # compaction may delete segments (which are replaced by merged segments) at any time.
         bucket_view = BucketView(self.redpanda)
         size_before = sum(
-            bucket_view.cloud_log_size_for_ntp(self.topic, i)
-            for i in range(0, self.partition_count))
+            bucket_view.cloud_log_size_for_ntp(self.topic, i).total(
+                no_archive=True) for i in range(0, self.partition_count))
         assert size_before > 0
 
         def get_nodes(partition):
@@ -854,8 +854,8 @@ class TopicDeleteCloudStorageTest(RedpandaTest):
         # Check no remote data was lost
         bucket_view.reset()
         size_after = sum(
-            bucket_view.cloud_log_size_for_ntp(self.topic, i)
-            for i in range(0, self.partition_count))
+            bucket_view.cloud_log_size_for_ntp(self.topic, i).total(
+                no_archive=True) for i in range(0, self.partition_count))
         assert size_after >= size_before
 
         # Check no purging/purged lifecycle marker was written

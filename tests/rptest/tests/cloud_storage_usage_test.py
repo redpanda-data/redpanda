@@ -95,7 +95,8 @@ class CloudStorageUsageTest(RedpandaTest, PartitionMovementMixin):
         reported_usage_sliding_window = deque(maxlen=10)
 
         def check():
-            manifest_usage = bucket_view.total_cloud_log_size()
+            manifest_usage = bucket_view.cloud_log_sizes_sum().accessible(
+                no_archive=True)
 
             reported_usage = self.admin.cloud_storage_usage()
             reported_usage_sliding_window.append(reported_usage)
@@ -145,9 +146,7 @@ class CloudStorageUsageTest(RedpandaTest, PartitionMovementMixin):
             ntp_remote_size = max(i.size
                                   for i in remote_items) if remote_items else 0
             actual_size = bucket_view.cloud_log_size_for_ntp(
-                ntp.topic,
-                ntp.partition,
-                include_size_below_start_offset=False)
+                ntp.topic, ntp.partition).accessible(no_archive=True)
 
             assert ntp_remote_size == actual_size
 

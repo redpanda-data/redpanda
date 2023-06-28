@@ -305,9 +305,13 @@ public:
     void flush_write_buffer();
 
     // Returns the cached size in bytes of all segments available to clients.
-    // (i.e. all segments after and including the segment that starts at
-    // the current _start_offset).
+    // This includes both the STM region and the archive.
     uint64_t cloud_log_size() const;
+
+    // Returns the cached size in bytes of all segments within the STM region
+    // that are above the start offset. (i.e. all segments after and including
+    // the segment that starts at the current _start_offset).
+    uint64_t stm_region_size_bytes() const;
 
     /// Returns cached size of the archive in bytes.
     ///
@@ -573,6 +577,7 @@ private:
     model::offset _start_offset;
     model::offset _last_uploaded_compacted_offset;
     model::offset _insync_offset;
+    // Size of the segments within the STM region
     size_t _cloud_log_size_bytes{0};
     // First accessible offset of the 'archive' region. Default value means
     // that there is no archive.
@@ -584,7 +589,8 @@ private:
     model::offset _archive_clean_offset;
     // Start kafka offset set by the DeleteRecords request
     kafka::offset _start_kafka_offset;
-    // Total size of the archive (excluding this manifest)
+    // Size of the segments within the archive region (i.e. excluding this
+    // manifest)
     uint64_t _archive_size_bytes{0};
     /// Map of spillover manifests that were uploaded to S3
     spillover_manifest_map _spillover_manifests;

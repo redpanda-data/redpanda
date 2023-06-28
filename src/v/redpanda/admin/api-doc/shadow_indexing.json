@@ -260,13 +260,21 @@
             "type": "long",
             "description": "Total size of the addressable cloud log for the partition"
         },
+        "stm_region_size_bytes": {
+            "type": "long",
+            "description": "Total size of the addressable segments in the STM region of the log"
+        },
+        "archive_size_bytes": {
+            "type": "long",
+            "description": "Total size of the archive region of the log"
+        },
         "local_log_size_bytes": {
             "type": "long",
             "description": "Total size of the addressable local log for the partition"
         },
-        "cloud_log_segment_count": {
+        "stm_region_segment_count": {
             "type": "long",
-            "description": "Number of segments in the cloud log (does not include segments queued for removal)"
+            "description": "Number of segments in the STM region of the cloud log"
         },
         "local_log_segment_count": {
             "type": "long",
@@ -276,6 +284,11 @@
             "type": "long",
             "nullable": true,
             "description": "The first Kafka offset accessible from the cloud (inclusive)"
+        },
+        "stm_region_start_offset": {
+            "type": "long",
+            "nullable": true,
+            "description": "The first Kafka offset accessible from the cloud in the STM region (inclusive)"
         },
         "cloud_log_last_offset": {
             "type": "long",

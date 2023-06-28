@@ -819,13 +819,11 @@ class EndToEndSpilloverTest(RedpandaTest):
             test_context,
             log_segment_size=1024,
             fast_uploads=True,
-            cloud_storage_housekeeping_interval_ms=10000)
-        super(EndToEndSpilloverTest, self).__init__(
-            test_context=test_context,
-            # Set to minimal value
-            extra_rp_conf=dict(
-                cloud_storage_spillover_manifest_max_segments=10),
-            si_settings=self.si_settings)
+            cloud_storage_housekeeping_interval_ms=10000,
+            cloud_storage_spillover_manifest_max_segments=10)
+        super(EndToEndSpilloverTest,
+              self).__init__(test_context=test_context,
+                             si_settings=self.si_settings)
 
         self.msg_size = 1024 * 256
         self.msg_count = 3000

@@ -1581,7 +1581,8 @@ class ClusterConfigAzureSharedKey(RedpandaTest):
 
     def get_cloud_log_size(self):
         s3_snapshot = BucketView(self.redpanda, topics=self.topics)
-        return s3_snapshot.cloud_log_size_for_ntp(self.topic, 0)
+        return s3_snapshot.cloud_log_size_for_ntp(self.topic,
+                                                  0).total(no_archive=True)
 
     def wait_for_cloud_uploads(self, initial_count: int, delta: int):
         def segment_uploaded():

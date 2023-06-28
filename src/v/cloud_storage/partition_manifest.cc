@@ -553,6 +553,10 @@ uint64_t partition_manifest::cloud_log_size() const {
     return _cloud_log_size_bytes + _archive_size_bytes;
 }
 
+uint64_t partition_manifest::stm_region_size_bytes() const {
+    return _cloud_log_size_bytes;
+}
+
 uint64_t partition_manifest::archive_size_bytes() const {
     return _archive_size_bytes;
 }
