@@ -777,6 +777,31 @@ ss::future<std::optional<model::offset>> disk_log_impl::do_gc(gc_config cfg) {
 
     cfg = apply_overrides(cfg);
 
+    /*
+     * _cloud_gc_offset is used to communicate the intent to collect
+     * partition data in excess of normal retention settings (and for infinite
+     * retention / no retention settings). it is expected that an external
+     * process such as disk space management drives this process such that after
+     * a round of gc has run the intent flag can be cleared.
+     */
+    if (_cloud_gc_offset.has_value()) {
+        const auto offset = _cloud_gc_offset.value();
+        _cloud_gc_offset.reset();
+
+        vassert(
+          is_cloud_retention_active(), "Expected remote retention active");
+
+        vlog(
+          gclog.info,
+          "[{}] applying 'deletion' log cleanup with remote retention override "
+          "offset {} and config {}",
+          config().ntp(),
+          _cloud_gc_offset,
+          cfg);
+
+        co_return co_await request_eviction_until_offset(offset);
+    }
+
     if (!config().is_collectable()) {
         co_return std::nullopt;
     }
@@ -2180,6 +2205,46 @@ ss::future<usage_report> disk_log_impl::disk_usage(gc_config cfg) {
       target.min_capacity_wanted, target.min_capacity);
 
     co_return usage_report(usage, reclaim, target);
+}
+
+fragmented_vector<ss::lw_shared_ptr<segment>>
+disk_log_impl::cloud_gc_eligible_segments() {
+    vassert(
+      is_cloud_retention_active(),
+      "Expected {} to have cloud retention enabled",
+      config().ntp());
+
+    // must-have restriction
+    if (_segs.size() <= 2) {
+        return {};
+    }
+
+    /*
+     * for a cloud-backed topic the max collecible offset is the threshold below
+     * which data has been uploaded and can safely be removed from local disk.
+     */
+    const auto max_collectible = stm_manager()->max_collectible_offset();
+
+    // collect eligible segments
+    fragmented_vector<segment_set::type> segments;
+    for (auto remaining = _segs.size() - 2; auto& seg : _segs) {
+        if (seg->offsets().committed_offset <= max_collectible) {
+            segments.push_back(seg);
+        }
+        if (--remaining > 0) {
+            break;
+        }
+    }
+
+    return segments;
+}
+
+void disk_log_impl::set_cloud_gc_offset(model::offset offset) {
+    vassert(
+      is_cloud_retention_active(),
+      "Expected {} to have cloud retention enabled",
+      config().ntp());
+    _cloud_gc_offset = offset;
 }
 
 } // namespace storage
