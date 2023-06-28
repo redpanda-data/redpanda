@@ -955,6 +955,13 @@ bool update_fetch_partition(
         include = true;
         partition.start_offset = model::offset(resp.log_start_offset);
     }
+    /**
+     * Always include partition in a response if it contains information about
+     * the preferred replica
+     */
+    if (resp.preferred_read_replica != -1) {
+        include = true;
+    }
     if (include) {
         return include;
     }
