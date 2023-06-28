@@ -51,7 +51,8 @@ void replicated_partition_probe::setup_internal_metrics(const model::ntp& ntp) {
     const auto& topic_label = ssx::metrics::internal_labels::topic_label;
     const auto& partition_label
       = ssx::metrics::internal_labels::partition_label;
-    auto aggregate_labels = prometheus::aggregate_labels({sm::shard_label});
+    auto aggregate_labels = prometheus::aggregate_labels(
+      {sm::shard_label, ssx::metrics::internal_labels::partition_label});
 
     const std::vector<sm::label_instance> labels = {
       ns_label(ntp.ns()),

@@ -3255,7 +3255,8 @@ void rm_stm::setup_metrics() {
     }
     namespace sm = ss::metrics;
 
-    auto aggregate_labels = prometheus::aggregate_labels({sm::shard_label});
+    auto aggregate_labels = prometheus::aggregate_labels(
+      {sm::shard_label, ssx::metrics::internal_labels::partition_label});
 
     const auto& ntp = _c->ntp();
     const std::vector<sm::label_instance> labels = {

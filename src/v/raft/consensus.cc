@@ -33,6 +33,7 @@
 #include "reflection/adl.h"
 #include "rpc/types.h"
 #include "ssx/future-util.h"
+#include "ssx/metrics.h"
 #include "storage/api.h"
 #include "vlog.h"
 
@@ -162,7 +163,8 @@ void consensus::setup_metrics() {
 
     _probe->setup_metrics(_log.config().ntp());
     auto labels = probe::create_metric_labels(_log.config().ntp());
-    auto aggregate_labels = prometheus::aggregate_labels({sm::shard_label});
+    auto aggregate_labels = prometheus::aggregate_labels(
+      {sm::shard_label, ssx::metrics::internal_labels::partition_label});
 
     _metrics.add_group(
       prometheus_sanitize::metrics_name("raft"),
