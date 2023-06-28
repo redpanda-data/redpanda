@@ -160,6 +160,7 @@ set_partition_retention_offsets(cluster::partition_manager& pm, size_t target) {
         for (const auto& seg : segments) {
             auto usage = co_await seg->persistent_size();
             log_total += usage.total();
+            offset = seg->offsets().committed_offset;
             vlog(
               rlog.info,
               "Collecting segment {}:{}-{} estimated to recover {}",
