@@ -28,6 +28,7 @@
 #include <chrono>
 #include <functional>
 #include <optional>
+#include <unordered_set>
 
 namespace config {
 
@@ -772,6 +773,45 @@ private:
         } else {
             auto elem_val = n.as<T>();
             value.emplace(elem_val.key(), std::move(elem_val));
+        }
+        return value;
+    }
+};
+
+/*
+ * Same as property<std::unordered_set<T>> but will also decode a
+ * single T. This can be useful for dealing with backwards compatibility or
+ * creating easier yaml schemas that have simplified special cases.
+ */
+template<typename T>
+class one_or_many_set_property : public property<std::unordered_set<T>> {
+public:
+    using property<std::unordered_set<T>>::property;
+
+    bool set_value(YAML::Node n) override {
+        auto value = decode_yaml(n);
+        return property<std::unordered_set<T>>::update_value(std::move(value));
+    }
+
+    std::optional<validation_error>
+    validate([[maybe_unused]] YAML::Node n) const override {
+        std::unordered_set<T> value = decode_yaml(n);
+        return property<std::unordered_set<T>>::validate(value);
+    }
+
+private:
+    /**
+     * Given either a single value or a list of values, return
+     * a list of decoded values.
+     */
+    std::unordered_set<T> decode_yaml(const YAML::Node& n) const {
+        std::unordered_set<T> value;
+        if (n.IsSequence()) {
+            for (auto elem : n) {
+                value.insert(std::move(elem.as<T>()));
+            }
+        } else {
+            value.insert(std::move(n.as<T>()));
         }
         return value;
     }

@@ -23,6 +23,7 @@
 #include <yaml-cpp/yaml.h>
 
 #include <unordered_map>
+#include <unordered_set>
 
 namespace YAML {
 
@@ -326,6 +327,31 @@ struct convert<std::unordered_map<typename T::key_type, T>> {
         } else {
             auto elem_val = node.as<T>();
             rhs.emplace(elem_val.key(), elem_val);
+        }
+        return true;
+    }
+};
+
+template<typename T>
+struct convert<std::unordered_set<T>> {
+    using type = std::unordered_set<T>;
+    static Node encode(const type& rhs) {
+        Node node;
+        for (const auto& value : rhs) {
+            node.push_back(convert<T>::encode(value));
+        }
+        return node;
+    }
+    static bool decode(const Node& node, type& rhs) {
+        rhs = std::unordered_set<T>{};
+        if (node.IsSequence()) {
+            for (auto elem : node) {
+                auto elem_val = elem.as<T>();
+                rhs.insert(elem_val);
+            }
+        } else {
+            auto elem_val = node.as<T>();
+            rhs.insert(elem_val);
         }
         return true;
     }
