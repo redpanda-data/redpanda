@@ -1024,6 +1024,8 @@ ss::future<response_ptr> op_context::send_response() && {
           .last_stable_offset = it->partition_response->last_stable_offset,
           .log_start_offset = it->partition_response->log_start_offset,
           .aborted = std::move(it->partition_response->aborted),
+          .preferred_read_replica
+          = it->partition_response->preferred_read_replica,
           .records = std::move(it->partition_response->records)};
 
         final_response.data.topics.back().partitions.push_back(std::move(r));
