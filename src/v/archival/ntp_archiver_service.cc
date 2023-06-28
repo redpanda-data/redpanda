@@ -538,6 +538,17 @@ ss::future<cloud_storage::download_result> ntp_archiver::sync_manifest() {
           "Failed to download partition manifest in read-replica mode");
         co_return res;
     } else {
+        if (m == _parent.archival_meta_stm()->manifest()) {
+            // TODO: This can be made more efficient by using a conditional GET:
+            // https://github.com/redpanda-data/redpanda/issues/11776
+            //
+            // Then, the GET can be adapted to return the raw buffer, so that we
+            // don't go through a deserialize/serialize cycle before writing the
+            // manifest back into a raft batch.
+            vlog(_rtclog.debug, "Manifest has not changed, no sync required");
+            co_return res;
+        }
+
         vlog(
           _rtclog.debug,
           "Updating the archival_meta_stm in read-replica mode, in-sync "
@@ -546,78 +557,14 @@ ss::future<cloud_storage::download_result> ntp_archiver::sync_manifest() {
           m.get_last_offset(),
           m.get_last_uploaded_compacted_offset());
 
-        if (m.get_last_offset() < manifest().get_last_offset()) {
-            // This indicates time travel, possible because the source cluster
-            // had a stale leader node upload a manifest on top of a more
-            // recent manifest uploaded by the current leader.  This is legal
-            // and the reader (us) should ignore the apparent time travel,
-            // in expectation that the current leader eventually wins and
-            // uploads a more recent manifest.
-            vlog(
-              _rtclog.error,
-              "Ignoring remote manifest.json contents: last_offset {} behind "
-              "last"
-              "seen last_offset {} (remote insync_offset {})",
-              m.get_last_offset(),
-              manifest().get_last_offset(),
-              m.get_insync_offset());
-            co_return res;
-        }
-
-        std::vector<cloud_storage::segment_meta> mdiff;
-        // Several things have to be done:
-        // - Add all segments between old last_offset and new last_offset
-        // - Compare all segments below last compacted offset with their
-        //   counterparts in the old manifest and re-add them if they are
-        //   diferent.
-        // - Apply new start_offset if it's different
-        auto offset = model::next_offset(manifest().get_last_offset());
-        for (auto it = m.segment_containing(offset); it != m.end(); ++it) {
-            mdiff.push_back(*it);
-        }
-
-        bool needs_cleanup = false;
-        auto old_start_offset = manifest().get_start_offset();
-        auto new_start_offset = m.get_start_offset();
-        for (const auto& s : m) {
-            if (
-              s.committed_offset <= m.get_last_uploaded_compacted_offset()
-              && s.base_offset >= new_start_offset) {
-                // Re-uploaded segments has to be aligned with one of
-                // the existing segments in the manifest. This is guaranteed
-                // by the archiver. Because of that we can simply lookup
-                // the base offset of the segment in the manifest and
-                // compare them.
-                auto iter = manifest().get(s.base_offset);
-                if (iter && *iter != s) {
-                    mdiff.push_back(s);
-                    needs_cleanup = true;
-                }
-            } else {
-                break;
-            }
-        }
-
         auto sync_timeout = config::shard_local_cfg()
                               .cloud_storage_metadata_sync_timeout_ms.value();
         auto deadline = ss::lowres_clock::now() + sync_timeout;
-        // The commands to update the manifest need to be batched together,
-        // otherwise the read-replica will be able to see partial update. Also,
-        // the batching is more efficient.
+
+        auto serialized = m.to_iobuf();
         auto builder = _parent.archival_meta_stm()->batch_start(deadline, _as);
-        builder.add_segments(std::move(mdiff));
-        if (
-          new_start_offset.has_value() && old_start_offset.has_value()
-          && old_start_offset.value() != new_start_offset.value()) {
-            builder.truncate(new_start_offset.value());
-            needs_cleanup = true;
-        }
-        if (needs_cleanup) {
-            // We only need to replicate this command if the
-            // manifest will be truncated or compacted segments
-            // will be added by previous commands.
-            builder.cleanup_metadata();
-        }
+        builder.replace_manifest(m.to_iobuf());
+
         auto errc = co_await builder.replicate();
         if (errc) {
             if (errc == raft::errc::shutting_down) {
