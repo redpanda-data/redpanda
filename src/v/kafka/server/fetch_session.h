@@ -26,6 +26,7 @@ namespace kafka {
 struct fetch_session_partition {
     model::ktp_with_hash topic_partition;
     int32_t max_bytes;
+    model::offset start_offset;
     model::offset fetch_offset;
     model::offset high_watermark;
     model::offset last_stable_offset;

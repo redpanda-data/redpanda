@@ -951,6 +951,10 @@ bool update_fetch_partition(
         include = true;
         partition.last_stable_offset = model::offset(resp.last_stable_offset);
     }
+    if (partition.start_offset != resp.log_start_offset) {
+        include = true;
+        partition.start_offset = model::offset(resp.log_start_offset);
+    }
     if (include) {
         return include;
     }
