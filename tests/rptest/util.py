@@ -228,8 +228,11 @@ def wait_for_local_storage_truncate(redpanda,
     redpanda.logger.debug(
         "Waiting for local storage to be truncated to {target_bytes} bytes")
 
+    sizes: list[int] = []
+
     def is_truncated():
         storage = redpanda.storage(sizes=True)
+        nonlocal sizes
         sizes = []
         for node_partition in storage.partitions("kafka", topic):
             if partition_idx is not None and node_partition.num != partition_idx:
@@ -269,11 +272,18 @@ def wait_for_local_storage_truncate(redpanda,
         threshold = target_bytes + 4096
 
         # We expect to have measured size on at least one node, or this isn't meaningful
-        assert len(sizes) > 0
+        if len(sizes) == 0:
+            return False
 
         return all(s <= threshold for s in sizes)
 
-    wait_until(is_truncated, timeout_sec=timeout_sec, backoff_sec=1)
+    wait_until(
+        is_truncated,
+        timeout_sec=timeout_sec,
+        backoff_sec=1,
+        err_msg=lambda:
+        f"truncation couldn't be verified for {topic=} and {target_bytes=}. last run partition_sizes={sizes}"
+    )
 
 
 @contextmanager
