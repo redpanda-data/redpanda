@@ -854,7 +854,8 @@ void application::configure_admin_server() {
       std::ref(topic_recovery_status_frontend),
       std::ref(tx_registry_frontend),
       std::ref(storage_node),
-      std::ref(_memory_sampling))
+      std::ref(_memory_sampling),
+      std::ref(shadow_index_cache))
       .get();
 }
 
@@ -1300,6 +1301,10 @@ void application::wire_up_redpanda_services(model::node_id node_id) {
           config::node().cloud_storage_cache_path(),
           ss::sharded_parameter([] {
               return config::shard_local_cfg().cloud_storage_cache_size.bind();
+          }),
+          ss::sharded_parameter([] {
+              return config::shard_local_cfg()
+                .cloud_storage_cache_max_objects.bind();
           }))
           .get();
 

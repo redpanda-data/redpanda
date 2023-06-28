@@ -894,7 +894,7 @@ class ManyPartitionsTest(PreallocNodesTest):
     @cluster(num_nodes=12, log_allow_list=RESTART_LOG_ALLOW_LIST)
     def test_omb(self):
         scale = ScaleParameters(self.redpanda, replication_factor=3)
-        self.redpanda.start(parallel=True)
+        self.redpanda.start()
 
         # We have other OMB benchmark tests, but this one runs at the
         # peak partition count.
@@ -962,7 +962,7 @@ class ManyPartitionsTest(PreallocNodesTest):
             int(scale.expect_bandwidth / len(self.redpanda.nodes) * 3)
         })
 
-        self.redpanda.start(parallel=True)
+        self.redpanda.start()
 
         self.logger.info("Entering topic creation")
         topic_names = [f"scale_{i:06d}" for i in range(0, n_topics)]

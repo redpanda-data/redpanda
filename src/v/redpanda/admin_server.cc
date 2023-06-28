@@ -12,6 +12,7 @@
 #include "redpanda/admin_server.h"
 
 #include "archival/ntp_archiver_service.h"
+#include "cloud_storage/cache_service.h"
 #include "cloud_storage/partition_manifest.h"
 #include "cloud_storage/remote_partition.h"
 #include "cluster/cloud_storage_size_reducer.h"
@@ -212,7 +213,8 @@ admin_server::admin_server(
     topic_recovery_status_frontend,
   ss::sharded<cluster::tx_registry_frontend>& tx_registry_frontend,
   ss::sharded<storage::node>& storage_node,
-  ss::sharded<memory_sampling>& memory_sampling_service)
+  ss::sharded<memory_sampling>& memory_sampling_service,
+  ss::sharded<cloud_storage::cache>& cloud_storage_cache)
   : _log_level_timer([this] { log_level_timer_handler(); })
   , _server("admin")
   , _cfg(std::move(cfg))
@@ -235,6 +237,7 @@ admin_server::admin_server(
   , _tx_registry_frontend(tx_registry_frontend)
   , _storage_node(storage_node)
   , _memory_sampling_service(memory_sampling_service)
+  , _cloud_storage_cache(cloud_storage_cache)
   , _default_blocked_reactor_notify(
       ss::engine().get_blocked_reactor_notify_ms()) {
     _server.set_content_streaming(true);
@@ -4342,6 +4345,21 @@ admin_server::get_local_storage_usage_handler(
     ret.reclaimable_by_retention = disk.reclaim.retention;
     ret.target_min_capacity = disk.target.min_capacity;
     ret.target_min_capacity_wanted = disk.target.min_capacity_wanted;
+
+    if (_cloud_storage_cache.local_is_initialized()) {
+        auto [cache_bytes, cache_objects]
+          = co_await _cloud_storage_cache.invoke_on(
+            ss::shard_id{0},
+            [](cloud_storage::cache& cache) -> std::pair<uint64_t, size_t> {
+                return {cache.get_usage_bytes(), cache.get_usage_objects()};
+            });
+
+        ret.cloud_storage_cache_bytes = cache_bytes;
+        ret.cloud_storage_cache_objects = cache_objects;
+    } else {
+        ret.cloud_storage_cache_bytes = 0;
+        ret.cloud_storage_cache_objects = 0;
+    }
 
     co_return ret;
 }

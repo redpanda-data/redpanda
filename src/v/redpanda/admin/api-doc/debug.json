@@ -912,6 +912,14 @@
                     "type": "long",
                     "description": "Compaction index"
                 },
+                "cloud_storage_cache_bytes": {
+                    "type": "long",
+                    "description": "Bytes in use by tiered storage cache"
+                },
+                "cloud_storage_cache_objects": {
+                    "type": "long",
+                    "description": "Number of objects in tiered storage cache"
+                },
                 "reclaimable_by_retention": {
                     "type": "long",
                     "description": "Number of bytes currently reclaimable by retention"

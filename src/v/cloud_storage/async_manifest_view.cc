@@ -1009,9 +1009,11 @@ async_manifest_view::hydrate_manifest(
             co_return error_outcome::manifest_download_error;
         }
         auto [str, len] = co_await manifest.serialize();
+        auto reservation = co_await _cache.local().reserve_space(len, 1);
         co_await _cache.local().put(
           manifest.get_manifest_path()(),
           str,
+          reservation,
           priority_manager::local().shadow_indexing_priority());
         _probe.on_spillover_manifest_hydration();
         vlog(

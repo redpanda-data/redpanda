@@ -55,7 +55,7 @@ from rptest.services import tls
 from rptest.services.admin import Admin
 from rptest.services.redpanda_installer import RedpandaInstaller, VERSION_RE as RI_VERSION_RE, int_tuple as ri_int_tuple
 from rptest.services.rolling_restarter import RollingRestarter
-from rptest.services.storage import ClusterStorage, NodeStorage
+from rptest.services.storage import ClusterStorage, NodeStorage, NodeCacheStorage
 from rptest.services.utils import BadLogLines, NodeCrash
 from rptest.util import inject_remote_script, wait_until_result
 
@@ -358,6 +358,7 @@ class SISettings:
                  cloud_storage_api_endpoint: str = 'minio-s3',
                  cloud_storage_api_endpoint_port: int = 9000,
                  cloud_storage_cache_size: int = 160 * 1000000,
+                 cloud_storage_cache_max_objects: Optional[int] = None,
                  cloud_storage_enable_remote_read: bool = True,
                  cloud_storage_enable_remote_write: bool = True,
                  cloud_storage_max_connections: Optional[int] = None,
@@ -407,6 +408,7 @@ class SISettings:
 
         self.log_segment_size = log_segment_size
         self.cloud_storage_cache_size = cloud_storage_cache_size
+        self.cloud_storage_cache_max_objects = cloud_storage_cache_max_objects
         self.cloud_storage_enable_remote_read = cloud_storage_enable_remote_read
         self.cloud_storage_enable_remote_write = cloud_storage_enable_remote_write
         self.cloud_storage_max_connections = cloud_storage_max_connections
@@ -511,6 +513,10 @@ class SISettings:
         conf["log_segment_size"] = self.log_segment_size
         conf["cloud_storage_enabled"] = True
         conf["cloud_storage_cache_size"] = self.cloud_storage_cache_size
+        if self.cloud_storage_cache_max_objects is not None:
+            conf[
+                "cloud_storage_cache_max_objects"] = self.cloud_storage_cache_max_objects
+
         conf[
             'cloud_storage_enable_remote_read'] = self.cloud_storage_enable_remote_read
         conf[
@@ -980,13 +986,7 @@ class RedpandaServiceBase(Service):
     def si_settings(self):
         return self._si_settings
 
-    def _for_nodes(self, nodes, cb: callable, *, parallel: bool) -> list:
-        if not parallel:
-            # Trivial case: just loop and call
-            for n in nodes:
-                cb(n)
-            return list(map(cb, nodes))
-
+    def for_nodes(self, nodes, cb: callable) -> list:
         n_workers = len(nodes)
         if n_workers > 0:
             with concurrent.futures.ThreadPoolExecutor(
@@ -1009,7 +1009,7 @@ class RedpandaServiceBase(Service):
                 f"sed -i -E -e '/TRACE|DEBUG/d' {RedpandaService.STDOUT_STDERR_CAPTURE} || true"
             )
 
-        self._for_nodes(self.nodes, prune, parallel=True)
+        self.for_nodes(self.nodes, prune)
 
     def node_id(self, node, force_refresh=False, timeout_sec=30):
         """
@@ -1744,13 +1744,12 @@ class RedpandaService(RedpandaServiceBase):
             node.account.copy_to(tmpfile, f"/etc/hosts")
 
         # Edit /etc/hosts on Redpanda nodes
-        self._for_nodes(self.nodes, setup_node_dns, parallel=True)
+        self.for_nodes(self.nodes, setup_node_dns)
 
     def start(self,
               nodes=None,
               clean_nodes=True,
               start_si=True,
-              parallel: bool = True,
               expect_fail: bool = False,
               auto_assign_node_id: bool = False,
               omit_seeds_on_idx_one: bool = True,
@@ -1758,12 +1757,6 @@ class RedpandaService(RedpandaServiceBase):
         """
         Start the service on all nodes.
 
-        By default, nodes are started in serial: this makes logs easier to
-        read and simplifies debugging.  For tests starting larger numbers of
-        nodes where serialized startup becomes annoying, pass parallel=True.
-
-        :param parallel: if true, run clean and start operations in parallel
-                         for the nodes being started.
         :param expect_fail: if true, expect redpanda nodes to terminate shortly
                             after starting.  Raise exception if they don't.
         """
@@ -1802,7 +1795,7 @@ class RedpandaService(RedpandaServiceBase):
                     f"Error cleaning node {node.account.hostname}:")
                 raise
 
-        self._for_nodes(to_start, clean_one, parallel=parallel)
+        self.for_nodes(to_start, clean_one)
 
         if first_start:
             self.write_tls_certs()
@@ -1820,7 +1813,7 @@ class RedpandaService(RedpandaServiceBase):
                             override_cfg_params=node_overrides)
 
         try:
-            self._for_nodes(to_start, start_one, parallel=parallel)
+            self.for_nodes(to_start, start_one)
         except TimeoutError as e:
             if expect_fail:
                 raise e
@@ -1965,7 +1958,7 @@ class RedpandaService(RedpandaServiceBase):
             # fall through
             return True
 
-        return all(self._for_nodes(self._started, check_node, parallel=True))
+        return all(self.for_nodes(self._started, check_node))
 
     def wait_until(self, fn, timeout_sec, backoff_sec, err_msg=None):
         """
@@ -2569,11 +2562,12 @@ class RedpandaService(RedpandaServiceBase):
         nodes = [(n, None) for n in self.nodes]
         for _ in range(3):
             retries = []
-            for node, _ in nodes:
-                pct_diff, reclaimable_diff, *deets = inspect_node(node)
+            results = self.for_nodes(nodes, lambda n: (n, inspect_node(n)))
+            for (node, (pct_diff, reclaimable_diff, *deets)) in results:
                 if pct_diff > 0.05 + reclaimable_diff:
                     retries.append(
                         (node, (pct_diff, reclaimable_diff, *deets)))
+
             if not retries:
                 # all good
                 return
@@ -2781,9 +2775,7 @@ class RedpandaService(RedpandaServiceBase):
 
         self.logger.info("%s: stopping service" % self.who_am_i())
 
-        self._for_nodes(self.nodes,
-                        lambda n: self.stop_node(n, **kwargs),
-                        parallel=True)
+        self.for_nodes(self.nodes, lambda n: self.stop_node(n, **kwargs))
 
         self._stop_duration_seconds = time.time() - self._stop_time
 
@@ -3184,7 +3176,9 @@ class RedpandaService(RedpandaServiceBase):
 
         self.logger.debug(
             f"Starting storage checks for {node.name} sizes={sizes}")
-        store = NodeStorage(node.name, RedpandaService.DATA_DIR)
+        store = NodeStorage(
+            node.name, RedpandaService.DATA_DIR,
+            os.path.join(RedpandaService.DATA_DIR, "cloud_storage_cache"))
         script_path = inject_remote_script(node, "compute_storage.py")
         cmd = [
             "python3", script_path, f"--data-dir={RedpandaService.DATA_DIR}"
@@ -3207,8 +3201,24 @@ class RedpandaService(RedpandaServiceBase):
                         continue
                     for segment, data in segments.items():
                         partition.set_segment_size(segment, data["size"])
+
+        if self.si_settings is not None and node.account.exists(
+                store.cache_dir):
+            bytes = int(
+                node.account.ssh_output(
+                    f"du -s \"{store.cache_dir}\"").strip().split()[0])
+            objects = int(
+                node.account.ssh_output(
+                    f"find \"{store.cache_dir}\" -type f | wc -l").strip())
+            indices = int(
+                node.account.ssh_output(
+                    f"find \"{store.cache_dir}\" -type f -name \"*.index\" | wc -l"
+                ).strip())
+            store.set_cache_stats(NodeCacheStorage(bytes, objects, indices))
+
         self.logger.debug(
             f"Finished storage checks for {node.name} sizes={sizes}")
+
         return store
 
     def storage(self, all_nodes: bool = False, sizes: bool = False):
@@ -3227,7 +3237,7 @@ class RedpandaService(RedpandaServiceBase):
             s = self.node_storage(node, sizes=sizes)
             store.add_node(s)
 
-        self._for_nodes(nodes, compute_node_storage, parallel=True)
+        self.for_nodes(nodes, compute_node_storage)
         self.logger.debug(
             f"Finished storage checks all_nodes={all_nodes} sizes={sizes}")
         return store
