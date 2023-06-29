@@ -458,3 +458,26 @@ class ReadReplicasUpgradeTest(EndToEndTest):
         wait_until(clusters_report_identical_hwms,
                    timeout_sec=30,
                    backoff_sec=1)
+
+
+class TestMisconfiguredReadReplicaService(EndToEndTest):
+    @cluster(num_nodes=1)
+    def test_create_replica_without_cloud_enabled(self):
+        """
+        Regression test for an issue where creating a read replica when cloud
+        isn't configured crashes the node.
+        """
+        self.start_redpanda(1)
+        rpk = RpkTool(self.redpanda)
+        conf = {
+            'redpanda.remote.readreplica': "dummy_bucket",
+        }
+        topic_name = "no_cloud_no_problems"
+        try:
+            rpk.create_topic(topic_name, replicas=1, config=conf)
+            assert False, "Expected failure"
+        except Exception as e:
+            assert "Configuration is invalid" in str(e), str(e)
+        assert self.redpanda.all_up()
+        topics = rpk.list_topics()
+        assert len(list(topics)) == 0, f"Unexpected partitions: {topics}"
