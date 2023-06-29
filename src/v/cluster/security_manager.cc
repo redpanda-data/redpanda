@@ -153,8 +153,18 @@ security_manager::fill_snapshot(controller_snapshot& controller_snap) const {
 
     for (const auto& cred : _credentials.local()) {
         ss::visit(cred.second, [&](security::scram_credential scram) {
-            snapshot.user_credentials.push_back(user_and_credential{
-              security::credential_user{cred.first}, std::move(scram)});
+            // Regular users may not have a defined principal. For example,
+            // those users created from HTTP POST security/users (See
+            // parse_scram_credential() in the Admin server). Therefore, add
+            // these users into the snapshot.
+            bool is_ephemeral_user
+              = scram.principal().has_value()
+                && scram.principal()->type()
+                     == security::principal_type::ephemeral_user;
+            if (!is_ephemeral_user) {
+                snapshot.user_credentials.push_back(user_and_credential{
+                  security::credential_user{cred.first}, std::move(scram)});
+            }
         });
         co_await ss::coroutine::maybe_yield();
     }
