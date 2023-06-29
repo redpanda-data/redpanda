@@ -2218,7 +2218,20 @@ configuration::configuration()
       "per shard, larger sizes prevent running out of memory because of too "
       "many concurrent fetch requests.",
       {.needs_restart = needs_restart::no, .visibility = visibility::user},
-      1_MiB) {}
+      1_MiB)
+  , cpu_profiler_enabled(
+      *this,
+      "cpu_profiler_enabled",
+      "Enables cpu profiling for Redpanda",
+      {.needs_restart = needs_restart::no, .visibility = visibility::user},
+      false)
+  , cpu_profiler_sample_period_ms(
+      *this,
+      "cpu_profiler_sample_period_ms",
+      "The sample period for the CPU profiler",
+      {.needs_restart = needs_restart::no, .visibility = visibility::user},
+      100ms,
+      {.min = 1ms}) {}
 
 configuration::error_map_t configuration::load(const YAML::Node& root_node) {
     if (!root_node["redpanda"]) {

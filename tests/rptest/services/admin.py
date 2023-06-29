@@ -1007,3 +1007,9 @@ class Admin:
                              "debug/sampled_memory_profile",
                              node=node,
                              **kwargs).json()
+
+    def get_cpu_profile(self, node=None):
+        """
+        Get the CPU profile of a node.
+        """
+        return self._request("get", "debug/cpu_profile", node=node).json()

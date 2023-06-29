@@ -3,6 +3,8 @@ v_cc_library(
   SRCS
     available_memory.cc
     memory_sampling.cc
+    cpu_profiler.cc
+    logger.cc
   DEPS
     Seastar::seastar
   )

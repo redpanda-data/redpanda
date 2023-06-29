@@ -38,6 +38,7 @@
 #include "raft/fwd.h"
 #include "redpanda/admin_server.h"
 #include "redpanda/monitor_unsafe_log_flag.h"
+#include "resource_mgmt/cpu_profiler.h"
 #include "resource_mgmt/cpu_scheduling.h"
 #include "resource_mgmt/memory_groups.h"
 #include "resource_mgmt/memory_sampling.h"
@@ -268,6 +269,8 @@ private:
     ss::metrics::metric_groups _metrics;
     ss::sharded<ssx::metrics::public_metrics_group> _public_metrics;
     std::unique_ptr<kafka::rm_group_proxy_impl> _rm_group_proxy;
+
+    ss::sharded<resources::cpu_profiler> _cpu_profiler;
 
     std::unique_ptr<cluster::node_isolation_watcher> _node_isolation_watcher;
 

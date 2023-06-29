@@ -443,6 +443,9 @@ struct configuration final : public config_store {
 
     bounded_property<double, numeric_bounds> kafka_memory_share_for_fetch;
     property<size_t> kafka_memory_batch_size_estimate_for_fetch;
+    // debug controls
+    property<bool> cpu_profiler_enabled;
+    bounded_property<std::chrono::milliseconds> cpu_profiler_sample_period_ms;
 
     configuration();
 
