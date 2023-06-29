@@ -1714,6 +1714,9 @@ void partition_manifest::do_update(partition_manifest_handler&& handler) {
         _replaced = std::move(*handler._replaced);
     }
 
+    if (handler._archive_size_bytes) {
+        _archive_size_bytes = *handler._archive_size_bytes;
+    }
     if (handler._cloud_log_size_bytes) {
         _cloud_log_size_bytes = handler._cloud_log_size_bytes.value();
     } else {
