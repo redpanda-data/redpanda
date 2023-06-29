@@ -45,11 +45,15 @@ kafka_delete_records_transport::delete_records(
     for (const auto& p_res : resp.data.topics[0].partitions) {
         // NOTE: offset_out_of_range returns with a low watermark of -1
         if (
-          p_res.error_code != kafka::error_code::offset_out_of_range
-          && p_res.error_code != kafka::error_code::none) {
+          p_res.error_code == kafka::error_code::offset_out_of_range
+          || p_res.error_code == kafka::error_code::none) {
             ret.emplace(p_res.partition_index, p_res.low_watermark);
+            continue;
         }
-        ret.emplace(p_res.partition_index, p_res.low_watermark);
+        throw std::runtime_error(fmt::format(
+          "Error for partition {}: {}",
+          p_res.partition_index,
+          p_res.error_code));
     }
     co_return ret;
 }
