@@ -8,6 +8,7 @@
 # by the Apache License, Version 2.0
 
 import errno
+from functools import lru_cache
 import json
 import os
 import re
@@ -445,6 +446,7 @@ class RedpandaInstaller:
             latest_unsupported_line = (latest_unsupported_line[0] - 1, 3)
         return latest_unsupported_line
 
+    @lru_cache
     def highest_from_prior_feature_version(
             self, version: RedpandaVersion) -> RedpandaVersionTriple:
         """
