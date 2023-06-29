@@ -173,6 +173,7 @@ void upload_index(
       remote_segment_sampling_step_bytes};
 
     auto builder = make_remote_segment_index_builder(
+      manifest_ntp,
       make_iobuf_input_stream(segment_bytes.copy()),
       ix,
       meta.delta_offset,

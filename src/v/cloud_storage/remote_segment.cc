@@ -347,6 +347,7 @@ ss::future<uint64_t> remote_segment::put_segment_in_cache_and_create_index(
       remote_segment_sampling_step_bytes);
     auto [sparse, sput] = input_stream_fanout<2>(std::move(s), 1);
     auto parser = make_remote_segment_index_builder(
+      get_ntp(),
       std::move(sparse),
       tmpidx,
       _base_offset_delta,

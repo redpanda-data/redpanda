@@ -12,6 +12,7 @@
 
 #include "cloud_storage/logger.h"
 #include "model/record_batch_types.h"
+#include "raft/consensus.h"
 #include "serde/envelope.h"
 #include "serde/serde.h"
 
@@ -330,10 +331,14 @@ offset_index::_find_under(deltafor_decoder<int64_t> decoder, int64_t offset) {
 }
 
 remote_segment_index_builder::remote_segment_index_builder(
-  offset_index& ix, model::offset_delta initial_delta, size_t sampling_step)
+  const model::ntp& ntp,
+  offset_index& ix,
+  model::offset_delta initial_delta,
+  size_t sampling_step)
   : _ix(ix)
   , _running_delta(initial_delta)
-  , _sampling_step(sampling_step) {}
+  , _sampling_step(sampling_step)
+  , _filter(raft::offset_translator_batch_types(ntp)) {}
 
 remote_segment_index_builder::consume_result
 remote_segment_index_builder::accept_batch_start(
@@ -345,9 +350,8 @@ void remote_segment_index_builder::consume_batch_start(
   model::record_batch_header hdr,
   size_t physical_base_offset,
   size_t size_on_disk) {
-    if (
-      hdr.type == model::record_batch_type::raft_configuration
-      || hdr.type == model::record_batch_type::archival_metadata) {
+    auto it = std::find(_filter.begin(), _filter.end(), hdr.type);
+    if (it != _filter.end()) {
         _running_delta += hdr.last_offset_delta + 1;
     } else {
         if (_window >= _sampling_step) {

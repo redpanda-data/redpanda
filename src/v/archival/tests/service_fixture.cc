@@ -391,6 +391,7 @@ void segment_matcher<Fixture>::verify_index(
       cloud_storage::remote_segment_sampling_step_bytes};
 
     auto builder = cloud_storage::make_remote_segment_index_builder(
+      ntp,
       reader_handle.take_stream(),
       ix,
       meta->delta_offset,

@@ -166,6 +166,7 @@ public:
     using stop_parser = storage::batch_consumer::stop_parser;
 
     remote_segment_index_builder(
+      const model::ntp& ntp,
       offset_index& ix,
       model::offset_delta initial_delta,
       size_t sampling_step);
@@ -192,17 +193,19 @@ private:
     model::offset_delta _running_delta;
     size_t _window{0};
     size_t _sampling_step;
+    std::vector<model::record_batch_type> _filter;
 };
 
 inline ss::lw_shared_ptr<storage::continuous_batch_parser>
 make_remote_segment_index_builder(
+  const model::ntp& ntp,
   ss::input_stream<char> stream,
   offset_index& ix,
   model::offset_delta initial_delta,
   size_t sampling_step) {
     auto parser = ss::make_lw_shared<storage::continuous_batch_parser>(
       std::make_unique<remote_segment_index_builder>(
-        ix, initial_delta, sampling_step),
+        ntp, ix, initial_delta, sampling_step),
       storage::segment_reader_handle(std::move(stream)));
     return parser;
 }
