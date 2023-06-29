@@ -634,14 +634,17 @@ FIXTURE_TEST(test_archive_retention, archiver_fixture) {
     auto fut = archiver.garbage_collect_archive();
     tests::cooperative_spin_wait_with_timeout(5s, [this, part]() mutable {
         const auto& manifest = part->archival_meta_stm()->manifest();
-        bool archive_clean_moved = manifest.get_archive_clean_offset()
-                                   == model::offset{2000};
+        bool archive_clean_offset_reset = manifest.get_archive_clean_offset()
+                                          == model::offset{};
+        bool archive_start_offset_reset = manifest.get_archive_start_offset()
+                                          == model::offset{};
         bool deletes_sent = std::count_if(
                               get_targets().begin(),
                               get_targets().end(),
                               [](auto it) { return it.second.has_q_delete; })
                             == 2;
-        return archive_clean_moved && deletes_sent;
+        return archive_clean_offset_reset && archive_start_offset_reset
+               && deletes_sent;
     }).get();
     fut.get();
 
