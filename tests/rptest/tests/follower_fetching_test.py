@@ -183,7 +183,8 @@ class IncrementalFollowerFetchingTest(PreallocNodesTest):
 
     @skip_debug_mode
     @cluster(num_nodes=5)
-    def test_incremental_fetch_from_follower(self):
+    @matrix(follower_offline=[True, False])
+    def test_incremental_fetch_from_follower(self, follower_offline):
         rack_layout_str = "ABC"
         rack_layout = [str(i) for i in rack_layout_str]
 
@@ -210,18 +211,23 @@ class IncrementalFollowerFetchingTest(PreallocNodesTest):
 
         producer.start()
         consumer_group = "kafka-cli-group"
+        rack = "A"
 
-        # We are using kafka cli consumer to control metadata, age and client rack id consumer properties
+        # We are using kafka cli consumer to control metadata age and client rack id consumer properties
         cli_consumer = KafkaCliConsumer(self.test_context,
                                         self.redpanda,
                                         topic.name,
                                         group="kafka-cli-group",
                                         consumer_properties={
-                                            "client.rack": "A",
+                                            "client.rack": rack,
                                             "metadata.max.age.ms": 10000
                                         })
         cli_consumer.start()
         cli_consumer.wait_for_messages(100)
+        if follower_offline:
+            idx = rack_layout_str.find(rack)
+            self.redpanda.stop_node(self.redpanda.get_node(idx))
+
         # sleep long enough to cause metadata refresh on the consumer
         time.sleep(30)
         # stop the producer
