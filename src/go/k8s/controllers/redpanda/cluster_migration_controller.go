@@ -3,16 +3,16 @@ package redpanda
 import (
 	"context"
 	"fmt"
-	"github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/utils/pointer"
 	"time"
 
 	"github.com/go-logr/logr"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/utils/pointer"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -21,6 +21,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"sigs.k8s.io/controller-runtime/pkg/source"
 
+	"github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
 	vectorizedv1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/vectorized/v1alpha1"
 	adminutils "github.com/redpanda-data/redpanda/src/go/k8s/pkg/admin"
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/labels"
@@ -84,7 +85,10 @@ func (r *ClusterToRedpandaReconciler) Reconcile(ctx context.Context, req ctrl.Re
 	// should return a redpanda CR object with the expected changes,
 	redpanda, result, err := r.migrate(ctx, cluster)
 
-	log.Info(fmt.Sprintf("%v", redpanda))
+	if err := r.createRedpandaResource(ctx, &redpanda); err != nil {
+		log.Error(err, "create redpanda resource")
+		return ctrl.Result{}, err
+	}
 
 	// Log reconciliation duration
 	durationMsg := fmt.Sprintf("reconciliation finished in %s", time.Since(start).String())
@@ -207,7 +211,6 @@ func (r *ClusterToRedpandaReconciler) migrateRedpandaClusterSpec(cluster *vector
 				}
 
 				users = append(users, userItem)
-
 			}
 		}
 	}
@@ -222,9 +225,9 @@ func (r *ClusterToRedpandaReconciler) migrateRedpandaClusterSpec(cluster *vector
 	}
 
 	return v1alpha1.RedpandaClusterSpec{
-		Image:            &rpImage,
-		Statefulset:      &rpStatefulset,
-		Resources:        &rpResources,
+		Image:       &rpImage,
+		Statefulset: &rpStatefulset,
+		//Resources:        &rpResources,
 		Tolerations:      rpTolerations,
 		Auth:             &rpAuth,
 		LicenseSecretRef: &rpLicenseRef,
@@ -299,4 +302,25 @@ func (r *ClusterToRedpandaReconciler) WithAllowPVCDeletion(allowPVCDeletion bool
 func (r *ClusterToRedpandaReconciler) WithConfiguratorSettings(configuratorSettings resources.ConfiguratorSettings) *ClusterToRedpandaReconciler {
 	r.configuratorSettings = configuratorSettings
 	return r
+}
+
+func (r *ClusterToRedpandaReconciler) createRedpandaResource(ctx context.Context, rp *v1alpha1.Redpanda) error {
+	// Check if HelmRepository exists or create it
+	rpGet := &v1alpha1.Redpanda{}
+	if err := r.Client.Get(ctx, types.NamespacedName{Namespace: rp.Namespace, Name: rp.Name}, rpGet); err != nil {
+		if apierrors.IsNotFound(err) {
+			if errCreate := r.Client.Create(ctx, rp); errCreate != nil {
+				return fmt.Errorf("error creating HelmRepository: %w", errCreate)
+			}
+		} else {
+			return fmt.Errorf("error getting repanda: %w", err)
+		}
+	}
+
+	// already exists, should try to update not create
+	if err := r.Client.Update(ctx, rp); err != nil {
+		return err
+	}
+
+	return nil
 }
