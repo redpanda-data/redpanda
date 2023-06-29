@@ -2249,7 +2249,7 @@ disk_log_impl::cloud_gc_eligible_segments() {
         if (seg->offsets().committed_offset <= max_collectible) {
             segments.push_back(seg);
         }
-        if (--remaining > 0) {
+        if (--remaining <= 0) {
             break;
         }
     }

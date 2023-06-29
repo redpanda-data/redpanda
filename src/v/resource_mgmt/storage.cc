@@ -84,7 +84,7 @@ ss::future<> disk_space_manager::run_loop() {
      * upcall to start the monitor loop when it appears that we are getting
      * close to an important threshold.
      */
-    constexpr auto frequency = std::chrono::seconds(5);
+    constexpr auto frequency = std::chrono::seconds(20);
 
     while (!_gate.is_closed()) {
         try {
@@ -126,6 +126,13 @@ set_partition_retention_offsets(cluster::partition_manager& pm, size_t target) {
         partitions.push_back(p.second);
     }
 
+    vlog(
+      rlog.info,
+      "Attempting to recover {} from {} remote partitions on core {}",
+      human::bytes(target),
+      partitions.size(),
+      ss::this_shard_id());
+
     size_t partitions_total = 0;
     for (const auto& p : partitions) {
         if (partitions_total >= target) {
@@ -137,6 +144,13 @@ set_partition_retention_offsets(cluster::partition_manager& pm, size_t target) {
         auto gate = log->gate().hold();
 
         auto segments = log->cloud_gc_eligible_segments();
+
+        vlog(
+          rlog.info,
+          "Remote partition {} reports {} reclaimable segments",
+          p->ntp(),
+          segments.size());
+
         if (segments.empty()) {
             continue;
         }
@@ -146,6 +160,14 @@ set_partition_retention_offsets(cluster::partition_manager& pm, size_t target) {
         for (const auto& seg : segments) {
             auto usage = co_await seg->persistent_size();
             log_total += usage.total();
+            offset = seg->offsets().committed_offset;
+            vlog(
+              rlog.info,
+              "Collecting segment {}:{}-{} estimated to recover {}",
+              p->ntp(),
+              seg->offsets().base_offset(),
+              seg->offsets().committed_offset(),
+              human::bytes(usage.total()));
             if (log_total >= target) {
                 break;
             }
@@ -154,10 +176,12 @@ set_partition_retention_offsets(cluster::partition_manager& pm, size_t target) {
         vlog(
           rlog.info,
           "Setting retention offset override {} estimated reclaim of {} for "
-          "cloud topic {}",
+          "cloud topic {}. Total reclaim {} of target {}.",
           offset,
           log_total,
-          p->ntp());
+          p->ntp(),
+          partitions_total,
+          target);
 
         log->set_cloud_gc_offset(offset);
         partitions_total += log_total;
