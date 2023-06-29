@@ -16,7 +16,10 @@ from ducktape.mark.resource import ClusterUseMetadata
 from ducktape.mark._mark import Mark
 
 
-def cluster(log_allow_list=None, check_allowed_error_logs=True, **kwargs):
+def cluster(log_allow_list=None,
+            check_allowed_error_logs=True,
+            check_for_storage_usage_inconsistencies=True,
+            **kwargs):
     """
     Drop-in replacement for Ducktape `cluster` that imposes additional
     redpanda-specific checks and defaults.
@@ -142,11 +145,12 @@ def cluster(log_allow_list=None, check_allowed_error_logs=True, **kwargs):
                             redpanda.cloud_storage_diagnostics()
                             raise
 
-                    try:
-                        redpanda.raise_on_storage_usage_inconsistency()
-                    except:
-                        redpanda.cloud_storage_diagnostics()
-                        raise
+                    if check_for_storage_usage_inconsistencies:
+                        try:
+                            redpanda.raise_on_storage_usage_inconsistency()
+                        except:
+                            redpanda.cloud_storage_diagnostics()
+                            raise
 
                 self.redpanda.validate_controller_log()
 
