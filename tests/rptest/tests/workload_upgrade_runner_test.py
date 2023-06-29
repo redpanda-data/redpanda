@@ -173,10 +173,19 @@ class RedpandaUpgradeTest(PreallocNodesTest):
             for w in workloads
         ]
 
-        self.upgrade_steps: list[RedpandaVersionTriple] = []
-
     def setUp(self):
-        # at the end of setUp, self.upgrade_steps will look like this:
+        # prevent superclass from starting redpanda, this tests deals with it
+        pass
+
+    def _get_upgrade_steps(self) -> list[RedpandaVersionTriple]:
+        # this function returns a sequence of upgrade steps to cover the list self.adapted_workloads:
+        # upgrade_steps will look like this:
+        #   for each release:
+        #       install latest patch, revert to previous patch, install again latest patch,
+        #
+        # this covers the upgrade policy of redpanda: you can go back to the previous patch, and you can upgrade from latest patch to next version
+        #
+        # so for example this sequence is the result of upgrading from 22.1 to 23.2, plus a going back with a patch:
         # [(22, 1, 11), (22, 1, 10), (22, 1, 11),
         #  (22, 2, 11), (22, 2, 10), (22, 2, 11),
         #  (22, 3, 16), (22, 3, 15), (22, 3, 16),
@@ -190,25 +199,25 @@ class RedpandaUpgradeTest(PreallocNodesTest):
         ]
 
         latest_unsupported_line = self.installer.latest_unsupported_line()
-        # keeping only releases older than latest EOL.
+        # keeping only releases older or equal to latest EOL.
         forward_upgrade_steps = [
             v for v in sorted(set(sum(workloads_steps, start=[])))
             if v >= latest_unsupported_line
         ]
 
         # for each version, include a downgrade step to previous patch, then go to latest patch
-        self.upgrade_steps: list[RedpandaVersionTriple] = []
+        upgrade_steps: list[RedpandaVersionTriple] = []
         prev = forward_upgrade_steps[0]
         for v in forward_upgrade_steps:
             if v[0:2] != prev[0:2] and prev[2] > 1:
                 # if the line has changed, add previous patch and again latest for line
                 previous_patch = (prev[0], prev[1], prev[2] - 1)
-                self.upgrade_steps.extend([previous_patch, prev])
-            self.upgrade_steps.append(v)
+                upgrade_steps.extend([previous_patch, prev])
+            upgrade_steps.append(v)
             # update the latest_current_line
             prev = v
 
-        self.logger.info(f"going through these versions: {self.upgrade_steps}")
+        return upgrade_steps
 
     def _check_workload_list(self,
                              to_check_list: list[WorkloadAdapter],
@@ -266,9 +275,12 @@ class RedpandaUpgradeTest(PreallocNodesTest):
                                       version_param=rp_versions,
                                       partial_update=True)
 
+        upgrade_steps = self._get_upgrade_steps()
+        self.logger.info(f"going through these versions: {upgrade_steps}")
+
         # upgrade loop: for each version
         for current_version in self.upgrade_through_versions(
-                self.upgrade_steps,
+                upgrade_steps,
                 already_running=False,
                 mid_upgrade_check=mid_upgrade_check):
             current_version = expand_version(self.installer, current_version)
