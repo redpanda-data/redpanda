@@ -1121,6 +1121,10 @@ std::optional<model::node_id> rack_aware_replica_selector::select_replica(
     std::vector<replica_info> rack_replicas;
     model::offset highest_hw;
     for (auto& replica : p_info.replicas) {
+        // filter out replicas which are not responsive
+        if (!replica.is_alive) {
+            continue;
+        }
         if (
           _md_cache.get_node_rack_id(replica.id) == c_info.rack_id
           && replica.log_end_offset >= c_info.fetch_offset) {
