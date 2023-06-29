@@ -182,6 +182,11 @@ void ntp_archiver::notify_leadership(std::optional<model::node_id> leader_id) {
 }
 
 ss::future<> ntp_archiver::upload_until_abort() {
+    if (unlikely(config::shard_local_cfg()
+                   .cloud_storage_disable_upload_loop_for_tests.value())) {
+        vlog(_rtclog.warn, "Skipping upload loop start");
+        co_return;
+    }
     if (!_probe) {
         _probe.emplace(_conf->ntp_metrics_disabled, _ntp);
     }
@@ -244,6 +249,12 @@ ss::future<> ntp_archiver::upload_until_abort() {
 }
 
 ss::future<> ntp_archiver::sync_manifest_until_abort() {
+    if (unlikely(
+          config::shard_local_cfg()
+            .cloud_storage_disable_read_replica_loop_for_tests.value())) {
+        vlog(_rtclog.warn, "Skipping read replica sync loop start");
+        co_return;
+    }
     if (!_probe) {
         _probe.emplace(_conf->ntp_metrics_disabled, _ntp);
     }
@@ -374,6 +385,36 @@ ss::future<> ntp_archiver::upload_topic_manifest() {
           _parent.ntp(),
           std::current_exception());
     }
+}
+
+ss::future<bool> ntp_archiver::sync_for_tests() {
+    while (!_as.abort_requested()) {
+        if (!_parent.is_leader()) {
+            bool shutdown = false;
+            try {
+                vlog(_rtclog.debug, "test waiting for leadership");
+                co_await _leader_cond.wait();
+            } catch (const ss::broken_condition_variable&) {
+                // stop() was called
+                shutdown = true;
+            }
+
+            if (shutdown || _as.abort_requested()) {
+                vlog(_rtclog.trace, "sync_for_tests shutting down");
+                co_return false;
+            }
+        }
+        _start_term = _parent.term();
+        if (!can_update_archival_metadata()) {
+            co_return false;
+        }
+        auto sync_timeout = config::shard_local_cfg()
+                              .cloud_storage_metadata_sync_timeout_ms.value();
+        if (co_await _parent.archival_meta_stm()->sync(sync_timeout)) {
+            co_return true;
+        }
+    }
+    co_return false;
 }
 
 ss::future<> ntp_archiver::upload_until_term_change() {

@@ -46,6 +46,7 @@ rp_test(
     topic_recovery_service_test.cc
     cloud_storage_e2e_test.cc
     async_manifest_view_test.cc
+    read_replica_test.cc
   DEFINITIONS BOOST_TEST_DYN_LINK
   LIBRARIES
     Boost::unit_test_framework

@@ -1412,6 +1412,21 @@ configuration::configuration()
       "performance",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       true)
+  , cloud_storage_disable_upload_loop_for_tests(
+      *this,
+      "cloud_storage_disable_upload_loop_for_tests",
+      "Begins the upload loop in tiered-storage-enabled topic partitions. The "
+      "property exists to simplify testing and shouldn't be set in production.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      false)
+  , cloud_storage_disable_read_replica_loop_for_tests(
+      *this,
+      "cloud_storage_disable_read_replica_loop_for_tests",
+      "Begins the read replica sync loop in tiered-storage-enabled topic "
+      "partitions. The property exists to simplify testing and shouldn't be "
+      "set in production.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      false)
   , cloud_storage_max_segments_pending_deletion_per_partition(
       *this,
       "cloud_storage_max_segments_pending_deletion_per_partition",

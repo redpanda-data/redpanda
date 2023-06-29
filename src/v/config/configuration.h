@@ -283,6 +283,8 @@ struct configuration final : public config_store {
       cloud_storage_cluster_metadata_upload_interval_ms;
     property<double> cloud_storage_idle_threshold_rps;
     property<bool> cloud_storage_enable_segment_merging;
+    property<bool> cloud_storage_disable_upload_loop_for_tests;
+    property<bool> cloud_storage_disable_read_replica_loop_for_tests;
     property<size_t> cloud_storage_max_segments_pending_deletion_per_partition;
     property<bool> cloud_storage_enable_compacted_topic_reupload;
     property<size_t> cloud_storage_recovery_temporary_retention_bytes_default;

@@ -10,6 +10,7 @@
 
 #include "archival/ntp_archiver_service.h"
 #include "cloud_storage/spillover_manifest.h"
+#include "cloud_storage/tests/produce_utils.h"
 #include "cloud_storage/tests/s3_imposter.h"
 #include "config/configuration.h"
 #include "kafka/server/tests/produce_consume_utils.h"
@@ -45,6 +46,8 @@ public:
 };
 
 FIXTURE_TEST(test_produce_consume_from_cloud, e2e_fixture) {
+    config::shard_local_cfg()
+      .cloud_storage_disable_upload_loop_for_tests.set_value(true);
     const model::topic topic_name("tapioca");
     model::ntp ntp(model::kafka_namespace, topic_name, 0);
     cluster::topic_properties props;
@@ -58,32 +61,13 @@ FIXTURE_TEST(test_produce_consume_from_cloud, e2e_fixture) {
     auto partition = app.partition_manager.local().get(ntp);
     auto* log = dynamic_cast<storage::disk_log_impl*>(
       partition->log().get_impl());
-    auto archiver_ref = partition->archiver();
-    BOOST_REQUIRE(archiver_ref.has_value());
-    auto& archiver = archiver_ref.value().get();
+    auto& archiver = partition->archiver().value().get();
+    BOOST_REQUIRE(archiver.sync_for_tests().get());
 
-    kafka_produce_transport producer(make_kafka_client().get());
-    producer.start().get();
-    std::vector<kv_t> records{
-      {"key0", "val0"},
-      {"key1", "val1"},
-      {"key2", "val2"},
-    };
-    producer.produce_to_partition(topic_name, model::partition_id(0), records)
-      .get();
-
-    // Create a new segment so we have data to upload.
-    log->flush().get();
-    log->force_roll(ss::default_priority_class()).get();
+    tests::remote_segment_generator gen(make_kafka_client().get(), *partition);
+    BOOST_REQUIRE_EQUAL(3, gen.records_per_batch(3).produce().get());
     BOOST_REQUIRE_EQUAL(2, log->segments().size());
-
-    // Upload the closed segment to object storage.
-    tests::cooperative_spin_wait_with_timeout(3s, [&archiver] {
-        return archiver.manifest().size() == 1;
-    }).get();
-    auto manifest_res = archiver.upload_manifest("test").get();
-    BOOST_REQUIRE_EQUAL(manifest_res, cloud_storage::upload_result::success);
-    archiver.flush_manifest_clean_offset().get();
+    BOOST_REQUIRE_EQUAL(1, archiver.manifest().size());
 
     // Compact the local log to GC to the collectible offset.
     ss::abort_source as;
@@ -110,15 +94,18 @@ FIXTURE_TEST(test_produce_consume_from_cloud, e2e_fixture) {
                                 model::partition_id(0),
                                 model::offset(0))
                               .get();
+    auto records = kv_t::sequence(0, 3);
     BOOST_CHECK_EQUAL(records.size(), consumed_records.size());
     for (int i = 0; i < records.size(); ++i) {
-        BOOST_CHECK_EQUAL(records[i].first, consumed_records[i].first);
-        BOOST_CHECK_EQUAL(records[i].second, consumed_records[i].second);
+        BOOST_CHECK_EQUAL(records[i].key, consumed_records[i].key);
+        BOOST_CHECK_EQUAL(records[i].val, consumed_records[i].val);
     }
 }
 
 FIXTURE_TEST(test_produce_consume_from_cloud_with_spillover, e2e_fixture) {
 #ifndef _NDEBUG
+    config::shard_local_cfg()
+      .cloud_storage_disable_upload_loop_for_tests.set_value(true);
     config::shard_local_cfg().cloud_storage_spillover_manifest_size.set_value(
       std::make_optional((size_t)0x1000));
 
@@ -170,8 +157,13 @@ FIXTURE_TEST(test_produce_consume_from_cloud_with_spillover, e2e_fixture) {
         log->flush().get();
         log->force_roll(ss::default_priority_class()).get();
 
+        BOOST_REQUIRE(archiver.sync_for_tests().get());
         archiver.upload_next_candidates().get();
     }
+    BOOST_REQUIRE_EQUAL(
+      cloud_storage::upload_result::success,
+      archiver.upload_manifest("test").get());
+    archiver.flush_manifest_clean_offset().get();
 
     // Create a new segment so we have data to upload.
     vlog(e2e_test_log.info, "Test log has {} segments", log->segments().size());
@@ -187,6 +179,7 @@ FIXTURE_TEST(test_produce_consume_from_cloud_with_spillover, e2e_fixture) {
 
     // This should upload several spillover manifests and apply changes to the
     // archival metadata STM.
+    BOOST_REQUIRE(archiver.sync_for_tests().get());
     archiver.apply_spillover().get();
 
     const auto& local_manifest = partition->archival_meta_stm()->manifest();
@@ -268,7 +261,7 @@ FIXTURE_TEST(test_produce_consume_from_cloud_with_spillover, e2e_fixture) {
     vlog(e2e_test_log.info, "Consuming from the partition");
     kafka_consume_transport consumer(make_kafka_client().get());
     consumer.start().get();
-    std::vector<std::pair<ss::sstring, ss::sstring>> consumed_records;
+    std::vector<kv_t> consumed_records;
     auto next_offset = archive_ko;
     while (consumed_records.size() < total_records) {
         auto tmp = consumer
@@ -287,8 +280,8 @@ FIXTURE_TEST(test_produce_consume_from_cloud_with_spillover, e2e_fixture) {
     for (const auto& rec : consumed_records) {
         auto expected_key = ssx::sformat("key{}", i);
         auto expected_val = ssx::sformat("val{}", i);
-        BOOST_REQUIRE_EQUAL(rec.first, expected_key);
-        BOOST_REQUIRE_EQUAL(rec.second, expected_val);
+        BOOST_REQUIRE_EQUAL(rec.key, expected_key);
+        BOOST_REQUIRE_EQUAL(rec.val, expected_val);
         i++;
     }
 
@@ -333,8 +326,8 @@ FIXTURE_TEST(test_produce_consume_from_cloud_with_spillover, e2e_fixture) {
     for (const auto& rec : consumed_records) {
         auto expected_key = ssx::sformat("key{}", i);
         auto expected_val = ssx::sformat("val{}", i);
-        BOOST_REQUIRE_EQUAL(rec.first, expected_key);
-        BOOST_REQUIRE_EQUAL(rec.second, expected_val);
+        BOOST_REQUIRE_EQUAL(rec.key, expected_key);
+        BOOST_REQUIRE_EQUAL(rec.val, expected_val);
         i++;
     }
 #endif

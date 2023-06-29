@@ -289,6 +289,15 @@ public:
       std::optional<std::reference_wrapper<retry_chain_node>> source_rtc
       = std::nullopt);
 
+    /// Attempt to upload topic manifest.  Does not throw on error.  Clears
+    /// _topic_manifest_dirty on success.
+    ss::future<> upload_topic_manifest();
+
+    /// Waits for this node to become leader, syncing archival metadata within
+    /// the current term. Returns false if the sync was not successful.
+    /// Must be called before updating archival metadata.
+    ss::future<bool> sync_for_tests();
+
 private:
     // Labels for contexts in which manifest uploads occur. Used for logging.
     static constexpr const char* housekeeping_ctx_label = "housekeeping";
@@ -464,10 +473,6 @@ private:
     /// Outer loop to keep invoking sync_manifest_until_term_change until our
     /// abort source fires.
     ss::future<> sync_manifest_until_abort();
-
-    /// Attempt to upload topic manifest.  Does not throw on error.  Clears
-    /// _topic_manifest_dirty on success.
-    ss::future<> upload_topic_manifest();
 
     /// Delete a segment and its transaction metadata from S3.
     /// The transaction metadata is only deleted if the segment

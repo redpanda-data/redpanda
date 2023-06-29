@@ -731,7 +731,7 @@ FIXTURE_TEST(test_basic_delete_around_batch, prod_consume_fixture) {
           = consumer.consume_from_partition(test_topic, pid, model::offset(1))
               .get();
         BOOST_REQUIRE(!consumed_records.empty());
-        BOOST_REQUIRE_EQUAL("key0", consumed_records[0].first);
+        BOOST_REQUIRE_EQUAL("key0", consumed_records[0].key);
     }
 
     {
@@ -747,7 +747,7 @@ FIXTURE_TEST(test_basic_delete_around_batch, prod_consume_fixture) {
           = consumer.consume_from_partition(test_topic, pid, model::offset(3))
               .get();
         BOOST_REQUIRE(!consumed_records.empty());
-        BOOST_REQUIRE_EQUAL("key3", consumed_records[0].first);
+        BOOST_REQUIRE_EQUAL("key3", consumed_records[0].key);
     }
 
     {
@@ -763,7 +763,7 @@ FIXTURE_TEST(test_basic_delete_around_batch, prod_consume_fixture) {
           = consumer.consume_from_partition(test_topic, pid, model::offset(6))
               .get();
         BOOST_REQUIRE(!consumed_records.empty());
-        BOOST_REQUIRE_EQUAL("key5", consumed_records[0].first);
+        BOOST_REQUIRE_EQUAL("key5", consumed_records[0].key);
     }
     auto lwm = deleter
                  .delete_records_from_partition(
@@ -784,5 +784,5 @@ FIXTURE_TEST(test_basic_delete_around_batch, prod_consume_fixture) {
       = consumer.consume_from_partition(test_topic, pid, model::offset(7))
           .get();
     BOOST_REQUIRE(!consumed_records.empty());
-    BOOST_REQUIRE_EQUAL("key7", consumed_records[0].first);
+    BOOST_REQUIRE_EQUAL("key7", consumed_records[0].key);
 }
