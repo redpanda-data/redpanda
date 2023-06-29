@@ -13,6 +13,7 @@
 #include "bytes/iostream.h"
 #include "cloud_storage/base_manifest.h"
 #include "cloud_storage/partition_manifest.h"
+#include "cloud_storage/spillover_manifest.h"
 #include "cloud_storage/types.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
@@ -1128,6 +1129,34 @@ SEASTAR_THREAD_TEST_CASE(test_complete_manifest_serialization_roundtrip) {
            .delta_offset_end = model::offset_delta(9),
            .sname_format = segment_name_format::v2,
          }},
+        {"500-3-v1.log",
+         partition_manifest::segment_meta{
+           .is_compacted = false,
+           .size_bytes = 4096,
+           .base_offset = model::offset(500),
+           .committed_offset = model::offset(599),
+           .max_timestamp = model::timestamp(1234567890),
+           .delta_offset = model::offset_delta(2),
+           .ntp_revision = model::initial_revision_id(1),
+           .archiver_term = model::term_id{42},
+           .segment_term = model::term_id{3},
+           .delta_offset_end = model::offset_delta(9),
+           .sname_format = segment_name_format::v3,
+         }},
+        {"600-3-v1.log",
+         partition_manifest::segment_meta{
+           .is_compacted = false,
+           .size_bytes = 4096,
+           .base_offset = model::offset(600),
+           .committed_offset = model::offset(699),
+           .max_timestamp = model::timestamp(1234567890),
+           .delta_offset = model::offset_delta(2),
+           .ntp_revision = model::initial_revision_id(1),
+           .archiver_term = model::term_id{42},
+           .segment_term = model::term_id{3},
+           .delta_offset_end = model::offset_delta(9),
+           .sname_format = segment_name_format::v3,
+         }},
       };
     std::multimap<ss::sstring, partition_manifest::segment_meta>
       expected_replaced_segments = {
@@ -1212,14 +1241,34 @@ SEASTAR_THREAD_TEST_CASE(test_complete_manifest_serialization_roundtrip) {
         accessor::add_replaced_segment(
           &m, segment_name(segment.first), segment.second);
     }
+    spillover_manifest spm(manifest_ntp, m.get_revision_id());
+    model::offset spillover_offset{200};
+    for (auto [_, segment_meta] : expected_segments) {
+        if (segment_meta.base_offset >= spillover_offset) {
+            break;
+        }
+        spm.add(segment_meta);
+    }
+    auto spillover_manifest_meta = spm.make_manifest_metadata();
+    m.spillover(spillover_manifest_meta);
 
-    auto run_checks = [&](auto restored, std::string test_info) {
+    auto run_checks = [&](partition_manifest restored, std::string test_info) {
         BOOST_TEST_INFO(test_info);
         BOOST_REQUIRE(restored == m);
 
-        for (const auto& expected : expected_segments) {
-            auto actual = restored.find(expected.second.base_offset);
-            require_equal_segment_meta(expected.second, *actual);
+        for (const auto& [name, segment_meta] : expected_segments) {
+            if (segment_meta.base_offset < spillover_offset) {
+                auto spm = restored.get_spillover_map().find(
+                  segment_meta.base_offset);
+                if (spm != restored.get_spillover_map().end()) {
+                    require_equal_segment_meta(*spm, spillover_manifest_meta);
+                }
+                continue;
+            }
+
+            auto actual = restored.find(segment_meta.base_offset);
+            BOOST_REQUIRE(actual != restored.end());
+            require_equal_segment_meta(segment_meta, *actual);
         }
 
         for (const auto& expected : expected_replaced_segments) {
@@ -1256,6 +1305,17 @@ SEASTAR_THREAD_TEST_CASE(test_complete_manifest_serialization_roundtrip) {
           return restored;
       }(),
       "to_iobuf/from_iobuf");
+    run_checks(
+      [&] {
+          partition_manifest restored{};
+          iobuf buf;
+          auto os = make_iobuf_ref_output_stream(buf);
+          m.serialize_json(os).get();
+          os.flush().get();
+          restored.update_with_json(std::move(buf));
+          return restored;
+      }(),
+      "to_json/from_json");
 }
 
 SEASTAR_THREAD_TEST_CASE(test_partition_manifest_start_offset_advance) {
