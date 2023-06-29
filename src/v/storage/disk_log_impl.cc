@@ -932,18 +932,11 @@ offset_stats disk_log_impl::offsets() const {
     // NOTE: we have to do this because ss::circular_buffer<> does not provide
     // with reverse iterators, so we manually find the iterator
     segment_set::type end;
-    segment_set::type term_start;
     for (int i = (int)_segs.size() - 1; i >= 0; --i) {
         auto& seg = _segs[i];
         if (!seg->empty()) {
-            if (!end) {
-                end = seg;
-            }
-            // find term start offset
-            if (seg->offsets().term < end->offsets().term) {
-                break;
-            }
-            term_start = seg;
+            end = seg;
+            break;
         }
     }
     if (!end) {
@@ -958,8 +951,6 @@ offset_stats disk_log_impl::offsets() const {
     // we have valid begin and end
     const auto& bof = _segs.front()->offsets();
     const auto& eof = end->offsets();
-    // term start
-    const auto term_start_offset = term_start->offsets().base_offset;
 
     const auto start_offset = _start_offset() >= 0 ? _start_offset
                                                    : bof.base_offset;
@@ -972,8 +963,35 @@ offset_stats disk_log_impl::offsets() const {
 
       .dirty_offset = eof.dirty_offset,
       .dirty_offset_term = eof.term,
-      .last_term_start_offset = term_start_offset,
     };
+}
+
+model::offset disk_log_impl::find_last_term_start_offset() const {
+    if (_segs.empty()) {
+        return {};
+    }
+
+    segment_set::type end;
+    segment_set::type term_start;
+    for (int i = (int)_segs.size() - 1; i >= 0; --i) {
+        auto& seg = _segs[i];
+        if (!seg->empty()) {
+            if (!end) {
+                end = seg;
+            }
+            // find term start offset
+            if (seg->offsets().term < end->offsets().term) {
+                break;
+            }
+            term_start = seg;
+        }
+    }
+
+    if (!end) {
+        return {};
+    }
+
+    return term_start->offsets().base_offset;
 }
 
 model::timestamp disk_log_impl::start_timestamp() const {

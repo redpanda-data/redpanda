@@ -192,12 +192,6 @@ struct offset_stats {
 
     model::offset dirty_offset;
     model::term_id dirty_offset_term;
-    // Base offset of the first batch in the most recent term stored in log
-    //
-    // The last_term_base offset will be used by the followers to inform the
-    // raft group leader about the next possible index where truncation should
-    // happen while recovering node log.
-    model::offset last_term_start_offset;
 
     friend std::ostream& operator<<(std::ostream&, const offset_stats&);
 };
