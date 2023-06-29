@@ -195,6 +195,15 @@ server::accept_finish(ss::sstring name, ss::future<ss::accept_result> f_cs_sa) {
     ar.connection.set_nodelay(true);
     ar.connection.set_keepalive(true);
 
+    if (cfg.tcp_keepalive_bindings.has_value()) {
+        ar.connection.set_keepalive_parameters(
+          seastar::net::tcp_keepalive_params{
+            .idle = cfg.tcp_keepalive_bindings->keepalive_idle_time(),
+            .interval = cfg.tcp_keepalive_bindings->keepalive_interval(),
+            .count = cfg.tcp_keepalive_bindings->keepalive_probes(),
+          });
+    }
+
     conn_quota::units cq_units;
     if (cfg.conn_quotas) {
         cq_units = co_await cfg.conn_quotas->get().local().get(

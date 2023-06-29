@@ -1580,6 +1580,17 @@ void application::wire_up_redpanda_services(model::node_id node_id) {
               };
 
               c.connection_rate_bindings.emplace(std::move(bindings));
+
+              c.tcp_keepalive_bindings.emplace(net::tcp_keepalive_bindings{
+                .keepalive_idle_time
+                = config::shard_local_cfg()
+                    .kafka_tcp_keepalive_idle_timeout_seconds.bind(),
+                .keepalive_interval
+                = config::shard_local_cfg()
+                    .kafka_tcp_keepalive_probe_interval_seconds.bind(),
+                .keepalive_probes
+                = config::shard_local_cfg().kafka_tcp_keepalive_probes.bind(),
+              });
           });
       })
       .get();

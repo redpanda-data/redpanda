@@ -521,6 +521,33 @@ configuration::configuration()
       "refreshed",
       {.visibility = visibility::tunable},
       2s)
+  , kafka_tcp_keepalive_idle_timeout_seconds(
+      *this,
+      "kafka_tcp_keepalive_timeout",
+      "TCP keepalive idle timeout in seconds for kafka connections. This "
+      "describes the timeout between tcp keepalive probes that the remote site"
+      "successfully acknowledged. Refers to the TCP_KEEPIDLE socket option. "
+      "When changed applies to new connections only.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      120s)
+  , kafka_tcp_keepalive_probe_interval_seconds(
+      *this,
+      "kafka_tcp_keepalive_probe_interval_seconds",
+      "TCP keepalive probe interval in seconds for kafka connections. This "
+      "describes the timeout between unacknowledged tcp keepalives. Refers to "
+      "the TCP_KEEPINTVL socket option. When changed applies to new "
+      "connections only.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      60s)
+  , kafka_tcp_keepalive_probes(
+      *this,
+      "kafka_tcp_keepalive_probes",
+      "TCP keepalive unacknowledge probes until the connection is considered "
+      "dead for kafka connections. Refers to the TCP_KEEPCNT socket option. "
+      "When "
+      "changed applies to new connections only.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      3)
   , kafka_connection_rate_limit(
       *this,
       "kafka_connection_rate_limit",
