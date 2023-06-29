@@ -640,6 +640,16 @@ ss::future<compaction_result> disk_log_impl::compact_adjacent_segments(
 }
 
 gc_config disk_log_impl::override_retention_config(gc_config cfg) const {
+    // Read replica topics have a different default retention
+    if (config().is_read_replica_mode_enabled()) {
+        cfg.eviction_time = std::max(
+          model::timestamp(
+            model::timestamp::now().value()
+            - ntp_config::read_replica_retention.count()),
+          cfg.eviction_time);
+        return cfg;
+    }
+
     // cloud_retention is disabled, do not override
     if (!is_cloud_retention_active()) {
         return cfg;
