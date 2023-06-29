@@ -1488,7 +1488,7 @@ configuration::configuration()
       "split the manifest into two parts and one of them will be uploaded to "
       "S3.",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
-      std::nullopt,
+      64_KiB,
       {.min = 4_KiB, .max = 4_MiB})
   , cloud_storage_spillover_manifest_max_segments(
       *this,
