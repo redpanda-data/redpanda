@@ -951,6 +951,17 @@ bool update_fetch_partition(
         include = true;
         partition.last_stable_offset = model::offset(resp.last_stable_offset);
     }
+    if (partition.start_offset != resp.log_start_offset) {
+        include = true;
+        partition.start_offset = model::offset(resp.log_start_offset);
+    }
+    /**
+     * Always include partition in a response if it contains information about
+     * the preferred replica
+     */
+    if (resp.preferred_read_replica != -1) {
+        include = true;
+    }
     if (include) {
         return include;
     }
@@ -1013,6 +1024,8 @@ ss::future<response_ptr> op_context::send_response() && {
           .last_stable_offset = it->partition_response->last_stable_offset,
           .log_start_offset = it->partition_response->log_start_offset,
           .aborted = std::move(it->partition_response->aborted),
+          .preferred_read_replica
+          = it->partition_response->preferred_read_replica,
           .records = std::move(it->partition_response->records)};
 
         final_response.data.topics.back().partitions.push_back(std::move(r));
@@ -1108,6 +1121,10 @@ std::optional<model::node_id> rack_aware_replica_selector::select_replica(
     std::vector<replica_info> rack_replicas;
     model::offset highest_hw;
     for (auto& replica : p_info.replicas) {
+        // filter out replicas which are not responsive
+        if (!replica.is_alive) {
+            continue;
+        }
         if (
           _md_cache.get_node_rack_id(replica.id) == c_info.rack_id
           && replica.log_end_offset >= c_info.fetch_offset) {

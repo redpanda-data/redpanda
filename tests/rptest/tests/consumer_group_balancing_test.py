@@ -73,7 +73,7 @@ class ConsumerGroupBalancingTest(RedpandaTest):
                                     consumer_properties, instance_id))
 
     def consumed_at_least(consumers, count):
-        return all([len(c._messages) > count for c in consumers])
+        return all([c._message_cnt > count for c in consumers])
 
     def validate_group_state(self,
                              group,
