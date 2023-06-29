@@ -275,48 +275,66 @@ class RedpandaUpgradeTest(PreallocNodesTest):
                                       version_param=rp_versions,
                                       partial_update=True)
 
-        upgrade_steps = self._get_upgrade_steps()
-        self.logger.info(f"going through these versions: {upgrade_steps}")
+        # variable to hold stacktraces from exceptions during execution
+        concat_error: list[str] = []
 
-        # upgrade loop: for each version
-        for current_version in self.upgrade_through_versions(
-                upgrade_steps,
-                already_running=False,
-                mid_upgrade_check=mid_upgrade_check):
-            current_version = expand_version(self.installer, current_version)
-            # setup workload that could start at current_version
-            for w in self.adapted_workloads:
-                if w.state == WorkloadAdapter.NOT_STARTED and current_version >= w.get_earliest_applicable_release(
-                ):
-                    self.logger.info(f"setup {w.get_workload_name()}")
-                    w.begin()  # this will set in a STARTED state
+        try:
+            # this loop can fails for reasons unrelated to the workloads (for example, download errors). capture the exception to not lose workload exceptions
+            upgrade_steps = self._get_upgrade_steps()
+            self.logger.info(f"going through these versions: {upgrade_steps}")
 
-            # run checks on all the started workload.
-            # each check could take multiple runs, so loop on a list of it until exhaustion
-            self._check_workload_list(to_check_list= \
-                                      [w for w in self.adapted_workloads if w.state == WorkloadAdapter.STARTED],
-                                      version_param=current_version)
+            # upgrade loop: for each version
+            for current_version in self.upgrade_through_versions(
+                    upgrade_steps,
+                    already_running=False,
+                    mid_upgrade_check=mid_upgrade_check):
+                current_version = expand_version(self.installer,
+                                                 current_version)
+                # setup workload that could start at current_version
+                for w in self.adapted_workloads:
+                    if w.state == WorkloadAdapter.NOT_STARTED and current_version >= w.get_earliest_applicable_release(
+                    ):
+                        self.logger.info(f"setup {w.get_workload_name()}")
+                        w.begin()  # this will set in a STARTED state
 
-            # stop workload that can't operate with next_version
-            for w in self.adapted_workloads:
-                if w.state == WorkloadAdapter.STARTED and current_version == w.get_latest_applicable_release(
-                ):
-                    self.logger.info(f"teardown of {w.get_workload_name()}")
-                    w.end()
+                # run checks on all the started workload.
+                # each check could take multiple runs, so loop on a list of it until exhaustion
+                self._check_workload_list(to_check_list= \
+                                        [w for w in self.adapted_workloads if w.state == WorkloadAdapter.STARTED],
+                                        version_param=current_version)
 
-            # quick exit: terminate loop if no workload is active
-            if len([
-                    w for w in self.adapted_workloads
-                    if w.state == WorkloadAdapter.STARTED
-                    or w.state == WorkloadAdapter.NOT_STARTED
-            ]) == 0:
-                self.logger.info(
-                    f"terminating upgrade loop at version {current_version}, no workload is active"
-                )
-                break
+                # stop workload that can't operate with next_version
+                for w in self.adapted_workloads:
+                    if w.state == WorkloadAdapter.STARTED and current_version == w.get_latest_applicable_release(
+                    ):
+                        self.logger.info(
+                            f"teardown of {w.get_workload_name()}")
+                        w.end()
+
+                # quick exit: terminate loop if no workload is active
+                if len([
+                        w for w in self.adapted_workloads
+                        if w.state == WorkloadAdapter.STARTED
+                        or w.state == WorkloadAdapter.NOT_STARTED
+                ]) == 0:
+                    self.logger.info(
+                        f"terminating upgrade loop at version {current_version}, no workload is active"
+                    )
+                    break
+        except Exception as e:
+            self.logger.error(
+                f"Exception during upgrade loop: {traceback.format_exception(e)}"
+            )
+            # the stacktrace is captured and formatted in concat_error
+            # so that it can be used in the error message
+            # along with time of failure
+            concat_error.append(
+                f"{self.upgrade_through_versions.__qualname__} failed at {time.time()} - {time.strftime('%Y-%m-%d %H:%M:%S', time.gmtime(time.time()))}"
+            )
+            concat_error.extend(traceback.format_exception(e))
+            pass
 
         # check workloads stopped with error, and format the exceptions into concat_error
-        concat_error: list[str] = []
         for w in self.adapted_workloads:
             if w.state == WorkloadAdapter.STOPPED_WITH_ERROR:
                 concat_error.append(
