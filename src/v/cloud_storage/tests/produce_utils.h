@@ -42,6 +42,14 @@ public:
         _batches_per_seg = b;
         return *this;
     }
+    remote_segment_generator& batch_time_delta_ms(int ms) {
+        _batch_time_delta_ms = ms;
+        return *this;
+    }
+    remote_segment_generator& base_timestamp(model::timestamp ts) {
+        _base_timestamp = ts;
+        return *this;
+    }
     kafka_produce_transport& producer() { return _producer; }
 
     // Produces records, flushing and rolling the local log, and uploading
@@ -57,6 +65,7 @@ public:
         auto& archiver = _partition.archiver().value().get();
 
         size_t total_records = 0;
+        auto cur_timestamp = _base_timestamp;
         while (_partition.archival_meta_stm()->manifest().size()
                < _num_remote_segs) {
             for (size_t i = 0; i < _batches_per_seg; i++) {
@@ -66,7 +75,12 @@ public:
                 co_await _producer.produce_to_partition(
                   _partition.ntp().tp.topic,
                   _partition.ntp().tp.partition,
-                  std::move(records));
+                  std::move(records),
+                  cur_timestamp);
+                if (cur_timestamp.has_value()) {
+                    cur_timestamp = model::timestamp(
+                      (*cur_timestamp)() + _batch_time_delta_ms);
+                }
             }
             co_await log->flush();
             co_await log->force_roll(ss::default_priority_class());
@@ -103,7 +117,12 @@ public:
                 co_await _producer.produce_to_partition(
                   _partition.ntp().tp.topic,
                   _partition.ntp().tp.partition,
-                  std::move(records));
+                  std::move(records),
+                  cur_timestamp);
+                if (cur_timestamp.has_value()) {
+                    cur_timestamp = model::timestamp(
+                      (*cur_timestamp)() + _batch_time_delta_ms);
+                }
             }
             co_await log->flush();
             co_await log->force_roll(ss::default_priority_class());
@@ -120,6 +139,8 @@ private:
     size_t _num_local_segs{0};
     size_t _records_per_batch{1};
     size_t _batches_per_seg{1};
+    std::optional<model::timestamp> _base_timestamp{std::nullopt};
+    int _batch_time_delta_ms{1};
 };
 
 } // namespace tests
