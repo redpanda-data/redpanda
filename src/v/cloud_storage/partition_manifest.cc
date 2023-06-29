@@ -644,7 +644,15 @@ void partition_manifest::set_archive_clean_offset(
         return;
     }
     if (_archive_clean_offset < start_rp_offset) {
-        _archive_clean_offset = start_rp_offset;
+        if (start_rp_offset == _start_offset) {
+            // If we've truncated up to the start offset of the STM manifest,
+            // the archive is completely removed.
+            _archive_clean_offset = model::offset{};
+            _archive_start_offset = model::offset{};
+            _archive_start_offset_delta = model::offset_delta{};
+        } else {
+            _archive_clean_offset = start_rp_offset;
+        }
         if (_archive_size_bytes >= size_bytes) {
             _archive_size_bytes -= size_bytes;
         } else {
