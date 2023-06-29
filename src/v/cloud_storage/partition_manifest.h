@@ -554,10 +554,14 @@ private:
     void serialize_segments(serialization_cursor_ptr cursor) const;
     /// Write next chunk of body
     void serialize_replaced(serialization_cursor_ptr cursor) const;
+    /// Write next chunk of body
+    void serialize_spillover(serialization_cursor_ptr cursor) const;
     /// Write epilogue
     void serialize_end(serialization_cursor_ptr cursor) const;
     /// Serialize normal manifest entry
     void serialize_segment_meta(
+      const segment_meta& meta, serialization_cursor_ptr cursor) const;
+    void serialize_spillover_manifest_meta(
       const segment_meta& meta, serialization_cursor_ptr cursor) const;
     /// Serialize removed manifest entry
     void serialize_removed_segment_meta(
