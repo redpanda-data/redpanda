@@ -1154,6 +1154,9 @@ struct partition_manifest_handler
         case state::expect_replaced_meta_start:
             _state = state::expect_replaced_meta_key;
             return true;
+        case state::expect_spillover_meta_start:
+            _state = state::expect_spillover_meta_key;
+            return true;
         case state::expect_manifest_key:
         case state::expect_manifest_value:
         case state::expect_segment_path:
@@ -1162,6 +1165,9 @@ struct partition_manifest_handler
         case state::expect_replaced_path:
         case state::expect_replaced_meta_key:
         case state::expect_replaced_meta_value:
+        case state::expect_spillover_meta_key:
+        case state::expect_spillover_meta_value:
+        case state::expect_spillover_start:
         case state::terminal_state:
             return false;
         }
@@ -1175,6 +1181,8 @@ struct partition_manifest_handler
                 _state = state::expect_segments_start;
             } else if (_manifest_key == "replaced") {
                 _state = state::expect_replaced_start;
+            } else if (_manifest_key == "spillover") {
+                _state = state::expect_spillover_start;
             } else {
                 _state = state::expect_manifest_value;
             }
@@ -1194,7 +1202,7 @@ struct partition_manifest_handler
               .term = _parsed_segment_key->term};
             if (_state == state::expect_segment_path) {
                 _state = state::expect_segment_meta_start;
-            } else {
+            } else if (_state == state::expect_replaced_path) {
                 _state = state::expect_replaced_meta_start;
             }
             return true;
@@ -1206,6 +1214,10 @@ struct partition_manifest_handler
             _segment_meta_key = key_string(str, length);
             _state = state::expect_replaced_meta_value;
             return true;
+        case state::expect_spillover_meta_key:
+            _segment_meta_key = key_string(str, length);
+            _state = state::expect_spillover_meta_value;
+            return true;
         case state::expect_manifest_start:
         case state::expect_manifest_value:
         case state::expect_segments_start:
@@ -1214,6 +1226,9 @@ struct partition_manifest_handler
         case state::expect_segment_meta_value:
         case state::expect_replaced_meta_start:
         case state::expect_replaced_meta_value:
+        case state::expect_spillover_start:
+        case state::expect_spillover_meta_start:
+        case state::expect_spillover_meta_value:
         case state::terminal_state:
             return false;
         }
@@ -1245,6 +1260,10 @@ struct partition_manifest_handler
         case state::expect_replaced_meta_key:
         case state::expect_replaced_meta_value:
         case state::terminal_state:
+        case state::expect_spillover_start:
+        case state::expect_spillover_meta_key:
+        case state::expect_spillover_meta_start:
+        case state::expect_spillover_meta_value:
             return false;
         }
     }
@@ -1287,6 +1306,7 @@ struct partition_manifest_handler
             return true;
         case state::expect_replaced_meta_value:
         case state::expect_segment_meta_value:
+        case state::expect_spillover_meta_value:
             if (_segment_meta_key == "size_bytes") {
                 _size_bytes = static_cast<size_t>(u);
             } else if (_segment_meta_key == "base_offset") {
@@ -1314,8 +1334,10 @@ struct partition_manifest_handler
             }
             if (_state == state::expect_segment_meta_value) {
                 _state = state::expect_segment_meta_key;
-            } else {
+            } else if (_state == state::expect_replaced_meta_value) {
                 _state = state::expect_replaced_meta_key;
+            } else if (_state == state::expect_spillover_meta_value) {
+                _state = state::expect_spillover_meta_key;
             }
             return true;
         case state::expect_manifest_start:
@@ -1328,6 +1350,9 @@ struct partition_manifest_handler
         case state::expect_replaced_path:
         case state::expect_replaced_meta_start:
         case state::expect_replaced_meta_key:
+        case state::expect_spillover_start:
+        case state::expect_spillover_meta_key:
+        case state::expect_spillover_meta_start:
         case state::terminal_state:
             return false;
         }
@@ -1345,6 +1370,7 @@ struct partition_manifest_handler
             return true;
         case state::expect_segment_meta_key:
         case state::expect_replaced_meta_key:
+        case state::expect_spillover_meta_key:
             check_that_required_meta_fields_are_present();
             _meta = {
               .is_compacted = _is_compacted.value_or(false),
@@ -1372,7 +1398,7 @@ struct partition_manifest_handler
                 }
                 _segments->insert(_meta);
                 _state = state::expect_segment_path;
-            } else {
+            } else if (_state == state::expect_replaced_meta_key) {
                 if (!_replaced) {
                     _replaced = std::make_unique<replaced_segments_list>();
                 }
@@ -1388,6 +1414,14 @@ struct partition_manifest_handler
                 _replaced->push_back(
                   partition_manifest::lw_segment_meta::convert(_meta));
                 _state = state::expect_replaced_path;
+            } else if (_state == state::expect_spillover_meta_key) {
+                _meta.is_compacted = false;
+                _meta.sname_format = segment_name_format::v3;
+                if (!_spillover) {
+                    _spillover = std::make_unique<segment_meta_cstore>();
+                }
+                _spillover->insert(_meta);
+                _state = state::expect_spillover_meta_start;
             }
             clear_meta_fields();
             return true;
@@ -1399,6 +1433,9 @@ struct partition_manifest_handler
         case state::expect_segment_meta_value:
         case state::expect_replaced_meta_start:
         case state::expect_replaced_meta_value:
+        case state::expect_spillover_start:
+        case state::expect_spillover_meta_start:
+        case state::expect_spillover_meta_value:
         case state::terminal_state:
             return false;
         }
@@ -1420,6 +1457,19 @@ struct partition_manifest_handler
                 return true;
             }
             return false;
+        case state::expect_spillover_meta_value:
+            /**
+             * Spillover manifest is never compacted, simply skip if the field
+             * is present
+             */
+            if (_segment_meta_key == "is_compacted") {
+                _state = state::expect_spillover_meta_key;
+                return true;
+            }
+            return false;
+        case state::expect_spillover_start:
+        case state::expect_spillover_meta_start:
+        case state::expect_spillover_meta_key:
         case state::expect_manifest_start:
         case state::expect_manifest_key:
         case state::expect_manifest_value:
@@ -1432,6 +1482,7 @@ struct partition_manifest_handler
         case state::expect_replaced_meta_start:
         case state::expect_replaced_meta_key:
         case state::terminal_state:
+
             return false;
         }
     }
@@ -1457,11 +1508,72 @@ struct partition_manifest_handler
         case state::expect_replaced_meta_value:
             _state = state::expect_replaced_meta_key;
             return true;
+        case state::expect_spillover_start:
+        case state::expect_spillover_meta_start:
+        case state::expect_spillover_meta_key:
+        case state::expect_spillover_meta_value:
+            _state = state::expect_spillover_meta_key;
+            return true;
         case state::terminal_state:
             return false;
         }
     }
+    bool StartArray() {
+        switch (_state) {
+        case state::expect_spillover_start:
+            _state = state::expect_spillover_meta_start;
+            return true;
+        case state::expect_manifest_value:
+        case state::expect_segment_meta_value:
+        case state::expect_manifest_start:
+        case state::expect_manifest_key:
+        case state::expect_segments_start:
+        case state::expect_segment_path:
+        case state::expect_segment_meta_start:
+        case state::expect_segment_meta_key:
+        case state::expect_replaced_start:
+        case state::expect_replaced_path:
+        case state::expect_replaced_meta_start:
+        case state::expect_replaced_meta_key:
+        case state::expect_replaced_meta_value:
+        case state::expect_spillover_meta_start:
+        case state::expect_spillover_meta_key:
+        case state::expect_spillover_meta_value:
+        case state::terminal_state:
+            return false;
+        };
+    }
+    bool EndArray(rapidjson::SizeType /*size*/) {
+        switch (_state) {
+        case state::expect_spillover_meta_start:
+            if (!_spillover) {
+                _spillover = std::make_unique<segment_meta_cstore>();
+            }
+            _spillover->insert(_meta);
+            _state = state::expect_manifest_key;
 
+            clear_meta_fields();
+            return true;
+        case state::expect_spillover_start:
+        case state::expect_manifest_value:
+        case state::expect_segment_meta_value:
+        case state::expect_manifest_start:
+        case state::expect_manifest_key:
+        case state::expect_segments_start:
+        case state::expect_segment_path:
+        case state::expect_segment_meta_start:
+        case state::expect_segment_meta_key:
+        case state::expect_replaced_start:
+        case state::expect_replaced_path:
+        case state::expect_replaced_meta_start:
+        case state::expect_replaced_meta_key:
+        case state::expect_replaced_meta_value:
+        case state::expect_spillover_meta_key:
+        case state::expect_spillover_meta_value:
+        case state::terminal_state:
+            return false;
+        };
+    }
     bool Default() { return false; }
 
     enum class state {
@@ -1478,6 +1590,10 @@ struct partition_manifest_handler
         expect_replaced_meta_start,
         expect_replaced_meta_key,
         expect_replaced_meta_value,
+        expect_spillover_start,
+        expect_spillover_meta_start,
+        expect_spillover_meta_key,
+        expect_spillover_meta_value,
         terminal_state,
     } _state{state::expect_manifest_start};
 
@@ -1492,6 +1608,7 @@ struct partition_manifest_handler
     partition_manifest::segment_meta _meta;
     std::unique_ptr<segment_map> _segments;
     std::unique_ptr<replaced_segments_list> _replaced;
+    std::unique_ptr<segment_meta_cstore> _spillover;
 
     // required manifest fields
     std::optional<int32_t> _version;
@@ -1717,6 +1834,11 @@ void partition_manifest::do_update(partition_manifest_handler&& handler) {
     if (handler._archive_size_bytes) {
         _archive_size_bytes = *handler._archive_size_bytes;
     }
+
+    if (handler._spillover) {
+        _spillover_manifests = std::move(*handler._spillover);
+    }
+
     if (handler._cloud_log_size_bytes) {
         _cloud_log_size_bytes = handler._cloud_log_size_bytes.value();
     } else {
