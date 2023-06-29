@@ -85,7 +85,8 @@ public:
     /// result contains mappings of kafka offset to file position from the index
     /// where entries are _roughly_ 16MiB apart in terms of file position.
     using coarse_index_t = absl::btree_map<kafka::offset, int64_t>;
-    coarse_index_t build_coarse_index(uint64_t step_size) const;
+    coarse_index_t
+    build_coarse_index(uint64_t step_size, std::string_view index_path) const;
 
     /// Serialize offset_index
     iobuf to_iobuf();

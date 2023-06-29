@@ -180,7 +180,7 @@ SEASTAR_THREAD_TEST_CASE(test_remote_segment_build_coarse_index) {
     BOOST_REQUIRE(result.has_value());
     BOOST_REQUIRE_NE(result.value(), 0);
 
-    auto mini_ix = ix.build_coarse_index(100_KiB);
+    auto mini_ix = ix.build_coarse_index(100_KiB, "test");
     absl::btree_map<int64_t, kafka::offset> file_to_koffset;
     std::transform(
       std::make_move_iterator(mini_ix.begin()),
@@ -264,7 +264,7 @@ SEASTAR_THREAD_TEST_CASE(
     BOOST_REQUIRE_EQUAL(acc.file_offset_index_size(), 0);
     BOOST_REQUIRE_GT(acc.file_offset_array_size(), 0);
 
-    auto mini_ix = ix.build_coarse_index(70_KiB);
+    auto mini_ix = ix.build_coarse_index(70_KiB, "test");
     absl::btree_map<int64_t, kafka::offset> file_to_koffset;
     std::transform(
       std::make_move_iterator(mini_ix.begin()),

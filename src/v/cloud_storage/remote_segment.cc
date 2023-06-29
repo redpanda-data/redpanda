@@ -479,7 +479,8 @@ ss::future<> remote_segment::do_hydrate_index() {
     }
 
     _index = std::move(ix);
-    _coarse_index.emplace(_index->build_coarse_index(_chunk_size));
+    _coarse_index.emplace(
+      _index->build_coarse_index(_chunk_size, _index_path.native()));
     co_await _chunks_api->start();
     auto buf = _index->to_iobuf();
 
@@ -658,7 +659,8 @@ ss::future<bool> remote_segment::maybe_materialize_index() {
             });
             ix.from_iobuf(std::move(state));
             _index = std::move(ix);
-            _coarse_index.emplace(_index->build_coarse_index(_chunk_size));
+            _coarse_index.emplace(
+              _index->build_coarse_index(_chunk_size, _index_path.native()));
             co_await _chunks_api->start();
         } catch (...) {
             // In case of any failure during index materialization just continue
