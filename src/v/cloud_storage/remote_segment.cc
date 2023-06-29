@@ -967,9 +967,12 @@ ss::future<> remote_segment::hydrate_chunk(segment_chunk_range range) {
     const auto end = range.last_offset().value_or(_size - 1);
     auto consumer = split_segment_into_chunk_range_consumer{
       *this, std::move(range)};
+
+    auto measurement = _probe.chunk_hydration_latency();
     auto res = co_await _api.download_segment(
       _bucket, _path, std::move(consumer), rtc, std::make_pair(start, end));
     if (res != download_result::success) {
+        measurement->set_trace(false);
         throw download_exception{res, _path};
     }
 }
