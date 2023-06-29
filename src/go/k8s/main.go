@@ -130,7 +130,7 @@ func main() {
 	flag.StringVar(&restrictToRedpandaVersion, "restrict-redpanda-version", "", "Restrict management of clusters to those with this version")
 	flag.StringVar(&vectorizedv1alpha1.SuperUsersPrefix, "superusers-prefix", "", "Prefix to add in username of superusers managed by operator. This will only affect new clusters, enabling this will not add prefix to existing clusters (alpha feature)")
 	flag.BoolVar(&debug, "debug", false, "Set to enable debugging")
-	flag.BoolVar(&enableClusterToRedpandaMigration, "do-migration", false, "Set to perform migration of cluster to redpanda resources")
+	flag.BoolVar(&enableClusterToRedpandaMigration, "enable-migration", false, "Set to perform migration of cluster to redpanda resources")
 	flag.StringVar(&namespace, "namespace", "", "If namespace is set to not empty value, it changes scope of Redpanda operator to work in single namespace")
 
 	logOptions.BindFlags(flag.CommandLine)
