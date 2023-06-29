@@ -173,15 +173,17 @@ offset_index::find_kaf_offset(kafka::offset upper_bound) {
     return res;
 }
 
-offset_index::coarse_index_t
-offset_index::build_coarse_index(uint64_t step_size) const {
+offset_index::coarse_index_t offset_index::build_coarse_index(
+  uint64_t step_size, std::string_view index_path) const {
     vlog(
       cst_log.trace,
-      "building coarse index from file offset index with {} rows",
+      "{}: building coarse index from file offset index with {} rows",
+      index_path,
       _file_index.get_row_count());
     vassert(
       step_size > static_cast<uint64_t>(_min_file_pos_step),
-      "step size {} cannot be less than or equal to index step size {}",
+      "{}: step size {} cannot be less than or equal to index step size {}",
+      index_path,
       step_size,
       _min_file_pos_step);
 
@@ -199,7 +201,7 @@ offset_index::build_coarse_index(uint64_t step_size) const {
     std::array<int64_t, buffer_depth> kafka_row{};
 
     coarse_index_t index;
-    auto populate_index = [step_size, &index](
+    auto populate_index = [step_size, &index, index_path](
                             const auto& file_offsets,
                             const auto& kafka_offsets,
                             auto& span_start,
@@ -212,8 +214,9 @@ offset_index::build_coarse_index(uint64_t step_size) const {
             if (span_end > span_start && delta >= step_size) {
                 vlog(
                   cst_log.trace,
-                  "adding entry to coarse index, current file pos: {}, step "
-                  "size: {}, span size: {}",
+                  "{}: adding entry to coarse index, current file pos: {}, "
+                  "step size: {}, span size: {}",
+                  index_path,
                   span_end,
                   step_size,
                   delta);
