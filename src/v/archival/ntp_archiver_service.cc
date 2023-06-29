@@ -509,6 +509,23 @@ ss::future<> ntp_archiver::upload_until_term_change() {
 
 ss::future<> ntp_archiver::sync_manifest_until_term_change() {
     while (can_update_archival_metadata()) {
+        if (!_feature_table.local().is_active(
+              features::feature::cloud_storage_manifest_format_v2)) {
+            vlog(
+              _rtclog.warn,
+              "Cannot synchronize read replica during upgrade, not all nodes "
+              "are upgraded yet.  Waiting...");
+            co_await _feature_table.local().await_feature(
+              features::feature::cloud_storage_manifest_format_v2, _as);
+            vlog(
+              _rtclog.info,
+              "Upgrade complete, proceeding to sync read replica.");
+
+            // Go around the loop to check we are still eligible to do the
+            // update
+            continue;
+        }
+
         cloud_storage::download_result result = co_await sync_manifest();
 
         if (result != cloud_storage::download_result::success) {
