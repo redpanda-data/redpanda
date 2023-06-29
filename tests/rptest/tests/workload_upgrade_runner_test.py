@@ -21,6 +21,7 @@ from rptest.tests.workload_producer_consumer import ProducerConsumerWorkload
 from rptest.tests.workload_dummy import DummyWorkload, MinimalWorkload
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.tests.workload_license import LicenseWorkload
+from rptest.utils.mode_checks import skip_debug_mode
 
 
 def expand_version(
@@ -245,6 +246,7 @@ class RedpandaUpgradeTest(PreallocNodesTest):
     def cluster_version(self) -> int:
         return Admin(self.redpanda).get_features()['cluster_version']
 
+    @skip_debug_mode
     @cluster(num_nodes=4)
     def test_workloads_through_releases(self):
         # this callback will be called between each upgrade, in a mixed version state
