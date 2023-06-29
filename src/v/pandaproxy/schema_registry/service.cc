@@ -21,6 +21,7 @@
 #include "kafka/protocol/list_offsets.h"
 #include "kafka/server/handlers/topics/types.h"
 #include "model/fundamental.h"
+#include "model/timeout_clock.h"
 #include "pandaproxy/api/api-doc/schema_registry.json.h"
 #include "pandaproxy/auth_utils.h"
 #include "pandaproxy/config_utils.h"
@@ -32,6 +33,7 @@
 #include "pandaproxy/util.h"
 #include "security/acl.h"
 #include "security/ephemeral_credential_store.h"
+#include "ssx/future-util.h"
 #include "ssx/semaphore.h"
 #include "utils/gate_guard.h"
 
@@ -48,6 +50,7 @@ namespace pandaproxy::schema_registry {
 using server = ctx_server<service>;
 const security::acl_principal principal{
   security::principal_type::ephemeral_user, "__schema_registry"};
+static constexpr auto initial_create_acls_backoff = 10ms;
 
 class wrap {
 public:
@@ -188,6 +191,45 @@ ss::future<> service::do_start() {
     });
 }
 
+ss::future<>
+create_acls(cluster::security_frontend& security_fe, ss::abort_source& as) {
+    // Initialize with any non-success errc
+    std::vector<cluster::errc> err_vec{cluster::errc::timeout};
+
+    auto create_acls_backoff = initial_create_acls_backoff;
+    std::vector<security::acl_binding> princpal_acl_binding{
+      security::acl_binding{
+        security::resource_pattern{
+          security::resource_type::topic,
+          model::schema_registry_internal_tp.topic,
+          security::pattern_type::literal},
+        security::acl_entry{
+          principal,
+          security::acl_host::wildcard_host(),
+          security::acl_operation::all,
+          security::acl_permission::allow}}};
+
+    while (err_vec[0] != cluster::errc::success && !as.abort_requested()) {
+        err_vec = co_await security_fe.create_acls(princpal_acl_binding, 1s);
+
+        if (err_vec[0] != cluster::errc::success) {
+            vlog(
+              plog.warn,
+              "Failed to create ACLs for {}, err {} - {}",
+              principal,
+              err_vec[0],
+              cluster::make_error_code(err_vec[0]).message());
+
+            co_await ss::sleep_abortable(create_acls_backoff, as);
+            create_acls_backoff = create_acls_backoff < 1s
+                                    ? create_acls_backoff * 2
+                                    : 1s;
+        }
+    }
+
+    vlog(plog.debug, "Successfully created ACLs for {}", principal);
+}
+
 ss::future<> service::configure() {
     auto config = co_await pandaproxy::create_client_credentials(
       *_controller,
@@ -202,18 +244,10 @@ ss::future<> service::configure() {
       _ctx.smp_sg, [has_ephemeral_credentials](service& s) {
           s._has_ephemeral_credentials = has_ephemeral_credentials;
       });
-    co_await _controller->get_security_frontend().local().create_acls(
-      {security::acl_binding{
-        security::resource_pattern{
-          security::resource_type::topic,
-          model::schema_registry_internal_tp.topic,
-          security::pattern_type::literal},
-        security::acl_entry{
-          principal,
-          security::acl_host::wildcard_host(),
-          security::acl_operation::all,
-          security::acl_permission::allow}}},
-      5s);
+
+    ssx::background = ssx::spawn_with_gate_then(_gate, [this] {
+        return create_acls(_controller->get_security_frontend().local(), _as);
+    });
 }
 
 ss::future<> service::mitigate_error(std::exception_ptr eptr) {
@@ -373,6 +407,7 @@ ss::future<> service::start() {
 }
 
 ss::future<> service::stop() {
+    _as.request_abort();
     co_await _gate.close();
     co_await _server.stop();
 }
