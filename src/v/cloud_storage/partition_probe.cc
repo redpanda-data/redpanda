@@ -98,6 +98,15 @@ partition_probe::partition_probe(const model::ntp& ntp) {
           sm::description(
             "Spillover manifest materialization latency histogram"),
           labels),
+
+        sm::make_histogram(
+          "chunk_hydration_latency",
+          [this] {
+              return ssx::metrics::report_default_histogram(
+                _chunk_hydration_latency);
+          },
+          sm::description("Chunk hydration latency histogram"),
+          labels),
       });
 }
 

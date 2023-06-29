@@ -50,6 +50,10 @@ public:
         return _spillover_mat_latency.auto_measure();
     }
 
+    auto chunk_hydration_latency() {
+        return _chunk_hydration_latency.auto_measure();
+    }
+
 private:
     uint64_t _bytes_read = 0;
     uint64_t _records_read = 0;
@@ -65,6 +69,8 @@ private:
     int64_t _spillover_manifest_hydrated = 0;
     /// Spillover manifest materialization latency
     hdr_hist _spillover_mat_latency;
+
+    hdr_hist _chunk_hydration_latency;
 
     ss::metrics::metric_groups _metrics;
 };
