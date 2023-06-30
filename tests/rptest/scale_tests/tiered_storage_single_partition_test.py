@@ -13,7 +13,7 @@ from rptest.services.kgo_verifier_services import KgoVerifierProducer, KgoVerifi
 from rptest.services.redpanda import SISettings, MetricsEndpoint
 from rptest.clients.types import TopicSpec
 from rptest.clients.rpk import RpkTool
-from rptest.utils.si_utils import BucketView, quiesce_uploads
+from rptest.utils.si_utils import BucketView, quiesce_uploads, NTP
 from ducktape.mark import parametrize
 import time
 
@@ -44,6 +44,8 @@ class TieredStorageSinglePartitionTest(RedpandaTest):
             # not exceed what we would expect based on this interval.
             'cloud_storage_manifest_max_upload_interval_sec':
             self.manifest_upload_interval,
+            # Ensure spillover can happen promptly during test
+            'cloud_storage_housekeeping_interval_ms': 5000
         }
         super().__init__(test_context, *args, **kwargs)
 
@@ -78,6 +80,27 @@ class TieredStorageSinglePartitionTest(RedpandaTest):
         # Enough data to run for >5min to see some kind of steady state
         target_runtime = 300
         write_bytes = produce_byte_rate * target_runtime
+
+        # A high throughput partition will tend to write enough metadata to trigger
+        # metadata spilling.  For the purposes of a short running test, set a low
+        # spill threshold so that this happens during the test.
+        expect_segments = write_bytes // self.log_segment_size
+        spillover_segments = max(expect_segments // 10, 1)
+        self.logger.info(
+            f"Configuring to spill metadata after {spillover_segments} segments"
+        )
+        self.redpanda.set_cluster_config({
+            'cloud_storage_spillover_manifest_max_segments':
+            spillover_segments
+        })
+
+        # We will consume data back at the end: set a large enough cache size
+        # to accommodate the streaming bandwidth
+        self.redpanda.set_cluster_config({
+            'cloud_storage_cache_size':
+            # Enough cache space to consume twice as fast as we produced
+            SISettings.cache_size_for_throughput(produce_byte_rate * 2)
+        })
 
         # Set local retention to half the write quantity, so that when we eventually
         # read data back, it'll be half remote storage and half local storage
@@ -203,6 +226,13 @@ class TieredStorageSinglePartitionTest(RedpandaTest):
         top_segment = list(manifest['segments'].values())[-1]
         offset_delta = top_segment['delta_offset_end']
         segment_count = len(manifest['segments'])
+
+        spill_manifests = bucket.get_spillover_manifests(
+            NTP(ns='kafka', topic=self.topic, partition=0))
+        if spill_manifests is not None:
+            for spill_meta, spill_manifest in spill_manifests.items():
+                segment_count += len(spill_manifest['segments'])
+
         last_term = top_segment['segment_term']
         self.logger.info(
             f"Delta: {offset_delta}, Segments: {segment_count}, Last term {last_term}"
@@ -213,10 +243,15 @@ class TieredStorageSinglePartitionTest(RedpandaTest):
         # - 1 empty upload at start
         # - 1 extra upload from runtime % upload interval
         # - 1 extra upload after the final interval_sec driven uploads
-        expect_manifest_uploads = (
-            (int(produce_duration) // self.manifest_upload_interval) + 3)
+        upload_intervals_elapsed = int(
+            produce_duration) // self.manifest_upload_interval
+        expect_manifest_uploads = len(
+            spill_manifests) + upload_intervals_elapsed + 3
+        self.logger.info(
+            f"Spill manifests: {len(spill_manifests)}, upload intervals elapsed: {upload_intervals_elapsed}"
+        )
 
-        assert manifest_uploads <= expect_manifest_uploads
+        assert manifest_uploads <= expect_manifest_uploads, f"Too many manifest uploads: {manifest_uploads} > {expect_manifest_uploads}"
 
         # No point writing data if we can't read it back!  Wrap up the test by
         # validating all data.
