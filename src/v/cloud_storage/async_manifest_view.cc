@@ -229,7 +229,7 @@ ss::future<result<bool, error_outcome>> async_manifest_view_cursor::next() {
         co_return manifest.as_failure();
     }
     if (unlikely(!manifest_in_range(manifest.value()))) {
-        co_return false;
+        co_return error_outcome::out_of_range;
     }
     _current = manifest.value();
     _timer.rearm(_idle_timeout + ss::lowres_clock::now());
@@ -241,8 +241,8 @@ ss::future<ss::stop_iteration> async_manifest_view_cursor::next_iter() {
     if (res.has_failure()) {
         throw std::system_error(res.error());
     }
-    co_return res.value() == true ? ss::stop_iteration::yes
-                                  : ss::stop_iteration::no;
+    co_return res.value() == false ? ss::stop_iteration::yes
+                                   : ss::stop_iteration::no;
 }
 
 std::optional<std::reference_wrapper<const partition_manifest>>
