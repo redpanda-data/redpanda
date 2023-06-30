@@ -45,8 +45,9 @@ public:
     // hydration. The waiters are managed per chunk in `segment_chunk::waiters`.
     // The first reader to request hydration queues the download. The next
     // readers are added to wait list.
-    ss::future<segment_chunk::handle_t>
-    hydrate_chunk(chunk_start_offset_t chunk_start);
+    ss::future<segment_chunk::handle_t> hydrate_chunk(
+      chunk_start_offset_t chunk_start,
+      std::optional<uint16_t> prefetch_override = std::nullopt);
 
     // For all chunks between first and last, increment the
     // required_by_readers_in_future value by one, and increment the
@@ -76,8 +77,9 @@ private:
     // Attempts to download chunk into cache and return the file handle for
     // segment_chunk. Should be retried if there is a failure due to cache
     // eviction between download and opening the file handle.
-    ss::future<ss::file>
-    do_hydrate_and_materialize(chunk_start_offset_t chunk_start);
+    ss::future<ss::file> do_hydrate_and_materialize(
+      chunk_start_offset_t chunk_start,
+      std::optional<uint16_t> prefetch_override = std::nullopt);
 
     // Periodically closes chunk file handles for the space to be reclaimable by
     // cache eviction. The chunks are evicted when they are no longer opened for
@@ -166,5 +168,25 @@ std::unique_ptr<chunk_eviction_strategy> make_eviction_strategy(
   model::cloud_storage_chunk_eviction_strategy k,
   uint64_t max_chunks,
   uint64_t hydrated_chunks);
+
+class segment_chunk_range {
+public:
+    using map_t = absl::
+      btree_map<chunk_start_offset_t, std::optional<chunk_start_offset_t>>;
+
+    segment_chunk_range(
+      const segment_chunks::chunk_map_t& chunks,
+      size_t prefetch,
+      chunk_start_offset_t start);
+
+    std::optional<chunk_start_offset_t> last_offset() const;
+    chunk_start_offset_t first_offset() const;
+
+    map_t::iterator begin();
+    map_t::iterator end();
+
+private:
+    map_t _chunks;
+};
 
 } // namespace cloud_storage

@@ -131,11 +131,10 @@ public:
     /// implementation, but the index is still required to be present first.
     ss::future<> hydrate();
 
-    /// Hydrate a part of a segment, identified by the given start and end
-    /// offsets. If the end offset is std::nullopt, the last offset in the file
-    /// is used as the end offset.
-    ss::future<> hydrate_chunk(
-      chunk_start_offset_t start, std::optional<chunk_start_offset_t> end);
+    /// Hydrate a part of a segment, identified by the given range. The range
+    /// can contain data for multiple contiguous chunks, in which case multiple
+    /// files are written to cache.
+    ss::future<> hydrate_chunk(segment_chunk_range range);
 
     /// Loads the segment chunk file from cache into an open file handle. If the
     /// file is not present in cache, the returned file handle is unopened.
@@ -214,8 +213,7 @@ private:
 
     /// Stores a segment chunk in cache. The chunk is stored in a path derived
     /// from the segment path: <segment_path>_chunks/chunk_start_file_offset.
-    ss::future<uint64_t> put_chunk_in_cache(
-      uint64_t,
+    ss::future<> put_chunk_in_cache(
       space_reservation_guard&,
       ss::input_stream<char>,
       chunk_start_offset_t chunk_start);
@@ -303,6 +301,8 @@ private:
 
     std::optional<segment_chunks> _chunks_api;
     std::optional<offset_index::coarse_index_t> _coarse_index;
+
+    friend class split_segment_into_chunk_range_consumer;
 };
 
 class remote_segment_batch_consumer;

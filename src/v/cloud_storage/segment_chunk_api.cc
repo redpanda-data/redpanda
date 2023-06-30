@@ -110,8 +110,8 @@ bool segment_chunks::downloads_in_progress() const {
     });
 }
 
-ss::future<ss::file>
-segment_chunks::do_hydrate_and_materialize(chunk_start_offset_t chunk_start) {
+ss::future<ss::file> segment_chunks::do_hydrate_and_materialize(
+  chunk_start_offset_t chunk_start, std::optional<uint16_t> prefetch_override) {
     gate_guard g{_gate};
     vassert(_started, "chunk API is not started");
 
@@ -121,12 +121,15 @@ segment_chunks::do_hydrate_and_materialize(chunk_start_offset_t chunk_start) {
         chunk_end = next->first - 1;
     }
 
-    co_await _segment.hydrate_chunk(chunk_start, chunk_end);
+    const auto prefetch = prefetch_override.value_or(
+      config::shard_local_cfg().cloud_storage_chunk_prefetch);
+    co_await _segment.hydrate_chunk(
+      segment_chunk_range{_chunks, prefetch, chunk_start});
     co_return co_await _segment.materialize_chunk(chunk_start);
 }
 
-ss::future<segment_chunk::handle_t>
-segment_chunks::hydrate_chunk(chunk_start_offset_t chunk_start) {
+ss::future<segment_chunk::handle_t> segment_chunks::hydrate_chunk(
+  chunk_start_offset_t chunk_start, std::optional<uint16_t> prefetch_override) {
     gate_guard g{_gate};
     vassert(_started, "chunk API is not started");
 
@@ -158,7 +161,8 @@ segment_chunks::hydrate_chunk(chunk_start_offset_t chunk_start) {
         // Keep retrying if materialization fails.
         bool done = false;
         while (!done) {
-            auto handle = co_await do_hydrate_and_materialize(chunk_start);
+            auto handle = co_await do_hydrate_and_materialize(
+              chunk_start, prefetch_override);
             if (handle) {
                 done = true;
                 chunk.handle = ss::make_lw_shared(std::move(handle));
@@ -423,6 +427,63 @@ std::unique_ptr<chunk_eviction_strategy> make_eviction_strategy(
         return std::make_unique<predictive_chunk_eviction_strategy>(
           max_chunks, hydrated_chunks);
     }
+}
+
+segment_chunk_range::segment_chunk_range(
+  const segment_chunks::chunk_map_t& chunks,
+  size_t prefetch,
+  chunk_start_offset_t start) {
+    auto it = chunks.find(start);
+    vassert(
+      it != chunks.end(), "failed to find {} in chunk start offsets", start);
+    auto n_it = std::next(it);
+
+    // We need one chunk which will be downloaded for the current read, plus the
+    // prefetch count
+    size_t num_chunks_required = prefetch + 1;
+
+    // Collects start and end file offsets to be hydrated for the given
+    // prefetch by iterating over adjacent chunk start offsets. The chunk map
+    // does not contain end offsets, so for a given chunk start offset in the
+    // map, the corresponding end of chunk is the next entry in the map minus
+    // one.
+    for (size_t i = 0; i < num_chunks_required && it != chunks.end(); ++i) {
+        auto start = it->first;
+
+        // The last entry in the chunk map always represents data upto the
+        // end of segment. A nullopt here is a signal to
+        // split_segment_into_chunk_range_consumer (which does have access to
+        // the segment size) to use the segment size as the end of the byte
+        // range.
+        std::optional<chunk_start_offset_t> end = std::nullopt;
+        if (n_it != chunks.end()) {
+            end = n_it->first - 1;
+        }
+
+        _chunks[start] = end;
+        if (n_it == chunks.end()) {
+            break;
+        }
+        it++;
+        n_it++;
+    }
+}
+
+std::optional<chunk_start_offset_t> segment_chunk_range::last_offset() const {
+    auto it = _chunks.end();
+    return std::prev(it)->second;
+}
+
+chunk_start_offset_t segment_chunk_range::first_offset() const {
+    return _chunks.begin()->first;
+}
+
+segment_chunk_range::map_t::iterator segment_chunk_range::begin() {
+    return _chunks.begin();
+}
+
+segment_chunk_range::map_t::iterator segment_chunk_range::end() {
+    return _chunks.end();
 }
 
 } // namespace cloud_storage

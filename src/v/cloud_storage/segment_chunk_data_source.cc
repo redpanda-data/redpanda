@@ -22,7 +22,8 @@ chunk_data_source_impl::chunk_data_source_impl(
   kafka::offset start,
   kafka::offset end,
   int64_t begin_stream_at,
-  ss::file_input_stream_options stream_options)
+  ss::file_input_stream_options stream_options,
+  std::optional<uint16_t> prefetch_override)
   : _chunks(chunks)
   , _segment(segment)
   , _first_chunk_start(_segment.get_chunk_start_for_kafka_offset(start))
@@ -31,7 +32,8 @@ chunk_data_source_impl::chunk_data_source_impl(
   , _current_chunk_start(_first_chunk_start)
   , _stream_options(std::move(stream_options))
   , _rtc{_as}
-  , _ctxlog{cst_log, _rtc, _segment.get_segment_path()().native()} {
+  , _ctxlog{cst_log, _rtc, _segment.get_segment_path()().native()}
+  , _prefetch_override{prefetch_override} {
     vlog(
       _ctxlog.trace,
       "chunk data source initialized with file position {} to {}",
@@ -73,7 +75,8 @@ ss::future<ss::temporary_buffer<char>> chunk_data_source_impl::get() {
 ss::future<>
 chunk_data_source_impl::load_chunk_handle(chunk_start_offset_t chunk_start) {
     try {
-        _current_data_file = co_await _chunks.hydrate_chunk(chunk_start);
+        _current_data_file = co_await _chunks.hydrate_chunk(
+          chunk_start, _prefetch_override);
     } catch (const ss::abort_requested_exception& ex) {
         throw;
     } catch (const ss::gate_closed_exception& ex) {

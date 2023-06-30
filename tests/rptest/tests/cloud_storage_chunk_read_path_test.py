@@ -2,9 +2,11 @@ import pprint
 from threading import Thread
 from time import sleep
 
+from ducktape.mark import parametrize
 from ducktape.utils.util import wait_until
 
 from rptest.clients.kafka_cli_tools import KafkaCliTools
+from rptest.clients.rpk import RpkTool
 from rptest.clients.types import TopicSpec
 from rptest.services.cluster import cluster
 from rptest.services.kgo_verifier_services import KgoVerifierProducer, KgoVerifierSeqConsumer
@@ -62,11 +64,14 @@ class CloudStorageChunkReadTest(PreallocNodesTest):
         self.redpanda.start()
         self._create_initial_topics()
 
-    def _produce_baseline(self, n_segments=20, msg_count=200000):
+    def _produce_baseline(self,
+                          n_segments=20,
+                          msg_size=None,
+                          msg_count=200000):
         producer = KgoVerifierProducer(self.test_context,
                                        self.redpanda,
                                        self.topic,
-                                       msg_size=self.message_size,
+                                       msg_size=msg_size or self.message_size,
                                        msg_count=msg_count,
                                        custom_node=self.preallocated_nodes)
         producer.start()
@@ -106,6 +111,7 @@ class CloudStorageChunkReadTest(PreallocNodesTest):
         """
         found_files = []
         for node in self.redpanda.started_nodes():
+            # Print all files in cache for debugging
             files = [
                 l.strip() for l in node.account.ssh_capture(
                     f"""find {self.redpanda.DATA_DIR}/cloud_storage_cache""")
@@ -125,6 +131,12 @@ class CloudStorageChunkReadTest(PreallocNodesTest):
         else:
             assert found_files, f'no files in cache dir matching expression {expr}'
 
+    def _assert_not_in_cache(self, expr: str):
+        return self._assert_files_in_cache(expr=expr, must_be_absent=True)
+
+    def _assert_in_cache(self, expr: str):
+        return self._assert_files_in_cache(expr=expr, must_be_absent=False)
+
     @cluster(num_nodes=4)
     def test_read_chunks(self):
         self._set_params_and_start_redpanda(
@@ -143,10 +155,9 @@ class CloudStorageChunkReadTest(PreallocNodesTest):
         rand_cons.wait(timeout_sec=300)
 
         # There should be no log files in cache
-        self._assert_files_in_cache(fr'.*kafka/{self.topic}/.*\.log\.[0-9]+$',
-                                    must_be_absent=True)
+        self._assert_not_in_cache(fr'.*kafka/{self.topic}/.*\.log\.[0-9]+$')
         # There should be some chunk files in cache
-        self._assert_files_in_cache(f'.*kafka/{self.topic}/.*_chunks/[0-9]+')
+        self._assert_in_cache(f'.*kafka/{self.topic}/.*_chunks/[0-9]+')
 
         consumer = KgoVerifierSeqConsumer(self.test_context,
                                           self.redpanda,
@@ -155,8 +166,46 @@ class CloudStorageChunkReadTest(PreallocNodesTest):
                                           nodes=self.preallocated_nodes)
         consumer.start()
         consumer.wait(timeout_sec=120)
-        self._assert_files_in_cache(fr'.*kafka/{self.topic}/.*\.log\.[0-9]+$',
-                                    must_be_absent=True)
+        self._assert_not_in_cache(fr'.*kafka/{self.topic}/.*\.log\.[0-9]+$')
+
+    @cluster(num_nodes=4)
+    @parametrize(prefetch=0)
+    @parametrize(prefetch=3)
+    @parametrize(prefetch=5)
+    def test_prefetch_chunks(self, prefetch):
+        self.log_segment_size = 1048576 * 10
+        self.topics[0].segment_bytes = self.log_segment_size
+        self._set_params_and_start_redpanda(
+            cloud_storage_chunk_prefetch=prefetch)
+
+        # Smaller messages mean chunks are closer to requested limit. We need more messages to be able
+        # to produce the required number of segments
+        self._produce_baseline(msg_size=100,
+                               n_segments=5,
+                               msg_count=200000 * 100)
+
+        rpk = RpkTool(self.redpanda)
+        # Cap max bytes to only get the first chunk.
+        rpk.consume(self.topic, partition=0, fetch_max_bytes=100, n=1)
+
+        self._assert_not_in_cache(fr'.*kafka/{self.topic}/.*\.log\.[0-9]+$')
+        chunk_files = set()
+        for node in self.redpanda.started_nodes():
+            chunk_files |= set([
+                l.strip() for l in node.account.ssh_capture(
+                    f"""find {self.redpanda.DATA_DIR}/cloud_storage_cache """
+                    f"""-regex '.*kafka/{self.topic}/.*_chunks/[0-9]+'""")
+            ])
+
+        self.logger.info(f'found {len(chunk_files)} chunk files')
+        for cf in chunk_files:
+            self.logger.debug(f'chunk file: {cf}')
+
+        if prefetch:
+            assert len(
+                chunk_files
+            ) == prefetch + 1, f'prefetch={prefetch} but {len(chunk_files)} chunks: ' \
+                               f'{pprint.pformat(chunk_files)} found in cache, expected {prefetch + 1}'
 
     @cluster(num_nodes=4)
     def test_fallback_mode(self):
@@ -174,14 +223,13 @@ class CloudStorageChunkReadTest(PreallocNodesTest):
         self._consume_baseline()
 
         # There should be no chunk files in cache in fallback mode
-        self._assert_files_in_cache(f'kafka/{self.topic}/.*_chunks/[0-9]+$',
-                                    must_be_absent=True)
+        self._assert_not_in_cache(f'kafka/{self.topic}/.*_chunks/[0-9]+$')
 
         # There should be some log files in cache in fallback mode
-        self._assert_files_in_cache(fr'.*kafka/{self.topic}/.*\.log\.[0-9]+$')
+        self._assert_in_cache(fr'.*kafka/{self.topic}/.*\.log\.[0-9]+$')
 
         # Index files should have been generated during full segment download.
-        self._assert_files_in_cache(f'.*kafka/{self.topic}/.*index$')
+        self._assert_in_cache(f'.*kafka/{self.topic}/.*index$')
 
     def _consume_baseline(self, timeout=60, max_msgs=None):
         consumer = KgoVerifierSeqConsumer(self.test_context,
@@ -200,11 +248,9 @@ class CloudStorageChunkReadTest(PreallocNodesTest):
         self._produce_baseline(n_segments=5)
         self._consume_baseline()
 
-        self._assert_files_in_cache(f'kafka/{self.topic}/.*_chunks/[0-9]+$',
-                                    must_be_absent=True)
-
-        self._assert_files_in_cache(fr'.*kafka/{self.topic}/.*\.log\.[0-9]+$')
-        self._assert_files_in_cache(f'.*kafka/{self.topic}/.*index$')
+        self._assert_not_in_cache(f'kafka/{self.topic}/.*_chunks/[0-9]+$')
+        self._assert_in_cache(fr'.*kafka/{self.topic}/.*\.log\.[0-9]+$')
+        self._assert_in_cache(f'.*kafka/{self.topic}/.*index$')
 
     @cluster(num_nodes=4, log_allow_list=["Exceeded cache size limit"])
     def test_read_when_cache_smaller_than_segment_size(self):
@@ -225,13 +271,16 @@ class CloudStorageChunkReadTest(PreallocNodesTest):
         # Read roughly 2 segments worth of data from the cloud
         read_count = msg_count // 2
         self.logger.info(f'reading {read_count} messages')
+
         observe_cache_dir = ObserveCacheDir(self.redpanda, self.topic)
         observe_cache_dir.start()
+
         self._consume_baseline(timeout=180, max_msgs=read_count)
         observe_cache_dir.stop()
-        self._assert_files_in_cache(fr'.*kafka/{self.topic}/.*\.log\.[0-9]+$',
-                                    must_be_absent=True)
-        self._assert_files_in_cache(f'.*kafka/{self.topic}/.*_chunks/[0-9]+')
+
+        self._assert_not_in_cache(fr'.*kafka/{self.topic}/.*\.log\.[0-9]+$')
+        self._assert_in_cache(f'.*kafka/{self.topic}/.*_chunks/[0-9]+')
+
         chunks_found = observe_cache_dir.chunks
         for file in chunks_found:
             self.logger.info(f'chunk file {file}')
@@ -269,9 +318,8 @@ class CloudStorageChunkReadTest(PreallocNodesTest):
 
         self._consume_baseline()
 
-        self._assert_files_in_cache(fr'.*kafka/{self.topic}/.*\.log\.[0-9]+$',
-                                    must_be_absent=True)
-        self._assert_files_in_cache(f'.*kafka/{self.topic}/.*_chunks/[0-9]+')
+        self._assert_not_in_cache(fr'.*kafka/{self.topic}/.*\.log\.[0-9]+$')
+        self._assert_in_cache(f'.*kafka/{self.topic}/.*_chunks/[0-9]+')
 
 
 class ObserveCacheDir(Thread):
