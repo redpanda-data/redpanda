@@ -184,6 +184,10 @@ func (r *ClusterToRedpandaReconciler) migrateRedpandaClusterSpec(cluster *vector
 	// Resources
 	redpandaResources := oldSpec.Resources.Redpanda
 	if redpandaResources != nil && redpandaResources.Cpu() != nil {
+		redpandaResources.Memory()
+		// on values
+		// memory
+		// reserveMemory
 
 		// Limits, Requests and Redpanda, these need to be parsed correctly
 		// On the chart we list these out a bit differently:

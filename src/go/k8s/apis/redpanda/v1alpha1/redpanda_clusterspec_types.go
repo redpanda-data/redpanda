@@ -2,6 +2,7 @@ package v1alpha1
 
 import (
 	"encoding/json"
+	"k8s.io/apimachinery/pkg/api/resource"
 
 	corev1 "k8s.io/api/core/v1"
 )
@@ -65,8 +66,8 @@ type RedpandaClusterSpec struct {
 }
 
 type ConfigWatcher struct {
-	Enabled   bool       `json:"enabled,omitempty"`
-	Resources *Resources `json:"resources,omitempty"`
+	Enabled   bool                         `json:"enabled,omitempty"`
+	Resources *corev1.ResourceRequirements `json:"resources,omitempty"`
 }
 
 // RedpandaImage is a top level field of the values file
@@ -217,20 +218,20 @@ type PersistentVolume struct {
 
 // PostInstallJob is a top level field of the values file
 type PostInstallJob struct {
-	Resources   *Resources        `json:"resources,omitempty"`
-	Annotations map[string]string `json:"annotations,omitempty"`
-	Enabled     bool              `json:"enabled"`
-	Labels      map[string]string `json:"labels,omitempty"`
+	Resources   *corev1.ResourceRequirements `json:"resources,omitempty"`
+	Annotations map[string]string            `json:"annotations,omitempty"`
+	Enabled     bool                         `json:"enabled"`
+	Labels      map[string]string            `json:"labels,omitempty"`
 }
 
 // PostUpgradeJob is a top level field of the values file
 type PostUpgradeJob struct {
-	Annotations  map[string]string `json:"annotations,omitempty"`
-	Enabled      bool              `json:"enabled"`
-	Labels       map[string]string `json:"labels,omitempty"`
-	ExtraEnv     json.RawMessage   `json:"extraEnv,omitempty"`
-	ExtraEnvFrom json.RawMessage   `json:"extraEnvFrom,omitempty"`
-	Resources    *Resources        `json:"resources,omitempty"`
+	Annotations  map[string]string            `json:"annotations,omitempty"`
+	Enabled      bool                         `json:"enabled"`
+	Labels       map[string]string            `json:"labels,omitempty"`
+	ExtraEnv     json.RawMessage              `json:"extraEnv,omitempty"`
+	ExtraEnvFrom json.RawMessage              `json:"extraEnvFrom,omitempty"`
+	Resources    *corev1.ResourceRequirements `json:"resources,omitempty"`
 }
 
 // Statefulset is a top level field of the values file
@@ -312,13 +313,13 @@ type UpdateStrategy struct {
 
 // Tuning is a top level field of the values file
 type Tuning struct {
-	Resources       *Resources `json:"resources,omitempty"`
-	BallastFilePath string     `json:"ballast_file_path,omitempty"`
-	BallastFileSize string     `json:"ballast_file_size,omitempty"`
-	TuneAioEvents   bool       `json:"tune_aio_events,omitempty"`
-	TuneBallastFile bool       `json:"tune_ballast_file,omitempty"`
-	TuneClockSource bool       `json:"tune_clocksource,omitempty"`
-	WellKnownIo     string     `json:"well_known_io,omitempty"`
+	Resources       *corev1.ResourceRequirements `json:"resources,omitempty"`
+	BallastFilePath string                       `json:"ballast_file_path,omitempty"`
+	BallastFileSize string                       `json:"ballast_file_size,omitempty"`
+	TuneAioEvents   bool                         `json:"tune_aio_events,omitempty"`
+	TuneBallastFile bool                         `json:"tune_ballast_file,omitempty"`
+	TuneClockSource bool                         `json:"tune_clocksource,omitempty"`
+	WellKnownIo     string                       `json:"well_known_io,omitempty"`
 }
 
 // Listeners is a top level field of the values file
@@ -390,18 +391,24 @@ type TopologySpreadConstraintsItems struct {
 }
 
 type CPU struct {
-	Cores           string `json:"cores,omitempty"`
-	Overprovisioned bool   `json:"overprovisioned,omitempty"`
+	Cores           *resource.Quantity `json:"cores,omitempty"`
+	Overprovisioned bool               `json:"overprovisioned,omitempty"`
 }
 
 type Container struct {
-	Max string `json:"max"`
-	Min string `json:"min,omitempty"`
+	Max *resource.Quantity `json:"max"`
+	Min *resource.Quantity `json:"min,omitempty"`
 }
 
 type Memory struct {
-	Container           *Container `json:"container"`
-	EnableMemoryLocking bool       `json:"enable_memory_locking,omitempty"`
+	Container           *Container      `json:"container"`
+	EnableMemoryLocking bool            `json:"enable_memory_locking,omitempty"`
+	Redpanda            *RedpandaMemory `json:"redpanda,omitempty"`
+}
+
+type RedpandaMemory struct {
+	Memory        *resource.Quantity `json:"memory"`
+	ReserveMemory *resource.Quantity `json:"reserveMemory"`
 }
 
 type RBAC struct {
@@ -416,8 +423,8 @@ type ServiceAccount struct {
 }
 
 type SetDataDirOwnership struct {
-	Enabled   bool       `json:"enabled,omitempty"`
-	Resources *Resources `json:"resources,omitempty"`
+	Enabled   bool                         `json:"enabled,omitempty"`
+	Resources *corev1.ResourceRequirements `json:"resources,omitempty"`
 }
 
 type InitContainerImage struct {
@@ -433,11 +440,11 @@ type InitContainers struct {
 }
 
 type Configurator struct {
-	Resources *Resources `json:"resources,omitempty"`
+	Resources *corev1.ResourceRequirements `json:"resources,omitempty"`
 }
 
 type SetTieredStorageCacheDirOwnership struct {
-	Resources *Resources `json:"resources,omitempty"`
+	Resources *corev1.ResourceRequirements `json:"resources,omitempty"`
 }
 
 type Monitoring struct {
