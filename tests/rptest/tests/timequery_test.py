@@ -11,6 +11,8 @@ import concurrent.futures
 import re
 import time
 import threading
+from logging import Logger
+from typing import Callable
 
 from rptest.services.cluster import cluster
 from rptest.tests.redpanda_test import RedpandaTest
@@ -38,6 +40,12 @@ from rptest.utils.mode_checks import skip_debug_mode
 
 
 class BaseTimeQuery:
+
+    log_segment_size: int
+    client: Callable[[], DefaultClient]
+    test_context: dict
+    logger: Logger
+
     def _create_and_produce(self, cluster, cloud_storage, local_retention,
                             base_ts, record_size, msg_count):
         topic = TopicSpec(name="tqtopic",
@@ -152,6 +160,12 @@ class BaseTimeQuery:
         hit_offsets = set()
 
         kcat = KafkaCat(cluster)
+        cloud_metrics = None
+        local_metrics = None
+
+        def diff_bytes(old, new):
+            return new > old and new - old < self.log_segment_size
+
         for e in expectations:
             ts = e.ts
             o = e.offset
@@ -179,11 +193,13 @@ class BaseTimeQuery:
             assert offset == o
 
             if is_redpanda and cloud_storage and o < local_start_offset and o not in hit_offsets and e.expect_read:
-                # We should have hydrated exactly one segment: this shows we are properly
-                # looking up the segment and not e.g. seeking from the start.  We may
+                # The number of bytes downloaded to query this offset is less than log segment size. We cannot rely
+                # on the number of segments downloaded, as chunked read registers each chunk as one segment, and a
+                # number of chunks may be downloaded to query an offset in a segment. The sum of bytes downloaded
+                # through chunks must be less than the segment size.
                 cloud_metrics.expect([
-                    ("vectorized_cloud_storage_successful_downloads_total",
-                     lambda a, b: b == a + 1)
+                    ("vectorized_cloud_storage_bytes_received_total",
+                     diff_bytes)
                 ])
 
             if is_redpanda and not cloud_storage and not batch_cache and e.expect_read:
@@ -191,8 +207,7 @@ class BaseTimeQuery:
                 # we are correctly looking up the right segment before seeking to
                 # the exact offset, and not e.g. reading from the start of the log.
                 local_metrics.expect([
-                    ("vectorized_storage_log_read_bytes_total",
-                     lambda a, b: b > a and b - a < self.log_segment_size)
+                    ("vectorized_storage_log_read_bytes_total", diff_bytes)
                 ])
 
             hit_offsets.add(o)
@@ -262,12 +277,17 @@ class TimeQueryTest(RedpandaTest, BaseTimeQuery):
             # Testing with batch cache disabled is important, because otherwise
             # we won't touch the path in skipping_consumer that applies
             # timestamp bounds
-            'disable_batch_cache': not batch_cache,
+            'disable_batch_cache':
+            not batch_cache,
 
             # Our time bounds on segment removal depend on the leadership
             # staying in one place.
-            'enable_leader_balancer': False,
-            'log_segment_size_min': 32 * 1024,
+            'enable_leader_balancer':
+            False,
+            'log_segment_size_min':
+            32 * 1024,
+            'cloud_storage_cache_chunk_size':
+            1024 * 128
         })
 
         if cloud_storage:
