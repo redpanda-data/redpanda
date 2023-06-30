@@ -648,6 +648,9 @@ FIXTURE_TEST(test_archive_retention, archiver_fixture) {
     }).get();
     fut.get();
 
+    BOOST_REQUIRE_EQUAL(
+      part->archival_meta_stm()->manifest().get_spillover_map().size(), 0);
+
     ss::sstring delete_payloads;
     for (const auto& [url, req] : get_targets()) {
         if (req.has_q_delete) {
