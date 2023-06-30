@@ -265,6 +265,17 @@ struct background_t {
 } // namespace detail
 inline constexpr detail::background_t background;
 
+/// \brief Create a new future, handling common shutdown exception types.
+inline seastar::future<>
+ignore_shutdown_exceptions(seastar::future<> fut) noexcept {
+    return std::move(fut)
+      .handle_exception_type([](const seastar::abort_requested_exception&) {})
+      .handle_exception_type([](const seastar::gate_closed_exception&) {})
+      .handle_exception_type([](const seastar::broken_semaphore&) {})
+      .handle_exception_type([](const seastar::broken_promise&) {})
+      .handle_exception_type([](const seastar::broken_condition_variable&) {});
+}
+
 /// \brief Create a future holding a gate, handling common shutdown exception
 /// types.  Returns the resulting future, onto which further exception handling
 /// may be chained.
@@ -279,11 +290,8 @@ inline constexpr detail::background_t background;
 /// noise on shutdown if the caller is logging exceptions.
 template<typename Func>
 inline auto spawn_with_gate_then(seastar::gate& g, Func&& func) noexcept {
-    return seastar::try_with_gate(g, std::forward<Func>(func))
-      .handle_exception_type([](const seastar::abort_requested_exception&) {})
-      .handle_exception_type([](const seastar::gate_closed_exception&) {})
-      .handle_exception_type([](const seastar::broken_semaphore&) {})
-      .handle_exception_type([](const seastar::broken_condition_variable&) {});
+    return ignore_shutdown_exceptions(
+      seastar::try_with_gate(g, std::forward<Func>(func)));
 }
 
 /// \brief Detach a fiber holding a gate, with exception handling to ignore
@@ -376,7 +384,7 @@ seastar::future<T...> with_timeout_abortable(
     auto st = std::make_unique<state>(deadline, as);
     auto result = st->done.get_future();
 
-    (void)f.then_wrapped([st = std::move(st)](auto&& f) {
+    background = f.then_wrapped([st = std::move(st)](auto&& f) {
         bool fired = !st->timer.armed() || !st->sub;
         st->timer.cancel();
         st->sub = seastar::abort_source::subscription{};
