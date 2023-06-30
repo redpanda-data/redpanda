@@ -252,6 +252,33 @@ class RedpandaUpgradeTest(PreallocNodesTest):
                 # ensure that checks are not performed too fast, by requesting a delay of 1 second
                 time.sleep(delay)
 
+    def _run_workloads_for_version(self, current_version):
+        # setup workload that could start at current_version
+        for w in self.adapted_workloads:
+            if w.state == WorkloadAdapter.NOT_STARTED and current_version >= w.get_earliest_applicable_release(
+            ):
+                self.logger.info(f"setup {w.get_workload_name()}")
+                w.begin()  # this will set in a STARTED state
+
+        # run checks on all the started workload.
+        # each check could take multiple runs, so loop on a list of it until exhaustion
+        self._check_workload_list(to_check_list= \
+                                [w for w in self.adapted_workloads if w.state == WorkloadAdapter.STARTED],
+                                version_param=current_version)
+
+        # stop workload that can't operate with next_version
+        for w in self.adapted_workloads:
+            if w.state == WorkloadAdapter.STARTED and \
+                current_version == w.get_latest_applicable_release():
+                self.logger.info(f"teardown of {w.get_workload_name()}")
+                w.end()
+
+        # quick exit: terminate loop if no workload is active
+        assert len([
+            w for w in self.adapted_workloads if w.state ==
+            WorkloadAdapter.STARTED or w.state == WorkloadAdapter.NOT_STARTED
+        ]) > 0, "no workload is active at {current_version=}"
+
     def cluster_version(self) -> int:
         return Admin(self.redpanda).get_features()['cluster_version']
 
@@ -290,37 +317,9 @@ class RedpandaUpgradeTest(PreallocNodesTest):
                     mid_upgrade_check=mid_upgrade_check):
                 current_version = expand_version(self.installer,
                                                  current_version)
-                # setup workload that could start at current_version
-                for w in self.adapted_workloads:
-                    if w.state == WorkloadAdapter.NOT_STARTED and current_version >= w.get_earliest_applicable_release(
-                    ):
-                        self.logger.info(f"setup {w.get_workload_name()}")
-                        w.begin()  # this will set in a STARTED state
+                self._run_workloads_for_version(
+                    expand_version(self.installer, current_version))
 
-                # run checks on all the started workload.
-                # each check could take multiple runs, so loop on a list of it until exhaustion
-                self._check_workload_list(to_check_list= \
-                                        [w for w in self.adapted_workloads if w.state == WorkloadAdapter.STARTED],
-                                        version_param=current_version)
-
-                # stop workload that can't operate with next_version
-                for w in self.adapted_workloads:
-                    if w.state == WorkloadAdapter.STARTED and current_version == w.get_latest_applicable_release(
-                    ):
-                        self.logger.info(
-                            f"teardown of {w.get_workload_name()}")
-                        w.end()
-
-                # quick exit: terminate loop if no workload is active
-                if len([
-                        w for w in self.adapted_workloads
-                        if w.state == WorkloadAdapter.STARTED
-                        or w.state == WorkloadAdapter.NOT_STARTED
-                ]) == 0:
-                    self.logger.info(
-                        f"terminating upgrade loop at version {current_version}, no workload is active"
-                    )
-                    break
         except Exception as e:
             self.logger.error(
                 f"Exception during upgrade loop: {traceback.format_exception(e)}"
