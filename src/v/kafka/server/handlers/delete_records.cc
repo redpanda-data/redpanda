@@ -52,6 +52,9 @@ validate_at_topic_level(request_context& ctx, const delete_records_topic& t) {
         return ctx.authorized(security::acl_operation::remove, t.name);
     };
     const auto is_deletable = [](const cluster::topic_configuration& cfg) {
+        if (cfg.is_read_replica()) {
+            return false;
+        }
         /// Immitates the logic in ntp_config::is_collectible
         if (
           !cfg.properties.has_overrides()
@@ -61,10 +64,6 @@ validate_at_topic_level(request_context& ctx, const delete_records_topic& t) {
         const auto& bitflags = cfg.properties.cleanup_policy_bitflags;
         return (*bitflags & model::cleanup_policy_bitflags::deletion)
                == model::cleanup_policy_bitflags::deletion;
-    };
-    const auto is_cloud_enabled = [](const cluster::topic_configuration& cfg) {
-        const auto& si_flags = cfg.properties.shadow_indexing;
-        return si_flags && *si_flags != model::shadow_indexing_mode::disabled;
     };
     const auto is_nodelete_topic = [](const delete_records_topic& t) {
         const auto& nodelete_topics
@@ -85,7 +84,7 @@ validate_at_topic_level(request_context& ctx, const delete_records_topic& t) {
         return make_partition_errors(t, error_code::topic_authorization_failed);
     } else if (!is_deletable(*cfg)) {
         return make_partition_errors(t, error_code::policy_violation);
-    } else if (is_cloud_enabled(*cfg) || is_nodelete_topic(t)) {
+    } else if (is_nodelete_topic(t)) {
         return make_partition_errors(t, error_code::invalid_topic_exception);
     }
     return {};

@@ -672,7 +672,8 @@ async_manifest_view::compute_retention(
     }
     if (
       _stm_manifest.get_start_kafka_offset_override() != kafka::offset{}
-      && _stm_manifest.get_start_kafka_offset_override() > result.offset) {
+      && _stm_manifest.get_start_kafka_offset_override()
+           > result.offset - result.delta) {
         // The start kafka offset is placed above the retention boundary. We
         // need to adjust retention boundary to remove all data up to start
         // kafka offset.
@@ -689,6 +690,10 @@ async_manifest_view::compute_retention(
               r.error());
         }
         result = r.value();
+        vlog(
+          _ctxlog.debug,
+          "Found offset {} to advance start offset to",
+          result.offset);
     }
     co_return result;
 }
@@ -703,7 +708,7 @@ async_manifest_view::offset_based_retention() noexcept {
         if (res.has_failure() && res.error() != error_outcome::out_of_range) {
             vlog(
               _ctxlog.error,
-              "Failed to compute time-based retention {}",
+              "Failed to compute offset-based retention {}",
               res.error());
             co_return res.as_failure();
         }

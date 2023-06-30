@@ -35,16 +35,35 @@ struct segment_spec {
     size_t end_offset;
     size_t size_bytes;
     std::optional<model::timestamp> timestamp{std::nullopt};
+    size_t start_kafka_offset;
+    size_t end_kafka_offset;
+
+    segment_spec(
+      size_t start,
+      size_t end,
+      size_t size,
+      std::optional<model::timestamp> ts = std::nullopt,
+      int start_kafka = -1,
+      int end_kafka = -1)
+      : start_offset(start)
+      , end_offset(end)
+      , size_bytes(size)
+      , timestamp(ts)
+      , start_kafka_offset(start_kafka >= 0 ? start_kafka : start)
+      , end_kafka_offset(end_kafka >= 0 ? end_kafka : end) {}
 
     friend std::ostream&
     operator<<(std::ostream& os, const segment_spec& spec) {
         fmt::print(
           os,
-          "{{ start_offset={}, end_offset={}, size_bytes={}, timestamp={} }}",
+          "{{ start_offset={}, end_offset={}, size_bytes={}, timestamp={}, "
+          "start_kafka_offset={}, end_kafka_offset={} }}",
           spec.start_offset,
           spec.end_offset,
           spec.size_bytes,
-          spec.timestamp);
+          spec.timestamp,
+          spec.start_kafka_offset,
+          spec.end_kafka_offset);
         return os;
     }
 };
@@ -72,6 +91,10 @@ inline void populate_manifest(
            .base_offset = model::offset{spec.start_offset},
            .committed_offset = model::offset{spec.end_offset},
            .max_timestamp = spec.timestamp ? *spec.timestamp
-                                           : model::timestamp::now()});
+                                           : model::timestamp::now(),
+           .delta_offset = model::offset_delta(
+             spec.start_offset - spec.start_kafka_offset),
+           .delta_offset_end = model::offset_delta(
+             spec.end_offset - spec.end_kafka_offset)});
     }
 }

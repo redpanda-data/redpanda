@@ -16,6 +16,7 @@
 #include "cluster/errc.h"
 #include "cluster/logger.h"
 #include "cluster/persisted_stm.h"
+#include "cluster/prefix_truncate_record.h"
 #include "config/configuration.h"
 #include "features/feature_table.h"
 #include "model/fundamental.h"
@@ -266,8 +267,8 @@ command_batch_builder::truncate(model::offset start_rp_offset) {
     return *this;
 }
 
-command_batch_builder&
-command_batch_builder::truncate(kafka::offset start_kafka_offset) {
+command_batch_builder& command_batch_builder::update_start_kafka_offset(
+  kafka::offset start_kafka_offset) {
     iobuf key_buf = serde::to_iobuf(
       archival_metadata_stm::update_start_kafka_offset_cmd::key);
     auto record_val
@@ -527,7 +528,7 @@ ss::future<std::error_code> archival_metadata_stm::truncate(
   ss::lowres_clock::time_point deadline,
   ss::abort_source& as) {
     auto builder = batch_start(deadline, as);
-    builder.truncate(start_kafka_offset);
+    builder.update_start_kafka_offset(start_kafka_offset);
     co_return co_await builder.replicate();
 }
 
@@ -708,6 +709,27 @@ ss::future<std::error_code> archival_metadata_stm::do_add_segments(
 }
 
 ss::future<> archival_metadata_stm::apply(model::record_batch b) {
+    if (b.header().type == model::record_batch_type::prefix_truncate) {
+        // Special case handling for prefix_truncate batches: these originate
+        // in log_eviction_stm, but affect the entire partition, local and
+        // cloud storage alike. Despite the record originating elsewhere, note
+        // that the STM is still deterministic, as records are applied in
+        // order and are not allowed to fail.
+        b.for_each_record(
+          [this, base_offset = b.base_offset()](model::record&& r) {
+              _last_dirty_at = base_offset + model::offset{r.offset_delta()};
+              auto key = serde::from_iobuf<uint8_t>(r.release_key());
+              auto val = serde::from_iobuf<prefix_truncate_record>(
+                r.release_value());
+              if (key == prefix_truncate_key) {
+                  // The archival layer can't translate arbitrary redpanda
+                  // offsets, so just pass through the Kafka offset as is.
+                  apply_update_start_kafka_offset(val.kafka_start_offset);
+              }
+          });
+        _insync_offset = b.last_offset();
+        co_return;
+    }
     if (b.header().type != model::record_batch_type::archival_metadata) {
         _insync_offset = b.last_offset();
         co_return;
@@ -1055,19 +1077,9 @@ void archival_metadata_stm::apply_update_start_kafka_offset(kafka::offset so) {
     if (!_manifest->advance_start_kafka_offset(so)) {
         vlog(
           _logger.error,
-          "Can't truncate manifest up to kafka offset {}, offset out of range, "
-          "current start kafka offset: {}, start offset: {}, archive start "
-          "offset: {}",
+          "Can't apply override to kafka start offset {}, currently {}",
           so,
-          get_start_kafka_offset(),
-          get_start_offset(),
-          get_archive_start_offset());
-    } else {
-        vlog(
-          _logger.debug,
-          "Start kafka offset updated to {}, start offset updated to {}",
-          get_start_kafka_offset(),
-          get_start_offset());
+          manifest().get_start_kafka_offset_override());
     }
 }
 

@@ -191,6 +191,10 @@ struct segment_meta {
         return model::next_offset(committed_offset) - delta;
     }
 
+    kafka::offset last_kafka_offset() const {
+        return next_kafka_offset() - kafka::offset(1);
+    }
+
     auto operator<=>(const segment_meta&) const = default;
 };
 std::ostream& operator<<(std::ostream& o, const segment_meta& r);

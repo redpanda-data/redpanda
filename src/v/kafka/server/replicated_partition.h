@@ -26,6 +26,7 @@
 #include <boost/numeric/conversion/cast.hpp>
 
 #include <memory>
+#include <optional>
 #include <system_error>
 
 namespace kafka {
@@ -39,17 +40,10 @@ public:
 
     ss::future<result<model::offset, error_code>>
     sync_effective_start(model::timeout_clock::duration timeout) final {
-        if (
-          _partition->is_read_replica_mode_enabled()
-          && _partition->cloud_data_available()) {
-            // Always assume remote read in this case.
-            co_return _partition->start_cloud_offset();
-        }
-
-        auto synced_local_start_offset
-          = co_await _partition->sync_effective_start(timeout);
-        if (!synced_local_start_offset) {
-            auto err = synced_local_start_offset.error();
+        auto synced_start_offset_override
+          = co_await _partition->sync_kafka_start_offset_override(timeout);
+        if (synced_start_offset_override.has_failure()) {
+            auto err = synced_start_offset_override.error();
             auto error_code = error_code::unknown_server_error;
             if (err.category() == cluster::error_category()) {
                 switch (cluster::errc(err.value())) {
@@ -66,34 +60,17 @@ public:
             }
             co_return error_code;
         }
-        auto local_kafka_start_offset = _translator->from_log_offset(
-          synced_local_start_offset.value());
-        if (
-          _partition->is_remote_fetch_enabled()
-          && _partition->cloud_data_available()
-          && (_partition->start_cloud_offset() < local_kafka_start_offset)) {
-            co_return _partition->start_cloud_offset();
-        }
-        co_return local_kafka_start_offset;
+        co_return kafka_start_offset_with_override(
+          synced_start_offset_override.value());
     }
 
     model::offset start_offset() const final {
-        if (
-          _partition->is_read_replica_mode_enabled()
-          && _partition->cloud_data_available()) {
-            // Always assume remote read in this case.
-            return _partition->start_cloud_offset();
+        const auto start_offset_override
+          = _partition->kafka_start_offset_override();
+        if (!start_offset_override.has_value()) {
+            return partition_kafka_start_offset();
         }
-
-        auto local_kafka_start_offset = _translator->from_log_offset(
-          _partition->raft_start_offset());
-        if (
-          _partition->is_remote_fetch_enabled()
-          && _partition->cloud_data_available()
-          && (_partition->start_cloud_offset() < local_kafka_start_offset)) {
-            return _partition->start_cloud_offset();
-        }
-        return local_kafka_start_offset;
+        return kafka_start_offset_with_override(start_offset_override.value());
     }
 
     model::offset high_watermark() const final {
@@ -198,6 +175,52 @@ public:
     result<partition_info> get_partition_info() const final;
 
 private:
+    // Returns the Kafka offset corresponding to the lowest offset in the
+    // log, including local and cloud storage. Doesn't take into account any
+    // start offset overrides (see start_offset()).
+    model::offset partition_kafka_start_offset() const {
+        if (
+          _partition->is_read_replica_mode_enabled()
+          && _partition->cloud_data_available()) {
+            // Always assume remote read in this case.
+            return _partition->start_cloud_offset();
+        }
+
+        auto local_kafka_start_offset = _translator->from_log_offset(
+          _partition->raft_start_offset());
+        if (
+          _partition->is_remote_fetch_enabled()
+          && _partition->cloud_data_available()
+          && (_partition->start_cloud_offset() < local_kafka_start_offset)) {
+            return _partition->start_cloud_offset();
+        }
+        return local_kafka_start_offset;
+    }
+
+    model::offset kafka_start_offset_with_override(
+      model::offset start_kafka_offset_override) const {
+        if (start_kafka_offset_override == model::offset{}) {
+            return partition_kafka_start_offset();
+        }
+        if (_partition->is_read_replica_mode_enabled()) {
+            // The start override may fall ahead of the HWM since read replicas
+            // compute HWM based on uploaded segments, and the override may
+            // appear in the manifest before uploading corresponding segments.
+            // Clamp down to the HWM.
+            const auto hwm = high_watermark();
+            if (hwm <= start_kafka_offset_override) {
+                return hwm;
+            }
+        }
+        return std::max(
+          partition_kafka_start_offset(), start_kafka_offset_override);
+    }
+
+    // Returns the highest offset in the given term, without considering
+    // overrides of the starting offset.
+    ss::future<std::optional<model::offset>>
+      get_leader_epoch_last_offset_unbounded(kafka::leader_epoch) const;
+
     ss::future<std::vector<cluster::rm_stm::tx_range>>
       aborted_transactions_local(
         cloud_storage::offset_range,

@@ -73,8 +73,8 @@ public:
 
     /// Truncate the beginning of the log up until a given offset
     /// Can only be performed on logs that are deletable and non internal
-    ss::future<std::error_code>
-    prefix_truncate(model::offset o, ss::lowres_clock::time_point deadline);
+    ss::future<std::error_code> prefix_truncate(
+      model::offset o, kafka::offset ko, ss::lowres_clock::time_point deadline);
 
     kafka_stages replicate_in_stages(
       model::batch_identity,
@@ -93,19 +93,46 @@ public:
     }
 
     ss::future<result<model::offset, std::error_code>>
-    sync_effective_start(model::timeout_clock::duration timeout) {
-        if (_log_eviction_stm) {
-            co_return co_await _log_eviction_stm->sync_effective_start(timeout);
+    sync_kafka_start_offset_override(model::timeout_clock::duration timeout) {
+        if (_log_eviction_stm && !is_read_replica_mode_enabled()) {
+            auto offset_res
+              = co_await _log_eviction_stm->sync_start_offset_override(timeout);
+            if (offset_res.has_failure()) {
+                co_return offset_res.as_failure();
+            }
+            // The eviction STM only keeps track of DeleteRecords truncations
+            // as Raft offsets. Translate if possible.
+            auto offset_translator_state = get_offset_translator_state();
+            if (
+              offset_res.value() != model::offset{}
+              && _raft->start_offset() < offset_res.value()) {
+                auto start_kafka_offset
+                  = offset_translator_state->from_log_offset(
+                    offset_res.value());
+                co_return start_kafka_offset;
+            }
+            // If a start override is no longer in the offset translator state,
+            // it may have been uploaded and persisted in the manifest.
         }
-        co_return raft_start_offset();
+        if (_archival_meta_stm) {
+            auto term = _raft->term();
+            if (!co_await _archival_meta_stm->sync(timeout)) {
+                if (term != _raft->term()) {
+                    co_return errc::not_leader;
+                } else {
+                    co_return errc::timeout;
+                }
+            }
+            auto start_kafka_offset = _archival_meta_stm->manifest()
+                                        .get_start_kafka_offset_override();
+            if (start_kafka_offset != kafka::offset{}) {
+                co_return kafka::offset_cast(start_kafka_offset);
+            }
+        }
+        co_return model::offset{};
     }
 
-    model::offset raft_start_offset() const {
-        if (_log_eviction_stm) {
-            return _log_eviction_stm->effective_start_offset();
-        }
-        return _raft->start_offset();
-    }
+    model::offset raft_start_offset() const { return _raft->start_offset(); }
 
     /**
      * The returned value of last committed offset should not be used to
@@ -310,6 +337,28 @@ public:
     ss::future<storage::translating_reader> make_cloud_reader(
       storage::log_reader_config config,
       std::optional<model::timeout_clock::time_point> deadline = std::nullopt);
+
+    std::optional<model::offset> kafka_start_offset_override() const {
+        if (_log_eviction_stm && !is_read_replica_mode_enabled()) {
+            auto o = _log_eviction_stm->start_offset_override();
+            if (o != model::offset{} && _raft->start_offset() < o) {
+                auto offset_translator_state = get_offset_translator_state();
+                auto start_kafka_offset
+                  = offset_translator_state->from_log_offset(o);
+                return start_kafka_offset;
+            }
+            // If a start override is no longer in the offset translator state,
+            // it may have been uploaded and persisted in the manifest.
+        }
+        if (_archival_meta_stm) {
+            auto o = _archival_meta_stm->manifest()
+                       .get_start_kafka_offset_override();
+            if (o != kafka::offset{}) {
+                return kafka::offset_cast(o);
+            }
+        }
+        return std::nullopt;
+    }
 
     ss::future<> remove_persistent_state();
     ss::future<> finalize_remote_partition(ss::abort_source& as);

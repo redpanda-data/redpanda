@@ -20,6 +20,7 @@
 #include "raft/consensus_utils.h"
 #include "raft/errc.h"
 #include "raft/types.h"
+#include "storage/log_reader.h"
 #include "storage/types.h"
 
 #include <seastar/core/coroutine.hh>
@@ -244,7 +245,43 @@ ss::future<std::optional<storage::timequery_result>>
 replicated_partition::timequery(storage::timequery_config cfg) {
     // cluster::partition::timequery returns a result in Kafka offsets,
     // no further offset translation is required here.
-    return _partition->timequery(cfg);
+    auto res = co_await _partition->timequery(cfg);
+    if (!res.has_value()) {
+        co_return std::nullopt;
+    }
+    const auto kafka_start_override = _partition->kafka_start_offset_override();
+    if (
+      !kafka_start_override.has_value()
+      || kafka_start_override.value() <= res.value().offset) {
+        // The start override doesn't affect the result of the timequery.
+        co_return res;
+    }
+    vlog(
+      klog.debug,
+      "{} timequery result {} clamped by start override, fetching result at "
+      "start {}",
+      ntp(),
+      res->offset,
+      kafka_start_override.value());
+    storage::log_reader_config config(
+      kafka_start_override.value(),
+      cfg.max_offset,
+      0,
+      2048, // We just need one record batch
+      cfg.prio,
+      cfg.type_filter,
+      std::nullopt, // No timestamp, just use the offset
+      cfg.abort_source);
+    auto translating_reader = co_await make_reader(config, std::nullopt);
+    auto ot_state = std::move(translating_reader.ot_state);
+    model::record_batch_reader::storage_t data
+      = co_await model::consume_reader_to_memory(
+        std::move(translating_reader.reader), model::no_timeout);
+    auto& batches = std::get<model::record_batch_reader::data_t>(data);
+    if (batches.empty()) {
+        co_return std::nullopt;
+    }
+    co_return storage::batch_timequery(*(batches.begin()), cfg.time);
 }
 
 ss::future<result<model::offset>> replicated_partition::replicate(
@@ -282,6 +319,23 @@ raft::replicate_stages replicated_partition::replicate(
 ss::future<std::optional<model::offset>>
 replicated_partition::get_leader_epoch_last_offset(
   kafka::leader_epoch epoch) const {
+    auto offset_unbounded = co_await get_leader_epoch_last_offset_unbounded(
+      epoch);
+    if (!offset_unbounded.has_value()) {
+        co_return std::nullopt;
+    }
+    if (!_partition->kafka_start_offset_override().has_value()) {
+        co_return offset_unbounded;
+    }
+    // If the requested term falls below our earliest consumable segment as
+    // bounded by a start override, return the offset of the next-highest term
+    // (the new start offset).
+    co_return std::max(offset_unbounded.value(), start_offset());
+}
+
+ss::future<std::optional<model::offset>>
+replicated_partition::get_leader_epoch_last_offset_unbounded(
+  kafka::leader_epoch epoch) const {
     const model::term_id term(epoch);
     const auto first_local_offset = _partition->raft_start_offset();
     const auto first_local_term = _partition->get_term(first_local_offset);
@@ -314,10 +368,17 @@ ss::future<error_code> replicated_partition::prefix_truncate(
       || kafka_truncation_offset > high_watermark()) {
         co_return error_code::offset_out_of_range;
     }
-    const auto rp_truncate_offset = _translator->to_log_offset(
-      kafka_truncation_offset);
+    model::offset rp_truncate_offset{};
+    auto local_kafka_start_offset = _translator->from_log_offset(
+      _partition->raft_start_offset());
+    if (kafka_truncation_offset > local_kafka_start_offset) {
+        rp_truncate_offset = _translator->to_log_offset(
+          kafka_truncation_offset);
+    }
     auto errc = co_await _partition->prefix_truncate(
-      rp_truncate_offset, deadline);
+      rp_truncate_offset,
+      model::offset_cast(kafka_truncation_offset),
+      deadline);
 
     /// Translate any std::error_codes into proper kafka error codes
     auto kerr = error_code::unknown_server_error;
