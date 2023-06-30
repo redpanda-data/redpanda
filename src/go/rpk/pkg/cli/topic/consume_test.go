@@ -279,7 +279,7 @@ func TestParseConsumeTimestamp(t *testing.T) {
 			gotErr        bool
 		)
 		test.startAt = test.startAt.UTC()
-		l, startAt, end, fromTimestamp, err = parseConsumeTimestamp(test.in, time.Now())
+		l, startAt, end, fromTimestamp, err = parseTimestampBasedOffset(test.in, time.Now())
 
 		gotErr = err != nil
 		if gotErr != test.expErrFirstHalf {
@@ -310,9 +310,9 @@ func TestParseConsumeTimestamp(t *testing.T) {
 		}
 
 		if fromTimestamp {
-			_, endAt, _, _, err = parseConsumeTimestamp(offset[1:], startAt)
+			_, endAt, _, _, err = parseTimestampBasedOffset(offset[1:], startAt)
 		} else {
-			_, endAt, _, _, err = parseConsumeTimestamp(offset[1:], time.Now())
+			_, endAt, _, _, err = parseTimestampBasedOffset(offset[1:], time.Now())
 		}
 
 		gotErr = err != nil

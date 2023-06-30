@@ -425,7 +425,7 @@ func parseFromToOffset(
 //
 // The expressions below all end in (?::|$), meaning, a non capturing group for
 // the first time followed by a colon or the second time at the end.
-func parseConsumeTimestamp(
+func parseTimestampBasedOffset(
 	half string, baseTimestamp time.Time,
 ) (length int, at time.Time, end bool, fromTimestamp bool, err error) {
 	switch {
@@ -516,7 +516,7 @@ func (c *consumer) parseTimeOffset(
 		err           error
 	)
 	if !strings.HasPrefix(offset, ":") {
-		length, startAt, end, fromTimestamp, err = parseConsumeTimestamp(offset, time.Now())
+		length, startAt, end, fromTimestamp, err = parseTimestampBasedOffset(offset, time.Now())
 		if err != nil {
 			return err
 		} else if end {
@@ -549,9 +549,9 @@ func (c *consumer) parseTimeOffset(
 	offset = offset[1:] // strip start:end delimiting colon
 
 	if fromTimestamp {
-		length, endAt, end, _, err = parseConsumeTimestamp(offset, startAt)
+		length, endAt, end, _, err = parseTimestampBasedOffset(offset, startAt)
 	} else {
-		length, endAt, end, _, err = parseConsumeTimestamp(offset, time.Now())
+		length, endAt, end, _, err = parseTimestampBasedOffset(offset, time.Now())
 	}
 
 	if err != nil {
