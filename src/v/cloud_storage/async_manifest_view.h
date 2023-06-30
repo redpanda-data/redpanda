@@ -256,7 +256,8 @@ public:
     async_manifest_view_cursor_status get_status() const;
 
     /// Move to the next manifest or fail
-    ss::future<result<bool, error_outcome>> next();
+    using eof = ss::bool_class<struct eof_tag>;
+    ss::future<result<eof, error_outcome>> next();
 
     /// Shortcut to use with Seastar's future utils.
     ///

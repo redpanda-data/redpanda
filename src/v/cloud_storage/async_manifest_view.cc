@@ -210,7 +210,8 @@ bool async_manifest_view_cursor::manifest_in_range(
       });
 }
 
-ss::future<result<bool, error_outcome>> async_manifest_view_cursor::next() {
+ss::future<result<async_manifest_view_cursor::eof, error_outcome>>
+async_manifest_view_cursor::next() {
     static constexpr auto EOS = model::offset{};
     auto next_base_offset = ss::visit(
       _current,
@@ -222,7 +223,7 @@ ss::future<result<bool, error_outcome>> async_manifest_view_cursor::next() {
       });
 
     if (next_base_offset == EOS || next_base_offset > _end) {
-        co_return false;
+        co_return eof::yes;
     }
     auto manifest = co_await _view.get_materialized_manifest(next_base_offset);
     if (manifest.has_failure()) {
@@ -233,7 +234,7 @@ ss::future<result<bool, error_outcome>> async_manifest_view_cursor::next() {
     }
     _current = manifest.value();
     _timer.rearm(_idle_timeout + ss::lowres_clock::now());
-    co_return true;
+    co_return eof::no;
 }
 
 ss::future<ss::stop_iteration> async_manifest_view_cursor::next_iter() {
@@ -241,8 +242,8 @@ ss::future<ss::stop_iteration> async_manifest_view_cursor::next_iter() {
     if (res.has_failure()) {
         throw std::system_error(res.error());
     }
-    co_return res.value() == false ? ss::stop_iteration::yes
-                                   : ss::stop_iteration::no;
+    co_return res.value() == eof::yes ? ss::stop_iteration::yes
+                                      : ss::stop_iteration::no;
 }
 
 std::optional<std::reference_wrapper<const partition_manifest>>
@@ -817,7 +818,9 @@ async_manifest_view::time_based_retention(
 
                 if (!eof) {
                     auto r = co_await cursor->next();
-                    if (r.has_value() && r.value() == false) {
+                    if (
+                      r.has_value()
+                      && r.value() == async_manifest_view_cursor::eof::yes) {
                         vlog(
                           _ctxlog.info,
                           "Entire archive is removed by the time-based "
@@ -937,7 +940,9 @@ async_manifest_view::size_based_retention(size_t size_limit) noexcept {
                   result.delta);
                 if (!eof) {
                     auto r = co_await cursor->next();
-                    if (r.has_value() && r.value() == false) {
+                    if (
+                      r.has_value()
+                      && r.value() == async_manifest_view_cursor::eof::yes) {
                         // If the retention policy requires us to remove
                         // segments from the STM manifest, or if the entire
                         // archive was removed, the archive start offset should
