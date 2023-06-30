@@ -17,6 +17,7 @@
 #include "kafka/protocol/delete_records.h"
 #include "kafka/protocol/flex_versions.h"
 #include "kafka/protocol/fwd.h"
+#include "kafka/protocol/offset_for_leader_epoch.h"
 #include "kafka/server/protocol_utils.h"
 #include "kafka/types.h"
 #include "net/transport.h"
@@ -207,6 +208,10 @@ public:
         } else if constexpr (std::is_same_v<type, sasl_handshake_request>) {
             return dispatch(std::move(r), api_version(1));
         } else if constexpr (std::is_same_v<type, delete_records_request>) {
+            return dispatch(std::move(r), api_version(2));
+        } else if constexpr (std::is_same_v<
+                               type,
+                               offset_for_leader_epoch_request>) {
             return dispatch(std::move(r), api_version(2));
         } else if constexpr (std::is_same_v<type, sasl_authenticate_request>) {
             return dispatch(std::move(r), api_version(1));
