@@ -267,8 +267,8 @@ command_batch_builder::truncate(model::offset start_rp_offset) {
     return *this;
 }
 
-command_batch_builder&
-command_batch_builder::truncate(kafka::offset start_kafka_offset) {
+command_batch_builder& command_batch_builder::update_start_kafka_offset(
+  kafka::offset start_kafka_offset) {
     iobuf key_buf = serde::to_iobuf(
       archival_metadata_stm::update_start_kafka_offset_cmd::key);
     auto record_val
@@ -528,7 +528,7 @@ ss::future<std::error_code> archival_metadata_stm::truncate(
   ss::lowres_clock::time_point deadline,
   ss::abort_source& as) {
     auto builder = batch_start(deadline, as);
-    builder.truncate(start_kafka_offset);
+    builder.update_start_kafka_offset(start_kafka_offset);
     co_return co_await builder.replicate();
 }
 

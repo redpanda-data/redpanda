@@ -14,6 +14,7 @@
 #include "cloud_storage/tests/produce_utils.h"
 #include "cloud_storage/tests/s3_imposter.h"
 #include "config/configuration.h"
+#include "kafka/server/tests/delete_records_utils.h"
 #include "kafka/server/tests/produce_consume_utils.h"
 #include "model/fundamental.h"
 #include "redpanda/tests/fixture.h"
@@ -118,4 +119,98 @@ FIXTURE_TEST(test_read_replica_basic_sync, read_replica_e2e_fixture) {
             next += model::offset(1);
         }
     }
+}
+
+FIXTURE_TEST(test_read_replica_delete_records, read_replica_e2e_fixture) {
+    const model::topic topic_name("tapioca");
+    model::ntp ntp(model::kafka_namespace, topic_name, 0);
+    cluster::topic_properties props;
+    props.shadow_indexing = model::shadow_indexing_mode::full;
+    props.retention_local_target_bytes = tristate<size_t>(1);
+    add_topic({model::kafka_namespace, topic_name}, 1, props).get();
+    wait_for_leader(ntp).get();
+
+    // Produce records to the source.
+    auto partition = app.partition_manager.local().get(ntp).get();
+    auto& archiver = partition->archiver()->get();
+    BOOST_REQUIRE(archiver.sync_for_tests().get());
+    archiver.upload_topic_manifest().get();
+    tests::remote_segment_generator gen(make_kafka_client().get(), *partition);
+    BOOST_REQUIRE_EQUAL(
+      30, gen.batches_per_segment(10).num_segments(3).produce().get());
+    BOOST_REQUIRE_EQUAL(3, archiver.manifest().size());
+
+    // NOTE: we're creating the deleter here before starting the read replica
+    // fixture because make_kafka_client() uses global configs that will be
+    // overwritten by the new fixture.
+    tests::kafka_delete_records_transport deleter(make_kafka_client().get());
+
+    auto rr_rp = start_read_replica_fixture();
+    cluster::topic_properties read_replica_props;
+    read_replica_props.shadow_indexing = model::shadow_indexing_mode::fetch;
+    read_replica_props.read_replica = true;
+    read_replica_props.read_replica_bucket = "test-bucket";
+    rr_rp
+      ->add_topic({model::kafka_namespace, topic_name}, 1, read_replica_props)
+      .get();
+    rr_rp->wait_for_leader(ntp).get();
+    auto rr_partition = rr_rp->app.partition_manager.local().get(ntp).get();
+    auto& rr_archiver = rr_partition->archiver()->get();
+
+    // Do an initial sync to download the manifest.
+    BOOST_REQUIRE(rr_archiver.sync_for_tests().get());
+    rr_archiver.sync_manifest().get();
+    BOOST_REQUIRE_EQUAL(3, rr_archiver.manifest().size());
+
+    kafka_consume_transport consumer(rr_rp->make_kafka_client().get());
+    consumer.start().get();
+    auto consumed_records = consumer
+                              .consume_from_partition(
+                                topic_name,
+                                model::partition_id(0),
+                                model::offset(28))
+                              .get();
+    BOOST_REQUIRE(!consumed_records.empty());
+    BOOST_CHECK_EQUAL("key28", consumed_records[0].key);
+    BOOST_CHECK_EQUAL("val28", consumed_records[0].val);
+
+    // DeleteRecords on the source cluster.
+    deleter.start().get();
+    auto new_start = model::offset(29);
+    BOOST_REQUIRE_EQUAL(
+      new_start,
+      deleter
+        .delete_records_from_partition(
+          topic_name, model::partition_id(0), new_start, 5s)
+        .get());
+    BOOST_REQUIRE_EQUAL(
+      cloud_storage::upload_result::success,
+      archiver.upload_manifest("test").get());
+    archiver.flush_manifest_clean_offset().get();
+
+    // Once synced on the read replica, it should fail to be read.
+    BOOST_REQUIRE(rr_archiver.sync_for_tests().get());
+    BOOST_REQUIRE_EQUAL(
+      cloud_storage::download_result::success,
+      rr_archiver.sync_manifest().get());
+    BOOST_REQUIRE_EQUAL(3, rr_archiver.manifest().size());
+    BOOST_REQUIRE_EXCEPTION(
+      consumer
+        .consume_from_partition(
+          topic_name, model::partition_id(0), model::offset(28))
+        .get(),
+      std::runtime_error,
+      [](std::runtime_error e) {
+          return std::string(e.what()).find("out_of_range")
+                 != std::string::npos;
+      });
+    consumed_records = consumer
+                         .consume_from_partition(
+                           topic_name,
+                           model::partition_id(0),
+                           model::offset(29))
+                         .get();
+    BOOST_REQUIRE(!consumed_records.empty());
+    BOOST_CHECK_EQUAL("key29", consumed_records[0].key);
+    BOOST_CHECK_EQUAL("val29", consumed_records[0].val);
 }
