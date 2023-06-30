@@ -26,6 +26,7 @@ offset_index::offset_index(
   : _rp_offsets{}
   , _kaf_offsets{}
   , _file_offsets{}
+  , _time_offsets{}
   , _pos{}
   , _initial_rp(initial_rp)
   , _initial_kaf(initial_kaf)
@@ -36,16 +37,21 @@ offset_index::offset_index(
   , _min_file_pos_step(file_pos_step) {}
 
 void offset_index::add(
-  model::offset rp_offset, kafka::offset kaf_offset, int64_t file_offset) {
+  model::offset rp_offset,
+  kafka::offset kaf_offset,
+  int64_t file_offset,
+  model::timestamp max_timestamp) {
     auto ix = index_mask & _pos++;
     _rp_offsets.at(ix) = rp_offset();
     _kaf_offsets.at(ix) = kaf_offset();
     _file_offsets.at(ix) = file_offset;
+    _time_offsets.at(ix) = max_timestamp.value();
     try {
         if ((_pos & index_mask) == 0) {
             _rp_index.add(_rp_offsets);
             _kaf_index.add(_kaf_offsets);
             _file_index.add(_file_offsets);
+            _time_index.add(_time_offsets);
         }
     } catch (...) {
         // Get rid of the corrupted state in the encoders.
@@ -59,6 +65,7 @@ void offset_index::add(
         _kaf_index = encoder_t(_initial_kaf);
         _file_index = foffset_encoder_t(
           _initial_file_pos, delta_delta_t(_min_file_pos_step));
+        _time_index = encoder_t(_initial_time.value());
         throw;
     }
 }
@@ -242,7 +249,7 @@ offset_index::coarse_index_t offset_index::build_coarse_index(
 struct offset_index_header
   : serde::envelope<
       offset_index_header,
-      serde::version<1>,
+      serde::version<2>,
       serde::compat_version<1>> {
     int64_t min_file_pos_step;
     uint64_t num_elements;
@@ -258,6 +265,12 @@ struct offset_index_header
     iobuf rp_index;
     iobuf kaf_index;
     iobuf file_index;
+
+    // Version 2 fields
+    int64_t base_time{model::timestamp::missing().value()};
+    int64_t last_time{model::timestamp::missing().value()};
+    std::vector<int64_t> time_write_buf;
+    iobuf time_index;
 };
 
 iobuf offset_index::to_iobuf() {
@@ -279,7 +292,11 @@ iobuf offset_index::to_iobuf() {
       .rp_index = _rp_index.copy(),
       .kaf_index = _kaf_index.copy(),
       .file_index = _file_index.copy(),
-    };
+      .base_time = _initial_time.value(),
+      .last_time = _time_index.get_last_value(),
+      .time_write_buf = std::vector<int64_t>(
+        _time_offsets.begin(), _time_offsets.end()),
+      .time_index = _time_index.copy()};
     return serde::to_iobuf(std::move(hdr));
 }
 
@@ -310,6 +327,17 @@ void offset_index::from_iobuf(iobuf b) {
       std::move(hdr.file_index),
       delta_delta_t(_min_file_pos_step));
     _min_file_pos_step = hdr.min_file_pos_step;
+
+    _initial_time = model::timestamp(hdr.base_time);
+    _time_index = encoder_t(
+      _initial_time.value(),
+      num_rows,
+      hdr.last_time,
+      std::move(hdr.time_index));
+    std::copy(
+      hdr.time_write_buf.begin(),
+      hdr.time_write_buf.end(),
+      _time_offsets.begin());
 }
 
 std::optional<offset_index::index_value>
@@ -362,7 +390,8 @@ void remote_segment_index_builder::consume_batch_start(
             _ix.add(
               hdr.base_offset,
               hdr.base_offset - _running_delta,
-              static_cast<int64_t>(physical_base_offset));
+              static_cast<int64_t>(physical_base_offset),
+              hdr.max_timestamp);
             _window = 0;
         }
     }

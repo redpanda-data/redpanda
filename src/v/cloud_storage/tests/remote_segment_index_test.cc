@@ -43,15 +43,18 @@ BOOST_AUTO_TEST_CASE(remote_segment_index_search_test) {
     std::vector<model::offset> rp_offsets;
     std::vector<kafka::offset> kaf_offsets;
     std::vector<size_t> file_offsets;
+    std::vector<model::timestamp> timestamps;
     int64_t rp = segment_base_rp_offset();
     int64_t kaf = segment_base_kaf_offset();
     size_t fpos = random_generators::get_int(1000, 2000);
+    model::timestamp timestamp{123456};
     bool is_config = false;
     for (size_t i = 0; i < segment_num_batches; i++) {
         if (!is_config) {
             rp_offsets.push_back(model::offset(rp));
             kaf_offsets.push_back(kafka::offset(kaf));
             file_offsets.push_back(fpos);
+            timestamps.push_back(timestamp);
         }
         // The test queries every element using the key that matches the element
         // exactly and then it queries the element using the key which is
@@ -63,6 +66,7 @@ BOOST_AUTO_TEST_CASE(remote_segment_index_search_test) {
         rp += batch_size;
         kaf += is_config ? batch_size - 1 : batch_size;
         fpos += random_generators::get_int(1000, 2000);
+        timestamp = model::timestamp(timestamp.value() + 1);
     }
 
     offset_index tmp_index(
@@ -71,7 +75,11 @@ BOOST_AUTO_TEST_CASE(remote_segment_index_search_test) {
     kafka::offset klast;
     size_t flast;
     for (size_t i = 0; i < rp_offsets.size(); i++) {
-        tmp_index.add(rp_offsets.at(i), kaf_offsets.at(i), file_offsets.at(i));
+        tmp_index.add(
+          rp_offsets.at(i),
+          kaf_offsets.at(i),
+          file_offsets.at(i),
+          timestamps.at(i));
         last = rp_offsets.at(i);
         klast = kaf_offsets.at(i);
         flast = file_offsets.at(i);

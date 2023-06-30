@@ -56,8 +56,11 @@ public:
       int64_t file_pos_step);
 
     /// Add new tuple to the index.
-    void
-    add(model::offset rp_offset, kafka::offset kaf_offset, int64_t file_offset);
+    void add(
+      model::offset rp_offset,
+      kafka::offset kaf_offset,
+      int64_t file_offset,
+      model::timestamp);
 
     struct find_result {
         model::offset rp_offset;
@@ -142,10 +145,12 @@ private:
     std::array<int64_t, buffer_depth> _rp_offsets;
     std::array<int64_t, buffer_depth> _kaf_offsets;
     std::array<int64_t, buffer_depth> _file_offsets;
+    std::array<int64_t, buffer_depth> _time_offsets;
     uint64_t _pos;
     model::offset _initial_rp;
     kafka::offset _initial_kaf;
     int64_t _initial_file_pos;
+    model::timestamp _initial_time;
 
     using encoder_t = deltafor_encoder<int64_t>;
     using decoder_t = deltafor_decoder<int64_t>;
@@ -156,6 +161,7 @@ private:
     encoder_t _rp_index;
     encoder_t _kaf_index;
     foffset_encoder_t _file_index;
+    encoder_t _time_index;
     int64_t _min_file_pos_step;
 
     friend class offset_index_accessor;
