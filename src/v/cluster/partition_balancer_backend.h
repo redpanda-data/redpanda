@@ -116,6 +116,7 @@ private:
     notification_id_type _topic_table_updates;
     notification_id_type _member_updates;
     notification_id_type _health_monitor_updates;
+    notification_id_type _leadership_change_updates;
 
     // Balancer runs in a series of ticks during a controller leadership term.
     // While the term stays the same, we know that no other balancer instance

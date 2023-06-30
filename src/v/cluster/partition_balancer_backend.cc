@@ -20,6 +20,7 @@
 #include "cluster/topics_frontend.h"
 #include "config/configuration.h"
 #include "config/property.h"
+#include "raft/group_manager.h"
 #include "random/generators.h"
 #include "utils/gate_guard.h"
 
@@ -98,6 +99,19 @@ void partition_balancer_backend::start() {
           on_health_monitor_update(report, old_report);
       });
     maybe_rearm_timer();
+    _leadership_change_updates
+      = _raft_group_manager.register_leadership_notification(
+        [this](
+          raft::group_id group,
+          model::term_id,
+          std::optional<model::node_id> leader_id) {
+            if (
+              group == _raft0->group() && leader_id
+              && *leader_id == _raft0->self().id() && _raft0->is_leader()) {
+                // do we need a delay here?
+                maybe_rearm_timer(true);
+            }
+        });
     vlog(clusterlog.info, "partition balancer started");
 }
 
@@ -256,6 +270,8 @@ ss::future<> partition_balancer_backend::stop() {
     _state.topics().unregister_lw_notification(_topic_table_updates);
     _state.members().unregister_members_updated_notification(_member_updates);
     _health_monitor.unregister_node_callback(_health_monitor_updates);
+    _raft_group_manager.unregister_leadership_notification(
+      _leadership_change_updates);
     _timer.cancel();
     _lock.broken();
     if (_tick_in_progress) {
