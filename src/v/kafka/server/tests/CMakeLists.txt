@@ -22,9 +22,11 @@ v_cc_library(
     kafka_test_utils
   HDRS
     "delete_records_utils.h"
+    "list_offsets_utils.h"
     "produce_consume_utils.h"
   SRCS
     "delete_records_utils.cc"
+    "list_offsets_utils.cc"
     "produce_consume_utils.cc"
   DEPS
     v::bytes
