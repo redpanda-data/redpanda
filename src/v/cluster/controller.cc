@@ -494,6 +494,7 @@ controller::start(cluster_discovery& discovery, ss::abort_source& shard0_as) {
             std::ref(_partition_allocator),
             std::ref(_tp_frontend),
             std::ref(_members_frontend),
+            std::ref(_raft_manager),
             config::shard_local_cfg().partition_autobalancing_mode.bind(),
             config::shard_local_cfg()
               .partition_autobalancing_node_availability_timeout_sec.bind(),

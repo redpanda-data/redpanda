@@ -40,6 +40,7 @@ public:
       ss::sharded<partition_allocator>&,
       ss::sharded<topics_frontend>&,
       ss::sharded<members_frontend>&,
+      ss::sharded<raft::group_manager>&,
       config::binding<model::partition_autobalancing_mode>&& mode,
       config::binding<std::chrono::seconds>&& availability_timeout,
       config::binding<unsigned>&& max_disk_usage_percent,
@@ -94,6 +95,7 @@ private:
     partition_allocator& _partition_allocator;
     topics_frontend& _topics_frontend;
     members_frontend& _members_frontend;
+    raft::group_manager& _raft_group_manager;
 
     config::binding<model::partition_autobalancing_mode> _mode;
     config::binding<std::chrono::seconds> _availability_timeout;
