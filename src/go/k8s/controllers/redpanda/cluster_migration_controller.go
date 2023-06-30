@@ -271,6 +271,32 @@ func (r *ClusterToRedpandaReconciler) migrateClusterSpec(cluster *vectorizedv1al
 }
 
 func (r *ClusterToRedpandaReconciler) migrateRedpandaConfig(cluster *vectorizedv1alpha1.Cluster, rp *v1alpha1.Redpanda) v1alpha1.Redpanda {
+	oldConfig := cluster.Spec.Configuration
+
+	rpSpec := &v1alpha1.RedpandaClusterSpec{}
+	if rp.Spec.ClusterSpec != nil {
+		rpSpec = rp.Spec.ClusterSpec
+	}
+
+	rpStatefulset := &v1alpha1.Statefulset{}
+	if rpSpec.Statefulset != nil {
+		rpStatefulset = rpSpec.Statefulset
+	}
+
+	// -- Additional Command line
+	if len(oldConfig.AdditionalCommandlineArguments) > 0 {
+		if rpStatefulset.AdditionalRedpandaCmdFlags == nil {
+			rpStatefulset.AdditionalRedpandaCmdFlags = make([]string, 0)
+		}
+		for k, v := range oldConfig.AdditionalCommandlineArguments {
+			rpStatefulset.AdditionalRedpandaCmdFlags = append(rpStatefulset.AdditionalRedpandaCmdFlags, fmt.Sprintf("%s=%s", k, v))
+		}
+
+	}
+
+	rpSpec.Statefulset = rpStatefulset
+
+	rp.Spec.ClusterSpec = rpSpec
 
 	return *rp
 }
