@@ -347,6 +347,12 @@ errc topics_frontend::validate_topic_configuration(
             }
         }
     }
+    if (
+      (assignable_config.is_read_replica()
+       || assignable_config.is_recovery_enabled())
+      && !_cloud_storage_api.local_is_initialized()) {
+        return errc::topic_invalid_config;
+    }
 
     return errc::success;
 }
