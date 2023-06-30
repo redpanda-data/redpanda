@@ -159,12 +159,15 @@ private:
     ss::timer<> _timer;
     ssx::semaphore _sem{0, "s/kvstore"};
     ss::lw_shared_ptr<segment> _segment;
+    // Protect _db and _next_offset across asynchronous mutations.
+    mutex _db_mut;
     model::offset _next_offset;
     absl::node_hash_map<bytes, iobuf, bytes_type_hash, bytes_type_eq> _db;
     std::optional<ntp_sanitizer_config> _ntp_sanitizer_config;
 
     ss::future<> put(key_space ks, bytes key, std::optional<iobuf> value);
-    void apply_op(bytes key, std::optional<iobuf> value);
+    void apply_op(
+      bytes key, std::optional<iobuf> value, ssx::semaphore_units const&);
     ss::future<> flush_and_apply_ops();
     ss::future<> roll();
     ss::future<> save_snapshot();
