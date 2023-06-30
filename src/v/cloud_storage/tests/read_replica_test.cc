@@ -13,6 +13,7 @@
 #include "cloud_storage/spillover_manifest.h"
 #include "cloud_storage/tests/produce_utils.h"
 #include "cloud_storage/tests/s3_imposter.h"
+#include "cloud_storage/types.h"
 #include "config/configuration.h"
 #include "kafka/server/tests/delete_records_utils.h"
 #include "kafka/server/tests/list_offsets_utils.h"
@@ -120,6 +121,47 @@ FIXTURE_TEST(test_read_replica_basic_sync, read_replica_e2e_fixture) {
             next += model::offset(1);
         }
     }
+}
+
+FIXTURE_TEST(
+  test_read_replica_rejects_delete_records, read_replica_e2e_fixture) {
+    const model::topic topic_name("tapioca");
+    model::ntp ntp(model::kafka_namespace, topic_name, 0);
+    cluster::topic_properties props;
+    props.shadow_indexing = model::shadow_indexing_mode::full;
+    props.retention_local_target_bytes = tristate<size_t>(1);
+    add_topic({model::kafka_namespace, topic_name}, 1, props).get();
+    wait_for_leader(ntp).get();
+
+    auto partition = app.partition_manager.local().get(ntp).get();
+    auto& archiver = partition->archiver()->get();
+    BOOST_REQUIRE(archiver.sync_for_tests().get());
+    archiver.upload_topic_manifest().get();
+
+    auto rr_rp = start_read_replica_fixture();
+    cluster::topic_properties read_replica_props;
+    read_replica_props.shadow_indexing = model::shadow_indexing_mode::fetch;
+    read_replica_props.read_replica = true;
+    read_replica_props.read_replica_bucket = "test-bucket";
+    rr_rp
+      ->add_topic({model::kafka_namespace, topic_name}, 1, read_replica_props)
+      .get();
+    rr_rp->wait_for_leader(ntp).get();
+
+    // Send the delete request to the _read replica_. This is not allowed.
+    tests::kafka_delete_records_transport deleter(
+      rr_rp->make_kafka_client().get());
+    deleter.start().get();
+    BOOST_REQUIRE_EXCEPTION(
+      deleter
+        .delete_records_from_partition(
+          topic_name, model::partition_id(0), model::offset(0), 5s)
+        .get(),
+      std::runtime_error,
+      [](std::runtime_error e) {
+          return std::string(e.what()).find("policy_violation")
+                 != std::string::npos;
+      });
 }
 
 FIXTURE_TEST(test_read_replica_delete_records, read_replica_e2e_fixture) {

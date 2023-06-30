@@ -52,6 +52,9 @@ validate_at_topic_level(request_context& ctx, const delete_records_topic& t) {
         return ctx.authorized(security::acl_operation::remove, t.name);
     };
     const auto is_deletable = [](const cluster::topic_configuration& cfg) {
+        if (cfg.is_read_replica()) {
+            return false;
+        }
         /// Immitates the logic in ntp_config::is_collectible
         if (
           !cfg.properties.has_overrides()
