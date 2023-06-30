@@ -1921,7 +1921,7 @@ ss::future<> ntp_archiver::garbage_collect_archive() {
         throw std::system_error(backlog.error());
     }
 
-    std::deque<std::filesystem::path> segments_to_remove;
+    std::deque<std::filesystem::path> objects_to_remove;
     std::deque<std::filesystem::path> manifests_to_remove;
 
     const auto clean_offset = manifest().get_archive_clean_offset();
@@ -1936,6 +1936,7 @@ ss::future<> ntp_archiver::garbage_collect_archive() {
     model::offset new_clean_offset;
     // Value includes segments but doesn't include manifests
     size_t bytes_to_remove = 0;
+    size_t segments_to_remove_count = 0;
 
     auto cursor = std::move(backlog.value());
 
@@ -1956,19 +1957,20 @@ ss::future<> ntp_archiver::garbage_collect_archive() {
                   }
                   if (meta.committed_offset < start_offset) {
                       auto path = manifest.generate_segment_path(meta);
-                      segments_to_remove.push_back(path());
+                      objects_to_remove.push_back(path());
                       new_clean_offset = model::next_offset(
                         meta.committed_offset);
                       bytes_to_remove += meta.size_bytes;
+                      ++segments_to_remove_count;
                       // Add index and tx-manifest
                       if (
                         meta.sname_format
                           == cloud_storage::segment_name_format::v3
                         && meta.metadata_size_hint != 0) {
-                          segments_to_remove.push_back(
+                          objects_to_remove.push_back(
                             cloud_storage::generate_remote_tx_path(path)());
                       }
-                      segments_to_remove.push_back(
+                      objects_to_remove.push_back(
                         cloud_storage::generate_index_path(path));
                   } else {
                       // This indicates that we need to remove only some of the
@@ -2001,7 +2003,7 @@ ss::future<> ntp_archiver::garbage_collect_archive() {
 
     // Drop out if we have no work to do, avoid doing things like the following
     // manifest flushing unnecessarily.
-    if (segments_to_remove.empty() && manifests_to_remove.empty()) {
+    if (objects_to_remove.empty() && manifests_to_remove.empty()) {
         vlog(_rtclog.debug, "Nothing to remove in archive GC");
         co_return;
     }
@@ -2016,10 +2018,16 @@ ss::future<> ntp_archiver::garbage_collect_archive() {
     }
 
     size_t successful_deletes{0};
+    size_t successful_segment_deletes{0};
+    size_t segments_in_batch{0};
     const size_t batch_size = 1000;
     std::vector<cloud_storage_clients::object_key> rem_batch;
-    for (const auto& path : segments_to_remove) {
-        vlog(_rtclog.info, "Deleting segment from cloud storage: {}", path);
+    for (const auto& path : objects_to_remove) {
+        std::string_view path_view{path.c_str()};
+        if (!path_view.ends_with("index") && !path_view.ends_with("tx")) {
+            vlog(_rtclog.info, "Deleting segment from cloud storage: {}", path);
+            ++segments_in_batch;
+        }
         rem_batch.emplace_back(path);
         if (rem_batch.size() >= batch_size) {
             auto sz = rem_batch.size();
@@ -2027,18 +2035,22 @@ ss::future<> ntp_archiver::garbage_collect_archive() {
             std::swap(tmp, rem_batch);
             if (co_await batch_delete(std::move(tmp))) {
                 successful_deletes += sz;
+                successful_segment_deletes += segments_in_batch;
             }
+
+            segments_in_batch = 0;
         }
     }
     if (co_await batch_delete(rem_batch)) {
         successful_deletes += rem_batch.size();
+        successful_segment_deletes += segments_in_batch;
     }
     rem_batch.clear();
 
-    const auto backlog_size_exceeded = segments_to_remove.size()
+    const auto backlog_size_exceeded = segments_to_remove_count
                                        > _max_segments_pending_deletion();
     const auto all_deletes_succeeded = successful_deletes
-                                       == segments_to_remove.size();
+                                       == objects_to_remove.size();
 
     if (!all_deletes_succeeded && backlog_size_exceeded) {
         vlog(
@@ -2048,7 +2060,7 @@ ss::future<> ntp_archiver::garbage_collect_archive() {
           "segments failed. Metadata for all remaining segments pending "
           "deletion will be removed and these segments will have to be removed "
           "manually.",
-          segments_to_remove.size(),
+          objects_to_remove.size(),
           _max_segments_pending_deletion());
     }
     if (!all_deletes_succeeded && !backlog_size_exceeded) {
@@ -2086,7 +2098,7 @@ ss::future<> ntp_archiver::garbage_collect_archive() {
             co_await batch_delete(rem_batch);
         }
     }
-    _probe->segments_deleted(static_cast<int64_t>(successful_deletes));
+    _probe->segments_deleted(static_cast<int64_t>(successful_segment_deletes));
     vlog(
       _rtclog.info,
       "Deleted {} spillover segments from the cloud",
