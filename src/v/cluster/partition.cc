@@ -27,6 +27,8 @@
 
 #include <seastar/util/defer.hh>
 
+#include <exception>
+
 namespace cluster {
 
 static bool is_id_allocator_topic(model::ntp ntp) {
@@ -202,15 +204,22 @@ ss::future<std::error_code> partition::prefix_truncate(
       _raft->ntp(),
       rp_start_offset,
       kafka_start_offset);
-    auto err = co_await _log_eviction_stm->truncate(
+    auto res = co_await _log_eviction_stm->truncate(
       rp_start_offset, kafka_start_offset, deadline, _as);
-    if (err) {
-        co_return err;
+    if (res.has_failure()) {
+        if (res.has_error()) {
+            co_return res.error();
+        }
+        // An exception was thrown.
+        vlog(
+          clusterlog.error, "Truncation failed: {}", std::current_exception());
+        co_return errc::replication_error;
     }
     if (_archival_meta_stm) {
         // The archival metadata stm also listens for prefix_truncate batches.
+        auto truncate_batch_offset = res.value();
         auto applied = co_await _archival_meta_stm->wait_no_throw(
-          _raft->committed_offset(), deadline, _as);
+          truncate_batch_offset, deadline, _as);
         if (applied) {
             co_return errc::success;
         }

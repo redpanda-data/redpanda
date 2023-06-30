@@ -192,7 +192,7 @@ model::offset log_eviction_stm::effective_start_offset() const {
       std::max(_raft->last_snapshot_index(), _delete_records_eviction_offset));
 }
 
-ss::future<std::error_code> log_eviction_stm::truncate(
+ss::future<log_eviction_stm::offset_result> log_eviction_stm::truncate(
   model::offset rp_start_offset,
   kafka::offset kafka_start_offset,
   ss::lowres_clock::time_point deadline,
@@ -222,18 +222,18 @@ ss::future<std::error_code> log_eviction_stm::truncate(
       _raft->last_snapshot_index(),
       _raft->last_visible_index());
 
-    auto ec = co_await replicate_command(std::move(batch), deadline, as);
-    if (ec) {
+    auto res = co_await replicate_command(std::move(batch), deadline, as);
+    if (res.has_failure()) {
         vlog(
           _logger.error,
           "Failed to observe replicated command in log, reason: {}",
-          ec.message());
-        co_return ec;
+          res.error().message());
+        co_return res.as_failure();
     }
-    co_return errc::success;
+    co_return res.value();
 }
 
-ss::future<std::error_code> log_eviction_stm::replicate_command(
+ss::future<log_eviction_stm::offset_result> log_eviction_stm::replicate_command(
   model::record_batch batch,
   ss::lowres_clock::time_point deadline,
   std::optional<std::reference_wrapper<ss::abort_source>> as) {
@@ -277,7 +277,7 @@ ss::future<std::error_code> log_eviction_stm::replicate_command(
         }
         co_return errc::timeout;
     }
-    co_return errc::success;
+    co_return result.value().last_offset;
 }
 
 ss::future<> log_eviction_stm::apply(model::record_batch batch) {
