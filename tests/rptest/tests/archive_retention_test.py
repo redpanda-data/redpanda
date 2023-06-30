@@ -32,13 +32,16 @@ class CloudArchiveRetentionTest(RedpandaTest):
         self.extra_rp_conf = dict(
             log_compaction_interval_ms=1000,
             cloud_storage_spillover_manifest_max_segments=5,
-            cloud_storage_enable_segment_merging=False,
-            log_segment_size_min=4096)
+            cloud_storage_enable_segment_merging=False)
 
-        si_settings = SISettings(test_context,
-                                 cloud_storage_housekeeping_interval_ms=1000,
-                                 log_segment_size=4096,
-                                 fast_uploads=True)
+        self.next_base_timestamp = 1664453149000  # arbitrary value
+        self.timestamp_step_ms = 1000 * 60 * 2  # 2 minutes
+
+        si_settings = SISettings(
+            test_context,
+            log_segment_size=1024 * 1024,  # 1 MiB
+            cloud_storage_housekeeping_interval_ms=1000,
+            fast_uploads=True)
 
         super(CloudArchiveRetentionTest,
               self).__init__(test_context=test_context,
@@ -52,19 +55,16 @@ class CloudArchiveRetentionTest(RedpandaTest):
     def produce(self, topic, msg_count):
         msg_size = 1024 * 256
         topic_name = topic.name
-        producer = KgoVerifierProducer(self.test_context,
-                                       self.redpanda,
-                                       topic_name,
-                                       msg_size=msg_size,
-                                       msg_count=msg_count)
-        producer.start()
-        producer.wait()
-        producer.free()
+        KgoVerifierProducer.oneshot(
+            self.test_context,
+            self.redpanda,
+            topic_name,
+            msg_size=msg_size,
+            msg_count=msg_count,
+            fake_timestamp_ms=self.next_base_timestamp,
+            fake_timestamp_step_ms=self.timestamp_step_ms)
 
-        def all_partitions_spilled():
-            return self.num_manifests_uploaded() > 0
-
-        wait_until(all_partitions_spilled, timeout_sec=180, backoff_sec=10)
+        self.next_base_timestamp += (msg_count + 1) * self.timestamp_step_ms
 
     def num_manifests_uploaded(self):
         s = self.redpanda.metric_sum(
@@ -85,11 +85,14 @@ class CloudArchiveRetentionTest(RedpandaTest):
 
     @cluster(num_nodes=4)
     @matrix(cloud_storage_type=get_cloud_storage_type(),
-            retention_type=['retention.ms', 'retention.bytes'])
+            retention_type=['retention.bytes', 'retention.ms'])
     def test_delete(self, cloud_storage_type, retention_type):
-        topic = TopicSpec(cleanup_policy=TopicSpec.CLEANUP_DELETE)
+        topic = TopicSpec(cleanup_policy=TopicSpec.CLEANUP_DELETE,
+                          retention_ms=-1)
 
         self.client().create_topic(topic)
+        self.client().alter_topic_config(topic.name, 'message.timestamp.type',
+                                         "CreateTime")
 
         def wait_for_topic():
             wait_until(lambda: len(
@@ -101,14 +104,13 @@ class CloudArchiveRetentionTest(RedpandaTest):
             initial_uploaded = self.num_manifests_uploaded()
 
             def new_manifest_spilled():
-                time.sleep(5)
-                self.produce(topic, 250)
+                self.produce(topic, 300)
                 num_spilled = self.num_manifests_uploaded()
                 return num_spilled > initial_uploaded + 10
 
             wait_until(new_manifest_spilled,
                        timeout_sec=120,
-                       backoff_sec=2,
+                       backoff_sec=10,
                        err_msg="Manifests were not created")
 
         wait_for_topic()
@@ -160,7 +162,7 @@ class CloudArchiveRetentionTest(RedpandaTest):
             f"waiting until {segments_to_delete} segments will be removed")
         # Wait for the first truncation to the middle of the archive
         wait_until(
-            lambda: self.num_segments_deleted() >= segments_to_delete,
+            lambda: self.num_segments_deleted() == segments_to_delete,
             timeout_sec=100,
             backoff_sec=5,
             err_msg=
@@ -189,15 +191,18 @@ class CloudArchiveRetentionTest(RedpandaTest):
             ntp = NTP(ns='kafka', topic=topic.name, partition=part_id)
             summaries = view.segment_summaries(ntp)
             if retention_type == 'retention.bytes':
-                segments_to_delete += len(summaries)
+                segments_to_delete = len(summaries)
             else:
                 retention_value = 1000  # 1s
                 current_time = round(time.time() * 1000)
-                segments_to_delete += len([
+                segments_to_delete = len([
                     s for s in summaries
                     if s.base_timestamp < (current_time - retention_value)
                 ])
 
+        # Note: altering the topic config will re-init the archiver and
+        # reset the metric tracking segment deletion. This is why we assign
+        # to `segments_to_delete` instead of adding.
         self.client().alter_topic_config(topic.name, retention_type,
                                          retention_value)
 
@@ -205,7 +210,7 @@ class CloudArchiveRetentionTest(RedpandaTest):
             f"waiting until {segments_to_delete} segments will be removed")
         # Wait for the second truncation of the entire archive
         wait_until(
-            lambda: self.num_segments_deleted() >= segments_to_delete,
+            lambda: self.num_segments_deleted() == segments_to_delete,
             timeout_sec=120,
             backoff_sec=5,
             err_msg=
