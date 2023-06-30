@@ -281,7 +281,8 @@ ss::future<std::error_code> log_eviction_stm::replicate_command(
 }
 
 ss::future<> log_eviction_stm::apply(model::record_batch batch) {
-    if (batch.header().type != model::record_batch_type::prefix_truncate) {
+    if (likely(
+          batch.header().type != model::record_batch_type::prefix_truncate)) {
         co_return;
     }
     /// The work done within apply() must be deterministic that way the start
@@ -309,9 +310,8 @@ ss::future<> log_eviction_stm::apply(model::record_batch batch) {
         // other STMs can honor it (e.g. archival).
         vlog(
           _logger.info,
-          "Replicated prefix_truncate batch for {} with no redpanda offset. "
-          "Requested "
-          "start Kafka offset {}",
+          "Replicated prefix_truncate batch for {} with no local redpanda "
+          "offset. Requested start Kafka offset {}",
           _raft->ntp(),
           record.kafka_start_offset);
         co_return;
