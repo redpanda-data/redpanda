@@ -14,7 +14,7 @@ import typing
 import time
 import itertools
 from collections import namedtuple
-from typing import Optional
+from typing import Iterator, Optional
 from ducktape.cluster.cluster import ClusterNode
 from rptest.util import wait_until_result
 from rptest.services import tls
@@ -382,7 +382,9 @@ class RpkTool:
         assert m, f"Reported offset not found in: {out}"
         return int(m.group(1))
 
-    def describe_topic(self, topic: str, tolerant: bool = False):
+    def describe_topic(self,
+                       topic: str,
+                       tolerant: bool = False) -> Iterator[RpkPartition]:
         """
         By default this will omit any partitions which do not have full
         metadata in the response: this means that if we are unlucky and a

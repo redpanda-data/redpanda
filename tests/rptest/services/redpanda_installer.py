@@ -8,6 +8,7 @@
 # by the Apache License, Version 2.0
 
 import errno
+from functools import lru_cache
 import json
 import os
 import re
@@ -92,6 +93,14 @@ class InstallOptions:
         self.num_to_upgrade = num_to_upgrade
 
 
+REDPANDA_INSTALLER_HEAD_TAG = "head"
+
+RedpandaVersionTriple = tuple[int, int, int]
+RedpandaVersionLine = tuple[int, int]
+RedpandaVersion = typing.Literal[
+    'head'] | RedpandaVersionLine | RedpandaVersionTriple
+
+
 class RedpandaInstaller:
     """
     Provides mechanisms to install multiple Redpanda binaries on a cluster.
@@ -105,7 +114,7 @@ class RedpandaInstaller:
     """
     # Represents the binaries installed at the time of the call to start(). It
     # is expected that this is identical across all nodes initially.
-    HEAD = "head"
+    HEAD = REDPANDA_INSTALLER_HEAD_TAG
 
     # Directory to which binaries are downloaded.
     #
@@ -121,7 +130,7 @@ class RedpandaInstaller:
 
     # Class member for caching the results of a github query to fetch the released
     # version list once per process lifetime of ducktape.
-    _released_versions: list[tuple] = []
+    _released_versions: list[RedpandaVersionTriple] = []
     _released_versions_lock = threading.Lock()
 
     @staticmethod
@@ -293,7 +302,7 @@ class RedpandaInstaller:
         # use it to get older versions relative to the head version.
         # NOTE: installing this version may not yield the same binaries being
         # as 'head', e.g. if an unreleased source is checked out.
-        self._head_version: tuple = int_tuple(
+        self._head_version: RedpandaVersionTriple = int_tuple(
             VERSION_RE.findall(initial_version)[0])
 
         self._started = True
@@ -400,12 +409,46 @@ class RedpandaInstaller:
         which might exist in github but not yet fave all their artifacts
         """
         r = requests.head(self._version_package_url(version))
-        if r.status_code not in (200, 404):
+        # allow 403 ClientError, it usually indicates Unauthorized get and can happen on S3 while dealing with old releases
+        if r.status_code not in (200, 403, 404):
             r.raise_for_status()
+
+        if r.status_code == 403:
+            self._redpanda.logger.warn(
+                f"request failed with {r.status_code=}: {r.reason=}")
 
         return r.status_code == 200
 
-    def highest_from_prior_feature_version(self, version):
+    def head_version(self) -> tuple[int, int, int]:
+        """
+        version compiled from current head of repository
+        """
+        self.start()
+        return self._head_version
+
+    def oldest_version(self) -> tuple[int, int, int]:
+        """
+        oldest version downloadable
+        """
+        self.start()
+        return self.released_versions[-1]
+
+    def latest_unsupported_line(self) -> tuple[int, int]:
+        """
+        compute the release from one year ago, go back one line, this is the latest_unsupported_line
+        """
+        head_line = self.head_version()[0:2]
+        oldest_supported_line = (head_line[0] - 1, head_line[1])
+        latest_unsupported_line = (oldest_supported_line[0],
+                                   oldest_supported_line[1] - 1)
+        if latest_unsupported_line[1] == 0:
+            # if going back, version vX.0 is v(X-1).3
+            latest_unsupported_line = (latest_unsupported_line[0] - 1, 3)
+        return latest_unsupported_line
+
+    @lru_cache
+    def highest_from_prior_feature_version(
+            self, version: RedpandaVersion) -> RedpandaVersionTriple:
         """
         Returns the highest version that is of a lower feature version than the
         given version, or None if one does not exist.
@@ -449,7 +492,9 @@ class RedpandaInstaller:
         )
         return result
 
-    def latest_for_line(self, release_line: tuple[int, int]):
+    def latest_for_line(
+        self, release_line: RedpandaVersionLine
+    ) -> tuple[RedpandaVersionTriple, bool]:
         """
         Returns the most recent version of redpanda from a release line, or HEAD if asking for a yet-to-be released version
         the return type is a tuple (version, is_head), where is_head is True if the version is from dev tip
@@ -487,8 +532,8 @@ class RedpandaInstaller:
 
         assert False, f"no downloadable versions in {versions_in_line[0:2]} for {release_line=}"
 
-    def install(self, nodes, version: typing.Union[str, tuple[int, int],
-                                                   tuple[int, int, int]]):
+    def install(self, nodes: list[typing.Any],
+                version: RedpandaVersion) -> tuple[RedpandaVersionTriple, str]:
         """
         Installs the release on the given nodes such that the next time the
         nodes are restarted, they will use the newly installed bits.
@@ -506,13 +551,20 @@ class RedpandaInstaller:
             self.start()
 
         # version can be HEAD, a specific release, or a release_line. first two will go through, last one will be converted to a specific release
-        install_target = version
-        actual_version = version if version != RedpandaInstaller.HEAD else self._head_version
-        # requested a line, find the most recent release
-        if version != RedpandaInstaller.HEAD and len(version) == 2:
-            actual_version, is_head = self.latest_for_line(install_target)
-            # update install_target only if is not head. later code handles HEAD as a special case
-            install_target = actual_version if not is_head else RedpandaInstaller.HEAD
+        if version == RedpandaInstaller.HEAD:
+            actual_version = self._head_version
+            install_target = RedpandaInstaller.HEAD
+        elif len(version) == 2:
+            # requested a line, find the most recent release
+            actual_version, _ = self.latest_for_line(version)
+            install_target = actual_version
+        else:
+            actual_version = version
+            install_target = version
+
+        # later code handles HEAD as a special case, so convert _head_version to it
+        if install_target == self._head_version:
+            install_target = RedpandaInstaller.HEAD
 
         self._redpanda.logger.info(
             f"got {version=} will install {actual_version=}")
