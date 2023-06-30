@@ -198,7 +198,7 @@ private:
         void skip_batch_start(
           model::record_batch_header header, size_t, size_t) override;
         void consume_records(iobuf&&) override;
-        stop_parser consume_batch_end() override;
+        ss::future<stop_parser> consume_batch_end() override;
         void print(std::ostream&) const override;
 
     private:

@@ -1233,7 +1233,7 @@ public:
     void consume_records(iobuf&& ib) override { _records = std::move(ib); }
 
     /// Produce batch if within memory limits
-    stop_parser consume_batch_end() override {
+    ss::future<stop_parser> consume_batch_end() override {
         auto batch = model::record_batch{
           _header, std::move(_records), model::record_batch::tag_ctor_ng{}};
 
@@ -1253,14 +1253,14 @@ public:
         size_t sz = _parent.produce(std::move(batch));
 
         if (_config.over_budget) {
-            return stop_parser::yes;
+            co_return stop_parser::yes;
         }
 
         if (sz > max_consume_size) {
-            return stop_parser::yes;
+            co_return stop_parser::yes;
         }
 
-        return stop_parser::no;
+        co_return stop_parser::no;
     }
 
     void print(std::ostream& o) const override {
