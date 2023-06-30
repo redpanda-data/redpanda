@@ -252,47 +252,91 @@ snc_quota_manager::calc_node_quota_default() const {
 
 void snc_quota_manager::get_or_create_quota_context(
   std::unique_ptr<snc_quota_context>& ctx,
-  std::optional<std::string_view> client_id) {
+  std::optional<std::string_view> client_id,
+  const security::acl_principal* const principal,
+  const ss::net::inet_address& client_addr,
+  const uint16_t client_port) {
     if (likely(ctx)) {
-        // NB: comparing string_view to sstring might be suboptimal
-        if (likely(ctx->_client_id == client_id)) {
+        bool principal_match = false;
+        if (principal) {
+            principal_match = ctx->_acl_principal
+                              && *ctx->_acl_principal == *principal;
+        } else {
+            principal_match = !ctx->_acl_principal;
+        }
+
+        // note: comparing sstring (the lefthand _client_id) to string_view
+        // (the righthand client_id) is only possible by converting the former
+        // to string_view, or with the sstring::operator<=>, => no perf penalty
+        if (likely(principal_match && ctx->_client_id == client_id)) {
             // the context is the right one
             return;
         }
 
-        // either of the context indexing propeties have changed on the client
+        // either of the context indexing properties have changed on the client
         // within the same connection. This is an unexpected path, quotas may
         // misbehave if we ever get here. The design is based on assumption that
         // this should not happen. If it does happen with a supported client, we
         // probably should start supporting multiple quota contexts per
         // connection
-        vlog(
-          klog.warn,
-          "qm - client_id has changed on the connection. Quotas are reset now. "
-          "Old client_id: {}, new client_id: {}",
-          ctx->_client_id,
-          client_id);
+        if (!principal_match) {
+            vlog(
+              klog.warn,
+              "{}:{} - qm - acl_principal has changed on the connection. "
+              "Quotas are reset now. Old: {}, new: {}",
+              client_addr,
+              client_port,
+              ctx->_acl_principal,
+              principal ? std::make_optional(*principal) : std::nullopt);
+        }
+        if (ctx->_client_id != client_id) {
+            vlog(
+              klog.warn,
+              "{}:{} - qm - client_id has changed on the connection. "
+              "Quotas are reset now. Old client_id: {}, new client_id: {}",
+              client_addr,
+              client_port,
+              ctx->_client_id,
+              client_id);
+        }
     }
 
-    ctx = std::make_unique<snc_quota_context>(client_id);
+    ctx = std::make_unique<snc_quota_context>(
+      client_id, principal ? std::make_optional(*principal) : std::nullopt);
+    vlog(
+      klog.trace,
+      "{}:{} - qm - Matching client_id: {}, principal: {}",
+      client_addr,
+      client_port,
+      ctx->_client_id,
+      ctx->_acl_principal);
     const auto tcgroup_it = config::find_throughput_control_group(
       _kafka_throughput_control().cbegin(),
       _kafka_throughput_control().cend(),
-      client_id);
+      client_id,
+      principal);
     if (tcgroup_it == _kafka_throughput_control().cend()) {
         ctx->_exempt = false;
-        vlog(klog.debug, "qm - No throughput control group assigned");
+        vlog(
+          klog.debug,
+          "{}:{} - qm - No throughput control group assigned",
+          client_addr,
+          client_port);
     } else {
         ctx->_exempt = true;
         if (tcgroup_it->is_noname()) {
             vlog(
               klog.debug,
-              "qm - Assigned throughput control group #{}",
+              "{}:{} - qm - Assigned throughput control group #{}",
+              client_addr,
+              client_port,
               std::distance(_kafka_throughput_control().cbegin(), tcgroup_it));
         } else {
             vlog(
               klog.debug,
-              "qm - Assigned throughput control group: {}",
+              "{}:{} - qm - Assigned throughput control group: '{}'",
+              client_addr,
+              client_port,
               tcgroup_it->name);
         }
     }
@@ -525,7 +569,7 @@ namespace detail {
 /// Split \p value between the elements of vector \p target in full, adding them
 /// to the elements already in the vector.
 /// If \p value is not a multiple of target.size(), the entire \p value
-/// is still dispensed in full. Quotinents rounded towards infinity
+/// is still dispensed in full. Quotients rounded towards infinity
 /// are added to the front elements of the \p target, and those rounded
 /// towards zero are added to the back elements.
 void dispense_equally(std::vector<quota_t>& target, const quota_t value) {
@@ -636,7 +680,7 @@ void dispense_negative_deltas(
     if (unlikely(quotas_left == 0)) {
         vlog(
           klog.error,
-          "qb - No shards to distribute the remianing delta: {}",
+          "qb - No shards to distribute the remaining delta: {}",
           delta);
         return;
     }
@@ -753,7 +797,7 @@ ss::future<> snc_quota_manager::quota_balancer_update(
         dispense_negative_deltas(
           schedule.eg, deltas.eg, std::move(quotas_soa.eg));
     }
-    // postive deltas are disensed equally
+    // positive deltas are dispensed equally
     if (deltas.in > 0) {
         dispense_equally(schedule.in, deltas.in);
     }

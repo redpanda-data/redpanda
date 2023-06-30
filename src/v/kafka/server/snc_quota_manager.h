@@ -13,6 +13,7 @@
 #include "config/property.h"
 #include "config/throughput_control_group.h"
 #include "seastarx.h"
+#include "security/acl.h"
 #include "utils/bottomless_token_bucket.h"
 #include "utils/mutex.h"
 
@@ -21,10 +22,13 @@
 #include <seastar/core/sharded.hh>
 #include <seastar/core/sstring.hh>
 #include <seastar/core/timer.hh>
+#include <seastar/net/inet_address.hh>
 
 #include <chrono>
 #include <optional>
 #include <string_view>
+#include <utility>
+#include <variant>
 
 namespace kafka {
 
@@ -62,14 +66,18 @@ private:
 
 class snc_quota_context {
 public:
-    explicit snc_quota_context(std::optional<std::string_view> client_id)
-      : _client_id(client_id) {}
+    snc_quota_context(
+      std::optional<std::string_view> client_id,
+      std::optional<security::acl_principal> acl_principal)
+      : _client_id(client_id)
+      , _acl_principal(std::move(acl_principal)) {}
 
 private:
     friend class snc_quota_manager;
 
     // Indexing
     std::optional<ss::sstring> _client_id;
+    std::optional<security::acl_principal> _acl_principal;
 
     // Configuration
 
@@ -78,7 +86,7 @@ private:
 
     // Operating
 
-    /// What time the client on this conection should throttle (be throttled)
+    /// What time the client on this connection should throttle (be throttled)
     /// until
     ss::lowres_clock::time_point _throttled_until;
 };
@@ -117,7 +125,10 @@ public:
     /// \post (bool)ctx == true
     void get_or_create_quota_context(
       std::unique_ptr<snc_quota_context>& ctx,
-      std::optional<std::string_view> client_id);
+      std::optional<std::string_view> client_id,
+      const security::acl_principal* principal,
+      const ss::net::inet_address& client_addr,
+      uint16_t client_port);
 
     /// Determine throttling required by shard level TP quotas.
     delays_t get_shard_delays(snc_quota_context&, clock::time_point now) const;
@@ -171,7 +182,7 @@ private:
     ss::future<> quota_balancer_step();
 
     /// A step of balancer that applies any updates from configuration changes.
-    /// Spawned by configration bindings watching changes of the properties.
+    /// Spawned by configuration bindings watching changes of the properties.
     /// Runs on the balancer shard only.
     ss::future<> quota_balancer_update(
       ingress_egress_state<std::optional<quota_t>> old_node_quota_default,
