@@ -1931,6 +1931,7 @@ ss::future<> ntp_archiver::garbage_collect_archive() {
 
     auto cursor = std::move(backlog.value());
 
+    using eof = cloud_storage::async_manifest_view_cursor::eof;
     while (cursor->get_status()
            == cloud_storage::async_manifest_view_cursor_status::
              materialized_spillover) {
@@ -1984,7 +1985,7 @@ ss::future<> ntp_archiver::garbage_collect_archive() {
               "Failed to load next spillover manifest: {}",
               res.error());
             break;
-        } else if (res.value() == false) {
+        } else if (res.value() == eof::yes) {
             // End of stream
             break;
         }

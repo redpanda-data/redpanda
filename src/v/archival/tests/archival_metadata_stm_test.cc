@@ -711,9 +711,9 @@ FIXTURE_TEST(test_archival_stm_spillover, archival_metadata_stm_fixture) {
         model::offset{0}, 0, ss::lowres_clock::now() + 10s, never_abort)
       .get();
     BOOST_REQUIRE_EQUAL(
-      archival_stm->manifest().get_archive_start_offset(), model::offset(0));
+      archival_stm->manifest().get_archive_start_offset(), model::offset{});
     BOOST_REQUIRE_EQUAL(
-      archival_stm->manifest().get_archive_clean_offset(), model::offset(0));
+      archival_stm->manifest().get_archive_clean_offset(), model::offset{});
 
     // unaligned spillover command shouldn't remove segment
     archival_stm

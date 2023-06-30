@@ -194,6 +194,11 @@ scan_remote_partition_incrementally_with_reuploads(
 /// This test scans the entire range of offsets
 FIXTURE_TEST(
   test_remote_partition_scan_translate_full_random, cloud_storage_fixture) {
+    vlog(
+      test_log.info,
+      "Seed used for read workload: {}",
+      random_generators::internal::seed);
+
     constexpr int num_segments = 1000;
     const auto [batch_types, num_data_batches] = generate_segment_layout(
       num_segments, 42);
@@ -217,6 +222,11 @@ FIXTURE_TEST(
 
 FIXTURE_TEST(
   test_remote_partition_scan_incrementally_random, cloud_storage_fixture) {
+    vlog(
+      test_log.info,
+      "Seed used for read workload: {}",
+      random_generators::internal::seed);
+
     constexpr int num_segments = 1000;
     const auto [batch_types, num_data_batches] = generate_segment_layout(
       num_segments, 42);
@@ -242,6 +252,11 @@ FIXTURE_TEST(
 FIXTURE_TEST(
   test_remote_partition_scan_incrementally_random_with_overlaps,
   cloud_storage_fixture) {
+    vlog(
+      test_log.info,
+      "Seed used for read workload: {}",
+      random_generators::internal::seed);
+
     constexpr int num_segments = 1000;
     const auto [batch_types, num_data_batches] = generate_segment_layout(
       num_segments, 42);
@@ -272,6 +287,11 @@ FIXTURE_TEST(
 FIXTURE_TEST(
   test_remote_partition_scan_incrementally_random_with_tx_fence,
   cloud_storage_fixture) {
+    vlog(
+      test_log.info,
+      "Seed used for read workload: {}",
+      random_generators::internal::seed);
+
     constexpr int num_segments = 1000;
     const auto [segment_layout, num_data_batches] = generate_segment_layout(
       num_segments, 42, false);
@@ -306,6 +326,11 @@ FIXTURE_TEST(
 FIXTURE_TEST(
   test_remote_partition_scan_incrementally_random_with_reuploads,
   cloud_storage_fixture) {
+    vlog(
+      test_log.info,
+      "Seed used for read workload: {}",
+      random_generators::internal::seed);
+
     constexpr int num_segments = 1000;
     const auto [batch_types, num_data_batches] = generate_segment_layout(
       num_segments, 42);

@@ -95,7 +95,9 @@ public:
     ///       available.
     ss::future<
       result<std::unique_ptr<async_manifest_view_cursor>, error_outcome>>
-    get_cursor(async_view_search_query_t q) noexcept;
+    get_cursor(
+      async_view_search_query_t q,
+      std::optional<model::offset> end_inclusive = std::nullopt) noexcept;
 
     /// Get inactive spillover manifests which are waiting for
     /// retention
@@ -254,7 +256,8 @@ public:
     async_manifest_view_cursor_status get_status() const;
 
     /// Move to the next manifest or fail
-    ss::future<result<bool, error_outcome>> next();
+    using eof = ss::bool_class<struct eof_tag>;
+    ss::future<result<eof, error_outcome>> next();
 
     /// Shortcut to use with Seastar's future utils.
     ///

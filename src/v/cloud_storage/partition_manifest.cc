@@ -644,7 +644,15 @@ void partition_manifest::set_archive_clean_offset(
         return;
     }
     if (_archive_clean_offset < start_rp_offset) {
-        _archive_clean_offset = start_rp_offset;
+        if (start_rp_offset == _start_offset) {
+            // If we've truncated up to the start offset of the STM manifest,
+            // the archive is completely removed.
+            _archive_clean_offset = model::offset{};
+            _archive_start_offset = model::offset{};
+            _archive_start_offset_delta = model::offset_delta{};
+        } else {
+            _archive_clean_offset = start_rp_offset;
+        }
         if (_archive_size_bytes >= size_bytes) {
             _archive_size_bytes -= size_bytes;
         } else {
@@ -669,12 +677,43 @@ void partition_manifest::set_archive_clean_offset(
           start_rp_offset,
           _archive_clean_offset);
     }
+
+    // Prefix truncate to get rid of the spillover manifests
+    // that have fallen below the clean offset.
+    const auto previous_spillover_manifests_size = _spillover_manifests.size();
+    if (_archive_clean_offset == model::offset{}) {
+        // Handle the case where the entire archive was removed.
+        _spillover_manifests = {};
+    } else {
+        std::optional<model::offset> truncation_point;
+        for (const auto& spill : _spillover_manifests) {
+            if (spill.base_offset >= _archive_clean_offset) {
+                break;
+            }
+            truncation_point = spill.base_offset;
+        }
+
+        if (truncation_point) {
+            vassert(
+              _archive_clean_offset >= *truncation_point,
+              "Attempt to prefix truncate the spillover manifest list above "
+              "the "
+              "archive clean offest: {} > {}",
+              *truncation_point,
+              _archive_clean_offset);
+            _spillover_manifests.prefix_truncate(*truncation_point);
+        }
+    }
+
     vlog(
       cst_log.info,
-      "{} archive clean offset moved to {} archive size set to {}",
+      "{} archive clean offset moved to {} archive size set to {}; count of "
+      "spillover manifests {} -> {}",
       _ntp,
       _archive_clean_offset,
-      _archive_size_bytes);
+      _archive_size_bytes,
+      previous_spillover_manifests_size,
+      _spillover_manifests.size());
 }
 
 bool partition_manifest::advance_start_kafka_offset(

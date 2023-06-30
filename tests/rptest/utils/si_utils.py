@@ -32,6 +32,8 @@ BLOCK_SIZE = 4096
 
 default_log_segment_size = 1048576  # 1MB
 
+DEFAULT_OFFSET = -9223372036854775808
+
 
 class NT(NamedTuple):
     ns: str
@@ -1291,13 +1293,16 @@ class BucketView:
 
     def segment_summaries(self, ntp: NTP):
         self._ensure_listing()
-        return self._state.segment_summaries[ntp]
+        if ntp in self._state.segment_summaries:
+            return self._state.segment_summaries[ntp]
+        else:
+            return dict()
 
     def is_archive_cleanup_complete(self, ntp: NTP):
         self._ensure_listing()
         manifest = self.manifest_for_ntp(ntp.topic, ntp.partition)
-        aso = manifest.get('archive_start_offset')
-        aco = manifest.get('archive_clean_offset')
+        aso = manifest.get('archive_start_offset', DEFAULT_OFFSET)
+        aco = manifest.get('archive_clean_offset', DEFAULT_OFFSET)
         summaries = self.segment_summaries(ntp)
         num = len(summaries)
         if aso > 0 and aco < aso:
@@ -1309,7 +1314,7 @@ class BucketView:
         if len(summaries) == 0:
             self.logger.debug(
                 f"archive is empty, start: {aso}, clean: {aco}, len: {num}")
-            return False
+            return True
 
         first_segment = min(summaries, key=lambda seg: seg.base_offset)
 
@@ -1324,10 +1329,17 @@ class BucketView:
     def check_archive_integrity(self, ntp: NTP):
         self._ensure_listing()
         manifest = self.manifest_for_ntp(ntp.topic, ntp.partition)
-        next_base_offset = manifest.get('archive_start_offset')
-        expected_last = manifest.get('last_offset')
-        for summary in self.segment_summaries(ntp):
-            assert next_base_offset == summary.base_offset, f"Unexpected segment {summary}, expected base offset {next_base_offset}"
-            next_base_offset = summary.last_offset + 1
+        summaries = self.segment_summaries(ntp)
+        if len(summaries) == 0:
+            assert 'archive_start_offset' not in manifest
+            assert 'archive_start_offset' not in manifest
         else:
-            assert expected_last == summary.last_offset, f"Unexpected last offset {summary.last_offset}, expected: {expected_last}"
+            next_base_offset = manifest.get('archive_start_offset')
+            stm_start_offset = manifest.get('start_offset')
+            expected_last = manifest.get('last_offset')
+
+            for summary in summaries:
+                assert next_base_offset == summary.base_offset, f"Unexpected segment {summary}, expected base offset {next_base_offset}"
+                next_base_offset = summary.last_offset + 1
+            else:
+                assert expected_last == summary.last_offset, f"Unexpected last offset {summary.last_offset}, expected: {expected_last}"
