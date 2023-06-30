@@ -126,10 +126,9 @@ func (r *ClusterToRedpandaReconciler) migrate(ctx context.Context, cluster *vect
 	}
 
 	// Migrating ClusterSpec
-	rp = r.migrateClusterSpec(cluster, &rp)
-	log.Info(fmt.Sprintf("redpanda now looks like: %+v", rp))
+	r.migrateClusterSpec(cluster, &rp)
 	// Migrating RedpandaConfig
-
+	r.migrateRedpandaConfig(cluster, &rp)
 	// The final step is to add labels so Helm adopts the existing resources as we create the redpanda resource
 	// Should we then delete old statefulset orphan old pods and then recreate pods?
 
@@ -283,18 +282,50 @@ func (r *ClusterToRedpandaReconciler) migrateRedpandaConfig(cluster *vectorizedv
 		rpStatefulset = rpSpec.Statefulset
 	}
 
-	// -- Additional Command line
+	rpLog := &v1alpha1.Logging{}
+	if rpSpec.Logging != nil {
+		rpLog = rpSpec.Logging
+	}
+
+	rpListeners := &v1alpha1.Listeners{}
+	if rpSpec.Listeners != nil {
+		rpListeners = rpSpec.Listeners
+	}
+
+	// --- Additional Command line ---
 	if len(oldConfig.AdditionalCommandlineArguments) > 0 {
 		if rpStatefulset.AdditionalRedpandaCmdFlags == nil {
 			rpStatefulset.AdditionalRedpandaCmdFlags = make([]string, 0)
 		}
 		for k, v := range oldConfig.AdditionalCommandlineArguments {
-			rpStatefulset.AdditionalRedpandaCmdFlags = append(rpStatefulset.AdditionalRedpandaCmdFlags, fmt.Sprintf("%s=%s", k, v))
+			if v != "" {
+				rpStatefulset.AdditionalRedpandaCmdFlags = append(rpStatefulset.AdditionalRedpandaCmdFlags, fmt.Sprintf("--%s=%s", k, v))
+			} else {
+				rpStatefulset.AdditionalRedpandaCmdFlags = append(rpStatefulset.AdditionalRedpandaCmdFlags, fmt.Sprintf("--%s", k))
+			}
 		}
+	}
+
+	// --- Developer mode set ---
+	if oldConfig.DeveloperMode {
+		rpLog.LogLevel = "trace"
+	}
+
+	// --- Listeners ---
+
+	kafkaListener := &v1alpha1.Kafka{}
+	if rpSpec.Listeners.Kafka != nil {
+		kafkaListener = rpSpec.Listeners.Kafka
+	}
+
+	if oldConfig.KafkaAPI != nil && len(oldConfig.KafkaAPI) > 0 {
 
 	}
 
+	// -- Putting everything together ---
 	rpSpec.Statefulset = rpStatefulset
+	rpSpec.Logging = rpLog
+	rpSpec.Listeners = rpListeners
 
 	rp.Spec.ClusterSpec = rpSpec
 
