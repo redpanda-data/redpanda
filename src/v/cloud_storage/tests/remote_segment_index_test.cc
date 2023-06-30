@@ -12,6 +12,8 @@
 #include "bytes/iostream.h"
 #include "cloud_storage/remote_segment_index.h"
 #include "cloud_storage/tests/common_def.h"
+#include "model/fundamental.h"
+#include "model/namespace.h"
 #include "random/generators.h"
 
 #include <seastar/testing/test_case.hh>
@@ -159,6 +161,9 @@ SEASTAR_THREAD_TEST_CASE(test_remote_segment_build_coarse_index) {
     const model::offset base_offset{100};
     const kafka::offset kbase_offset{100};
     std::vector<batch_t> batches;
+    model::offset expected_base_offset = base_offset, expected_last_offset;
+    size_t expected_conf_records = 0;
+    size_t expected_data_records = 0;
     for (int i = 0; i < 1000; i++) {
         auto num_records = random_generators::get_int(1, 20);
         std::vector<size_t> record_sizes;
@@ -172,16 +177,26 @@ SEASTAR_THREAD_TEST_CASE(test_remote_segment_build_coarse_index) {
           .record_sizes = std::move(record_sizes),
         };
         batches.push_back(std::move(batch));
+        expected_data_records += num_records;
     }
+    expected_last_offset = base_offset
+                           + model::offset(
+                             expected_conf_records + expected_data_records - 1);
     auto segment = generate_segment(base_offset, batches);
     auto is = make_iobuf_input_stream(std::move(segment));
     offset_index ix(base_offset, kbase_offset, 0, 0);
+    segment_record_stats stats{};
     auto parser = make_remote_segment_index_builder(
-      test_ntp, std::move(is), ix, model::offset_delta(0), 0);
+      test_ntp, std::move(is), ix, model::offset_delta(0), 0, std::ref(stats));
     auto pclose = ss::defer([&parser] { parser->close().get(); });
     auto result = parser->consume().get();
     BOOST_REQUIRE(result.has_value());
     BOOST_REQUIRE_NE(result.value(), 0);
+
+    BOOST_REQUIRE_EQUAL(stats.total_conf_records, expected_conf_records);
+    BOOST_REQUIRE_EQUAL(stats.total_data_records, expected_data_records);
+    BOOST_REQUIRE_EQUAL(stats.base_rp_offset, expected_base_offset);
+    BOOST_REQUIRE_EQUAL(stats.last_rp_offset, expected_last_offset);
 
     auto mini_ix = ix.build_coarse_index(100_KiB, "test");
     absl::btree_map<int64_t, kafka::offset> file_to_koffset;

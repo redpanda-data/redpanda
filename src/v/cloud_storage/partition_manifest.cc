@@ -909,6 +909,51 @@ bool partition_manifest::add(
     return add(m);
 }
 
+bool partition_manifest::safe_segment_meta_to_add(const segment_meta& m) {
+    if (_segments.empty()) {
+        // The empty manifest can be started from any offset. If we deleted all
+        // segments due to retention we should start from last uploaded offset.
+        // The reuploads are not possible if the manifest is empty.
+        return _last_offset == model::offset{0}
+               || model::next_offset(_last_offset) == m.base_offset;
+    }
+    if (m.is_compacted) {
+        // For the compacted uploads we're actually allowing to start and
+        // stop inside the gap.
+        // TODO: consider making this more strict
+        return true;
+    }
+    auto last = _segments.last_segment().value();
+    auto next = model::next_offset(last.committed_offset);
+    if (m.base_offset == next) {
+        return last.delta_offset_end == m.delta_offset;
+    }
+    if (m.base_offset > next) {
+        // Base offset of the uploaded segment overshoots the expected value
+        return false;
+    }
+    // Check reupload correctness
+    // The segment should be aligned with existing segments in the manifest but
+    // there should be more than one segment covered by 'm'.
+    auto it = _segments.find(m.base_offset);
+    if (it == _segments.end()) {
+        return false;
+    }
+    if (it->committed_offset == m.committed_offset) {
+        // 'm' is a reupload of an individual segment, the segment should have
+        // different size
+        return it->size_bytes != m.size_bytes;
+    }
+    ++it;
+    while (it != _segments.end()) {
+        if (it->committed_offset == m.committed_offset) {
+            return true;
+        }
+        ++it;
+    }
+    return false;
+}
+
 partition_manifest
 partition_manifest::truncate(model::offset starting_rp_offset) {
     if (!advance_start_offset(starting_rp_offset)) {
