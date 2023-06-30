@@ -574,6 +574,17 @@ class SISettings:
     def is_damage_expected(self, damage_types: set[str]):
         return (damage_types & self._expected_damage_types) == damage_types
 
+    @classmethod
+    def cache_size_for_throughput(cls, throughput_bytes: int) -> int:
+        """
+        Calculate the cache size required to accomodate a particular
+        streaming throughput for consumers.
+        """
+        # - Cache trim interval is 5 seconds.
+        # - Cache trim low watermark is 80%.
+        # Effective streaming bandwidth is 20% of cache size every trim period
+        return int((throughput_bytes * 5) / 0.2)
+
 
 class TLSProvider:
     """
