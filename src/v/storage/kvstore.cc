@@ -596,7 +596,8 @@ void kvstore::replay_consumer::consume_records(iobuf&& records) {
     _records = std::move(records);
 }
 
-batch_consumer::stop_parser kvstore::replay_consumer::consume_batch_end() {
+ss::future<batch_consumer::stop_parser>
+kvstore::replay_consumer::consume_batch_end() {
     /*
      * build the batch and then apply all its records to the store
      */
@@ -617,7 +618,7 @@ batch_consumer::stop_parser kvstore::replay_consumer::consume_batch_end() {
       "Unexpected next offset {} expected {}",
       _store->_next_offset,
       next_batch_offset);
-    return stop_parser::no;
+    co_return stop_parser::no;
 }
 
 void kvstore::replay_consumer::print(std::ostream& os) const {

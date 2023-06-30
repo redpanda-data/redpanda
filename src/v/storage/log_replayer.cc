@@ -58,7 +58,7 @@ public:
         crc_extend_iobuf(_crc, records);
     }
 
-    stop_parser consume_batch_end() override {
+    ss::future<stop_parser> consume_batch_end() override {
         if (is_valid_batch_crc()) {
             _cfg.last_offset = _header.last_offset();
             _cfg.truncate_file_pos = _file_pos_to_end_of_batch;
@@ -68,9 +68,9 @@ public:
                                               - _header.size_bytes;
             _seg->index().maybe_track(_header, physical_base_offset);
             _header = {};
-            return stop_parser::no;
+            co_return stop_parser::no;
         }
-        return stop_parser::yes;
+        co_return stop_parser::yes;
     }
 
     bool is_valid_batch_crc() const {

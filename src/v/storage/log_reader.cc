@@ -93,7 +93,7 @@ void skipping_consumer::consume_records(iobuf&& records) {
     _records = std::move(records);
 }
 
-batch_consumer::stop_parser skipping_consumer::consume_batch_end() {
+ss::future<batch_consumer::stop_parser> skipping_consumer::consume_batch_end() {
     // Note: This is what keeps the train moving. the `_reader.*` transitively
     // updates the next batch to consume
     _reader.add_one(model::record_batch(
@@ -102,22 +102,22 @@ batch_consumer::stop_parser skipping_consumer::consume_batch_end() {
     if (
       _header.last_offset() >= _reader._seg.offsets().stable_offset
       || _header.last_offset() >= _reader._config.max_offset) {
-        return stop_parser::yes;
+        co_return stop_parser::yes;
     }
     /*
      * if the very next batch is known to be cached, then stop parsing. the next
      * read will with high probability experience a cache hit.
      */
     if (_next_cached_batch == (_header.last_offset() + model::offset(1))) {
-        return stop_parser::yes;
+        co_return stop_parser::yes;
     }
     if (
       _reader._config.bytes_consumed >= _reader._config.max_bytes
       || model::timeout_clock::now() >= _timeout) {
-        return stop_parser::yes;
+        co_return stop_parser::yes;
     }
     _header = {};
-    return stop_parser(_reader._state.is_full());
+    co_return stop_parser(_reader._state.is_full());
 }
 
 void skipping_consumer::print(std::ostream& os) const {

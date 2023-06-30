@@ -247,12 +247,14 @@ ss::future<result<stop_parser>> continuous_batch_parser::consume_records() {
     auto sz = _header->size_bytes - model::packed_record_batch_header_size;
     return verify_read_iobuf(
              get_stream(), sz, "parser::consume_records", _recovery)
-      .then([this](result<iobuf> record) -> result<stop_parser> {
+      .then([this](result<iobuf> record) -> ss::future<result<stop_parser>> {
           if (!record) {
-              return record.error();
+              return ss::make_ready_future<result<stop_parser>>(record.error());
           }
           _consumer->consume_records(std::move(record.value()));
-          return result<stop_parser>(_consumer->consume_batch_end());
+          return _consumer->consume_batch_end().then([](stop_parser sp) {
+              return ss::make_ready_future<result<stop_parser>>(sp);
+          });
       });
 }
 
