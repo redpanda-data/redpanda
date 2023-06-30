@@ -25,6 +25,9 @@
 
 using namespace cloud_storage;
 
+static const model::ntp test_ntp(
+  model::kafka_namespace, model::topic("test-topic"), model::partition_id(0));
+
 BOOST_AUTO_TEST_CASE(remote_segment_index_search_test) {
     // This value is a power of two - 1 on purpose. This way we
     // will read from the compressed part and from the buffer of
@@ -133,7 +136,7 @@ SEASTAR_THREAD_TEST_CASE(test_remote_segment_index_builder) {
     auto is = make_iobuf_input_stream(std::move(segment));
     offset_index ix(base_offset, kbase_offset, 0, 0);
     auto parser = make_remote_segment_index_builder(
-      std::move(is), ix, model::offset_delta(0), 0);
+      test_ntp, std::move(is), ix, model::offset_delta(0), 0);
     auto result = parser->consume().get();
     BOOST_REQUIRE(result.has_value());
     BOOST_REQUIRE(result.value() != 0);
@@ -174,7 +177,7 @@ SEASTAR_THREAD_TEST_CASE(test_remote_segment_build_coarse_index) {
     auto is = make_iobuf_input_stream(std::move(segment));
     offset_index ix(base_offset, kbase_offset, 0, 0);
     auto parser = make_remote_segment_index_builder(
-      std::move(is), ix, model::offset_delta(0), 0);
+      test_ntp, std::move(is), ix, model::offset_delta(0), 0);
     auto pclose = ss::defer([&parser] { parser->close().get(); });
     auto result = parser->consume().get();
     BOOST_REQUIRE(result.has_value());
@@ -254,7 +257,7 @@ SEASTAR_THREAD_TEST_CASE(
     auto is = make_iobuf_input_stream(std::move(segment));
     offset_index ix(base_offset, kbase_offset, 0, 0);
     auto parser = make_remote_segment_index_builder(
-      std::move(is), ix, model::offset_delta(0), 0);
+      test_ntp, std::move(is), ix, model::offset_delta(0), 0);
     auto pclose = ss::defer([&parser] { parser->close().get(); });
     auto result = parser->consume().get();
     BOOST_REQUIRE(result.has_value());

@@ -1216,6 +1216,7 @@ ntp_archiver::make_segment_index(
 
     vlog(ctxlog.debug, "creating remote segment index: {}", index_path);
     auto builder = cloud_storage::make_remote_segment_index_builder(
+      _ntp,
       std::move(stream),
       ix,
       base_rp_offset - base_kafka_offset,
