@@ -95,7 +95,9 @@ public:
     ///       available.
     ss::future<
       result<std::unique_ptr<async_manifest_view_cursor>, error_outcome>>
-    get_cursor(async_view_search_query_t q) noexcept;
+    get_cursor(
+      async_view_search_query_t q,
+      std::optional<model::offset> end_inclusive = std::nullopt) noexcept;
 
     /// Get inactive spillover manifests which are waiting for
     /// retention

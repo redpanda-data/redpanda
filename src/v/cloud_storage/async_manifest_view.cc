@@ -479,7 +479,9 @@ ss::future<> async_manifest_view::run_bg_loop() {
 }
 
 ss::future<result<std::unique_ptr<async_manifest_view_cursor>, error_outcome>>
-async_manifest_view::get_cursor(async_view_search_query_t query) noexcept {
+async_manifest_view::get_cursor(
+  async_view_search_query_t query,
+  std::optional<model::offset> end_inclusive) noexcept {
     try {
         ss::gate::holder h(_gate);
         if (
@@ -494,11 +496,23 @@ async_manifest_view::get_cursor(async_view_search_query_t query) noexcept {
             co_return error_outcome::out_of_range;
         }
         model::offset begin;
-        model::offset end = _stm_manifest.get_last_offset();
+        model::offset end = end_inclusive.value_or(
+          _stm_manifest.get_last_offset());
         if (_stm_manifest.get_archive_start_offset() == model::offset{}) {
             begin = _stm_manifest.get_start_offset().value_or(begin);
         } else {
             begin = _stm_manifest.get_archive_start_offset();
+        }
+
+        if (end < begin) {
+            vlog(
+              _ctxlog.debug,
+              "invalid end offset: stm_manifest_begin={} stm_manifest_end={} "
+              "end_inclusive_override={}",
+              begin,
+              _stm_manifest.get_last_offset(),
+              end_inclusive);
+            co_return error_outcome::out_of_range;
         }
         auto cursor = std::make_unique<async_manifest_view_cursor>(
           *this, begin, end, _manifest_meta_ttl());
