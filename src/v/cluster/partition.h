@@ -94,7 +94,7 @@ public:
 
     ss::future<result<model::offset, std::error_code>>
     sync_kafka_start_offset_override(model::timeout_clock::duration timeout) {
-        if (_log_eviction_stm) {
+        if (_log_eviction_stm && !is_read_replica_mode_enabled()) {
             auto offset_res
               = co_await _log_eviction_stm->sync_start_offset_override(timeout);
             if (offset_res.has_failure()) {
@@ -339,7 +339,7 @@ public:
       std::optional<model::timeout_clock::time_point> deadline = std::nullopt);
 
     std::optional<model::offset> kafka_start_offset_override() const {
-        if (_log_eviction_stm) {
+        if (_log_eviction_stm && !is_read_replica_mode_enabled()) {
             auto o = _log_eviction_stm->start_offset_override();
             if (o != model::offset{} && _raft->start_offset() < o) {
                 auto offset_translator_state = get_offset_translator_state();
