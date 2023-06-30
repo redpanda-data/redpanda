@@ -28,8 +28,11 @@ inline std::random_device::result_type get_seed() {
     auto seed = rd();
     return seed;
 }
+
+static const auto seed = get_seed();
+
 // NOLINTNEXTLINE
-static thread_local std::default_random_engine gen(internal::get_seed());
+static thread_local std::default_random_engine gen(internal::seed);
 } // namespace internal
 
 bytes get_bytes(size_t n = 128 * 1024);
