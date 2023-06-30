@@ -100,6 +100,7 @@ func main() {
 		metricsTimeout              time.Duration
 		restrictToRedpandaVersion   string
 		namespace                   string
+		migrateChartVersion         string
 
 		enableClusterToRedpandaMigration bool
 
@@ -132,6 +133,7 @@ func main() {
 	flag.BoolVar(&debug, "debug", false, "Set to enable debugging")
 	flag.BoolVar(&enableClusterToRedpandaMigration, "enable-migration", false, "Set to perform migration of cluster to redpanda resources")
 	flag.StringVar(&namespace, "namespace", "", "If namespace is set to not empty value, it changes scope of Redpanda operator to work in single namespace")
+	flag.StringVar(&migrateChartVersion, "migrate-chart-version", "4.0.49", "version of chart to attempt migration from")
 
 	logOptions.BindFlags(flag.CommandLine)
 	clientOptions.BindFlags(flag.CommandLine)
@@ -265,6 +267,7 @@ func main() {
 				DecommissionWaitInterval:  decommissionWaitInterval,
 				MetricsTimeout:            metricsTimeout,
 				RestrictToRedpandaVersion: restrictToRedpandaVersion,
+				MigrationVersion:          migrateChartVersion,
 			}).WithClusterDomain(clusterDomain).WithConfiguratorSettings(configurator).WithAllowPVCDeletion(allowPVCDeletion).SetupWithManager(mgr); err != nil {
 				setupLog.Error(err, "Unable to create controller", "controller", "Cluster")
 				os.Exit(1)

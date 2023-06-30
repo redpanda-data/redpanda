@@ -29,12 +29,17 @@ import (
 )
 
 var (
-	// ManagingClusterAnnotation is the annotation that tells the cluster reconciler to start/stop managing obj
-	ManagingClusterAnnotation = "redpanda.vectorized.io/managed"
+	// ManagingClusterAnnotation is the annotation that tells the cluster reconciler to start/stop managing cluster
+	ManagingClusterAnnotation = vectorizedv1alpha1.GroupVersion.Group + "/managed"
+
+	// ManagingRedpandaAnnotation is the annotation that tells the cluster reconciler to start/stop managing redpandas
+	ManagingRedpandaAnnotation = v1alpha1.GroupVersion.Group + "/managed"
+
 	// MigrationCompleteAnnotation Set to false means we should retry/continue migration process, should be idempotent
-	MigrationCompleteAnnotation = "redpanda.io/migration-complete"
+	MigrationCompleteAnnotation = v1alpha1.GroupVersion.Group + "/migration-complete"
+
 	// MigrationFromLabel to indicate where the redpanda resource was migrated from
-	MigrationFromLabel = "redpanda.io/migrated-from"
+	MigrationFromLabel = v1alpha1.GroupVersion.Group + "/migrated-from"
 
 	// RedpandaImageRepository is the deefault image repo for redpanda
 	RedpandaImageRepository = "docker.redpanda.com/redpandadata/redpanda"
@@ -52,6 +57,7 @@ type ClusterToRedpandaReconciler struct {
 	MetricsTimeout            time.Duration
 	RestrictToRedpandaVersion string
 	allowPVCDeletion          bool
+	MigrationVersion          string
 }
 
 func (r *ClusterToRedpandaReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
@@ -108,13 +114,19 @@ func (r *ClusterToRedpandaReconciler) migrate(ctx context.Context, cluster *vect
 
 	rp := v1alpha1.Redpanda{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      cluster.Name,
-			Namespace: cluster.Namespace,
+			Name:        cluster.Name,
+			Namespace:   cluster.Namespace,
+			Annotations: map[string]string{ManagingRedpandaAnnotation: "false"},
 		},
 	}
 
 	// Spec details including chart version etc..
 	rpSpec := v1alpha1.RedpandaSpec{}
+
+	rpChartRef := v1alpha1.ChartRef{
+		ChartVersion: r.MigrationVersion,
+	}
+	rpSpec.ChartRef = rpChartRef
 
 	// Values file entries are here, we should be filling the cluster details mostly here
 
