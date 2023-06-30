@@ -77,7 +77,7 @@ class DeleteRecordsTest(RedpandaTest):
             self.redpanda.set_extra_rp_conf(extra_rp_conf)
             self.redpanda.set_si_settings(si_settings)
 
-        self.redpanda.start(parallel=True)
+        self.redpanda.start()
         self._create_initial_topics()
 
         if start_with_data is True:
