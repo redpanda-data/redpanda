@@ -2,6 +2,7 @@ package v1alpha1
 
 import (
 	"encoding/json"
+
 	"k8s.io/apimachinery/pkg/api/resource"
 
 	corev1 "k8s.io/api/core/v1"
@@ -66,8 +67,9 @@ type RedpandaClusterSpec struct {
 }
 
 type ConfigWatcher struct {
-	Enabled   bool                         `json:"enabled,omitempty"`
-	Resources *corev1.ResourceRequirements `json:"resources,omitempty"`
+	Enabled         bool                         `json:"enabled,omitempty"`
+	Resources       *corev1.ResourceRequirements `json:"resources,omitempty"`
+	SecurityContext *corev1.SecurityContext      `json:"SecurityContext,omitempty"`
 }
 
 // RedpandaImage is a top level field of the values file
@@ -248,7 +250,7 @@ type Statefulset struct {
 	PriorityClassName             string                     `json:"priorityClassName,omitempty"`
 	ReadinessProbe                *ReadinessProbe            `json:"readinessProbe,omitempty"`
 	Replicas                      int                        `json:"replicas,omitempty"`
-	SecurityContext               *SecurityContext           `json:"securityContext,omitempty"`
+	SecurityContext               *corev1.SecurityContext    `json:"securityContext,omitempty"`
 	SideCars                      *SideCars                  `json:"sideCars,omitempty"`
 	SkipChown                     bool                       `json:"skipChown,omitempty"`
 	StartupProbe                  *StartupProbe              `json:"startupProbe,omitempty"`
@@ -275,13 +277,6 @@ type ReadinessProbe struct {
 	FailureThreshold    int `json:"failureThreshold"`
 	InitialDelaySeconds int `json:"initialDelaySeconds"`
 	PeriodSeconds       int `json:"periodSeconds"`
-}
-
-// SecurityContext is a top level field of the values file
-type SecurityContext struct {
-	FsGroup             int    `json:"fsGroup"`
-	FsGroupChangePolicy string `json:"fsGroupChangePolicy,omitempty"`
-	RunAsUser           int    `json:"runAsUser"`
 }
 
 // StartupProbe is a top level field of the values file

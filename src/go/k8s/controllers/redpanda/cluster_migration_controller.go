@@ -143,7 +143,6 @@ func (r *ClusterToRedpandaReconciler) migrate(ctx context.Context, cluster *vect
 }
 
 func (r *ClusterToRedpandaReconciler) migrateRedpandaClusterSpec(cluster *vectorizedv1alpha1.Cluster) v1alpha1.RedpandaClusterSpec {
-
 	// Cannot be nil
 	oldSpec := cluster.Spec
 
@@ -202,7 +201,7 @@ func (r *ClusterToRedpandaReconciler) migrateRedpandaClusterSpec(cluster *vector
 		//
 
 		rpResources.CPU = &v1alpha1.CPU{
-			Cores: redpandaResources.Cpu().String(),
+			Cores: redpandaResources.Cpu(),
 		}
 
 		rpResources.Memory = &v1alpha1.Memory{}
@@ -218,7 +217,7 @@ func (r *ClusterToRedpandaReconciler) migrateRedpandaClusterSpec(cluster *vector
 		// TODO: check to see what secret is being created with user information
 		if len(oldSpec.Superusers) > 0 {
 			users := make([]v1alpha1.UsersItems, 0)
-			for i, _ := range oldSpec.Superusers {
+			for i := range oldSpec.Superusers {
 				user := oldSpec.Superusers[i]
 				userItem := v1alpha1.UsersItems{
 					Name:      user.Username,
@@ -243,7 +242,7 @@ func (r *ClusterToRedpandaReconciler) migrateRedpandaClusterSpec(cluster *vector
 	return v1alpha1.RedpandaClusterSpec{
 		Image:       &rpImage,
 		Statefulset: &rpStatefulset,
-		//Resources:        &rpResources,
+		// Resources:        &rpResources,
 		Tolerations:      rpTolerations,
 		Auth:             &rpAuth,
 		LicenseSecretRef: &rpLicenseRef,
