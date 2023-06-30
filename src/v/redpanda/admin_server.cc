@@ -101,6 +101,7 @@
 #include <seastar/core/prometheus.hh>
 #include <seastar/core/reactor.hh>
 #include <seastar/core/sharded.hh>
+#include <seastar/core/shared_ptr.hh>
 #include <seastar/core/smp.hh>
 #include <seastar/core/sstring.hh>
 #include <seastar/core/timer.hh>
@@ -141,6 +142,22 @@ static ss::logger logger{"admin_api_server"};
 
 // Helpers for partition routes
 namespace {
+
+template<typename C>
+class lw_shared_container {
+public:
+    using iterator = C::iterator;
+    using value_type = C::value_type;
+
+    explicit lw_shared_container(C&& c)
+      : c_{ss::make_lw_shared<C>(std::move(c))} {}
+
+    iterator begin() const { return c_->begin(); }
+    iterator end() const { return c_->end(); }
+
+private:
+    ss::lw_shared_ptr<C> c_;
+};
 
 struct string_conversion_exception : public default_control_character_thrower {
     using default_control_character_thrower::default_control_character_thrower;
@@ -3012,8 +3029,7 @@ void admin_server::register_partition_routes() {
             [](auto& partition_manager, bool materialized, auto get_leader) {
                 return partition_manager.map_reduce0(
                   [materialized, get_leader](auto& pm) {
-                      std::vector<summary> partitions;
-                      partitions.reserve(pm.partitions().size());
+                      fragmented_vector<summary> partitions;
                       for (const auto& it : pm.partitions()) {
                           summary p;
                           p.ns = it.first.ns;
@@ -3026,9 +3042,14 @@ void admin_server::register_partition_routes() {
                       }
                       return partitions;
                   },
-                  std::vector<summary>{},
-                  [](std::vector<summary> acc, std::vector<summary> update) {
-                      acc.insert(acc.end(), update.begin(), update.end());
+                  fragmented_vector<summary>{},
+                  [](
+                    fragmented_vector<summary> acc,
+                    fragmented_vector<summary> update) {
+                      std::move(
+                        std::make_move_iterator(update.begin()),
+                        std::make_move_iterator(update.end()),
+                        std::back_inserter(acc));
                       return acc;
                   });
             };
@@ -3038,8 +3059,11 @@ void admin_server::register_partition_routes() {
                    [](const auto& p) {
                        return p->get_leader_id().value_or(model::node_id(-1))();
                    })
-            .then([](auto partitions) {
-                return ss::json::json_return_type(std::move(partitions));
+            .then([](auto partitions) mutable {
+                return ss::json::json_return_type(
+                  ss::json::stream_range_as_array(
+                    lw_shared_container{std::move(partitions)},
+                    [](summary const& i) -> summary const& { return i; }));
             });
       });
 
