@@ -166,8 +166,9 @@ private:
      * 2. then recover from segments
      */
     ss::future<> recover();
-    void load_snapshot_in_thread();
-    void replay_segments_in_thread(segment_set);
+    ss::future<> load_snapshot();
+    ss::future<> load_snapshot_from_reader(snapshot_reader&);
+    ss::future<> replay_segments(segment_set);
 
     /**
      * Replay batches against the key-value store.

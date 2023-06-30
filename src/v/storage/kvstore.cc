@@ -12,6 +12,7 @@
 #include "bytes/iobuf.h"
 #include "bytes/iostream.h"
 #include "config/configuration.h"
+#include "model/async_adl_serde.h"
 #include "model/namespace.h"
 #include "prometheus/prometheus_sanitize.h"
 #include "raft/types.h"
@@ -22,6 +23,7 @@
 #include "storage/types.h"
 #include "vlog.h"
 
+#include <seastar/core/coroutine.hh>
 #include <seastar/core/metrics.hh>
 #include <seastar/core/thread.hh>
 #include <seastar/util/defer.hh>
@@ -328,13 +330,8 @@ ss::future<> kvstore::save_snapshot() {
 
     // no operations have been applied to the db
     if (_next_offset == model::offset(0)) {
-        return ss::now();
+        co_return;
     }
-
-    vlog(
-      lg.debug,
-      "Creating snapshot at offset {}",
-      _next_offset - model::offset(1));
 
     // package up the db into a batch
     storage::record_batch_builder builder(
@@ -349,75 +346,82 @@ ss::future<> kvstore::save_snapshot() {
     // serialize batch: size_prefix + batch
     iobuf data;
     auto ph = data.reserve(sizeof(int32_t));
-    reflection::serialize(data, std::move(batch));
+    co_await reflection::async_adl<model::record_batch>{}.to(
+      data, std::move(batch));
     auto size = ss::cpu_to_le(int32_t(data.size_bytes() - sizeof(int32_t)));
     ph.write((const char*)&size, sizeof(size));
 
-    return _snap.start_snapshot().then(
-      [this, data = std::move(data)](snapshot_writer writer) mutable {
-          return ss::do_with(
-            std::move(writer),
-            [this, data = std::move(data)](snapshot_writer& wr) mutable {
-                // the last log offset represented in the snapshot
-                auto last_offset = _next_offset - model::offset(1);
+    vlog(
+      lg.debug,
+      "Creating snapshot at offset {} ({} bytes)",
+      _next_offset - model::offset(1),
+      size);
 
-                iobuf meta;
-                reflection::serialize(meta, last_offset);
+    auto wr = co_await _snap.start_snapshot();
+    // the last log offset represented in the snapshot
+    auto last_offset = _next_offset - model::offset(1);
 
-                return wr.write_metadata(std::move(meta))
-                  .then([&wr, data = std::move(data)]() mutable {
-                      auto& os = wr.output(); // kept alive by do_with above
-                      return write_iobuf_to_output_stream(std::move(data), os);
-                  })
-                  .then([&wr] { return wr.close(); })
-                  .then([this, &wr]() {
-                      vlog(lg.debug, "Finishing snapshot creation");
-                      return _snap.finish_snapshot(wr);
-                  });
-            });
-      });
+    iobuf meta;
+    reflection::serialize(meta, last_offset);
+
+    co_await wr.write_metadata(std::move(meta));
+    auto& os = wr.output();
+    co_await write_iobuf_to_output_stream(std::move(data), os);
+    co_await wr.close();
+
+    vlog(lg.debug, "Finishing snapshot creation");
+    co_await _snap.finish_snapshot(wr);
 }
 
 ss::future<> kvstore::recover() {
-    return ss::async([this] {
-        /*
-         * after loading _next_offset will be set to either zero if no snapshot
-         * is found, or the offset immediately following the snapshot offset.
-         */
-        load_snapshot_in_thread();
+    /*
+     * after loading _next_offset will be set to either zero if no snapshot
+     * is found, or the offset immediately following the snapshot offset.
+     */
+    co_await load_snapshot();
 
-        auto segments
-          = recover_segments(
-              partition_path(_ntpc),
-              debug_sanitize_files::yes,
-              _ntpc.is_compacted(),
-              [] { return std::nullopt; },
-              _as,
-              config::shard_local_cfg().storage_read_buffer_size(),
-              config::shard_local_cfg().storage_read_readahead_count(),
-              std::nullopt,
-              _resources,
-              _feature_table)
-              .get0();
+    auto segments = co_await recover_segments(
+      partition_path(_ntpc),
+      debug_sanitize_files::yes,
+      _ntpc.is_compacted(),
+      [] { return std::nullopt; },
+      _as,
+      config::shard_local_cfg().storage_read_buffer_size(),
+      config::shard_local_cfg().storage_read_readahead_count(),
+      std::nullopt,
+      _resources,
+      _feature_table);
 
-        replay_segments_in_thread(std::move(segments));
-    });
+    co_await replay_segments(std::move(segments));
 }
 
-void kvstore::load_snapshot_in_thread() {
+ss::future<> kvstore::load_snapshot() {
     _gate.check(); // early out on shutdown
 
     // open snapshot reader, if a snapshot exists
-    auto reader = _snap.open_snapshot().get0();
+    auto reader = co_await _snap.open_snapshot();
     if (!reader) {
         vlog(lg.debug, "Load snapshot: no snapshot found");
         _next_offset = model::offset(0);
-        return;
+        co_return;
     }
-    auto close_reader = ss::defer([&reader] { reader->close().get(); });
 
+    std::exception_ptr ex;
+    try {
+        co_await load_snapshot_from_reader(reader.value());
+    } catch (...) {
+        ex = std::current_exception();
+    }
+
+    co_await reader->close();
+    if (ex) {
+        throw ex;
+    }
+}
+
+ss::future<> kvstore::load_snapshot_from_reader(snapshot_reader& reader) {
     // the snapshot metadata contains the last offset represented
-    auto snap_meta = reader->read_metadata().get0();
+    auto snap_meta = co_await reader.read_metadata();
     iobuf_parser parser(std::move(snap_meta));
     auto last_offset = model::offset(
       reflection::adl<model::offset::type>{}.from(parser));
@@ -427,7 +431,7 @@ void kvstore::load_snapshot_in_thread() {
       last_offset);
 
     // read and restore db from snapshot
-    auto buf = read_iobuf_exactly(reader->input(), sizeof(int32_t)).get0();
+    auto buf = co_await read_iobuf_exactly(reader.input(), sizeof(int32_t));
     if (buf.size_bytes() != sizeof(int32_t)) {
         throw std::runtime_error(fmt::format(
           "Failed to read snapshot size. Wanted {} bytes != {}",
@@ -436,7 +440,7 @@ void kvstore::load_snapshot_in_thread() {
     }
     auto size = reflection::from_iobuf<int32_t>(std::move(buf));
 
-    buf = read_iobuf_exactly(reader->input(), size).get0();
+    buf = co_await read_iobuf_exactly(reader.input(), size);
     if ((int32_t)buf.size_bytes() != size) {
         throw std::runtime_error(fmt::format(
           "Failed to read snapshot data. Wanted {} bytes != {}",
@@ -444,7 +448,8 @@ void kvstore::load_snapshot_in_thread() {
           buf.size_bytes()));
     }
 
-    auto batch = reflection::from_iobuf<model::record_batch>(std::move(buf));
+    auto batch = co_await reflection::from_iobuf_async<model::record_batch>(
+      std::move(buf));
 
     auto batch_crc = model::crc_record_batch(batch);
     if (batch.header().crc != batch_crc) {
@@ -460,6 +465,7 @@ void kvstore::load_snapshot_in_thread() {
           batch.header().header_crc));
     }
 
+    _db.reserve(batch.header().record_count);
     batch.for_each_record([this](model::record r) {
         auto key = iobuf_to_bytes(r.release_key());
         _probe.add_cached_bytes(key.size() + r.value().size_bytes());
@@ -476,7 +482,7 @@ void kvstore::load_snapshot_in_thread() {
     _next_offset = last_offset + model::offset(1);
 }
 
-void kvstore::replay_segments_in_thread(segment_set segs) {
+ss::future<> kvstore::replay_segments(segment_set segs) {
     vlog(
       lg.debug,
       "Replaying {} segments from offset {}",
@@ -484,7 +490,7 @@ void kvstore::replay_segments_in_thread(segment_set segs) {
       _next_offset);
 
     if (segs.empty()) {
-        return;
+        co_return;
     }
 
     // find segment that starts at _next_offset
@@ -494,7 +500,8 @@ void kvstore::replay_segments_in_thread(segment_set segs) {
       });
 
     // we didn't find an exact match, and the last segment starts after
-    // _next_offset. this is unrecoverable. it's effectively a hole in the log.
+    // _next_offset. this is unrecoverable. it's effectively a hole in the
+    // log.
     if (
       match == segs.end()
       && segs.back()->offsets().base_offset > _next_offset) {
@@ -502,9 +509,9 @@ void kvstore::replay_segments_in_thread(segment_set segs) {
           fmt::format("Segment starting at offset {} not found", _next_offset));
     }
 
-    // if no exact match was found (match == segs.end()) then all the segments
-    // are old and can be deleted. the recovery loop below will be skipped, and
-    // we'll immediately gc the old segments.
+    // if no exact match was found (match == segs.end()) then all the
+    // segments are old and can be deleted. the recovery loop below will be
+    // skipped, and we'll immediately gc the old segments.
 
     for (auto it = match; it != segs.end(); it++) {
         auto seg = *it;
@@ -518,19 +525,18 @@ void kvstore::replay_segments_in_thread(segment_set segs) {
           seg->offsets().base_offset,
           _next_offset);
 
-        auto reader_handle
-          = seg->reader().data_stream(0, ss::default_priority_class()).get();
+        auto reader_handle = co_await seg->reader().data_stream(
+          0, ss::default_priority_class());
         auto parser = std::make_unique<continuous_batch_parser>(
           std::make_unique<replay_consumer>(this), std::move(reader_handle));
         auto p = parser.get();
-        p->consume()
+        co_await p->consume()
           .discard_result()
           .then([p]() { return p->close(); })
-          .finally([parser = std::move(parser)] {})
-          .get();
+          .finally([parser = std::move(parser)] {});
 
-        // early out on shutdown. parser will exit fast, but cleanly. here we
-        // ensure the entire recovery process is halted.
+        // early out on shutdown. parser will exit fast, but cleanly. here
+        // we ensure the entire recovery process is halted.
         _gate.check();
     }
 
@@ -541,21 +547,21 @@ void kvstore::replay_segments_in_thread(segment_set segs) {
           lg.info,
           "Removing old segment with base offset {}",
           seg->offsets().base_offset);
-        seg->close().get();
-        ss::remove_file(seg->reader().path().string()).get();
-        ss::remove_file(seg->index().path().string()).get();
+        co_await seg->close();
+        co_await ss::remove_file(seg->reader().path().string());
+        co_await ss::remove_file(seg->index().path().string());
     }
 
     // close the rest
     for (auto it = match; it != segs.end(); it++) {
-        (*it)->close().get();
+        co_await (*it)->close();
     }
 
     // saving a snapshot right after recovery during start-up prevents an
-    // accumulation of segments in cases where the system restarts many times
-    // without ever filling up a segment and snapshotting when rolling. they'll
-    // be removed on the next startup.
-    save_snapshot().get();
+    // accumulation of segments in cases where the system restarts many
+    // times without ever filling up a segment and snapshotting when
+    // rolling. they'll be removed on the next startup.
+    co_await save_snapshot();
 }
 
 batch_consumer::consume_result kvstore::replay_consumer::accept_batch_start(
