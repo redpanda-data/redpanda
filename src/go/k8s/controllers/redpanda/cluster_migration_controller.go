@@ -118,23 +118,17 @@ func (r *ClusterToRedpandaReconciler) migrate(ctx context.Context, cluster *vect
 			Namespace:   cluster.Namespace,
 			Annotations: map[string]string{ManagingRedpandaAnnotation: "false"},
 		},
+		Spec: v1alpha1.RedpandaSpec{
+			ChartRef: v1alpha1.ChartRef{
+				ChartVersion: r.MigrationVersion,
+			},
+		},
 	}
 
-	// Spec details including chart version etc..
-	rpSpec := v1alpha1.RedpandaSpec{}
-
-	rpChartRef := v1alpha1.ChartRef{
-		ChartVersion: r.MigrationVersion,
-	}
-	rpSpec.ChartRef = rpChartRef
-
-	// Values file entries are here, we should be filling the cluster details mostly here
-
-	rpClusterSpec := r.migrateRedpandaClusterSpec(cluster)
-
-	// Now place all the cluster spec details in
-	rp.Spec = rpSpec
-	rp.Spec.ClusterSpec = &rpClusterSpec
+	// Migrating ClusterSpec
+	rp = r.migrateClusterSpec(cluster, &rp)
+	log.Info(fmt.Sprintf("redpanda now looks like: %+v", rp))
+	// Migrating RedpandaConfig
 
 	// The final step is to add labels so Helm adopts the existing resources as we create the redpanda resource
 	// Should we then delete old statefulset orphan old pods and then recreate pods?
@@ -142,15 +136,41 @@ func (r *ClusterToRedpandaReconciler) migrate(ctx context.Context, cluster *vect
 	return rp, ctrl.Result{}, nil
 }
 
-func (r *ClusterToRedpandaReconciler) migrateRedpandaClusterSpec(cluster *vectorizedv1alpha1.Cluster) v1alpha1.RedpandaClusterSpec {
+func (r *ClusterToRedpandaReconciler) migrateClusterSpec(cluster *vectorizedv1alpha1.Cluster, rp *v1alpha1.Redpanda) v1alpha1.Redpanda {
 	// Cannot be nil
 	oldSpec := cluster.Spec
 
-	rpImage := v1alpha1.RedpandaImage{}
-	rpStatefulset := v1alpha1.Statefulset{}
-	rpResources := v1alpha1.Resources{}
+	rpSpec := &v1alpha1.RedpandaClusterSpec{}
+	if rp.Spec.ClusterSpec != nil {
+		rpSpec = rp.Spec.ClusterSpec
+	}
 
-	// Image information
+	rpImage := &v1alpha1.RedpandaImage{}
+	if rpSpec.Image != nil {
+		rpImage = rpSpec.Image
+	}
+
+	rpStatefulset := &v1alpha1.Statefulset{}
+	if rpSpec.Statefulset != nil {
+		rpStatefulset = rpSpec.Statefulset
+	}
+
+	rpResources := &v1alpha1.Resources{}
+	if rpSpec.Resources != nil {
+		rpResources = rpSpec.Resources
+	}
+
+	rpLicenseRef := &v1alpha1.LicenseSecretRef{}
+	if rpSpec.LicenseSecretRef != nil {
+		rpLicenseRef = rpSpec.LicenseSecretRef
+	}
+
+	rpAuth := &v1alpha1.Auth{}
+	if rpSpec.Auth != nil {
+		rpAuth = rpSpec.Auth
+	}
+
+	// --- Image information --
 	rpImage.Repository = RedpandaImageRepository
 	if oldSpec.Image != "" {
 		rpImage.Repository = oldSpec.Image
@@ -160,7 +180,7 @@ func (r *ClusterToRedpandaReconciler) migrateRedpandaClusterSpec(cluster *vector
 		rpImage.Tag = oldSpec.Version
 	}
 
-	// Annotations
+	// -- Annotations ---
 	if oldSpec.Annotations != nil {
 		rpStatefulset.Annotations = oldSpec.Annotations
 	}
@@ -177,10 +197,10 @@ func (r *ClusterToRedpandaReconciler) migrateRedpandaClusterSpec(cluster *vector
 		rpTolerations = append(rpTolerations, oldSpec.Tolerations...)
 	}
 
-	// Replicas
+	// --- Replicas ---
 	rpStatefulset.Replicas = int(pointer.Int32Deref(oldSpec.Replicas, 3))
 
-	// Resources
+	// --- Resources ---
 	redpandaResources := oldSpec.Resources.Redpanda
 	if redpandaResources != nil && redpandaResources.Cpu() != nil {
 		redpandaResources.Memory()
@@ -208,7 +228,7 @@ func (r *ClusterToRedpandaReconciler) migrateRedpandaClusterSpec(cluster *vector
 
 	}
 
-	rpAuth := v1alpha1.Auth{}
+	// migrate auth
 	if pointer.BoolDeref(oldSpec.KafkaEnableAuthorization, false) || oldSpec.EnableSASL {
 		rpAuth.SASL = &v1alpha1.SASL{
 			Enabled: true,
@@ -231,7 +251,6 @@ func (r *ClusterToRedpandaReconciler) migrateRedpandaClusterSpec(cluster *vector
 	}
 
 	// license details
-	rpLicenseRef := v1alpha1.LicenseSecretRef{}
 	if oldSpec.LicenseRef != nil {
 		if oldSpec.LicenseRef.Key != "" {
 			rpLicenseRef.SecretKey = oldSpec.LicenseRef.Key
@@ -239,14 +258,21 @@ func (r *ClusterToRedpandaReconciler) migrateRedpandaClusterSpec(cluster *vector
 		rpLicenseRef.SecretName = oldSpec.LicenseRef.Name
 	}
 
-	return v1alpha1.RedpandaClusterSpec{
-		Image:       &rpImage,
-		Statefulset: &rpStatefulset,
-		// Resources:        &rpResources,
-		Tolerations:      rpTolerations,
-		Auth:             &rpAuth,
-		LicenseSecretRef: &rpLicenseRef,
-	}
+	rpSpec.Image = rpImage
+	rpSpec.Statefulset = rpStatefulset
+	rpSpec.Tolerations = rpTolerations
+	rpSpec.Auth = rpAuth
+	rpSpec.LicenseSecretRef = rpLicenseRef
+
+	// cluster spec now updated, we should probably only recreate if needed
+	rp.Spec.ClusterSpec = rpSpec
+
+	return *rp
+}
+
+func (r *ClusterToRedpandaReconciler) migrateRedpandaConfig(cluster *vectorizedv1alpha1.Cluster, rp *v1alpha1.Redpanda) v1alpha1.Redpanda {
+
+	return *rp
 }
 
 // SetupWithManager sets up the controller with the Manager.
@@ -322,7 +348,7 @@ func (r *ClusterToRedpandaReconciler) WithConfiguratorSettings(configuratorSetti
 func (r *ClusterToRedpandaReconciler) createRedpandaResource(ctx context.Context, rp *v1alpha1.Redpanda) error {
 	// Check if HelmRepository exists or create it
 	rpGet := &v1alpha1.Redpanda{}
-	if err := r.Client.Get(ctx, types.NamespacedName{Namespace: rp.Namespace, Name: rp.Name}, rpGet); err != nil {
+	if err := r.Get(ctx, types.NamespacedName{Namespace: rp.Namespace, Name: rp.Name}, rpGet); err != nil {
 		if apierrors.IsNotFound(err) {
 			if errCreate := r.Client.Create(ctx, rp); errCreate != nil {
 				return fmt.Errorf("error creating HelmRepository: %w", errCreate)
@@ -332,8 +358,11 @@ func (r *ClusterToRedpandaReconciler) createRedpandaResource(ctx context.Context
 		}
 	}
 
+	// need to get previous resource version and update the old with the new.
+	rp.ResourceVersion = rpGet.ResourceVersion
+
 	// already exists, should try to update not create
-	if err := r.Client.Update(ctx, rp); err != nil {
+	if err := r.Update(ctx, rp); err != nil {
 		return err
 	}
 
