@@ -563,14 +563,16 @@ FIXTURE_TEST(test_async_manifest_view_retention, async_manifest_view_fixture) {
     model::offset prefix_base_offset;
     model::offset_delta prefix_delta;
     for (const auto& meta : expected) {
-        prefix_size += meta.size_bytes;
         prefix_timestamp = meta.base_timestamp;
         prefix_base_offset = meta.base_offset;
         prefix_delta = meta.delta_offset;
-        quota--;
+
         if (quota == 0) {
             break;
         }
+
+        prefix_size += meta.size_bytes;
+        quota--;
     }
 
     vlog(

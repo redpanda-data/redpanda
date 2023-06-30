@@ -763,8 +763,22 @@ async_manifest_view::time_based_retention(
           "Computing time-based retention, boundary: {}, now: {}",
           now - delta,
           now);
+
+        if (!_stm_manifest.get_start_offset().has_value()) {
+            vlog(
+              _ctxlog.error,
+              "Empty STM manifest with archive in place: "
+              "stm_start_offset={}, archive_start_offset={}, "
+              "archive_clean_offset={}",
+              _stm_manifest.get_start_offset(),
+              _stm_manifest.get_archive_start_offset(),
+              _stm_manifest.get_archive_clean_offset());
+            co_return error_outcome::failure;
+        }
+
         auto res = co_await get_cursor(
-          _stm_manifest.get_archive_start_offset());
+          _stm_manifest.get_archive_start_offset(),
+          model::prev_offset(_stm_manifest.get_start_offset().value()));
         if (res.has_failure() && res.error() != error_outcome::out_of_range) {
             vlog(
               _ctxlog.error,
@@ -803,13 +817,12 @@ async_manifest_view::time_based_retention(
 
                 if (!eof) {
                     auto r = co_await cursor->next();
-                    if (
-                      r.has_failure()
-                      && r.error() == error_outcome::out_of_range) {
+                    if (r.has_value() && r.value() == false) {
                         vlog(
                           _ctxlog.info,
                           "Entire archive is removed by the time-based "
                           "retention");
+                        break;
                     } else if (r.has_failure()) {
                         vlog(
                           _ctxlog.error,
@@ -862,8 +875,22 @@ async_manifest_view::size_based_retention(size_t size_limit) noexcept {
               cloud_log_size,
               size_limit,
               to_remove);
+
+            if (!_stm_manifest.get_start_offset().has_value()) {
+                vlog(
+                  _ctxlog.error,
+                  "Empty STM manifest with archive in place: "
+                  "stm_start_offset={}, archive_start_offset={}, "
+                  "archive_clean_offset={}",
+                  _stm_manifest.get_start_offset(),
+                  _stm_manifest.get_archive_start_offset(),
+                  _stm_manifest.get_archive_clean_offset());
+                co_return error_outcome::failure;
+            }
+
             auto res = co_await get_cursor(
-              _stm_manifest.get_archive_start_offset());
+              _stm_manifest.get_archive_start_offset(),
+              model::prev_offset(_stm_manifest.get_start_offset().value()));
             if (res.has_failure()) {
                 vlog(
                   _ctxlog.error,
@@ -885,14 +912,15 @@ async_manifest_view::size_based_retention(size_t size_limit) noexcept {
                 auto eof = cursor->with_manifest(
                   [this, &to_remove, &result](const auto& manifest) mutable {
                       for (const auto& meta : manifest) {
+                          result.offset = meta.base_offset;
+                          result.delta = meta.delta_offset;
+
                           if (meta.size_bytes > to_remove) {
                               vlog(_ctxlog.debug, "Retention stop at {}", meta);
                               to_remove = 0;
                               return true;
                           } else {
                               to_remove -= meta.size_bytes;
-                              result.offset = meta.base_offset;
-                              result.delta = meta.delta_offset;
                               vlog(
                                 _ctxlog.debug,
                                 "Retention consume {}, remaining bytes: {}",
@@ -909,13 +937,31 @@ async_manifest_view::size_based_retention(size_t size_limit) noexcept {
                   result.delta);
                 if (!eof) {
                     auto r = co_await cursor->next();
-                    if (
-                      r.has_failure()
-                      && r.error() == error_outcome::out_of_range) {
+                    if (r.has_value() && r.value() == false) {
+                        // If the retention policy requires us to remove
+                        // segments from the STM manifest, or if the entire
+                        // archive was removed, the archive start offset should
+                        // be advanced to match that of the STM region.
+                        if (!_stm_manifest.empty()) {
+                            // The STM manifest should never be empty here since
+                            // we have an archive in place.
+                            result.offset = _stm_manifest.begin()->base_offset;
+                            result.delta = _stm_manifest.begin()->delta_offset;
+                        } else {
+                            vlog(
+                              _ctxlog.error,
+                              "Empty STM manifest with archive in place: "
+                              "stm_start_offset={}, archive_start_offset={}, "
+                              "archive_clean_offset={}",
+                              _stm_manifest.get_start_offset(),
+                              _stm_manifest.get_archive_start_offset(),
+                              _stm_manifest.get_archive_clean_offset());
+                        }
                         vlog(
                           _ctxlog.info,
                           "Entire archive is removed by the size-based "
                           "retention");
+                        break;
                     } else if (r.has_failure()) {
                         vlog(
                           _ctxlog.error,
