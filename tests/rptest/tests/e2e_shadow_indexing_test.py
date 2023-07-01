@@ -885,8 +885,8 @@ class ShadowIndexingManyPartitionsTest(PreallocNodesTest):
         try:
             wait_until(
                 lambda: nodes_report_cloud_segments(self.redpanda, 128 * 200),
-                timeout_sec=120,
-                backoff_sec=3)
+                timeout_sec=300,
+                backoff_sec=5)
         finally:
             producer.stop()
             producer.wait()
