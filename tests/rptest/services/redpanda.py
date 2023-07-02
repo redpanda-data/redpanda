@@ -3312,6 +3312,17 @@ class RedpandaService(RedpandaServiceBase):
         data_path = pathlib.Path(RedpandaService.DATA_DIR)
         return ((p.relative_to(data_path), s) for p, s in parts)
 
+    def data_dir_usage(self, subdir: str, node: ClusterNode):
+        """
+        Return a rolled up disk usage report for the given data sub-directory.
+        """
+        dir = os.path.join(RedpandaService.DATA_DIR, subdir)
+        if not node.account.exists(dir):
+            return 0
+        script_path = inject_remote_script(node, "disk_usage.py")
+        cmd = ["python3", script_path, dir]
+        return int(node.account.ssh_output(shlex.join(cmd), timeout_sec=10))
+
     def broker_address(self, node, listener: str = "dnslistener"):
         assert node in self.nodes, f"where node is {node.name}"
         assert node in self._started
