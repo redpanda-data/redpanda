@@ -32,11 +32,13 @@ public:
     static constexpr ss::shard_id shard = 0;
     partition_allocator(
       ss::sharded<members_table>&,
-      config::binding<std::optional<size_t>>,
-      config::binding<std::optional<int32_t>>,
-      config::binding<uint32_t>,
-      config::binding<uint32_t>,
-      config::binding<bool>);
+      config::binding<std::optional<size_t>> memory_per_partition,
+      config::binding<std::optional<int32_t>> fds_per_partition,
+      config::binding<uint32_t> partitions_per_shard,
+      config::binding<uint32_t> partitions_reserve_shard0,
+      config::binding<std::vector<ss::sstring>>
+        kafka_topics_skipping_allocation,
+      config::binding<bool> enable_rack_awareness);
 
     // Replica placement APIs
 
@@ -51,6 +53,7 @@ public:
     /// replicas to reach the requested replication factor will be allocated
     /// anew.
     result<allocated_partition> reallocate_partition(
+      model::topic_namespace,
       partition_constraints,
       const partition_assignment&,
       partition_allocation_domain,
@@ -59,6 +62,7 @@ public:
     /// Create allocated_partition object from current replicas for use with the
     /// allocate_replica method.
     allocated_partition make_allocated_partition(
+      model::ntp ntp,
       std::vector<model::broker_shard> replicas,
       partition_allocation_domain) const;
 
@@ -178,7 +182,9 @@ private:
     check_cluster_limits(allocation_request const& request) const;
 
     result<allocated_partition> allocate_new_partition(
-      partition_constraints, partition_allocation_domain);
+      model::topic_namespace nt,
+      partition_constraints,
+      partition_allocation_domain);
 
     result<reallocation_step> do_allocate_replica(
       allocated_partition&,
@@ -196,6 +202,7 @@ private:
     config::binding<std::optional<int32_t>> _fds_per_partition;
     config::binding<uint32_t> _partitions_per_shard;
     config::binding<uint32_t> _partitions_reserve_shard0;
+    config::binding<std::vector<ss::sstring>> _internal_kafka_topics;
     config::binding<bool> _enable_rack_awareness;
 };
 } // namespace cluster

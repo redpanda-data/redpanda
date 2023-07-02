@@ -104,6 +104,7 @@ ss::future<> controller::wire_up() {
             config::shard_local_cfg().topic_fds_per_partition.bind(),
             config::shard_local_cfg().topic_partitions_per_shard.bind(),
             config::shard_local_cfg().topic_partitions_reserve_shard0.bind(),
+            config::shard_local_cfg().kafka_nodelete_topics.bind(),
             config::shard_local_cfg().enable_rack_awareness.bind());
       })
       .then([this] { return _credentials.start(); })

@@ -48,7 +48,8 @@ create_allocation_node(model::node_id nid, uint32_t cores) {
       nid,
       cores,
       config::mock_binding<uint32_t>(uint32_t{partitions_per_shard}),
-      config::mock_binding<uint32_t>(uint32_t{partitions_reserve_shard0}));
+      config::mock_binding<uint32_t>(uint32_t{partitions_reserve_shard0}),
+      config::mock_binding<std::vector<ss::sstring>>({}));
 }
 
 struct controller_workers {
@@ -64,6 +65,9 @@ public:
             config::mock_binding<std::optional<int32_t>>(std::nullopt),
             config::mock_binding<uint32_t>(uint32_t{partitions_per_shard}),
             config::mock_binding<uint32_t>(uint32_t{partitions_reserve_shard0}),
+            config::mock_binding<std::vector<ss::sstring>>(
+              std::vector<ss::sstring>{
+                {"__audit", "__consumer_offsets", "_schemas"}}),
             config::mock_binding<bool>(true))
           .get();
         // use node status that is not used in test as self is always available
@@ -90,7 +94,7 @@ public:
           test_ns, model::topic(topic), partitions, replication_factor);
 
         cluster::allocation_request req(
-          cluster::partition_allocation_domains::common);
+          cfg.tp_ns, cluster::partition_allocation_domains::common);
         req.partitions.reserve(partitions);
         for (auto p = 0; p < partitions; ++p) {
             req.partitions.emplace_back(
@@ -160,6 +164,28 @@ struct partition_balancer_planner_fixture {
             .node_responsiveness_timeout = std::chrono::seconds(10)},
           workers.state.local(),
           workers.allocator.local());
+    }
+
+    cluster::topic_configuration_assignment make_tp_configuration(
+      const ss::sstring& topic, int partitions, int16_t replication_factor) {
+        cluster::topic_configuration cfg(
+          test_ns, model::topic(topic), partitions, replication_factor);
+
+        cluster::allocation_request req(
+          cfg.tp_ns, cluster::partition_allocation_domains::common);
+        req.partitions.reserve(partitions);
+        for (auto p = 0; p < partitions; ++p) {
+            req.partitions.emplace_back(
+              model::partition_id(p), replication_factor);
+        }
+
+        auto pas = workers.allocator.local()
+                     .allocate(std::move(req))
+                     .get()
+                     .value()
+                     ->copy_assignments();
+
+        return {cfg, std::move(pas)};
     }
 
     model::topic_namespace make_tp_ns(const ss::sstring& tp) {

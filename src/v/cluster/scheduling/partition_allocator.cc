@@ -46,16 +46,18 @@ partition_allocator::partition_allocator(
   config::binding<std::optional<int32_t>> fds_per_partition,
   config::binding<uint32_t> partitions_per_shard,
   config::binding<uint32_t> partitions_reserve_shard0,
+  config::binding<std::vector<ss::sstring>> internal_kafka_topics,
   config::binding<bool> enable_rack_awareness)
   : _state(std::make_unique<allocation_state>(
-    partitions_per_shard, partitions_reserve_shard0))
+    partitions_per_shard, partitions_reserve_shard0, internal_kafka_topics))
   , _allocation_strategy(simple_allocation_strategy())
   , _members(members)
-  , _memory_per_partition(memory_per_partition)
-  , _fds_per_partition(fds_per_partition)
-  , _partitions_per_shard(partitions_per_shard)
-  , _partitions_reserve_shard0(partitions_reserve_shard0)
-  , _enable_rack_awareness(enable_rack_awareness) {}
+  , _memory_per_partition(std::move(memory_per_partition))
+  , _fds_per_partition(std::move(fds_per_partition))
+  , _partitions_per_shard(std::move(partitions_per_shard))
+  , _partitions_reserve_shard0(std::move(partitions_reserve_shard0))
+  , _internal_kafka_topics(std::move(internal_kafka_topics))
+  , _enable_rack_awareness(std::move(enable_rack_awareness)) {}
 
 allocation_constraints partition_allocator::default_constraints(
   const partition_allocation_domain domain) {
@@ -77,6 +79,7 @@ allocation_constraints partition_allocator::default_constraints(
 }
 
 result<allocated_partition> partition_allocator::allocate_new_partition(
+  model::topic_namespace nt,
   partition_constraints p_constraints,
   const partition_allocation_domain domain) {
     vlog(
@@ -94,7 +97,9 @@ result<allocated_partition> partition_allocator::allocate_new_partition(
     auto effective_constraints = default_constraints(domain);
     effective_constraints.add(p_constraints.constraints);
 
-    allocated_partition ret{{}, domain, *_state};
+    model::ntp ntp{
+      std::move(nt.ns), std::move(nt.tp), p_constraints.partition_id};
+    allocated_partition ret{std::move(ntp), {}, domain, *_state};
     for (auto r = 0; r < replicas_to_allocate; ++r) {
         auto replica = do_allocate_replica(
           ret, std::nullopt, effective_constraints);
@@ -271,10 +276,11 @@ partition_allocator::allocate(allocation_request request) {
     intermediate_allocation assignments(
       *_state, request.partitions.size(), request.domain);
 
+    const auto& nt = request._nt;
     for (auto& p_constraints : request.partitions) {
         auto const partition_id = p_constraints.partition_id;
         auto allocated = allocate_new_partition(
-          std::move(p_constraints), request.domain);
+          nt, std::move(p_constraints), request.domain);
         if (!allocated) {
             co_return allocated.error();
         }
@@ -290,6 +296,7 @@ partition_allocator::allocate(allocation_request request) {
 }
 
 result<allocated_partition> partition_allocator::reallocate_partition(
+  model::topic_namespace nt,
   partition_constraints p_constraints,
   const partition_assignment& current_assignment,
   const partition_allocation_domain domain,
@@ -309,7 +316,10 @@ result<allocated_partition> partition_allocator::reallocate_partition(
         return errc::topic_invalid_replication_factor;
     }
 
-    allocated_partition res{current_assignment.replicas, domain, *_state};
+    model::ntp ntp{
+      std::move(nt.ns), std::move(nt.tp), p_constraints.partition_id};
+    allocated_partition res{
+      std::move(ntp), current_assignment.replicas, domain, *_state};
 
     if (num_new_replicas == 0 && replicas_to_reallocate.empty()) {
         // nothing to do
@@ -340,9 +350,11 @@ result<allocated_partition> partition_allocator::reallocate_partition(
 }
 
 allocated_partition partition_allocator::make_allocated_partition(
+  model::ntp ntp,
   std::vector<model::broker_shard> replicas,
   partition_allocation_domain domain) const {
-    return allocated_partition{std::move(replicas), domain, *_state};
+    return allocated_partition{
+      std::move(ntp), std::move(replicas), domain, *_state};
 }
 
 result<reallocation_step> partition_allocator::reallocate_replica(
@@ -381,7 +393,11 @@ result<reallocation_step> partition_allocator::do_allocate_replica(
     });
 
     auto node = _allocation_strategy.choose_node(
-      partition._replicas, effective_constraints, *_state, partition._domain);
+      partition._ntp,
+      partition._replicas,
+      effective_constraints,
+      *_state,
+      partition._domain);
     if (!node) {
         return node.error();
     }
@@ -430,7 +446,9 @@ void partition_allocator::remove_final_counts(
 ss::future<>
 partition_allocator::apply_snapshot(const controller_snapshot& snap) {
     auto new_state = std::make_unique<allocation_state>(
-      _partitions_per_shard, _partitions_reserve_shard0);
+      _partitions_per_shard,
+      _partitions_reserve_shard0,
+      _internal_kafka_topics);
 
     for (const auto& [id, node] : snap.members.nodes) {
         allocation_node::state state;

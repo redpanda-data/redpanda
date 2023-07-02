@@ -83,7 +83,10 @@ ss::future<bool> health_manager::ensure_partition_replication(model::ntp ntp) {
       ntp.tp.partition, _target_replication_factor);
 
     auto allocation = _allocator.local().reallocate_partition(
-      constraints, *assignment, get_allocation_domain(ntp));
+      model::topic_namespace{ntp.ns, ntp.tp.topic},
+      constraints,
+      *assignment,
+      get_allocation_domain(ntp));
     if (!allocation) {
         vlog(
           clusterlog.warn,

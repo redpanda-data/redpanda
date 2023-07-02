@@ -17,6 +17,7 @@
 #include "cluster/scheduling/allocation_strategy.h"
 #include "cluster/scheduling/partition_allocator.h"
 #include "config/configuration.h"
+#include "config/mock_property.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "net/unresolved_address.h"
@@ -37,6 +38,7 @@ struct partition_allocator_fixture {
         config::mock_binding<std::optional<int32_t>>(std::nullopt),
         config::mock_binding<uint32_t>(uint32_t{partitions_per_shard}),
         config::mock_binding<uint32_t>(uint32_t{partitions_reserve_shard0}),
+        kafka_internal_topics.bind(),
         config::mock_binding<bool>(true)) {
         members.start().get0();
         ss::smp::invoke_on_all([] {
@@ -69,7 +71,8 @@ struct partition_allocator_fixture {
           broker.id(),
           broker.properties().cores,
           config::mock_binding<uint32_t>(uint32_t{partitions_per_shard}),
-          config::mock_binding<uint32_t>(uint32_t{partitions_reserve_shard0})));
+          config::mock_binding<uint32_t>(uint32_t{partitions_reserve_shard0}),
+          kafka_internal_topics.bind()));
     }
 
     void saturate_all_machines() {
@@ -115,8 +118,13 @@ struct partition_allocator_fixture {
 
     cluster::allocation_request
     make_allocation_request(int partitions, uint16_t replication_factor) {
+        return make_allocation_request(tn, partitions, replication_factor);
+    }
+
+    cluster::allocation_request make_allocation_request(
+      model::topic_namespace tn, int partitions, uint16_t replication_factor) {
         cluster::allocation_request req(
-          cluster::partition_allocation_domains::common);
+          std::move(tn), cluster::partition_allocation_domains::common);
         req.partitions.reserve(partitions);
         for (int i = 0; i < partitions; ++i) {
             req.partitions.emplace_back(
@@ -125,6 +133,8 @@ struct partition_allocator_fixture {
         return req;
     }
 
+    config::mock_property<std::vector<ss::sstring>> kafka_internal_topics{{}};
+    model::topic_namespace tn{model::kafka_namespace, model::topic{"test"}};
     ss::sharded<cluster::members_table> members;
     cluster::partition_allocator allocator;
 

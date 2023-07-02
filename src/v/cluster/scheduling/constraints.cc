@@ -29,8 +29,10 @@ hard_constraint not_fully_allocated() {
     class impl : public hard_constraint::impl {
     public:
         hard_constraint_evaluator
-        make_evaluator(const replicas_t&) const final {
-            return [](const allocation_node& node) { return !node.is_full(); };
+        make_evaluator(const model::ntp& ntp, const replicas_t&) const final {
+            return [&ntp](const allocation_node& node) {
+                return !node.is_full(ntp);
+            };
         }
 
         ss::sstring name() const final {
@@ -45,7 +47,7 @@ hard_constraint is_active() {
     class impl : public hard_constraint::impl {
     public:
         hard_constraint_evaluator
-        make_evaluator(const replicas_t&) const final {
+        make_evaluator(const model::ntp&, const replicas_t&) const final {
             return [](const allocation_node& node) { return node.is_active(); };
         }
 
@@ -62,7 +64,7 @@ hard_constraint on_node(model::node_id id) {
           : _id(id) {}
 
         hard_constraint_evaluator
-        make_evaluator(const replicas_t&) const final {
+        make_evaluator(const model::ntp&, const replicas_t&) const final {
             return
               [this](const allocation_node& node) { return node.id() == _id; };
         }
@@ -89,7 +91,7 @@ hard_constraint on_nodes(const std::vector<model::node_id>& ids) {
             }
         }
         hard_constraint_evaluator
-        make_evaluator(const replicas_t&) const final {
+        make_evaluator(const model::ntp&, const replicas_t&) const final {
             return [this](const allocation_node& node) {
                 return _ids.contains(node.id());
             };
@@ -125,7 +127,7 @@ hard_constraint distinct_from(const replicas_t& replicas) {
           : _replicas(r) {}
 
         hard_constraint_evaluator
-        make_evaluator(const replicas_t&) const final {
+        make_evaluator(const model::ntp&, const replicas_t&) const final {
             return [this](const allocation_node& node) {
                 return std::all_of(
                   _replicas.begin(),
@@ -150,8 +152,8 @@ hard_constraint distinct_from(const replicas_t& replicas) {
 hard_constraint distinct_nodes() {
     class impl : public hard_constraint::impl {
     public:
-        hard_constraint_evaluator
-        make_evaluator(const replicas_t& current_replicas) const final {
+        hard_constraint_evaluator make_evaluator(
+          const model::ntp&, const replicas_t& current_replicas) const final {
             return [&current_replicas](const allocation_node& node) {
                 return std::all_of(
                   current_replicas.begin(),
@@ -187,7 +189,7 @@ hard_constraint disk_not_overflowed_by_partition(
           , _node_disk_reports(node_disk_reports) {}
 
         hard_constraint_evaluator
-        make_evaluator(const replicas_t&) const final {
+        make_evaluator(const model::ntp&, const replicas_t&) const final {
             return [this](const allocation_node& node) {
                 auto disk_it = _node_disk_reports.find(node.id());
                 if (disk_it == _node_disk_reports.end()) {
@@ -320,32 +322,6 @@ soft_constraint least_disk_filled(
 
     return soft_constraint(
       std::make_unique<impl>(max_disk_usage_ratio, node_disk_reports));
-}
-
-soft_constraint make_soft_constraint(hard_constraint constraint) {
-    class impl : public soft_constraint::impl {
-    public:
-        explicit impl(hard_constraint constraint)
-          : _hard_constraint(std::move(constraint)) {}
-
-        soft_constraint_evaluator
-        make_evaluator(const replicas_t& replicas) const final {
-            auto ev = _hard_constraint.make_evaluator(replicas);
-            return
-              [ev = std::move(ev)](const allocation_node& node) -> uint64_t {
-                  return ev(node) ? soft_constraint::max_score : 0;
-              };
-        }
-
-        ss::sstring name() const final {
-            return ssx::sformat(
-              "soft constraint adapter of ({})", _hard_constraint);
-        }
-
-        const hard_constraint _hard_constraint;
-    };
-
-    return soft_constraint(std::make_unique<impl>(std::move(constraint)));
 }
 
 soft_constraint distinct_rack_preferred(const members_table& members) {
