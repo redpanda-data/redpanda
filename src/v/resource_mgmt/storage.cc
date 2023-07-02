@@ -77,20 +77,12 @@ ss::future<> disk_space_manager::stop() {
 ss::future<> disk_space_manager::run_loop() {
     vassert(ss::this_shard_id() == run_loop_core, "Run on wrong core");
 
-    /*
-     * In the short term this frequency should be low enough to provide decent
-     * reactivity to changes in space usage, but not too low as to do an
-     * excessive amount of work. Medium term we want storage to trigger an
-     * upcall to start the monitor loop when it appears that we are getting
-     * close to an important threshold.
-     */
-    constexpr auto frequency = std::chrono::seconds(20);
-
     while (!_gate.is_closed()) {
         try {
             if (_enabled()) {
                 co_await _control_sem.wait(
-                  frequency, std::max(_control_sem.current(), size_t(1)));
+                  config::shard_local_cfg().log_storage_max_usage_interval(),
+                  std::max(_control_sem.current(), size_t(1)));
             } else {
                 co_await _control_sem.wait();
             }
