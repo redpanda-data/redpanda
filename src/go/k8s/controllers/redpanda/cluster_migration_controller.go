@@ -318,7 +318,13 @@ func (r *ClusterToRedpandaReconciler) migrateRedpandaConfig(cluster *vectorizedv
 		kafkaListener = rpSpec.Listeners.Kafka
 	}
 
+	migrateKafkaAPI(oldConfig.KafkaAPI, kafkaListener)
+
 	if oldConfig.KafkaAPI != nil && len(oldConfig.KafkaAPI) > 0 {
+		for i, _ := range oldConfig.KafkaAPI {
+			toMigrate := oldConfig.KafkaAPI[i]
+			migrateKafkaAPI(toMigrate, kafkaListener)
+		}
 
 	}
 

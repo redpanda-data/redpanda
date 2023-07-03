@@ -5,9 +5,14 @@ import (
 	vectorizedv1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/vectorized/v1alpha1"
 )
 
-func migrateKafkaAPI(oldKafka *vectorizedv1alpha1.KafkaAPI) *redpandav1alpha1.Kafka {
-	if oldKafka == nil {
-		return nil
+func migrateKafkaAPI(oldKafka vectorizedv1alpha1.KafkaAPI, migratedKafkaApi *redpandav1alpha1.Kafka) {
+	if migratedKafkaApi == nil {
+		return
+	}
+
+	oldExternal := oldKafka.External
+	if oldExternal.Enabled == false && oldExternal.EndpointTemplate == "" && {
+
 	}
 
 	rpKafka := &redpandav1alpha1.Kafka{
