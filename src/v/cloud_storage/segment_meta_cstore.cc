@@ -552,7 +552,7 @@ public:
         }
         auto bo = *base_offset_iter;
         auto ix = base_offset_iter.index();
-        auto hint_it = _hints.find(bo);
+        auto hint_it = _hints.lower_bound(bo);
         if (hint_it == _hints.end() || hint_it->second == std::nullopt) {
             return iterators_t(
               _is_compacted.at_index(ix),
