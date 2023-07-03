@@ -317,6 +317,8 @@ func (r *ClusterToRedpandaReconciler) migrateRedpandaConfig(cluster *vectorizedv
 
 	// --- Listeners ---
 
+	// Migrate Certificates required here:
+
 	kafkaListener := &v1alpha1.Kafka{}
 	if rpSpec.Listeners.Kafka != nil {
 		kafkaListener = rpSpec.Listeners.Kafka
