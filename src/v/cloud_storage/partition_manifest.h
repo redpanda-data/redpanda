@@ -164,7 +164,7 @@ public:
       , _archive_start_offset(archive_start_offset)
       , _archive_start_offset_delta(archive_start_offset_delta)
       , _archive_clean_offset(archive_clean_offset)
-      , _start_kafka_offset(start_kafka_offset)
+      , _start_kafka_offset_override(start_kafka_offset)
       , _archive_size_bytes(archive_size_bytes) {
         for (auto nm : replaced) {
             auto key = parse_segment_name(nm.name);
@@ -488,7 +488,7 @@ public:
           _archive_start_offset,
           _archive_start_offset_delta,
           _archive_clean_offset,
-          _start_kafka_offset,
+          _start_kafka_offset_override,
           _archive_size_bytes,
           _spillover_manifests);
     }
@@ -507,7 +507,7 @@ public:
           _archive_start_offset,
           _archive_start_offset_delta,
           _archive_clean_offset,
-          _start_kafka_offset,
+          _start_kafka_offset_override,
           _archive_size_bytes,
           _spillover_manifests);
     }
@@ -588,7 +588,7 @@ private:
     // less or equal to 'start'.
     model::offset _archive_clean_offset;
     // Start kafka offset set by the DeleteRecords request
-    kafka::offset _start_kafka_offset;
+    kafka::offset _start_kafka_offset_override;
     // Size of the segments within the archive region (i.e. excluding this
     // manifest)
     uint64_t _archive_size_bytes{0};

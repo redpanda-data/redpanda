@@ -13,6 +13,7 @@
 #include "cluster/persisted_stm.h"
 #include "config/configuration.h"
 #include "model/fundamental.h"
+#include "outcome.h"
 #include "raft/fwd.h"
 #include "seastarx.h"
 #include "storage/types.h"
@@ -44,6 +45,7 @@ class consensus;
 class log_eviction_stm final
   : public persisted_stm<kvstore_backed_stm_snapshot> {
 public:
+    using offset_result = result<model::offset, std::error_code>;
     log_eviction_stm(
       raft::consensus*, ss::logger&, ss::abort_source&, storage::kvstore&);
 
@@ -57,7 +59,9 @@ public:
     /// requested offset but pushes a special record batch onto the log which
     /// when read by brokers, will invoke a routine that will perform the
     /// deletion
-    ss::future<std::error_code> truncate(
+    ///
+    /// Returns the offset at which the operation was replicated.
+    ss::future<offset_result> truncate(
       model::offset rp_start_offset,
       kafka::offset kafka_start_offset,
       ss::lowres_clock::time_point deadline,
@@ -89,7 +93,7 @@ public:
     /// This only returns the start override, if one exists. It does not take
     /// into account local storage, and may not even point to an offset that
     /// exists in local storage (e.g. if we have locally truncated).
-    ss::future<result<model::offset, std::error_code>>
+    ss::future<offset_result>
     sync_start_offset_override(model::timeout_clock::duration timeout);
 
     model::offset start_offset_override() const {
@@ -114,7 +118,7 @@ private:
     ss::future<> apply(model::record_batch) override;
     ss::future<> handle_eviction() override;
 
-    ss::future<std::error_code> replicate_command(
+    ss::future<offset_result> replicate_command(
       model::record_batch batch,
       ss::lowres_clock::time_point deadline,
       std::optional<std::reference_wrapper<ss::abort_source>> as);

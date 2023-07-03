@@ -332,7 +332,7 @@ std::optional<model::offset> partition_manifest::get_start_offset() const {
 }
 
 kafka::offset partition_manifest::get_start_kafka_offset_override() const {
-    return _start_kafka_offset;
+    return _start_kafka_offset_override;
 }
 
 const partition_manifest::spillover_manifest_map&
@@ -606,10 +606,10 @@ void partition_manifest::set_archive_start_offset(
         _archive_start_offset = start_rp_offset;
         _archive_start_offset_delta = start_delta;
         auto new_so = _archive_start_offset - _archive_start_offset_delta;
-        if (new_so > _start_kafka_offset) {
+        if (new_so > _start_kafka_offset_override) {
             // The new archive start has moved past the user-requested start
             // offset, so there's no point in tracking it further.
-            _start_kafka_offset = kafka::offset{};
+            _start_kafka_offset_override = kafka::offset{};
         }
     } else {
         vlog(
@@ -718,15 +718,15 @@ void partition_manifest::set_archive_clean_offset(
 
 bool partition_manifest::advance_start_kafka_offset(
   kafka::offset new_start_offset) {
-    if (_start_kafka_offset >= new_start_offset) {
+    if (_start_kafka_offset_override >= new_start_offset) {
         return false;
     }
-    _start_kafka_offset = new_start_offset;
+    _start_kafka_offset_override = new_start_offset;
     vlog(
       cst_log.info,
       "{} start kafka offset override set to {}",
       _ntp,
-      _start_kafka_offset);
+      _start_kafka_offset_override);
     return true;
 }
 
@@ -799,8 +799,8 @@ bool partition_manifest::advance_start_offset(model::offset new_start_offset) {
         // so there's no point in tracking it further.
         if (
           highest_removed_offset != kafka::offset{}
-          && highest_removed_offset >= _start_kafka_offset) {
-            _start_kafka_offset = kafka::offset{};
+          && highest_removed_offset >= _start_kafka_offset_override) {
+            _start_kafka_offset_override = kafka::offset{};
         }
         return true;
     }
@@ -1720,7 +1720,8 @@ void partition_manifest::do_update(partition_manifest_handler&& handler) {
         _cloud_log_size_bytes = compute_cloud_log_size();
     }
 
-    _start_kafka_offset = handler._start_kafka_offset.value_or(kafka::offset{});
+    _start_kafka_offset_override = handler._start_kafka_offset.value_or(
+      kafka::offset{});
 }
 
 // This object is supposed to track state of the asynchronous
@@ -1834,9 +1835,9 @@ void partition_manifest::serialize_begin(
         w.Key("archive_clean_offset");
         w.Int64(_archive_clean_offset());
     }
-    if (_start_kafka_offset != kafka::offset{}) {
+    if (_start_kafka_offset_override != kafka::offset{}) {
         w.Key("start_kafka_offset");
-        w.Int64(_start_kafka_offset());
+        w.Int64(_start_kafka_offset_override());
     }
     if (_archive_size_bytes != 0) {
         w.Key("archive_size_bytes");
