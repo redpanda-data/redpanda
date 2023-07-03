@@ -2289,6 +2289,19 @@ class RedpandaService(RedpandaServiceBase):
         return self.cloud_storage_client.list_objects(
             self._si_settings.cloud_storage_bucket)
 
+    def set_cluster_config_to_null(self,
+                                   name: str,
+                                   expect_restart: bool = False,
+                                   admin_client: Optional[Admin] = None,
+                                   timeout: int = 10):
+        if admin_client is None:
+            admin_client = self._admin
+
+        patch_result = admin_client.patch_cluster_config(upsert={name: None})
+        new_version = patch_result['config_version']
+
+        self._wait_for_config_version(new_version, expect_restart, timeout)
+
     def set_cluster_config(self,
                            values: dict,
                            expect_restart: bool = False,
@@ -2311,10 +2324,15 @@ class RedpandaService(RedpandaServiceBase):
             remove=[k for k, v in values.items() if v is None])
         new_version = patch_result['config_version']
 
+        self._wait_for_config_version(new_version, expect_restart, timeout)
+
+    def _wait_for_config_version(self, config_version, expect_restart: bool,
+                                 timeout: int):
         def is_ready():
-            status = admin_client.get_cluster_config_status(
+            status = self._admin.get_cluster_config_status(
                 node=self.controller())
-            ready = all([n['config_version'] >= new_version for n in status])
+            ready = all(
+                [n['config_version'] >= config_version for n in status])
 
             return ready, status
 
@@ -2325,8 +2343,8 @@ class RedpandaService(RedpandaServiceBase):
             is_ready,
             timeout_sec=timeout,
             backoff_sec=0.5,
-            err_msg=f"Config status versions did not converge on {new_version}"
-        )
+            err_msg=
+            f"Config status versions did not converge on {config_version}")
 
         any_restarts = any(n['restart'] for n in config_status)
         if any_restarts and expect_restart:
