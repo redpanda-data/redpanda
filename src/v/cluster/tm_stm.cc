@@ -909,7 +909,7 @@ tm_stm::expire_tx(model::term_id term, kafka::transactional_id tx_id) {
     co_return r0.error();
 }
 
-ss::future<> tm_stm::handle_eviction() {
+ss::future<> tm_stm::handle_raft_snapshot() {
     return _cache.local().write_lock().then(
       [this]([[maybe_unused]] ss::basic_rwlock<>::holder unit) {
           _cache.local().clear_log();

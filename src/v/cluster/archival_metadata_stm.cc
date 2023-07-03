@@ -645,7 +645,7 @@ ss::future<> archival_metadata_stm::apply(model::record_batch b) {
     _manifest->advance_insync_offset(b.last_offset());
 }
 
-ss::future<> archival_metadata_stm::handle_eviction() {
+ss::future<> archival_metadata_stm::handle_raft_snapshot() {
     cloud_storage::partition_manifest manifest;
 
     const auto& bucket_config

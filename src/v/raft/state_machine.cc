@@ -39,7 +39,7 @@ void state_machine::set_next(model::offset offset) {
     _waiters.notify(model::prev_offset(offset));
 }
 
-ss::future<> state_machine::handle_eviction() {
+ss::future<> state_machine::handle_raft_snapshot() {
     vlog(
       _log.warn,
       "{} state_machine should support handle_eviction",
@@ -123,7 +123,7 @@ ss::future<> state_machine::apply() {
       .then([this] {
           auto f = ss::now();
           if (_next < _raft->start_offset()) {
-              f = handle_eviction();
+              f = handle_raft_snapshot();
           }
           return f.then([this] {
               /**
