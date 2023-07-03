@@ -24,7 +24,7 @@ record_batch_builder::record_batch_builder(
   : _batch_type(bt)
   , _base_offset(base_offset) {}
 
-record_batch_builder::~record_batch_builder() {}
+record_batch_builder::~record_batch_builder() = default;
 
 model::record_batch record_batch_builder::build() && {
     int32_t offset_delta = 0;
