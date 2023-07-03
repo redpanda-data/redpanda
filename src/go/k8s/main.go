@@ -100,6 +100,9 @@ func main() {
 		metricsTimeout              time.Duration
 		restrictToRedpandaVersion   string
 		namespace                   string
+		migrateChartVersion         string
+
+		enableClusterToRedpandaMigration bool
 
 		// allowPVCDeletion controls the PVC deletion feature in the Cluster custom resource.
 		// PVCs will be deleted when its Pod has been deleted and the Node that Pod is assigned to
@@ -128,7 +131,9 @@ func main() {
 	flag.StringVar(&restrictToRedpandaVersion, "restrict-redpanda-version", "", "Restrict management of clusters to those with this version")
 	flag.StringVar(&vectorizedv1alpha1.SuperUsersPrefix, "superusers-prefix", "", "Prefix to add in username of superusers managed by operator. This will only affect new clusters, enabling this will not add prefix to existing clusters (alpha feature)")
 	flag.BoolVar(&debug, "debug", false, "Set to enable debugging")
+	flag.BoolVar(&enableClusterToRedpandaMigration, "enable-migration", false, "Set to perform migration of cluster to redpanda resources")
 	flag.StringVar(&namespace, "namespace", "", "If namespace is set to not empty value, it changes scope of Redpanda operator to work in single namespace")
+	flag.StringVar(&migrateChartVersion, "migrate-chart-version", "4.0.49", "version of chart to attempt migration from")
 
 	logOptions.BindFlags(flag.CommandLine)
 	clientOptions.BindFlags(flag.CommandLine)
@@ -251,6 +256,24 @@ func main() {
 			setupLog.Error(err, "unable to create controller", "controller", "Redpanda")
 			os.Exit(1)
 		}
+
+		// Migration Reconciler should start here
+		if enableClusterToRedpandaMigration {
+			if err = (&redpandacontrollers.ClusterToRedpandaReconciler{
+				Client:                    mgr.GetClient(),
+				Log:                       ctrl.Log.WithName("controllers").WithName("redpanda").WithName("Cluster"),
+				Scheme:                    mgr.GetScheme(),
+				AdminAPIClientFactory:     adminutils.NewInternalAdminAPI,
+				DecommissionWaitInterval:  decommissionWaitInterval,
+				MetricsTimeout:            metricsTimeout,
+				RestrictToRedpandaVersion: restrictToRedpandaVersion,
+				MigrationVersion:          migrateChartVersion,
+			}).WithClusterDomain(clusterDomain).WithConfiguratorSettings(configurator).WithAllowPVCDeletion(allowPVCDeletion).SetupWithManager(mgr); err != nil {
+				setupLog.Error(err, "Unable to create controller", "controller", "Cluster")
+				os.Exit(1)
+			}
+		}
+
 	} else {
 		ctrl.Log.Info("running in v1", "mode", "clustered")
 
