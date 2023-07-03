@@ -357,7 +357,7 @@ class SISettings:
                  cloud_storage_region: str = 'panda-region',
                  cloud_storage_api_endpoint: str = 'minio-s3',
                  cloud_storage_api_endpoint_port: int = 9000,
-                 cloud_storage_cache_size: int = 160 * 1000000,
+                 cloud_storage_cache_size: Optional[int] = None,
                  cloud_storage_cache_max_objects: Optional[int] = None,
                  cloud_storage_enable_remote_read: bool = True,
                  cloud_storage_enable_remote_write: bool = True,
@@ -515,7 +515,15 @@ class SISettings:
 
         conf["log_segment_size"] = self.log_segment_size
         conf["cloud_storage_enabled"] = True
-        conf["cloud_storage_cache_size"] = self.cloud_storage_cache_size
+        if self.cloud_storage_cache_size is None:
+            # Default cache size for testing: large enough to enable streaming throughput up to 100MB/s, but no
+            # larger, so that a test doing any significant amount of throughput will exercise trimming.
+            conf[
+                "cloud_storage_cache_size"] = SISettings.cache_size_for_throughput(
+                    1024 * 1024 * 100),
+        else:
+            conf["cloud_storage_cache_size"] = self.cloud_storage_cache_size
+
         if self.cloud_storage_cache_max_objects is not None:
             conf[
                 "cloud_storage_cache_max_objects"] = self.cloud_storage_cache_max_objects
