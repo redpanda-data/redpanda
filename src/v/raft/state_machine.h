@@ -104,7 +104,7 @@ public:
 
 protected:
     void set_next(model::offset offset);
-    virtual ss::future<> handle_eviction();
+    virtual ss::future<> handle_raft_snapshot();
 
     model::offset last_applied_offset() { return model::prev_offset(_next); }
 

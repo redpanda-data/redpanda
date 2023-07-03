@@ -2942,7 +2942,7 @@ ss::future<> rm_stm::do_remove_persistent_state() {
     co_return co_await persisted_stm::remove_persistent_state();
 }
 
-ss::future<> rm_stm::handle_eviction() {
+ss::future<> rm_stm::handle_raft_snapshot() {
     return _state_lock.hold_write_lock().then(
       [this]([[maybe_unused]] ss::basic_rwlock<>::holder unit) {
           _log_state.reset();

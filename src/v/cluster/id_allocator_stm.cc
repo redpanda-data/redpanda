@@ -199,7 +199,7 @@ ss::future<stm_snapshot> id_allocator_stm::take_snapshot() {
       std::logic_error("id_allocator_stm doesn't support snapshots"));
 }
 
-ss::future<> id_allocator_stm::handle_eviction() {
+ss::future<> id_allocator_stm::handle_raft_snapshot() {
     _next_snapshot = _c->start_offset();
     _processed = 0;
     set_next(_next_snapshot);
