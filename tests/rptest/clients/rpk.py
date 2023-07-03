@@ -15,6 +15,7 @@ import time
 import itertools
 from typing import Optional
 from ducktape.cluster.cluster import ClusterNode
+from rptest.clients.types import TopicSpec
 from rptest.util import wait_until_result
 from rptest.services import tls
 from ducktape.errors import TimeoutError
@@ -322,7 +323,8 @@ class RpkTool:
                 msg,
                 headers=[],
                 partition=None,
-                timeout=None):
+                timeout=None,
+                compression_type=TopicSpec.COMPRESSION_NONE):
 
         if timeout is None:
             # For produce, we use a lower timeout than the general
@@ -331,8 +333,8 @@ class RpkTool:
             timeout = DEFAULT_PRODUCE_TIMEOUT
 
         cmd = [
-            'produce', '--key', key, '-z', 'none', '--delivery-timeout',
-            f'{timeout}s', '-f', '%v', topic
+            'produce', '--key', key, '-z', f'{compression_type}',
+            '--delivery-timeout', f'{timeout}s', '-f', '%v', topic
         ]
         if headers:
             cmd += ['-H ' + h for h in headers]

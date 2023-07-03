@@ -16,6 +16,8 @@ import socket
 import urllib.request
 import ssl
 import threading
+import urllib.parse
+import base64
 from rptest.services.cluster import cluster
 from ducktape.mark import matrix
 from ducktape.utils.util import wait_until
@@ -1816,3 +1818,120 @@ class PandaProxyConsumerGroupTest(PandaProxyEndpoints):
         self.logger.debug(
             "Test offset commit: after second coordinator change")
         do_consumer_offset_commit(new_offset=1)
+
+
+class PandaProxyCompressedBatchesTest(PandaProxyEndpoints):
+    topics = [
+        TopicSpec(partition_count=1),
+    ]
+
+    def __init__(self, context):
+
+        super(PandaProxyCompressedBatchesTest,
+              self).__init__(context,
+                             extra_rp_conf={
+                                 "enable_leader_balancer": False,
+                                 "group_topic_partitions": 1
+                             })
+
+    def _produce_with_compression(self, num_bytes: int, compression_type: str,
+                                  partition: int):
+        rpk = RpkTool(self.redpanda)
+        msg = "A" * num_bytes
+        offset = rpk.produce(self.topic,
+                             key="k",
+                             msg=msg,
+                             compression_type=compression_type)
+        self.logger.debug(f"RPK produced {num_bytes} As to offset {offset}")
+        return msg, offset
+
+    def _fetch_compressed_msg(self, partition: int):
+        rpk = RpkTool(self.redpanda)
+        # Confirm compression type with rpk
+        output = rpk.consume(self.topic,
+                             n=1,
+                             partition=partition,
+                             format="%v %a{compression}")
+        output = output.strip().split()
+        self.logger.debug(f"RPK consumed {output}")
+        assert len(
+            output
+        ) == 2, "Unexpected output from rpk consume, expected <value> <compression type>"
+        return output[0], output[1]
+
+    @cluster(num_nodes=3)
+    def test_fetch(self):
+        target_partition = 0
+        msg_size = 1024
+        produced_msg, produced_offset = self._produce_with_compression(
+            num_bytes=msg_size,
+            compression_type=TopicSpec.COMPRESSION_GZIP,
+            partition=target_partition)
+        fetched_msg, fetched_compression_type = self._fetch_compressed_msg(
+            partition=target_partition)
+        assert produced_msg == fetched_msg, "Consumer fetched the wrong message"
+        assert fetched_compression_type == TopicSpec.COMPRESSION_GZIP, "Consumer detected a different compression type"
+
+        # Confirm pandaproxy fetch
+        self.logger.info(f"Fetching compressed message via PandaProxy")
+        fetch_result_raw = self._fetch_topic(self.topic,
+                                             partition=target_partition)
+        assert fetch_result_raw.status_code == requests.codes.ok, f"Status: {fetch_result_raw.status_code}"
+        result = fetch_result_raw.json()
+        self.logger.debug(result)
+        assert len(result) == 1, "Unexpected output from Pandaproxy fetch"
+        item = result[0]
+        assert item[
+            "topic"] == self.topic, "Pandaproxy fetch consumed the wrong topic"
+        # Remove the b64 and bytes encodings
+        value = base64.b64decode(item["value"]).decode()
+        assert value == fetched_msg, "Pandaproxy fetch consumed the wrong message"
+        assert item[
+            "partition"] == target_partition, "Pandaproxy fetch consumed the wrong partition"
+        assert item[
+            "offset"] == produced_offset, "Pandaproxy fetch consumed the wrong offset"
+
+    @cluster(num_nodes=3)
+    def test_fetch_consumer_group(self):
+        target_partition = 0
+        msg_size = 1024
+        produced_msg, produced_offset = self._produce_with_compression(
+            num_bytes=msg_size,
+            compression_type=TopicSpec.COMPRESSION_GZIP,
+            partition=target_partition)
+        fetched_msg, fetched_compression_type = self._fetch_compressed_msg(
+            partition=target_partition)
+        assert produced_msg == fetched_msg, "Consumer fetched the wrong message"
+        assert fetched_compression_type == TopicSpec.COMPRESSION_GZIP, "Consumer detected a different compression type"
+
+        # Confirm pandaproxy consumer group fetch
+        self.logger.info("Create a consumer group")
+        group_id = f"test-group"
+        cc_res = self._create_consumer(group_id)
+        assert cc_res.status_code == requests.codes.ok, f"Status: {cc_res.status_code}"
+
+        c0 = Consumer(cc_res.json(), self.logger)
+
+        # Subscribe a consumer to topic
+        self.logger.info(f"Subscribe consumer to topic: {self.topic}")
+        sc_res = c0.subscribe([self.topic])
+        assert sc_res.status_code == requests.codes.no_content, f"Status: {sc_res.status_code}"
+
+        # Attempt to read from topic
+        self.logger.info(f"Consumer fetch compressed record")
+        cf_res = c0.fetch()
+        assert cf_res.status_code == requests.codes.ok, f"Status: {cf_res.status_code}"
+        result = cf_res.json()
+        self.logger.debug(result)
+        assert len(
+            result) == 1, "Unexpected output from Pandaproxy consumer fetch"
+        item = result[0]
+        assert item[
+            "topic"] == self.topic, f"Pandaproxy consumer fetch consumed the wrong topic"
+        # Remove the b64 and bytes encodings
+        value = base64.b64decode(item["value"]).decode()
+        assert value == fetched_msg, "Pandaproxy consumer fetch consumed the wrong message"
+        assert item[
+            "partition"] == target_partition, "Pandaproxy consumer fetch consumed the wrong partition"
+        assert item[
+            "offset"] == produced_offset, "Pandaproxy consumer fetch consumed the wrong offset"
