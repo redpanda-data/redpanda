@@ -126,9 +126,14 @@ ss::future<> state_machine::apply() {
               f = handle_eviction();
           }
           return f.then([this] {
-              // build a reader for log range [_next, +inf).
+              /**
+               * Raft make_reader method allows callers reading up to last_visible
+               * index. In order to make the STMs safe and working with the raft
+               * semantics (i.e. what is applied must be comitted) we have to
+               * limit reading to the committed offset.
+               */
               storage::log_reader_config config(
-                _next, model::model_limits<model::offset>::max(), _io_prio);
+                _next, _raft->committed_offset(), _io_prio);
               return _raft->make_reader(config);
           });
       })
