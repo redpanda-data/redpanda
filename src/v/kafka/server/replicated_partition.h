@@ -65,6 +65,31 @@ public:
         }
         return _translator->from_log_offset(_partition->high_watermark());
     }
+    /**
+     * According to Kafka protocol semantics a log_end_offset is an offset that
+     * is assigned to the next record produced to a log
+     */
+    model::offset log_end_offset() const {
+        if (_partition->is_read_replica_mode_enabled()) {
+            if (_partition->cloud_data_available()) {
+                return model::next_offset(_partition->next_cloud_offset());
+            } else {
+                return model::offset(0);
+            }
+        }
+        /**
+         * If a local log is empty we return start offset as this is the offset
+         * assigned to the next batch produced to the log.
+         */
+        if (_partition->dirty_offset() < _partition->start_offset()) {
+            return _translator->from_log_offset(_partition->start_offset());
+        }
+        /**
+         * By default we return a dirty_offset + 1
+         */
+        return model::next_offset(
+          _translator->from_log_offset(_partition->dirty_offset()));
+    }
 
     checked<model::offset, error_code> last_stable_offset() const final {
         if (_partition->is_read_replica_mode_enabled()) {
