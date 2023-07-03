@@ -9,7 +9,7 @@
 
 import time
 import traceback
-from typing import Any, Optional
+from typing import Any, Callable, Optional
 from rptest.clients.offline_log_viewer import OfflineLogViewer
 from rptest.services.cluster import cluster
 from rptest.services.admin import Admin
@@ -157,7 +157,7 @@ class RedpandaUpgradeTest(PreallocNodesTest):
             'missing_segments',
         })
 
-        self.installer = self.redpanda._installer
+        self.installer: RedpandaInstaller = self.redpanda._installer
 
         # workloads that will be executed during this test
         workloads: list[PWorkload] = [
@@ -279,56 +279,23 @@ class RedpandaUpgradeTest(PreallocNodesTest):
             WorkloadAdapter.STARTED or w.state == WorkloadAdapter.NOT_STARTED
         ]) > 0, "no workload is active at {current_version=}"
 
-    def cluster_version(self) -> int:
-        return Admin(self.redpanda).get_features()['cluster_version']
-
-    @skip_debug_mode
-    @cluster(num_nodes=4)
-    def test_workloads_through_releases(self):
-        # this callback will be called between each upgrade, in a mixed version state
-        def mid_upgrade_check(raw_versions: dict[Any, RedpandaVersion]):
-            rp_versions = {
-                k: expand_version(self.installer, v)
-                for k, v in raw_versions.items()
-            }
-            next_version = max(rp_versions.values())
-            # check only workload that are active and that can operate with next_version
-            to_check_workloads = [
-                w for w in self.adapted_workloads
-                if w.state == WorkloadAdapter.STARTED
-                and next_version <= w.get_latest_applicable_release()
-            ]
-            self._check_workload_list(to_check_list=to_check_workloads,
-                                      version_param=rp_versions,
-                                      partial_update=True)
+    def _run_test_and_check_for_errors(self, test_function: Callable[[],
+                                                                     None]):
+        # wraps test_function execution in a try catch, performs some pretty printing of the results
 
         # variable to hold stacktraces from exceptions during execution
         concat_error: list[str] = []
-
         try:
-            # this loop can fails for reasons unrelated to the workloads (for example, download errors). capture the exception to not lose workload exceptions
-            upgrade_steps = self._get_upgrade_steps()
-            self.logger.info(f"going through these versions: {upgrade_steps}")
-
-            # upgrade loop: for each version
-            for current_version in self.upgrade_through_versions(
-                    upgrade_steps,
-                    already_running=False,
-                    mid_upgrade_check=mid_upgrade_check):
-                current_version = expand_version(self.installer,
-                                                 current_version)
-                self._run_workloads_for_version(
-                    expand_version(self.installer, current_version))
-
+            test_function()
         except Exception as e:
             self.logger.error(
-                f"Exception during upgrade loop: {traceback.format_exception(e)}"
+                f"Exception during {test_function.__qualname__}: {traceback.format_exception(e)}"
             )
             # the stacktrace is captured and formatted in concat_error
             # so that it can be used in the error message
             # along with time of failure
             concat_error.append(
-                f"{self.upgrade_through_versions.__qualname__} failed at {time.time()} - {time.strftime('%Y-%m-%d %H:%M:%S', time.gmtime(time.time()))}"
+                f"{test_function.__qualname__} failed at {time.time()} - {time.strftime('%Y-%m-%d %H:%M:%S', time.gmtime(time.time()))}"
             )
             concat_error.extend(traceback.format_exception(e))
             pass
@@ -352,3 +319,50 @@ class RedpandaUpgradeTest(PreallocNodesTest):
             self.logger.info(
                 f"Read {len(controller_records)} controller records from node {node.name} successfully"
             )
+            self.logger.error(
+                f"Read {len(controller_records)} controller records from node {node.name} successfully"
+            )
+
+    def cluster_version(self) -> int:
+        return Admin(self.redpanda).get_features()['cluster_version']
+
+    @skip_debug_mode
+    @cluster(num_nodes=4)
+    def test_workloads_through_releases(self):
+        """
+        This tests performs a chain of upgrades on the cluster, from the oldest supported version to HEAD.
+        While doing this, it executes self.adapted_workloads to generate workloads and perform checks.
+        """
+
+        # this callback will be called between each upgrade, in a mixed version state
+        def mid_upgrade_check(raw_versions: dict[Any, RedpandaVersion]):
+            rp_versions = {
+                k: expand_version(self.installer, v)
+                for k, v in raw_versions.items()
+            }
+            next_version = max(rp_versions.values())
+            # check only workload that are active and that can operate with next_version
+            to_check_workloads = [
+                w for w in self.adapted_workloads
+                if w.state == WorkloadAdapter.STARTED
+                and next_version <= w.get_latest_applicable_release()
+            ]
+            self._check_workload_list(to_check_list=to_check_workloads,
+                                      version_param=rp_versions,
+                                      partial_update=True)
+
+        def upgrade_loop():
+            upgrade_steps = self._get_upgrade_steps()
+            self.logger.info(f"going through these versions: {upgrade_steps}")
+
+            # upgrade loop: for each version
+            for current_version in self.upgrade_through_versions(
+                    upgrade_steps,
+                    already_running=False,
+                    mid_upgrade_check=mid_upgrade_check):
+                current_version = expand_version(self.installer,
+                                                 current_version)
+                self._run_workloads_for_version(
+                    expand_version(self.installer, current_version))
+
+        self._run_test_and_check_for_errors(upgrade_loop)
