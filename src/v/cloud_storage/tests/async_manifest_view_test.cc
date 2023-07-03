@@ -116,14 +116,68 @@ public:
         spillover_start_offsets.push_back(so);
     }
 
+    void trigger_spillover(int num_segments, bool hydrate = true) {
+        BOOST_REQUIRE_GT(stm_manifest.size(), num_segments + 1);
+
+        const auto so = model::next_offset(stm_manifest.get_last_offset());
+        spillover_manifest spm(manifest_ntp, manifest_rev);
+        for (const auto& meta : stm_manifest) {
+            spm.add(meta);
+            if (--num_segments == 0) {
+                break;
+            }
+        }
+
+        stm_manifest.spillover(spm.make_manifest_metadata());
+
+        // update cache
+        auto path = spm.get_manifest_path();
+        if (hydrate) {
+            auto stream = spm.serialize().get();
+            auto reservation = cache.local().reserve_space(123, 1).get();
+            cache.local()
+              .put(
+                path, stream.stream, reservation, ss::default_priority_class())
+              .get();
+            stream.stream.close().get();
+        }
+        // upload to the cloud
+        auto [in_stream, size_bytes] = spm.serialize().get();
+        iobuf tmp_buf;
+        auto out_stream = make_iobuf_ref_output_stream(tmp_buf);
+        ss::copy(in_stream, out_stream).get();
+        in_stream.close().get();
+        out_stream.close().get();
+        ss::sstring body = linearize_iobuf(std::move(tmp_buf));
+        expectation exp{
+          .url = path().string(),
+          .body = body,
+        };
+        _expectations.push_back(std::move(exp));
+        spillover_start_offsets.push_back(so);
+    }
+
+    void add_segments_to_stm_manifest(std::vector<segment_meta> segs) {
+        for (const auto& meta : segs) {
+            stm_manifest.add(meta);
+            if (all_segments.has_value()) {
+                all_segments->get().push_back(
+                  stm_manifest.last_segment().value());
+            }
+        }
+    }
+
     void listen() { set_expectations_and_listen(_expectations); }
 
     void collect_segments_to(std::vector<segment_meta>& meta) {
         all_segments = std::ref(meta);
     }
 
-    // Generate random segments and add them to the manifest
-    void add_random_segments(partition_manifest& manifest, int num_segments) {
+    std::vector<segment_meta>
+    generate_random_segments(partition_manifest& manifest, int num_segments) {
+        std::vector<segment_meta> segs;
+        segs.reserve(num_segments);
+
         auto base = manifest.empty()
                       ? model::offset(0)
                       : model::next_offset(manifest.get_last_offset());
@@ -152,11 +206,17 @@ public:
             base = model::next_offset(last);
             delta = delta_end;
             last_timestamp += std::chrono::milliseconds(ts_step);
-            manifest.add(meta);
-            if (all_segments.has_value()) {
-                all_segments->get().push_back(manifest.last_segment().value());
-            }
+
+            segs.push_back(meta);
         }
+
+        return segs;
+    }
+
+    // Generate random segments and add them to the manifest
+    void add_random_segments(partition_manifest& manifest, int num_segments) {
+        auto segs = generate_random_segments(manifest, num_segments);
+        add_segments_to_stm_manifest(std::move(segs));
     }
 
     void print_diff(
@@ -632,4 +692,83 @@ FIXTURE_TEST(test_async_manifest_view_retention, async_manifest_view_fixture) {
     BOOST_REQUIRE(rr6.has_value());
     BOOST_REQUIRE_EQUAL(rr6.value().offset, prefix_base_offset);
     BOOST_REQUIRE_EQUAL(rr6.value().delta, prefix_delta);
+}
+
+FIXTURE_TEST(
+  test_async_manifest_view_last_offset_term, async_manifest_view_fixture) {
+    // Test prologue: set up two spillover manifests and the stm
+    // manifest as follows:
+    //          spill 1      spill 2       stm
+    //       [----------] [----------] [----------]
+    //        ^        ^   ^   ^^   ^            ^
+    // Term:  1        1   2   23   3            3
+    std::vector<segment_meta> expected;
+    collect_segments_to(expected);
+
+    auto first_term = generate_random_segments(stm_manifest, 10);
+    auto first_term_last_offset = first_term.back().committed_offset;
+    add_segments_to_stm_manifest(std::move(first_term));
+
+    auto second_term = generate_random_segments(stm_manifest, 5);
+    auto second_term_last_offset = second_term.back().committed_offset;
+
+    for (auto& meta : second_term) {
+        meta.segment_term = model::term_id{2};
+    }
+    add_segments_to_stm_manifest(std::move(second_term));
+
+    auto third_term = generate_random_segments(stm_manifest, 15);
+    auto third_term_last_offset = third_term.back().committed_offset;
+    for (auto& meta : third_term) {
+        meta.segment_term = model::term_id{3};
+    }
+    add_segments_to_stm_manifest(std::move(third_term));
+
+    trigger_spillover(10);
+    trigger_spillover(10);
+
+    // Check that the cloud log layout matches our expectations
+    BOOST_REQUIRE_EQUAL(stm_manifest.begin()->segment_term, model::term_id{3});
+    BOOST_REQUIRE_EQUAL(stm_manifest.get_spillover_map().size(), 2);
+    BOOST_REQUIRE_EQUAL(
+      stm_manifest.get_spillover_map().begin()->archiver_term,
+      model::term_id{1});
+    BOOST_REQUIRE_EQUAL(
+      stm_manifest.get_spillover_map().begin()->segment_term,
+      model::term_id{1});
+    BOOST_REQUIRE_EQUAL(
+      std::next(stm_manifest.get_spillover_map().begin())->archiver_term,
+      model::term_id{2});
+    BOOST_REQUIRE_EQUAL(
+      std::next(stm_manifest.get_spillover_map().begin())->segment_term,
+      model::term_id{3});
+
+    // Query the last offset for each term (epoch in Kafka speak) and
+    // verify against expectations.
+    auto first_term_query = view.get_term_last_offset(model::term_id{1}).get();
+    BOOST_REQUIRE(first_term_query.has_value());
+    BOOST_REQUIRE(first_term_query.value().has_value());
+    BOOST_REQUIRE_EQUAL(
+      first_term_query.value().value(), first_term_last_offset);
+
+    auto second_term_query = view.get_term_last_offset(model::term_id{2}).get();
+    BOOST_REQUIRE(second_term_query.has_value());
+    BOOST_REQUIRE(second_term_query.value().has_value());
+    BOOST_REQUIRE_EQUAL(
+      second_term_query.value().value(), second_term_last_offset);
+
+    auto third_term_query = view.get_term_last_offset(model::term_id{3}).get();
+    BOOST_REQUIRE(third_term_query.has_value());
+    BOOST_REQUIRE(third_term_query.value().has_value());
+    BOOST_REQUIRE_EQUAL(
+      third_term_query.value().value(), third_term_last_offset);
+
+    auto future_term_query
+      = view.get_term_last_offset(model::term_id{100}).get();
+    BOOST_REQUIRE(future_term_query.has_value());
+    BOOST_REQUIRE(future_term_query.value() == std::nullopt);
+
+    auto past_term_query = view.get_term_last_offset(model::term_id{100}).get();
+    BOOST_REQUIRE(past_term_query.has_value());
+    BOOST_REQUIRE(past_term_query.value() == std::nullopt);
 }
