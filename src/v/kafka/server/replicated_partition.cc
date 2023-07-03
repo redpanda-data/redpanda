@@ -354,8 +354,17 @@ replicated_partition::get_leader_epoch_last_offset_unbounded(
     if (
       _partition->is_remote_fetch_enabled()
       && _partition->cloud_data_available()) {
-        co_return co_await _partition->get_cloud_term_last_offset(term);
+        auto last_offset = co_await _partition->get_cloud_term_last_offset(
+          term);
+        if (last_offset) {
+            co_return last_offset;
+        } else {
+            // Return the offset of this next-highest term, but from the
+            // cloud
+            co_return _partition->start_cloud_offset();
+        }
     }
+
     // Return the offset of this next-highest term.
     co_return _translator->from_log_offset(first_local_offset);
 }
