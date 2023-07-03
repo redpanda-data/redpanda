@@ -57,7 +57,6 @@ type ClusterToRedpandaReconciler struct {
 	MetricsTimeout            time.Duration
 	RestrictToRedpandaVersion string
 	allowPVCDeletion          bool
-	MigrationVersion          string
 }
 
 func (r *ClusterToRedpandaReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
@@ -75,6 +74,11 @@ func (r *ClusterToRedpandaReconciler) Reconcile(ctx context.Context, req ctrl.Re
 	// Examine if the object is under deletion
 	// if so, do not continue
 	if !cluster.ObjectMeta.DeletionTimestamp.IsZero() {
+		return ctrl.Result{}, nil
+	}
+
+	if cluster.Spec.Migration == nil || !cluster.Spec.Migration.Enable {
+		log.Info("cluster obj not set for migration, ignoring.")
 		return ctrl.Result{}, nil
 	}
 
@@ -120,7 +124,7 @@ func (r *ClusterToRedpandaReconciler) migrate(ctx context.Context, cluster *vect
 		},
 		Spec: v1alpha1.RedpandaSpec{
 			ChartRef: v1alpha1.ChartRef{
-				ChartVersion: r.MigrationVersion,
+				ChartVersion: cluster.Spec.Migration.ChartVersion,
 			},
 		},
 	}
@@ -318,14 +322,11 @@ func (r *ClusterToRedpandaReconciler) migrateRedpandaConfig(cluster *vectorizedv
 		kafkaListener = rpSpec.Listeners.Kafka
 	}
 
-	migrateKafkaAPI(oldConfig.KafkaAPI, kafkaListener)
-
 	if oldConfig.KafkaAPI != nil && len(oldConfig.KafkaAPI) > 0 {
 		for i, _ := range oldConfig.KafkaAPI {
 			toMigrate := oldConfig.KafkaAPI[i]
 			migrateKafkaAPI(toMigrate, kafkaListener)
 		}
-
 	}
 
 	// -- Putting everything together ---
