@@ -88,6 +88,10 @@ public:
      */
     model::offset bootstrap_last_applied() const;
     /**
+     * Return when the committed offset has been established when STM starts.
+     */
+    ss::future<model::offset> bootstrap_committed_offset();
+    /**
      * Store last applied offset. If an offset is persisted it will be used by
      * consensus instance underlying this state machine to recovery committed
      * index on startup

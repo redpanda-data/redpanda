@@ -220,4 +220,15 @@ ss::future<result<model::offset>> state_machine::insert_linearizable_barrier(
       .then([f = std::move(f)]() mutable { return std::move(f); });
 }
 
+ss::future<model::offset> state_machine::bootstrap_committed_offset() {
+    /// It is useful for some STMs to know what the committed offset is so they
+    /// may do things like block until they have consumed all known committed
+    /// records. To achieve this, this method waits on offset 0, so on the first
+    /// call to `event_manager::notify_commit_index`, it is known that the
+    /// committed offset is in an initialized state.
+    return _raft->events()
+      .wait(model::offset(0), model::no_timeout, _as)
+      .then([this] { return _raft->committed_offset(); });
+}
+
 } // namespace raft
