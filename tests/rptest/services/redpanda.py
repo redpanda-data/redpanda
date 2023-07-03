@@ -3198,7 +3198,9 @@ class RedpandaService(RedpandaServiceBase):
         ]
         if sizes:
             cmd.append("--sizes")
-        output = node.account.ssh_output(shlex.join(cmd), timeout_sec=10)
+        output = node.account.ssh_output(shlex.join(cmd),
+                                         combine_stderr=False,
+                                         timeout_sec=10)
         namespaces = json.loads(output)
         for ns, topics in namespaces.items():
             ns_path = os.path.join(store.data_dir, ns)
@@ -3219,14 +3221,16 @@ class RedpandaService(RedpandaServiceBase):
                 store.cache_dir):
             bytes = int(
                 node.account.ssh_output(
-                    f"du -s \"{store.cache_dir}\"").strip().split()[0])
+                    f"du -s \"{store.cache_dir}\"",
+                    combine_stderr=False).strip().split()[0])
             objects = int(
                 node.account.ssh_output(
-                    f"find \"{store.cache_dir}\" -type f | wc -l").strip())
+                    f"find \"{store.cache_dir}\" -type f | wc -l",
+                    combine_stderr=False).strip())
             indices = int(
                 node.account.ssh_output(
-                    f"find \"{store.cache_dir}\" -type f -name \"*.index\" | wc -l"
-                ).strip())
+                    f"find \"{store.cache_dir}\" -type f -name \"*.index\" | wc -l",
+                    combine_stderr=False).strip())
             store.set_cache_stats(NodeCacheStorage(bytes, objects, indices))
 
         self.logger.debug(
