@@ -205,7 +205,7 @@ public:
     }
 
 protected:
-    ss::future<> handle_eviction() override;
+    ss::future<> handle_raft_snapshot() override;
 
 private:
     std::optional<tm_transaction> find_tx(kafka::transactional_id);

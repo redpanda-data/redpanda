@@ -436,7 +436,7 @@ public:
     uint64_t get_snapshot_size() const override;
 
 protected:
-    ss::future<> handle_eviction() override;
+    ss::future<> handle_raft_snapshot() override;
 
 private:
     void setup_metrics();

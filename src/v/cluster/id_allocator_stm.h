@@ -100,7 +100,7 @@ private:
     ss::future<> write_snapshot();
     ss::future<> apply_snapshot(stm_snapshot_header, iobuf&&) override;
     ss::future<stm_snapshot> take_snapshot() override;
-    ss::future<> handle_eviction() override;
+    ss::future<> handle_raft_snapshot() override;
     ss::future<bool> sync(model::timeout_clock::duration);
 
     mutex _lock;

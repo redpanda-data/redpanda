@@ -336,7 +336,7 @@ ss::future<> log_eviction_stm::apply(model::record_batch batch) {
     }
 }
 
-ss::future<> log_eviction_stm::handle_eviction() {
+ss::future<> log_eviction_stm::handle_raft_snapshot() {
     /// In the case there is a gap detected in the log, the only path
     /// forward is to read the raft snapshot and begin processing from the
     /// raft last_snapshot_index

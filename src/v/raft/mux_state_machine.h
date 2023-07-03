@@ -163,7 +163,7 @@ private:
 
     ss::future<> apply(model::record_batch b) final;
     ss::future<> do_apply(model::record_batch b);
-    ss::future<> handle_eviction() final;
+    ss::future<> handle_raft_snapshot() final;
 
     // called after a batch is applied
     virtual ss::future<> on_batch_applied() { return ss::now(); }
@@ -424,7 +424,7 @@ ss::future<> mux_state_machine<T...>::do_apply(model::record_batch b) {
 
 template<typename... T>
 requires(State<T>, ...)
-ss::future<> mux_state_machine<T...>::handle_eviction() {
+ss::future<> mux_state_machine<T...>::handle_raft_snapshot() {
     // We end up here if the last applied offset of the state machine is less
     // than the raft log start offset (this can happen during startup or when an
     // out-of-date node re-joins the cluster). To continue making progress the

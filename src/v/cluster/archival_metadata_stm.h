@@ -237,7 +237,7 @@ private:
     do_replicate_commands(model::record_batch, ss::abort_source&);
 
     ss::future<> apply(model::record_batch batch) override;
-    ss::future<> handle_eviction() override;
+    ss::future<> handle_raft_snapshot() override;
 
     ss::future<> apply_snapshot(stm_snapshot_header, iobuf&&) override;
     ss::future<stm_snapshot> take_snapshot() override;
