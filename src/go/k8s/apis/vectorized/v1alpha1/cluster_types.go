@@ -180,7 +180,13 @@ type ClusterSpec struct {
 	InitialValidationForVolume *bool `json:"initialValidationForVolume,omitempty"`
 
 	// If set to true then we should allow to migrate
-	DoMigration *bool `json:"doMigration,omitempty"`
+	Migration *ClusterMigration `json:"migration,omitempty"`
+}
+
+// ClusterMigration details when enabling migration of the cluster object
+type ClusterMigration struct {
+	Enable       bool   `json:"enable"`
+	ChartVersion string `json:"chartVersion"`
 }
 
 // RestartConfig contains strategies to configure how the cluster behaves when restarting, because of upgrades

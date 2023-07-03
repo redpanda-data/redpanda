@@ -323,9 +323,6 @@ spec:
                 required:
                 - image
                 type: object
-              doMigration:
-                description: If set to true then we should allow to migrate
-                type: boolean
               enterprise:
                 description: Enterprise defines configurable fields for features that
                   require license
@@ -492,6 +489,17 @@ spec:
                 default: console
                 description: Prefix for all exported prometheus metrics
                 type: string
+              migration:
+                description: If set to true then we should allow to migrate
+                properties:
+                  chartVersion:
+                    type: string
+                  enable:
+                    type: boolean
+                required:
+                - chartVersion
+                - enable
+                type: object
               redpanda:
                 description: Redpanda contains configurations that are Redpanda specific
                 properties:

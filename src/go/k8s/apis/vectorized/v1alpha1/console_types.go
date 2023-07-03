@@ -81,7 +81,13 @@ type ConsoleSpec struct {
 	SecretStore *SecretStore `json:"secretStore,omitempty"`
 
 	// If set to true then we should allow to migrate
-	DoMigration *bool `json:"doMigration,omitempty"`
+	Migration *ConsoleMigration `json:"migration,omitempty"`
+}
+
+// ConsoleMigration details when enabling migration of the cluster object
+type ConsoleMigration struct {
+	Enable       bool   `json:"enable"`
+	ChartVersion string `json:"chartVersion"`
 }
 
 // Server is the Console app HTTP server config
