@@ -305,8 +305,8 @@ ss::future<> cache::trim() {
     uint64_t deleted_size = 0;
     size_t deleted_count = 0;
     if (
-      _current_cache_size >= target_size
-      || _current_cache_objects >= target_objects) {
+      _current_cache_size + _reserved_cache_size >= target_size
+      || _current_cache_objects + _reserved_cache_objects >= target_objects) {
         auto size_to_delete
           = (_current_cache_size + _reserved_cache_size)
             - std::min(target_size, _current_cache_size + _reserved_cache_size);
