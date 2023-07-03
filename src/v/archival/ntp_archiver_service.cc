@@ -1991,6 +1991,13 @@ ss::future<> ntp_archiver::garbage_collect_archive() {
         }
     }
 
+    // Drop out if we have no work to do, avoid doing things like the following
+    // manifest flushing unnecessarily.
+    if (segments_to_remove.empty() && manifests_to_remove.empty()) {
+        vlog(_rtclog.debug, "Nothing to remove in archive GC");
+        co_return;
+    }
+
     if (
       _parent.archival_meta_stm()->get_dirty(_projected_manifest_clean_at)
       != cluster::archival_metadata_stm::state_dirty::clean) {

@@ -131,8 +131,9 @@ class TieredStorageCacheStressTest(RedpandaTest):
 
         # Cache trim interval is 5 seconds.  Cache trim low watermark is 80%.
         # Effective streaming bandwidth is 20% of cache size every trim period
-        size_limit = max(int((expect_bandwidth * 5) / 0.2),
-                         partition_count * chunk_size)
+        size_limit = max(
+            SISettings.cache_size_for_throughput(expect_bandwidth),
+            partition_count * chunk_size)
         size_limit = max(size_limit, at_least_bytes)
         # One index per segment, one tx file per segment, one object per chunk bytes
         max_objects = (size_limit //
