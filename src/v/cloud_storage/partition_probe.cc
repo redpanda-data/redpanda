@@ -107,6 +107,11 @@ partition_probe::partition_probe(const model::ntp& ntp) {
           },
           sm::description("Chunk hydration latency histogram"),
           labels),
+        sm::make_gauge(
+          "chunk_size",
+          [this] { return _chunk_size; },
+          sm::description("Size of chunk downloaded from cloud storage"),
+          labels),
       });
 }
 

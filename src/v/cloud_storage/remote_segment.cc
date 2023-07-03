@@ -96,6 +96,7 @@ public:
             auto dsi = std::make_unique<bounded_stream>(stream, bytes_to_read);
             auto stream_upto = ss::input_stream<char>{
               ss::data_source{std::move(dsi)}};
+            _segment._probe.chunk_size(bytes_to_read);
             co_await _segment.put_chunk_in_cache(
               reservation, std::move(stream_upto), start);
         }
