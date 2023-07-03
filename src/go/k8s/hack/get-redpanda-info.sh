@@ -3,8 +3,9 @@
 set -x
 
 script_namespace=${1:-redpanda-system}
+test_directory=${2:-../../_e2e_artifacts}
 
-ARTIFACTS_PATH=$(TMPDIR=../../_e2e_artifacts mktemp -d)
+ARTIFACTS_PATH=$(TMPDIR=$test_directory mktemp -d)
 
 mkdir -p $ARTIFACTS_PATH/exported-logs/
 kind export logs --name kind $ARTIFACTS_PATH/exported-logs/
