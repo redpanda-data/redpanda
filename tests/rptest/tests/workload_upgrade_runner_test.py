@@ -368,3 +368,58 @@ class RedpandaUpgradeTest(PreallocNodesTest):
                     expand_version(self.installer, current_version))
 
         self._run_test_and_check_for_errors(upgrade_loop)
+
+    @skip_debug_mode
+    @cluster(num_nodes=4)
+    def test_workloads_in_a_partial_upgrade(self):
+        """
+        This tests installs the latest release, performs a partial upgrade to HEAD, then reverts back.
+        While doing this, it executes self.adapted_workloads to generate workloads and perform checks.
+        """
+        def partial_upgrade():
+            head_version = self.installer.head_version()
+            latest_stable_version = self.installer.highest_from_prior_feature_version(
+                head_version)
+
+            self.logger.info(
+                f"Installing base version {latest_stable_version}")
+            self.installer.install(self.redpanda.nodes, latest_stable_version)
+            self.redpanda.start()
+
+            # activate workloads, check progress, do not deactivate workloads
+            self._run_workloads_for_version(latest_stable_version,
+                                            stop_eol_workloads=False)
+
+            # install head only in half of the nodes, perform a partial update check
+            rp_nodes = self.redpanda.nodes
+            nodes_to_keep, nodes_to_upgrade = \
+                rp_nodes[0:len(rp_nodes) // 2], rp_nodes[len(rp_nodes) // 2:]
+
+            self.logger.info(
+                f"Installing head version {head_version} on {[n.account.hostname for n in nodes_to_upgrade]}"
+            )
+            self.installer.install(nodes_to_upgrade, head_version)
+            self.redpanda.rolling_restart_nodes(nodes_to_upgrade,
+                                                start_timeout=90,
+                                                stop_timeout=90)
+
+
+            self._check_workload_list(
+                [
+                    w for w in self.adapted_workloads
+                    if w.state == WorkloadAdapter.STARTED
+                ],
+                version_param=\
+                    {kn: latest_stable_version for kn in nodes_to_keep } | {un: head_version for un in nodes_to_upgrade},
+                partial_update=True)
+
+            # reinstall latest release, perform checks, and terminate
+            self.logger.info(f"Rolling back to {latest_stable_version}")
+            self.installer.install(nodes_to_upgrade, latest_stable_version)
+            self.redpanda.rolling_restart_nodes(nodes_to_upgrade,
+                                                start_timeout=90,
+                                                stop_timeout=90)
+
+            self._run_workloads_for_version(latest_stable_version)
+
+        self._run_test_and_check_for_errors(partial_upgrade)
