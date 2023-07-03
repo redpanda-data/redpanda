@@ -252,11 +252,13 @@ class RedpandaUpgradeTest(PreallocNodesTest):
                 # ensure that checks are not performed too fast, by requesting a delay of 1 second
                 time.sleep(delay)
 
-    def _run_workloads_for_version(self, current_version):
+    def _run_workloads_for_version(self,
+                                   current_version,
+                                   stop_eol_workloads=True):
         # setup workload that could start at current_version
         for w in self.adapted_workloads:
-            if w.state == WorkloadAdapter.NOT_STARTED and current_version >= w.get_earliest_applicable_release(
-            ):
+            if w.state == WorkloadAdapter.NOT_STARTED and w.get_earliest_applicable_release(
+            ) <= current_version <= w.get_latest_applicable_release():
                 self.logger.info(f"setup {w.get_workload_name()}")
                 w.begin()  # this will set in a STARTED state
 
@@ -266,18 +268,18 @@ class RedpandaUpgradeTest(PreallocNodesTest):
                                 [w for w in self.adapted_workloads if w.state == WorkloadAdapter.STARTED],
                                 version_param=current_version)
 
-        # stop workload that can't operate with next_version
-        for w in self.adapted_workloads:
-            if w.state == WorkloadAdapter.STARTED and \
-                current_version == w.get_latest_applicable_release():
-                self.logger.info(f"teardown of {w.get_workload_name()}")
-                w.end()
+        if stop_eol_workloads:
+            # stop workload that can't operate with next_version
+            for w in self.adapted_workloads:
+                if w.state == WorkloadAdapter.STARTED and \
+                    current_version >= w.get_latest_applicable_release():
+                    self.logger.info(f"teardown of {w.get_workload_name()}")
+                    w.end()
 
-        # quick exit: terminate loop if no workload is active
-        assert len([
-            w for w in self.adapted_workloads if w.state ==
-            WorkloadAdapter.STARTED or w.state == WorkloadAdapter.NOT_STARTED
-        ]) > 0, "no workload is active at {current_version=}"
+        # quick exit: terminate loop if
+        assert not all(w.state == WorkloadAdapter.STOPPED_WITH_ERROR
+                       for w in self.adapted_workloads
+                       ), "no workload is active at {current_version=}"
 
     def _run_test_and_check_for_errors(self, test_function: Callable[[],
                                                                      None]):
