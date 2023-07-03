@@ -79,6 +79,9 @@ type ConsoleSpec struct {
 
 	// SecretStore contains the configuration for the cloud provider secret manager
 	SecretStore *SecretStore `json:"secretStore,omitempty"`
+
+	// If set to true then we should allow to migrate
+	DoMigration *bool `json:"doMigration,omitempty"`
 }
 
 // Server is the Console app HTTP server config

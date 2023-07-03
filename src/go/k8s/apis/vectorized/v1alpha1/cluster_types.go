@@ -178,6 +178,9 @@ type ClusterSpec struct {
 	// - it has XFS file system
 	// - it can create test file and delete it
 	InitialValidationForVolume *bool `json:"initialValidationForVolume,omitempty"`
+
+	// If set to true then we should allow to migrate
+	DoMigration *bool `json:"doMigration,omitempty"`
 }
 
 // RestartConfig contains strategies to configure how the cluster behaves when restarting, because of upgrades

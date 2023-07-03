@@ -795,6 +795,9 @@ spec:
                 description: DNSTrailingDotDisabled gives ability to turn off the
                   fully-qualified DNS name. http://www.dns-sd.org/trailingdotsindomainnames.html
                 type: boolean
+              doMigration:
+                description: If set to true then we should allow to migrate
+                type: boolean
               enableSasl:
                 description: 'SASL enablement flag Deprecated: replaced by "kafkaEnableAuthorization"'
                 type: boolean

@@ -323,6 +323,9 @@ spec:
                 required:
                 - image
                 type: object
+              doMigration:
+                description: If set to true then we should allow to migrate
+                type: boolean
               enterprise:
                 description: Enterprise defines configurable fields for features that
                   require license
