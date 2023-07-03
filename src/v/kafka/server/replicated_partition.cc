@@ -489,7 +489,7 @@ result<partition_info> replicated_partition::get_partition_info() const {
     ret.replicas.push_back(replica_info{
       .id = _partition->raft()->self().id(),
       .high_watermark = high_watermark(),
-      .log_end_offset = log_dirty_offset(),
+      .log_end_offset = log_end_offset(),
       .is_alive = true,
     });
 
