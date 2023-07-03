@@ -510,6 +510,7 @@ class CloudStorageTimingStressTest(RedpandaTest, PartitionMovementMixin):
     @skip_debug_mode
     def test_cloud_storage_with_partition_moves(self, cleanup_policy):
         """
+
         This test adds partition moves on top of the baseline cloud storage workload.
         The idea is to evolve this test into a more generic fuzzing test in the future
         (e.g. isolate/kill nodes, isolate leader from cloud storage, change cloud storage
