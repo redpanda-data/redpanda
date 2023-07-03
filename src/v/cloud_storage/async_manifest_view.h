@@ -139,6 +139,13 @@ private:
     ss::future<result<archive_start_offset_advance, error_outcome>>
     offset_based_retention() noexcept;
 
+    // Perform a term upper bound search within the spillover manifest list.
+    // Returns the index of the first spillover manifest that contains a segment
+    // wit term greater than the requested one. If no such spillover manifest
+    // exists, returns std::nullopt.
+    std::optional<size_t>
+    get_spillover_upper_bound_by_term(model::term_id term) noexcept;
+
     ss::future<> run_bg_loop();
 
     /// Return true if the offset belongs to the archive

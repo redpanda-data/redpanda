@@ -630,26 +630,44 @@ async_manifest_view::get_term_last_offset(model::term_id term) noexcept {
             }
         }
     } else if (stmm.get_archive_start_offset() != model::offset{}) {
-        // Use column-store that contains list of spillover manifests to
-        // find a starting point for the search.
-        const auto& spillover_map = stm_manifest().get_spillover_map();
-        // This column contains term of the last segment in the manifest
-        const auto& term_col = spillover_map.get_segment_term_column();
-        size_t sp_index = 0;
-        for (auto t : term_col) {
-            if (t > term()) {
-                break;
-            }
-            sp_index++;
+        const auto spill_index = get_spillover_upper_bound_by_term(term);
+        if (!spill_index.has_value()) {
+            co_return std::nullopt;
         }
-        auto sp_start = spillover_map.get_base_offset_column().at_index(
-          sp_index);
-        auto res = co_await get_cursor(
-          sp_start.is_end() ? stm_manifest().get_archive_start_offset()
-                            : model::offset{*sp_start});
+
+        vlog(
+          _ctxlog.debug,
+          "Picked spill manifest at index {} for last offest in term {}",
+          *spill_index,
+          term());
+
+        auto spill = stm_manifest().get_spillover_map().at_index(*spill_index);
+        if (spill.is_end()) {
+            vlog(
+              _ctxlog.error,
+              "Failed to find spillover manifest at index: {}",
+              *spill_index);
+            co_return error_outcome::failure;
+        }
+
+        auto cursor_start = spill->base_offset;
+        auto archive_start = stm_manifest().get_archive_start_offset();
+        if (cursor_start < archive_start) {
+            // The start offset of the selected spill manifest
+            // may be below the start offset of the archive.
+            // If that's the case, point the cursor to the start of the archive
+            // if that lies within the selected spill manifest.
+            if (archive_start <= spill->committed_offset) {
+                cursor_start = archive_start;
+            } else {
+                co_return std::nullopt;
+            }
+        }
+
+        auto res = co_await get_cursor(cursor_start);
         if (res.has_error()) {
             vlog(_ctxlog.error, "Failed to scan metadata: {}", res.error());
-            co_return res;
+            co_return res.as_failure();
         }
         std::optional<kafka::offset> res_offset;
         co_await ss::repeat(
@@ -1375,4 +1393,27 @@ async_manifest_view::materialize_manifest(
         co_return error_outcome::failure;
     }
 }
+
+std::optional<size_t> async_manifest_view::get_spillover_upper_bound_by_term(
+  model::term_id term) noexcept {
+    // Use column-store that contains list of spillover manifests to
+    // find a starting point for the search.
+    const auto& spillover_map = stm_manifest().get_spillover_map();
+    // This column contains the term of the last segment in the spill manifest
+    const auto& last_term_col = spillover_map.get_segment_term_column();
+    size_t sp_index = 0;
+    for (auto last_term : last_term_col) {
+        if (last_term > term()) {
+            break;
+        }
+        sp_index++;
+    }
+
+    if (sp_index == last_term_col.size()) {
+        return std::nullopt;
+    }
+
+    return sp_index;
+}
+
 } // namespace cloud_storage
