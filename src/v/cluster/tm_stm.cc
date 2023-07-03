@@ -948,7 +948,7 @@ ss::future<> tm_stm::expire_tx(kafka::transactional_id tx_id) {
     co_await update_tx(std::move(tx), etag).discard_result();
 }
 
-ss::future<> tm_stm::handle_eviction() {
+ss::future<> tm_stm::handle_raft_snapshot() {
     return _cache.local().write_lock().then(
       [this]([[maybe_unused]] ss::basic_rwlock<>::holder unit) {
           _cache.local().clear_log();
