@@ -226,7 +226,14 @@ void partition_balancer_planner::init_per_node_state(
           node_report.id, node_disk_space(node_report.id, total, total - free));
     }
 
-    for (const auto& [id, disk] : ctx.node_disk_reports) {
+    for (model::node_id id : ctx.all_nodes) {
+        auto disk_it = ctx.node_disk_reports.find(id);
+        if (disk_it == ctx.node_disk_reports.end()) {
+            vlog(clusterlog.info, "node {}: no disk report", id);
+            continue;
+        }
+
+        const auto& disk = disk_it->second;
         double used_space_ratio = disk.original_used_ratio();
         vlog(
           clusterlog.debug,
@@ -330,7 +337,6 @@ bool partition_balancer_planner::request_context::all_reports_received() const {
         if (
           !all_unavailable_nodes.contains(id)
           && !node_disk_reports.contains(id)) {
-            vlog(clusterlog.info, "No disk report for node {}", id);
             return false;
         }
     }
@@ -1396,7 +1402,22 @@ ss::future<> partition_balancer_planner::get_counts_rebalancing_actions(
           cur_objective);
     }
 
-    if (!actions_added) {
+    auto all_nodes_healthy = [&] {
+        // don't count rebalance as finished if not all nodes are fully
+        // available - if they become healthy later, partition distribution
+        // won't be optimal.
+        if (!ctx.all_unavailable_nodes.empty()) {
+            return false;
+        }
+        for (model::node_id id : ctx.all_nodes) {
+            if (!ctx.node_disk_reports.contains(id)) {
+                return false;
+            }
+        }
+        return true;
+    };
+
+    if (!actions_added && all_nodes_healthy()) {
         ctx._counts_rebalancing_finished = true;
     }
 }

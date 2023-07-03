@@ -8,7 +8,7 @@
 # by the Apache License, Version 2.0
 
 from collections import defaultdict
-import random, math
+import random, math, time
 from rptest.services.admin import Admin
 from rptest.services.cluster import cluster
 from ducktape.utils.util import wait_until
@@ -289,3 +289,54 @@ class ScalingUpTest(EndToEndTest):
             self.logger.info(f"{t} spans {len(nodes)} nodes")
             # assert that each topic has replicas on all of the nodes
             assert len(nodes) == len(self.redpanda.nodes)
+
+    @cluster(num_nodes=7)
+    def test_adding_node_with_unavailable_node(self):
+        self.redpanda = make_redpanda_service(
+            self.test_context,
+            5,
+            extra_rp_conf={
+                "partition_autobalancing_mode": "off",
+                "group_topic_partitions": self.group_topic_partitions
+            })
+        # start 3 nodes first
+        self.redpanda.start(nodes=self.redpanda.nodes[0:3])
+        # create some topics
+        total_replicas = self.create_topics(rf=3, partition_count=20)
+        # add consumer group topic replicas
+        total_replicas += self.group_topic_partitions * 3
+
+        throughput = 100000 if not self.debug_mode else 1000
+        self.start_producer(1, throughput=throughput)
+        self.start_consumer(1)
+        self.await_startup(min_records=5 * throughput, timeout_sec=120)
+
+        # start a node just to register it (no partitions will be moved)
+        unavailable_node = self.redpanda.nodes[3]
+        self.redpanda.start_node(unavailable_node)
+        self.redpanda.stop_node(unavailable_node)
+        time.sleep(5.0)  # let the node become unavailable
+
+        admin = Admin(self.redpanda, default_node=self.redpanda.nodes[0])
+        admin.patch_cluster_config(
+            upsert={"partition_autobalancing_mode": "node_add"})
+
+        added_node = self.redpanda.nodes[4]
+        self.redpanda.start_node(added_node)
+        added_node_id = self.redpanda.node_id(added_node)
+
+        def initial_rebalance_finished():
+            reconfigurations_len = len(admin.list_reconfigurations())
+            replicas_on_added = self._replicas_per_node().get(added_node_id, 0)
+            self.logger.info(f"waiting for initial rebalance: "
+                             f"{reconfigurations_len=}, {replicas_on_added=}")
+            return reconfigurations_len == 0 and replicas_on_added > 0
+
+        wait_until(initial_rebalance_finished,
+                   timeout_sec=self.rebalance_timeout,
+                   backoff_sec=1,
+                   err_msg="initial rebalance failed")
+
+        self.redpanda.start_node(unavailable_node)
+        self.wait_for_partitions_rebalanced(total_replicas=total_replicas,
+                                            timeout_sec=self.rebalance_timeout)
