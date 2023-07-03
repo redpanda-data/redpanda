@@ -26,6 +26,20 @@ record_batch_builder::record_batch_builder(
 
 record_batch_builder::~record_batch_builder() = default;
 
+record_batch_builder& record_batch_builder::add_raw_kv(
+  std::optional<iobuf>&& key, std::optional<iobuf>&& value) {
+    _records.emplace_back(std::move(key), std::move(value));
+    return *this;
+}
+
+record_batch_builder& record_batch_builder::add_raw_kw(
+  std::optional<iobuf>&& key,
+  std::optional<iobuf>&& value,
+  std::vector<model::record_header> headers) {
+    _records.emplace_back(std::move(key), std::move(value), std::move(headers));
+    return *this;
+}
+
 model::record_batch record_batch_builder::build() && {
     int32_t offset_delta = 0;
     if (!_timestamp) {
