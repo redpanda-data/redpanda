@@ -89,7 +89,8 @@ private:
     int16_t _producer_epoch{-1};
     bool _is_control_type{false};
     bool _transactional_type{false};
-    std::vector<serialized_record> _records;
+    iobuf _records;
+    int32_t _offset_delta{0};
     model::compression _compression{model::compression::none};
     std::optional<model::timestamp> _timestamp;
 };
