@@ -119,6 +119,14 @@ configuration::configuration()
        .example = "2147483648000",
        .visibility = visibility::tunable},
       std::nullopt)
+  , log_storage_max_usage_interval(
+      *this,
+      "log_storage_max_usage_interval",
+      "The maximum amount of time before log storage usage will be calculated",
+      {.needs_restart = needs_restart::no,
+       .example = "31536000000",
+       .visibility = visibility::tunable},
+      30s)
   , rpc_server_listen_backlog(
       *this,
       "rpc_server_listen_backlog",

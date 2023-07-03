@@ -2242,8 +2242,10 @@ disk_log_impl::cloud_gc_eligible_segments() {
       "Expected {} to have cloud retention enabled",
       config().ntp());
 
+    constexpr size_t keep_segs = 1;
+
     // must-have restriction
-    if (_segs.size() <= 2) {
+    if (_segs.size() <= keep_segs) {
         return {};
     }
 
@@ -2255,7 +2257,7 @@ disk_log_impl::cloud_gc_eligible_segments() {
 
     // collect eligible segments
     fragmented_vector<segment_set::type> segments;
-    for (auto remaining = _segs.size() - 2; auto& seg : _segs) {
+    for (auto remaining = _segs.size() - keep_segs; auto& seg : _segs) {
         if (seg->offsets().committed_offset <= max_collectible) {
             segments.push_back(seg);
         }
