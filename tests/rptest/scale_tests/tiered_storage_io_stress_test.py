@@ -151,14 +151,18 @@ class TieredStorageIoStressTest(PreallocNodesTest):
         interval_uploads=[True, False])
     def test_io_stress(self, cloud_storage_type, segment_size,
                        interval_uploads):
+        # We expect to produce & consume at least this fast
+        expected_throughput = 100 * 1024 * 1024
+
         si_settings = SISettings(
             self.test_context,
             log_segment_size=segment_size,
             cloud_storage_segment_max_upload_interval_sec=30
             if interval_uploads else None,
 
-            # A cache large enough for one segment of data per reader
-            cloud_storage_cache_size=self.RANDOM_READ_PARALLEL * segment_size)
+            # A cache large enough to accommodate a respectable read throughput
+            cloud_storage_cache_size=SISettings.cache_size_for_throughput(
+                expected_throughput))
         self.redpanda.set_si_settings(si_settings)
 
         self.redpanda.start()
