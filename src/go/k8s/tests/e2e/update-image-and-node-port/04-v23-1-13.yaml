@@ -4,7 +4,7 @@ metadata:
   name: update-image-cluster-and-node-port
 spec:
   image: "vectorized/redpanda"
-  version: "v23.1.11"
+  version: "v23.1.13"
   configuration:
     additionalCommandlineArguments:
       default-log-level: trace

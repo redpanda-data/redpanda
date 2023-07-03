@@ -1,7 +1,7 @@
 apiVersion: redpanda.vectorized.io/v1alpha1
 kind: Cluster
 metadata:
-  name: update-image-cluster-and-node-port
+  name: up-img-admin-mtls
 spec:
   image: "vectorized/redpanda"
-  version: "v22.3.20"
+  version: "v23.1.13"
