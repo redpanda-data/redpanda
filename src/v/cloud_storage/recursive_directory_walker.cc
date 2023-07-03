@@ -42,9 +42,13 @@ struct walk_accumulator {
         seen_dentries = true;
         auto entry_path = fmt::format("{}/{}", target, entry.name);
         if (entry.type && entry.type == ss::directory_entry_type::regular) {
-            vlog(cst_log.debug, "Regular file found {}", entry_path);
-
             auto file_stats = co_await ss::file_stat(entry_path);
+
+            vlog(
+              cst_log.debug,
+              "Regular file found {} ({})",
+              entry_path,
+              file_stats.size);
 
             auto last_access_timepoint = tracker.estimate_timestamp(entry_path)
                                            .value_or(file_stats.time_accessed);
