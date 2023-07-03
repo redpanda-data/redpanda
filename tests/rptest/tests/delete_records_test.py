@@ -237,7 +237,7 @@ class DeleteRecordsTest(RedpandaTest):
                     segment_boundaries[random_seg] + 1,
                     segment_boundaries[random_seg + 1] - 1)
             elif truncate_point == "at_segment_boundary":
-                random_seg = random.randint(0, len(segment_boundaries) - 1)
+                random_seg = random.randint(1, len(segment_boundaries) - 1)
                 truncate_offset = segment_boundaries[random_seg] - 1
             else:
                 assert False, "unknown test parameter encountered"

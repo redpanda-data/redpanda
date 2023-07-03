@@ -231,6 +231,10 @@ class KCL:
 
         kcl admin delete-records foo:p0,o120 foo:p1,o3888 ...
         """
+        def validate_offsets(args):
+            offsets = flat_map(lambda x: list(x.values()), args.values())
+            return all([x >= 0 for x in offsets])
+
         def unfold(x):
             topic, partitions_offsets = x
             return [
@@ -240,6 +244,11 @@ class KCL:
 
         if len(topic_partitions_offsets) == 0:
             return []
+
+        if validate_offsets(topic_partitions_offsets) is False:
+            raise RuntimeError(
+                f'Negative offset passed to delete-records: {topic_partitions_offsets}'
+            )
 
         cmd = ['-X', f'timeout_ms={timeout_ms}', 'admin', 'delete-records'
                ] + flat_map(unfold, topic_partitions_offsets.items())
