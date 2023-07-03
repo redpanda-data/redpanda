@@ -202,31 +202,32 @@ spec:
                         description: Admin is a top level field of the values file
                         properties:
                           external:
-                            description: External is a top level field of the values
-                              file
-                            properties:
-                              addresses:
-                                description: RawMessage is a raw encoded JSON value.
-                                  It implements Marshaler and Unmarshaler and can
-                                  be used to delay JSON decoding or precompute a JSON
-                                  encoding.
-                                format: byte
-                                type: string
-                              domain:
-                                type: string
-                              enabled:
-                                type: boolean
-                              externalDNS:
-                                properties:
-                                  enabled:
-                                    type: boolean
-                                required:
-                                - enabled
-                                type: object
-                              type:
-                                type: string
-                            required:
-                            - enabled
+                            additionalProperties:
+                              properties:
+                                advertisedPorts:
+                                  items:
+                                    type: integer
+                                  type: array
+                                port:
+                                  type: integer
+                                tls:
+                                  description: TLS is a top level field of the values
+                                    file
+                                  properties:
+                                    certs:
+                                      type: string
+                                    enabled:
+                                      type: boolean
+                                    requireClientAuth:
+                                      type: boolean
+                                  required:
+                                  - requireClientAuth
+                                  type: object
+                              required:
+                              - advertisedPorts
+                              - port
+                              - tls
+                              type: object
                             type: object
                           port:
                             type: integer
@@ -234,15 +235,12 @@ spec:
                             description: TLS is a top level field of the values file
                             properties:
                               certs:
-                                description: Certs is a top level field of the values
-                                  file
-                                type: object
+                                type: string
                               enabled:
                                 type: boolean
                               requireClientAuth:
                                 type: boolean
                             required:
-                            - enabled
                             - requireClientAuth
                             type: object
                         required:
@@ -251,38 +249,39 @@ spec:
                         - tls
                         type: object
                       http:
-                        description: HTTP is a top level field of the values file
+                        description: HTTP is a top level field of the values file`
                         properties:
                           authenticationMethod:
                             type: string
                           enabled:
                             type: boolean
                           external:
-                            description: External is a top level field of the values
-                              file
-                            properties:
-                              addresses:
-                                description: RawMessage is a raw encoded JSON value.
-                                  It implements Marshaler and Unmarshaler and can
-                                  be used to delay JSON decoding or precompute a JSON
-                                  encoding.
-                                format: byte
-                                type: string
-                              domain:
-                                type: string
-                              enabled:
-                                type: boolean
-                              externalDNS:
-                                properties:
-                                  enabled:
-                                    type: boolean
-                                required:
-                                - enabled
-                                type: object
-                              type:
-                                type: string
-                            required:
-                            - enabled
+                            additionalProperties:
+                              properties:
+                                advertisedPorts:
+                                  items:
+                                    type: integer
+                                  type: array
+                                port:
+                                  type: integer
+                                tls:
+                                  description: TLS is a top level field of the values
+                                    file
+                                  properties:
+                                    certs:
+                                      type: string
+                                    enabled:
+                                      type: boolean
+                                    requireClientAuth:
+                                      type: boolean
+                                  required:
+                                  - requireClientAuth
+                                  type: object
+                              required:
+                              - advertisedPorts
+                              - port
+                              - tls
+                              type: object
                             type: object
                           kafkaEndpoint:
                             type: string
@@ -292,15 +291,12 @@ spec:
                             description: TLS is a top level field of the values file
                             properties:
                               certs:
-                                description: Certs is a top level field of the values
-                                  file
-                                type: object
+                                type: string
                               enabled:
                                 type: boolean
                               requireClientAuth:
                                 type: boolean
                             required:
-                            - enabled
                             - requireClientAuth
                             type: object
                         required:
@@ -316,31 +312,32 @@ spec:
                           authenticationMethod:
                             type: string
                           external:
-                            description: External is a top level field of the values
-                              file
-                            properties:
-                              addresses:
-                                description: RawMessage is a raw encoded JSON value.
-                                  It implements Marshaler and Unmarshaler and can
-                                  be used to delay JSON decoding or precompute a JSON
-                                  encoding.
-                                format: byte
-                                type: string
-                              domain:
-                                type: string
-                              enabled:
-                                type: boolean
-                              externalDNS:
-                                properties:
-                                  enabled:
-                                    type: boolean
-                                required:
-                                - enabled
-                                type: object
-                              type:
-                                type: string
-                            required:
-                            - enabled
+                            additionalProperties:
+                              properties:
+                                advertisedPorts:
+                                  items:
+                                    type: integer
+                                  type: array
+                                port:
+                                  type: integer
+                                tls:
+                                  description: TLS is a top level field of the values
+                                    file
+                                  properties:
+                                    certs:
+                                      type: string
+                                    enabled:
+                                      type: boolean
+                                    requireClientAuth:
+                                      type: boolean
+                                  required:
+                                  - requireClientAuth
+                                  type: object
+                              required:
+                              - advertisedPorts
+                              - port
+                              - tls
+                              type: object
                             type: object
                           port:
                             type: integer
@@ -348,15 +345,12 @@ spec:
                             description: TLS is a top level field of the values file
                             properties:
                               certs:
-                                description: Certs is a top level field of the values
-                                  file
-                                type: object
+                                type: string
                               enabled:
                                 type: boolean
                               requireClientAuth:
                                 type: boolean
                             required:
-                            - enabled
                             - requireClientAuth
                             type: object
                         required:
@@ -373,15 +367,12 @@ spec:
                             description: TLS is a top level field of the values file
                             properties:
                               certs:
-                                description: Certs is a top level field of the values
-                                  file
-                                type: object
+                                type: string
                               enabled:
                                 type: boolean
                               requireClientAuth:
                                 type: boolean
                             required:
-                            - enabled
                             - requireClientAuth
                             type: object
                         required:
@@ -397,31 +388,32 @@ spec:
                           enabled:
                             type: boolean
                           external:
-                            description: External is a top level field of the values
-                              file
-                            properties:
-                              addresses:
-                                description: RawMessage is a raw encoded JSON value.
-                                  It implements Marshaler and Unmarshaler and can
-                                  be used to delay JSON decoding or precompute a JSON
-                                  encoding.
-                                format: byte
-                                type: string
-                              domain:
-                                type: string
-                              enabled:
-                                type: boolean
-                              externalDNS:
-                                properties:
-                                  enabled:
-                                    type: boolean
-                                required:
-                                - enabled
-                                type: object
-                              type:
-                                type: string
-                            required:
-                            - enabled
+                            additionalProperties:
+                              properties:
+                                advertisedPorts:
+                                  items:
+                                    type: integer
+                                  type: array
+                                port:
+                                  type: integer
+                                tls:
+                                  description: TLS is a top level field of the values
+                                    file
+                                  properties:
+                                    certs:
+                                      type: string
+                                    enabled:
+                                      type: boolean
+                                    requireClientAuth:
+                                      type: boolean
+                                  required:
+                                  - requireClientAuth
+                                  type: object
+                              required:
+                              - advertisedPorts
+                              - port
+                              - tls
+                              type: object
                             type: object
                           kafkaEndpoint:
                             type: string
@@ -431,15 +423,12 @@ spec:
                             description: TLS is a top level field of the values file
                             properties:
                               certs:
-                                description: Certs is a top level field of the values
-                                  file
-                                type: object
+                                type: string
                               enabled:
                                 type: boolean
                               requireClientAuth:
                                 type: boolean
                             required:
-                            - enabled
                             - requireClientAuth
                             type: object
                         required:
@@ -1701,15 +1690,40 @@ spec:
                     description: TLS is a top level field of the values file
                     properties:
                       certs:
-                        description: Certs is a top level field of the values file
+                        additionalProperties:
+                          properties:
+                            caEnabled:
+                              type: boolean
+                            duration:
+                              description: A Duration represents the elapsed time
+                                between two instants as an int64 nanosecond count.
+                                The representation limits the largest representable
+                                duration to approximately 290 years.
+                              format: int64
+                              type: integer
+                            issuerRef:
+                              properties:
+                                kind:
+                                  type: string
+                                name:
+                                  type: string
+                              required:
+                              - kind
+                              - name
+                              type: object
+                            secretRef:
+                              properties:
+                                name:
+                                  type: string
+                              required:
+                              - name
+                              type: object
+                          required:
+                          - caEnabled
+                          type: object
                         type: object
                       enabled:
                         type: boolean
-                      requireClientAuth:
-                        type: boolean
-                    required:
-                    - enabled
-                    - requireClientAuth
                     type: object
                   tolerations:
                     description: Tolerations is the override to give your redpanda

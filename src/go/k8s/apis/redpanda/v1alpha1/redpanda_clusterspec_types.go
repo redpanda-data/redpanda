@@ -2,6 +2,7 @@ package v1alpha1
 
 import (
 	"encoding/json"
+	"time"
 
 	"k8s.io/apimachinery/pkg/api/resource"
 
@@ -118,13 +119,32 @@ type UsersItems struct {
 
 // TLS is a top level field of the values file
 type TLS struct {
-	Certs             *Certs `json:"certs,omitempty"`
-	Enabled           bool   `json:"enabled"`
-	RequireClientAuth bool   `json:"requireClientAuth"`
+	Certs   map[string]*Certificate `json:"certs,omitempty"`
+	Enabled *bool                   `json:"enabled,omitempty"`
 }
 
-// Certs is a top level field of the values file
-type Certs struct{}
+type Certificate struct {
+	IssuerRef *IssuerRef     `json:"issuerRef,omitempty"`
+	SecretRef *SecreRef      `json:"secretRef,omitempty"`
+	Duration  *time.Duration `json:"duration,omitempty"`
+	CAEnabled bool           `json:"caEnabled"`
+}
+
+type IssuerRef struct {
+	name string `json:"name"`
+	kind string `json:"kind"`
+}
+
+type SecreRef struct {
+	name string `json:"name"`
+}
+
+// TLS is a top level field of the values file
+type ListenerTLS struct {
+	Cert              *string `json:"certs,omitempty"`
+	Enabled           *bool   `json:"enabled,omitempty"`
+	RequireClientAuth bool    `json:"requireClientAuth"`
+}
 
 // External is a top level field of the values file
 type External struct {
@@ -326,45 +346,51 @@ type Listeners struct {
 	SchemaRegistry *SchemaRegistry `json:"schemaRegistry,omitempty"`
 }
 
-// Admin is a top level field of the values file
-type Admin struct {
-	External *External `json:"external"`
-	Port     int       `json:"port"`
-	TLS      *TLS      `json:"tls"`
+type ExternalListener struct {
+	Port            int          `json:"port"`
+	TLS             *ListenerTLS `json:"tls"`
+	AdvertisedPorts []int        `json:"advertisedPorts"`
 }
 
-// HTTP is a top level field of the values file
+// Admin is a top level field of the values file
+type Admin struct {
+	External map[string]*ExternalListener `json:"external"`
+	Port     int                          `json:"port"`
+	TLS      *ListenerTLS                 `json:"tls"`
+}
+
+// HTTP is a top level field of the values file`
 type HTTP struct {
-	AuthenticationMethod *string   `json:"authenticationMethod,omitempty"`
-	Enabled              bool      `json:"enabled"`
-	External             *External `json:"external"`
-	KafkaEndpoint        string    `json:"kafkaEndpoint"`
-	Port                 int       `json:"port"`
-	TLS                  *TLS      `json:"tls"`
+	AuthenticationMethod *string                      `json:"authenticationMethod,omitempty"`
+	Enabled              bool                         `json:"enabled"`
+	External             map[string]*ExternalListener `json:"external"`
+	KafkaEndpoint        string                       `json:"kafkaEndpoint"`
+	Port                 int                          `json:"port"`
+	TLS                  *ListenerTLS                 `json:"tls"`
 }
 
 // Kafka is a top level field of the values file
 type Kafka struct {
-	AuthenticationMethod *string   `json:"authenticationMethod,omitempty"`
-	External             *External `json:"external"`
-	Port                 int       `json:"port"`
-	TLS                  *TLS      `json:"tls"`
+	AuthenticationMethod *string                      `json:"authenticationMethod,omitempty"`
+	External             map[string]*ExternalListener `json:"external"`
+	Port                 int                          `json:"port"`
+	TLS                  *ListenerTLS                 `json:"tls"`
 }
 
 // RPC is a top level field of the values file
 type RPC struct {
-	Port int  `json:"port"`
-	TLS  *TLS `json:"tls"`
+	Port int          `json:"port"`
+	TLS  *ListenerTLS `json:"tls"`
 }
 
 // SchemaRegistry is a top level field of the values file
 type SchemaRegistry struct {
-	AuthenticationMethod *string   `json:"authenticationMethod,omitempty"`
-	Enabled              bool      `json:"enabled"`
-	External             *External `json:"external"`
-	KafkaEndpoint        string    `json:"kafkaEndpoint"`
-	Port                 int       `json:"port"`
-	TLS                  *TLS      `json:"tls"`
+	AuthenticationMethod *string                      `json:"authenticationMethod,omitempty"`
+	Enabled              bool                         `json:"enabled"`
+	External             map[string]*ExternalListener `json:"external"`
+	KafkaEndpoint        string                       `json:"kafkaEndpoint"`
+	Port                 int                          `json:"port"`
+	TLS                  *ListenerTLS                 `json:"tls"`
 }
 
 // Config is a top level field of the values file
