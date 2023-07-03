@@ -28,20 +28,35 @@ record_batch_builder::~record_batch_builder() = default;
 
 record_batch_builder& record_batch_builder::add_raw_kv(
   std::optional<iobuf>&& key, std::optional<iobuf>&& value) {
-    _records.emplace_back(std::move(key), std::move(value));
-    return *this;
+    return add_raw_kw(std::move(key), std::move(value), {});
 }
 
 record_batch_builder& record_batch_builder::add_raw_kw(
   std::optional<iobuf>&& key,
   std::optional<iobuf>&& value,
   std::vector<model::record_header> headers) {
-    _records.emplace_back(std::move(key), std::move(value), std::move(headers));
+    auto sr = serialized_record{
+      std::move(key), std::move(value), std::move(headers)};
+    auto rec_sz = record_size(_offset_delta, sr);
+    auto kz = sr.encoded_key_size;
+    auto vz = sr.encoded_value_size;
+    auto r = model::record(
+      rec_sz,
+      model::record_attributes{},
+      0,
+      _offset_delta,
+      kz,
+      std::move(sr.key),
+      vz,
+      std::move(sr.value),
+      std::move(sr.headers));
+    ++_offset_delta;
+    model::append_record_to_buffer(_records, r);
+
     return *this;
 }
 
 model::record_batch record_batch_builder::build() && {
-    int32_t offset_delta = 0;
     if (!_timestamp) {
         _timestamp = model::timestamp::now();
     }
@@ -52,13 +67,13 @@ model::record_batch record_batch_builder::build() && {
       .type = _batch_type,
       .crc = 0, // crc computed later
       .attrs = model::record_batch_attributes{} |= _compression,
-      .last_offset_delta = static_cast<int32_t>(_records.size() - 1),
+      .last_offset_delta = _offset_delta - 1,
       .first_timestamp = *_timestamp,
       .max_timestamp = *_timestamp,
       .producer_id = _producer_id,
       .producer_epoch = _producer_epoch,
       .base_sequence = -1,
-      .record_count = static_cast<int32_t>(_records.size()),
+      .record_count = _offset_delta,
       .ctx = model::record_batch_header::context(
         model::term_id(0), ss::this_shard_id())};
 
@@ -70,32 +85,13 @@ model::record_batch record_batch_builder::build() && {
         header.attrs.set_transactional_type();
     }
 
-    iobuf records;
-    for (auto& sr : _records) {
-        auto rec_sz = record_size(offset_delta, sr);
-        auto kz = sr.encoded_key_size;
-        auto vz = sr.encoded_value_size;
-        auto r = model::record(
-          rec_sz,
-          model::record_attributes{},
-          0,
-          offset_delta,
-          kz,
-          std::move(sr.key),
-          vz,
-          std::move(sr.value),
-          std::move(sr.headers));
-        ++offset_delta;
-        model::append_record_to_buffer(records, r);
-    }
-
     if (_compression != model::compression::none) {
-        records = compression::compressor::compress(records, _compression);
+        _records = compression::compressor::compress(_records, _compression);
     }
 
-    internal::reset_size_checksum_metadata(header, records);
+    internal::reset_size_checksum_metadata(header, _records);
     return model::record_batch(
-      header, std::move(records), model::record_batch::tag_ctor_ng{});
+      header, std::move(_records), model::record_batch::tag_ctor_ng{});
 }
 
 uint32_t record_batch_builder::record_size(
