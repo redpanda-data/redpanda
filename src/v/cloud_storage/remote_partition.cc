@@ -720,83 +720,17 @@ ss::future<> remote_partition::serialize_json_manifest_to_output_stream(
 // returns term last kafka offset
 ss::future<std::optional<kafka::offset>>
 remote_partition::get_term_last_offset(model::term_id term) const {
-    const auto& stmm = _manifest_view->stm_manifest();
-    vassert(
-      stmm.size() > 0,
-      "The manifest for {} is not expected to be empty",
-      _manifest_view->get_ntp());
-
-    if (stmm.begin()->segment_term <= term) {
-        // if last segment term is equal to the one we look for return it
-        auto last = stmm.last_segment();
-        vassert(
-          last.has_value(),
-          "The manifest for {} is not expected to be empty",
-          _manifest_view->get_ntp());
-
-        if (last->segment_term == term) {
-            // Fast path, most requests should query the last term
-            co_return last->next_kafka_offset() - kafka::offset(1);
-        } else {
-            // look for first segment in next term, segments are sorted by
-            // base_offset and term
-            for (auto const& p : stmm) {
-                if (p.segment_term > term) {
-                    co_return p.base_kafka_offset() - kafka::offset(1);
-                }
-            }
-        }
-    } else if (stmm.get_archive_start_offset() != model::offset{}) {
-        // Use column-store that contains list of spillover manifests to
-        // find a starting point for the search.
-        const auto& spillover_map
-          = _manifest_view->stm_manifest().get_spillover_map();
-        // This column contains term of the last segment in the manifest
-        const auto& term_col = spillover_map.get_segment_term_column();
-        size_t sp_index = 0;
-        for (auto t : term_col) {
-            if (t > term()) {
-                break;
-            }
-            sp_index++;
-        }
-        auto sp_start = spillover_map.get_base_offset_column().at_index(
-          sp_index);
-        auto res = co_await _manifest_view->get_cursor(
-          sp_start.is_end()
-            ? _manifest_view->stm_manifest().get_archive_start_offset()
-            : model::offset{*sp_start});
-        if (res.has_error()) {
-            vlog(_ctxlog.error, "Failed to scan metadata: {}", res.error());
-            throw std::system_error(res.error());
-        }
-        std::optional<kafka::offset> res_offset;
-        co_await ss::repeat(
-          [this, &res_offset, term, cursor = std::move(res.value())] {
-              const auto& manifest = cursor->manifest()->get();
-              vlog(
-                _ctxlog.debug,
-                "Scanning manifest {} for term {}",
-                manifest.get_manifest_path(),
-                term);
-              for (auto meta : manifest) {
-                  if (meta.segment_term > term) {
-                      res_offset = meta.base_kafka_offset() - kafka::offset(1);
-                      vlog(
-                        _ctxlog.debug,
-                        "Scan found offset {} at term {}",
-                        res_offset.value(),
-                        meta.segment_term);
-                      return ss::make_ready_future<ss::stop_iteration>(
-                        ss::stop_iteration::yes);
-                  }
-              }
-              return cursor->next_iter();
-          });
-
-        co_return res_offset;
+    const auto res = co_await _manifest_view->get_term_last_offset(term);
+    if (res.has_error()) {
+        vlog(
+          _ctxlog.error,
+          "Failed to get last offset from term {}: {}",
+          term,
+          res.error());
+        throw std::system_error(res.error());
+    } else {
+        co_return res.value();
     }
-    co_return std::nullopt;
 }
 
 ss::future<std::vector<model::tx_range>>

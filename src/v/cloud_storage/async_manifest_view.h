@@ -105,6 +105,9 @@ public:
       result<std::unique_ptr<async_manifest_view_cursor>, error_outcome>>
     get_retention_backlog() noexcept;
 
+    ss::future<result<std::optional<kafka::offset>, error_outcome>>
+    get_term_last_offset(model::term_id term) noexcept;
+
     bool is_empty() const noexcept;
 
     const model::ntp& get_ntp() const { return _stm_manifest.get_ntp(); }
@@ -135,6 +138,13 @@ private:
 
     ss::future<result<archive_start_offset_advance, error_outcome>>
     offset_based_retention() noexcept;
+
+    // Perform a term upper bound search within the spillover manifest list.
+    // Returns the index of the first spillover manifest that contains a segment
+    // wit term greater than the requested one. If no such spillover manifest
+    // exists, returns std::nullopt.
+    std::optional<size_t>
+    get_spillover_upper_bound_by_term(model::term_id term) noexcept;
 
     ss::future<> run_bg_loop();
 

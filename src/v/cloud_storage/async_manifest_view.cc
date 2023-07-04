@@ -601,6 +601,103 @@ async_manifest_view::get_retention_backlog() noexcept {
     co_return error_outcome::failure;
 }
 
+ss::future<result<std::optional<kafka::offset>, error_outcome>>
+async_manifest_view::get_term_last_offset(model::term_id term) noexcept {
+    const auto& stmm = stm_manifest();
+    vassert(
+      stmm.size() > 0,
+      "The manifest for {} is not expected to be empty",
+      get_ntp());
+
+    if (stmm.begin()->segment_term <= term) {
+        // if last segment term is equal to the one we look for return it
+        auto last = stmm.last_segment();
+        vassert(
+          last.has_value(),
+          "The manifest for {} is not expected to be empty",
+          get_ntp());
+
+        if (last->segment_term == term) {
+            // Fast path, most requests should query the last term
+            co_return last->next_kafka_offset() - kafka::offset(1);
+        } else {
+            // look for first segment in next term, segments are sorted by
+            // base_offset and term
+            for (auto const& p : stmm) {
+                if (p.segment_term > term) {
+                    co_return p.base_kafka_offset() - kafka::offset(1);
+                }
+            }
+        }
+    } else if (stmm.get_archive_start_offset() != model::offset{}) {
+        const auto spill_index = get_spillover_upper_bound_by_term(term);
+        if (!spill_index.has_value()) {
+            co_return std::nullopt;
+        }
+
+        vlog(
+          _ctxlog.debug,
+          "Picked spill manifest at index {} for last offest in term {}",
+          *spill_index,
+          term());
+
+        auto spill = stm_manifest().get_spillover_map().at_index(*spill_index);
+        if (spill.is_end()) {
+            vlog(
+              _ctxlog.error,
+              "Failed to find spillover manifest at index: {}",
+              *spill_index);
+            co_return error_outcome::failure;
+        }
+
+        auto cursor_start = spill->base_offset;
+        auto archive_start = stm_manifest().get_archive_start_offset();
+        if (cursor_start < archive_start) {
+            // The start offset of the selected spill manifest
+            // may be below the start offset of the archive.
+            // If that's the case, point the cursor to the start of the archive
+            // if that lies within the selected spill manifest.
+            if (archive_start <= spill->committed_offset) {
+                cursor_start = archive_start;
+            } else {
+                co_return std::nullopt;
+            }
+        }
+
+        auto res = co_await get_cursor(cursor_start);
+        if (res.has_error()) {
+            vlog(_ctxlog.error, "Failed to scan metadata: {}", res.error());
+            co_return res.as_failure();
+        }
+        std::optional<kafka::offset> res_offset;
+        co_await ss::repeat(
+          [this, &res_offset, term, cursor = std::move(res.value())] {
+              const auto& manifest = cursor->manifest()->get();
+              vlog(
+                _ctxlog.debug,
+                "Scanning manifest {} for term {}",
+                manifest.get_manifest_path(),
+                term);
+              for (auto meta : manifest) {
+                  if (meta.segment_term > term) {
+                      res_offset = meta.base_kafka_offset() - kafka::offset(1);
+                      vlog(
+                        _ctxlog.debug,
+                        "Scan found offset {} at term {}",
+                        res_offset.value(),
+                        meta.segment_term);
+                      return ss::make_ready_future<ss::stop_iteration>(
+                        ss::stop_iteration::yes);
+                  }
+              }
+              return cursor->next_iter();
+          });
+
+        co_return res_offset;
+    }
+    co_return std::nullopt;
+}
+
 bool async_manifest_view::is_empty() const noexcept {
     return _stm_manifest.size() == 0;
 }
@@ -1296,4 +1393,27 @@ async_manifest_view::materialize_manifest(
         co_return error_outcome::failure;
     }
 }
+
+std::optional<size_t> async_manifest_view::get_spillover_upper_bound_by_term(
+  model::term_id term) noexcept {
+    // Use column-store that contains list of spillover manifests to
+    // find a starting point for the search.
+    const auto& spillover_map = stm_manifest().get_spillover_map();
+    // This column contains the term of the last segment in the spill manifest
+    const auto& last_term_col = spillover_map.get_segment_term_column();
+    size_t sp_index = 0;
+    for (auto last_term : last_term_col) {
+        if (last_term > term()) {
+            break;
+        }
+        sp_index++;
+    }
+
+    if (sp_index == last_term_col.size()) {
+        return std::nullopt;
+    }
+
+    return sp_index;
+}
+
 } // namespace cloud_storage
