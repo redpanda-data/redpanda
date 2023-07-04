@@ -30,14 +30,7 @@ rules:
   - update
   - patch
   - delete
-- apiGroups:
-  - ""
-  resources:
-  - events
-  verbs:
-  - create
-  - patch
-  {{- if eq .Values.scope "Namespace" }}
+{{- if eq .Values.scope "Namespace" }}
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
