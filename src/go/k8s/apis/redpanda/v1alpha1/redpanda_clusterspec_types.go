@@ -131,12 +131,12 @@ type Certificate struct {
 }
 
 type IssuerRef struct {
-	name string `json:"name"`
-	kind string `json:"kind"`
+	Name string `json:"name"`
+	Kind string `json:"kind"`
 }
 
 type SecreRef struct {
-	name string `json:"name"`
+	Name string `json:"name"`
 }
 
 // TLS is a top level field of the values file
