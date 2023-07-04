@@ -132,7 +132,8 @@ static ss::future<list_offset_partition_response> list_offsets_partition(
       timestamp,
       offset,
       kafka_read_priority(),
-      {model::record_batch_type::raft_data}});
+      {model::record_batch_type::raft_data},
+      octx.rctx.abort_source().local()});
     auto id = ktp.get_partition();
     if (res) {
         co_return list_offsets_response::make_partition(
