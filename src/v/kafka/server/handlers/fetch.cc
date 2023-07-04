@@ -94,7 +94,9 @@ static ss::future<read_result> read_from_partition(
       kafka_read_priority(),
       std::nullopt,
       std::nullopt,
-      std::nullopt);
+      config.abort_source.has_value()
+        ? config.abort_source.value().get().local()
+        : storage::opt_abort_source_t{});
 
     reader_config.strict_max_bytes = config.strict_max_bytes;
     auto rdr = co_await part.make_reader(reader_config);
@@ -799,6 +801,7 @@ class simple_fetch_planner final : public fetch_planner::impl {
               .skip_read = bytes_left_in_plan == 0 && max_bytes == 0,
               .read_from_follower = octx.request.has_rack_id(),
               .consumer_rack_id = octx.request.data.rack_id,
+              .abort_source = octx.rctx.abort_source(),
             };
 
             plan.fetches_per_shard[*shard].push_back({tp, config}, &(*resp_it));
