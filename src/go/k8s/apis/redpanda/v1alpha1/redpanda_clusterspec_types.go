@@ -125,7 +125,7 @@ type TLS struct {
 
 type Certificate struct {
 	IssuerRef *IssuerRef     `json:"issuerRef,omitempty"`
-	SecretRef *SecreRef      `json:"secretRef,omitempty"`
+	SecretRef *SecretRef     `json:"secretRef,omitempty"`
 	Duration  *time.Duration `json:"duration,omitempty"`
 	CAEnabled bool           `json:"caEnabled"`
 }
@@ -135,11 +135,11 @@ type IssuerRef struct {
 	Kind string `json:"kind"`
 }
 
-type SecreRef struct {
+type SecretRef struct {
 	Name string `json:"name"`
 }
 
-// TLS is a top level field of the values file
+// ListenerTLS is a top level field of the values file
 type ListenerTLS struct {
 	Cert              *string `json:"certs,omitempty"`
 	Enabled           *bool   `json:"enabled,omitempty"`

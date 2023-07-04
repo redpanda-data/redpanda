@@ -211,8 +211,8 @@ spec:
                                 port:
                                   type: integer
                                 tls:
-                                  description: TLS is a top level field of the values
-                                    file
+                                  description: ListenerTLS is a top level field of
+                                    the values file
                                   properties:
                                     certs:
                                       type: string
@@ -232,7 +232,8 @@ spec:
                           port:
                             type: integer
                           tls:
-                            description: TLS is a top level field of the values file
+                            description: ListenerTLS is a top level field of the values
+                              file
                             properties:
                               certs:
                                 type: string
@@ -265,8 +266,8 @@ spec:
                                 port:
                                   type: integer
                                 tls:
-                                  description: TLS is a top level field of the values
-                                    file
+                                  description: ListenerTLS is a top level field of
+                                    the values file
                                   properties:
                                     certs:
                                       type: string
@@ -288,7 +289,8 @@ spec:
                           port:
                             type: integer
                           tls:
-                            description: TLS is a top level field of the values file
+                            description: ListenerTLS is a top level field of the values
+                              file
                             properties:
                               certs:
                                 type: string
@@ -321,8 +323,8 @@ spec:
                                 port:
                                   type: integer
                                 tls:
-                                  description: TLS is a top level field of the values
-                                    file
+                                  description: ListenerTLS is a top level field of
+                                    the values file
                                   properties:
                                     certs:
                                       type: string
@@ -342,7 +344,8 @@ spec:
                           port:
                             type: integer
                           tls:
-                            description: TLS is a top level field of the values file
+                            description: ListenerTLS is a top level field of the values
+                              file
                             properties:
                               certs:
                                 type: string
@@ -364,7 +367,8 @@ spec:
                           port:
                             type: integer
                           tls:
-                            description: TLS is a top level field of the values file
+                            description: ListenerTLS is a top level field of the values
+                              file
                             properties:
                               certs:
                                 type: string
@@ -397,8 +401,8 @@ spec:
                                 port:
                                   type: integer
                                 tls:
-                                  description: TLS is a top level field of the values
-                                    file
+                                  description: ListenerTLS is a top level field of
+                                    the values file
                                   properties:
                                     certs:
                                       type: string
@@ -420,7 +424,8 @@ spec:
                           port:
                             type: integer
                           tls:
-                            description: TLS is a top level field of the values file
+                            description: ListenerTLS is a top level field of the values
+                              file
                             properties:
                               certs:
                                 type: string
