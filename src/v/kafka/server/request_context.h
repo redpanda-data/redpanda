@@ -27,6 +27,7 @@
 #include "pandaproxy/schema_registry/fwd.h"
 #include "seastarx.h"
 #include "security/fwd.h"
+#include "ssx/abort_source.h"
 #include "vlog.h"
 
 #include <seastar/core/future.hh>
@@ -89,6 +90,9 @@ public:
     const request_header& header() const { return _header; }
 
     ss::lw_shared_ptr<connection_context> connection() { return _conn; }
+
+    ssx::sharded_abort_source& abort_source() { return _conn->abort_source(); }
+    bool abort_requested() const { return _conn->abort_requested(); }
 
     protocol::decoder& reader() { return _reader; }
 
