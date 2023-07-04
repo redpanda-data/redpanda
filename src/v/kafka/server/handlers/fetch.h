@@ -109,7 +109,8 @@ struct op_context {
     bool should_stop_fetch() const {
         return !request.debounce_delay() || over_min_bytes()
                || is_empty_request() || contains_preferred_replica
-               || response_error || deadline <= model::timeout_clock::now();
+               || response_error || rctx.abort_requested()
+               || deadline <= model::timeout_clock::now();
     }
 
     bool over_min_bytes() const {
