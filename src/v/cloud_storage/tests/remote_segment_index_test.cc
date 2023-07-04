@@ -70,7 +70,11 @@ BOOST_AUTO_TEST_CASE(remote_segment_index_search_test) {
     }
 
     offset_index tmp_index(
-      segment_base_rp_offset, segment_base_kaf_offset, 0U, 1000);
+      segment_base_rp_offset,
+      segment_base_kaf_offset,
+      0U,
+      1000,
+      model::timestamp{0xdeadbeef});
     model::offset last;
     kafka::offset klast;
     size_t flast;
@@ -86,7 +90,11 @@ BOOST_AUTO_TEST_CASE(remote_segment_index_search_test) {
     }
 
     offset_index index(
-      segment_base_rp_offset, segment_base_kaf_offset, 0U, 1000);
+      segment_base_rp_offset,
+      segment_base_kaf_offset,
+      0U,
+      1000,
+      model::timestamp{0xdeadbeef});
     auto buf = tmp_index.to_iobuf();
     index.from_iobuf(std::move(buf));
 
@@ -144,7 +152,8 @@ SEASTAR_THREAD_TEST_CASE(test_remote_segment_index_builder) {
     }
     auto segment = generate_segment(base_offset, batches);
     auto is = make_iobuf_input_stream(std::move(segment));
-    offset_index ix(base_offset, kbase_offset, 0, 0);
+    offset_index ix(
+      base_offset, kbase_offset, 0, 0, model::timestamp{0xdeadbeef});
     auto parser = make_remote_segment_index_builder(
       test_ntp, std::move(is), ix, model::offset_delta(0), 0);
     auto result = parser->consume().get();
@@ -192,7 +201,8 @@ SEASTAR_THREAD_TEST_CASE(test_remote_segment_build_coarse_index) {
                              expected_conf_records + expected_data_records - 1);
     auto segment = generate_segment(base_offset, batches);
     auto is = make_iobuf_input_stream(std::move(segment));
-    offset_index ix(base_offset, kbase_offset, 0, 0);
+    offset_index ix(
+      base_offset, kbase_offset, 0, 0, model::timestamp{0xdeadbeef});
     segment_record_stats stats{};
     auto parser = make_remote_segment_index_builder(
       test_ntp, std::move(is), ix, model::offset_delta(0), 0, std::ref(stats));
@@ -278,7 +288,8 @@ SEASTAR_THREAD_TEST_CASE(
     }
     auto segment = generate_segment(base_offset, batches);
     auto is = make_iobuf_input_stream(std::move(segment));
-    offset_index ix(base_offset, kbase_offset, 0, 0);
+    offset_index ix(
+      base_offset, kbase_offset, 0, 0, model::timestamp{0xdeadbeef});
     auto parser = make_remote_segment_index_builder(
       test_ntp, std::move(is), ix, model::offset_delta(0), 0);
     auto pclose = ss::defer([&parser] { parser->close().get(); });

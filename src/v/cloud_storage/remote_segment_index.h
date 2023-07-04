@@ -53,7 +53,8 @@ public:
       model::offset initial_rp,
       kafka::offset initial_kaf,
       int64_t initial_file_pos,
-      int64_t file_pos_step);
+      int64_t file_pos_step,
+      model::timestamp initial_time);
 
     /// Add new tuple to the index.
     void add(

@@ -22,7 +22,8 @@ offset_index::offset_index(
   model::offset initial_rp,
   kafka::offset initial_kaf,
   int64_t initial_file_pos,
-  int64_t file_pos_step)
+  int64_t file_pos_step,
+  model::timestamp initial_time)
   : _rp_offsets{}
   , _kaf_offsets{}
   , _file_offsets{}
@@ -31,9 +32,11 @@ offset_index::offset_index(
   , _initial_rp(initial_rp)
   , _initial_kaf(initial_kaf)
   , _initial_file_pos(initial_file_pos)
+  , _initial_time(initial_time)
   , _rp_index(initial_rp)
   , _kaf_index(initial_kaf)
   , _file_index(initial_file_pos, delta_delta_t(file_pos_step))
+  , _time_index(initial_time.value())
   , _min_file_pos_step(file_pos_step) {}
 
 void offset_index::add(

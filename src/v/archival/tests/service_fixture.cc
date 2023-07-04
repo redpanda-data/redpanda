@@ -388,7 +388,8 @@ void segment_matcher<Fixture>::verify_index(
       meta->base_offset,
       meta->base_kafka_offset(),
       0,
-      cloud_storage::remote_segment_sampling_step_bytes};
+      cloud_storage::remote_segment_sampling_step_bytes,
+      meta->base_timestamp};
 
     auto builder = cloud_storage::make_remote_segment_index_builder(
       ntp,
@@ -400,16 +401,22 @@ void segment_matcher<Fixture>::verify_index(
     builder->consume().finally([&builder] { return builder->close(); }).get();
     reader_handle.close().get();
 
-    auto actual = iobuf_to_bytes(ix.to_iobuf());
+    auto ix_buf = ix.to_iobuf();
+    iobuf expected_buf;
+    expected_buf.append((const uint8_t*)(expected.data()), expected.size());
 
     vlog(
       fixt_log.info,
       "expected {} bytes, got {}",
       expected.size(),
-      actual.size());
+      ix_buf.size_bytes());
 
-    auto a = ss::sstring{actual.begin(), actual.end()};
-    BOOST_REQUIRE(a == expected); // NOLINT
+    if (ix_buf != expected_buf) {
+        vlog(fixt_log.info, "ix_buf: {}", ix_buf.hexdump(1024));
+
+        vlog(fixt_log.info, "expected: {}", expected_buf.hexdump(1024));
+    }
+    BOOST_REQUIRE(ix_buf == expected_buf); // NOLINT
 }
 
 template<class Fixture>

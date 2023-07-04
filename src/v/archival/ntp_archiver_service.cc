@@ -1092,7 +1092,11 @@ ss::future<ntp_archiver_upload_result> ntp_archiver::upload_segment(
 
     auto index_path = make_index_path(path);
     auto make_idx_fut = make_segment_index(
-      candidate.starting_offset, _rtclog, index_path, std::move(stream_index));
+      candidate.starting_offset,
+      candidate.base_timestamp,
+      _rtclog,
+      index_path,
+      std::move(stream_index));
 
     auto [upload_res, idx_res] = co_await ss::when_all_succeed(
       std::move(upload_fut), std::move(make_idx_fut));
@@ -1222,6 +1226,7 @@ ss::future<ntp_archiver_upload_result> ntp_archiver::upload_tx(
 ss::future<std::optional<ntp_archiver::make_segment_index_result>>
 ntp_archiver::make_segment_index(
   model::offset base_rp_offset,
+  model::timestamp base_timestamp,
   retry_chain_logger& ctxlog,
   std::string_view index_path,
   ss::input_stream<char> stream) {
@@ -1232,7 +1237,8 @@ ntp_archiver::make_segment_index(
       base_rp_offset,
       base_kafka_offset,
       0,
-      cloud_storage::remote_segment_sampling_step_bytes};
+      cloud_storage::remote_segment_sampling_step_bytes,
+      base_timestamp};
 
     vlog(ctxlog.debug, "creating remote segment index: {}", index_path);
     cloud_storage::segment_record_stats stats{};
