@@ -22,9 +22,13 @@ func migrateTLS(rpConfig *vectorizedv1alpha1.RedpandaConfig, rpTLS *redpandav1al
 
 }
 
-func migrateKafkaAPI(oldKafka vectorizedv1alpha1.KafkaAPI, migratedKafkaApi *redpandav1alpha1.Kafka, tls *redpandav1alpha1.TLS) {
-	if migratedKafkaApi == nil {
+func migrateKafkaAPI(oldKafka vectorizedv1alpha1.KafkaAPI, migratedKafkaAPI *redpandav1alpha1.Kafka, tls *redpandav1alpha1.TLS) {
+	if migratedKafkaAPI == nil {
 		return
+	}
+
+	if tls.Certs == nil {
+		tls.Certs = make(map[string]*redpandav1alpha1.Certificate, 0)
 	}
 
 	// TODO: how do we know which api is internal?
@@ -33,18 +37,21 @@ func migrateKafkaAPI(oldKafka vectorizedv1alpha1.KafkaAPI, migratedKafkaApi *red
 	if oldExternal.Enabled == false && strings.HasPrefix(oldExternal.PreferredAddressType, "Internal") {
 		isExternal = false
 
-		migratedKafkaApi.Port = oldKafka.Port
-		migratedKafkaApi.AuthenticationMethod = &oldKafka.AuthenticationMethod
+		migratedKafkaAPI.Port = oldKafka.Port
+		migratedKafkaAPI.AuthenticationMethod = &oldKafka.AuthenticationMethod
 
-		if migratedKafkaApi.TLS == nil {
-			migratedKafkaApi.TLS = &redpandav1alpha1.ListenerTLS{
+		if migratedKafkaAPI.TLS == nil {
+			migratedKafkaAPI.TLS = &redpandav1alpha1.ListenerTLS{
 				Cert:              pointer.String(fmt.Sprintf(kafkaInternalCertNamesTmpl, 0)),
 				Enabled:           pointer.Bool(oldKafka.TLS.Enabled),
 				RequireClientAuth: oldKafka.TLS.RequireClientAuth,
 			}
 		}
 
-		migratedKafkaApi.TLS.RequireClientAuth = oldKafka.TLS.RequireClientAuth
+		// update internal certificate
+		tls.Certs[fmt.Sprintf(kafkaInternalCertNamesTmpl, 0)] = getCertificateFromKafkaTls(oldKafka.TLS)
+
+		migratedKafkaAPI.TLS.RequireClientAuth = oldKafka.TLS.RequireClientAuth
 	}
 
 	// --- External ---
@@ -53,9 +60,9 @@ func migrateKafkaAPI(oldKafka vectorizedv1alpha1.KafkaAPI, migratedKafkaApi *red
 	}
 
 	// TODO: how do we determine which item is default?
-	count := len(migratedKafkaApi.External)
-	if migratedKafkaApi.External == nil || count == 0 {
-		migratedKafkaApi.External = make(map[string]*redpandav1alpha1.ExternalListener, 0)
+	count := len(migratedKafkaAPI.External)
+	if migratedKafkaAPI.External == nil || count == 0 {
+		migratedKafkaAPI.External = make(map[string]*redpandav1alpha1.ExternalListener, 0)
 	}
 
 	// create new external object to add
@@ -70,9 +77,36 @@ func migrateKafkaAPI(oldKafka vectorizedv1alpha1.KafkaAPI, migratedKafkaApi *red
 			Enabled:           pointer.Bool(oldKafka.TLS.Enabled),
 			RequireClientAuth: oldKafka.TLS.RequireClientAuth,
 		},
+		AdvertisedPorts: make([]int, 0),
 	}
 
-	migratedKafkaApi.External[name] = rpExternal
+	tls.Certs[name] = getCertificateFromKafkaTls(oldKafka.TLS)
+
+	migratedKafkaAPI.External[name] = rpExternal
+}
+
+func getCertificateFromKafkaTls(tls vectorizedv1alpha1.KafkaAPITLS) *redpandav1alpha1.Certificate {
+	var issuerRef *redpandav1alpha1.IssuerRef = nil
+	if tls.IssuerRef != nil {
+		issuerRef = &redpandav1alpha1.IssuerRef{
+			Name: tls.IssuerRef.Name,
+			Kind: tls.IssuerRef.Kind,
+		}
+	}
+
+	var secretRef *redpandav1alpha1.SecretRef = nil
+	if tls.NodeSecretRef != nil {
+		secretRef = &redpandav1alpha1.SecretRef{
+			Name: tls.NodeSecretRef.Name,
+		}
+	}
+
+	return &redpandav1alpha1.Certificate{
+		IssuerRef: issuerRef,
+		SecretRef: secretRef,
+		// TODO: verify that you are required to have a CA always
+		CAEnabled: true,
+	}
 }
 
 func migrateSchemaRegistry(oldSchemaRegistry *vectorizedv1alpha1.SchemaRegistryAPI, tls *redpandav1alpha1.TLS) {

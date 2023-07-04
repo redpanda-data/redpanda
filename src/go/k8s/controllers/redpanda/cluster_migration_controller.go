@@ -3,6 +3,7 @@ package redpanda
 import (
 	"context"
 	"fmt"
+	log "github.com/sirupsen/logrus"
 	"time"
 
 	"github.com/go-logr/logr"
@@ -316,8 +317,13 @@ func (r *ClusterToRedpandaReconciler) migrateRedpandaConfig(cluster *vectorizedv
 	}
 
 	// --- Listeners ---
+	rpSpec.Listeners = rpListeners
 
 	// Migrate Certificates required here:
+	rpTLS := &v1alpha1.TLS{}
+	if rpSpec.TLS != nil {
+		rpTLS = rpSpec.TLS
+	}
 
 	kafkaListener := &v1alpha1.Kafka{}
 	if rpSpec.Listeners.Kafka != nil {
@@ -327,13 +333,18 @@ func (r *ClusterToRedpandaReconciler) migrateRedpandaConfig(cluster *vectorizedv
 	if oldConfig.KafkaAPI != nil && len(oldConfig.KafkaAPI) > 0 {
 		for i, _ := range oldConfig.KafkaAPI {
 			toMigrate := oldConfig.KafkaAPI[i]
-			migrateKafkaAPI(toMigrate, kafkaListener)
+			migrateKafkaAPI(toMigrate, kafkaListener, rpTLS)
 		}
 	}
+
+	log.Info(fmt.Sprintf("kafkaListeners %v", kafkaListener))
+
+	rpListeners.Kafka = kafkaListener
 
 	// -- Putting everything together ---
 	rpSpec.Statefulset = rpStatefulset
 	rpSpec.Logging = rpLog
+	rpSpec.TLS = rpTLS
 	rpSpec.Listeners = rpListeners
 
 	rp.Spec.ClusterSpec = rpSpec
