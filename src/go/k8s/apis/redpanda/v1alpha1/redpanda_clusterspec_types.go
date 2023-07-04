@@ -374,7 +374,7 @@ type Kafka struct {
 	AuthenticationMethod *string                      `json:"authenticationMethod,omitempty"`
 	External             map[string]*ExternalListener `json:"external"`
 	Port                 int                          `json:"port"`
-	TLS                  *ListenerTLS                 `json:"tls"`
+	TLS                  *ListenerTLS                 `json:"tls,omitempty"`
 }
 
 // RPC is a top level field of the values file

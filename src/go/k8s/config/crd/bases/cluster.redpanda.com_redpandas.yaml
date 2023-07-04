@@ -359,7 +359,6 @@ spec:
                         required:
                         - external
                         - port
-                        - tls
                         type: object
                       rpc:
                         description: RPC is a top level field of the values file
