@@ -146,3 +146,40 @@ PERF_TEST(containers, frag_vec_nth_end) {
 PERF_TEST(containers, frag_vec_nth_end_unchecked) {
     return nth_vector_end_unchecked<ELEM_COUNT, frag_vec>();
 }
+
+void iterate_iterator(const auto& v) {
+    auto total = v.front();
+    for (auto& e : v) {
+        total += e;
+    }
+
+    volatile auto sink = total;
+}
+
+PERF_TEST(containers, std_vec_iterate) {
+    return work_on_vec<1000, std_vec>([](auto& v) { iterate_iterator(v); });
+}
+
+PERF_TEST(containers, frag_vec_iterate) {
+    return work_on_vec<1000, frag_vec>([](auto& v) { iterate_iterator(v); });
+}
+
+static constexpr size_t IMI_COUNT = 1024;
+
+void iterate_masked(const auto& v) {
+    auto total = v.front();
+    for (size_t c = 0, i = 0; c < v.size(); c++, i += 107) {
+        total += v[i & (IMI_COUNT - 1)];
+    }
+
+    volatile auto sink = total;
+    sink++;
+}
+
+PERF_TEST(containers, std_vec_iterate_idx) {
+    return work_on_vec<IMI_COUNT, std_vec>([](auto& v) { iterate_masked(v); });
+}
+
+PERF_TEST(containers, frag_vec_iterate_idx) {
+    return work_on_vec<IMI_COUNT, frag_vec>([](auto& v) { iterate_masked(v); });
+}
