@@ -180,6 +180,23 @@ private:
     /// them until cache size <= _cache_size_low_watermark * max_bytes
     ss::future<> trim();
 
+    struct trim_result {
+        uint64_t deleted_size{0};
+        size_t deleted_count{0};
+    };
+
+    /// Ordinary trim: prioritze trimming data chunks, only delete indices etc
+    /// if all their chunks are dropped.
+    ss::future<trim_result> trim_fast(
+      const fragmented_vector<file_list_item>& candidates,
+      uint64_t target_size,
+      size_t target_objects);
+
+    /// Exhaustive trim: walk all files including indices, remove whatever is
+    /// least recently accessed.
+    ss::future<trim_result>
+    trim_exhaustive(uint64_t target_size, size_t target_objects);
+
     /// If trimming may proceed immediately, return nullopt.  Else return
     /// how long the caller should wait before trimming to respect the
     /// rate limit.
