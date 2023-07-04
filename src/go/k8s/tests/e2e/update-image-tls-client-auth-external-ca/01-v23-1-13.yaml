@@ -4,7 +4,7 @@ metadata:
   name: update-img-external-client-ca
 spec:
   image: "vectorized/redpanda"
-  version: "v23.1.9"
+  version: "v23.1.13"
   replicas: 1
   resources:
     requests:

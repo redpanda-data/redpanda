@@ -23,7 +23,7 @@ commands:
     background: true
   - command: "./hack/wait-for-webhook-ready.sh"
 artifactsDir: tests/_e2e_artifacts
-timeout: 360
+timeout: 390
 reportFormat: xml
 parallel: 4
 namespace: redpanda-system

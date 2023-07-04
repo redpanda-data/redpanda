@@ -80,7 +80,7 @@ kind: Cluster
 metadata:
   name: update-img-external-client-ca
 status:
-  version: "v23.1.9"
+  version: "v23.1.13"
   readyReplicas: 1
   replicas: 1
   upgrading: false
