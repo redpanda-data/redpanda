@@ -13,6 +13,16 @@ rp_test(
 )
 
 rp_test(
+  UNIT_TEST
+  BINARY_NAME ssx_multi_thread
+  SOURCES
+    abort_source_test.cc
+  LIBRARIES v::seastar_testing_main
+  ARGS "-- -c 2"
+  LABELS ssx
+)
+
+rp_test(
   BENCHMARK_TEST
   BINARY_NAME ssx_bench
   SOURCES
