@@ -315,6 +315,25 @@ ss::future<> cache::trim() {
       candidates_for_deletion.end(),
       [](auto& a, auto& b) { return a.access_time < b.access_time; });
 
+    // Calculate how much to delete
+    auto size_to_delete
+      = (_current_cache_size + _reserved_cache_size)
+        - std::min(target_size, _current_cache_size + _reserved_cache_size);
+    auto objects_to_delete
+      = _current_cache_objects + _reserved_cache_objects
+        - std::min(
+          target_objects, _current_cache_objects + _reserved_cache_objects);
+
+    vlog(
+      cst_log.debug,
+      "trim: removing {} bytes, {} objects ({}% of cache) to reach target "
+      "{}",
+      size_to_delete,
+      objects_to_delete,
+      _current_cache_size > 0 ? (size_to_delete * 100) / _current_cache_size
+                              : 0,
+      target_size);
+
     // Execute the ordinary trim, prioritize removing
     auto fast_result = co_await trim_fast(
       candidates_for_deletion, target_size, target_objects);
@@ -354,6 +373,28 @@ ss::future<> cache::trim() {
     probe.set_size(_current_cache_size);
     probe.set_num_files(cache_entries_before_trim - fast_result.deleted_count);
 
+    size_to_delete -= std::min(fast_result.deleted_size, size_to_delete);
+    objects_to_delete -= std::min(fast_result.deleted_count, objects_to_delete);
+    if (size_to_delete > 0 || objects_to_delete > 0) {
+        vlog(
+          cst_log.info,
+          "trim: regular trim did not free enough space, executing exhaustive "
+          "trim to free {}/{}...",
+          size_to_delete,
+          objects_to_delete);
+        co_await trim_exhaustive(size_to_delete, objects_to_delete);
+    }
+
+    vlog(
+      cst_log.info,
+      "trim: post-trim cache size {}/{} (reserved {}/{}, pending {}/{})",
+      _current_cache_size,
+      _current_cache_objects,
+      _reserved_cache_size,
+      _reserved_cache_objects,
+      _reservations_pending,
+      _reserved_cache_objects);
+
     _last_clean_up = ss::lowres_clock::now();
 
     // It is up to callers to set this to true if they determine that after
@@ -363,27 +404,9 @@ ss::future<> cache::trim() {
 
 ss::future<cache::trim_result> cache::trim_fast(
   const fragmented_vector<file_list_item>& candidates,
-  uint64_t target_size,
-  size_t target_objects) {
+  uint64_t size_to_delete,
+  size_t objects_to_delete) {
     trim_result result;
-
-    auto size_to_delete
-      = (_current_cache_size + _reserved_cache_size)
-        - std::min(target_size, _current_cache_size + _reserved_cache_size);
-    auto objects_to_delete
-      = _current_cache_objects + _reserved_cache_objects
-        - std::min(
-          target_objects, _current_cache_objects + _reserved_cache_objects);
-
-    vlog(
-      cst_log.debug,
-      "trim: removing {} bytes, {} objects ({}% of cache) to reach target "
-      "{}",
-      size_to_delete,
-      objects_to_delete,
-      _current_cache_size > 0 ? (size_to_delete * 100) / _current_cache_size
-                              : 0,
-      target_size);
 
     size_t candidate_i = 0;
     while (
@@ -492,7 +515,7 @@ ss::future<cache::trim_result> cache::trim_fast(
 
             vlog(
               cst_log.trace,
-              "Reclaimed {} bytes from {}",
+              "trim: reclaimed(fast) {} bytes from {}",
               this_segment_deleted_bytes,
               file_stat.path);
         } catch (const ss::gate_closed_exception&) {
@@ -501,7 +524,7 @@ ss::future<cache::trim_result> cache::trim_fast(
         } catch (const std::exception& e) {
             vlog(
               cst_log.error,
-              "Cache eviction couldn't delete {}: {}.",
+              "trim: couldn't delete {}: {}.",
               file_stat.path,
               e.what());
         }
@@ -512,8 +535,71 @@ ss::future<cache::trim_result> cache::trim_fast(
 }
 
 ss::future<cache::trim_result>
-cache::trim_exhaustive(uint64_t target_size, size_t target_objects) {
+cache::trim_exhaustive(uint64_t size_to_delete, size_t objects_to_delete) {
     trim_result result;
+
+    // Enumerate ALL files in the cache (as opposed to trim_fast that strips out
+    // indices/tx/tmp files)
+    auto [walked_cache_size, _filtered_out, candidates, _]
+      = co_await _walker.walk(_cache_dir.native(), _access_time_tracker);
+
+    // Sort by atime
+    std::sort(candidates.begin(), candidates.end(), [](auto& a, auto& b) {
+        return a.access_time < b.access_time;
+    });
+
+    size_t candidate_i = 0;
+    while (
+      candidate_i < candidates.size()
+      && (result.deleted_size < size_to_delete || result.deleted_count < objects_to_delete)) {
+        auto& file_stat = candidates[candidate_i++];
+
+        // Skip the accesstime file, we should never delete this.
+        if (
+          file_stat.path
+            == (_cache_dir / access_time_tracker_file_name).string()
+          || file_stat.path
+               == (_cache_dir / access_time_tracker_file_name_tmp).string()) {
+            candidate_i++;
+            continue;
+        }
+
+        // Unlike the fast trim, we *do not* skip .tmp files.  This is to handle
+        // the case where we have some abandoned tmp files, and have hit the
+        // exhaustive trim because they are occupying too much space.
+        try {
+            co_await delete_file_and_empty_parents(file_stat.path);
+            _access_time_tracker.remove_timestamp(
+              std::string_view(file_stat.path));
+
+            _current_cache_size -= std::min(
+              file_stat.size, _current_cache_size);
+            _current_cache_objects -= std::min(
+              size_t{1}, _current_cache_objects);
+
+            result.deleted_count += 1;
+            result.deleted_size += file_stat.size;
+
+            vlog(
+              cst_log.trace,
+              "trim: reclaimed(exhaustive) {} bytes from {}",
+              file_stat.size,
+              file_stat.path);
+        } catch (const ss::gate_closed_exception&) {
+            // We are shutting down, stop iterating and propagate
+            throw;
+        } catch (const std::exception& e) {
+            // This is only a warning, because in exhaustive scan we might hit a
+            // .part file and get ENOENT, this is expected behavior
+            // occasionally.
+            vlog(
+              cst_log.warn,
+              "trim: couldn't delete {}: {}.",
+              file_stat.path,
+              e.what());
+        }
+    }
+
     co_return result;
 }
 
@@ -945,9 +1031,15 @@ bool cache::may_exceed_limits(uint64_t bytes, size_t objects) {
     // - puts must not be blocked (i.e. disk is not critically low)
     // - allowing the put must not consume more than 10% of free space
     // - allowing the put must not violate the object count limit
+    // - the put must be blocked by actual cache space unavailable, not just
+    //   other reservations.
+
+    auto would_fit_in_cache = _current_cache_size + bytes <= _max_bytes();
+
     return !_block_puts && _free_space > bytes * 10
            && _current_cache_objects + _reserved_cache_objects + objects
-                < _max_objects();
+                < _max_objects()
+           && !would_fit_in_cache;
 }
 
 ss::future<> cache::do_reserve_space(uint64_t bytes, size_t objects) {
@@ -1002,15 +1094,18 @@ ss::future<> cache::do_reserve_space(uint64_t bytes, size_t objects) {
                 // do the trim.
                 co_await trim_throttled();
                 did_trim = true;
-
-                // Recalculate: things may have changed significantly during
-                // trim and/or trim throttle delay
-                may_exceed = may_exceed_limits(bytes, objects);
             }
 
             if (!may_reserve_space(bytes, objects)) {
                 if (did_trim) {
-                    _last_trim_failed = true;
+                    // Recalculate: things may have changed significantly during
+                    // trim and/or trim throttle delay
+                    may_exceed = may_exceed_limits(bytes, objects);
+                    if (may_exceed) {
+                        // Tip off the next caller that they may proactively
+                        // exceed the cache size without waiting for a trim.
+                        _last_trim_failed = true;
+                    }
                 }
                 // Even after trimming, the reservation cannot be accommodated.
                 // This is unexpected: either something is wrong with the trim,

@@ -189,13 +189,13 @@ private:
     /// if all their chunks are dropped.
     ss::future<trim_result> trim_fast(
       const fragmented_vector<file_list_item>& candidates,
-      uint64_t target_size,
-      size_t target_objects);
+      uint64_t delete_bytes,
+      size_t delete_objects);
 
     /// Exhaustive trim: walk all files including indices, remove whatever is
     /// least recently accessed.
     ss::future<trim_result>
-    trim_exhaustive(uint64_t target_size, size_t target_objects);
+    trim_exhaustive(uint64_t delete_bytes, size_t delete_objects);
 
     /// If trimming may proceed immediately, return nullopt.  Else return
     /// how long the caller should wait before trimming to respect the
