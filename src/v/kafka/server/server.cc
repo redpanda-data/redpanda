@@ -288,64 +288,69 @@ ss::future<> server::apply(ss::lw_shared_ptr<net::connection> conn) {
         .kafka_throughput_controlled_api_keys.bind<std::vector<bool>>(
           &convert_api_names_to_key_bitmap));
 
+    std::exception_ptr eptr;
     try {
+        co_await ctx->start();
         co_await ctx->process();
+        co_return co_await ctx->abort_source().stop();
     } catch (...) {
-        auto eptr = std::current_exception();
-        auto disconnected = net::is_disconnect_exception(eptr);
-        if (authn_method == config::broker_authn_method::sasl) {
-            /*
-             * This block is a 2x2 matrix of:
-             * - sasl enabled or disabled
-             * - message looks like a disconnect or internal error
-             *
-             * Disconnects are logged at DEBUG level, because they are
-             * already recorded at INFO level by the outer RPC layer,
-             * so we don't want to log two INFO logs for each client
-             * disconnect.
-             */
-            if (disconnected) {
-                vlog(
-                  klog.debug,
-                  "Disconnected {} {}:{} ({}, sasl state: {})",
-                  ctx->server().name(),
-                  ctx->client_host(),
-                  ctx->client_port(),
-                  disconnected.value(),
-                  security::sasl_state_to_str(ctx->sasl()->state()));
-
-            } else {
-                vlog(
-                  klog.warn,
-                  "Error {} {}:{}: {} (sasl state: {})",
-                  ctx->server().name(),
-                  ctx->client_host(),
-                  ctx->client_port(),
-                  eptr,
-                  security::sasl_state_to_str(ctx->sasl()->state()));
-            }
-        } else {
-            if (disconnected) {
-                vlog(
-                  klog.debug,
-                  "Disconnected {} {}:{} ({})",
-                  ctx->server().name(),
-                  ctx->client_host(),
-                  ctx->client_port(),
-                  disconnected.value());
-
-            } else {
-                vlog(
-                  klog.warn,
-                  "Error {} {}:{}: {}",
-                  ctx->server().name(),
-                  ctx->client_host(),
-                  ctx->client_port(),
-                  eptr);
-            }
-        }
-        std::rethrow_exception(eptr);
+        eptr = std::current_exception();
     }
+    co_await ctx->abort_source().request_abort_ex(eptr);
+    co_await ctx->abort_source().stop();
+    auto disconnected = net::is_disconnect_exception(eptr);
+    if (authn_method == config::broker_authn_method::sasl) {
+        /*
+         * This block is a 2x2 matrix of:
+         * - sasl enabled or disabled
+         * - message looks like a disconnect or internal error
+         *
+         * Disconnects are logged at DEBUG level, because they are
+         * already recorded at INFO level by the outer RPC layer,
+         * so we don't want to log two INFO logs for each client
+         * disconnect.
+         */
+        if (disconnected) {
+            vlog(
+              klog.debug,
+              "Disconnected {} {}:{} ({}, sasl state: {})",
+              ctx->server().name(),
+              ctx->client_host(),
+              ctx->client_port(),
+              disconnected.value(),
+              security::sasl_state_to_str(ctx->sasl()->state()));
+
+        } else {
+            vlog(
+              klog.warn,
+              "Error {} {}:{}: {} (sasl state: {})",
+              ctx->server().name(),
+              ctx->client_host(),
+              ctx->client_port(),
+              eptr,
+              security::sasl_state_to_str(ctx->sasl()->state()));
+        }
+    } else {
+        if (disconnected) {
+            vlog(
+              klog.debug,
+              "Disconnected {} {}:{} ({})",
+              ctx->server().name(),
+              ctx->client_host(),
+              ctx->client_port(),
+              disconnected.value());
+
+        } else {
+            vlog(
+              klog.warn,
+              "Error {} {}:{}: {}",
+              ctx->server().name(),
+              ctx->client_host(),
+              ctx->client_port(),
+              eptr);
+        }
+    }
+    std::rethrow_exception(eptr);
 }
 
 template<>
