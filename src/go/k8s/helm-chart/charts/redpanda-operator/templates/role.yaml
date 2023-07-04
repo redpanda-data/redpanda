@@ -52,6 +52,12 @@ rules:
       - update
       - watch
   - apiGroups:
+      - apps
+    resources:
+      - statefulsets
+    verbs:
+      - get
+  - apiGroups:
       - batch
     resources:
       - jobs
