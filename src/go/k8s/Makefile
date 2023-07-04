@@ -45,7 +45,7 @@ manager: generate vet
 
 # Run against the configured Kubernetes cluster in ~/.kube/config
 run: generate vet manifests
-	go run ./main.go --namespace=$(NAMESPACE) --enable-migration=$(MIGRATION_ENABLED)
+	go run ./main.go --namespace=$(NAMESPACE)
 
 # Install CRDs into a cluster
 install: manifests kustomize
