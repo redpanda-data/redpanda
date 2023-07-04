@@ -25,18 +25,11 @@ public:
     record_batch_builder& operator=(const record_batch_builder&) = delete;
 
     virtual record_batch_builder&
-    add_raw_kv(std::optional<iobuf>&& key, std::optional<iobuf>&& value) {
-        _records.emplace_back(std::move(key), std::move(value));
-        return *this;
-    }
+    add_raw_kv(std::optional<iobuf>&& key, std::optional<iobuf>&& value);
     virtual record_batch_builder& add_raw_kw(
       std::optional<iobuf>&& key,
       std::optional<iobuf>&& value,
-      std::vector<model::record_header> headers) {
-        _records.emplace_back(
-          std::move(key), std::move(value), std::move(headers));
-        return *this;
-    }
+      std::vector<model::record_header> headers);
     virtual model::record_batch build() &&;
     virtual ~record_batch_builder();
 
@@ -96,7 +89,8 @@ private:
     int16_t _producer_epoch{-1};
     bool _is_control_type{false};
     bool _transactional_type{false};
-    std::vector<serialized_record> _records;
+    iobuf _records;
+    int32_t _offset_delta{0};
     model::compression _compression{model::compression::none};
     std::optional<model::timestamp> _timestamp;
 };
