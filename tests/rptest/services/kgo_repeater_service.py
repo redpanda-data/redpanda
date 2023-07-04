@@ -294,7 +294,7 @@ class KgoRepeaterService(Service):
             return p >= initial_p + msg_count and c >= initial_c + msg_count
 
         # Minimum window for checking for progress: otherwise when the bandwidth
-        # expection is high, we end up failing if we happen to check at a moment
+        # expectation is high, we end up failing if we happen to check at a moment
         # the system isn't at peak throughput (e.g. when it's just warming up)
         timeout_sec = max(timeout_sec, 60)
 
