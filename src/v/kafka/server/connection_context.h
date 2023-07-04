@@ -20,6 +20,7 @@
 #include "security/authorizer.h"
 #include "security/mtls.h"
 #include "security/sasl_authentication.h"
+#include "ssx/abort_source.h"
 #include "ssx/semaphore.h"
 #include "utils/hdr_hist.h"
 #include "utils/log_hist.h"
@@ -127,8 +128,18 @@ public:
     connection_context& operator=(const connection_context&) = delete;
     connection_context& operator=(connection_context&&) = delete;
 
+    ss::future<> start() {
+        co_await _as.start(_server.abort_source());
+    }
+
+    ss::future<> stop() {
+        co_await _as.stop();
+    }
+
     /// The instance of \ref kafka::server on the shard serving the connection
     server& server() { return _server; }
+    ssx::sharded_abort_source& abort_source() { return _as; }
+    bool abort_requested() const { return _as.abort_requested(); }
     const ss::sstring& listener() const { return conn->name(); }
     std::optional<security::sasl_server>& sasl() { return _sasl; }
 
@@ -338,6 +349,7 @@ private:
     sequence_id _next_response;
     sequence_id _seq_idx;
     map_t _responses;
+    ssx::sharded_abort_source _as;
     std::optional<security::sasl_server> _sasl;
     const ss::net::inet_address _client_addr;
     const bool _enable_authorizer;
