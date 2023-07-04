@@ -13,7 +13,7 @@ commands:
     ignoreFailure: true
   - command: "./hack/install-cert-manager.sh tests/_e2e_artifacts_v2"
   - command: "helm dep up helm-chart/charts/redpanda-operator/"
-  - command: "helm install --set scope=Namespace --set image.tag=dev --set image.repository=localhost/redpanda-operator --set installCRDs=true --namespace redpanda --create-namespace redpanda-operator ./helm-chart/charts/redpanda-operator"
+  - command: "helm install --set scope=Namespace --set logLevel=trace --set image.tag=dev --set image.repository=localhost/redpanda-operator --set installCRDs=true --namespace redpanda --create-namespace redpanda-operator ./helm-chart/charts/redpanda-operator"
 artifactsDir: tests/_e2e_artifacts_v2
 timeout: 360
 reportFormat: xml
