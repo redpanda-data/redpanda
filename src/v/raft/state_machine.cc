@@ -79,6 +79,15 @@ state_machine::batch_applicator::operator()(model::record_batch batch) {
           ss::stop_iteration::yes);
     }
 
+    const auto committed_offset = _machine->_raft->committed_offset();
+    vassert(
+      batch.last_offset() <= committed_offset,
+      "Can not apply not committed batches to stm [{}]. Applied batch "
+      "header: {}, raft committed offset: {}",
+      _machine->_raft->ntp(),
+      batch.header(),
+      committed_offset);
+
     auto last_offset = batch.last_offset();
     return _machine->apply(std::move(batch)).then([this, last_offset] {
         _last_applied = last_offset;
@@ -127,10 +136,10 @@ ss::future<> state_machine::apply() {
           }
           return f.then([this] {
               /**
-               * Raft make_reader method allows callers reading up to last_visible
-               * index. In order to make the STMs safe and working with the raft
-               * semantics (i.e. what is applied must be comitted) we have to
-               * limit reading to the committed offset.
+               * Raft make_reader method allows callers reading up to
+               * last_visible index. In order to make the STMs safe and working
+               * with the raft semantics (i.e. what is applied must be comitted)
+               * we have to limit reading to the committed offset.
                */
               storage::log_reader_config config(
                 _next, _raft->committed_offset(), _io_prio);
