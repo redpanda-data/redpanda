@@ -206,7 +206,13 @@ class DeleteRecordsTest(RedpandaTest):
 
         def get_segment_boundaries(node):
             def to_final_indicies(seg):
-                return int(seg.data_file.split('-')[0])
+                if self.data_file is not None:
+                    return int(seg.data_file.split('-')[0])
+                else:
+                    # A segment with no data file indicates that an index or
+                    # compaction index was left behind for a deleted segment, or
+                    # deletion is currently in flight.
+                    return 0
 
             return sorted([to_final_indicies(seg) for seg in node])
 
