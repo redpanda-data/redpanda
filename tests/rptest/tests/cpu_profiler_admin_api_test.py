@@ -13,6 +13,7 @@ from rptest.services.admin import Admin
 from rptest.services.redpanda import LoggingConfig
 from rptest.clients.types import TopicSpec
 from rptest.services.kgo_repeater_service import repeater_traffic
+from rptest.utils.mode_checks import skip_debug_mode
 
 
 class CPUProfilerAdminAPITest(RedpandaTest):
@@ -32,6 +33,7 @@ class CPUProfilerAdminAPITest(RedpandaTest):
         self.admin = Admin(self.redpanda)
 
     @cluster(num_nodes=4)
+    @skip_debug_mode
     def test_get_cpu_profile(self):
         # Provide traffic so there is something to sample.
         with repeater_traffic(context=self.test_context,
