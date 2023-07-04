@@ -880,13 +880,13 @@ class RedpandaServiceBase(Service):
     def add_extra_rp_conf(self, conf):
         self._extra_rp_conf = {**self._extra_rp_conf, **conf}
 
-    def get_node_memory_mb(self):
+    def get_node_memory_mb(self) -> int:
         pass
 
-    def get_node_cpu_count(self):
+    def get_node_cpu_count(self) -> int:
         pass
 
-    def get_node_disk_free(self):
+    def get_node_disk_free(self) -> int:
         pass
 
     def lsof_node(self, node: ClusterNode, filter: Optional[str] = None):
