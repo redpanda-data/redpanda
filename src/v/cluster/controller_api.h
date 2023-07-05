@@ -41,6 +41,7 @@ public:
       ss::sharded<rpc::connection_cache>&,
       ss::sharded<health_monitor_frontend>&,
       ss::sharded<members_table>&,
+      ss::sharded<partition_balancer_backend>&,
       ss::sharded<ss::abort_source>&);
 
     ss::future<result<std::vector<ntp_reconciliation_state>>>
@@ -92,6 +93,9 @@ private:
     ss::future<ss::chunked_fifo<controller_backend::delta_metadata>>
       get_remote_core_deltas(model::ntp, ss::shard_id);
 
+    ss::future<result<ss::chunked_fifo<model::ntp>>>
+      get_decommission_allocation_failures(model::node_id);
+
     model::node_id _self;
     ss::sharded<controller_backend>& _backend;
     ss::sharded<topic_table>& _topics;
@@ -99,6 +103,7 @@ private:
     ss::sharded<rpc::connection_cache>& _connections;
     ss::sharded<health_monitor_frontend>& _health_monitor;
     ss::sharded<members_table>& _members;
+    ss::sharded<partition_balancer_backend>& _partition_balancer;
     ss::sharded<ss::abort_source>& _as;
 };
 } // namespace cluster

@@ -3811,6 +3811,8 @@ struct node_decommission_progress {
     bool finished = false;
     // number of replicas left on decommissioned node
     size_t replicas_left{0};
+    // Replicas on the node with failures during reallocation.
+    ss::chunked_fifo<model::ntp> allocation_failures;
     // list of currently ongoing partition reconfigurations
     std::vector<partition_reconfiguration_state> current_reconfigurations;
 };

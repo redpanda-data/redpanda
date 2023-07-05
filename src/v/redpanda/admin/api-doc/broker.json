@@ -348,6 +348,14 @@
                     "type": "long",
                     "description": "number of replicas left on a node"
                 },
+                "allocation_failures": {
+                    "type" : "array",
+                    "items": {
+                        "type": "string",
+                        "description": "ntp"
+                    },
+                    "description": "a subset of partitions originating from this node with allocation failures. "
+                },
                 "partitions": {
                     "type": "array",
                     "items": {
