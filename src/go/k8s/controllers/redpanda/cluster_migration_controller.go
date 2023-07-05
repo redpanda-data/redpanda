@@ -82,10 +82,8 @@ func (r *ClusterToRedpandaReconciler) Reconcile(ctx context.Context, req ctrl.Re
 		return ctrl.Result{}, nil
 	}
 
-	clusterAnnotations := cluster.GetAnnotations()
-	if managed, ok := clusterAnnotations[ManagingClusterAnnotation]; !ok || managed == "true" {
-		clusterAnnotations[ManagingClusterAnnotation] = "false"
-		cluster.SetAnnotations(clusterAnnotations)
+	if isRedpandaClusterManaged(log, cluster) {
+		cluster.Annotations[ManagingClusterAnnotation] = "false"
 		if err := r.Update(ctx, cluster); err != nil {
 			log.Error(err, "unable to update annotations")
 			return ctrl.Result{}, err
