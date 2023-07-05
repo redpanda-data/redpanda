@@ -139,6 +139,9 @@ private:
     // returns true if the failure can be logged
     bool increment_failure_count();
 
+    void
+    report_decommission_reallocation_failure(model::node_id, const model::ntp&);
+
     partition_balancer_planner& _parent;
     absl::btree_map<model::ntp, size_t> _ntp2size;
     absl::node_hash_map<model::ntp, absl::flat_hash_map<model::node_id, size_t>>
@@ -146,6 +149,10 @@ private:
     absl::node_hash_map<model::ntp, allocated_partition> _reassignments;
     uint64_t _planned_moves_size_bytes = 0;
     size_t _failed_actions_count = 0;
+    // Tracks ntps with allocation failures grouped by decommissioning node.
+    static constexpr size_t max_ntps_with_reallocation_falures = 25;
+    absl::flat_hash_map<model::node_id, absl::btree_set<model::ntp>>
+      _decommission_realloc_failures;
     absl::node_hash_set<model::ntp> _cancellations;
     bool _counts_rebalancing_finished = false;
     ss::abort_source& _as;
@@ -356,6 +363,15 @@ bool partition_balancer_planner::request_context::increment_failure_count() {
         return false;
     } else {
         return false;
+    }
+}
+
+void partition_balancer_planner::request_context::
+  report_decommission_reallocation_failure(
+    model::node_id node, const model::ntp& ntp) {
+    auto& ntps = _decommission_realloc_failures.try_emplace(node).first->second;
+    if (ntps.size() < max_ntps_with_reallocation_falures) {
+        ntps.emplace(ntp);
     }
 }
 
@@ -961,11 +977,14 @@ ss::future<> partition_balancer_planner::get_node_drain_actions(
           [&](reassignable_partition& part) {
               for (const auto& replica : to_move) {
                   if (part.is_original(replica)) {
-                      // ignore result
-                      (void)part.move_replica(
+                      auto result = part.move_replica(
                         replica,
                         ctx.config().hard_max_disk_usage_ratio,
                         reason);
+                      if (!result) {
+                          ctx.report_decommission_reallocation_failure(
+                            replica, part.ntp());
+                      }
                   }
               }
           },
@@ -1435,6 +1454,9 @@ void partition_balancer_planner::request_context::collect_actions(
       std::back_inserter(result.cancellations));
 
     result.counts_rebalancing_finished = _counts_rebalancing_finished;
+
+    result.decommission_realloc_failures = std::move(
+      _decommission_realloc_failures);
 
     if (
       !result.cancellations.empty() || !result.reassignments.empty()

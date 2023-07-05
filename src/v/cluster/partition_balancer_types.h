@@ -185,7 +185,7 @@ struct partition_balancer_overview_request
 struct partition_balancer_overview_reply
   : serde::envelope<
       partition_balancer_overview_reply,
-      serde::version<0>,
+      serde::version<1>,
       serde::compat_version<0>> {
     using rpc_adl_exempt = std::true_type;
 
@@ -193,14 +193,23 @@ struct partition_balancer_overview_reply
     model::timestamp last_tick_time;
     partition_balancer_status status;
     std::optional<partition_balancer_violations> violations;
+    absl::flat_hash_map<model::node_id, absl::btree_set<model::ntp>>
+      decommission_realloc_failures;
 
     auto serde_fields() {
-        return std::tie(error, last_tick_time, status, violations);
+        return std::tie(
+          error,
+          last_tick_time,
+          status,
+          violations,
+          decommission_realloc_failures);
     }
 
     bool operator==(const partition_balancer_overview_reply& other) const {
         return error == other.error && last_tick_time == other.last_tick_time
-               && status == other.status && violations == other.violations;
+               && status == other.status && violations == other.violations
+               && decommission_realloc_failures
+                    == other.decommission_realloc_failures;
     }
 
     friend std::ostream&

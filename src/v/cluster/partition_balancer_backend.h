@@ -133,6 +133,9 @@ private:
           = partition_balancer_status::starting;
         size_t last_tick_in_progress_updates = 0;
 
+        absl::flat_hash_map<model::node_id, absl::btree_set<model::ntp>>
+          last_tick_decommission_realloc_failures;
+
         bool _ondemand_rebalance_requested = false;
     };
     std::optional<per_term_state> _cur_term;

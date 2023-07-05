@@ -73,6 +73,8 @@ public:
         partition_balancer_violations violations;
         std::vector<ntp_reassignment> reassignments;
         std::vector<model::ntp> cancellations;
+        absl::flat_hash_map<model::node_id, absl::btree_set<model::ntp>>
+          decommission_realloc_failures;
         bool counts_rebalancing_finished = false;
         size_t failed_actions_count = 0;
         status status = status::empty;
