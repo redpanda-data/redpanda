@@ -32,6 +32,7 @@
 #include "rpc/types.h"
 #include "ssx/future-util.h"
 #include "storage/api.h"
+#include "storage/kvstore.h"
 #include "vlog.h"
 
 #include <seastar/core/condition-variable.hh>
@@ -1331,11 +1332,29 @@ ss::future<> consensus::do_start() {
             _vote_timeout.rearm(next_election);
         }
 
-        auto last_applied = read_last_applied();
-        if (last_applied > _commit_index) {
-            _commit_index = last_applied;
-            maybe_update_last_visible_index(_commit_index);
-            vlog(_ctxlog.trace, "Recovered commit_index: {}", _commit_index);
+        auto const last_applied = read_last_applied();
+        if (last_applied > lstats.dirty_offset) {
+            vlog(
+              _ctxlog.error,
+              "Inconsistency detected between KVStore last_applied offset({}) "
+              "and log end offset ({}).  If the storage directory was not "
+              "modified intentionally, this is a bug. Raft in initial state: "
+              "{}",
+              last_applied,
+              lstats.dirty_offset,
+              initial_state);
+        }
+
+        if (initial_state) {
+            co_await _storage.kvs().remove(
+              storage::kvstore::key_space::consensus, last_applied_key());
+        } else {
+            if (last_applied > _commit_index) {
+                _commit_index = last_applied;
+                maybe_update_last_visible_index(_commit_index);
+                vlog(
+                  _ctxlog.trace, "Recovered commit_index: {}", _commit_index);
+            }
         }
 
         co_await _event_manager.start();
