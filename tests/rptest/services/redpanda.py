@@ -1072,6 +1072,10 @@ class RedpandaServiceBase(Service):
     def raise_on_storage_usage_inconsistency(self):
         pass
 
+    def raise_on_cloud_storage_inconsistencies(self,
+                                               inconsistencies: list[str]):
+        pass
+
     def validate_controller_log(self):
         pass
 
@@ -3634,6 +3638,99 @@ class RedpandaService(RedpandaServiceBase):
 
         return wait_until_result(check, timeout_sec=30, backoff_sec=1)
 
+    def _get_object_storage_report(
+            self,
+            tolerate_empty_object_storage=False) -> dict[str, str | list[str]]:
+        """
+        Uses rp-storage-tool to get the object storage report.
+        If the cluster is running the tool could see some inconsistencies and report anomalies,
+        so the result needs to be interpreted.
+        Example of a report:
+        {"malformed_manifests":[],
+         "malformed_topic_manifests":[]
+         "missing_segments":[
+           "db0df8df/kafka/test/58_57/0-6-895-1-v1.log.2",
+           "5c34266a/kafka/test/52_57/0-6-895-1-v1.log.2"
+         ],
+         "ntpr_no_manifest":[],
+         "ntr_no_topic_manifest":[],
+         "segments_outside_manifest":[],
+         "unknown_keys":[]}
+        """
+        vars = {}
+        backend = ""
+        if self.si_settings.cloud_storage_type == CloudStorageType.S3:
+            backend = "aws"
+            vars["AWS_REGION"] = self.si_settings.cloud_storage_region
+            if self.si_settings.endpoint_url:
+                vars["AWS_ENDPOINT"] = self.si_settings.endpoint_url
+                if self.si_settings.endpoint_url.startswith("http://"):
+                    vars["AWS_ALLOW_HTTP"] = "true"
+
+            if self.si_settings.cloud_storage_access_key is not None:
+                vars[
+                    "AWS_ACCESS_KEY_ID"] = self.si_settings.cloud_storage_access_key
+                vars[
+                    "AWS_SECRET_ACCESS_KEY"] = self.si_settings.cloud_storage_secret_key
+        elif self.si_settings.cloud_storage_type == CloudStorageType.ABS:
+            backend = "azure"
+            if self.si_settings.cloud_storage_azure_storage_account == SISettings.ABS_AZURITE_ACCOUNT:
+                vars["AZURE_STORAGE_USE_EMULATOR"] = "true"
+                # We do not use the SISettings.endpoint_url, because that includes the account
+                # name in the URL, and the `object_store` crate used in the scanning tool
+                # assumes that when the emulator is used, the account name should always
+                # appear in the path.
+                vars[
+                    "AZURITE_BLOB_STORAGE_URL"] = f"http://{AZURITE_HOSTNAME}:{AZURITE_PORT}"
+            else:
+                vars[
+                    "AZURE_STORAGE_CONNECTION_STRING"] = self.cloud_storage_client.conn_str
+                vars[
+                    "AZURE_STORAGE_ACCOUNT_KEY"] = self.si_settings.cloud_storage_azure_shared_key
+                vars[
+                    "AZURE_STORAGE_ACCOUNT_NAME"] = self.si_settings.cloud_storage_azure_storage_account
+
+        # Pick an arbitrary node to run the scrub from
+        node = self.nodes[0]
+
+        bucket = self.si_settings.cloud_storage_bucket
+        environment = ' '.join(f'{k}=\"{v}\"' for k, v in vars.items())
+        output = node.account.ssh_output(
+            f"{environment} rp-storage-tool --backend {backend} scan-metadata --source {bucket}",
+            combine_stderr=False,
+            allow_fail=True,
+            timeout_sec=30)
+
+        report = {}
+        try:
+            report = json.loads(output)
+        except:
+            self.logger.error(f"Error running bucket scrub: {output}")
+            if not tolerate_empty_object_storage:
+                raise
+        else:
+            self.logger.info(json.dumps(report, indent=2))
+
+        return report
+
+    def raise_on_cloud_storage_inconsistencies(self,
+                                               inconsistencies: list[str]):
+        """
+        like stop_and_scrub_object_storage, use rp-storage-tool to explicitly check for inconsistencies,
+        but without stopping the cluster.
+        """
+        report = self._get_object_storage_report(
+            tolerate_empty_object_storage=True)
+        fatal_anomalies = set(k for k, v in report.items()
+                              if len(v) > 0 and k in inconsistencies)
+        if fatal_anomalies:
+            self.logger.error(
+                f"Found fatal inconsistencies in object storage: {json.dumps(report, indent=2)}"
+            )
+            raise RuntimeError(
+                f"Object storage reports fatal anomalies of type {fatal_anomalies}"
+            )
+
     def stop_and_scrub_object_storage(self):
         # Before stopping, ensure that all tiered storage partitions
         # have uploaded at least a manifest: we do not require that they
@@ -3684,69 +3781,7 @@ class RedpandaService(RedpandaServiceBase):
         # flushing data to remote storage.
         self.stop()
 
-        vars = {}
-        backend = ""
-        if self.si_settings.cloud_storage_type == CloudStorageType.S3:
-            backend = "aws"
-            vars["AWS_REGION"] = self.si_settings.cloud_storage_region
-            if self.si_settings.endpoint_url:
-                vars["AWS_ENDPOINT"] = self.si_settings.endpoint_url
-                if self.si_settings.endpoint_url.startswith("http://"):
-                    vars["AWS_ALLOW_HTTP"] = "true"
-
-            if self.si_settings.cloud_storage_access_key is not None:
-                vars[
-                    "AWS_ACCESS_KEY_ID"] = self.si_settings.cloud_storage_access_key
-                vars[
-                    "AWS_SECRET_ACCESS_KEY"] = self.si_settings.cloud_storage_secret_key
-        elif self.si_settings.cloud_storage_type == CloudStorageType.ABS:
-            backend = "azure"
-            if self.si_settings.cloud_storage_azure_storage_account == SISettings.ABS_AZURITE_ACCOUNT:
-                vars["AZURE_STORAGE_USE_EMULATOR"] = "true"
-                # We do not use the SISettings.endpoint_url, because that includes the account
-                # name in the URL, and the `object_store` crate used in the scanning tool
-                # assumes that when the emulator is used, the account name should always
-                # appear in the path.
-                vars[
-                    "AZURITE_BLOB_STORAGE_URL"] = f"http://{AZURITE_HOSTNAME}:{AZURITE_PORT}"
-            else:
-                vars[
-                    "AZURE_STORAGE_CONNECTION_STRING"] = self.cloud_storage_client.conn_str
-                vars[
-                    "AZURE_STORAGE_ACCOUNT_KEY"] = self.si_settings.cloud_storage_azure_shared_key
-                vars[
-                    "AZURE_STORAGE_ACCOUNT_NAME"] = self.si_settings.cloud_storage_azure_storage_account
-
-        # Pick an arbitrary node to run the scrub from
-        node = self.nodes[0]
-
-        bucket = self.si_settings.cloud_storage_bucket
-        environment = ' '.join(f'{k}=\"{v}\"' for k, v in vars.items())
-        output = node.account.ssh_output(
-            f"{environment} rp-storage-tool --backend {backend} scan-metadata --source {bucket}",
-            combine_stderr=False,
-            allow_fail=True,
-            timeout_sec=30)
-
-        try:
-            report = json.loads(output)
-        except:
-            self.logger.error(f"Error running bucket scrub: {output}")
-            raise
-        else:
-            self.logger.info(json.dumps(report, indent=2))
-
-        # Example of a report:
-        # {"malformed_manifests":[],
-        #  "malformed_topic_manifests":[]
-        #  "missing_segments":[
-        #    "db0df8df/kafka/test/58_57/0-6-895-1-v1.log.2",
-        #    "5c34266a/kafka/test/52_57/0-6-895-1-v1.log.2"
-        #  ],
-        #  "ntpr_no_manifest":[],
-        #  "ntr_no_topic_manifest":[],
-        #  "segments_outside_manifest":[],
-        #  "unknown_keys":[]}
+        report = self._get_object_storage_report()
 
         # It is legal for tiered storage to leak objects under
         # certain circumstances: this will remain the case until
