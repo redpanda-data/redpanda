@@ -6,8 +6,8 @@ import (
 	"time"
 
 	"github.com/fluxcd/pkg/runtime/logger"
-
 	"github.com/go-logr/logr"
+	"github.com/prometheus/client_golang/prometheus"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -19,6 +19,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
+	"sigs.k8s.io/controller-runtime/pkg/metrics"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"sigs.k8s.io/controller-runtime/pkg/source"
@@ -45,7 +46,19 @@ var (
 
 	// RedpandaImageRepository is the deefault image repo for redpanda
 	RedpandaImageRepository = "docker.redpanda.com/redpandadata/redpanda"
+
+	migrationController = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "migration_controller_reconciliation_total",
+			Help: "Number of migration controller reconciliations",
+		}, []string{"namespace", "name"},
+	)
 )
+
+func init() {
+	// Register custom metrics with the global prometheus registry
+	metrics.Registry.MustRegister(migrationController)
+}
 
 // ClusterToRedpandaReconciler reconciles a Cluster object by migrating it to a Redpanda object
 type ClusterToRedpandaReconciler struct {
@@ -62,6 +75,12 @@ type ClusterToRedpandaReconciler struct {
 }
 
 func (r *ClusterToRedpandaReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+	c, err := migrationController.GetMetricWithLabelValues(req.Namespace, req.Name)
+	if err != nil {
+		return ctrl.Result{}, fmt.Errorf("get counter metrics: %w", err)
+	}
+	c.Inc()
+
 	start := time.Now()
 	log := ctrl.LoggerFrom(ctx).WithName("ClusterMigrationReconciler.Reconcile")
 	log.V(logger.DebugLevel).Info("Starting reconcile loop")
@@ -76,6 +95,7 @@ func (r *ClusterToRedpandaReconciler) Reconcile(ctx context.Context, req ctrl.Re
 	// Examine if the object is under deletion
 	// if so, do not continue
 	if !cluster.ObjectMeta.DeletionTimestamp.IsZero() {
+		migrationController.DeleteLabelValues(req.Namespace, req.Name)
 		return ctrl.Result{}, nil
 	}
 
