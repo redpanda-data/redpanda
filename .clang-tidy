@@ -23,5 +23,7 @@ CheckOptions:
     value:           llvm
   - key:             modernize-use-nullptr.NullMacros
     value:           NULL
+  - key:             performance-unnecessary-value-param.AllowedTypes
+    value:           'seastar::lw_shared_ptr;seastar::shared_ptr'
 ...
 
