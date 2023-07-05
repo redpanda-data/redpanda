@@ -34,7 +34,10 @@ server::server(server_configuration c, ss::logger& log)
   , _log(log)
   , _memory{size_t{static_cast<size_t>(cfg.max_service_memory_per_core)}, "net/server-mem"}
   , _probe(std::make_unique<server_probe>())
-  , _public_metrics(ssx::metrics::public_metrics_handle) {}
+  , _public_metrics(ssx::metrics::public_metrics_handle) {
+    vlog(
+      _log.info, "Creating net::server for {} with config {}", cfg.name, cfg);
+}
 
 server::server(ss::sharded<server_configuration>* s, ss::logger& log)
   : server(s->local(), log) {}
@@ -363,7 +366,11 @@ std::ostream& operator<<(std::ostream& o, const server_configuration& c) {
         o << a;
     }
     o << ", max_service_memory_per_core: " << c.max_service_memory_per_core
-      << ", metrics_enabled:" << !c.disable_metrics;
+      << ", metrics_enabled:" << !c.disable_metrics
+      << ", listen_backlog:" << c.listen_backlog
+      << ", tcp_recv_buf:" << c.tcp_recv_buf
+      << ", tcp_send_buf:" << c.tcp_send_buf
+      << ", stream_recv_buf:" << c.stream_recv_buf;
     return o << "}";
 }
 
