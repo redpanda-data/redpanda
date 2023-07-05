@@ -39,9 +39,7 @@ type ChartRef struct {
 // RedpandaSpec defines the desired state of Redpanda
 type RedpandaSpec struct {
 	// ChartRef defines chart details including repository
-	ChartRef ChartRef `json:"chartRef"`
-	// HelmRepositoryName defines the repository to use, defaults to redpanda if not defined
-	HelmRepositoryName string `json:"helmRepositoryName,omitempty"`
+	ChartRef ChartRef `json:"chartRef,omitempty"`
 	// ClusterSpec defines the values to use in the cluster
 	ClusterSpec *RedpandaClusterSpec `json:"clusterSpec,omitempty"`
 }
@@ -126,7 +124,7 @@ func (in *Redpanda) GetHelmReleaseName() string {
 }
 
 func (in *Redpanda) GetHelmRepositoryName() string {
-	helmRepository := in.Spec.HelmRepositoryName
+	helmRepository := in.Spec.ChartRef.HelmRepositoryName
 	if helmRepository == "" {
 		helmRepository = "redpanda-repository"
 	}
