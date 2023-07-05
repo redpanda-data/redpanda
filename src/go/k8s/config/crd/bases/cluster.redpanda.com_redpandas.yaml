@@ -226,7 +226,6 @@ spec:
                               required:
                               - advertisedPorts
                               - port
-                              - tls
                               type: object
                             type: object
                           port:
@@ -247,7 +246,6 @@ spec:
                         required:
                         - external
                         - port
-                        - tls
                         type: object
                       http:
                         description: HTTP is a top level field of the values file`
@@ -281,7 +279,6 @@ spec:
                               required:
                               - advertisedPorts
                               - port
-                              - tls
                               type: object
                             type: object
                           kafkaEndpoint:
@@ -306,7 +303,6 @@ spec:
                         - external
                         - kafkaEndpoint
                         - port
-                        - tls
                         type: object
                       kafka:
                         description: Kafka is a top level field of the values file
@@ -338,7 +334,6 @@ spec:
                               required:
                               - advertisedPorts
                               - port
-                              - tls
                               type: object
                             type: object
                           port:
@@ -380,7 +375,6 @@ spec:
                             type: object
                         required:
                         - port
-                        - tls
                         type: object
                       schemaRegistry:
                         description: SchemaRegistry is a top level field of the values
@@ -415,7 +409,6 @@ spec:
                               required:
                               - advertisedPorts
                               - port
-                              - tls
                               type: object
                             type: object
                           kafkaEndpoint:
@@ -440,7 +433,6 @@ spec:
                         - external
                         - kafkaEndpoint
                         - port
-                        - tls
                         type: object
                     type: object
                   logging:

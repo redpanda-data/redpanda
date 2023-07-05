@@ -348,7 +348,7 @@ type Listeners struct {
 
 type ExternalListener struct {
 	Port            int          `json:"port"`
-	TLS             *ListenerTLS `json:"tls"`
+	TLS             *ListenerTLS `json:"tls,omitempty"`
 	AdvertisedPorts []int        `json:"advertisedPorts"`
 }
 
@@ -356,7 +356,7 @@ type ExternalListener struct {
 type Admin struct {
 	External map[string]*ExternalListener `json:"external"`
 	Port     int                          `json:"port"`
-	TLS      *ListenerTLS                 `json:"tls"`
+	TLS      *ListenerTLS                 `json:"tls,omitempty"`
 }
 
 // HTTP is a top level field of the values file`
@@ -366,7 +366,7 @@ type HTTP struct {
 	External             map[string]*ExternalListener `json:"external"`
 	KafkaEndpoint        string                       `json:"kafkaEndpoint"`
 	Port                 int                          `json:"port"`
-	TLS                  *ListenerTLS                 `json:"tls"`
+	TLS                  *ListenerTLS                 `json:"tls,omitempty"`
 }
 
 // Kafka is a top level field of the values file
@@ -380,7 +380,7 @@ type Kafka struct {
 // RPC is a top level field of the values file
 type RPC struct {
 	Port int          `json:"port"`
-	TLS  *ListenerTLS `json:"tls"`
+	TLS  *ListenerTLS `json:"tls,omitempty"`
 }
 
 // SchemaRegistry is a top level field of the values file
@@ -390,7 +390,7 @@ type SchemaRegistry struct {
 	External             map[string]*ExternalListener `json:"external"`
 	KafkaEndpoint        string                       `json:"kafkaEndpoint"`
 	Port                 int                          `json:"port"`
-	TLS                  *ListenerTLS                 `json:"tls"`
+	TLS                  *ListenerTLS                 `json:"tls,omitempty"`
 }
 
 // Config is a top level field of the values file
