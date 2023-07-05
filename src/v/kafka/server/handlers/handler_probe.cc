@@ -14,6 +14,7 @@
 #include "config/configuration.h"
 #include "kafka/server/handlers/handler_interface.h"
 #include "kafka/server/logger.h"
+#include "prometheus/aggregate_labels.h"
 #include "prometheus/prometheus_sanitize.h"
 
 #include <seastar/core/lowres_clock.hh>
@@ -65,9 +66,7 @@ void handler_probe::setup_metrics(
     }
 
     std::vector<sm::label_instance> labels{sm::label("handler")(handler_name)};
-    auto aggregate_labels = config::shard_local_cfg().aggregate_metrics()
-                              ? std::vector<sm::label>{sm::shard_label}
-                              : std::vector<sm::label>{};
+    auto aggregate_labels = prometheus::aggregate_labels({sm::shard_label});
 
     metrics.add_group(
       prometheus_sanitize::metrics_name("kafka_handler"),

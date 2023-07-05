@@ -44,12 +44,10 @@ public:
         }
 
         auto group_label = sm::label("group");
-        auto topic_label = sm::label("topic");
-        auto partition_label = sm::label("partition");
         std::vector<sm::label_instance> labels{
           group_label(group_id()),
-          topic_label(tp.topic()),
-          partition_label(tp.partition())};
+          ssx::metrics::internal_labels::topic_label(tp.topic()),
+          ssx::metrics::internal_labels::partition_label(tp.partition())};
         _metrics.add_group(
           prometheus_sanitize::metrics_name("kafka:group"),
           {sm::make_gauge(
@@ -68,12 +66,10 @@ public:
         }
 
         auto group_label = ssx::metrics::make_namespaced_label("group");
-        auto topic_label = ssx::metrics::make_namespaced_label("topic");
-        auto partition_label = ssx::metrics::make_namespaced_label("partition");
         std::vector<sm::label_instance> labels{
           group_label(group_id()),
-          topic_label(tp.topic()),
-          partition_label(tp.partition())};
+          ssx::metrics::public_labels::topic_label(tp.topic()),
+          ssx::metrics::public_labels::partition_label(tp.partition())};
 
         _public_metrics.add_group(
           prometheus_sanitize::metrics_name("kafka:consumer:group"),

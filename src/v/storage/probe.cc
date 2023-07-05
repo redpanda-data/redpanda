@@ -10,6 +10,7 @@
 #include "storage/probe.h"
 
 #include "config/configuration.h"
+#include "prometheus/aggregate_labels.h"
 #include "prometheus/prometheus_sanitize.h"
 #include "storage/readers_cache_probe.h"
 #include "storage/segment.h"
@@ -65,18 +66,13 @@ void probe::setup_metrics(const model::ntp& ntp) {
     }
 
     namespace sm = ss::metrics;
-    auto ns_label = sm::label("namespace");
-    auto topic_label = sm::label("topic");
-    auto partition_label = sm::label("partition");
     const std::vector<sm::label_instance> labels = {
-      ns_label(ntp.ns()),
-      topic_label(ntp.tp.topic()),
-      partition_label(ntp.tp.partition()),
+      ssx::metrics::internal_labels::ns_label(ntp.ns()),
+      ssx::metrics::internal_labels::topic_label(ntp.tp.topic()),
+      ssx::metrics::internal_labels::partition_label(ntp.tp.partition()),
     };
-    auto aggregate_labels
-      = config::shard_local_cfg().aggregate_metrics()
-          ? std::vector<sm::label>{sm::shard_label, partition_label}
-          : std::vector<sm::label>{};
+    auto aggregate_labels = prometheus::aggregate_labels(
+      {sm::shard_label, ssx::metrics::internal_labels::partition_label});
 
     _metrics.add_group(
       prometheus_sanitize::metrics_name("storage:log"),
@@ -187,18 +183,13 @@ void readers_cache_probe::setup_metrics(const model::ntp& ntp) {
         return;
     }
     namespace sm = ss::metrics;
-    auto ns_label = sm::label("namespace");
-    auto topic_label = sm::label("topic");
-    auto partition_label = sm::label("partition");
-    auto aggregate_labels
-      = config::shard_local_cfg().aggregate_metrics()
-          ? std::vector<sm::label>{sm::shard_label, partition_label}
-          : std::vector<sm::label>{};
+    auto aggregate_labels = prometheus::aggregate_labels(
+      {sm::shard_label, ssx::metrics::internal_labels::partition_label});
 
     const std::vector<sm::label_instance> labels = {
-      ns_label(ntp.ns()),
-      topic_label(ntp.tp.topic()),
-      partition_label(ntp.tp.partition()),
+      ssx::metrics::internal_labels::ns_label(ntp.ns()),
+      ssx::metrics::internal_labels::topic_label(ntp.tp.topic()),
+      ssx::metrics::internal_labels::partition_label(ntp.tp.partition()),
     };
 
     _metrics.add_group(

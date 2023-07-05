@@ -52,6 +52,32 @@ struct public_metrics_group {
 };
 
 /**
+ * Some frequently used labels are defined here;
+ */
+namespace internal_labels {
+inline const auto ns_label = ss::metrics::label("namespace");
+inline const auto topic_label = ss::metrics::label("topic");
+inline const auto partition_label = ss::metrics::label("partition");
+
+// Used in pandaproxy to label operation type.
+inline const auto operation_label = ss::metrics::label("operation");
+
+// Used in internal rpc to label method type.
+inline const auto method_label = ss::metrics::label("method");
+
+} // namespace internal_labels
+
+namespace public_labels {
+inline const auto ns_label = make_namespaced_label("namespace");
+inline const auto topic_label = make_namespaced_label("topic");
+inline const auto partition_label = make_namespaced_label("partition");
+
+// Used in pandaproxy to label operation type.
+inline const auto operation_label = make_namespaced_label("operation");
+
+} // namespace public_labels
+
+/**
  * @brief A class bundling together public and internal metrics.
  *
  * Intended to replace an ss::metrics::metric_groups instance when

@@ -128,6 +128,16 @@ void rjson_serialize(
     w.EndArray();
 }
 
+template<typename T>
+void rjson_serialize(
+  json::Writer<json::StringBuffer>& w, const std::unordered_set<T>& v) {
+    w.StartArray();
+    for (const auto& e : v) {
+        rjson_serialize(w, e);
+    }
+    w.EndArray();
+}
+
 template<typename T, typename A>
 void rjson_serialize(
   json::Writer<json::StringBuffer>& w, const ss::circular_buffer<T, A>& v) {

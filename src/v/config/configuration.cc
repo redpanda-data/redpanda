@@ -17,10 +17,13 @@
 #include "pandaproxy/schema_registry/schema_id_validation.h"
 #include "security/gssapi_principal_mapper.h"
 #include "security/mtls.h"
+#include "ssx/metrics.h"
 #include "storage/chunk_cache.h"
 #include "storage/segment_appender.h"
 #include "units.h"
 #include "utils/bottomless_token_bucket.h"
+
+#include <seastar/core/metrics.hh>
 
 #include <cstdint>
 #include <optional>
@@ -364,6 +367,20 @@ configuration::configuration()
       "partition labels.",
       {.needs_restart = needs_restart::yes},
       false)
+  , metrics_aggregation_labels(
+      *this,
+      "metrics_aggregation_labels",
+      "When aggregate_metrics is enabled this specifies which labels should be "
+      "aggregated together in the metrics endpoint",
+      {.needs_restart = needs_restart::yes,
+       .example = R"(['shard', 'partition'])",
+       .visibility = visibility::user},
+      {ssx::metrics::public_labels::partition_label.name(),
+       ssx::metrics::internal_labels::partition_label.name(),
+       ss::metrics::shard_label.name(),
+       ssx::metrics::public_labels::operation_label.name(),
+       ssx::metrics::internal_labels::operation_label.name(),
+       ssx::metrics::internal_labels::method_label.name()})
   , group_min_session_timeout_ms(
       *this,
       "group_min_session_timeout_ms",

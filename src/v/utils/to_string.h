@@ -21,6 +21,7 @@
 
 #include <optional>
 #include <ostream>
+#include <unordered_set>
 #include <variant>
 
 namespace std {
@@ -48,6 +49,23 @@ operator<<(std::ostream& o, const ss::lowres_clock::duration& d) {
       "{}",
       std::chrono::duration_cast<std::chrono::milliseconds>(d).count());
     return o;
+}
+
+template<typename Value, typename Hash, typename Pred, typename Allocator>
+std::ostream& operator<<(
+  std::ostream& os, const std::unordered_set<Value, Hash, Pred, Allocator>& v) {
+    bool first = true;
+    os << "{";
+    for (auto&& elem : v) {
+        if (!first) {
+            os << ", ";
+        } else {
+            first = false;
+        }
+        os << elem;
+    }
+    os << "}";
+    return os;
 }
 
 } // namespace std

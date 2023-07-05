@@ -34,8 +34,10 @@ RPC_TEMPLATE = """
 #include "utils/string_switch.h"
 #include "random/fast_prng.h"
 #include "outcome.h"
+#include "prometheus/aggregate_labels.h"
 #include "prometheus/prometheus_sanitize.h"
 #include "seastarx.h"
+#include "ssx/metrics.h"
 
 // extra includes
 {%- for include in includes %}
@@ -82,16 +84,13 @@ public:
     void setup_metrics() final {
         namespace sm = ss::metrics;
         auto service_label = sm::label("service");
-        auto method_label = sm::label("method");
+        auto method_label = ssx::metrics::internal_labels::method_label;
       {%- for method in methods %}
         {
             std::vector<ss::metrics::label_instance> labels{
               service_label("{{service_name}}"),
               method_label("{{method.name}}")};
-                auto aggregate_labels
-                  = config::shard_local_cfg().aggregate_metrics()
-                      ? std::vector<sm::label>{sm::shard_label, method_label}
-                      : std::vector<sm::label>{};
+            auto aggregate_labels = prometheus::aggregate_labels({sm::shard_label, method_label});
             _metrics.add_group(
               prometheus_sanitize::metrics_name("internal_rpc"),
               {sm::make_histogram(

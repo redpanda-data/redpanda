@@ -10,6 +10,7 @@
 #include "config/configuration.h"
 #include "net/client_probe.h"
 #include "net/server_probe.h"
+#include "prometheus/aggregate_labels.h"
 #include "prometheus/prometheus_sanitize.h"
 #include "ssx/metrics.h"
 #include "ssx/sformat.h"
@@ -23,9 +24,8 @@ namespace net {
 void server_probe::setup_metrics(
   ss::metrics::metric_groups& mgs, std::string_view proto) {
     namespace sm = ss::metrics;
-    auto aggregate_labels = config::shard_local_cfg().aggregate_metrics()
-                              ? std::vector<sm::label>{sm::shard_label}
-                              : std::vector<sm::label>{};
+    auto aggregate_labels = prometheus::aggregate_labels({sm::shard_label});
+
     mgs.add_group(
       prometheus_sanitize::metrics_name(ss::sstring{proto}),
       {
