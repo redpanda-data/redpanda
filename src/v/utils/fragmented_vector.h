@@ -131,12 +131,20 @@ public:
 
     const T& operator[](size_t index) const {
         vassert(index < _size, "Index out of range {}/{}", index, _size);
-        auto& frag = _frags.at(index / elems_per_frag);
-        return frag.at(index % elems_per_frag);
+        return unchecked_at(index);
     }
 
     T& operator[](size_t index) {
         return const_cast<T&>(std::as_const(*this)[index]);
+    }
+
+    const T& unchecked_at(size_t index) const {
+        auto& frag = _frags.at(index / elems_per_frag);
+        return frag.at(index % elems_per_frag);
+    }
+
+    T& unchecked_at(size_t index) {
+        return const_cast<T&>(std::as_const(*this).unchecked_at(index));
     }
 
     const T& front() const { return _frags.front().front(); }
@@ -194,18 +202,24 @@ public:
         _capacity = 0;
     }
 
-    template<bool C>
+    template<bool IsConst, bool IsChecked>
     class iter {
     public:
         using iterator_category = std::random_access_iterator_tag;
-        using value_type = typename std::conditional_t<C, const T, T>;
+        using value_type = typename std::conditional_t<IsConst, const T, T>;
         using difference_type = std::ptrdiff_t;
         using pointer = value_type*;
         using reference = value_type&;
 
         iter() = default;
 
-        reference operator*() const { return _vec->operator[](_index); }
+        reference operator*() const {
+            if constexpr (IsChecked) {
+                return _vec->operator[](_index);
+            } else {
+                return _vec->unchecked_at(_index);
+            }
+        }
 
         iter& operator+=(ssize_t n) {
             _index += n;
@@ -251,7 +265,8 @@ public:
 
     private:
         friend class fragmented_vector;
-        using vec_type = std::conditional_t<C, const this_type, this_type>;
+        using vec_type
+          = std::conditional_t<IsConst, const this_type, this_type>;
 
         iter(vec_type* vec, size_t index)
           : _index(index)
@@ -261,8 +276,8 @@ public:
         vec_type* _vec{};
     };
 
-    using const_iterator = iter<true>;
-    using iterator = iter<false>;
+    using const_iterator = iter<true, true>;
+    using iterator = iter<false, true>;
 
     iterator begin() { return iterator(this, 0); }
     iterator end() { return iterator(this, _size); }
@@ -272,6 +287,28 @@ public:
 
     const_iterator cbegin() const { return const_iterator(this, 0); }
     const_iterator cend() const { return const_iterator(this, _size); }
+
+    using const_iterator_unchecked = iter<true, false>;
+    using iterator_unchecked = iter<false, false>;
+
+    iterator_unchecked begin_unchecked() { return iterator_unchecked(this, 0); }
+    iterator_unchecked end_unchecked() {
+        return iterator_unchecked(this, _size);
+    }
+
+    const_iterator_unchecked begin_unchecked() const {
+        return const_iterator_unchecked(this, 0);
+    }
+    const_iterator_unchecked end_unchecked() const {
+        return const_iterator_unchecked(this, _size);
+    }
+
+    const_iterator_unchecked cbegin_unchecked() const {
+        return const_iterator_unchecked(this, 0);
+    }
+    const_iterator_unchecked cend_unchecked() const {
+        return const_iterator_unchecked(this, _size);
+    }
 
     friend test_details::fragmented_vector_accessor;
 

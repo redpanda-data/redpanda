@@ -98,6 +98,11 @@ test_equal(std::vector<T>& truth, fragmented_vector<T, 1024>& other) {
     BOOST_REQUIRE(!truth.empty());
     BOOST_REQUIRE_EQUAL_COLLECTIONS(
       truth.begin(), truth.end(), other.begin(), other.end());
+    BOOST_REQUIRE_EQUAL_COLLECTIONS(
+      truth.begin(),
+      truth.end(),
+      other.begin_unchecked(),
+      other.end_unchecked());
     BOOST_REQUIRE_EQUAL(truth.empty(), other.empty());
     BOOST_REQUIRE_EQUAL(truth.size(), other.size());
     BOOST_REQUIRE_EQUAL(truth.back(), other.back());
@@ -235,41 +240,67 @@ BOOST_AUTO_TEST_CASE(fragmented_vector_fragment_sizing) {
 BOOST_AUTO_TEST_CASE(fragmented_vector_iterator_arithmetic) {
     auto v = make<int64_t, 8>({0, 1, 2, 3});
 
-    auto b = v->begin();
+    auto do_with_be = [&](auto bfn, auto efn) {
+        auto b = bfn(v);
 
-    BOOST_CHECK_EQUAL(*(b + 0), 0);
-    BOOST_CHECK_EQUAL(*(b + 1), 1);
-    BOOST_CHECK_EQUAL(*(b + 2), 2);
-    BOOST_CHECK_EQUAL(*(b + 3), 3);
+        BOOST_CHECK_EQUAL(*(b + 0), 0);
+        BOOST_CHECK_EQUAL(*(b + 1), 1);
+        BOOST_CHECK_EQUAL(*(b + 2), 2);
+        BOOST_CHECK_EQUAL(*(b + 3), 3);
 
-    auto e = v->end();
+        auto e = efn(v);
 
-    BOOST_CHECK((e - 0) == e);
+        BOOST_CHECK((e - 0) == e);
 
-    BOOST_CHECK_EQUAL(*(e - 1), 3);
-    BOOST_CHECK_EQUAL(*(e - 2), 2);
-    BOOST_CHECK_EQUAL(*(e - 3), 1);
-    BOOST_CHECK_EQUAL(*(e - 4), 0);
+        BOOST_CHECK_EQUAL(*(e - 1), 3);
+        BOOST_CHECK_EQUAL(*(e - 2), 2);
+        BOOST_CHECK_EQUAL(*(e - 3), 1);
+        BOOST_CHECK_EQUAL(*(e - 4), 0);
+    };
+
+    // checked mutable iterator
+    do_with_be(
+      [](auto& v) { return v->begin(); }, [](auto& v) { return v->end(); });
+
+    // checked const iterator
+    do_with_be(
+      [](auto& v) { return v->cbegin(); }, [](auto& v) { return v->cend(); });
+
+    // unchecked iterator
+    do_with_be(
+      [](auto& v) { return v->begin_unchecked(); },
+      [](auto& v) { return v->end_unchecked(); });
 }
 
 BOOST_AUTO_TEST_CASE(fragmented_vector_iterator_comparison) {
     auto v = make<int64_t, 8>({0, 1, 2, 3});
 
-    auto b = v->begin();
+    auto do_with_b = [&](auto bfn) {
+        auto b = bfn(v);
 
-    BOOST_CHECK(b == b);
-    BOOST_CHECK(b <= b);
-    BOOST_CHECK(!(b < b));
-    BOOST_CHECK(!(b > b));
-    BOOST_CHECK(!(b != b));
+        BOOST_CHECK(b == b);
+        BOOST_CHECK(b <= b);
+        BOOST_CHECK(!(b < b));
+        BOOST_CHECK(!(b > b));
+        BOOST_CHECK(!(b != b));
 
-    auto b1 = b + 1;
+        auto b1 = b + 1;
 
-    BOOST_CHECK(b <= b1);
-    BOOST_CHECK(b < b1);
-    BOOST_CHECK(b1 >= b);
-    BOOST_CHECK(b1 > b);
-    BOOST_CHECK(b1 >= b);
+        BOOST_CHECK(b <= b1);
+        BOOST_CHECK(b < b1);
+        BOOST_CHECK(b1 >= b);
+        BOOST_CHECK(b1 > b);
+        BOOST_CHECK(b1 >= b);
+    };
+
+    // checked mutable iterator
+    do_with_b([](auto& v) { return v->begin(); });
+
+    // checked const iterator
+    do_with_b([](auto& v) { return v->cbegin(); });
+
+    // unchecked iterator
+    do_with_b([](auto& v) { return v->begin_unchecked(); });
 }
 
 BOOST_AUTO_TEST_CASE(fragmented_vector_empty_after_move) {

@@ -30,6 +30,7 @@
 #include <seastar/core/future.hh>
 #include <seastar/core/loop.hh>
 
+#include <algorithm>
 #include <filesystem>
 #include <optional>
 
@@ -2059,8 +2060,11 @@ void rm_stm::compact_snapshot() {
     for (const auto& it : _log_state.seq_table) {
         lw_tss.push_back(it.second.entry.last_write_timestamp);
     }
-    std::sort(lw_tss.begin(), lw_tss.end());
-    auto pivot = lw_tss[lw_tss.size() - 1 - _seq_table_min_size];
+    auto pivot_idx = static_cast<ssize_t>(lw_tss.size()) - 1
+                     - _seq_table_min_size;
+    auto b = lw_tss.begin_unchecked(), e = lw_tss.end_unchecked();
+    std::nth_element(b, e, b + pivot_idx);
+    auto pivot = lw_tss[pivot_idx];
 
     if (pivot < cutoff_timestamp) {
         cutoff_timestamp = pivot;
