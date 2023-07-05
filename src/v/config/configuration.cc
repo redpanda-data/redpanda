@@ -452,12 +452,7 @@ configuration::configuration()
       "Time to wait for a response from tx_registry",
       {.visibility = visibility::user},
       2000ms)
-  , seq_table_min_size(
-      *this,
-      "seq_table_min_size",
-      "Minimum size of the seq table non affected by compaction",
-      {.visibility = visibility::user},
-      1000)
+  , seq_table_min_size(*this, "seq_table_min_size")
   , tx_timeout_delay_ms(
       *this,
       "tx_timeout_delay_ms",
