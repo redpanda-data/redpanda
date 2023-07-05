@@ -8,7 +8,6 @@
 # by the Apache License, Version 2.0
 
 import time
-import signal
 import concurrent.futures
 from collections import Counter
 
@@ -533,7 +532,9 @@ class ManyPartitionsTest(PreallocNodesTest):
         t1 = time.time()
         wait_until(
             lambda: self._node_leadership_balanced(topic_names, n_partitions),
-            expect_leader_transfer_time, 10)
+            expect_leader_transfer_time,
+            10,
+            err_msg="Waiting for leadership balance after restart")
         self.logger.info(
             f"Leaderships balanced in {time.time() - t1:.2f} seconds")
 
@@ -564,7 +565,8 @@ class ManyPartitionsTest(PreallocNodesTest):
             wait_until(
                 lambda: self._all_elections_done(topic_names, n_partitions),
                 timeout_sec=60,
-                backoff_sec=5)
+                backoff_sec=5,
+                err_msg="Waiting for elections to complete after restart")
             self.logger.info(f"Post-restart elections done.")
 
             inter_restart_check()
@@ -624,7 +626,8 @@ class ManyPartitionsTest(PreallocNodesTest):
                 wait_until(lambda: nodes_report_cloud_segments(
                     self.redpanda, target_cloud_segments),
                            timeout_sec=expect_runtime,
-                           backoff_sec=5)
+                           backoff_sec=5,
+                           err_msg="Waiting for cloud segments upload")
             finally:
                 producer.stop()
                 producer.wait(timeout_sec=expect_runtime)
@@ -733,7 +736,8 @@ class ManyPartitionsTest(PreallocNodesTest):
         # checkpoint with valid ranges.
         wait_until(lambda: fast_producer.produce_status.acked > 0,
                    timeout_sec=30,
-                   backoff_sec=1.0)
+                   backoff_sec=1.0,
+                   err_msg="Waiting for producer checkpoint")
 
         rand_ios = 100
         rand_parallel = 100
@@ -993,7 +997,8 @@ class ManyPartitionsTest(PreallocNodesTest):
         self.logger.info(f"Awaiting elections...")
         wait_until(lambda: self._all_elections_done(topic_names, n_partitions),
                    timeout_sec=60,
-                   backoff_sec=5)
+                   backoff_sec=5,
+                   err_msg="Waiting for initial elections")
         self.logger.info(f"Initial elections done.")
 
         for node_name, file_count in self._get_fd_counts():
