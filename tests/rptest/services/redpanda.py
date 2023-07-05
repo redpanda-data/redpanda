@@ -3701,7 +3701,7 @@ class RedpandaService(RedpandaServiceBase):
          "segments_outside_manifest":[],
          "unknown_keys":[]}
         """
-        vars = {}
+        vars = {"RUST_LOG": "warn"}
         backend = ""
         if self.si_settings.cloud_storage_type == CloudStorageType.S3:
             backend = "aws"
@@ -3739,17 +3739,22 @@ class RedpandaService(RedpandaServiceBase):
 
         bucket = self.si_settings.cloud_storage_bucket
         environment = ' '.join(f'{k}=\"{v}\"' for k, v in vars.items())
-        output = node.account.ssh_output(
+        output, stderr = self._ssh_output_stderr(
+            node,
             f"{environment} rp-storage-tool --backend {backend} scan-metadata --source {bucket}",
-            combine_stderr=False,
             allow_fail=True,
             timeout_sec=30)
+
+        # if stderr contains a WARN logline:
+        if re.search(b'\[\S+ WARN', stderr) is not None:
+            self.logger.warning(f"rp-storage-tool stderr output: {stderr}")
 
         report = {}
         try:
             report = json.loads(output)
         except:
-            self.logger.error(f"Error running bucket scrub: {output}")
+            self.logger.error(
+                f"Error running bucket scrub: {output=} {stderr=}")
             if not tolerate_empty_object_storage:
                 raise
         else:
