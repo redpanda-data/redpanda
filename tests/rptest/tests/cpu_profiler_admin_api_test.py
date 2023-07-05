@@ -33,7 +33,6 @@ class CPUProfilerAdminAPITest(RedpandaTest):
         self.admin = Admin(self.redpanda)
 
     @cluster(num_nodes=4)
-    @skip_debug_mode
     def test_get_cpu_profile(self):
         # Provide traffic so there is something to sample.
         with repeater_traffic(context=self.test_context,
