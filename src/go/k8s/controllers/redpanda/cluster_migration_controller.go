@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/fluxcd/pkg/runtime/logger"
+
 	"github.com/go-logr/logr"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -62,9 +64,9 @@ type ClusterToRedpandaReconciler struct {
 func (r *ClusterToRedpandaReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	start := time.Now()
 	log := ctrl.LoggerFrom(ctx).WithName("ClusterMigrationReconciler.Reconcile")
-	log.Info("Starting reconcile loop")
+	log.V(logger.DebugLevel).Info("Starting reconcile loop")
 
-	defer log.Info("Finished reconcile loop")
+	defer log.V(logger.DebugLevel).Info("Finished reconcile loop")
 
 	cluster := &vectorizedv1alpha1.Cluster{}
 	if err := r.Client.Get(ctx, req.NamespacedName, cluster); err != nil {
