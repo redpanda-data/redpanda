@@ -6,6 +6,7 @@
 # As of the Change Date specified in that file, in accordance with
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
+import dataclasses
 import json
 import random
 import re
@@ -23,7 +24,7 @@ from rptest.clients.types import TopicSpec
 from rptest.services.action_injector import random_process_kills
 from rptest.services.admin import Admin
 from rptest.services.cluster import cluster
-from rptest.services.kgo_verifier_services import KgoVerifierProducer, KgoVerifierRandomConsumer, KgoVerifierSeqConsumer
+from rptest.services.kgo_verifier_services import KgoVerifierConsumerGroupConsumer, KgoVerifierProducer, KgoVerifierRandomConsumer, KgoVerifierSeqConsumer
 from rptest.services.metrics_check import MetricCheck
 from rptest.services.redpanda import SISettings, get_cloud_storage_type, make_redpanda_service, CHAOS_LOG_ALLOW_LIST, MetricsEndpoint
 from rptest.tests.end_to_end import EndToEndTest
@@ -87,6 +88,24 @@ class EndToEndShadowIndexingBase(EndToEndTest):
     def tearDown(self):
         assert self.redpanda and self.redpanda.cloud_storage_client
         self.redpanda.cloud_storage_client.empty_bucket(self.s3_bucket_name)
+
+
+def num_manifests_uploaded(test_self):
+    s = test_self.redpanda.metric_sum(
+        metric_name="redpanda_cloud_storage_spillover_manifest_uploads_total",
+        metrics_endpoint=MetricsEndpoint.PUBLIC_METRICS)
+    test_self.logger.info(
+        f"redpanda_cloud_storage_spillover_manifest_uploads = {s}")
+    return s
+
+
+def num_manifests_downloaded(test_self):
+    s = test_self.redpanda.metric_sum(
+        metric_name="redpanda_cloud_storage_spillover_manifest_downloads_total",
+        metrics_endpoint=MetricsEndpoint.PUBLIC_METRICS)
+    test_self.logger.info(
+        f"redpanda_cloud_storage_spillover_manifest_downloads = {s}")
+    return s
 
 
 class EndToEndShadowIndexingTest(EndToEndShadowIndexingBase):
@@ -207,6 +226,174 @@ class EndToEndShadowIndexingTest(EndToEndShadowIndexingBase):
 
         assert consumer.consumer_status.validator.invalid_reads == 0
         assert consumer.consumer_status.validator.valid_reads >= msg_count_before_reset + msg_count_after_reset
+
+    @cluster(num_nodes=4)
+    @matrix(cloud_storage_type=get_cloud_storage_type())
+    def test_reset_spillover(self, cloud_storage_type):
+        msg_size = 2056
+        self.redpanda.set_cluster_config({
+            "cloud_storage_housekeeping_interval_ms":
+            10000,
+            "cloud_storage_spillover_manifest_max_segments":
+            10
+        })
+        msg_per_segment = self.segment_size // msg_size
+        msg_count_before_reset = 50 * msg_per_segment
+        producer = KgoVerifierProducer(self.test_context,
+                                       self.redpanda,
+                                       self.topic,
+                                       msg_size=msg_size,
+                                       msg_count=msg_count_before_reset)
+
+        producer.start()
+
+        def all_partitions_spilled():
+            return num_manifests_uploaded(self) > 0
+
+        wait_until(all_partitions_spilled, timeout_sec=180, backoff_sec=10)
+
+        producer.wait(timeout_sec=60)
+        producer.free()
+
+        wait_until(lambda: self._all_uploads_done() == True,
+                   timeout_sec=60,
+                   backoff_sec=5)
+
+        s3_snapshot = BucketView(self.redpanda, topics=self.topics)
+        manifest = s3_snapshot.manifest_for_ntp(self.topic, 0)
+        spillover_manifests = s3_snapshot.get_spillover_manifests(
+            NTP("kafka", self.topic, 0))
+        # Enable aggressive local retention to remove local copy of the data
+        self.rpk.alter_topic_config(self.topic, 'retention.local.target.bytes',
+                                    self.segment_size * 5)
+
+        wait_for_local_storage_truncate(self.redpanda,
+                                        self.topic,
+                                        target_bytes=7 * self.segment_size,
+                                        partition_idx=0,
+                                        timeout_sec=30)
+
+        self.rpk.alter_topic_config(self.topic, 'redpanda.remote.write',
+                                    'false')
+        time.sleep(1)
+
+        # collect all spillover manifests
+        all_spillover_manifests = []
+        for manifest_meta, sm in spillover_manifests.items():
+            all_spillover_manifests.append(sm)
+
+        # sorted list containing spillover manifest metadata
+        all_spillover_manifests = sorted(all_spillover_manifests,
+                                         key=lambda sm: sm['start_offset'])
+
+        first_left = None
+        manifest['spillover'] = []
+
+        # drop all the segments from first manifest
+        self.logger.info(
+            f"Dropping first {all_spillover_manifests[0]} spillover manifest")
+
+        for s_manifest in all_spillover_manifests[1:]:
+            # sorted tuples (name, meta)
+            segments = sorted(s_manifest['segments'].items(),
+                              key=lambda e: e[1]['base_offset'])
+            if first_left is None:
+                first_left = segments[0][1]
+
+            total_size = sum([s['size_bytes'] for _, s in segments])
+            first_segment_meta = segments[0][1]
+            last_segment_meta = segments[-1][1]
+            spillover_manifest_meta = {}
+
+            # fill spillover manifest meta with data from first segment
+            spillover_manifest_meta['ntp_revision'] = first_segment_meta[
+                'ntp_revision']
+            spillover_manifest_meta['base_offset'] = first_segment_meta[
+                'base_offset']
+            spillover_manifest_meta['base_timestamp'] = first_segment_meta[
+                'base_timestamp']
+            spillover_manifest_meta['delta_offset'] = first_segment_meta[
+                'delta_offset']
+
+            # override offsets with data from the last segment
+            spillover_manifest_meta['committed_offset'] = last_segment_meta[
+                'committed_offset']
+            spillover_manifest_meta['delta_offset_end'] = last_segment_meta[
+                'delta_offset_end']
+            spillover_manifest_meta['max_timestamp'] = last_segment_meta[
+                'max_timestamp']
+            spillover_manifest_meta['size_bytes'] = total_size
+            manifest['spillover'].append(spillover_manifest_meta)
+
+        # adjust archive fields
+        manifest['archive_start_offset'] = first_left['base_offset']
+        manifest['archive_clean_offset'] = first_left['base_offset']
+        manifest['archive_start_offset_delta'] = first_left['delta_offset']
+        for _, segment in all_spillover_manifests[0]['segments'].items():
+            manifest['archive_size_bytes'] -= segment['size_bytes']
+
+        json_man = json.dumps(manifest)
+        self.logger.info(f"Re-setting manifest to:{json_man}")
+
+        self.redpanda._admin.unsafe_reset_cloud_metadata(
+            self.topic, 0, manifest)
+
+        self.rpk.alter_topic_config(self.topic, 'redpanda.remote.write',
+                                    'true')
+
+        msg_count_after_reset = 10 * msg_per_segment
+        producer = KgoVerifierProducer(self.test_context,
+                                       self.redpanda,
+                                       self.topic,
+                                       msg_size=msg_size,
+                                       msg_count=msg_count_after_reset,
+                                       debug_logs=True,
+                                       trace_logs=True)
+
+        producer.start()
+        producer.wait(timeout_sec=30)
+        producer.free()
+
+        # wait for uploads from first
+        wait_until(lambda: self._all_uploads_done() == True,
+                   timeout_sec=60,
+                   backoff_sec=5)
+        rpk = RpkTool(self.redpanda)
+        partitions = list(rpk.describe_topic(self.topic))
+        assert partitions[0].start_offset == (
+            first_left['base_offset'] - first_left['delta_offset']
+        ), f"Partition start offset must be equal to the reset start offset. \
+            expected: {first_left['base_offset']}, delta: {first_left['delta_offset']} current: {partitions[0].start_offset}"
+
+        # Read the whole partition once, consumer must not be able to consume data from removed spillover manifests
+        consumer = KgoVerifierConsumerGroupConsumer(self.test_context,
+                                                    self.redpanda,
+                                                    self.topic,
+                                                    msg_size=msg_size,
+                                                    debug_logs=True,
+                                                    trace_logs=True,
+                                                    readers=1)
+
+        consumer.start()
+        # messages to read contains all the produced messages minus the one that were dropped
+        messages_to_read = msg_count_before_reset + msg_count_after_reset - partitions[
+            0].start_offset
+        wait_until(
+            lambda: consumer.consumer_status.validator.valid_reads >=
+            messages_to_read,
+            timeout_sec=60,
+            backoff_sec=1,
+            err_msg=
+            f"Error waiting for {messages_to_read} messages to be consumed after reset."
+        )
+        consumer.wait(timeout_sec=60)
+
+        self.logger.info(
+            f"finished with consumer status: {consumer.consumer_status}")
+
+        assert consumer.consumer_status.validator.invalid_reads == 0
+        # validate that messages from the manifests that were removed from the manifest are not readable
+        assert consumer.consumer_status.validator.valid_reads == messages_to_read
 
     @cluster(num_nodes=5)
     @matrix(cloud_storage_type=get_cloud_storage_type())
@@ -902,7 +1089,7 @@ class EndToEndSpilloverTest(RedpandaTest):
         producer.free()
 
         def all_partitions_spilled():
-            return self.num_manifests_uploaded() > 0
+            return num_manifests_uploaded(self) > 0
 
         wait_until(all_partitions_spilled, timeout_sec=180, backoff_sec=10)
 
@@ -959,21 +1146,3 @@ class EndToEndSpilloverTest(RedpandaTest):
 
         self.logger.info("Restart consumer")
         self.consume()
-
-    def num_manifests_uploaded(self):
-        s = self.redpanda.metric_sum(
-            metric_name=
-            "redpanda_cloud_storage_spillover_manifest_uploads_total",
-            metrics_endpoint=MetricsEndpoint.PUBLIC_METRICS)
-        self.logger.info(
-            f"redpanda_cloud_storage_spillover_manifest_uploads = {s}")
-        return s
-
-    def num_manifests_downloaded(self):
-        s = self.redpanda.metric_sum(
-            metric_name=
-            "redpanda_cloud_storage_spillover_manifest_downloads_total",
-            metrics_endpoint=MetricsEndpoint.PUBLIC_METRICS)
-        self.logger.info(
-            f"redpanda_cloud_storage_spillover_manifest_downloads = {s}")
-        return s
