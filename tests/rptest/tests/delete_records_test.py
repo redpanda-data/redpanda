@@ -206,7 +206,7 @@ class DeleteRecordsTest(RedpandaTest):
 
         def get_segment_boundaries(node):
             def to_final_indicies(seg):
-                if self.data_file is not None:
+                if seg.data_file is not None:
                     return int(seg.data_file.split('-')[0])
                 else:
                     # A segment with no data file indicates that an index or
