@@ -3,7 +3,6 @@ package redpanda
 import (
 	"context"
 	"fmt"
-	log "github.com/sirupsen/logrus"
 	"time"
 
 	"github.com/go-logr/logr"
@@ -325,21 +324,30 @@ func (r *ClusterToRedpandaReconciler) migrateRedpandaConfig(cluster *vectorizedv
 		rpTLS = rpSpec.TLS
 	}
 
-	kafkaListener := &v1alpha1.Kafka{}
-	if rpSpec.Listeners.Kafka != nil {
-		kafkaListener = rpSpec.Listeners.Kafka
-	}
-
 	if oldConfig.KafkaAPI != nil && len(oldConfig.KafkaAPI) > 0 {
+		kafkaListener := &v1alpha1.Kafka{}
+		if rpSpec.Listeners.Kafka != nil {
+			kafkaListener = rpSpec.Listeners.Kafka
+		}
+
 		for i, _ := range oldConfig.KafkaAPI {
 			toMigrate := oldConfig.KafkaAPI[i]
 			migrateKafkaAPI(toMigrate, kafkaListener, rpTLS)
 		}
+
+		rpListeners.Kafka = kafkaListener
 	}
 
-	log.Info(fmt.Sprintf("kafkaListeners %v", kafkaListener))
+	if oldConfig.SchemaRegistry != nil {
+		schemaRegistryListener := &v1alpha1.SchemaRegistry{}
+		if rpSpec.Listeners.SchemaRegistry != nil {
+			schemaRegistryListener = rpSpec.Listeners.SchemaRegistry
+		}
 
-	rpListeners.Kafka = kafkaListener
+		migrateSchemaRegistry(oldConfig.SchemaRegistry, schemaRegistryListener, rpTLS)
+
+		rpListeners.SchemaRegistry = schemaRegistryListener
+	}
 
 	// -- Putting everything together ---
 	rpSpec.Statefulset = rpStatefulset
