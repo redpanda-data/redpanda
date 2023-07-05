@@ -959,71 +959,123 @@ bool remote_partition::bounds_timestamp(model::timestamp t) const {
 static constexpr ss::lowres_clock::duration finalize_timeout = 20s;
 static constexpr ss::lowres_clock::duration finalize_backoff = 1s;
 
-ss::future<> remote_partition::finalize(ss::abort_source& as) {
-    vlog(_ctxlog.info, "Finalizing remote storage state...");
+/// When a remote_partition is being destroyed for the last time, we save this
+/// subset of its state into a background fiber that tries to do a final update
+/// of remote metadata.
+struct finalize_data {
+    model::ntp ntp;
+    model::initial_revision_id revision;
+    cloud_storage_clients::bucket_name bucket;
+    cloud_storage_clients::object_key key;
+    cloud_storage_clients::object_tag_formatter tags;
+    iobuf serialized_manifest;
+    model::offset insync_offset;
+};
 
-    // This function is called after ::stop, so we may not use our
-    // main retry_chain_node which is bound to our abort source,
-    // and construct a special one.
+ss::future<> finalize_background(remote& api, finalize_data data) {
+    // This function runs as a detached background fiber, so has no shutdown
+    // logic of its own: our remote operations will be shut down when the
+    // `remote` object is shut down.
+    ss::abort_source& as = api.as();
+
     retry_chain_node local_rtc(as, finalize_timeout, finalize_backoff);
-    const auto& stm_manifest = _manifest_view->stm_manifest();
 
-    partition_manifest remote_manifest(
-      stm_manifest.get_ntp(), stm_manifest.get_revision_id());
+    partition_manifest remote_manifest(data.ntp, data.revision);
 
     auto [manifest_get_result, result_fmt]
-      = co_await _api.try_download_partition_manifest(
-        _bucket, remote_manifest, local_rtc);
+      = co_await api.try_download_partition_manifest(
+        data.bucket, remote_manifest, local_rtc);
 
     if (manifest_get_result != download_result::success) {
         vlog(
-          _ctxlog.error,
-          "Failed to fetch manifest during finalize(). Error: {}",
+          cst_log.error,
+          "[{}] Failed to fetch manifest during finalize(). Error: {}",
+          data.ntp,
           manifest_get_result);
         co_return;
     }
 
-    if (
-      remote_manifest.get_insync_offset() > stm_manifest.get_insync_offset()) {
+    if (remote_manifest.get_insync_offset() > data.insync_offset) {
         // Our local manifest is behind the remote: return a copy of the
         // remote manifest for use in deletion
         vlog(
-          _ctxlog.debug,
-          "Remote manifest has newer state than local ({} > {}), using this "
+          cst_log.debug,
+          "[{}] Remote manifest has newer state than local ({} > {}), using "
+          "this "
           "for deletion during finalize",
+          data.ntp,
           remote_manifest.get_insync_offset(),
-          stm_manifest.get_insync_offset());
-    } else if (
-      remote_manifest.get_insync_offset() < stm_manifest.get_insync_offset()) {
+          data.insync_offset);
+    } else if (remote_manifest.get_insync_offset() < data.insync_offset) {
         // The remote manifest is out of date, upload a fresh one
         vlog(
-          _ctxlog.info,
-          "Remote manifest has older state than local ({} < {}), attempting to "
+          cst_log.info,
+          "[{}] Remote manifest has older state than local ({} < {}), "
+          "attempting to "
           "upload latest manifest",
+          data.ntp,
           remote_manifest.get_insync_offset(),
-          stm_manifest.get_insync_offset());
-        auto manifest_tags
-          = cloud_storage::remote::make_partition_manifest_tags(
-            stm_manifest.get_ntp(), stm_manifest.get_revision_id());
+          data.insync_offset);
 
-        auto manifest_put_result = co_await _api.upload_manifest(
-          _bucket, stm_manifest, local_rtc, manifest_tags);
+        auto manifest_put_result = co_await api.upload_object(
+          data.bucket,
+          data.key,
+          std::move(data.serialized_manifest),
+          local_rtc,
+          data.tags,
+          "manifest");
 
         if (manifest_put_result != upload_result::success) {
             vlog(
-              _ctxlog.warn,
-              "Failed to write manifest during finalize(), remote manifest may "
+              cst_log.warn,
+              "[{}] Failed to write manifest during finalize(), remote "
+              "manifest may "
               "be left in incomplete state after topic deletion. Error: {}",
+              data.ntp,
               manifest_put_result);
         }
     } else {
         // Remote and local state is in sync, no action required.
         vlog(
-          _ctxlog.debug,
-          "Remote manifest is in sync with local state during finalize "
+          cst_log.debug,
+          "[{}] Remote manifest is in sync with local state during finalize "
           "(insync_offset={})",
-          stm_manifest.get_insync_offset());
+          data.ntp,
+          data.insync_offset);
     }
+}
+
+void remote_partition::finalize() {
+    vlog(_ctxlog.info, "Finalizing remote storage state...");
+
+    // We do this in the background, because
+    //  - this function is called by
+    //    the controller, and we don't want to block the controller if our
+    //    remote requests get slow.
+    //  - if remote requests are slow, we don't want to delay releasing
+    //    the memory occupied by remote_partition and cluster::partition.
+    //    This function reduces memory footprint to just the serialized
+    //    manifest that is passed into the background fiber.
+
+    const auto& stm_manifest = _manifest_view->stm_manifest();
+    auto serialized_manifest = stm_manifest.to_iobuf();
+
+    finalize_data data{
+      .ntp = stm_manifest.get_ntp(),
+      .revision = stm_manifest.get_revision_id(),
+      .bucket = _bucket,
+      .key
+      = cloud_storage_clients::object_key{stm_manifest.get_manifest_path()()},
+      .tags = cloud_storage::remote::make_partition_manifest_tags(
+        stm_manifest.get_ntp(), stm_manifest.get_revision_id()),
+      .serialized_manifest = std::move(serialized_manifest),
+      .insync_offset = stm_manifest.get_insync_offset()};
+
+    ssx::spawn_with_gate(
+      _api.gate(),
+      [&api = _api, data = std::move(data)]() mutable -> ss::future<> {
+          return finalize_background(api, std::move(data));
+      });
 }
 
 /**

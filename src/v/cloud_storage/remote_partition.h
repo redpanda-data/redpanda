@@ -131,8 +131,9 @@ public:
     ss::future<std::vector<model::tx_range>>
     aborted_transactions(offset_range offsets);
 
-    /// Flush metadata to object storage, prior to a topic deletion
-    ss::future<> finalize(ss::abort_source&);
+    /// Do background flush metadata to object storage, prior to a topic
+    /// deletion
+    void finalize();
 
     enum class erase_result { erased, failed };
 
