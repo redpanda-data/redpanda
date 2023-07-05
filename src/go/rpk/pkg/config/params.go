@@ -1244,16 +1244,6 @@ func (c *Config) fixSchemePorts() error {
 		}
 		c.redpandaYaml.Rpk.KafkaAPI.Brokers[i] = net.JoinHostPort(host, port)
 	}
-	for i, a := range c.redpandaYaml.Rpk.AdminAPI.Addresses {
-		_, host, port, err := rpknet.SplitSchemeHostPort(a)
-		if err != nil {
-			return fmt.Errorf("unable to fix admin address %v: %w", a, err)
-		}
-		if port == "" {
-			port = strconv.Itoa(DefaultKafkaPort)
-		}
-		c.redpandaYaml.Rpk.AdminAPI.Addresses[i] = net.JoinHostPort(host, port)
-	}
 	p := c.rpkYaml.Profile(c.rpkYaml.CurrentProfile)
 	for i, k := range p.KafkaAPI.Brokers {
 		_, host, port, err := rpknet.SplitSchemeHostPort(k)
@@ -1265,15 +1255,28 @@ func (c *Config) fixSchemePorts() error {
 		}
 		p.KafkaAPI.Brokers[i] = net.JoinHostPort(host, port)
 	}
-	for i, a := range p.AdminAPI.Addresses {
-		_, host, port, err := rpknet.SplitSchemeHostPort(a)
-		if err != nil {
-			return fmt.Errorf("unable to fix admin address %v: %w", a, err)
+	// if it's OIDC we don't need to add the default ports to the admin API URL.
+	if isOIDC := p.KafkaAPI.SASL != nil && p.KafkaAPI.SASL.Mechanism == "oidc_from_cloud_auth"; !isOIDC {
+		for i, a := range c.redpandaYaml.Rpk.AdminAPI.Addresses {
+			_, host, port, err := rpknet.SplitSchemeHostPort(a)
+			if err != nil {
+				return fmt.Errorf("unable to fix admin address %v: %w", a, err)
+			}
+			if port == "" {
+				port = strconv.Itoa(DefaultAdminPort)
+			}
+			c.redpandaYaml.Rpk.AdminAPI.Addresses[i] = net.JoinHostPort(host, port)
 		}
-		if port == "" {
-			port = strconv.Itoa(DefaultAdminPort)
+		for i, a := range p.AdminAPI.Addresses {
+			_, host, port, err := rpknet.SplitSchemeHostPort(a)
+			if err != nil {
+				return fmt.Errorf("unable to fix admin address %v: %w", a, err)
+			}
+			if port == "" {
+				port = strconv.Itoa(DefaultAdminPort)
+			}
+			p.AdminAPI.Addresses[i] = net.JoinHostPort(host, port)
 		}
-		p.AdminAPI.Addresses[i] = net.JoinHostPort(host, port)
 	}
 	return nil
 }

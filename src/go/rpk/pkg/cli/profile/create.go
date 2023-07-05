@@ -91,7 +91,7 @@ rpk always switches to the newly created profile.
 
 			ctx, cancel := context.WithTimeout(cmd.Context(), 10*time.Second)
 			defer cancel()
-			cloudMTLS, cloudSASL, err := createCtx(ctx, fs, y, cfg, fromRedpanda, fromProfile, fromCloud, set, name, description)
+			cloudMTLS, cloudSASL, err := createProfile(ctx, fs, y, cfg, fromRedpanda, fromProfile, fromCloud, set, name, description)
 			out.MaybeDieErr(err)
 
 			fmt.Printf("Created and switched to new profile %q.\n", name)
@@ -117,7 +117,7 @@ rpk always switches to the newly created profile.
 }
 
 // This returns whether the command should print cloud mTLS or SASL messages.
-func createCtx(
+func createProfile(
 	ctx context.Context,
 	fs afero.Fs,
 	y *config.RpkYaml,
@@ -226,7 +226,13 @@ func createCloudProfile(ctx context.Context, y *config.RpkYaml, cfg *config.Conf
 
 	c, err := cl.Cluster(ctx, clusterID)
 	if err != nil {
-		return p, false, false, fmt.Errorf("unable to request details for cluster %q: %w", clusterID, err)
+		// If we fail from a normal cluster, we try from virtual clusters.
+		vc, err := cl.VirtualCluster(ctx, clusterID)
+		if err != nil {
+			return p, false, false, fmt.Errorf("unable to request details for cluster %q: %w", clusterID, err)
+		}
+		p, cloudMTLS, cloudSASL = FromVirtualCluster(vc)
+		return p, cloudMTLS, cloudSASL, nil
 	}
 	if len(c.Status.Listeners.Kafka.Default.URLs) == 0 {
 		return p, false, false, fmt.Errorf("cluster %q has no kafka listeners", clusterID)
@@ -263,6 +269,10 @@ func FromVirtualCluster(vc cloudapi.VirtualCluster) (p config.RpkProfile, isMTLS
 			SASL: &config.SASL{
 				Mechanism: admin.CloudOIDC,
 			},
+		},
+		AdminAPI: config.RpkAdminAPI{
+			Addresses: []string{vc.Status.Listeners.ConsoleURL}, // We use the ConsoleURL as the admin API in virtual clusters.
+			TLS:       new(config.TLS),
 		},
 	}
 	return p, false, false // we do not need to print any required message; we generate the config in full

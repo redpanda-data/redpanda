@@ -62,6 +62,7 @@ type AdminAPI struct {
 	oneshotClient       *http.Client
 	basicCredentials    BasicCredentials
 	tlsConfig           *tls.Config
+	bearerToken         string // Only used in requests to virtual cluster's admin API.
 }
 
 func getBasicCredentials(p *config.RpkProfile) BasicCredentials {
@@ -70,6 +71,20 @@ func getBasicCredentials(p *config.RpkProfile) BasicCredentials {
 	} else {
 		return BasicCredentials{Username: "", Password: ""}
 	}
+}
+
+// getBearerToken gets the bearer token from the current auth _only_ if the
+// SASL mechanism is Cloud OIDC.
+func getBearerToken(p *config.RpkProfile) (string, error) {
+	var bearerToken string
+	if p.KafkaAPI.SASL != nil && p.KafkaAPI.SASL.Mechanism == CloudOIDC {
+		auth := p.CurrentAuth()
+		if auth == nil || auth.AuthToken == "" {
+			return "", errors.New("please login again using 'rpk cloud login'") // Most likely the user changed the current auth or logged out from cloud.
+		}
+		bearerToken = auth.AuthToken
+	}
+	return bearerToken, nil
 }
 
 // NewClient returns an AdminAPI client that talks to each of the addresses in
@@ -81,7 +96,11 @@ func NewClient(fs afero.Fs, p *config.RpkProfile) (*AdminAPI, error) {
 	if err != nil {
 		return nil, fmt.Errorf("unable to create admin api tls config: %v", err)
 	}
-	return NewAdminAPI(addrs, getBasicCredentials(p), tc)
+	bt, err := getBearerToken(p)
+	if err != nil {
+		return nil, err
+	}
+	return NewAdminAPI(addrs, getBasicCredentials(p), tc, bt)
 }
 
 // NewHostClient returns an AdminAPI that talks to the given host, which is
@@ -110,19 +129,18 @@ func NewHostClient(
 	} else {
 		addrs = []string{host} // trust input is hostname (validate below)
 	}
-
-	return NewAdminAPI(addrs, getBasicCredentials(p), tc)
+	bt, err := getBearerToken(p)
+	if err != nil {
+		return nil, err
+	}
+	return NewAdminAPI(addrs, getBasicCredentials(p), tc, bt)
 }
 
-func NewAdminAPI(
-	urls []string, creds BasicCredentials, tlsConfig *tls.Config,
-) (*AdminAPI, error) {
-	return newAdminAPI(urls, creds, tlsConfig)
+func NewAdminAPI(urls []string, creds BasicCredentials, tlsConfig *tls.Config, bearerToken string) (*AdminAPI, error) {
+	return newAdminAPI(urls, creds, tlsConfig, bearerToken)
 }
 
-func newAdminAPI(
-	urls []string, creds BasicCredentials, tlsConfig *tls.Config,
-) (*AdminAPI, error) {
+func newAdminAPI(urls []string, creds BasicCredentials, tlsConfig *tls.Config, bearerToken string) (*AdminAPI, error) {
 	// General purpose backoff, includes 503s and other errors
 	const retryBackoffMs = 1500
 
@@ -164,6 +182,7 @@ func newAdminAPI(
 		basicCredentials: creds,
 		tlsConfig:        tlsConfig,
 		brokerIDToUrls:   make(map[int]string),
+		bearerToken:      bearerToken,
 	}
 	if tlsConfig != nil {
 		a.retryClient.Transport = &http.Transport{TLSClientConfig: tlsConfig}
@@ -185,14 +204,19 @@ func newAdminAPI(
 		default:
 			return nil, fmt.Errorf("unrecognized scheme %q in host %q", scheme, u)
 		}
-		a.urls[i] = fmt.Sprintf("%s://%s", scheme, host)
+		if a.bearerToken != "" {
+			// If it has a bearer token, it's a Console URL and need to append
+			// the /api path.
+			a.urls[i] = fmt.Sprintf("%s://%s/api", scheme, host)
+		} else {
+			a.urls[i] = fmt.Sprintf("%s://%s", scheme, host)
+		}
 	}
-
 	return a, nil
 }
 
 func (a *AdminAPI) newAdminForSingleHost(host string) (*AdminAPI, error) {
-	return newAdminAPI([]string{host}, a.basicCredentials, a.tlsConfig)
+	return newAdminAPI([]string{host}, a.basicCredentials, a.tlsConfig, a.bearerToken)
 }
 
 func (a *AdminAPI) urlsWithPath(path string) []string {
@@ -243,7 +267,7 @@ func (a *AdminAPI) GetLeaderID(ctx context.Context) (*int, error) {
 }
 
 // sendAny sends a single request to one of the client's urls and unmarshals
-// the body into into, which is expected to be a pointer to a struct.
+// the body into 'into', which is expected to be a pointer to a struct.
 //
 // On errors, this function will keep trying all the nodes we know about until
 // one of them succeeds, or we run out of nodes.  In the latter case, we will return
@@ -536,6 +560,10 @@ func (a *AdminAPI) sendAndReceive(
 
 	if a.basicCredentials.Username != "" {
 		req.SetBasicAuth(a.basicCredentials.Username, a.basicCredentials.Password)
+	}
+
+	if a.bearerToken != "" {
+		req.Header.Set("Authorization", "Bearer "+a.bearerToken)
 	}
 
 	const applicationJSON = "application/json"
