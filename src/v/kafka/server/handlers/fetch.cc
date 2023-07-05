@@ -475,7 +475,7 @@ static void fill_fetch_responses(
         resp_it->set(std::move(resp));
         std::chrono::microseconds fetch_latency
           = std::chrono::duration_cast<std::chrono::microseconds>(
-            start_time - op_context::latency_clock::now());
+            op_context::latency_clock::now() - start_time);
         octx.rctx.probe().record_fetch_latency(fetch_latency);
     }
 }
