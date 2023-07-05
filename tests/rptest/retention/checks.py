@@ -80,12 +80,10 @@ class Checks(object):
             for item in iterator:
                 # Show in summary only if result is false or show is true
                 if item["show"] or not item['result']:
-                    _str += _fmt.format(
-                        item['expr'],
-                        item['result'],
-                        item['expr_text']
-                    )
+                    _str += _fmt.format(item['expr'], item['result'],
+                                        item['expr_text'])
             return _str
+
         if not self.summary:
             _summary = "\n# Summary:"
 
@@ -107,19 +105,15 @@ class Checks(object):
     def assert_results(self):
         _r = filter(lambda x: not x['result'], self.checks)
         if len(list(_r)) > 0:
-            raise AssertionError(
-                "At least one check failed.\n" + self.get_summary_as_text()
-            )
+            raise AssertionError("At least one check failed.\n" +
+                                 self.get_summary_as_text())
         else:
             return True
 
 
 def main():
     # this is very simple unittest for Checks :)
-    args = {
-        "a": 5,
-        "b": 6
-    }
+    args = {"a": 5, "b": 6}
     expr = "a+b*2"
     parsed_expr = parse(expr)
     NamesToConstants(args).visit(parsed_expr)

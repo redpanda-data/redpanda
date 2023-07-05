@@ -3555,7 +3555,7 @@ class RedpandaService(RedpandaServiceBase):
 
         return wait_until_result(check, timeout_sec=30, backoff_sec=1)
 
-    def stop_and_scrub_object_storage(self):
+    def stop_and_scrub_object_storage(self, run_timeout=60):
         # Before stopping, ensure that all tiered storage partitions
         # have uploaded at least a manifest: we do not require that they
         # have uploaded until the head of their log, just that they have
@@ -3647,7 +3647,7 @@ class RedpandaService(RedpandaServiceBase):
             f"{environment} rp-storage-tool --backend {backend} scan-metadata --source {bucket}",
             combine_stderr=False,
             allow_fail=True,
-            timeout_sec=30)
+            timeout_sec=run_timeout)
 
         try:
             report = json.loads(output)

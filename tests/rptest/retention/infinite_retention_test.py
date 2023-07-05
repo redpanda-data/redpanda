@@ -36,19 +36,23 @@ class InfiniteRetentionTest(PreallocNodesTest):
 
     # Calculate other
     # bitrates
-    produce_byte_rate = 30 * 1024 * 1024
+    produce_byte_rate = 100 * 1024 * 1024
+    # fill the BW as much as possible
+    parallel_consumers = 10
     limit_consume_rate = False
-    consume_byte_rate = 30 * 1024 * 1024
+    consume_rate_mb = 50
+    consume_byte_rate = consume_rate_mb * 1024 * 1024
 
     # Huge message size to generate a lot of data
     msg_size = 16384
 
     # Run an hour
-    total_iterations = 6
-    target_runtime = 600
+    total_iterations = 8
+    target_runtime = 3600
     target_stress_start = 30
     target_stress_delay = 30
     write_bytes = produce_byte_rate * target_runtime
+    read_bytes = consume_byte_rate * parallel_consumers
     msg_count = write_bytes // msg_size
 
     # The producer should achieve throughput within this factor
@@ -60,25 +64,20 @@ class InfiniteRetentionTest(PreallocNodesTest):
 
     # consumers should receive at least half of the messages
     # aligned with bitrate
-    recreare_consumer = False
-    consumer_tolerance = 1
-    expected_consumer_duration = (write_bytes //
-                                  consume_byte_rate) * consumer_tolerance
-    consumer_message_count = msg_count // (
-        produce_byte_rate // consume_byte_rate) // consumer_tolerance
-    parallel_consumers = 2
+    consumer_tolerance = 2
+    max_consumer_duration = target_runtime * consumer_tolerance * total_iterations
+    # If we limit consume rate, then set message count
+    # consumer_message_count = msg_count // (
+    #     produce_byte_rate // consume_byte_rate) // consumer_tolerance
+    consumer_message_count = None
 
     # Additional configs
     retention_ms = -1
     cloud_storage_spillover_manifest_max_segments = 10
 
-    topics = (
-        TopicSpec(
-            retention_ms=retention_ms,
-            replication_factor=3,
-            partition_count=partition_count
-        ),
-    )
+    topics = (TopicSpec(retention_ms=retention_ms,
+                        replication_factor=3,
+                        partition_count=partition_count), )
 
     def __init__(self, test_context, *args, **kwargs):
         self.si_settings = SISettings(
@@ -106,12 +105,10 @@ class InfiniteRetentionTest(PreallocNodesTest):
             'cloud_storage_spillover_manifest_max_segments':
             self.cloud_storage_spillover_manifest_max_segments,
         }
-        super().__init__(test_context, node_prealloc_count=1, *args, **kwargs)
+        super().__init__(test_context, node_prealloc_count=2, *args, **kwargs)
 
     def setUp(self):
         # ensure nodes are clean before the test
-        for node in self.redpanda.nodes:
-            self.redpanda.clean_node(node)
         super().setUp()
 
     def tearDown(self):
@@ -120,11 +117,40 @@ class InfiniteRetentionTest(PreallocNodesTest):
             self.redpanda.stop_node(node)
         # free nodes
         self.free_nodes()
-
+        self.free_preallocated_nodes()
         super().tearDown()
 
     @staticmethod
-    def _calculate_statistic(topics, rpk, bucket):
+    def _get_timings_table(timings):
+        _max_index = max([max(list(v.keys())) for v in timings.values()])
+
+        # Log pretty table of timings
+        # first row
+        lines = []
+        line = " " * 18
+        for idx in range(1, _max_index + 1):
+            line += f"{idx:^14}"
+        lines.append(line)
+        # process rows
+        for k, v in timings.items():
+            line = f"{k:<18}"
+            for idx in range(1, _max_index + 1):
+                # In case timing not saved, use 'n/a'
+                _val = v[idx] if idx in v else "n/a"
+                # print use special fmt for seconds
+                if k in [
+                        "high_watermark", "manifest_uploads",
+                        "segment_uploads", "consumed_messages"
+                ] or isinstance(_val, str):
+                    _t = f"{_val}"
+                else:
+                    _t = f"{_val:.2f}s"
+                line += f"{_t:^14}"
+            lines.append(line)
+        return "\n".join(lines)
+
+    @staticmethod
+    def _calculate_statistic(topics, rpk, redpanda):
         # TODO: Update for multiple topics used
         _stats = {
             # Sum of all watermarks from every partition
@@ -145,6 +171,8 @@ class InfiniteRetentionTest(PreallocNodesTest):
                 _m = max(list)
                 _stats[key] = _m if _stats[key] < _m else _stats[key]
 
+        bucket = BucketView(redpanda)
+
         for topic in topics:
             _lts_list = []
             _uts_list = []
@@ -153,32 +181,45 @@ class InfiniteRetentionTest(PreallocNodesTest):
                 _stats["hwm"] += partition.high_watermark
 
                 # get next max timestamp fot current partition
-                _lts_list += [int(rpk.consume(
-                    topic=topic.name,
-                    n=1,
-                    partition=partition.id,
-                    offset=partition.high_watermark-1,
-                    format="%d\\n"
-                ).strip())]
+                _lts_list += [
+                    int(
+                        rpk.consume(topic=topic.name,
+                                    n=1,
+                                    partition=partition.id,
+                                    offset=partition.high_watermark - 1,
+                                    format="%d\\n").strip())
+                ]
 
                 # get manifest from bucket
                 _m = bucket.manifest_for_ntp(topic.name, partition.id)
 
                 # get latest timestamp from segments in current partiton
                 if _m['segments']:
-                    _uts_list += [max(s['max_timestamp']
-                                  for s in _m['segments'].values())]
+                    _uts_list += [
+                        max(s['max_timestamp']
+                            for s in _m['segments'].values())
+                    ]
                     _top_segment = list(_m['segments'].values())[-1]
                     _stats['partition_deltas'].append([
-                        _m['partition'],
-                        _top_segment['delta_offset_end'],
-                        len(_m['segments']),
-                        _top_segment['segment_term']
+                        _m['partition'], _top_segment['delta_offset_end'],
+                        len(_m['segments']), _top_segment['segment_term']
                     ])
 
             # get latest timestamps
             _check_and_set_max(_lts_list, "local_ts")
             _check_and_set_max(_uts_list, "uploaded_ts")
+
+        # Uploads
+        # Check manifest upload metrics:
+        #  - we should not have uploaded the manifest more times
+        #    then there were manifest upload intervals in the runtime.
+        _stats["manifest_uploads"] = redpanda.metric_sum(
+            metric_name=
+            "redpanda_cloud_storage_partition_manifest_uploads_total",
+            metrics_endpoint=MetricsEndpoint.PUBLIC_METRICS)
+        _stats["segment_uploads"] = redpanda.metric_sum(
+            metric_name="redpanda_cloud_storage_segment_uploads_total",
+            metrics_endpoint=MetricsEndpoint.PUBLIC_METRICS)
 
         return _stats
 
@@ -187,55 +228,49 @@ class InfiniteRetentionTest(PreallocNodesTest):
             self.topic, tolerant=True)).high_watermark is not None
 
     def _create_producer(self):
-        return KgoVerifierProducer(
-            self.test_context,
-            self.redpanda,
-            self.topic,
-            msg_size=self.msg_size,
-            msg_count=self.msg_count,
-            batch_max_bytes=512 * 1024,
-            rate_limit_bps=self.produce_byte_rate,
-            custom_node=self.preallocated_nodes,
-            debug_logs=True)
+        return KgoVerifierProducer(self.test_context,
+                                   self.redpanda,
+                                   self.topic,
+                                   msg_size=self.msg_size,
+                                   msg_count=self.msg_count,
+                                   batch_max_bytes=512 * 1024,
+                                   rate_limit_bps=self.produce_byte_rate,
+                                   custom_node=[self.preallocated_nodes[0]],
+                                   debug_logs=True)
 
     def _create_rnd_consumer(self):
-        return KgoVerifierRandomConsumer(
-                self.test_context,
-                self.redpanda,
-                self.topic,
-                self.msg_size,
-                self.consumer_message_count,
-                self.parallel_consumers,
-                nodes=self.preallocated_nodes,
-                debug_logs=True,
-                trace_logs=True)
+        return KgoVerifierRandomConsumer(self.test_context,
+                                         self.redpanda,
+                                         self.topic,
+                                         self.msg_size,
+                                         self.consumer_message_count,
+                                         self.parallel_consumers,
+                                         nodes=[self.preallocated_nodes[1]],
+                                         debug_logs=True,
+                                         trace_logs=True)
 
     def _create_seq_consumer(self):
-        return KgoVerifierSeqConsumer(
-            self.test_context,
-            self.redpanda,
-            self.topic,
-            msg_size=self.msg_size,
-            max_msgs=self.consumer_message_count,
-            max_throughput_mb=self.consume_byte_rate,
-            nodes=self.preallocated_nodes,
-            debug_logs=True,
-            trace_logs=True)
+        return KgoVerifierSeqConsumer(self.test_context,
+                                      self.redpanda,
+                                      self.topic,
+                                      msg_size=self.msg_size,
+                                      max_msgs=self.consumer_message_count,
+                                      max_throughput_mb=self.consume_rate_mb *
+                                      self.parallel_consumers,
+                                      nodes=[self.preallocated_nodes[1]],
+                                      debug_logs=True,
+                                      trace_logs=True)
 
     def _create_group_consumer(self):
-        if self.recreare_consumer:
-            _count = self.consumer_message_count
-        else:
-            _count = None
-
         return KgoVerifierConsumerGroupConsumer(
             self.test_context,
             self.redpanda,
             self.topic,
             msg_size=self.msg_size,
-            max_msgs=_count,
+            max_msgs=self.consumer_message_count,
             readers=self.parallel_consumers,
-            nodes=self.preallocated_nodes,
+            max_throughput_mb=self.consume_rate_mb * self.parallel_consumers,
+            nodes=[self.preallocated_nodes[1]],
             debug_logs=True,
             trace_logs=True)
 
@@ -259,7 +294,8 @@ class InfiniteRetentionTest(PreallocNodesTest):
 
         producer = self._create_producer()
 
-        self.logger.info(f"Producing {self.msg_count} msgs ({self.write_bytes} bytes)")
+        self.logger.info(
+            f"Producing {self.msg_count} msgs ({self.write_bytes} bytes)")
         produce_start = time.time()
         producer.start()
 
@@ -271,11 +307,9 @@ class InfiniteRetentionTest(PreallocNodesTest):
                 # real world: simulates cluster update
                 for node in self.redpanda.nodes:
                     time.sleep(self.target_stress_delay)
-                    self.redpanda.restart_nodes(
-                        [node],
-                        start_timeout=180,
-                        stop_timeout=180
-                    )
+                    self.redpanda.restart_nodes([node],
+                                                start_timeout=180,
+                                                stop_timeout=180)
 
             # Wait for the cluster to recover after final restart,
             # so that subsequent post-stress success conditions
@@ -315,16 +349,13 @@ class InfiniteRetentionTest(PreallocNodesTest):
             "actual_byte_rate < produce_byte_rate * producer_tolerance",
         )
 
-        bucket = BucketView(self.redpanda)
-
         # Read the highest timestamp in local storage
         self.logger.info("Calculating stats for all partitions")
-        stats = self._calculate_statistic(self.topics, rpk, bucket)
+        stats = self._calculate_statistic(self.topics, rpk, self.redpanda)
 
         # Ensure that all messages made it to topic
         self.logger.info(
-            f"calculated hwm: {stats['hwm']}, message count: {self.msg_count}"
-        )
+            f"calculated hwm: {stats['hwm']}, message count: {self.msg_count}")
         chk.add_arg("sum_high_watermarks", stats['hwm'])
         chk.add_arg("msg_count", self.msg_count)
         chk.add_check(
@@ -339,17 +370,15 @@ class InfiniteRetentionTest(PreallocNodesTest):
         # time range of the most recently produced data
         if not stats['uploaded_ts']:
             self.logger.warn(
-                "No uploaded segments sound! Check test parameters!"
-            )
+                "No uploaded segments found! Check test parameters!")
         else:
             self.logger.info(f"Max uploaded ts = {stats['uploaded_ts']}")
 
             lag_seconds = (stats['local_ts'] - stats['uploaded_ts']) / 1000.0
             config_interval = (self.manifest_upload_interval +
                                (self.segment_size / actual_byte_rate))
-            self.logger.info(
-                f"Upload lag: {lag_seconds}s, "
-                f"Upload interval: {config_interval}")
+            self.logger.info(f"Upload lag: {lag_seconds}s, "
+                             f"Upload interval: {config_interval}")
             chk.add_arg("lag_seconds", lag_seconds)
             chk.add_arg("config_interval", config_interval)
             chk.add_check(
@@ -368,19 +397,11 @@ class InfiniteRetentionTest(PreallocNodesTest):
         # Check manifest upload metrics:
         #  - we should not have uploaded the manifest more times
         #    then there were manifest upload intervals in the runtime.
-        manifest_uploads = self.redpanda.metric_sum(
-            metric_name=
-            "redpanda_cloud_storage_partition_manifest_uploads_total",
-            metrics_endpoint=MetricsEndpoint.PUBLIC_METRICS)
-        segment_uploads = self.redpanda.metric_sum(
-            metric_name="redpanda_cloud_storage_segment_uploads_total",
-            metrics_endpoint=MetricsEndpoint.PUBLIC_METRICS)
         self.logger.info(
-            f"Upload counts: {manifest_uploads} manifests, "
-            f"{segment_uploads} segments"
-        )
-        chk.add_arg("manifest_uploads", manifest_uploads)
-        chk.add_arg("segment_uploads", segment_uploads)
+            f"Upload counts: {stats['manifest_uploads']} manifests, "
+            f"{stats['segment_uploads']} segments")
+        chk.add_arg("manifest_uploads", stats['manifest_uploads'])
+        chk.add_arg("segment_uploads", stats['segment_uploads'])
         chk.add_check(
             "Non-zero manifest uploads",
             "manifest_uploads > 0",
@@ -421,9 +442,8 @@ class InfiniteRetentionTest(PreallocNodesTest):
         # - 1 extra upload after the final interval_sec driven uploads
         expect_manifest_uploads = (
             (int(produce_duration) // self.manifest_upload_interval) + 3)
-        self.logger.info(
-            f"Manifests uploads: {manifest_uploads}, "
-            f"Expected not less than: {expect_manifest_uploads}")
+        self.logger.info(f"Manifests uploads: {stats['manifest_uploads']}, "
+                         f"Expected not less than: {expect_manifest_uploads}")
         chk.add_arg("produce_duration", int(produce_duration))
         chk.add_arg("manifest_upload_interval", self.manifest_upload_interval)
         chk.add_check(
@@ -452,17 +472,25 @@ class InfiniteRetentionTest(PreallocNodesTest):
             f"segment_size = {self.segment_size}\n"
             f"chunk_size = {self.chunk_size}\n"
             f"partition_count = {self.partition_count}\n"
-            f"msg_count = {self.msg_count}\n"
             f"msg_size = {self.msg_size}\n"
-            f"consumer_msg_count = {self.consumer_message_count}\n"
+            f"msg_count = {self.msg_count}\n"
             f"producer_rate = {self.produce_byte_rate/1024/1024}MB\n"
             f"producer_tolerance = {self.producer_tolerance}\n"
-            f"consumer_rate = {self.produce_byte_rate/1024/1024}MB\n"
+            f"consumer_rate = {self.consume_rate_mb}MB * {self.parallel_consumers}\n"
             f"consumer_tolerance = {self.consumer_tolerance}\n"
+            f"parallel consumers = {self.parallel_consumers}\n"
             f"runtime = {self.target_runtime}s\n"
             f"mb_written = {self.write_bytes/1024/1024}MB\n"
-            f"expected_producer_duration = {self.expected_producer_duration}s\n"
-            f"expected_consumer_duration = {self.expected_consumer_duration}s\n")
+            f"max_producer_duration = {self.expected_producer_duration}s\n"
+            f"max_consumer_duration = {self.max_consumer_duration}s * {iteration_count}\n"
+        )
+
+        # Create consumer with no limit
+        consumer = self._create_group_consumer()
+        # SeqConsumer (broken)
+        # consumer = self._create_seq_consumer()
+        # # Start it in a clean node
+        # consumer.start()
 
         # Producer
         producer = self._create_producer()
@@ -470,23 +498,23 @@ class InfiniteRetentionTest(PreallocNodesTest):
         # Prepare to save timigs
         iteration_timings = {
             "high_watermark": {},
+            "produce": {},
             "manifest_uploads": {},
             "segment_uploads": {},
-            "produce": {},
+            "consumed_messages": {},
             "consume": {},
             "checks": {},
+            "scrub": {},
             "restart": {}
         }
 
         # Announce scrub_exception
         scrub_exception = None
-
-        # Start consumer with no limit
-        consumer = self._create_group_consumer()
-        consumer.start(clean=False)
-
-        while iteration <= iteration_count:
-            self.logger.info(f"Starting iteration {iteration}, runtime {self.target_runtime}s")
+        # Do iterations of producing messages
+        while iteration < iteration_count:
+            self.logger.info(
+                f"Starting iteration {iteration}, runtime {self.target_runtime}s"
+            )
             # Consumer are to be created each time and released at the end
 
             # rand_consumer = self._create_rnd_consumer()
@@ -498,38 +526,22 @@ class InfiniteRetentionTest(PreallocNodesTest):
             producer.start()
             producer.wait_for_acks(1000, timeout_sec=60, backoff_sec=10)
             producer.wait_for_offset_map()
-            # Consumers
-            consume_start = time.time()
-            # consumer.start(clean=False)
-
             # wait and stop
             producer.wait(timeout_sec=self.expected_producer_duration)
-            if self.recreare_consumer:
-                consumer.wait(timeout_sec=self.expected_consumer_duration)
-
-            self.logger.info("Stopping services and checking storage")
-            producer.stop()
-
-            # Timing
             produce_duration = time.time() - produce_start
-            iteration_timings["produce"][iteration] = produce_duration
+            producer.stop()
+            # Timing
+            self.logger.info("Done producing messages")
 
-            # consumer.stop()
-            # consumer.free()
-
-            # Consume timing
-            consume_duration = time.time() - consume_start
-            iteration_timings["consume"][iteration] = consume_duration
             # Dict for all checks
             chk = Checks()
-
             checks_start = time.time()
-
             # Calculate actual bitrate
             actual_byte_rate = (self.write_bytes / produce_duration)
             mbps = int(actual_byte_rate / (1024 * 1024))
             self.logger.info(
-                f"Produced {self.write_bytes} in {produce_duration}s, {mbps}MiB/s")
+                f"Produced {self.write_bytes} in {produce_duration}s, {mbps}MiB/s"
+            )
             # Add it for checking
             chk.add_arg(f"i{iteration}_actual_byte_rate", actual_byte_rate)
             chk.add_arg("produce_byte_rate", self.produce_byte_rate)
@@ -540,13 +552,9 @@ class InfiniteRetentionTest(PreallocNodesTest):
             )
 
             # Conduct message checks
-            bucket = BucketView(self.redpanda)
-
             self.logger.info(
-                f"Iteration {iteration}; calculating stats for all partitions"
-            )
-            stats = self._calculate_statistic(self.topics, rpk, bucket)
-
+                f"Iteration {iteration}; calculating stats for all partitions")
+            stats = self._calculate_statistic(self.topics, rpk, self.redpanda)
             # Ensure that all messages made it to topic
             self.logger.info(
                 f"calculated hwm: {stats['hwm']}, message count: {self.msg_count}"
@@ -557,23 +565,13 @@ class InfiniteRetentionTest(PreallocNodesTest):
                 "Ensure that all messages made it to topic",
                 f"i{iteration}_sum_high_watermarks >= i{iteration}_msg_count",
             )
-
-            # Check manifest upload metrics:
-            #  - we should not have uploaded the manifest more times
-            #    then there were manifest upload intervals in the runtime.
-            manifest_uploads = self.redpanda.metric_sum(
-                metric_name=
-                "redpanda_cloud_storage_partition_manifest_uploads_total",
-                metrics_endpoint=MetricsEndpoint.PUBLIC_METRICS)
-            segment_uploads = self.redpanda.metric_sum(
-                metric_name="redpanda_cloud_storage_segment_uploads_total",
-                metrics_endpoint=MetricsEndpoint.PUBLIC_METRICS)
             self.logger.info(
-                f"Upload counts: {manifest_uploads} manifests, "
-                f"{segment_uploads} segments"
-            )
-            chk.add_arg(f"i{iteration}_manifest_uploads", manifest_uploads)
-            chk.add_arg(f"i{iteration}_segment_uploads", segment_uploads)
+                f"Upload counts: {stats['manifest_uploads']} manifests, "
+                f"{stats['segment_uploads']} segments")
+            chk.add_arg(f"i{iteration}_manifest_uploads",
+                        stats['manifest_uploads'])
+            chk.add_arg(f"i{iteration}_segment_uploads",
+                        stats['segment_uploads'])
             chk.add_check(
                 f"Iteration {iteration}; non-zero manifest uploads",
                 f"i{iteration}_manifest_uploads > 0",
@@ -582,29 +580,32 @@ class InfiniteRetentionTest(PreallocNodesTest):
                 f"Iteration {iteration}; non-zero segment uploads",
                 f"i{iteration}_segment_uploads > 0",
             )
-
+            checks_duration = time.time() - checks_start
+            scrub_start = time.time()
             # Run 'rp_storage_tool' to check for anomalies
             try:
-                self.redpanda.stop_and_scrub_object_storage()
+                self.redpanda.stop_and_scrub_object_storage(run_timeout=1800)
             except RuntimeError as exc:
                 scrub_exception = exc
+            scrub_duration = time.time() - scrub_start
 
-            checks_duration = time.time() - checks_start
+            iteration_timings["produce"][iteration] = produce_duration
             iteration_timings["high_watermark"][iteration] = stats['hwm']
-            iteration_timings["manifest_uploads"][iteration] = manifest_uploads
-            iteration_timings["segment_uploads"][iteration] = segment_uploads
+            iteration_timings["manifest_uploads"][iteration] = stats[
+                'manifest_uploads']
+            iteration_timings["segment_uploads"][iteration] = stats[
+                'segment_uploads']
             iteration_timings["checks"][iteration] = checks_duration
+            iteration_timings["scrub"][iteration] = scrub_duration
 
-            restart_start = time.time()
             # restart nodes
+            restart_start = time.time()
             # random_node = random.choice(self.redpanda.nodes)
             # self.redpanda.remove_local_data(random_node)
             for node in self.redpanda.nodes:
-                self.redpanda.restart_nodes(
-                    [node],
-                    start_timeout=180,
-                    stop_timeout=180
-                )
+                self.redpanda.restart_nodes([node],
+                                            start_timeout=180,
+                                            stop_timeout=180)
 
             self.redpanda._admin.await_stable_leader("controller",
                                                      partition=0,
@@ -621,48 +622,53 @@ class InfiniteRetentionTest(PreallocNodesTest):
 
             self.logger.info(f"Iteration {iteration} completed. Timings are:")
             for k, v in iteration_timings.items():
-                self.logger.info(f"{k}={v[iteration]}")
+                if iteration in v:
+                    _val = v[iteration]
+                else:
+                    _val = "n/a"
+                self.logger.info(f"{k} = {_val}")
             if scrub_exception:
                 break
             else:
                 # do next iteration
                 iteration += 1
 
-        # Cleanup consumer
+        # Last iteration is consuming messages only
+        # Consumer
+        consume_start = time.time()
+        consumer.start()
+        # make sure that we get at least one status read befor polling
+        time.sleep(5)
+        # Consumer will work with all messages in a queue
+        # So, it will take huge amount of time
+        consumer.wait(timeout_sec=self.max_consumer_duration)
+        consume_duration = time.time() - consume_start
         consumer.stop()
+        self.logger.info("Done consuming messages")
+
+        # Timings
+        stats = self._calculate_statistic(self.topics, rpk, self.redpanda)
+        iteration_timings["high_watermark"][iteration] = stats['hwm']
+        iteration_timings["manifest_uploads"][iteration] = stats[
+            'manifest_uploads']
+        iteration_timings["segment_uploads"][iteration] = stats[
+            'segment_uploads']
+        iteration_timings["consume"][iteration] = consume_duration
+        iteration_timings["consumed_messages"][iteration] = \
+            consumer.consumer_status.validator.total_reads
+
+        # Cleanup consumer
+        # consumer.stop()
         consumer.free()
 
         chk.conduct_checks()
-        # Log pretty table of timings
-        # first row
-        lines = []
-        line = " "*18
-        for idx in range(1, iteration_count+1):
-            line += f"{idx:^14}"
-        lines.append(line)
-        # process rows
-        for k, v in iteration_timings.items():
-            line = f"{k:<18}"
-            for idx in range(1, iteration_count+1):
-                if k in [
-                    "high_watermark",
-                    "manifest_uploads",
-                    "segment_uploads"
-                ]:
-                    _t = f"{v[idx]}"
-                else:
-                    _t = f"{v[idx]:.2f}s"
-                line += f"{_t:^14}"
-            lines.append(line)
-
+        # Format timigs as table
+        timigs = self._get_timings_table(iteration_timings)
         # Assert checks and print summary
         if chk.assert_results():
             self.logger.info(chk.get_summary_as_text())
         if scrub_exception:
-            self.logger.info(
-                "rp-storage-tool detected fatal anomaly "
-                f"in iteration {iteration}")
+            self.logger.info("rp-storage-tool detected fatal anomaly "
+                             f"in iteration {iteration}")
             raise scrub_exception
-        else:
-            self.logger.info(
-                "All iterations done. Timings:\n{}".format("\n".join(lines)))
+        self.logger.info(f"All iterations done. Timings:\n{timigs}")
