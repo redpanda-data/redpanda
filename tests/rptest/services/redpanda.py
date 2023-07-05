@@ -2324,12 +2324,20 @@ class RedpandaService(RedpandaServiceBase):
             remove=[k for k, v in values.items() if v is None])
         new_version = patch_result['config_version']
 
-        self._wait_for_config_version(new_version, expect_restart, timeout)
+        self._wait_for_config_version(new_version,
+                                      expect_restart,
+                                      timeout,
+                                      admin_client=admin_client)
 
-    def _wait_for_config_version(self, config_version, expect_restart: bool,
-                                 timeout: int):
+    def _wait_for_config_version(self,
+                                 config_version,
+                                 expect_restart: bool,
+                                 timeout: int,
+                                 admin_client: Optional[Admin] = None):
+        admin_client = admin_client or self._admin
+
         def is_ready():
-            status = self._admin.get_cluster_config_status(
+            status = admin_client.get_cluster_config_status(
                 node=self.controller())
             ready = all(
                 [n['config_version'] >= config_version for n in status])
@@ -2352,9 +2360,9 @@ class RedpandaService(RedpandaServiceBase):
             # Having disrupted the cluster with a restart, wait for the controller
             # to be available again before returning to the caller, so that they do
             # not have to worry about subsequent configuration actions failing.
-            self._admin.await_stable_leader(namespace="redpanda",
-                                            topic="controller",
-                                            partition=0)
+            admin_client.await_stable_leader(namespace="redpanda",
+                                             topic="controller",
+                                             partition=0)
         elif any_restarts:
             raise AssertionError(
                 "Nodes report restart required but expect_restart is False")
