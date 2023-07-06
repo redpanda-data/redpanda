@@ -362,6 +362,8 @@ private:
         /// Controls checks for reuploads, compacted segments have this
         /// check disabled
         allow_reuploads_t allow_reuploads;
+        /// Archiver term of the upload
+        model::term_id archiver_term;
     };
 
     /// Start upload without waiting for it to complete
@@ -392,6 +394,7 @@ private:
 
     /// Upload individual segment to S3.
     ///
+    /// \param archiver_term is a current term of the archiver
     /// \param candidate is an upload candidate
     /// \param segment_read_locks protects the underlying segment(s) from being
     ///        deleted while the upload is in flight.
@@ -402,6 +405,7 @@ private:
     ///        to nullopt own retry chain of the ntp_archiver is used
     /// \return error code
     ss::future<cloud_storage::upload_result> upload_segment(
+      model::term_id archiver_term,
       upload_candidate candidate,
       std::vector<ss::rwlock::holder> segment_read_locks,
       std::optional<std::reference_wrapper<retry_chain_node>> source_rtc
@@ -411,6 +415,7 @@ private:
     /// upload fails the exception can be handled in the caller and the stream
     /// can be closed.
     ss::future<cloud_storage::upload_result> do_upload_segment(
+      const remote_segment_path& path,
       upload_candidate candidate,
       ss::input_stream<char> stream,
       std::optional<std::reference_wrapper<retry_chain_node>> source_rtc
@@ -426,6 +431,7 @@ private:
     ///
     /// \return error code
     ss::future<cloud_storage::upload_result> upload_tx(
+      model::term_id archiver_term,
       upload_candidate candidate,
       fragmented_vector<model::tx_range> tx,
       std::optional<std::reference_wrapper<retry_chain_node>> source_rtc
@@ -503,8 +509,8 @@ private:
     bool stm_retention_needed() const;
 
     /// Helper to generate a segment path from candidate
-    remote_segment_path
-    segment_path_for_candidate(const upload_candidate& candidate);
+    remote_segment_path segment_path_for_candidate(
+      model::term_id archiver_term, const upload_candidate& candidate);
 
     /// Method to use with lazy_abort_source
     std::optional<ss::sstring> upload_should_abort();
