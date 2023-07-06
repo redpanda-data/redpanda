@@ -77,7 +77,8 @@ want to disable automatic profile creation and selection, use --no-profile.
 		Run: func(cmd *cobra.Command, _ []string) {
 			cfg, err := p.Load(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)
-			y := cfg.VirtualRpkYaml()
+			y, err := cfg.ActualRpkYamlOrEmpty()
+			out.MaybeDie(err, "unable to load config: %v", err)
 			auth := y.Auth(y.CurrentCloudAuth)
 			cc := auth.HasClientCredentials()
 
