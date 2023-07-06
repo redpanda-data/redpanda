@@ -190,6 +190,13 @@ remote_probe::remote_probe(
                 "fetch/timequery requests reading from tiered storage)"))
               .aggregate({sm::shard_label}),
             sm::make_counter(
+              "partition_readers_delayed",
+              [&ms] { return ms.get_partition_readers_delayed(); },
+              sm::description("How many read requests were delayed due to "
+                              "hitting reader limit.  This indicates cluster "
+                              "is saturated with tiered storage reads."))
+              .aggregate({sm::shard_label}),
+            sm::make_counter(
               "segment_index_uploads_total",
               [this] { return get_index_uploads(); },
               sm::description("Successful segment index uploads"),
