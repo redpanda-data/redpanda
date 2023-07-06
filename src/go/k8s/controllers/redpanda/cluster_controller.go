@@ -154,17 +154,13 @@ func (r *ClusterReconciler) Reconcile(
 	ar.clusterService()
 	ar.headlessService()
 	ar.ingress()
+	ar.nodeportService()
 
 	if vectorizedCluster.Status.CurrentReplicas >= 1 {
 		if err := r.setPodNodeIDAnnotation(ctx, &vectorizedCluster, log, ar); err != nil {
 			return ctrl.Result{}, fmt.Errorf("setting pod node_id annotation: %w", err)
 		}
 	}
-
-	redpandaPorts := networking.NewRedpandaPorts(&vectorizedCluster)
-	nodeports := collectNodePorts(redpandaPorts)
-
-	nodeportSvc := resources.NewNodePortService(r.Client, &vectorizedCluster, r.Scheme, nodeports, log)
 
 	var proxySu *resources.SuperUsersResource
 	var proxySuKey types.NamespacedName
@@ -192,7 +188,7 @@ func (r *ClusterReconciler) Reconcile(
 		r.Scheme,
 		ar.getHeadlessServiceFQDN(),
 		ar.getHeadlessServiceName(),
-		nodeportSvc.Key(),
+		ar.getNodeportServiceKey(),
 		pki.StatefulSetVolumeProvider(),
 		pki.AdminAPIConfigProvider(),
 		sa.Key().Name,
@@ -204,7 +200,6 @@ func (r *ClusterReconciler) Reconcile(
 		r.MetricsTimeout)
 
 	toApply := []resources.Reconciler{
-		nodeportSvc,
 		proxySu,
 		schemaRegistrySu,
 		configMapResource,
@@ -268,7 +263,7 @@ func (r *ClusterReconciler) Reconcile(
 		ar.getHeadlessServiceFQDN(),
 		ar.getClusterServiceFQDN(),
 		schemaRegistryPort,
-		nodeportSvc.Key(),
+		ar.getNodeportServiceKey(),
 		ar.getBootstrapServiceKey(),
 	)
 	if err != nil {
@@ -1170,6 +1165,7 @@ const (
 	clusterService     = "ClusterPorts"
 	headlessService    = "HeadlessService"
 	ingress            = "Ingress"
+	nodeportService    = "NodeportService"
 )
 
 func newAttachedResources(ctx context.Context, r *ClusterReconciler, log logr.Logger, cluster *vectorizedv1alpha1.Cluster) *attachedResources {
@@ -1308,4 +1304,23 @@ func (a *attachedResources) ingress() {
 	}
 
 	a.items[ingress] = resources.NewIngress(a.reconciler.Client, a.cluster, a.reconciler.Scheme, subdomain, clusterServiceName, resources.PandaproxyPortExternalName, a.log).WithAnnotations(map[string]string{resources.SSLPassthroughAnnotation: "true"}).WithUserConfig(pandaProxyIngressConfig)
+}
+
+func (a *attachedResources) nodeportService() {
+	// if already initialized, exit immediately
+	if _, ok := a.items[nodeportService]; ok {
+		return
+	}
+	redpandaPorts := networking.NewRedpandaPorts(a.cluster)
+	nodeports := collectNodePorts(redpandaPorts)
+	a.items[nodeportService] = resources.NewNodePortService(a.reconciler.Client, a.cluster, a.reconciler.Scheme, nodeports, a.log)
+}
+
+func (a *attachedResources) getNodeportService() *resources.NodePortServiceResource {
+	a.nodeportService()
+	return a.items[nodeportService].(*resources.NodePortServiceResource)
+}
+
+func (a *attachedResources) getNodeportServiceKey() types.NamespacedName {
+	return a.getNodeportService().Key()
 }
