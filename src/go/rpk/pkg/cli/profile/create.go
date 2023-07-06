@@ -243,11 +243,16 @@ func createCloudProfile(ctx context.Context, y *config.RpkYaml, cfg *config.Conf
 		return PromptCloudClusterProfile(ctx, cl)
 	}
 
-	c, err := cl.Cluster(ctx, clusterID)
-	if err != nil {
-		return p, false, false, fmt.Errorf("unable to request details for cluster %q: %w", clusterID, err)
+	vc, err := cl.VirtualCluster(ctx, clusterID)
+	if err != nil { // if we fail for a vcluster, we try again for a normal cluster
+		c, err := cl.Cluster(ctx, clusterID)
+		if err != nil {
+			return p, false, false, fmt.Errorf("unable to request details for cluster %q: %w", clusterID, err)
+		}
+		p, cloudMTLS, cloudSASL = fromCloudCluster(c)
+		return p, cloudMTLS, cloudSASL, nil
 	}
-	p, cloudMTLS, cloudSASL = fromCloudCluster(c)
+	p, cloudMTLS, cloudSASL = fromVirtualCluster(vc)
 	return p, cloudMTLS, cloudSASL, nil
 }
 
@@ -279,6 +284,10 @@ func fromVirtualCluster(vc cloudapi.VirtualCluster) (p config.RpkProfile, isMTLS
 			SASL: &config.SASL{
 				Mechanism: adminapi.CloudOIDC,
 			},
+		},
+		AdminAPI: config.RpkAdminAPI{
+			Addresses: []string{vc.Status.Listeners.ConsoleURL},
+			TLS:       new(config.TLS),
 		},
 	}
 	return p, false, false // we do not need to print any required message; we generate the config in full

@@ -84,6 +84,7 @@ type AdminAPI struct {
 	oneshotClient       *http.Client
 	auth                Auth
 	tlsConfig           *tls.Config
+	forCloud            bool
 }
 
 func getAuth(p *config.RpkProfile) (Auth, error) {
@@ -129,7 +130,7 @@ func NewClient(fs afero.Fs, p *config.RpkProfile) (*AdminAPI, error) {
 	if err != nil {
 		return nil, err
 	}
-	return NewAdminAPI(addrs, auth, tc)
+	return newAdminAPI(addrs, auth, tc, p.FromCloud)
 }
 
 // NewHostClient returns an AdminAPI that talks to the given host, which is
@@ -162,14 +163,14 @@ func NewHostClient(fs afero.Fs, p *config.RpkProfile, host string) (*AdminAPI, e
 		return nil, err
 	}
 
-	return NewAdminAPI(addrs, auth, tc)
+	return newAdminAPI(addrs, auth, tc, p.FromCloud)
 }
 
 func NewAdminAPI(urls []string, auth Auth, tlsConfig *tls.Config) (*AdminAPI, error) {
-	return newAdminAPI(urls, auth, tlsConfig)
+	return newAdminAPI(urls, auth, tlsConfig, false)
 }
 
-func newAdminAPI(urls []string, auth Auth, tlsConfig *tls.Config) (*AdminAPI, error) {
+func newAdminAPI(urls []string, auth Auth, tlsConfig *tls.Config, forCloud bool) (*AdminAPI, error) {
 	// General purpose backoff, includes 503s and other errors
 	const retryBackoffMs = 1500
 
@@ -211,6 +212,7 @@ func newAdminAPI(urls []string, auth Auth, tlsConfig *tls.Config) (*AdminAPI, er
 		auth:           auth,
 		tlsConfig:      tlsConfig,
 		brokerIDToUrls: make(map[int]string),
+		forCloud:       forCloud,
 	}
 	if tlsConfig != nil {
 		a.retryClient.Transport = &http.Transport{TLSClientConfig: tlsConfig}
@@ -232,14 +234,18 @@ func newAdminAPI(urls []string, auth Auth, tlsConfig *tls.Config) (*AdminAPI, er
 		default:
 			return nil, fmt.Errorf("unrecognized scheme %q in host %q", scheme, u)
 		}
-		a.urls[i] = fmt.Sprintf("%s://%s", scheme, host)
+		full := fmt.Sprintf("%s://%s", scheme, host)
+		if forCloud {
+			full += "/api" // our cloud paths are prefixed with "/api"
+		}
+		a.urls[i] = full
 	}
 
 	return a, nil
 }
 
 func (a *AdminAPI) newAdminForSingleHost(host string) (*AdminAPI, error) {
-	return newAdminAPI([]string{host}, a.auth, a.tlsConfig)
+	return newAdminAPI([]string{host}, a.auth, a.tlsConfig, a.forCloud)
 }
 
 func (a *AdminAPI) urlsWithPath(path string) []string {
