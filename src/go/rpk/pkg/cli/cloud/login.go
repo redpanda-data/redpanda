@@ -83,7 +83,7 @@ want to disable automatic profile creation and selection, use --no-profile.
 
 			_, err = oauth.LoadFlow(cmd.Context(), fs, cfg, auth0.NewClient(cfg.DevOverrides()))
 			if err != nil {
-				fmt.Printf("Unable to login to Redpanda Cloud (%v).", err)
+				fmt.Printf("Unable to login to Redpanda Cloud (%v).\n", err)
 				if e := (*oauth.BadClientTokenError)(nil); errors.As(err, &e) && cc {
 					fmt.Println(`You may need to clear your client ID and secret with 'rpk cloud logout --clear-credentials',
 and then re-specify the client credentials next time you log in.`)

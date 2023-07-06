@@ -258,6 +258,11 @@ func (p *RpkProfile) CurrentAuth() *RpkCloudAuth {
 	return p.c.rpkYaml.Auth(p.c.rpkYaml.CurrentCloudAuth)
 }
 
+// DevOverrides returns any configured dev overrides.
+func (p *RpkProfile) DevOverrides() DevOverrides {
+	return p.c.devOverrides
+}
+
 // HasClientCredentials returns if both ClientID and ClientSecret are empty.
 func (a *RpkCloudAuth) HasClientCredentials() bool {
 	k, _ := a.Kind()

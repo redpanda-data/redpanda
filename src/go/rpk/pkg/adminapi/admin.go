@@ -28,6 +28,8 @@ import (
 	"github.com/hashicorp/go-multierror"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/net"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/oauth"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/oauth/providers/auth0"
 	"github.com/sethgrid/pester"
 	"github.com/spf13/afero"
 	"go.uber.org/zap"
@@ -90,8 +92,22 @@ func getAuth(p *config.RpkProfile) (Auth, error) {
 		return &BasicAuth{Username: p.KafkaAPI.SASL.User, Password: p.KafkaAPI.SASL.Password}, nil
 	case p.KafkaAPI.SASL != nil && p.KafkaAPI.SASL.Mechanism == CloudOIDC:
 		a := p.CurrentAuth()
-		if a == nil {
+		if a == nil || len(a.AuthToken) == 0 {
 			return nil, errors.New("no current auth found, please login with 'rpk cloud login'")
+		}
+		expired, err := oauth.ValidateToken(
+			a.AuthToken,
+			auth0.NewClient(p.DevOverrides()).Audience(),
+			a.ClientID,
+		)
+		if err != nil {
+			if errors.Is(err, oauth.ErrMissingToken) {
+				return nil, err
+			}
+			return nil, fmt.Errorf("unable to validate cloud token, please login again using 'rpk cloud login': %v", err)
+		}
+		if expired {
+			return nil, fmt.Errorf("your cloud token has expired, please login again using 'rpk cloud login'")
 		}
 		return &BearerToken{Token: a.AuthToken}, nil
 	default:

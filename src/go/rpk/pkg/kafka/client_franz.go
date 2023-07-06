@@ -19,12 +19,14 @@ import (
 
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/adminapi"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/oauth"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/oauth/providers/auth0"
 	"github.com/spf13/afero"
 	"github.com/twmb/franz-go/pkg/kadm"
 	"github.com/twmb/franz-go/pkg/kerr"
 	"github.com/twmb/franz-go/pkg/kgo"
 	"github.com/twmb/franz-go/pkg/kmsg"
-	"github.com/twmb/franz-go/pkg/sasl/oauth"
+	koauth "github.com/twmb/franz-go/pkg/sasl/oauth"
 	"github.com/twmb/franz-go/pkg/sasl/scram"
 	"github.com/twmb/franz-go/plugin/kzap"
 )
@@ -98,9 +100,23 @@ func NewFranzClient(fs afero.Fs, p *config.RpkProfile, extraOpts ...kgo.Opt) (*k
 		if k.SASL.Mechanism == adminapi.CloudOIDC {
 			a := p.CurrentAuth()
 			if a == nil || a.AuthToken == "" {
-				return nil, fmt.Errorf("please login to our cloud using 'rpk cloud login'") // TODO
+				return nil, errors.New("no current auth found, please login with 'rpk cloud login'")
 			}
-			opts = append(opts, kgo.SASL((oauth.Auth{
+			expired, err := oauth.ValidateToken(
+				a.AuthToken,
+				auth0.NewClient(p.DevOverrides()).Audience(),
+				a.ClientID,
+			)
+			if err != nil {
+				if errors.Is(err, oauth.ErrMissingToken) {
+					return nil, err
+				}
+				return nil, fmt.Errorf("unable to validate cloud token, please login again using 'rpk cloud login': %v", err)
+			}
+			if expired {
+				return nil, fmt.Errorf("your cloud token has expired, please login again using 'rpk cloud login'")
+			}
+			opts = append(opts, kgo.SASL((koauth.Auth{
 				Token: a.AuthToken,
 			}).AsMechanism()))
 		} else {

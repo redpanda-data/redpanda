@@ -160,6 +160,9 @@ func waitForDeviceToken(ctx context.Context, cl Client, dcode DeviceCode) (Token
 // If the token is expired, this returns true, nil
 // Otherwise, this returns false, *BadClientTokenError.
 func ValidateToken(token, audience string, clientIDs ...string) (expired bool, rerr error) {
+	if token == "" {
+		return false, ErrMissingToken
+	}
 	defer func() {
 		if rerr != nil {
 			rerr = &BadClientTokenError{rerr}
