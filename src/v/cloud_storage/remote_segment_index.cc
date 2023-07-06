@@ -303,9 +303,9 @@ void remote_segment_index_builder::skip_batch_start(
 
 void remote_segment_index_builder::consume_records(iobuf&&) {}
 
-remote_segment_index_builder::stop_parser
+ss::future<remote_segment_index_builder::stop_parser>
 remote_segment_index_builder::consume_batch_end() {
-    return stop_parser::no;
+    co_return stop_parser::no;
 }
 
 void remote_segment_index_builder::print(std::ostream& o) const {

@@ -172,7 +172,7 @@ public:
       size_t size_on_disk);
 
     virtual void consume_records(iobuf&&);
-    virtual stop_parser consume_batch_end();
+    virtual ss::future<stop_parser> consume_batch_end();
     virtual void print(std::ostream&) const;
 
 private:

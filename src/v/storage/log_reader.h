@@ -74,7 +74,7 @@ public:
       size_t physical_base_offset,
       size_t bytes_on_disk) override;
     void consume_records(iobuf&&) override;
-    stop_parser consume_batch_end() override;
+    ss::future<stop_parser> consume_batch_end() override;
     void print(std::ostream&) const override;
 
 private:
