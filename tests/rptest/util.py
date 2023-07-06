@@ -407,12 +407,15 @@ def wait_for_recovery_throttle_rate(redpanda, new_rate: int):
                 num_shards = len(shard_rates)
                 # Account for rounding error
                 # Ex: if a rate 1 is divided among 2 shards, each shard gets nothing
-                expected_rate = int(new_rate / num_shards) * num_shards
+                min_expected_rate = int(new_rate / num_shards) * num_shards
+                # We must validate if the rate assigned is in range between min
+                # and max expected rate as reminder may be assigned to the node missing recovery tokens
+                max_expected_rate = new_rate
                 current_rate = int(sum([m.value for m in shard_rates]))
                 redpanda.logger.debug(
-                    f"Node {node.name} has total rate: {current_rate}, expecting: {expected_rate}"
+                    f"Node {node.name} has total rate: {current_rate}, expecting value in range: [{min_expected_rate}, {max_expected_rate}]"
                 )
-                return current_rate == expected_rate
+                return current_rate >= min_expected_rate and current_rate <= max_expected_rate
             except:
                 redpanda.logger.debug(
                     f"Error getting throttle rate for {node}", exc_info=True)
