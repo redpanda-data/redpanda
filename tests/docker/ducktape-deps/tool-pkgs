@@ -24,7 +24,6 @@ apt-get install -qq \
   openssh-server \
   netcat-openbsd \
   sudo \
-  llvm \
   python3-pip \
   libzstd-dev \
   pkg-config
