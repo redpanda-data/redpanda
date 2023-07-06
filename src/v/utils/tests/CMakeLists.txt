@@ -13,6 +13,7 @@ rp_test(
     retry_chain_node_test.cc
     seastar_histogram_test.cc
     timed_mutex_test.cc
+    rwlock_test.cc
     token_bucket_test.cc
     uuid_test.cc
     vint_test.cc
