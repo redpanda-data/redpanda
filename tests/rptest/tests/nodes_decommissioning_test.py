@@ -309,7 +309,7 @@ class NodesDecommissioningTest(EndToEndTest):
                    backoff_sec=2)
 
         # stop decommissioned node
-        self.redpanda.stop_node(self.redpanda.get_node(to_decommission))
+        self.redpanda.stop_node(self.redpanda.get_node_by_id(to_decommission))
 
         self.run_validation(enable_idempotence=False, consumer_timeout_sec=90)
 
