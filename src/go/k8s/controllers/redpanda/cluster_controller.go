@@ -114,13 +114,12 @@ func (r *ClusterReconciler) Reconcile(
 
 	var vectorizedCluster vectorizedv1alpha1.Cluster
 	ar := newAttachedResources(ctx, r, log, &vectorizedCluster)
-	crb := resources.NewClusterRoleBinding(r.Client, &vectorizedCluster, r.Scheme, log)
 	if err := r.Get(ctx, req.NamespacedName, &vectorizedCluster); err != nil {
 		// we'll ignore not-found errors, since they can't be fixed by an immediate
 		// requeue (we'll need to wait for a new notification), and we can get them
 		// on deleted requests.
 		if apierrors.IsNotFound(err) {
-			if removeError := crb.RemoveSubject(ctx, req.NamespacedName); removeError != nil {
+			if removeError := ar.getClusterRoleBinding().RemoveSubject(ctx, req.NamespacedName); removeError != nil {
 				return ctrl.Result{}, fmt.Errorf("unable to remove subject in ClusterroleBinding: %w", removeError)
 			}
 			return ctrl.Result{}, nil
@@ -151,6 +150,7 @@ func (r *ClusterReconciler) Reconcile(
 
 	ar.bootstrapService()
 	ar.clusterRole()
+	ar.clusterRoleBinding()
 
 	if vectorizedCluster.Status.CurrentReplicas >= 1 {
 		if err := r.setPodNodeIDAnnotation(ctx, &vectorizedCluster, log); err != nil {
@@ -232,7 +232,6 @@ func (r *ClusterReconciler) Reconcile(
 		secretResource,
 		pki,
 		sa,
-		crb,
 		resources.NewPDB(r.Client, &vectorizedCluster, r.Scheme, log),
 		sts,
 	}
@@ -1192,8 +1191,9 @@ type attachedResources struct {
 }
 
 const (
-	bootstrapService = "BootstrapService"
-	clusterRole      = "ClusterRole"
+	bootstrapService   = "BootstrapService"
+	clusterRole        = "ClusterRole"
+	clusterRoleBinding = "ClusterRoleBinding"
 )
 
 func newAttachedResources(ctx context.Context, r *ClusterReconciler, log logr.Logger, cluster *vectorizedv1alpha1.Cluster) *attachedResources {
@@ -1250,4 +1250,17 @@ func (a *attachedResources) clusterRole() {
 		return
 	}
 	a.items[clusterRole] = resources.NewClusterRole(a.reconciler.Client, a.cluster, a.reconciler.Scheme, a.log)
+}
+
+func (a *attachedResources) clusterRoleBinding() {
+	// if already initialized, exit immediately
+	if _, ok := a.items[clusterRoleBinding]; ok {
+		return
+	}
+	a.items[clusterRoleBinding] = resources.NewClusterRoleBinding(a.reconciler.Client, a.cluster, a.reconciler.Scheme, a.log)
+}
+
+func (a *attachedResources) getClusterRoleBinding() *resources.ClusterRoleBindingResource {
+	a.clusterRoleBinding()
+	return a.items[clusterRoleBinding].(*resources.ClusterRoleBindingResource)
 }
