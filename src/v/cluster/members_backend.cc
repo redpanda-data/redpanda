@@ -330,6 +330,7 @@ ss::future<std::error_code> members_backend::reconcile() {
     }
 
     // process one update at a time
+    vassert(!_updates.empty(), "_updates was empty");
     auto& meta = _updates.front();
 
     // leadership changed, drop not yet requested reallocations to make sure
