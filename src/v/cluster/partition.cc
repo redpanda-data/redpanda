@@ -206,14 +206,8 @@ ss::future<std::error_code> partition::prefix_truncate(
       kafka_start_offset);
     auto res = co_await _log_eviction_stm->truncate(
       rp_start_offset, kafka_start_offset, deadline, _as);
-    if (res.has_failure()) {
-        if (res.has_error()) {
-            co_return res.error();
-        }
-        // An exception was thrown.
-        vlog(
-          clusterlog.error, "Truncation failed: {}", std::current_exception());
-        co_return errc::replication_error;
+    if (res.has_error()) {
+        co_return res.error();
     }
     if (_archival_meta_stm) {
         // The archival metadata stm also listens for prefix_truncate batches.
