@@ -33,7 +33,6 @@ class CPUProfilerAdminAPITest(RedpandaTest):
         self.admin = Admin(self.redpanda)
 
     @cluster(num_nodes=4)
-    @skip_debug_mode
     def test_get_cpu_profile(self):
         # Provide traffic so there is something to sample.
         with repeater_traffic(context=self.test_context,
@@ -42,7 +41,8 @@ class CPUProfilerAdminAPITest(RedpandaTest):
                               msg_size=4096,
                               workers=1) as repeater:
             repeater.await_group_ready()
-            repeater.await_progress(1024, timeout_sec=75)
+            repeater.await_progress(1024,
+                                    timeout_sec=100 if self.debug_mode else 75)
 
             profile = self.admin.get_cpu_profile()
 
