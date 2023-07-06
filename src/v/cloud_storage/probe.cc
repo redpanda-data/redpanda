@@ -182,6 +182,13 @@ remote_probe::remote_probe(
               sm::description("Number of segment read cursors for hydrated "
                               "remote log segments"))
               .aggregate({sm::shard_label}),
+            sm::make_gauge(
+              "partition_readers",
+              [&ms] { return ms.current_partition_readers(); },
+              sm::description(
+                "Number of partition reader instances (number of current "
+                "fetch/timequery requests reading from tiered storage)"))
+              .aggregate({sm::shard_label}),
             sm::make_counter(
               "segment_index_uploads_total",
               [this] { return get_index_uploads(); },

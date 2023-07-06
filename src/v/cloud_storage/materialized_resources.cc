@@ -50,7 +50,8 @@ materialized_resources::materialized_resources()
   , _max_segments_per_shard(
       config::shard_local_cfg()
         .cloud_storage_max_materialized_segments_per_shard.bind())
-  , _segment_reader_units(max_readers(), "cst_reader")
+  , _segment_reader_units(max_readers(), "cst_segment_reader")
+  , _partition_reader_units(max_readers(), "cst_partition_reader")
   , _segment_units(max_segments(), "cst_segment")
   , _manifest_meta_size(
       config::shard_local_cfg().cloud_storage_manifest_cache_size.bind())
@@ -58,6 +59,8 @@ materialized_resources::materialized_resources()
       config::shard_local_cfg().cloud_storage_manifest_cache_size())) {
     _max_readers_per_shard.watch(
       [this]() { _segment_reader_units.set_capacity(max_readers()); });
+    _max_readers_per_shard.watch(
+      [this]() { _partition_reader_units.set_capacity(max_readers()); });
     _max_segments_per_shard.watch(
       [this]() { _segment_units.set_capacity(max_segments()); });
     _max_partitions_per_shard.watch(
@@ -80,6 +83,10 @@ ss::future<> materialized_resources::stop() {
     co_await _manifest_cache->stop();
 
     _stm_timer.cancel();
+
+    _segment_units.broken();
+    _segment_reader_units.broken();
+    _partition_reader_units.broken();
 
     co_await _gate.close();
     cst_log.debug("Stopped materialized_segments...");
@@ -116,6 +123,10 @@ size_t materialized_resources::current_segment_readers() const {
     return _segment_reader_units.outstanding();
 }
 
+size_t materialized_resources::current_partition_readers() const {
+    return _partition_reader_units.outstanding();
+}
+
 size_t materialized_resources::current_segments() const {
     return _segment_units.outstanding();
 }
@@ -134,6 +145,11 @@ ssx::semaphore_units materialized_resources::get_segment_reader_units() {
     // guaranteed to do this, if all readers are in use.
 
     return _segment_reader_units.take(1).units;
+}
+
+ss::future<ssx::semaphore_units>
+materialized_resources::get_partition_reader_units(size_t n) {
+    return _partition_reader_units.get_units(n);
 }
 
 ssx::semaphore_units materialized_resources::get_segment_units() {

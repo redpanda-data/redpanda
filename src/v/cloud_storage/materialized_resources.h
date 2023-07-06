@@ -59,6 +59,8 @@ public:
 
     ssx::semaphore_units get_segment_reader_units();
 
+    ss::future<ssx::semaphore_units> get_partition_reader_units(size_t);
+
     ssx::semaphore_units get_segment_units();
 
     materialized_manifest_cache& get_materialized_manifest_cache();
@@ -77,6 +79,9 @@ private:
 
     /// How many remote_segment_batch_reader instances exist
     size_t current_segment_readers() const;
+
+    /// How many partition_record_batch_reader_impl instances exist
+    size_t current_partition_readers() const;
 
     /// How many materialized_segment_state instances exist
     size_t current_segments() const;
@@ -113,9 +118,19 @@ private:
     /// Gate for background eviction
     ss::gate _gate;
 
-    /// Concurrency limit on how many remote_segment_batch_reader may be
-    /// instantiated at once on one shard.
+    /// Size limit on the cache of remote_segment_batch_reader instances,
+    /// per shard.  These are limited because they consume a lot of memory
+    /// with their read buffer.
     adjustable_semaphore _segment_reader_units;
+
+    /// Concurrency limit on how many partition_record_batch_reader_impl may be
+    /// instantiated at once on one shard.  This is a de-facto limit on how many
+    /// concurrent reads may be done.  We need this in addition to
+    /// segment_reader_units, because that is a soft limit (guides trimming),
+    /// whereas this is a hard limit (readers will not be created unless units
+    /// are available), and can be enforced very early in the lifetime of a
+    /// kafka fetch/timequery request.
+    adjustable_semaphore _partition_reader_units;
 
     /// Concurrency limit on how many segments may be materialized at
     /// once: this will trigger faster trimming under pressure.

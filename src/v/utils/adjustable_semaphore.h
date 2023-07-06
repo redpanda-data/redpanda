@@ -95,6 +95,8 @@ public:
         return _capacity - available_units();
     }
 
+    void broken() noexcept { _sem.broken(); }
+
 private:
     ssx::semaphore _sem;
 
