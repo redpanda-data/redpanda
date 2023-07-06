@@ -212,7 +212,9 @@ func createProfile(
 	if name != "" {
 		p.Name = name // name can be empty if we are creating a cloud cluster based profile
 	}
-	p.Description = description
+	if description != "" {
+		p.Description = description // p.Description could be set by cloud cluster loading; only override if the user specified
+	}
 	y.CurrentProfile = y.PushProfile(p)
 	if err := y.Write(fs); err != nil {
 		return "", false, false, fmt.Errorf("unable to write rpk file: %v", err)
@@ -311,6 +313,33 @@ var ErrNoCloudClusters = errors.New("no clusters found")
 // it automatically. This returns ErrNoCloudClusters if the user has no cloud
 // clusters.
 func PromptCloudClusterProfile(ctx context.Context, cl *cloudapi.Client) (p config.RpkProfile, requiresMTLS, requiresSASL bool, err error) {
+	// We get the org name asynchronously because this is a slow request --
+	// doing it while the user does a slow operation of selecting a cluster
+	// hides the delay.
+	//
+	// We also get namespaces immediately for two reasons: (1) we always
+	// want the namespace name, and (2) we might need a list of all
+	// namespaces.
+	var (
+		org     cloudapi.Organization
+		orgErr  error
+		orgDone = make(chan struct{})
+
+		nss     []cloudapi.Namespace
+		nssErr  error
+		nssDone = make(chan struct{})
+	)
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	go func() {
+		defer close(orgDone)
+		org, orgErr = cl.Organization(ctx)
+	}()
+	go func() {
+		defer close(nssDone)
+		nss, nssErr = cl.Namespaces(ctx)
+	}()
+
 	vcs, cs, err := clusterList(ctx, cl)
 	if err != nil {
 		return p, false, false, err
@@ -319,25 +348,35 @@ func PromptCloudClusterProfile(ctx context.Context, cl *cloudapi.Client) (p conf
 		return p, false, false, ErrNoCloudClusters
 	}
 
+	<-nssDone
+	if nssErr != nil {
+		return p, false, false, fmt.Errorf("unable to get list of namespaces: %w", nssErr)
+	}
+
+	findNamespace := func(id string) string {
+		for _, n := range nss {
+			if n.ID == id {
+				return n.Name
+			}
+		}
+		return ""
+	}
+
 	// If there is just 1 cluster/virtual-cluster we go ahead and select that.
 	var selected nameAndCluster
 	if len(cs) == 1 && len(vcs) == 0 {
 		selected = nameAndCluster{
-			name: cs[0].Name,
+			name: fmt.Sprintf("%s/%s", findNamespace(cs[0].NamespaceUUID), cs[0].Name),
 			c:    &cs[0],
 		}
 	} else if len(vcs) == 1 && len(cs) == 0 {
 		selected = nameAndCluster{
-			name: vcs[0].Name,
+			name: fmt.Sprintf("%s/%s", findNamespace(vcs[0].NamespaceUUID), vcs[0].Name),
 			vc:   &vcs[0],
 		}
 	} else {
-		ns, err := cl.Namespaces(ctx)
-		if err != nil {
-			return p, false, false, fmt.Errorf("unable to get list of namespaces: %w", err)
-		}
-		nsIDToName := make(map[string]string, len(ns))
-		for _, n := range ns {
+		nsIDToName := make(map[string]string, len(nss))
+		for _, n := range nss {
 			nsIDToName[n.ID] = n.Name
 		}
 		nameAndCs := combineClusterNames(vcs, cs, nsIDToName)
@@ -351,6 +390,11 @@ func PromptCloudClusterProfile(ctx context.Context, cl *cloudapi.Client) (p conf
 			return p, false, false, err
 		}
 		selected = nameAndCs[idx]
+	}
+
+	<-orgDone
+	if orgErr != nil {
+		return p, false, false, fmt.Errorf("unable to get organization: %w", orgErr)
 	}
 
 	// We have a cluster selected, but the list response does not return
@@ -369,6 +413,7 @@ func PromptCloudClusterProfile(ctx context.Context, cl *cloudapi.Client) (p conf
 		}
 		p, requiresMTLS, requiresSASL = fromVirtualCluster(c)
 	}
+	p.Description = fmt.Sprintf("%s %q", org.Name, selected.name)
 	return p, requiresMTLS, requiresSASL, nil
 }
 
