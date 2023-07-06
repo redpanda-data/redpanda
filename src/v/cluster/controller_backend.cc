@@ -1116,9 +1116,9 @@ bool controller_backend::can_finish_update(
   uint64_t current_retry,
   topic_table_delta::op_type update_type,
   const std::vector<model::broker_shard>& current_replicas) {
-    // force abort update may be finished by any node
     if (update_type == topic_table_delta::op_type::force_abort_update) {
-        return true;
+        // Wait for the leader to be elected in the new replica set.
+        return current_leader == _self;
     }
     /**
      * If the revert feature is active we use current leader to dispatch
