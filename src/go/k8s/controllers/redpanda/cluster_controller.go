@@ -126,8 +126,12 @@ func (r *ClusterReconciler) Reconcile(
 		}
 		return ctrl.Result{}, fmt.Errorf("unable to retrieve Cluster resource: %w", err)
 	}
-	// if the cluster is being deleted, delete finalizers
-	if !vectorizedCluster.GetDeletionTimestamp().IsZero() {
+
+	isManaged := isRedpandaClusterManaged(log, &vectorizedCluster) && isRedpandaClusterVersionManaged(log, &vectorizedCluster, r.RestrictToRedpandaVersion)
+
+	// if the cluster is being deleted, or is no longer managed by the controller,
+	// delete the finalizers from the Cluster and its Pods
+	if !vectorizedCluster.GetDeletionTimestamp().IsZero() || !isManaged {
 		return r.handleClusterDeletion(ctx, &vectorizedCluster, log)
 	}
 
@@ -142,14 +146,6 @@ func (r *ClusterReconciler) Reconcile(
 	// set a finalizer on the pods so we can have the data needed to decommission them
 	if err := r.handlePodFinalizer(ctx, &vectorizedCluster, log); err != nil {
 		return ctrl.Result{}, fmt.Errorf("setting pod finalizer: %w", err)
-	}
-
-	if !isRedpandaClusterManaged(log, &vectorizedCluster) {
-		return ctrl.Result{}, nil
-	}
-
-	if !isRedpandaClusterVersionManaged(log, &vectorizedCluster, r.RestrictToRedpandaVersion) {
-		return ctrl.Result{}, nil
 	}
 
 	if vectorizedCluster.Status.CurrentReplicas >= 1 {
