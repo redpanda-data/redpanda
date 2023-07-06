@@ -59,12 +59,27 @@ ss::future<> log_eviction_stm::write_raft_snapshots_in_background() {
     /// This method is executed as a background fiber and it attempts to write
     /// snapshots as close to effective_start_offset as possible.
     auto gh = _gate.hold();
+    bool wait_with_timeout = false;
     while (!_as.abort_requested()) {
+        /// This background fiber can be woken-up via apply() when special
+        /// batches are processed or by the storage layer when local
+        /// eviction is triggered.
         try {
-            /// This background fiber can be woken-up via apply() when special
-            /// batches are processed or by the storage layer when local
-            /// eviction is triggered.
-            co_await _reap_condition.wait();
+            static const auto eviction_event_wait_time = 5s;
+            if (wait_with_timeout) {
+                /// If after call to \ref do_write_snapshot() has not
+                /// truncated up until the desired point, it will be OK to
+                /// iterate again after some time to retry. Maybe
+                /// max_collectible_offset has moved forward.
+                co_await _reap_condition.wait(eviction_event_wait_time);
+            } else {
+                /// Last truncation had completed with success, there is no need
+                /// to wait for any other condition then for notify() to be
+                /// called.
+                co_await _reap_condition.wait();
+            }
+        } catch (const ss::condition_variable_timed_out&) {
+            /// There is still more data to truncate
         } catch (const ss::broken_condition_variable&) {
             /// stop() has been called
             break;
@@ -72,31 +87,32 @@ ss::future<> log_eviction_stm::write_raft_snapshots_in_background() {
         auto evict_until = std::max(
           _delete_records_eviction_offset, _storage_eviction_offset);
         auto index_lb = _raft->log().index_lower_bound(evict_until);
-        if (index_lb) {
-            vassert(
-              index_lb <= evict_until,
-              "Calculated boundary {} must be <= effective_start {} ",
-              index_lb,
-              evict_until);
-            try {
-                co_await do_write_raft_snapshot(*index_lb);
-            } catch (const ss::abort_requested_exception&) {
-                // ignore abort requested exception, shutting down
-            } catch (const ss::gate_closed_exception&) {
-                // ignore gate closed exception, shutting down
-            } catch (const ss::broken_semaphore&) {
-                // ignore broken sem exception, shutting down
-            } catch (const ss::broken_named_semaphore&) {
-                // ignore broken named sem exception, shutting down
-            } catch (const std::exception& e) {
-                vlog(
-                  _logger.error,
-                  "Error occurred when attempting to write snapshot: "
-                  "{}, ntp: {}",
-                  e,
-                  _raft->ntp());
-            }
+        if (!index_lb) {
+            wait_with_timeout = false;
+            continue;
         }
+        vassert(
+          index_lb <= evict_until,
+          "Calculated boundary {} must be <= effective_start {} ",
+          index_lb,
+          evict_until);
+        try {
+            co_await do_write_raft_snapshot(*index_lb);
+        } catch (const ss::abort_requested_exception&) {
+            // ignore abort requested exception, shutting down
+        } catch (const ss::gate_closed_exception&) {
+            // ignore gate closed exception, shutting down
+        } catch (const ss::broken_semaphore&) {
+            // ignore broken sem exception, shutting down
+        } catch (const std::exception& e) {
+            vlog(
+              _logger.error,
+              "Error occurred when attempting to write snapshot: "
+              "{}, ntp: {}",
+              e,
+              _raft->ntp());
+        }
+        wait_with_timeout = _raft->last_snapshot_index() < index_lb;
     }
 }
 
@@ -143,12 +159,17 @@ ss::future<> log_eviction_stm::do_write_raft_snapshot(model::offset index_lb) {
     const auto max_collectible_offset
       = _raft->log().stm_manager()->max_collectible_offset();
     if (index_lb > max_collectible_offset) {
+        index_lb = max_collectible_offset;
+        if (index_lb <= _raft->last_snapshot_index()) {
+            /// Cannot truncate, have already reached maximum allowable
+            co_return;
+        }
         vlog(
           _logger.trace,
-          "Can only evict up to offset: {}, ntp: {}",
+          "Can only evict up to offset: {}, asked to evict to: {} ntp: {}",
           max_collectible_offset,
+          index_lb,
           _raft->ntp());
-        index_lb = max_collectible_offset;
     }
     vlog(
       _logger.debug,
