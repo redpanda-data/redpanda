@@ -26,6 +26,7 @@
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/metrics.hh>
 #include <seastar/core/thread.hh>
+#include <seastar/coroutine/maybe_yield.hh>
 #include <seastar/util/defer.hh>
 #include <seastar/util/log.hh>
 
@@ -163,6 +164,8 @@ std::optional<iobuf> kvstore::get(key_space ks, bytes_view key) {
 
     // do not re-assign to string_view -> temporary
     auto kkey = make_spaced_key(ks, key);
+    // _db_mut lock is not required here; it's ok to observe a partial apply
+    // since _next_offset is not needed here.
     if (auto it = _db.find(kkey); it != _db.end()) {
         return it->second.copy();
     }
@@ -193,7 +196,8 @@ ss::future<> kvstore::put(key_space ks, bytes key, std::optional<iobuf> value) {
       });
 }
 
-void kvstore::apply_op(bytes key, std::optional<iobuf> value) {
+void kvstore::apply_op(
+  bytes key, std::optional<iobuf> value, ssx::semaphore_units const&) {
     auto it = _db.find(key);
     bool found = it != _db.end();
     if (value) {
@@ -252,12 +256,14 @@ ss::future<> kvstore::flush_and_apply_ops() {
      */
     return _segment->append(std::move(batch))
       .then([this](append_result) { return _segment->flush(); })
-      .then([this, last_offset, ops = std::move(ops)]() mutable {
+      .then([this]() { return _db_mut.get_units(); })
+      .then([this, last_offset, ops = std::move(ops)](auto units) mutable {
           for (auto& op : ops) {
-              apply_op(std::move(op.key), std::move(op.value));
+              apply_op(std::move(op.key), std::move(op.value), units);
               op.done.set_value();
           }
           _next_offset = last_offset + model::offset(1);
+          units.return_all();
       });
 }
 
@@ -341,11 +347,14 @@ ss::future<> kvstore::save_snapshot() {
     // package up the db into a batch
     storage::record_batch_builder builder(
       model::record_batch_type::kvstore, model::offset(0));
+    auto units = co_await _db_mut.get_units();
     for (auto& entry : _db) {
         builder.add_raw_kv(
           bytes_to_iobuf(entry.first),
           entry.second.share(0, entry.second.size_bytes()));
+        co_await ss::coroutine::maybe_yield();
     }
+    units.return_all();
     auto batch = std::move(builder).build();
 
     // serialize batch: size_prefix + batch
@@ -470,8 +479,9 @@ ss::future<> kvstore::load_snapshot_from_reader(snapshot_reader& reader) {
           batch.header().header_crc));
     }
 
+    auto lock = co_await _db_mut.get_units();
     _db.reserve(batch.header().record_count);
-    batch.for_each_record([this](model::record r) {
+    co_await batch.for_each_record_async([this](model::record r) {
         auto key = iobuf_to_bytes(r.release_key());
         _probe.add_cached_bytes(key.size() + r.value().size_bytes());
         auto res = _db.emplace(std::move(key), r.release_value());
@@ -608,18 +618,20 @@ void kvstore::replay_consumer::consume_records(iobuf&& records) {
     _records = std::move(records);
 }
 
-batch_consumer::stop_parser kvstore::replay_consumer::consume_batch_end() {
+ss::future<batch_consumer::stop_parser>
+kvstore::replay_consumer::consume_batch_end() {
     /*
      * build the batch and then apply all its records to the store
      */
     model::record_batch batch(
       _header, std::move(_records), model::record_batch::tag_ctor_ng{});
 
-    batch.for_each_record([this](model::record r) {
+    auto lock = co_await _store->_db_mut.get_units();
+    co_await batch.for_each_record_async([this, &lock](model::record r) {
         auto key = iobuf_to_bytes(r.release_key());
         auto value = reflection::from_iobuf<std::optional<iobuf>>(
           r.release_value());
-        _store->apply_op(std::move(key), std::move(value));
+        _store->apply_op(std::move(key), std::move(value), lock);
         _store->_next_offset += model::offset(1);
     });
 
@@ -629,7 +641,7 @@ batch_consumer::stop_parser kvstore::replay_consumer::consume_batch_end() {
       "Unexpected next offset {} expected {}",
       _store->_next_offset,
       next_batch_offset);
-    return stop_parser::no;
+    co_return stop_parser::no;
 }
 
 void kvstore::replay_consumer::print(std::ostream& os) const {

@@ -138,7 +138,9 @@ public:
         records.push_back(std::move(ib));
     }
 
-    stop_parser consume_batch_end() override { return stop_parser::no; }
+    ss::future<stop_parser> consume_batch_end() override {
+        co_return stop_parser::no;
+    }
 
     void print(std::ostream& o) const override {
         o << "counting_record_consumer";

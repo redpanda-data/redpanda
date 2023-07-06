@@ -80,7 +80,7 @@ public:
       = 0;
 
     virtual void consume_records(iobuf&&) = 0;
-    virtual stop_parser consume_batch_end() = 0;
+    virtual ss::future<stop_parser> consume_batch_end() = 0;
 
     virtual void print(std::ostream&) const = 0;
 
