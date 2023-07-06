@@ -44,8 +44,8 @@ func newCreateCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 		Short: "Create an rpk profile",
 		Long: `Create an rpk profile.
 
-There are multiple ways to create a profile. If no name is provided, the
-name "default" is used.
+There are multiple ways to create a profile. A name must be provided if not
+using --from-cloud.
 
 * You can use --from-redpanda to generate a new profile from an existing
   redpanda.yaml file. The special values "current" create a profile from the
@@ -57,7 +57,8 @@ name "default" is used.
   profile from the existing profile.
 
 * You can use --from-cloud to generate a profile from an existing cloud cluster
-  id. Note that you must be logged in with 'rpk cloud login' first.
+  id. Note that you must be logged in with 'rpk cloud login' first. The special
+  value "prompt" will prompt to select a cloud cluster to create a profile for.
 
 * You can use --set key=value to directly set fields. The key can either be
   the name of a -X flag or the path to the field in the profile's YAML format.
@@ -84,12 +85,12 @@ rpk always switches to the newly created profile.
 			y, err := cfg.ActualRpkYamlOrEmpty()
 			out.MaybeDie(err, "unable to load rpk.yaml: %v", err)
 
-			if len(args) == 0 {
-				args = append(args, "default")
+			var name string
+			if len(args) > 0 {
+				name = args[0]
 			}
-			name := args[0]
-			if name == "" {
-				out.Die("profile name cannot be empty")
+			if name == "" && fromCloud == "" {
+				out.Die("profile name cannot be empty unless using --from-cloud")
 			}
 
 			if (fromCloud != "" && fromRedpanda != "") || (fromCloud != "" && fromProfile != "") || (fromRedpanda != "" && fromProfile != "") {
@@ -98,7 +99,7 @@ rpk always switches to the newly created profile.
 
 			ctx, cancel := context.WithTimeout(cmd.Context(), 10*time.Second)
 			defer cancel()
-			cloudMTLS, cloudSASL, err := createCtx(ctx, fs, y, cfg, fromRedpanda, fromProfile, fromCloud, set, name, description)
+			name, cloudMTLS, cloudSASL, err := createProfile(ctx, fs, y, cfg, fromRedpanda, fromProfile, fromCloud, set, name, description)
 			out.MaybeDieErr(err)
 
 			fmt.Printf("Created and switched to new profile %q.\n", name)
@@ -126,7 +127,7 @@ rpk always switches to the newly created profile.
 }
 
 // This returns whether the command should print cloud mTLS or SASL messages.
-func createCtx(
+func createProfile(
 	ctx context.Context,
 	fs afero.Fs,
 	y *config.RpkYaml,
@@ -137,9 +138,9 @@ func createCtx(
 	set []string,
 	name string,
 	description string,
-) (cloudMTLS, cloudSASL bool, err error) {
+) (finalName string, cloudMTLS, cloudSASL bool, err error) {
 	if p := y.Profile(name); p != nil {
-		return false, false, fmt.Errorf("profile %q already exists", name)
+		return "", false, false, fmt.Errorf("profile %q already exists", name)
 	}
 
 	var p config.RpkProfile
@@ -148,7 +149,12 @@ func createCtx(
 		var err error
 		p, cloudMTLS, cloudSASL, err = createCloudProfile(ctx, y, cfg, fromCloud)
 		if err != nil {
-			return false, false, err
+			return "", false, false, err
+		}
+		if name == "" {
+			if p := y.Profile(p.Name); p != nil {
+				return "", false, false, fmt.Errorf("profile %q already exists, please try again and specify a new name", p.Name)
+			}
 		}
 
 	case fromProfile != "":
@@ -159,19 +165,19 @@ func createCtx(
 			raw, err := afero.ReadFile(fs, fromProfile)
 			if err != nil {
 				if !errors.Is(err, os.ErrNotExist) {
-					return false, false, fmt.Errorf("unable to read file %q: %v", fromProfile, err)
+					return "", false, false, fmt.Errorf("unable to read file %q: %v", fromProfile, err)
 				}
 				y, err := cfg.ActualRpkYamlOrEmpty()
 				if err != nil {
-					return false, false, fmt.Errorf("file %q does not exist, and we cannot read rpk.yaml: %v", fromProfile, err)
+					return "", false, false, fmt.Errorf("file %q does not exist, and we cannot read rpk.yaml: %v", fromProfile, err)
 				}
 				src := y.Profile(fromProfile)
 				if src == nil {
-					return false, false, fmt.Errorf("unable to find profile %q", fromProfile)
+					return "", false, false, fmt.Errorf("unable to find profile %q", fromProfile)
 				}
 				p = *src
 			} else if err := yaml.Unmarshal(raw, &p); err != nil {
-				return false, false, fmt.Errorf("unable to yaml decode file %q: %v", fromProfile, err)
+				return "", false, false, fmt.Errorf("unable to yaml decode file %q: %v", fromProfile, err)
 			}
 		}
 
@@ -183,11 +189,11 @@ func createCtx(
 		default:
 			raw, err := afero.ReadFile(fs, fromRedpanda)
 			if err != nil {
-				return false, false, fmt.Errorf("unable to read file %q: %v", fromRedpanda, err)
+				return "", false, false, fmt.Errorf("unable to read file %q: %v", fromRedpanda, err)
 			}
 			var rpyaml config.RedpandaYaml
 			if err := yaml.Unmarshal(raw, &rpyaml); err != nil {
-				return false, false, fmt.Errorf("unable to yaml decode file %q: %v", fromRedpanda, err)
+				return "", false, false, fmt.Errorf("unable to yaml decode file %q: %v", fromRedpanda, err)
 			}
 			nodeCfg = rpyaml.Rpk
 		}
@@ -197,19 +203,21 @@ func createCtx(
 		}
 	}
 	if err := doSet(&p, set); err != nil {
-		return false, false, err
+		return "", false, false, err
 	}
 	if cloudSASL && p.KafkaAPI.SASL != nil {
 		cloudSASL = false
 	}
 
-	p.Name = name
+	if name != "" {
+		p.Name = name // name can be empty if we are creating a cloud cluster based profile
+	}
 	p.Description = description
 	y.CurrentProfile = y.PushProfile(p)
 	if err := y.Write(fs); err != nil {
-		return false, false, fmt.Errorf("unable to write rpk file: %v", err)
+		return "", false, false, fmt.Errorf("unable to write rpk file: %v", err)
 	}
-	return
+	return y.CurrentProfile, cloudMTLS, cloudSASL, nil
 }
 
 func createCloudProfile(ctx context.Context, y *config.RpkYaml, cfg *config.Config, clusterID string) (p config.RpkProfile, cloudMTLS, cloudSASL bool, err error) {
