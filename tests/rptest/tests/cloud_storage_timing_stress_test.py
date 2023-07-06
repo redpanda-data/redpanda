@@ -46,7 +46,10 @@ def cloud_storage_usage_check(test):
     # The usage inferred from the uploaded manifest
     # lags behind the actual reported usage. For this reason,
     # we maintain a sliding window of reported usages and check whether
-    # the manifest inferred usage can be found in it.
+    # the manifest inferred usage can be found in it. A deque size of 10
+    # gives us a look-behind window of roughly 2 seconds (10 * 0.2).
+    # This should be fine since the manifest after every batch of segment uploads
+    # and on prior to each GC operation (housekeeping happens every 1 second).
     reported_usage_sliding_window = deque(maxlen=10)
 
     def check():
@@ -249,7 +252,7 @@ class CloudStorageTimingStressTest(RedpandaTest, PartitionMovementMixin):
             log_segment_size=self.log_segment_size,
             cloud_storage_housekeeping_interval_ms=1000,
             cloud_storage_spillover_manifest_max_segments=10,
-            fast_uploads=True)
+            cloud_storage_segment_max_upload_interval_sec=10)
 
         extra_rp_conf = dict(
             log_compaction_interval_ms=1000,
@@ -288,7 +291,8 @@ class CloudStorageTimingStressTest(RedpandaTest, PartitionMovementMixin):
                                    debug_logs=True,
                                    trace_logs=True)
 
-    def _create_consumer(self) -> KgoVerifierSeqConsumer:
+    def _create_consumer(
+            self, producer: KgoVerifierProducer) -> KgoVerifierSeqConsumer:
         bps = self.produce_byte_rate_per_ntp * self.topics[0].partition_count
         bytes_count = bps * self.target_runtime
         msg_count = bytes_count // self.message_size
@@ -302,7 +306,8 @@ class CloudStorageTimingStressTest(RedpandaTest, PartitionMovementMixin):
                                       msg_size=self.message_size,
                                       max_throughput_mb=int(bps // self.mib),
                                       debug_logs=True,
-                                      trace_logs=True)
+                                      trace_logs=True,
+                                      producer=producer)
 
     def _all_uploads_done(self):
         topic_description = self.rpk.describe_topic(self.topic)
@@ -385,6 +390,9 @@ class CloudStorageTimingStressTest(RedpandaTest, PartitionMovementMixin):
             retry_on_exc=True)
 
     def prologue(self, cleanup_policy):
+        self.redpanda.set_cluster_config_to_null(
+            "cloud_storage_manifest_max_upload_interval_sec")
+
         self.topic_spec.cleanup_policy = cleanup_policy
         self.topics = [self.topic_spec]
         self._create_initial_topics()
@@ -398,7 +406,7 @@ class CloudStorageTimingStressTest(RedpandaTest, PartitionMovementMixin):
                             cloud_storage_status_endpoint_check)
 
         self.producer = self._create_producer()
-        self.consumer = self._create_consumer()
+        self.consumer = self._create_consumer(self.producer)
 
         self.producer.start()
 
