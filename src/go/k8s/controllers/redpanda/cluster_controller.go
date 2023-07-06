@@ -155,9 +155,13 @@ func (r *ClusterReconciler) Reconcile(
 	ar.headlessService()
 	ar.ingress()
 	ar.nodeportService()
+	pki, err := ar.getPKI()
+	if err != nil {
+		return ctrl.Result{}, fmt.Errorf("creating pki: %w", err)
+	}
 
 	if vectorizedCluster.Status.CurrentReplicas >= 1 {
-		if err := r.setPodNodeIDAnnotation(ctx, &vectorizedCluster, log, ar); err != nil {
+		if err = r.setPodNodeIDAnnotation(ctx, &vectorizedCluster, log, ar); err != nil {
 			return ctrl.Result{}, fmt.Errorf("setting pod node_id annotation: %w", err)
 		}
 	}
@@ -173,10 +177,6 @@ func (r *ClusterReconciler) Reconcile(
 	if vectorizedCluster.IsSASLOnInternalEnabled() && vectorizedCluster.Spec.Configuration.SchemaRegistry != nil {
 		schemaRegistrySu = resources.NewSuperUsers(r.Client, &vectorizedCluster, r.Scheme, resources.ScramSchemaRegistryUsername, resources.SchemaRegistrySuffix, log)
 		schemaRegistrySuKey = schemaRegistrySu.Key()
-	}
-	pki, err := certmanager.NewPki(ctx, r.Client, &vectorizedCluster, ar.getHeadlessServiceFQDN(), ar.getClusterServiceFQDN(), r.Scheme, log)
-	if err != nil {
-		return ctrl.Result{}, fmt.Errorf("creating pki: %w", err)
 	}
 	sa := resources.NewServiceAccount(r.Client, &vectorizedCluster, r.Scheme, log)
 	configMapResource := resources.NewConfigMap(r.Client, &vectorizedCluster, r.Scheme, ar.getHeadlessServiceFQDN(), proxySuKey, schemaRegistrySuKey, pki.BrokerTLSConfigProvider(), log)
@@ -204,7 +204,6 @@ func (r *ClusterReconciler) Reconcile(
 		schemaRegistrySu,
 		configMapResource,
 		secretResource,
-		pki,
 		sa,
 		resources.NewPDB(r.Client, &vectorizedCluster, r.Scheme, log),
 		sts,
@@ -401,14 +400,10 @@ func (r *ClusterReconciler) handlePodFinalizer(
 		if err != nil {
 			return fmt.Errorf("node-id annotation is not an integer: %w", err)
 		}
-		// get the broker list
-		redpandaPorts := networking.NewRedpandaPorts(rp)
-		clusterPorts := collectClusterPorts(redpandaPorts, rp)
-		clusterSvc := resources.NewClusterService(r.Client, rp, r.Scheme, clusterPorts, log)
 
-		pki, err := certmanager.NewPki(ctx, r.Client, rp, ar.getHeadlessServiceFQDN(), clusterSvc.ServiceFQDN(r.clusterDomain), r.Scheme, log)
+		pki, err := ar.getPKI()
 		if err != nil {
-			return fmt.Errorf("creating pki: %w", err)
+			return err
 		}
 
 		adminClient, err := r.AdminAPIClientFactory(ctx, r.Client, rp, ar.getHeadlessServiceFQDN(), pki.AdminAPIConfigProvider())
@@ -517,7 +512,7 @@ func (r *ClusterReconciler) setPodNodeIDAnnotation(
 		}
 		nodeIDStr, ok := pod.Annotations[resources.PodAnnotationNodeIDKey]
 
-		nodeID, err := r.fetchAdminNodeID(ctx, rp, pod, log, ar)
+		nodeID, err := r.fetchAdminNodeID(ctx, rp, pod, ar)
 		if err != nil {
 			log.Error(err, `cannot fetch node id for node-id annotation`)
 			continue
@@ -557,13 +552,9 @@ func (r *ClusterReconciler) decommissionBroker(
 	log := l.WithName("decommissionBroker").WithValues("node-id", nodeID)
 	log.V(logger.DebugLevel).Info("decommission broker")
 
-	redpandaPorts := networking.NewRedpandaPorts(rp)
-	clusterPorts := collectClusterPorts(redpandaPorts, rp)
-	clusterSvc := resources.NewClusterService(r.Client, rp, r.Scheme, clusterPorts, log)
-
-	pki, err := certmanager.NewPki(ctx, r.Client, rp, ar.getHeadlessServiceFQDN(), clusterSvc.ServiceFQDN(r.clusterDomain), r.Scheme, log)
+	pki, err := ar.getPKI()
 	if err != nil {
-		return fmt.Errorf("unable to create pki: %w", err)
+		return err
 	}
 
 	adminClient, err := r.AdminAPIClientFactory(ctx, r.Client, rp, ar.getHeadlessServiceFQDN(), pki.AdminAPIConfigProvider())
@@ -578,13 +569,8 @@ func (r *ClusterReconciler) decommissionBroker(
 	return nil
 }
 
-func (r *ClusterReconciler) fetchAdminNodeID(ctx context.Context, rp *vectorizedv1alpha1.Cluster, pod *corev1.Pod, l logr.Logger, ar *attachedResources) (int32, error) {
-	log := l.WithName("fetchAdminNodeID")
-	redpandaPorts := networking.NewRedpandaPorts(rp)
-	clusterPorts := collectClusterPorts(redpandaPorts, rp)
-	clusterSvc := resources.NewClusterService(r.Client, rp, r.Scheme, clusterPorts, log)
-
-	pki, err := certmanager.NewPki(ctx, r.Client, rp, ar.getHeadlessServiceFQDN(), clusterSvc.ServiceFQDN(r.clusterDomain), r.Scheme, log)
+func (r *ClusterReconciler) fetchAdminNodeID(ctx context.Context, rp *vectorizedv1alpha1.Cluster, pod *corev1.Pod, ar *attachedResources) (int32, error) {
+	pki, err := ar.getPKI()
 	if err != nil {
 		return -1, fmt.Errorf("creating pki: %w", err)
 	}
@@ -1166,6 +1152,7 @@ const (
 	headlessService    = "HeadlessService"
 	ingress            = "Ingress"
 	nodeportService    = "NodeportService"
+	pki                = "PKI"
 )
 
 func newAttachedResources(ctx context.Context, r *ClusterReconciler, log logr.Logger, cluster *vectorizedv1alpha1.Cluster) *attachedResources {
@@ -1323,4 +1310,27 @@ func (a *attachedResources) getNodeportService() *resources.NodePortServiceResou
 
 func (a *attachedResources) getNodeportServiceKey() types.NamespacedName {
 	return a.getNodeportService().Key()
+}
+
+func (a *attachedResources) pki() error {
+	// if already initialized, exit immediately
+	if _, ok := a.items[pki]; ok {
+		return nil
+	}
+
+	newPKI, err := certmanager.NewPki(a.ctx, a.reconciler.Client, a.cluster, a.getHeadlessServiceFQDN(), a.getClusterServiceFQDN(), a.reconciler.Scheme, a.log)
+	if err != nil {
+		return fmt.Errorf("creating pki: %w", err)
+	}
+
+	a.items[pki] = newPKI
+	return nil
+}
+
+func (a *attachedResources) getPKI() (*certmanager.PkiReconciler, error) {
+	err := a.pki()
+	if err != nil {
+		return nil, err
+	}
+	return a.items[pki].(*certmanager.PkiReconciler), nil
 }
