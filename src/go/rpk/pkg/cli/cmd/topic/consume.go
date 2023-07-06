@@ -161,7 +161,7 @@ func (c *consumer) consume() {
 		}
 
 		fs.EachError(func(t string, p int32, err error) {
-			fmt.Fprintf(os.Stderr, "ERR: topic %s partition %d: %v", t, p, err)
+			fmt.Fprintf(os.Stderr, "ERR: topic %s partition %d: %v\n", t, p, err)
 		})
 
 		marks = marks[:0]
