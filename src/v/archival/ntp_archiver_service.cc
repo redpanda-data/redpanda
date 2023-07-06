@@ -665,8 +665,8 @@ ss::future<cloud_storage::upload_result> ntp_archiver::upload_manifest(
       get_bucket_name(), manifest(), fib, _manifest_tags);
 }
 
-remote_segment_path
-ntp_archiver::segment_path_for_candidate(const upload_candidate& candidate) {
+remote_segment_path ntp_archiver::segment_path_for_candidate(
+  model::term_id archiver_term, const upload_candidate& candidate) {
     vassert(
       candidate.remote_sources.empty(),
       "This method can only work with local segments");
@@ -678,7 +678,7 @@ ntp_archiver::segment_path_for_candidate(const upload_candidate& candidate) {
       .base_offset = candidate.starting_offset,
       .committed_offset = candidate.final_offset,
       .ntp_revision = _rev,
-      .archiver_term = _start_term,
+      .archiver_term = archiver_term,
       .segment_term = candidate.term,
       .sname_format = cloud_storage::segment_name_format::v2,
     };
@@ -688,6 +688,7 @@ ntp_archiver::segment_path_for_candidate(const upload_candidate& candidate) {
 
 // from offset to offset (by record batch boundary)
 ss::future<cloud_storage::upload_result> ntp_archiver::upload_segment(
+  model::term_id archiver_term,
   upload_candidate candidate,
   std::optional<std::reference_wrapper<retry_chain_node>> source_rtc) {
     vassert(
@@ -701,7 +702,7 @@ ss::future<cloud_storage::upload_result> ntp_archiver::upload_segment(
       &rtc.get());
     retry_chain_logger ctxlog(archival_log, fib, _ntp.path());
 
-    auto path = segment_path_for_candidate(candidate);
+    auto path = segment_path_for_candidate(archiver_term, candidate);
     vlog(ctxlog.debug, "Uploading segment {} to {}", candidate, path);
 
     auto lazy_abort_source = cloud_storage::lazy_abort_source{
@@ -748,6 +749,7 @@ std::optional<ss::sstring> ntp_archiver::upload_should_abort() {
 }
 
 ss::future<cloud_storage::upload_result> ntp_archiver::upload_tx(
+  model::term_id archiver_term,
   upload_candidate candidate,
   std::optional<std::reference_wrapper<retry_chain_node>> source_rtc) {
     vassert(
@@ -774,7 +776,7 @@ ss::future<cloud_storage::upload_result> ntp_archiver::upload_tx(
         co_return cloud_storage::upload_result::success;
     }
 
-    auto path = segment_path_for_candidate(candidate);
+    auto path = segment_path_for_candidate(archiver_term, candidate);
 
     cloud_storage::tx_range_manifest manifest(path, std::move(tx_range));
 
@@ -861,9 +863,9 @@ ntp_archiver::schedule_single_upload(const upload_context& upload_ctx) {
 
     // The upload is successful only if both segment and tx_range are uploaded.
     std::vector<ss::future<cloud_storage::upload_result>> all_uploads;
-    all_uploads.emplace_back(upload_segment(upload));
+    all_uploads.emplace_back(upload_segment(upload_ctx.archiver_term, upload));
     if (upload_ctx.upload_kind == segment_upload_kind::non_compacted) {
-        all_uploads.emplace_back(upload_tx(upload));
+        all_uploads.emplace_back(upload_tx(upload_ctx.archiver_term, upload));
     }
 
     auto upl_fut = aggregate_upload_results(std::move(all_uploads));
@@ -882,7 +884,7 @@ ntp_archiver::schedule_single_upload(const upload_context& upload_ctx) {
         .max_timestamp = upload.max_timestamp,
         .delta_offset = delta,
         .ntp_revision = _rev,
-        .archiver_term = _start_term,
+        .archiver_term = upload_ctx.archiver_term,
         .segment_term = upload.term,
         .delta_offset_end = delta_offset_next,
         .sname_format = cloud_storage::segment_name_format::v2,
@@ -919,7 +921,8 @@ ntp_archiver::schedule_uploads(model::offset last_stable_offset) {
       segment_upload_kind::non_compacted,
       start_upload_offset,
       last_stable_offset,
-      allow_reuploads_t::no);
+      allow_reuploads_t::no,
+      _start_term);
 
     if (
       config::shard_local_cfg().cloud_storage_enable_compacted_topic_reupload()
@@ -928,7 +931,8 @@ ntp_archiver::schedule_uploads(model::offset last_stable_offset) {
           segment_upload_kind::compacted,
           compacted_segments_upload_start,
           model::offset::max(),
-          allow_reuploads_t::yes);
+          allow_reuploads_t::yes,
+          _start_term);
     }
 
     co_return co_await schedule_uploads(std::move(params));
@@ -1279,12 +1283,14 @@ ntp_archiver::upload_context::upload_context(
   segment_upload_kind upload_kind,
   model::offset start_offset,
   model::offset last_offset,
-  allow_reuploads_t allow_reuploads)
+  allow_reuploads_t allow_reuploads,
+  model::term_id archiver_term)
   : upload_kind{upload_kind}
   , start_offset{start_offset}
   , last_offset{last_offset}
   , allow_reuploads{allow_reuploads}
-  , uploads{} {}
+  , uploads{}
+  , archiver_term(archiver_term) {}
 
 std::ostream& operator<<(std::ostream& os, segment_upload_kind upload_kind) {
     switch (upload_kind) {
@@ -1580,11 +1586,12 @@ ss::future<bool> ntp_archiver::do_upload_local(
     auto ot_state = _parent.get_offset_translator_state();
     auto delta = base - model::offset_cast(ot_state->from_log_offset(base));
     auto delta_offset_next = ot_state->next_offset_delta(upload.final_offset);
+    auto archiver_term = _start_term;
 
     // Upload segments and tx-manifest in parallel
     std::vector<ss::future<cloud_storage::upload_result>> futures;
-    futures.emplace_back(upload_segment(upload, source_rtc));
-    futures.emplace_back(upload_tx(upload, source_rtc));
+    futures.emplace_back(upload_segment(archiver_term, upload, source_rtc));
+    futures.emplace_back(upload_tx(archiver_term, upload, source_rtc));
     auto upl_res = co_await aggregate_upload_results(std::move(futures));
 
     if (upl_res != cloud_storage::upload_result::success) {
@@ -1605,7 +1612,7 @@ ss::future<bool> ntp_archiver::do_upload_local(
       .max_timestamp = upload.max_timestamp,
       .delta_offset = delta,
       .ntp_revision = _rev,
-      .archiver_term = _start_term,
+      .archiver_term = archiver_term,
       .segment_term = upload.term,
       .delta_offset_end = delta_offset_next,
       .sname_format = cloud_storage::segment_name_format::v2,
