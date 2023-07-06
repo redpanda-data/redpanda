@@ -150,6 +150,7 @@ func (r *ClusterReconciler) Reconcile(
 	}
 
 	ar.bootstrapService()
+	ar.clusterRole()
 
 	if vectorizedCluster.Status.CurrentReplicas >= 1 {
 		if err := r.setPodNodeIDAnnotation(ctx, &vectorizedCluster, log); err != nil {
@@ -231,7 +232,6 @@ func (r *ClusterReconciler) Reconcile(
 		secretResource,
 		pki,
 		sa,
-		resources.NewClusterRole(r.Client, &vectorizedCluster, r.Scheme, log),
 		crb,
 		resources.NewPDB(r.Client, &vectorizedCluster, r.Scheme, log),
 		sts,
@@ -1193,6 +1193,7 @@ type attachedResources struct {
 
 const (
 	bootstrapService = "BootstrapService"
+	clusterRole      = "ClusterRole"
 )
 
 func newAttachedResources(ctx context.Context, r *ClusterReconciler, log logr.Logger, cluster *vectorizedv1alpha1.Cluster) *attachedResources {
@@ -1241,4 +1242,12 @@ func (a *attachedResources) getBootstrapService() *resources.LoadBalancerService
 
 func (a *attachedResources) getBootstrapServiceKey() types.NamespacedName {
 	return a.getBootstrapService().Key()
+}
+
+func (a *attachedResources) clusterRole() {
+	// if already initialized, exit immediately
+	if _, ok := a.items[clusterRole]; ok {
+		return
+	}
+	a.items[clusterRole] = resources.NewClusterRole(a.reconciler.Client, a.cluster, a.reconciler.Scheme, a.log)
 }
