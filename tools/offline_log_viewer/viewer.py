@@ -8,6 +8,7 @@ from consumer_groups import GroupsLog
 from consumer_offsets import OffsetsLog
 from tx_coordinator import TxLog
 
+import itertools
 from storage import Store
 from kvstore import KvStore
 from kafka import KafkaLog
@@ -15,6 +16,20 @@ import logging
 import json
 
 logger = logging.getLogger('viewer')
+
+
+class SerializableGenerator(list):
+    """Generator that is serializable by JSON"""
+    def __init__(self, iterable):
+        tmp_body = iter(iterable)
+        try:
+            self._head = iter([next(tmp_body)])
+            self.append(tmp_body)
+        except StopIteration:
+            self._head = []
+
+    def __iter__(self):
+        return itertools.chain(self._head, *self[:1])
 
 
 def print_kv_store(store):
@@ -38,12 +53,11 @@ def print_kv_store(store):
 def print_controller(store, bin_dump: bool):
     for ntp in store.ntps:
         if ntp.nspace == "redpanda" and ntp.topic == "controller":
-            ctrl = ControllerLog(ntp)
-            ctrl.decode(bin_dump)
-
-            # Send JSON output to stdout in case caller wants to parse it, other
-            # CLI output goes to stderr via logger
-            print(json.dumps(ctrl.records, indent=2))
+            ctrl = ControllerLog(ntp, bin_dump)
+            iter_json = json.JSONEncoder(indent=2).iterencode(
+                SerializableGenerator(ctrl))
+            for j in iter_json:
+                print(j, end='')
 
 
 def print_kafka(store, topic, headers_only):
