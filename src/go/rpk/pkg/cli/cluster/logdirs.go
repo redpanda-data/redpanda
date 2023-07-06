@@ -81,9 +81,14 @@ where revision is a Redpanda internal concept.
 			if len(topics) > 0 {
 				listed, err := adm.ListTopics(context.Background(), topics...)
 				out.MaybeDie(err, "unable to describe topics: %v", err)
+				var exit bool
 				listed.EachError(func(d kadm.TopicDetail) {
 					fmt.Fprintf(os.Stderr, "unable to discover the partitions on topic %q: %v\n", d.Topic, d.Err)
+					exit = true
 				})
+				if exit {
+					os.Exit(1)
+				}
 				s = listed.TopicsSet()
 			}
 
@@ -190,7 +195,7 @@ where revision is a Redpanda internal concept.
 			// what we have already ordered and aggregated.
 			if sortBySize {
 				sort.SliceStable(rows, func(i, j int) bool {
-					return rows[i].Size < rows[j].Size
+					return rows[i].Size >= rows[j].Size
 				})
 			}
 
