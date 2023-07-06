@@ -113,6 +113,7 @@ func (r *ClusterReconciler) Reconcile(
 	defer log.Info("Finished reconcile loop")
 
 	var vectorizedCluster vectorizedv1alpha1.Cluster
+	ar := newAttachedResources(ctx, r, log, &vectorizedCluster)
 	crb := resources.NewClusterRoleBinding(r.Client, &vectorizedCluster, r.Scheme, log)
 	if err := r.Get(ctx, req.NamespacedName, &vectorizedCluster); err != nil {
 		// we'll ignore not-found errors, since they can't be fixed by an immediate
@@ -148,6 +149,8 @@ func (r *ClusterReconciler) Reconcile(
 		return ctrl.Result{}, fmt.Errorf("setting pod finalizer: %w", err)
 	}
 
+	ar.bootstrapService()
+
 	if vectorizedCluster.Status.CurrentReplicas >= 1 {
 		if err := r.setPodNodeIDAnnotation(ctx, &vectorizedCluster, log); err != nil {
 			return ctrl.Result{}, fmt.Errorf("setting pod node_id annotation: %w", err)
@@ -157,12 +160,10 @@ func (r *ClusterReconciler) Reconcile(
 	redpandaPorts := networking.NewRedpandaPorts(&vectorizedCluster)
 	nodeports := collectNodePorts(redpandaPorts)
 	headlessPorts := collectHeadlessPorts(redpandaPorts)
-	lbPorts := collectLBPorts(redpandaPorts)
 	clusterPorts := collectClusterPorts(redpandaPorts, &vectorizedCluster)
 
 	headlessSvc := resources.NewHeadlessService(r.Client, &vectorizedCluster, r.Scheme, headlessPorts, log)
 	nodeportSvc := resources.NewNodePortService(r.Client, &vectorizedCluster, r.Scheme, nodeports, log)
-	bootstrapSvc := resources.NewLoadBalancerService(r.Client, &vectorizedCluster, r.Scheme, lbPorts, true, log)
 
 	clusterSvc := resources.NewClusterService(r.Client, &vectorizedCluster, r.Scheme, clusterPorts, log)
 	subdomain := ""
@@ -224,7 +225,6 @@ func (r *ClusterReconciler) Reconcile(
 		clusterSvc,
 		nodeportSvc,
 		ingress,
-		bootstrapSvc,
 		proxySu,
 		schemaRegistrySu,
 		configMapResource,
@@ -235,6 +235,14 @@ func (r *ClusterReconciler) Reconcile(
 		crb,
 		resources.NewPDB(r.Client, &vectorizedCluster, r.Scheme, log),
 		sts,
+	}
+
+	result, errs := ar.Ensure()
+	if !result.IsZero() {
+		return result, nil
+	}
+	if errs != nil {
+		return result, errs
 	}
 
 	for _, res := range toApply {
@@ -283,7 +291,7 @@ func (r *ClusterReconciler) Reconcile(
 		clusterSvc.ServiceFQDN(r.clusterDomain),
 		schemaRegistryPort,
 		nodeportSvc.Key(),
-		bootstrapSvc.Key(),
+		ar.getBootstrapServiceKey(),
 	)
 	if err != nil {
 		return ctrl.Result{}, err
@@ -1173,4 +1181,64 @@ func isRedpandaClusterVersionManaged(
 		return false
 	}
 	return true
+}
+
+type attachedResources struct {
+	ctx        context.Context
+	reconciler *ClusterReconciler
+	log        logr.Logger
+	cluster    *vectorizedv1alpha1.Cluster
+	items      map[string]resources.Resource
+}
+
+const (
+	bootstrapService = "BootstrapService"
+)
+
+func newAttachedResources(ctx context.Context, r *ClusterReconciler, log logr.Logger, cluster *vectorizedv1alpha1.Cluster) *attachedResources {
+	return &attachedResources{
+		ctx:        ctx,
+		reconciler: r,
+		log:        log,
+		cluster:    cluster,
+		items:      map[string]resources.Resource{},
+	}
+}
+
+func (a *attachedResources) Ensure() (ctrl.Result, error) {
+	result := ctrl.Result{}
+	var errs error
+	for _, resource := range a.items {
+		err := resource.Ensure(a.ctx)
+		var e *resources.RequeueAfterError
+		if errors.As(err, &e) {
+			a.log.Info(e.Error())
+			if result.RequeueAfter < e.RequeueAfter {
+				result = ctrl.Result{RequeueAfter: e.RequeueAfter}
+			}
+		} else if err != nil {
+			a.log.Error(err, "Failed to reconcile resource")
+			errs = errors.Join(errs, err)
+		}
+	}
+	return result, errs
+}
+
+func (a *attachedResources) bootstrapService() {
+	// if already initialized, exit immediately
+	if _, ok := a.items[bootstrapService]; ok {
+		return
+	}
+	redpandaPorts := networking.NewRedpandaPorts(a.cluster)
+	loadbalancerPorts := collectLBPorts(redpandaPorts)
+	a.items[bootstrapService] = resources.NewLoadBalancerService(a.reconciler.Client, a.cluster, a.reconciler.Scheme, loadbalancerPorts, true, a.log)
+}
+
+func (a *attachedResources) getBootstrapService() *resources.LoadBalancerServiceResource {
+	a.bootstrapService()
+	return a.items[bootstrapService].(*resources.LoadBalancerServiceResource)
+}
+
+func (a *attachedResources) getBootstrapServiceKey() types.NamespacedName {
+	return a.getBootstrapService().Key()
 }
