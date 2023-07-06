@@ -44,6 +44,9 @@ struct usage_window
     bool is_open() const { return begin != 0 && end == 0; }
 
     void reset(ss::lowres_system_clock::time_point now);
+    void reset_to_nearest_interval(
+      std::chrono::seconds usage_window_width_interval,
+      ss::lowres_system_clock::time_point tp);
 
     auto serde_fields() { return std::tie(begin, end, u); }
 };
@@ -74,7 +77,7 @@ protected:
     virtual ss::future<usage> close_current_window() = 0;
 
 private:
-    std::chrono::seconds reset_state(fragmented_vector<usage_window> buckets);
+    void reset_state(fragmented_vector<usage_window> buckets);
     void close_window();
     void rearm_window_timer();
     bool is_bucket_stale(size_t idx, uint64_t close_ts) const;
