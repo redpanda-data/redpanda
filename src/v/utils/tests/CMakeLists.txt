@@ -14,6 +14,7 @@ rp_test(
     waiter_queue_test.cc
     object_pool_test.cc
     delta_for_test.cc
+    rwlock_test.cc
     token_bucket_test.cc
     uuid_test.cc
     seastar_histogram_test.cc
