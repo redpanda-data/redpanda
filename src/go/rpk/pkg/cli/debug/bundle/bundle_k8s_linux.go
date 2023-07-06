@@ -23,7 +23,7 @@ import (
 	"time"
 
 	"github.com/hashicorp/go-multierror"
-	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/api/admin"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/adminapi"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/spf13/afero"
 	k8score "k8s.io/api/core/v1"
@@ -206,7 +206,7 @@ func saveClusterAdminAPICalls(ctx context.Context, ps *stepParams, fs afero.Fs, 
 				TLS:       p.AdminAPI.TLS,
 			},
 		}
-		cl, err := admin.NewClient(fs, p)
+		cl, err := adminapi.NewClient(fs, p)
 		if err != nil {
 			return fmt.Errorf("unable to initialize admin client: %v", err)
 		}
@@ -219,7 +219,7 @@ func saveClusterAdminAPICalls(ctx context.Context, ps *stepParams, fs afero.Fs, 
 			func() error { return requestAndSave(ctx, ps, "admin/reconfigurations.json", cl.Reconfigurations) },
 			func() error {
 				// Need to wrap this function because cl.Config receives an additional 'includeDefaults' param.
-				f := func(ctx context.Context) (admin.Config, error) {
+				f := func(ctx context.Context) (adminapi.Config, error) {
 					return cl.Config(ctx, true)
 				}
 				return requestAndSave(ctx, ps, "admin/cluster_config.json", f)
@@ -252,7 +252,7 @@ func saveSingleAdminAPICalls(ctx context.Context, ps *stepParams, fs afero.Fs, p
 					TLS:       p.AdminAPI.TLS,
 				},
 			}
-			cl, err := admin.NewClient(fs, p)
+			cl, err := adminapi.NewClient(fs, p)
 			if err != nil {
 				rerrs = multierror.Append(rerrs, fmt.Errorf("unable to initialize admin client for %q: %v", a, err))
 				continue

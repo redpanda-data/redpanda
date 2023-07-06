@@ -13,7 +13,7 @@ import (
 	"fmt"
 	"path/filepath"
 
-	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/api/admin"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/adminapi"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/out"
 	"github.com/spf13/afero"
@@ -54,8 +54,10 @@ central configuration store (and via 'rpk cluster config edit').
 		Run: func(cmd *cobra.Command, propertyNames []string) {
 			cfg, err := p.Load(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)
+			p := cfg.VirtualProfile()
+			out.CheckExitCloudAdmin(p)
 
-			client, err := admin.NewClient(fs, cfg.VirtualProfile())
+			client, err := adminapi.NewClient(fs, p)
 			out.MaybeDie(err, "unable to initialize admin client: %v", err)
 
 			schema, err := client.ClusterConfigSchema(cmd.Context())

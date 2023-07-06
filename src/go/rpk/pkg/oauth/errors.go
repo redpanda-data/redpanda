@@ -1,6 +1,7 @@
 package oauth
 
 import (
+	"errors"
 	"fmt"
 )
 
@@ -29,3 +30,6 @@ type BadClientTokenError struct {
 func (e *BadClientTokenError) Error() string {
 	return fmt.Sprintf("invalid client token: %v", e.Err)
 }
+
+// ErrMissingToken is returned when trying to validate an empty token.
+var ErrMissingToken = errors.New("missing cloud token, please login with 'rpk cloud login'")

@@ -15,7 +15,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/api/admin"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/adminapi"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/out"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/system"
@@ -51,9 +51,10 @@ the jobs launched. Possible results are:
 			// Load config settings
 			p, err := p.LoadVirtualProfile(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)
+			out.CheckExitCloudAdmin(p)
 
 			// Create new HTTP client for communication w/ admin server
-			cl, err := admin.NewClient(fs, p)
+			cl, err := adminapi.NewClient(fs, p)
 			out.MaybeDie(err, "unable to initialize admin client: %v", err)
 
 			// Make HTTP GET request to any node requesting for status
@@ -113,7 +114,7 @@ func rowDataAsInterface(row []string) []interface{} {
 	return iarr
 }
 
-func runningNodes(reports []admin.SelfTestNodeReport) []int {
+func runningNodes(reports []adminapi.SelfTestNodeReport) []int {
 	running := []int{}
 	for _, report := range reports {
 		if report.Status == statusRunning {
@@ -124,7 +125,7 @@ func runningNodes(reports []admin.SelfTestNodeReport) []int {
 	return running
 }
 
-func isUninitialized(reports []admin.SelfTestNodeReport) bool {
+func isUninitialized(reports []adminapi.SelfTestNodeReport) bool {
 	noResults := 0
 	for _, report := range reports {
 		if report.Status == statusIdle && len(report.Results) == 0 {
@@ -134,11 +135,11 @@ func isUninitialized(reports []admin.SelfTestNodeReport) bool {
 	return noResults == len(reports)
 }
 
-func makeReportHeader(report admin.SelfTestNodeReport) string {
+func makeReportHeader(report adminapi.SelfTestNodeReport) string {
 	return fmt.Sprintf("NODE ID: %d | STATUS: %s", report.NodeID, report.Status)
 }
 
-func makeReportTable(report admin.SelfTestNodeReport) [][]string {
+func makeReportTable(report adminapi.SelfTestNodeReport) [][]string {
 	var table [][]string
 	for _, sr := range report.Results {
 		table = append(table, []string{"NAME", sr.TestName})
@@ -159,7 +160,7 @@ func makeReportTable(report admin.SelfTestNodeReport) [][]string {
 		}
 		table = append(table, []string{"IOPS", fmt.Sprintf("%d req/sec", *sr.RequestsPerSec)})
 		var throughput string
-		if sr.TestType == admin.NetcheckTagIdentifier {
+		if sr.TestType == adminapi.NetcheckTagIdentifier {
 			throughput = system.BitsToHuman(float64(*sr.BytesPerSec))
 		} else {
 			throughput = units.BytesSize(float64(*sr.BytesPerSec))

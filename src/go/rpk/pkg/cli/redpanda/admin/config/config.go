@@ -9,7 +9,7 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/api/admin"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/adminapi"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/out"
 	"github.com/spf13/afero"
@@ -40,8 +40,9 @@ func newPrintCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 		Run: func(cmd *cobra.Command, _ []string) {
 			p, err := p.LoadVirtualProfile(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)
+			out.CheckExitCloudAdmin(p)
 
-			cl, err := admin.NewHostClient(fs, p, host)
+			cl, err := adminapi.NewHostClient(fs, p, host)
 			out.MaybeDie(err, "unable to initialize admin client: %v", err)
 
 			conf, err := cl.Config(cmd.Context(), true)
@@ -105,7 +106,7 @@ failure of enabling each logger is individually printed.
 			p, err := p.LoadVirtualProfile(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)
 
-			cl, err := admin.NewHostClient(fs, p, host)
+			cl, err := adminapi.NewHostClient(fs, p, host)
 			out.MaybeDie(err, "unable to initialize admin client: %v", err)
 
 			switch len(loggers) {

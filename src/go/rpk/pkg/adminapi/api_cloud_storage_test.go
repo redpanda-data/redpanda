@@ -7,7 +7,7 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
-package admin
+package adminapi
 
 import (
 	"context"
@@ -35,7 +35,7 @@ func TestStartAutomatedRecovery(t *testing.T) {
 		server := httptest.NewServer(test.testFn(t))
 		defer server.Close()
 
-		client, err := NewAdminAPI([]string{server.URL}, BasicCredentials{}, nil)
+		client, err := NewAdminAPI([]string{server.URL}, new(NopAuth), nil)
 		assert.NoError(t, err)
 
 		response, err := client.StartAutomatedRecovery(context.Background(), ".*")
@@ -106,7 +106,7 @@ func TestPollAutomatedRecoveryStatus(t *testing.T) {
 		server := httptest.NewServer(test.testFn(t))
 		defer server.Close()
 
-		client, err := NewAdminAPI([]string{server.URL}, BasicCredentials{}, nil)
+		client, err := NewAdminAPI([]string{server.URL}, new(NopAuth), nil)
 		assert.NoError(t, err)
 
 		resp, err := client.PollAutomatedRecoveryStatus(context.Background())

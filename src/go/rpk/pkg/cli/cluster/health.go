@@ -14,7 +14,7 @@ import (
 	"reflect"
 	"time"
 
-	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/api/admin"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/adminapi"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/out"
 	"github.com/spf13/afero"
@@ -41,11 +41,12 @@ following conditions are met:
 		Run: func(cmd *cobra.Command, _ []string) {
 			p, err := p.LoadVirtualProfile(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)
+			out.CheckExitCloudAdmin(p)
 
-			cl, err := admin.NewClient(fs, p)
+			cl, err := adminapi.NewClient(fs, p)
 			out.MaybeDie(err, "unable to initialize admin client: %v", err)
 
-			var lastOverview admin.ClusterHealthOverview
+			var lastOverview adminapi.ClusterHealthOverview
 			for {
 				ret, err := cl.GetHealthOverview(cmd.Context())
 				out.MaybeDie(err, "unable to request cluster health: %v", err)
@@ -68,7 +69,7 @@ following conditions are met:
 	return cmd
 }
 
-func printHealthOverview(hov *admin.ClusterHealthOverview) {
+func printHealthOverview(hov *adminapi.ClusterHealthOverview) {
 	types.Sort(hov)
 	out.Section("CLUSTER HEALTH OVERVIEW")
 	overviewFormat := `Healthy:               %v

@@ -22,7 +22,17 @@ import (
 
 	"github.com/AlecAivazis/survey/v2"
 	"github.com/twmb/franz-go/pkg/kadm"
+
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 )
+
+// CheckExitCloudAdmin exits if the profile has FromCloud=true and no
+// ALLOW_RPK_CLOUD_ADMIN override.
+func CheckExitCloudAdmin(p *config.RpkProfile) {
+	if p.FromCloud && !p.DevOverrides().AllowRpkCloudAdmin {
+		Die("This admin API based command is not supported on Redpanda Cloud clusters.")
+	}
+}
 
 // Confirm prompts the user to confirm the formatted message and returns the
 // confirmation result or an error.

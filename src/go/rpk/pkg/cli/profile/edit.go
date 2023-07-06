@@ -20,34 +20,22 @@ import (
 )
 
 func newEditCommand(fs afero.Fs, p *config.Params) *cobra.Command {
-	var raw bool
-	cmd := &cobra.Command{
+	return &cobra.Command{
 		Use:   "edit [NAME]",
 		Short: "Edit an rpk profile",
 		Long: `Edit an rpk profile.
 
 This command opens your default editor to edit the specified profile, or
-the current profile if no profile is specified.
-
-If you are editing the current profile, rpk also populates what you edit
-with internal defaults, user specified flags, and environment variables.
-If you want to edit the current raw profile as it exists in rpk.yaml, you
-can use the --raw flag.
+the current profile if no profile is specified. If the profile does not
+exist, this command creates it and switches to it.
 `,
 		Args:              cobra.MaximumNArgs(1),
 		ValidArgsFunction: ValidProfiles(fs, p),
 		Run: func(_ *cobra.Command, args []string) {
 			cfg, err := p.Load(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)
-
-			y := cfg.VirtualRpkYaml()
-			if raw {
-				var ok bool
-				y, ok = cfg.ActualRpkYaml()
-				if !ok {
-					out.Die("rpk.yaml file does not exist")
-				}
-			}
+			y, err := cfg.ActualRpkYamlOrEmpty()
+			out.MaybeDie(err, "unable to load config: %v", err)
 
 			if len(args) == 0 {
 				args = append(args, y.CurrentProfile)
@@ -55,15 +43,20 @@ can use the --raw flag.
 			name := args[0]
 			p := y.Profile(name)
 			if p == nil {
-				out.Die("profile %s does not exist", name)
-				return
+				y.CurrentProfile = y.PushProfile(config.RpkProfile{Name: name})
+				p = y.Profile(name)
 			}
 
 			update, err := rpkos.EditTmpYAMLFile(fs, *p)
 			out.MaybeDieErr(err)
 
+			// If a user clears the name by accident, we keep the old name.
+			if update.Name == "" {
+				update.Name = name
+			}
+
 			var renamed, updatedCurrent bool
-			if update.Name != name && update.Name != "" {
+			if update.Name != name {
 				renamed = true
 				if y.CurrentProfile == name {
 					updatedCurrent = true
@@ -85,7 +78,4 @@ can use the --raw flag.
 			}
 		},
 	}
-
-	cmd.Flags().BoolVar(&raw, "raw", false, "Edit profile directly as it exists in rpk.yaml without any environment variables nor flags applied")
-	return cmd
 }

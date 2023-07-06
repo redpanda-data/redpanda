@@ -7,7 +7,7 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
-package admin
+package adminapi
 
 import (
 	"context"
@@ -77,7 +77,6 @@ func TestAdminAPI(t *testing.T) {
 			handlers: map[string]http.HandlerFunc{
 				"/v1/security/users": func(rw http.ResponseWriter, r *http.Request) {
 					rw.Write([]byte(`["Joss", "lola", "jeff", "tobias"]`))
-					rw.WriteHeader(http.StatusOK)
 				},
 			},
 			action: func(t *testing.T, a *AdminAPI) error {
@@ -109,7 +108,7 @@ func TestAdminAPI(t *testing.T) {
 				}
 			}()
 
-			adminClient, err := NewAdminAPI(urls, BasicCredentials{}, nil)
+			adminClient, err := NewAdminAPI(urls, new(NopAuth), nil)
 			require.NoError(t, err)
 			err = tt.action(t, adminClient)
 			require.NoError(t, err)

@@ -1245,14 +1245,21 @@ func (c *Config) fixSchemePorts() error {
 		c.redpandaYaml.Rpk.KafkaAPI.Brokers[i] = net.JoinHostPort(host, port)
 	}
 	for i, a := range c.redpandaYaml.Rpk.AdminAPI.Addresses {
-		_, host, port, err := rpknet.SplitSchemeHostPort(a)
+		scheme, host, port, err := rpknet.SplitSchemeHostPort(a)
 		if err != nil {
 			return fmt.Errorf("unable to fix admin address %v: %w", a, err)
 		}
-		if port == "" {
-			port = strconv.Itoa(DefaultKafkaPort)
+		switch scheme {
+		case "":
+			if port == "" {
+				port = strconv.Itoa(DefaultAdminPort)
+			}
+			c.redpandaYaml.Rpk.AdminAPI.Addresses[i] = net.JoinHostPort(host, port)
+		case "http", "https":
+			continue // keep whatever port exists; empty ports will default to 80 or 443
+		default:
+			return fmt.Errorf("unable to fix admin address %v: unsupported scheme %q", a, scheme)
 		}
-		c.redpandaYaml.Rpk.AdminAPI.Addresses[i] = net.JoinHostPort(host, port)
 	}
 	p := c.rpkYaml.Profile(c.rpkYaml.CurrentProfile)
 	for i, k := range p.KafkaAPI.Brokers {
@@ -1266,14 +1273,21 @@ func (c *Config) fixSchemePorts() error {
 		p.KafkaAPI.Brokers[i] = net.JoinHostPort(host, port)
 	}
 	for i, a := range p.AdminAPI.Addresses {
-		_, host, port, err := rpknet.SplitSchemeHostPort(a)
+		scheme, host, port, err := rpknet.SplitSchemeHostPort(a)
 		if err != nil {
 			return fmt.Errorf("unable to fix admin address %v: %w", a, err)
 		}
-		if port == "" {
-			port = strconv.Itoa(DefaultAdminPort)
+		switch scheme {
+		case "":
+			if port == "" {
+				port = strconv.Itoa(DefaultAdminPort)
+			}
+			p.AdminAPI.Addresses[i] = net.JoinHostPort(host, port)
+		case "http", "https":
+			continue // keep whatever port exists; empty ports will default to 80 or 443
+		default:
+			return fmt.Errorf("unable to fix admin address %v: unsupported scheme %q", a, scheme)
 		}
-		p.AdminAPI.Addresses[i] = net.JoinHostPort(host, port)
 	}
 	return nil
 }
@@ -1296,7 +1310,20 @@ func (c *Config) parseDevOverrides() {
 		if !ok {
 			panic(fmt.Sprintf("missing env tag on DevOverride.%s", t.Field(i).Name))
 		}
-		v.Field(i).SetString(os.Getenv(envKey))
+		envVal := os.Getenv(envKey)
+		if envVal == "" {
+			continue
+		}
+		f := v.Field(i)
+		t := f.Type()
+		switch t.Kind() {
+		case reflect.Bool:
+			f.SetBool(true) // any value for the env key means true
+		case reflect.String:
+			f.SetString(envVal)
+		default:
+			panic("unhandled type")
+		}
 	}
 }
 

@@ -15,7 +15,7 @@ import (
 	"math/big"
 	"strings"
 
-	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/api/admin"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/adminapi"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/out"
 	"github.com/spf13/afero"
@@ -48,7 +48,7 @@ acl help text for more info.
 			p, err := p.LoadVirtualProfile(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)
 
-			cl, err := admin.NewClient(fs, p)
+			cl, err := adminapi.NewClient(fs, p)
 			out.MaybeDie(err, "unable to initialize admin client: %v", err)
 
 			// Backwards compatibility: we favor the new user
@@ -85,9 +85,9 @@ acl help text for more info.
 
 			switch strings.ToLower(mechanism) {
 			case "scram-sha-256":
-				mechanism = admin.ScramSha256
+				mechanism = adminapi.ScramSha256
 			case "scram-sha-512":
-				mechanism = admin.ScramSha512
+				mechanism = adminapi.ScramSha512
 			default:
 				out.Die("unsupported mechanism %q", mechanism)
 			}
@@ -116,7 +116,7 @@ acl help text for more info.
 	cmd.Flags().StringVarP(&newPass, "new-password", "p", "", "")
 	cmd.Flags().MarkHidden("new-password")
 
-	cmd.Flags().StringVar(&mechanism, "mechanism", strings.ToLower(admin.ScramSha256), "SASL mechanism to use for the user you are creating (scram-sha-256, scram-sha-512, case insensitive)")
+	cmd.Flags().StringVar(&mechanism, "mechanism", strings.ToLower(adminapi.ScramSha256), "SASL mechanism to use for the user you are creating (scram-sha-256, scram-sha-512, case insensitive)")
 
 	return cmd
 }

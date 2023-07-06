@@ -7,7 +7,7 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
-package admin
+package adminapi
 
 import (
 	"context"
@@ -28,7 +28,7 @@ type newUser struct {
 const (
 	ScramSha256 = "SCRAM-SHA-256"
 	ScramSha512 = "SCRAM-SHA-512"
-	CloudOIDC   = "oidc_from_cloud_auth"
+	CloudOIDC   = "CLOUD-OIDC"
 )
 
 // CreateUser creates a user with the given username and password using the

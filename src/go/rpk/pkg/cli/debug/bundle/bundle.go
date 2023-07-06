@@ -69,6 +69,8 @@ func NewCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 			cfg, err := p.Load(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)
 
+			// We do not out.CheckExitCloudAdmin here, because
+			// capturing a debug *can* have access sometimes (k8s).
 			var (
 				p           = cfg.VirtualProfile()
 				y           = cfg.VirtualRedpandaYaml()

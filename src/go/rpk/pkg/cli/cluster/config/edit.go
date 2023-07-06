@@ -15,7 +15,7 @@ import (
 	"os"
 	"os/exec"
 
-	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/api/admin"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/adminapi"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/out"
 	"github.com/spf13/afero"
@@ -45,8 +45,9 @@ to edit all properties including these tunables.
 		Run: func(cmd *cobra.Command, _ []string) {
 			p, err := p.LoadVirtualProfile(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)
+			out.CheckExitCloudAdmin(p)
 
-			client, err := admin.NewClient(fs, p)
+			client, err := adminapi.NewClient(fs, p)
 			out.MaybeDie(err, "unable to initialize admin client: %v", err)
 
 			// GET the schema
@@ -67,9 +68,9 @@ to edit all properties including these tunables.
 
 func executeEdit(
 	ctx context.Context,
-	client *admin.AdminAPI,
-	schema admin.ConfigSchema,
-	currentConfig admin.Config,
+	client *adminapi.AdminAPI,
+	schema adminapi.ConfigSchema,
+	currentConfig adminapi.Config,
 	all *bool,
 ) error {
 	// Generate a yaml template for editing

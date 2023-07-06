@@ -3,7 +3,7 @@ package partitions
 import (
 	"fmt"
 
-	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/api/admin"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/adminapi"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/out"
 	"github.com/spf13/afero"
@@ -70,8 +70,9 @@ investigation. A few areas to investigate:
 		Run: func(cmd *cobra.Command, _ []string) {
 			p, err := p.LoadVirtualProfile(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)
+			out.CheckExitCloudAdmin(p)
 
-			cl, err := admin.NewClient(fs, p)
+			cl, err := adminapi.NewClient(fs, p)
 			out.MaybeDie(err, "unable to initialize admin client: %v", err)
 
 			status, err := cl.GetPartitionStatus(cmd.Context())
@@ -84,7 +85,7 @@ investigation. A few areas to investigate:
 	return cmd
 }
 
-func printBalancerStatus(pbs admin.PartitionBalancerStatus) {
+func printBalancerStatus(pbs adminapi.PartitionBalancerStatus) {
 	const format = `Status:                       %v
 Seconds Since Last Tick:      %v
 Current Reassignment Count:   %v
