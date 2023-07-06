@@ -71,9 +71,11 @@ topic_b 0
 
 			// For -topic options that didn't include partitions, perform a
 			// lookup for them using a metadata request
-			mdResp, err := adm.Metadata(context.Background(), topicsSet.EmptyTopics()...)
-			out.MaybeDie(err, "unable to make metadata request: %v", err)
-			topicsSet.Merge(mdResp.Topics.TopicsSet())
+			if empty := topicsSet.EmptyTopics(); len(empty) > 0 {
+				mdResp, err := adm.Metadata(context.Background(), empty...)
+				out.MaybeDie(err, "unable to make metadata request: %v", err)
+				topicsSet.Merge(mdResp.Topics.TopicsSet())
+			}
 
 			responses, err := adm.DeleteOffsets(context.Background(), args[0], topicsSet)
 			out.MaybeDieErr(err)
@@ -100,7 +102,7 @@ topic_b 0
 func parseTopicPartitionsArgs(list []string) (kadm.TopicsSet, error) {
 	parsed, err := out.ParseTopicPartitions(list)
 	if err == nil {
-		topicsList := make(kadm.TopicsList, len(parsed))
+		topicsList := make(kadm.TopicsList, 0, len(parsed))
 		for topic, partitions := range parsed {
 			topicsList = append(topicsList, kadm.TopicPartitions{Topic: topic, Partitions: partitions})
 		}
