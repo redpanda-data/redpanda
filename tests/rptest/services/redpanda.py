@@ -1865,6 +1865,8 @@ class RedpandaService(RedpandaServiceBase):
         self.logger.info("Verifying storage is in expected state")
         storage = self.storage()
         for node in storage.nodes:
+            if node not in to_start:
+                continue
             unexpected_ns = set(node.ns) - {"redpanda"}
             if unexpected_ns:
                 for ns in unexpected_ns:
