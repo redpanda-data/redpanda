@@ -151,6 +151,7 @@ func (r *ClusterReconciler) Reconcile(
 	ar.bootstrapService()
 	ar.clusterRole()
 	ar.clusterRoleBinding()
+	ar.clusterService()
 
 	if vectorizedCluster.Status.CurrentReplicas >= 1 {
 		if err := r.setPodNodeIDAnnotation(ctx, &vectorizedCluster, log); err != nil {
@@ -161,12 +162,10 @@ func (r *ClusterReconciler) Reconcile(
 	redpandaPorts := networking.NewRedpandaPorts(&vectorizedCluster)
 	nodeports := collectNodePorts(redpandaPorts)
 	headlessPorts := collectHeadlessPorts(redpandaPorts)
-	clusterPorts := collectClusterPorts(redpandaPorts, &vectorizedCluster)
 
 	headlessSvc := resources.NewHeadlessService(r.Client, &vectorizedCluster, r.Scheme, headlessPorts, log)
 	nodeportSvc := resources.NewNodePortService(r.Client, &vectorizedCluster, r.Scheme, nodeports, log)
 
-	clusterSvc := resources.NewClusterService(r.Client, &vectorizedCluster, r.Scheme, clusterPorts, log)
 	subdomain := ""
 	var ppIngressConfig *vectorizedv1alpha1.IngressConfig
 	proxyAPIExternal := vectorizedCluster.PandaproxyAPIExternal()
@@ -178,7 +177,7 @@ func (r *ClusterReconciler) Reconcile(
 		&vectorizedCluster,
 		r.Scheme,
 		subdomain,
-		clusterSvc.Key().Name,
+		ar.getClusterServiceName(),
 		resources.PandaproxyPortExternalName,
 		log).
 		WithAnnotations(map[string]string{resources.SSLPassthroughAnnotation: "true"}).
@@ -196,7 +195,7 @@ func (r *ClusterReconciler) Reconcile(
 		schemaRegistrySu = resources.NewSuperUsers(r.Client, &vectorizedCluster, r.Scheme, resources.ScramSchemaRegistryUsername, resources.SchemaRegistrySuffix, log)
 		schemaRegistrySuKey = schemaRegistrySu.Key()
 	}
-	pki, err := certmanager.NewPki(ctx, r.Client, &vectorizedCluster, headlessSvc.HeadlessServiceFQDN(r.clusterDomain), clusterSvc.ServiceFQDN(r.clusterDomain), r.Scheme, log)
+	pki, err := certmanager.NewPki(ctx, r.Client, &vectorizedCluster, headlessSvc.HeadlessServiceFQDN(r.clusterDomain), ar.getClusterServiceFQDN(), r.Scheme, log)
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("creating pki: %w", err)
 	}
@@ -223,7 +222,6 @@ func (r *ClusterReconciler) Reconcile(
 
 	toApply := []resources.Reconciler{
 		headlessSvc,
-		clusterSvc,
 		nodeportSvc,
 		ingress,
 		proxySu,
@@ -287,7 +285,7 @@ func (r *ClusterReconciler) Reconcile(
 		&vectorizedCluster,
 		sts,
 		headlessSvc.HeadlessServiceFQDN(r.clusterDomain),
-		clusterSvc.ServiceFQDN(r.clusterDomain),
+		ar.getClusterServiceFQDN(),
 		schemaRegistryPort,
 		nodeportSvc.Key(),
 		ar.getBootstrapServiceKey(),
@@ -1194,6 +1192,7 @@ const (
 	bootstrapService   = "BootstrapService"
 	clusterRole        = "ClusterRole"
 	clusterRoleBinding = "ClusterRoleBinding"
+	clusterService     = "ClusterPorts"
 )
 
 func newAttachedResources(ctx context.Context, r *ClusterReconciler, log logr.Logger, cluster *vectorizedv1alpha1.Cluster) *attachedResources {
@@ -1263,4 +1262,27 @@ func (a *attachedResources) clusterRoleBinding() {
 func (a *attachedResources) getClusterRoleBinding() *resources.ClusterRoleBindingResource {
 	a.clusterRoleBinding()
 	return a.items[clusterRoleBinding].(*resources.ClusterRoleBindingResource)
+}
+
+func (a *attachedResources) clusterService() {
+	// if already initialized, exit immediately
+	if _, ok := a.items[clusterService]; ok {
+		return
+	}
+	redpandaPorts := networking.NewRedpandaPorts(a.cluster)
+	clusterPorts := collectClusterPorts(redpandaPorts, a.cluster)
+	a.items[clusterService] = resources.NewClusterService(a.reconciler.Client, a.cluster, a.reconciler.Scheme, clusterPorts, a.log)
+}
+
+func (a *attachedResources) getClusterService() *resources.ClusterServiceResource {
+	a.clusterService()
+	return a.items[clusterService].(*resources.ClusterServiceResource)
+}
+
+func (a *attachedResources) getClusterServiceName() string {
+	return a.getClusterService().Key().Name
+}
+
+func (a *attachedResources) getClusterServiceFQDN() string {
+	return a.getClusterService().ServiceFQDN(a.reconciler.clusterDomain)
 }
