@@ -521,7 +521,7 @@ configuration::configuration()
       "use_fetch_scheduler_group",
       "Use a separate scheduler group for fetch processing",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
-      true)
+      false)
   , metadata_status_wait_timeout_ms(
       *this,
       "metadata_status_wait_timeout_ms",
