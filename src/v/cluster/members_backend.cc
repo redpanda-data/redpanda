@@ -21,6 +21,7 @@
 #include "random/generators.h"
 
 #include <seastar/core/coroutine.hh>
+#include <seastar/util/log.hh>
 
 namespace cluster {
 namespace {
@@ -291,6 +292,7 @@ ss::future<> members_backend::calculate_reallocations_after_recommissioned(
 ss::future<std::error_code> members_backend::reconcile() {
     // if nothing to do, wait
     co_await _new_updates.wait([this] { return !_updates.empty(); });
+    vlog(clusterlog.trace, "reconcile() found {} updates", _updates.size());
     auto u = co_await _lock.get_units();
 
     // remove finished updates
@@ -302,12 +304,19 @@ ss::future<std::error_code> members_backend::reconcile() {
     }
 
     if (!_raft0->is_elected_leader()) {
+        vlog(
+          clusterlog.trace,
+          "reconcile() early exit, leader: false, empty(): {}",
+          _updates.empty());
         co_return errc::not_leader;
     }
 
     // use linearizable barrier to make sure leader is up to date and all
     // changes are applied
+
+    vlog(clusterlog.trace, "reconcile() before barrier");
     auto barrier_result = co_await _raft0->linearizable_barrier();
+    vlog(clusterlog.trace, "reconcile() after barrier");
     if (
       barrier_result.has_error()
       || barrier_result.value() < _raft0->dirty_offset()) {
@@ -337,6 +346,11 @@ ss::future<std::error_code> members_backend::reconcile() {
     // there is no stale state
     auto current_term = _raft0->term();
     if (_last_term != current_term) {
+        vlog(
+          clusterlog.trace,
+          "reconcile() leadership changed {} {}",
+          _last_term,
+          current_term);
         for (auto& [_, reallocation] : meta.partition_reallocations) {
             if (reallocation.state == reallocation_state::reassigned) {
                 reallocation.release_allocated();
@@ -346,6 +360,13 @@ ss::future<std::error_code> members_backend::reconcile() {
         }
     }
     _last_term = current_term;
+
+    vlog(
+      clusterlog.trace,
+      "reconcile() try_to_finish for {} with {} reallocs, {} updates remaining",
+      meta.update,
+      meta.partition_reallocations.size(),
+      _updates.size());
 
     co_await try_to_finish_update(meta);
 
@@ -470,6 +491,10 @@ ss::future<>
 members_backend::try_to_finish_update(members_backend::update_meta& meta) {
     // broker was removed, finish
     if (!_members.local().contains(meta.update.id)) {
+        vlog(
+          clusterlog.trace,
+          "reconcile() finished update for {} as it was removed",
+          meta.update);
         meta.finished = true;
     }
 
@@ -486,18 +511,44 @@ members_backend::try_to_finish_update(members_backend::update_meta& meta) {
         co_return;
     }
 
+    auto is_finished = [](const auto& r) {
+        return r.second.state == reallocation_state::finished;
+    };
+
     // if all reallocations are propagate reallocation finished event and
     // mark update as finished
     const auto all_reallocations_finished = std::all_of(
       meta.partition_reallocations.begin(),
       meta.partition_reallocations.end(),
-      [](const auto& r) {
-          return r.second.state == reallocation_state::finished;
-      });
+      is_finished);
+
+    if (clusterlog.is_enabled(ss::log_level::trace)) {
+        const auto finished_count = std::count_if(
+          meta.partition_reallocations.begin(),
+          meta.partition_reallocations.end(),
+          is_finished);
+        vlog(
+          clusterlog.trace,
+          "reconcile() try_to_finish() {}: {}/{} finished",
+          meta.update,
+          finished_count,
+          meta.partition_reallocations.size());
+    }
 
     if (all_reallocations_finished && !meta.partition_reallocations.empty()) {
+        vlog(
+          clusterlog.trace,
+          "reconcile() try_to_finish() {}: begin finish_node_reallocations",
+          meta.update);
         auto err = co_await _members_frontend.local().finish_node_reallocations(
           meta.update.id);
+
+        vlog(
+          clusterlog.trace,
+          "reconcile() try_to_finish() {}: end finish_node_reallocations: {}",
+          meta.update,
+          err);
+
         if (!err) {
             meta.finished = true;
         }
@@ -523,6 +574,11 @@ ss::future<> members_backend::reconcile_reallocation_state(
         if (meta.new_replica_set.empty()) {
             // if partition allocator failed to reassign partitions return
             // and wait for next retry
+            vlog(
+              clusterlog.trace,
+              "[ntp: {}, {} -> -] new partition assignment failed (empty)",
+              ntp,
+              meta.new_replica_set);
             co_return;
         }
         // success, update state and move on
