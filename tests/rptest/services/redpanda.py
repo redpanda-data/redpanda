@@ -1196,7 +1196,7 @@ class RedpandaServiceCloud(RedpandaServiceK8s):
                      oauth_client_secret,
                      oauth_audience,
                      api_url,
-                     cluster_id=None,
+                     cluster_id='',
                      delete_namespace=False):
             """
             Initializes the object, but does not create clusters. Use
@@ -1209,7 +1209,7 @@ class RedpandaServiceCloud(RedpandaServiceK8s):
             :param oauth_client_secret: client secret from redpanda cloud ui page for clients
             :param oauth_audience: oauth audience
             :param api_url: url of hostname for swagger api without trailing slash char
-            :param cluster_id: if not None, will skip creating a new cluster
+            :param cluster_id: if not empty string, will skip creating a new cluster
             :param delete_namespace: if False, will skip namespace deletion step after tests are run
             """
 
@@ -1340,7 +1340,7 @@ class RedpandaServiceCloud(RedpandaServiceK8s):
             if product_id is None:
                 product_id = self.DEFAULT_PRODUCT_ID
 
-            if self.cluster_id is not None:
+            if self.cluster_id != '':
                 self._logger.warn(
                     f'will not create cluster; already have cluster_id {self.cluster_id}'
                 )
@@ -1405,9 +1405,9 @@ class RedpandaServiceCloud(RedpandaServiceK8s):
             Deletes a cloud cluster and the namespace it belongs to.
             """
 
-            if self._cluster_id is None:
+            if self._cluster_id == '':
                 self._logger.warn(
-                    f'cluster_id is None, unable to delete cluster')
+                    f'cluster_id is empty, unable to delete cluster')
                 return
 
             resp = self._http_get(f'/api/v1/clusters/{self.cluster_id}')
@@ -1415,7 +1415,7 @@ class RedpandaServiceCloud(RedpandaServiceK8s):
 
             resp = self._http_delete(f'/api/v1/clusters/{self.cluster_id}')
             self._logger.debug(f'resp: {json.dumps(resp)}')
-            self._cluster_id = None
+            self._cluster_id = ''
 
             # skip namespace deletion to avoid error because cluster delete not complete yet
             if self._delete_namespace:
@@ -1450,7 +1450,7 @@ class RedpandaServiceCloud(RedpandaServiceK8s):
         self._cloud_api_url = context.globals.get(self.GLOBAL_CLOUD_API_URL,
                                                   None)
         self._cloud_cluster_id = context.globals.get(
-            self.GLOBAL_CLOUD_CLUSTER_ID, None)
+            self.GLOBAL_CLOUD_CLUSTER_ID, '')
         self._cloud_delete_cluster = context.globals.get(
             self.GLOBAL_CLOUD_DELETE_CLUSTER, True)
         self.logger.debug(f'initial cluster_id: {self._cloud_cluster_id}')
