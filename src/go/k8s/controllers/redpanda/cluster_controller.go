@@ -153,6 +153,7 @@ func (r *ClusterReconciler) Reconcile(
 	ar.clusterRoleBinding()
 	ar.clusterService()
 	ar.headlessService()
+	ar.ingress()
 
 	if vectorizedCluster.Status.CurrentReplicas >= 1 {
 		if err := r.setPodNodeIDAnnotation(ctx, &vectorizedCluster, log, ar); err != nil {
@@ -164,23 +165,6 @@ func (r *ClusterReconciler) Reconcile(
 	nodeports := collectNodePorts(redpandaPorts)
 
 	nodeportSvc := resources.NewNodePortService(r.Client, &vectorizedCluster, r.Scheme, nodeports, log)
-
-	subdomain := ""
-	var ppIngressConfig *vectorizedv1alpha1.IngressConfig
-	proxyAPIExternal := vectorizedCluster.PandaproxyAPIExternal()
-	if proxyAPIExternal != nil {
-		subdomain = proxyAPIExternal.External.Subdomain
-		ppIngressConfig = proxyAPIExternal.External.Ingress
-	}
-	ingress := resources.NewIngress(r.Client,
-		&vectorizedCluster,
-		r.Scheme,
-		subdomain,
-		ar.getClusterServiceName(),
-		resources.PandaproxyPortExternalName,
-		log).
-		WithAnnotations(map[string]string{resources.SSLPassthroughAnnotation: "true"}).
-		WithUserConfig(ppIngressConfig)
 
 	var proxySu *resources.SuperUsersResource
 	var proxySuKey types.NamespacedName
@@ -221,7 +205,6 @@ func (r *ClusterReconciler) Reconcile(
 
 	toApply := []resources.Reconciler{
 		nodeportSvc,
-		ingress,
 		proxySu,
 		schemaRegistrySu,
 		configMapResource,
@@ -1186,6 +1169,7 @@ const (
 	clusterRoleBinding = "ClusterRoleBinding"
 	clusterService     = "ClusterPorts"
 	headlessService    = "HeadlessService"
+	ingress            = "Ingress"
 )
 
 func newAttachedResources(ctx context.Context, r *ClusterReconciler, log logr.Logger, cluster *vectorizedv1alpha1.Cluster) *attachedResources {
@@ -1306,4 +1290,22 @@ func (a *attachedResources) getHeadlessServiceName() string {
 
 func (a *attachedResources) getHeadlessServiceFQDN() string {
 	return a.getHeadlessService().HeadlessServiceFQDN(a.reconciler.clusterDomain)
+}
+
+func (a *attachedResources) ingress() {
+	// if already initialized, exit immediately
+	if _, ok := a.items[ingress]; ok {
+		return
+	}
+	clusterServiceName := a.getClusterServiceName()
+
+	var pandaProxyIngressConfig *vectorizedv1alpha1.IngressConfig
+	subdomain := ""
+	proxyAPIExternal := a.cluster.PandaproxyAPIExternal()
+	if proxyAPIExternal != nil {
+		subdomain = proxyAPIExternal.External.Subdomain
+		pandaProxyIngressConfig = proxyAPIExternal.External.Ingress
+	}
+
+	a.items[ingress] = resources.NewIngress(a.reconciler.Client, a.cluster, a.reconciler.Scheme, subdomain, clusterServiceName, resources.PandaproxyPortExternalName, a.log).WithAnnotations(map[string]string{resources.SSLPassthroughAnnotation: "true"}).WithUserConfig(pandaProxyIngressConfig)
 }
