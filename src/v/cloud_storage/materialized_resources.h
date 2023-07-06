@@ -86,6 +86,12 @@ private:
     /// How many materialized_segment_state instances exist
     size_t current_segments() const;
 
+    /// Counts the number of times when get_partition_reader_units() was
+    /// called and had to sleep because no units were immediately available.
+    uint64_t get_partition_readers_delayed() {
+        return _partition_readers_delayed;
+    }
+
     /// Consume from _eviction_list
     ss::future<> run_eviction_loop();
 
@@ -141,6 +147,9 @@ private:
 
     /// Cache used to store materialized spillover manifests
     ss::shared_ptr<materialized_manifest_cache> _manifest_cache;
+
+    /// Counter that is exposed via probe object.
+    uint64_t _partition_readers_delayed{0};
 };
 
 } // namespace cloud_storage

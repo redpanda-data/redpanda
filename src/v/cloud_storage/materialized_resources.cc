@@ -149,6 +149,11 @@ ssx::semaphore_units materialized_resources::get_segment_reader_units() {
 
 ss::future<ssx::semaphore_units>
 materialized_resources::get_partition_reader_units(size_t n) {
+    if (_partition_reader_units.available_units() <= 0) {
+        // Update metrics counter if we are trying to acquire units while
+        // saturated saturated
+        _partition_readers_delayed += 1;
+    }
     return _partition_reader_units.get_units(n);
 }
 

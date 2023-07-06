@@ -189,12 +189,14 @@ class partition_record_batch_reader_impl final
 public:
     explicit partition_record_batch_reader_impl(
       ss::shared_ptr<remote_partition> part,
-      ss::lw_shared_ptr<storage::offset_translator_state> ot_state) noexcept
+      ss::lw_shared_ptr<storage::offset_translator_state> ot_state,
+      ssx::semaphore_units units) noexcept
       : _rtc(part->_as)
       , _ctxlog(cst_log, _rtc, part->get_ntp().path())
       , _partition(std::move(part))
       , _ot_state(std::move(ot_state))
-      , _gate_guard(_partition->_gate) {
+      , _gate_guard(_partition->_gate)
+      , _units(std::move(units)) {
         auto ntp = _partition->get_ntp();
         vlog(_ctxlog.trace, "Constructing reader {}", ntp);
     }
@@ -622,6 +624,10 @@ private:
     /// Contains offset of the first produced record batch or min()
     /// if no data were produced yet
     model::offset _first_produced_offset{};
+
+    /// RAII units managed by `materialized_resources` to limit concurrent
+    /// readers, we simply carry the object around and then free on destruction.
+    ssx::semaphore_units _units;
 };
 
 remote_partition::remote_partition(
@@ -897,10 +903,12 @@ ss::future<storage::translating_reader> remote_partition::make_reader(
       "remote partition make_reader invoked, config: {}, num segments {}",
       config,
       _segments.size());
+
+    auto units = co_await _api.materialized().get_partition_reader_units(1);
     auto ot_state = ss::make_lw_shared<storage::offset_translator_state>(
       get_ntp());
     auto impl = std::make_unique<partition_record_batch_reader_impl>(
-      shared_from_this(), ot_state);
+      shared_from_this(), ot_state, std::move(units));
     co_await impl->start(config);
     co_return storage::translating_reader{
       model::record_batch_reader(std::move(impl)), std::move(ot_state)};
