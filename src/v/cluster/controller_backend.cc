@@ -959,7 +959,10 @@ controller_backend::process_partition_reconfiguration(
              * configuration so old replicas are not longer needed.
              */
             if (can_finish_update(
-                  type, target_assignment.replicas, previous_replicas)) {
+                  partition->get_leader_id(),
+                  type,
+                  target_assignment.replicas,
+                  previous_replicas)) {
                 co_return co_await dispatch_update_finished(
                   std::move(ntp), target_assignment);
             }
@@ -1009,12 +1012,14 @@ controller_backend::process_partition_reconfiguration(
 }
 
 bool controller_backend::can_finish_update(
+  std::optional<model::node_id> current_leader,
   topic_table_delta::op_type update_type,
   const std::vector<model::broker_shard>& current_replicas,
   const std::vector<model::broker_shard>& previous_replicas) {
     // force abort update may be finished by any node
     if (update_type == topic_table_delta::op_type::force_abort_update) {
-        return true;
+        return current_leader == _self;
+        ;
     }
     // update may be finished by a node that was added to replica set
     if (!has_local_replicas(_self, previous_replicas)) {
