@@ -403,7 +403,7 @@ class NodesDecommissioningTest(PreallocNodesTest):
 
         self._wait_for_node_removed(to_decommission)
         # stop decommissioned node
-        self.redpanda.stop_node(self.redpanda.get_node(to_decommission))
+        self.redpanda.stop_node(self.redpanda.get_node_by_id(to_decommission))
 
         self.verify()
 
