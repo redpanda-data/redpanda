@@ -159,6 +159,7 @@ func (r *ClusterReconciler) Reconcile(
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("creating pki: %w", err)
 	}
+	ar.podDisruptionBudget()
 
 	if vectorizedCluster.Status.CurrentReplicas >= 1 {
 		if err = r.setPodNodeIDAnnotation(ctx, &vectorizedCluster, log, ar); err != nil {
@@ -205,7 +206,6 @@ func (r *ClusterReconciler) Reconcile(
 		configMapResource,
 		secretResource,
 		sa,
-		resources.NewPDB(r.Client, &vectorizedCluster, r.Scheme, log),
 		sts,
 	}
 
@@ -1145,14 +1145,15 @@ type attachedResources struct {
 }
 
 const (
-	bootstrapService   = "BootstrapService"
-	clusterRole        = "ClusterRole"
-	clusterRoleBinding = "ClusterRoleBinding"
-	clusterService     = "ClusterPorts"
-	headlessService    = "HeadlessService"
-	ingress            = "Ingress"
-	nodeportService    = "NodeportService"
-	pki                = "PKI"
+	bootstrapService    = "BootstrapService"
+	clusterRole         = "ClusterRole"
+	clusterRoleBinding  = "ClusterRoleBinding"
+	clusterService      = "ClusterPorts"
+	headlessService     = "HeadlessService"
+	ingress             = "Ingress"
+	nodeportService     = "NodeportService"
+	pki                 = "PKI"
+	podDisruptionBudget = "PodDisruptionBudget"
 )
 
 func newAttachedResources(ctx context.Context, r *ClusterReconciler, log logr.Logger, cluster *vectorizedv1alpha1.Cluster) *attachedResources {
@@ -1333,4 +1334,12 @@ func (a *attachedResources) getPKI() (*certmanager.PkiReconciler, error) {
 		return nil, err
 	}
 	return a.items[pki].(*certmanager.PkiReconciler), nil
+}
+
+func (a *attachedResources) podDisruptionBudget() {
+	// if already initialized, exit immediately
+	if _, ok := a.items[podDisruptionBudget]; ok {
+		return
+	}
+	a.items[podDisruptionBudget] = resources.NewPDB(a.reconciler.Client, a.cluster, a.reconciler.Scheme, a.log)
 }
