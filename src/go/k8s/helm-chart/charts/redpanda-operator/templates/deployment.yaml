@@ -64,7 +64,7 @@ spec:
         {{- end }}
         {{- if eq .Values.scope "Namespace" }}
         - --namespace={{ .Release.Namespace }}
-        - --log-level=debug
+        - --log-level={{ .Values.logLevel }}
         {{- end }}
         command:
         - /manager

@@ -21,7 +21,6 @@ rules:
   - ""
   - coordination.k8s.io
   resources:
-  - configmaps
   - leases
   verbs:
   - get
@@ -31,14 +30,7 @@ rules:
   - update
   - patch
   - delete
-- apiGroups:
-  - ""
-  resources:
-  - events
-  verbs:
-  - create
-  - patch
-  {{- if eq .Values.scope "Namespace" }}
+{{- if eq .Values.scope "Namespace" }}
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
@@ -47,6 +39,16 @@ metadata:
   labels:
 {{ include "redpanda-operator.labels" . | indent 4 }}
 rules:
+  - apiGroups:
+      - apps
+    resources:
+      - deployments
+    verbs:
+      - create
+      - delete
+      - get
+      - patch
+      - update
   - apiGroups:
       - apps
     resources:
@@ -60,6 +62,16 @@ rules:
       - update
       - watch
   - apiGroups:
+      - apps
+    resources:
+      - statefulsets
+    verbs:
+      - create
+      - delete
+      - get
+      - patch
+      - update
+  - apiGroups:
       - batch
     resources:
       - jobs
@@ -71,6 +83,26 @@ rules:
       - patch
       - update
       - watch
+  - apiGroups:
+      - cert-manager.io
+    resources:
+      - certificates
+    verbs:
+      - create
+      - delete
+      - get
+      - patch
+      - update
+  - apiGroups:
+      - cert-manager.io
+    resources:
+      - issuers
+    verbs:
+      - create
+      - delete
+      - get
+      - patch
+      - update
   - apiGroups:
       - cluster.redpanda.com
     resources:
@@ -187,6 +219,16 @@ rules:
     resources:
       - helmreleases/status
     verbs:
+      - get
+      - patch
+      - update
+  - apiGroups:
+      - policy
+    resources:
+      - poddisruptionbudgets
+    verbs:
+      - create
+      - delete
       - get
       - patch
       - update

@@ -256,6 +256,16 @@ rules:
 - apiGroups:
   - apps
   resources:
+  - deployments
+  verbs:
+  - create
+  - delete
+  - get
+  - patch
+  - update
+- apiGroups:
+  - apps
+  resources:
   - replicasets
   verbs:
   - create
@@ -265,6 +275,16 @@ rules:
   - patch
   - update
   - watch
+- apiGroups:
+  - apps
+  resources:
+  - statefulsets
+  verbs:
+  - create
+  - delete
+  - get
+  - patch
+  - update
 - apiGroups:
   - batch
   resources:
@@ -277,6 +297,26 @@ rules:
   - patch
   - update
   - watch
+- apiGroups:
+  - cert-manager.io
+  resources:
+  - certificates
+  verbs:
+  - create
+  - delete
+  - get
+  - patch
+  - update
+- apiGroups:
+  - cert-manager.io
+  resources:
+  - issuers
+  verbs:
+  - create
+  - delete
+  - get
+  - patch
+  - update
 - apiGroups:
   - cluster.redpanda.com
   resources:
@@ -393,6 +433,16 @@ rules:
   resources:
   - helmreleases/status
   verbs:
+  - get
+  - patch
+  - update
+- apiGroups:
+  - policy
+  resources:
+  - poddisruptionbudgets
+  verbs:
+  - create
+  - delete
   - get
   - patch
   - update
