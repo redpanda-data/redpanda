@@ -112,9 +112,9 @@ func (r *ClusterReconciler) Reconcile(
 	log.Info("Starting reconcile loop")
 	defer log.Info("Finished reconcile loop")
 
-	var redpandaCluster vectorizedv1alpha1.Cluster
-	crb := resources.NewClusterRoleBinding(r.Client, &redpandaCluster, r.Scheme, log)
-	if err := r.Get(ctx, req.NamespacedName, &redpandaCluster); err != nil {
+	var vectorizedCluster vectorizedv1alpha1.Cluster
+	crb := resources.NewClusterRoleBinding(r.Client, &vectorizedCluster, r.Scheme, log)
+	if err := r.Get(ctx, req.NamespacedName, &vectorizedCluster); err != nil {
 		// we'll ignore not-found errors, since they can't be fixed by an immediate
 		// requeue (we'll need to wait for a new notification), and we can get them
 		// on deleted requests.
@@ -127,57 +127,57 @@ func (r *ClusterReconciler) Reconcile(
 		return ctrl.Result{}, fmt.Errorf("unable to retrieve Cluster resource: %w", err)
 	}
 	// if the cluster is being deleted, delete finalizers
-	if !redpandaCluster.GetDeletionTimestamp().IsZero() {
-		return r.handleClusterDeletion(ctx, &redpandaCluster, log)
+	if !vectorizedCluster.GetDeletionTimestamp().IsZero() {
+		return r.handleClusterDeletion(ctx, &vectorizedCluster, log)
 	}
 
 	// if the cluster isn't being deleted, add a finalizer
-	if !controllerutil.ContainsFinalizer(&redpandaCluster, FinalizerKey) {
+	if !controllerutil.ContainsFinalizer(&vectorizedCluster, FinalizerKey) {
 		log.V(logger.DebugLevel).Info("adding finalizer")
-		controllerutil.AddFinalizer(&redpandaCluster, FinalizerKey)
-		if err := r.Update(ctx, &redpandaCluster); err != nil {
+		controllerutil.AddFinalizer(&vectorizedCluster, FinalizerKey)
+		if err := r.Update(ctx, &vectorizedCluster); err != nil {
 			return ctrl.Result{}, fmt.Errorf("unable to set Cluster finalizer: %w", err)
 		}
 	}
 	// set a finalizer on the pods so we can have the data needed to decommission them
-	if err := r.handlePodFinalizer(ctx, &redpandaCluster, log); err != nil {
+	if err := r.handlePodFinalizer(ctx, &vectorizedCluster, log); err != nil {
 		return ctrl.Result{}, fmt.Errorf("setting pod finalizer: %w", err)
 	}
 
-	if !isRedpandaClusterManaged(log, &redpandaCluster) {
+	if !isRedpandaClusterManaged(log, &vectorizedCluster) {
 		return ctrl.Result{}, nil
 	}
 
-	if !isRedpandaClusterVersionManaged(log, &redpandaCluster, r.RestrictToRedpandaVersion) {
+	if !isRedpandaClusterVersionManaged(log, &vectorizedCluster, r.RestrictToRedpandaVersion) {
 		return ctrl.Result{}, nil
 	}
 
-	if redpandaCluster.Status.CurrentReplicas >= 1 {
-		if err := r.setPodNodeIDAnnotation(ctx, &redpandaCluster, log); err != nil {
+	if vectorizedCluster.Status.CurrentReplicas >= 1 {
+		if err := r.setPodNodeIDAnnotation(ctx, &vectorizedCluster, log); err != nil {
 			return ctrl.Result{}, fmt.Errorf("setting pod node_id annotation: %w", err)
 		}
 	}
 
-	redpandaPorts := networking.NewRedpandaPorts(&redpandaCluster)
+	redpandaPorts := networking.NewRedpandaPorts(&vectorizedCluster)
 	nodeports := collectNodePorts(redpandaPorts)
 	headlessPorts := collectHeadlessPorts(redpandaPorts)
 	lbPorts := collectLBPorts(redpandaPorts)
-	clusterPorts := collectClusterPorts(redpandaPorts, &redpandaCluster)
+	clusterPorts := collectClusterPorts(redpandaPorts, &vectorizedCluster)
 
-	headlessSvc := resources.NewHeadlessService(r.Client, &redpandaCluster, r.Scheme, headlessPorts, log)
-	nodeportSvc := resources.NewNodePortService(r.Client, &redpandaCluster, r.Scheme, nodeports, log)
-	bootstrapSvc := resources.NewLoadBalancerService(r.Client, &redpandaCluster, r.Scheme, lbPorts, true, log)
+	headlessSvc := resources.NewHeadlessService(r.Client, &vectorizedCluster, r.Scheme, headlessPorts, log)
+	nodeportSvc := resources.NewNodePortService(r.Client, &vectorizedCluster, r.Scheme, nodeports, log)
+	bootstrapSvc := resources.NewLoadBalancerService(r.Client, &vectorizedCluster, r.Scheme, lbPorts, true, log)
 
-	clusterSvc := resources.NewClusterService(r.Client, &redpandaCluster, r.Scheme, clusterPorts, log)
+	clusterSvc := resources.NewClusterService(r.Client, &vectorizedCluster, r.Scheme, clusterPorts, log)
 	subdomain := ""
 	var ppIngressConfig *vectorizedv1alpha1.IngressConfig
-	proxyAPIExternal := redpandaCluster.PandaproxyAPIExternal()
+	proxyAPIExternal := vectorizedCluster.PandaproxyAPIExternal()
 	if proxyAPIExternal != nil {
 		subdomain = proxyAPIExternal.External.Subdomain
 		ppIngressConfig = proxyAPIExternal.External.Ingress
 	}
 	ingress := resources.NewIngress(r.Client,
-		&redpandaCluster,
+		&vectorizedCluster,
 		r.Scheme,
 		subdomain,
 		clusterSvc.Key().Name,
@@ -188,27 +188,27 @@ func (r *ClusterReconciler) Reconcile(
 
 	var proxySu *resources.SuperUsersResource
 	var proxySuKey types.NamespacedName
-	if redpandaCluster.IsSASLOnInternalEnabled() && redpandaCluster.PandaproxyAPIInternal() != nil {
-		proxySu = resources.NewSuperUsers(r.Client, &redpandaCluster, r.Scheme, resources.ScramPandaproxyUsername, resources.PandaProxySuffix, log)
+	if vectorizedCluster.IsSASLOnInternalEnabled() && vectorizedCluster.PandaproxyAPIInternal() != nil {
+		proxySu = resources.NewSuperUsers(r.Client, &vectorizedCluster, r.Scheme, resources.ScramPandaproxyUsername, resources.PandaProxySuffix, log)
 		proxySuKey = proxySu.Key()
 	}
 	var schemaRegistrySu *resources.SuperUsersResource
 	var schemaRegistrySuKey types.NamespacedName
-	if redpandaCluster.IsSASLOnInternalEnabled() && redpandaCluster.Spec.Configuration.SchemaRegistry != nil {
-		schemaRegistrySu = resources.NewSuperUsers(r.Client, &redpandaCluster, r.Scheme, resources.ScramSchemaRegistryUsername, resources.SchemaRegistrySuffix, log)
+	if vectorizedCluster.IsSASLOnInternalEnabled() && vectorizedCluster.Spec.Configuration.SchemaRegistry != nil {
+		schemaRegistrySu = resources.NewSuperUsers(r.Client, &vectorizedCluster, r.Scheme, resources.ScramSchemaRegistryUsername, resources.SchemaRegistrySuffix, log)
 		schemaRegistrySuKey = schemaRegistrySu.Key()
 	}
-	pki, err := certmanager.NewPki(ctx, r.Client, &redpandaCluster, headlessSvc.HeadlessServiceFQDN(r.clusterDomain), clusterSvc.ServiceFQDN(r.clusterDomain), r.Scheme, log)
+	pki, err := certmanager.NewPki(ctx, r.Client, &vectorizedCluster, headlessSvc.HeadlessServiceFQDN(r.clusterDomain), clusterSvc.ServiceFQDN(r.clusterDomain), r.Scheme, log)
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("creating pki: %w", err)
 	}
-	sa := resources.NewServiceAccount(r.Client, &redpandaCluster, r.Scheme, log)
-	configMapResource := resources.NewConfigMap(r.Client, &redpandaCluster, r.Scheme, headlessSvc.HeadlessServiceFQDN(r.clusterDomain), proxySuKey, schemaRegistrySuKey, pki.BrokerTLSConfigProvider(), log)
-	secretResource := resources.PreStartStopScriptSecret(r.Client, &redpandaCluster, r.Scheme, headlessSvc.HeadlessServiceFQDN(r.clusterDomain), proxySuKey, schemaRegistrySuKey, log)
+	sa := resources.NewServiceAccount(r.Client, &vectorizedCluster, r.Scheme, log)
+	configMapResource := resources.NewConfigMap(r.Client, &vectorizedCluster, r.Scheme, headlessSvc.HeadlessServiceFQDN(r.clusterDomain), proxySuKey, schemaRegistrySuKey, pki.BrokerTLSConfigProvider(), log)
+	secretResource := resources.PreStartStopScriptSecret(r.Client, &vectorizedCluster, r.Scheme, headlessSvc.HeadlessServiceFQDN(r.clusterDomain), proxySuKey, schemaRegistrySuKey, log)
 
 	sts := resources.NewStatefulSet(
 		r.Client,
-		&redpandaCluster,
+		&vectorizedCluster,
 		r.Scheme,
 		headlessSvc.HeadlessServiceFQDN(r.clusterDomain),
 		headlessSvc.Key().Name,
@@ -235,9 +235,9 @@ func (r *ClusterReconciler) Reconcile(
 		secretResource,
 		pki,
 		sa,
-		resources.NewClusterRole(r.Client, &redpandaCluster, r.Scheme, log),
+		resources.NewClusterRole(r.Client, &vectorizedCluster, r.Scheme, log),
 		crb,
-		resources.NewPDB(r.Client, &redpandaCluster, r.Scheme, log),
+		resources.NewPDB(r.Client, &vectorizedCluster, r.Scheme, log),
 		sts,
 	}
 
@@ -256,7 +256,7 @@ func (r *ClusterReconciler) Reconcile(
 		}
 	}
 
-	adminAPI, err := r.AdminAPIClientFactory(ctx, r.Client, &redpandaCluster, headlessSvc.HeadlessServiceFQDN(r.clusterDomain), pki.AdminAPIConfigProvider())
+	adminAPI, err := r.AdminAPIClientFactory(ctx, r.Client, &vectorizedCluster, headlessSvc.HeadlessServiceFQDN(r.clusterDomain), pki.AdminAPIConfigProvider())
 	if err != nil && !errors.Is(err, &adminutils.NoInternalAdminAPI{}) {
 		return ctrl.Result{}, fmt.Errorf("creating admin api client: %w", err)
 	}
@@ -276,12 +276,12 @@ func (r *ClusterReconciler) Reconcile(
 	}
 
 	schemaRegistryPort := config.DefaultSchemaRegPort
-	if redpandaCluster.Spec.Configuration.SchemaRegistry != nil {
-		schemaRegistryPort = redpandaCluster.Spec.Configuration.SchemaRegistry.Port
+	if vectorizedCluster.Spec.Configuration.SchemaRegistry != nil {
+		schemaRegistryPort = vectorizedCluster.Spec.Configuration.SchemaRegistry.Port
 	}
 	err = r.reportStatus(
 		ctx,
-		&redpandaCluster,
+		&vectorizedCluster,
 		sts,
 		headlessSvc.HeadlessServiceFQDN(r.clusterDomain),
 		clusterSvc.ServiceFQDN(r.clusterDomain),
@@ -295,7 +295,7 @@ func (r *ClusterReconciler) Reconcile(
 
 	err = r.reconcileConfiguration(
 		ctx,
-		&redpandaCluster,
+		&vectorizedCluster,
 		configMapResource,
 		sts,
 		pki,
@@ -311,20 +311,20 @@ func (r *ClusterReconciler) Reconcile(
 		return ctrl.Result{}, err
 	}
 
-	if featuregates.CentralizedConfiguration(redpandaCluster.Spec.Version) {
-		if cc := redpandaCluster.Status.GetCondition(vectorizedv1alpha1.ClusterConfiguredConditionType); cc == nil || cc.Status != corev1.ConditionTrue {
+	if featuregates.CentralizedConfiguration(vectorizedCluster.Spec.Version) {
+		if cc := vectorizedCluster.Status.GetCondition(vectorizedv1alpha1.ClusterConfiguredConditionType); cc == nil || cc.Status != corev1.ConditionTrue {
 			return ctrl.Result{RequeueAfter: time.Minute * 1}, nil
 		}
 	}
 
 	// The following should be at the last part as it requires AdminAPI to be running
-	if err := r.setPodNodeIDAnnotation(ctx, &redpandaCluster, log); err != nil {
+	if err := r.setPodNodeIDAnnotation(ctx, &vectorizedCluster, log); err != nil {
 		return ctrl.Result{}, fmt.Errorf("setting pod node_id annotation: %w", err)
 	}
 
 	// want: refactor above to resources (i.e. setInitialSuperUserPassword, reconcileConfiguration)
 	// ensuring license must be at the end when condition ClusterConfigured=true and AdminAPI is ready
-	license := resources.NewLicense(r.Client, r.Scheme, &redpandaCluster, adminAPI, log)
+	license := resources.NewLicense(r.Client, r.Scheme, &vectorizedCluster, adminAPI, log)
 	if err := license.Ensure(ctx); err != nil {
 		var raErr *resources.RequeueAfterError
 		if errors.As(err, &raErr) {
