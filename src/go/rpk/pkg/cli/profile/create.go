@@ -14,6 +14,8 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"sort"
+	"strings"
 	"time"
 
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/adminapi"
@@ -24,6 +26,7 @@ import (
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/out"
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
+	"golang.org/x/sync/errgroup"
 	"gopkg.in/yaml.v3"
 )
 
@@ -89,6 +92,10 @@ rpk always switches to the newly created profile.
 				out.Die("profile name cannot be empty")
 			}
 
+			if (fromCloud != "" && fromRedpanda != "") || (fromCloud != "" && fromProfile != "") || (fromRedpanda != "" && fromProfile != "") {
+				out.Die("can only use one of --from-cloud, --from-redpanda, or --from-profile")
+			}
+
 			ctx, cancel := context.WithTimeout(cmd.Context(), 10*time.Second)
 			defer cancel()
 			cloudMTLS, cloudSASL, err := createCtx(ctx, fs, y, cfg, fromRedpanda, fromProfile, fromCloud, set, name, description)
@@ -111,6 +118,8 @@ rpk always switches to the newly created profile.
 	cmd.Flags().StringVar(&fromCloud, "from-cloud", "", "Create and switch to a new profile generated from a Redpanda Cloud cluster ID")
 	cmd.Flags().StringVarP(&description, "description", "d", "", "Optional description of the profile")
 
+	cmd.Flags().Lookup("from-cloud").NoOptDefVal = "prompt"
+
 	cmd.RegisterFlagCompletionFunc("set", validSetArgs)
 
 	return cmd
@@ -129,9 +138,6 @@ func createCtx(
 	name string,
 	description string,
 ) (cloudMTLS, cloudSASL bool, err error) {
-	if (fromCloud != "" && fromRedpanda != "") || (fromCloud != "" && fromProfile != "") || (fromRedpanda != "" && fromProfile != "") {
-		return false, false, fmt.Errorf("can only use one of --from-cloud, --from-redpanda, or --from-profile")
-	}
 	if p := y.Profile(name); p != nil {
 		return false, false, fmt.Errorf("profile %q already exists", name)
 	}
@@ -223,20 +229,21 @@ func createCloudProfile(ctx context.Context, y *config.RpkYaml, cfg *config.Conf
 	}
 	cl := cloudapi.NewClient(overrides.CloudAPIURL, a.AuthToken)
 
+	if clusterID == "prompt" {
+		return PromptCloudClusterProfile(ctx, cl)
+	}
+
 	c, err := cl.Cluster(ctx, clusterID)
 	if err != nil {
 		return p, false, false, fmt.Errorf("unable to request details for cluster %q: %w", clusterID, err)
 	}
-	if len(c.Status.Listeners.Kafka.Default.URLs) == 0 {
-		return p, false, false, fmt.Errorf("cluster %q has no kafka listeners", clusterID)
-	}
-	p, cloudMTLS, cloudSASL = FromCloudCluster(c)
+	p, cloudMTLS, cloudSASL = fromCloudCluster(c)
 	return p, cloudMTLS, cloudSASL, nil
 }
 
-// FromCloudCluster returns an rpk profile from a cloud cluster, as well
+// fromCloudCluster returns an rpk profile from a cloud cluster, as well
 // as if the cluster requires mtls or sasl.
-func FromCloudCluster(c cloudapi.Cluster) (p config.RpkProfile, isMTLS, isSASL bool) {
+func fromCloudCluster(c cloudapi.Cluster) (p config.RpkProfile, isMTLS, isSASL bool) {
 	p = config.RpkProfile{
 		Name:      c.Name,
 		FromCloud: true,
@@ -252,7 +259,7 @@ func FromCloudCluster(c cloudapi.Cluster) (p config.RpkProfile, isMTLS, isSASL b
 	return p, isMTLS, isSASL
 }
 
-func FromVirtualCluster(vc cloudapi.VirtualCluster) (p config.RpkProfile, isMTLS, isSASL bool) {
+func fromVirtualCluster(vc cloudapi.VirtualCluster) (p config.RpkProfile, isMTLS, isSASL bool) {
 	p = config.RpkProfile{
 		Name:      vc.Name,
 		FromCloud: true,
@@ -286,4 +293,139 @@ If your cluster requires SASL, generate SASL credentials in the UI and then set
 them in rpk with
     rpk profile set user {sasl_username}
     rpk profile set pass {sasl_password}`
+}
+
+// ErrNoCloudClusters is returned when the user has no cloud clusters.
+var ErrNoCloudClusters = errors.New("no clusters found")
+
+// PromptCloudClusterProfile returns a profile for the cluster selected by the
+// user. If their cloud account has only one cluster, a profile is created for
+// it automatically. This returns ErrNoCloudClusters if the user has no cloud
+// clusters.
+func PromptCloudClusterProfile(ctx context.Context, cl *cloudapi.Client) (p config.RpkProfile, requiresMTLS, requiresSASL bool, err error) {
+	vcs, cs, err := clusterList(ctx, cl)
+	if err != nil {
+		return p, false, false, err
+	}
+	if len(cs) == 0 && len(vcs) == 0 {
+		return p, false, false, ErrNoCloudClusters
+	}
+
+	// If there is just 1 cluster/virtual-cluster we go ahead and select that.
+	var selected nameAndCluster
+	if len(cs) == 1 && len(vcs) == 0 {
+		selected = nameAndCluster{
+			name: cs[0].Name,
+			c:    &cs[0],
+		}
+	} else if len(vcs) == 1 && len(cs) == 0 {
+		selected = nameAndCluster{
+			name: vcs[0].Name,
+			vc:   &vcs[0],
+		}
+	} else {
+		ns, err := cl.Namespaces(ctx)
+		if err != nil {
+			return p, false, false, fmt.Errorf("unable to get list of namespaces: %w", err)
+		}
+		nsIDToName := make(map[string]string, len(ns))
+		for _, n := range ns {
+			nsIDToName[n.ID] = n.Name
+		}
+		nameAndCs := combineClusterNames(vcs, cs, nsIDToName)
+
+		var names []string
+		for _, nc := range nameAndCs {
+			names = append(names, nc.name)
+		}
+		idx, err := out.PickIndex(names, "Which cloud namespace/cluster would you like to create a profile for?")
+		if err != nil {
+			return p, false, false, err
+		}
+		selected = nameAndCs[idx]
+	}
+
+	// We have a cluster selected, but the list response does not return
+	// all information we need. We need to now directly request this
+	// cluster's information.
+	if selected.c != nil {
+		c, err := cl.Cluster(ctx, selected.c.ID)
+		if err != nil {
+			return p, false, false, fmt.Errorf("unable to get cluster %q information: %w", c.ID, err)
+		}
+		p, requiresMTLS, requiresSASL = fromCloudCluster(c)
+	} else {
+		c, err := cl.VirtualCluster(ctx, selected.vc.ID)
+		if err != nil {
+			return p, false, false, fmt.Errorf("unable to get cluster %q information: %w", c.ID, err)
+		}
+		p, requiresMTLS, requiresSASL = fromVirtualCluster(c)
+	}
+	return p, requiresMTLS, requiresSASL, nil
+}
+
+// nameAndCluster describes a cluster name in the form of
+// <namespace>/<cluster-name> and the cluster type (virtual, normal).
+type nameAndCluster struct {
+	name string
+	c    *cloudapi.Cluster
+	vc   *cloudapi.VirtualCluster
+}
+
+func clusterList(ctx context.Context, cl *cloudapi.Client) (vcs []cloudapi.VirtualCluster, cs []cloudapi.Cluster, err error) {
+	g, egCtx := errgroup.WithContext(ctx)
+	g.Go(func() (rerr error) {
+		vcs, rerr = cl.VirtualClusters(egCtx)
+		if rerr != nil {
+			return fmt.Errorf("unable to get the list of virtual clusters: %v", rerr)
+		}
+		return nil
+	})
+	g.Go(func() (rerr error) {
+		cs, rerr = cl.Clusters(egCtx)
+		if rerr != nil {
+			return fmt.Errorf("unable to get the list of clusters: %v", rerr)
+		}
+		return nil
+	})
+	if err := g.Wait(); err != nil {
+		return nil, nil, err
+	}
+	return
+}
+
+// combineClusterNames combines the names of Virtual Clusters and Clusters,
+// sorted alphabetically, and returns a list of nameAndCluster structs
+// representing the combined clusters (VClusters first, then Clusters).
+func combineClusterNames(vcs []cloudapi.VirtualCluster, cs []cloudapi.Cluster, nsIDToName map[string]string) []nameAndCluster {
+	// First we display the Virtual Clusters
+	var vNameAndCs []nameAndCluster
+	for _, vc := range vcs {
+		vc := vc
+		if strings.ToLower(vc.State) != cloudapi.ClusterStateReady {
+			continue
+		}
+		vNameAndCs = append(vNameAndCs, nameAndCluster{
+			name: fmt.Sprintf("%s/%s", nsIDToName[vc.NamespaceUUID], vc.Name),
+			vc:   &vc,
+		})
+	}
+	sort.Slice(vNameAndCs, func(i, j int) bool {
+		return vNameAndCs[i].name < vNameAndCs[j].name
+	})
+
+	// Then we append the cluster names
+	var nameAndCs []nameAndCluster
+	for _, c := range cs {
+		c := c
+		nameAndCs = append(nameAndCs, nameAndCluster{
+			name: fmt.Sprintf("%s/%s", nsIDToName[c.NamespaceUUID], c.Name),
+			c:    &c,
+		})
+	}
+	sort.Slice(nameAndCs, func(i, j int) bool {
+		return nameAndCs[i].name < nameAndCs[j].name
+	})
+
+	return append(vNameAndCs, nameAndCs...)
 }
