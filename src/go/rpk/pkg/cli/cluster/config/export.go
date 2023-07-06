@@ -145,6 +145,7 @@ to include all properties including these low level tunables.
 		Run: func(cmd *cobra.Command, _ []string) {
 			p, err := p.LoadVirtualProfile(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)
+			out.CheckExitCloudAdmin(p)
 
 			client, err := adminapi.NewClient(fs, p)
 			out.MaybeDie(err, "unable to initialize admin client: %v", err)

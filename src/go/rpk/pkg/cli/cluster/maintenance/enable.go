@@ -45,6 +45,7 @@ node exists that is already in maintenance mode then an error will be returned.
 
 			p, err := p.LoadVirtualProfile(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)
+			out.CheckExitCloudAdmin(p)
 
 			client, err := adminapi.NewClient(fs, p)
 			out.MaybeDie(err, "unable to initialize admin client: %v", err)

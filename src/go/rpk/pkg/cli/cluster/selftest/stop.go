@@ -34,6 +34,7 @@ success when all jobs have been stopped or reports errors if broker timeouts hav
 			// Load config settings
 			p, err := p.LoadVirtualProfile(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)
+			out.CheckExitCloudAdmin(p)
 
 			// Create new HTTP client for communication w/ admin server
 			cl, err := adminapi.NewClient(fs, p)

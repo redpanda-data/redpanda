@@ -51,6 +51,7 @@ the jobs launched. Possible results are:
 			// Load config settings
 			p, err := p.LoadVirtualProfile(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)
+			out.CheckExitCloudAdmin(p)
 
 			// Create new HTTP client for communication w/ admin server
 			cl, err := adminapi.NewClient(fs, p)

@@ -1310,7 +1310,20 @@ func (c *Config) parseDevOverrides() {
 		if !ok {
 			panic(fmt.Sprintf("missing env tag on DevOverride.%s", t.Field(i).Name))
 		}
-		v.Field(i).SetString(os.Getenv(envKey))
+		envVal := os.Getenv(envKey)
+		if envVal == "" {
+			continue
+		}
+		f := v.Field(i)
+		t := f.Type()
+		switch t.Kind() {
+		case reflect.Bool:
+			f.SetBool(true) // any value for the env key means true
+		case reflect.String:
+			f.SetString(envVal)
+		default:
+			panic("unhandled type")
+		}
 	}
 }
 

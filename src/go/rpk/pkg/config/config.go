@@ -47,6 +47,10 @@ type DevOverrides struct {
 	// BYOCSkipVersionCheck is used by `rpk cloud byoc` and skips any byoc
 	// plugin version checking, instead using whatever is available.
 	BYOCSkipVersionCheck string `env:"RPK_CLOUD_SKIP_VERSION_CHECK"`
+	// AllowRpkCloudAdmin bypasses out.CheckExitCloudAdmin, allowing rpk to
+	// continue to use an admin command even if the command is technically
+	// not supported because the cluster is a cloud cluster.
+	AllowRpkCloudAdmin bool `env:"ALLOW_RPK_CLOUD_ADMIN"`
 }
 
 // Config encapsulates a redpanda.yaml and/or an rpk.yaml. This is the

@@ -56,6 +56,7 @@ command.`,
 			// Load config settings
 			p, err := p.LoadVirtualProfile(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)
+			out.CheckExitCloudAdmin(p)
 
 			// Warn user before continuing, proceed only via explicit signal
 			if !noConfirm {

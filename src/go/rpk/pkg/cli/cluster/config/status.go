@@ -34,6 +34,7 @@ is offline.`,
 		Run: func(cmd *cobra.Command, args []string) {
 			p, err := p.LoadVirtualProfile(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)
+			out.CheckExitCloudAdmin(p)
 
 			client, err := adminapi.NewClient(fs, p)
 			out.MaybeDie(err, "unable to initialize admin client: %v", err)
