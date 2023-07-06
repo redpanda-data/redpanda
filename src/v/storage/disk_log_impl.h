@@ -133,6 +133,8 @@ public:
     fragmented_vector<ss::lw_shared_ptr<segment>> cloud_gc_eligible_segments();
     void set_cloud_gc_offset(model::offset);
 
+    ss::future<reclaimable_offsets> get_reclaimable_offsets(gc_config cfg);
+
 private:
     friend class disk_log_appender; // for multi-term appends
     friend class disk_log_builder;  // for tests

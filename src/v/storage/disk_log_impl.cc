@@ -30,6 +30,7 @@
 #include "storage/types.h"
 #include "storage/version.h"
 #include "utils/gate_guard.h"
+#include "utils/human.h"
 #include "vassert.h"
 #include "vlog.h"
 
@@ -2285,8 +2286,10 @@ disk_log_impl::cloud_gc_eligible_segments() {
     }
 
     /*
-     * for a cloud-backed topic the max collecible offset is the threshold below
-     * which data has been uploaded and can safely be removed from local disk.
+     * how much are we allowed to collect? sub-systems (e.g. transactions)
+     * may signal restrictions through the max collectible offset. for cloud
+     * topics max collectible will include a reflection of how much data has
+     * been uploaded into the cloud.
      */
     const auto max_collectible = stm_manager()->max_collectible_offset();
 
@@ -2310,6 +2313,199 @@ void disk_log_impl::set_cloud_gc_offset(model::offset offset) {
       "Expected {} to have cloud retention enabled",
       config().ntp());
     _cloud_gc_offset = offset;
+}
+
+ss::future<reclaimable_offsets>
+disk_log_impl::get_reclaimable_offsets(gc_config cfg) {
+    // protect against concurrent log removal with housekeeping loop
+    auto gate = _compaction_housekeeping_gate.hold();
+
+    reclaimable_offsets res;
+
+    if (!is_cloud_retention_active()) {
+        vlog(
+          stlog.debug,
+          "Reporting no reclaimable offsets for non-cloud partition {}",
+          config().ntp());
+        co_return res;
+    }
+
+    /*
+     * there is currently a bug with read replicas that makes the max
+     * collectible offset unreliable. the read replica topics still have a
+     * retention setting, but we are going to exempt them from forced reclaim
+     * until this bug is fixed to avoid any complications.
+     *
+     * https://github.com/redpanda-data/redpanda/issues/11936
+     */
+    if (config().is_read_replica_mode_enabled()) {
+        vlog(
+          stlog.debug,
+          "Reporting no reclaimable offsets for read replica partition {}",
+          config().ntp());
+        co_return res;
+    }
+
+    /*
+     * calculate the effective local retention. this forces the local retention
+     * override in contrast to housekeeping GC where the overrides are applied
+     * only when local retention is non-advisory.
+     */
+    cfg = apply_base_overrides(cfg);
+    cfg = override_retention_config(cfg);
+    const auto local_retention_offset
+      = co_await maybe_adjusted_retention_offset(cfg);
+
+    /*
+     * when local retention is based off an explicit override, then we treat it
+     * as the partition having a retention hint and use it to deprioritize
+     * selection of data to reclaim over data without any hints.
+     */
+    const auto hinted = has_local_retention_override();
+
+    /*
+     * for a cloud-backed topic the max collecible offset is the threshold below
+     * which data has been uploaded and can safely be removed from local disk.
+     */
+    const auto max_collectible = stm_manager()->max_collectible_offset();
+
+    /*
+     * lightweight segment set copy for safe iteration
+     */
+    fragmented_vector<segment_set::type> segments;
+    for (const auto& seg : _segs) {
+        segments.push_back(seg);
+    }
+
+    /*
+     * currently we use two segments as the low space size
+     */
+    std::optional<model::offset> low_space_offset;
+    if (segments.size() >= 2) {
+        low_space_offset = segments[segments.size() - 2]->offsets().base_offset;
+    }
+
+    vlog(
+      stlog.debug,
+      "Categorizing {} {} segments for {} with local retention {} low "
+      "space {} max collectible {}",
+      segments.size(),
+      (hinted ? "hinted" : "non-hinted"),
+      config().ntp(),
+      local_retention_offset,
+      low_space_offset,
+      max_collectible);
+
+    /*
+     * categorize each segment.
+     */
+    for (const auto& seg : segments) {
+        const auto usage = co_await seg->persistent_size();
+        const auto seg_size = usage.total();
+
+        /*
+         * the active segment designation takes precedence because it requires
+         * special consideration related to the implications of force rolling.
+         */
+        if (seg == segments.back()) {
+            /*
+             * since the active segment receives all new data at any given time
+             * it may not be fully uploaded to cloud storage so it is hard to
+             * say anything definitive about it. instead, we report its size as
+             * a potential:
+             *
+             *   1. rolling the active segment will bound progress towards
+             *   making its current full size reclaimable as max collectible
+             *   increases to cover the entire segment.
+             *
+             *   2. finally, we don't report it if max collectible hasn't even
+             *   made it to the active segment yet.
+             */
+            if (seg->offsets().base_offset <= max_collectible) {
+                res.force_roll = seg_size;
+                vlog(
+                  stlog.trace,
+                  "Reporting partially collectible {} active segment",
+                  human::bytes(seg_size));
+            }
+            break;
+        }
+
+        // to be categorized
+        const reclaimable_offsets::offset point{
+          .offset = seg->offsets().dirty_offset,
+          .size = seg_size,
+        };
+
+        /*
+         * if the current segment is not fully collectible, then subsequent
+         * segments will not be either, and don't require consideration.
+         */
+        if (point.offset > max_collectible) {
+            vlog(
+              stlog.trace,
+              "Stopping collection at offset {}:{} above max collectible {}",
+              point.offset,
+              human::bytes(point.size),
+              max_collectible);
+            break;
+        }
+
+        /*
+         * when local retention is non-advisory then standard garbage collection
+         * housekeeping will automatically remove data down to local retention.
+         *
+         * however when local retention is advisory, then partition storage is
+         * allowed to expand up to the consumable retention. in this case
+         * housekeeping will remove data above consumable retention, and we
+         * categorize this excess data here down to the local retention.
+         */
+        if (
+          local_retention_offset.has_value()
+          && point.offset <= local_retention_offset.value()) {
+            res.effective_local_retention.push_back(point);
+            vlog(
+              stlog.trace,
+              "Adding offset {}:{} as local retention reclaimable",
+              point.offset,
+              human::bytes(point.size));
+            continue;
+        }
+
+        /*
+         * the low space represents the limit of data we want to remove from
+         * any partition before moving on to more extreme tactics.
+         */
+        if (
+          low_space_offset.has_value()
+          && point.offset <= low_space_offset.value()) {
+            if (hinted) {
+                res.low_space_hinted.push_back(point);
+                vlog(
+                  stlog.trace,
+                  "Adding offset {}:{} as low space hinted",
+                  point.offset,
+                  human::bytes(point.size));
+            } else {
+                res.low_space_non_hinted.push_back(point);
+                vlog(
+                  stlog.trace,
+                  "Adding offset {}:{} as low space non-hinted",
+                  point.offset,
+                  human::bytes(point.size));
+            }
+            continue;
+        }
+
+        res.active_segment.push_back(point);
+        vlog(
+          stlog.trace,
+          "Adding offset {}:{} as active segment bounded",
+          point.offset,
+          human::bytes(point.size));
+    }
+
+    co_return res;
 }
 
 } // namespace storage
