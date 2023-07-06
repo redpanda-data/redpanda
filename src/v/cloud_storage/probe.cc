@@ -178,9 +178,9 @@ remote_probe::remote_probe(
               .aggregate({sm::shard_label}),
             sm::make_gauge(
               "readers",
-              [&ms] { return ms.current_readers(); },
-              sm::description(
-                "Number of read cursors for hydrated remote log segments"))
+              [&ms] { return ms.current_segment_readers(); },
+              sm::description("Number of segment read cursors for hydrated "
+                              "remote log segments"))
               .aggregate({sm::shard_label}),
             sm::make_counter(
               "segment_index_uploads_total",

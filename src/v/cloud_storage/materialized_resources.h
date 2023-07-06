@@ -36,9 +36,11 @@ class materialized_manifest_cache;
  * This class tracks:
  * - Instances of materialized_segment that are created by
  *   each individual remote_partition
- * - The readers within them, to globally limit concurrent
+ * - The segment readers within them, to globally limit concurrent
  *   readers instantiated, as each reader has a memory+fd
  *   impact.
+ * - The top level partition readers, which should always be fewer
+ *   in number than the segment readers they borrow.
  * - Instances of spillover_manifest used by async_manifest_view.
  *
  * It is important to have shard-global visibility of materialized
@@ -55,14 +57,14 @@ public:
 
     void register_segment(materialized_segment_state& s);
 
-    ssx::semaphore_units get_reader_units();
+    ssx::semaphore_units get_segment_reader_units();
 
     ssx::semaphore_units get_segment_units();
 
     materialized_manifest_cache& get_materialized_manifest_cache();
 
 private:
-    /// Timer use to periodically evict stale readers
+    /// Timer use to periodically evict stale segment readers
     ss::timer<ss::lowres_clock> _stm_timer;
     simple_time_jitter<ss::lowres_clock> _stm_jitter;
 
@@ -74,7 +76,7 @@ private:
     size_t max_segments() const;
 
     /// How many remote_segment_batch_reader instances exist
-    size_t current_readers() const;
+    size_t current_segment_readers() const;
 
     /// How many materialized_segment_state instances exist
     size_t current_segments() const;
@@ -82,9 +84,9 @@ private:
     /// Consume from _eviction_list
     ss::future<> run_eviction_loop();
 
-    /// Try to evict readers until `target_free` units are available in
+    /// Try to evict segment readers until `target_free` units are available in
     /// _reader_units, i.e. available for new readers to be created.
-    void trim_readers(size_t target_free);
+    void trim_segment_readers(size_t target_free);
 
     /// Synchronous scan of segments for eviction, reads+modifies _materialized
     /// and writes victims to _eviction_list
@@ -113,7 +115,7 @@ private:
 
     /// Concurrency limit on how many remote_segment_batch_reader may be
     /// instantiated at once on one shard.
-    adjustable_semaphore _reader_units;
+    adjustable_semaphore _segment_reader_units;
 
     /// Concurrency limit on how many segments may be materialized at
     /// once: this will trigger faster trimming under pressure.

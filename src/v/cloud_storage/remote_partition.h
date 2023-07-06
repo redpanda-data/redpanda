@@ -147,7 +147,8 @@ public:
     void offload_segment(model::offset);
 
     // Place on the eviction queue.
-    void evict_reader(std::unique_ptr<remote_segment_batch_reader> reader);
+    void
+    evict_segment_reader(std::unique_ptr<remote_segment_batch_reader> reader);
     void evict_segment(ss::lw_shared_ptr<remote_segment> segment);
 
     // Compute cache usage statistics. This method uses information from the
@@ -176,13 +177,13 @@ private:
     /// \param config is a reader config
     /// \param offset_key is an key of the segment state in the _segments
     /// \param st is a segment state referenced by offset_key
-    std::unique_ptr<remote_segment_batch_reader> borrow_reader(
+    std::unique_ptr<remote_segment_batch_reader> borrow_segment_reader(
       storage::log_reader_config config,
       kafka::offset offset_key,
       materialized_segment_ptr& st);
 
     /// Return reader back to segment_state
-    void return_reader(std::unique_ptr<remote_segment_batch_reader>);
+    void return_segment_reader(std::unique_ptr<remote_segment_batch_reader>);
 
     /// The result of the borrow_next_reader method
     ///
@@ -200,7 +201,7 @@ private:
     /// find the target. It can find already materialized segment and reuse the
     /// reader. Alternatively, it can materialize the segment and create a
     /// reader.
-    borrow_result_t borrow_next_reader(
+    borrow_result_t borrow_next_segment_reader(
       const partition_manifest& manifest,
       storage::log_reader_config config,
       model::offset hint = {});

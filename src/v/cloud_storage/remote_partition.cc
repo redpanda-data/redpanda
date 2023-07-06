@@ -75,7 +75,7 @@ remote_partition::iterator remote_partition::materialize_segment(
     return iter;
 }
 
-remote_partition::borrow_result_t remote_partition::borrow_next_reader(
+remote_partition::borrow_result_t remote_partition::borrow_next_segment_reader(
 
   const partition_manifest& manifest,
   storage::log_reader_config config,
@@ -441,7 +441,7 @@ private:
     /// Return or evict currently referenced reader
     void dispose_current_reader() {
         if (_reader) {
-            _partition->return_reader(std::move(_reader));
+            _partition->return_segment_reader(std::move(_reader));
         }
     }
 
@@ -497,7 +497,7 @@ private:
         if (!_partition || _partition->_manifest_view->stm_manifest().empty()) {
             return {};
         }
-        auto res = _partition->borrow_next_reader(manifest, config);
+        auto res = _partition->borrow_next_segment_reader(manifest, config);
         if (res.reader) {
             // Here we know the exact type of the reader_state because of
             // the invariant of the borrow_reader
@@ -561,7 +561,7 @@ private:
               _reader->max_rp_offset(),
               _reader->is_eof(),
               _next_segment_base_offset);
-            _partition->evict_reader(std::move(_reader));
+            _partition->evict_segment_reader(std::move(_reader));
             vlog(
               _ctxlog.debug,
               "initializing new segment reader {}, next offset {}, manifest "
@@ -574,7 +574,7 @@ private:
               !maybe_manifest.has_value()
               || _next_segment_base_offset != model::offset{}) {
                 auto [new_reader, new_next_offset]
-                  = _partition->borrow_next_reader(
+                  = _partition->borrow_next_segment_reader(
                     maybe_manifest.value(), config, _next_segment_base_offset);
                 _next_segment_base_offset = new_next_offset;
                 _reader = std::move(new_reader);
@@ -645,7 +645,7 @@ ss::future<> remote_partition::start() {
     co_return;
 }
 
-void remote_partition::evict_reader(
+void remote_partition::evict_segment_reader(
   std::unique_ptr<remote_segment_batch_reader> reader) {
     _eviction_pending.push_back(std::move(reader));
     _has_evictions_cvar.signal();
@@ -873,7 +873,7 @@ ss::future<> remote_partition::stop() {
 }
 
 /// Return reader back to segment_state
-void remote_partition::return_reader(
+void remote_partition::return_segment_reader(
   std::unique_ptr<remote_segment_batch_reader> reader) {
     auto offset = reader->base_rp_offset();
     if (auto it = _segments.find(offset);
@@ -884,7 +884,7 @@ void remote_partition::return_reader(
         // which 'it' points to belongs to the new segment.
         it->second->return_reader(std::move(reader));
     } else {
-        evict_reader(std::move(reader));
+        evict_segment_reader(std::move(reader));
     }
 }
 

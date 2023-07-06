@@ -20,7 +20,7 @@ namespace cloud_storage {
 void materialized_segment_state::offload(remote_partition* partition) {
     _hook.unlink();
     for (auto&& rs : readers) {
-        partition->evict_reader(std::move(rs));
+        partition->evict_segment_reader(std::move(rs));
     }
     partition->evict_segment(std::move(segment));
     partition->_probe.segment_offloaded();
@@ -70,7 +70,7 @@ materialized_segment_state::borrow_reader(
 
     // Obey budget for concurrent readers: call into materialized_segments
     // to give it an opportunity to free state and make way for us.
-    auto units = parent->materialized().get_reader_units();
+    auto units = parent->materialized().get_segment_reader_units();
 
     return std::make_unique<remote_segment_batch_reader>(
       segment, cfg, probe, std::move(units));
