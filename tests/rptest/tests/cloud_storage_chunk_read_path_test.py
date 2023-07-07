@@ -5,6 +5,7 @@ from time import sleep
 from ducktape.mark import parametrize
 from ducktape.utils.util import wait_until
 
+from rptest.services.admin import Admin
 from rptest.clients.kafka_cli_tools import KafkaCliTools
 from rptest.clients.rpk import RpkTool
 from rptest.clients.types import TopicSpec
@@ -63,6 +64,28 @@ class CloudStorageChunkReadTest(PreallocNodesTest):
             self.redpanda.set_extra_rp_conf(self.extra_rp_conf)
         self.redpanda.start()
         self._create_initial_topics()
+
+    def _trim_and_verify(self):
+        """
+        Use admin API trim hook to validate that the trimming logic can successfully
+        hit a target size of zero irrespective of what kind of content we promoted.
+        """
+        admin = Admin(self.redpanda)
+        self.redpanda.for_nodes(
+            self.redpanda.nodes, lambda n: admin.cloud_storage_trim(
+                byte_limit=0, object_limit=0, node=n))
+
+        for node_storage in self.redpanda.storage().nodes:
+            assert node_storage.cache is not None, f"Node {node_storage.name} has no cache stats"
+
+            # The only file to elude the trim should be accesstime tracker
+            assert node_storage.cache.objects <= 1, f"Node {node_storage.name} has too many objects: {node_storage.cache.objects}"
+
+            # Byte size will include accesstime file, so we must be tolerant
+            assert node_storage.cache.bytes <= 1E6, f"Node {node_storage.name} size is too great: {node_storage.cache.bytes}"
+
+            # No index files should survive a trim to zero
+            assert node_storage.cache.indices <= 0, f"Node {node_storage.name} still has {node_storage.cache.indices} index files"
 
     def _produce_baseline(self,
                           n_segments=20,
@@ -168,6 +191,8 @@ class CloudStorageChunkReadTest(PreallocNodesTest):
         consumer.wait(timeout_sec=120)
         self._assert_not_in_cache(fr'.*kafka/{self.topic}/.*\.log\.[0-9]+$')
 
+        self._trim_and_verify()
+
     @cluster(num_nodes=4)
     @parametrize(prefetch=0)
     @parametrize(prefetch=3)
@@ -207,6 +232,8 @@ class CloudStorageChunkReadTest(PreallocNodesTest):
             ) == prefetch + 1, f'prefetch={prefetch} but {len(chunk_files)} chunks: ' \
                                f'{pprint.pformat(chunk_files)} found in cache, expected {prefetch + 1}'
 
+        self._trim_and_verify()
+
     @cluster(num_nodes=4)
     def test_fallback_mode(self):
         """
@@ -231,6 +258,8 @@ class CloudStorageChunkReadTest(PreallocNodesTest):
         # Index files should have been generated during full segment download.
         self._assert_in_cache(f'.*kafka/{self.topic}/.*index$')
 
+        self._trim_and_verify()
+
     def _consume_baseline(self, timeout=60, max_msgs=None):
         consumer = KgoVerifierSeqConsumer(self.test_context,
                                           self.redpanda,
@@ -251,6 +280,8 @@ class CloudStorageChunkReadTest(PreallocNodesTest):
         self._assert_not_in_cache(f'kafka/{self.topic}/.*_chunks/[0-9]+$')
         self._assert_in_cache(fr'.*kafka/{self.topic}/.*\.log\.[0-9]+$')
         self._assert_in_cache(f'.*kafka/{self.topic}/.*index$')
+
+        self._trim_and_verify()
 
     @cluster(num_nodes=4, log_allow_list=["Exceeded cache size limit"])
     def test_read_when_cache_smaller_than_segment_size(self):
@@ -300,6 +331,8 @@ class CloudStorageChunkReadTest(PreallocNodesTest):
         assert max_chunks_at_a_time_in_cache <= 9, f'found {max_chunks_at_a_time_in_cache} in cache, ' \
                                                    f'which can hold only 8 chunks at a time'
 
+        self._trim_and_verify()
+
     @cluster(num_nodes=4)
     def test_read_when_segment_size_smaller_than_chunk_size(self):
         self._set_params_and_start_redpanda(cloud_storage_cache_chunk_size=16 *
@@ -320,6 +353,8 @@ class CloudStorageChunkReadTest(PreallocNodesTest):
 
         self._assert_not_in_cache(fr'.*kafka/{self.topic}/.*\.log\.[0-9]+$')
         self._assert_in_cache(f'.*kafka/{self.topic}/.*_chunks/[0-9]+')
+
+        self._trim_and_verify()
 
 
 class ObserveCacheDir(Thread):
