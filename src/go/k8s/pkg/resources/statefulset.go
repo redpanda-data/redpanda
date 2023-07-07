@@ -145,7 +145,7 @@ func NewStatefulSet(
 		nodeConfigMapHashGetter,
 		adminAPIClientFactory,
 		decommissionWaitInterval,
-		logger,
+		logger.WithName("StatefulSetResource"),
 		defaultAdminAPITimeout,
 		nil,
 	}

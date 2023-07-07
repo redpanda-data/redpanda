@@ -1134,7 +1134,7 @@ func newAttachedResources(ctx context.Context, r *ClusterReconciler, log logr.Lo
 func (a *attachedResources) Ensure() (ctrl.Result, error) {
 	result := ctrl.Result{}
 	var errs error
-	for _, resource := range a.items {
+	for key, resource := range a.items {
 		if resource == nil {
 			continue
 		}
@@ -1146,7 +1146,7 @@ func (a *attachedResources) Ensure() (ctrl.Result, error) {
 				result = ctrl.Result{RequeueAfter: e.RequeueAfter}
 			}
 		} else if err != nil {
-			a.log.Error(err, "Failed to reconcile resource")
+			a.log.Error(err, "Failed to reconcile resource", "resource", key)
 			errs = errors.Join(errs, err)
 		}
 	}

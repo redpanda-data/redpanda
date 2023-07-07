@@ -77,7 +77,7 @@ func NewSuperUsers(
 		object,
 		prefixedUsername,
 		suffix,
-		l,
+		l.WithName("SuperUsersResource"),
 	}
 }
 
@@ -86,7 +86,6 @@ func (r *SuperUsersResource) Ensure(ctx context.Context) error {
 	if r == nil {
 		return nil
 	}
-
 	obj, err := r.obj()
 	if err != nil {
 		return fmt.Errorf("unable to construct object: %w", err)
@@ -126,6 +125,7 @@ func (r *SuperUsersResource) obj() (k8sclient.Object, error) {
 
 	err = controllerutil.SetControllerReference(r.object, obj, r.scheme)
 	if err != nil {
+		r.logger.WithValues("obj", obj).Error(err, "failed to set controller reference")
 		return nil, err
 	}
 

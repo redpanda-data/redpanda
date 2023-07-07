@@ -64,7 +64,7 @@ func PreStartStopScriptSecret(
 		serviceFQDN,
 		pandaproxySASLUser,
 		schemaRegistrySASLUser,
-		logger,
+		logger.WithName("PreStartStopScriptResource"),
 	}
 }
 
@@ -108,6 +108,7 @@ func (r *PreStartStopScriptResource) update(
 
 // obj returns resource managed client.Object
 func (r *PreStartStopScriptResource) obj() (k8sclient.Object, error) {
+	r.logger.WithValues("key", r.Key()).Info("creating secret object")
 	secret := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: r.Key().Namespace,
@@ -126,6 +127,7 @@ func (r *PreStartStopScriptResource) obj() (k8sclient.Object, error) {
 
 	err := controllerutil.SetControllerReference(r.pandaCluster, secret, r.scheme)
 	if err != nil {
+		r.logger.WithValues("secret", secret).Error(err, "failed to set controller reference")
 		return nil, err
 	}
 
