@@ -167,12 +167,6 @@ func (r *ClusterReconciler) Reconcile(
 		}
 	}
 
-	var proxySu *resources.SuperUsersResource
-	var proxySuKey types.NamespacedName
-	if vectorizedCluster.IsSASLOnInternalEnabled() && vectorizedCluster.PandaproxyAPIInternal() != nil {
-		proxySu = resources.NewSuperUsers(r.Client, &vectorizedCluster, r.Scheme, resources.ScramPandaproxyUsername, resources.PandaProxySuffix, log)
-		proxySuKey = proxySu.Key()
-	}
 	var schemaRegistrySu *resources.SuperUsersResource
 	var schemaRegistrySuKey types.NamespacedName
 	if vectorizedCluster.IsSASLOnInternalEnabled() && vectorizedCluster.Spec.Configuration.SchemaRegistry != nil {
@@ -180,8 +174,8 @@ func (r *ClusterReconciler) Reconcile(
 		schemaRegistrySuKey = schemaRegistrySu.Key()
 	}
 	sa := resources.NewServiceAccount(r.Client, &vectorizedCluster, r.Scheme, log)
-	configMapResource := resources.NewConfigMap(r.Client, &vectorizedCluster, r.Scheme, ar.getHeadlessServiceFQDN(), proxySuKey, schemaRegistrySuKey, pki.BrokerTLSConfigProvider(), log)
-	secretResource := resources.PreStartStopScriptSecret(r.Client, &vectorizedCluster, r.Scheme, ar.getHeadlessServiceFQDN(), proxySuKey, schemaRegistrySuKey, log)
+	configMapResource := resources.NewConfigMap(r.Client, &vectorizedCluster, r.Scheme, ar.getHeadlessServiceFQDN(), ar.getProxySuperUserKey(), schemaRegistrySuKey, pki.BrokerTLSConfigProvider(), log)
+	secretResource := resources.PreStartStopScriptSecret(r.Client, &vectorizedCluster, r.Scheme, ar.getHeadlessServiceFQDN(), ar.getProxySuperUserKey(), schemaRegistrySuKey, log)
 
 	sts := resources.NewStatefulSet(
 		r.Client,
@@ -201,7 +195,6 @@ func (r *ClusterReconciler) Reconcile(
 		r.MetricsTimeout)
 
 	toApply := []resources.Reconciler{
-		proxySu,
 		schemaRegistrySu,
 		configMapResource,
 		secretResource,
@@ -238,9 +231,10 @@ func (r *ClusterReconciler) Reconcile(
 	}
 
 	var secrets []types.NamespacedName
-	if proxySu != nil {
-		secrets = append(secrets, proxySu.Key())
+	if ar.getProxySuperuser() != nil {
+		secrets = append(secrets, ar.getProxySuperUserKey())
 	}
+
 	if schemaRegistrySu != nil {
 		secrets = append(secrets, schemaRegistrySu.Key())
 	}
@@ -1154,6 +1148,7 @@ const (
 	nodeportService     = "NodeportService"
 	pki                 = "PKI"
 	podDisruptionBudget = "PodDisruptionBudget"
+	proxySuperuser      = "ProxySuperuser"
 )
 
 func newAttachedResources(ctx context.Context, r *ClusterReconciler, log logr.Logger, cluster *vectorizedv1alpha1.Cluster) *attachedResources {
@@ -1342,4 +1337,29 @@ func (a *attachedResources) podDisruptionBudget() {
 		return
 	}
 	a.items[podDisruptionBudget] = resources.NewPDB(a.reconciler.Client, a.cluster, a.reconciler.Scheme, a.log)
+}
+
+func (a *attachedResources) proxySuperuser() {
+	// if already initialized, exit immediately
+	if _, ok := a.items[proxySuperuser]; ok {
+		return
+	}
+
+	var proxySASLUser *resources.SuperUsersResource
+	a.items[proxySuperuser] = proxySASLUser
+	if a.cluster.IsSASLOnInternalEnabled() && a.cluster.PandaproxyAPIInternal() != nil {
+		a.items[proxySuperuser] = resources.NewSuperUsers(a.reconciler.Client, a.cluster, a.reconciler.Scheme, resources.ScramPandaproxyUsername, resources.PandaProxySuffix, a.log)
+	}
+}
+
+func (a *attachedResources) getProxySuperuser() *resources.SuperUsersResource {
+	a.proxySuperuser()
+	return a.items[proxySuperuser].(*resources.SuperUsersResource)
+}
+
+func (a *attachedResources) getProxySuperUserKey() types.NamespacedName {
+	if a.getProxySuperuser() == nil {
+		return types.NamespacedName{}
+	}
+	return a.getProxySuperuser().Key()
 }
