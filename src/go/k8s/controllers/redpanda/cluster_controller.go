@@ -177,32 +177,14 @@ func (r *ClusterReconciler) Reconcile(
 	if err != nil {
 		return ctrl.Result{}, err
 	}
+	if err = ar.statefulSet(); err != nil {
+		return ctrl.Result{}, fmt.Errorf("creating statefulset: %w", err)
+	}
 
 	if vectorizedCluster.Status.CurrentReplicas >= 1 {
 		if err = r.setPodNodeIDAnnotation(ctx, &vectorizedCluster, log, ar); err != nil {
 			return ctrl.Result{}, fmt.Errorf("setting pod node_id annotation: %w", err)
 		}
-	}
-
-	sts := resources.NewStatefulSet(
-		r.Client,
-		&vectorizedCluster,
-		r.Scheme,
-		ar.getHeadlessServiceFQDN(),
-		ar.getHeadlessServiceName(),
-		ar.getNodeportServiceKey(),
-		pki.StatefulSetVolumeProvider(),
-		pki.AdminAPIConfigProvider(),
-		ar.getServiceAccountName(),
-		r.configuratorSettings,
-		cm.GetNodeConfigHash,
-		r.AdminAPIClientFactory,
-		r.DecommissionWaitInterval,
-		log,
-		r.MetricsTimeout)
-
-	toApply := []resources.Reconciler{
-		sts,
 	}
 
 	result, errs := ar.Ensure()
@@ -211,21 +193,6 @@ func (r *ClusterReconciler) Reconcile(
 	}
 	if errs != nil {
 		return result, errs
-	}
-
-	for _, res := range toApply {
-		err = res.Ensure(ctx)
-
-		var e *resources.RequeueAfterError
-		if errors.As(err, &e) {
-			log.Info(e.Error())
-			return ctrl.Result{RequeueAfter: e.RequeueAfter}, nil
-		}
-
-		if err != nil {
-			log.Error(err, "Failed to reconcile resource")
-			return ctrl.Result{}, err
-		}
 	}
 
 	adminAPI, err := r.AdminAPIClientFactory(ctx, r.Client, &vectorizedCluster, ar.getHeadlessServiceFQDN(), pki.AdminAPIConfigProvider())
@@ -242,6 +209,10 @@ func (r *ClusterReconciler) Reconcile(
 	schemaRegistryPort := config.DefaultSchemaRegPort
 	if vectorizedCluster.Spec.Configuration.SchemaRegistry != nil {
 		schemaRegistryPort = vectorizedCluster.Spec.Configuration.SchemaRegistry.Port
+	}
+	sts, err := ar.getStatefulSet()
+	if err != nil {
+		return ctrl.Result{}, err
 	}
 	err = r.reportStatus(
 		ctx,
@@ -1147,6 +1118,7 @@ const (
 	schemaRegistrySuperUser = "SchemaRegistrySuperUser"
 	serviceAccount          = "ServiceAccount"
 	secret                  = "Secret"
+	statefulSet             = "StatefulSet"
 )
 
 func newAttachedResources(ctx context.Context, r *ClusterReconciler, log logr.Logger, cluster *vectorizedv1alpha1.Cluster) *attachedResources {
@@ -1443,4 +1415,43 @@ func (a *attachedResources) secret() {
 		return
 	}
 	a.items[secret] = resources.PreStartStopScriptSecret(a.reconciler.Client, a.cluster, a.reconciler.Scheme, a.getHeadlessServiceFQDN(), a.getProxySuperUserKey(), a.getSchemaRegistrySuperUserKey(), a.log)
+}
+
+func (a *attachedResources) statefulSet() error {
+	// if already initialized, exit immediately
+	if _, ok := a.items[statefulSet]; ok {
+		return nil
+	}
+	pki, err := a.getPKI()
+	if err != nil {
+		return err
+	}
+	cm, err := a.getConfigMap()
+	if err != nil {
+		return err
+	}
+	a.items[statefulSet] = resources.NewStatefulSet(
+		a.reconciler.Client,
+		a.cluster,
+		a.reconciler.Scheme,
+		a.getHeadlessServiceFQDN(),
+		a.getHeadlessServiceName(),
+		a.getNodeportServiceKey(),
+		pki.StatefulSetVolumeProvider(),
+		pki.AdminAPIConfigProvider(),
+		a.getServiceAccountName(),
+		a.reconciler.configuratorSettings,
+		cm.GetNodeConfigHash,
+		a.reconciler.AdminAPIClientFactory,
+		a.reconciler.DecommissionWaitInterval,
+		a.log,
+		a.reconciler.MetricsTimeout)
+	return nil
+}
+
+func (a *attachedResources) getStatefulSet() (*resources.StatefulSetResource, error) {
+	if err := a.statefulSet(); err != nil {
+		return nil, err
+	}
+	return a.items[statefulSet].(*resources.StatefulSetResource), nil
 }
