@@ -102,6 +102,9 @@ Trim records from a JSON file
 				}
 				fmt.Println()
 			}
+			if len(o) == 0 {
+				out.Die("there are no records to trim")
+			}
 			drr, err := adm.DeleteRecords(cmd.Context(), o)
 			out.MaybeDie(err, "unable to trim records: %v", err)
 			printDeleteRecordResponse(drr)
