@@ -244,7 +244,7 @@ func buildGrafanaDashboard(
 	isPublicMetrics bool,
 	datasource string,
 ) graf.Dashboard {
-	intervals := []string{"5s", "10s", "30s", "1m", "5m", "15m", "30m", "1h", "2h", "1d"}
+	intervals := []string{"30s", "1m", "5m", "15m", "30m", "1h", "2h", "1d"}
 	timeOptions := []string{"5m", "15m", "1h", "6h", "12h", "24h", "2d", "7d", "30d"}
 	var summaryPanels []graf.Panel
 	if isPublicMetrics {
@@ -265,7 +265,7 @@ func buildGrafanaDashboard(
 			rows...,
 		),
 		Editable: true,
-		Refresh:  "10s",
+		Refresh:  "1m",
 		Time:     graf.Time{From: "now-1h", To: "now"},
 		TimePicker: graf.TimePicker{
 			RefreshIntervals: intervals,
@@ -758,7 +758,7 @@ func fetchMetrics(
 func newPercentilePanel(
 	m *dto.MetricFamily, percentile float32, isPublicMetrics bool, datasource string,
 ) *graf.GraphPanel {
-	template := `histogram_quantile(%.2f, sum(rate(%s_bucket{instance=~"$node",shard=~"$node_shard"}[2m])) by (le, $aggr_criteria))`
+	template := `histogram_quantile(%.2f, sum(rate(%s_bucket{instance=~"$node",shard=~"$node_shard"}[$__rate_interval])) by (le, $aggr_criteria))`
 	if isPublicMetrics {
 		template = `histogram_quantile(%.2f, sum(rate(%s_bucket{instance=~"$node"}[$__rate_interval])) by (le, $aggr_criteria))`
 	}
@@ -782,7 +782,7 @@ func newPercentilePanel(
 }
 
 func newCounterPanel(m *dto.MetricFamily, isPublicMetrics bool, datasource string) *graf.GraphPanel {
-	template := `sum(irate(%s{instance=~"$node",shard=~"$node_shard"}[2m])) by ($aggr_criteria)`
+	template := `sum(irate(%s{instance=~"$node",shard=~"$node_shard"}[$__rate_interval])) by ($aggr_criteria)`
 	if isPublicMetrics {
 		template = `sum(rate(%s{instance=~"$node"}[$__rate_interval])) by ($aggr_criteria)`
 	}
@@ -831,7 +831,7 @@ func newGaugePanel(m *dto.MetricFamily, isPublicMetrics bool, datasource string)
 
 func makeRatioPanel(m0, m1 *dto.MetricFamily, help, datasource string) *graf.GraphPanel {
 	expr := fmt.Sprintf(
-		`sum(irate(%s{instance=~"$node",shard=~"$node_shard"}[2m])) by ($aggr_criteria) / sum(irate(%s{instance=~"$node",shard=~"$node_shard"}[2m])) by ($aggr_criteria)`,
+		`sum(irate(%s{instance=~"$node",shard=~"$node_shard"}[$__rate_interval])) by ($aggr_criteria) / sum(irate(%s{instance=~"$node",shard=~"$node_shard"}[$__rate_interval])) by ($aggr_criteria)`,
 		m0.GetName(), m1.GetName())
 	target := graf.Target{
 		Expr:           expr,
