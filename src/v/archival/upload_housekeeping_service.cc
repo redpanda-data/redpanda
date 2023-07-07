@@ -75,7 +75,7 @@ upload_housekeeping_service::upload_housekeeping_service(
 
         _idle_jittery_timeout = simple_time_jitter<ss::lowres_clock>(
           _idle_timeout(), 100ms);
-        _idle_timer.arm(_idle_jittery_timeout.next_duration());
+        rearm_idle_timer();
     });
 
     _epoch_duration.watch(
