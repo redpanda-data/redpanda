@@ -105,10 +105,12 @@ class ClusterBootstrapUpgrade(RedpandaTest):
         self.admin = self.redpanda._admin
 
     def setUp(self):
+        prev_version = self.installer.highest_from_prior_feature_version(
+            RedpandaInstaller.HEAD)
         # NOTE: `rpk redpanda admin brokers list` requires versions v22.1.x and
         # above.
         _, self.oldversion_str = self.installer.install(
-            self.redpanda.nodes, (22, 2))
+            self.redpanda.nodes, prev_version)
         set_seeds_for_cluster(self.redpanda, 3)
         super(ClusterBootstrapUpgrade, self).setUp()
 
@@ -118,7 +120,7 @@ class ClusterBootstrapUpgrade(RedpandaTest):
                                                     empty_seed_starts_cluster):
         # Upgrade the cluster to begin using the new binary, but don't change
         # any configs yet.
-        self.installer.install(self.redpanda.nodes, (22, 3))
+        self.installer.install(self.redpanda.nodes, RedpandaInstaller.HEAD)
         self.redpanda.rolling_restart_nodes(self.redpanda.nodes)
 
         # Now update the configs.
@@ -134,54 +136,10 @@ class ClusterBootstrapUpgrade(RedpandaTest):
     def test_change_bootstrap_configs_during_upgrade(
             self, empty_seed_starts_cluster):
         # Upgrade the cluster as we change the configs node-by-node.
-        self.installer.install(self.redpanda.nodes, (22, 3))
+        self.installer.install(self.redpanda.nodes, RedpandaInstaller.HEAD)
         self.redpanda.rolling_restart_nodes(self.redpanda.nodes,
                                             override_cfg_params={
                                                 "empty_seed_starts_cluster":
                                                 empty_seed_starts_cluster
                                             },
                                             omit_seeds_on_idx_one=False)
-
-    @cluster(num_nodes=3, log_allow_list=RESTART_LOG_ALLOW_LIST)
-    def test_cluster_uuid_upgrade(self):
-        """
-        Check that cluster_uuid is not available until the entire cluster is
-        upgraded, and after the upgrade is complete that cluster_uuid is here
-        """
-        def get_cluster_uuid():
-            u_prev = None
-            for n in self.redpanda.nodes:
-                u = self.admin.get_cluster_uuid(n)
-                if u is None:
-                    self.redpanda.logger.debug(f"No cluster UUID in {n.name}")
-                    return None
-                if u_prev is not None:
-                    assert u == u_prev, f"Different cluster UUID values:"\
-                        " {u} of {n.name}, and {u_prev} of the previous node"
-                u_prev = u
-            return u_prev
-
-        unique_versions = wait_for_num_versions(self.redpanda, 1)
-        assert self.oldversion_str in unique_versions, unique_versions
-
-        # Upgrade all but 1 node, verify cluster UUID is not created in 10s
-        one_node = [self.redpanda.nodes[0]]
-        but_one_node = self.redpanda.nodes[1:]
-        self.installer.install(but_one_node, (22, 3))
-        self.redpanda.restart_nodes(but_one_node)
-        unique_versions = wait_for_num_versions(self.redpanda, 2)
-        assert self.oldversion_str in unique_versions, unique_versions
-        try:
-            wait_until(lambda: get_cluster_uuid() is not None,
-                       timeout_sec=10,
-                       backoff_sec=1)
-            assert False, "Cluster UUID created before the cluster has completed an upgrade"
-        except ducktape.errors.TimeoutError:
-            pass
-
-        # Upgrade all nodes, verify the cluster has a UUID now
-        self.installer.install(one_node, (22, 3))
-        self.redpanda.restart_nodes(one_node)
-        unique_versions = wait_for_num_versions(self.redpanda, 1)
-        assert self.oldversion_str not in unique_versions, unique_versions
-        wait_until(lambda: get_cluster_uuid() is not None, timeout_sec=30)
