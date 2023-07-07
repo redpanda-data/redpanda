@@ -160,6 +160,7 @@ func (r *ClusterReconciler) Reconcile(
 		return ctrl.Result{}, fmt.Errorf("creating pki: %w", err)
 	}
 	ar.podDisruptionBudget()
+	ar.serviceAccount()
 	var secrets []types.NamespacedName
 	if ar.getProxySuperuser() != nil {
 		secrets = append(secrets, ar.getProxySuperUserKey())
@@ -175,7 +176,6 @@ func (r *ClusterReconciler) Reconcile(
 		}
 	}
 
-	sa := resources.NewServiceAccount(r.Client, &vectorizedCluster, r.Scheme, log)
 	configMapResource := resources.NewConfigMap(r.Client, &vectorizedCluster, r.Scheme, ar.getHeadlessServiceFQDN(), ar.getProxySuperUserKey(), ar.getSchemaRegistrySuperUserKey(), pki.BrokerTLSConfigProvider(), log)
 	secretResource := resources.PreStartStopScriptSecret(r.Client, &vectorizedCluster, r.Scheme, ar.getHeadlessServiceFQDN(), ar.getProxySuperUserKey(), ar.getSchemaRegistrySuperUserKey(), log)
 
@@ -188,7 +188,7 @@ func (r *ClusterReconciler) Reconcile(
 		ar.getNodeportServiceKey(),
 		pki.StatefulSetVolumeProvider(),
 		pki.AdminAPIConfigProvider(),
-		sa.Key().Name,
+		ar.getServiceAccountName(),
 		r.configuratorSettings,
 		configMapResource.GetNodeConfigHash,
 		r.AdminAPIClientFactory,
@@ -199,7 +199,6 @@ func (r *ClusterReconciler) Reconcile(
 	toApply := []resources.Reconciler{
 		configMapResource,
 		secretResource,
-		sa,
 		sts,
 	}
 
@@ -1142,6 +1141,7 @@ const (
 	podDisruptionBudget     = "PodDisruptionBudget"
 	proxySuperuser          = "ProxySuperuser"
 	schemaRegistrySuperUser = "SchemaRegistrySuperUser"
+	serviceAccount          = "ServiceAccount"
 )
 
 func newAttachedResources(ctx context.Context, r *ClusterReconciler, log logr.Logger, cluster *vectorizedv1alpha1.Cluster) *attachedResources {
@@ -1383,4 +1383,24 @@ func (a *attachedResources) getSchemaRegistrySuperUserKey() types.NamespacedName
 		return types.NamespacedName{}
 	}
 	return a.getSchemaRegistrySuperUser().Key()
+}
+
+func (a *attachedResources) serviceAccount() {
+	// if already initialized, exit immediately
+	if _, ok := a.items[serviceAccount]; ok {
+		return
+	}
+	a.items[serviceAccount] = resources.NewServiceAccount(a.reconciler.Client, a.cluster, a.reconciler.Scheme, a.log)
+}
+
+func (a *attachedResources) getServiceAccount() *resources.ServiceAccountResource {
+	return a.items[serviceAccount].(*resources.ServiceAccountResource)
+}
+
+func (a *attachedResources) getServiceAccountKey() types.NamespacedName {
+	return a.getServiceAccount().Key()
+}
+
+func (a *attachedResources) getServiceAccountName() string {
+	return a.getServiceAccountKey().Name
 }
