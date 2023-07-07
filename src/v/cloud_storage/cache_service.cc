@@ -391,11 +391,25 @@ ss::future<> cache::trim(
     if (size_to_delete > 0 || objects_to_delete > 0) {
         vlog(
           cst_log.info,
-          "trim: regular trim did not free enough space, executing exhaustive "
+          "trim: fast trim did not free enough space, executing exhaustive "
           "trim to free {}/{}...",
           size_to_delete,
           objects_to_delete);
-        co_await trim_exhaustive(size_to_delete, objects_to_delete);
+        auto exhaustive_result = co_await trim_exhaustive(
+          size_to_delete, objects_to_delete);
+        size_to_delete -= std::min(
+          exhaustive_result.deleted_size, size_to_delete);
+        objects_to_delete -= std::min(
+          exhaustive_result.deleted_count, objects_to_delete);
+        if (size_to_delete || objects_to_delete) {
+            vlog(
+              cst_log.error,
+              "trim: failed to free sufficient space in exhaustive trim, {} "
+              "bytes, {} objects still require deletion",
+              size_to_delete,
+              objects_to_delete);
+            probe.failed_trim();
+        }
     }
 
     vlog(
@@ -419,6 +433,8 @@ ss::future<cache::trim_result> cache::trim_fast(
   const fragmented_vector<file_list_item>& candidates,
   uint64_t size_to_delete,
   size_t objects_to_delete) {
+    probe.fast_trim();
+
     trim_result result;
 
     size_t candidate_i = 0;
@@ -550,6 +566,7 @@ bool cache::is_trim_exempt(const ss::sstring& path) const {
 
 ss::future<cache::trim_result>
 cache::trim_exhaustive(uint64_t size_to_delete, size_t objects_to_delete) {
+    probe.exhaustive_trim();
     trim_result result;
 
     // Enumerate ALL files in the cache (as opposed to trim_fast that strips out
