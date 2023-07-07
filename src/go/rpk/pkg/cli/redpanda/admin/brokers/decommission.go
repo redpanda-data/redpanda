@@ -90,7 +90,7 @@ help text for more details on why.`, broker)
 			err = cl.DecommissionBroker(cmd.Context(), broker)
 			out.MaybeDie(err, "unable to decommission broker: %v", err)
 
-			fmt.Printf("Success, broker %d decommission started.  Use `rpk redpanda admin brokers decommission-status %d` to monitor data movement.`", broker, broker)
+			fmt.Printf("Success, broker %d decommission started.  Use `rpk redpanda admin brokers decommission-status %d` to monitor data movement.\n`", broker, broker)
 		},
 	}
 
