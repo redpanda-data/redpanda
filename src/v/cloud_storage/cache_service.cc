@@ -414,13 +414,7 @@ ss::future<cache::trim_result> cache::trim_fast(
       && (result.deleted_size < size_to_delete || result.deleted_count < objects_to_delete)) {
         auto& file_stat = candidates[candidate_i++];
 
-        // Skip the accesstime file, we should never delete this.
-        if (
-          file_stat.path
-            == (_cache_dir / access_time_tracker_file_name).string()
-          || file_stat.path
-               == (_cache_dir / access_time_tracker_file_name_tmp).string()) {
-            candidate_i++;
+        if (is_trim_exempt(file_stat.path)) {
             continue;
         }
 
@@ -534,6 +528,16 @@ ss::future<cache::trim_result> cache::trim_fast(
     co_return result;
 }
 
+bool cache::is_trim_exempt(const ss::sstring& path) const {
+    if (
+      path == (_cache_dir / access_time_tracker_file_name).string()
+      || path == (_cache_dir / access_time_tracker_file_name_tmp).string()) {
+        return true;
+    }
+
+    return false;
+}
+
 ss::future<cache::trim_result>
 cache::trim_exhaustive(uint64_t size_to_delete, size_t objects_to_delete) {
     trim_result result;
@@ -554,12 +558,7 @@ cache::trim_exhaustive(uint64_t size_to_delete, size_t objects_to_delete) {
       && (result.deleted_size < size_to_delete || result.deleted_count < objects_to_delete)) {
         auto& file_stat = candidates[candidate_i++];
 
-        // Skip the accesstime file, we should never delete this.
-        if (
-          file_stat.path
-            == (_cache_dir / access_time_tracker_file_name).string()
-          || file_stat.path
-               == (_cache_dir / access_time_tracker_file_name_tmp).string()) {
+        if (is_trim_exempt(file_stat.path)) {
             candidate_i++;
             continue;
         }

@@ -205,6 +205,10 @@ private:
     /// Invoke trim, waiting if not enough time passed since the last trim
     ss::future<> trim_throttled();
 
+    /// Whether an objects path makes it impervious to pinning, like
+    /// the access time tracker.
+    bool is_trim_exempt(const ss::sstring&) const;
+
     /// Triggers directory walker, creates a list of files to delete and deletes
     /// only tmp files that are left from previous Red Panda run
     ss::future<> clean_up_at_start();
