@@ -13,6 +13,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -80,6 +81,9 @@ Trim records from a JSON file
 			if fromFile != "" {
 				o, err = parseOffsetFile(fs, fromFile, args)
 				out.MaybeDie(err, "unable to parse file %q: %v", fromFile, err)
+				if len(o) == 0 {
+					out.Die("offset file is empty")
+				}
 			} else {
 				if len(args) == 0 {
 					out.Die("Error: required arg 'topic' not set\n%v", cmd.UsageString())
@@ -90,6 +94,9 @@ Trim records from a JSON file
 				topic := args[0]
 				o, err = parseOffsetArgs(cmd.Context(), adm, topic, offset, partitions)
 				out.MaybeDieErr(err)
+				if len(o) == 0 {
+					out.Die("topic %q does not exists", topic)
+				}
 			}
 			if !noConfirm {
 				err := printDeleteRecordRequest(cmd.Context(), adm, o)
@@ -102,12 +109,12 @@ Trim records from a JSON file
 				}
 				fmt.Println()
 			}
-			if len(o) == 0 {
-				out.Die("there are no records to trim")
-			}
 			drr, err := adm.DeleteRecords(cmd.Context(), o)
 			out.MaybeDie(err, "unable to trim records: %v", err)
-			printDeleteRecordResponse(drr)
+			ok := printDeleteRecordResponse(drr)
+			if !ok { // This means that at least 1 row contained an error.
+				os.Exit(1)
+			}
 		},
 	}
 
@@ -184,6 +191,9 @@ func parseOffsetArgs(ctx context.Context, adm *kadm.Client, topic, offset string
 			l, ok := listedOffsets.Lookup(topic, p)
 			if !ok {
 				return nil, fmt.Errorf("unable to find offset %q for topic %q in partition %v: %v", offset, topic, p, err)
+			}
+			if l.Err != nil {
+				return nil, l.Err
 			}
 			parsedOffset = l.Offset
 		}
@@ -268,15 +278,17 @@ func printDeleteRecordRequest(ctx context.Context, adm *kadm.Client, o kadm.Offs
 	return rerr
 }
 
-func printDeleteRecordResponse(drr kadm.DeleteRecordsResponses) {
+func printDeleteRecordResponse(drr kadm.DeleteRecordsResponses) (ok bool) {
 	tw := out.NewTable("TOPIC", "PARTITION", "NEW-START-OFFSET", "ERROR")
 	defer tw.Flush()
-
+	ok = true
 	drr.Each(func(r kadm.DeleteRecordsResponse) {
 		if r.Err != nil {
 			tw.Print(r.Topic, r.Partition, "-", r.Err)
+			ok = false
 		} else {
 			tw.Print(r.Topic, r.Partition, r.LowWatermark, "")
 		}
 	})
+	return
 }
