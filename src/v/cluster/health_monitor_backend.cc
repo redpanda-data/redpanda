@@ -807,6 +807,9 @@ health_monitor_backend::get_cluster_health_overview(
         }
     }
 
+    std::sort(ret.all_nodes.begin(), ret.all_nodes.end());
+    std::sort(ret.nodes_down.begin(), ret.nodes_down.end());
+
     // The size of the health status must be bounded: if all partitions
     // on a system with 50k partitions are under-replicated, it is not helpful
     // to try and cram all 50k NTPs into a vector here.
