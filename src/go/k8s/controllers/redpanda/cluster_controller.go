@@ -161,6 +161,7 @@ func (r *ClusterReconciler) Reconcile(
 	}
 	ar.podDisruptionBudget()
 	ar.serviceAccount()
+	ar.secret()
 	var secrets []types.NamespacedName
 	if ar.getProxySuperuser() != nil {
 		secrets = append(secrets, ar.getProxySuperUserKey())
@@ -177,7 +178,6 @@ func (r *ClusterReconciler) Reconcile(
 	}
 
 	configMapResource := resources.NewConfigMap(r.Client, &vectorizedCluster, r.Scheme, ar.getHeadlessServiceFQDN(), ar.getProxySuperUserKey(), ar.getSchemaRegistrySuperUserKey(), pki.BrokerTLSConfigProvider(), log)
-	secretResource := resources.PreStartStopScriptSecret(r.Client, &vectorizedCluster, r.Scheme, ar.getHeadlessServiceFQDN(), ar.getProxySuperUserKey(), ar.getSchemaRegistrySuperUserKey(), log)
 
 	sts := resources.NewStatefulSet(
 		r.Client,
@@ -198,7 +198,6 @@ func (r *ClusterReconciler) Reconcile(
 
 	toApply := []resources.Reconciler{
 		configMapResource,
-		secretResource,
 		sts,
 	}
 
@@ -1142,6 +1141,7 @@ const (
 	proxySuperuser          = "ProxySuperuser"
 	schemaRegistrySuperUser = "SchemaRegistrySuperUser"
 	serviceAccount          = "ServiceAccount"
+	secret                  = "Secret"
 )
 
 func newAttachedResources(ctx context.Context, r *ClusterReconciler, log logr.Logger, cluster *vectorizedv1alpha1.Cluster) *attachedResources {
@@ -1403,4 +1403,12 @@ func (a *attachedResources) getServiceAccountKey() types.NamespacedName {
 
 func (a *attachedResources) getServiceAccountName() string {
 	return a.getServiceAccountKey().Name
+}
+
+func (a *attachedResources) secret() {
+	// if already initialized, exit immediately
+	if _, ok := a.items[secret]; ok {
+		return
+	}
+	a.items[secret] = resources.PreStartStopScriptSecret(a.reconciler.Client, a.cluster, a.reconciler.Scheme, a.getHeadlessServiceFQDN(), a.getProxySuperUserKey(), a.getSchemaRegistrySuperUserKey(), a.log)
 }
