@@ -463,6 +463,29 @@ bool get_boolean_query_param(
     return ss::http::request::case_insensitive_cmp()(str_param, "true")
            || str_param == "1";
 }
+
+/**
+ * Helper for requests with decimal_integer URL query parameters.
+ *
+ * Throws a bad_request exception if the parameter is present but not
+ * an integer.
+ */
+std::optional<uint64_t>
+get_integer_query_param(const ss::http::request& req, std::string_view name) {
+    auto key = ss::sstring(name);
+    if (!req.query_parameters.contains(key)) {
+        return std::nullopt;
+    }
+
+    const ss::sstring& str_param = req.query_parameters.at(key);
+    try {
+        return std::stoi(str_param);
+    } catch (const std::invalid_argument&) {
+        throw ss::httpd::bad_request_exception(
+          fmt::format("Parameter {} must be an integer", name));
+    }
+}
+
 } // namespace
 
 void admin_server::configure_metrics_route() {
@@ -4973,6 +4996,21 @@ admin_server::delete_cloud_storage_lifecycle(
     co_return ss::json::json_return_type(ss::json::json_void());
 }
 
+ss::future<ss::json::json_return_type>
+admin_server::post_cloud_storage_cache_trim(
+  std::unique_ptr<ss::http::request> req) {
+    auto size_limit = get_integer_query_param(*req, "objects");
+    auto bytes_limit = static_cast<std::optional<size_t>>(
+      get_integer_query_param(*req, "bytes"));
+
+    co_await _cloud_storage_cache.invoke_on(
+      ss::shard_id{0}, [size_limit, bytes_limit](auto& c) {
+          return c.trim_manually(size_limit, bytes_limit);
+      });
+
+    co_return ss::json::json_return_type(ss::json::json_void());
+}
+
 ss::future<std::unique_ptr<ss::http::reply>> admin_server::get_manifest(
   std::unique_ptr<ss::http::request> req,
   std::unique_ptr<ss::http::reply> rep) {
@@ -5069,6 +5107,12 @@ void admin_server::register_shadow_indexing_routes() {
       ss::httpd::shadow_indexing_json::delete_cloud_storage_lifecycle,
       [this](auto req) {
           return delete_cloud_storage_lifecycle(std::move(req));
+      });
+
+    register_route<user>(
+      ss::httpd::shadow_indexing_json::post_cloud_storage_cache_trim,
+      [this](auto req) {
+          return post_cloud_storage_cache_trim(std::move(req));
       });
 
     register_route_raw_async<user>(

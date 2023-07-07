@@ -447,6 +447,8 @@ private:
     get_cloud_storage_lifecycle(std::unique_ptr<ss::http::request> req);
     ss::future<ss::json::json_return_type>
     delete_cloud_storage_lifecycle(std::unique_ptr<ss::http::request> req);
+    ss::future<ss::json::json_return_type>
+    post_cloud_storage_cache_trim(std::unique_ptr<ss::http::request> req);
     ss::future<std::unique_ptr<ss::http::reply>> get_manifest(
       std::unique_ptr<ss::http::request> req,
       std::unique_ptr<ss::http::reply> rep);
