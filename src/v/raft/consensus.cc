@@ -634,7 +634,7 @@ ss::future<result<model::offset>> consensus::linearizable_barrier() {
           meta(),
           model::make_memory_record_batch_reader(
             ss::circular_buffer<model::record_batch>{}),
-          flush_after_append::no);
+          flush_after_append::yes);
         auto seq = next_follower_sequence(target);
         sequences.emplace(target, seq);
 
