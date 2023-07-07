@@ -421,14 +421,11 @@ func parseFromToOffset(
 	return
 }
 
-// Until we use go1.17, nano/1e6 converts nanoseconds to milliseconds.
-func unixMilli(nano int64) int64 { return nano / 1e6 }
-
 // Parses the first or second timestamp in a timestamp based offset.
 //
 // The expressions below all end in (?::|$), meaning, a non capturing group for
 // the first time followed by a colon or the second time at the end.
-func parseConsumeTimestamp(
+func parseTimestampBasedOffset(
 	half string, baseTimestamp time.Time,
 ) (length int, at time.Time, end bool, fromTimestamp bool, err error) {
 	switch {
@@ -519,7 +516,7 @@ func (c *consumer) parseTimeOffset(
 		err           error
 	)
 	if !strings.HasPrefix(offset, ":") {
-		length, startAt, end, fromTimestamp, err = parseConsumeTimestamp(offset, time.Now())
+		length, startAt, end, fromTimestamp, err = parseTimestampBasedOffset(offset, time.Now())
 		if err != nil {
 			return err
 		} else if end {
@@ -529,12 +526,12 @@ func (c *consumer) parseTimeOffset(
 		// If there are no offsets after the requested milli, we get
 		// the default offset -1, which below in NewOffset().At(-1)
 		// actually coincidentally maps to AtEnd(). So it all works.
-		lstart, err := adm.ListOffsetsAfterMilli(context.Background(), unixMilli(startAt.UnixNano()), topics...)
+		lstart, err := adm.ListOffsetsAfterMilli(context.Background(), startAt.UnixMilli(), topics...)
 		if err == nil {
 			err = lstart.Error()
 		}
 		if err != nil {
-			return fmt.Errorf("unable to list offsets after milli %d: %v", unixMilli(startAt.UnixNano()), err)
+			return fmt.Errorf("unable to list offsets after milli %d: %v", startAt.UnixMilli(), err)
 		}
 
 		c.setParts(&c.partStarts, lstart, nil)
@@ -552,9 +549,9 @@ func (c *consumer) parseTimeOffset(
 	offset = offset[1:] // strip start:end delimiting colon
 
 	if fromTimestamp {
-		length, endAt, end, _, err = parseConsumeTimestamp(offset, startAt)
+		length, endAt, end, _, err = parseTimestampBasedOffset(offset, startAt)
 	} else {
-		length, endAt, end, _, err = parseConsumeTimestamp(offset, time.Now())
+		length, endAt, end, _, err = parseTimestampBasedOffset(offset, time.Now())
 	}
 
 	if err != nil {
@@ -572,12 +569,12 @@ func (c *consumer) parseTimeOffset(
 			return fmt.Errorf("unable to list end offsets: %v", err)
 		}
 	} else {
-		lend, err = adm.ListOffsetsAfterMilli(context.Background(), unixMilli(endAt.UnixNano()), topics...)
+		lend, err = adm.ListOffsetsAfterMilli(context.Background(), endAt.UnixMilli(), topics...)
 		if err == nil {
 			err = lend.Error()
 		}
 		if err != nil {
-			return fmt.Errorf("unable to list offsets after milli %d: %v", unixMilli(endAt.UnixNano()), err)
+			return fmt.Errorf("unable to list offsets after milli %d: %v", endAt.UnixMilli(), err)
 		}
 	}
 	c.setParts(&c.partEnds, lend, nil)

@@ -123,6 +123,13 @@ class RpkOffsetDeleteResponsePartition(typing.NamedTuple):
     error_msg: str
 
 
+class RpkTrimOffsetResponse(typing.NamedTuple):
+    topic: str
+    partition: int
+    new_start_offset: int
+    error_msg: str
+
+
 @dataclass
 class RpkColumnHeader:
     name: str
@@ -1213,3 +1220,41 @@ class RpkTool:
                                    int(size)))
 
         return result
+
+    def trim_prefix(self, topic, offset, partitions=[]):
+        def parse(line):
+            if line.startswith("Request error") or not line.strip():
+                # RPK may print messages about request errors, which it internally
+                # retries.  Drop these lines.
+                return None
+
+            # $ rpk topic trim-prefix foo -p 0 -o 100
+            # TOPIC             PARTITION  NEW-START-OFFSET  ERROR
+            # foo               0          100
+
+            line = [x.strip() for x in line.split()]
+            if line[0] == "TOPIC":
+                return None
+            return RpkTrimOffsetResponse(
+                topic=line[0],
+                partition=int(line[1]),
+                new_start_offset=int(line[2]) if line[2] != "-" else -1,
+                error_msg=line[3] if len(line) > 3 else "")
+
+        cmd = [
+            self._rpk_binary(),
+            "topic",
+            "trim-prefix",
+            topic,
+            "--offset",
+            str(offset),
+            "--no-confirm",
+            "-X",
+            "brokers=" + self._redpanda.brokers(),
+        ]
+
+        if len(partitions) > 0:
+            cmd += ["--partitions", ",".join([str(x) for x in partitions])]
+
+        output = self._execute(cmd)
+        return list(filter(None, map(parse, output.splitlines())))

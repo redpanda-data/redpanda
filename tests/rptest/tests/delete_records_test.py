@@ -19,12 +19,12 @@ from ducktape.mark import parametrize
 from rptest.services.cluster import cluster
 from rptest.services.kgo_verifier_services import KgoVerifierConsumerGroupConsumer, KgoVerifierProducer
 from rptest.tests.redpanda_test import RedpandaTest
-from rptest.clients.kcl import KCL
 from rptest.clients.kafka_cli_tools import KafkaCliTools
-from rptest.clients.rpk import RpkTool
+from rptest.clients.rpk import RpkTool, RpkException
 from ducktape.utils.util import wait_until
 from rptest.clients.types import TopicSpec
 from rptest.util import produce_until_segments
+from rptest.util import expect_exception
 
 
 class DeleteRecordsTest(RedpandaTest):
@@ -45,7 +45,6 @@ class DeleteRecordsTest(RedpandaTest):
                                                 extra_rp_conf=extra_rp_conf)
         self._ctx = test_context
 
-        self.kcl = KCL(self.redpanda)
         self.rpk = RpkTool(self.redpanda)
 
     def get_topic_info(self):
@@ -70,15 +69,14 @@ class DeleteRecordsTest(RedpandaTest):
         Asserts that the response contains 1 element, with matching topic &
         partition contents.
         """
-        response = self.kcl.delete_records(
-            {topic: {
-                partition: truncate_offset
-            }})
+        response = self.rpk.trim_prefix(topic,
+                                        truncate_offset,
+                                        partitions=[partition])
         assert len(response) == 1
         assert response[0].topic == topic
         assert response[0].partition == partition
-        assert response[0].error == 'OK', f"Err msg: {response[0].error}"
-        return response[0].new_low_watermark
+        assert response[0].error_msg == "", f"Err msg: {response[0].error}"
+        return response[0].new_start_offset
 
     def assert_start_partition_boundaries(self, truncate_offset):
         def check_bound_start(offset):
@@ -320,14 +318,11 @@ class DeleteRecordsTest(RedpandaTest):
             assert len(response) == 1
             assert response[0].topic == self.topic
             assert response[0].partition == 0
-            assert response[0].new_low_watermark == -1
-            return response[0].error
+            assert response[0].new_start_offset == -1
+            return response[0].error_msg
 
         def bad_truncation(truncate_offset):
-            response = self.kcl.delete_records(
-                {self.topic: {
-                    0: truncate_offset
-                }})
+            response = self.rpk.trim_prefix(self.topic, truncate_offset, [0])
             assert check_bad_response(response).startswith(
                 out_of_range_prefix
             ), f"Unexpected error msg: {response[0].error}"
@@ -361,44 +356,41 @@ class DeleteRecordsTest(RedpandaTest):
         missing_topic = "foo_bar"
         out_of_range_prefix = "OFFSET_OUT_OF_RANGE"
         unknown_topic_or_partition = "UNKNOWN_TOPIC_OR_PARTITION"
-        missing_partition = "partition was not returned"
 
         # Assert failure condition on unknown topic
-        response = self.kcl.delete_records({missing_topic: {0: 0}})
-        assert len(response) == 1
-        assert response[0].new_low_watermark == -1
-        assert response[0].error.find(unknown_topic_or_partition) != -1
+        with expect_exception(RpkException,
+                              lambda e: unknown_topic_or_partition in str(e)):
+            self.rpk.trim_prefix(missing_topic, 0, [0])
 
         # Assert failure condition on unknown partition index
-        missing_idx = 15
-        response = self.kcl.delete_records({self.topic: {missing_idx: 0}})
-        assert len(response) == 1
-        assert response[0].new_low_watermark == -1
-        assert response[0].error.find(missing_partition) != -1
+        with expect_exception(RpkException,
+                              lambda e: unknown_topic_or_partition in str(e)):
+            missing_idx = 15
+            self.rpk.trim_prefix(self.topic, 0, [missing_idx])
 
         # Assert out of range occurs on an empty topic
         attempts = 5
         response = []
         while attempts > 0:
-            response = self.kcl.delete_records({self.topic: {0: 0}})
+            response = self.rpk.trim_prefix(self.topic, 0, [0])
             assert len(response) == 1
             assert response[0].topic == self.topic
             assert response[0].partition == 0
-            assert response[0].new_low_watermark == -1
-            if not response[0].error.startswith("NOT_LEADER"):
+            assert response[0].new_start_offset == -1
+            if not response[0].error_msg.startswith("NOT_LEADER"):
                 break
             time.sleep(1)
             attempts -= 1
-        assert response[0].error.startswith(out_of_range_prefix)
+        assert response[0].error_msg.startswith(out_of_range_prefix)
 
         # Assert correct behavior on a topic with 1 record
         kafka_tools = KafkaCliTools(self.redpanda)
         kafka_tools.produce(self.topic, 1, 512)
         self.wait_until_records(1, timeout_sec=5, backoff_sec=1)
-        response = self.kcl.delete_records({self.topic: {0: 0}})
+        response = self.rpk.trim_prefix(self.topic, 0, [0])
         assert len(response) == 1
-        assert response[0].new_low_watermark == -1
-        assert response[0].error.startswith(out_of_range_prefix)
+        assert response[0].new_start_offset == -1
+        assert response[0].error_msg.startswith(out_of_range_prefix)
 
         # ... truncating at high watermark 1 should delete all data
         low_watermark = self.delete_records(self.topic, 0, 1)
@@ -422,15 +414,13 @@ class DeleteRecordsTest(RedpandaTest):
         def delete_records_within_transaction(reporter):
             try:
                 high_watermark = int(self.get_topic_info().high_watermark)
-                response = self.kcl.delete_records(
-                    {self.topic: {
-                        0: high_watermark
-                    }}, timeout_ms=5000)
+                response = self.rpk.trim_prefix(self.topic, high_watermark,
+                                                [0])
                 assert len(response) == 1
                 # Even though the on disk data may be late to evict, the start offset
                 # should have been immediately updated
-                assert response[0].new_low_watermark == high_watermark
-                assert response[0].error == 'OK'
+                assert response[0].new_start_offset == high_watermark
+                assert response[0].error_msg == ""
             except Exception as e:
                 reporter.exc = e
 
@@ -489,13 +479,10 @@ class DeleteRecordsTest(RedpandaTest):
             truncate_point = random.randint(start_offset, high_watermark)
             self.redpanda.logger.info(
                 f"Issuing delete_records request at offset: {truncate_point}")
-            response = self.kcl.delete_records(
-                {self.topic: {
-                    0: truncate_point
-                }}, timeout_ms=5000)
+            response = self.rpk.trim_prefix(self.topic, truncate_point, [0])
             assert len(response) == 1
-            assert response[0].new_low_watermark == truncate_point
-            assert response[0].error == 'OK'
+            assert response[0].new_start_offset == truncate_point
+            assert response[0].error_msg == ""
             # Cannot assert end boundaries as there is a concurrent producer
             # moving the hwm forward
             self.assert_start_partition_boundaries(truncate_point)
