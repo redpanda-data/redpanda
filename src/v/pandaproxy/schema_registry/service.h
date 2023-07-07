@@ -20,6 +20,7 @@
 #include "seastarx.h"
 #include "utils/request_auth.h"
 
+#include <seastar/core/abort_source.hh>
 #include <seastar/core/future.hh>
 #include <seastar/core/sharded.hh>
 #include <seastar/core/smp.hh>
@@ -71,6 +72,7 @@ private:
     sharded_store& _store;
     ss::sharded<seq_writer>& _writer;
     std::unique_ptr<cluster::controller>& _controller;
+    ss::abort_source _as;
 
     one_shot _ensure_started;
     request_authenticator _auth;

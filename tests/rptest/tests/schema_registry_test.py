@@ -1388,6 +1388,9 @@ class SchemaRegistryTestMethods(SchemaRegistryEndpoints):
                                                 partition=0)
             self.logger.info(f"Restarting node: {leader}")
             self.redpanda.restart_nodes(self.redpanda.get_node(leader))
+            admin.await_stable_leader(topic="_schemas",
+                                      partition=0,
+                                      namespace="kafka")
 
         for _ in range(20):
             for n in self.redpanda.nodes:
