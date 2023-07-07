@@ -1115,12 +1115,17 @@ ss::future<> cache::do_reserve_space(uint64_t bytes, size_t objects) {
                 // stall entirely.
                 vlog(
                   cst_log.warn,
-                  "Failed to trim cache enough to reserve {} bytes (size={} "
-                  "reserved={} pending={})",
+                  "Failed to trim cache enough to reserve {}/{} bytes "
+                  "(size={}/{} "
+                  "reserved={}/{} pending={}/{})",
                   bytes,
+                  objects,
                   _current_cache_size,
+                  _current_cache_objects,
                   _reserved_cache_size,
-                  _reservations_pending);
+                  _reserved_cache_objects,
+                  _reservations_pending,
+                  _reservations_pending_objects);
 
                 // If there is a lot of free space on the disk, and we already
                 // tried our best to trim, then we may exceed the cache size

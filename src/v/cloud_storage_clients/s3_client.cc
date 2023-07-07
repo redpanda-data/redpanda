@@ -536,12 +536,14 @@ ss::future<http::client::response_stream_ref> s3_client::do_get_object(
                     && result == boost::beast::http::status::not_found) {
                       vlog(
                         s3_log.debug,
-                        "S3 replied with expected error: {:l}",
+                        "S3 GET request with expected error: {} {:l}",
+                        ref->get_headers().result(),
                         ref->get_headers());
                   } else {
                       vlog(
                         s3_log.warn,
-                        "S3 replied with error: {:l}",
+                        "S3 GET request failed: {} {:l}",
+                        ref->get_headers().result(),
                         ref->get_headers());
                   }
                   return util::drain_response_stream(std::move(ref))
@@ -592,7 +594,8 @@ ss::future<s3_client::head_object_result> s3_client::do_head_object(
                   } else if (status != boost::beast::http::status::ok) {
                       vlog(
                         s3_log.warn,
-                        "S3 replied with error: {:l}",
+                        "S3 HEAD request failed: {} {:l}",
+                        status,
                         ref->get_headers());
                       return parse_head_error_response<head_object_result>(
                         ref->get_headers(), key);
@@ -663,7 +666,8 @@ ss::future<> s3_client::do_put_object(
                       if (status != boost::beast::http::status::ok) {
                           vlog(
                             s3_log.warn,
-                            "S3 replied with error: {:l}",
+                            "S3 PUT request failed: {} {:l}",
+                            status,
                             ref->get_headers());
                           return parse_rest_error_response<>(
                             status, std::move(res));
@@ -680,7 +684,7 @@ ss::future<> s3_client::do_put_object(
                 return ss::make_exception_future<>(err);
             })
             .handle_exception([](std::exception_ptr eptr) {
-                vlog(s3_log.warn, "S3 request failed with error: {}", eptr);
+                vlog(s3_log.warn, "S3 PUT request failed with error: {}", eptr);
                 return ss::make_exception_future<>(eptr);
             })
             .finally([&body]() { return body.close(); });
@@ -740,7 +744,11 @@ ss::future<s3_client::list_bucket_result> s3_client::do_list_objects_v2(
             [resp, gather_item_if = std::move(pred)]() mutable {
                 const auto& header = resp->get_headers();
                 if (header.result() != boost::beast::http::status::ok) {
-                    vlog(s3_log.warn, "S3 replied with error: {:l}", header);
+                    vlog(
+                      s3_log.warn,
+                      "S3 ListObjectsv2 request failed: {} {:l}",
+                      header.result(),
+                      header);
 
                     // In the error path we drain the response stream fully, the
                     // error response should not be very large.
@@ -830,7 +838,8 @@ ss::future<> s3_client::do_delete_object(
                      != boost::beast::http::status::no_content) { // expect 204
                   vlog(
                     s3_log.warn,
-                    "S3 replied with error: {:l}",
+                    "S3 DeleteObject request failed: {} {:l}",
+                    status,
                     ref->get_headers());
                   return parse_rest_error_response<>(status, std::move(res));
               }
@@ -866,7 +875,7 @@ static auto iobuf_to_delete_objects_result(iobuf&& buf) {
             } else {
                 vlog(
                   s3_log.warn,
-                  "an DeleteResult.Error does not contain the Key tag");
+                  "a DeleteResult.Error does not contain the Key tag");
             }
         }
     } catch (...) {
