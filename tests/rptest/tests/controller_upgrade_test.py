@@ -63,6 +63,13 @@ class ControllerUpgradeTest(EndToEndTest):
         else:
             admin_operations = [o for o in RedpandaAdminOperation]
 
+        # DeleteRecords is not an allowable admin operation until the cluster
+        # has been fully upgraded
+        admin_operations = [
+            o for o in admin_operations
+            if o != RedpandaAdminOperation.DELETE_RECORDS
+        ]
+
         installer.install(self.redpanda.nodes, prev_version)
 
         self.redpanda.start()
