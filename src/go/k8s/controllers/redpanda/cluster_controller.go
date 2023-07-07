@@ -160,6 +160,14 @@ func (r *ClusterReconciler) Reconcile(
 		return ctrl.Result{}, fmt.Errorf("creating pki: %w", err)
 	}
 	ar.podDisruptionBudget()
+	var secrets []types.NamespacedName
+	if ar.getProxySuperuser() != nil {
+		secrets = append(secrets, ar.getProxySuperUserKey())
+	}
+
+	if ar.getSchemaRegistrySuperUser() != nil {
+		secrets = append(secrets, ar.getSchemaRegistrySuperUserKey())
+	}
 
 	if vectorizedCluster.Status.CurrentReplicas >= 1 {
 		if err = r.setPodNodeIDAnnotation(ctx, &vectorizedCluster, log, ar); err != nil {
@@ -167,15 +175,9 @@ func (r *ClusterReconciler) Reconcile(
 		}
 	}
 
-	var schemaRegistrySu *resources.SuperUsersResource
-	var schemaRegistrySuKey types.NamespacedName
-	if vectorizedCluster.IsSASLOnInternalEnabled() && vectorizedCluster.Spec.Configuration.SchemaRegistry != nil {
-		schemaRegistrySu = resources.NewSuperUsers(r.Client, &vectorizedCluster, r.Scheme, resources.ScramSchemaRegistryUsername, resources.SchemaRegistrySuffix, log)
-		schemaRegistrySuKey = schemaRegistrySu.Key()
-	}
 	sa := resources.NewServiceAccount(r.Client, &vectorizedCluster, r.Scheme, log)
-	configMapResource := resources.NewConfigMap(r.Client, &vectorizedCluster, r.Scheme, ar.getHeadlessServiceFQDN(), ar.getProxySuperUserKey(), schemaRegistrySuKey, pki.BrokerTLSConfigProvider(), log)
-	secretResource := resources.PreStartStopScriptSecret(r.Client, &vectorizedCluster, r.Scheme, ar.getHeadlessServiceFQDN(), ar.getProxySuperUserKey(), schemaRegistrySuKey, log)
+	configMapResource := resources.NewConfigMap(r.Client, &vectorizedCluster, r.Scheme, ar.getHeadlessServiceFQDN(), ar.getProxySuperUserKey(), ar.getSchemaRegistrySuperUserKey(), pki.BrokerTLSConfigProvider(), log)
+	secretResource := resources.PreStartStopScriptSecret(r.Client, &vectorizedCluster, r.Scheme, ar.getHeadlessServiceFQDN(), ar.getProxySuperUserKey(), ar.getSchemaRegistrySuperUserKey(), log)
 
 	sts := resources.NewStatefulSet(
 		r.Client,
@@ -195,7 +197,6 @@ func (r *ClusterReconciler) Reconcile(
 		r.MetricsTimeout)
 
 	toApply := []resources.Reconciler{
-		schemaRegistrySu,
 		configMapResource,
 		secretResource,
 		sa,
@@ -228,15 +229,6 @@ func (r *ClusterReconciler) Reconcile(
 	adminAPI, err := r.AdminAPIClientFactory(ctx, r.Client, &vectorizedCluster, ar.getHeadlessServiceFQDN(), pki.AdminAPIConfigProvider())
 	if err != nil && !errors.Is(err, &adminutils.NoInternalAdminAPI{}) {
 		return ctrl.Result{}, fmt.Errorf("creating admin api client: %w", err)
-	}
-
-	var secrets []types.NamespacedName
-	if ar.getProxySuperuser() != nil {
-		secrets = append(secrets, ar.getProxySuperUserKey())
-	}
-
-	if schemaRegistrySu != nil {
-		secrets = append(secrets, schemaRegistrySu.Key())
 	}
 
 	if errSetInit := r.setInitialSuperUserPassword(ctx, adminAPI, secrets); errSetInit != nil {
@@ -1139,16 +1131,17 @@ type attachedResources struct {
 }
 
 const (
-	bootstrapService    = "BootstrapService"
-	clusterRole         = "ClusterRole"
-	clusterRoleBinding  = "ClusterRoleBinding"
-	clusterService      = "ClusterPorts"
-	headlessService     = "HeadlessService"
-	ingress             = "Ingress"
-	nodeportService     = "NodeportService"
-	pki                 = "PKI"
-	podDisruptionBudget = "PodDisruptionBudget"
-	proxySuperuser      = "ProxySuperuser"
+	bootstrapService        = "BootstrapService"
+	clusterRole             = "ClusterRole"
+	clusterRoleBinding      = "ClusterRoleBinding"
+	clusterService          = "ClusterPorts"
+	headlessService         = "HeadlessService"
+	ingress                 = "Ingress"
+	nodeportService         = "NodeportService"
+	pki                     = "PKI"
+	podDisruptionBudget     = "PodDisruptionBudget"
+	proxySuperuser          = "ProxySuperuser"
+	schemaRegistrySuperUser = "SchemaRegistrySuperUser"
 )
 
 func newAttachedResources(ctx context.Context, r *ClusterReconciler, log logr.Logger, cluster *vectorizedv1alpha1.Cluster) *attachedResources {
@@ -1165,6 +1158,9 @@ func (a *attachedResources) Ensure() (ctrl.Result, error) {
 	result := ctrl.Result{}
 	var errs error
 	for _, resource := range a.items {
+		if resource == nil {
+			continue
+		}
 		err := resource.Ensure(a.ctx)
 		var e *resources.RequeueAfterError
 		if errors.As(err, &e) {
@@ -1362,4 +1358,29 @@ func (a *attachedResources) getProxySuperUserKey() types.NamespacedName {
 		return types.NamespacedName{}
 	}
 	return a.getProxySuperuser().Key()
+}
+
+func (a *attachedResources) schemaRegistrySuperUser() {
+	// if already initialized, exit immediately
+	if _, ok := a.items[schemaRegistrySuperUser]; ok {
+		return
+	}
+
+	var schemaRegistrySASLUser *resources.SuperUsersResource
+	a.items[schemaRegistrySuperUser] = schemaRegistrySASLUser
+	if a.cluster.IsSASLOnInternalEnabled() && a.cluster.Spec.Configuration.SchemaRegistry != nil {
+		a.items[schemaRegistrySuperUser] = resources.NewSuperUsers(a.reconciler.Client, a.cluster, a.reconciler.Scheme, resources.ScramSchemaRegistryUsername, resources.SchemaRegistrySuffix, a.log)
+	}
+}
+
+func (a *attachedResources) getSchemaRegistrySuperUser() *resources.SuperUsersResource {
+	a.schemaRegistrySuperUser()
+	return a.items[schemaRegistrySuperUser].(*resources.SuperUsersResource)
+}
+
+func (a *attachedResources) getSchemaRegistrySuperUserKey() types.NamespacedName {
+	if a.getSchemaRegistrySuperUser() == nil {
+		return types.NamespacedName{}
+	}
+	return a.getSchemaRegistrySuperUser().Key()
 }
