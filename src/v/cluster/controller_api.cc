@@ -65,8 +65,8 @@ controller_api::get_reconciliation_state(std::vector<model::ntp> ntps) {
 }
 
 ss::future<result<bool>>
-controller_api::all_reconciliations_done(std::vector<model::ntp> ntps) {
-    const size_t batch_size = 8192;
+controller_api::all_reconciliations_done(std::deque<model::ntp> ntps) {
+    const size_t batch_size = 4096;
     // For a huge topic with e.g. 100k partitions, this will be a huge loop:
     // that means we need parallelism, but not so much that we totally
     // saturate inter-core queues.
@@ -281,19 +281,16 @@ ss::future<std::error_code> controller_api::wait_for_topic(
         co_return make_error_code(errc::topic_not_exists);
     }
 
-    absl::node_hash_map<model::node_id, std::vector<model::ntp>> requests;
-    // collect ntps per node
+    std::deque<model::ntp> all_ntps;
     for (const auto& p_as : metadata->get().get_assignments()) {
-        for (const auto& bs : p_as.replicas) {
-            requests[bs.node_id].emplace_back(tp_ns.ns, tp_ns.tp, p_as.id);
-        }
+        all_ntps.emplace_back(tp_ns.ns, tp_ns.tp, p_as.id);
     }
     bool ready = false;
     while (!ready) {
         if (model::timeout_clock::now() > timeout) {
             co_return make_error_code(errc::timeout);
         }
-        auto res = co_await are_ntps_ready(requests, timeout);
+        auto res = co_await all_reconciliations_done(all_ntps);
         ready = !res.has_error() && res.value();
         if (!ready) {
             co_await ss::sleep_abortable(
@@ -302,24 +299,6 @@ ss::future<std::error_code> controller_api::wait_for_topic(
     }
 
     co_return errc::success;
-}
-
-ss::future<result<bool>> controller_api::are_ntps_ready(
-  absl::node_hash_map<model::node_id, std::vector<model::ntp>> requests,
-  model::timeout_clock::time_point timeout) {
-    std::vector<ss::future<result<bool>>> replies;
-    replies.reserve(requests.size());
-
-    for (auto& [id, ntps] : requests) {
-        auto f = all_reconciliations_done(std::move(ntps));
-        replies.push_back(std::move(f));
-    }
-
-    auto r = co_await ss::when_all_succeed(replies.begin(), replies.end());
-
-    co_return std::all_of(r.begin(), r.end(), [](result<bool> is_ready_result) {
-        return !is_ready_result.has_error() && is_ready_result.value();
-    });
 }
 
 ss::future<result<std::vector<partition_reconfiguration_state>>>
