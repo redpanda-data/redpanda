@@ -639,6 +639,16 @@ ss::future<compaction_result> disk_log_impl::compact_adjacent_segments(
     co_return ret;
 }
 
+bool disk_log_impl::has_local_retention_override() const {
+    if (config().has_overrides()) {
+        const auto& overrides = config().get_overrides();
+        auto bytes = overrides.retention_local_target_bytes;
+        auto time = overrides.retention_local_target_ms;
+        return bytes.is_engaged() || time.is_engaged();
+    }
+    return false;
+}
+
 gc_config disk_log_impl::override_retention_config(gc_config cfg) const {
     // Read replica topics have a different default retention
     if (config().is_read_replica_mode_enabled()) {

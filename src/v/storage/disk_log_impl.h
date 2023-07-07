@@ -203,6 +203,10 @@ private:
 
     void wrote_stm_bytes(size_t);
 
+    // returns true if this partition's local retention configuration has
+    // overrides, such as custom topic configs.
+    bool has_local_retention_override() const;
+
     gc_config override_retention_config(gc_config) const;
 
     bool is_cloud_retention_active() const;
