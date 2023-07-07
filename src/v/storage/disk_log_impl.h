@@ -213,6 +213,11 @@ private:
 
     std::optional<model::offset> retention_offset(gc_config);
 
+    // returns retention_offset(cfg) but may also first apply adjustments to
+    // future timestamps if this option is turned on in configuration.
+    ss::future<std::optional<model::offset>>
+    maybe_adjusted_retention_offset(gc_config cfg);
+
     /*
      * total disk usage and the amount of reclaimable space are most efficiently
      * computed together given that use cases often use both together.

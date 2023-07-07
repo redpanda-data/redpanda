@@ -832,16 +832,7 @@ ss::future<std::optional<model::offset>> disk_log_impl::do_gc(gc_config cfg) {
       config().ntp(),
       cfg);
 
-    auto ignore_timestamps_in_future
-      = config::shard_local_cfg().storage_ignore_timestamps_in_future_sec();
-    if (ignore_timestamps_in_future.has_value()) {
-        // Correct any timestamps too far in future, before calculating the
-        // retention offset.
-        co_await retention_adjust_timestamps(
-          ignore_timestamps_in_future.value());
-    }
-
-    auto max_offset = retention_offset(cfg);
+    auto max_offset = co_await maybe_adjusted_retention_offset(cfg);
 
     if (max_offset) {
         co_return co_await request_eviction_until_offset(*max_offset);
@@ -904,6 +895,20 @@ ss::future<> disk_log_impl::retention_adjust_timestamps(
             break;
         }
     }
+}
+
+ss::future<std::optional<model::offset>>
+disk_log_impl::maybe_adjusted_retention_offset(gc_config cfg) {
+    auto ignore_timestamps_in_future
+      = config::shard_local_cfg().storage_ignore_timestamps_in_future_sec();
+    if (ignore_timestamps_in_future.has_value()) {
+        // Correct any timestamps too far in future, before calculating the
+        // retention offset.
+        co_await retention_adjust_timestamps(
+          ignore_timestamps_in_future.value());
+    }
+
+    co_return retention_offset(cfg);
 }
 
 std::optional<model::offset> disk_log_impl::retention_offset(gc_config cfg) {
