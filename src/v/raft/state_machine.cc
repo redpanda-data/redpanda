@@ -15,6 +15,8 @@
 #include "storage/log.h"
 #include "storage/record_batch_builder.h"
 
+#include <seastar/util/later.hh>
+
 namespace raft {
 
 state_machine::state_machine(
@@ -165,23 +167,38 @@ ss::future<result<model::offset>> state_machine::insert_linearizable_barrier(
     /**
      * Inject leader barrier and wait until returned offset is applied
      */
+    if (_barrier_promise) {
+        return _barrier_promise->get_shared_future();
+    }
+    _barrier_promise = barrier_promise_t{};
+    auto f = _barrier_promise->get_shared_future();
+
     return ss::with_timeout(
              timeout,
              _raft->linearizable_barrier().then(
                [this, timeout](result<model::offset> r) {
                    if (!r) {
-                       return ss::make_ready_future<result<model::offset>>(
-                         r.error());
+                       _barrier_promise->set_value(r);
+                       _barrier_promise.reset();
+                       return ss::now();
                    }
 
                    // wait for the returned offset to be applied
-                   return wait(r.value(), timeout).then([r] {
-                       return result<model::offset>(r.value());
+                   return wait(r.value(), timeout).then([this, r] {
+                       _barrier_promise->set_value(r);
+                       _barrier_promise.reset();
                    });
                }))
-      .handle_exception_type([](const ss::timed_out_error&) {
-          return result<model::offset>(errc::timeout);
-      });
+      .handle_exception_type([this](const ss::timed_out_error&) {
+          _barrier_promise->set_value(errc::timeout);
+          _barrier_promise.reset();
+      })
+      .handle_exception([this](const std::exception_ptr& e) {
+          vlog(_log.warn, "Linearizable barrier failed - {}", e);
+          _barrier_promise->set_value(errc::append_entries_dispatch_error);
+          _barrier_promise.reset();
+      })
+      .then([f = std::move(f)]() mutable { return std::move(f); });
 }
 
 ss::future<model::offset> state_machine::bootstrap_committed_offset() {
