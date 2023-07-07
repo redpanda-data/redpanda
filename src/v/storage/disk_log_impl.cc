@@ -649,7 +649,7 @@ bool disk_log_impl::has_local_retention_override() const {
     return false;
 }
 
-gc_config disk_log_impl::override_retention_config(gc_config cfg) const {
+gc_config disk_log_impl::maybe_override_retention_config(gc_config cfg) const {
     // Read replica topics have a different default retention
     if (config().is_read_replica_mode_enabled()) {
         cfg.eviction_time = std::max(
@@ -665,6 +665,32 @@ gc_config disk_log_impl::override_retention_config(gc_config cfg) const {
         return cfg;
     }
 
+    /*
+     * don't override with local retention settings--let partition data expand
+     * up to standard retention settings.
+     */
+    if (config::shard_local_cfg().retention_local_is_advisory()) {
+        vlog(
+          gclog.trace,
+          "[{}] Skipped retention override for topic with remote write "
+          "enabled: {}",
+          config().ntp(),
+          cfg);
+        return cfg;
+    }
+
+    cfg = override_retention_config(cfg);
+
+    vlog(
+      gclog.trace,
+      "[{}] Overrode retention for topic with remote write enabled: {}",
+      config().ntp(),
+      cfg);
+
+    return cfg;
+}
+
+gc_config disk_log_impl::override_retention_config(gc_config cfg) const {
     tristate<std::size_t> local_retention_bytes{std::nullopt};
     tristate<std::chrono::milliseconds> local_retention_ms{std::nullopt};
 
@@ -707,12 +733,6 @@ gc_config disk_log_impl::override_retention_config(gc_config cfg) const {
             - local_retention_ms.value().count()),
           cfg.eviction_time);
     }
-
-    vlog(
-      gclog.trace,
-      "[{}] Overrode retention for topic with remote write enabled: {}",
-      config().ntp(),
-      cfg);
 
     return cfg;
 }
@@ -760,7 +780,7 @@ gc_config disk_log_impl::apply_base_overrides(gc_config defaults) const {
 
 gc_config disk_log_impl::apply_overrides(gc_config defaults) const {
     auto ret = apply_base_overrides(defaults);
-    return override_retention_config(ret);
+    return maybe_override_retention_config(ret);
 }
 
 ss::future<> disk_log_impl::housekeeping(housekeeping_config cfg) {
@@ -2076,7 +2096,7 @@ disk_log_impl::disk_usage_target(gc_config cfg, usage usage) {
          */
     } else {
         // applies local retention overrides for cloud storage
-        cfg = override_retention_config(cfg);
+        cfg = maybe_override_retention_config(cfg);
     }
 
     /*

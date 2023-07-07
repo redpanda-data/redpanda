@@ -319,6 +319,7 @@ struct configuration final : public config_store {
     // cloud storage read and write enabled
     property<std::optional<size_t>> retention_local_target_bytes_default;
     property<std::chrono::milliseconds> retention_local_target_ms_default;
+    property<bool> retention_local_is_advisory;
     property<std::optional<uint64_t>> retention_local_target_capacity_bytes;
     property<std::chrono::milliseconds> retention_local_trim_interval;
 

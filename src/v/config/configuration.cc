@@ -1603,6 +1603,14 @@ configuration::configuration()
       "write enabled",
       {.needs_restart = needs_restart::no, .visibility = visibility::user},
       24h)
+  , retention_local_is_advisory(
+      *this,
+      "retention_local_is_advisory",
+      "Allow log data to expand past local retention. When enabled, non-local "
+      "retention settings are used, and local retention settings are used to "
+      "inform data removal policies in low-disk space scenarios.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::user},
+      false)
   , retention_local_target_capacity_bytes(
       *this,
       "retention_local_target_capacity_bytes",
