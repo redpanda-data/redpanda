@@ -991,7 +991,7 @@ ss::future<> partition::finalize_remote_partition(ss::abort_source& as) {
               clusterlog.debug,
               "Finalizing remote metadata on partition delete {}",
               ntp());
-            co_await _cloud_storage_partition->finalize(as);
+            _cloud_storage_partition->finalize();
         }
     }
 }

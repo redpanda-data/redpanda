@@ -455,6 +455,11 @@ public:
       const model::topic& topic,
       const model::initial_revision_id rev);
 
+    // If you need to spawn a background task that relies on
+    // this object staying alive, spawn it with this gate.
+    seastar::gate& gate() { return _gate; };
+    ss::abort_source& as() { return _as; }
+
 private:
     ss::future<upload_result> delete_objects_sequentially(
       const cloud_storage_clients::bucket_name& bucket,
