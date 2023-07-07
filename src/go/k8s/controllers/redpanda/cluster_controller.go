@@ -170,14 +170,19 @@ func (r *ClusterReconciler) Reconcile(
 	if ar.getSchemaRegistrySuperUser() != nil {
 		secrets = append(secrets, ar.getSchemaRegistrySuperUserKey())
 	}
+	if err = ar.configMap(); err != nil {
+		return ctrl.Result{}, fmt.Errorf("creating configmap: %w", err)
+	}
+	cm, err := ar.getConfigMap()
+	if err != nil {
+		return ctrl.Result{}, err
+	}
 
 	if vectorizedCluster.Status.CurrentReplicas >= 1 {
 		if err = r.setPodNodeIDAnnotation(ctx, &vectorizedCluster, log, ar); err != nil {
 			return ctrl.Result{}, fmt.Errorf("setting pod node_id annotation: %w", err)
 		}
 	}
-
-	configMapResource := resources.NewConfigMap(r.Client, &vectorizedCluster, r.Scheme, ar.getHeadlessServiceFQDN(), ar.getProxySuperUserKey(), ar.getSchemaRegistrySuperUserKey(), pki.BrokerTLSConfigProvider(), log)
 
 	sts := resources.NewStatefulSet(
 		r.Client,
@@ -190,14 +195,13 @@ func (r *ClusterReconciler) Reconcile(
 		pki.AdminAPIConfigProvider(),
 		ar.getServiceAccountName(),
 		r.configuratorSettings,
-		configMapResource.GetNodeConfigHash,
+		cm.GetNodeConfigHash,
 		r.AdminAPIClientFactory,
 		r.DecommissionWaitInterval,
 		log,
 		r.MetricsTimeout)
 
 	toApply := []resources.Reconciler{
-		configMapResource,
 		sts,
 	}
 
@@ -256,7 +260,7 @@ func (r *ClusterReconciler) Reconcile(
 	err = r.reconcileConfiguration(
 		ctx,
 		&vectorizedCluster,
-		configMapResource,
+		cm,
 		sts,
 		pki,
 		ar.getHeadlessServiceFQDN(),
@@ -1133,6 +1137,7 @@ const (
 	clusterRole             = "ClusterRole"
 	clusterRoleBinding      = "ClusterRoleBinding"
 	clusterService          = "ClusterPorts"
+	configMap               = "ConfigMap"
 	headlessService         = "HeadlessService"
 	ingress                 = "Ingress"
 	nodeportService         = "NodeportService"
@@ -1237,6 +1242,33 @@ func (a *attachedResources) getClusterServiceName() string {
 
 func (a *attachedResources) getClusterServiceFQDN() string {
 	return a.getClusterService().ServiceFQDN(a.reconciler.clusterDomain)
+}
+
+func (a *attachedResources) configMap() error {
+	// if already initialized, exit immediately
+	if _, ok := a.items[configMap]; ok {
+		return nil
+	}
+
+	proxySASLUserKey := a.getProxySuperUserKey()
+	schemaRegistrySASLUserKey := a.getSchemaRegistrySuperUserKey()
+
+	err := a.pki()
+	if err != nil {
+		return fmt.Errorf("creating pki: %w", err)
+	}
+	pki := a.items[pki].(*certmanager.PkiReconciler)
+
+	a.items[configMap] = resources.NewConfigMap(a.reconciler.Client, a.cluster, a.reconciler.Scheme, a.getHeadlessServiceFQDN(), proxySASLUserKey, schemaRegistrySASLUserKey, pki.BrokerTLSConfigProvider(), a.log)
+	return nil
+}
+
+func (a *attachedResources) getConfigMap() (*resources.ConfigMapResource, error) {
+	err := a.configMap()
+	if err != nil {
+		return nil, err
+	}
+	return a.items[configMap].(*resources.ConfigMapResource), nil
 }
 
 func (a *attachedResources) headlessService() {
