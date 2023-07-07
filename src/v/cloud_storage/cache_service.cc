@@ -336,7 +336,7 @@ ss::future<> cache::trim() {
 
     // Execute the ordinary trim, prioritize removing
     auto fast_result = co_await trim_fast(
-      candidates_for_deletion, target_size, target_objects);
+      candidates_for_deletion, size_to_delete, objects_to_delete);
 
     // We aim to keep current_cache_size continuously up to date, but
     // in case of housekeeping issues, correct it if it apepars to have
