@@ -420,7 +420,6 @@ ss::future<cache::trim_result> cache::trim_fast(
 
         // skip tmp files since someone may be writing to it
         if (std::string_view(file_stat.path).ends_with(tmp_extension)) {
-            candidate_i++;
             continue;
         }
 
@@ -430,7 +429,6 @@ ss::future<cache::trim_result> cache::trim_fast(
         if (
           std::string_view(file_stat.path).ends_with(".tx")
           || std::string_view(file_stat.path).ends_with(".index")) {
-            candidate_i++;
             continue;
         }
 
@@ -522,7 +520,6 @@ ss::future<cache::trim_result> cache::trim_fast(
               file_stat.path,
               e.what());
         }
-        candidate_i++;
     }
 
     co_return result;
@@ -559,7 +556,6 @@ cache::trim_exhaustive(uint64_t size_to_delete, size_t objects_to_delete) {
         auto& file_stat = candidates[candidate_i++];
 
         if (is_trim_exempt(file_stat.path)) {
-            candidate_i++;
             continue;
         }
 
