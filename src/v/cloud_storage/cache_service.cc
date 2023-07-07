@@ -227,7 +227,17 @@ ss::future<> cache::trim_throttled() {
     co_await trim();
 }
 
-ss::future<> cache::trim() {
+ss::future<> cache::trim_manually(
+  std::optional<uint64_t> size_limit_override,
+  std::optional<size_t> object_limit_override) {
+    vassert(ss::this_shard_id() == 0, "Method can only be invoked on shard 0");
+    auto units = co_await ss::get_units(_cleanup_sm, 1);
+    co_return co_await trim(size_limit_override, object_limit_override);
+}
+
+ss::future<> cache::trim(
+  std::optional<uint64_t> size_limit_override,
+  std::optional<size_t> object_limit_override) {
     vassert(ss::this_shard_id() == 0, "Method can only be invoked on shard 0");
     gate_guard guard{_gate};
     auto [walked_cache_size, filtered_out_files, candidates_for_deletion, _]
@@ -242,15 +252,18 @@ ss::future<> cache::trim() {
     // from cache directory by the user manually.
     co_await _access_time_tracker.trim(candidates_for_deletion);
 
+    auto size_limit = size_limit_override.value_or(_max_bytes());
+    auto object_limit = object_limit_override.value_or(_max_objects());
+
     // We aim to trim to within the upper size limit, and additionally
     // free enough space for anyone waiting in `reserve_space` to proceed
     auto target_size = uint64_t(
-      (_max_bytes() - std::min(_reservations_pending, _max_bytes())));
+      (size_limit - std::min(_reservations_pending, size_limit)));
 
-    size_t target_objects = static_cast<size_t>(_max_objects())
+    size_t target_objects = static_cast<size_t>(object_limit)
                             - std::min(
                               _reservations_pending_objects,
-                              static_cast<size_t>(_max_objects()));
+                              static_cast<size_t>(object_limit));
 
     // Apply _cache_size_low_watermark to the size and/or the object count,
     // depending on which is currently the limiting factor for the trim.
@@ -295,8 +308,8 @@ ss::future<> cache::trim() {
       _current_cache_size,
       _current_cache_objects,
       walked_cache_size,
-      _max_bytes(),
-      _max_objects(),
+      size_limit,
+      object_limit,
       _reserved_cache_size,
       _reserved_cache_objects,
       _reservations_pending,
