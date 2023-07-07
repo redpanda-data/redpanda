@@ -44,6 +44,14 @@ error_outcome handle_client_transport_error(
 
     try {
         std::rethrow_exception(current_exception);
+    } catch (const std::filesystem::filesystem_error& e) {
+        if (e.code() == std::errc::no_such_file_or_directory) {
+            vlog(logger.warn, "File removed during download: ", e.path1());
+            outcome = error_outcome::retry;
+        } else {
+            vlog(logger.error, "Filesystem error {}", e);
+            outcome = error_outcome::fail;
+        }
     } catch (const std::system_error& cerr) {
         // The system_error is type erased and not convenient for selective
         // handling. The following errors should be retried:

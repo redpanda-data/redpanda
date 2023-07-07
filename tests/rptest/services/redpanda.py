@@ -888,13 +888,13 @@ class RedpandaServiceBase(Service):
     def add_extra_rp_conf(self, conf):
         self._extra_rp_conf = {**self._extra_rp_conf, **conf}
 
-    def get_node_memory_mb(self):
+    def get_node_memory_mb(self) -> int:
         pass
 
-    def get_node_cpu_count(self):
+    def get_node_cpu_count(self) -> int:
         pass
 
-    def get_node_disk_free(self):
+    def get_node_disk_free(self) -> int:
         pass
 
     def lsof_node(self, node: ClusterNode, filter: Optional[str] = None):
@@ -3219,6 +3219,10 @@ class RedpandaService(RedpandaServiceBase):
 
         return None
 
+    @property
+    def cache_dir(self):
+        return os.path.join(RedpandaService.DATA_DIR, "cloud_storage_cache")
+
     def node_storage(self,
                      node,
                      sizes: bool = False,
@@ -3234,9 +3238,8 @@ class RedpandaService(RedpandaServiceBase):
 
         self.logger.debug(
             f"Starting storage checks for {node.name} sizes={sizes}")
-        store = NodeStorage(
-            node.name, RedpandaService.DATA_DIR,
-            os.path.join(RedpandaService.DATA_DIR, "cloud_storage_cache"))
+        store = NodeStorage(node.name, RedpandaService.DATA_DIR,
+                            self.cache_dir)
         script_path = inject_remote_script(node, "compute_storage.py")
         cmd = [
             "python3", script_path, f"--data-dir={RedpandaService.DATA_DIR}"

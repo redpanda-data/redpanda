@@ -9,7 +9,7 @@
 
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.services.cluster import cluster
-from rptest.services.kgo_verifier_services import KgoVerifierProducer, KgoVerifierSeqConsumer
+from rptest.services.kgo_verifier_services import KgoVerifierProducer, KgoVerifierSeqConsumer, KgoVerifierRandomConsumer
 from rptest.services.redpanda import SISettings, MetricsEndpoint, ResourceSettings
 from rptest.services.admin import Admin
 from rptest.clients.rpk import RpkTool
@@ -30,11 +30,34 @@ class TieredStorageCacheStressTest(RedpandaTest):
     segment_upload_interval = 30
     manifest_upload_interval = 10
 
+    # Anywhere we calculate an expected runtime based on an expected bandwidth,
+    # use this grace factor to make timeouts reasonably permissive.
+    runtime_grace_factor = 2.0
+
     def __init__(self, test_context, *args, **kwargs):
 
         super().__init__(test_context, *args, **kwargs)
 
     def setUp(self):
+        # Use interval uploads so that tests can do a "wait til everything uploaded"
+        # check if they want to.
+        extra_rp_conf = {
+            'cloud_storage_segment_max_upload_interval_sec':
+            self.segment_upload_interval,
+            'cloud_storage_manifest_max_upload_interval_sec':
+            self.manifest_upload_interval,
+        }
+        self.redpanda.set_extra_rp_conf(extra_rp_conf)
+
+        # We will run with artificially constrained memory, to minimize use of
+        # the batch cache and ensure that tiered storage reads are not using
+        # egregious amounts of memory.  The memory is within the official system
+        # requirements (2GB per core).  Use a small core count so that if we're
+        # running on a system with plenty of cores, we don't spread out the
+        # partitions such that each core has lots of slack memory.
+        self.redpanda.set_resource_settings(
+            ResourceSettings(memory_mb=4096, num_cpus=2))
+
         # defer redpanda startup to the test
         pass
 
@@ -84,10 +107,12 @@ class TieredStorageCacheStressTest(RedpandaTest):
         self.logger.info(f"Cache HWM [{node.name}]: {hwm_size}/{hwm_objects}")
 
         if limit_mode == LimitMode.bytes or limit_mode == LimitMode.both:
+            assert size_limit is not None
             assert usage['cloud_storage_cache_bytes'] <= size_limit
             assert node_storage.cache.bytes <= size_limit
             assert hwm_size <= size_limit
         elif limit_mode == LimitMode.objects or limit_mode == LimitMode.both:
+            assert max_objects is not None
             assert usage['cloud_storage_cache_objects'] <= max_objects
             assert node_storage.cache.objects <= max_objects
             assert hwm_objects <= max_objects
@@ -95,6 +120,38 @@ class TieredStorageCacheStressTest(RedpandaTest):
             raise NotImplementedError(limit_mode)
 
         return any_cache_usage
+
+    def _create_topic(self, topic_name: str, partition_count: int,
+                      local_retention: int):
+        rpk = RpkTool(self.redpanda)
+        rpk.create_topic(topic_name,
+                         partitions=partition_count,
+                         replicas=3,
+                         config={
+                             'retention.local.target.bytes': local_retention,
+                         })
+
+    def _produce_and_quiesce(self, topic_name: str, msg_size: int,
+                             data_size: int, expect_bandwidth: float):
+        expect_runtime = max(60.0, (data_size / expect_bandwidth) * 2)
+
+        t1 = time.time()
+        KgoVerifierProducer.oneshot(self.test_context,
+                                    self.redpanda,
+                                    topic_name,
+                                    msg_size=msg_size,
+                                    msg_count=data_size // msg_size,
+                                    batch_max_bytes=msg_size * 8,
+                                    timeout_sec=expect_runtime *
+                                    self.runtime_grace_factor)
+        produce_duration = time.time() - t1
+        self.logger.info(
+            f"Produced {data_size} bytes in {produce_duration} seconds, {(data_size/produce_duration)/1000000.0:.2f}MB/s"
+        )
+
+        quiesce_uploads(
+            self.redpanda, [topic_name],
+            self.manifest_upload_interval + self.segment_upload_interval + 30)
 
     @cluster(num_nodes=4)
     @matrix(limit_mode=[LimitMode.bytes, LimitMode.objects, LimitMode.both],
@@ -113,7 +170,7 @@ class TieredStorageCacheStressTest(RedpandaTest):
 
             # Lowball expectation of bandwidth that should work reliably on
             # small instance types
-            expect_bandwidth = 100E6
+            expect_bandwidth = int(100E6)
 
             # Make the cache at least this big (avoid using very small caches when
             # the segment size is small)
@@ -122,7 +179,7 @@ class TieredStorageCacheStressTest(RedpandaTest):
             # In general, this test should always be run on dedicated nodes: mini-me mode
             # for developers on fast workstations hacking on the test.
             partition_count = 16
-            expect_bandwidth = 20E6
+            expect_bandwidth = int(20E6)
             at_least_bytes = 1 * 1024 * 1024 * 1024
 
         topic_name = 'streaming-read'
@@ -142,16 +199,7 @@ class TieredStorageCacheStressTest(RedpandaTest):
         if partition_count >= len(self.redpanda.nodes):
             # If we have multiple partitions then we are spreading load across multiple
             # nodes, and each node should need a proportionally smaller cache
-            size_limit // len(self.redpanda.nodes)
-
-        # Use interval uploads so that tests can do a "wait til everything uploaded"
-        # check if they want to.
-        extra_rp_conf = {
-            'cloud_storage_segment_max_upload_interval_sec':
-            self.segment_upload_interval,
-            'cloud_storage_manifest_max_upload_interval_sec':
-            self.manifest_upload_interval,
-        }
+            size_limit = size_limit // len(self.redpanda.nodes)
 
         si_settings = SISettings(test_context=self.test_context,
                                  log_segment_size=log_segment_size)
@@ -180,29 +228,12 @@ class TieredStorageCacheStressTest(RedpandaTest):
 
         msg_count = data_size // msg_size
 
-        # We will run with artificially constrained memory, to minimize use of
-        # the batch cache and ensure that tiered storage reads are not using
-        # egregious amounts of memory.  The memory is within the official system
-        # requirements (2GB per core).  Use a small core count so that if we're
-        # running on a system with plenty of cores, we don't spread out the
-        # partitions such that each core has lots of slack memory.
-        self.redpanda.set_resource_settings(
-            ResourceSettings(memory_mb=4096, num_cpus=2))
-
-        self.redpanda.set_extra_rp_conf(extra_rp_conf)
         self.redpanda.set_si_settings(si_settings)
         self.redpanda.start()
 
-        rpk = RpkTool(self.redpanda)
-        rpk.create_topic(
-            topic_name,
-            partitions=partition_count,
-            replicas=3,
-            config={
-                # Minimal local retention, to send traffic to remote
-                # storage.
-                'retention.local.target.bytes': log_segment_size,
-            })
+        # Minimal local retention, to send traffic to remote
+        # storage.
+        self._create_topic(topic_name, partition_count, log_segment_size)
 
         self.logger.info(
             f"Writing {data_size} bytes, will be read using {size_limit}/{max_objects} cache"
@@ -215,24 +246,8 @@ class TieredStorageCacheStressTest(RedpandaTest):
 
         # Write out the data.  We will write + read in separate phases in order
         # that this test cleanly exercises the read path.
-        t1 = time.time()
-        KgoVerifierProducer.oneshot(
-            self.test_context,
-            self.redpanda,
-            topic_name,
-            msg_size=msg_size,
-            msg_count=data_size // msg_size,
-            batch_max_bytes=msg_size * 8,
-            timeout_sec=(data_size / expect_bandwidth) * 2)
-        produce_duration = time.time() - t1
-        self.logger.info(
-            f"Produced {data_size} bytes in {produce_duration} seconds, {(data_size/produce_duration)/1000000.0:.2f}MB/s"
-        )
-
-        # Wait for uploads to complete
-        quiesce_uploads(
-            self.redpanda, [topic_name],
-            self.segment_upload_interval + self.manifest_upload_interval + 30)
+        self._produce_and_quiesce(topic_name, msg_size, data_size,
+                                  expect_bandwidth)
 
         # Read all the data, validate that we read complete and achieve
         # the streaming bandwidth that we expect
@@ -267,3 +282,158 @@ class TieredStorageCacheStressTest(RedpandaTest):
 
         # At least one node should have _something_ in its cache, or something is wrong with our test
         assert any(nodes_cache_used) is True
+
+    @cluster(num_nodes=4)
+    def tiny_cache_test(self):
+        """
+        Verify stability and eventual progress when running with an absurdly small cache.
+
+        This is an unrealistic situation, aimed at shaking out edge cases in the cache
+        trimming logic that might only occur when the cache size is <= the order of
+        magnitude as data in flight.
+
+        When the cache is under this much pressure, usual ordering of put/eviction
+        of chunks vs. indices is violated, so we are exercising that trimming works
+        for indices even if they outlive their associated chunks, etc.
+        """
+
+        topic_name = 'tiny-cache'
+        msg_size = 16384
+        partition_count = 1
+
+        consume_parallel = 20
+        consume_messages_per_worker = 5
+
+        # Lowball expectation of bandwidth that should work reliably on small instance types
+        expect_bandwidth = 100E6
+
+        segment_size = 32 * 1024 * 1024
+        chunk_size = min(16 * 1024 * 1024, segment_size)
+
+        # Cache only large enough for each worker to have one chunk at a time
+        cache_size = chunk_size * consume_parallel
+
+        # We will write data far larger than the cache.
+        data_size = segment_size * 100
+
+        si_settings = SISettings(test_context=self.test_context,
+                                 log_segment_size=segment_size,
+                                 cloud_storage_cache_size=cache_size)
+        self.redpanda.set_si_settings(si_settings)
+        self.redpanda.start()
+
+        # Inject data
+        # Minimal local retention, to send traffic to remote storage.
+        self._create_topic(topic_name, partition_count, segment_size)
+        self._produce_and_quiesce(topic_name, msg_size, data_size,
+                                  expect_bandwidth)
+
+        # Use a random consumer to pathologically overload the ability of the cache to
+        # handle incoming reads.
+        # This should be slow, but:
+        #  - Eventually complete
+        #  - Do not overshoot cache size limits
+
+        # Runtime will be as long as it takes to cycle each read chunk through
+        # the cache, multiplied by the trim throttle interval (5s)
+        expect_consume_time_s = self.runtime_grace_factor * (
+            (consume_parallel * consume_messages_per_worker * 5) /
+            (cache_size / chunk_size))
+
+        t1 = time.time()
+        KgoVerifierRandomConsumer.oneshot(
+            self.test_context,
+            self.redpanda,
+            topic_name,
+            msg_size=msg_size,
+            rand_read_msgs=consume_messages_per_worker,
+            parallel=consume_parallel,
+            timeout_sec=expect_consume_time_s)
+        random_consume_duration = time.time() - t1
+        self.logger.info(
+            f"Random consume finished  in {random_consume_duration} seconds")
+
+        for node in self.redpanda.nodes:
+            self._validate_node_storage(node,
+                                        LimitMode.bytes,
+                                        cache_size,
+                                        max_objects=None)
+
+    @cluster(num_nodes=4)
+    def garbage_objects_test(self):
+        """
+        Verify that if there are a large number of small files which do not pair
+        with data chunks, we still trim them when cache space is low.
+
+        This test is a reproducer for issues where the cache needs trimming but there
+        are not data objects present to cue the fast trim process to delete indices etc,
+        and we must fall back to exhaustive trim, such as:
+        https://github.com/redpanda-data/redpanda/issues/11835
+        """
+
+        segment_size = 128 * 1024 * 1024
+        msg_size = 16384
+        data_size = segment_size * 10
+        topic_name = "exhaustive-trim"
+        expect_bandwidth = 100 * 1024 * 1024
+
+        # Clean manually, so that later we can start(clean_nodes=False) to preserve
+        # our injected garbage files.
+        for n in self.redpanda.nodes:
+            self.redpanda.clean_node(n)
+
+        # Pre-populate caches with garbage files.
+        garbage_count = 100
+        for node in self.redpanda.nodes:
+            node.account.ssh_output(
+                f"mkdir -p {self.redpanda.cache_dir} ; for n in `seq 1 {garbage_count}`; do "
+                f"dd if=/dev/urandom bs=1k count=4 of={self.redpanda.cache_dir}/garbage_$n.bin ; done",
+                combine_stderr=False)
+
+        cache_object_limit = garbage_count // 2
+
+        # Set cache size to 50 objects
+        si_settings = SISettings(
+            test_context=self.test_context,
+            log_segment_size=segment_size,
+            cloud_storage_cache_max_objects=cache_object_limit,
+            cloud_storage_cache_size=SISettings.cache_size_for_throughput(
+                expect_bandwidth))
+
+        # Bring up redpanda
+
+        self.redpanda.set_si_settings(si_settings)
+        self.redpanda.start(clean_nodes=False)
+
+        # Cache startup should have registered the garbage objects in stats
+        admin = Admin(self.redpanda)
+        for node in self.redpanda.nodes:
+            usage = admin.get_local_storage_usage(node)
+            assert usage[
+                'cloud_storage_cache_objects'] >= garbage_count, f"Node {node.name} has unexpectedly few objects {usage['cloud_storage_cache_objects']} < {garbage_count}"
+
+        # Inject data
+        self._create_topic(topic_name, 1, segment_size)
+        self._produce_and_quiesce(topic_name, msg_size, data_size,
+                                  expect_bandwidth)
+
+        # Try to do some reads
+        KgoVerifierRandomConsumer.oneshot(self.test_context,
+                                          self.redpanda,
+                                          topic_name,
+                                          msg_size=msg_size,
+                                          rand_read_msgs=4,
+                                          parallel=4,
+                                          timeout_sec=30)
+
+        admin = Admin(self.redpanda)
+        leader_node = self.redpanda.get_node_by_id(
+            admin.get_partition_leader(namespace="kafka",
+                                       topic=topic_name,
+                                       partition=0))
+
+        # Assert that an exhaustive trim happened, such that the garbage files
+        # reduce in number to the point that the read is able to proceed
+        usage = admin.get_local_storage_usage(leader_node)
+        assert usage[
+            'cloud_storage_cache_objects'] <= cache_object_limit, f"Node {leader_node.name} has unexpectedly many objects {usage['cloud_storage_cache_objects']} > {cache_object_limit}"
