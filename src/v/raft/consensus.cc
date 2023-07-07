@@ -1805,17 +1805,23 @@ consensus::do_append_entries(append_entries_request&& r) {
             return ss::make_ready_future<append_entries_reply>(
               std::move(reply));
         }
+        auto f = ss::now();
+        if (r.flush && lstats.dirty_offset > _flushed_offset) {
+            f = flush_log();
+        }
         auto last_visible = std::min(
           lstats.dirty_offset, r.meta.last_visible_index);
         // on the follower leader control visibility of entries in the log
         maybe_update_last_visible_index(last_visible);
-        return maybe_update_follower_commit_idx(
-                 model::offset(r.meta.commit_index))
-          .then([reply = std::move(reply)]() mutable {
-              reply.result = append_entries_reply::status::success;
-              return ss::make_ready_future<append_entries_reply>(
-                std::move(reply));
-          });
+        return f.then([this, reply, request_metadata = r.meta] {
+            return maybe_update_follower_commit_idx(
+                     model::offset(request_metadata.commit_index))
+              .then([this, reply]() mutable {
+                  reply.last_flushed_log_index = _flushed_offset;
+                  reply.result = append_entries_reply::status::success;
+                  return reply;
+              });
+        });
     }
 
     // section 3
