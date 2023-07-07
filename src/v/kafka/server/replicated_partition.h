@@ -47,12 +47,14 @@ public:
             auto error_code = error_code::unknown_server_error;
             if (err.category() == cluster::error_category()) {
                 switch (cluster::errc(err.value())) {
+                    /**
+                     * In the case of timeout and shutting down errors return
+                     * not_leader_for_partition error to force clients retry.
+                     */
                 case cluster::errc::shutting_down:
                 case cluster::errc::not_leader:
-                    error_code = error_code::not_leader_for_partition;
-                    break;
                 case cluster::errc::timeout:
-                    error_code = error_code::request_timed_out;
+                    error_code = error_code::not_leader_for_partition;
                     break;
                 default:
                     error_code = error_code::unknown_server_error;
