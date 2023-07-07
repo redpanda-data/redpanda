@@ -882,6 +882,8 @@ class ShadowIndexingManyPartitionsTest(PreallocNodesTest):
                                        self.topic,
                                        msg_size=1024,
                                        msg_count=10 * 1000 * 1000,
+                                       rate_limit_bps=256 *
+                                       self.small_segment_size,
                                        custom_node=self.preallocated_nodes)
         producer.start()
         try:
@@ -914,6 +916,8 @@ class ShadowIndexingManyPartitionsTest(PreallocNodesTest):
                                        self.topic,
                                        msg_size=1024,
                                        msg_count=10 * 1000 * 1000,
+                                       rate_limit_bps=256 *
+                                       self.small_segment_size,
                                        custom_node=self.preallocated_nodes)
         producer.start()
         try:
