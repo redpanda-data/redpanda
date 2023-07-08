@@ -18,7 +18,6 @@ from ducktape.utils.util import wait_until
 
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.clients.kafka_cli_tools import KafkaCliTools
-from rptest.clients.kcl import KCL
 from rptest.clients.rpk import RpkTool
 from rptest.clients.types import TopicSpec
 from rptest.services.action_injector import random_process_kills
@@ -361,16 +360,15 @@ class EndToEndShadowIndexingTest(EndToEndShadowIndexingBase):
                                        n=6,
                                        original_snapshot=original_snapshot)
         self.producer.stop()
-        kcl = KCL(self.redpanda)
+        rpk = RpkTool(self.redpanda)
         new_lwm = 2
-        response = kcl.delete_records({self.topic: {0: new_lwm}})
+        response = rpk.trim_prefix(self.topic, new_lwm, partitions=[0])
         assert len(response) == 1
         assert response[0].topic == self.topic
         assert response[0].partition == 0
-        assert response[0].error == 'OK', f"Err msg: {response[0].error}"
-        assert new_lwm == response[0].new_low_watermark, response[
-            0].new_low_watermark
-        rpk = RpkTool(self.redpanda)
+        assert response[0].error_msg == '', f"Err msg: {response[0].error_msg}"
+        assert new_lwm == response[0].new_start_offset, response[
+            0].new_start_offset
         topics_info = list(rpk.describe_topic(self.topic))
         assert len(topics_info) == 1
         assert topics_info[0].start_offset == new_lwm, topics_info

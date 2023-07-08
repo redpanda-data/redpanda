@@ -314,18 +314,10 @@ class DeleteRecordsTest(RedpandaTest):
         kafka_tools.produce(self.topic, num_records, records_size)
         self.wait_until_records(num_records, timeout_sec=10, backoff_sec=1)
 
-        def check_bad_response(response):
-            assert len(response) == 1
-            assert response[0].topic == self.topic
-            assert response[0].partition == 0
-            assert response[0].new_start_offset == -1
-            return response[0].error_msg
-
         def bad_truncation(truncate_offset):
-            response = self.rpk.trim_prefix(self.topic, truncate_offset, [0])
-            assert check_bad_response(response).startswith(
-                out_of_range_prefix
-            ), f"Unexpected error msg: {response[0].error}"
+            with expect_exception(RpkException,
+                                  lambda e: out_of_range_prefix in str(e)):
+                self.rpk.trim_prefix(self.topic, truncate_offset, [0])
 
         # Try truncating past the end of the log
         bad_truncation(num_records + 1)
@@ -369,28 +361,17 @@ class DeleteRecordsTest(RedpandaTest):
             self.rpk.trim_prefix(self.topic, 0, [missing_idx])
 
         # Assert out of range occurs on an empty topic
-        attempts = 5
-        response = []
-        while attempts > 0:
-            response = self.rpk.trim_prefix(self.topic, 0, [0])
-            assert len(response) == 1
-            assert response[0].topic == self.topic
-            assert response[0].partition == 0
-            assert response[0].new_start_offset == -1
-            if not response[0].error_msg.startswith("NOT_LEADER"):
-                break
-            time.sleep(1)
-            attempts -= 1
-        assert response[0].error_msg.startswith(out_of_range_prefix)
+        with expect_exception(RpkException,
+                              lambda e: out_of_range_prefix in str(e)):
+            self.rpk.trim_prefix(self.topic, 0, [0])
 
         # Assert correct behavior on a topic with 1 record
         kafka_tools = KafkaCliTools(self.redpanda)
         kafka_tools.produce(self.topic, 1, 512)
         self.wait_until_records(1, timeout_sec=5, backoff_sec=1)
-        response = self.rpk.trim_prefix(self.topic, 0, [0])
-        assert len(response) == 1
-        assert response[0].new_start_offset == -1
-        assert response[0].error_msg.startswith(out_of_range_prefix)
+        with expect_exception(RpkException,
+                              lambda e: out_of_range_prefix in str(e)):
+            self.rpk.trim_prefix(self.topic, 0, [0])
 
         # ... truncating at high watermark 1 should delete all data
         low_watermark = self.delete_records(self.topic, 0, 1)

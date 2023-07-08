@@ -11,7 +11,6 @@ from typing import NamedTuple, Optional
 from rptest.services.cluster import cluster
 
 from rptest.clients.default import DefaultClient
-from rptest.clients.kcl import KCL
 from rptest.services.redpanda import SISettings
 from rptest.clients.rpk import RpkTool, RpkException
 from rptest.clients.types import TopicSpec
@@ -273,14 +272,14 @@ class TestReadReplicaService(EndToEndTest):
             cloud_storage_type: CloudStorageType) -> None:
         self._setup_read_replica(partition_count=partition_count,
                                  num_messages=1000)
-        kcl = KCL(self.redpanda)
+        rpk = RpkTool(self.redpanda)
 
         def set_lwm(new_lwm):
-            response = kcl.delete_records({self.topic_name: {0: new_lwm}})
-            assert response[0].error == 'OK', response[0].error
-            assert response[0].new_low_watermark == new_lwm
-
-        rpk = RpkTool(self.redpanda)
+            response = rpk.trim_prefix(self.topic_name,
+                                       new_lwm,
+                                       partitions=[0])
+            assert response[0].error_msg == '', response[0].error_msg
+            assert response[0].new_start_offset == new_lwm
 
         def check_lwm(new_lwm):
             topics_info = list(rpk.describe_topic(self.topic_name))
