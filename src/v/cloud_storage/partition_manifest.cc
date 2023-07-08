@@ -351,10 +351,9 @@ partition_manifest::full_log_start_kafka_offset() const {
           _archive_start_offset,
           _start_offset);
         return _archive_start_offset - _archive_start_offset_delta;
-    } else if (_start_offset != model::offset{}) {
-        return compute_start_kafka_offset_local();
     }
-    return std::nullopt;
+
+    return get_start_kafka_offset();
 }
 
 std::optional<kafka::offset>
@@ -362,7 +361,19 @@ partition_manifest::get_start_kafka_offset() const {
     if (_start_offset == model::offset{}) {
         return std::nullopt;
     }
-    return compute_start_kafka_offset_local();
+
+    if (unlikely(!_cached_start_kafka_offset_local)) {
+        _cached_start_kafka_offset_local = compute_start_kafka_offset_local();
+    }
+
+    return _cached_start_kafka_offset_local;
+}
+
+void partition_manifest::set_start_offset(model::offset start_offset) {
+    _start_offset = start_offset;
+    // `_cached_start_kafka_offset_local` needs to be invalidated every
+    // time the start offset changes.
+    _cached_start_kafka_offset_local = std::nullopt;
 }
 
 std::optional<kafka::offset>
@@ -767,7 +778,7 @@ bool partition_manifest::advance_start_offset(model::offset new_start_offset) {
             return false;
         }
 
-        _start_offset = advanced_start_offset;
+        set_start_offset(advanced_start_offset);
 
         auto previous_head_segment = segment_containing(previous_start_offset);
         if (previous_head_segment == end()) {
@@ -859,7 +870,7 @@ bool partition_manifest::add(segment_meta meta) {
     if (_start_offset == model::offset{} && _segments.empty()) {
         // This can happen if this is the first time we add something
         // to the manifest or if all data was removed previously.
-        _start_offset = meta.base_offset;
+        set_start_offset(meta.base_offset);
     }
     const auto total_replaced_size = move_aligned_offset_range(meta);
 
@@ -925,7 +936,7 @@ partition_manifest partition_manifest::truncate() {
 
     if (_segments.empty()) {
         // start offset only makes sense if we have segments
-        _start_offset = model::offset{};
+        set_start_offset({});
         // NOTE: _last_offset should not be reset
     }
     return removed;
@@ -1677,9 +1688,9 @@ void partition_manifest::do_update(partition_manifest_handler&& handler) {
     _last_offset = handler._last_offset.value();
 
     if (handler._start_offset) {
-        _start_offset = handler._start_offset.value();
+        set_start_offset(handler._start_offset.value());
     } else {
-        _start_offset = {};
+        set_start_offset({});
     }
 
     _last_uploaded_compacted_offset
@@ -1707,7 +1718,7 @@ void partition_manifest::do_update(partition_manifest_handler&& handler) {
         if (handler._start_offset == std::nullopt && !_segments.empty()) {
             // Backward compatibility. Old manifest format doesn't have
             // start_offset field. In this case we need to set it implicitly.
-            _start_offset = _segments.begin()->base_offset;
+            set_start_offset(_segments.begin()->base_offset);
         }
     }
     if (handler._replaced) {
@@ -2199,6 +2210,10 @@ iobuf partition_manifest::to_iobuf() const {
 void partition_manifest::from_iobuf(iobuf in) {
     partition_manifest_serde_to_partition_manifest(
       serde::from_iobuf<partition_manifest_serde>(std::move(in)), *this);
+
+    // `_start_offset` can be modified in the above so invalidate
+    // the dependent cached value.
+    _cached_start_kafka_offset_local = std::nullopt;
 }
 
 } // namespace cloud_storage

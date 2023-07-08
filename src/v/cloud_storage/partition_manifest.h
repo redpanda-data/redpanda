@@ -524,6 +524,8 @@ public:
 private:
     std::optional<kafka::offset> compute_start_kafka_offset_local() const;
 
+    void set_start_offset(model::offset start_offset);
+
     void subtract_from_cloud_log_size(size_t to_subtract);
 
     // Computes the size in bytes of all segments available to clients
@@ -574,6 +576,8 @@ private:
     /// Collection of replaced but not yet removed segments
     replaced_segments_list _replaced;
     model::offset _last_offset;
+    // Note: always set this member with `set_start_offset` as it has cached
+    // values associated with it that need to be invalidated.
     model::offset _start_offset;
     model::offset _last_uploaded_compacted_offset;
     model::offset _insync_offset;
@@ -594,6 +598,11 @@ private:
     uint64_t _archive_size_bytes{0};
     /// Map of spillover manifests that were uploaded to S3
     spillover_manifest_map _spillover_manifests;
+
+    // The starting offset for a Kafka batch in the segment that corresponds
+    // with `_start_offset`. This value is computed from
+    // `compute_start_kafka_offset_local` and is not in the serialized manifest.
+    mutable std::optional<kafka::offset> _cached_start_kafka_offset_local;
 };
 
 } // namespace cloud_storage
