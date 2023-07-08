@@ -1189,13 +1189,15 @@ async_manifest_view::hydrate_manifest(
           path,
           manifest.size());
         co_return std::move(manifest);
+    } catch (const ss::gate_closed_exception&) {
+        vlog(_ctxlog.debug, "gate closed while hydrating manifest: {}", path);
     } catch (...) {
         vlog(
           _ctxlog.error,
           "Failed to materialize segment: {}",
           std::current_exception());
-        co_return error_outcome::failure;
     }
+    co_return error_outcome::failure;
 }
 
 std::optional<segment_meta> async_manifest_view::search_spillover_manifests(
