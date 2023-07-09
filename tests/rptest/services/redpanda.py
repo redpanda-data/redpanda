@@ -1577,7 +1577,7 @@ class RedpandaService(RedpandaServiceBase):
         # stash a copy here so that we can quickly look up e.g. addresses later.
         self._node_configs = {}
 
-        self._seed_servers = [self.nodes[0]] if len(self.nodes) > 0 else []
+        self._seed_servers = self.nodes
 
         self._expect_max_controller_records = 1000
 

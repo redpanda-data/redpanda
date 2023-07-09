@@ -64,7 +64,6 @@ class NodeIdAssignment(RedpandaTest):
         self.admin = self.redpanda._admin
 
     def setUp(self):
-        self.redpanda.set_seed_servers(self.redpanda.nodes)
         self.redpanda.start(auto_assign_node_id=True,
                             omit_seeds_on_idx_one=False)
         self._create_initial_topics()
@@ -152,6 +151,7 @@ class NodeIdAssignmentParallel(RedpandaTest):
 
     def setUp(self):
         # Start just one node so we can add several at the same time.
+        self.redpanda.set_seed_servers([self.redpanda.nodes[0]])
         self.redpanda.start([self.redpanda.nodes[0]],
                             auto_assign_node_id=True,
                             omit_seeds_on_idx_one=False)
