@@ -182,6 +182,42 @@ set_partition_retention_offsets(cluster::partition_manager& pm, size_t target) {
     co_return partitions_total;
 }
 
+void eviction_policy::schedule::seek(size_t cursor) {
+    vassert(sched_size > 0, "Seek cannot be called on an empty schedule");
+    cursor = cursor % sched_size;
+
+    // reset iterator
+    shard_idx = 0;
+    partition_idx = 0;
+
+    for (; shard_idx < shards.size(); ++shard_idx) {
+        const auto count = shards[shard_idx].partitions.size();
+        if (cursor < count) {
+            partition_idx = cursor;
+            return;
+        }
+        cursor -= count;
+    }
+
+    vassert(false, "Seek could not find cursor location");
+}
+
+void eviction_policy::schedule::next() {
+    ++partition_idx;
+    while (true) {
+        if (partition_idx >= shards[shard_idx].partitions.size()) {
+            shard_idx = (shard_idx + 1) % shards.size();
+            partition_idx = 0;
+        } else {
+            break;
+        }
+    }
+}
+
+eviction_policy::partition* eviction_policy::schedule::current() {
+    return &shards[shard_idx].partitions[partition_idx];
+}
+
 ss::future<> disk_space_manager::manage_data_disk(uint64_t target_size) {
     /*
      * query log storage usage across all cores

@@ -12,6 +12,7 @@
 #pragma once
 
 #include "config/property.h"
+#include "raft/types.h"
 #include "seastarx.h"
 #include "ssx/semaphore.h"
 #include "storage/node.h"
@@ -32,6 +33,79 @@ namespace storage {
 
 class api;
 class node;
+
+class eviction_policy {
+public:
+    /*
+     * tracks reclaimable data in a partition. the raft::group_id
+     * is used to decouple the process of evaluating the policy from the
+     * lifetime of any one partition. if a partition is removed during the
+     * process, we will notice it missing when looking it up by its raft group
+     * id and skip that particular partition.
+     */
+    struct partition {
+        raft::group_id group;
+        reclaimable_offsets offsets;
+    };
+
+    /*
+     * shard-tagged set of partitions. scheduling state is collected on core-0
+     * before being analyzed to determine which decisions to broadcast back to
+     * each core. tagging the partitions with the shard makes it easier to track
+     * which decisions route to which core.
+     */
+    struct shard_partitions {
+        ss::shard_id shard;
+        fragmented_vector<partition> partitions;
+    };
+
+    /*
+     * holds information about reclaimable space partitions across all cores.
+     * policies are applied to the schedule and manipulate it (e.g. recording
+     * eviction decisions). the schedule exposes a round-robin iterator
+     * interface for policies.
+     */
+    struct schedule {
+        std::vector<shard_partitions> shards;
+        const size_t sched_size;
+
+        // iterator position in the shards vector
+        size_t shard_idx{0};
+        // iterator position in the shards[shard_idx].partitions vector
+        size_t partition_idx{0};
+
+        explicit schedule(std::vector<shard_partitions> shards, size_t size)
+          : shards(std::move(shards))
+          , sched_size(size) {}
+
+        /*
+         * reposition the iterator at the cursor location. note that the cursor
+         * doesn't correspond to a specific position. after a call to seek(N)
+         * then current() will return a pointer to the (N % sched_size)-th
+         * partition managed by this schedule.
+         *
+         * preconditions:
+         *   - sched_size > 0
+         */
+        void seek(size_t cursor);
+
+        /*
+         * advance the iterator to the next partition.
+         *
+         * preconditions:
+         *   - seek() has been invoked
+         */
+        void next();
+
+        /*
+         * return current partition's reclaimable offsets
+         *
+         * preconditions:
+         *   - seek() has been invoked
+         */
+        partition* current();
+    };
+};
 
 /*
  *
