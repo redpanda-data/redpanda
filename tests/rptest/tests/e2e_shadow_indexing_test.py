@@ -321,7 +321,9 @@ class EndToEndShadowIndexingTest(EndToEndShadowIndexingBase):
 
         self.redpanda.stop()
         self.redpanda.remove_local_data(self.redpanda.nodes[0])
-        self.redpanda.restart_nodes(self.redpanda.nodes)
+        self.redpanda.restart_nodes(self.redpanda.nodes,
+                                    auto_assign_node_id=True,
+                                    omit_seeds_on_idx_one=False)
         self.redpanda._admin.await_stable_leader("controller",
                                                  partition=0,
                                                  namespace='redpanda',
@@ -383,7 +385,9 @@ class EndToEndShadowIndexingTest(EndToEndShadowIndexingBase):
         self.redpanda.stop()
         for n in self.redpanda.nodes:
             self.redpanda.remove_local_data(n)
-        self.redpanda.restart_nodes(self.redpanda.nodes)
+        self.redpanda.restart_nodes(self.redpanda.nodes,
+                                    auto_assign_node_id=True,
+                                    omit_seeds_on_idx_one=False)
         self.redpanda._admin.await_stable_leader("controller",
                                                  partition=0,
                                                  namespace='redpanda',
@@ -732,7 +736,9 @@ class ShadowIndexingManyPartitionsTest(PreallocNodesTest):
         node = self.redpanda.nodes[0]
         self.redpanda.stop()
         self.redpanda.remove_local_data(node)
-        self.redpanda.restart_nodes(self.redpanda.nodes)
+        self.redpanda.restart_nodes(self.redpanda.nodes,
+                                    auto_assign_node_id=True,
+                                    omit_seeds_on_idx_one=False)
         self.redpanda._admin.await_stable_leader("controller",
                                                  partition=0,
                                                  namespace='redpanda',
