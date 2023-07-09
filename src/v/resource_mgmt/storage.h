@@ -56,6 +56,27 @@ public:
          */
         std::optional<model::offset> decision;
         size_t total{0};
+
+        /*
+         * used when applying policies to the schedule.
+         *
+         * pointer to one of the offset groups in the offsets member. this
+         * pointer allows policy evaluation to know when the iterator needs
+         * to initialized for the given phase.
+         */
+        ss::chunked_fifo<reclaimable_offsets::offset>* level{nullptr};
+
+        /*
+         * used when applying policies to the schedule.
+         *
+         * the iterator points to the next reclaimable offset for consideration
+         * within the context of the current policy phase being evaluated.
+         *
+         * the only reason this is an optional<T> is because the seastar
+         * chunked_fifo iterator doesn't have a default constructor.
+         */
+        std::optional<ss::chunked_fifo<reclaimable_offsets::offset>::iterator>
+          iter;
     };
 
     /*
@@ -130,6 +151,13 @@ public:
     ss::future<schedule> create_new_schedule();
 
     /*
+     * balanced eviction of segments across all partitions without violating any
+     * partition's local retention policy. when local retention is advisory
+     * this evicts data that has expand best-effort past local retention.
+     */
+    size_t evict_until_local_retention(schedule&, size_t);
+
+    /*
      * install the schedule by applying eviction decisions on all cores.
      */
     ss::future<> install_schedule(schedule);
@@ -137,6 +165,16 @@ public:
 private:
     ss::sharded<cluster::partition_manager>* _pm;
     ss::sharded<storage::api>* _storage;
+
+    /*
+     * marks segments for eviction from a scheduling level using a round robin
+     * balanced strategy. the process ends if the target eviction size is
+     * achieved or the process stops making progress.
+     */
+    using level_selector = std::function<
+      ss::chunked_fifo<reclaimable_offsets::offset>*(partition*)>;
+    size_t evict_balanced_from_level(
+      schedule&, size_t, std::string_view, const level_selector&);
 
     ss::future<fragmented_vector<partition>> collect_reclaimable_offsets();
     ss::future<size_t> install_schedule(shard_partitions);

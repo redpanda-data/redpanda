@@ -359,6 +359,109 @@ ss::future<size_t> eviction_policy::install_schedule(shard_partitions shard) {
     });
 }
 
+size_t eviction_policy::evict_balanced_from_level(
+  schedule& sched,
+  size_t target_excess,
+  std::string_view level_name,
+  const level_selector& selector) {
+    size_t level_total = 0;
+    bool progress = false;
+    auto partition = sched.current();
+    const auto first = partition;
+
+    while (true) {
+        /*
+         * if this is the first time visiting this partition and this level then
+         * initialize the level iterator at the first segment.
+         */
+        auto level = selector(partition);
+        if (partition->level != level) {
+            partition->level = level;
+            partition->iter = level->begin();
+            vlog(
+              rlog.trace,
+              "Initializing level {} iterator for partition {} with {} "
+              "candidate segments",
+              level_name,
+              partition->group,
+              level->size());
+        }
+
+        if (partition->iter.has_value()) {
+            if (partition->iter.value() == level->end()) {
+                // suppress further messages about reaching end of level
+                partition->iter.reset();
+                vlog(
+                  rlog.trace,
+                  "Finished level {} iteration for partition {}",
+                  level_name,
+                  partition->group);
+            } else {
+                /*
+                 * we haven't reached the end of the candidate set so schedule
+                 * the current segment from this partition for removal.
+                 */
+                partition->decision = partition->iter.value()->offset;
+                partition->total += partition->iter.value()->size;
+                level_total += partition->iter.value()->size;
+                progress = true;
+
+                vlog(
+                  rlog.trace,
+                  "Mark partition {} at offset {} for {} removal total {} "
+                  "level {} total {}",
+                  partition->group,
+                  partition->decision.value(),
+                  human::bytes(partition->iter.value()->size),
+                  human::bytes(partition->total),
+                  level_name,
+                  human::bytes(level_total));
+
+                ++partition->iter.value();
+            }
+        }
+
+        ++_cursor;
+        sched.next();
+
+        if (level_total > target_excess) {
+            break;
+        }
+
+        partition = sched.current();
+
+        // end level iteration if no progress is made
+        if (partition == first) {
+            if (!progress) {
+                vlog(
+                  rlog.trace,
+                  "Ending level {} with no more progress possible",
+                  level_name);
+                break;
+            }
+            vlog(rlog.trace, "Restarting level {} iteration", level_name);
+            progress = false;
+        }
+    }
+
+    vlog(
+      rlog.info,
+      "Marked {} for removal with target {} in level {}",
+      human::bytes(level_total),
+      human::bytes(target_excess),
+      level_name);
+
+    return level_total;
+}
+
+size_t eviction_policy::evict_until_local_retention(
+  schedule& sched, size_t target_excess) {
+    return evict_balanced_from_level(
+      sched, target_excess, "local-retention", [](auto group) {
+          return &group->offsets.effective_local_retention;
+      });
+}
+
 ss::future<> disk_space_manager::manage_data_disk(uint64_t target_size) {
     /*
      * query log storage usage across all cores
