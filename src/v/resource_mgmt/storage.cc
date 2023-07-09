@@ -401,6 +401,14 @@ size_t eviction_policy::evict_until_low_space_hinted(
       });
 }
 
+size_t eviction_policy::evict_until_active_segment(
+  schedule& sched, size_t target_excess) {
+    return evict_balanced_from_level(
+      sched, target_excess, "active-segment", [](auto group) {
+          return &group->offsets.active_segment;
+      });
+}
+
 ss::future<> disk_space_manager::manage_data_disk(uint64_t target_size) {
     /*
      * query log storage usage across all cores
@@ -481,6 +489,19 @@ ss::future<> disk_space_manager::manage_data_disk(uint64_t target_size) {
                 estimate += _policy.evict_until_low_space_hinted(
                   schedule, target_excess - estimate);
             }
+
+            if (estimate < target_excess) {
+                estimate += _policy.evict_until_active_segment(
+                  schedule, target_excess - estimate);
+            }
+
+            /*
+             * at this point if we haven't been able to meet the target then
+             * only active segments should remain. reclaiming from the active
+             * segments is left as future work for the policy. in order to
+             * collect from them they would need to be force rolled: they are
+             * automatically rolled now according to segment.ms.
+             */
 
             vlog(
               rlog.info, "Scheduling {} for reclaim", human::bytes(estimate));

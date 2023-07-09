@@ -173,6 +173,11 @@ public:
     size_t evict_until_low_space_hinted(schedule&, size_t);
 
     /*
+     * balanced eviction until partition active segment is reached.
+     */
+    size_t evict_until_active_segment(schedule&, size_t);
+
+    /*
      * install the schedule by applying eviction decisions on all cores.
      */
     ss::future<> install_schedule(schedule);
