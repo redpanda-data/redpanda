@@ -100,88 +100,6 @@ ss::future<> disk_space_manager::run_loop() {
     }
 }
 
-/*
- * Attempts to set retention offset for cloud enabled topics such that the
- * target amount of bytes will be recovered when garbage collection is applied.
- *
- * This is greedy approach which will recover as much as possible from each
- * partition before moving on to the next.
- */
-static ss::future<size_t>
-set_partition_retention_offsets(cluster::partition_manager& pm, size_t target) {
-    // build a lightweight copy to avoid invalidations during iteration
-    fragmented_vector<ss::lw_shared_ptr<cluster::partition>> partitions;
-    for (const auto& p : pm.partitions()) {
-        if (!p.second->remote_partition()) {
-            continue;
-        }
-        partitions.push_back(p.second);
-    }
-
-    vlog(
-      rlog.info,
-      "Attempting to recover {} from {} remote partitions on core {}",
-      human::bytes(target),
-      partitions.size(),
-      ss::this_shard_id());
-
-    size_t partitions_total = 0;
-    for (const auto& p : partitions) {
-        if (partitions_total >= target) {
-            break;
-        }
-
-        auto log = dynamic_cast<storage::disk_log_impl*>(p->log().get_impl());
-        // make sure housekeeping doesn't delete the log from below us
-        auto gate = log->gate().hold();
-
-        auto segments = log->cloud_gc_eligible_segments();
-
-        vlog(
-          rlog.info,
-          "Remote partition {} reports {} reclaimable segments",
-          p->ntp(),
-          segments.size());
-
-        if (segments.empty()) {
-            continue;
-        }
-
-        size_t log_total = 0;
-        auto offset = segments.front()->offsets().committed_offset;
-        for (const auto& seg : segments) {
-            auto usage = co_await seg->persistent_size();
-            log_total += usage.total();
-            offset = seg->offsets().committed_offset;
-            vlog(
-              rlog.info,
-              "Collecting segment {}:{}-{} estimated to recover {}",
-              p->ntp(),
-              seg->offsets().base_offset(),
-              seg->offsets().committed_offset(),
-              human::bytes(usage.total()));
-            if (log_total >= target) {
-                break;
-            }
-        }
-
-        vlog(
-          rlog.info,
-          "Setting retention offset override {} estimated reclaim of {} for "
-          "cloud topic {}. Total reclaim {} of target {}.",
-          offset,
-          log_total,
-          p->ntp(),
-          partitions_total,
-          target);
-
-        log->set_cloud_gc_offset(offset);
-        partitions_total += log_total;
-    }
-
-    co_return partitions_total;
-}
-
 void eviction_policy::schedule::seek(size_t cursor) {
     vassert(sched_size > 0, "Seek cannot be called on an empty schedule");
     cursor = cursor % sched_size;
@@ -527,22 +445,6 @@ ss::future<> disk_space_manager::manage_data_disk(uint64_t target_size) {
           human::bytes(usage.reclaim.retention),
           human::bytes(target_excess - usage.reclaim.retention),
           human::bytes(usage.reclaim.available));
-
-        /*
-         * This is a simple greedy approach. It will attempt to reclaim as much
-         * data as possible from each partition on each core, stopping once
-         * enough space has been reclaimed to meet the current target.
-         */
-        size_t total = 0;
-        for (auto shard : ss::smp::all_cpus()) {
-            auto goal = target_excess - total;
-            total += co_await _pm->invoke_on(shard, [goal](auto& pm) {
-                return set_partition_retention_offsets(pm, goal);
-            });
-            if (total >= target_excess) {
-                break;
-            }
-        }
     } else {
         vlog(
           rlog.info,
