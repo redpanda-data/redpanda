@@ -35,7 +35,8 @@ disk_space_manager::disk_space_manager(
   , _storage_node(storage_node)
   , _cache(cache->local_is_initialized() ? cache : nullptr)
   , _pm(pm)
-  , _log_storage_target_size(std::move(log_storage_target_size)) {
+  , _log_storage_target_size(std::move(log_storage_target_size))
+  , _policy(_pm, _storage) {
     _enabled.watch([this] {
         vlog(
           rlog.info,
@@ -161,7 +162,11 @@ ss::future<eviction_policy::schedule> eviction_policy::create_new_schedule() {
       });
 
     vlog(rlog.debug, "Created new eviction schedule with {} partitions", size);
-    co_return schedule(std::move(shards), size);
+    schedule sched(std::move(shards), size);
+    if (sched.sched_size > 0) {
+        sched.seek(_cursor);
+    }
+    co_return sched;
 }
 
 ss::future<fragmented_vector<eviction_policy::partition>>
@@ -445,6 +450,18 @@ ss::future<> disk_space_manager::manage_data_disk(uint64_t target_size) {
           human::bytes(usage.reclaim.retention),
           human::bytes(target_excess - usage.reclaim.retention),
           human::bytes(usage.reclaim.available));
+
+        auto schedule = co_await _policy.create_new_schedule();
+        if (schedule.sched_size > 0) {
+            auto estimate = _policy.evict_until_local_retention(
+              schedule, target_excess);
+
+            vlog(
+              rlog.info, "Scheduling {} for reclaim", human::bytes(estimate));
+            co_await _policy.install_schedule(std::move(schedule));
+        } else {
+            vlog(rlog.info, "No partitions eligible for reclaim were found");
+        }
     } else {
         vlog(
           rlog.info,

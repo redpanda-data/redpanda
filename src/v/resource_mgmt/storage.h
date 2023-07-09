@@ -147,6 +147,8 @@ public:
     /*
      * create a new schedule containing information about partitions on the
      * system. initially the schedule will contain no eviction decisions.
+     * if the resulting schedule is non-empty then the policy's cursor will be
+     * normalized to the new schedule's size.
      */
     ss::future<schedule> create_new_schedule();
 
@@ -165,6 +167,12 @@ public:
 private:
     ss::sharded<cluster::partition_manager>* _pm;
     ss::sharded<storage::api>* _storage;
+
+    /*
+     * used to approximate round-robin iteration across partitions in a
+     * schedule, such as balanced removal of old segments.
+     */
+    size_t _cursor{0};
 
     /*
      * marks segments for eviction from a scheduling level using a round robin
@@ -219,6 +227,8 @@ private:
 
     ss::future<> manage_data_disk(uint64_t target_size);
     config::binding<std::optional<uint64_t>> _log_storage_target_size;
+
+    eviction_policy _policy;
 
     ss::gate _gate;
     ss::future<> run_loop();
