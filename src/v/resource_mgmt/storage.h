@@ -167,6 +167,12 @@ public:
     size_t evict_until_low_space_non_hinted(schedule&, size_t);
 
     /*
+     * same as non-hinted variant, but includes partitions with explicitly
+     * configured local retention.
+     */
+    size_t evict_until_low_space_hinted(schedule&, size_t);
+
+    /*
      * install the schedule by applying eviction decisions on all cores.
      */
     ss::future<> install_schedule(schedule);
