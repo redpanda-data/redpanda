@@ -218,6 +218,147 @@ eviction_policy::partition* eviction_policy::schedule::current() {
     return &shards[shard_idx].partitions[partition_idx];
 }
 
+ss::future<eviction_policy::schedule> eviction_policy::create_new_schedule() {
+    auto shards = co_await _pm->map([this](auto& /* ignored */) {
+        /*
+         * the partition_manager reference is ignored since
+         * collect_reclaimable_offsets already has access to a
+         * sharded<partition_manager>.
+         */
+        return collect_reclaimable_offsets().then([](auto partitions) {
+            return shard_partitions{
+              .shard = ss::this_shard_id(),
+              .partitions = std::move(partitions),
+            };
+        });
+    });
+
+    // compute the size of the schedule
+    const auto size = std::accumulate(
+      shards.cbegin(),
+      shards.cend(),
+      size_t{0},
+      [](size_t acc, const shard_partitions& shard) {
+          return acc + shard.partitions.size();
+      });
+
+    vlog(rlog.debug, "Created new eviction schedule with {} partitions", size);
+    co_return schedule(std::move(shards), size);
+}
+
+ss::future<fragmented_vector<eviction_policy::partition>>
+eviction_policy::collect_reclaimable_offsets() {
+    /*
+     * build a lightweight copy to avoid invalidations during iteration
+     */
+    fragmented_vector<ss::lw_shared_ptr<cluster::partition>> partitions;
+    for (const auto& p : _pm->local().partitions()) {
+        if (!p.second->remote_partition()) {
+            continue;
+        }
+        partitions.push_back(p.second);
+    }
+
+    /*
+     * retention settings mirror settings found in housekeeping()
+     */
+    const auto collection_threshold = [this] {
+        const auto& lm = _storage->local().log_mgr();
+        if (!lm.config().delete_retention().has_value()) {
+            return model::timestamp(0);
+        }
+        const auto now = model::timestamp::now().value();
+        const auto retention = lm.config().delete_retention().value().count();
+        return model::timestamp(now - retention);
+    };
+
+    gc_config cfg(
+      collection_threshold(),
+      _storage->local().log_mgr().config().retention_bytes());
+
+    /*
+     * in smallish batches partitions are queried for their reclaimable
+     * segments. all of this information is bundled up and returned.
+     */
+    fragmented_vector<partition> res;
+    co_await ss::max_concurrent_for_each(
+      partitions.begin(), partitions.end(), 20, [&res, cfg](const auto& p) {
+          auto log = dynamic_cast<storage::disk_log_impl*>(p->log().get_impl());
+          return log->get_reclaimable_offsets(cfg)
+            .then([&res, group = p->group()](auto offsets) {
+                res.push_back({
+                  .group = group,
+                  .offsets = std::move(offsets),
+                });
+            })
+            .handle_exception_type([](const ss::gate_closed_exception&) {})
+            .handle_exception([ntp = p->ntp()](std::exception_ptr e) {
+                vlog(
+                  rlog.debug,
+                  "Error collecting reclaimable offsets from {}: {}",
+                  ntp,
+                  e);
+            });
+      });
+
+    /*
+     * sorting by raft::group_id would provide a more stable round-robin
+     * evaluation of partitions in later processing of the result, but on small
+     * timescales we don't expect enough churn to make a difference, nor with a
+     * large number of partitions on the system would the non-determinism
+     * in the parallelism above in max_concurrent_for_each be problematic.
+     */
+
+    vlog(rlog.trace, "Reporting reclaim offsets for {} partitions", res.size());
+    co_return res;
+}
+
+ss::future<> eviction_policy::install_schedule(schedule schedule) {
+    /*
+     * install the schedule on each core in parallel
+     */
+    auto total = co_await ss::map_reduce(
+      schedule.shards,
+      [this](auto& shard) { return install_schedule(std::move(shard)); },
+      size_t(0),
+      std::plus<>());
+
+    vlog(rlog.info, "Requested truncation from {} cloud partitions", total);
+}
+
+// the per-shard counterpart of install_schedule(schedule)
+ss::future<size_t> eviction_policy::install_schedule(shard_partitions shard) {
+    const auto shard_id = shard.shard;
+    return _pm->invoke_on(shard_id, [shard = std::move(shard)](auto& pm) {
+        size_t decisions = 0;
+        for (const auto& partition : shard.partitions) {
+            if (!partition.decision.has_value()) {
+                continue;
+            }
+
+            auto p = pm.partition_for(partition.group);
+            if (!p) {
+                continue;
+            }
+
+            auto log = dynamic_cast<storage::disk_log_impl*>(
+              p->log().get_impl());
+            log->set_cloud_gc_offset(partition.decision.value());
+            ++decisions;
+
+            vlog(
+              rlog.trace,
+              "Marking offset {} in cloud partition {} group {} for estimated "
+              "{} reclaim",
+              partition.decision.value(),
+              partition.group,
+              p->ntp(),
+              human::bytes(partition.total));
+        }
+        return decisions;
+    });
+}
+
 ss::future<> disk_space_manager::manage_data_disk(uint64_t target_size) {
     /*
      * query log storage usage across all cores
