@@ -385,6 +385,14 @@ size_t eviction_policy::evict_until_local_retention(
       });
 }
 
+size_t eviction_policy::evict_until_low_space_non_hinted(
+  schedule& sched, size_t target_excess) {
+    return evict_balanced_from_level(
+      sched, target_excess, "lwm-non-hinted", [](auto group) {
+          return &group->offsets.low_space_non_hinted;
+      });
+}
+
 ss::future<> disk_space_manager::manage_data_disk(uint64_t target_size) {
     /*
      * query log storage usage across all cores
@@ -455,6 +463,11 @@ ss::future<> disk_space_manager::manage_data_disk(uint64_t target_size) {
         if (schedule.sched_size > 0) {
             auto estimate = _policy.evict_until_local_retention(
               schedule, target_excess);
+
+            if (estimate < target_excess) {
+                estimate += _policy.evict_until_low_space_non_hinted(
+                  schedule, target_excess - estimate);
+            }
 
             vlog(
               rlog.info, "Scheduling {} for reclaim", human::bytes(estimate));

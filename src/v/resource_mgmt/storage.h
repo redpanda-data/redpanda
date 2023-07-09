@@ -160,6 +160,13 @@ public:
     size_t evict_until_local_retention(schedule&, size_t);
 
     /*
+     * balanced eviction of segments across all partitions without explicit
+     * local retention settings. eviction does not proceed past the configured
+     * low space level for the partition.
+     */
+    size_t evict_until_low_space_non_hinted(schedule&, size_t);
+
+    /*
      * install the schedule by applying eviction decisions on all cores.
      */
     ss::future<> install_schedule(schedule);
