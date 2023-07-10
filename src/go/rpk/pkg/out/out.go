@@ -76,6 +76,15 @@ func Prompt(msg string, args ...interface{}) (string, error) {
 	return input, err
 }
 
+// PromptPassword is like Prompt but the text shows up as *'s.
+func PromptPassword(msg string, args ...interface{}) (string, error) {
+	var input string
+	err := survey.AskOne(&survey.Password{
+		Message: fmt.Sprintf(msg, args...),
+	}, &input)
+	return input, err
+}
+
 // Die formats the message with a suffixed newline to stderr and exits the
 // process with 1.
 func Die(msg string, args ...interface{}) {

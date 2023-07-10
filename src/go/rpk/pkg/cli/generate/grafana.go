@@ -53,7 +53,7 @@ var (
 		"memory",
 		"raft",
 	}
-	dashboardMap = map[string]*dashboardSpec{
+	dashboardMap = map[string]*fileSpec{
 		"consumer-metrics": {
 			"Kafka-Consumer-Metrics.json",
 			"Allows for monitoring of Java Kafka consumers, using the Prometheus JMX Exporter and the Kafka Sample Configuration.",
@@ -83,12 +83,6 @@ var (
 )
 
 const panelHeight = 6
-
-type dashboardSpec struct {
-	Location    string // The dashboard location (GH or local path).
-	Description string // The dashboard Description.
-	Hash        string // The SHA256 hash of the JSON dashboard file.
-}
 
 type RowSet struct {
 	rowTitles   []string
@@ -181,19 +175,7 @@ To see a list of all available dashboards, use the '--dashboard help' flag.
 	// New Flag //
 	dashboardFlag := "dashboard"
 	cmd.Flags().StringVar(&dashboard, dashboardFlag, "operations", "The name of the dashboard you wish to download; use --dashboard help for more info")
-
-	// This portion of code is to register the flag autocompletion.
-	cmd.RegisterFlagCompletionFunc(dashboardFlag, func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
-		opts := make([]string, 0, len(dashboardMap))
-		for k, v := range dashboardMap {
-			// Cobra provides support for completion descriptions:
-			//     flagName -- Description of flag
-			// to do so we must add a \t between the flag and the Description.
-			s := fmt.Sprintf("%v\t%v", k, v.Description)
-			opts = append(opts, s)
-		}
-		return opts, cobra.ShellCompDirectiveDefault
-	})
+	cmd.RegisterFlagCompletionFunc(dashboardFlag, validFiles(dashboardMap))
 
 	// We install the Admin Flags in case TLS is enabled in the metric endpoint.
 	p.InstallAdminFlags(cmd)
@@ -946,7 +928,7 @@ func htmlHeader(str string) string {
 }
 
 // printDashboardHelp prints the dashboard flag options based on the given spec.
-func printDashboardHelp(spec map[string]*dashboardSpec) {
+func printDashboardHelp(spec map[string]*fileSpec) {
 	var (
 		lines       []string // Each line of the dashboard spec.
 		maxLen      int      // maxLen is the maximum length until we reach the placeholder.
