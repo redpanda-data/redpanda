@@ -238,6 +238,7 @@ FIXTURE_TEST(test_archival_stm_segment_replace, archival_metadata_stm_fixture) {
     std::vector<cloud_storage::segment_meta> m2;
     m2.push_back(segment_meta{
       .is_compacted = true,
+      .size_bytes = 1024,
       .base_offset = model::offset(0),
       .committed_offset = model::offset(999),
       .archiver_term = model::term_id(1),
@@ -760,21 +761,27 @@ FIXTURE_TEST(
       .committed_offset = model::offset(1999),
       .delta_offset = model::offset_delta(0),
       .archiver_term = model::term_id(1),
-      .segment_term = model::term_id(1)});
+      .segment_term = model::term_id(1),
+      .delta_offset_end = model::offset_delta(0),
+    });
     m.push_back(segment_meta{
       .size_bytes = 2000,
       .base_offset = model::offset(2000),
       .committed_offset = model::offset(2999),
       .delta_offset = model::offset_delta(0),
       .archiver_term = model::term_id(1),
-      .segment_term = model::term_id(1)});
+      .segment_term = model::term_id(1),
+      .delta_offset_end = model::offset_delta(0),
+    });
     m.push_back(segment_meta{
       .size_bytes = 3000,
       .base_offset = model::offset(3000),
       .committed_offset = model::offset(3999),
       .delta_offset = model::offset_delta(0),
       .archiver_term = model::term_id(2),
-      .segment_term = model::term_id(2)});
+      .segment_term = model::term_id(2),
+      .delta_offset_end = model::offset_delta(0),
+    });
 
     // Replicate add_segment_cmd command that adds segment with offset 0
     auto batcher1 = archival_stm->batch_start(

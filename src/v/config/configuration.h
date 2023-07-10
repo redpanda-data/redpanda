@@ -303,6 +303,7 @@ struct configuration final : public config_store {
     property<std::chrono::milliseconds> cloud_storage_manifest_cache_ttl_ms;
     property<std::chrono::milliseconds>
       cloud_storage_topic_purge_grace_period_ms;
+    property<bool> cloud_storage_disable_upload_consistency_checks;
 
     // Azure Blob Storage
     property<std::optional<ss::sstring>> cloud_storage_azure_storage_account;

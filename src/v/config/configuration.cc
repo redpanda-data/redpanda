@@ -1549,6 +1549,14 @@ configuration::configuration()
       "Grace period during which the scrubber will refuse to purge the topic.",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       30s)
+  , cloud_storage_disable_upload_consistency_checks(
+      *this,
+      "cloud_storage_disable_upload_consistency_checks",
+      "Disable all upload consistency checks. This will allow redpanda to "
+      "upload logs with gaps and replicate metadata with consistency "
+      "violations. Normally, this options should be disabled.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      false)
   , cloud_storage_azure_storage_account(
       *this,
       "cloud_storage_azure_storage_account",

@@ -46,12 +46,54 @@ enum class segment_upload_kind { compacted, non_compacted };
 
 std::ostream& operator<<(std::ostream& os, segment_upload_kind upload_kind);
 
-/// This class performs per-ntp arhcival workload. Every ntp can be
+class ntp_archiver_upload_result {
+public:
+    ntp_archiver_upload_result() = default;
+    ntp_archiver_upload_result(const ntp_archiver_upload_result&) = default;
+    ntp_archiver_upload_result(ntp_archiver_upload_result&&) = default;
+    ntp_archiver_upload_result& operator=(const ntp_archiver_upload_result&)
+      = default;
+    ntp_archiver_upload_result& operator=(ntp_archiver_upload_result&&)
+      = default;
+    ~ntp_archiver_upload_result() = default;
+
+    /// Result without the value (error or success)
+    ntp_archiver_upload_result(cloud_storage::upload_result); // NOLINT
+
+    /// Merge series of results into one.
+    ///
+    /// The 'results' list shouldn't be empty.
+    /// At least one of the results should have record stats.
+    static ntp_archiver_upload_result
+    merge(const std::vector<ntp_archiver_upload_result>& results);
+
+    /// Success result with value
+    explicit ntp_archiver_upload_result(
+      const cloud_storage::segment_record_stats& m);
+
+    /// Check if segment meta is present
+    bool has_record_stats() const;
+
+    /// Extract segment stats
+    const cloud_storage::segment_record_stats& record_stats() const;
+
+    /// Extract operation upload_result
+    cloud_storage::upload_result result() const;
+
+    /// Convert to upload_result
+    cloud_storage::upload_result operator()(cloud_storage::upload_result) const;
+
+private:
+    std::optional<cloud_storage::segment_record_stats> _stats;
+    cloud_storage::upload_result _result{cloud_storage::upload_result::success};
+};
+
+/// This class performs per-ntp archival workload. Every ntp can be
 /// processed independently, without the knowledge about others. All
-/// 'ntp_archiver' instances that the shard posesses are supposed to be
+/// 'ntp_archiver' instances that the shard possesses are supposed to be
 /// aggregated on a higher level in the 'archiver_service'.
 ///
-/// The 'ntp_archiver' is responsible for manifest manitpulations and
+/// The 'ntp_archiver' is responsible for manifest manipulations and
 /// generation of per-ntp candidate set. The actual file uploads are
 /// handled by 'archiver_service'.
 ///
@@ -329,7 +371,7 @@ private:
         /// The future that will be ready when the segment will be fully
         /// uploaded.
         /// NOTE: scheduled future may hold segment read locks.
-        std::optional<ss::future<cloud_storage::upload_result>> result;
+        std::optional<ss::future<ntp_archiver_upload_result>> result;
         /// Last offset of the uploaded segment or part
         model::offset inclusive_last_offset;
         /// Segment metadata
@@ -404,7 +446,7 @@ private:
     /// is a retry_chain_node of the caller, if it's set
     ///        to nullopt own retry chain of the ntp_archiver is used
     /// \return error code
-    ss::future<cloud_storage::upload_result> upload_segment(
+    ss::future<ntp_archiver_upload_result> upload_segment(
       model::term_id archiver_term,
       upload_candidate candidate,
       std::vector<ss::rwlock::holder> segment_read_locks,
@@ -430,12 +472,17 @@ private:
     /// Upload segment's transactions metadata to S3.
     ///
     /// \return error code
-    ss::future<cloud_storage::upload_result> upload_tx(
+    ss::future<ntp_archiver_upload_result> upload_tx(
       model::term_id archiver_term,
       upload_candidate candidate,
       fragmented_vector<model::tx_range> tx,
       std::optional<std::reference_wrapper<retry_chain_node>> source_rtc
       = std::nullopt);
+
+    struct make_segment_index_result {
+        cloud_storage::offset_index index;
+        cloud_storage::segment_record_stats stats;
+    };
 
     /// Builds a segment index from the supplied input stream.
     ///
@@ -445,7 +492,7 @@ private:
     /// only for logging
     /// \param stream The data stream from which the index is created
     /// \return An index on success, nullopt on failure
-    ss::future<std::optional<cloud_storage::offset_index>> make_segment_index(
+    ss::future<std::optional<make_segment_index_result>> make_segment_index(
       model::offset base_rp_offset,
       retry_chain_logger& ctxlog,
       std::string_view index_path,
