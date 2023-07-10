@@ -2601,6 +2601,10 @@ static void move_snapshot_wo_seqs(rm_stm::tx_snapshot& target, T& source) {
 
 ss::future<>
 rm_stm::apply_snapshot(stm_snapshot_header hdr, iobuf&& tx_ss_buf) {
+    vlog(
+      _ctx_log.trace,
+      "applying snapshot with last included offset: {}",
+      hdr.offset);
     tx_snapshot data;
     iobuf_parser data_parser(std::move(tx_ss_buf));
     if (hdr.version == tx_snapshot::version) {
@@ -2851,6 +2855,10 @@ ss::future<> rm_stm::offload_aborted_txns() {
 // https://github.com/redpanda-data/redpanda/issues/6768
 ss::future<stm_snapshot> rm_stm::take_snapshot() {
     auto start_offset = _raft->start_offset();
+    vlog(
+      _ctx_log.trace,
+      "taking snapshot with last included offset of: {}",
+      model::prev_offset(start_offset));
 
     fragmented_vector<abort_index> abort_indexes;
     fragmented_vector<abort_index> expired_abort_indexes;
