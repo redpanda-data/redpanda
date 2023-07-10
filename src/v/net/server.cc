@@ -301,10 +301,16 @@ ss::future<> server::wait_for_shutdown() {
         _connection_rates->stop();
     }
 
-    return _conn_gate.close().then([this] {
-        return seastar::do_for_each(
-          _connections, [](net::connection& c) { return c.shutdown(); });
-    });
+    vlog(
+      _log.info, "{} - quiescing {} connections", name(), _connections.size());
+    return _conn_gate.close()
+      .then([this] {
+          return seastar::do_for_each(
+            _connections, [](net::connection& c) { return c.shutdown(); });
+      })
+      .then([&log = _log, name = name()] {
+          vlog(log.info, "{} - finished shutdown", name);
+      });
 }
 
 ss::future<> server::stop() {

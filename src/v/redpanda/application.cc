@@ -240,6 +240,7 @@ void application::shutdown() {
         partition_manager
           .invoke_on_all(&cluster::partition_manager::stop_partitions)
           .get();
+        vlog(_log.debug, "Stopped all partitions");
     }
 
     // Wait for all requests to finish before destructing services that may be
@@ -247,6 +248,7 @@ void application::shutdown() {
     if (_kafka_server.local_is_initialized()) {
         _kafka_server.invoke_on_all(&net::server::wait_for_shutdown).get();
         _kafka_server.stop().get();
+        vlog(_log.debug, "Stopped Kafka server");
     }
     if (_kafka_conn_quotas.local_is_initialized()) {
         _kafka_conn_quotas.stop().get();
@@ -254,6 +256,7 @@ void application::shutdown() {
     if (_rpc.local_is_initialized()) {
         _rpc.invoke_on_all(&rpc::rpc_server::wait_for_shutdown).get();
         _rpc.stop().get();
+        vlog(_log.debug, "Stopped internal RPC server");
     }
 
     // Shut down services in reverse order to which they were registered.
