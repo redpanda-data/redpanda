@@ -46,6 +46,7 @@
 #include <absl/container/flat_hash_map.h>
 #include <absl/container/flat_hash_set.h>
 #include <absl/container/node_hash_map.h>
+#include <fmt/ranges.h>
 
 #include <algorithm>
 #include <exception>
@@ -589,7 +590,6 @@ controller_backend::deltas_t calculate_bootstrap_deltas(
 
     // *it is not included
     auto start = it.base();
-    result_delta.reserve(std::distance(start, deltas.end()));
     std::move(start, deltas.end(), std::back_inserter(result_delta));
     return result_delta;
 }
@@ -2017,10 +2017,14 @@ ss::future<> controller_backend::delete_partition(
     co_await _partition_manager.local().remove(ntp, mode);
 }
 
-std::vector<controller_backend::delta_metadata>
+ss::chunked_fifo<controller_backend::delta_metadata>
 controller_backend::list_ntp_deltas(const model::ntp& ntp) const {
     if (auto it = _topic_deltas.find(ntp); it != _topic_deltas.end()) {
-        return it->second;
+        ss::chunked_fifo<controller_backend::delta_metadata> ret;
+        ret.reserve(it->second.size());
+        std::copy(
+          it->second.begin(), it->second.end(), std::back_inserter(ret));
+        return ret;
     }
 
     return {};

@@ -31,7 +31,7 @@ make_assignment(std::vector<model::broker_shard> replicas) {
 using op_t = cluster::topic_table::delta::op_type;
 using delta_t = cluster::topic_table::delta;
 using meta_t = cluster::controller_backend::delta_metadata;
-using deltas_t = std::vector<meta_t>;
+using deltas_t = std::deque<meta_t>;
 
 meta_t make_delta(
   int64_t o,
@@ -142,11 +142,14 @@ SEASTAR_THREAD_TEST_CASE(update_including_current_node) {
       current_node, std::move(d_1));
 
     BOOST_REQUIRE_EQUAL(deltas.size(), 3);
-    BOOST_REQUIRE_EQUAL(deltas[0].delta.offset, recreate_current.delta.offset);
     BOOST_REQUIRE_EQUAL(
-      deltas[1].delta.offset, update_with_current.delta.offset);
+      deltas.begin()->delta.offset, recreate_current.delta.offset);
     BOOST_REQUIRE_EQUAL(
-      deltas[2].delta.offset, finish_update_with_current.delta.offset);
+      std::next(deltas.begin())->delta.offset,
+      update_with_current.delta.offset);
+    BOOST_REQUIRE_EQUAL(
+      std::next(deltas.begin(), 2)->delta.offset,
+      finish_update_with_current.delta.offset);
 }
 
 SEASTAR_THREAD_TEST_CASE(update_excluding_current_node) {
@@ -196,9 +199,10 @@ SEASTAR_THREAD_TEST_CASE(move_back_to_current_node) {
 
     BOOST_REQUIRE_EQUAL(deltas.size(), 2);
     BOOST_REQUIRE_EQUAL(
-      deltas[0].delta.offset, update_with_current_2.delta.offset);
+      deltas.begin()->delta.offset, update_with_current_2.delta.offset);
     BOOST_REQUIRE_EQUAL(
-      deltas[1].delta.offset, finish_update_with_current_2.delta.offset);
+      std::next(deltas.begin())->delta.offset,
+      finish_update_with_current_2.delta.offset);
 }
 
 SEASTAR_THREAD_TEST_CASE(move_back_to_current_node_not_finished) {
@@ -218,5 +222,5 @@ SEASTAR_THREAD_TEST_CASE(move_back_to_current_node_not_finished) {
 
     BOOST_REQUIRE_EQUAL(deltas.size(), 1);
     BOOST_REQUIRE_EQUAL(
-      deltas[0].delta.offset, update_with_current_2.delta.offset);
+      deltas.begin()->delta.offset, update_with_current_2.delta.offset);
 }

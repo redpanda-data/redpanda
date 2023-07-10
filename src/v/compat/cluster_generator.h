@@ -537,7 +537,7 @@ struct instance_generator<cluster::ntp_reconciliation_state> {
     static cluster::ntp_reconciliation_state random() {
         return {
           model::random_ntp(),
-          tests::random_vector([] {
+          tests::random_chunked_fifo([] {
               return instance_generator<cluster::backend_operation>::random();
           }),
           random_generators::random_choice(
@@ -548,7 +548,7 @@ struct instance_generator<cluster::ntp_reconciliation_state> {
     }
 
     static std::vector<cluster::ntp_reconciliation_state> limits() {
-        return {{}};
+        return {};
     }
 };
 
@@ -564,7 +564,7 @@ struct instance_generator<cluster::reconciliation_state_reply> {
     }
 
     static std::vector<cluster::reconciliation_state_reply> limits() {
-        return {{}};
+        return {};
     }
 };
 
