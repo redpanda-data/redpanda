@@ -293,6 +293,8 @@ private:
         allow_reuploads_t allow_reuploads;
         /// Collection of uploads scheduled so far
         std::vector<scheduled_upload> uploads{};
+        /// Archiver term of the started upload
+        model::term_id archiver_term;
 
         /// Schedules a single upload, adds it to upload collection and
         /// progresses the start offset
@@ -303,7 +305,8 @@ private:
           segment_upload_kind upload_kind,
           model::offset start_offset,
           model::offset last_offset,
-          allow_reuploads_t allow_reuploads);
+          allow_reuploads_t allow_reuploads,
+          model::term_id arch_term);
     };
 
     /// Start upload without waiting for it to complete
@@ -338,6 +341,7 @@ private:
     ///        to nullopt own retry chain of the ntp_archiver is used
     /// \return error code
     ss::future<cloud_storage::upload_result> upload_segment(
+      model::term_id archiver_term,
       upload_candidate candidate,
       std::optional<std::reference_wrapper<retry_chain_node>> source_rtc
       = std::nullopt);
@@ -346,6 +350,7 @@ private:
     ///
     /// \return error code
     ss::future<cloud_storage::upload_result> upload_tx(
+      model::term_id archiver_term,
       upload_candidate candidate,
       std::optional<std::reference_wrapper<retry_chain_node>> source_rtc
       = std::nullopt);
@@ -397,8 +402,8 @@ private:
     bool may_begin_uploads() const;
 
     /// Helper to generate a segment path from candidate
-    remote_segment_path
-    segment_path_for_candidate(const upload_candidate& candidate);
+    remote_segment_path segment_path_for_candidate(
+      model::term_id archiver_term, const upload_candidate& candidate);
 
     /// Method to use with lazy_abort_source
     std::optional<ss::sstring> upload_should_abort();
