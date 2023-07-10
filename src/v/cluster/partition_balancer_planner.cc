@@ -728,18 +728,14 @@ ss::future<> partition_balancer_planner::request_context::for_each_partition(
          it != topics.topics_iterator_end();
          ++it) {
         const auto& assignments = it->second.get_assignments();
-        for (auto a_it = assignments.begin();
-             // Check iterator validity in each iteration after scheduling
-             // point.
-             (void)it->second,
-                  a_it != assignments.end();
-             a_it++) {
-            auto ntp = model::ntp(it->first.ns, it->first.tp, a_it->id);
-            auto stop = do_with_partition(ntp, a_it->replicas, visitor);
+        for (const auto& assignment : assignments) {
+            auto ntp = model::ntp(it->first.ns, it->first.tp, assignment.id);
+            auto stop = do_with_partition(ntp, assignment.replicas, visitor);
             if (stop == ss::stop_iteration::yes) {
                 co_return;
             }
             co_await maybe_yield();
+            it.check();
         }
     }
 }

@@ -59,6 +59,8 @@ public:
       , _stability_func(std::move(func))
       , _stable_revision(_stability_func()) {}
 
+    void check() const { validate_revision(); }
+
 private:
     void validate_revision() const {
         auto current_revision = _stability_func();
