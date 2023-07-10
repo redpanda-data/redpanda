@@ -490,6 +490,7 @@ class KgoVerifierProducer(KgoVerifierService):
                  debug_logs=False,
                  trace_logs=False,
                  fake_timestamp_ms=None,
+                 fake_timestamp_step_ms=None,
                  use_transactions=False,
                  transaction_abort_rate=None,
                  msgs_per_transaction=None,
@@ -502,6 +503,7 @@ class KgoVerifierProducer(KgoVerifierService):
         self._status = ProduceStatus()
         self._batch_max_bytes = batch_max_bytes
         self._fake_timestamp_ms = fake_timestamp_ms
+        self._fake_timestamp_step_ms = fake_timestamp_step_ms
         self._use_transactions = use_transactions
         self._transaction_abort_rate = transaction_abort_rate
         self._msgs_per_transaction = msgs_per_transaction
@@ -568,6 +570,9 @@ class KgoVerifierProducer(KgoVerifierService):
 
         if self._fake_timestamp_ms is not None:
             cmd = cmd + f' --fake-timestamp-ms {self._fake_timestamp_ms}'
+
+        if self._fake_timestamp_step_ms is not None:
+            cmd = cmd + f' --fake-timestamp-step-ms {self._fake_timestamp_step_ms}'
 
         if self._use_transactions:
             cmd = cmd + f' --use-transactions'
