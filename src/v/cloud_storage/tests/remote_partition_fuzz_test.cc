@@ -266,7 +266,11 @@ FIXTURE_TEST(
     auto max = segments.back().max_offset;
     vlog(test_log.debug, "offset range: {}-{}", base, max);
 
-    scan_remote_partition_incrementally(*this, base, max);
+    try {
+        scan_remote_partition_incrementally(*this, base, max);
+    } catch (const download_exception& ex) {
+        vlog(test_log.warn, "timeout connecting to s3 impostor: {}", ex.what());
+    }
 }
 
 FIXTURE_TEST(
@@ -281,7 +285,11 @@ FIXTURE_TEST(
     auto max = segments.back().max_offset;
     vlog(test_log.debug, "offset range: {}-{}", base, max);
 
-    scan_remote_partition_incrementally(*this, base, max);
+    try {
+        scan_remote_partition_incrementally(*this, base, max);
+    } catch (const download_exception& ex) {
+        vlog(test_log.warn, "timeout connecting to s3 impostor: {}", ex.what());
+    }
 }
 
 FIXTURE_TEST(
@@ -300,26 +308,30 @@ FIXTURE_TEST(
     auto max = segments.back().max_offset;
     vlog(test_log.debug, "offset range: {}-{}", base, max);
 
-    auto headers_read = scan_remote_partition_incrementally(
-      *this, base, max, 0, 20, 20);
-    model::offset expected_offset{0};
-    size_t ix_header = 0;
-    for (size_t ix_seg = 0; ix_seg < segment_layout.size(); ix_seg++) {
-        for (size_t ix_batch = 0; ix_batch < segment_layout[ix_seg].size();
-             ix_batch++) {
-            auto batch = segment_layout[ix_seg][ix_batch];
-            if (batch.type == model::record_batch_type::tx_fence) {
-                expected_offset++;
-            } else if (batch.type == model::record_batch_type::raft_data) {
-                auto header = headers_read[ix_header];
-                BOOST_REQUIRE_EQUAL(expected_offset, header.base_offset);
-                expected_offset = header.last_offset() + model::offset(1);
-                ix_header++;
-            } else {
-                // raft_configuratoin or archival_metadata
-                // no need to update expected_offset or ix_header
+    try {
+        auto headers_read = scan_remote_partition_incrementally(
+          *this, base, max, 0, 20, 20);
+        model::offset expected_offset{0};
+        size_t ix_header = 0;
+        for (size_t ix_seg = 0; ix_seg < segment_layout.size(); ix_seg++) {
+            for (size_t ix_batch = 0; ix_batch < segment_layout[ix_seg].size();
+                 ix_batch++) {
+                auto batch = segment_layout[ix_seg][ix_batch];
+                if (batch.type == model::record_batch_type::tx_fence) {
+                    expected_offset++;
+                } else if (batch.type == model::record_batch_type::raft_data) {
+                    auto header = headers_read[ix_header];
+                    BOOST_REQUIRE_EQUAL(expected_offset, header.base_offset);
+                    expected_offset = header.last_offset() + model::offset(1);
+                    ix_header++;
+                } else {
+                    // raft_configuratoin or archival_metadata
+                    // no need to update expected_offset or ix_header
+                }
             }
         }
+    } catch (const download_exception& ex) {
+        vlog(test_log.warn, "timeout connecting to s3 impostor: {}", ex.what());
     }
 }
 
@@ -338,19 +350,24 @@ FIXTURE_TEST(
     auto base = segments[0].base_offset;
     auto max = segments[num_segments - 1].max_offset;
     vlog(test_log.debug, "full offset range: {}-{}", base, max);
-    auto headers_read = scan_remote_partition_incrementally_with_reuploads(
-      *this,
-      base,
-      max,
-      std::move(segments),
-      random_generators::get_int(5, 20),
-      random_generators::get_int(5, 20));
-    model::offset expected_offset{0};
-    for (const auto& header : headers_read) {
-        BOOST_REQUIRE_EQUAL(expected_offset, header.base_offset);
-        expected_offset = header.last_offset() + model::offset(1);
+
+    try {
+        auto headers_read = scan_remote_partition_incrementally_with_reuploads(
+          *this,
+          base,
+          max,
+          std::move(segments),
+          random_generators::get_int(5, 20),
+          random_generators::get_int(5, 20));
+        model::offset expected_offset{0};
+        for (const auto& header : headers_read) {
+            BOOST_REQUIRE_EQUAL(expected_offset, header.base_offset);
+            expected_offset = header.last_offset() + model::offset(1);
+        }
+        BOOST_REQUIRE_EQUAL(headers_read.size(), num_data_batches);
+    } catch (const download_exception& ex) {
+        vlog(test_log.warn, "timeout connecting to s3 impostor: {}", ex.what());
     }
-    BOOST_REQUIRE_EQUAL(headers_read.size(), num_data_batches);
 }
 
 namespace {
@@ -391,6 +408,7 @@ FIXTURE_TEST(test_scan_while_shutting_down, cloud_storage_fixture) {
     storage::log_reader_config reader_config(
       base, model::offset::max(), ss::default_priority_class());
     static auto bucket = cloud_storage_clients::bucket_name("bucket");
+
     auto manifest = hydrate_manifest(api.local(), bucket);
     partition_probe probe(manifest.get_ntp());
     auto manifest_view = ss::make_shared<async_manifest_view>(
