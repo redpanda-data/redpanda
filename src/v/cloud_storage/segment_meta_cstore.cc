@@ -21,6 +21,7 @@
 #include <exception>
 #include <functional>
 #include <limits>
+#include <new>
 #include <stdexcept>
 #include <tuple>
 
@@ -267,22 +268,20 @@ public:
     /// Add element to the store. The operation is transactional.
     void append(const segment_meta& meta) {
         auto ix = _base_offset.size();
-        // C++ guarantees that all parameters of the function are
-        // computed before the function is called. Here, every 'append_tx'
-        // call returns a transaction that has to be committed. The 'append_tx'
-        // is a transactional append operation and it's 'commit' method is
-        // guaranteed to not throw exceptions. Because of that all 'append_tx'
-        // calls will be completed before the 'commit_all' function will be
-        // called. The 'commit_all' calls 'commit' method on all transactions,
-        // committing them. If any 'append_tx' call will throw no column will be
-        // updated and all transactions will be aborted. Because of that the
-        // update is all or nothing even in presence of bad_alloc exceptions.
-        details::commit_all(details::tuple_map(
-          [&](auto& col, auto accessor) {
-              return col.append_tx(std::invoke(accessor, meta));
-          },
-          columns(),
-          segment_meta_accessors));
+
+        try {
+            details::tuple_map(
+              [&](auto& col, auto accessor) {
+                  return col.append(std::invoke(accessor, meta));
+              },
+              columns(),
+              segment_meta_accessors);
+        } catch (const std::bad_alloc&) {
+            // bad_alloc is the only exception that 'append' could throw
+            // but in this case we will keep c-store in the inconsistent
+            // state. It's safer to terminate redpanda after that.
+            vassert(false, "column_store bad_alloc during 'append' operation");
+        }
 
         if (
           ix
