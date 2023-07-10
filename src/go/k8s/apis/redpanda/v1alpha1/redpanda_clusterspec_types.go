@@ -2,9 +2,6 @@ package v1alpha1
 
 import (
 	"encoding/json"
-	"time"
-
-	"k8s.io/apimachinery/pkg/api/resource"
 
 	corev1 "k8s.io/api/core/v1"
 )
@@ -68,9 +65,8 @@ type RedpandaClusterSpec struct {
 }
 
 type ConfigWatcher struct {
-	Enabled         bool                         `json:"enabled,omitempty"`
-	Resources       *corev1.ResourceRequirements `json:"resources,omitempty"`
-	SecurityContext *corev1.SecurityContext      `json:"SecurityContext,omitempty"`
+	Enabled   bool       `json:"enabled,omitempty"`
+	Resources *Resources `json:"resources,omitempty"`
 }
 
 // RedpandaImage is a top level field of the values file
@@ -119,40 +115,21 @@ type UsersItems struct {
 
 // TLS is a top level field of the values file
 type TLS struct {
-	Certs   map[string]*Certificate `json:"certs,omitempty"`
-	Enabled *bool                   `json:"enabled,omitempty"`
+	Certs             *Certs `json:"certs,omitempty"`
+	Enabled           bool   `json:"enabled"`
+	RequireClientAuth bool   `json:"requireClientAuth"`
 }
 
-type Certificate struct {
-	IssuerRef *IssuerRef     `json:"issuerRef,omitempty"`
-	SecretRef *SecretRef     `json:"secretRef,omitempty"`
-	Duration  *time.Duration `json:"duration,omitempty"`
-	CAEnabled bool           `json:"caEnabled"`
-}
-
-type IssuerRef struct {
-	Name string `json:"name"`
-	Kind string `json:"kind"`
-}
-
-type SecretRef struct {
-	Name string `json:"name"`
-}
-
-// ListenerTLS is a top level field of the values file
-type ListenerTLS struct {
-	Cert              *string `json:"cert,omitempty"`
-	Enabled           *bool   `json:"enabled,omitempty"`
-	RequireClientAuth bool    `json:"requireClientAuth"`
-}
+// Certs is a top level field of the values file
+type Certs struct{}
 
 // External is a top level field of the values file
 type External struct {
-	Addresses   []string     `json:"addresses,omitempty"`
-	Domain      *string      `json:"domain,omitempty"`
-	Enabled     *bool        `json:"enabled,omitempty"`
-	Type        *string      `json:"type,omitempty"`
-	ExternalDNS *ExternalDNS `json:"externalDNS,omitempty"`
+	Addresses   json.RawMessage `json:"addresses,omitempty"`
+	Domain      string          `json:"domain,omitempty"`
+	Enabled     bool            `json:"enabled"`
+	Type        string          `json:"type,omitempty"`
+	ExternalDNS *ExternalDNS    `json:"externalDNS,omitempty"`
 }
 
 // Logging is a top level field of the values file
@@ -240,20 +217,20 @@ type PersistentVolume struct {
 
 // PostInstallJob is a top level field of the values file
 type PostInstallJob struct {
-	Resources   *corev1.ResourceRequirements `json:"resources,omitempty"`
-	Annotations map[string]string            `json:"annotations,omitempty"`
-	Enabled     bool                         `json:"enabled"`
-	Labels      map[string]string            `json:"labels,omitempty"`
+	Resources   *Resources        `json:"resources,omitempty"`
+	Annotations map[string]string `json:"annotations,omitempty"`
+	Enabled     bool              `json:"enabled"`
+	Labels      map[string]string `json:"labels,omitempty"`
 }
 
 // PostUpgradeJob is a top level field of the values file
 type PostUpgradeJob struct {
-	Annotations  map[string]string            `json:"annotations,omitempty"`
-	Enabled      bool                         `json:"enabled"`
-	Labels       map[string]string            `json:"labels,omitempty"`
-	ExtraEnv     json.RawMessage              `json:"extraEnv,omitempty"`
-	ExtraEnvFrom json.RawMessage              `json:"extraEnvFrom,omitempty"`
-	Resources    *corev1.ResourceRequirements `json:"resources,omitempty"`
+	Annotations  map[string]string `json:"annotations,omitempty"`
+	Enabled      bool              `json:"enabled"`
+	Labels       map[string]string `json:"labels,omitempty"`
+	ExtraEnv     json.RawMessage   `json:"extraEnv,omitempty"`
+	ExtraEnvFrom json.RawMessage   `json:"extraEnvFrom,omitempty"`
+	Resources    *Resources        `json:"resources,omitempty"`
 }
 
 // Statefulset is a top level field of the values file
@@ -262,7 +239,7 @@ type Statefulset struct {
 	Annotations                   map[string]string          `json:"annotations,omitempty"`
 	Budget                        *Budget                    `json:"budget,omitempty"`
 	InitContainerImage            *InitContainerImage        `json:"initContainerImage,omitempty"`
-	InitContainers                *InitContainers            `json:"initContainers,omitempty"`
+	InitContainers                *InitContainers            `json:"initContainer,omitempty"`
 	LivenessProbe                 *LivenessProbe             `json:"livenessProbe,omitempty"`
 	NodeSelector                  map[string]string          `json:"nodeSelector,omitempty"`
 	PodAffinity                   json.RawMessage            `json:"podAffinity,omitempty"`
@@ -270,7 +247,7 @@ type Statefulset struct {
 	PriorityClassName             string                     `json:"priorityClassName,omitempty"`
 	ReadinessProbe                *ReadinessProbe            `json:"readinessProbe,omitempty"`
 	Replicas                      int                        `json:"replicas,omitempty"`
-	SecurityContext               *corev1.SecurityContext    `json:"securityContext,omitempty"`
+	SecurityContext               *SecurityContext           `json:"securityContext,omitempty"`
 	SideCars                      *SideCars                  `json:"sideCars,omitempty"`
 	SkipChown                     bool                       `json:"skipChown,omitempty"`
 	StartupProbe                  *StartupProbe              `json:"startupProbe,omitempty"`
@@ -297,6 +274,13 @@ type ReadinessProbe struct {
 	FailureThreshold    int `json:"failureThreshold"`
 	InitialDelaySeconds int `json:"initialDelaySeconds"`
 	PeriodSeconds       int `json:"periodSeconds"`
+}
+
+// SecurityContext is a top level field of the values file
+type SecurityContext struct {
+	FsGroup             int    `json:"fsGroup"`
+	FsGroupChangePolicy string `json:"fsGroupChangePolicy,omitempty"`
+	RunAsUser           int    `json:"runAsUser"`
 }
 
 // StartupProbe is a top level field of the values file
@@ -328,13 +312,13 @@ type UpdateStrategy struct {
 
 // Tuning is a top level field of the values file
 type Tuning struct {
-	Resources       *corev1.ResourceRequirements `json:"resources,omitempty"`
-	BallastFilePath string                       `json:"ballast_file_path,omitempty"`
-	BallastFileSize string                       `json:"ballast_file_size,omitempty"`
-	TuneAioEvents   bool                         `json:"tune_aio_events,omitempty"`
-	TuneBallastFile bool                         `json:"tune_ballast_file,omitempty"`
-	TuneClockSource bool                         `json:"tune_clocksource,omitempty"`
-	WellKnownIo     string                       `json:"well_known_io,omitempty"`
+	Resources       *Resources `json:"resources,omitempty"`
+	BallastFilePath string     `json:"ballast_file_path,omitempty"`
+	BallastFileSize string     `json:"ballast_file_size,omitempty"`
+	TuneAioEvents   bool       `json:"tune_aio_events,omitempty"`
+	TuneBallastFile bool       `json:"tune_ballast_file,omitempty"`
+	TuneClockSource bool       `json:"tune_clocksource,omitempty"`
+	WellKnownIo     string     `json:"well_known_io,omitempty"`
 }
 
 // Listeners is a top level field of the values file
@@ -346,51 +330,45 @@ type Listeners struct {
 	SchemaRegistry *SchemaRegistry `json:"schemaRegistry,omitempty"`
 }
 
-type ExternalListener struct {
-	Port            int          `json:"port"`
-	TLS             *ListenerTLS `json:"tls,omitempty"`
-	AdvertisedPorts []int        `json:"advertisedPorts"`
-}
-
 // Admin is a top level field of the values file
 type Admin struct {
-	External map[string]*ExternalListener `json:"external"`
-	Port     int                          `json:"port"`
-	TLS      *ListenerTLS                 `json:"tls,omitempty"`
+	External *External `json:"external"`
+	Port     int       `json:"port"`
+	TLS      *TLS      `json:"tls"`
 }
 
-// HTTP is a top level field of the values file`
+// HTTP is a top level field of the values file
 type HTTP struct {
-	AuthenticationMethod *string                      `json:"authenticationMethod,omitempty"`
-	Enabled              bool                         `json:"enabled"`
-	External             map[string]*ExternalListener `json:"external"`
-	KafkaEndpoint        string                       `json:"kafkaEndpoint"`
-	Port                 int                          `json:"port"`
-	TLS                  *ListenerTLS                 `json:"tls,omitempty"`
+	AuthenticationMethod *string   `json:"authenticationMethod,omitempty"`
+	Enabled              bool      `json:"enabled"`
+	External             *External `json:"external"`
+	KafkaEndpoint        string    `json:"kafkaEndpoint"`
+	Port                 int       `json:"port"`
+	TLS                  *TLS      `json:"tls"`
 }
 
 // Kafka is a top level field of the values file
 type Kafka struct {
-	AuthenticationMethod *string                      `json:"authenticationMethod,omitempty"`
-	External             map[string]*ExternalListener `json:"external"`
-	Port                 int                          `json:"port"`
-	TLS                  *ListenerTLS                 `json:"tls,omitempty"`
+	AuthenticationMethod *string   `json:"authenticationMethod,omitempty"`
+	External             *External `json:"external"`
+	Port                 int       `json:"port"`
+	TLS                  *TLS      `json:"tls"`
 }
 
 // RPC is a top level field of the values file
 type RPC struct {
-	Port int          `json:"port"`
-	TLS  *ListenerTLS `json:"tls,omitempty"`
+	Port int  `json:"port"`
+	TLS  *TLS `json:"tls"`
 }
 
 // SchemaRegistry is a top level field of the values file
 type SchemaRegistry struct {
-	AuthenticationMethod *string                      `json:"authenticationMethod,omitempty"`
-	Enabled              bool                         `json:"enabled"`
-	External             map[string]*ExternalListener `json:"external"`
-	KafkaEndpoint        string                       `json:"kafkaEndpoint"`
-	Port                 int                          `json:"port"`
-	TLS                  *ListenerTLS                 `json:"tls,omitempty"`
+	AuthenticationMethod *string   `json:"authenticationMethod,omitempty"`
+	Enabled              bool      `json:"enabled"`
+	External             *External `json:"external"`
+	KafkaEndpoint        string    `json:"kafkaEndpoint"`
+	Port                 int       `json:"port"`
+	TLS                  *TLS      `json:"tls"`
 }
 
 // Config is a top level field of the values file
@@ -403,7 +381,6 @@ type Config struct {
 // SideCars is a field that stores sidecars in the statefulset
 type SideCars struct {
 	ConfigWatcher *ConfigWatcher `json:"configWatcher,omitempty"`
-	RpkStatus     *SideCarObj    `json:"rpkStatus,omitempty"`
 }
 
 type TopologySpreadConstraintsItems struct {
@@ -413,24 +390,18 @@ type TopologySpreadConstraintsItems struct {
 }
 
 type CPU struct {
-	Cores           *resource.Quantity `json:"cores,omitempty"`
-	Overprovisioned bool               `json:"overprovisioned,omitempty"`
+	Cores           string `json:"cores,omitempty"`
+	Overprovisioned bool   `json:"overprovisioned,omitempty"`
 }
 
 type Container struct {
-	Max *resource.Quantity `json:"max"`
-	Min *resource.Quantity `json:"min,omitempty"`
+	Max string `json:"max"`
+	Min string `json:"min,omitempty"`
 }
 
 type Memory struct {
-	Container           *Container      `json:"container"`
-	EnableMemoryLocking bool            `json:"enable_memory_locking,omitempty"`
-	Redpanda            *RedpandaMemory `json:"redpanda,omitempty"`
-}
-
-type RedpandaMemory struct {
-	Memory        *resource.Quantity `json:"memory"`
-	ReserveMemory *resource.Quantity `json:"reserveMemory"`
+	Container           *Container `json:"container"`
+	EnableMemoryLocking bool       `json:"enable_memory_locking,omitempty"`
 }
 
 type RBAC struct {
@@ -445,8 +416,8 @@ type ServiceAccount struct {
 }
 
 type SetDataDirOwnership struct {
-	Enabled   bool                         `json:"enabled,omitempty"`
-	Resources *corev1.ResourceRequirements `json:"resources,omitempty"`
+	Enabled   bool       `json:"enabled,omitempty"`
+	Resources *Resources `json:"resources,omitempty"`
 }
 
 type InitContainerImage struct {
@@ -462,11 +433,11 @@ type InitContainers struct {
 }
 
 type Configurator struct {
-	Resources *corev1.ResourceRequirements `json:"resources,omitempty"`
+	Resources *Resources `json:"resources,omitempty"`
 }
 
 type SetTieredStorageCacheDirOwnership struct {
-	Resources *corev1.ResourceRequirements `json:"resources,omitempty"`
+	Resources *Resources `json:"resources,omitempty"`
 }
 
 type Monitoring struct {
@@ -477,12 +448,4 @@ type Monitoring struct {
 
 type ExternalDNS struct {
 	Enabled bool `json:"enabled"`
-}
-
-// SideCarObj represents generic sidecar object. This is a placeholder for now as it may
-// each sidecar entry may require more specific impl.
-type SideCarObj struct {
-	Enabled         bool                         `json:"enabled,omitempty"`
-	Resources       *corev1.ResourceRequirements `json:"resources,omitempty"`
-	SecurityContext *corev1.SecurityContext      `json:"SecurityContext,omitempty"`
 }
