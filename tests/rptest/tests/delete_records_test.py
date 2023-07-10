@@ -16,6 +16,7 @@ import confluent_kafka as ck
 import ducktape
 
 from ducktape.mark import parametrize
+from rptest.services.admin import Admin
 from rptest.services.cluster import cluster
 from rptest.services.kgo_verifier_services import KgoVerifierConsumerGroupConsumer, KgoVerifierProducer
 from rptest.tests.redpanda_test import RedpandaTest
@@ -46,6 +47,7 @@ class DeleteRecordsTest(RedpandaTest):
         self._ctx = test_context
 
         self.rpk = RpkTool(self.redpanda)
+        self.admin = Admin(self.redpanda)
 
     def get_topic_info(self):
         topics_info = list(self.rpk.describe_topic(self.topic))
@@ -171,7 +173,7 @@ class DeleteRecordsTest(RedpandaTest):
     # occurs at the moment a failure is injected.
     @cluster(num_nodes=3, check_for_storage_usage_inconsistencies=False)
     @parametrize(truncate_point="at_segment_boundary")
-    @parametrize(truncate_point="within_segment")
+    @parametrize(truncate_point="random_offset")
     @parametrize(truncate_point="one_below_high_watermark")
     @parametrize(truncate_point="at_high_watermark")
     def test_delete_records_segment_deletion(self, truncate_point: str):
@@ -214,10 +216,11 @@ class DeleteRecordsTest(RedpandaTest):
 
             return sorted([to_final_indicies(seg) for seg in node])
 
-        # Tests for 3 different types of scenarios
+        # Tests for 4 different types of scenarios
         # 1. User wants to truncate all data - high_watermark
-        # 2. User wants to truncate at a segment boundary - at_segment_boundary
-        # 3. User wants to trunate between a boundary - within_segment
+        # 2. User wants to truncate 1 before  the high watermark
+        # 3. User wants to truncate at a random point
+        # 4. User wants to truncate at a random segment boundary
         def obtain_test_parameters(snapshot):
             node = snapshot[list(snapshot.keys())[-1]]
             segment_boundaries = get_segment_boundaries(node)
@@ -229,21 +232,28 @@ class DeleteRecordsTest(RedpandaTest):
                 truncate_offset = high_watermark - 1  # Leave 1 record
             elif truncate_point == "at_high_watermark":
                 truncate_offset = high_watermark  # Delete all data
-            elif truncate_point == "within_segment":
-                random_seg = random.randint(0, len(segment_boundaries) - 2)
-                truncate_offset = random.randint(
-                    segment_boundaries[random_seg] + 1,
-                    segment_boundaries[random_seg + 1] - 1)
+            elif truncate_point == "random_offset":
+                truncate_offset = random.randint(1, high_watermark)
             elif truncate_point == "at_segment_boundary":
-                random_seg = random.randint(1, len(segment_boundaries) - 1)
-                truncate_offset = segment_boundaries[random_seg] - 1
+                random_segment = random.randint(1, len(snapshot) - 1)
+                truncate_offset = segment_boundaries[random_segment]
             else:
                 assert False, "unknown test parameter encountered"
 
-            self.redpanda.logger.info(f"Truncate offset: {truncate_offset}")
-            return (truncate_offset, high_watermark)
+            # Cannot compare kafka offsets to redpanda offsets returned by storage utilities,
+            # so conversion must occur to compare
+            response = self.admin.get_local_offsets_translated(
+                [truncate_offset], self.topic, 0, translate_to="redpanda")
+            assert len(response) == 1 and 'rp_offset' in response[0], response
+            rp_truncate_offset = response[0]['rp_offset']
 
-        (truncate_offset, high_watermark) = obtain_test_parameters(snapshot)
+            self.redpanda.logger.info(
+                f"Truncate kafka offset: {truncate_offset} truncate redpanda offset: {rp_truncate_offset} high watermark: {high_watermark}"
+            )
+            return (truncate_offset, rp_truncate_offset, high_watermark)
+
+        (truncate_offset, rp_truncate_offset,
+         high_watermark) = obtain_test_parameters(snapshot)
 
         # Make delete-records call, assert response looks ok
         try:
@@ -263,9 +273,8 @@ class DeleteRecordsTest(RedpandaTest):
         # Assert start offset is correct and there aren't any off-by-one errors
         self.assert_new_partition_boundaries(low_watermark, high_watermark)
 
-        def all_segments_removed(segments):
-            num_below_watermark = len(
-                [seg for seg in segments if seg < low_watermark])
+        def all_segments_removed(segments, lwm):
+            num_below_watermark = len([seg for seg in segments if seg < lwm])
             return num_below_watermark <= 1
 
         try:
@@ -277,7 +286,8 @@ class DeleteRecordsTest(RedpandaTest):
                 snapshot = self.redpanda.storage(
                     all_nodes=True).segments_by_node("kafka", self.topic, 0)
                 return all([
-                    all_segments_removed(get_segment_boundaries(node))
+                    all_segments_removed(get_segment_boundaries(node),
+                                         rp_truncate_offset)
                     for _, node in snapshot.items()
                 ])
 
@@ -296,7 +306,8 @@ class DeleteRecordsTest(RedpandaTest):
                 "kafka", self.topic, 0)
             for _, node in snapshot.items():
                 if node != stopped_node:
-                    assert all_segments_removed(get_segment_boundaries(node))
+                    assert all_segments_removed(get_segment_boundaries(node),
+                                                rp_truncate_offset)
 
     @cluster(num_nodes=3)
     def test_delete_records_bounds_checking(self):
