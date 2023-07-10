@@ -155,8 +155,6 @@ spec:
                         type: object
                       type:
                         type: string
-                    required:
-                    - enabled
                     type: object
                   fullNameOverride:
                     description: FullnameOverride is the override to give your redpanda
@@ -202,105 +200,100 @@ spec:
                         description: Admin is a top level field of the values file
                         properties:
                           external:
-                            description: External is a top level field of the values
-                              file
-                            properties:
-                              addresses:
-                                description: RawMessage is a raw encoded JSON value.
-                                  It implements Marshaler and Unmarshaler and can
-                                  be used to delay JSON decoding or precompute a JSON
-                                  encoding.
-                                format: byte
-                                type: string
-                              domain:
-                                type: string
-                              enabled:
-                                type: boolean
-                              externalDNS:
-                                properties:
-                                  enabled:
-                                    type: boolean
-                                required:
-                                - enabled
-                                type: object
-                              type:
-                                type: string
-                            required:
-                            - enabled
+                            additionalProperties:
+                              properties:
+                                advertisedPorts:
+                                  items:
+                                    type: integer
+                                  type: array
+                                port:
+                                  type: integer
+                                tls:
+                                  description: ListenerTLS is a top level field of
+                                    the values file
+                                  properties:
+                                    certs:
+                                      type: string
+                                    enabled:
+                                      type: boolean
+                                    requireClientAuth:
+                                      type: boolean
+                                  required:
+                                  - requireClientAuth
+                                  type: object
+                              required:
+                              - advertisedPorts
+                              - port
+                              type: object
                             type: object
                           port:
                             type: integer
                           tls:
-                            description: TLS is a top level field of the values file
+                            description: ListenerTLS is a top level field of the values
+                              file
                             properties:
                               certs:
-                                description: Certs is a top level field of the values
-                                  file
-                                type: object
+                                type: string
                               enabled:
                                 type: boolean
                               requireClientAuth:
                                 type: boolean
                             required:
-                            - enabled
                             - requireClientAuth
                             type: object
                         required:
                         - external
                         - port
-                        - tls
                         type: object
                       http:
-                        description: HTTP is a top level field of the values file
+                        description: HTTP is a top level field of the values file`
                         properties:
                           authenticationMethod:
                             type: string
                           enabled:
                             type: boolean
                           external:
-                            description: External is a top level field of the values
-                              file
-                            properties:
-                              addresses:
-                                description: RawMessage is a raw encoded JSON value.
-                                  It implements Marshaler and Unmarshaler and can
-                                  be used to delay JSON decoding or precompute a JSON
-                                  encoding.
-                                format: byte
-                                type: string
-                              domain:
-                                type: string
-                              enabled:
-                                type: boolean
-                              externalDNS:
-                                properties:
-                                  enabled:
-                                    type: boolean
-                                required:
-                                - enabled
-                                type: object
-                              type:
-                                type: string
-                            required:
-                            - enabled
+                            additionalProperties:
+                              properties:
+                                advertisedPorts:
+                                  items:
+                                    type: integer
+                                  type: array
+                                port:
+                                  type: integer
+                                tls:
+                                  description: ListenerTLS is a top level field of
+                                    the values file
+                                  properties:
+                                    certs:
+                                      type: string
+                                    enabled:
+                                      type: boolean
+                                    requireClientAuth:
+                                      type: boolean
+                                  required:
+                                  - requireClientAuth
+                                  type: object
+                              required:
+                              - advertisedPorts
+                              - port
+                              type: object
                             type: object
                           kafkaEndpoint:
                             type: string
                           port:
                             type: integer
                           tls:
-                            description: TLS is a top level field of the values file
+                            description: ListenerTLS is a top level field of the values
+                              file
                             properties:
                               certs:
-                                description: Certs is a top level field of the values
-                                  file
-                                type: object
+                                type: string
                               enabled:
                                 type: boolean
                               requireClientAuth:
                                 type: boolean
                             required:
-                            - enabled
                             - requireClientAuth
                             type: object
                         required:
@@ -308,7 +301,6 @@ spec:
                         - external
                         - kafkaEndpoint
                         - port
-                        - tls
                         type: object
                       kafka:
                         description: Kafka is a top level field of the values file
@@ -316,53 +308,50 @@ spec:
                           authenticationMethod:
                             type: string
                           external:
-                            description: External is a top level field of the values
-                              file
-                            properties:
-                              addresses:
-                                description: RawMessage is a raw encoded JSON value.
-                                  It implements Marshaler and Unmarshaler and can
-                                  be used to delay JSON decoding or precompute a JSON
-                                  encoding.
-                                format: byte
-                                type: string
-                              domain:
-                                type: string
-                              enabled:
-                                type: boolean
-                              externalDNS:
-                                properties:
-                                  enabled:
-                                    type: boolean
-                                required:
-                                - enabled
-                                type: object
-                              type:
-                                type: string
-                            required:
-                            - enabled
+                            additionalProperties:
+                              properties:
+                                advertisedPorts:
+                                  items:
+                                    type: integer
+                                  type: array
+                                port:
+                                  type: integer
+                                tls:
+                                  description: ListenerTLS is a top level field of
+                                    the values file
+                                  properties:
+                                    certs:
+                                      type: string
+                                    enabled:
+                                      type: boolean
+                                    requireClientAuth:
+                                      type: boolean
+                                  required:
+                                  - requireClientAuth
+                                  type: object
+                              required:
+                              - advertisedPorts
+                              - port
+                              type: object
                             type: object
                           port:
                             type: integer
                           tls:
-                            description: TLS is a top level field of the values file
+                            description: ListenerTLS is a top level field of the values
+                              file
                             properties:
                               certs:
-                                description: Certs is a top level field of the values
-                                  file
-                                type: object
+                                type: string
                               enabled:
                                 type: boolean
                               requireClientAuth:
                                 type: boolean
                             required:
-                            - enabled
                             - requireClientAuth
                             type: object
                         required:
                         - external
                         - port
-                        - tls
                         type: object
                       rpc:
                         description: RPC is a top level field of the values file
@@ -370,23 +359,20 @@ spec:
                           port:
                             type: integer
                           tls:
-                            description: TLS is a top level field of the values file
+                            description: ListenerTLS is a top level field of the values
+                              file
                             properties:
                               certs:
-                                description: Certs is a top level field of the values
-                                  file
-                                type: object
+                                type: string
                               enabled:
                                 type: boolean
                               requireClientAuth:
                                 type: boolean
                             required:
-                            - enabled
                             - requireClientAuth
                             type: object
                         required:
                         - port
-                        - tls
                         type: object
                       schemaRegistry:
                         description: SchemaRegistry is a top level field of the values
@@ -397,49 +383,47 @@ spec:
                           enabled:
                             type: boolean
                           external:
-                            description: External is a top level field of the values
-                              file
-                            properties:
-                              addresses:
-                                description: RawMessage is a raw encoded JSON value.
-                                  It implements Marshaler and Unmarshaler and can
-                                  be used to delay JSON decoding or precompute a JSON
-                                  encoding.
-                                format: byte
-                                type: string
-                              domain:
-                                type: string
-                              enabled:
-                                type: boolean
-                              externalDNS:
-                                properties:
-                                  enabled:
-                                    type: boolean
-                                required:
-                                - enabled
-                                type: object
-                              type:
-                                type: string
-                            required:
-                            - enabled
+                            additionalProperties:
+                              properties:
+                                advertisedPorts:
+                                  items:
+                                    type: integer
+                                  type: array
+                                port:
+                                  type: integer
+                                tls:
+                                  description: ListenerTLS is a top level field of
+                                    the values file
+                                  properties:
+                                    certs:
+                                      type: string
+                                    enabled:
+                                      type: boolean
+                                    requireClientAuth:
+                                      type: boolean
+                                  required:
+                                  - requireClientAuth
+                                  type: object
+                              required:
+                              - advertisedPorts
+                              - port
+                              type: object
                             type: object
                           kafkaEndpoint:
                             type: string
                           port:
                             type: integer
                           tls:
-                            description: TLS is a top level field of the values file
+                            description: ListenerTLS is a top level field of the values
+                              file
                             properties:
                               certs:
-                                description: Certs is a top level field of the values
-                                  file
-                                type: object
+                                type: string
                               enabled:
                                 type: boolean
                               requireClientAuth:
                                 type: boolean
                             required:
-                            - enabled
                             - requireClientAuth
                             type: object
                         required:
@@ -447,7 +431,6 @@ spec:
                         - external
                         - kafkaEndpoint
                         - port
-                        - tls
                         type: object
                     type: object
                   logging:
@@ -509,33 +492,54 @@ spec:
                           type: string
                         type: object
                       resources:
+                        description: ResourceRequirements describes the compute resource
+                          requirements.
                         properties:
-                          cpu:
-                            properties:
-                              cores:
-                                type: string
-                              overprovisioned:
-                                type: boolean
+                          claims:
+                            description: "Claims lists the names of resources, defined
+                              in spec.resourceClaims, that are used by this container.
+                              \n This is an alpha field and requires enabling the
+                              DynamicResourceAllocation feature gate. \n This field
+                              is immutable."
+                            items:
+                              description: ResourceClaim references one entry in PodSpec.ResourceClaims.
+                              properties:
+                                name:
+                                  description: Name must match the name of one entry
+                                    in pod.spec.resourceClaims of the Pod where this
+                                    field is used. It makes that resource available
+                                    inside a container.
+                                  type: string
+                              required:
+                              - name
+                              type: object
+                            type: array
+                            x-kubernetes-list-map-keys:
+                            - name
+                            x-kubernetes-list-type: map
+                          limits:
+                            additionalProperties:
+                              anyOf:
+                              - type: integer
+                              - type: string
+                              pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                              x-kubernetes-int-or-string: true
+                            description: 'Limits describes the maximum amount of compute
+                              resources allowed. More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/'
                             type: object
-                          memory:
-                            properties:
-                              container:
-                                properties:
-                                  max:
-                                    type: string
-                                  min:
-                                    type: string
-                                required:
-                                - max
-                                type: object
-                              enable_memory_locking:
-                                type: boolean
-                            required:
-                            - container
+                          requests:
+                            additionalProperties:
+                              anyOf:
+                              - type: integer
+                              - type: string
+                              pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                              x-kubernetes-int-or-string: true
+                            description: 'Requests describes the minimum amount of
+                              compute resources required. If Requests is omitted for
+                              a container, it defaults to Limits if that is explicitly
+                              specified, otherwise to an implementation-defined value.
+                              More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/'
                             type: object
-                        required:
-                        - cpu
-                        - memory
                         type: object
                     required:
                     - enabled
@@ -567,33 +571,54 @@ spec:
                           type: string
                         type: object
                       resources:
+                        description: ResourceRequirements describes the compute resource
+                          requirements.
                         properties:
-                          cpu:
-                            properties:
-                              cores:
-                                type: string
-                              overprovisioned:
-                                type: boolean
+                          claims:
+                            description: "Claims lists the names of resources, defined
+                              in spec.resourceClaims, that are used by this container.
+                              \n This is an alpha field and requires enabling the
+                              DynamicResourceAllocation feature gate. \n This field
+                              is immutable."
+                            items:
+                              description: ResourceClaim references one entry in PodSpec.ResourceClaims.
+                              properties:
+                                name:
+                                  description: Name must match the name of one entry
+                                    in pod.spec.resourceClaims of the Pod where this
+                                    field is used. It makes that resource available
+                                    inside a container.
+                                  type: string
+                              required:
+                              - name
+                              type: object
+                            type: array
+                            x-kubernetes-list-map-keys:
+                            - name
+                            x-kubernetes-list-type: map
+                          limits:
+                            additionalProperties:
+                              anyOf:
+                              - type: integer
+                              - type: string
+                              pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                              x-kubernetes-int-or-string: true
+                            description: 'Limits describes the maximum amount of compute
+                              resources allowed. More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/'
                             type: object
-                          memory:
-                            properties:
-                              container:
-                                properties:
-                                  max:
-                                    type: string
-                                  min:
-                                    type: string
-                                required:
-                                - max
-                                type: object
-                              enable_memory_locking:
-                                type: boolean
-                            required:
-                            - container
+                          requests:
+                            additionalProperties:
+                              anyOf:
+                              - type: integer
+                              - type: string
+                              pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                              x-kubernetes-int-or-string: true
+                            description: 'Requests describes the minimum amount of
+                              compute resources required. If Requests is omitted for
+                              a container, it defaults to Limits if that is explicitly
+                              specified, otherwise to an implementation-defined value.
+                              More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/'
                             type: object
-                        required:
-                        - cpu
-                        - memory
                         type: object
                     required:
                     - enabled
@@ -626,7 +651,11 @@ spec:
                       cpu:
                         properties:
                           cores:
-                            type: string
+                            anyOf:
+                            - type: integer
+                            - type: string
+                            pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                            x-kubernetes-int-or-string: true
                           overprovisioned:
                             type: boolean
                         type: object
@@ -635,14 +664,40 @@ spec:
                           container:
                             properties:
                               max:
-                                type: string
+                                anyOf:
+                                - type: integer
+                                - type: string
+                                pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                                x-kubernetes-int-or-string: true
                               min:
-                                type: string
+                                anyOf:
+                                - type: integer
+                                - type: string
+                                pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                                x-kubernetes-int-or-string: true
                             required:
                             - max
                             type: object
                           enable_memory_locking:
                             type: boolean
+                          redpanda:
+                            properties:
+                              memory:
+                                anyOf:
+                                - type: integer
+                                - type: string
+                                pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                                x-kubernetes-int-or-string: true
+                              reserveMemory:
+                                anyOf:
+                                - type: integer
+                                - type: string
+                                pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                                x-kubernetes-int-or-string: true
+                            required:
+                            - memory
+                            - reserveMemory
+                            type: object
                         required:
                         - container
                         type: object
@@ -683,38 +738,68 @@ spec:
                         required:
                         - maxUnavailable
                         type: object
-                      initContainer:
+                      initContainerImage:
+                        properties:
+                          repository:
+                            type: string
+                          tag:
+                            type: string
+                        type: object
+                      initContainers:
                         properties:
                           configurator:
                             properties:
                               resources:
+                                description: ResourceRequirements describes the compute
+                                  resource requirements.
                                 properties:
-                                  cpu:
-                                    properties:
-                                      cores:
-                                        type: string
-                                      overprovisioned:
-                                        type: boolean
+                                  claims:
+                                    description: "Claims lists the names of resources,
+                                      defined in spec.resourceClaims, that are used
+                                      by this container. \n This is an alpha field
+                                      and requires enabling the DynamicResourceAllocation
+                                      feature gate. \n This field is immutable."
+                                    items:
+                                      description: ResourceClaim references one entry
+                                        in PodSpec.ResourceClaims.
+                                      properties:
+                                        name:
+                                          description: Name must match the name of
+                                            one entry in pod.spec.resourceClaims of
+                                            the Pod where this field is used. It makes
+                                            that resource available inside a container.
+                                          type: string
+                                      required:
+                                      - name
+                                      type: object
+                                    type: array
+                                    x-kubernetes-list-map-keys:
+                                    - name
+                                    x-kubernetes-list-type: map
+                                  limits:
+                                    additionalProperties:
+                                      anyOf:
+                                      - type: integer
+                                      - type: string
+                                      pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                                      x-kubernetes-int-or-string: true
+                                    description: 'Limits describes the maximum amount
+                                      of compute resources allowed. More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/'
                                     type: object
-                                  memory:
-                                    properties:
-                                      container:
-                                        properties:
-                                          max:
-                                            type: string
-                                          min:
-                                            type: string
-                                        required:
-                                        - max
-                                        type: object
-                                      enable_memory_locking:
-                                        type: boolean
-                                    required:
-                                    - container
+                                  requests:
+                                    additionalProperties:
+                                      anyOf:
+                                      - type: integer
+                                      - type: string
+                                      pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                                      x-kubernetes-int-or-string: true
+                                    description: 'Requests describes the minimum amount
+                                      of compute resources required. If Requests is
+                                      omitted for a container, it defaults to Limits
+                                      if that is explicitly specified, otherwise to
+                                      an implementation-defined value. More info:
+                                      https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/'
                                     type: object
-                                required:
-                                - cpu
-                                - memory
                                 type: object
                             type: object
                           setDataDirOwnership:
@@ -722,65 +807,111 @@ spec:
                               enabled:
                                 type: boolean
                               resources:
+                                description: ResourceRequirements describes the compute
+                                  resource requirements.
                                 properties:
-                                  cpu:
-                                    properties:
-                                      cores:
-                                        type: string
-                                      overprovisioned:
-                                        type: boolean
+                                  claims:
+                                    description: "Claims lists the names of resources,
+                                      defined in spec.resourceClaims, that are used
+                                      by this container. \n This is an alpha field
+                                      and requires enabling the DynamicResourceAllocation
+                                      feature gate. \n This field is immutable."
+                                    items:
+                                      description: ResourceClaim references one entry
+                                        in PodSpec.ResourceClaims.
+                                      properties:
+                                        name:
+                                          description: Name must match the name of
+                                            one entry in pod.spec.resourceClaims of
+                                            the Pod where this field is used. It makes
+                                            that resource available inside a container.
+                                          type: string
+                                      required:
+                                      - name
+                                      type: object
+                                    type: array
+                                    x-kubernetes-list-map-keys:
+                                    - name
+                                    x-kubernetes-list-type: map
+                                  limits:
+                                    additionalProperties:
+                                      anyOf:
+                                      - type: integer
+                                      - type: string
+                                      pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                                      x-kubernetes-int-or-string: true
+                                    description: 'Limits describes the maximum amount
+                                      of compute resources allowed. More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/'
                                     type: object
-                                  memory:
-                                    properties:
-                                      container:
-                                        properties:
-                                          max:
-                                            type: string
-                                          min:
-                                            type: string
-                                        required:
-                                        - max
-                                        type: object
-                                      enable_memory_locking:
-                                        type: boolean
-                                    required:
-                                    - container
+                                  requests:
+                                    additionalProperties:
+                                      anyOf:
+                                      - type: integer
+                                      - type: string
+                                      pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                                      x-kubernetes-int-or-string: true
+                                    description: 'Requests describes the minimum amount
+                                      of compute resources required. If Requests is
+                                      omitted for a container, it defaults to Limits
+                                      if that is explicitly specified, otherwise to
+                                      an implementation-defined value. More info:
+                                      https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/'
                                     type: object
-                                required:
-                                - cpu
-                                - memory
                                 type: object
                             type: object
                           setTieredStorageCacheDirOwnership:
                             properties:
                               resources:
+                                description: ResourceRequirements describes the compute
+                                  resource requirements.
                                 properties:
-                                  cpu:
-                                    properties:
-                                      cores:
-                                        type: string
-                                      overprovisioned:
-                                        type: boolean
+                                  claims:
+                                    description: "Claims lists the names of resources,
+                                      defined in spec.resourceClaims, that are used
+                                      by this container. \n This is an alpha field
+                                      and requires enabling the DynamicResourceAllocation
+                                      feature gate. \n This field is immutable."
+                                    items:
+                                      description: ResourceClaim references one entry
+                                        in PodSpec.ResourceClaims.
+                                      properties:
+                                        name:
+                                          description: Name must match the name of
+                                            one entry in pod.spec.resourceClaims of
+                                            the Pod where this field is used. It makes
+                                            that resource available inside a container.
+                                          type: string
+                                      required:
+                                      - name
+                                      type: object
+                                    type: array
+                                    x-kubernetes-list-map-keys:
+                                    - name
+                                    x-kubernetes-list-type: map
+                                  limits:
+                                    additionalProperties:
+                                      anyOf:
+                                      - type: integer
+                                      - type: string
+                                      pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                                      x-kubernetes-int-or-string: true
+                                    description: 'Limits describes the maximum amount
+                                      of compute resources allowed. More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/'
                                     type: object
-                                  memory:
-                                    properties:
-                                      container:
-                                        properties:
-                                          max:
-                                            type: string
-                                          min:
-                                            type: string
-                                        required:
-                                        - max
-                                        type: object
-                                      enable_memory_locking:
-                                        type: boolean
-                                    required:
-                                    - container
+                                  requests:
+                                    additionalProperties:
+                                      anyOf:
+                                      - type: integer
+                                      - type: string
+                                      pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                                      x-kubernetes-int-or-string: true
+                                    description: 'Requests describes the minimum amount
+                                      of compute resources required. If Requests is
+                                      omitted for a container, it defaults to Limits
+                                      if that is explicitly specified, otherwise to
+                                      an implementation-defined value. More info:
+                                      https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/'
                                     type: object
-                                required:
-                                - cpu
-                                - memory
                                 type: object
                             type: object
                           tuning:
@@ -792,33 +923,56 @@ spec:
                               ballast_file_size:
                                 type: string
                               resources:
+                                description: ResourceRequirements describes the compute
+                                  resource requirements.
                                 properties:
-                                  cpu:
-                                    properties:
-                                      cores:
-                                        type: string
-                                      overprovisioned:
-                                        type: boolean
+                                  claims:
+                                    description: "Claims lists the names of resources,
+                                      defined in spec.resourceClaims, that are used
+                                      by this container. \n This is an alpha field
+                                      and requires enabling the DynamicResourceAllocation
+                                      feature gate. \n This field is immutable."
+                                    items:
+                                      description: ResourceClaim references one entry
+                                        in PodSpec.ResourceClaims.
+                                      properties:
+                                        name:
+                                          description: Name must match the name of
+                                            one entry in pod.spec.resourceClaims of
+                                            the Pod where this field is used. It makes
+                                            that resource available inside a container.
+                                          type: string
+                                      required:
+                                      - name
+                                      type: object
+                                    type: array
+                                    x-kubernetes-list-map-keys:
+                                    - name
+                                    x-kubernetes-list-type: map
+                                  limits:
+                                    additionalProperties:
+                                      anyOf:
+                                      - type: integer
+                                      - type: string
+                                      pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                                      x-kubernetes-int-or-string: true
+                                    description: 'Limits describes the maximum amount
+                                      of compute resources allowed. More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/'
                                     type: object
-                                  memory:
-                                    properties:
-                                      container:
-                                        properties:
-                                          max:
-                                            type: string
-                                          min:
-                                            type: string
-                                        required:
-                                        - max
-                                        type: object
-                                      enable_memory_locking:
-                                        type: boolean
-                                    required:
-                                    - container
+                                  requests:
+                                    additionalProperties:
+                                      anyOf:
+                                      - type: integer
+                                      - type: string
+                                      pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                                      x-kubernetes-int-or-string: true
+                                    description: 'Requests describes the minimum amount
+                                      of compute resources required. If Requests is
+                                      omitted for a container, it defaults to Limits
+                                      if that is explicitly specified, otherwise to
+                                      an implementation-defined value. More info:
+                                      https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/'
                                     type: object
-                                required:
-                                - cpu
-                                - memory
                                 type: object
                               tune_aio_events:
                                 type: boolean
@@ -829,13 +983,6 @@ spec:
                               well_known_io:
                                 type: string
                             type: object
-                        type: object
-                      initContainerImage:
-                        properties:
-                          repository:
-                            type: string
-                          tag:
-                            type: string
                         type: object
                       livenessProbe:
                         description: LivenessProbe is a top level field of the values
@@ -903,18 +1050,181 @@ spec:
                       replicas:
                         type: integer
                       securityContext:
-                        description: SecurityContext is a top level field of the values
-                          file
+                        description: SecurityContext holds security configuration
+                          that will be applied to a container. Some fields are present
+                          in both SecurityContext and PodSecurityContext.  When both
+                          are set, the values in SecurityContext take precedence.
                         properties:
-                          fsGroup:
-                            type: integer
-                          fsGroupChangePolicy:
+                          allowPrivilegeEscalation:
+                            description: 'AllowPrivilegeEscalation controls whether
+                              a process can gain more privileges than its parent process.
+                              This bool directly controls if the no_new_privs flag
+                              will be set on the container process. AllowPrivilegeEscalation
+                              is true always when the container is: 1) run as Privileged
+                              2) has CAP_SYS_ADMIN Note that this field cannot be
+                              set when spec.os.name is windows.'
+                            type: boolean
+                          capabilities:
+                            description: The capabilities to add/drop when running
+                              containers. Defaults to the default set of capabilities
+                              granted by the container runtime. Note that this field
+                              cannot be set when spec.os.name is windows.
+                            properties:
+                              add:
+                                description: Added capabilities
+                                items:
+                                  description: Capability represent POSIX capabilities
+                                    type
+                                  type: string
+                                type: array
+                              drop:
+                                description: Removed capabilities
+                                items:
+                                  description: Capability represent POSIX capabilities
+                                    type
+                                  type: string
+                                type: array
+                            type: object
+                          privileged:
+                            description: Run container in privileged mode. Processes
+                              in privileged containers are essentially equivalent
+                              to root on the host. Defaults to false. Note that this
+                              field cannot be set when spec.os.name is windows.
+                            type: boolean
+                          procMount:
+                            description: procMount denotes the type of proc mount
+                              to use for the containers. The default is DefaultProcMount
+                              which uses the container runtime defaults for readonly
+                              paths and masked paths. This requires the ProcMountType
+                              feature flag to be enabled. Note that this field cannot
+                              be set when spec.os.name is windows.
                             type: string
-                          runAsUser:
+                          readOnlyRootFilesystem:
+                            description: Whether this container has a read-only root
+                              filesystem. Default is false. Note that this field cannot
+                              be set when spec.os.name is windows.
+                            type: boolean
+                          runAsGroup:
+                            description: The GID to run the entrypoint of the container
+                              process. Uses runtime default if unset. May also be
+                              set in PodSecurityContext.  If set in both SecurityContext
+                              and PodSecurityContext, the value specified in SecurityContext
+                              takes precedence. Note that this field cannot be set
+                              when spec.os.name is windows.
+                            format: int64
                             type: integer
-                        required:
-                        - fsGroup
-                        - runAsUser
+                          runAsNonRoot:
+                            description: Indicates that the container must run as
+                              a non-root user. If true, the Kubelet will validate
+                              the image at runtime to ensure that it does not run
+                              as UID 0 (root) and fail to start the container if it
+                              does. If unset or false, no such validation will be
+                              performed. May also be set in PodSecurityContext.  If
+                              set in both SecurityContext and PodSecurityContext,
+                              the value specified in SecurityContext takes precedence.
+                            type: boolean
+                          runAsUser:
+                            description: The UID to run the entrypoint of the container
+                              process. Defaults to user specified in image metadata
+                              if unspecified. May also be set in PodSecurityContext.  If
+                              set in both SecurityContext and PodSecurityContext,
+                              the value specified in SecurityContext takes precedence.
+                              Note that this field cannot be set when spec.os.name
+                              is windows.
+                            format: int64
+                            type: integer
+                          seLinuxOptions:
+                            description: The SELinux context to be applied to the
+                              container. If unspecified, the container runtime will
+                              allocate a random SELinux context for each container.  May
+                              also be set in PodSecurityContext.  If set in both SecurityContext
+                              and PodSecurityContext, the value specified in SecurityContext
+                              takes precedence. Note that this field cannot be set
+                              when spec.os.name is windows.
+                            properties:
+                              level:
+                                description: Level is SELinux level label that applies
+                                  to the container.
+                                type: string
+                              role:
+                                description: Role is a SELinux role label that applies
+                                  to the container.
+                                type: string
+                              type:
+                                description: Type is a SELinux type label that applies
+                                  to the container.
+                                type: string
+                              user:
+                                description: User is a SELinux user label that applies
+                                  to the container.
+                                type: string
+                            type: object
+                          seccompProfile:
+                            description: The seccomp options to use by this container.
+                              If seccomp options are provided at both the pod & container
+                              level, the container options override the pod options.
+                              Note that this field cannot be set when spec.os.name
+                              is windows.
+                            properties:
+                              localhostProfile:
+                                description: localhostProfile indicates a profile
+                                  defined in a file on the node should be used. The
+                                  profile must be preconfigured on the node to work.
+                                  Must be a descending path, relative to the kubelet's
+                                  configured seccomp profile location. Must only be
+                                  set if type is "Localhost".
+                                type: string
+                              type:
+                                description: "type indicates which kind of seccomp
+                                  profile will be applied. Valid options are: \n Localhost
+                                  - a profile defined in a file on the node should
+                                  be used. RuntimeDefault - the container runtime
+                                  default profile should be used. Unconfined - no
+                                  profile should be applied."
+                                type: string
+                            required:
+                            - type
+                            type: object
+                          windowsOptions:
+                            description: The Windows specific settings applied to
+                              all containers. If unspecified, the options from the
+                              PodSecurityContext will be used. If set in both SecurityContext
+                              and PodSecurityContext, the value specified in SecurityContext
+                              takes precedence. Note that this field cannot be set
+                              when spec.os.name is linux.
+                            properties:
+                              gmsaCredentialSpec:
+                                description: GMSACredentialSpec is where the GMSA
+                                  admission webhook (https://github.com/kubernetes-sigs/windows-gmsa)
+                                  inlines the contents of the GMSA credential spec
+                                  named by the GMSACredentialSpecName field.
+                                type: string
+                              gmsaCredentialSpecName:
+                                description: GMSACredentialSpecName is the name of
+                                  the GMSA credential spec to use.
+                                type: string
+                              hostProcess:
+                                description: HostProcess determines if a container
+                                  should be run as a 'Host Process' container. This
+                                  field is alpha-level and will only be honored by
+                                  components that enable the WindowsHostProcessContainers
+                                  feature flag. Setting this field without the feature
+                                  flag will result in errors when validating the Pod.
+                                  All of a Pod's containers must have the same effective
+                                  HostProcess value (it is not allowed to have a mix
+                                  of HostProcess containers and non-HostProcess containers).  In
+                                  addition, if HostProcess is true then HostNetwork
+                                  must also be set to true.
+                                type: boolean
+                              runAsUserName:
+                                description: The UserName in Windows to run the entrypoint
+                                  of the container process. Defaults to the user specified
+                                  in image metadata if unspecified. May also be set
+                                  in PodSecurityContext. If set in both SecurityContext
+                                  and PodSecurityContext, the value specified in SecurityContext
+                                  takes precedence.
+                                type: string
+                            type: object
                         type: object
                       sideCars:
                         description: SideCars is a field that stores sidecars in the
@@ -922,36 +1232,513 @@ spec:
                         properties:
                           configWatcher:
                             properties:
+                              SecurityContext:
+                                description: SecurityContext holds security configuration
+                                  that will be applied to a container. Some fields
+                                  are present in both SecurityContext and PodSecurityContext.  When
+                                  both are set, the values in SecurityContext take
+                                  precedence.
+                                properties:
+                                  allowPrivilegeEscalation:
+                                    description: 'AllowPrivilegeEscalation controls
+                                      whether a process can gain more privileges than
+                                      its parent process. This bool directly controls
+                                      if the no_new_privs flag will be set on the
+                                      container process. AllowPrivilegeEscalation
+                                      is true always when the container is: 1) run
+                                      as Privileged 2) has CAP_SYS_ADMIN Note that
+                                      this field cannot be set when spec.os.name is
+                                      windows.'
+                                    type: boolean
+                                  capabilities:
+                                    description: The capabilities to add/drop when
+                                      running containers. Defaults to the default
+                                      set of capabilities granted by the container
+                                      runtime. Note that this field cannot be set
+                                      when spec.os.name is windows.
+                                    properties:
+                                      add:
+                                        description: Added capabilities
+                                        items:
+                                          description: Capability represent POSIX
+                                            capabilities type
+                                          type: string
+                                        type: array
+                                      drop:
+                                        description: Removed capabilities
+                                        items:
+                                          description: Capability represent POSIX
+                                            capabilities type
+                                          type: string
+                                        type: array
+                                    type: object
+                                  privileged:
+                                    description: Run container in privileged mode.
+                                      Processes in privileged containers are essentially
+                                      equivalent to root on the host. Defaults to
+                                      false. Note that this field cannot be set when
+                                      spec.os.name is windows.
+                                    type: boolean
+                                  procMount:
+                                    description: procMount denotes the type of proc
+                                      mount to use for the containers. The default
+                                      is DefaultProcMount which uses the container
+                                      runtime defaults for readonly paths and masked
+                                      paths. This requires the ProcMountType feature
+                                      flag to be enabled. Note that this field cannot
+                                      be set when spec.os.name is windows.
+                                    type: string
+                                  readOnlyRootFilesystem:
+                                    description: Whether this container has a read-only
+                                      root filesystem. Default is false. Note that
+                                      this field cannot be set when spec.os.name is
+                                      windows.
+                                    type: boolean
+                                  runAsGroup:
+                                    description: The GID to run the entrypoint of
+                                      the container process. Uses runtime default
+                                      if unset. May also be set in PodSecurityContext.  If
+                                      set in both SecurityContext and PodSecurityContext,
+                                      the value specified in SecurityContext takes
+                                      precedence. Note that this field cannot be set
+                                      when spec.os.name is windows.
+                                    format: int64
+                                    type: integer
+                                  runAsNonRoot:
+                                    description: Indicates that the container must
+                                      run as a non-root user. If true, the Kubelet
+                                      will validate the image at runtime to ensure
+                                      that it does not run as UID 0 (root) and fail
+                                      to start the container if it does. If unset
+                                      or false, no such validation will be performed.
+                                      May also be set in PodSecurityContext.  If set
+                                      in both SecurityContext and PodSecurityContext,
+                                      the value specified in SecurityContext takes
+                                      precedence.
+                                    type: boolean
+                                  runAsUser:
+                                    description: The UID to run the entrypoint of
+                                      the container process. Defaults to user specified
+                                      in image metadata if unspecified. May also be
+                                      set in PodSecurityContext.  If set in both SecurityContext
+                                      and PodSecurityContext, the value specified
+                                      in SecurityContext takes precedence. Note that
+                                      this field cannot be set when spec.os.name is
+                                      windows.
+                                    format: int64
+                                    type: integer
+                                  seLinuxOptions:
+                                    description: The SELinux context to be applied
+                                      to the container. If unspecified, the container
+                                      runtime will allocate a random SELinux context
+                                      for each container.  May also be set in PodSecurityContext.  If
+                                      set in both SecurityContext and PodSecurityContext,
+                                      the value specified in SecurityContext takes
+                                      precedence. Note that this field cannot be set
+                                      when spec.os.name is windows.
+                                    properties:
+                                      level:
+                                        description: Level is SELinux level label
+                                          that applies to the container.
+                                        type: string
+                                      role:
+                                        description: Role is a SELinux role label
+                                          that applies to the container.
+                                        type: string
+                                      type:
+                                        description: Type is a SELinux type label
+                                          that applies to the container.
+                                        type: string
+                                      user:
+                                        description: User is a SELinux user label
+                                          that applies to the container.
+                                        type: string
+                                    type: object
+                                  seccompProfile:
+                                    description: The seccomp options to use by this
+                                      container. If seccomp options are provided at
+                                      both the pod & container level, the container
+                                      options override the pod options. Note that
+                                      this field cannot be set when spec.os.name is
+                                      windows.
+                                    properties:
+                                      localhostProfile:
+                                        description: localhostProfile indicates a
+                                          profile defined in a file on the node should
+                                          be used. The profile must be preconfigured
+                                          on the node to work. Must be a descending
+                                          path, relative to the kubelet's configured
+                                          seccomp profile location. Must only be set
+                                          if type is "Localhost".
+                                        type: string
+                                      type:
+                                        description: "type indicates which kind of
+                                          seccomp profile will be applied. Valid options
+                                          are: \n Localhost - a profile defined in
+                                          a file on the node should be used. RuntimeDefault
+                                          - the container runtime default profile
+                                          should be used. Unconfined - no profile
+                                          should be applied."
+                                        type: string
+                                    required:
+                                    - type
+                                    type: object
+                                  windowsOptions:
+                                    description: The Windows specific settings applied
+                                      to all containers. If unspecified, the options
+                                      from the PodSecurityContext will be used. If
+                                      set in both SecurityContext and PodSecurityContext,
+                                      the value specified in SecurityContext takes
+                                      precedence. Note that this field cannot be set
+                                      when spec.os.name is linux.
+                                    properties:
+                                      gmsaCredentialSpec:
+                                        description: GMSACredentialSpec is where the
+                                          GMSA admission webhook (https://github.com/kubernetes-sigs/windows-gmsa)
+                                          inlines the contents of the GMSA credential
+                                          spec named by the GMSACredentialSpecName
+                                          field.
+                                        type: string
+                                      gmsaCredentialSpecName:
+                                        description: GMSACredentialSpecName is the
+                                          name of the GMSA credential spec to use.
+                                        type: string
+                                      hostProcess:
+                                        description: HostProcess determines if a container
+                                          should be run as a 'Host Process' container.
+                                          This field is alpha-level and will only
+                                          be honored by components that enable the
+                                          WindowsHostProcessContainers feature flag.
+                                          Setting this field without the feature flag
+                                          will result in errors when validating the
+                                          Pod. All of a Pod's containers must have
+                                          the same effective HostProcess value (it
+                                          is not allowed to have a mix of HostProcess
+                                          containers and non-HostProcess containers).  In
+                                          addition, if HostProcess is true then HostNetwork
+                                          must also be set to true.
+                                        type: boolean
+                                      runAsUserName:
+                                        description: The UserName in Windows to run
+                                          the entrypoint of the container process.
+                                          Defaults to the user specified in image
+                                          metadata if unspecified. May also be set
+                                          in PodSecurityContext. If set in both SecurityContext
+                                          and PodSecurityContext, the value specified
+                                          in SecurityContext takes precedence.
+                                        type: string
+                                    type: object
+                                type: object
                               enabled:
                                 type: boolean
                               resources:
+                                description: ResourceRequirements describes the compute
+                                  resource requirements.
                                 properties:
-                                  cpu:
+                                  claims:
+                                    description: "Claims lists the names of resources,
+                                      defined in spec.resourceClaims, that are used
+                                      by this container. \n This is an alpha field
+                                      and requires enabling the DynamicResourceAllocation
+                                      feature gate. \n This field is immutable."
+                                    items:
+                                      description: ResourceClaim references one entry
+                                        in PodSpec.ResourceClaims.
+                                      properties:
+                                        name:
+                                          description: Name must match the name of
+                                            one entry in pod.spec.resourceClaims of
+                                            the Pod where this field is used. It makes
+                                            that resource available inside a container.
+                                          type: string
+                                      required:
+                                      - name
+                                      type: object
+                                    type: array
+                                    x-kubernetes-list-map-keys:
+                                    - name
+                                    x-kubernetes-list-type: map
+                                  limits:
+                                    additionalProperties:
+                                      anyOf:
+                                      - type: integer
+                                      - type: string
+                                      pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                                      x-kubernetes-int-or-string: true
+                                    description: 'Limits describes the maximum amount
+                                      of compute resources allowed. More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/'
+                                    type: object
+                                  requests:
+                                    additionalProperties:
+                                      anyOf:
+                                      - type: integer
+                                      - type: string
+                                      pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                                      x-kubernetes-int-or-string: true
+                                    description: 'Requests describes the minimum amount
+                                      of compute resources required. If Requests is
+                                      omitted for a container, it defaults to Limits
+                                      if that is explicitly specified, otherwise to
+                                      an implementation-defined value. More info:
+                                      https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/'
+                                    type: object
+                                type: object
+                            type: object
+                          rpkStatus:
+                            description: SideCarObj represents generic sidecar object.
+                              This is a placeholder for now as it may each sidecar
+                              entry may require more specific impl.
+                            properties:
+                              SecurityContext:
+                                description: SecurityContext holds security configuration
+                                  that will be applied to a container. Some fields
+                                  are present in both SecurityContext and PodSecurityContext.  When
+                                  both are set, the values in SecurityContext take
+                                  precedence.
+                                properties:
+                                  allowPrivilegeEscalation:
+                                    description: 'AllowPrivilegeEscalation controls
+                                      whether a process can gain more privileges than
+                                      its parent process. This bool directly controls
+                                      if the no_new_privs flag will be set on the
+                                      container process. AllowPrivilegeEscalation
+                                      is true always when the container is: 1) run
+                                      as Privileged 2) has CAP_SYS_ADMIN Note that
+                                      this field cannot be set when spec.os.name is
+                                      windows.'
+                                    type: boolean
+                                  capabilities:
+                                    description: The capabilities to add/drop when
+                                      running containers. Defaults to the default
+                                      set of capabilities granted by the container
+                                      runtime. Note that this field cannot be set
+                                      when spec.os.name is windows.
                                     properties:
-                                      cores:
+                                      add:
+                                        description: Added capabilities
+                                        items:
+                                          description: Capability represent POSIX
+                                            capabilities type
+                                          type: string
+                                        type: array
+                                      drop:
+                                        description: Removed capabilities
+                                        items:
+                                          description: Capability represent POSIX
+                                            capabilities type
+                                          type: string
+                                        type: array
+                                    type: object
+                                  privileged:
+                                    description: Run container in privileged mode.
+                                      Processes in privileged containers are essentially
+                                      equivalent to root on the host. Defaults to
+                                      false. Note that this field cannot be set when
+                                      spec.os.name is windows.
+                                    type: boolean
+                                  procMount:
+                                    description: procMount denotes the type of proc
+                                      mount to use for the containers. The default
+                                      is DefaultProcMount which uses the container
+                                      runtime defaults for readonly paths and masked
+                                      paths. This requires the ProcMountType feature
+                                      flag to be enabled. Note that this field cannot
+                                      be set when spec.os.name is windows.
+                                    type: string
+                                  readOnlyRootFilesystem:
+                                    description: Whether this container has a read-only
+                                      root filesystem. Default is false. Note that
+                                      this field cannot be set when spec.os.name is
+                                      windows.
+                                    type: boolean
+                                  runAsGroup:
+                                    description: The GID to run the entrypoint of
+                                      the container process. Uses runtime default
+                                      if unset. May also be set in PodSecurityContext.  If
+                                      set in both SecurityContext and PodSecurityContext,
+                                      the value specified in SecurityContext takes
+                                      precedence. Note that this field cannot be set
+                                      when spec.os.name is windows.
+                                    format: int64
+                                    type: integer
+                                  runAsNonRoot:
+                                    description: Indicates that the container must
+                                      run as a non-root user. If true, the Kubelet
+                                      will validate the image at runtime to ensure
+                                      that it does not run as UID 0 (root) and fail
+                                      to start the container if it does. If unset
+                                      or false, no such validation will be performed.
+                                      May also be set in PodSecurityContext.  If set
+                                      in both SecurityContext and PodSecurityContext,
+                                      the value specified in SecurityContext takes
+                                      precedence.
+                                    type: boolean
+                                  runAsUser:
+                                    description: The UID to run the entrypoint of
+                                      the container process. Defaults to user specified
+                                      in image metadata if unspecified. May also be
+                                      set in PodSecurityContext.  If set in both SecurityContext
+                                      and PodSecurityContext, the value specified
+                                      in SecurityContext takes precedence. Note that
+                                      this field cannot be set when spec.os.name is
+                                      windows.
+                                    format: int64
+                                    type: integer
+                                  seLinuxOptions:
+                                    description: The SELinux context to be applied
+                                      to the container. If unspecified, the container
+                                      runtime will allocate a random SELinux context
+                                      for each container.  May also be set in PodSecurityContext.  If
+                                      set in both SecurityContext and PodSecurityContext,
+                                      the value specified in SecurityContext takes
+                                      precedence. Note that this field cannot be set
+                                      when spec.os.name is windows.
+                                    properties:
+                                      level:
+                                        description: Level is SELinux level label
+                                          that applies to the container.
                                         type: string
-                                      overprovisioned:
-                                        type: boolean
+                                      role:
+                                        description: Role is a SELinux role label
+                                          that applies to the container.
+                                        type: string
+                                      type:
+                                        description: Type is a SELinux type label
+                                          that applies to the container.
+                                        type: string
+                                      user:
+                                        description: User is a SELinux user label
+                                          that applies to the container.
+                                        type: string
                                     type: object
-                                  memory:
+                                  seccompProfile:
+                                    description: The seccomp options to use by this
+                                      container. If seccomp options are provided at
+                                      both the pod & container level, the container
+                                      options override the pod options. Note that
+                                      this field cannot be set when spec.os.name is
+                                      windows.
                                     properties:
-                                      container:
-                                        properties:
-                                          max:
-                                            type: string
-                                          min:
-                                            type: string
-                                        required:
-                                        - max
-                                        type: object
-                                      enable_memory_locking:
-                                        type: boolean
+                                      localhostProfile:
+                                        description: localhostProfile indicates a
+                                          profile defined in a file on the node should
+                                          be used. The profile must be preconfigured
+                                          on the node to work. Must be a descending
+                                          path, relative to the kubelet's configured
+                                          seccomp profile location. Must only be set
+                                          if type is "Localhost".
+                                        type: string
+                                      type:
+                                        description: "type indicates which kind of
+                                          seccomp profile will be applied. Valid options
+                                          are: \n Localhost - a profile defined in
+                                          a file on the node should be used. RuntimeDefault
+                                          - the container runtime default profile
+                                          should be used. Unconfined - no profile
+                                          should be applied."
+                                        type: string
                                     required:
-                                    - container
+                                    - type
                                     type: object
-                                required:
-                                - cpu
-                                - memory
+                                  windowsOptions:
+                                    description: The Windows specific settings applied
+                                      to all containers. If unspecified, the options
+                                      from the PodSecurityContext will be used. If
+                                      set in both SecurityContext and PodSecurityContext,
+                                      the value specified in SecurityContext takes
+                                      precedence. Note that this field cannot be set
+                                      when spec.os.name is linux.
+                                    properties:
+                                      gmsaCredentialSpec:
+                                        description: GMSACredentialSpec is where the
+                                          GMSA admission webhook (https://github.com/kubernetes-sigs/windows-gmsa)
+                                          inlines the contents of the GMSA credential
+                                          spec named by the GMSACredentialSpecName
+                                          field.
+                                        type: string
+                                      gmsaCredentialSpecName:
+                                        description: GMSACredentialSpecName is the
+                                          name of the GMSA credential spec to use.
+                                        type: string
+                                      hostProcess:
+                                        description: HostProcess determines if a container
+                                          should be run as a 'Host Process' container.
+                                          This field is alpha-level and will only
+                                          be honored by components that enable the
+                                          WindowsHostProcessContainers feature flag.
+                                          Setting this field without the feature flag
+                                          will result in errors when validating the
+                                          Pod. All of a Pod's containers must have
+                                          the same effective HostProcess value (it
+                                          is not allowed to have a mix of HostProcess
+                                          containers and non-HostProcess containers).  In
+                                          addition, if HostProcess is true then HostNetwork
+                                          must also be set to true.
+                                        type: boolean
+                                      runAsUserName:
+                                        description: The UserName in Windows to run
+                                          the entrypoint of the container process.
+                                          Defaults to the user specified in image
+                                          metadata if unspecified. May also be set
+                                          in PodSecurityContext. If set in both SecurityContext
+                                          and PodSecurityContext, the value specified
+                                          in SecurityContext takes precedence.
+                                        type: string
+                                    type: object
+                                type: object
+                              enabled:
+                                type: boolean
+                              resources:
+                                description: ResourceRequirements describes the compute
+                                  resource requirements.
+                                properties:
+                                  claims:
+                                    description: "Claims lists the names of resources,
+                                      defined in spec.resourceClaims, that are used
+                                      by this container. \n This is an alpha field
+                                      and requires enabling the DynamicResourceAllocation
+                                      feature gate. \n This field is immutable."
+                                    items:
+                                      description: ResourceClaim references one entry
+                                        in PodSpec.ResourceClaims.
+                                      properties:
+                                        name:
+                                          description: Name must match the name of
+                                            one entry in pod.spec.resourceClaims of
+                                            the Pod where this field is used. It makes
+                                            that resource available inside a container.
+                                          type: string
+                                      required:
+                                      - name
+                                      type: object
+                                    type: array
+                                    x-kubernetes-list-map-keys:
+                                    - name
+                                    x-kubernetes-list-type: map
+                                  limits:
+                                    additionalProperties:
+                                      anyOf:
+                                      - type: integer
+                                      - type: string
+                                      pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                                      x-kubernetes-int-or-string: true
+                                    description: 'Limits describes the maximum amount
+                                      of compute resources allowed. More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/'
+                                    type: object
+                                  requests:
+                                    additionalProperties:
+                                      anyOf:
+                                      - type: integer
+                                      - type: string
+                                      pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                                      x-kubernetes-int-or-string: true
+                                    description: 'Requests describes the minimum amount
+                                      of compute resources required. If Requests is
+                                      omitted for a container, it defaults to Limits
+                                      if that is explicitly specified, otherwise to
+                                      an implementation-defined value. More info:
+                                      https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/'
+                                    type: object
                                 type: object
                             type: object
                         type: object
@@ -1154,15 +1941,40 @@ spec:
                     description: TLS is a top level field of the values file
                     properties:
                       certs:
-                        description: Certs is a top level field of the values file
+                        additionalProperties:
+                          properties:
+                            caEnabled:
+                              type: boolean
+                            duration:
+                              description: A Duration represents the elapsed time
+                                between two instants as an int64 nanosecond count.
+                                The representation limits the largest representable
+                                duration to approximately 290 years.
+                              format: int64
+                              type: integer
+                            issuerRef:
+                              properties:
+                                kind:
+                                  type: string
+                                name:
+                                  type: string
+                              required:
+                              - kind
+                              - name
+                              type: object
+                            secretRef:
+                              properties:
+                                name:
+                                  type: string
+                              required:
+                              - name
+                              type: object
+                          required:
+                          - caEnabled
+                          type: object
                         type: object
                       enabled:
                         type: boolean
-                      requireClientAuth:
-                        type: boolean
-                    required:
-                    - enabled
-                    - requireClientAuth
                     type: object
                   tolerations:
                     description: Tolerations is the override to give your redpanda
@@ -1214,33 +2026,54 @@ spec:
                       ballast_file_size:
                         type: string
                       resources:
+                        description: ResourceRequirements describes the compute resource
+                          requirements.
                         properties:
-                          cpu:
-                            properties:
-                              cores:
-                                type: string
-                              overprovisioned:
-                                type: boolean
+                          claims:
+                            description: "Claims lists the names of resources, defined
+                              in spec.resourceClaims, that are used by this container.
+                              \n This is an alpha field and requires enabling the
+                              DynamicResourceAllocation feature gate. \n This field
+                              is immutable."
+                            items:
+                              description: ResourceClaim references one entry in PodSpec.ResourceClaims.
+                              properties:
+                                name:
+                                  description: Name must match the name of one entry
+                                    in pod.spec.resourceClaims of the Pod where this
+                                    field is used. It makes that resource available
+                                    inside a container.
+                                  type: string
+                              required:
+                              - name
+                              type: object
+                            type: array
+                            x-kubernetes-list-map-keys:
+                            - name
+                            x-kubernetes-list-type: map
+                          limits:
+                            additionalProperties:
+                              anyOf:
+                              - type: integer
+                              - type: string
+                              pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                              x-kubernetes-int-or-string: true
+                            description: 'Limits describes the maximum amount of compute
+                              resources allowed. More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/'
                             type: object
-                          memory:
-                            properties:
-                              container:
-                                properties:
-                                  max:
-                                    type: string
-                                  min:
-                                    type: string
-                                required:
-                                - max
-                                type: object
-                              enable_memory_locking:
-                                type: boolean
-                            required:
-                            - container
+                          requests:
+                            additionalProperties:
+                              anyOf:
+                              - type: integer
+                              - type: string
+                              pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                              x-kubernetes-int-or-string: true
+                            description: 'Requests describes the minimum amount of
+                              compute resources required. If Requests is omitted for
+                              a container, it defaults to Limits if that is explicitly
+                              specified, otherwise to an implementation-defined value.
+                              More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/'
                             type: object
-                        required:
-                        - cpu
-                        - memory
                         type: object
                       tune_aio_events:
                         type: boolean
