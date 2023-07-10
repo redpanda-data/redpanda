@@ -793,6 +793,11 @@ ss::future<> archival_metadata_stm::apply(model::record_batch b) {
         case replace_manifest_cmd::key:
             apply_replace_manifest(r.release_value());
             break;
+        default:
+            throw std::runtime_error(fmt_with_ctx(
+              fmt::format,
+              "Unknown archival metadata STM command {}",
+              static_cast<int>(key)));
         };
     });
 
