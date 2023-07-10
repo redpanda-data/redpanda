@@ -856,6 +856,23 @@ BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_prefix_truncate_full) {
     test_cstore_prefix_truncate(short_test_size, short_test_size);
 }
 
+BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_prefix_truncate_complete) {
+    segment_meta_cstore store;
+    auto manifest = generate_metadata(short_test_size);
+    for (auto const& sm : manifest) {
+        store.insert(sm);
+    }
+
+    store.prefix_truncate(model::offset::max());
+    BOOST_REQUIRE(store.empty());
+
+    for (auto const& sm : manifest) {
+        store.insert(sm);
+    }
+    store.prefix_truncate(manifest.back().committed_offset + model::offset{1});
+    BOOST_REQUIRE(store.empty());
+}
+
 BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_serde_roundtrip) {
     segment_meta_cstore store{};
     auto manifest = generate_metadata(10007);
