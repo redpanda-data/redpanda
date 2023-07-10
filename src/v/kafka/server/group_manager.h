@@ -32,6 +32,7 @@
 #include "raft/group_manager.h"
 #include "seastarx.h"
 #include "ssx/semaphore.h"
+#include "utils/rwlock.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/coroutine.hh>
@@ -208,12 +209,14 @@ private:
         ssx::semaphore sem{1, "k/group-mgr"};
         ss::abort_source as;
         ss::lw_shared_ptr<cluster::partition> partition;
-        ss::basic_rwlock<> catchup_lock;
+        ss::lw_shared_ptr<ssx::rwlock> catchup_lock;
         model::term_id term{-1};
 
         explicit attached_partition(ss::lw_shared_ptr<cluster::partition> p)
           : loading(true)
-          , partition(std::move(p)) {}
+          , partition(std::move(p)) {
+            catchup_lock = ss::make_lw_shared<ssx::rwlock>();
+        }
     };
 
     cluster::notification_id_type _leader_notify_handle;

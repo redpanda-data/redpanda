@@ -29,6 +29,7 @@
 #include "model/timestamp.h"
 #include "seastarx.h"
 #include "utils/mutex.h"
+#include "utils/rwlock.h"
 
 #include <seastar/core/future.hh>
 #include <seastar/core/lowres_clock.hh>
@@ -202,6 +203,7 @@ public:
       kafka::group_id id,
       group_state s,
       config::configuration& conf,
+      ss::lw_shared_ptr<ssx::rwlock> catchup_lock,
       ss::lw_shared_ptr<cluster::partition> partition,
       model::term_id,
       ss::sharded<cluster::tx_gateway_frontend>& tx_frontend,
@@ -214,6 +216,7 @@ public:
       kafka::group_id id,
       group_metadata_value& md,
       config::configuration& conf,
+      ss::lw_shared_ptr<ssx::rwlock> catchup_lock,
       ss::lw_shared_ptr<cluster::partition> partition,
       model::term_id,
       ss::sharded<cluster::tx_gateway_frontend>& tx_frontend,
@@ -916,6 +919,7 @@ private:
     ss::timer<clock_type> _join_timer;
     bool _new_member_added;
     config::configuration& _conf;
+    ss::lw_shared_ptr<ssx::rwlock> _catchup_lock;
     ss::lw_shared_ptr<cluster::partition> _partition;
     absl::node_hash_map<
       model::topic_partition,
