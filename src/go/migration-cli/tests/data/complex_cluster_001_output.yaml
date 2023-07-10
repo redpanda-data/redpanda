@@ -1,0 +1,127 @@
+apiVersion: cluster.redpanda.com/v1alpha1
+kind: Redpanda
+metadata:
+  annotations:
+    cluster.redpanda.com/managed: "false"
+  creationTimestamp: null
+  name: complex-cluster-001
+spec:
+  chartRef:
+    chartVersion: 4.0.54
+  clusterSpec:
+    auth:
+      sasl:
+        enabled: true
+        users: null
+    console:
+      enabled: false
+    external:
+      domain: someblah.byoc.prd.cloud.redpanda.com
+    image:
+      repository: docker.io/redpandadata/redpanda
+      tag: v23.1.11
+    license_secret_ref:
+      secret_key: license
+      secret_name: redpanda-someblah-license
+    listeners:
+      admin:
+        external: {}
+        port: 9644
+        tls:
+          cert: ""
+          enabled: false
+          requireClientAuth: false
+      http:
+        authenticationMethod: none
+        enabled: true
+        external:
+          http-default:
+            advertisedPorts: []
+            port: 30082
+            tls:
+              cert: http-default
+              enabled: true
+              requireClientAuth: false
+        kafkaEndpoint: kafka-default
+        port: 8082
+        tls:
+          cert: ""
+          enabled: false
+          requireClientAuth: false
+      kafka:
+        authenticationMethod: sasl
+        external:
+          kafka-default:
+            advertisedPorts: []
+            port: 30092
+            tls:
+              cert: kafka-default
+              enabled: true
+              requireClientAuth: false
+        port: 9092
+        tls:
+          cert: ""
+          enabled: false
+          requireClientAuth: false
+      rpc:
+        port: 33145
+      schemaRegistry:
+        authenticationMethod: http_basic
+        enabled: true
+        external: {}
+        kafkaEndpoint: kafka-default
+        port: 30081
+        tls:
+          cert: schemaregistry-internal-0
+          enabled: true
+          requireClientAuth: false
+    resources:
+      cpu:
+        cores: "7"
+      memory:
+        container:
+          max: 28000Mi
+          min: 28000Mi
+        redpanda:
+          memory: "21646068940"
+          reserveMemory: "1"
+    statefulset:
+      additionalRedpandaCmdFlags:
+        - --abort-on-seastar-bad-alloc
+        - --dump-memory-diagnostics-on-alloc-failure-kind=all
+      budget:
+        maxUnavailable: 1
+      replicas: 12
+    storage:
+      persistentVolume:
+        enabled: true
+        size: 2550Gi
+        storageClass: local-path
+      tieredConfig:
+        cloud_storage_bucket: ""
+        cloud_storage_enable_remote_read: true
+        cloud_storage_enable_remote_write: true
+        cloud_storage_region: ""
+        cloud_storage_segment_max_upload_interval_sec: 3600
+    tls:
+      certs:
+        http-default:
+          caEnabled: true
+          secretRef:
+            name: rp-someblah-redpanda
+        kafka-default:
+          caEnabled: true
+          issuerRef:
+            kind: ClusterIssuer
+            name: letsencrypt-dns-prod
+        schemaregistry-internal-0:
+          caEnabled: true
+          secretRef:
+            name: rp-someblah-redpanda
+      enabled: true
+    tolerations:
+      - effect: NoSchedule
+        key: redpanda-node
+        operator: Equal
+        value: "true"
+status: {}

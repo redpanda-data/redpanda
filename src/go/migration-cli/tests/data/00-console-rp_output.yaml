@@ -1,0 +1,88 @@
+apiVersion: cluster.redpanda.com/v1alpha1
+kind: Redpanda
+metadata:
+  annotations:
+    cluster.redpanda.com/managed: "false"
+  creationTimestamp: null
+  name: cluster-for-console
+spec:
+  chartRef:
+    chartVersion: 4.0.54
+  clusterSpec:
+    console:
+      config:
+        connect:
+          enabled: false
+        server:
+          listenPort: 8080
+      configMap:
+        create: false
+      deployment:
+        create: false
+      enabled: true
+      secret:
+        create: false
+    image:
+      repository: localhost/redpanda
+      tag: dev
+    listeners:
+      admin:
+        external: {}
+        port: 9644
+        tls:
+          cert: ""
+          enabled: false
+          requireClientAuth: false
+      http:
+        authenticationMethod: none
+        enabled: true
+        external: {}
+        kafkaEndpoint: kafka-default
+        port: 8082
+        tls:
+          cert: ""
+          enabled: false
+          requireClientAuth: false
+      kafka:
+        authenticationMethod: none
+        external: {}
+        port: 9092
+        tls:
+          cert: ""
+          enabled: false
+          requireClientAuth: false
+      rpc:
+        port: 33145
+      schemaRegistry:
+        authenticationMethod: none
+        enabled: true
+        external: {}
+        kafkaEndpoint: kafka-default
+        port: 8081
+    logging:
+      logLevel: trace
+      usageStats:
+        enabled: false
+    resources:
+      cpu:
+        cores: "1"
+      memory:
+        container:
+          max: 1250Mi
+          min: 1250Mi
+    statefulset:
+      additionalRedpandaCmdFlags:
+        - --abort-on-seastar-bad-alloc
+        - --dump-memory-diagnostics-on-alloc-failure-kind=all
+        - --reserve-memory=100M
+      replicas: 2
+    storage:
+      persistentVolume:
+        enabled: true
+        size: 100Gi
+      tieredConfig:
+        cloud_storage_bucket: ""
+        cloud_storage_region: ""
+    tls:
+      enabled: false
+status: {}
