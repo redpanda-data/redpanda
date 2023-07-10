@@ -87,8 +87,10 @@ class ControllerEraseTest(RedpandaTest):
             bystander_node)["dirty_offset"]
 
         def wait_victim_node_apply_segments():
-            return admin.get_controller_status(victim_node)[
-                "last_applied_offset"] >= bystander_node_dirty_offset
+            status = admin.get_controller_status(victim_node)
+            last_applied = status["last_applied_offset"]
+            dirty_offset = status["dirty_offset"]
+            return dirty_offset == last_applied and last_applied >= bystander_node_dirty_offset
 
         wait_until(
             wait_victim_node_apply_segments,
