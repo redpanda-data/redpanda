@@ -46,7 +46,7 @@ func NewClusterRoleBinding(
 		client,
 		scheme,
 		pandaCluster,
-		logger,
+		logger.WithName("ClusterRoleBindingsResource"),
 	}
 }
 

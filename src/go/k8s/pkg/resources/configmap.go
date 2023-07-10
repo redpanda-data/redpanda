@@ -178,12 +178,12 @@ func (r *ConfigMapResource) markConfigurationConditionChanged(
 func (r *ConfigMapResource) obj(ctx context.Context) (k8sclient.Object, error) {
 	conf, err := r.CreateConfiguration(ctx)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("creating configuration: %w", err)
 	}
 
 	cfgSerialized, err := conf.Serialize()
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("serializing: %w", err)
 	}
 
 	cm := &corev1.ConfigMap{
@@ -208,7 +208,7 @@ func (r *ConfigMapResource) obj(ctx context.Context) (k8sclient.Object, error) {
 
 	err = controllerutil.SetControllerReference(r.pandaCluster, cm, r.scheme)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("setting controller reference: %w", err)
 	}
 
 	return cm, nil
@@ -310,13 +310,13 @@ func (r *ConfigMapResource) CreateConfiguration(
 
 	if r.pandaCluster.Spec.CloudStorage.Enabled {
 		if err := r.prepareCloudStorage(ctx, cfg); err != nil {
-			return nil, err
+			return nil, fmt.Errorf("preparing cloud storage: %w", err)
 		}
 	}
 
 	for _, user := range r.pandaCluster.Spec.Superusers {
 		if err := cfg.AppendToAdditionalRedpandaProperty(superusersConfigurationKey, user.Username); err != nil {
-			return nil, err
+			return nil, fmt.Errorf("appending superusers property: %w", err)
 		}
 	}
 
@@ -342,14 +342,14 @@ func (r *ConfigMapResource) CreateConfiguration(
 	cfg.SetAdditionalRedpandaProperty("log_segment_size", logSegmentSize)
 
 	if err := r.PrepareSeedServerList(cr); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("preparing seed server list: %w", err)
 	}
 
 	r.preparePandaproxy(&cfg.NodeConfiguration)
 	r.preparePandaproxyTLS(&cfg.NodeConfiguration, mountPoints)
 	err := r.preparePandaproxyClient(ctx, cfg, mountPoints)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("preparing proxy client: %w", err)
 	}
 
 	if sr := r.pandaCluster.Spec.Configuration.SchemaRegistry; sr != nil {
@@ -369,7 +369,7 @@ func (r *ConfigMapResource) CreateConfiguration(
 	r.prepareSchemaRegistryTLS(&cfg.NodeConfiguration, mountPoints)
 	err = r.prepareSchemaRegistryClient(ctx, cfg, mountPoints)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("preparing schemaRegistry client: %w", err)
 	}
 
 	if featuregates.RackAwareness(r.pandaCluster.Spec.Version) {
@@ -377,7 +377,7 @@ func (r *ConfigMapResource) CreateConfiguration(
 	}
 
 	if err := cfg.SetAdditionalFlatProperties(r.pandaCluster.Spec.AdditionalConfiguration); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("adding additional flat properties: %w", err)
 	}
 
 	return cfg, nil

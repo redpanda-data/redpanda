@@ -59,7 +59,7 @@ func NewCACertificateBundle(
 		pandaCluster,
 		secrets,
 		&types.NamespacedName{Name: pandaCluster.Name + "-" + caCertBundleSecretSuffix, Namespace: pandaCluster.Namespace},
-		logger,
+		logger.WithName("CACertificateBundleResource"),
 	}
 }
 
