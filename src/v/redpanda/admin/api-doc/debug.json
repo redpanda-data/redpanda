@@ -474,6 +474,47 @@
           ]
         },
         {
+            "path": "/v1/debug/storage/offset_translator/{namespace}/{topic}/{partition}",
+            "operations": [
+                {
+                    "method": "GET",
+                    "summary": "Return list of all local offsets translated",
+                    "nickname": "get_local_offsets_translated",
+                    "produces": [
+                       "application/json"
+                    ],
+                    "type": "array",
+                    "parameters": [
+                        {
+                            "name": "namespace",
+                            "in": "path",
+                            "required": true,
+                            "type": "string"
+                        },
+                        {
+                            "name": "topic",
+                            "in": "path",
+                            "required": true,
+                            "type": "string"
+                        },
+                        {
+                            "name": "partition",
+                            "in": "path",
+                            "required": true,
+                            "type": "integer"
+                        },
+                        {
+                            "name": "translate_to",
+                            "in": "query",
+                            "required": false,
+                            "allowMultiple": false,
+                            "type": "string"
+                        }
+                    ]
+                }
+            ]
+        },
+        {
             "path": "/v1/debug/cpu_profile",
             "operations": [
                 {
@@ -1023,6 +1064,20 @@
                 "free_bytes_delta": {
                     "type": "long",
                     "description": "Free size adjustment (signed)"
+                }
+            }
+        },
+        "translated_offset": {
+            "id": "translated_offset",
+            "description": "2-tuple of redpanda and kafka offset",
+            "properties": {
+                "rp_offset": {
+                    "type": "long",
+                    "description": "redpanda offset"
+                },
+                "kafka_offset": {
+                    "type": "long",
+                    "description": "kafka offset"
                 }
             }
         }

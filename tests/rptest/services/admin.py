@@ -1013,3 +1013,20 @@ class Admin:
         Get the CPU profile of a node.
         """
         return self._request("get", "debug/cpu_profile", node=node).json()
+
+    def get_local_offsets_translated(self,
+                                     offsets,
+                                     topic,
+                                     partition,
+                                     translate_to="kafka",
+                                     node=None):
+        """
+        Query offset translator to translate offsets from one type to another
+
+        Options for param "translate_to" are "kafka" and "redpanda"
+        """
+        return self._request(
+            "get",
+            f"debug/storage/offset_translator/kafka/{topic}/{partition}?translate_to={translate_to}",
+            node=node,
+            json=offsets).json()

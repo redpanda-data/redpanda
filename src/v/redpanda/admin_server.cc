@@ -4262,6 +4262,12 @@ void admin_server::register_debug_routes() {
       });
 
     register_route<superuser>(
+      ss::httpd::debug_json::get_local_offsets_translated,
+      [this](std::unique_ptr<ss::http::request> request) {
+          return get_local_offsets_translated_handler(std::move(request));
+      });
+
+    register_route<superuser>(
       ss::httpd::debug_json::put_disk_stat,
       [this](std::unique_ptr<ss::http::request> request) {
           return put_disk_stat_handler(std::move(request));
@@ -4294,6 +4300,75 @@ admin_server::get_disk_stat_handler(std::unique_ptr<ss::http::request> req) {
     disk.free_bytes = stat.stat.f_bfree * stat.stat.f_frsize;
 
     co_return disk;
+}
+
+ss::future<ss::json::json_return_type>
+admin_server::get_local_offsets_translated_handler(
+  std::unique_ptr<ss::http::request> req) {
+    static const std::string_view to_kafka = "kafka";
+    static const std::string_view to_rp = "redpanda";
+    const model::ntp ntp = parse_ntp_from_request(req->param);
+    const auto shard = _controller->get_shard_table().local().shard_for(ntp);
+    auto translate_to = to_kafka;
+    if (auto e = req->get_query_param("translate_to"); !e.empty()) {
+        if (e != to_kafka && e != to_rp) {
+            throw ss::httpd::bad_request_exception(fmt::format(
+              "'translate_to' parameter must be one of either {} or {}",
+              to_kafka,
+              to_rp));
+        }
+        translate_to = e;
+    }
+    if (!shard) {
+        throw ss::httpd::not_found_exception(
+          fmt::format("ntp {} could not be found on the node", ntp));
+    }
+    const auto doc = co_await parse_json_body(req.get());
+    if (!doc.IsArray()) {
+        throw ss::httpd::bad_request_exception(
+          "Request body must be JSON array of integers");
+    }
+    std::vector<model::offset> input;
+    for (auto& item : doc.GetArray()) {
+        if (!item.IsInt()) {
+            throw ss::httpd::bad_request_exception(
+              "Offsets must all be integers");
+        }
+        input.emplace_back(item.GetInt());
+    }
+    co_return co_await _controller->get_partition_manager().invoke_on(
+      *shard,
+      [ntp, translate_to, input = std::move(input)](
+        cluster::partition_manager& pm) {
+          auto partition = pm.get(ntp);
+          if (!partition) {
+              return ss::make_exception_future<ss::json::json_return_type>(
+                ss::httpd::not_found_exception(fmt::format(
+                  "partition with ntp {} could not be found on the node",
+                  ntp)));
+          }
+          const auto ots = partition->get_offset_translator_state();
+          std::vector<ss::httpd::debug_json::translated_offset> result;
+          for (const auto offset : input) {
+              try {
+                  ss::httpd::debug_json::translated_offset to;
+                  if (translate_to == to_kafka) {
+                      to.kafka_offset = ots->from_log_offset(offset);
+                      to.rp_offset = offset;
+                  } else {
+                      to.rp_offset = ots->to_log_offset(offset);
+                      to.kafka_offset = offset;
+                  }
+                  result.push_back(std::move(to));
+              } catch (const std::runtime_error&) {
+                  throw ss::httpd::bad_request_exception(fmt::format(
+                    "Offset provided {} was out of offset translator range",
+                    offset));
+              }
+          }
+          return ss::make_ready_future<ss::json::json_return_type>(
+            std::move(result));
+      });
 }
 
 namespace {
