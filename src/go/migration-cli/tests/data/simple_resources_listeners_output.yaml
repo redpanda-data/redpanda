@@ -1,0 +1,50 @@
+apiVersion: cluster.redpanda.com/v1alpha1
+kind: Redpanda
+metadata:
+  annotations:
+    cluster.redpanda.com/managed: "false"
+  creationTimestamp: null
+  name: resources-simple-listeners
+spec:
+  chartRef:
+    chartVersion: 4.0.54
+  clusterSpec:
+    console:
+      enabled: false
+    image:
+      repository: docker.io/redpandadata/redpanda
+      tag: v22.3.22
+    listeners:
+      admin:
+        external: {}
+        port: 9644
+        tls:
+          cert: ""
+          enabled: false
+          requireClientAuth: false
+      kafka:
+        authenticationMethod: none
+        external: {}
+        port: 9092
+        tls:
+          cert: ""
+          enabled: false
+          requireClientAuth: false
+      rpc:
+        port: 33145
+    resources:
+      cpu:
+        cores: "1"
+      memory:
+        container:
+          max: 2501Mi
+          min: 2501Mi
+    statefulset:
+      replicas: 1
+    storage:
+      persistentVolume:
+        enabled: true
+        size: 100Gi
+    tls:
+      enabled: false
+status: {}
