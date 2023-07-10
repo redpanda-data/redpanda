@@ -75,7 +75,7 @@ remote_partition::iterator remote_partition::materialize_segment(
     return iter;
 }
 
-remote_partition::borrow_result_t remote_partition::borrow_next_reader(
+remote_partition::borrow_result_t remote_partition::borrow_next_segment_reader(
 
   const partition_manifest& manifest,
   storage::log_reader_config config,
@@ -189,12 +189,14 @@ class partition_record_batch_reader_impl final
 public:
     explicit partition_record_batch_reader_impl(
       ss::shared_ptr<remote_partition> part,
-      ss::lw_shared_ptr<storage::offset_translator_state> ot_state) noexcept
+      ss::lw_shared_ptr<storage::offset_translator_state> ot_state,
+      ssx::semaphore_units units) noexcept
       : _rtc(part->_as)
       , _ctxlog(cst_log, _rtc, part->get_ntp().path())
       , _partition(std::move(part))
       , _ot_state(std::move(ot_state))
-      , _gate_guard(_partition->_gate) {
+      , _gate_guard(_partition->_gate)
+      , _units(std::move(units)) {
         auto ntp = _partition->get_ntp();
         vlog(_ctxlog.trace, "Constructing reader {}", ntp);
     }
@@ -441,7 +443,7 @@ private:
     /// Return or evict currently referenced reader
     void dispose_current_reader() {
         if (_reader) {
-            _partition->return_reader(std::move(_reader));
+            _partition->return_segment_reader(std::move(_reader));
         }
     }
 
@@ -497,7 +499,7 @@ private:
         if (!_partition || _partition->_manifest_view->stm_manifest().empty()) {
             return {};
         }
-        auto res = _partition->borrow_next_reader(manifest, config);
+        auto res = _partition->borrow_next_segment_reader(manifest, config);
         if (res.reader) {
             // Here we know the exact type of the reader_state because of
             // the invariant of the borrow_reader
@@ -561,7 +563,7 @@ private:
               _reader->max_rp_offset(),
               _reader->is_eof(),
               _next_segment_base_offset);
-            _partition->evict_reader(std::move(_reader));
+            _partition->evict_segment_reader(std::move(_reader));
             vlog(
               _ctxlog.debug,
               "initializing new segment reader {}, next offset {}, manifest "
@@ -574,7 +576,7 @@ private:
               !maybe_manifest.has_value()
               || _next_segment_base_offset != model::offset{}) {
                 auto [new_reader, new_next_offset]
-                  = _partition->borrow_next_reader(
+                  = _partition->borrow_next_segment_reader(
                     maybe_manifest.value(), config, _next_segment_base_offset);
                 _next_segment_base_offset = new_next_offset;
                 _reader = std::move(new_reader);
@@ -622,6 +624,10 @@ private:
     /// Contains offset of the first produced record batch or min()
     /// if no data were produced yet
     model::offset _first_produced_offset{};
+
+    /// RAII units managed by `materialized_resources` to limit concurrent
+    /// readers, we simply carry the object around and then free on destruction.
+    ssx::semaphore_units _units;
 };
 
 remote_partition::remote_partition(
@@ -645,7 +651,7 @@ ss::future<> remote_partition::start() {
     co_return;
 }
 
-void remote_partition::evict_reader(
+void remote_partition::evict_segment_reader(
   std::unique_ptr<remote_segment_batch_reader> reader) {
     _eviction_pending.push_back(std::move(reader));
     _has_evictions_cvar.signal();
@@ -873,7 +879,7 @@ ss::future<> remote_partition::stop() {
 }
 
 /// Return reader back to segment_state
-void remote_partition::return_reader(
+void remote_partition::return_segment_reader(
   std::unique_ptr<remote_segment_batch_reader> reader) {
     auto offset = reader->base_rp_offset();
     if (auto it = _segments.find(offset);
@@ -884,7 +890,7 @@ void remote_partition::return_reader(
         // which 'it' points to belongs to the new segment.
         it->second->return_reader(std::move(reader));
     } else {
-        evict_reader(std::move(reader));
+        evict_segment_reader(std::move(reader));
     }
 }
 
@@ -897,10 +903,12 @@ ss::future<storage::translating_reader> remote_partition::make_reader(
       "remote partition make_reader invoked, config: {}, num segments {}",
       config,
       _segments.size());
+
+    auto units = co_await _api.materialized().get_partition_reader_units(1);
     auto ot_state = ss::make_lw_shared<storage::offset_translator_state>(
       get_ntp());
     auto impl = std::make_unique<partition_record_batch_reader_impl>(
-      shared_from_this(), ot_state);
+      shared_from_this(), ot_state, std::move(units));
     co_await impl->start(config);
     co_return storage::translating_reader{
       model::record_batch_reader(std::move(impl)), std::move(ot_state)};

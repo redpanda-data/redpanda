@@ -179,6 +179,23 @@ class KgoVerifierService(Service):
 
     def wait_node(self, node, timeout_sec=None):
         """
+        Wrapper to catch timeouts on wait, and send a `/print_stack` to the remote
+        process in case it is experiencing a hang bug.
+        """
+        try:
+            return self._do_wait_node(node, timeout_sec)
+        except:
+            try:
+                self._remote(node, "print_stack")
+            except Exception as e:
+                self._redpanda.logger.warn(
+                    f"{self.who_am_i()} failed to print stacks during wait failure: {e}"
+                )
+
+            raise
+
+    def _do_wait_node(self, node, timeout_sec):
+        """
         Wait for the remote process to gracefully finish: if it is a one-shot
         operation this waits for all work to complete, if it is a looping
         operation then we wait for the current iteration of the loop to finish
@@ -202,10 +219,13 @@ class KgoVerifierService(Service):
         # Let the worker fall through to the end of its current iteration
         self.logger.debug(
             f"wait_node {self.who_am_i()}: waiting for worker to complete")
-        self._redpanda.wait_until(lambda: self._status.active is False or self.
-                                  _status_thread.errored,
-                                  timeout_sec=timeout_sec,
-                                  backoff_sec=5)
+        self._redpanda.wait_until(
+            lambda: self._status.active is False or self._status_thread.
+            errored,
+            timeout_sec=timeout_sec,
+            backoff_sec=5,
+            err_msg=
+            f"{self.who_am_i()} didn't complete in {timeout_sec} seconds")
         self._status_thread.raise_on_error()
 
         # Read final status

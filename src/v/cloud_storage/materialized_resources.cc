@@ -50,18 +50,21 @@ materialized_resources::materialized_resources()
   , _max_segments_per_shard(
       config::shard_local_cfg()
         .cloud_storage_max_materialized_segments_per_shard.bind())
-  , _reader_units(max_readers(), "cst_reader")
+  , _segment_reader_units(max_readers(), "cst_segment_reader")
+  , _partition_reader_units(max_readers(), "cst_partition_reader")
   , _segment_units(max_segments(), "cst_segment")
   , _manifest_meta_size(
       config::shard_local_cfg().cloud_storage_manifest_cache_size.bind())
   , _manifest_cache(ss::make_shared<materialized_manifest_cache>(
       config::shard_local_cfg().cloud_storage_manifest_cache_size())) {
     _max_readers_per_shard.watch(
-      [this]() { _reader_units.set_capacity(max_readers()); });
+      [this]() { _segment_reader_units.set_capacity(max_readers()); });
+    _max_readers_per_shard.watch(
+      [this]() { _partition_reader_units.set_capacity(max_readers()); });
     _max_segments_per_shard.watch(
       [this]() { _segment_units.set_capacity(max_segments()); });
     _max_partitions_per_shard.watch(
-      [this]() { _reader_units.set_capacity(max_readers()); });
+      [this]() { _segment_reader_units.set_capacity(max_readers()); });
     _manifest_meta_size.watch([this] {
         ssx::background = ss::with_gate(_gate, [this] {
             vlog(
@@ -80,6 +83,10 @@ ss::future<> materialized_resources::stop() {
     co_await _manifest_cache->stop();
 
     _stm_timer.cancel();
+
+    _segment_units.broken();
+    _segment_reader_units.broken();
+    _partition_reader_units.broken();
 
     co_await _gate.close();
     cst_log.debug("Stopped materialized_segments...");
@@ -112,8 +119,12 @@ size_t materialized_resources::max_segments() const {
       _max_partitions_per_shard() * default_segment_factor));
 }
 
-size_t materialized_resources::current_readers() const {
-    return _reader_units.outstanding();
+size_t materialized_resources::current_segment_readers() const {
+    return _segment_reader_units.outstanding();
+}
+
+size_t materialized_resources::current_partition_readers() const {
+    return _partition_reader_units.outstanding();
 }
 
 size_t materialized_resources::current_segments() const {
@@ -124,16 +135,26 @@ void materialized_resources::register_segment(materialized_segment_state& s) {
     _materialized.push_back(s);
 }
 
-ssx::semaphore_units materialized_resources::get_reader_units() {
-    if (_reader_units.available_units() <= 0) {
-        trim_readers(max_readers() / 2);
+ssx::semaphore_units materialized_resources::get_segment_reader_units() {
+    if (_segment_reader_units.available_units() <= 0) {
+        trim_segment_readers(max_readers() / 2);
     }
 
     // TOOD: make this function async so that it can wait until we succeed
     // in evicting some readers: trim_readers is not
     // guaranteed to do this, if all readers are in use.
 
-    return _reader_units.take(1).units;
+    return _segment_reader_units.take(1).units;
+}
+
+ss::future<ssx::semaphore_units>
+materialized_resources::get_partition_reader_units(size_t n) {
+    if (_partition_reader_units.available_units() <= 0) {
+        // Update metrics counter if we are trying to acquire units while
+        // saturated saturated
+        _partition_readers_delayed += 1;
+    }
+    return _partition_reader_units.get_units(n);
 }
 
 ssx::semaphore_units materialized_resources::get_segment_units() {
@@ -149,12 +170,12 @@ ssx::semaphore_units materialized_resources::get_segment_units() {
     return _segment_units.take(1).units;
 }
 
-void materialized_resources::trim_readers(size_t target_free) {
+void materialized_resources::trim_segment_readers(size_t target_free) {
     vlog(
       cst_log.debug,
-      "Trimming readers until {} reader slots are free (current {})",
+      "Trimming segment readers until {} reader slots are free (current {})",
       target_free,
-      _reader_units.available_units());
+      _segment_reader_units.available_units());
 
     // We sort segments by their reader count before culling, to avoid unfairly
     // targeting whichever segments happen to be first in the list.
@@ -188,7 +209,8 @@ void materialized_resources::trim_readers(size_t target_free) {
     }
 
     for (auto i = candidates.rbegin();
-         i != candidates.rend() && _reader_units.current() < target_free;
+         i != candidates.rend()
+         && _segment_reader_units.current() < target_free;
          ++i) {
         auto& st = i->second.get();
 
@@ -202,13 +224,14 @@ void materialized_resources::trim_readers(size_t target_free) {
 
         // Readers hold a reference to the segment, so for the
         // segment.owned() check to pass, we need to clear them out.
-        while (!st.readers.empty() && _reader_units.current() < target_free) {
+        while (!st.readers.empty()
+               && _segment_reader_units.current() < target_free) {
             auto partition = st.parent;
             // TODO: consider asserting here instead: it's a bug for
             // 'partition' to be null, since readers outlive the partition, and
             // we can't create new readers if the partition has been shut down.
             if (likely(partition)) {
-                partition->evict_reader(std::move(st.readers.front()));
+                partition->evict_segment_reader(std::move(st.readers.front()));
             }
             st.readers.pop_front();
         }
@@ -332,7 +355,7 @@ void materialized_resources::maybe_trim_segment(
             // we can't create new readers if the partition has been shut down.
             auto partition = st.parent;
             if (likely(partition)) {
-                partition->evict_reader(std::move(st.readers.front()));
+                partition->evict_segment_reader(std::move(st.readers.front()));
             }
             st.readers.pop_front();
         }

@@ -178,9 +178,23 @@ remote_probe::remote_probe(
               .aggregate({sm::shard_label}),
             sm::make_gauge(
               "readers",
-              [&ms] { return ms.current_readers(); },
+              [&ms] { return ms.current_segment_readers(); },
+              sm::description("Number of segment read cursors for hydrated "
+                              "remote log segments"))
+              .aggregate({sm::shard_label}),
+            sm::make_gauge(
+              "partition_readers",
+              [&ms] { return ms.current_partition_readers(); },
               sm::description(
-                "Number of read cursors for hydrated remote log segments"))
+                "Number of partition reader instances (number of current "
+                "fetch/timequery requests reading from tiered storage)"))
+              .aggregate({sm::shard_label}),
+            sm::make_counter(
+              "partition_readers_delayed",
+              [&ms] { return ms.get_partition_readers_delayed(); },
+              sm::description("How many read requests were delayed due to "
+                              "hitting reader limit.  This indicates cluster "
+                              "is saturated with tiered storage reads."))
               .aggregate({sm::shard_label}),
             sm::make_counter(
               "segment_index_uploads_total",

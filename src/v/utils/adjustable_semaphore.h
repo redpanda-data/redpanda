@@ -95,8 +95,12 @@ public:
         return _capacity - available_units();
     }
 
+    void broken() noexcept { _sem.broken(); }
+
+    uint64_t capacity() { return _capacity; }
+
 private:
     ssx::semaphore _sem;
 
-    uint64_t _capacity;
+    uint64_t _capacity{0};
 };
