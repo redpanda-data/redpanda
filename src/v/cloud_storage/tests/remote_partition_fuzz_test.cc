@@ -313,10 +313,8 @@ FIXTURE_TEST(
           *this, base, max, 0, 20, 20);
         model::offset expected_offset{0};
         size_t ix_header = 0;
-        for (size_t ix_seg = 0; ix_seg < segment_layout.size(); ix_seg++) {
-            for (size_t ix_batch = 0; ix_batch < segment_layout[ix_seg].size();
-                 ix_batch++) {
-                auto batch = segment_layout[ix_seg][ix_batch];
+        for (const auto& ix_seg : segment_layout) {
+            for (const auto& batch : ix_seg) {
                 if (batch.type == model::record_batch_type::tx_fence) {
                     expected_offset++;
                 } else if (batch.type == model::record_batch_type::raft_data) {
