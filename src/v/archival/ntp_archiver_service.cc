@@ -1609,15 +1609,18 @@ ss::future<ntp_archiver::upload_group_result> ntp_archiver::wait_uploads(
                        - (total.num_succeeded + total.num_cancelled);
 
     std::vector<cloud_storage::segment_meta> mdiff;
-    std::optional<model::offset_delta> delta_offset_top;
+    std::optional<model::offset_delta> delta_offset_end;
     std::optional<model::offset> last_offset;
     auto last_segment = manifest().last_segment();
     if (
       last_segment.has_value()
       && last_segment->delta_offset_end != model::offset_delta{}) {
-        delta_offset_top = last_segment->delta_offset_end;
+        delta_offset_end = last_segment->delta_offset_end;
         last_offset = last_segment->committed_offset;
     }
+    const bool checks_disabled
+      = config::shard_local_cfg()
+          .cloud_storage_disable_upload_consistency_checks.value();
     for (size_t i = 0; i < segment_results.size(); i++) {
         if (
           segment_results[i].result()
@@ -1625,7 +1628,7 @@ ss::future<ntp_archiver::upload_group_result> ntp_archiver::wait_uploads(
             break;
         }
         const auto& upload = scheduled[ixupload[i]];
-        if (segment_results[i].has_record_stats()) {
+        if (!checks_disabled && segment_results[i].has_record_stats()) {
             // Validate metadata by comparing it to the segment stats
             // generated during index building process. The stats contains
             // "ground truth" about the uploaded segment because the code that
@@ -1659,25 +1662,25 @@ ss::future<ntp_archiver::upload_group_result> ntp_archiver::wait_uploads(
             }
         }
         if (
-          segment_kind == segment_upload_kind::non_compacted
+          !checks_disabled && segment_kind == segment_upload_kind::non_compacted
           && upload.meta.has_value() && last_offset.has_value()
           && upload.meta->base_offset > last_offset.value()) {
             // This code block is executed only for non-compacted uploads
             // which are adding new segments and not replacing existing
             // ones.
             if (
-              delta_offset_top.has_value() && upload.meta.has_value()
-              && upload.meta->delta_offset != delta_offset_top) {
+              delta_offset_end.has_value() && upload.meta.has_value()
+              && upload.meta->delta_offset != delta_offset_end) {
                 vlog(
                   _rtclog.error,
                   "Delta offset of the uploaded segment {} doesn't match "
                   "with expected value of {}",
                   upload.meta->delta_offset,
-                  delta_offset_top);
+                  delta_offset_end);
                 _probe->gap_detected(last_offset.value());
                 break;
             } else {
-                delta_offset_top = upload.meta->delta_offset_end;
+                delta_offset_end = upload.meta->delta_offset_end;
             }
             if (
               last_offset.has_value() && upload.meta.has_value()

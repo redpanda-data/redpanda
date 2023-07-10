@@ -991,7 +991,10 @@ model::offset archival_metadata_stm::max_collectible_offset() {
 
 void archival_metadata_stm::apply_add_segment(const segment& segment) {
     auto meta = segment.meta;
-    if (!_manifest->safe_segment_meta_to_add(meta)) {
+    bool disable_safe_add
+      = config::shard_local_cfg()
+          .cloud_storage_disable_upload_consistency_checks.value();
+    if (!disable_safe_add && !_manifest->safe_segment_meta_to_add(meta)) {
         auto last = _manifest->last_segment();
         vlog(
           _logger.warn,
