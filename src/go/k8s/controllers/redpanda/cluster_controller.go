@@ -155,21 +155,27 @@ func (r *ClusterReconciler) Reconcile(
 	ar.headlessService()
 	ar.ingress()
 	ar.nodeportService()
+	if err := ar.pki(); err != nil {
+		return ctrl.Result{}, err
+	}
 	pki, err := ar.getPKI()
 	if err != nil {
-		return ctrl.Result{}, fmt.Errorf("creating pki: %w", err)
+		return ctrl.Result{}, fmt.Errorf("getting pki: %w", err)
 	}
 	ar.podDisruptionBudget()
+	ar.proxySuperuser()
+	ar.schemaRegistrySuperUser()
 	ar.serviceAccount()
 	ar.secret()
+
 	var secrets []types.NamespacedName
 	if ar.getProxySuperuser() != nil {
 		secrets = append(secrets, ar.getProxySuperUserKey())
 	}
-
 	if ar.getSchemaRegistrySuperUser() != nil {
 		secrets = append(secrets, ar.getSchemaRegistrySuperUserKey())
 	}
+
 	if err = ar.configMap(); err != nil {
 		return ctrl.Result{}, fmt.Errorf("creating configmap: %w", err)
 	}
@@ -362,7 +368,7 @@ func (r *ClusterReconciler) handlePodFinalizer(
 
 		pki, err := ar.getPKI()
 		if err != nil {
-			return err
+			return fmt.Errorf("getting pki: %w", err)
 		}
 
 		adminClient, err := r.AdminAPIClientFactory(ctx, r.Client, rp, ar.getHeadlessServiceFQDN(), pki.AdminAPIConfigProvider())
@@ -513,7 +519,7 @@ func (r *ClusterReconciler) decommissionBroker(
 
 	pki, err := ar.getPKI()
 	if err != nil {
-		return err
+		return fmt.Errorf("getting pki: %w", err)
 	}
 
 	adminClient, err := r.AdminAPIClientFactory(ctx, r.Client, rp, ar.getHeadlessServiceFQDN(), pki.AdminAPIConfigProvider())
@@ -531,7 +537,7 @@ func (r *ClusterReconciler) decommissionBroker(
 func (r *ClusterReconciler) fetchAdminNodeID(ctx context.Context, rp *vectorizedv1alpha1.Cluster, pod *corev1.Pod, ar *attachedResources) (int32, error) {
 	pki, err := ar.getPKI()
 	if err != nil {
-		return -1, fmt.Errorf("creating pki: %w", err)
+		return -1, fmt.Errorf("getting pki: %w", err)
 	}
 
 	ordinal, err := utils.GetPodOrdinal(pod.Name, rp.Name)
@@ -1227,7 +1233,7 @@ func (a *attachedResources) configMap() error {
 
 	err := a.pki()
 	if err != nil {
-		return fmt.Errorf("creating pki: %w", err)
+		return err
 	}
 	pki := a.items[pki].(*certmanager.PkiReconciler)
 
@@ -1286,7 +1292,14 @@ func (a *attachedResources) ingress() {
 		pandaProxyIngressConfig = proxyAPIExternal.External.Ingress
 	}
 
-	a.items[ingress] = resources.NewIngress(a.reconciler.Client, a.cluster, a.reconciler.Scheme, subdomain, clusterServiceName, resources.PandaproxyPortExternalName, a.log).WithAnnotations(map[string]string{resources.SSLPassthroughAnnotation: "true"}).WithUserConfig(pandaProxyIngressConfig)
+	a.items[ingress] = resources.NewIngress(
+		a.reconciler.Client,
+		a.cluster,
+		a.reconciler.Scheme,
+		subdomain,
+		clusterServiceName,
+		resources.PandaproxyPortExternalName,
+		a.log).WithAnnotations(map[string]string{resources.SSLPassthroughAnnotation: "true"}).WithUserConfig(pandaProxyIngressConfig)
 }
 
 func (a *attachedResources) nodeportService() {
