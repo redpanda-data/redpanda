@@ -845,6 +845,7 @@ ss::future<> disk_log_impl::retention_adjust_timestamps(
     auto ignore_threshold = model::timestamp(
       model::timestamp::now().value() + ignore_in_future / 1ms);
 
+    fragmented_vector<segment_set::type> segs_all_bogus;
     for (const auto& s : _segs) {
         auto max_ts = s->index().retention_timestamp();
 
@@ -869,21 +870,9 @@ ss::future<> disk_log_impl::retention_adjust_timestamps(
                   s->path().string());
                 s->index().set_retention_timestamp(alternate_batch_ts.value());
             } else {
-                // No indexed batch in the segment has a usable timestamp: fall
-                // back to using the mtime of the file.  This is not accurate
-                // at all (the file might have been created long
-                // after the data was written) but is better than nothing.
-                auto file_timestamp = co_await s->get_file_timestamp();
-                vlog(
-                  gclog.warn,
-                  "[{}] Timestamp in future detected, check client clocks.  "
-                  "Adjusting retention timestamp from {} to file mtime {} on "
-                  "{}",
-                  config().ntp(),
-                  max_ts,
-                  file_timestamp,
-                  s->path().string());
-                s->index().set_retention_timestamp(file_timestamp);
+                // Collect segments with all bogus segments. We'll adjust them
+                // below.
+                segs_all_bogus.emplace_back(s);
             }
         } else {
             // We may drop out as soon as we see a segment with a valid
@@ -893,6 +882,26 @@ ss::future<> disk_log_impl::retention_adjust_timestamps(
             // this earlier segment has  been collected.
             break;
         }
+    }
+    // Doing this outside the main loop since it incurs a scheduling point, and
+    // segs_all_bogus is guaranteed to be stable, unlike _segs.
+    for (const auto& s : segs_all_bogus) {
+        // No indexed batch in the segment has a usable timestamp: fall
+        // back to using the mtime of the file.  This is not accurate
+        // at all (the file might have been created long
+        // after the data was written) but is better than nothing.
+        auto max_ts = s->index().retention_timestamp();
+        auto file_timestamp = co_await s->get_file_timestamp();
+        vlog(
+          gclog.warn,
+          "[{}] Timestamp in future detected, check client clocks.  "
+          "Adjusting retention timestamp from {} to file mtime {} on "
+          "{}",
+          config().ntp(),
+          max_ts,
+          file_timestamp,
+          s->path().string());
+        s->index().set_retention_timestamp(file_timestamp);
     }
 }
 
