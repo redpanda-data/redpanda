@@ -3303,6 +3303,13 @@ void rm_stm::setup_metrics() {
       prometheus_sanitize::metrics_name("tx:partition"),
       {
         sm::make_gauge(
+          "idempotency_pid_cache_size",
+          [this] { return _log_state.seq_table.size(); },
+          sm::description(
+            "Number of active producers (known producer_id seq number pairs)."),
+          labels)
+          .aggregate(aggregate_labels),
+        sm::make_gauge(
           "idempotency_num_pids_inflight",
           [this] { return _inflight_requests.size(); },
           sm::description(
