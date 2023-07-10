@@ -116,7 +116,7 @@ private:
     ss::future<> do_write_raft_snapshot(model::offset);
     ss::future<> write_raft_snapshots_in_background();
     ss::future<> apply(model::record_batch) override;
-    ss::future<> handle_eviction() override;
+    ss::future<> handle_raft_snapshot() override;
 
     ss::future<offset_result> replicate_command(
       model::record_batch batch,

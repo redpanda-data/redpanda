@@ -39,7 +39,7 @@ void state_machine::set_next(model::offset offset) {
     _waiters.notify(model::prev_offset(offset));
 }
 
-ss::future<> state_machine::handle_eviction() {
+ss::future<> state_machine::handle_raft_snapshot() {
     vlog(
       _log.warn,
       "{} state_machine should support handle_eviction",
@@ -78,6 +78,15 @@ state_machine::batch_applicator::operator()(model::record_batch batch) {
         return ss::make_ready_future<ss::stop_iteration>(
           ss::stop_iteration::yes);
     }
+
+    const auto committed_offset = _machine->_raft->committed_offset();
+    vassert(
+      batch.last_offset() <= committed_offset,
+      "Can not apply not committed batches to stm [{}]. Applied batch "
+      "header: {}, raft committed offset: {}",
+      _machine->_raft->ntp(),
+      batch.header(),
+      committed_offset);
 
     auto last_offset = batch.last_offset();
     return _machine->apply(std::move(batch)).then([this, last_offset] {
@@ -123,12 +132,17 @@ ss::future<> state_machine::apply() {
       .then([this] {
           auto f = ss::now();
           if (_next < _raft->start_offset()) {
-              f = handle_eviction();
+              f = handle_raft_snapshot();
           }
           return f.then([this] {
-              // build a reader for log range [_next, +inf).
+              /**
+               * Raft make_reader method allows callers reading up to
+               * last_visible index. In order to make the STMs safe and working
+               * with the raft semantics (i.e. what is applied must be comitted)
+               * we have to limit reading to the committed offset.
+               */
               storage::log_reader_config config(
-                _next, model::model_limits<model::offset>::max(), _io_prio);
+                _next, _raft->committed_offset(), _io_prio);
               return _raft->make_reader(config);
           });
       })

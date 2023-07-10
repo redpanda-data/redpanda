@@ -800,7 +800,7 @@ ss::future<> archival_metadata_stm::apply(model::record_batch b) {
     _manifest->advance_insync_offset(b.last_offset());
 }
 
-ss::future<> archival_metadata_stm::handle_eviction() {
+ss::future<> archival_metadata_stm::handle_raft_snapshot() {
     cloud_storage::partition_manifest new_manifest{
       _manifest->get_ntp(), _manifest->get_revision_id()};
 
