@@ -85,6 +85,31 @@ cache_probe::cache_probe() {
                     "High watermark of number of objects in cache."))
                   .aggregate(aggregate_labels),
               });
+
+            _public_metrics.add_group(
+              prometheus_sanitize::metrics_name("cloud_storage_cache_trim"),
+              {
+                sm::make_counter(
+                  "fast_trims",
+                  [this] { return _fast_trims; },
+                  sm::description("Number of times we have trimmed the cache "
+                                  "using the normal (fast) mode."))
+                  .aggregate(aggregate_labels),
+                sm::make_counter(
+                  "exhaustive_trims",
+                  [this] { return _exhaustive_trims; },
+                  sm::description(
+                    "Number of times we couldn't free enough space with a fast "
+                    "trim and had to fall back to a slower exhaustive trim."))
+                  .aggregate(aggregate_labels),
+                sm::make_counter(
+                  "failed_trims",
+                  [this] { return _failed_trims; },
+                  sm::description(
+                    "Number of times could not free the expected amount of "
+                    "space, indicating possible bug or configuration issue."))
+                  .aggregate(aggregate_labels),
+              });
         }
 
         // Put/get stats are local to each shard.

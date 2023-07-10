@@ -37,6 +37,10 @@ public:
     void put_started() { ++_cur_in_progress_files; }
     void put_ended() { --_cur_in_progress_files; }
 
+    void fast_trim() { ++_fast_trims; }
+    void exhaustive_trim() { ++_exhaustive_trims; }
+    void failed_trim() { ++_failed_trims; }
+
 private:
     uint64_t _num_puts = 0;
     uint64_t _num_gets = 0;
@@ -48,6 +52,10 @@ private:
     int64_t _cur_num_files = 0;
     int64_t _hwm_num_files = 0;
     int64_t _cur_in_progress_files = 0;
+
+    int64_t _fast_trims{0};
+    int64_t _exhaustive_trims{0};
+    int64_t _failed_trims{0};
 
     ss::metrics::metric_groups _metrics;
     ss::metrics::metric_groups _public_metrics{

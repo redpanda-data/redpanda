@@ -227,7 +227,17 @@ ss::future<> cache::trim_throttled() {
     co_await trim();
 }
 
-ss::future<> cache::trim() {
+ss::future<> cache::trim_manually(
+  std::optional<uint64_t> size_limit_override,
+  std::optional<size_t> object_limit_override) {
+    vassert(ss::this_shard_id() == 0, "Method can only be invoked on shard 0");
+    auto units = co_await ss::get_units(_cleanup_sm, 1);
+    co_return co_await trim(size_limit_override, object_limit_override);
+}
+
+ss::future<> cache::trim(
+  std::optional<uint64_t> size_limit_override,
+  std::optional<size_t> object_limit_override) {
     vassert(ss::this_shard_id() == 0, "Method can only be invoked on shard 0");
     gate_guard guard{_gate};
     auto [walked_cache_size, filtered_out_files, candidates_for_deletion, _]
@@ -242,15 +252,18 @@ ss::future<> cache::trim() {
     // from cache directory by the user manually.
     co_await _access_time_tracker.trim(candidates_for_deletion);
 
+    auto size_limit = size_limit_override.value_or(_max_bytes());
+    auto object_limit = object_limit_override.value_or(_max_objects());
+
     // We aim to trim to within the upper size limit, and additionally
     // free enough space for anyone waiting in `reserve_space` to proceed
     auto target_size = uint64_t(
-      (_max_bytes() - std::min(_reservations_pending, _max_bytes())));
+      (size_limit - std::min(_reservations_pending, size_limit)));
 
-    size_t target_objects = static_cast<size_t>(_max_objects())
+    size_t target_objects = static_cast<size_t>(object_limit)
                             - std::min(
                               _reservations_pending_objects,
-                              static_cast<size_t>(_max_objects()));
+                              static_cast<size_t>(object_limit));
 
     // Apply _cache_size_low_watermark to the size and/or the object count,
     // depending on which is currently the limiting factor for the trim.
@@ -295,8 +308,8 @@ ss::future<> cache::trim() {
       _current_cache_size,
       _current_cache_objects,
       walked_cache_size,
-      _max_bytes(),
-      _max_objects(),
+      size_limit,
+      object_limit,
       _reserved_cache_size,
       _reserved_cache_objects,
       _reservations_pending,
@@ -326,17 +339,26 @@ ss::future<> cache::trim() {
 
     vlog(
       cst_log.debug,
-      "trim: removing {} bytes, {} objects ({}% of cache) to reach target "
-      "{}",
+      "trim: removing {}/{} bytes, {}/{} objects ({}% of cache) to reach "
+      "target {} (tmp size {})",
       size_to_delete,
+      _current_cache_size,
       objects_to_delete,
+      _current_cache_objects,
       _current_cache_size > 0 ? (size_to_delete * 100) / _current_cache_size
                               : 0,
-      target_size);
+      target_size,
+      tmp_files_size);
 
     // Execute the ordinary trim, prioritize removing
     auto fast_result = co_await trim_fast(
-      candidates_for_deletion, target_size, target_objects);
+      candidates_for_deletion, size_to_delete, objects_to_delete);
+
+    // Subsequent calculations require knowledge of how much data cannot
+    // possibly be deleted (because all trims skip it) in order to decide
+    // whether the trim worked properly.
+    static constexpr size_t undeletable_objects = 1;
+    auto undeletable_bytes = (co_await access_time_tracker_size()).value_or(0);
 
     // We aim to keep current_cache_size continuously up to date, but
     // in case of housekeeping issues, correct it if it apepars to have
@@ -346,7 +368,7 @@ ss::future<> cache::trim() {
     // updated while the walk is happening.
     uint64_t cache_size_lower_bound = walked_cache_size
                                       - fast_result.deleted_size
-                                      - tmp_files_size;
+                                      - tmp_files_size - undeletable_bytes;
     if (_current_cache_size < cache_size_lower_bound) {
         vlog(
           cst_log.debug,
@@ -364,10 +386,11 @@ ss::future<> cache::trim() {
 
     vlog(
       cst_log.debug,
-      "trim: deleted {}/{} files of total size {}.",
+      "trim: deleted {}/{} files of total size {}.  Undeletable size {}.",
       fast_result.deleted_count,
       cache_entries_before_trim,
-      fast_result.deleted_size);
+      fast_result.deleted_size,
+      undeletable_bytes);
 
     _total_cleaned += fast_result.deleted_size;
     probe.set_size(_current_cache_size);
@@ -375,14 +398,42 @@ ss::future<> cache::trim() {
 
     size_to_delete -= std::min(fast_result.deleted_size, size_to_delete);
     objects_to_delete -= std::min(fast_result.deleted_count, objects_to_delete);
-    if (size_to_delete > 0 || objects_to_delete > 0) {
+
+    // Before we (maybe) proceed to do an exhaustive trim, make sure we're not
+    // trying to trim more data than was physically seen while walking the
+    // cache.
+    size_to_delete = std::min(
+      walked_cache_size - fast_result.deleted_size, size_to_delete);
+    objects_to_delete = std::min(
+      candidates_for_deletion.size() - fast_result.deleted_count,
+      objects_to_delete);
+
+    if (
+      size_to_delete > undeletable_bytes
+      || objects_to_delete > undeletable_objects) {
         vlog(
           cst_log.info,
-          "trim: regular trim did not free enough space, executing exhaustive "
+          "trim: fast trim did not free enough space, executing exhaustive "
           "trim to free {}/{}...",
           size_to_delete,
           objects_to_delete);
-        co_await trim_exhaustive(size_to_delete, objects_to_delete);
+
+        auto exhaustive_result = co_await trim_exhaustive(
+          size_to_delete, objects_to_delete);
+        size_to_delete -= std::min(
+          exhaustive_result.deleted_size, size_to_delete);
+        objects_to_delete -= std::min(
+          exhaustive_result.deleted_count, objects_to_delete);
+        if ((size_to_delete > undeletable_bytes
+             || objects_to_delete > undeletable_objects)) {
+            vlog(
+              cst_log.error,
+              "trim: failed to free sufficient space in exhaustive trim, {} "
+              "bytes, {} objects still require deletion",
+              size_to_delete,
+              objects_to_delete);
+            probe.failed_trim();
+        }
     }
 
     vlog(
@@ -406,6 +457,8 @@ ss::future<cache::trim_result> cache::trim_fast(
   const fragmented_vector<file_list_item>& candidates,
   uint64_t size_to_delete,
   size_t objects_to_delete) {
+    probe.fast_trim();
+
     trim_result result;
 
     size_t candidate_i = 0;
@@ -414,19 +467,12 @@ ss::future<cache::trim_result> cache::trim_fast(
       && (result.deleted_size < size_to_delete || result.deleted_count < objects_to_delete)) {
         auto& file_stat = candidates[candidate_i++];
 
-        // Skip the accesstime file, we should never delete this.
-        if (
-          file_stat.path
-            == (_cache_dir / access_time_tracker_file_name).string()
-          || file_stat.path
-               == (_cache_dir / access_time_tracker_file_name_tmp).string()) {
-            candidate_i++;
+        if (is_trim_exempt(file_stat.path)) {
             continue;
         }
 
         // skip tmp files since someone may be writing to it
         if (std::string_view(file_stat.path).ends_with(tmp_extension)) {
-            candidate_i++;
             continue;
         }
 
@@ -436,7 +482,6 @@ ss::future<cache::trim_result> cache::trim_fast(
         if (
           std::string_view(file_stat.path).ends_with(".tx")
           || std::string_view(file_stat.path).ends_with(".index")) {
-            candidate_i++;
             continue;
         }
 
@@ -528,20 +573,41 @@ ss::future<cache::trim_result> cache::trim_fast(
               file_stat.path,
               e.what());
         }
-        candidate_i++;
     }
 
     co_return result;
 }
 
+bool cache::is_trim_exempt(const ss::sstring& path) const {
+    if (
+      path == (_cache_dir / access_time_tracker_file_name).string()
+      || path == (_cache_dir / access_time_tracker_file_name_tmp).string()) {
+        return true;
+    }
+
+    return false;
+}
+
 ss::future<cache::trim_result>
 cache::trim_exhaustive(uint64_t size_to_delete, size_t objects_to_delete) {
+    probe.exhaustive_trim();
     trim_result result;
 
     // Enumerate ALL files in the cache (as opposed to trim_fast that strips out
     // indices/tx/tmp files)
     auto [walked_cache_size, _filtered_out, candidates, _]
       = co_await _walker.walk(_cache_dir.native(), _access_time_tracker);
+
+    vlog(
+      cst_log.debug,
+      "trim: exhaustive trim of {} candidates, walked size {} (cache size "
+      "{}/{}), {}/{} to delete",
+      candidates.size(),
+      walked_cache_size,
+      _current_cache_size,
+      _current_cache_objects,
+      size_to_delete,
+      objects_to_delete);
 
     // Sort by atime
     std::sort(candidates.begin(), candidates.end(), [](auto& a, auto& b) {
@@ -554,13 +620,7 @@ cache::trim_exhaustive(uint64_t size_to_delete, size_t objects_to_delete) {
       && (result.deleted_size < size_to_delete || result.deleted_count < objects_to_delete)) {
         auto& file_stat = candidates[candidate_i++];
 
-        // Skip the accesstime file, we should never delete this.
-        if (
-          file_stat.path
-            == (_cache_dir / access_time_tracker_file_name).string()
-          || file_stat.path
-               == (_cache_dir / access_time_tracker_file_name_tmp).string()) {
-            candidate_i++;
+        if (is_trim_exempt(file_stat.path)) {
             continue;
         }
 
@@ -601,6 +661,19 @@ cache::trim_exhaustive(uint64_t size_to_delete, size_t objects_to_delete) {
     }
 
     co_return result;
+}
+
+ss::future<std::optional<uint64_t>> cache::access_time_tracker_size() const {
+    auto path = _cache_dir / access_time_tracker_file_name;
+    try {
+        co_return static_cast<uint64_t>(co_await ss::file_size(path.string()));
+    } catch (std::filesystem::filesystem_error& e) {
+        if (e.code() == std::errc::no_such_file_or_directory) {
+            co_return std::nullopt;
+        } else {
+            throw;
+        }
+    }
 }
 
 ss::future<> cache::load_access_time_tracker() {

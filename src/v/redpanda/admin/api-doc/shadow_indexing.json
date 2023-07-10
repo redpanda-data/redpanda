@@ -164,6 +164,19 @@
           ]
         }
       ]
+    },
+    {
+      "path": "/v1/cloud_storage/cache/trim",
+      "operations": [
+        {
+          "method": "POST",
+          "summary": "Invoke trimming on the local cache of tiered storage objects",
+          "operationId": "cloud_storage_cache_trim",
+          "nickname": "post_cloud_storage_cache_trim",
+          "parameters": [
+          ]
+        }
+      ]
     }
   ],
   "models": {

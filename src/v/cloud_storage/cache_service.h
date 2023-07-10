@@ -165,6 +165,13 @@ public:
 
     uint64_t get_usage_bytes() { return _current_cache_size; }
 
+    /// Administrative trim, that specifies its own limits instead of using
+    /// the configured limits (skips throttling, and can e.g. trim to zero bytes
+    /// if they want to)
+    ss::future<> trim_manually(
+      std::optional<uint64_t> size_limit_override,
+      std::optional<size_t> object_limit_override);
+
 private:
     /// Load access time tracker from file
     ss::future<> load_access_time_tracker();
@@ -178,7 +185,9 @@ private:
 
     /// Triggers directory walker, creates a list of files to delete and deletes
     /// them until cache size <= _cache_size_low_watermark * max_bytes
-    ss::future<> trim();
+    ss::future<> trim(
+      std::optional<uint64_t> size_limit_override = std::nullopt,
+      std::optional<size_t> object_limit_override = std::nullopt);
 
     struct trim_result {
         uint64_t deleted_size{0};
@@ -204,6 +213,12 @@ private:
 
     /// Invoke trim, waiting if not enough time passed since the last trim
     ss::future<> trim_throttled();
+
+    /// Whether an objects path makes it impervious to pinning, like
+    /// the access time tracker.
+    bool is_trim_exempt(const ss::sstring&) const;
+
+    ss::future<std::optional<uint64_t>> access_time_tracker_size() const;
 
     /// Triggers directory walker, creates a list of files to delete and deletes
     /// only tmp files that are left from previous Red Panda run
