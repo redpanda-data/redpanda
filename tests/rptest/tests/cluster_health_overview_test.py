@@ -39,9 +39,27 @@ class ClusterHealthOverviewTest(RedpandaTest):
 
         self.client().create_topic(topics)
 
+    def get_health(self):
+        """Wrapper around admin.get_cluster_health_overview which validates some invariants
+        about each health report"""
+
+        hov = self.admin.get_cluster_health_overview()
+
+        # these invariants should always hold
+        if hov['is_healthy']:
+            assert len(hov['nodes_down']) == 0
+            assert len(hov['leaderless_partitions']) == 0
+            assert len(hov['under_replicated_partitions']) == 0
+            assert len(hov['unhealthy_reasons']) == 0
+            assert len(hov['all_nodes']) > 0
+        else:
+            assert len(hov['unhealthy_reasons']) > 0
+
+        return hov
+
     def wait_until_healthy(self):
         def is_healthy():
-            res = self.admin.get_cluster_health_overview()
+            res = self.get_health()
             return res['is_healthy'] == True and len(res['all_nodes']) == 5
 
         wait_until(is_healthy, 30, 2)
@@ -60,9 +78,15 @@ class ClusterHealthOverviewTest(RedpandaTest):
         self.redpanda.stop_node(first_down)
 
         def one_node_down():
-            hov = self.admin.get_cluster_health_overview()
-            return not hov['is_healthy'] and [self.redpanda.idx(first_down)
-                                              ] == hov['nodes_down']
+            hov = self.get_health()
+            if not hov['is_healthy']:
+                # when the health report flips to not healthy, we check that
+                # the expected node is reported as down and unhealthy reasons line up
+                assert [self.redpanda.idx(first_down)] == hov['nodes_down']
+                # next check is "in" instead of "==" because we may also have under_replicated_partitions
+                assert 'nodes_down' in hov['unhealthy_reasons']
+                return True
+            return False
 
         wait_until(one_node_down, 30, 2)
 
@@ -76,12 +100,15 @@ class ClusterHealthOverviewTest(RedpandaTest):
         self.redpanda.stop_node(second_down)
 
         def two_nodes_down():
-            hov = self.admin.get_cluster_health_overview()
+            hov = self.get_health()
             if hov['is_healthy'] or len(hov['nodes_down']) != 2:
                 return False
 
             if len(hov['leaderless_partitions']) == 0:
                 return False
+
+            assert 'leaderless_partitions' in hov['unhealthy_reasons']
+
             return True
 
         wait_until(two_nodes_down, 30, 2)
