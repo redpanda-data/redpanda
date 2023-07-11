@@ -310,6 +310,10 @@ uint64_t persisted_stm<T>::get_snapshot_size() const {
 template<supported_stm_snapshot T>
 ss::future<>
 persisted_stm<T>::ensure_snapshot_exists(model::offset target_offset) {
+    vlog(
+      _log.debug,
+      "ensure snapshot_exists with target offset: {}",
+      target_offset);
     return _op_lock.with([this, target_offset]() {
         auto f = wait_for_snapshot_hydrated();
 
