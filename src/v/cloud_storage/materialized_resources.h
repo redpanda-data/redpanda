@@ -72,9 +72,11 @@ private:
 
     config::binding<uint32_t> _max_partitions_per_shard;
     config::binding<std::optional<uint32_t>> _max_segment_readers_per_shard;
+    config::binding<std::optional<uint32_t>> _max_partition_readers_per_shard;
     config::binding<std::optional<uint32_t>> _max_segments_per_shard;
 
-    size_t max_readers() const;
+    size_t max_segment_readers() const;
+    size_t max_partition_readers() const;
     size_t max_segments() const;
 
     /// How many remote_segment_batch_reader instances exist

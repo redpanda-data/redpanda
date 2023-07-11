@@ -48,24 +48,30 @@ materialized_resources::materialized_resources()
   , _max_segment_readers_per_shard(
       config::shard_local_cfg()
         .cloud_storage_max_segment_readers_per_shard.bind())
+  , _max_partition_readers_per_shard(
+      config::shard_local_cfg()
+        .cloud_storage_max_partition_readers_per_shard.bind())
   , _max_segments_per_shard(
       config::shard_local_cfg()
         .cloud_storage_max_materialized_segments_per_shard.bind())
-  , _segment_reader_units(max_readers(), "cst_segment_reader")
-  , _partition_reader_units(max_readers(), "cst_partition_reader")
+  , _segment_reader_units(max_segment_readers(), "cst_segment_reader")
+  , _partition_reader_units(max_partition_readers(), "cst_partition_reader")
   , _segment_units(max_segments(), "cst_segment")
   , _manifest_meta_size(
       config::shard_local_cfg().cloud_storage_manifest_cache_size.bind())
   , _manifest_cache(ss::make_shared<materialized_manifest_cache>(
       config::shard_local_cfg().cloud_storage_manifest_cache_size())) {
     _max_segment_readers_per_shard.watch(
-      [this]() { _segment_reader_units.set_capacity(max_readers()); });
-    _max_segment_readers_per_shard.watch(
-      [this]() { _partition_reader_units.set_capacity(max_readers()); });
+      [this]() { _segment_reader_units.set_capacity(max_segment_readers()); });
+    _max_partition_readers_per_shard.watch([this]() {
+        _partition_reader_units.set_capacity(max_partition_readers());
+    });
     _max_segments_per_shard.watch(
       [this]() { _segment_units.set_capacity(max_segments()); });
-    _max_partitions_per_shard.watch(
-      [this]() { _segment_reader_units.set_capacity(max_readers()); });
+    _max_partitions_per_shard.watch([this]() {
+        _segment_reader_units.set_capacity(max_segment_readers());
+        _partition_reader_units.set_capacity(max_partition_readers());
+    });
     _manifest_meta_size.watch([this] {
         ssx::background = ss::with_gate(_gate, [this] {
             vlog(
@@ -110,8 +116,13 @@ materialized_resources::get_materialized_manifest_cache() {
     return *_manifest_cache;
 }
 
-size_t materialized_resources::max_readers() const {
+size_t materialized_resources::max_segment_readers() const {
     return static_cast<size_t>(_max_segment_readers_per_shard().value_or(
+      _max_partitions_per_shard() * default_reader_factor));
+}
+
+size_t materialized_resources::max_partition_readers() const {
+    return static_cast<size_t>(_max_partition_readers_per_shard().value_or(
       _max_partitions_per_shard() * default_reader_factor));
 }
 
@@ -138,7 +149,7 @@ void materialized_resources::register_segment(materialized_segment_state& s) {
 
 ssx::semaphore_units materialized_resources::get_segment_reader_units() {
     if (_segment_reader_units.available_units() <= 0) {
-        trim_segment_readers(max_readers() / 2);
+        trim_segment_readers(max_segment_readers() / 2);
     }
 
     // TOOD: make this function async so that it can wait until we succeed
