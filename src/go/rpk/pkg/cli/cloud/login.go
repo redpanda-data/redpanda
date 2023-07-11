@@ -78,8 +78,10 @@ want to disable automatic profile creation and selection, use --no-profile.
 			y, err := cfg.ActualRpkYamlOrEmpty()
 			out.MaybeDie(err, "unable to load config: %v", err)
 			auth := y.Auth(y.CurrentCloudAuth)
-			cc := auth.HasClientCredentials()
-
+			var cc bool
+			if auth != nil {
+				cc = auth.HasClientCredentials()
+			}
 			_, err = oauth.LoadFlow(cmd.Context(), fs, cfg, auth0.NewClient(cfg.DevOverrides()))
 			if err != nil {
 				fmt.Printf("Unable to login to Redpanda Cloud (%v).\n", err)
@@ -101,7 +103,7 @@ and then re-specify the client credentials next time you log in.`)
 				return
 			}
 
-			msg, err := loginProfileFlow(cmd.Context(), fs, y, auth, cfg.DevOverrides().CloudAPIURL)
+			msg, err := loginProfileFlow(cmd.Context(), fs, cfg, cfg.DevOverrides().CloudAPIURL)
 			if err != nil {
 				fmt.Printf("Unable to create and switch to profile: %v\n", err)
 				fmt.Printf("Once any error is fixed, you can create a profile with\n")
@@ -118,7 +120,12 @@ and then re-specify the client credentials next time you log in.`)
 	return cmd
 }
 
-func loginProfileFlow(ctx context.Context, fs afero.Fs, y *config.RpkYaml, auth *config.RpkCloudAuth, overrideCloudURL string) (string, error) {
+func loginProfileFlow(ctx context.Context, fs afero.Fs, cfg *config.Config, overrideCloudURL string) (string, error) {
+	y, err := cfg.ActualRpkYamlOrEmpty()
+	if err != nil {
+		return "", fmt.Errorf("unable to load config: %v", err)
+	}
+	auth := y.Auth(y.CurrentCloudAuth)
 	// If our current profile is a cloud cluster, we exit.
 	// If one cloud profile exists, we switch to it.
 	// If two+ cloud profiles exist, we prompt the user to select one.
