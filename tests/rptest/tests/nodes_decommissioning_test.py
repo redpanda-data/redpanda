@@ -19,6 +19,7 @@ from rptest.tests.prealloc_nodes import PreallocNodesTest
 from rptest.utils.mode_checks import skip_debug_mode
 from rptest.util import wait_for_recovery_throttle_rate
 from rptest.clients.rpk import RpkTool
+from rptest.tests.redpanda_test import RedpandaTest
 from rptest.services.cluster import cluster
 from ducktape.utils.util import wait_until
 from ducktape.mark import parametrize
@@ -822,3 +823,109 @@ class NodesDecommissioningTest(PreallocNodesTest):
                                  auto_assign_node_id=new_bootstrap)
 
         assert len(self.admin.get_brokers(node=self.redpanda.nodes[0])) == 5
+
+
+class NodeDecommissionFailureReportingTest(RedpandaTest):
+    def __init__(self, *args, **kwargs):
+        super().__init__(
+            *args,
+            num_brokers=4,
+            extra_rp_conf={"partition_autobalancing_mode": "continuous"},
+            **kwargs)
+
+    def setUp(self):
+        pass
+
+    @cluster(num_nodes=4, log_allow_list=RESTART_LOG_ALLOW_LIST)
+    def test_allocation_failure_reporting(self):
+        """Checks allocation failures for replicas on decommission nodes is reported correctly."""
+
+        # Start all but one node
+        all_but_one = self.redpanda.nodes[:-1]
+        self.redpanda.set_seed_servers(all_but_one)
+        self.redpanda.start(nodes=all_but_one,
+                            auto_assign_node_id=True,
+                            omit_seeds_on_idx_one=False)
+
+        assert len(self.redpanda.started_nodes()) == 3, len(
+            self.redpanda.started_nodes())
+
+        spec = TopicSpec(partition_count=10, replication_factor=3)
+        self.client().create_topic(spec)
+
+        admin = self.redpanda._admin
+
+        to_decommission = self.redpanda.nodes[-2]
+        to_decommission_id = self.redpanda.node_id(to_decommission)
+
+        partitions_json = admin.get_partitions(topic=spec.name,
+                                               node=to_decommission)
+        partitions = set([
+            f"{p['ns']}/{p['topic']}/{p['partition_id']}"
+            for p in partitions_json
+        ])
+
+        assert len(partitions) == 10, partitions
+
+        def decommission(node_id, node=None):
+            def decommissioned():
+                try:
+                    results = []
+                    for n in all_but_one:
+                        if self.redpanda.node_id(n) == node_id:
+                            continue
+                        brokers = admin.get_brokers(node=n)
+                        for b in brokers:
+                            if b['node_id'] == node_id:
+                                results.append(
+                                    b['membership_status'] == 'draining')
+                    if all(results):
+                        return True
+                    admin.decommission_broker(node_id, node=node)
+                except requests.exceptions.RetryError:
+                    return False
+                except requests.exceptions.ConnectionError:
+                    return False
+                except requests.exceptions.HTTPError:
+                    return False
+
+            wait_until(decommissioned, 30, 1)
+
+        self.logger.info(f"decommissioning node: {to_decommission_id}")
+        decommission(to_decommission_id)
+
+        def wait_for_allocation_failures(failed_partitions):
+            def wait(node):
+                status = admin.get_decommission_status(to_decommission_id,
+                                                       node=node)
+                if "allocation_failures" not in status.keys():
+                    return False
+                alloc_failures = set(status["allocation_failures"])
+                self.logger.debug(
+                    f"alloc failures: {alloc_failures}, node: {node}")
+                return failed_partitions == alloc_failures
+
+            def check_all_nodes():
+                return all(wait(n) for n in self.redpanda.started_nodes())
+
+            self.logger.debug(
+                f"Waiting for allocation failures: {failed_partitions}")
+            wait_until(
+                check_all_nodes,
+                timeout_sec=60,
+                backoff_sec=1,
+                err_msg=
+                f"Timed out waiting for all nodes to report allocation failures"
+            )
+
+        wait_for_allocation_failures(failed_partitions=partitions)
+
+        # Start the last node, unblocks decommission
+        self.redpanda.start(nodes=[self.redpanda.nodes[-1]],
+                            auto_assign_node_id=True,
+                            omit_seeds_on_idx_one=False)
+        waiter = NodeDecommissionWaiter(self.redpanda,
+                                        to_decommission_id,
+                                        self.logger,
+                                        progress_timeout=60)
+        waiter.wait_for_removal()

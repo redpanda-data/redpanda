@@ -392,6 +392,7 @@ controller::start(cluster_discovery& discovery, ss::abort_source& shard0_as) {
             std::ref(_connections),
             std::ref(_hm_frontend),
             std::ref(_members_table),
+            std::ref(_partition_balancer),
             std::ref(_as));
       })
       .then([this] {

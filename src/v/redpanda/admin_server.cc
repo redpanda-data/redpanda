@@ -2399,6 +2399,11 @@ admin_server::get_decommission_progress_handler(
     ret.replicas_left = decommission_progress.replicas_left;
     ret.finished = decommission_progress.finished;
 
+    for (const auto& ntp : decommission_progress.allocation_failures) {
+        ret.allocation_failures.push(
+          fmt::format("{}/{}/{}", ntp.ns(), ntp.tp.topic(), ntp.tp.partition));
+    }
+
     for (auto& p : decommission_progress.current_reconfigurations) {
         ss::httpd::broker_json::partition_reconfiguration_status status;
         status.ns = p.ntp.ns;
