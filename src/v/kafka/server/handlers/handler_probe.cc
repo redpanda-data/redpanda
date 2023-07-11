@@ -33,6 +33,7 @@ handler_probe_manager::handler_probe_manager()
         auto key = api_key{i};
 
         if (handler_for_key(key) || i == unknown_handler_key) {
+            _probes[i].initialize();
             _probes[i].setup_metrics(_metrics, key);
         }
     }
@@ -101,6 +102,14 @@ void handler_probe::setup_metrics(
           [this] { return _bytes_sent; },
           sm::description("Number of bytes sent in kafka replies"),
           labels)
+          .aggregate(aggregate_labels),
+        sm::make_histogram(
+          "latency_seconds",
+          sm::description("Latency histogram of kafka requests"),
+          labels,
+          [this] {
+              return ssx::metrics::report_default_histogram(_latency.value());
+          })
           .aggregate(aggregate_labels),
       });
 }
