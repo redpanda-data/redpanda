@@ -539,12 +539,13 @@ void partition_manifest::flush_write_buffer() {
 }
 
 uint64_t partition_manifest::compute_cloud_log_size() const {
-    return std::transform_reduce(
-      find(_start_offset),
-      end(),
-      uint64_t{0},
-      std::plus{},
-      [](const auto& seg) { return seg.size_bytes; });
+    const auto& bo_col = _segments.get_base_offset_column();
+    const auto& sz_col = _segments.get_size_bytes_column();
+    auto it = bo_col.find(_start_offset);
+    if (it.is_end()) {
+        return 0;
+    }
+    return std::accumulate(sz_col.at_index(it.index()), sz_col.end(), 0);
 }
 
 uint64_t partition_manifest::cloud_log_size() const {
