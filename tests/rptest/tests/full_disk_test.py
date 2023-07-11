@@ -246,10 +246,11 @@ class FullDiskTest(EndToEndTest):
             self.full_disk.trigger_low_space()
 
             # confirm we were blocked from producing
-            not_producing = RateTarget(max_total_sec=40,
-                                       target_sec=5,
-                                       target_min_rate=0,
-                                       target_max_rate=1)
+            not_producing = RateTarget(
+                max_total_sec=40 if not self.debug_mode else 100,
+                target_sec=5,
+                target_min_rate=0,
+                target_max_rate=1)
             self.bytes_prod.expect_rate(not_producing)
 
             self.full_disk.clear_low_space()
