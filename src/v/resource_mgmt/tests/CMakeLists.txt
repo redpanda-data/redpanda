@@ -22,3 +22,11 @@ rp_test(
         SKIP_BUILD_TYPES "Debug"
         ARGS "-- -c1 -m1G"
 )
+
+rp_test(
+  UNIT_TEST
+  BINARY_NAME storage_resource_mgmt
+  SOURCES storage_test.cc
+  LIBRARIES v::seastar_testing_main v::storage_resource_mgmt v::config
+  LABELS resource_mgmt
+)
