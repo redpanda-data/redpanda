@@ -2308,10 +2308,14 @@ disk_log_impl::cloud_gc_eligible_segments() {
 }
 
 void disk_log_impl::set_cloud_gc_offset(model::offset offset) {
-    vassert(
-      is_cloud_retention_active(),
-      "Expected {} to have cloud retention enabled",
-      config().ntp());
+    if (!is_cloud_retention_active()) {
+        vlog(
+          stlog.debug,
+          "Ignoring request to set GC offset on non-cloud enabled partition "
+          "{}. Configuration may have recently changed.",
+          config().ntp());
+        return;
+    }
     _cloud_gc_offset = offset;
 }
 
