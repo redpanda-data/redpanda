@@ -47,7 +47,7 @@ class CloudStorageChunkReadTest(PreallocNodesTest):
         self.extra_rp_conf = {'cloud_storage_cache_chunk_size': 1024 * 256}
         if not self.redpanda.dedicated_nodes:
             self.extra_rp_conf.update(
-                {'cloud_storage_max_readers_per_shard': 10})
+                {'cloud_storage_max_segment_readers_per_shard': 10})
         self.redpanda.set_extra_rp_conf(self.extra_rp_conf)
 
     def setup(self):

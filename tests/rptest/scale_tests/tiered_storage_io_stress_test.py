@@ -63,7 +63,7 @@ class TieredStorageIoStressTest(PreallocNodesTest):
 
         # Set a modest reader concurrency limit to run safely on GB-per-core
         # test environments
-        extra_rp_conf['cloud_storage_max_readers_per_shard'] = 500
+        extra_rp_conf['cloud_storage_max_segment_readers_per_shard'] = 500
 
         super().__init__(test_context=test_context,
                          node_prealloc_count=1,

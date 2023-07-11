@@ -592,7 +592,7 @@ std::vector<model::record_batch_header> scan_remote_partition_incrementally(
             maybe_max_segments);
     }
     if (maybe_max_readers) {
-        config::shard_local_cfg().cloud_storage_max_readers_per_shard(
+        config::shard_local_cfg().cloud_storage_max_segment_readers_per_shard(
           maybe_max_readers);
     }
     auto manifest = hydrate_manifest(imposter.api.local(), bucket);
@@ -672,7 +672,7 @@ std::vector<model::record_batch_header> scan_remote_partition(
             maybe_max_segments);
     }
     if (maybe_max_readers) {
-        config::shard_local_cfg().cloud_storage_max_readers_per_shard(
+        config::shard_local_cfg().cloud_storage_max_segment_readers_per_shard(
           maybe_max_readers);
     }
     storage::log_reader_config reader_config(

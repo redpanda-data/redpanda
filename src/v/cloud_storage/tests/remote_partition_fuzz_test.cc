@@ -39,7 +39,7 @@ scan_remote_partition_incrementally_with_reuploads(
             maybe_max_segments);
     }
     if (maybe_max_readers) {
-        config::shard_local_cfg().cloud_storage_max_readers_per_shard(
+        config::shard_local_cfg().cloud_storage_max_segment_readers_per_shard(
           maybe_max_readers);
     }
     auto m = ss::make_lw_shared<cloud_storage::partition_manifest>(

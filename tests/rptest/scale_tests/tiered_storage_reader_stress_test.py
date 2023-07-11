@@ -47,7 +47,8 @@ class TieredStorageReaderStressTest(RedpandaTest):
             self.segment_upload_interval,
             'cloud_storage_manifest_max_upload_interval_sec':
             self.manifest_upload_interval,
-            'cloud_storage_max_readers_per_shard': self.readers_per_shard
+            'cloud_storage_max_segment_readers_per_shard':
+            self.readers_per_shard
         }
         super().__init__(test_context,
                          *args,

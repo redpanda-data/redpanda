@@ -1653,12 +1653,31 @@ configuration::configuration()
       "elapsed",
       {.visibility = visibility::tunable},
       5s)
-  , cloud_storage_max_readers_per_shard(
+  , cloud_storage_max_segment_readers_per_shard(
       *this,
-      "cloud_storage_max_readers_per_shard",
-      "Maximum concurrent readers of remote data per CPU core.  If unset, "
+      "cloud_storage_max_segment_readers_per_shard",
+      "Maximum concurrent I/O cursors of materialized remote segments per CPU "
+      "core.  If unset, "
+      "value of `topic_partitions_per_shard` is used, i.e. one segment reader "
+      "per "
+      "partition if the shard is at its maximum partition capacity.  These "
+      "readers are cached"
+      "across Kafka consume requests and store a readahead buffer.",
+      {.needs_restart = needs_restart::no,
+       .visibility = visibility::tunable,
+       .aliases = {"cloud_storage_max_readers_per_shard"}},
+      std::nullopt)
+  , cloud_storage_max_partition_readers_per_shard(
+      *this,
+      "cloud_storage_max_partition_readers_per_shard",
+      "Maximum concurrent partition readers of remote data per CPU core.  If "
+      "unset, "
       "value of `topic_partitions_per_shard` is used, i.e. one reader per "
-      "partition if the shard is at its maximum partition capacity.",
+      "partition if the shard is at its maximum partition capacity.  These "
+      "readers have the"
+      "lifetime of a Kafka consume request, so this property controls how many "
+      "consume"
+      "requests to remote data can make progress at the same time.",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       std::nullopt)
   , cloud_storage_max_materialized_segments_per_shard(
