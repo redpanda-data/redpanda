@@ -673,7 +673,7 @@ public:
         return it != _base_offset.end();
     }
 
-    bool empty() const { return size() == 0; }
+    bool empty() const { return _base_offset.empty(); }
 
     void serde_write(iobuf& out) {
         // hint_map_t (absl::btree_map) is not serde-enabled, it's serialized

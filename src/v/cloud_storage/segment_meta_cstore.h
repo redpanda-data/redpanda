@@ -645,6 +645,12 @@ public:
         return total;
     }
 
+    bool empty() const {
+        // short circuit at the first non empty frame
+        return std::ranges::all_of(
+          _frames, [](auto& f) { return f.size() == 0; });
+    }
+
     size_t mem_use() const {
         size_t total = 0;
         for (const auto& p : _frames) {
