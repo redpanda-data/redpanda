@@ -45,8 +45,9 @@ materialized_resources::materialized_resources()
   : _stm_jitter(stm_jitter_duration)
   , _max_partitions_per_shard(
       config::shard_local_cfg().topic_partitions_per_shard.bind())
-  , _max_readers_per_shard(
-      config::shard_local_cfg().cloud_storage_max_readers_per_shard.bind())
+  , _max_segment_readers_per_shard(
+      config::shard_local_cfg()
+        .cloud_storage_max_segment_readers_per_shard.bind())
   , _max_segments_per_shard(
       config::shard_local_cfg()
         .cloud_storage_max_materialized_segments_per_shard.bind())
@@ -57,9 +58,9 @@ materialized_resources::materialized_resources()
       config::shard_local_cfg().cloud_storage_manifest_cache_size.bind())
   , _manifest_cache(ss::make_shared<materialized_manifest_cache>(
       config::shard_local_cfg().cloud_storage_manifest_cache_size())) {
-    _max_readers_per_shard.watch(
+    _max_segment_readers_per_shard.watch(
       [this]() { _segment_reader_units.set_capacity(max_readers()); });
-    _max_readers_per_shard.watch(
+    _max_segment_readers_per_shard.watch(
       [this]() { _partition_reader_units.set_capacity(max_readers()); });
     _max_segments_per_shard.watch(
       [this]() { _segment_units.set_capacity(max_segments()); });
@@ -110,7 +111,7 @@ materialized_resources::get_materialized_manifest_cache() {
 }
 
 size_t materialized_resources::max_readers() const {
-    return static_cast<size_t>(_max_readers_per_shard().value_or(
+    return static_cast<size_t>(_max_segment_readers_per_shard().value_or(
       _max_partitions_per_shard() * default_reader_factor));
 }
 

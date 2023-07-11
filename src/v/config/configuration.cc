@@ -1653,13 +1653,15 @@ configuration::configuration()
       "elapsed",
       {.visibility = visibility::tunable},
       5s)
-  , cloud_storage_max_readers_per_shard(
+  , cloud_storage_max_segment_readers_per_shard(
       *this,
-      "cloud_storage_max_readers_per_shard",
+      "cloud_storage_max_segment_readers_per_shard",
       "Maximum concurrent readers of remote data per CPU core.  If unset, "
       "value of `topic_partitions_per_shard` is used, i.e. one reader per "
       "partition if the shard is at its maximum partition capacity.",
-      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      {.needs_restart = needs_restart::no,
+       .visibility = visibility::tunable,
+       .aliases = {"cloud_storage_max_readers_per_shard"}},
       std::nullopt)
   , cloud_storage_max_materialized_segments_per_shard(
       *this,

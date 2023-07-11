@@ -71,7 +71,7 @@ private:
     simple_time_jitter<ss::lowres_clock> _stm_jitter;
 
     config::binding<uint32_t> _max_partitions_per_shard;
-    config::binding<std::optional<uint32_t>> _max_readers_per_shard;
+    config::binding<std::optional<uint32_t>> _max_segment_readers_per_shard;
     config::binding<std::optional<uint32_t>> _max_segments_per_shard;
 
     size_t max_readers() const;
