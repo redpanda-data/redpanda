@@ -330,6 +330,8 @@ struct configuration final : public config_store {
     property<std::optional<uint32_t>>
       cloud_storage_max_segment_readers_per_shard;
     property<std::optional<uint32_t>>
+      cloud_storage_max_partition_readers_per_shard;
+    property<std::optional<uint32_t>>
       cloud_storage_max_materialized_segments_per_shard;
     property<uint64_t> cloud_storage_cache_chunk_size;
     property<double> cloud_storage_hydrated_chunks_per_segment_ratio;
