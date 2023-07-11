@@ -1126,63 +1126,30 @@ ss::future<> partition::unsafe_reset_remote_partition_manifest(iobuf buf) {
 
     auto reset_builder = _archival_meta_stm->batch_start(deadline, _as);
 
-    // Add command to drop manifest. When applied, the current manifest
-    // will be replaced with a default constructed one.
-    reset_builder.reset_metadata();
-    builders.push_back(std::move(reset_builder));
+    // Add command to replace manifest. When applied, the current manifest
+    // will be replaced with the one provided.
+    reset_builder.replace_manifest(req_m.to_iobuf());
 
-    // Add segments. Note that we only add, and omit the replaced segments.
-    // This should only be done in the context of a last-ditch effort to
-    // restore functionality to a partition. Replaced segments are likely
-    // unimportant.
-    constexpr size_t segments_per_batch = 256;
-    std::vector<cloud_storage::segment_meta> segments;
-    segments.reserve(segments_per_batch);
+    vlog(
+      clusterlog.info,
+      "Replicating replace manifest command. New manifest start offset: {}",
+      req_m.get_start_offset());
 
-    for (const auto& s : req_m) {
-        segments.emplace_back(s);
-        if (segments.size() == segments_per_batch) {
-            auto segments_builder = _archival_meta_stm->batch_start(
-              deadline, _as);
-            segments_builder.add_segments(std::move(segments));
-            builders.push_back(std::move(segments_builder));
-
-            segments.clear();
+    auto errc = co_await reset_builder.replicate();
+    if (errc) {
+        if (errc == raft::errc::shutting_down) {
+            // During shutdown, act like we hit an abort source rather
+            // than trying to log+handle this like a write error.
+            throw ss::abort_requested_exception();
         }
-    }
 
-    if (segments.size() > 0) {
-        auto segments_builder = _archival_meta_stm->batch_start(deadline, _as);
-        segments_builder.add_segments(std::move(segments));
-        builders.push_back(std::move(segments_builder));
-    }
-
-    size_t idx = 0;
-    for (auto& builder : builders) {
         vlog(
-          clusterlog.info,
-          "Unsafe reset replicating batch {}/{}",
-          idx + 1,
-          builders.size());
-
-        auto errc = co_await builder.replicate();
-        if (errc) {
-            if (errc == raft::errc::shutting_down) {
-                // During shutdown, act like we hit an abort source rather
-                // than trying to log+handle this like a write error.
-                throw ss::abort_requested_exception();
-            }
-
-            vlog(
-              clusterlog.warn,
-              "[{}] Unsafe reset failed to update archival STM: {}",
-              ntp(),
-              errc.message());
-            throw std::runtime_error(
-              fmt::format("Failed to update archival STM: {}", errc.message()));
-        }
-
-        ++idx;
+          clusterlog.warn,
+          "[{}] Unsafe reset failed to update archival STM: {}",
+          ntp(),
+          errc.message());
+        throw std::runtime_error(
+          fmt::format("Failed to update archival STM: {}", errc.message()));
     }
 
     vlog(
