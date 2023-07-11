@@ -39,14 +39,16 @@ class FollowerFetchingTest(PreallocNodesTest):
         )
         self.s3_bucket_name = si_settings.cloud_storage_bucket
 
-        super(FollowerFetchingTest, self).__init__(test_context=test_context,
-                                                   num_brokers=3,
-                                                   node_prealloc_count=1,
-                                                   extra_rp_conf={
-                                                       'enable_rack_awareness':
-                                                       True,
-                                                   },
-                                                   si_settings=si_settings)
+        super(FollowerFetchingTest, self).__init__(
+            test_context=test_context,
+            num_brokers=3,
+            node_prealloc_count=1,
+            extra_rp_conf={
+                'enable_rack_awareness': True,
+                # disable leader balancer to prevent leaders from moving and causing additional client retries
+                'enable_leader_balancer': False
+            },
+            si_settings=si_settings)
 
     def tearDown(self):
         self.cloud_storage_client.empty_bucket(self.s3_bucket_name)
