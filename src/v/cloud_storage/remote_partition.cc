@@ -456,19 +456,50 @@ private:
             // stored using model::offset type.
             query = model::offset_cast(config.start_offset);
         }
-        // Find manifest that contains requested timestamp
-        auto cur = co_await _partition->_manifest_view->get_cursor(query);
-        if (cur.has_failure()) {
+        // Find manifest that contains requested offset or timestamp
+        int retry_quota = 4;
+        while (retry_quota-- > 0) {
+            auto stm_start_offset
+              = _partition->_manifest_view->stm_manifest().get_start_offset();
+            if (!stm_start_offset.has_value()) {
+                vlog(
+                  _ctxlog.error, "STM manifest has no start offset; no data");
+                co_return;
+            }
+            auto cur = co_await _partition->_manifest_view->get_cursor(query);
+            if (cur.has_failure()) {
+                vlog(
+                  _ctxlog.error,
+                  "Failed to query spillover manifests: {}, query: {}",
+                  cur.error(),
+                  query);
+                co_return;
+            }
+            auto new_stm_start_offset
+              = _partition->_manifest_view->stm_manifest().get_start_offset();
+            if (likely(new_stm_start_offset == stm_start_offset.value())) {
+                _view_cursor = std::move(cur.value());
+                if (
+                  _view_cursor->manifest()->get().get_start_offset().value()
+                  == new_stm_start_offset) {
+                    _initial_stm_start_offset = new_stm_start_offset;
+                }
+                initialize_reader_state(
+                  _view_cursor->manifest().value(), config);
+                co_return;
+            }
             vlog(
-              _ctxlog.error,
-              "Failed to query spillover manifests: {}, query: {}",
-              cur.error(),
+              _ctxlog.info,
+              "STM manifest start offset moved from {} to {} due to spillover "
+              "or truncation; retrying lookup {}",
+              stm_start_offset,
+              new_stm_start_offset,
               query);
-            co_return;
         }
-        _view_cursor = std::move(cur.value());
-        initialize_reader_state(_view_cursor->manifest().value(), config);
-        co_return;
+        vlog(
+          _ctxlog.warn,
+          "Couldn't initialize cursor for {} after retrying",
+          query);
     }
 
     // Initialize object using remote_partition as a source
@@ -573,8 +604,25 @@ private:
               _view_cursor->get_status());
             auto maybe_manifest = _view_cursor->manifest();
             if (
-              !maybe_manifest.has_value()
-              || _next_segment_base_offset != model::offset{}) {
+              maybe_manifest.has_value()
+              && _next_segment_base_offset != model::offset{}) {
+                // Our segment lookup may return incorrect results if the
+                // offset we're looking for has been moved out of this manifest
+                // (e.g. spillover of the STM manifest).
+                auto& manifest = maybe_manifest->get();
+                if (
+                  unlikely(
+                    _initial_stm_start_offset.has_value()
+                    && _initial_stm_start_offset != manifest.get_start_offset()
+                    && (!manifest.get_start_offset().has_value() || manifest.get_start_offset() > _next_segment_base_offset))) {
+                    vlog(
+                      _ctxlog.debug,
+                      "maybe_reset_reader, STM manifest start offset moved to "
+                      "{} while iterating to {}. Stopping iteration",
+                      manifest.get_start_offset(),
+                      _next_segment_base_offset);
+                    co_return false;
+                }
                 auto [new_reader, new_next_offset]
                   = _partition->borrow_next_segment_reader(
                     maybe_manifest.value(), config, _next_segment_base_offset);
@@ -613,6 +661,24 @@ private:
     ss::shared_ptr<remote_partition> _partition;
     /// Manifest view cursor
     std::unique_ptr<async_manifest_view_cursor> _view_cursor;
+
+    // Start of the STM manifest at the time the cursor was constructed, if
+    // constructed pointing at the STM manifest.
+    //
+    // It's critical for correctness that as readers look for segments in the
+    // STM manifest, that they check whether the STM has changed (e.g. because
+    // of spillover). If so, segment lookups within the manifest may
+    // incorrectly consider a reduced set of segments and subsequently skip
+    // segments.
+    //
+    // Set to nullopt if view_cursor doesn't point at the STM manifest, or if
+    // the STM manifest has no start offset (it's empty), in which case such a
+    // check needn't be done.
+    //
+    // NOTE: the reader iterates through at most one manifest
+    // TODO: make this less fragile.
+    std::optional<model::offset> _initial_stm_start_offset{std::nullopt};
+
     ss::lw_shared_ptr<storage::offset_translator_state> _ot_state;
     /// Reader state that was borrowed from the materialized_segment_state
     std::unique_ptr<remote_segment_batch_reader> _reader;
