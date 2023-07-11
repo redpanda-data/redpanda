@@ -9,7 +9,9 @@
 from rptest.services.cluster import cluster
 from rptest.clients.types import TopicSpec
 from rptest.tests.end_to_end import EndToEndTest
+from rptest.clients.rpk import RpkTool
 from ducktape.mark import matrix
+from ducktape.utils.util import wait_until
 from random import shuffle
 import time
 from rptest.tests.partition_movement import PartitionMovementMixin
@@ -49,10 +51,10 @@ class PartitionForceReconfigurationTest(EndToEndTest, PartitionMovementMixin):
                 f"Leaderless partitions: {leaderless_parts}")
             return ntp in leaderless_parts
 
-        self.redpanda.wait_until(no_leader,
-                                 timeout_sec=30,
-                                 backoff_sec=1,
-                                 err_msg="Partition has a leader")
+        wait_until(no_leader,
+                   timeout_sec=30,
+                   backoff_sec=1,
+                   err_msg="Partition has a leader")
 
     def _alive_nodes(self):
         return [n.account.hostname for n in self.redpanda.started_nodes()]
@@ -90,6 +92,18 @@ class PartitionForceReconfigurationTest(EndToEndTest, PartitionMovementMixin):
                                                           partition=0,
                                                           replicas=replicas)
 
+    def _start_consumer(self):
+        self.start_consumer()
+        # Wait for all consumer offsets partitions to have a stable leadership.
+        # With lost nodes on debug builds, this seems to take time to converge.
+        for part in range(0, 16):
+            self.redpanda._admin.await_stable_leader(
+                topic="__consumer_offsets",
+                partition=part,
+                timeout_s=30,
+                backoff_s=2,
+                hosts=self._alive_nodes())
+
     @cluster(num_nodes=9)
     @matrix(acks=[-1, 1],
             restart=[True, False],
@@ -113,7 +127,7 @@ class PartitionForceReconfigurationTest(EndToEndTest, PartitionMovementMixin):
                                                  replication=len(alive),
                                                  hosts=self._alive_nodes())
 
-        self.start_consumer()
+        self._start_consumer()
         if controller_snapshots:
             # Wait for few seconds to make sure snapshots
             # happen.
