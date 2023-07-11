@@ -302,15 +302,16 @@ ss::future<session_resources> connection_context::throttle_request(
              r_data = std::move(r_data),
              delay = delay.request,
              track,
-             tracker = std::move(tracker)](ssx::semaphore_units units) mutable {
+             tracker = std::move(tracker),
+             &h_probe](ssx::semaphore_units units) mutable {
           return server().get_request_unit().then(
             [this,
              r_data = std::move(r_data),
              delay,
              mem_units = std::move(units),
              track,
-             tracker = std::move(tracker)](
-              ssx::semaphore_units qd_units) mutable {
+             tracker = std::move(tracker),
+             &h_probe](ssx::semaphore_units qd_units) mutable {
                 session_resources r{
                   .backpressure_delay = delay,
                   .memlocks = std::move(mem_units),
@@ -320,6 +321,7 @@ ss::future<session_resources> connection_context::throttle_request(
                 if (track) {
                     r.method_latency = _server.hist().auto_measure();
                 }
+                r.handler_latency = h_probe.auto_latency_measurement();
                 return r;
             });
       });
