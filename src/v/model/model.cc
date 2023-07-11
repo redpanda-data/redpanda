@@ -47,7 +47,7 @@ void read_nested(
 void write(iobuf& out, timestamp ts) { serde::write(out, ts._v); }
 
 std::ostream& operator<<(std::ostream& os, const topic_partition& tp) {
-    fmt::print(os, "{{topic_partition: {}:{}}}", tp.topic, tp.partition);
+    fmt::print(os, "{{{}/{}}}", tp.topic, tp.partition);
     return os;
 }
 
@@ -57,13 +57,13 @@ std::ostream& operator<<(std::ostream& os, const ntp& n) {
 }
 
 std::ostream& operator<<(std::ostream& o, const model::topic_namespace& tp_ns) {
-    fmt::print(o, "{{ns: {}, topic: {}}}", tp_ns.ns, tp_ns.tp);
+    fmt::print(o, "{{{}/{}}}", tp_ns.ns, tp_ns.tp);
     return o;
 }
 
 std::ostream&
 operator<<(std::ostream& o, const model::topic_namespace_view& tp_ns) {
-    fmt::print(o, "{{ns: {}, topic: {}}}", tp_ns.ns, tp_ns.tp);
+    fmt::print(o, "{{{}/{}}}", tp_ns.ns, tp_ns.tp);
     return o;
 }
 
