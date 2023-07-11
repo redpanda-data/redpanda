@@ -267,9 +267,10 @@ class DeleteRecordsTest(RedpandaTest):
                     # A segment with no data file indicates that an index or
                     # compaction index was left behind for a deleted segment, or
                     # deletion is currently in flight.
-                    return 0
+                    return -1
 
             boundaries = sorted([to_final_indicies(seg) for seg in node])
+            boundaries = [idx for idx in boundaries if idx >= 0]
             self.redpanda.logger.debug(f"Local boundaries: {boundaries}")
             return boundaries
 
