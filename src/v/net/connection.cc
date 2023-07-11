@@ -11,6 +11,7 @@
 
 #include "net/exceptions.h"
 #include "rpc/service.h"
+#include "vlog.h"
 
 #include <seastar/core/future.hh>
 
@@ -149,8 +150,10 @@ void connection::shutdown_input() {
         _fd.shutdown_input();
     } catch (...) {
         _probe.connection_close_error();
-        rpc::rpclog.debug(
-          "Failed to shutdown connection: {}", std::current_exception());
+        vlog(
+          rpc::rpclog.debug,
+          "Failed to shutdown connection: {}",
+          std::current_exception());
     }
 }
 

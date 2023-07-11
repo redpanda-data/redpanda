@@ -10,13 +10,18 @@
 #include "net/batched_output_stream.h"
 
 #include "likely.h"
+#include "net/logger.h"
 #include "ssx/semaphore.h"
 #include "vassert.h"
+#include "vlog.h"
 
+#include <seastar/core/coroutine.hh>
 #include <seastar/core/future.hh>
 #include <seastar/core/scattered_message.hh>
 
 #include <fmt/format.h>
+
+#include <exception>
 
 namespace net {
 
@@ -68,7 +73,7 @@ ss::future<> batched_output_stream::flush() {
 }
 ss::future<> batched_output_stream::stop() {
     if (_closed) {
-        return ss::make_ready_future<>();
+        co_return;
     }
     _closed = true;
 
@@ -77,12 +82,26 @@ ss::future<> batched_output_stream::stop() {
         // initialized output_stream, which has a default initialized
         // data_sink, which has a null pimpl pointer, and will segfault if
         // any methods (including flush or close) are called on it.
-        return ss::make_ready_future();
+        co_return;
     }
 
-    return ss::with_semaphore(*_write_sem, 1, [this] {
-        return do_flush().finally([this] { return _out.close(); });
-    });
+    vlog(netlog.trace, "Taking output stream write units");
+    auto units = co_await ss::get_units(*_write_sem, 1);
+    vlog(netlog.trace, "Took output stream write units, flushing...");
+    std::exception_ptr ex = nullptr;
+    try {
+        co_await do_flush();
+        vlog(netlog.trace, "Flushed output stream successfully");
+    } catch (const std::exception& e) {
+        ex = std::current_exception();
+        vlog(netlog.trace, "Flush of output stream failed: {}", e.what());
+    }
+    vlog(netlog.trace, "Closing output stream");
+    co_await _out.close();
+    vlog(netlog.trace, "Closed output stream");
+    if (ex) {
+        std::rethrow_exception(ex);
+    }
 }
 
 } // namespace net
