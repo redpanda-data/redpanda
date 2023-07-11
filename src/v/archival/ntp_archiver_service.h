@@ -494,6 +494,7 @@ private:
     /// \return An index on success, nullopt on failure
     ss::future<std::optional<make_segment_index_result>> make_segment_index(
       model::offset base_rp_offset,
+      model::timestamp base_timestamp,
       retry_chain_logger& ctxlog,
       std::string_view index_path,
       ss::input_stream<char> stream);

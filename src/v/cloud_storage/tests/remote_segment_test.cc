@@ -170,7 +170,8 @@ void upload_index(
       meta.base_offset,
       meta.base_kafka_offset(),
       0,
-      remote_segment_sampling_step_bytes};
+      remote_segment_sampling_step_bytes,
+      meta.base_timestamp};
 
     auto builder = make_remote_segment_index_builder(
       manifest_ntp,

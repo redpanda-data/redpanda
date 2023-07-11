@@ -263,6 +263,7 @@ private:
     model::offset _base_rp_offset;
     model::offset_delta _base_offset_delta;
     model::offset _max_rp_offset;
+    model::timestamp _base_timestamp;
 
     // The expected size according to the manifest entry for the segment
     size_t _size{0};

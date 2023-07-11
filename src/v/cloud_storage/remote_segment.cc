@@ -178,6 +178,7 @@ remote_segment::remote_segment(
   , _base_offset_delta(std::clamp(
       meta.delta_offset, model::offset_delta(0), model::offset_delta::max()))
   , _max_rp_offset(meta.committed_offset)
+  , _base_timestamp(meta.base_timestamp)
   , _size(meta.size_bytes)
   , _rtc(&parent)
   , _ctxlog(cst_log, _rtc, generate_log_prefix(meta, ntp))
@@ -402,7 +403,8 @@ ss::future<uint64_t> remote_segment::put_segment_in_cache_and_create_index(
       get_base_rp_offset(),
       get_base_kafka_offset(),
       0,
-      remote_segment_sampling_step_bytes);
+      remote_segment_sampling_step_bytes,
+      _base_timestamp);
     auto [sparse, sput] = input_stream_fanout<2>(std::move(s), 1);
     auto parser = make_remote_segment_index_builder(
       get_ntp(),
@@ -523,7 +525,8 @@ ss::future<> remote_segment::do_hydrate_index() {
       _base_rp_offset,
       _base_rp_offset - _base_offset_delta,
       0,
-      remote_segment_sampling_step_bytes);
+      remote_segment_sampling_step_bytes,
+      _base_timestamp);
 
     auto result = co_await _api.download_index(
       _bucket, remote_segment_path{_index_path}, ix, local_rtc);
@@ -689,7 +692,8 @@ ss::future<bool> remote_segment::maybe_materialize_index() {
       _base_rp_offset,
       _base_rp_offset - _base_offset_delta,
       0,
-      remote_segment_sampling_step_bytes);
+      remote_segment_sampling_step_bytes,
+      _base_timestamp);
     if (auto cache_item = co_await _cache.get(path); cache_item.has_value()) {
         // The cache item is expected to be present if the segment is present
         // so it's very unlikely that we will call this method if there is no
