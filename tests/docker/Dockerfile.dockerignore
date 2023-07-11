@@ -10,3 +10,4 @@
 !tests/docker/ducktape-deps/
 !tests/rptest/remote_scripts
 !tests/protobuf
+!lsan_suppressions.txt
