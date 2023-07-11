@@ -704,14 +704,16 @@ const model::ntp& remote_partition::get_ntp() const {
 }
 
 bool remote_partition::is_data_available() const {
-    // Only advertize data if we have segments _and_ our start offset
-    // corresponds to some data (not if our start_offset points off
-    // the end of the manifest, as a result of a truncation where we
-    // have not yet cleaned out the segments).
     const auto& stmm = _manifest_view->stm_manifest();
-    return stmm.size() > 0
-           && (stmm.find(stmm.get_start_offset().value())
-                != stmm.end() || stmm.get_archive_start_offset() > stmm.get_start_offset().value());
+    const auto start_offset = stmm.get_start_offset();
+
+    // If the start offset for the STM region is not set, then the cloud log is
+    // empty. There's one special case, where the start offset is set, and yet
+    // the cloud log should be considered emtpy: retention in the STM region
+    // advanced the start offset, but the garbage collection, and subsequent
+    // truncation, did not happen yet.
+    return start_offset.has_value()
+           && start_offset.value() <= stmm.get_last_offset();
 }
 
 uint64_t remote_partition::cloud_log_size() const {
