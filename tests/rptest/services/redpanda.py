@@ -1082,10 +1082,13 @@ class RedpandaServiceK8s(RedpandaServiceBase):
                                                  num_brokers,
                                                  cluster_spec=cluster_spec)
         self._trim_logs = False
-        self._helm = HelmTool(self)
-        self._kubectl = KubectlTool(self)
+        self._helm = None
+        self._kubectl = None
 
     def start_node(self, node, **kwargs):
+        pass
+
+    def start(self, **kwargs):
         """
         Install the helm chart which will launch the entire cluster. If
         the cluster is already running, then noop. This function will not
@@ -1093,6 +1096,8 @@ class RedpandaServiceK8s(RedpandaServiceBase):
         redpanda does not start within a timeout period the service will
         fail to start.
         """
+        self._helm = HelmTool(self)
+        self._kubectl = KubectlTool(self)
         self._helm.install()
 
     def stop_node(self, node, **kwargs):
@@ -1176,6 +1181,8 @@ class RedpandaServiceCloud(RedpandaServiceK8s):
     GLOBAL_CLOUD_API_URL = 'cloud_api_url'
     GLOBAL_CLOUD_CLUSTER_ID = 'cloud_cluster_id'
     GLOBAL_CLOUD_DELETE_CLUSTER = 'cloud_delete_cluster'
+    GLOBAL_TELEPORT_AUTH_SERVER = 'cloud_teleport_auth_server'
+    GLOBAL_TELEPORT_BOT_TOKEN = 'cloud_teleport_bot_token'
 
     class CloudCluster():
         """
@@ -1447,6 +1454,10 @@ class RedpandaServiceCloud(RedpandaServiceK8s):
             self.GLOBAL_CLOUD_OAUTH_CLIENT_SECRET, None)
         self._cloud_oauth_audience = context.globals.get(
             self.GLOBAL_CLOUD_OAUTH_AUDIENCE, None)
+        self._cloud_teleport_proxy = context.globals.get(
+            self.GLOBAL_TELEPORT_AUTH_SERVER, None)
+        self._cloud_teleport_bot_token = context.globals.get(
+            self.GLOBAL_TELEPORT_BOT_TOKEN, None)
         self._cloud_api_url = context.globals.get(self.GLOBAL_CLOUD_API_URL,
                                                   None)
         self._cloud_cluster_id = context.globals.get(
@@ -1469,7 +1480,9 @@ class RedpandaServiceCloud(RedpandaServiceK8s):
         remote_uri = f'redpanda@{cluster_id}-agent'
         self._kubectl = KubectlTool(self,
                                     remote_uri=remote_uri,
-                                    cluster_id=self._cloud_cluster.cluster_id)
+                                    cluster_id=self._cloud_cluster.cluster_id,
+                                    tp_proxy=self._cloud_teleport_proxy,
+                                    tp_token=self._cloud_teleport_bot_token)
 
     def stop_node(self, node, **kwargs):
         pass
