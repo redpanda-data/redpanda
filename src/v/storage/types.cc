@@ -60,6 +60,11 @@ std::ostream& operator<<(std::ostream& o, const log_reader_config& cfg) {
     o << ", over_budget:" << cfg.over_budget;
     o << ", strict_max_bytes:" << cfg.strict_max_bytes;
     o << ", skip_batch_cache:" << cfg.skip_batch_cache;
+    o << ", abortable:" << cfg.abort_source.has_value();
+    o << ", aborted:"
+      << (cfg.abort_source.has_value()
+            ? cfg.abort_source.value().get().abort_requested()
+            : false);
     return o << "}";
 }
 
