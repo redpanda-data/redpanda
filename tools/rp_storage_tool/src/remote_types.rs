@@ -271,6 +271,17 @@ pub fn decode_colstore(
         let shortname =
             segment_shortname(seg_base_offset as RawOffset, seg_segment_term as RaftTerm);
 
+        // For optional fields which are represented as uint64_t minimum value when
+        // they are unset: these are unset when the cluster's metadata pre-dates the version
+        // when the field was added.
+        fn some_if_positive<T: TryFrom<i64>>(v: i64) -> Option<T> {
+            if v >= 0 {
+                T::try_from(v).ok()
+            } else {
+                None
+            }
+        }
+
         segment_map.insert(
             shortname,
             PartitionManifestSegment {
@@ -279,13 +290,13 @@ pub fn decode_colstore(
                 is_compacted: is_compacted.get(i) == 1,
                 size_bytes: size_bytes.get(i),
                 archiver_term: archiver_term.get(i),
-                delta_offset: Some(delta_offset.get(i) as DeltaOffset),
-                base_timestamp: Some(base_timestamp.get(i)),
-                max_timestamp: Some(max_timestamp.get(i)),
-                ntp_revision: Some(ntp_revision.get(i) as u64),
-                sname_format: Some(sname_format.get(i) as u32),
-                segment_term: Some(seg_segment_term),
-                delta_offset_end: Some(delta_offset_end.get(i) as u64),
+                delta_offset: some_if_positive(delta_offset.get(i)),
+                base_timestamp: some_if_positive(base_timestamp.get(i)),
+                max_timestamp: some_if_positive(max_timestamp.get(i)),
+                ntp_revision: some_if_positive(ntp_revision.get(i)),
+                sname_format: some_if_positive(sname_format.get(i)),
+                segment_term: some_if_positive(segment_term.get(i)),
+                delta_offset_end: some_if_positive(delta_offset_end.get(i)),
             },
         );
     }
