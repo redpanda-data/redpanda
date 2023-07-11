@@ -274,7 +274,8 @@ class CloudStorageTimingStressTest(RedpandaTest, PartitionMovementMixin):
         self.admin = Admin(self.redpanda)
         self.checks = []
 
-    def _create_producer(self) -> KgoVerifierProducer:
+    def _create_producer(self,
+                         cleanup_policy: str = None) -> KgoVerifierProducer:
         bps = self.produce_byte_rate_per_ntp * self.topics[0].partition_count
         bytes_count = bps * self.target_runtime
         msg_count = bytes_count // self.message_size
@@ -282,6 +283,7 @@ class CloudStorageTimingStressTest(RedpandaTest, PartitionMovementMixin):
         self.logger.info(f"Will produce {bytes_count / self.mib}MiB at"
                          f"{bps / self.mib}MiB/s on topic={self.topic}")
 
+        key_set_cardinality = 10 if 'compact' in cleanup_policy else None
         return KgoVerifierProducer(self.test_context,
                                    self.redpanda,
                                    self.topic,
@@ -289,7 +291,8 @@ class CloudStorageTimingStressTest(RedpandaTest, PartitionMovementMixin):
                                    msg_count=msg_count,
                                    rate_limit_bps=bps,
                                    debug_logs=True,
-                                   trace_logs=True)
+                                   trace_logs=True,
+                                   key_set_cardinality=key_set_cardinality)
 
     def _create_consumer(
             self, producer: KgoVerifierProducer) -> KgoVerifierSeqConsumer:
@@ -405,7 +408,7 @@ class CloudStorageTimingStressTest(RedpandaTest, PartitionMovementMixin):
         self.register_check("cloud_storage_status_endpoint",
                             cloud_storage_status_endpoint_check)
 
-        self.producer = self._create_producer()
+        self.producer = self._create_producer(cleanup_policy)
         self.consumer = self._create_consumer(self.producer)
 
         self.producer.start()
