@@ -1619,7 +1619,7 @@ consensus::get_last_entry_term(const storage::offset_stats& lstats) const {
     return _last_snapshot_term;
 }
 
-ss::future<vote_reply> consensus::do_vote(vote_request&& r) {
+ss::future<vote_reply> consensus::do_vote(vote_request r) {
     vote_reply reply;
     reply.term = _term;
     reply.target_node_id = r.node_id;
@@ -1628,12 +1628,13 @@ ss::future<vote_reply> consensus::do_vote(vote_request&& r) {
     auto last_log_index = lstats.dirty_offset;
     _probe->vote_request();
     auto last_entry_term = get_last_entry_term(lstats);
-    vlog(_ctxlog.trace, "Vote request: {}", r);
+    bool term_changed = false;
+    vlog(_ctxlog.trace, "Received vote request: {}", r);
 
     if (unlikely(is_request_target_node_invalid("vote", r))) {
         reply.log_ok = false;
         reply.granted = false;
-        return ss::make_ready_future<vote_reply>(reply);
+        co_return reply;
     }
 
     // Optimization: for vote requests from nodes that are likely
@@ -1657,10 +1658,8 @@ ss::future<vote_reply> consensus::do_vote(vote_request&& r) {
                   "Vote request from peer {} with heartbeat failures, "
                   "resetting backoff",
                   r.node_id);
-                return _client_protocol.reset_backoff(r.node_id.id())
-                  .then([reply]() {
-                      return ss::make_ready_future<vote_reply>(reply);
-                  });
+                co_await _client_protocol.reset_backoff(r.node_id.id());
+                co_return reply;
             }
         }
     }
@@ -1683,7 +1682,7 @@ ss::future<vote_reply> consensus::do_vote(vote_request&& r) {
           "Already heard from the leader, not granting vote to node {}",
           r.node_id);
         reply.granted = false;
-        return ss::make_ready_future<vote_reply>(std::move(reply));
+        co_return reply;
     }
 
     /// set to true if the caller's log is as up to date as the recipient's
@@ -1695,7 +1694,7 @@ ss::future<vote_reply> consensus::do_vote(vote_request&& r) {
 
     // raft.pdf: reply false if term < currentTerm (§5.1)
     if (r.term < _term) {
-        return ss::make_ready_future<vote_reply>(std::move(reply));
+        co_return reply;
     }
     auto n_priority = get_node_priority(r.node_id);
     // do not grant vote if voter priority is lower than current target
@@ -1709,14 +1708,13 @@ ss::future<vote_reply> consensus::do_vote(vote_request&& r) {
           n_priority,
           _target_priority);
         reply.granted = false;
-        return ss::make_ready_future<vote_reply>(reply);
+        co_return reply;
     }
 
     if (r.term > _term) {
         vlog(
           _ctxlog.info,
-          "Received vote request with larger term from node {}, received "
-          "{}, "
+          "Received vote request with larger term from node {}, received {}, "
           "current {}",
           r.node_id,
           r.term,
@@ -1724,6 +1722,7 @@ ss::future<vote_reply> consensus::do_vote(vote_request&& r) {
         reply.term = r.term;
         _term = r.term;
         _voted_for = {};
+        term_changed = true;
         do_step_down("voter_term_greater");
         if (_leader_id) {
             _leader_id = std::nullopt;
@@ -1736,45 +1735,42 @@ ss::future<vote_reply> consensus::do_vote(vote_request&& r) {
             // would cause subsequent votes to fail (_hbeat is updated by the
             // leader)
             _hbeat = clock_type::time_point::min();
-            return ss::make_ready_future<vote_reply>(reply);
+            co_return reply;
         }
     }
 
     // do not grant vote if log isn't ok
     if (!reply.log_ok) {
-        return ss::make_ready_future<vote_reply>(reply);
+        co_return reply;
     }
 
     if (_voted_for.id()() < 0) {
-        auto node_id = r.node_id;
-        return write_voted_for({node_id, _term})
-          .then_wrapped([this, reply = std::move(reply), r = std::move(r)](
-                          ss::future<> f) mutable {
-              bool granted = false;
+        try {
+            co_await write_voted_for({r.node_id, _term});
+        } catch (...) {
+            vlog(
+              _ctxlog.warn,
+              "Unable to persist raft group state, vote not granted "
+              "- {}",
+              std::current_exception());
+            reply.granted = false;
+            co_return reply;
+        }
+        _voted_for = r.node_id;
+        reply.granted = true;
 
-              if (f.failed()) {
-                  vlog(
-                    _ctxlog.warn,
-                    "Unable to persist raft group state, vote not granted "
-                    "- {}",
-                    f.get_exception());
-              } else {
-                  _voted_for = r.node_id;
-                  _hbeat = clock_type::now();
-                  granted = true;
-              }
-
-              reply.granted = granted;
-
-              return ss::make_ready_future<vote_reply>(std::move(reply));
-          });
     } else {
         reply.granted = (r.node_id == _voted_for);
-        if (reply.granted) {
-            _hbeat = clock_type::now();
-        }
-        return ss::make_ready_future<vote_reply>(std::move(reply));
     }
+    /**
+     * Only update last heartbeat value, indicating existence of a leader if a
+     * term change i.e. a node is not processing prevote_request.
+     */
+    if (reply.granted && term_changed) {
+        _hbeat = clock_type::now();
+    }
+
+    co_return reply;
 }
 
 ss::future<append_entries_reply>
@@ -1802,7 +1798,8 @@ consensus::do_append_entries(append_entries_request&& r) {
         return ss::make_ready_future<append_entries_reply>(reply);
     }
     // no need to trigger timeout
-    vlog(_ctxlog.trace, "Append entries request: {}", request_metadata);
+    vlog(
+      _ctxlog.trace, "Received append entries request: {}", request_metadata);
 
     // raft.pdf: Reply false if term < currentTerm (§5.1)
     if (request_metadata.term < _term) {
