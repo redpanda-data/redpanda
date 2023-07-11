@@ -401,6 +401,9 @@ struct configuration final : public config_store {
 
     bounded_property<int64_t> node_isolation_heartbeat_timeout;
 
+    bounded_property<double, numeric_bounds> kafka_memory_share_for_fetch;
+    property<size_t> kafka_memory_batch_size_estimate_for_fetch;
+
     configuration();
 
     error_map_t load(const YAML::Node& root_node);

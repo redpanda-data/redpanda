@@ -39,6 +39,7 @@
 #include "pandaproxy/schema_registry/configuration.h"
 #include "redpanda/application.h"
 #include "resource_mgmt/cpu_scheduling.h"
+#include "ssx/thread_worker.h"
 #include "storage/directories.h"
 #include "storage/tests/utils/disk_log_builder.h"
 #include "test_utils/async.h"
@@ -110,33 +111,39 @@ public:
         app.check_environment();
         app.wire_up_and_start(*app_signal, true);
 
-        configs.start(ss::sstring("fixture_config")).get();
+        net::server_configuration scfg("fixture_config");
+        scfg.max_service_memory_per_core = memory_groups::rpc_total_memory();
+        scfg.disable_metrics = net::metrics_disabled::yes;
+        scfg.disable_public_metrics = net::public_metrics_disabled::yes;
+        configs.start(scfg).get();
 
         // used by request context builder
-        proto = std::make_unique<kafka::server>(
-          &configs,
-          app.smp_service_groups.kafka_smp_sg(),
-          app.sched_groups.fetch_sg(),
-          app.metadata_cache,
-          app.controller->get_topics_frontend(),
-          app.controller->get_config_frontend(),
-          app.controller->get_feature_table(),
-          app.quota_mgr,
-          app.snc_quota_mgr,
-          app.group_router,
-          app.usage_manager,
-          app.shard_table,
-          app.partition_manager,
-          app.fetch_session_cache,
-          app.id_allocator_frontend,
-          app.controller->get_credential_store(),
-          app.controller->get_authorizer(),
-          app.controller->get_security_frontend(),
-          app.controller->get_api(),
-          app.tx_gateway_frontend,
-          app.cp_partition_manager,
-          std::nullopt,
-          *app.thread_worker);
+        proto
+          .start(
+            &configs,
+            app.smp_service_groups.kafka_smp_sg(),
+            app.sched_groups.fetch_sg(),
+            std::ref(app.metadata_cache),
+            std::ref(app.controller->get_topics_frontend()),
+            std::ref(app.controller->get_config_frontend()),
+            std::ref(app.controller->get_feature_table()),
+            std::ref(app.quota_mgr),
+            std::ref(app.snc_quota_mgr),
+            std::ref(app.group_router),
+            std::ref(app.usage_manager),
+            std::ref(app.shard_table),
+            std::ref(app.partition_manager),
+            std::ref(app.fetch_session_cache),
+            std::ref(app.id_allocator_frontend),
+            std::ref(app.controller->get_credential_store()),
+            std::ref(app.controller->get_authorizer()),
+            std::ref(app.controller->get_security_frontend()),
+            std::ref(app.controller->get_api()),
+            std::ref(app.tx_gateway_frontend),
+            std::ref(app.cp_partition_manager),
+            std::nullopt,
+            std::ref(*app.thread_worker))
+          .get();
 
         configs.stop().get();
     }
@@ -191,6 +198,7 @@ public:
 
     ~redpanda_thread_fixture() {
         shutdown();
+        proto.stop().get();
         if (remove_on_shutdown) {
             std::filesystem::remove_all(data_dir);
         }
@@ -566,7 +574,7 @@ public:
     kafka::request_context make_request_context() {
         security::sasl_server sasl(security::sasl_server::sasl_state::complete);
         auto conn = ss::make_lw_shared<kafka::connection_context>(
-          *proto,
+          proto.local(),
           nullptr,
           std::move(sasl),
           false,
@@ -599,7 +607,7 @@ public:
     uint16_t schema_reg_port;
     std::filesystem::path data_dir;
     ss::sharded<net::server_configuration> configs;
-    std::unique_ptr<kafka::server> proto;
+    ss::sharded<kafka::server> proto;
     bool remove_on_shutdown;
     std::unique_ptr<::stop_signal> app_signal;
 };

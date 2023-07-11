@@ -79,7 +79,7 @@ struct tcp_keepalive_bindings {
 
 struct server_configuration {
     std::vector<server_endpoint> addrs;
-    int64_t max_service_memory_per_core;
+    int64_t max_service_memory_per_core = 0;
     std::optional<int> listen_backlog;
     std::optional<int> tcp_recv_buf;
     std::optional<int> tcp_send_buf;

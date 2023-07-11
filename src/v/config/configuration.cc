@@ -1975,7 +1975,24 @@ configuration::configuration()
       "considering itself to be isolated",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       3000,
-      {.min = 100, .max = 10000}) {}
+      {.min = 100, .max = 10000})
+  , kafka_memory_share_for_fetch(
+      *this,
+      "kafka_memory_share_for_fetch",
+      "The share of kafka subsystem memory that can be used for fetch read "
+      "buffers, as a fraction of kafka subsystem memory amount",
+      {.needs_restart = needs_restart::yes, .visibility = visibility::user},
+      0.5,
+      {.min = 0.0, .max = 1.0})
+  , kafka_memory_batch_size_estimate_for_fetch(
+      *this,
+      "kafka_memory_batch_size_estimate_for_fetch",
+      "The size of the batch used to estimate memory consumption for Fetch "
+      "requests, in bytes. Smaller sizes allow more concurrent fetch requests "
+      "per shard, larger sizes prevent running out of memory because of too "
+      "many concurrent fetch requests.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::user},
+      1_MiB) {}
 
 configuration::error_map_t configuration::load(const YAML::Node& root_node) {
     if (!root_node["redpanda"]) {

@@ -168,19 +168,25 @@ FIXTURE_TEST(read_from_ntp_max_bytes, redpanda_thread_fixture) {
         auto octx = kafka::op_context(
           std::move(rctx), ss::default_smp_service_group());
         auto shard = octx.rctx.shards().shard_for(ntp).value();
-        return octx.rctx.partition_manager()
-          .invoke_on(
-            shard,
-            [&octx, ntp, config](cluster::partition_manager& pm) {
-                return kafka::read_from_ntp(
-                  pm,
-                  octx.rctx.coproc_partition_manager().local(),
-                  ntp,
-                  config,
-                  true,
-                  model::no_timeout);
-            })
-          .get0();
+        kafka::read_result res
+          = octx.rctx.partition_manager()
+              .invoke_on(
+                shard,
+                [&octx, ntp, config](cluster::partition_manager& pm) {
+                    return kafka::testing::read_from_ntp(
+                      pm,
+                      octx.rctx.coproc_partition_manager().local(),
+                      ntp,
+                      config,
+                      true,
+                      model::no_timeout,
+                      false,
+                      octx.rctx.server().local().memory(),
+                      octx.rctx.server().local().memory_fetch_sem());
+                })
+              .get0();
+        BOOST_TEST_REQUIRE(res.has_data());
+        return res;
     };
     wait_for_controller_leadership().get0();
     auto ntp = make_data(get_next_partition_revision_id().get());

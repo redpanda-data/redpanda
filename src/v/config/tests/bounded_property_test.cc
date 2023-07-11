@@ -12,12 +12,20 @@
 
 #include <seastar/testing/thread_test_case.hh>
 
+#include <optional>
+
+static_assert(config::detail::bounds<config::numeric_integral_bounds<int>>);
+static_assert(config::detail::bounds<config::numeric_bounds<double>>);
+
 namespace {
 
 struct test_config : public config::config_store {
     config::bounded_property<int32_t> bounded_int;
     config::bounded_property<std::optional<int32_t>> bounded_int_opt;
     config::bounded_property<int16_t> odd_constraint;
+    config::bounded_property<double, config::numeric_bounds> bounded_double;
+    config::bounded_property<std::optional<double>, config::numeric_bounds>
+      bounded_double_opt;
 
     test_config()
       : bounded_int(
@@ -40,10 +48,24 @@ struct test_config : public config::config_store {
           "Property value has to be odd",
           {},
           1,
-          {.oddeven = config::odd_even_constraint::odd}) {}
+          {.oddeven = config::odd_even_constraint::odd})
+      , bounded_double(
+          *this,
+          "bounded_double",
+          "A float with some bounds set",
+          {},
+          1.618033988749,
+          {.min = -1, .max = 2.236067977})
+      , bounded_double_opt(
+          *this,
+          "bounded_double_opt",
+          "An options float with some bounds set",
+          {},
+          std::nullopt,
+          {.min = -1, .max = 2.236067977}) {}
 };
 
-SEASTAR_THREAD_TEST_CASE(numeric_bounds) {
+SEASTAR_THREAD_TEST_CASE(numeric_integral_bounds) {
     auto cfg = test_config();
 
     // We are checking numeric bounds, not YAML syntax/type validation.  The
@@ -99,6 +121,48 @@ SEASTAR_THREAD_TEST_CASE(numeric_bounds) {
     // Misaligned: clamp to next lowest alignment
     cfg.bounded_int.set_value(YAML::Load("8197"));
     BOOST_CHECK(cfg.bounded_int() == 8192);
+}
+
+SEASTAR_THREAD_TEST_CASE(numeric_fp_bounds) {
+    auto cfg = test_config();
+
+    // We are checking numeric bounds, not YAML syntax/type validation.  The
+    // latter shows up as exceptions from validate/set_value, rather than
+    // as structured errors, and is not covered by this test.
+    auto valid_values = {"-1", "-0.1", "1.618033988749", "2", "2.236067977"};
+    auto invalid_values = {
+      "-1000.9", "-1.0001", "3", "4095", "4097", "32769", "2000000000"};
+
+    std::optional<config::validation_error> verr;
+
+    for (const auto& v : valid_values) {
+        verr = cfg.bounded_double.validate(YAML::Load(v));
+        BOOST_TEST(!verr.has_value());
+
+        verr = cfg.bounded_double_opt.validate(YAML::Load(v));
+        BOOST_TEST(!verr.has_value());
+    }
+
+    for (const auto& v : invalid_values) {
+        verr = cfg.bounded_double.validate(YAML::Load(v));
+        BOOST_TEST(verr.has_value());
+
+        verr = cfg.bounded_double_opt.validate(YAML::Load(v));
+        BOOST_TEST(verr.has_value());
+    }
+
+    // Optional variant should also always consider nullopt to be valid.
+    verr = cfg.bounded_double_opt.validate(std::nullopt);
+    BOOST_TEST(!verr.has_value());
+
+    // # Invalid values should be clamped by set_value
+    // Too low: clamp to minimum
+    cfg.bounded_double.set_value(YAML::Load("-2"));
+    BOOST_TEST(cfg.bounded_double() == -1);
+
+    // Too high: clamp to maximum
+    cfg.bounded_double.set_value(YAML::Load("1000000"));
+    BOOST_TEST(cfg.bounded_double() == 2.236067977);
 }
 
 } // namespace
