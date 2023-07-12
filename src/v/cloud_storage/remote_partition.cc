@@ -810,16 +810,16 @@ remote_partition::get_term_last_offset(model::term_id term) const {
 ss::future<std::vector<model::tx_range>>
 remote_partition::aborted_transactions(offset_range offsets) {
     gate_guard guard(_gate);
-    const auto& manifest = _manifest_view->stm_manifest();
-    const auto so = manifest.get_start_offset();
+    const auto& stm_manifest = _manifest_view->stm_manifest();
+    const auto so = stm_manifest.get_start_offset();
     std::vector<model::tx_range> result;
     if (so.has_value() && offsets.begin > so.value()) {
         // Here we have to use kafka offsets to locate the segments and
         // redpanda offsets to extract aborted transactions metadata because
         // tx-manifests contains redpanda offsets.
         std::deque<ss::lw_shared_ptr<remote_segment>> remote_segs;
-        for (auto it = manifest.segment_containing(offsets.begin);
-             it != manifest.end();
+        for (auto it = stm_manifest.segment_containing(offsets.begin);
+             it != stm_manifest.end();
              ++it) {
             if (it->base_offset > offsets.end_rp) {
                 break;
@@ -829,7 +829,7 @@ remote_partition::aborted_transactions(offset_range offsets) {
             // second map lookup to learn if this is the case.
             auto m = _segments.find(it->base_offset);
             if (m == _segments.end()) {
-                auto path = manifest.generate_segment_path(*it);
+                auto path = stm_manifest.generate_segment_path(*it);
                 m = materialize_segment(path, *it);
             }
             remote_segs.emplace_back(m->second->segment);
@@ -841,32 +841,53 @@ remote_partition::aborted_transactions(offset_range offsets) {
         }
     } else {
         // Target archive section of the log
-        auto cur_res = co_await _manifest_view->get_cursor(
-          manifest.get_archive_start_offset());
-        if (cur_res.has_failure()) {
-            vlog(
-              _ctxlog.error,
-              "Failed to traverse archive part of the log: {}",
-              cur_res.error());
-            throw std::runtime_error(fmt_with_ctx(
-              fmt::format, "Failed to get the cursor {}", cur_res.error()));
-        }
-        auto cursor = std::move(cur_res.value());
         std::deque<std::pair<segment_meta, remote_segment_path>>
           meta_to_materialize;
-        co_await ss::repeat([&meta_to_materialize, &cursor, offsets] {
-            const auto& manifest = cursor->manifest()->get();
-            for (auto it = manifest.segment_containing(offsets.begin);
-                 it != manifest.end();
-                 ++it) {
-                if (it->base_offset > offsets.end_rp) {
-                    break;
-                }
-                auto path = manifest.generate_segment_path(*it);
-                meta_to_materialize.push_back(std::make_pair(*it, path));
+        int retry_quota = 4;
+        while (retry_quota-- > 0) {
+            meta_to_materialize.clear();
+            auto cur_res = co_await _manifest_view->get_cursor(
+              stm_manifest.get_archive_start_offset());
+            const auto stm_start_offset = stm_manifest.get_start_offset();
+            if (cur_res.has_failure()) {
+                vlog(
+                  _ctxlog.error,
+                  "Failed to traverse archive part of the log: {}",
+                  cur_res.error());
+                throw std::runtime_error(fmt_with_ctx(
+                  fmt::format, "Failed to get the cursor {}", cur_res.error()));
             }
-            return cursor->next_iter();
-        });
+            auto cursor = std::move(cur_res.value());
+            co_await ss::repeat([&meta_to_materialize, &cursor, offsets] {
+                const auto& manifest = cursor->manifest()->get();
+                for (auto it = manifest.segment_containing(offsets.begin);
+                     it != manifest.end();
+                     ++it) {
+                    if (it->base_offset > offsets.end_rp) {
+                        break;
+                    }
+                    auto path = manifest.generate_segment_path(*it);
+                    meta_to_materialize.push_back(std::make_pair(*it, path));
+                }
+                return cursor->next_iter();
+            });
+            if (likely(
+                  _manifest_view->stm_manifest().get_start_offset()
+                  == stm_start_offset)) {
+                break;
+            }
+            // The STM manifest has been truncated while iterating. To avoid
+            // accidentally skipping segments, just try again.
+            if (retry_quota == 0) {
+                throw ss::timed_out_error();
+            }
+            vlog(
+              _ctxlog.info,
+              "STM manifest start offset moved from {} to {} due to spillover "
+              "or truncation while collecting aborted transactions",
+              stm_start_offset,
+              _manifest_view->stm_manifest().get_start_offset());
+        }
 
         for (const auto& [meta, path] : meta_to_materialize) {
             // Segment might be materialized, we need a
