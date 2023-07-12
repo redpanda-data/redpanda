@@ -372,22 +372,38 @@ ss::future<response_ptr> sasl_authenticate_handler::handle(
     log_request(ctx.header(), request);
     vlog(klog.debug, "Received SASL_AUTHENTICATE {}", request);
 
-    auto result = co_await ctx.sasl()->authenticate(
-      std::move(request.data.auth_bytes));
-    if (likely(result)) {
-        sasl_authenticate_response_data data{
-          .error_code = error_code::none,
-          .error_message = std::nullopt,
-          .auth_bytes = std::move(result.value()),
-        };
-        co_return co_await ctx.respond(
-          sasl_authenticate_response(std::move(data)));
+    std::error_code ec;
+
+    try {
+        auto result = co_await ctx.sasl()->authenticate(
+          std::move(request.data.auth_bytes));
+        if (likely(result)) {
+            sasl_authenticate_response_data data{
+              .error_code = error_code::none,
+              .error_message = std::nullopt,
+              .auth_bytes = std::move(result.value()),
+            };
+            co_return co_await ctx.respond(
+              sasl_authenticate_response(std::move(data)));
+        }
+
+        ec = result.error();
+    } catch (security::scram_exception& e) {
+        vlog(
+          klog.warn,
+          "[{}:{}]  Error processing SASL authentication request for {}: {}",
+          ctx.connection()->client_host(),
+          ctx.connection()->client_port(),
+          ctx.header().client_id.value_or(std::string_view("unset-client-id")),
+          e);
+
+        ec = make_error_code(security::errc::invalid_credentials);
     }
 
     sasl_authenticate_response_data data{
       .error_code = error_code::sasl_authentication_failed,
       .error_message = ssx::sformat(
-        "SASL authentication failed: {}", result.error().message()),
+        "SASL authentication failed: {}", ec.message()),
     };
     co_return co_await ctx.respond(sasl_authenticate_response(std::move(data)));
 }
