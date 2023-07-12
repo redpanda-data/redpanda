@@ -452,15 +452,21 @@ struct compaction_result {
  *            retention policy was ignored. for example reclaiming
  *            past the retention limits if the data being reclaimed
  *            has been uploaded to cloud storage.
+ *
+ * local_retention: amount of data that can safely be reclaimed that is above
+ *                  the local retention policy. this will be affected by if
+ *                  local retention is advisory or not.
  */
 struct reclaim_size_limits {
     size_t retention{0};
     size_t available{0};
+    size_t local_retention{0};
 
     friend reclaim_size_limits
     operator+(reclaim_size_limits lhs, const reclaim_size_limits& rhs) {
         lhs.retention += rhs.retention;
         lhs.available += rhs.available;
+        lhs.local_retention += rhs.local_retention;
         return lhs;
     }
 };
