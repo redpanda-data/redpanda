@@ -76,6 +76,7 @@ private:
     ss::gate _gate;
     ss::future<> run_loop();
     ssx::semaphore _control_sem{0, "resource_mgmt::space_manager"};
+    bool _previous_reclaim{false};
 };
 
 } // namespace storage

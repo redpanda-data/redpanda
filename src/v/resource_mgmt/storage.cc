@@ -206,13 +206,16 @@ ss::future<> disk_space_manager::manage_data_disk(uint64_t target_size) {
                                  ? 0
                                  : usage.usage.total() - target_size;
     if (target_excess <= 0) {
-        vlog(
-          rlog.info,
+        vlogl(
+          rlog,
+          _previous_reclaim ? ss::log_level::info : ss::log_level::debug,
           "Log storage usage {} <= target size {}. No work to do.",
           human::bytes(usage.usage.total()),
           human::bytes(target_size));
+        _previous_reclaim = false;
         co_return;
     }
+    _previous_reclaim = true;
 
     /*
      * when log storage has exceeded the target usage, then there are some knobs
