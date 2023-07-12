@@ -817,6 +817,7 @@ remote_partition::aborted_transactions(offset_range offsets) {
         // Here we have to use kafka offsets to locate the segments and
         // redpanda offsets to extract aborted transactions metadata because
         // tx-manifests contains redpanda offsets.
+        std::deque<ss::lw_shared_ptr<remote_segment>> remote_segs;
         for (auto it = manifest.segment_containing(offsets.begin);
              it != manifest.end();
              ++it) {
@@ -831,7 +832,10 @@ remote_partition::aborted_transactions(offset_range offsets) {
                 auto path = manifest.generate_segment_path(*it);
                 m = materialize_segment(path, *it);
             }
-            auto tx = co_await m->second->segment->aborted_transactions(
+            remote_segs.emplace_back(m->second->segment);
+        }
+        for (const auto& segment : remote_segs) {
+            auto tx = co_await segment->aborted_transactions(
               offsets.begin_rp, offsets.end_rp);
             std::copy(tx.begin(), tx.end(), std::back_inserter(result));
         }
