@@ -1969,12 +1969,21 @@ log make_disk_backed_log(
  * assumes that the compaction gate is held.
  */
 ss::future<std::pair<usage, reclaim_size_limits>>
-disk_log_impl::disk_usage_and_reclaimable_space(gc_config cfg) {
+disk_log_impl::disk_usage_and_reclaimable_space(gc_config input_cfg) {
     std::optional<model::offset> max_offset;
     if (config().is_collectable()) {
-        cfg = apply_overrides(cfg);
+        auto cfg = apply_overrides(input_cfg);
         max_offset = retention_offset(cfg);
     }
+
+    /*
+     * offset calculation for local retention reclaimable is different than the
+     * retention above and takes into account local retention advisory flag.
+     */
+    auto local_retention_cfg = apply_base_overrides(input_cfg);
+    local_retention_cfg = override_retention_config(local_retention_cfg);
+    const auto local_retention_offset
+      = co_await maybe_adjusted_retention_offset(local_retention_cfg);
 
     /*
      * evicting data based on the retention policy is a coordinated effort
@@ -2012,6 +2021,7 @@ disk_log_impl::disk_usage_and_reclaimable_space(gc_config cfg) {
     fragmented_vector<segment_set::type> retention_segments;
     fragmented_vector<segment_set::type> available_segments;
     fragmented_vector<segment_set::type> remaining_segments;
+    fragmented_vector<segment_set::type> local_retention_segments;
     for (auto& seg : _segs) {
         if (
           retention_offset.has_value()
@@ -2024,9 +2034,26 @@ disk_log_impl::disk_usage_and_reclaimable_space(gc_config cfg) {
         } else {
             remaining_segments.push_back(seg);
         }
+
+        /*
+         * track segments that are reclaimable and above local retention.
+         * effectively identcal to the condition in get_reclaimable_offsets. it
+         * is repeated here because it is convenient to roll up these stats into
+         * the usage information for consumption by the health monitor. the end
+         * state is that the usage reporting here and the work in
+         * get_reclaimable_offsets is going to be merged together.
+         */
+        if (
+          !config().is_read_replica_mode_enabled()
+          && is_cloud_retention_active() && seg != _segs.back()
+          && seg->offsets().dirty_offset <= max_collectible
+          && local_retention_offset.has_value()
+          && seg->offsets().dirty_offset <= local_retention_offset.value()) {
+            local_retention_segments.push_back(seg);
+        }
     }
 
-    auto [retention, available, remaining] = co_await ss::when_all_succeed(
+    auto [retention, available, remaining, lcl] = co_await ss::when_all_succeed(
       // reduce segment subject to retention policy
       ss::map_reduce(
         retention_segments,
@@ -2046,6 +2073,13 @@ disk_log_impl::disk_usage_and_reclaimable_space(gc_config cfg) {
         remaining_segments,
         [](const segment_set::type& seg) { return seg->persistent_size(); },
         usage{},
+        [](usage acc, usage u) { return acc + u; }),
+
+      // reduce segments not available for reclaim
+      ss::map_reduce(
+        local_retention_segments,
+        [](const segment_set::type& seg) { return seg->persistent_size(); },
+        usage{},
         [](usage acc, usage u) { return acc + u; }));
 
     /*
@@ -2061,6 +2095,7 @@ disk_log_impl::disk_usage_and_reclaimable_space(gc_config cfg) {
     reclaim_size_limits reclaim{
       .retention = retention.total(),
       .available = retention.total() + available.total(),
+      .local_retention = lcl.total(),
     };
 
     co_return std::make_pair(usage, reclaim);
