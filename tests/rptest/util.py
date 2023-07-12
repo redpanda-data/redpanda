@@ -18,6 +18,8 @@ from requests.exceptions import HTTPError
 from rptest.clients.kafka_cli_tools import KafkaCliTools
 from rptest.services.storage import Segment
 
+from ducktape.cluster.remoteaccount import RemoteCommandError
+
 
 class Scale:
     KEY = "scale"
@@ -435,3 +437,49 @@ def wait_for_recovery_throttle_rate(redpanda, new_rate: int):
                timeout_sec=90,
                backoff_sec=1,
                err_msg=f"Timed out waiting recovery rate to reach: {new_rate}")
+
+
+def ssh_output_stderr(source_service,
+                      node,
+                      cmd,
+                      allow_fail=False,
+                      timeout_sec=None) -> tuple[bytes, bytes]:
+    """Runs the command via SSH and captures stdout and stderr, returning it as a byte strings.
+    this is a copy/mode of ssh_output, with the intention midterm to upstream it to ducktape
+
+    :param source_service: The service calling this function. used for logging purposes (e.g. redpanda)
+    :param cmd: The remote ssh command.
+    :param node: where to run the command
+    :param allow_fail: If True, ignore nonzero exit status of the remote command,
+            else raise an ``RemoteCommandError``
+    :param timeout_sec: Set timeout on blocking reads/writes. Default None. For more details see
+        http://docs.paramiko.org/en/2.0/api/channel.html#paramiko.channel.Channel.settimeout
+
+    :return: stdout, stderr pair output from the ssh command.
+    :raise RemoteCommandError: If ``allow_fail`` is False and the command returns a non-zero exit status
+    """
+    source_service.logger.debug(f"Running ssh command: {cmd}")
+
+    client = node.account.ssh_client
+    stdin, stdout, stderr = client.exec_command(cmd, timeout=timeout_sec)
+
+    try:
+        stdoutdata = stdout.read()
+        stderrdata = stderr.read()
+
+        exit_status = stdin.channel.recv_exit_status()
+        if exit_status != 0:
+            if not allow_fail:
+                raise RemoteCommandError(source_service, cmd, exit_status,
+                                         stderrdata)
+            else:
+                source_service.logger.debug(
+                    f"Running ssh command {cmd} exited with status {exit_status} and message: {stderrdata}"
+                )
+    finally:
+        stdin.close()
+        stdout.close()
+        stderr.close()
+    source_service.logger.debug(
+        f"Returning ssh command output:\n{stdoutdata}\n")
+    return stdoutdata, stderrdata

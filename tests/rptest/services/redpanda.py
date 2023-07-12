@@ -58,7 +58,7 @@ from rptest.services.redpanda_installer import RedpandaInstaller, VERSION_RE as 
 from rptest.services.rolling_restarter import RollingRestarter
 from rptest.services.storage import ClusterStorage, NodeStorage, NodeCacheStorage
 from rptest.services.utils import BadLogLines, NodeCrash
-from rptest.util import inject_remote_script, wait_until_result
+from rptest.util import inject_remote_script, ssh_output_stderr, wait_until_result
 
 Partition = collections.namedtuple('Partition',
                                    ['topic', 'index', 'leader', 'replicas'])
@@ -3654,49 +3654,6 @@ class RedpandaService(RedpandaServiceBase):
 
         return wait_until_result(check, timeout_sec=30, backoff_sec=1)
 
-    def _ssh_output_stderr(self,
-                           node: ClusterNode,
-                           cmd,
-                           allow_fail=False,
-                           timeout_sec=None) -> tuple[bytes, bytes]:
-        """Runs the command via SSH and captures stdout and stderr, returning it as a byte strings.
-        this is a copy/mode of ssh_output, with the intention midterm to upstream it to ducktape
-
-        :param cmd: The remote ssh command.
-        :param node: where to run the command
-        :param allow_fail: If True, ignore nonzero exit status of the remote command,
-               else raise an ``RemoteCommandError``
-        :param timeout_sec: Set timeout on blocking reads/writes. Default None. For more details see
-            http://docs.paramiko.org/en/2.0/api/channel.html#paramiko.channel.Channel.settimeout
-
-        :return: stdout, stderr pair output from the ssh command.
-        :raise RemoteCommandError: If ``allow_fail`` is False and the command returns a non-zero exit status
-        """
-        self.logger.debug(f"Running ssh command: {cmd}")
-
-        client: SSHClient = node.account.ssh_client
-        stdin, stdout, stderr = client.exec_command(cmd, timeout=timeout_sec)
-
-        try:
-            stdoutdata = stdout.read()
-            stderrdata = stderr.read()
-
-            exit_status = stdin.channel.recv_exit_status()
-            if exit_status != 0:
-                if not allow_fail:
-                    raise RemoteCommandError(self, cmd, exit_status,
-                                             stderrdata)
-                else:
-                    self.logger.debug(
-                        f"Running ssh command {cmd} exited with status {exit_status} and message: {stderrdata}"
-                    )
-        finally:
-            stdin.close()
-            stdout.close()
-            stderr.close()
-        self.logger.debug(f"Returning ssh command output:\n{stdoutdata}\n")
-        return stdoutdata, stderrdata
-
     def _get_object_storage_report(
             self,
             tolerate_empty_object_storage=False) -> dict[str, str | list[str]]:
@@ -3754,7 +3711,8 @@ class RedpandaService(RedpandaServiceBase):
 
         bucket = self.si_settings.cloud_storage_bucket
         environment = ' '.join(f'{k}=\"{v}\"' for k, v in vars.items())
-        output, stderr = self._ssh_output_stderr(
+        output, stderr = ssh_output_stderr(
+            self,
             node,
             f"{environment} rp-storage-tool --backend {backend} scan-metadata --source {bucket}",
             allow_fail=True,
