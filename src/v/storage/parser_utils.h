@@ -52,10 +52,7 @@ model::record_batch maybe_decompress_batch_sync(const model::record_batch&);
 
 /// \brief batch compression
 ss::future<model::record_batch>
-compress_batch(model::compression, model::record_batch&&);
-/// \brief batch compression
-ss::future<model::record_batch>
-compress_batch(model::compression, const model::record_batch&);
+  compress_batch(model::compression, model::record_batch);
 
 /// \brief resets the size, header crc and payload crc
 void reset_size_checksum_metadata(model::record_batch_header&, const iobuf&);
