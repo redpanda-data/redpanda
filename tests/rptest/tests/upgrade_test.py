@@ -352,7 +352,8 @@ class UpgradeFromPriorFeatureVersionCloudStorageTest(RedpandaTest):
         super().__init__(
             test_context=test_context,
             num_brokers=3,
-            si_settings=SISettings(test_context),
+            si_settings=SISettings(
+                test_context, cloud_storage_housekeeping_interval_ms=1000),
             extra_rp_conf={
                 # We will exercise storage/cloud_storage read paths, get the
                 # batch cache out of the way to ensure reads hit storage layer.
@@ -498,9 +499,13 @@ class UpgradeFromPriorFeatureVersionCloudStorageTest(RedpandaTest):
         #                    local log trim, as in 23.2.x we are lazy about uploading manifests by default.
         if initial_version > Version("23.1.0") and initial_version < Version(
                 "23.2.0"):
-            admin.patch_cluster_config(
-                upsert={'cloud_storage_manifest_max_upload_interval_sec': 1},
-                node=new_version_node)
+            admin.patch_cluster_config(upsert={
+                'cloud_storage_manifest_max_upload_interval_sec':
+                1,
+                'cloud_storage_spillover_manifest_max_segments':
+                2
+            },
+                                       node=new_version_node)
 
         if block_uploads_during_upgrade:
             # If uploads are blocked during upgrade, we expect the new
@@ -535,8 +540,14 @@ class UpgradeFromPriorFeatureVersionCloudStorageTest(RedpandaTest):
                                      partition=newdata_p,
                                      target_id=self.redpanda.idx(old_node))
 
+        produce(newdata_p, 10)
+
         # Verify all data readable
         verify()
+
+        bucket_view = BucketView(self.redpanda)
+        manifest_mid_upgrade = bucket_view.manifest_for_ntp(
+            topic=topic, partition=newdata_p)
 
         # Finish the upgrade
         self.redpanda.rolling_restart_nodes([self.redpanda.nodes[-1]],
@@ -557,6 +568,27 @@ class UpgradeFromPriorFeatureVersionCloudStorageTest(RedpandaTest):
                                         target_bytes=local_retention_bytes +
                                         segment_bytes,
                                         timeout_sec=30)
+
+        def insync_offset_advanced():
+            bucket_view.reset()
+            current_manifest = bucket_view.manifest_for_ntp(
+                topic=topic, partition=newdata_p)
+
+            return current_manifest["insync_offset"] > manifest_mid_upgrade[
+                "insync_offset"]
+
+        # Wait for a manifest re-upload such that rp-storage-tool
+        # does not flag expected anomalies due to segment merger reuploads.
+        wait_until(insync_offset_advanced,
+                   timeout_sec=10,
+                   backoff_sec=2,
+                   err_msg="New manifest was not uploaded post upgrade")
+
+        # Check that spillover commands applied cleanly. If they did not, it's an
+        # indication that the upgrade has led to inconsistent state accross
+        # archival STMs on different nodes.
+        assert self.redpanda.search_log_any(
+            "Can't apply spillover_cmd") is False
 
 
 class RedpandaInstallerTest(RedpandaTest):
