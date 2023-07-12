@@ -12,6 +12,7 @@
 #include "storage.h"
 
 #include "cloud_storage/cache_service.h"
+#include "cluster/node/local_monitor.h"
 #include "cluster/partition_manager.h"
 #include "storage/disk_log_impl.h"
 #include "utils/human.h"
@@ -26,11 +27,13 @@ namespace storage {
 disk_space_manager::disk_space_manager(
   config::binding<bool> enabled,
   config::binding<std::optional<uint64_t>> log_storage_target_size,
+  ss::sharded<cluster::node::local_monitor>* local_monitor,
   ss::sharded<storage::api>* storage,
   ss::sharded<storage::node>* storage_node,
   ss::sharded<cloud_storage::cache>* cache,
   ss::sharded<cluster::partition_manager>* pm)
   : _enabled(std::move(enabled))
+  , _local_monitor(local_monitor)
   , _storage(storage)
   , _storage_node(storage_node)
   , _cache(cache->local_is_initialized() ? cache : nullptr)
@@ -80,24 +83,24 @@ ss::future<> disk_space_manager::run_loop() {
 
     while (!_gate.is_closed()) {
         try {
-            if (_enabled()) {
-                co_await _control_sem.wait(
-                  config::shard_local_cfg().retention_local_trim_interval(),
-                  std::max(_control_sem.current(), size_t(1)));
-            } else {
-                co_await _control_sem.wait();
-            }
+            co_await _control_sem.wait(
+              config::shard_local_cfg().retention_local_trim_interval(),
+              std::max(_control_sem.current(), size_t(1)));
         } catch (const ss::semaphore_timed_out&) {
             // time for some controlling
         }
 
         if (!_enabled()) {
+            _local_monitor->local().set_log_data_state(std::nullopt);
             continue;
         }
 
-        if (_log_storage_target_size().has_value()) {
-            co_await manage_data_disk(_log_storage_target_size().value());
+        if (!_log_storage_target_size().has_value()) {
+            _local_monitor->local().set_log_data_state(std::nullopt);
+            continue;
         }
+
+        co_await manage_data_disk(_log_storage_target_size().value());
     }
 }
 
@@ -424,6 +427,15 @@ ss::future<> disk_space_manager::manage_data_disk(uint64_t target_size) {
           std::current_exception());
         co_return;
     }
+
+    /*
+     * inform local monitor of latest usage/reclaim info for health report
+     */
+    cluster::node::local_state::log_data_state monitor_update;
+    monitor_update.data_target_size = target_size;
+    monitor_update.data_current_size = usage.usage.total();
+    monitor_update.data_reclaimable_size = usage.reclaim.local_retention;
+    _local_monitor->local().set_log_data_state(monitor_update);
 
     /*
      * how much data from log storage do we need to remove from disk to be able
