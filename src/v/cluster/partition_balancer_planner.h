@@ -67,6 +67,7 @@ public:
         actions_planned,
         waiting_for_maintenance_end,
         waiting_for_reports,
+        missing_sizes,
     };
     /**
      * class describing a reason underlying partition replica set change

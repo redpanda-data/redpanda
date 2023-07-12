@@ -139,6 +139,8 @@ private:
     // returns true if the failure can be logged
     bool increment_failure_count();
 
+    void increment_missing_size_count() { _partitions_with_missing_size++; }
+
     void
     report_decommission_reallocation_failure(model::node_id, const model::ntp&);
 
@@ -149,6 +151,9 @@ private:
     absl::node_hash_map<model::ntp, allocated_partition> _reassignments;
     uint64_t _planned_moves_size_bytes = 0;
     size_t _failed_actions_count = 0;
+    // we track missing partition size info separately as it requires force
+    // refresh of health report
+    size_t _partitions_with_missing_size = 0;
     // Tracks ntps with allocation failures grouped by decommissioning node.
     static constexpr size_t max_ntps_with_reallocation_falures = 25;
     absl::flat_hash_map<model::node_id, absl::btree_set<model::ntp>>
@@ -560,6 +565,7 @@ public:
             break;
         case immutability_reason::no_size_info:
             reason = "partition size information unavailable";
+            _ctx.increment_missing_size_count();
             break;
         case immutability_reason::reconfiguration_state:
             reason = ssx::sformat(
@@ -1506,10 +1512,12 @@ partition_balancer_planner::plan_actions(
             result.status = status::waiting_for_maintenance_end;
         }
     }
-
     co_await get_counts_rebalancing_actions(ctx);
 
     ctx.collect_actions(result);
+    if (ctx._partitions_with_missing_size > 0) {
+        result.status = status::missing_sizes;
+    }
     co_return result;
 }
 
