@@ -62,6 +62,41 @@ struct local_state
     /// all drive's alert state.
     storage::disk_space_alert get_disk_alert() const;
 
+    /*
+     * the system may try to use less than the entire disk for log data. for
+     * example a configuration may be:
+     *
+     *    physical disk size: 1 TB
+     *
+     *    // configured reservations
+     *    target_size: 700 GB
+     *    cache size: 200 GB
+     *    overhead size: 100 GB
+     *
+     *    // current usage
+     *    current_size: 700 GB (at capacity)
+     *    reclaimable_size: 200 GB
+     *
+     * in this scenario scenario even though the target size has been reached,
+     * according to the retention policy on the node up to 200 GB is currently
+     * reclaimable if the target size is exceeded.
+     *
+     * data_target_size: the target capacity of log data
+     * data_current_size: current amount of log data
+     * data_reclaimable_size: amount of data reclaimable log data
+     */
+    struct log_data_state
+      : serde::envelope<
+          log_data_state,
+          serde::version<0>,
+          serde::compat_version<0>> {
+        uint64_t data_target_size{0};
+        uint64_t data_current_size{0};
+        uint64_t data_reclaimable_size{0};
+        friend std::ostream& operator<<(std::ostream&, const log_data_state&);
+    };
+    tristate<log_data_state> log_data_size{std::nullopt};
+
     void serde_read(iobuf_parser&, const serde::header&);
     void serde_write(iobuf& out) const;
 
