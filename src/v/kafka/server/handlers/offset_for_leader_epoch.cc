@@ -80,7 +80,7 @@ static ss::future<std::vector<epoch_end_offset>> fetch_offsets(
         ret.push_back(response_t::make_epoch_end_offset(
           r.ktp.get_partition(),
           co_await get_epoch_end_offset(r.requested_epoch, *p),
-          p->leader_epoch()));
+          r.requested_epoch));
     }
     co_return ret;
 }
