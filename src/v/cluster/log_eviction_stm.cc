@@ -236,12 +236,14 @@ ss::future<log_eviction_stm::offset_result> log_eviction_stm::truncate(
     vlog(
       _logger.info,
       "Replicating prefix_truncate command, redpanda start offset: {}, kafka "
-      "start offset: {}"
-      "current last snapshot offset: {}, current last visible offset: {}",
+      "start offset: {} "
+      "current last snapshot offset: {}, current last visible offset: {} for "
+      "ntp: {}",
       val.rp_start_offset,
       val.kafka_start_offset,
       _raft->last_snapshot_index(),
-      _raft->last_visible_index());
+      _raft->last_visible_index(),
+      _raft->ntp());
 
     auto res = co_await replicate_command(std::move(batch), deadline, as);
     if (res.has_failure()) {

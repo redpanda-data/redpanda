@@ -474,6 +474,8 @@ private:
     ss::future<ss::json::json_return_type>
       cpu_profile_handler(std::unique_ptr<ss::http::request>);
     ss::future<ss::json::json_return_type>
+      get_local_offsets_translated_handler(std::unique_ptr<ss::http::request>);
+    ss::future<ss::json::json_return_type>
       cloud_storage_usage_handler(std::unique_ptr<ss::http::request>);
     ss::future<ss::json::json_return_type>
       restart_service_handler(std::unique_ptr<ss::http::request>);
