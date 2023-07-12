@@ -13,7 +13,7 @@ from typing import Any, Callable, Optional
 from rptest.clients.offline_log_viewer import OfflineLogViewer
 from rptest.services.cluster import cluster
 from rptest.services.admin import Admin
-from rptest.services.redpanda import SISettings
+from rptest.services.redpanda import RedpandaService, SISettings
 from rptest.services.redpanda_installer import RedpandaInstaller, RedpandaVersion, RedpandaVersionTriple
 from rptest.services.workload_protocol import PWorkload
 from rptest.tests.prealloc_nodes import PreallocNodesTest
@@ -389,6 +389,8 @@ class RedpandaUpgradeTest(PreallocNodesTest):
                                                  current_version)
                 self._run_workloads_for_version(
                     expand_version(self.installer, current_version))
+                self.redpanda.raise_on_cloud_storage_inconsistencies(
+                    ['ntpr_bad_deltas'])
 
         self._run_test_and_check_for_errors(upgrade_loop)
 
