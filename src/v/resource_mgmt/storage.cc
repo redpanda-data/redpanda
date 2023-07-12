@@ -81,7 +81,7 @@ ss::future<> disk_space_manager::run_loop() {
         try {
             if (_enabled()) {
                 co_await _control_sem.wait(
-                  config::shard_local_cfg().log_storage_max_usage_interval(),
+                  config::shard_local_cfg().retention_local_trim_interval(),
                   std::max(_control_sem.current(), size_t(1)));
             } else {
                 co_await _control_sem.wait();

@@ -606,7 +606,7 @@ class LogStorageMaxSizeSI(RedpandaTest):
 
         # set the log storage target size. system will try to meet this target.
         self.redpanda.set_cluster_config(
-            dict(log_storage_target_size=target_size, ))
+            dict(retention_local_target_capacity_bytes=target_size, ))
 
         # now go write another `data_size` bytes
         t1 = time()

@@ -24,7 +24,7 @@ import time
 class LogStorageTargetSizeTest(RedpandaTest):
     segment_upload_interval = 30
     manifest_upload_interval = 10
-    log_storage_max_usage_interval = 5
+    retention_local_trim_interval = 5
 
     def __init__(self, test_context, *args, **kwargs):
         super().__init__(test_context, *args, **kwargs)
@@ -63,7 +63,7 @@ class LogStorageTargetSizeTest(RedpandaTest):
         # not immediate. currently a monitoring loop runs periodically, and
         # during this time data may accumulate that is not subject to being
         # removed because the monitor has not run to notice it.
-        accounting_delay_accumulation = rate_limit_bps * self.log_storage_max_usage_interval
+        accounting_delay_accumulation = rate_limit_bps * self.retention_local_trim_interval
 
         # consider the case where all the active segments fill up and roll at
         # the same time, and then a full accounting period passes during which
@@ -89,9 +89,9 @@ class LogStorageTargetSizeTest(RedpandaTest):
             self.segment_upload_interval,
             'cloud_storage_manifest_max_upload_interval_sec':
             self.manifest_upload_interval,
-            'log_storage_max_usage_interval':
-            self.log_storage_max_usage_interval,
-            'log_storage_target_size': target_size,
+            'retention_local_trim_interval':
+            self.retention_local_trim_interval,
+            'retention_local_target_capacity_bytes': target_size,
         }
         si_settings = SISettings(test_context=self.test_context,
                                  log_segment_size=log_segment_size)
