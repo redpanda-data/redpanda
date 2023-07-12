@@ -379,6 +379,25 @@ ss::future<> ntp_archiver::upload_topic_manifest() {
 ss::future<> ntp_archiver::upload_until_term_change() {
     ss::lowres_clock::duration backoff = _conf->upload_loop_initial_backoff;
 
+    if (!_feature_table.local().is_active(
+          features::feature::cloud_storage_manifest_format_v2)) {
+        vlog(
+          _rtclog.warn,
+          "Cannot operate upload loop during upgrade, not all nodes "
+          "are upgraded yet.  Waiting...");
+        co_await _feature_table.local().await_feature(
+          features::feature::cloud_storage_manifest_format_v2, _as);
+        vlog(
+          _rtclog.info, "Upgrade complete, proceeding with the upload loop.");
+
+        // The cluster likely needed a bunch of restarts in order to
+        // reach this point, which means that leadership may have been
+        // transferred away (hence the explicit check).
+        if (!may_begin_uploads()) {
+            co_return;
+        }
+    }
+
     // Before starting, upload the manifest if needed.  This makes our
     // behavior more deterministic on first start (uploading the empty
     // manifest) and after unclean leadership changes (flush dirty manifest
