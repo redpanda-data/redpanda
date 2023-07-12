@@ -68,6 +68,16 @@ public:
         waiting_for_maintenance_end,
         waiting_for_reports,
     };
+    /**
+     * class describing a reason underlying partition replica set change
+     */
+    enum class change_reason {
+        rack_constraint_repair,
+        partition_count_rebalancing,
+        node_decommissioning,
+        node_unavailable,
+        disk_full,
+    };
 
     struct plan_data {
         partition_balancer_violations violations;
@@ -99,7 +109,8 @@ private:
     static ss::future<> get_node_drain_actions(
       request_context&,
       const absl::flat_hash_set<model::node_id>&,
-      std::string_view reason);
+      change_reason reason);
+
     static ss::future<> get_rack_constraint_repair_actions(request_context&);
     static ss::future<> get_full_node_actions(request_context&);
     static ss::future<> get_counts_rebalancing_actions(request_context&);
@@ -110,6 +121,8 @@ private:
     planner_config _config;
     partition_balancer_state& _state;
     partition_allocator& _partition_allocator;
+
+    friend std::ostream& operator<<(std::ostream&, change_reason);
 };
 
 } // namespace cluster
