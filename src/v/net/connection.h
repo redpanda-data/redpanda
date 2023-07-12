@@ -65,6 +65,10 @@ public:
         return ss::tls::get_dn_information(_fd);
     }
 
+    ss::future<> wait_for_input_shutdown() {
+        return _fd ? _fd.wait_input_shutdown() : ss::make_ready_future<>();
+    }
+
 private:
     boost::intrusive::list<connection>& _hook;
     ss::sstring _name;
