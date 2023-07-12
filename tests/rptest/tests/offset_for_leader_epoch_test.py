@@ -146,6 +146,16 @@ class OffsetForLeaderEpochTest(PreallocNodesTest):
         for o in leader_epoch_offsets:
             assert o.error is not None and "UNKNOWN_LEADER_EPOCH" in o.error
 
+        # test case for requested_epoch larger then leader_epoch
+
+        leader_epoch_offsets = kcl.offset_for_leader_epoch(topics=topic_names,
+                                                           leader_epoch=15000)
+
+        for o in leader_epoch_offsets:
+            # Ensure the leader_epoch returned is not the current leader_epoch
+            # but the requested
+            assert o.error == '' and o.leader_epoch == 15000 and o.epoch_end_offset == -1
+
     @cluster(num_nodes=6, log_allow_list=RESTART_LOG_ALLOW_LIST)
     def test_offset_for_leader_epoch_transfer(self):
 
