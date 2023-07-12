@@ -27,7 +27,10 @@ class cache;
 
 namespace cluster {
 class partition_manager;
+namespace node {
+class local_monitor;
 }
+} // namespace cluster
 
 namespace storage {
 
@@ -216,6 +219,7 @@ public:
     disk_space_manager(
       config::binding<bool> enabled,
       config::binding<std::optional<uint64_t>> log_storage_target_size,
+      ss::sharded<cluster::node::local_monitor>* local_monitor,
       ss::sharded<storage::api>* storage,
       ss::sharded<storage::node>* storage_node,
       ss::sharded<cloud_storage::cache>* cache,
@@ -232,6 +236,7 @@ public:
 
 private:
     config::binding<bool> _enabled;
+    ss::sharded<cluster::node::local_monitor>* _local_monitor;
     ss::sharded<storage::api>* _storage;
     ss::sharded<storage::node>* _storage_node;
     ss::sharded<cloud_storage::cache>* _cache;
