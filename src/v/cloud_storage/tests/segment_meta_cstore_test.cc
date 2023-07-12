@@ -808,6 +808,7 @@ BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_full_contains) {
 void test_cstore_prefix_truncate(size_t test_size, size_t max_truncate_ix) {
     // failing seed:
     // std::istringstream{"10263162"} >> random_generators::internal::gen;
+    BOOST_REQUIRE_GE(test_size, 2);
     BOOST_TEST_INFO(fmt::format(
       "random_generators::internal::gen: [{}]",
       random_generators::internal::gen));
@@ -820,9 +821,9 @@ void test_cstore_prefix_truncate(size_t test_size, size_t max_truncate_ix) {
 
     // Truncate the generated manifest and the column store
     // and check that all operations can be performed.
-    auto ix = random_generators::get_int(1, (int)max_truncate_ix);
-    auto iter = manifest.begin();
-    std::advance(iter, ix);
+    auto ix = random_generators::get_int(
+      1, (int)std::min(manifest.size() - 1, max_truncate_ix));
+    auto iter = std::next(manifest.begin(), ix);
     auto start_offset = iter->base_offset;
 
     vlog(
@@ -853,6 +854,23 @@ BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_prefix_truncate_small) {
 
 BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_prefix_truncate_full) {
     test_cstore_prefix_truncate(short_test_size, short_test_size);
+}
+
+BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_prefix_truncate_complete) {
+    segment_meta_cstore store;
+    auto manifest = generate_metadata(short_test_size);
+    for (auto const& sm : manifest) {
+        store.insert(sm);
+    }
+
+    store.prefix_truncate(model::offset::max());
+    BOOST_REQUIRE(store.empty());
+
+    for (auto const& sm : manifest) {
+        store.insert(sm);
+    }
+    store.prefix_truncate(manifest.back().committed_offset + model::offset{1});
+    BOOST_REQUIRE(store.empty());
 }
 
 BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_serde_roundtrip) {
