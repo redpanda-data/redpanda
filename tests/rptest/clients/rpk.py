@@ -867,7 +867,7 @@ class RpkTool:
         ]
         return self._execute(cmd).strip()
 
-    def cluster_config_set(self, key: str, value):
+    def cluster_config_set(self, key: str, value: str):
         cmd = [
             self._rpk_binary(), "--api-urls",
             self._admin_host(), "cluster", "config", "set", key, value
