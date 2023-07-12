@@ -330,7 +330,10 @@ class RedpandaUpgradeTest(PreallocNodesTest):
 
     @skip_debug_mode
     @cluster(num_nodes=4)
-    def test_workloads_through_releases(self):
+    def test_workloads_through_releases(
+            self,
+            override_earliest_release_limit: Optional[RedpandaVersion] = None,
+            override_latest_release_limit: Optional[RedpandaVersion] = None):
         """
         This tests performs a chain of upgrades on the cluster, from the oldest supported version to HEAD.
         While doing this, it executes self.adapted_workloads to generate workloads and perform checks.
@@ -354,7 +357,27 @@ class RedpandaUpgradeTest(PreallocNodesTest):
                                       partial_update=True)
 
         def upgrade_loop():
+            nonlocal override_earliest_release_limit
+            nonlocal override_latest_release_limit
+
             upgrade_steps = self._get_upgrade_steps()
+            if override_earliest_release_limit is not None:
+                override_earliest_release_limit = expand_version(
+                    self.installer, override_earliest_release_limit)
+                new_start_version = next(
+                    s for s in upgrade_steps
+                    if s >= override_earliest_release_limit)
+                upgrade_steps = upgrade_steps[upgrade_steps.
+                                              index(new_start_version):]
+
+            if override_latest_release_limit is not None:
+                override_latest_release_limit = expand_version(
+                    self.installer, override_latest_release_limit)
+                new_stop_version = next(rs for rs in reversed(upgrade_steps)
+                                        if rs <= override_latest_release_limit)
+                upgrade_steps = upgrade_steps[:upgrade_steps.
+                                              index(new_stop_version) + 1]
+
             self.logger.info(f"going through these versions: {upgrade_steps}")
 
             # upgrade loop: for each version
