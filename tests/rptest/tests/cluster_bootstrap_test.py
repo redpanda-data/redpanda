@@ -46,6 +46,12 @@ class ClusterBootstrapNew(RedpandaTest):
         for node in self.redpanda.nodes:
             self.redpanda.set_extra_node_conf(
                 node, {"empty_seed_starts_cluster": False})
+
+        # setup seed servers on the other two nodes to prevent them from joining
+        # cluster point the nodes to node 0
+        for node in self.redpanda.nodes[1:]:
+            self.redpanda.set_seed_servers([self.redpanda.nodes[0]])
+
         try:
             self.redpanda.start(omit_seeds_on_idx_one=True)
             assert False, "Should have been unable to start"
