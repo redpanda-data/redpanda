@@ -141,18 +141,18 @@ type SecretRef struct {
 
 // ListenerTLS is a top level field of the values file
 type ListenerTLS struct {
-	Cert              *string `json:"certs,omitempty"`
+	Cert              *string `json:"cert,omitempty"`
 	Enabled           *bool   `json:"enabled,omitempty"`
 	RequireClientAuth bool    `json:"requireClientAuth"`
 }
 
 // External is a top level field of the values file
 type External struct {
-	Addresses   json.RawMessage `json:"addresses,omitempty"`
-	Domain      string          `json:"domain,omitempty"`
-	Enabled     bool            `json:"enabled,omitempty"`
-	Type        string          `json:"type,omitempty"`
-	ExternalDNS *ExternalDNS    `json:"externalDNS,omitempty"`
+	Addresses   []string     `json:"addresses,omitempty"`
+	Domain      *string      `json:"domain,omitempty"`
+	Enabled     *bool        `json:"enabled,omitempty"`
+	Type        *string      `json:"type,omitempty"`
+	ExternalDNS *ExternalDNS `json:"externalDNS,omitempty"`
 }
 
 // Logging is a top level field of the values file

@@ -137,11 +137,9 @@ spec:
                     description: External is a top level field of the values file
                     properties:
                       addresses:
-                        description: RawMessage is a raw encoded JSON value. It implements
-                          Marshaler and Unmarshaler and can be used to delay JSON
-                          decoding or precompute a JSON encoding.
-                        format: byte
-                        type: string
+                        items:
+                          type: string
+                        type: array
                       domain:
                         type: string
                       enabled:
@@ -212,7 +210,7 @@ spec:
                                   description: ListenerTLS is a top level field of
                                     the values file
                                   properties:
-                                    certs:
+                                    cert:
                                       type: string
                                     enabled:
                                       type: boolean
@@ -232,7 +230,7 @@ spec:
                             description: ListenerTLS is a top level field of the values
                               file
                             properties:
-                              certs:
+                              cert:
                                 type: string
                               enabled:
                                 type: boolean
@@ -265,7 +263,7 @@ spec:
                                   description: ListenerTLS is a top level field of
                                     the values file
                                   properties:
-                                    certs:
+                                    cert:
                                       type: string
                                     enabled:
                                       type: boolean
@@ -287,7 +285,7 @@ spec:
                             description: ListenerTLS is a top level field of the values
                               file
                             properties:
-                              certs:
+                              cert:
                                 type: string
                               enabled:
                                 type: boolean
@@ -320,7 +318,7 @@ spec:
                                   description: ListenerTLS is a top level field of
                                     the values file
                                   properties:
-                                    certs:
+                                    cert:
                                       type: string
                                     enabled:
                                       type: boolean
@@ -340,7 +338,7 @@ spec:
                             description: ListenerTLS is a top level field of the values
                               file
                             properties:
-                              certs:
+                              cert:
                                 type: string
                               enabled:
                                 type: boolean
@@ -362,7 +360,7 @@ spec:
                             description: ListenerTLS is a top level field of the values
                               file
                             properties:
-                              certs:
+                              cert:
                                 type: string
                               enabled:
                                 type: boolean
@@ -395,7 +393,7 @@ spec:
                                   description: ListenerTLS is a top level field of
                                     the values file
                                   properties:
-                                    certs:
+                                    cert:
                                       type: string
                                     enabled:
                                       type: boolean
@@ -417,7 +415,7 @@ spec:
                             description: ListenerTLS is a top level field of the values
                               file
                             properties:
-                              certs:
+                              cert:
                                 type: string
                               enabled:
                                 type: boolean
