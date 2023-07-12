@@ -553,13 +553,12 @@ public:
 
     void
     report_failure(partition_balancer_planner::change_reason change_reason) {
-        bool can_log = _ctx.increment_failure_count();
-        if (!can_log) {
-            return;
-        }
-
         ss::sstring reason;
         switch (_reason) {
+        case immutability_reason::batch_full:
+            // don't log full batch failures (if the batch is full, we are
+            // not stalling), and do not increment failure count
+            return;
         case immutability_reason::no_quorum:
             reason = "no raft quorum";
             break;
@@ -571,9 +570,10 @@ public:
             reason = ssx::sformat(
               "reconfiguration in progress, state: {}", _reconfiguration_state);
             break;
-        case immutability_reason::batch_full:
-            // don't log full batch failures (if the batch is full, we are
-            // not stalling)
+        }
+
+        const bool can_log = _ctx.increment_failure_count();
+        if (!can_log) {
             return;
         }
 
