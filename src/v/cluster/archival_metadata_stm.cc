@@ -633,6 +633,11 @@ ss::future<> archival_metadata_stm::apply(model::record_batch b) {
         case reset_metadata_cmd::key:
             apply_reset_metadata();
             break;
+        default:
+            throw std::runtime_error(fmt_with_ctx(
+              fmt::format,
+              "Unknown archival metadata STM command {}",
+              static_cast<int>(key)));
         };
     });
 
