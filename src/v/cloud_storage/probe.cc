@@ -208,6 +208,22 @@ remote_probe::remote_probe(
               sm::description("Successful spillover manifest uploads"),
               {})
               .aggregate({sm::shard_label}),
+            sm::make_gauge(
+              "spillover_manifests_materialized_count",
+              [&ms] { return ms.get_materialized_manifest_cache().size(); },
+              sm::description(
+                "How many spilled manifests are currently cached in memory"),
+              {})
+              .aggregate({sm::shard_label}),
+            sm::make_gauge(
+              "spillover_manifests_materialized_bytes",
+              [&ms] {
+                  return ms.get_materialized_manifest_cache().size_bytes();
+              },
+              sm::description("Bytes of memory used for spilled manifests "
+                              "currently cached in memory"),
+              {})
+              .aggregate({sm::shard_label}),
           });
     }
 }
