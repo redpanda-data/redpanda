@@ -221,7 +221,7 @@ struct cluster_health_overview {
     // is healthy is a main cluster indicator, it is intended as an simple flag
     // that will allow all external cluster orchestrating processes to decide if
     // they can proceed with next steps
-    bool is_healthy;
+    bool is_healthy() { return unhealthy_reasons.empty(); }
 
     // additional human readable information that will make debugging cluster
     // errors easier

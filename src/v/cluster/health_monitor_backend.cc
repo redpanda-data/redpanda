@@ -871,8 +871,6 @@ health_monitor_backend::get_cluster_health_overview(
         ret.unhealthy_reasons.emplace_back("no_health_report");
     }
 
-    ret.is_healthy = ret.unhealthy_reasons.empty();
-
     ret.bytes_in_cloud_storage = _bytes_in_cloud_storage;
 
     co_return ret;

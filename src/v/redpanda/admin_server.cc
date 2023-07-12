@@ -4520,7 +4520,7 @@ void admin_server::register_cluster_routes() {
               model::time_from_now(std::chrono::seconds(5)))
             .then([](auto health_overview) {
                 ss::httpd::cluster_json::cluster_health_overview ret;
-                ret.is_healthy = health_overview.is_healthy;
+                ret.is_healthy = health_overview.is_healthy();
 
                 ret.unhealthy_reasons._set = true;
                 ret.all_nodes._set = true;
