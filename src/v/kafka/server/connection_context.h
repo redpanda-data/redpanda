@@ -21,6 +21,7 @@
 #include "security/mtls.h"
 #include "security/sasl_authentication.h"
 #include "ssx/abort_source.h"
+#include "ssx/future-util.h"
 #include "ssx/semaphore.h"
 #include "utils/hdr_hist.h"
 #include "utils/named_type.h"
@@ -128,9 +129,21 @@ public:
 
     ss::future<> start() {
         co_await _as.start(_server.abort_source());
+        if (conn) {
+            ssx::background
+              = conn->wait_for_input_shutdown()
+                  .finally([this]() { return _as.request_abort(); })
+                  .finally([this]() { _wait_input_shutdown.set_value(); });
+        } else {
+            _wait_input_shutdown.set_value();
+        }
     }
 
     ss::future<> stop() {
+        if (conn) {
+            conn->shutdown_input();
+        }
+        co_await _wait_input_shutdown.get_future();
         co_await _as.stop();
     }
 
@@ -357,6 +370,7 @@ private:
     config::conversion_binding<std::vector<bool>, std::vector<ss::sstring>>
       _kafka_throughput_controlled_api_keys;
     std::unique_ptr<snc_quota_context> _snc_quota_context;
+    ss::promise<> _wait_input_shutdown;
 };
 
 } // namespace kafka
