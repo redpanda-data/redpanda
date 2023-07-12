@@ -1199,7 +1199,7 @@ class RedpandaServiceCloud(RedpandaServiceK8s):
 
         CHECK_TIMEOUT_SEC = 3600
         CHECK_BACKOFF_SEC = 60.0
-        DEFAULT_PRODUCT_ID = 'cgrdrd9jiflmsknn2nl0'
+        DEFAULT_PRODUCT_ID = 'chqrd4q37efgkmohsbdg'  # preprod tier-1-aws
 
         def __init__(self,
                      logger,
@@ -1363,35 +1363,34 @@ class RedpandaServiceCloud(RedpandaServiceK8s):
             name = f'rp-ducktape-cluster-{self._unique_id}'  # e.g. rp-ducktape-cluster-3b36f516
             self._logger.debug(f'creating cluster name {name}')
             body = {
-                "namespaceUuid": namespace_uuid,
-                "connectionType": "public",
-                "network": {
-                    "displayName": f"public-network-{name}",
-                    "spec": {
-                        "deploymentType": "FMC",
-                        "provider": "AWS",
-                        "regionId": "ccpfuvec6lhdao925q10",
-                        "zones": ["usw2-az1"],
-                        "installPackVersion": "23.1.20230502184729",
-                        "cidr": "10.0.0.0/16"
-                    }
-                },
                 "cluster": {
                     "name": name,
                     "productId": product_id,
                     "spec": {
                         "clusterType": "FMC",
-                        "provider": "AWS",
-                        "region": "us-west-2",
-                        "isMultiAz": False,
-                        "zones": ["usw2-az1"],
-                        "installPackVersion": "23.1.20230502184729",
                         "connectors": {
                             "enabled": True
                         },
-                        "networkId": ""
+                        "installPackVersion": "23.2.20230707135118",
+                        "isMultiAz": False,
+                        "networkId": "",
+                        "provider": "AWS",
+                        "region": "us-west-2",
+                        "zones": ["usw2-az1"],
                     }
-                }
+                },
+                "connectionType": "public",
+                "namespaceUuid": namespace_uuid,
+                "network": {
+                    "displayName": f"public-network-{name}",
+                    "spec": {
+                        "cidr": "10.1.0.0/16",
+                        "deploymentType": "FMC",
+                        "installPackVersion": "23.2.20230707135118",
+                        "provider": "AWS",
+                        "regionId": "cckac9vvbr5ofm048jjg",
+                    }
+                },
             }
 
             self._logger.debug(f'body: {json.dumps(body)}')
