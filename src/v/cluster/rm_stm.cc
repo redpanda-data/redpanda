@@ -2069,6 +2069,13 @@ void rm_stm::compact_snapshot() {
     for (auto it = _log_state.seq_table.cbegin();
          it != _log_state.seq_table.cend();) {
         if (is_producer_expired(now, it->second.entry)) {
+            vlog(
+              _ctx_log.debug,
+              "Clearing pid: {}, last_write_timestamp: {}, now: {}, reason: "
+              "expired",
+              it->first,
+              it->second.entry.last_write_timestamp,
+              now.value());
             _log_state.erase_seq(it++);
         } else {
             if (
@@ -3129,6 +3136,7 @@ ss::future<> rm_stm::do_remove_persistent_state() {
 ss::future<> rm_stm::handle_raft_snapshot() {
     return _state_lock.hold_write_lock().then(
       [this]([[maybe_unused]] ss::basic_rwlock<>::holder unit) {
+          vlog(_ctx_log.debug, "Resetting all state, reason: log eviction");
           _log_state.reset();
           _mem_state = mem_state{_tx_root_tracker};
           set_next(_c->start_offset());
@@ -3235,6 +3243,12 @@ ss::future<> rm_stm::clear_old_idempotent_pids() {
         auto rw_lock = get_idempotent_producer_lock(pid_for_delete);
         auto lock = rw_lock->try_write_lock();
         if (lock) {
+            vlog(
+              _ctx_log.trace,
+              "Clearing pid: {}, reason: exceeded max concurrent pids: "
+              "{}",
+              pid_for_delete,
+              _max_concurrent_producer_ids());
             _log_state.lru_idempotent_pids.pop_front();
             _log_state.seq_table.erase(pid_for_delete);
             _inflight_requests.erase(pid_for_delete);
