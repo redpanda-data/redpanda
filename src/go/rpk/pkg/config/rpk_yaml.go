@@ -263,6 +263,12 @@ func (p *RpkProfile) DevOverrides() DevOverrides {
 	return p.c.devOverrides
 }
 
+// HasSASLCredentials returns if both Kafka SASL user and password are empty.
+func (p *RpkProfile) HasSASLCredentials() bool {
+	s := p.KafkaAPI.SASL
+	return s != nil && s.User != "" && s.Password != ""
+}
+
 // HasClientCredentials returns if both ClientID and ClientSecret are empty.
 func (a *RpkCloudAuth) HasClientCredentials() bool {
 	k, _ := a.Kind()

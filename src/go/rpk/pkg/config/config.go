@@ -108,7 +108,7 @@ func (c *Config) VirtualRpkYaml() *RpkYaml {
 
 // VirtualProfile returns an rpk.yaml's current Virtual profile,
 // starting with defaults, then decoding a potential file, then applying env
-// vars and then flags. This always returns non-nil due to a guaranee from
+// vars and then flags. This always returns non-nil due to a guarantee from
 // Params.Load.
 func (c *Config) VirtualProfile() *RpkProfile {
 	return c.rpkYaml.Profile(c.rpkYaml.CurrentProfile)
@@ -120,9 +120,9 @@ func (c *Config) ActualRpkYaml() (*RpkYaml, bool) {
 	return &c.rpkYamlActual, c.rpkYamlExists
 }
 
-// ActualRpkYamlOrDefaults returns an actual rpk.yaml if it exists, otherwise
-// this returns a blank rpk.yaml. If this function tries to return a default
-// rpk.yaml but cannot read the user config dir, this returns an error.
+// ActualRpkYamlOrEmpty returns an actual rpk.yaml if it exists, otherwise this
+// returns a blank rpk.yaml. If this function tries to return a default rpk.yaml
+// but cannot read the user config dir, this returns an error.
 func (c *Config) ActualRpkYamlOrEmpty() (y *RpkYaml, err error) {
 	if c.rpkYamlExists || c.rpkYamlInitd {
 		return &c.rpkYamlActual, nil
