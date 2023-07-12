@@ -1611,7 +1611,7 @@ configuration::configuration()
       "the target. When no target is specified storage usage is unbounded.",
       {.needs_restart = needs_restart::no,
        .example = "2147483648000",
-       .visibility = visibility::tunable},
+       .visibility = visibility::user},
       std::nullopt)
   , retention_local_trim_interval(
       *this,
