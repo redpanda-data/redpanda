@@ -23,4 +23,12 @@ struct compressor {
     static iobuf uncompress(const iobuf&, type);
 };
 
+// A simple opinionated stream compressor.
+//
+// Will use stream compression when available, to defer to compressor.
+struct stream_compressor {
+    static ss::future<iobuf> compress(iobuf, type);
+    static ss::future<iobuf> uncompress(iobuf, type);
+};
+
 } // namespace compression
