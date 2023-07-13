@@ -322,6 +322,7 @@ struct configuration final : public config_store {
     property<bool> retention_local_is_advisory;
     property<std::optional<uint64_t>> retention_local_target_capacity_bytes;
     property<std::chrono::milliseconds> retention_local_trim_interval;
+    property<double> retention_local_trim_overage_coeff;
 
     // Archival cache
     property<uint64_t> cloud_storage_cache_size;

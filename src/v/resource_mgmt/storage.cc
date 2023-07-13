@@ -429,9 +429,9 @@ ss::future<> disk_space_manager::manage_data_disk(uint64_t target_size) {
      * how much data from log storage do we need to remove from disk to be able
      * to stay below the current target size?
      */
-    const auto target_excess = usage.usage.total() < target_size
-                                 ? 0
-                                 : usage.usage.total() - target_size;
+    const auto real_target_excess = usage.usage.total() < target_size
+                                      ? 0
+                                      : usage.usage.total() - target_size;
 
     /*
      * if we are below the target, then nothing to do. however, if we are above
@@ -440,7 +440,7 @@ ss::future<> disk_space_manager::manage_data_disk(uint64_t target_size) {
      * would like to avoid reclaiming an entire segment (e.g. 100 MB) to reach
      * the goal.
      */
-    if (target_excess <= config::shard_local_cfg().log_segment_size()) {
+    if (real_target_excess <= config::shard_local_cfg().log_segment_size()) {
         vlogl(
           rlog,
           _previous_reclaim ? ss::log_level::info : ss::log_level::debug,
@@ -453,6 +453,20 @@ ss::future<> disk_space_manager::manage_data_disk(uint64_t target_size) {
         co_return;
     }
     _previous_reclaim = true;
+
+    /*
+     * the control loop only starts reclaiming once we hit an overage. the
+     * downside of this is that we will effectively always be running over the
+     * target size. while this is expected behavior and the target isn't
+     * intended to be precise, we can attempt to compensate by over reclaiming
+     * in anticipation of the data arriving in the next idle period of the
+     * control loop. for a steady state workload this works pretty well. more
+     * generally we may want to consider a smoother function as well as
+     * dynamically adjusting the control loop frequency.
+     */
+    const auto target_excess = static_cast<uint64_t>(
+      real_target_excess
+      * config::shard_local_cfg().retention_local_trim_overage_coeff());
 
     /*
      * when log storage has exceeded the target usage, then there are some knobs
@@ -475,11 +489,12 @@ ss::future<> disk_space_manager::manage_data_disk(uint64_t target_size) {
     if (target_excess > usage.reclaim.retention) {
         vlog(
           rlog.info,
-          "Log storage usage {} > target size {} by {}. Garbage collection "
-          "expected to recover {}. Overriding tiered storage retention to "
-          "recover {}. Total estimated available to recover {}",
+          "Log storage usage {} > target size {} by {} (adjusted {}). Garbage "
+          "collection expected to recover {}. Overriding tiered storage "
+          "retention to recover {}. Total estimated available to recover {}",
           human::bytes(usage.usage.total()),
           human::bytes(target_size),
+          human::bytes(real_target_excess),
           human::bytes(target_excess),
           human::bytes(usage.reclaim.retention),
           human::bytes(target_excess - usage.reclaim.retention),
@@ -522,10 +537,11 @@ ss::future<> disk_space_manager::manage_data_disk(uint64_t target_size) {
     } else {
         vlog(
           rlog.info,
-          "Log storage usage {} > target size {} by {}. Garbage collection "
-          "expected to recover {}.",
+          "Log storage usage {} > target size {} by {} (adjusted {}). Garbage "
+          "collection expected to recover {}.",
           human::bytes(usage.usage.total()),
           human::bytes(target_size),
+          human::bytes(real_target_excess),
           human::bytes(target_excess),
           human::bytes(usage.reclaim.retention));
     }

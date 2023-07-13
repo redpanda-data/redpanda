@@ -1631,6 +1631,16 @@ configuration::configuration()
        .example = "31536000000",
        .visibility = visibility::tunable},
       30s)
+  , retention_local_trim_overage_coeff(
+      *this,
+      "retention_local_trim_overage_coeff",
+      "The space management control loop will reclaim the overage multiplied "
+      "by this this coefficient in order to compensate for data that is "
+      "written during the idle period between control loop invocations.",
+      {.needs_restart = needs_restart::no,
+       .example = "1.8",
+       .visibility = visibility::tunable},
+      2.0)
   , cloud_storage_cache_size(
       *this,
       "cloud_storage_cache_size",
