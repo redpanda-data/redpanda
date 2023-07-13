@@ -206,7 +206,9 @@ public:
             vlog(_ctxlog.debug, "abort_source is set");
             auto sub = config.abort_source->get().subscribe([this]() noexcept {
                 vlog(_ctxlog.debug, "abort requested via config.abort_source");
-                dispose_current_reader();
+                if (_reader) {
+                    _partition->evict_segment_reader(std::move(_reader));
+                }
             });
             if (sub) {
                 _as_sub = std::move(*sub);
