@@ -3716,7 +3716,7 @@ class RedpandaService(RedpandaServiceBase):
             node,
             f"{environment} rp-storage-tool --backend {backend} scan-metadata --source {bucket}",
             allow_fail=True,
-            timeout_sec=30)
+            timeout_sec=60)
 
         # if stderr contains a WARN logline:
         if re.search(b'\[\S+ WARN', stderr) is not None:
