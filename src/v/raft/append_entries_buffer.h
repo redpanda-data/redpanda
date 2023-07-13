@@ -3,6 +3,7 @@
 #include "raft/types.h"
 #include "ssx/semaphore.h"
 
+#include <seastar/core/chunked_fifo.hh>
 #include <seastar/core/condition-variable.hh>
 #include <seastar/core/gate.hh>
 
@@ -132,14 +133,18 @@ public:
     ss::future<> stop();
 
 private:
-    using request_t = std::vector<append_entries_request>;
-    using response_t = std::vector<ss::promise<append_entries_reply>>;
+    /**
+     * Use 32 items per chunk as usually the buffer size is small
+     */
+    using request_t = ss::chunked_fifo<append_entries_request, 32>;
+    using response_t = ss::chunked_fifo<ss::promise<append_entries_reply>, 32>;
     using reply_t = std::variant<append_entries_reply, std::exception_ptr>;
+    using reply_list_t = ss::chunked_fifo<reply_t, 32>;
 
     ss::future<> flush();
     ss::future<> do_flush(request_t, response_t, ssx::semaphore_units);
 
-    void propagate_results(std::vector<reply_t>, response_t);
+    void propagate_results(reply_list_t, response_t);
 
     consensus& _consensus;
     request_t _requests;
