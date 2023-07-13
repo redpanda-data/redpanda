@@ -1343,6 +1343,7 @@ remote_segment_batch_reader::read_some(
 
 ss::future<std::unique_ptr<storage::continuous_batch_parser>>
 remote_segment_batch_reader::init_parser() {
+    ss::gate::holder h(_gate);
     vlog(
       _ctxlog.debug,
       "remote_segment_batch_reader::init_parser, start_offset: {}",
