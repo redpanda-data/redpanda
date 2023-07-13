@@ -222,6 +222,16 @@ async_manifest_view_cursor::next() {
           return model::next_offset(m->manifest.get_last_offset());
       });
 
+    // TODO: address the general race:
+    // - spillover manifests are [0, 10], [11, 20], [21, 30]
+    // - STM manifest has segments [31, 40], [41, 50], [51, 60]
+    // - cursor is iterated over through the spillover manifests
+    // - next() called, moving cursor to offset 31, and STM manifest is
+    //   selected and "materialized"
+    // - STM spills over to create new manifest [31, 50], new STM manifest only
+    //   has [51, 60]
+    // - users of the cursor see manifest starting at offset 51 instead of 31
+
     if (next_base_offset == EOS || next_base_offset > _end) {
         co_return eof::yes;
     }

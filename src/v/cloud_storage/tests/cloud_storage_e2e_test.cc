@@ -9,6 +9,7 @@
  */
 
 #include "archival/ntp_archiver_service.h"
+#include "cloud_storage/remote.h"
 #include "cloud_storage/spillover_manifest.h"
 #include "cloud_storage/tests/produce_utils.h"
 #include "cloud_storage/tests/s3_imposter.h"
@@ -331,4 +332,138 @@ FIXTURE_TEST(test_produce_consume_from_cloud_with_spillover, e2e_fixture) {
         i++;
     }
 #endif
+}
+
+class cloud_storage_manual_e2e_test
+  : public s3_imposter_fixture
+  , public redpanda_thread_fixture
+  , public enable_cloud_storage_fixture {
+public:
+    static constexpr auto segs_per_spill = 10;
+    cloud_storage_manual_e2e_test()
+      : redpanda_thread_fixture(
+        redpanda_thread_fixture::init_cloud_storage_tag{},
+        httpd_port_number()) {
+        // No expectations: tests will PUT and GET organically.
+        set_expectations_and_listen({});
+        wait_for_controller_leadership().get();
+
+        // Apply local retention frequently.
+        config::shard_local_cfg().log_compaction_interval_ms.set_value(
+          std::chrono::duration_cast<std::chrono::milliseconds>(1s));
+        // We'll control uploads ourselves.
+        config::shard_local_cfg()
+          .cloud_storage_enable_segment_merging.set_value(false);
+        config::shard_local_cfg()
+          .cloud_storage_disable_upload_loop_for_tests.set_value(true);
+        // Disable metrics to speed things up.
+        config::shard_local_cfg().enable_metrics_reporter.set_value(false);
+        // Encourage spilling over.
+        config::shard_local_cfg()
+          .cloud_storage_spillover_manifest_max_segments.set_value(
+            std::make_optional<size_t>(segs_per_spill));
+        config::shard_local_cfg()
+          .cloud_storage_spillover_manifest_size.set_value(
+            std::optional<size_t>{});
+
+        topic_name = model::topic("tapioca");
+        ntp = model::ntp(model::kafka_namespace, topic_name, 0);
+
+        // Create a tiered storage topic with very little local retention.
+        cluster::topic_properties props;
+        props.shadow_indexing = model::shadow_indexing_mode::full;
+        props.retention_local_target_bytes = tristate<size_t>(1);
+        props.cleanup_policy_bitflags
+          = model::cleanup_policy_bitflags::deletion;
+        add_topic({model::kafka_namespace, topic_name}, 1, props).get();
+        wait_for_leader(ntp).get();
+        partition = app.partition_manager.local().get(ntp).get();
+        log = dynamic_cast<storage::disk_log_impl*>(
+          partition->log().get_impl());
+        archiver = &partition->archiver()->get();
+    }
+
+    model::topic topic_name;
+    model::ntp ntp;
+    cluster::partition* partition;
+    storage::disk_log_impl* log;
+    archival::ntp_archiver* archiver;
+};
+
+namespace {
+
+ss::future<bool> check_consume_from_beginning(
+  kafka::client::transport client,
+  const model::topic& topic_name,
+  ss::gate& gate) {
+    kafka_consume_transport consumer(std::move(client));
+    co_await consumer.start();
+    int iters = 0;
+    while (iters == 0 || !gate.is_closed()) {
+        auto holder = gate.hold();
+        auto kvs = co_await consumer.consume_from_partition(
+          topic_name, model::partition_id(0), model::offset(0));
+        if (kvs.empty()) {
+            vlog(e2e_test_log.error, "no fetch results");
+            co_return false;
+        }
+        if (kvs[0].key != "key0") {
+            vlog(e2e_test_log.error, "{} != key0", kvs[0].key);
+            co_return false;
+        }
+        if (kvs[0].val != "val0") {
+            vlog(e2e_test_log.error, "{} != val0", kvs[0].val);
+            co_return false;
+        }
+        iters++;
+    }
+    co_return true;
+}
+
+} // namespace
+
+FIXTURE_TEST(test_consume_during_spillover, cloud_storage_manual_e2e_test) {
+    config::shard_local_cfg().fetch_max_bytes.set_value(size_t{10});
+    const auto records_per_seg = 5;
+    const auto num_segs = 40;
+    tests::remote_segment_generator gen(make_kafka_client().get(), *partition);
+    auto total_records = gen.num_segments(num_segs)
+                           .batches_per_segment(records_per_seg)
+                           .produce()
+                           .get();
+    BOOST_REQUIRE_GE(total_records, 200);
+
+    ss::gate g;
+
+    std::vector<kafka::client::transport> clients;
+    std::vector<ss::future<bool>> checks;
+    clients.reserve(10);
+    checks.reserve(10);
+    for (int i = 0; i < 10; i++) {
+        clients.emplace_back(make_kafka_client().get());
+    }
+    for (auto& client : clients) {
+        checks.push_back(
+          check_consume_from_beginning(std::move(client), topic_name, g));
+    }
+    auto cleanup = ss::defer([&] {
+        if (!g.is_closed()) {
+            g.close().get();
+        }
+        for (auto& check : checks) {
+            check.get();
+        }
+    });
+
+    auto start_before_spill = archiver->manifest().get_start_offset();
+    BOOST_REQUIRE(archiver->sync_for_tests().get());
+    archiver->apply_spillover().get();
+    BOOST_REQUIRE_NE(
+      start_before_spill, archiver->manifest().get_start_offset());
+
+    g.close().get();
+    for (auto& check : checks) {
+        BOOST_CHECK(check.get());
+    }
+    cleanup.cancel();
 }
