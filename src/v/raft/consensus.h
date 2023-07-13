@@ -52,6 +52,7 @@ class replicate_entries_stm;
 class vote_stm;
 class prevote_stm;
 class recovery_stm;
+class heartbeat_manager;
 
 std::vector<model::record_batch_type>
 offset_translator_batch_types(const model::ntp& ntp);
@@ -457,6 +458,7 @@ private:
     friend replicate_batcher;
     friend event_manager;
     friend append_entries_buffer;
+    friend heartbeat_manager;
     using update_last_quorum_index
       = ss::bool_class<struct update_last_quorum_index>;
     // all these private functions assume that we are under exclusive operations
