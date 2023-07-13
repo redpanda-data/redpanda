@@ -98,7 +98,7 @@ func validSetArgs(_ *cobra.Command, _ []string, toComplete string) (ps []string,
 	}()
 
 	xf, ypaths := config.XProfileFlags()
-	ypaths = append(ypaths, "description") // we have no xflag for the description field since this is purely informational
+	ypaths = append(ypaths, "description", "prompt") // we have no xflag for the description nor prompt field, the latter is a global that can also be edited per profile
 	if len(toComplete) == 0 {
 		return ypaths, cobra.ShellCompDirectiveNoSpace
 	}
