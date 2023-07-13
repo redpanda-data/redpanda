@@ -93,7 +93,7 @@ Four modifiers are supported, "bold", "faint", "underline", and "invert".
 				return
 			}
 
-			prompt := cfg.VirtualRpkYaml().Defaults.Prompt
+			prompt := cfg.VirtualRpkYaml().Globals.Prompt
 			if p.Prompt != "" {
 				prompt = p.Prompt
 			}

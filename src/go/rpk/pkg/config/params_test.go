@@ -1041,7 +1041,7 @@ func TestXSetExamples(t *testing.T) {
 	for _, fn := range []func() (xs, yamlPaths []string){
 		XProfileFlags,
 		XCloudAuthFlags,
-		XRpkDefaultsFlags,
+		XRpkGlobalFlags,
 	} {
 		xs, yamlPaths := fn()
 		for i, x := range xs {
@@ -1059,7 +1059,7 @@ func TestXSetExamples(t *testing.T) {
 				err = Set(new(RpkProfile), yamlPath, xf.testExample)
 			case xkindCloudAuth:
 				err = Set(new(RpkCloudAuth), yamlPath, xf.testExample)
-			case xkindDefault:
+			case xkindGlobal:
 				err = Set(new(RpkYaml), yamlPath, xf.testExample)
 			default:
 				t.Errorf("unrecognized xflag kind %v", xf.kind)
@@ -1077,13 +1077,13 @@ func TestXSetExamples(t *testing.T) {
 }
 
 func TestXSetDefaultsPaths(t *testing.T) {
-	xs, paths := XRpkDefaultsFlags()
+	xs, paths := XRpkGlobalFlags()
 	for i, x := range xs {
 		if paths[i] != x {
-			t.Errorf("XRpkDefaultsFlags() returned different xflag %s and path %s", x, paths[i])
+			t.Errorf("XRpkGlobalFlags() returned different xflag %s and path %s", x, paths[i])
 		}
-		if !strings.HasPrefix(x, "defaults.") {
-			t.Errorf("XRpkDefaultsFlags() returned xflag %s that doesn't start with defaults.", x)
+		if !strings.HasPrefix(x, "globals.") {
+			t.Errorf("XRpkGlobalFlags() returned xflag %s that doesn't start with globals.", x)
 		}
 	}
 }
