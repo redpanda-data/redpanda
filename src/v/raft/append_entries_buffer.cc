@@ -91,7 +91,7 @@ ss::future<> append_entries_buffer::flush() {
 ss::future<> append_entries_buffer::do_flush(
   request_t requests, response_t response_promises, ssx::semaphore_units u) {
     bool needs_flush = false;
-    std::vector<reply_t> replies;
+    reply_list_t replies;
     auto f = ss::now();
     {
         ssx::semaphore_units op_lock_units = std::move(u);
@@ -123,7 +123,7 @@ ss::future<> append_entries_buffer::do_flush(
 }
 
 void append_entries_buffer::propagate_results(
-  std::vector<reply_t> replies, response_t response_promises) {
+  reply_list_t replies, response_t response_promises) {
     vassert(
       replies.size() == response_promises.size(),
       "Number of requests and response promiseshave to be equal. Have {} "
