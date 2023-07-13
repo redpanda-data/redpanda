@@ -325,12 +325,12 @@ var xflags = map[string]xflag{
 		},
 	},
 
-	"globals.redpanda_client_id": {
-		"globals.redpanda_client_id",
+	"globals.kafka_protocol_request_client_id": {
+		"globals.kafka_protocol_request_client_id",
 		"rpk",
 		xkindGlobal,
 		func(v string, y *RpkYaml) error {
-			y.Globals.RedpandaClientID = v
+			y.Globals.KafkaProtocolReqClientID = v
 			return nil
 		},
 	},
@@ -532,7 +532,7 @@ globals.fetch_max_wait=5s
   This timeout specifies the maximum time that brokers will wait before
   replying to a fetch request with whatever data is available.
 
-globals.redpanda_client_id=rpk
+globals.kafka_protocol_request_client_id=rpk
   This string value is the client ID that rpk uses when issuing Kafka protocol
   requests to Redpanda. This client ID shows up in Redpanda logs and metrics,
   changing it can be useful if you want to have your own rpk client stand out
@@ -563,7 +563,7 @@ globals.dial_timeout=duration(3s,1m,2h)
 globals.request_timeout_overhead=duration(10s,1m,2h)
 globals.retry_timeout=duration(30s,1m,2h)
 globals.fetch_max_wait=duration(5s,1m,2h)
-globals.redpanda_client_id=rpk
+globals.kafka_protocol_request_client_id=rpk
 `
 }
 

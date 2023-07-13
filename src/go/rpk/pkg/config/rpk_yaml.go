@@ -121,8 +121,8 @@ type (
 		// fetch requests.
 		FetchMaxWait Duration `yaml:"fetch_max_wait"`
 
-		// RedpandaClientID is the client ID to use for the Kafka API.
-		RedpandaClientID string `yaml:"redpanda_client_id"`
+		// KafkaProtocolReqClientID is the client ID to use for the Kafka API.
+		KafkaProtocolReqClientID string `yaml:"kafka_protocol_request_client_id"`
 	}
 
 	RpkProfile struct {
