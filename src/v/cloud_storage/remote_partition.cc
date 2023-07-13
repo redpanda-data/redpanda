@@ -204,6 +204,7 @@ public:
     ss::future<> start(storage::log_reader_config config) {
         if (config.abort_source) {
             vlog(_ctxlog.debug, "abort_source is set");
+            _partition_reader_as = config.abort_source;
             auto sub = config.abort_source->get().subscribe([this]() noexcept {
                 vlog(_ctxlog.debug, "abort requested via config.abort_source");
                 if (_reader) {
@@ -266,6 +267,14 @@ public:
 
     bool is_end_of_stream() const override { return _reader == nullptr; }
 
+    void throw_on_external_abort() {
+        _partition->_as.check();
+
+        if (_partition_reader_as) {
+            _partition_reader_as.value().get().check();
+        }
+    }
+
     ss::future<storage_t>
     do_load_slice(model::timeout_clock::time_point deadline) override {
         std::exception_ptr unknown_exception_ptr = nullptr;
@@ -292,6 +301,8 @@ public:
                     co_await set_end_of_stream();
                     co_return storage_t{};
                 }
+
+                throw_on_external_abort();
                 auto reader_delta = _reader->current_delta();
                 if (
                   !_ot_state->empty()
@@ -344,6 +355,8 @@ public:
                 try {
                     auto result = co_await _reader->read_some(
                       deadline, *_ot_state);
+                    throw_on_external_abort();
+
                     if (!result) {
                         vlog(
                           _ctxlog.debug,
@@ -365,6 +378,7 @@ public:
                     }
                     co_return storage_t{std::move(d)};
                 } catch (const stuck_reader_exception& ex) {
+                    throw_on_external_abort();
                     vlog(
                       _ctxlog.warn,
                       "stuck reader: current rp offset: {}, max rp offset: {}",
@@ -620,6 +634,8 @@ private:
     std::unique_ptr<remote_segment_batch_reader> _reader;
     /// Cancellation subscription
     ss::abort_source::subscription _as_sub;
+    /// Reference to the abort source of the partition reader
+    storage::opt_abort_source_t _partition_reader_as;
     /// Guard for the partition gate
     ss::gate::holder _gate_guard;
     model::offset _next_segment_base_offset{};
