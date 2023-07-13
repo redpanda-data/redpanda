@@ -3374,31 +3374,28 @@ void consensus::update_heartbeat_status(vnode id, bool success) {
     }
 }
 
-bool consensus::should_reconnect_follower(vnode id) {
+bool consensus::should_reconnect_follower(
+  const follower_index_metadata& f_meta) {
     if (_heartbeat_disconnect_failures == 0) {
         // Force disconnection is disabled
         return false;
     }
 
-    if (auto it = _fstats.find(id); it != _fstats.end()) {
-        auto last_at = it->second.last_received_reply_timestamp;
-        const auto fail_count = it->second.heartbeats_failed;
+    const auto last_at = f_meta.last_received_reply_timestamp;
+    const auto fail_count = f_meta.heartbeats_failed;
 
-        auto is_live = last_at + _jit.base_duration() > clock_type::now();
-        auto since = std::chrono::duration_cast<std::chrono::milliseconds>(
-                       clock_type::now() - last_at)
-                       .count();
-        vlog(
-          _ctxlog.trace,
-          "should_reconnect_follower({}): {}/{} fails, last ok {}ms ago",
-          id,
-          fail_count,
-          _heartbeat_disconnect_failures,
-          since);
-        return fail_count > _heartbeat_disconnect_failures && !is_live;
-    }
-
-    return false;
+    auto is_live = last_at + _jit.base_duration() > clock_type::now();
+    auto since = std::chrono::duration_cast<std::chrono::milliseconds>(
+                   clock_type::now() - last_at)
+                   .count();
+    vlog(
+      _ctxlog.trace,
+      "should_reconnect_follower({}): {}/{} fails, last ok {}ms ago",
+      f_meta.node_id,
+      fail_count,
+      _heartbeat_disconnect_failures,
+      since);
+    return fail_count > _heartbeat_disconnect_failures && !is_live;
 }
 
 voter_priority consensus::next_target_priority() {

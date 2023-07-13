@@ -410,7 +410,7 @@ public:
 
     void update_heartbeat_status(vnode, bool);
 
-    bool should_reconnect_follower(vnode);
+    bool should_reconnect_follower(const follower_index_metadata&);
 
     std::vector<follower_metrics> get_follower_metrics() const;
     result<follower_metrics> get_follower_metrics(model::node_id) const;

@@ -136,6 +136,15 @@ public:
     bool is_stopped() const { return _bghbeats.is_closed(); }
 
 private:
+    struct heartbeat_requests {
+        /// Requests to dispatch.  Can include request to self.
+        std::vector<heartbeat_manager::node_heartbeat> requests;
+
+        /// These nodes' heartbeat status indicates they need
+        /// a transport reconnection before sending next heartbeat
+        absl::flat_hash_set<model::node_id> reconnect_nodes;
+    };
+
     void dispatch_heartbeats();
 
     clock_type::time_point next_heartbeat_timeout();
@@ -159,6 +168,7 @@ private:
       const absl::node_hash_map<raft::group_id, follower_request_meta>& groups,
       result<heartbeat_reply> result);
 
+    heartbeat_requests requests_for_range();
     // private members
 
     mutex _lock;

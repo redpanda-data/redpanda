@@ -39,15 +39,6 @@ ss::logger hbeatlog{"r/heartbeat"};
 using consensus_ptr = heartbeat_manager::consensus_ptr;
 using consensus_set = heartbeat_manager::consensus_set;
 
-struct heartbeat_requests {
-    /// Requests to dispatch.  Can include request to self.
-    std::vector<heartbeat_manager::node_heartbeat> requests;
-
-    /// These nodes' heartbeat status indicates they need
-    /// a transport reconnection before sending next heartbeat
-    absl::flat_hash_set<model::node_id> reconnect_nodes;
-};
-
 heartbeat_manager::follower_request_meta::follower_request_meta(
   consensus_ptr ptr,
   follower_req_seq seq,
@@ -72,15 +63,15 @@ heartbeat_manager::follower_request_meta::~follower_request_meta() noexcept {
     }
 }
 
-static heartbeat_requests requests_for_range(
-  const consensus_set& c, clock_type::duration heartbeat_interval) {
+heartbeat_manager::heartbeat_requests heartbeat_manager::requests_for_range() {
     absl::node_hash_map<
       model::node_id,
       ss::chunked_fifo<std::pair<
         heartbeat_metadata,
         heartbeat_manager::follower_request_meta>>>
       pending_beats;
-    if (c.empty()) {
+
+    if (_consensus_groups.empty()) {
         return {};
     }
 
@@ -88,68 +79,33 @@ static heartbeat_requests requests_for_range(
     // that we should tear down their TCP connection before next heartbeat
     absl::flat_hash_set<model::node_id> reconnect_nodes;
 
-    auto last_heartbeat = clock_type::now() - heartbeat_interval;
-    for (auto& ptr : c) {
-        if (!ptr->is_elected_leader()) {
+    const auto last_heartbeat = clock_type::now() - _heartbeat_interval();
+    for (auto& r : _consensus_groups) {
+        if (!r->is_elected_leader()) {
             continue;
         }
 
-        auto maybe_create_follower_request = [ptr,
-                                              last_heartbeat,
-                                              &pending_beats,
-                                              &reconnect_nodes](
-                                               const vnode& rni) mutable {
-            // special case self beat
-            // self beat is used to make sure that the protocol will make
-            // progress when there is only on node
-            if (rni == ptr->self()) {
-                auto hb_metadata = ptr->meta();
-                pending_beats[rni.id()].emplace_back(
-                  heartbeat_metadata{
-                    .meta = hb_metadata, .node_id = rni, .target_node_id = rni},
-                  heartbeat_manager::follower_request_meta(
-                    ptr, follower_req_seq(0), hb_metadata.prev_log_index, rni));
-                return;
+        for (auto& [id, follower_metadata] : r->_fstats) {
+            if (follower_metadata.suppress_heartbeats) {
+                vlog(r->_ctxlog.trace, "[{}] heartbeat suppressed", id);
+                continue;
             }
-
-            if (ptr->are_heartbeats_suppressed(rni)) {
-                vlog(
-                  hbeatlog.trace,
-                  "Heartbeat suppressed - target: {}, ntp: {}, group_id: {}",
-                  rni,
-                  ptr->ntp(),
-                  ptr->group());
-                return;
+            if (
+              follower_metadata.last_sent_append_entries_req_timestamp
+              > last_heartbeat) {
+                vlog(r->_ctxlog.trace, "[{}] heartbeat skipped", id);
+                continue;
             }
-            auto last_sent_append_entries_req_timestamp
-              = ptr->last_sent_append_entries_req_timestamp(rni);
-
-            if (last_sent_append_entries_req_timestamp > last_heartbeat) {
-                vlog(
-                  hbeatlog.trace,
-                  "Heartbeat skipped - target: {}, ntp: {}, group_id: {}",
-                  rni,
-                  ptr->ntp(),
-                  ptr->group());
-                // we already sent heartbeat, skip it
-                return;
-            }
-
-            auto seq_id = ptr->next_follower_sequence(rni);
-            auto hb_meta = ptr->meta();
-            pending_beats[rni.id()].emplace_back(
-              heartbeat_metadata{hb_meta, ptr->self(), rni},
+            auto const seq_id = follower_metadata.last_sent_seq++;
+            auto hb_meta = r->meta();
+            pending_beats[id.id()].emplace_back(
+              heartbeat_metadata{hb_meta, r->self(), id},
               heartbeat_manager::follower_request_meta(
-                ptr, seq_id, hb_meta.prev_log_index, rni));
-
-            if (ptr->should_reconnect_follower(rni)) {
-                reconnect_nodes.insert(rni.id());
+                r, seq_id, hb_meta.prev_log_index, id));
+            if (r->should_reconnect_follower(follower_metadata)) {
+                reconnect_nodes.insert(id.id());
             }
-        };
-
-        auto group = ptr->config();
-        // collect voters
-        group.for_each_broker_id(maybe_create_follower_request);
+        }
     }
 
     std::vector<heartbeat_manager::node_heartbeat> reqs;
@@ -205,7 +161,7 @@ heartbeat_manager::send_heartbeats(std::vector<node_heartbeat> reqs) {
 }
 
 ss::future<> heartbeat_manager::do_dispatch_heartbeats() {
-    auto reqs = requests_for_range(_consensus_groups, _heartbeat_interval());
+    auto reqs = requests_for_range();
 
     for (const auto& node_id : reqs.reconnect_nodes) {
         if (co_await _client_protocol.ensure_disconnect(node_id)) {
