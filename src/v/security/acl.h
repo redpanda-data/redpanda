@@ -96,11 +96,6 @@ enum class acl_operation : int8_t {
     idempotent_write = 10,
 };
 
-/*
- * Compute the implied operations based on the specified operation.
- */
-std::vector<acl_operation> acl_implied_ops(acl_operation operation);
-
 std::ostream& operator<<(std::ostream&, acl_operation);
 
 /*
