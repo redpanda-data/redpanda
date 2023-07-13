@@ -17,6 +17,7 @@
 #include "kafka/protocol/response_writer.h"
 #include "model/fundamental.h"
 #include "model/record.h"
+#include "model/timestamp.h"
 #include "prometheus/prometheus_sanitize.h"
 #include "raft/consensus_utils.h"
 #include "raft/errc.h"
@@ -235,7 +236,6 @@ rm_stm::rm_stm(
                          .abort_timed_out_transactions_interval_ms.value())
   , _abort_index_segment_size(
       config::shard_local_cfg().abort_index_segment_size.value())
-  , _seq_table_min_size(config::shard_local_cfg().seq_table_min_size.value())
   , _transactional_id_expiration(
       config::shard_local_cfg().transactional_id_expiration_ms.value())
   , _is_tx_enabled(config::shard_local_cfg().enable_transactions.value())
@@ -1052,24 +1052,16 @@ ss::future<result<kafka_result>> rm_stm::do_replicate(
   model::record_batch_reader b,
   raft::replicate_options opts,
   ss::lw_shared_ptr<available_promise<>> enqueued) {
-    return _state_lock.hold_read_lock().then(
-      [this, enqueued, bid, opts, b = std::move(b)](
-        ss::basic_rwlock<>::holder unit) mutable {
-          if (bid.is_transactional) {
-              auto pid = bid.pid.get_id();
-              return get_tx_lock(pid)
-                ->with([this, bid, b = std::move(b)]() mutable {
-                    return replicate_tx(bid, std::move(b));
-                })
-                .finally([u = std::move(unit)] {});
-          } else if (bid.has_idempotent()) {
-              return replicate_seq(bid, std::move(b), opts, enqueued)
-                .finally([u = std::move(unit)] {});
-          }
+    auto unit = co_await _state_lock.hold_read_lock();
+    if (bid.is_transactional) {
+        auto pid = bid.pid.get_id();
+        auto tx_units = co_await get_tx_lock(pid)->get_units();
+        co_return co_await replicate_tx(bid, std::move(b));
+    } else if (bid.has_idempotent()) {
+        co_return co_await replicate_seq(bid, std::move(b), opts, enqueued);
+    }
 
-          return replicate_msg(std::move(b), opts, enqueued)
-            .finally([u = std::move(unit)] {});
-      });
+    co_return co_await replicate_msg(std::move(b), opts, enqueued);
 }
 
 ss::future<> rm_stm::stop() {
@@ -1911,50 +1903,56 @@ rm_stm::do_aborted_transactions(model::offset from, model::offset to) {
     co_return result;
 }
 
+bool rm_stm::is_producer_expired(
+  model::timestamp now, const seq_entry& entry) const {
+    /**
+     * Producer is expired if it has no ongoing transactions and its last write
+     * timestamp is older than requested producer id
+     */
+    auto lock_it = _tx_locks.find(entry.pid.get_id());
+    /**
+     * If there are ongoing transactions we must keep the producer state alive
+     */
+    if (lock_it != _tx_locks.end() && !lock_it->second->ready()) {
+        return false;
+    }
+
+    if (_log_state.tx_seqs.contains(entry.pid)) {
+        return false;
+    }
+
+    return now.value() - entry.last_write_timestamp
+           > _transactional_id_expiration.count();
+}
+
 void rm_stm::compact_snapshot() {
-    auto cutoff_timestamp = model::timestamp::now().value()
-                            - _transactional_id_expiration.count();
-    if (cutoff_timestamp <= _oldest_session.value()) {
+    if (_log_state.seq_table.empty()) {
+        return;
+    }
+    const auto now = model::timestamp::now();
+    const auto expiration_ms_count = _transactional_id_expiration.count();
+    if ((now - _oldest_session).value() < expiration_ms_count) {
         return;
     }
 
-    if (_log_state.seq_table.size() <= _seq_table_min_size) {
-        return;
-    }
+    model::timestamp::type oldest_preserved_session = now.value();
 
-    if (_log_state.seq_table.size() == 0) {
-        return;
-    }
-
-    fragmented_vector<model::timestamp::type> lw_tss;
-    for (const auto& it : _log_state.seq_table) {
-        lw_tss.push_back(it.second.entry.last_write_timestamp);
-    }
-    std::sort(lw_tss.begin(), lw_tss.end());
-    auto pivot = lw_tss[lw_tss.size() - 1 - _seq_table_min_size];
-
-    if (pivot < cutoff_timestamp) {
-        cutoff_timestamp = pivot;
-    }
-
-    auto next_oldest_session = model::timestamp::now();
-    auto size = _log_state.seq_table.size();
     for (auto it = _log_state.seq_table.cbegin();
          it != _log_state.seq_table.cend();) {
-        if (
-          size > _seq_table_min_size
-          && it->second.entry.last_write_timestamp <= cutoff_timestamp) {
-            size--;
-            _log_state.erase_pid_from_seq_table(it->first);
-            it++;
+        if (is_producer_expired(now, it->second.entry)) {
+            _log_state.erase_seq(it++);
         } else {
-            next_oldest_session = std::min(
-              next_oldest_session,
-              model::timestamp(it->second.entry.last_write_timestamp));
+            if (
+              it->second.entry.last_write_timestamp
+              != model::timestamp::missing().value()) {
+                oldest_preserved_session = std::min(
+                  it->second.entry.last_write_timestamp,
+                  oldest_preserved_session);
+            }
             ++it;
         }
     }
-    _oldest_session = next_oldest_session;
+    _oldest_session = model::timestamp(oldest_preserved_session);
 }
 
 ss::future<bool> rm_stm::sync(model::timeout_clock::duration timeout) {
@@ -2443,8 +2441,10 @@ void rm_stm::apply_data(model::batch_identity bid, model::offset last_offset) {
               rm_stm::clear_type::idempotent_pids);
         }
 
-        seq_it->second.entry.last_write_timestamp = bid.first_timestamp.value();
-        _oldest_session = std::min(_oldest_session, bid.first_timestamp);
+        seq_it->second.entry.last_write_timestamp = bid.max_timestamp.value();
+        if (bid.max_timestamp != model::timestamp::missing()) {
+            _oldest_session = std::min(_oldest_session, bid.max_timestamp);
+        }
     }
 
     if (bid.is_transactional) {
@@ -2801,79 +2801,95 @@ ss::future<stm_snapshot> rm_stm::take_snapshot() {
               });
         });
     }
+    kafka::offset start_kafka_offset = from_log_offset(start_offset);
+    return f.then([this, start_kafka_offset]() mutable {
+        return ss::do_with(
+          iobuf{}, [this, start_kafka_offset](iobuf& tx_ss_buf) mutable {
+              auto version = active_snapshot_version();
+              auto fut_serialize = ss::now();
+              if (version == tx_snapshot::version) {
+                  tx_snapshot tx_ss;
+                  fill_snapshot_wo_seqs(tx_ss);
+                  for (const auto& entry : _log_state.seq_table) {
+                      /**
+                       * Only store those producer id sequences which offset is
+                       * greater than log start offset. This way a snapshot will
+                       * not retain producers ids for which all the batches were
+                       * removed with log cleanup policy.
+                       *
+                       * Note that we are not removing producer ids from the in
+                       * memory state but rather relay on the expiration policy
+                       * to do it, however when recovering state from the
+                       * snapshot removed producers will be gone.
+                       */
+                      if (
+                        entry.second.entry.last_offset >= start_kafka_offset) {
+                          tx_ss.seqs.push_back(entry.second.entry.copy());
+                      }
+                  }
+                  tx_ss.offset = _insync_offset;
 
-    return f.then([this]() mutable {
-        return ss::do_with(iobuf{}, [this](iobuf& tx_ss_buf) mutable {
-            auto version = active_snapshot_version();
-            auto fut_serialize = ss::now();
-            if (version == tx_snapshot::version) {
-                tx_snapshot tx_ss;
-                fill_snapshot_wo_seqs(tx_ss);
-                for (const auto& entry : _log_state.seq_table) {
-                    tx_ss.seqs.push_back(entry.second.entry.copy());
-                }
-                tx_ss.offset = _insync_offset;
+                  for (const auto& entry : _log_state.tx_seqs) {
+                      tx_ss.tx_seqs.push_back(tx_snapshot::tx_seqs_snapshot{
+                        .pid = entry.first, .tx_seq = entry.second});
+                  }
 
-                for (const auto& entry : _log_state.tx_seqs) {
-                    tx_ss.tx_seqs.push_back(tx_snapshot::tx_seqs_snapshot{
-                      .pid = entry.first, .tx_seq = entry.second});
-                }
+                  for (const auto& entry : _log_state.expiration) {
+                      tx_ss.expiration.push_back(
+                        tx_snapshot::expiration_snapshot{
+                          .pid = entry.first, .timeout = entry.second.timeout});
+                  }
 
-                for (const auto& entry : _log_state.expiration) {
-                    tx_ss.expiration.push_back(tx_snapshot::expiration_snapshot{
-                      .pid = entry.first, .timeout = entry.second.timeout});
-                }
-
-                fut_serialize = reflection::async_adl<tx_snapshot>{}.to(
-                  tx_ss_buf, std::move(tx_ss));
-            } else if (version == tx_snapshot_v2::version) {
-                tx_snapshot_v2 tx_ss;
-                fill_snapshot_wo_seqs(tx_ss);
-                for (const auto& entry : _log_state.seq_table) {
-                    tx_ss.seqs.push_back(entry.second.entry.copy());
-                }
-                tx_ss.offset = _insync_offset;
-                fut_serialize = reflection::async_adl<tx_snapshot_v2>{}.to(
-                  tx_ss_buf, std::move(tx_ss));
-            } else if (version == tx_snapshot_v1::version) {
-                tx_snapshot_v1 tx_ss;
-                fill_snapshot_wo_seqs(tx_ss);
-                for (const auto& it : _log_state.seq_table) {
-                    auto& entry = it.second.entry;
-                    seq_entry_v1 seqs;
-                    seqs.pid = entry.pid;
-                    seqs.seq = entry.seq;
-                    try {
-                        seqs.last_offset = to_log_offset(entry.last_offset);
-                    } catch (...) {
-                        // ignoring outside the translation range errors
-                        continue;
-                    }
-                    seqs.last_write_timestamp = entry.last_write_timestamp;
-                    seqs.seq_cache.reserve(seqs.seq_cache.size());
-                    for (auto& item : entry.seq_cache) {
-                        try {
-                            seqs.seq_cache.push_back(seq_cache_entry_v1{
-                              .seq = item.seq,
-                              .offset = to_log_offset(item.offset)});
-                        } catch (...) {
-                            // ignoring outside the translation range errors
-                            continue;
-                        }
-                    }
-                    tx_ss.seqs.push_back(std::move(seqs));
-                }
-                tx_ss.offset = _insync_offset;
-                fut_serialize = reflection::async_adl<tx_snapshot_v1>{}.to(
-                  tx_ss_buf, std::move(tx_ss));
-            } else {
-                vassert(false, "unsupported tx_snapshot version {}", version);
-            }
-            return fut_serialize.then([version, &tx_ss_buf, this]() {
-                return stm_snapshot::create(
-                  version, _insync_offset, std::move(tx_ss_buf));
-            });
-        });
+                  fut_serialize = reflection::async_adl<tx_snapshot>{}.to(
+                    tx_ss_buf, std::move(tx_ss));
+              } else if (version == tx_snapshot_v2::version) {
+                  tx_snapshot_v2 tx_ss;
+                  fill_snapshot_wo_seqs(tx_ss);
+                  for (const auto& entry : _log_state.seq_table) {
+                      tx_ss.seqs.push_back(entry.second.entry.copy());
+                  }
+                  tx_ss.offset = _insync_offset;
+                  fut_serialize = reflection::async_adl<tx_snapshot_v2>{}.to(
+                    tx_ss_buf, std::move(tx_ss));
+              } else if (version == tx_snapshot_v1::version) {
+                  tx_snapshot_v1 tx_ss;
+                  fill_snapshot_wo_seqs(tx_ss);
+                  for (const auto& it : _log_state.seq_table) {
+                      auto& entry = it.second.entry;
+                      seq_entry_v1 seqs;
+                      seqs.pid = entry.pid;
+                      seqs.seq = entry.seq;
+                      try {
+                          seqs.last_offset = to_log_offset(entry.last_offset);
+                      } catch (...) {
+                          // ignoring outside the translation range errors
+                          continue;
+                      }
+                      seqs.last_write_timestamp = entry.last_write_timestamp;
+                      seqs.seq_cache.reserve(seqs.seq_cache.size());
+                      for (auto& item : entry.seq_cache) {
+                          try {
+                              seqs.seq_cache.push_back(seq_cache_entry_v1{
+                                .seq = item.seq,
+                                .offset = to_log_offset(item.offset)});
+                          } catch (...) {
+                              // ignoring outside the translation range errors
+                              continue;
+                          }
+                      }
+                      tx_ss.seqs.push_back(std::move(seqs));
+                  }
+                  tx_ss.offset = _insync_offset;
+                  fut_serialize = reflection::async_adl<tx_snapshot_v1>{}.to(
+                    tx_ss_buf, std::move(tx_ss));
+              } else {
+                  vassert(false, "unsupported tx_snapshot version {}", version);
+              }
+              return fut_serialize.then([version, &tx_ss_buf, this]() {
+                  return stm_snapshot::create(
+                    version, _insync_offset, std::move(tx_ss_buf));
+              });
+          });
     });
 }
 
