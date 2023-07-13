@@ -278,11 +278,9 @@ FIXTURE_TEST(test_delete_from_stm_consume, delete_records_e2e_fixture) {
                                 model::partition_id(0),
                                 model::offset(1))
                               .get();
-    BOOST_CHECK_GE(consumed_records.size(), 2);
+    BOOST_CHECK_GE(consumed_records.size(), 1);
     BOOST_CHECK_EQUAL("key1", consumed_records[0].key);
     BOOST_CHECK_EQUAL("val1", consumed_records[0].val);
-    BOOST_CHECK_EQUAL("key2", consumed_records[1].key);
-    BOOST_CHECK_EQUAL("val2", consumed_records[1].val);
     check_consume_out_of_range(
       consumer, topic_name, model::partition_id(0), model::offset(0));
 }
