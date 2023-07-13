@@ -2,6 +2,8 @@ package brokers
 
 import (
 	"errors"
+	"fmt"
+	"sort"
 	"strconv"
 
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/adminapi"
@@ -51,6 +53,16 @@ func newDecommissionBrokerStatus(fs afero.Fs, p *config.Params) *cobra.Command {
 				}
 			}
 
+			if dbs.AllocationFailures != nil {
+				sort.Strings(dbs.AllocationFailures)
+				out.Section("allocation falures")
+				for _, f := range dbs.AllocationFailures {
+					fmt.Println(f)
+				}
+				fmt.Println()
+			}
+
+			out.Section("decommission progress")
 			headers := []string{"Namespace-Topic", "Partition", "Moving-to", "Completion-%", "Partition-size"}
 			if detailed {
 				headers = append(headers, "Bytes-moved", "Bytes-remaining")
