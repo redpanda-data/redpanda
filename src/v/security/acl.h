@@ -97,29 +97,6 @@ enum class acl_operation : int8_t {
     idempotent_write = 10,
 };
 
-/*
- * Compute the implied operations based on the specified operation.
- */
-inline std::vector<acl_operation> acl_implied_ops(acl_operation operation) {
-    switch (operation) {
-    case acl_operation::describe:
-        return {
-          acl_operation::describe,
-          acl_operation::read,
-          acl_operation::write,
-          acl_operation::remove,
-          acl_operation::alter,
-        };
-    case acl_operation::describe_configs:
-        return {
-          acl_operation::describe_configs,
-          acl_operation::alter_configs,
-        };
-    default:
-        return {operation};
-    }
-}
-
 inline std::ostream& operator<<(std::ostream& os, acl_operation op) {
     switch (op) {
     case acl_operation::all:
