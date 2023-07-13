@@ -111,17 +111,46 @@ public:
         }
 
         // check for allow
-        auto ops = acl_implied_ops(operation);
-        return std::any_of(
-          ops.cbegin(),
-          ops.cend(),
-          [&acls, &principal, &host](acl_operation operation) {
-              return acls.contains(
-                operation, principal, host, acl_permission::allow);
-          });
+        return acl_any_implied_ops_allowed(acls, principal, host, operation);
     }
 
 private:
+    /*
+     * Compute whether the specified operation is allowed based on the implied
+     * operations.
+     */
+    bool acl_any_implied_ops_allowed(
+      const acl_matches& acls,
+      const acl_principal& principal,
+      const acl_host& host,
+      const acl_operation operation) const {
+        auto check_op = [&acls, &principal, &host](acl_operation operation) {
+            return acls.contains(
+              operation, principal, host, acl_permission::allow);
+        };
+
+        switch (operation) {
+        case acl_operation::describe: {
+            static constexpr std::array ops = {
+              acl_operation::describe,
+              acl_operation::read,
+              acl_operation::write,
+              acl_operation::remove,
+              acl_operation::alter,
+            };
+            return std::any_of(ops.begin(), ops.end(), check_op);
+        }
+        case acl_operation::describe_configs: {
+            static constexpr std::array ops = {
+              acl_operation::describe_configs,
+              acl_operation::alter_configs,
+            };
+            return std::any_of(ops.begin(), ops.end(), check_op);
+        }
+        default:
+            return check_op(operation);
+        }
+    }
     acl_store _store;
 
     // The list of superusers is stored twice: once as a vector in the
