@@ -156,8 +156,6 @@ private:
 
     /// \brief sends a batch to one node
     ss::future<> do_heartbeat(node_heartbeat&&);
-    /// \brief handle heartbeat at local node
-    ss::future<> do_self_heartbeat(node_heartbeat&&);
 
     /// \brief notifies the consensus groups about append_entries log offsets
     /// \param n the physical node that owns heart beats

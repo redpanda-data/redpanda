@@ -48,18 +48,14 @@ heartbeat_manager::follower_request_meta::follower_request_meta(
   , seq(seq)
   , dirty_offset(dirty_offset)
   , follower_vnode(target) {
-    if (c->self() != follower_vnode) {
-        c->update_suppress_heartbeats(
-          follower_vnode, seq, heartbeats_suppressed::yes);
-    }
+    c->update_suppress_heartbeats(
+      follower_vnode, seq, heartbeats_suppressed::yes);
 }
 
 heartbeat_manager::follower_request_meta::~follower_request_meta() noexcept {
     if (c) {
-        if (c->self() != follower_vnode) {
-            c->update_suppress_heartbeats(
-              follower_vnode, seq, heartbeats_suppressed::no);
-        }
+        c->update_suppress_heartbeats(
+          follower_vnode, seq, heartbeats_suppressed::no);
     }
 }
 
@@ -148,12 +144,6 @@ heartbeat_manager::send_heartbeats(std::vector<node_heartbeat> reqs) {
           std::vector<ss::future<>> futures;
           futures.reserve(reqs.size());
           for (auto& r : reqs) {
-              // self heartbeat
-              if (r.target == _self) {
-                  futures.push_back(do_self_heartbeat(std::move(r)));
-                  continue;
-              }
-
               futures.push_back(do_heartbeat(std::move(r)));
           }
           return ss::when_all_succeed(futures.begin(), futures.end());
@@ -171,24 +161,6 @@ ss::future<> heartbeat_manager::do_dispatch_heartbeats() {
     }
 
     co_await send_heartbeats(std::move(reqs.requests));
-}
-
-ss::future<> heartbeat_manager::do_self_heartbeat(node_heartbeat&& r) {
-    heartbeat_reply reply;
-    reply.meta.reserve(r.request.heartbeats.size());
-    std::transform(
-      std::begin(r.request.heartbeats),
-      std::end(r.request.heartbeats),
-      std::back_inserter(reply.meta),
-      [](heartbeat_metadata& hb) {
-          return append_entries_reply{
-            .target_node_id = hb.target_node_id,
-            .node_id = hb.target_node_id,
-            .group = hb.meta.group,
-            .result = append_entries_reply::status::success};
-      });
-    process_reply(r.target, r.meta_map, std::move(reply));
-    return ss::now();
 }
 
 ss::future<> heartbeat_manager::do_heartbeat(node_heartbeat&& r) {
@@ -282,7 +254,6 @@ void heartbeat_manager::process_reply(
             continue;
         }
         auto consensus = *it;
-        vlog(hbeatlog.trace, "Heartbeat reply from node: {} - {}", n, m);
 
         if (unlikely(
               m.result == append_entries_reply::status::group_unavailable)) {
