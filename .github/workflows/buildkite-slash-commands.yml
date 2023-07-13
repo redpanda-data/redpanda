@@ -5,6 +5,7 @@ on:
       - test-codecov-command
       - cdt-command
       - test-release-pipeline-command
+      - test-arm64-command
 
 jobs:
   run-build:
