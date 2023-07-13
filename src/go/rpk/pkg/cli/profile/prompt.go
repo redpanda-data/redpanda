@@ -209,6 +209,9 @@ func parsePrompt(s string, name string) (string, []color.Attribute, error) {
 			output = append(output, c)
 		}
 	}
+	if len(s) != 0 && len(text) == 0 {
+		output = append(output, name...)
+	}
 	return string(output), attrs, nil
 }
 

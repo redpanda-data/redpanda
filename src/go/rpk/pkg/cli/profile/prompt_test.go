@@ -60,7 +60,7 @@ func TestParsePrompt(t *testing.T) {
 		{`\"blue\"`, "", nil, true},          // backslash only allowed in quoted str
 		{` "prompt" `, "prompt", nil, false}, // simple
 		{`unknown-thing `, "", nil, true},    // unknown keyword stripped
-		{`blue	green red, bg-hi-blue`, "", []color.Attribute{color.FgBlue, color.FgGreen, color.FgRed, color.BgHiBlue}, false}, // attr at end is kept
+		{`blue	green red, bg-hi-blue`, "foo", []color.Attribute{color.FgBlue, color.FgGreen, color.FgRed, color.BgHiBlue}, false}, // attr at end is kept, name is added by default
 		{` " %n " `, " foo ", nil, false},   // name swapped in
 		{`"\\\%%%%n"`, "\\%%n", nil, false}, // escaping works, and %% works
 		{`"text1" "text2"`, "", nil, true},  // one quoted string
