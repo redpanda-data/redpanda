@@ -18,6 +18,7 @@ from rptest.services.cluster import cluster
 from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST, make_redpanda_service
 from rptest.services.redpanda_installer import RedpandaInstaller
 from rptest.tests.end_to_end import EndToEndTest
+from rptest.utils.mode_checks import skip_debug_mode
 
 # TODO: fix https://github.com/redpanda-data/redpanda/issues/5629
 ALLOWED_LOGS = [
@@ -40,6 +41,7 @@ ALLOWED_LOGS = [
 
 
 class ControllerUpgradeTest(EndToEndTest):
+    @skip_debug_mode
     @cluster(num_nodes=7, log_allow_list=RESTART_LOG_ALLOW_LIST + ALLOWED_LOGS)
     def test_updating_cluster_when_executing_operations(self):
         '''
