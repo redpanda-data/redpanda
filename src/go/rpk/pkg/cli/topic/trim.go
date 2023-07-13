@@ -102,7 +102,7 @@ Trim records from a JSON file
 				err := printDeleteRecordRequest(cmd.Context(), adm, o)
 				out.MaybeDie(err, "unable to print trimming request: %v", err)
 				fmt.Println()
-				confirmed, err := out.Confirm("Confirm trimming of the above offsets?")
+				confirmed, err := out.Confirm("Confirm deletion of all data before the new start offsets?")
 				out.MaybeDie(err, "unable to confirm: %v", err)
 				if !confirmed {
 					out.Exit("Trimming canceled.")
