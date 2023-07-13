@@ -878,6 +878,9 @@ class RpkTool:
         if timeout is None:
             timeout = DEFAULT_TIMEOUT
 
+        # Unconditionally enable verbose logging
+        cmd += ['-v']
+
         if log_cmd:
             self._redpanda.logger.debug("Executing command: %s", cmd)
 
@@ -887,7 +890,7 @@ class RpkTool:
                              stderr=subprocess.PIPE,
                              text=True)
         try:
-            output, error = p.communicate(input=stdin, timeout=timeout)
+            output, stderror = p.communicate(input=stdin, timeout=timeout)
         except subprocess.TimeoutExpired:
             p.kill()
             raise RpkException(f"command {' '.join(cmd)} timed out")
@@ -895,11 +898,14 @@ class RpkTool:
         self._redpanda.logger.debug(f'\n{output}')
 
         if p.returncode:
-            self._redpanda.logger.error(error)
+            self._redpanda.logger.error(stderror)
             raise RpkException(
                 'command %s returned %d, output: %s' %
                 (' '.join(cmd) if log_cmd else '[redacted]', p.returncode,
-                 output), error, p.returncode)
+                 output), stderror, p.returncode)
+        else:
+            # Send the verbose output of rpk to debug logger
+            self._redpanda.logger.debug(f"\n{stderror}")
 
         return output
 
