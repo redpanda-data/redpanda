@@ -591,15 +591,15 @@ class DeleteRecordsTest(RedpandaTest):
             has occured. Have the test retry on some failures to account for this.
             """
             try:
-                try:
-                    while iterations > 0:
+                while iterations > 0:
+                    try:
                         periodic_delete_records()
                         iterations -= 1
                         time.sleep(sleep_sec)
-                except AssertionError as e:
-                    if allowable_retrys == 0:
-                        raise e
-                    allowable_retrys = allowable_retrys - 1
+                    except AssertionError as e:
+                        if allowable_retrys == 0:
+                            raise e
+                        allowable_retrys = allowable_retrys - 1
             except Exception as e:
                 reporter.exc = e
 
