@@ -194,10 +194,10 @@ type Requests struct {
 
 // Storage is a top level field of the values file
 type Storage struct {
-	HostPath                      string                         `json:"hostPath"`
-	PersistentVolume              *PersistentVolume              `json:"persistentVolume"`
+	HostPath                      *string                        `json:"hostPath,omitempty"`
+	PersistentVolume              *PersistentVolume              `json:"persistentVolume,omitempty"`
 	TieredConfig                  *TieredConfig                  `json:"tieredConfig,omitempty"`
-	TieredStorageHostPath         string                         `json:"tieredStorageHostPath,omitempty"`
+	TieredStorageHostPath         *string                        `json:"tieredStorageHostPath,omitempty"`
 	TieredStoragePersistentVolume *TieredStoragePersistentVolume `json:"tieredStoragePersistentVolume,omitempty"`
 }
 
@@ -240,10 +240,10 @@ type TieredStoragePersistentVolume struct {
 // PersistentVolume is a top level field of the values file
 type PersistentVolume struct {
 	Annotations  map[string]string `json:"annotations,omitempty"`
-	Enabled      bool              `json:"enabled"`
+	Enabled      *bool             `json:"enabled"`
 	Labels       map[string]string `json:"labels,omitempty"`
-	Size         string            `json:"size,omitempty"`
-	StorageClass string            `json:"storageClass,omitempty"`
+	Size         *string           `json:"size,omitempty"`
+	StorageClass *string           `json:"storageClass,omitempty"`
 }
 
 // PostInstallJob is a top level field of the values file
