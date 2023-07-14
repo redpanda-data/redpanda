@@ -107,6 +107,9 @@ private:
     ss::future<> init_ntp_sizes_from_health_report(
       const cluster_health_report& health_report, request_context&);
 
+    /// Returns a pair of (total, free) bytes on a given node.
+    std::pair<uint64_t, uint64_t> get_node_bytes_info(const node::local_state&);
+
     static ss::future<> get_node_drain_actions(
       request_context&,
       const absl::flat_hash_set<model::node_id>&,
