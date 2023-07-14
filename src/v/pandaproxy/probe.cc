@@ -24,8 +24,7 @@ probe::probe(
   : _request_metrics()
   , _path(path_desc)
   , _group_name(group_name)
-  , _metrics()
-  , _public_metrics(ssx::metrics::public_metrics_handle) {
+  , _metrics() {
     setup_metrics();
     setup_public_metrics();
 }

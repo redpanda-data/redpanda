@@ -11,6 +11,7 @@
 #pragma once
 
 #include "seastarx.h"
+#include "ssx/metrics.h"
 
 #include <seastar/core/metrics_registration.hh>
 
@@ -34,7 +35,8 @@ public:
 private:
     uint64_t _successful_fetches{0};
     uint64_t _fetch_errors{0};
-    ss::metrics::metric_groups _metrics;
+    ssx::metrics::metric_groups _metrics
+      = ssx::metrics::metric_groups::make_internal();
 };
 
 } // namespace cloud_roles

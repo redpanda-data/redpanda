@@ -36,6 +36,7 @@ RPC_TEMPLATE = """
 #include "outcome.h"
 #include "prometheus/prometheus_sanitize.h"
 #include "seastarx.h"
+#include "ssx/metrics.h"
 
 // extra includes
 {%- for include in includes %}
@@ -147,7 +148,7 @@ private:
       }){{ "," if not loop.last }}
       {%- endfor %}
     {% raw %}}}{% endraw %};
-    ss::metrics::metric_groups _metrics;
+    ssx::metrics::metric_groups _metrics;
 };
 
 using {{service_name}}_service = {{service_name}}_service_base<rpc::default_message_codec>;

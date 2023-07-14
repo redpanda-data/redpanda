@@ -11,6 +11,7 @@
 
 #pragma once
 #include "model/fundamental.h"
+#include "ssx/metrics.h"
 
 #include <seastar/core/metrics_registration.hh>
 #include <seastar/core/shared_ptr.hh>
@@ -88,8 +89,10 @@ private:
     uint64_t _bytes_produced{0};
     uint64_t _bytes_fetched{0};
     uint64_t _schema_id_validation_records_failed{0};
-    ss::metrics::metric_groups _metrics;
-    ss::metrics::metric_groups _public_metrics;
+    ssx::metrics::metric_groups _metrics
+      = ssx::metrics::metric_groups::make_internal();
+    ssx::metrics::metric_groups _public_metrics
+      = ssx::metrics::metric_groups::make_public();
 };
 
 } // namespace cluster

@@ -48,6 +48,6 @@ public:
     void clear() { _public_metrics.clear(); }
 
 private:
-    seastar::metrics::metric_groups _public_metrics{
-      ssx::metrics::public_metrics_handle};
+    ssx::metrics::metric_groups _public_metrics
+      = ssx::metrics::metric_groups::make_public();
 };

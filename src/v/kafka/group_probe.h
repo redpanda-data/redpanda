@@ -27,8 +27,7 @@ namespace kafka {
 class group_offset_probe {
 public:
     explicit group_offset_probe(model::offset& offset) noexcept
-      : _offset(offset)
-      , _public_metrics(ssx::metrics::public_metrics_handle) {}
+      : _offset(offset) {}
     group_offset_probe(const group_offset_probe&) = delete;
     group_offset_probe& operator=(const group_offset_probe&) = delete;
     group_offset_probe(group_offset_probe&&) = delete;
@@ -87,8 +86,10 @@ public:
 
 private:
     model::offset& _offset;
-    ss::metrics::metric_groups _metrics;
-    ss::metrics::metric_groups _public_metrics;
+    ssx::metrics::metric_groups _metrics
+      = ssx::metrics::metric_groups::make_internal();
+    ssx::metrics::metric_groups _public_metrics
+      = ssx::metrics::metric_groups::make_public();
 };
 
 template<typename KeyType, typename ValType>
@@ -105,8 +106,7 @@ public:
       offsets_map& offsets) noexcept
       : _members(members)
       , _static_members(static_members)
-      , _offsets(offsets)
-      , _public_metrics(ssx::metrics::public_metrics_handle) {}
+      , _offsets(offsets) {}
 
     group_probe(const group_probe&) = delete;
     group_probe& operator=(const group_probe&) = delete;
@@ -146,7 +146,8 @@ private:
     member_map& _members;
     static_member_map& _static_members;
     offsets_map& _offsets;
-    ss::metrics::metric_groups _public_metrics;
+    ssx::metrics::metric_groups _public_metrics
+      = ssx::metrics::metric_groups::make_public();
 };
 
 } // namespace kafka

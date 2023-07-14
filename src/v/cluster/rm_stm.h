@@ -23,6 +23,7 @@
 #include "raft/logger.h"
 #include "raft/state_machine.h"
 #include "raft/types.h"
+#include "ssx/metrics.h"
 #include "storage/offset_translator_state.h"
 #include "storage/snapshot.h"
 #include "utils/available_promise.h"
@@ -965,7 +966,8 @@ private:
     prefix_logger _ctx_log;
     config::binding<uint64_t> _max_concurrent_producer_ids;
     mutex _clean_old_pids_mtx;
-    ss::metrics::metric_groups _metrics;
+    ssx::metrics::metric_groups _metrics
+      = ssx::metrics::metric_groups::make_internal();
 };
 
 struct fence_batch_data {

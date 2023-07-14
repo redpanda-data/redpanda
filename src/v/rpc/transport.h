@@ -20,6 +20,7 @@
 #include "rpc/response_handler.h"
 #include "rpc/types.h"
 #include "seastarx.h"
+#include "ssx/metrics.h"
 #include "utils/named_type.h"
 
 #include <seastar/core/gate.hh>
@@ -119,9 +120,9 @@ public:
       std::optional<connection_cache_label> label = std::nullopt,
       std::optional<model::node_id> node_id = std::nullopt);
     ~transport() override;
-    transport(transport&&) noexcept = default;
     // semaphore is not move assignable
-    transport& operator=(transport&&) noexcept = delete;
+    transport(transport&&) = delete;
+    transport& operator=(transport&&) = delete;
     transport(const transport&) = delete;
     transport& operator=(const transport&) = delete;
 
@@ -201,7 +202,8 @@ private:
     absl::flat_hash_map<uint32_t, std::unique_ptr<response_entry>>
       _correlations;
     uint32_t _correlation_idx{0};
-    ss::metrics::metric_groups _metrics;
+    ssx::metrics::metric_groups _metrics
+      = ssx::metrics::metric_groups::make_internal();
     /**
      * Ordered map containing requests to be sent over the wire. The map
      * preserves order of calling send_typed function. It is fine to use

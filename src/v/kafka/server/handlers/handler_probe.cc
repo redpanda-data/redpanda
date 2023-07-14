@@ -50,7 +50,7 @@ handler_probe::handler_probe()
   : _last_recorded_in_progress(ss::lowres_clock::now()) {}
 
 void handler_probe::setup_metrics(
-  ss::metrics::metric_groups& metrics, api_key key) {
+  ssx::metrics::metric_groups& metrics, api_key key) {
     namespace sm = ss::metrics;
 
     if (config::shard_local_cfg().disable_metrics()) {

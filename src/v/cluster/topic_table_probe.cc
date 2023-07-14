@@ -15,6 +15,7 @@
 #include "config/configuration.h"
 #include "config/node_config.h"
 #include "prometheus/prometheus_sanitize.h"
+#include "ssx/metrics.h"
 
 namespace cluster {
 
@@ -141,9 +142,10 @@ void topic_table_probe::handle_topic_creation(
 
     namespace sm = ss::metrics;
 
-    sm::metric_groups topic_metrics{ssx::metrics::public_metrics_handle};
+    auto [it, inserted] = _topics_metrics.emplace(
+      topic_namespace, ssx::metrics::public_metrics_handle);
 
-    topic_metrics.add_group(
+    it->second.add_group(
       prometheus_sanitize::metrics_name("kafka"),
       {sm::make_gauge(
          "replicas",
@@ -171,9 +173,6 @@ void topic_table_probe::handle_topic_creation(
          sm::description("Configured number of partitions for the topic"),
          labels)
          .aggregate({sm::shard_label})});
-
-    _topics_metrics.emplace(
-      std::move(topic_namespace), std::move(topic_metrics));
 }
 
 void topic_table_probe::handle_topic_deletion(

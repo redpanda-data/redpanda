@@ -57,9 +57,10 @@ private:
     int64_t _exhaustive_trims{0};
     int64_t _failed_trims{0};
 
-    ss::metrics::metric_groups _metrics;
-    ss::metrics::metric_groups _public_metrics{
-      ssx::metrics::public_metrics_handle};
+    ssx::metrics::metric_groups _metrics
+      = ssx::metrics::metric_groups::make_internal();
+    ssx::metrics::metric_groups _public_metrics
+      = ssx::metrics::metric_groups::make_public();
 };
 
 } // namespace cloud_storage

@@ -9,6 +9,7 @@
 
 #pragma once
 #include "seastarx.h"
+#include "ssx/metrics.h"
 
 #include <seastar/core/gate.hh>
 #include <seastar/core/io_priority_class.hh>
@@ -125,6 +126,7 @@ private:
     int _min_shares;
     int _max_shares;
     ss::gate _gate;
-    ss::metrics::metric_groups _metrics;
+    ssx::metrics::metric_groups _metrics
+      = ssx::metrics::metric_groups::make_internal();
 };
 } // namespace storage

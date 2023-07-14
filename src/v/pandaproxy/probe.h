@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include "ssx/metrics.h"
 #include "utils/hdr_hist.h"
 
 #include <seastar/core/metrics_registration.hh>
@@ -76,8 +77,10 @@ private:
     http_status_metric _request_metrics;
     const ss::httpd::path_description& _path;
     const ss::sstring& _group_name;
-    ss::metrics::metric_groups _metrics;
-    ss::metrics::metric_groups _public_metrics;
+    ssx::metrics::metric_groups _metrics
+      = ssx::metrics::metric_groups::make_internal();
+    ssx::metrics::metric_groups _public_metrics
+      = ssx::metrics::metric_groups::make_public();
 };
 
 } // namespace pandaproxy

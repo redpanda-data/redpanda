@@ -60,8 +60,8 @@ private:
     config::binding<std::optional<size_t>> _capacity_binding;
     token_bucket<> _throttler;
     int64_t _dropped_requests_amount{};
-    ss::metrics::metric_groups _public_metrics{
-      ssx::metrics::public_metrics_handle};
+    ssx::metrics::metric_groups _public_metrics
+      = ssx::metrics::metric_groups::make_public();
 };
 
 class controller_log_limiter {

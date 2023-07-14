@@ -11,6 +11,7 @@
 #pragma once
 
 #include "config/configuration.h"
+#include "ssx/metrics.h"
 
 #include <seastar/core/metrics.hh>
 #include <seastar/core/metrics_registration.hh>
@@ -62,7 +63,8 @@ public:
     void decompressed() { ++_batches_decompressed; }
 
 private:
-    ss::metrics::metric_groups _metrics;
+    ssx::metrics::metric_groups _metrics
+      = ssx::metrics::metric_groups::make_internal();
     int64_t _hits;
     int64_t _misses;
     int64_t _batches_decompressed;

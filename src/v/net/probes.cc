@@ -21,7 +21,7 @@
 
 namespace net {
 void server_probe::setup_metrics(
-  ss::metrics::metric_groups& mgs, std::string_view proto) {
+  ssx::metrics::metric_groups& mgs, std::string_view proto) {
     namespace sm = ss::metrics;
     auto aggregate_labels = config::shard_local_cfg().aggregate_metrics()
                               ? std::vector<sm::label>{sm::shard_label}
@@ -112,7 +112,7 @@ void server_probe::setup_metrics(
 }
 
 void server_probe::setup_public_metrics(
-  ss::metrics::metric_groups& mgs, std::string_view proto) {
+  ssx::metrics::metric_groups& mgs, std::string_view proto) {
     namespace sm = ss::metrics;
 
     if (proto.ends_with("_rpc")) {
@@ -154,7 +154,7 @@ std::ostream& operator<<(std::ostream& o, const server_probe& p) {
 }
 
 void client_probe::setup_metrics(
-  ss::metrics::metric_groups& mgs,
+  ssx::metrics::metric_groups& mgs,
   const std::optional<rpc::connection_cache_label>& label,
   const std::optional<model::node_id>& node_id,
   const net::unresolved_address& target_addr) {

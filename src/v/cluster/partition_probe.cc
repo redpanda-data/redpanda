@@ -22,8 +22,7 @@ namespace cluster {
 
 replicated_partition_probe::replicated_partition_probe(
   const partition& p) noexcept
-  : _partition(p)
-  , _public_metrics(ssx::metrics::public_metrics_handle) {
+  : _partition(p) {
     config::shard_local_cfg().enable_schema_id_validation.bind().watch(
       [this]() { reconfigure_metrics(); });
 }

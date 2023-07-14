@@ -77,9 +77,10 @@ private:
     /// Number of segments awaiting deletion
     int64_t _segments_to_delete = 0;
 
-    ss::metrics::metric_groups _metrics;
-    ss::metrics::metric_groups _public_metrics{
-      ssx::metrics::public_metrics_handle};
+    ssx::metrics::metric_groups _metrics
+      = ssx::metrics::metric_groups::make_internal();
+    ssx::metrics::metric_groups _public_metrics
+      = ssx::metrics::metric_groups::make_public();
 };
 
 /// Metrics probe for upload housekeeping service
@@ -155,10 +156,10 @@ private:
     uint64_t _segment_deletions{0};
     uint64_t _metadata_syncs{0};
 
-    ss::metrics::metric_groups _service_metrics{
-      ssx::metrics::public_metrics_handle};
-    ss::metrics::metric_groups _jobs_metrics{
-      ssx::metrics::public_metrics_handle};
+    ssx::metrics::metric_groups _service_metrics
+      = ssx::metrics::metric_groups::make_public();
+    ssx::metrics::metric_groups _jobs_metrics
+      = ssx::metrics::metric_groups::make_public();
 };
 
 } // namespace archival
