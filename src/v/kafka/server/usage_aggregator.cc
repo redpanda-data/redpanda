@@ -101,6 +101,12 @@ usage usage::operator+(const usage& other) const {
       .bytes_received = bytes_received + other.bytes_received};
 }
 
+usage& usage::operator+=(const usage& other) {
+    bytes_sent += other.bytes_sent;
+    bytes_received += other.bytes_received;
+    return *this;
+}
+
 template<typename time_point>
 auto epoch_time_secs(time_point now) {
     return std::chrono::duration_cast<std::chrono::seconds>(
@@ -200,14 +206,9 @@ usage_aggregator<clock_type>::usage_aggregator(
                   }
               });
     });
-    _timer.set_callback([this] {
-        ssx::background = ssx::spawn_with_gate_then(_gate, [this]() {
-                              return close_window();
-                          }).finally([this] {
-            if (!_gate.is_closed()) {
-                rearm_window_timer();
-            }
-        });
+    _close_window_timer.set_callback([this] {
+        close_window();
+        rearm_window_timer();
     });
     /// TODO: This should be refactored when fragmented_vector::resize is
     /// implemented
@@ -233,7 +234,7 @@ void usage_aggregator<clock_type>::rearm_window_timer() {
     vassert(
       duration_until_next_close >= 0s,
       "Error correctly detecting last window delta");
-    _timer.arm(duration_until_next_close);
+    _close_window_timer.arm(duration_until_next_close);
 }
 
 template<typename clock_type>
@@ -270,7 +271,11 @@ ss::future<> usage_aggregator<clock_type>::start() {
 }
 
 template<typename clock_type>
-std::vector<usage_window> usage_aggregator<clock_type>::get_usage_stats() {
+ss::future<std::vector<usage_window>>
+usage_aggregator<clock_type>::get_usage_stats() {
+    /// Get the freshest data for the open bucket
+    co_await grab_data(_current_window);
+
     std::vector<usage_window> stats;
     for (size_t i = 1; i < _buckets.size(); ++i) {
         const auto idx = (_current_window + i) % _usage_num_windows;
@@ -282,15 +287,21 @@ std::vector<usage_window> usage_aggregator<clock_type>::get_usage_stats() {
     stats.push_back(_buckets[_current_window]);
     /// std::reverse returns results in ordering from newest to oldest
     std::reverse(stats.begin(), stats.end());
-    return stats;
+    co_return stats;
 }
 
 template<typename clock_type>
 ss::future<> usage_aggregator<clock_type>::stop() {
-    _timer.cancel();
+    /// Shutdown background work
+    _close_window_timer.cancel();
     _persist_disk_timer.cancel();
     co_await _bg_write_gate.close();
     try {
+        /// Fetch freshest window, if possible
+        co_await grab_data(_current_window);
+        /// Prevent further calls to grab_data to succeed
+        _m.broken();
+        /// Write freshest buckets to disk
         co_await persist_to_disk(
           _kvstore,
           persisted_state{
@@ -311,11 +322,35 @@ ss::future<> usage_aggregator<clock_type>::stop() {
 /// overwritten, therefore the data can be omitted
 template<typename clock_type>
 bool usage_aggregator<clock_type>::is_bucket_stale(
-  size_t idx, uint64_t close_ts) const {
-    /// Check is simple, close_ts should be what it was when the window
-    /// closed, if it isn't, then the window is stale and was re-used,
+  size_t idx, uint64_t open_ts) const {
+    /// Check is simple, open_ts should be what it was when the window
+    /// opened, if it isn't, then the window is stale and was re-used,
     /// data was overwritten.
-    return _buckets[idx].end != close_ts;
+    return _buckets[idx].begin != open_ts;
+}
+
+/// Only fiber of execution responsible for grabbing the results
+/// from all cores, resetting their respective counters and caching
+/// the result in memory
+template<typename clock_type>
+ss::future<> usage_aggregator<clock_type>::grab_data(size_t idx) {
+    auto gh = _gate.hold();
+    try {
+        auto units = _m.get_units();
+        const auto ts = _buckets[idx].begin;
+        /// Grab the data, across this scheduling point we cannot assume things
+        /// like _current_window have the same value as before this call, that
+        /// is why _current_window is locally cached
+        const auto usage_data = co_await close_current_window();
+        if (!is_bucket_stale(idx, ts)) {
+            _buckets[idx].u += usage_data;
+            _buckets[idx].u.bytes_cloud_storage
+              = usage_data.bytes_cloud_storage;
+        }
+    } catch (const std::exception& e) {
+        vlog(
+          klog.info, "encountered error when attempting to fetch data: {}", e);
+    }
 }
 
 template<typename clock_type>
@@ -327,28 +362,12 @@ void usage_aggregator<clock_type>::close_window() {
     const auto now = round_to_interval(
       _usage_window_width_interval, ss::lowres_system_clock::now());
     const auto now_ts = epoch_time_secs(now);
-    const auto before_close_idx = _current_window;
-    _buckets[before_close_idx].end = now_ts;
+    _buckets[_current_window].end = now_ts;
+    const auto w = _current_window;
     _current_window = (_current_window + 1) % _buckets.size();
     _buckets[_current_window].reset(now);
-    /// The timer must progress so subsequent windows may be closed, async work
-    /// may hold that up for a significant amount of time, therefore async work
-    /// will be dispatched in the background and the result set written to the
-    /// correct bucket when it is eventually computed
-    ssx::spawn_with_gate(_gate, [this, before_close_idx, close_ts = now_ts] {
-        return close_current_window()
-          .then([this, before_close_idx, close_ts](usage next) {
-              if (!is_bucket_stale(before_close_idx, close_ts)) {
-                  _buckets[before_close_idx].u = next;
-              }
-          })
-          .handle_exception([](std::exception_ptr eptr) {
-              vlog(
-                klog.debug,
-                "usage_manager async job exception encountered: {}",
-                eptr);
-          });
-    });
+    ssx::background = ssx::spawn_with_gate_then(
+      _gate, [this, w]() { return grab_data(w); });
 }
 
 template<typename clock_type>
