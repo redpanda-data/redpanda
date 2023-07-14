@@ -35,6 +35,8 @@ public:
       ss::sharded<cluster::tx_coordinator_mapper>&,
       ss::sharded<features::feature_table>&);
 
+    ss::future<bool> ensure_tx_topic_exists();
+
     ss::future<find_coordinator_reply>
       find_coordinator(kafka::transactional_id, model::timeout_clock::duration);
 
