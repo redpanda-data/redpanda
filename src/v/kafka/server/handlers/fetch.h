@@ -222,6 +222,19 @@ struct read_result {
         memory_units_t& operator=(memory_units_t&&) noexcept = default;
         memory_units_t(const memory_units_t&) = delete;
         memory_units_t& operator=(const memory_units_t&) = delete;
+        memory_units_t(
+          ssx::semaphore& memory_sem,
+          ssx::semaphore& memory_fetch_sem) noexcept;
+
+        /*
+         * Adopts another memory_units_t. This requires that both
+         * memory_units_t are from the same shard.
+         */
+        void adopt(memory_units_t&& o);
+
+        bool has_units() const {
+            return fetch.count() > 0 || kafka.count() > 0;
+        }
     };
 
     explicit read_result(error_code e)
