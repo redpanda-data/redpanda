@@ -130,16 +130,16 @@ ss::future<> usage_manager::stop() {
     co_await _accounting_fiber->stop();
 }
 
-std::vector<usage_window> usage_manager::get_usage_stats() const {
+ss::future<std::vector<usage_window>> usage_manager::get_usage_stats() const {
     if (ss::this_shard_id() != usage_manager_main_shard) {
         throw std::runtime_error(
           "Attempt to query results of "
           "kafka::usage_manager off the main accounting shard");
     }
     if (!_accounting_fiber) {
-        return {}; // no stats
+        co_return std::vector<usage_window>{}; // no stats
     }
-    return _accounting_fiber->get_usage_stats();
+    co_return co_await _accounting_fiber->get_usage_stats();
 }
 
 } // namespace kafka
