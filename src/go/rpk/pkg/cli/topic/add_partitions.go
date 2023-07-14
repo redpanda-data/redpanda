@@ -47,7 +47,7 @@ func newAddPartitionsCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 			defer adm.Close()
 
 			if num <= 0 {
-				out.Die("No additional partitions requested, exiting!")
+				out.Die("--num (-n) should be a positive value, exiting!")
 			}
 
 			resps, err := adm.CreatePartitions(context.Background(), num, topics...)
@@ -78,6 +78,7 @@ func newAddPartitionsCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 		},
 	}
 	cmd.Flags().IntVarP(&num, "num", "n", 0, "Number of partitions to add to each topic")
+	cmd.MarkFlagRequired("num")
 	cmd.Flags().BoolVarP(&force, "force", "f", false, "Force change the partition count in internal topics, e.g. __consumer_offsets.")
 	return cmd
 }
