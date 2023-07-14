@@ -3654,9 +3654,9 @@ class RedpandaService(RedpandaServiceBase):
 
         return wait_until_result(check, timeout_sec=30, backoff_sec=1)
 
-    def _get_object_storage_report(
-            self,
-            tolerate_empty_object_storage=False) -> dict[str, str | list[str]]:
+    def _get_object_storage_report(self,
+                                   tolerate_empty_object_storage=False,
+                                   timeout=60) -> dict[str, str | list[str]]:
         """
         Uses rp-storage-tool to get the object storage report.
         If the cluster is running the tool could see some inconsistencies and report anomalies,
@@ -3716,7 +3716,7 @@ class RedpandaService(RedpandaServiceBase):
             node,
             f"{environment} rp-storage-tool --backend {backend} scan-metadata --source {bucket}",
             allow_fail=True,
-            timeout_sec=60)
+            timeout_sec=timeout)
 
         # if stderr contains a WARN logline, log it as DEBUG, since this is mostly related to debugging rp-storage-tool itself
         if re.search(b'\[\S+ WARN', stderr) is not None:
@@ -3736,13 +3736,14 @@ class RedpandaService(RedpandaServiceBase):
         return report
 
     def raise_on_cloud_storage_inconsistencies(self,
-                                               inconsistencies: list[str]):
+                                               inconsistencies: list[str],
+                                               run_timeout=60):
         """
         like stop_and_scrub_object_storage, use rp-storage-tool to explicitly check for inconsistencies,
         but without stopping the cluster.
         """
         report = self._get_object_storage_report(
-            tolerate_empty_object_storage=True)
+            tolerate_empty_object_storage=True, timeout=run_timeout)
         fatal_anomalies = set(k for k, v in report.items()
                               if len(v) > 0 and k in inconsistencies)
         if fatal_anomalies:
@@ -3753,7 +3754,7 @@ class RedpandaService(RedpandaServiceBase):
                 f"Object storage reports fatal anomalies of type {fatal_anomalies}"
             )
 
-    def stop_and_scrub_object_storage(self):
+    def stop_and_scrub_object_storage(self, run_timeout=60):
         # Before stopping, ensure that all tiered storage partitions
         # have uploaded at least a manifest: we do not require that they
         # have uploaded until the head of their log, just that they have
@@ -3763,6 +3764,8 @@ class RedpandaService(RedpandaServiceBase):
         # This should not need to wait long: even without waiting for
         # manifest upload interval, partitions should upload their initial
         # manifest as soon as they can, and that's all we require.
+        # :param run_timeout timeout for the execution of rp-storage-tool.
+        # can be set to None for no timeout
 
         def all_partitions_uploaded_manifest():
             for p in self.partitions():
@@ -3803,7 +3806,7 @@ class RedpandaService(RedpandaServiceBase):
         # flushing data to remote storage.
         self.stop()
 
-        report = self._get_object_storage_report()
+        report = self._get_object_storage_report(timeout=run_timeout)
 
         # It is legal for tiered storage to leak objects under
         # certain circumstances: this will remain the case until
