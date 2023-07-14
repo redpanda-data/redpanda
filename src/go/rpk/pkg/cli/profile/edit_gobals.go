@@ -19,14 +19,13 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func newEditDefaultsCommand(fs afero.Fs, p *config.Params) *cobra.Command {
+func newEditGlobalsCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "edit-defaults",
-		Short: "Edit rpk defaults",
-		Long: `Edit rpk defaults.
+		Use:   "edit-globals",
+		Short: "Edit rpk globals",
+		Long: `Edit rpk globals.
 
-This command opens your default editor to edit the specified profile, or
-the current profile if no profile is specified.
+This command opens your default editor to edit the rpk global configurations.
 `,
 		Args: cobra.ExactArgs(0),
 		Run: func(*cobra.Command, []string) {
@@ -35,12 +34,12 @@ the current profile if no profile is specified.
 			y, err := cfg.ActualRpkYamlOrEmpty()
 			out.MaybeDie(err, "unable to load config: %v", err)
 
-			y.Defaults, err = rpkos.EditTmpYAMLFile(fs, y.Defaults)
+			y.Globals, err = rpkos.EditTmpYAMLFile(fs, y.Globals)
 			out.MaybeDieErr(err)
 
 			err = y.Write(fs)
 			out.MaybeDie(err, "unable to write rpk.yaml: %v", err)
-			fmt.Println("Defaults updated successfully.")
+			fmt.Println("Global configurations updated successfully.")
 		},
 	}
 	return cmd

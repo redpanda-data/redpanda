@@ -92,7 +92,7 @@ func NewFranzClient(fs afero.Fs, p *config.RpkProfile, extraOpts ...kgo.Opt) (*k
 	if d := d.FetchMaxWait; d.Duration != 0 {
 		opts = append(opts, kgo.FetchMaxWait(d.Duration))
 	}
-	if id := d.RedpandaClientID; id != "" {
+	if id := d.KafkaProtocolReqClientID; id != "" {
 		opts = append(opts, kgo.ClientID(id))
 	}
 

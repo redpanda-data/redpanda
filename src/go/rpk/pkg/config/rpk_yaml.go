@@ -86,7 +86,7 @@ type (
 		// upgrade rpk".
 		Version int `yaml:"version"`
 
-		Defaults RpkDefaults `yaml:"defaults,omitempty"`
+		Globals RpkGlobals `yaml:"globals,omitempty"`
 
 		CurrentProfile   string         `yaml:"current_profile"`
 		CurrentCloudAuth string         `yaml:"current_cloud_auth"`
@@ -94,7 +94,7 @@ type (
 		CloudAuths       []RpkCloudAuth `yaml:"cloud_auth,omitempty"`
 	}
 
-	RpkDefaults struct {
+	RpkGlobals struct {
 		// Prompt is the prompt to use for all profiles, unless the
 		// profile itself overrides it.
 		Prompt string `yaml:"prompt"`
@@ -121,8 +121,8 @@ type (
 		// fetch requests.
 		FetchMaxWait Duration `yaml:"fetch_max_wait"`
 
-		// RedpandaClientID is the client ID to use for the Kafka API.
-		RedpandaClientID string `yaml:"redpanda_client_id"`
+		// KafkaProtocolReqClientID is the client ID to use for the Kafka API.
+		KafkaProtocolReqClientID string `yaml:"kafka_protocol_request_client_id"`
 	}
 
 	RpkProfile struct {
@@ -249,8 +249,8 @@ func (p *RpkProfile) SugarLogger() *zap.SugaredLogger {
 }
 
 // Defaults returns the virtual defaults for the rpk.yaml.
-func (p *RpkProfile) Defaults() *RpkDefaults {
-	return &p.c.rpkYaml.Defaults
+func (p *RpkProfile) Defaults() *RpkGlobals {
+	return &p.c.rpkYaml.Globals
 }
 
 // CurrentAuth returns the current cloud Auth.

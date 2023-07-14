@@ -19,18 +19,17 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-func newPrintDefaultsCommand(fs afero.Fs, p *config.Params) *cobra.Command {
+func newPrintGlobalsCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	return &cobra.Command{
-		Use:   "print-defaults",
-		Short: "Print rpk default",
-		Long:  `Print rpk defaults.`,
+		Use:   "print-globals",
+		Short: "Print rpk global configuration",
 		Args:  cobra.ExactArgs(0),
 		Run: func(_ *cobra.Command, args []string) {
 			cfg, err := p.Load(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)
 
 			y := cfg.VirtualRpkYaml()
-			m, err := yaml.Marshal(y.Defaults)
+			m, err := yaml.Marshal(y.Globals)
 			out.MaybeDie(err, "unable to encode profile: %v", err)
 			fmt.Println(string(m))
 		},

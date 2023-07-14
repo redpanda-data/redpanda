@@ -37,14 +37,14 @@ your configuration in one place.
 		newCurrentCommand(fs, p),
 		newDeleteCommand(fs, p),
 		newEditCommand(fs, p),
-		newEditDefaultsCommand(fs, p),
+		newEditGlobalsCommand(fs, p),
 		newListCommand(fs, p),
 		newPrintCommand(fs, p),
-		newPrintDefaultsCommand(fs, p),
+		newPrintGlobalsCommand(fs, p),
 		newPromptCommand(fs, p),
 		newRenameToCommand(fs, p),
 		newSetCommand(fs, p),
-		newSetDefaultsCommand(fs, p),
+		newSetGlobalsCommand(fs, p),
 		newUseCommand(fs, p),
 	)
 

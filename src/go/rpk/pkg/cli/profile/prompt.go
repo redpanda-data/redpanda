@@ -93,7 +93,7 @@ Four modifiers are supported, "bold", "faint", "underline", and "invert".
 				return
 			}
 
-			prompt := cfg.VirtualRpkYaml().Defaults.Prompt
+			prompt := cfg.VirtualRpkYaml().Globals.Prompt
 			if p.Prompt != "" {
 				prompt = p.Prompt
 			}
@@ -208,6 +208,9 @@ func parsePrompt(s string, name string) (string, []color.Attribute, error) {
 		default:
 			output = append(output, c)
 		}
+	}
+	if len(s) != 0 && len(text) == 0 {
+		output = append(output, name...)
 	}
 	return string(output), attrs, nil
 }

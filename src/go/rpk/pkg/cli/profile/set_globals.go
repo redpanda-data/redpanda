@@ -19,24 +19,24 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func newSetDefaultsCommand(fs afero.Fs, p *config.Params) *cobra.Command {
+func newSetGlobalsCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	return &cobra.Command{
-		Use:   "set-defaults [KEY=VALUE]+",
-		Short: "Set rpk default fields",
-		Long: `Set rpk default fields.
+		Use:   "set-globals [KEY=VALUE]+",
+		Short: "Set rpk globals fields",
+		Long: `Set rpk globals fields.
 
-This command takes a list of key=value pairs to write to the defaults section
-of rpk.yaml. The defaults section contains a set of settings that apply to all
-profiles and changes the way that rpk acts. For a list of default flags and
-what they mean, check 'rpk -X help' and look for any key that begins with
-"defaults".
+This command takes a list of key=value pairs to write to the global config 
+section of rpk.yaml. The globals section contains a set of settings that apply
+to all profiles and changes the way that rpk acts. For a list of global flags
+and what they mean, check 'rpk -X help' and look for any key that begins with
+"globals".
 
 This command supports autocompletion of valid keys. You can also use the
 format 'set key value' if you intend to only set one key.
 `,
 
 		Args:              cobra.MinimumNArgs(1),
-		ValidArgsFunction: validSetDefaultsArgs,
+		ValidArgsFunction: validSetGlobalArgs,
 		Run: func(_ *cobra.Command, args []string) {
 			cfg, err := p.Load(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)
@@ -51,7 +51,7 @@ format 'set key value' if you intend to only set one key.
 			y, err := cfg.ActualRpkYamlOrEmpty()
 			out.MaybeDie(err, "unable to load rpk.yaml: %v", err)
 
-			err = doSetDefaults(y, args)
+			err = doSetGlobals(y, args)
 			out.MaybeDieErr(err)
 			err = y.Write(fs)
 			out.MaybeDieErr(err)
@@ -60,7 +60,7 @@ format 'set key value' if you intend to only set one key.
 	}
 }
 
-func doSetDefaults(y *config.RpkYaml, set []string) error {
+func doSetGlobals(y *config.RpkYaml, set []string) error {
 	for _, kv := range set {
 		split := strings.SplitN(kv, "=", 2)
 		if len(split) != 2 {
@@ -78,9 +78,9 @@ func doSetDefaults(y *config.RpkYaml, set []string) error {
 	return nil
 }
 
-func validSetDefaultsArgs(_ *cobra.Command, _ []string, toComplete string) (ps []string, d cobra.ShellCompDirective) {
+func validSetGlobalArgs(_ *cobra.Command, _ []string, toComplete string) (ps []string, d cobra.ShellCompDirective) {
 	var possibilities []string
-	_, ypaths := config.XRpkDefaultsFlags()
+	_, ypaths := config.XRpkGlobalFlags()
 	for _, p := range ypaths {
 		if strings.HasPrefix(p, toComplete) {
 			possibilities = append(possibilities, p+"=")
