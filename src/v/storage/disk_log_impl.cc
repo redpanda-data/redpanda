@@ -61,6 +61,22 @@ namespace storage {
  * transaction manager topic.
  *
  * Once controller snapshots are enabled this rule will relaxed accordingly.
+ *
+ * Interaction with space management
+ * =================================
+ *
+ * We leave some topics exempt (for now) from trimming even when space
+ * management is turned on.
+ *
+ *    * Controller: control space using new snapshot mechanism
+ *    * Consumer groups, transactions, producer ids, etc...
+ *
+ * The main concern with consumer groups is performance: changes in leadership
+ * of a CG partition trigger a full replay of the consumer group partition. If
+ * it is allowed to be swapped to cloud tier, then performance issues will arise
+ * from normal cluster operation (leadershp movement) and this cost is not
+ * driven / constrained by historical reads. Similarly for transactions and
+ * idempotence. Controller topic should space can be managed by snapshots.
  */
 bool deletion_exempt(const model::ntp& ntp) {
     bool is_internal_namespace = ntp.ns() == model::redpanda_ns
@@ -2360,6 +2376,13 @@ void disk_log_impl::set_cloud_gc_offset(model::offset offset) {
           config().ntp());
         return;
     }
+    if (deletion_exempt(config().ntp())) {
+        vlog(
+          stlog.debug,
+          "Ignoring request to trim at GC offset for exempt partition {}",
+          config().ntp());
+        return;
+    }
     _cloud_gc_offset = offset;
 }
 
@@ -2390,6 +2413,15 @@ disk_log_impl::get_reclaimable_offsets(gc_config cfg) {
         vlog(
           stlog.debug,
           "Reporting no reclaimable offsets for read replica partition {}",
+          config().ntp());
+        co_return res;
+    }
+
+    // see comment on deletion_exempt
+    if (deletion_exempt(config().ntp())) {
+        vlog(
+          stlog.debug,
+          "Reporting no reclaimable space for exempt partition {}",
           config().ntp());
         co_return res;
     }
