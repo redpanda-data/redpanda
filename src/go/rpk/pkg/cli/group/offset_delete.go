@@ -12,6 +12,7 @@ package group
 import (
 	"context"
 	"fmt"
+	"os"
 
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/kafka"
@@ -81,15 +82,20 @@ topic_b 0
 			out.MaybeDieErr(err)
 
 			tw := out.NewTabWriter()
-			defer tw.Flush()
+			ok := true
 			for topic, partitionErrors := range responses {
 				for partition, err := range partitionErrors {
 					msg := "OK"
 					if err != nil {
+						ok = false
 						msg = err.Error()
 					}
 					fmt.Fprintf(tw, "%s\t%d\t%s\n", topic, partition, msg)
 				}
+			}
+			tw.Flush()
+			if !ok { // At least one row contained an error.
+				os.Exit(1)
 			}
 		},
 	}

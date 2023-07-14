@@ -36,10 +36,14 @@ class ClusterAuthorizationError(Exception):
 
 
 class RpkException(Exception):
-    def __init__(self, msg, stderr="", returncode=None):
+    def __init__(self, msg, stderr="", returncode=None, stdout=""):
         self.msg = msg
+        self.stdout = stdout
         self.stderr = stderr
         self.returncode = returncode
+        # Useful for when its desired to still propogate parsed stdout
+        # to caller when when rpk exits 1
+        self.parsed_output = None
 
     def __str__(self):
         if self.stderr:
@@ -50,7 +54,11 @@ class RpkException(Exception):
             retcode = f" returncode: {self.returncode}"
         else:
             retcode = ""
-        return f"RpkException<{self.msg}{err}{retcode}>"
+        if self.stdout:
+            stdout = f" stdout: {self.stdout}"
+        else:
+            stdout = ""
+        return f"RpkException<{self.msg}{err}{stdout}{retcode}>"
 
 
 class RpkPartition:
@@ -878,6 +886,9 @@ class RpkTool:
         if timeout is None:
             timeout = DEFAULT_TIMEOUT
 
+        # Unconditionally enable verbose logging
+        cmd += ['-v']
+
         if log_cmd:
             self._redpanda.logger.debug("Executing command: %s", cmd)
 
@@ -887,7 +898,7 @@ class RpkTool:
                              stderr=subprocess.PIPE,
                              text=True)
         try:
-            output, error = p.communicate(input=stdin, timeout=timeout)
+            output, stderror = p.communicate(input=stdin, timeout=timeout)
         except subprocess.TimeoutExpired:
             p.kill()
             raise RpkException(f"command {' '.join(cmd)} timed out")
@@ -895,11 +906,14 @@ class RpkTool:
         self._redpanda.logger.debug(f'\n{output}')
 
         if p.returncode:
-            self._redpanda.logger.error(error)
+            self._redpanda.logger.error(stderror)
             raise RpkException(
                 'command %s returned %d, output: %s' %
                 (' '.join(cmd) if log_cmd else '[redacted]', p.returncode,
-                 output), error, p.returncode)
+                 output), stderror, p.returncode, output)
+        else:
+            # Send the verbose output of rpk to debug logger
+            self._redpanda.logger.debug(f"\n{stderror}")
 
         return output
 
@@ -1115,8 +1129,8 @@ class RpkTool:
                 r"\s*(?P<topic>\S*)\s*(?P<partition>\d*)\s*(?P<status>\w+):?(?P<error>.*)"
             )
             matched = [regex.match(x) for x in output]
-            failed_matches = [x for x in matched if x is None]
-            if len(failed_matches) > 0:
+            failed_matches = any([x for x in matched if x is None])
+            if failed_matches:
                 raise RuntimeError("Failed to parse offset-delete output")
             return [
                 RpkOffsetDeleteResponsePartition(x['topic'],
@@ -1125,19 +1139,7 @@ class RpkTool:
                 for x in matched
             ]
 
-        def parse_offset_delete_output_err(output):
-            if len(output) == 0:
-                raise RuntimeError("Unexpected rpk output")
-            regex = re.compile(r"(\w*):(.*)")
-            matched = regex.match(output[0])
-            if matched is None:
-                raise RuntimeError("Failed to parse offset-delete output")
-            return RpkOffsetDeleteResponsePartition(None, None,
-                                                    matched.group(1),
-                                                    matched.group(2))
-
         def try_offset_delete(retries=5):
-            retriable_codes = set(['NOT_COORDINATOR'])
             while retries > 0:
                 try:
                     output = self._execute(cmd)
@@ -1145,9 +1147,10 @@ class RpkTool:
                 except RpkException as e:
                     if e.returncode != 1:
                         raise e
-                    err = parse_offset_delete_output_err(e.stderr.splitlines())
-                    if err.status not in retriable_codes:
-                        return err
+                    if not 'NOT_COORDINATOR' in str(e):
+                        e.parsed_output = parse_offset_delete_output(
+                            e.stdout.splitlines())
+                        raise e
                     retries -= 1
             raise RpkException("Max number of retries exceeded")
 
@@ -1178,7 +1181,7 @@ class RpkTool:
             group,
         ] + request_args_w_flags
 
-        # Retry if the command exits 1 (in case top level ec was returned)
+        # Retry if NOT_COORDINATOR is observed when command exits 1
         return try_offset_delete(retries=5)
 
     def generate_grafana(self, dashboard):
