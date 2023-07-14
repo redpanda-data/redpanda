@@ -49,6 +49,22 @@ public:
           .cloud_storage_disable_upload_loop_for_tests.set_value(true);
         config::shard_local_cfg()
           .cloud_storage_disable_read_replica_loop_for_tests.set_value(true);
+
+        topic_name = model::topic("tapioca");
+        ntp = model::ntp(model::kafka_namespace, topic_name, 0);
+
+        cluster::topic_properties props;
+        props.shadow_indexing = model::shadow_indexing_mode::full;
+        props.retention_local_target_bytes = tristate<size_t>(1);
+        add_topic({model::kafka_namespace, topic_name}, 1, props).get();
+        wait_for_leader(ntp).get();
+
+        src_partition = app.partition_manager.local().get(ntp).get();
+        src_log = dynamic_cast<storage::disk_log_impl*>(
+          src_partition->log().get_impl());
+        auto archiver_ref = src_partition->archiver();
+        BOOST_REQUIRE(archiver_ref.has_value());
+        src_archiver = &archiver_ref.value().get();
     }
 
     std::unique_ptr<redpanda_thread_fixture> start_read_replica_fixture() {
@@ -66,26 +82,23 @@ public:
           get_archival_config(),
           get_cloud_config(httpd_port_number()));
     }
+
+    model::topic topic_name;
+    model::ntp ntp;
+    cluster::partition* src_partition;
+    storage::disk_log_impl* src_log;
+    archival::ntp_archiver* src_archiver;
 };
 
 FIXTURE_TEST(test_read_replica_basic_sync, read_replica_e2e_fixture) {
-    const model::topic topic_name("tapioca");
-    model::ntp ntp(model::kafka_namespace, topic_name, 0);
-    cluster::topic_properties props;
-    props.shadow_indexing = model::shadow_indexing_mode::full;
-    props.retention_local_target_bytes = tristate<size_t>(1);
-    add_topic({model::kafka_namespace, topic_name}, 1, props).get();
-    wait_for_leader(ntp).get();
-
     // Produce records to the source.
-    auto partition = app.partition_manager.local().get(ntp).get();
-    auto& archiver = partition->archiver()->get();
-    BOOST_REQUIRE(archiver.sync_for_tests().get());
-    archiver.upload_topic_manifest().get();
-    tests::remote_segment_generator gen(make_kafka_client().get(), *partition);
+    BOOST_REQUIRE(src_archiver->sync_for_tests().get());
+    src_archiver->upload_topic_manifest().get();
+    tests::remote_segment_generator gen(
+      make_kafka_client().get(), *src_partition);
     BOOST_REQUIRE_EQUAL(
       30, gen.records_per_batch(10).num_segments(3).produce().get());
-    BOOST_REQUIRE_EQUAL(3, archiver.manifest().size());
+    BOOST_REQUIRE_EQUAL(3, src_archiver->manifest().size());
 
     // Create the read replica application, now that we've initialized things
     // that rely globals (e.g. configs, etc).
@@ -125,18 +138,8 @@ FIXTURE_TEST(test_read_replica_basic_sync, read_replica_e2e_fixture) {
 
 FIXTURE_TEST(
   test_read_replica_rejects_delete_records, read_replica_e2e_fixture) {
-    const model::topic topic_name("tapioca");
-    model::ntp ntp(model::kafka_namespace, topic_name, 0);
-    cluster::topic_properties props;
-    props.shadow_indexing = model::shadow_indexing_mode::full;
-    props.retention_local_target_bytes = tristate<size_t>(1);
-    add_topic({model::kafka_namespace, topic_name}, 1, props).get();
-    wait_for_leader(ntp).get();
-
-    auto partition = app.partition_manager.local().get(ntp).get();
-    auto& archiver = partition->archiver()->get();
-    BOOST_REQUIRE(archiver.sync_for_tests().get());
-    archiver.upload_topic_manifest().get();
+    BOOST_REQUIRE(src_archiver->sync_for_tests().get());
+    src_archiver->upload_topic_manifest().get();
 
     auto rr_rp = start_read_replica_fixture();
     cluster::topic_properties read_replica_props;
@@ -165,23 +168,14 @@ FIXTURE_TEST(
 }
 
 FIXTURE_TEST(test_read_replica_delete_records, read_replica_e2e_fixture) {
-    const model::topic topic_name("tapioca");
-    model::ntp ntp(model::kafka_namespace, topic_name, 0);
-    cluster::topic_properties props;
-    props.shadow_indexing = model::shadow_indexing_mode::full;
-    props.retention_local_target_bytes = tristate<size_t>(1);
-    add_topic({model::kafka_namespace, topic_name}, 1, props).get();
-    wait_for_leader(ntp).get();
-
     // Produce records to the source.
-    auto partition = app.partition_manager.local().get(ntp).get();
-    auto& archiver = partition->archiver()->get();
-    BOOST_REQUIRE(archiver.sync_for_tests().get());
-    archiver.upload_topic_manifest().get();
-    tests::remote_segment_generator gen(make_kafka_client().get(), *partition);
+    BOOST_REQUIRE(src_archiver->sync_for_tests().get());
+    src_archiver->upload_topic_manifest().get();
+    tests::remote_segment_generator gen(
+      make_kafka_client().get(), *src_partition);
     BOOST_REQUIRE_EQUAL(
       30, gen.batches_per_segment(10).num_segments(3).produce().get());
-    BOOST_REQUIRE_EQUAL(3, archiver.manifest().size());
+    BOOST_REQUIRE_EQUAL(3, src_archiver->manifest().size());
 
     // NOTE: we're creating the deleter here before starting the read replica
     // fixture because make_kafka_client() uses global configs that will be
@@ -228,8 +222,8 @@ FIXTURE_TEST(test_read_replica_delete_records, read_replica_e2e_fixture) {
         .get());
     BOOST_REQUIRE_EQUAL(
       cloud_storage::upload_result::success,
-      archiver.upload_manifest("test").get());
-    archiver.flush_manifest_clean_offset().get();
+      src_archiver->upload_manifest("test").get());
+    src_archiver->flush_manifest_clean_offset().get();
 
     // Once synced on the read replica, it should fail to be read.
     BOOST_REQUIRE(rr_archiver.sync_for_tests().get());
@@ -260,19 +254,10 @@ FIXTURE_TEST(test_read_replica_delete_records, read_replica_e2e_fixture) {
 
 FIXTURE_TEST(
   test_read_replica_delete_records_in_local, read_replica_e2e_fixture) {
-    const model::topic topic_name("tapioca");
-    model::ntp ntp(model::kafka_namespace, topic_name, 0);
-    cluster::topic_properties props;
-    props.shadow_indexing = model::shadow_indexing_mode::full;
-    props.retention_local_target_bytes = tristate<size_t>(1);
-    add_topic({model::kafka_namespace, topic_name}, 1, props).get();
-    wait_for_leader(ntp).get();
-
-    auto partition = app.partition_manager.local().get(ntp).get();
-    auto& archiver = partition->archiver()->get();
-    BOOST_REQUIRE(archiver.sync_for_tests().get());
-    archiver.upload_topic_manifest().get();
-    tests::remote_segment_generator gen(make_kafka_client().get(), *partition);
+    BOOST_REQUIRE(src_archiver->sync_for_tests().get());
+    src_archiver->upload_topic_manifest().get();
+    tests::remote_segment_generator gen(
+      make_kafka_client().get(), *src_partition);
     BOOST_REQUIRE_EQUAL(
       40,
       gen.batches_per_segment(10)
@@ -280,9 +265,9 @@ FIXTURE_TEST(
         .additional_local_segments(1)
         .produce()
         .get());
-    BOOST_REQUIRE_EQUAL(3, archiver.manifest().size());
+    BOOST_REQUIRE_EQUAL(3, src_archiver->manifest().size());
     auto highest_kafka_offset_in_cloud
-      = archiver.manifest().get_last_kafka_offset().value();
+      = src_archiver->manifest().get_last_kafka_offset().value();
 
     // DeleteRecords in the region of the log that hasn't yet been uploaded.
     tests::kafka_delete_records_transport deleter(make_kafka_client().get());
@@ -298,8 +283,8 @@ FIXTURE_TEST(
     // Persist the deletion to the cloud without uploading the segments.
     BOOST_REQUIRE_EQUAL(
       cloud_storage::upload_result::success,
-      archiver.upload_manifest("test").get());
-    archiver.flush_manifest_clean_offset().get();
+      src_archiver->upload_manifest("test").get());
+    src_archiver->flush_manifest_clean_offset().get();
 
     tests::kafka_list_offsets_transport lister(make_kafka_client().get());
     lister.start().get();
