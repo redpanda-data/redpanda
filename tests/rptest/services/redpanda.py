@@ -58,7 +58,7 @@ from rptest.services.redpanda_installer import RedpandaInstaller, VERSION_RE as 
 from rptest.services.rolling_restarter import RollingRestarter
 from rptest.services.storage import ClusterStorage, NodeStorage, NodeCacheStorage
 from rptest.services.utils import BadLogLines, NodeCrash
-from rptest.util import inject_remote_script, wait_until_result
+from rptest.util import inject_remote_script, ssh_output_stderr, wait_until_result
 
 Partition = collections.namedtuple('Partition',
                                    ['topic', 'index', 'leader', 'replicas'])
@@ -3732,52 +3732,9 @@ class RedpandaService(RedpandaServiceBase):
 
         return wait_until_result(check, timeout_sec=30, backoff_sec=1)
 
-    def _ssh_output_stderr(self,
-                           node: ClusterNode,
-                           cmd,
-                           allow_fail=False,
-                           timeout_sec=None) -> tuple[bytes, bytes]:
-        """Runs the command via SSH and captures stdout and stderr, returning it as a byte strings.
-        this is a copy/mode of ssh_output, with the intention midterm to upstream it to ducktape
-
-        :param cmd: The remote ssh command.
-        :param node: where to run the command
-        :param allow_fail: If True, ignore nonzero exit status of the remote command,
-               else raise an ``RemoteCommandError``
-        :param timeout_sec: Set timeout on blocking reads/writes. Default None. For more details see
-            http://docs.paramiko.org/en/2.0/api/channel.html#paramiko.channel.Channel.settimeout
-
-        :return: stdout, stderr pair output from the ssh command.
-        :raise RemoteCommandError: If ``allow_fail`` is False and the command returns a non-zero exit status
-        """
-        self.logger.debug(f"Running ssh command: {cmd}")
-
-        client: SSHClient = node.account.ssh_client
-        stdin, stdout, stderr = client.exec_command(cmd, timeout=timeout_sec)
-
-        try:
-            stdoutdata = stdout.read()
-            stderrdata = stderr.read()
-
-            exit_status = stdin.channel.recv_exit_status()
-            if exit_status != 0:
-                if not allow_fail:
-                    raise RemoteCommandError(self, cmd, exit_status,
-                                             stderrdata)
-                else:
-                    self.logger.debug(
-                        f"Running ssh command {cmd} exited with status {exit_status} and message: {stderrdata}"
-                    )
-        finally:
-            stdin.close()
-            stdout.close()
-            stderr.close()
-        self.logger.debug(f"Returning ssh command output:\n{stdoutdata}\n")
-        return stdoutdata, stderrdata
-
-    def _get_object_storage_report(
-            self,
-            tolerate_empty_object_storage=False) -> dict[str, str | list[str]]:
+    def _get_object_storage_report(self,
+                                   tolerate_empty_object_storage=False,
+                                   timeout=60) -> dict[str, str | list[str]]:
         """
         Uses rp-storage-tool to get the object storage report.
         If the cluster is running the tool could see some inconsistencies and report anomalies,
@@ -3832,15 +3789,16 @@ class RedpandaService(RedpandaServiceBase):
 
         bucket = self.si_settings.cloud_storage_bucket
         environment = ' '.join(f'{k}=\"{v}\"' for k, v in vars.items())
-        output, stderr = self._ssh_output_stderr(
+        output, stderr = ssh_output_stderr(
+            self,
             node,
             f"{environment} rp-storage-tool --backend {backend} scan-metadata --source {bucket}",
             allow_fail=True,
-            timeout_sec=30)
+            timeout_sec=timeout)
 
-        # if stderr contains a WARN logline:
+        # if stderr contains a WARN logline, log it as DEBUG, since this is mostly related to debugging rp-storage-tool itself
         if re.search(b'\[\S+ WARN', stderr) is not None:
-            self.logger.warning(f"rp-storage-tool stderr output: {stderr}")
+            self.logger.debug(f"rp-storage-tool stderr output: {stderr}")
 
         report = {}
         try:
@@ -3856,13 +3814,14 @@ class RedpandaService(RedpandaServiceBase):
         return report
 
     def raise_on_cloud_storage_inconsistencies(self,
-                                               inconsistencies: list[str]):
+                                               inconsistencies: list[str],
+                                               run_timeout=60):
         """
         like stop_and_scrub_object_storage, use rp-storage-tool to explicitly check for inconsistencies,
         but without stopping the cluster.
         """
         report = self._get_object_storage_report(
-            tolerate_empty_object_storage=True)
+            tolerate_empty_object_storage=True, timeout=run_timeout)
         fatal_anomalies = set(k for k, v in report.items()
                               if len(v) > 0 and k in inconsistencies)
         if fatal_anomalies:
@@ -3873,7 +3832,7 @@ class RedpandaService(RedpandaServiceBase):
                 f"Object storage reports fatal anomalies of type {fatal_anomalies}"
             )
 
-    def stop_and_scrub_object_storage(self):
+    def stop_and_scrub_object_storage(self, run_timeout=60):
         # Before stopping, ensure that all tiered storage partitions
         # have uploaded at least a manifest: we do not require that they
         # have uploaded until the head of their log, just that they have
@@ -3883,6 +3842,8 @@ class RedpandaService(RedpandaServiceBase):
         # This should not need to wait long: even without waiting for
         # manifest upload interval, partitions should upload their initial
         # manifest as soon as they can, and that's all we require.
+        # :param run_timeout timeout for the execution of rp-storage-tool.
+        # can be set to None for no timeout
 
         def all_partitions_uploaded_manifest():
             for p in self.partitions():
@@ -3923,7 +3884,7 @@ class RedpandaService(RedpandaServiceBase):
         # flushing data to remote storage.
         self.stop()
 
-        report = self._get_object_storage_report()
+        report = self._get_object_storage_report(timeout=run_timeout)
 
         # It is legal for tiered storage to leak objects under
         # certain circumstances: this will remain the case until
