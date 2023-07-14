@@ -24,8 +24,7 @@ import (
 )
 
 func NewDescribeCommand(fs afero.Fs, p *config.Params) *cobra.Command {
-	var summary bool
-
+	var summary, commits bool
 	cmd := &cobra.Command{
 		Use:   "describe [GROUPS...]",
 		Short: "Describe group offset status & lag",
@@ -46,39 +45,20 @@ information about the members.
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer cancel()
 
-			described, err := adm.DescribeGroups(ctx, groups...)
-			out.HandleShardError("DescribeGroups", err)
-
+			lags, err := adm.Lag(ctx, groups...)
+			if err != nil {
+				out.Die("unable to describe groups: %v", err)
+			}
 			if summary {
-				printDescribedSummary(described)
+				printDescribedSummary(lags)
 				return
 			}
-
-			fetched := adm.FetchManyOffsets(ctx, groups...)
-			fetched.EachError(func(r kadm.FetchOffsetsResponse) {
-				fmt.Printf("unable to fetch offsets for group %q: %v\n", r.Group, r.Err)
-				delete(fetched, r.Group)
-			})
-			if fetched.AllFailed() {
-				out.Die("unable to fetch offsets for any group")
-			}
-
-			var listed kadm.ListedOffsets
-			listPartitions := described.AssignedPartitions()
-			listPartitions.Merge(fetched.CommittedPartitions())
-			if topics := listPartitions.Topics(); len(topics) > 0 {
-				listed, err = adm.ListEndOffsets(ctx, topics...)
-				out.HandleShardError("ListOffsets", err)
-			}
-
-			printDescribed(
-				described,
-				fetched,
-				listed,
-			)
+			printDescribed(commits, lags)
 		},
 	}
 	cmd.Flags().BoolVarP(&summary, "print-summary", "s", false, "Print only the group summary section")
+	cmd.Flags().BoolVarP(&commits, "print-commits", "c", false, "Print only the group commits section")
+	cmd.MarkFlagsMutuallyExclusive("print-summary", "print-commits")
 	return cmd
 }
 
@@ -101,17 +81,11 @@ type describeRow struct {
 	err           error
 }
 
-func printDescribed(
-	groups kadm.DescribedGroups,
-	fetched map[string]kadm.FetchOffsetsResponse,
-	listed kadm.ListedOffsets,
-) {
-	for _, group := range groups.Sorted() {
-		lag := kadm.CalculateGroupLag(group, fetched[group.Group].Fetched, listed)
-
+func printDescribed(commits bool, lags kadm.DescribedGroupLags) {
+	for _, group := range lags.Sorted() {
 		var rows []describeRow
 		var useInstanceID, useErr bool
-		for _, l := range lag.Sorted() {
+		for _, l := range group.Lag.Sorted() {
 			row := describeRow{
 				topic:     l.End.Topic,
 				partition: l.End.Partition,
@@ -143,18 +117,18 @@ func printDescribed(
 			rows = append(rows, row)
 		}
 
-		printDescribedGroup(group, rows, useInstanceID, useErr)
+		printDescribedGroup(commits, group, rows, useInstanceID, useErr)
 		fmt.Println()
 	}
 }
 
-func printDescribedSummary(groups kadm.DescribedGroups) {
+func printDescribedSummary(groups kadm.DescribedGroupLags) {
 	for _, group := range groups.Sorted() {
 		printDescribedGroupSummary(group)
 	}
 }
 
-func printDescribedGroupSummary(group kadm.DescribedGroup) {
+func printDescribedGroupSummary(group kadm.DescribedGroupLag) {
 	tw := out.NewTabWriter()
 	defer tw.Flush()
 	fmt.Fprintf(tw, "GROUP\t%s\n", group.Group)
@@ -162,19 +136,21 @@ func printDescribedGroupSummary(group kadm.DescribedGroup) {
 	fmt.Fprintf(tw, "STATE\t%s\n", group.State)
 	fmt.Fprintf(tw, "BALANCER\t%s\n", group.Protocol)
 	fmt.Fprintf(tw, "MEMBERS\t%d\n", len(group.Members))
-	if group.Err != nil {
-		fmt.Fprintf(tw, "ERROR\t%s\n", group.Err)
+	if group.Error() != nil {
+		fmt.Fprintf(tw, "ERROR\t%s\n", group.Error())
 	}
 }
 
 func printDescribedGroup(
-	group kadm.DescribedGroup,
+	commits bool,
+	group kadm.DescribedGroupLag,
 	rows []describeRow,
 	useInstanceID bool,
 	useErr bool,
 ) {
-	printDescribedGroupSummary(group)
-
+	if !commits {
+		printDescribedGroupSummary(group)
+	}
 	if len(rows) == 0 {
 		return
 	}

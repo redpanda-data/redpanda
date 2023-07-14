@@ -6,11 +6,11 @@ require (
 	cloud.google.com/go/compute/metadata v0.2.3
 	github.com/AlecAivazis/survey/v2 v2.3.7
 	github.com/avast/retry-go v3.0.0+incompatible
-	github.com/aws/aws-sdk-go v1.44.296
-	github.com/beevik/ntp v1.1.1
+	github.com/aws/aws-sdk-go v1.44.300
+	github.com/beevik/ntp v1.2.0
 	github.com/cespare/xxhash v1.1.0
 	github.com/coreos/go-systemd/v22 v22.5.0
-	github.com/docker/docker v24.0.2+incompatible
+	github.com/docker/docker v24.0.4+incompatible
 	github.com/docker/go-connections v0.4.0
 	github.com/docker/go-units v0.5.0
 	github.com/fatih/color v1.15.0
@@ -30,14 +30,14 @@ require (
 	github.com/spf13/pflag v1.0.5
 	github.com/stretchr/testify v1.8.4
 	github.com/tklauser/go-sysconf v0.3.11
-	github.com/twmb/franz-go v1.13.6
-	github.com/twmb/franz-go/pkg/kadm v1.8.1
-	github.com/twmb/franz-go/pkg/kmsg v1.5.0
+	github.com/twmb/franz-go v1.14.1
+	github.com/twmb/franz-go/pkg/kadm v1.9.0
+	github.com/twmb/franz-go/pkg/kmsg v1.6.1
 	github.com/twmb/franz-go/plugin/kzap v1.1.2
 	github.com/twmb/tlscfg v1.2.1
 	github.com/twmb/types v1.1.6
 	go.uber.org/zap v1.24.0
-	golang.org/x/exp v0.0.0-20230626212559-97b1e661b5df
+	golang.org/x/exp v0.0.0-20230713183714-613f0c0eb8a1
 	golang.org/x/sync v0.3.0
 	golang.org/x/sys v0.10.0
 	golang.org/x/term v0.10.0
@@ -48,7 +48,7 @@ require (
 )
 
 require (
-	cloud.google.com/go/compute v1.20.1 // indirect
+	cloud.google.com/go/compute v1.21.0 // indirect
 	github.com/Azure/go-ansiterm v0.0.0-20230124172434-306776ec8161 // indirect
 	github.com/BurntSushi/toml v1.3.2 // indirect
 	github.com/Microsoft/go-winio v0.6.1 // indirect
@@ -96,7 +96,7 @@ require (
 	go.uber.org/atomic v1.11.0 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
 	golang.org/x/crypto v0.11.0 // indirect
-	golang.org/x/exp/typeparams v0.0.0-20230626212559-97b1e661b5df // indirect
+	golang.org/x/exp/typeparams v0.0.0-20230713183714-613f0c0eb8a1 // indirect
 	golang.org/x/lint v0.0.0-20210508222113-6edffad5e616 // indirect
 	golang.org/x/mod v0.12.0 // indirect
 	golang.org/x/net v0.12.0 // indirect
