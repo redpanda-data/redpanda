@@ -564,7 +564,11 @@ ss::future<download_result> remote::download_segment(
     retry_chain_node fib(&parent);
     retry_chain_logger ctxlog(cst_log, fib);
     auto path = cloud_storage_clients::object_key(segment_path());
-    auto lease = co_await _pool.local().acquire(fib.root_abort_source());
+
+    auto lease = co_await [this, &fib] {
+        auto m = _probe.client_acquisition();
+        return _pool.local().acquire(fib.root_abort_source());
+    }();
 
     auto permit = fib.retry();
     vlog(ctxlog.debug, "Download segment {}", path);
@@ -572,6 +576,8 @@ ss::future<download_result> remote::download_segment(
     while (!_gate.is_closed() && permit.is_allowed && !result) {
         notify_external_subscribers(
           api_activity_notification::segment_download, parent);
+
+        auto download_latency_measure = _probe.segment_download();
         auto resp = co_await lease.client->get_object(
           bucket, path, fib.get_timeout(), false, byte_range);
 
@@ -597,6 +603,8 @@ ss::future<download_result> remote::download_segment(
                     ex, cst_log);
             }
         }
+
+        download_latency_measure.reset();
 
         lease.client->shutdown();
 

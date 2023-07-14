@@ -207,6 +207,12 @@ public:
 
     void index_download() { ++_cnt_index_downloads; }
 
+    auto client_acquisition() {
+        return _client_acquisition_latency.auto_measure();
+    }
+
+    auto segment_download() { return _segment_download_latency.auto_measure(); }
+
 private:
     /// Number of topic manifest uploads
     uint64_t _cnt_topic_manifest_uploads{0};
@@ -260,6 +266,9 @@ private:
     uint64_t _cnt_spillover_manifest_uploads{0};
     /// Number of spillover manifest downloads
     uint64_t _cnt_spillover_manifest_downloads{0};
+
+    hdr_hist _client_acquisition_latency;
+    hdr_hist _segment_download_latency;
 
     ss::metrics::metric_groups _metrics;
     ss::metrics::metric_groups _public_metrics;

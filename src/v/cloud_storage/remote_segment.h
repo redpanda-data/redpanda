@@ -79,7 +79,8 @@ public:
       const remote_segment_path& path,
       const model::ntp& ntp,
       const segment_meta& meta,
-      retry_chain_node& parent);
+      retry_chain_node& parent,
+      partition_probe& probe);
 
     remote_segment(const remote_segment&) = delete;
     remote_segment(remote_segment&&) = delete;
@@ -302,6 +303,7 @@ private:
 
     std::optional<segment_chunks> _chunks_api;
     std::optional<offset_index::coarse_index_t> _coarse_index;
+    partition_probe& _probe;
 
     friend class split_segment_into_chunk_range_consumer;
 };

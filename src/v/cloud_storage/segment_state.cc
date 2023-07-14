@@ -35,7 +35,7 @@ materialized_segment_state::materialized_segment_state(
   , parent(p.weak_from_this())
   , _units(std::move(u)) {
     segment = ss::make_lw_shared<remote_segment>(
-      p._api, p._cache, p._bucket, path, p.get_ntp(), meta, p._rtc);
+      p._api, p._cache, p._bucket, path, p.get_ntp(), meta, p._rtc, p._probe);
     p.materialized().register_segment(*this);
 }
 

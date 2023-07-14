@@ -96,6 +96,7 @@ public:
             auto dsi = std::make_unique<bounded_stream>(stream, bytes_to_read);
             auto stream_upto = ss::input_stream<char>{
               ss::data_source{std::move(dsi)}};
+            _segment._probe.chunk_size(bytes_to_read);
             co_await _segment.put_chunk_in_cache(
               reservation, std::move(stream_upto), start);
         }
@@ -165,7 +166,8 @@ remote_segment::remote_segment(
   const remote_segment_path& path,
   const model::ntp& ntp,
   const segment_meta& meta,
-  retry_chain_node& parent)
+  retry_chain_node& parent,
+  partition_probe& probe)
   : _api(r)
   , _cache(c)
   , _bucket(std::move(bucket))
@@ -193,7 +195,8 @@ remote_segment::remote_segment(
   // segment in chunks at the same time. In the first case roughly half the
   // segment may be hydrated at a time.
   , _chunks_in_segment(
-      std::max(static_cast<uint64_t>(ceil(_size / _chunk_size)), 1UL)) {
+      std::max(static_cast<uint64_t>(ceil(_size / _chunk_size)), 1UL))
+  , _probe(probe) {
     if (
       meta.sname_format == segment_name_format::v3
       && meta.metadata_size_hint == 0) {
@@ -969,9 +972,12 @@ ss::future<> remote_segment::hydrate_chunk(segment_chunk_range range) {
     const auto end = range.last_offset().value_or(_size - 1);
     auto consumer = split_segment_into_chunk_range_consumer{
       *this, std::move(range)};
+
+    auto measurement = _probe.chunk_hydration_latency();
     auto res = co_await _api.download_segment(
       _bucket, _path, std::move(consumer), rtc, std::make_pair(start, end));
     if (res != download_result::success) {
+        measurement->set_trace(false);
         throw download_exception{res, _path};
     }
 }

@@ -130,6 +130,20 @@ remote_probe::remote_probe(
               "spillover_manifest_downloads",
               [this] { return get_spillover_manifest_downloads(); },
               sm::description("Number of spillover manifest downloads")),
+            sm::make_histogram(
+              "client_acquisition_latency",
+              [this] {
+                  return ssx::metrics::report_default_histogram(
+                    _client_acquisition_latency);
+              },
+              sm::description("Client acquisition latency histogram")),
+            sm::make_histogram(
+              "segment_download_latency",
+              [this] {
+                  return ssx::metrics::report_default_histogram(
+                    _segment_download_latency);
+              },
+              sm::description("Segment download latency histogram")),
           });
     }
 
