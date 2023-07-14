@@ -403,26 +403,6 @@ std::ostream& operator<<(std::ostream& o, const acl_binding_filter& f) {
     return o;
 }
 
-std::vector<acl_operation> acl_implied_ops(acl_operation operation) {
-    switch (operation) {
-    case acl_operation::describe:
-        return {
-          acl_operation::describe,
-          acl_operation::read,
-          acl_operation::write,
-          acl_operation::remove,
-          acl_operation::alter,
-        };
-    case acl_operation::describe_configs:
-        return {
-          acl_operation::describe_configs,
-          acl_operation::alter_configs,
-        };
-    default:
-        return {operation};
-    }
-}
-
 bool acl_entry_filter::matches(const acl_entry& other) const {
     if (_principal && _principal != other.principal()) {
         return false;
