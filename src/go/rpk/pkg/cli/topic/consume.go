@@ -541,6 +541,9 @@ func (c *consumer) parseTimeOffset(
 		}
 	} else {
 		lstart, err := adm.ListStartOffsets(context.Background(), topics...)
+		if err == nil {
+			err = lstart.Error()
+		}
 		if err != nil {
 			return fmt.Errorf("unable to list start offsets: %v", err)
 		}
