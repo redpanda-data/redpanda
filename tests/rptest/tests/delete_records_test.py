@@ -372,10 +372,12 @@ class DeleteRecordsTest(RedpandaTest):
             )
             snapshot = self.redpanda.storage(all_nodes=True).segments_by_node(
                 "kafka", self.topic, 0)
-            for _, node in snapshot.items():
-                if node != stopped_node:
+            for node_name, segments in snapshot.items():
+                if node_name != stopped_node.name:
+                    self.redpanda.logger.debug(
+                        f"Verifying storage on node {node_name}...")
                     assert all_segments_removed(
-                        get_segment_boundaries_via_local_storage(node),
+                        get_segment_boundaries_via_local_storage(segments),
                         rp_truncate_offset)
 
         if cloud_storage_enabled:
