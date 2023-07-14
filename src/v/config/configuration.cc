@@ -1649,6 +1649,12 @@ configuration::configuration()
        .example = "1.8",
        .visibility = visibility::tunable},
       2.0)
+  , space_management_enable(
+      *this,
+      "space_management_enable",
+      "Enable automatic space management.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::user},
+      true)
   , cloud_storage_cache_size(
       *this,
       "cloud_storage_cache_size",
@@ -2003,13 +2009,6 @@ configuration::configuration()
       "the data directory. Redpanda will refuse to start if it is not found.",
       {.needs_restart = needs_restart::no, .visibility = visibility::user},
       false)
-  , enable_storage_space_manager(
-      *this,
-      "enable_storage_space_manager",
-      "Enable the storage space manager that coordinates and control space "
-      "usage between log data and the cloud storage cache.",
-      {.needs_restart = needs_restart::no, .visibility = visibility::user},
-      true)
   , memory_abort_on_alloc_failure(
       *this,
       "memory_abort_on_alloc_failure",
