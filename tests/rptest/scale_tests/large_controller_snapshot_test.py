@@ -61,6 +61,7 @@ class LargeControllerSnapshotTest(RedpandaTest):
         seed_nodes = self.redpanda.nodes[0:3]
         joiner_node = self.redpanda.nodes[3]
 
+        self.redpanda.set_seed_servers(seed_nodes)
         self.redpanda.start(nodes=seed_nodes, omit_seeds_on_idx_one=False)
 
         admin = Admin(self.redpanda, default_node=seed_nodes[0])
