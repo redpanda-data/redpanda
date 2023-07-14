@@ -730,7 +730,7 @@ gc_config disk_log_impl::override_retention_config(gc_config cfg) const {
 
 bool disk_log_impl::is_cloud_retention_active() const {
     return config::shard_local_cfg().cloud_storage_enabled()
-           && (config().is_archival_enabled());
+           && (config().is_archival_enabled() || config().is_read_replica_mode_enabled());
 }
 
 /*
@@ -2329,22 +2329,6 @@ disk_log_impl::get_reclaimable_offsets(gc_config cfg) {
         vlog(
           stlog.debug,
           "Reporting no reclaimable offsets for non-cloud partition {}",
-          config().ntp());
-        co_return res;
-    }
-
-    /*
-     * there is currently a bug with read replicas that makes the max
-     * collectible offset unreliable. the read replica topics still have a
-     * retention setting, but we are going to exempt them from forced reclaim
-     * until this bug is fixed to avoid any complications.
-     *
-     * https://github.com/redpanda-data/redpanda/issues/11936
-     */
-    if (config().is_read_replica_mode_enabled()) {
-        vlog(
-          stlog.debug,
-          "Reporting no reclaimable offsets for read replica partition {}",
           config().ntp());
         co_return res;
     }

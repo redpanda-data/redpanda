@@ -102,6 +102,8 @@ FIXTURE_TEST(test_read_replica_basic_sync, read_replica_e2e_fixture) {
 
     // Create the read replica application, now that we've initialized things
     // that rely globals (e.g. configs, etc).
+    config::shard_local_cfg().log_compaction_interval_ms.set_value(
+      std::chrono::duration_cast<std::chrono::milliseconds>(1s));
     auto rr_rp = start_read_replica_fixture();
 
     cluster::topic_properties read_replica_props;
@@ -165,6 +167,78 @@ FIXTURE_TEST(
           return std::string(e.what()).find("policy_violation")
                  != std::string::npos;
       });
+}
+
+FIXTURE_TEST(test_read_replica_truncate, read_replica_e2e_fixture) {
+    // Produce records to the source.
+    BOOST_REQUIRE(src_archiver->sync_for_tests().get());
+    src_archiver->upload_topic_manifest().get();
+    tests::remote_segment_generator gen(
+      make_kafka_client().get(), *src_partition);
+    BOOST_REQUIRE_EQUAL(
+      30, gen.records_per_batch(10).num_segments(3).produce().get());
+    BOOST_REQUIRE_EQUAL(3, src_archiver->manifest().size());
+
+    // Create the read replica application, now that we've initialized things
+    // that rely globals (e.g. configs, etc).
+    config::shard_local_cfg().log_compaction_interval_ms.set_value(
+      std::chrono::duration_cast<std::chrono::milliseconds>(1s));
+    auto rr_rp = start_read_replica_fixture();
+
+    cluster::topic_properties read_replica_props;
+    read_replica_props.shadow_indexing = model::shadow_indexing_mode::fetch;
+    read_replica_props.read_replica = true;
+    read_replica_props.retention_local_target_bytes = tristate<size_t>(1);
+    read_replica_props.retention_bytes = tristate<size_t>(1);
+    read_replica_props.read_replica_bucket = "test-bucket";
+    rr_rp
+      ->add_topic({model::kafka_namespace, topic_name}, 1, read_replica_props)
+      .get();
+    rr_rp->wait_for_leader(ntp).get();
+    auto rr_partition = rr_rp->app.partition_manager.local().get(ntp).get();
+    auto rr_archiver_ref = rr_partition->archiver();
+    BOOST_REQUIRE(rr_archiver_ref.has_value());
+    auto& rr_archiver = rr_partition->archiver()->get();
+    auto* rr_log = dynamic_cast<storage::disk_log_impl*>(
+      rr_partition->log().get_impl());
+
+    for (int i = 0; i < 5; i++) {
+        // Write more segments so there is a new manifest to sync.
+        auto src_num_segs = 3 + 1 + i;
+        BOOST_REQUIRE_GE(
+          10,
+          gen.records_per_batch(10)
+            .num_segments(src_num_segs)
+            .produce(tests::needs_connect::no)
+            .get());
+        BOOST_REQUIRE_EQUAL(src_num_segs, src_archiver->manifest().size());
+
+        // Sync the manifest and roll onto a new segment so we can test
+        // truncation.
+        BOOST_REQUIRE(rr_archiver.sync_for_tests().get());
+        rr_archiver.sync_manifest().get();
+        BOOST_REQUIRE_EQUAL(src_num_segs, rr_archiver.manifest().size());
+        rr_log->flush().get();
+        rr_log->force_roll(ss::default_priority_class()).get();
+    }
+    // NOTE: GC only notifies the log_eviction_stm that it has segments to
+    // truncate, hence the wait.
+    storage::gc_config aggressive_gc(model::timestamp::max(), size_t{1});
+    rr_log->gc(aggressive_gc).get();
+    tests::cooperative_spin_wait_with_timeout(10s, [rr_log] {
+        // One active segment, plus the last manifest sync.
+        return rr_log->segment_count() == 2;
+    }).get();
+
+    // The segment with the latest replace_manifest record should pin GC.
+    rr_partition->raft()->step_down("test_stepdown").get();
+    rr_rp->wait_for_leader(ntp, 10s).get();
+    rr_log->flush().get();
+    rr_log->force_roll(ss::default_priority_class()).get();
+    BOOST_REQUIRE_EQUAL(rr_log->segment_count(), 3);
+    rr_log->gc(aggressive_gc).get();
+    ss::sleep(3s).get();
+    BOOST_REQUIRE_EQUAL(rr_log->segment_count(), 3);
 }
 
 FIXTURE_TEST(test_read_replica_delete_records, read_replica_e2e_fixture) {

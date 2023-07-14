@@ -19,6 +19,8 @@
 
 namespace tests {
 
+using needs_connect = ss::bool_class<struct needs_connect_tag>;
+
 class remote_segment_generator {
 public:
     remote_segment_generator(
@@ -58,8 +60,10 @@ public:
     //
     // The produced pattern "key<i>", "val<i>" for Kafka offset i.
     // Expects to be the only one mutating the underlying partition state.
-    ss::future<int> produce() {
-        co_await _producer.start();
+    ss::future<int> produce(needs_connect conn = needs_connect::yes) {
+        if (conn == needs_connect::yes) {
+            co_await _producer.start();
+        }
         auto* log = dynamic_cast<storage::disk_log_impl*>(
           _partition.log().get_impl());
         auto& archiver = _partition.archiver().value().get();
