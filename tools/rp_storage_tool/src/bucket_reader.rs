@@ -1514,7 +1514,12 @@ impl BucketReader {
             // Note: assuming memory is sufficient for manifests
             match self.partition_manifests.get_mut(&ntpr) {
                 Some(meta) => {
-                    meta.head_manifest = Some(manifest);
+                    // Avoid overwriting a binary manifest with a JSON manifest
+                    if meta.head_manifest.is_none()
+                        || meta.head_manifest.is_some() && key.ends_with(".bin")
+                    {
+                        meta.head_manifest = Some(manifest);
+                    }
                 }
                 None => {
                     self.partition_manifests.insert(
