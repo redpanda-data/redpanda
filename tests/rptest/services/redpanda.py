@@ -3718,9 +3718,9 @@ class RedpandaService(RedpandaServiceBase):
             allow_fail=True,
             timeout_sec=60)
 
-        # if stderr contains a WARN logline:
+        # if stderr contains a WARN logline, log it as DEBUG, since this is mostly related to debugging rp-storage-tool itself
         if re.search(b'\[\S+ WARN', stderr) is not None:
-            self.logger.warning(f"rp-storage-tool stderr output: {stderr}")
+            self.logger.debug(f"rp-storage-tool stderr output: {stderr}")
 
         report = {}
         try:
