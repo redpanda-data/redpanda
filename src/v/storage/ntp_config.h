@@ -33,8 +33,6 @@ public:
     static constexpr bool default_remote_delete{true};
     static constexpr bool legacy_remote_delete{false};
 
-    static constexpr std::chrono::milliseconds read_replica_retention{3600000};
-
     struct default_overrides {
         // if not set use the log_manager's configuration
         std::optional<model::cleanup_policy_bitflags> cleanup_policy_bitflags;
@@ -186,12 +184,6 @@ public:
             // If no value set, fall through and use the cluster-wide default.
         }
 
-        if (is_read_replica_mode_enabled()) {
-            // Read replicas have a special hardcoded default, because they do
-            // not retain user data in local raft log, just configuration.
-            return read_replica_retention;
-        }
-
         return config::shard_local_cfg().delete_retention_ms();
     }
 
@@ -240,12 +232,6 @@ public:
                 return _overrides->segment_ms.value();
             }
             // fall through to server config
-        }
-
-        if (is_read_replica_mode_enabled()) {
-            // Read replicas have a special hardcoded default, because they do
-            // not retain user data in local raft log, just configuration.
-            return read_replica_retention;
         }
 
         return config::shard_local_cfg().log_segment_ms;

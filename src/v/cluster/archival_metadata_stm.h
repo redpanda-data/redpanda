@@ -226,6 +226,8 @@ public:
 
     model::offset get_last_clean_at() const { return _last_clean_at; };
 
+    model::offset max_collectible_offset() override;
+
 private:
     ss::future<std::error_code> do_add_segments(
       std::vector<cloud_storage::segment_meta>,
@@ -241,7 +243,6 @@ private:
 
     ss::future<> apply_snapshot(stm_snapshot_header, iobuf&&) override;
     ss::future<stm_snapshot> take_snapshot() override;
-    model::offset max_collectible_offset() override;
 
     struct segment;
     struct start_offset;
@@ -293,10 +294,13 @@ private:
 
     // The offset of the last mark_clean_cmd applied: if the manifest is
     // clean, this will equal _insync_offset.
-    model::offset _last_clean_at;
+    model::offset _last_clean_at{};
 
     // The offset of the last record that modified this stm
-    model::offset _last_dirty_at;
+    model::offset _last_dirty_at{};
+
+    // Offset of the last applied replace_manifest command.
+    std::optional<model::offset> _last_applied_replace_cmd{std::nullopt};
 
     cloud_storage::remote& _cloud_storage_api;
     features::feature_table& _feature_table;

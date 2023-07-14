@@ -742,9 +742,11 @@ ss::future<> archival_metadata_stm::apply(model::record_batch b) {
     b.for_each_record([this, base_offset = b.base_offset()](model::record&& r) {
         auto key = serde::from_iobuf<cmd_key>(r.release_key());
 
+        model::offset record_offset = base_offset
+                                      + model::offset{r.offset_delta()};
         if (key != mark_clean_cmd::key) {
             // All keys other than mark clean make the manifest dirty
-            _last_dirty_at = base_offset + model::offset{r.offset_delta()};
+            _last_dirty_at = record_offset;
         }
 
         switch (key) {
@@ -792,6 +794,11 @@ ss::future<> archival_metadata_stm::apply(model::record_batch b) {
             break;
         case replace_manifest_cmd::key:
             apply_replace_manifest(r.release_value());
+            _last_applied_replace_cmd = record_offset;
+            vlog(
+              _logger.debug,
+              "Replace command applied at offset {}",
+              _last_applied_replace_cmd);
             break;
         default:
             throw std::runtime_error(fmt_with_ctx(
@@ -972,12 +979,18 @@ model::offset archival_metadata_stm::max_collectible_offset() {
         collect_all = false;
     }
 
-    if (collect_all || is_read_replica) {
+    if (is_read_replica) {
+        // In read-replicas, the state machine exists to maintain a view of the
+        // latest remote manifest, and we only need to starting at the latest
+        // replace_manifest command.
+        if (_last_applied_replace_cmd.has_value()) {
+            return model::prev_offset(_last_applied_replace_cmd.value());
+        }
+        return model::offset::max();
+    }
+    if (collect_all) {
         // The archival is disabled but the state machine still exists so we
         // shouldn't stop eviction from happening.
-        // In read-replicas the state machine exists and stores segments from
-        // the remote manifest. Since nothing is uploaded there is no need to
-        // interact with local retention.
         return model::offset::max();
     }
     auto lo = get_last_offset();
