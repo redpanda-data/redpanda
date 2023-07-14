@@ -2184,7 +2184,7 @@ ss::future<> ntp_archiver::garbage_collect_archive() {
         if (stop) {
             break;
         }
-        auto path = cursor->manifest()->get().get_manifest_path();
+        auto path = cursor->manifest()->get_manifest_path();
         manifests_to_remove.push_back(path());
         auto res = co_await cursor->next();
         if (res.has_failure()) {

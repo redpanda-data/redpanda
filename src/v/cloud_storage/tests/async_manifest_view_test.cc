@@ -677,8 +677,8 @@ FIXTURE_TEST(test_async_manifest_view_retention, async_manifest_view_fixture) {
     auto cur = std::move(cur_res.value());
     // Set expected offset to the start of the second segment
     cur->next().get();
-    prefix_base_offset = cur->manifest()->get().begin()->base_offset;
-    prefix_delta = cur->manifest()->get().begin()->delta_offset;
+    prefix_base_offset = cur->manifest()->begin()->base_offset;
+    prefix_delta = cur->manifest()->begin()->delta_offset;
     stm_manifest.advance_start_kafka_offset(prefix_base_offset - prefix_delta);
     vlog(
       test_log.info,

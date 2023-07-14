@@ -256,13 +256,12 @@ ss::future<ss::stop_iteration> async_manifest_view_cursor::next_iter() {
                                       : ss::stop_iteration::no;
 }
 
-std::optional<std::reference_wrapper<const partition_manifest>>
+ssx::task_local_ptr<const partition_manifest>
 async_manifest_view_cursor::manifest() const {
-    using ret_t
-      = std::optional<std::reference_wrapper<const partition_manifest>>;
+    using ret_t = ssx::task_local_ptr<const partition_manifest>;
     return ss::visit(
       _current,
-      [](std::monostate) -> ret_t { return std::nullopt; },
+      [](std::monostate) -> ret_t { return {}; },
       [this](stale_manifest) -> ret_t {
           auto errc = make_error_code(error_outcome::timed_out);
           throw std::system_error(
@@ -273,10 +272,10 @@ async_manifest_view_cursor::manifest() const {
               _view.get_ntp()));
       },
       [](std::reference_wrapper<const partition_manifest> m) -> ret_t {
-          return m;
+          return ret_t(&m.get());
       },
       [](const ss::shared_ptr<materialized_manifest>& m) -> ret_t {
-          return std::ref(m->manifest);
+          return ret_t(&m->manifest);
       });
 }
 
@@ -682,7 +681,7 @@ async_manifest_view::get_term_last_offset(model::term_id term) noexcept {
         std::optional<kafka::offset> res_offset;
         co_await ss::repeat(
           [this, &res_offset, term, cursor = std::move(res.value())] {
-              const auto& manifest = cursor->manifest()->get();
+              const auto& manifest = *cursor->manifest();
               vlog(
                 _ctxlog.debug,
                 "Scanning manifest {} for term {}",
@@ -841,7 +840,7 @@ async_manifest_view::offset_based_retention() noexcept {
               _ctxlog.debug,
               "There is no segment old enough to be removed by retention");
         } else {
-            const auto& manifest = res.value()->manifest()->get();
+            const auto& manifest = *res.value()->manifest();
             vassert(
               !manifest.empty(),
               "{} Spillover manifest can't be empty",
@@ -961,7 +960,7 @@ async_manifest_view::time_based_retention(
                   "Failed to find the retention boundary, the manifest {} "
                   "doesn't "
                   "have any matching segment",
-                  cursor->manifest()->get().get_manifest_path());
+                  cursor->manifest()->get_manifest_path());
             }
         }
     } catch (...) {
