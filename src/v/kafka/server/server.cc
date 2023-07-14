@@ -11,6 +11,7 @@
 
 #include "cluster/id_allocator_frontend.h"
 #include "cluster/topics_frontend.h"
+#include "cluster/tx_registry_frontend.h"
 #include "config/broker_authn_endpoint.h"
 #include "config/configuration.h"
 #include "config/node_config.h"
@@ -1565,6 +1566,16 @@ list_transactions_handler::handle(request_context ctx, ss::smp_service_group) {
         }
         return true;
     };
+
+    auto& tx_registry = ctx.tx_registry_frontend();
+    if (!co_await tx_registry.ensure_tx_topic_exists()) {
+        vlog(
+          klog.error,
+          "Can not return list of transactions. Failed to create {}",
+          model::tx_manager_nt);
+        response.data.error_code = kafka::error_code::unknown_server_error;
+        co_return co_await ctx.respond(std::move(response));
+    }
 
     auto& tx_frontend = ctx.tx_gateway_frontend();
     auto txs = co_await tx_frontend.get_all_transactions();

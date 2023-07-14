@@ -61,14 +61,49 @@ tx_registry_frontend::tx_registry_frontend(
       config::shard_local_cfg().metadata_dissemination_retry_delay_ms.value()) {
 }
 
+ss::future<bool> tx_registry_frontend::ensure_tx_topic_exists() {
+    if (_metadata_cache.local().contains(model::tx_manager_nt)) {
+        co_return true;
+    }
+
+    if (!co_await try_create_tx_topic()) {
+        vlog(clusterlog.warn, "failed to create {}", model::tx_manager_nt);
+        co_return false;
+    }
+
+    auto retries = _metadata_dissemination_retries;
+    auto delay_ms = _metadata_dissemination_retry_delay_ms;
+    std::optional<std::string> error;
+    while (!_as.abort_requested() && 0 < retries--) {
+        auto is_cache_filled = _metadata_cache.local().contains(
+          model::tx_manager_nt);
+        if (unlikely(!is_cache_filled)) {
+            error = vformat(
+              fmt::runtime("can't find {} in the metadata_cache cache"),
+              model::tx_manager_nt);
+            vlog(
+              clusterlog.trace,
+              "waiting for {} to fill metadata_cache cache, retries left: {}",
+              model::tx_manager_nt,
+              retries);
+            co_await sleep_abortable(delay_ms, _as);
+            continue;
+        }
+        co_return true;
+    }
+
+    if (error) {
+        vlog(clusterlog.warn, "{}", error.value());
+    }
+
+    co_return false;
+}
+
 ss::future<find_coordinator_reply> tx_registry_frontend::find_coordinator(
   kafka::transactional_id tid, model::timeout_clock::duration timeout) {
     if (!_metadata_cache.local().contains(model::tx_manager_nt)) {
         if (!co_await try_create_tx_topic()) {
-            vlog(
-              clusterlog.warn,
-              "can't find {} in the metadata cache",
-              model::tx_manager_nt);
+            vlog(clusterlog.warn, "failed to create {}", model::tx_manager_nt);
             co_return find_coordinator_reply(
               std::nullopt, std::nullopt, errc::topic_not_exists);
         }
@@ -316,7 +351,8 @@ ss::future<bool> tx_registry_frontend::try_create_tx_topic() {
     return _controller->get_topics_frontend()
       .local()
       .autocreate_topics(
-        {std::move(topic)}, config::shard_local_cfg().create_topic_timeout_ms())
+        {std::move(topic)},
+        config::shard_local_cfg().create_topic_timeout_ms() * partitions_amount)
       .then([](std::vector<cluster::topic_result> res) {
           vassert(res.size() == 1, "expected exactly one result");
           if (res[0].ec == cluster::errc::topic_already_exists) {

@@ -28,7 +28,8 @@ class TxKafkaApiTest(RedpandaTest):
                                  "tx_timeout_delay_ms": 10000000,
                                  "abort_timed_out_transactions_interval_ms":
                                  10000000,
-                                 'enable_leader_balancer': False
+                                 "enable_leader_balancer": False,
+                                 "transaction_coordinator_partitions": 4
                              })
 
         self.kafka_cli = KafkaCliTools(self.redpanda, "3.0.0")
@@ -105,6 +106,11 @@ class TxKafkaApiTest(RedpandaTest):
             for partition in range(topic.partition_count):
                 tpoic_partition = f"{topic}-{partition}"
                 assert tpoic_partition in expected_partitions
+
+    @cluster(num_nodes=3)
+    def test_empty_list_transactions(self):
+        txs_info = self.kafka_cli.list_transactions()
+        assert len(txs_info) == 0
 
     @cluster(num_nodes=3)
     def test_list_transactions(self):
