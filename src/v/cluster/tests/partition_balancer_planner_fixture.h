@@ -374,6 +374,10 @@ struct partition_balancer_planner_fixture {
                 node_disk.free = nearly_full_node_free_size;
             }
             node_report.id = model::node_id(i);
+            node_report.local_state.log_data_size = {
+              .data_target_size = node_disk.total,
+              .data_current_size = node_disk.total - node_disk.free,
+              .data_reclaimable_size = 0};
             node_report.local_state.set_disk(node_disk);
             health_report.node_reports.push_back(node_report);
         }
