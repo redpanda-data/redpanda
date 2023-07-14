@@ -853,6 +853,11 @@ class segment_meta_cstore::impl
 public:
     void append(const segment_meta& meta) { _col.append(meta); }
 
+    const auto& get_size_bytes_column() const {
+        flush_write_buffer();
+        return _col.get_column_cref<segment_meta_ix::size_bytes>();
+    }
+
     const auto& get_base_offset_column() const {
         flush_write_buffer();
         return _col.get_column_cref<segment_meta_ix::base_offset>();
@@ -1177,6 +1182,10 @@ segment_meta_cstore::append(const segment_meta& meta) {
 }
 
 void segment_meta_cstore::flush_write_buffer() { _impl->flush_write_buffer(); }
+
+const gauge_col_t& segment_meta_cstore::get_size_bytes_column() const {
+    return _impl->get_size_bytes_column();
+}
 
 const counter_col_t& segment_meta_cstore::get_base_offset_column() const {
     return _impl->get_base_offset_column();

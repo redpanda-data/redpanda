@@ -276,10 +276,10 @@ public:
                 co_return storage_t{};
             }
             if (_reader->config().over_budget) {
-                vlog(_ctxlog.debug, "We're overbudget, stopping");
+                vlog(_ctxlog.debug, "We're over-budget, stopping");
                 // We need to stop in such way that will keep the
                 // reader in the reusable state, so we could reuse
-                // it on next itertaion
+                // it on next iteration
 
                 // The existing state have to be rebuilt
                 dispose_current_reader();
@@ -295,8 +295,8 @@ public:
                   !_ot_state->empty()
                   && _ot_state->last_delta() > reader_delta) {
                     // It's not safe to call 'read_sone' with the current
-                    // offset translator state becuase delta offset of the
-                    // current reader is below last delta registred by the
+                    // offset translator state because delta offset of the
+                    // current reader is below last delta registered by the
                     // offset translator. The offset translator contains data
                     // from the previous segment and there is an inconsistency
                     // between them.
