@@ -155,8 +155,13 @@ static ss::future<read_result> read_from_partition(
       std::move(aborted_transactions));
 }
 
+read_result::memory_units_t::memory_units_t(
+  ssx::semaphore& memory_sem, ssx::semaphore& memory_fetch_sem) noexcept
+  : kafka(ss::consume_units(memory_sem, 0))
+  , fetch(ss::consume_units(memory_fetch_sem, 0)) {}
+
 read_result::memory_units_t::~memory_units_t() noexcept {
-    if (shard == ss::this_shard_id()) {
+    if (shard == ss::this_shard_id() || !has_units()) {
         return;
     }
     auto f = ss::smp::submit_to(
@@ -167,6 +172,13 @@ read_result::memory_units_t::~memory_units_t() noexcept {
     if (!f.available()) {
         ss::engine().run_in_background(std::move(f));
     }
+}
+
+void read_result::memory_units_t::adopt(memory_units_t&& o) {
+    // Adopts assert internally that the units are from the same semaphore.
+    // So there is no need to assert that they are from the same shard here.
+    kafka.adopt(std::move(o.kafka));
+    fetch.adopt(std::move(o.fetch));
 }
 
 /**
@@ -263,7 +275,7 @@ static ss::future<read_result> do_read_from_ntp(
   ssx::semaphore& memory_sem,
   ssx::semaphore& memory_fetch_sem) {
     // control available memory
-    read_result::memory_units_t memory_units;
+    read_result::memory_units_t memory_units(memory_sem, memory_fetch_sem);
     if (!ntp_config.cfg.skip_read) {
         memory_units = reserve_memory_units(
           memory_sem,
@@ -421,6 +433,10 @@ static void fill_fetch_responses(
         range = boost::irange<size_t>(
           0, std::min({results.size(), responses.size()}));
     }
+
+    // Used to aggregate semaphore_units from results.
+    std::optional<read_result::memory_units_t> total_memory_units;
+
     for (auto idx : range) {
         auto& res = results[idx];
         auto& resp_it = responses[idx];
@@ -452,6 +468,20 @@ static void fill_fetch_responses(
         resp.last_stable_offset = res.last_stable_offset;
         if (res.preferred_replica) {
             resp.preferred_read_replica = *res.preferred_replica;
+        }
+
+        // Aggregate memory_units from all results together to avoid
+        // making more than one cross-shard function call to free them.
+        //
+        // Only aggregate non-empty memory_units.
+        if (res.memory_units.has_units()) {
+            if (unlikely(!total_memory_units)) {
+                // Move the first set of semaphore_units to get a copy of the
+                // semaphore pointer and the shard results originates from.
+                total_memory_units = std::move(res.memory_units);
+            } else {
+                total_memory_units->adopt(std::move(res.memory_units));
+            }
         }
 
         /**
