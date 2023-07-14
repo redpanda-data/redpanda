@@ -8,6 +8,9 @@ CRD_OPTIONS ?= "crd:trivialVersions=true,preserveUnknownFields=false"
 # default redpanda image to load
 REDPANDA_IMG ?= "localhost/redpanda:dev"
 
+# default redpanda namespace
+NAMESPACE ?= "redpanda"
+
 ifeq (aarch64,$(uname -m))
 TARGETARCH = arm64
 else
@@ -40,6 +43,10 @@ manager: generate vet
 # Run against the configured Kubernetes cluster in ~/.kube/config
 run: generate vet manifests
 	go run ./main.go
+
+# Run against the configured Kubernetes cluster in ~/.kube/config
+run-v2: generate vet manifests
+	go run ./main.go --namespace=$(NAMESPACE)
 
 # Install CRDs into a cluster
 install: manifests kustomize

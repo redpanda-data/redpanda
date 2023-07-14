@@ -267,8 +267,23 @@ func (in *External) DeepCopyInto(out *External) {
 	*out = *in
 	if in.Addresses != nil {
 		in, out := &in.Addresses, &out.Addresses
-		*out = make(json.RawMessage, len(*in))
+		*out = make([]string, len(*in))
 		copy(*out, *in)
+	}
+	if in.Domain != nil {
+		in, out := &in.Domain, &out.Domain
+		*out = new(string)
+		**out = **in
+	}
+	if in.Enabled != nil {
+		in, out := &in.Enabled, &out.Enabled
+		*out = new(bool)
+		**out = **in
+	}
+	if in.Type != nil {
+		in, out := &in.Type, &out.Type
+		*out = new(string)
+		**out = **in
 	}
 	if in.ExternalDNS != nil {
 		in, out := &in.ExternalDNS, &out.ExternalDNS
