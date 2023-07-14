@@ -2067,18 +2067,21 @@ void rm_stm::compact_snapshot() {
     model::timestamp::type oldest_preserved_session = now.value();
 
     for (auto it = _log_state.seq_table.cbegin();
-         it != _log_state.seq_table.cend();) {
+         it != _log_state.seq_table.cend();
+         it++) {
         if (is_producer_expired(now, it->second.entry)) {
-            _log_state.erase_seq(it++);
+            vlog(
+              _ctx_log.debug,
+              "Clearing pid: {}, last_write_timestamp: {}, now: {}, reason: "
+              "expired",
+              it->first,
+              it->second.entry.last_write_timestamp,
+              now.value());
+            auto it_copy = it;
+            _log_state.erase_seq(it_copy);
         } else {
-            if (
-              it->second.entry.last_write_timestamp
-              != model::timestamp::missing().value()) {
-                oldest_preserved_session = std::min(
-                  it->second.entry.last_write_timestamp,
-                  oldest_preserved_session);
-            }
-            ++it;
+            oldest_preserved_session = std::min(
+              it->second.entry.last_write_timestamp, oldest_preserved_session);
         }
     }
     _oldest_session = model::timestamp(oldest_preserved_session);
@@ -2537,10 +2540,9 @@ void rm_stm::apply_data(model::batch_identity bid, model::offset last_offset) {
               rm_stm::clear_type::idempotent_pids);
         }
 
-        seq_it->second.entry.last_write_timestamp = bid.max_timestamp.value();
-        if (bid.max_timestamp != model::timestamp::missing()) {
-            _oldest_session = std::min(_oldest_session, bid.max_timestamp);
-        }
+        auto now = model::timestamp::now();
+        seq_it->second.entry.last_write_timestamp = now.value();
+        _oldest_session = std::min(_oldest_session, now);
     }
 
     if (bid.is_transactional) {
@@ -3129,6 +3131,7 @@ ss::future<> rm_stm::do_remove_persistent_state() {
 ss::future<> rm_stm::handle_raft_snapshot() {
     return _state_lock.hold_write_lock().then(
       [this]([[maybe_unused]] ss::basic_rwlock<>::holder unit) {
+          vlog(_ctx_log.debug, "Resetting all state, reason: log eviction");
           _log_state.reset();
           _mem_state = mem_state{_tx_root_tracker};
           set_next(_c->start_offset());
@@ -3235,6 +3238,12 @@ ss::future<> rm_stm::clear_old_idempotent_pids() {
         auto rw_lock = get_idempotent_producer_lock(pid_for_delete);
         auto lock = rw_lock->try_write_lock();
         if (lock) {
+            vlog(
+              _ctx_log.trace,
+              "Clearing pid: {}, reason: exceeded max concurrent pids: "
+              "{}",
+              pid_for_delete,
+              _max_concurrent_producer_ids());
             _log_state.lru_idempotent_pids.pop_front();
             _log_state.seq_table.erase(pid_for_delete);
             _inflight_requests.erase(pid_for_delete);
