@@ -23,7 +23,7 @@ from rptest.tests.redpanda_test import RedpandaTest
 from rptest.util import (produce_until_segments, produce_total_bytes,
                          wait_for_local_storage_truncate, segments_count,
                          expect_exception)
-from rptest.utils.si_utils import BucketView, NTP
+from rptest.utils.si_utils import BucketView, NTP, quiesce_uploads
 
 
 class CloudArchiveRetentionTest(RedpandaTest):
@@ -116,9 +116,8 @@ class CloudArchiveRetentionTest(RedpandaTest):
         wait_for_topic()
         produce_until_spillover()
 
-        # Enable cloud retention for the topic to force deleting data
-        # from the 'archive'
-        wait_for_topic()
+        # Wait for all uploads to complete before fetching segment summaries.
+        quiesce_uploads(self.redpanda, [topic.name], timeout_sec=60)
 
         view = BucketView(self.redpanda, [topic], scan_segments=True)
 
@@ -166,9 +165,7 @@ class CloudArchiveRetentionTest(RedpandaTest):
             timeout_sec=100,
             backoff_sec=5,
             err_msg=
-            f"Segments were not removed from the cloud, expected {segments_to_delete} "
-            +
-            f"segments to be removed but only {self.num_segments_deleted()} was actually removed"
+            f"Segments were not removed from the cloud, expected {segments_to_delete} deletions"
         )
 
         view.reset()
