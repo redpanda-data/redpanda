@@ -77,6 +77,13 @@
                     "type": "boolean",
                     "description": "basic cluster health indicator"
                 },
+                "unhealthy_reasons": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "description": "A list of reasons why the cluster is unhealthy (contains at least one cause when is_healthy is false)"
+                },
                 "controller_id": {
                     "type": "int",
                     "description": "node that is currently a leader or `-1` if leader is not elected"
