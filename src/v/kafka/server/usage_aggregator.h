@@ -27,6 +27,7 @@ struct usage
     uint64_t bytes_received{0};
     std::optional<uint64_t> bytes_cloud_storage;
     usage operator+(const usage&) const;
+    usage& operator+=(const usage&);
     auto serde_fields() {
         return std::tie(bytes_sent, bytes_received, bytes_cloud_storage);
     }
@@ -64,7 +65,7 @@ public:
     virtual ss::future<> start();
     virtual ss::future<> stop();
 
-    std::vector<usage_window> get_usage_stats();
+    ss::future<std::vector<usage_window>> get_usage_stats();
 
     std::chrono::seconds max_history() const {
         return _usage_window_width_interval * _usage_num_windows;
@@ -81,16 +82,18 @@ private:
     void close_window();
     void rearm_window_timer();
     bool is_bucket_stale(size_t idx, uint64_t close_ts) const;
+    ss::future<> grab_data(size_t);
 
 private:
     size_t _usage_num_windows;
     std::chrono::seconds _usage_window_width_interval;
     std::chrono::seconds _usage_disk_persistance_interval;
 
-    /// Timers for controlling window closure and disk persistance
-    ss::timer<clock_type> _timer;
+    /// Timers for controlling window closure data fetching and disk persistance
+    ss::timer<clock_type> _close_window_timer;
     ss::timer<clock_type> _persist_disk_timer;
 
+    mutex _m;
     ss::gate _bg_write_gate;
     ss::gate _gate;
     size_t _current_window{0};
