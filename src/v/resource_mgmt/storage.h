@@ -12,6 +12,7 @@
 #pragma once
 
 #include "config/property.h"
+#include "features/feature_table.h"
 #include "raft/types.h"
 #include "seastarx.h"
 #include "ssx/semaphore.h"
@@ -216,6 +217,7 @@ public:
     disk_space_manager(
       config::binding<bool> enabled,
       config::binding<std::optional<uint64_t>> log_storage_target_size,
+      ss::sharded<features::feature_table>* feature_table,
       ss::sharded<storage::api>* storage,
       ss::sharded<storage::node>* storage_node,
       ss::sharded<cloud_storage::cache>* cache,
@@ -232,6 +234,7 @@ public:
 
 private:
     config::binding<bool> _enabled;
+    ss::sharded<features::feature_table>* _feature_table;
     ss::sharded<storage::api>* _storage;
     ss::sharded<storage::node>* _storage_node;
     ss::sharded<cloud_storage::cache>* _cache;

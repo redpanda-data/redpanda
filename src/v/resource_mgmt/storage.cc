@@ -26,11 +26,13 @@ namespace storage {
 disk_space_manager::disk_space_manager(
   config::binding<bool> enabled,
   config::binding<std::optional<uint64_t>> log_storage_target_size,
+  ss::sharded<features::feature_table>* feature_table,
   ss::sharded<storage::api>* storage,
   ss::sharded<storage::node>* storage_node,
   ss::sharded<cloud_storage::cache>* cache,
   ss::sharded<cluster::partition_manager>* pm)
   : _enabled(std::move(enabled))
+  , _feature_table(feature_table)
   , _storage(storage)
   , _storage_node(storage_node)
   , _cache(cache->local_is_initialized() ? cache : nullptr)
@@ -92,6 +94,18 @@ ss::future<> disk_space_manager::run_loop() {
         }
 
         if (!_enabled()) {
+            continue;
+        }
+
+        /*
+         * waiting for the nodes to upgrade isn't important locally, but it
+         * allows us to send a consistent message back to the partition balancer
+         * which may be trying to distinguish between new-balancer / old-broker
+         * scenarios.
+         */
+        if (!_feature_table->local().is_active(
+              features::feature::retention_local_trim)) {
+            vlog(rlog.debug, "Retention local trim feature is not active");
             continue;
         }
 
