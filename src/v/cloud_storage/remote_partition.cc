@@ -480,7 +480,7 @@ private:
             if (likely(new_stm_start_offset == stm_start_offset.value())) {
                 _view_cursor = std::move(cur.value());
                 if (
-                  _view_cursor->manifest()->get().get_start_offset().value()
+                  _view_cursor->manifest()->get_start_offset().value()
                   == new_stm_start_offset) {
                     _initial_stm_start_offset = new_stm_start_offset;
                 }
@@ -609,7 +609,7 @@ private:
                 // Our segment lookup may return incorrect results if the
                 // offset we're looking for has been moved out of this manifest
                 // (e.g. spillover of the STM manifest).
-                auto& manifest = maybe_manifest->get();
+                auto& manifest = *maybe_manifest;
                 if (
                   unlikely(
                     _initial_stm_start_offset.has_value()
@@ -859,7 +859,7 @@ remote_partition::aborted_transactions(offset_range offsets) {
             }
             auto cursor = std::move(cur_res.value());
             co_await ss::repeat([&meta_to_materialize, &cursor, offsets] {
-                const auto& manifest = cursor->manifest()->get();
+                const auto& manifest = *cursor->manifest();
                 for (auto it = manifest.segment_containing(offsets.begin);
                      it != manifest.end();
                      ++it) {

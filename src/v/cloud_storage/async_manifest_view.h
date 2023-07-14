@@ -17,6 +17,7 @@
 #include "cloud_storage_clients/types.h"
 #include "model/metadata.h"
 #include "model/timestamp.h"
+#include "ssx/task_local_ptr.h"
 #include "utils/retry_chain_node.h"
 
 #include <seastar/core/abort_source.hh>
@@ -277,9 +278,13 @@ public:
 
     /// Return current manifest
     ///
+    /// \note the manifest is only valid during current time-slice and
+    ///       could be invalidated after any scheduling point. The pointer
+    ///       will be invalidated to prevent this from happening unnoticed.
+    ///       The caller shouldn't dereference and cache the raw pointer to
+    ///       the manifest anywhere.
     /// \return pointer to the current manifest or nullopt
-    std::optional<std::reference_wrapper<const partition_manifest>>
-    manifest() const;
+    ssx::task_local_ptr<const partition_manifest> manifest() const;
 
     /// Pass current manifest to the functor
     ///
@@ -291,7 +296,7 @@ public:
     auto with_manifest(Fn fn) {
         auto ref = manifest();
         vassert(ref.has_value(), "Invalid cursor, {}", _view.get_ntp());
-        return fn(ref->get());
+        return fn(*ref);
     }
 
 private:
