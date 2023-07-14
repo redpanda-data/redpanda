@@ -22,6 +22,12 @@ import (
 	"github.com/spf13/cobra"
 )
 
+type credentials struct {
+	User      string `json:"user" yaml:"user"`
+	Password  string `json:"password,omitempty" yaml:"password,omitempty"`
+	Mechanism string `json:"mechanism,omitempty" yaml:"mechanism,omitempty"`
+}
+
 func newCreateUserCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	var userOld, pass, newPass, mechanism string
 	cmd := &cobra.Command{
@@ -45,6 +51,7 @@ acl help text for more info.
 
 		Args: cobra.MaximumNArgs(1), // when the deprecated user flag is removed, change this to cobra.ExactArgs(1)
 		Run: func(cmd *cobra.Command, args []string) {
+			f := p.Formatter
 			p, err := p.LoadVirtualProfile(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)
 
@@ -94,6 +101,14 @@ acl help text for more info.
 
 			err = cl.CreateUser(cmd.Context(), user, pass, mechanism)
 			out.MaybeDie(err, "unable to create user %q: %v", user, err)
+			c := credentials{user, "", mechanism}
+			if generated {
+				c.Password = pass // We only want to display the password if it was generated.
+			}
+			if isText, _, s, err := f.Format(c); !isText {
+				out.MaybeDie(err, "unable to print in the required format %q: %v", f.Kind, err)
+				out.Exit(s)
+			}
 			fmt.Printf("Created user %q.\n", user)
 			if generated {
 				fmt.Println("Automatically generated password:")

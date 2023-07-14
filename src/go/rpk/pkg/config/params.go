@@ -410,6 +410,9 @@ type Params struct {
 	loggerOnce sync.Once
 	logger     *zap.Logger
 
+	// Formatter is used to format rpk's output (json/yaml/text)
+	Formatter OutFormatter
+
 	// BACKCOMPAT FLAGS
 	brokers           []string
 	user              string
@@ -644,6 +647,15 @@ func (p *Params) InstallCloudFlags(cmd *cobra.Command) {
 	cmd.Flags().StringVar(&p.cloudClientID, FlagClientID, "", "The client ID of the organization in Redpanda Cloud")
 	cmd.Flags().StringVar(&p.cloudClientSecret, FlagClientSecret, "", "The client secret of the organization in Redpanda Cloud")
 	cmd.MarkFlagsRequiredTogether(FlagClientID, FlagClientSecret)
+}
+
+func (p *Params) InstallFormatFlag(cmd *cobra.Command) {
+	pf := cmd.PersistentFlags()
+
+	pf.StringVar(&p.Formatter.Kind, "format", "text", fmt.Sprintf("Output format (%v)", strings.Join((&OutFormatter{}).SupportedFormats(), ",")))
+	cmd.RegisterFlagCompletionFunc("format", func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+		return (&OutFormatter{}).SupportedFormats(), cobra.ShellCompDirectiveNoSpace
+	})
 }
 
 func (p *Params) backcompatFlagsToOverrides() {

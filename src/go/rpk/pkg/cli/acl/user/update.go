@@ -26,6 +26,7 @@ func newUpdateCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 		Short: "Update SASL user credentials",
 		Args:  cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
+			f := p.Formatter
 			p, err := p.LoadVirtualProfile(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)
 
@@ -35,6 +36,10 @@ func newUpdateCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 			user := args[0]
 			err = cl.UpdateUser(cmd.Context(), user, newPass, strings.ToUpper(mechanism))
 			out.MaybeDie(err, "unable to update the client credentials for user %q: %v", user, err)
+			if isText, _, s, err := f.Format(credentials{user, "", mechanism}); !isText {
+				out.MaybeDie(err, "unable to print credentials in the required format %q: %v", f.Kind, err)
+				out.Exit(s)
+			}
 			out.Exit("Updated user %q successfully.", user)
 		},
 	}

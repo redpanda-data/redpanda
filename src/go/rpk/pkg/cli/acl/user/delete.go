@@ -31,6 +31,7 @@ delete any ACLs that may exist for this user.
 `,
 		Args: cobra.MaximumNArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
+			f := p.Formatter
 			p, err := p.LoadVirtualProfile(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)
 
@@ -51,6 +52,10 @@ delete any ACLs that may exist for this user.
 
 			err = cl.DeleteUser(cmd.Context(), user)
 			out.MaybeDie(err, "unable to delete user %q: %s", user, err)
+			if isText, _, s, err := f.Format(credentials{user, "", ""}); !isText {
+				out.MaybeDie(err, "unable to print response in the required format %q: %v", f.Kind, err)
+				out.Exit(s)
+			}
 			fmt.Printf("Deleted user %q.\n", user)
 		},
 	}
