@@ -219,6 +219,9 @@ COPY --chown=0:0 --chmod=0755 tools/offline_log_viewer /opt/scripts/offline_log_
 RUN mkdir -p /opt/remote
 COPY --chown=0:0 --chmod=0755 tests/rptest/remote_scripts /opt/remote
 
+# copy lsan suppressions file
+COPY --chown=0:0 --chmod=0644 lsan_suppressions.txt /opt/lsan_suppressions.txt
+
 # expose port 8080 for any http examples within clients
 EXPOSE 8080
 

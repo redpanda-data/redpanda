@@ -155,6 +155,9 @@ PREV_VERSION_LOG_ALLOW_LIST = [
     "raft - .*recovery append entries error.*client_request_timeout"
 ]
 
+# Path to the LSAN suppressions file
+LSAN_SUPPRESSIONS_FILE = "/opt/lsan_suppressions.txt"
+
 
 class MetricSamples:
     def __init__(self, samples: list[MetricSample]):
@@ -1645,6 +1648,15 @@ class RedpandaService(RedpandaServiceBase):
         self._environment = dict(
             ASAN_OPTIONS=
             "abort_on_error=1:disable_coredump=0:unmap_shadow_on_exit=1")
+
+        # If lsan_suppressions.txt exists, then include it
+        if os.path.exists(LSAN_SUPPRESSIONS_FILE):
+            self.logger.debug(f'{LSAN_SUPPRESSIONS_FILE} exists')
+            self._environment[
+                'LSAN_OPTIONS'] = f'suppressions={LSAN_SUPPRESSIONS_FILE}'
+        else:
+            self.logger.debug(f'{LSAN_SUPPRESSIONS_FILE} does not exist')
+
         if environment is not None:
             self._environment.update(environment)
 
