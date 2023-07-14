@@ -30,6 +30,7 @@
 #include "storage/types.h"
 #include "storage/version.h"
 #include "utils/gate_guard.h"
+#include "utils/human.h"
 #include "vassert.h"
 #include "vlog.h"
 
@@ -639,7 +640,17 @@ ss::future<compaction_result> disk_log_impl::compact_adjacent_segments(
     co_return ret;
 }
 
-gc_config disk_log_impl::override_retention_config(gc_config cfg) const {
+bool disk_log_impl::has_local_retention_override() const {
+    if (config().has_overrides()) {
+        const auto& overrides = config().get_overrides();
+        auto bytes = overrides.retention_local_target_bytes;
+        auto time = overrides.retention_local_target_ms;
+        return bytes.is_engaged() || time.is_engaged();
+    }
+    return false;
+}
+
+gc_config disk_log_impl::maybe_override_retention_config(gc_config cfg) const {
     // Read replica topics have a different default retention
     if (config().is_read_replica_mode_enabled()) {
         cfg.eviction_time = std::max(
@@ -655,6 +666,32 @@ gc_config disk_log_impl::override_retention_config(gc_config cfg) const {
         return cfg;
     }
 
+    /*
+     * don't override with local retention settings--let partition data expand
+     * up to standard retention settings.
+     */
+    if (config::shard_local_cfg().retention_local_is_advisory()) {
+        vlog(
+          gclog.trace,
+          "[{}] Skipped retention override for topic with remote write "
+          "enabled: {}",
+          config().ntp(),
+          cfg);
+        return cfg;
+    }
+
+    cfg = override_retention_config(cfg);
+
+    vlog(
+      gclog.trace,
+      "[{}] Overrode retention for topic with remote write enabled: {}",
+      config().ntp(),
+      cfg);
+
+    return cfg;
+}
+
+gc_config disk_log_impl::override_retention_config(gc_config cfg) const {
     tristate<std::size_t> local_retention_bytes{std::nullopt};
     tristate<std::chrono::milliseconds> local_retention_ms{std::nullopt};
 
@@ -697,12 +734,6 @@ gc_config disk_log_impl::override_retention_config(gc_config cfg) const {
             - local_retention_ms.value().count()),
           cfg.eviction_time);
     }
-
-    vlog(
-      gclog.trace,
-      "[{}] Overrode retention for topic with remote write enabled: {}",
-      config().ntp(),
-      cfg);
 
     return cfg;
 }
@@ -750,7 +781,7 @@ gc_config disk_log_impl::apply_base_overrides(gc_config defaults) const {
 
 gc_config disk_log_impl::apply_overrides(gc_config defaults) const {
     auto ret = apply_base_overrides(defaults);
-    return override_retention_config(ret);
+    return maybe_override_retention_config(ret);
 }
 
 ss::future<> disk_log_impl::housekeeping(housekeeping_config cfg) {
@@ -822,16 +853,7 @@ ss::future<std::optional<model::offset>> disk_log_impl::do_gc(gc_config cfg) {
       config().ntp(),
       cfg);
 
-    auto ignore_timestamps_in_future
-      = config::shard_local_cfg().storage_ignore_timestamps_in_future_sec();
-    if (ignore_timestamps_in_future.has_value()) {
-        // Correct any timestamps too far in future, before calculating the
-        // retention offset.
-        co_await retention_adjust_timestamps(
-          ignore_timestamps_in_future.value());
-    }
-
-    auto max_offset = retention_offset(cfg);
+    auto max_offset = co_await maybe_adjusted_retention_offset(cfg);
 
     if (max_offset) {
         co_return co_await request_eviction_until_offset(*max_offset);
@@ -903,6 +925,20 @@ ss::future<> disk_log_impl::retention_adjust_timestamps(
           s->path().string());
         s->index().set_retention_timestamp(file_timestamp);
     }
+}
+
+ss::future<std::optional<model::offset>>
+disk_log_impl::maybe_adjusted_retention_offset(gc_config cfg) {
+    auto ignore_timestamps_in_future
+      = config::shard_local_cfg().storage_ignore_timestamps_in_future_sec();
+    if (ignore_timestamps_in_future.has_value()) {
+        // Correct any timestamps too far in future, before calculating the
+        // retention offset.
+        co_await retention_adjust_timestamps(
+          ignore_timestamps_in_future.value());
+    }
+
+    co_return retention_offset(cfg);
 }
 
 std::optional<model::offset> disk_log_impl::retention_offset(gc_config cfg) {
@@ -2070,7 +2106,7 @@ disk_log_impl::disk_usage_target(gc_config cfg, usage usage) {
          */
     } else {
         // applies local retention overrides for cloud storage
-        cfg = override_retention_config(cfg);
+        cfg = maybe_override_retention_config(cfg);
     }
 
     /*
@@ -2259,8 +2295,10 @@ disk_log_impl::cloud_gc_eligible_segments() {
     }
 
     /*
-     * for a cloud-backed topic the max collecible offset is the threshold below
-     * which data has been uploaded and can safely be removed from local disk.
+     * how much are we allowed to collect? sub-systems (e.g. transactions)
+     * may signal restrictions through the max collectible offset. for cloud
+     * topics max collectible will include a reflection of how much data has
+     * been uploaded into the cloud.
      */
     const auto max_collectible = stm_manager()->max_collectible_offset();
 
@@ -2279,11 +2317,208 @@ disk_log_impl::cloud_gc_eligible_segments() {
 }
 
 void disk_log_impl::set_cloud_gc_offset(model::offset offset) {
-    vassert(
-      is_cloud_retention_active(),
-      "Expected {} to have cloud retention enabled",
-      config().ntp());
+    if (!is_cloud_retention_active()) {
+        vlog(
+          stlog.debug,
+          "Ignoring request to set GC offset on non-cloud enabled partition "
+          "{}. Configuration may have recently changed.",
+          config().ntp());
+        return;
+    }
     _cloud_gc_offset = offset;
+}
+
+ss::future<reclaimable_offsets>
+disk_log_impl::get_reclaimable_offsets(gc_config cfg) {
+    // protect against concurrent log removal with housekeeping loop
+    auto gate = _compaction_housekeeping_gate.hold();
+
+    reclaimable_offsets res;
+
+    if (!is_cloud_retention_active()) {
+        vlog(
+          stlog.debug,
+          "Reporting no reclaimable offsets for non-cloud partition {}",
+          config().ntp());
+        co_return res;
+    }
+
+    /*
+     * there is currently a bug with read replicas that makes the max
+     * collectible offset unreliable. the read replica topics still have a
+     * retention setting, but we are going to exempt them from forced reclaim
+     * until this bug is fixed to avoid any complications.
+     *
+     * https://github.com/redpanda-data/redpanda/issues/11936
+     */
+    if (config().is_read_replica_mode_enabled()) {
+        vlog(
+          stlog.debug,
+          "Reporting no reclaimable offsets for read replica partition {}",
+          config().ntp());
+        co_return res;
+    }
+
+    /*
+     * calculate the effective local retention. this forces the local retention
+     * override in contrast to housekeeping GC where the overrides are applied
+     * only when local retention is non-advisory.
+     */
+    cfg = apply_base_overrides(cfg);
+    cfg = override_retention_config(cfg);
+    const auto local_retention_offset
+      = co_await maybe_adjusted_retention_offset(cfg);
+
+    /*
+     * when local retention is based off an explicit override, then we treat it
+     * as the partition having a retention hint and use it to deprioritize
+     * selection of data to reclaim over data without any hints.
+     */
+    const auto hinted = has_local_retention_override();
+
+    /*
+     * for a cloud-backed topic the max collecible offset is the threshold below
+     * which data has been uploaded and can safely be removed from local disk.
+     */
+    const auto max_collectible = stm_manager()->max_collectible_offset();
+
+    /*
+     * lightweight segment set copy for safe iteration
+     */
+    fragmented_vector<segment_set::type> segments;
+    for (const auto& seg : _segs) {
+        segments.push_back(seg);
+    }
+
+    /*
+     * currently we use two segments as the low space size
+     */
+    std::optional<model::offset> low_space_offset;
+    if (segments.size() >= 2) {
+        low_space_offset = segments[segments.size() - 2]->offsets().base_offset;
+    }
+
+    vlog(
+      stlog.debug,
+      "Categorizing {} {} segments for {} with local retention {} low "
+      "space {} max collectible {}",
+      segments.size(),
+      (hinted ? "hinted" : "non-hinted"),
+      config().ntp(),
+      local_retention_offset,
+      low_space_offset,
+      max_collectible);
+
+    /*
+     * categorize each segment.
+     */
+    for (const auto& seg : segments) {
+        const auto usage = co_await seg->persistent_size();
+        const auto seg_size = usage.total();
+
+        /*
+         * the active segment designation takes precedence because it requires
+         * special consideration related to the implications of force rolling.
+         */
+        if (seg == segments.back()) {
+            /*
+             * since the active segment receives all new data at any given time
+             * it may not be fully uploaded to cloud storage so it is hard to
+             * say anything definitive about it. instead, we report its size as
+             * a potential:
+             *
+             *   1. rolling the active segment will bound progress towards
+             *   making its current full size reclaimable as max collectible
+             *   increases to cover the entire segment.
+             *
+             *   2. finally, we don't report it if max collectible hasn't even
+             *   made it to the active segment yet.
+             */
+            if (seg->offsets().base_offset <= max_collectible) {
+                res.force_roll = seg_size;
+                vlog(
+                  stlog.trace,
+                  "Reporting partially collectible {} active segment",
+                  human::bytes(seg_size));
+            }
+            break;
+        }
+
+        // to be categorized
+        const reclaimable_offsets::offset point{
+          .offset = seg->offsets().dirty_offset,
+          .size = seg_size,
+        };
+
+        /*
+         * if the current segment is not fully collectible, then subsequent
+         * segments will not be either, and don't require consideration.
+         */
+        if (point.offset > max_collectible) {
+            vlog(
+              stlog.trace,
+              "Stopping collection at offset {}:{} above max collectible {}",
+              point.offset,
+              human::bytes(point.size),
+              max_collectible);
+            break;
+        }
+
+        /*
+         * when local retention is non-advisory then standard garbage collection
+         * housekeeping will automatically remove data down to local retention.
+         *
+         * however when local retention is advisory, then partition storage is
+         * allowed to expand up to the consumable retention. in this case
+         * housekeeping will remove data above consumable retention, and we
+         * categorize this excess data here down to the local retention.
+         */
+        if (
+          local_retention_offset.has_value()
+          && point.offset <= local_retention_offset.value()) {
+            res.effective_local_retention.push_back(point);
+            vlog(
+              stlog.trace,
+              "Adding offset {}:{} as local retention reclaimable",
+              point.offset,
+              human::bytes(point.size));
+            continue;
+        }
+
+        /*
+         * the low space represents the limit of data we want to remove from
+         * any partition before moving on to more extreme tactics.
+         */
+        if (
+          low_space_offset.has_value()
+          && point.offset <= low_space_offset.value()) {
+            if (hinted) {
+                res.low_space_hinted.push_back(point);
+                vlog(
+                  stlog.trace,
+                  "Adding offset {}:{} as low space hinted",
+                  point.offset,
+                  human::bytes(point.size));
+            } else {
+                res.low_space_non_hinted.push_back(point);
+                vlog(
+                  stlog.trace,
+                  "Adding offset {}:{} as low space non-hinted",
+                  point.offset,
+                  human::bytes(point.size));
+            }
+            continue;
+        }
+
+        res.active_segment.push_back(point);
+        vlog(
+          stlog.trace,
+          "Adding offset {}:{} as active segment bounded",
+          point.offset,
+          human::bytes(point.size));
+    }
+
+    co_return res;
 }
 
 } // namespace storage

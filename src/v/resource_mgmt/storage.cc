@@ -35,7 +35,8 @@ disk_space_manager::disk_space_manager(
   , _storage_node(storage_node)
   , _cache(cache->local_is_initialized() ? cache : nullptr)
   , _pm(pm)
-  , _log_storage_target_size(std::move(log_storage_target_size)) {
+  , _log_storage_target_size(std::move(log_storage_target_size))
+  , _policy(_pm, _storage) {
     _enabled.watch([this] {
         vlog(
           rlog.info,
@@ -81,7 +82,7 @@ ss::future<> disk_space_manager::run_loop() {
         try {
             if (_enabled()) {
                 co_await _control_sem.wait(
-                  config::shard_local_cfg().log_storage_max_usage_interval(),
+                  config::shard_local_cfg().retention_local_trim_interval(),
                   std::max(_control_sem.current(), size_t(1)));
             } else {
                 co_await _control_sem.wait();
@@ -100,86 +101,312 @@ ss::future<> disk_space_manager::run_loop() {
     }
 }
 
-/*
- * Attempts to set retention offset for cloud enabled topics such that the
- * target amount of bytes will be recovered when garbage collection is applied.
- *
- * This is greedy approach which will recover as much as possible from each
- * partition before moving on to the next.
- */
-static ss::future<size_t>
-set_partition_retention_offsets(cluster::partition_manager& pm, size_t target) {
-    // build a lightweight copy to avoid invalidations during iteration
+void eviction_policy::schedule::seek(size_t cursor) {
+    vassert(sched_size > 0, "Seek cannot be called on an empty schedule");
+    cursor = cursor % sched_size;
+
+    // reset iterator
+    shard_idx = 0;
+    partition_idx = 0;
+
+    for (; shard_idx < shards.size(); ++shard_idx) {
+        const auto count = shards[shard_idx].partitions.size();
+        if (cursor < count) {
+            partition_idx = cursor;
+            return;
+        }
+        cursor -= count;
+    }
+
+    vassert(false, "Seek could not find cursor location");
+}
+
+void eviction_policy::schedule::next() {
+    ++partition_idx;
+    while (true) {
+        if (partition_idx >= shards[shard_idx].partitions.size()) {
+            shard_idx = (shard_idx + 1) % shards.size();
+            partition_idx = 0;
+        } else {
+            break;
+        }
+    }
+}
+
+eviction_policy::partition* eviction_policy::schedule::current() {
+    return &shards[shard_idx].partitions[partition_idx];
+}
+
+ss::future<eviction_policy::schedule> eviction_policy::create_new_schedule() {
+    auto shards = co_await _pm->map([this](auto& /* ignored */) {
+        /*
+         * the partition_manager reference is ignored since
+         * collect_reclaimable_offsets already has access to a
+         * sharded<partition_manager>.
+         */
+        return collect_reclaimable_offsets().then([](auto partitions) {
+            return shard_partitions{
+              .shard = ss::this_shard_id(),
+              .partitions = std::move(partitions),
+            };
+        });
+    });
+
+    // compute the size of the schedule
+    const auto size = std::accumulate(
+      shards.cbegin(),
+      shards.cend(),
+      size_t{0},
+      [](size_t acc, const shard_partitions& shard) {
+          return acc + shard.partitions.size();
+      });
+
+    vlog(rlog.debug, "Created new eviction schedule with {} partitions", size);
+    schedule sched(std::move(shards), size);
+    if (sched.sched_size > 0) {
+        sched.seek(_cursor);
+    }
+    co_return sched;
+}
+
+ss::future<fragmented_vector<eviction_policy::partition>>
+eviction_policy::collect_reclaimable_offsets() {
+    /*
+     * build a lightweight copy to avoid invalidations during iteration
+     */
     fragmented_vector<ss::lw_shared_ptr<cluster::partition>> partitions;
-    for (const auto& p : pm.partitions()) {
+    for (const auto& p : _pm->local().partitions()) {
         if (!p.second->remote_partition()) {
             continue;
         }
         partitions.push_back(p.second);
     }
 
-    vlog(
-      rlog.info,
-      "Attempting to recover {} from {} remote partitions on core {}",
-      human::bytes(target),
-      partitions.size(),
-      ss::this_shard_id());
-
-    size_t partitions_total = 0;
-    for (const auto& p : partitions) {
-        if (partitions_total >= target) {
-            break;
+    /*
+     * retention settings mirror settings found in housekeeping()
+     */
+    const auto collection_threshold = [this] {
+        const auto& lm = _storage->local().log_mgr();
+        if (!lm.config().delete_retention().has_value()) {
+            return model::timestamp(0);
         }
+        const auto now = model::timestamp::now().value();
+        const auto retention = lm.config().delete_retention().value().count();
+        return model::timestamp(now - retention);
+    };
 
-        auto log = dynamic_cast<storage::disk_log_impl*>(p->log().get_impl());
-        // make sure housekeeping doesn't delete the log from below us
-        auto gate = log->gate().hold();
+    gc_config cfg(
+      collection_threshold(),
+      _storage->local().log_mgr().config().retention_bytes());
 
-        auto segments = log->cloud_gc_eligible_segments();
+    /*
+     * in smallish batches partitions are queried for their reclaimable
+     * segments. all of this information is bundled up and returned.
+     */
+    fragmented_vector<partition> res;
+    co_await ss::max_concurrent_for_each(
+      partitions.begin(), partitions.end(), 20, [&res, cfg](const auto& p) {
+          auto log = dynamic_cast<storage::disk_log_impl*>(p->log().get_impl());
+          return log->get_reclaimable_offsets(cfg)
+            .then([&res, group = p->group()](auto offsets) {
+                res.push_back({
+                  .group = group,
+                  .offsets = std::move(offsets),
+                });
+            })
+            .handle_exception_type([](const ss::gate_closed_exception&) {})
+            .handle_exception([ntp = p->ntp()](std::exception_ptr e) {
+                vlog(
+                  rlog.debug,
+                  "Error collecting reclaimable offsets from {}: {}",
+                  ntp,
+                  e);
+            });
+      });
 
-        vlog(
-          rlog.info,
-          "Remote partition {} reports {} reclaimable segments",
-          p->ntp(),
-          segments.size());
+    /*
+     * sorting by raft::group_id would provide a more stable round-robin
+     * evaluation of partitions in later processing of the result, but on small
+     * timescales we don't expect enough churn to make a difference, nor with a
+     * large number of partitions on the system would the non-determinism
+     * in the parallelism above in max_concurrent_for_each be problematic.
+     */
 
-        if (segments.empty()) {
-            continue;
-        }
+    vlog(rlog.trace, "Reporting reclaim offsets for {} partitions", res.size());
+    co_return res;
+}
 
-        size_t log_total = 0;
-        auto offset = segments.front()->offsets().committed_offset;
-        for (const auto& seg : segments) {
-            auto usage = co_await seg->persistent_size();
-            log_total += usage.total();
-            offset = seg->offsets().committed_offset;
+ss::future<> eviction_policy::install_schedule(schedule schedule) {
+    /*
+     * install the schedule on each core in parallel
+     */
+    auto total = co_await ss::map_reduce(
+      schedule.shards,
+      [this](auto& shard) { return install_schedule(std::move(shard)); },
+      size_t(0),
+      std::plus<>());
+
+    vlog(rlog.info, "Requested truncation from {} cloud partitions", total);
+}
+
+// the per-shard counterpart of install_schedule(schedule)
+ss::future<size_t> eviction_policy::install_schedule(shard_partitions shard) {
+    const auto shard_id = shard.shard;
+    return _pm->invoke_on(shard_id, [shard = std::move(shard)](auto& pm) {
+        size_t decisions = 0;
+        for (const auto& partition : shard.partitions) {
+            if (!partition.decision.has_value()) {
+                continue;
+            }
+
+            auto p = pm.partition_for(partition.group);
+            if (!p) {
+                continue;
+            }
+
+            auto log = dynamic_cast<storage::disk_log_impl*>(
+              p->log().get_impl());
+            log->set_cloud_gc_offset(partition.decision.value());
+            ++decisions;
+
             vlog(
-              rlog.info,
-              "Collecting segment {}:{}-{} estimated to recover {}",
+              rlog.trace,
+              "Marking offset {} in cloud partition {} group {} for estimated "
+              "{} reclaim",
+              partition.decision.value(),
+              partition.group,
               p->ntp(),
-              seg->offsets().base_offset(),
-              seg->offsets().committed_offset(),
-              human::bytes(usage.total()));
-            if (log_total >= target) {
-                break;
+              human::bytes(partition.total));
+        }
+        return decisions;
+    });
+}
+
+size_t eviction_policy::evict_balanced_from_level(
+  schedule& sched,
+  size_t target_excess,
+  std::string_view level_name,
+  const level_selector& selector) {
+    size_t level_total = 0;
+    bool progress = false;
+    auto partition = sched.current();
+    const auto first = partition;
+
+    while (true) {
+        /*
+         * if this is the first time visiting this partition and this level then
+         * initialize the level iterator at the first segment.
+         */
+        auto level = selector(partition);
+        if (partition->level != level) {
+            partition->level = level;
+            partition->iter = level->begin();
+            vlog(
+              rlog.trace,
+              "Initializing level {} iterator for partition {} with {} "
+              "candidate segments",
+              level_name,
+              partition->group,
+              level->size());
+        }
+
+        if (partition->iter.has_value()) {
+            if (partition->iter.value() == level->end()) {
+                // suppress further messages about reaching end of level
+                partition->iter.reset();
+                vlog(
+                  rlog.trace,
+                  "Finished level {} iteration for partition {}",
+                  level_name,
+                  partition->group);
+            } else {
+                /*
+                 * we haven't reached the end of the candidate set so schedule
+                 * the current segment from this partition for removal.
+                 */
+                partition->decision = partition->iter.value()->offset;
+                partition->total += partition->iter.value()->size;
+                level_total += partition->iter.value()->size;
+                progress = true;
+
+                vlog(
+                  rlog.trace,
+                  "Mark partition {} at offset {} for {} removal total {} "
+                  "level {} total {}",
+                  partition->group,
+                  partition->decision.value(),
+                  human::bytes(partition->iter.value()->size),
+                  human::bytes(partition->total),
+                  level_name,
+                  human::bytes(level_total));
+
+                ++partition->iter.value();
             }
         }
 
-        vlog(
-          rlog.info,
-          "Setting retention offset override {} estimated reclaim of {} for "
-          "cloud topic {}. Total reclaim {} of target {}.",
-          offset,
-          log_total,
-          p->ntp(),
-          partitions_total,
-          target);
+        ++_cursor;
+        sched.next();
 
-        log->set_cloud_gc_offset(offset);
-        partitions_total += log_total;
+        if (level_total > target_excess) {
+            break;
+        }
+
+        partition = sched.current();
+
+        // end level iteration if no progress is made
+        if (partition == first) {
+            if (!progress) {
+                vlog(
+                  rlog.trace,
+                  "Ending level {} with no more progress possible",
+                  level_name);
+                break;
+            }
+            vlog(rlog.trace, "Restarting level {} iteration", level_name);
+            progress = false;
+        }
     }
 
-    co_return partitions_total;
+    vlog(
+      rlog.info,
+      "Marked {} for removal with target {} in level {}",
+      human::bytes(level_total),
+      human::bytes(target_excess),
+      level_name);
+
+    return level_total;
+}
+
+size_t eviction_policy::evict_until_local_retention(
+  schedule& sched, size_t target_excess) {
+    return evict_balanced_from_level(
+      sched, target_excess, "local-retention", [](auto group) {
+          return &group->offsets.effective_local_retention;
+      });
+}
+
+size_t eviction_policy::evict_until_low_space_non_hinted(
+  schedule& sched, size_t target_excess) {
+    return evict_balanced_from_level(
+      sched, target_excess, "lwm-non-hinted", [](auto group) {
+          return &group->offsets.low_space_non_hinted;
+      });
+}
+
+size_t eviction_policy::evict_until_low_space_hinted(
+  schedule& sched, size_t target_excess) {
+    return evict_balanced_from_level(
+      sched, target_excess, "lwm-hinted", [](auto group) {
+          return &group->offsets.low_space_hinted;
+      });
+}
+
+size_t eviction_policy::evict_until_active_segment(
+  schedule& sched, size_t target_excess) {
+    return evict_balanced_from_level(
+      sched, target_excess, "active-segment", [](auto group) {
+          return &group->offsets.active_segment;
+      });
 }
 
 ss::future<> disk_space_manager::manage_data_disk(uint64_t target_size) {
@@ -202,17 +429,44 @@ ss::future<> disk_space_manager::manage_data_disk(uint64_t target_size) {
      * how much data from log storage do we need to remove from disk to be able
      * to stay below the current target size?
      */
-    const auto target_excess = usage.usage.total() < target_size
-                                 ? 0
-                                 : usage.usage.total() - target_size;
-    if (target_excess <= 0) {
-        vlog(
-          rlog.info,
-          "Log storage usage {} <= target size {}. No work to do.",
+    const auto real_target_excess = usage.usage.total() < target_size
+                                      ? 0
+                                      : usage.usage.total() - target_size;
+
+    /*
+     * if we are below the target, then nothing to do. however, if we are above
+     * the target by only a "small" amount then we avoid reclaim as well. this
+     * helps in cases where for example we are sitting at 10 KB overage and
+     * would like to avoid reclaiming an entire segment (e.g. 100 MB) to reach
+     * the goal.
+     */
+    if (real_target_excess <= config::shard_local_cfg().log_segment_size()) {
+        vlogl(
+          rlog,
+          _previous_reclaim ? ss::log_level::info : ss::log_level::debug,
+          "Log storage usage {} is within {} threshold of target size {}. No "
+          "further work to do.",
           human::bytes(usage.usage.total()),
+          human::bytes(config::shard_local_cfg().log_segment_size()),
           human::bytes(target_size));
+        _previous_reclaim = false;
         co_return;
     }
+    _previous_reclaim = true;
+
+    /*
+     * the control loop only starts reclaiming once we hit an overage. the
+     * downside of this is that we will effectively always be running over the
+     * target size. while this is expected behavior and the target isn't
+     * intended to be precise, we can attempt to compensate by over reclaiming
+     * in anticipation of the data arriving in the next idle period of the
+     * control loop. for a steady state workload this works pretty well. more
+     * generally we may want to consider a smoother function as well as
+     * dynamically adjusting the control loop frequency.
+     */
+    const auto target_excess = static_cast<uint64_t>(
+      real_target_excess
+      * config::shard_local_cfg().retention_local_trim_overage_coeff());
 
     /*
      * when log storage has exceeded the target usage, then there are some knobs
@@ -235,38 +489,59 @@ ss::future<> disk_space_manager::manage_data_disk(uint64_t target_size) {
     if (target_excess > usage.reclaim.retention) {
         vlog(
           rlog.info,
-          "Log storage usage {} > target size {} by {}. Garbage collection "
-          "expected to recover {}. Overriding tiered storage retention to "
-          "recover {}. Total estimated available to recover {}",
+          "Log storage usage {} > target size {} by {} (adjusted {}). Garbage "
+          "collection expected to recover {}. Overriding tiered storage "
+          "retention to recover {}. Total estimated available to recover {}",
           human::bytes(usage.usage.total()),
           human::bytes(target_size),
+          human::bytes(real_target_excess),
           human::bytes(target_excess),
           human::bytes(usage.reclaim.retention),
           human::bytes(target_excess - usage.reclaim.retention),
           human::bytes(usage.reclaim.available));
 
-        /*
-         * This is a simple greedy approach. It will attempt to reclaim as much
-         * data as possible from each partition on each core, stopping once
-         * enough space has been reclaimed to meet the current target.
-         */
-        size_t total = 0;
-        for (auto shard : ss::smp::all_cpus()) {
-            auto goal = target_excess - total;
-            total += co_await _pm->invoke_on(shard, [goal](auto& pm) {
-                return set_partition_retention_offsets(pm, goal);
-            });
-            if (total >= target_excess) {
-                break;
+        auto schedule = co_await _policy.create_new_schedule();
+        if (schedule.sched_size > 0) {
+            auto estimate = _policy.evict_until_local_retention(
+              schedule, target_excess);
+
+            if (estimate < target_excess) {
+                estimate += _policy.evict_until_low_space_non_hinted(
+                  schedule, target_excess - estimate);
             }
+
+            if (estimate < target_excess) {
+                estimate += _policy.evict_until_low_space_hinted(
+                  schedule, target_excess - estimate);
+            }
+
+            if (estimate < target_excess) {
+                estimate += _policy.evict_until_active_segment(
+                  schedule, target_excess - estimate);
+            }
+
+            /*
+             * at this point if we haven't been able to meet the target then
+             * only active segments should remain. reclaiming from the active
+             * segments is left as future work for the policy. in order to
+             * collect from them they would need to be force rolled: they are
+             * automatically rolled now according to segment.ms.
+             */
+
+            vlog(
+              rlog.info, "Scheduling {} for reclaim", human::bytes(estimate));
+            co_await _policy.install_schedule(std::move(schedule));
+        } else {
+            vlog(rlog.info, "No partitions eligible for reclaim were found");
         }
     } else {
         vlog(
           rlog.info,
-          "Log storage usage {} > target size {} by {}. Garbage collection "
-          "expected to recover {}.",
+          "Log storage usage {} > target size {} by {} (adjusted {}). Garbage "
+          "collection expected to recover {}.",
           human::bytes(usage.usage.total()),
           human::bytes(target_size),
+          human::bytes(real_target_excess),
           human::bytes(target_excess),
           human::bytes(usage.reclaim.retention));
     }

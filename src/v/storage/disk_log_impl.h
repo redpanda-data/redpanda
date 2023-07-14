@@ -133,6 +133,8 @@ public:
     fragmented_vector<ss::lw_shared_ptr<segment>> cloud_gc_eligible_segments();
     void set_cloud_gc_offset(model::offset);
 
+    ss::future<reclaimable_offsets> get_reclaimable_offsets(gc_config cfg);
+
 private:
     friend class disk_log_appender; // for multi-term appends
     friend class disk_log_builder;  // for tests
@@ -203,11 +205,21 @@ private:
 
     void wrote_stm_bytes(size_t);
 
+    // returns true if this partition's local retention configuration has
+    // overrides, such as custom topic configs.
+    bool has_local_retention_override() const;
+
+    gc_config maybe_override_retention_config(gc_config) const;
     gc_config override_retention_config(gc_config) const;
 
     bool is_cloud_retention_active() const;
 
     std::optional<model::offset> retention_offset(gc_config);
+
+    // returns retention_offset(cfg) but may also first apply adjustments to
+    // future timestamps if this option is turned on in configuration.
+    ss::future<std::optional<model::offset>>
+    maybe_adjusted_retention_offset(gc_config cfg);
 
     /*
      * total disk usage and the amount of reclaimable space are most efficiently
