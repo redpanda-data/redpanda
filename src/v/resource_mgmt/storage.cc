@@ -26,7 +26,9 @@ namespace storage {
 
 disk_space_manager::disk_space_manager(
   config::binding<bool> enabled,
-  config::binding<std::optional<uint64_t>> log_storage_target_size,
+  config::binding<std::optional<uint64_t>> retention_target_capacity_bytes,
+  config::binding<std::optional<double>> retention_target_capacity_pct,
+  config::binding<double> disk_reservation_percent,
   ss::sharded<cluster::node::local_monitor>* local_monitor,
   ss::sharded<storage::api>* storage,
   ss::sharded<storage::node>* storage_node,
@@ -38,8 +40,13 @@ disk_space_manager::disk_space_manager(
   , _storage_node(storage_node)
   , _cache(cache->local_is_initialized() ? cache : nullptr)
   , _pm(pm)
-  , _log_storage_target_size(std::move(log_storage_target_size))
+  , _retention_target_capacity_bytes(std::move(retention_target_capacity_bytes))
+  , _retention_target_capacity_percent(std::move(retention_target_capacity_pct))
+  , _disk_reservation_percent(std::move(disk_reservation_percent))
+  , _data_disk_size(_local_monitor->local().get_state_cached().data_disk.total)
+  , _target_size(0)
   , _policy(_pm, _storage) {
+    update_target_size(); // initialize
     _enabled.watch([this] {
         vlog(
           rlog.info,
@@ -47,6 +54,9 @@ disk_space_manager::disk_space_manager(
           _enabled() ? "Enabling" : "Disabling");
         _control_sem.signal();
     });
+    _retention_target_capacity_bytes.watch([this] { update_target_size(); });
+    _retention_target_capacity_percent.watch([this] { update_target_size(); });
+    _disk_reservation_percent.watch([this] { update_target_size(); });
 }
 
 ss::future<> disk_space_manager::start() {
@@ -95,13 +105,66 @@ ss::future<> disk_space_manager::run_loop() {
             continue;
         }
 
-        if (!_log_storage_target_size().has_value()) {
+        if (_target_size == 0) {
             _local_monitor->local().set_log_data_state(std::nullopt);
             continue;
         }
 
-        co_await manage_data_disk(_log_storage_target_size().value());
+        co_await manage_data_disk(_target_size);
     }
+}
+
+void disk_space_manager::update_target_size() {
+    // amount of data disk reserved for non-redpanda use
+    const uint64_t reservation_size = _data_disk_size
+                                      * (_disk_reservation_percent() / 100.0);
+
+    // unreserved data disk space
+    const auto usable_size = _data_disk_size - reservation_size;
+
+    // percent-based target size
+    const uint64_t target_size_pct
+      = usable_size
+        * (_retention_target_capacity_percent().value_or(0) / 100.0);
+
+    // bytes-based target size
+    uint64_t target_size_bytes = _retention_target_capacity_bytes().value_or(0);
+    if (target_size_bytes > usable_size) {
+        vlog(
+          rlog.info,
+          "Clamping requested target max bytes {} to usable size {}",
+          target_size_bytes,
+          usable_size);
+        target_size_bytes = usable_size;
+    }
+
+    if (target_size_pct > 0 && target_size_bytes == 0) {
+        // only percent target
+        _target_size = target_size_pct;
+    } else if (target_size_pct == 0 && target_size_bytes > 0) {
+        // only bytes target
+        _target_size = target_size_bytes;
+    } else if (target_size_pct > 0 && target_size_bytes > 0) {
+        // apply both targets
+        _target_size = std::min(target_size_pct, target_size_bytes);
+    } else {
+        // disabled
+        _target_size = 0;
+    }
+
+    if (_target_size > 0) {
+        _control_sem.signal();
+    }
+
+    vlog(
+      rlog.info,
+      "Setting new target log data size {}. Disk size {} reservation percent "
+      "{} target percent {} bytes {}",
+      human::bytes(_target_size),
+      human::bytes(_data_disk_size),
+      _disk_reservation_percent(),
+      _retention_target_capacity_percent(),
+      _retention_target_capacity_bytes());
 }
 
 void eviction_policy::schedule::seek(size_t cursor) {
