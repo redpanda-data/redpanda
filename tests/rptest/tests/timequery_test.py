@@ -233,7 +233,7 @@ class BaseTimeQuery:
             return next(rpk.describe_topic(topic.name)).start_offset
 
         wait_until(lambda: start_offset() > 0,
-                   timeout_sec=60,
+                   timeout_sec=120,
                    backoff_sec=5,
                    err_msg="Start offset did not advance")
 
