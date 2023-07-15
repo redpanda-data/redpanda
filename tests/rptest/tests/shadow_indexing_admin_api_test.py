@@ -201,6 +201,11 @@ class SIAdminApiTest(RedpandaTest):
         self.admin.await_stable_leader("test-topic", 0)
         response = self.admin.get_partition_manifest("test-topic", 0)
 
+        # We may end up with a no topic manifest if the restart below occurs
+        # before the topic manifest is written. Since we're disabling tiered
+        # storage, there is no further opportunity to write the topic manifest.
+        self.redpanda.add_permitted_anomaly("ntr_no_topic_manifest")
+
         assert "last_offset" in response
         assert response["last_offset"] == 0
 
