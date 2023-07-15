@@ -1631,6 +1631,7 @@ class RedpandaService(RedpandaServiceBase):
             })
 
         self._started = []
+        self._additional_permitted_anomalies = set()
         self._security_config = dict()
 
         self._raise_on_errors = self._context.globals.get(
@@ -1693,6 +1694,9 @@ class RedpandaService(RedpandaServiceBase):
                 del self._environment[k]
             except KeyError:
                 pass
+
+    def add_permitted_anomaly(self, anomaly: str):
+        self._additional_permitted_anomalies.add(anomaly)
 
     def set_extra_node_conf(self, node, conf):
         assert node in self.nodes, f"where node is {node.name}"
@@ -3893,6 +3897,7 @@ class RedpandaService(RedpandaServiceBase):
         # we externally validate
         # (https://github.com/redpanda-data/redpanda/issues/9072)
         permitted_anomalies = {"segments_outside_manifest"}
+        permitted_anomalies.update(self._additional_permitted_anomalies)
 
         # Whether any anomalies were found
         any_anomalies = any(len(v) for v in report['anomalies'].values())
