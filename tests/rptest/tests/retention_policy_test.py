@@ -511,7 +511,8 @@ class ShadowIndexingCloudRetentionTest(RedpandaTest):
                 "cloud_storage_enable_remote_write": True,
                 "cloud_storage_enable_remote_read": True,
                 "cloud_storage_housekeeping_interval_ms":
-                cs_housekeeping_interval
+                cs_housekeeping_interval,
+                "cloud_storage_segment_max_upload_interval_sec": 1,
             },
             expect_restart=True)
 
