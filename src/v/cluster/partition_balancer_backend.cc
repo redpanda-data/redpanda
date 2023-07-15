@@ -238,7 +238,8 @@ void partition_balancer_backend::tick() {
           [this] {
               return do_tick().finally([this] {
                   _tick_in_progress = {};
-                  maybe_rearm_timer();
+                  maybe_rearm_timer(
+                    _cur_term && _cur_term->_force_health_report_refresh);
               });
           })
           .handle_exception_type([](balancer_tick_aborted_exception& e) {
@@ -296,8 +297,10 @@ ss::future<> partition_balancer_backend::do_tick() {
 
     auto health_report = co_await _health_monitor.get_cluster_health(
       cluster_report_filter{},
-      force_refresh::no,
+      force_refresh(_cur_term->_force_health_report_refresh),
       model::timeout_clock::now() + controller_stm_sync_timeout);
+    _cur_term->_force_health_report_refresh = false;
+
     if (!health_report) {
         vlog(
           clusterlog.info,
@@ -343,6 +346,9 @@ ss::future<> partition_balancer_backend::do_tick() {
       _state.topics().has_updates_in_progress()
       || plan_data.status == planner_status::actions_planned) {
         _cur_term->last_status = partition_balancer_status::in_progress;
+    } else if (plan_data.status == planner_status::missing_sizes) {
+        _cur_term->_force_health_report_refresh = true;
+        _cur_term->last_status = partition_balancer_status::in_progress;
     } else if (plan_data.status == planner_status::waiting_for_reports) {
         _cur_term->last_status = partition_balancer_status::starting;
     } else if (
@@ -361,7 +367,7 @@ ss::future<> partition_balancer_backend::do_tick() {
           "nodes to rebalance count: {}; on demand rebalance requested: {}; "
           "updates in progress: {}; "
           "action counts: reassignments: {}, cancellations: {}, failed: {}; "
-          "counts rebalancing finished: {}",
+          "counts rebalancing finished: {}, force refresh health report: {}",
           _cur_term->last_status,
           _cur_term->last_violations.unavailable_nodes.size(),
           _cur_term->last_violations.full_nodes.size(),
@@ -371,7 +377,8 @@ ss::future<> partition_balancer_backend::do_tick() {
           plan_data.reassignments.size(),
           plan_data.cancellations.size(),
           plan_data.failed_actions_count,
-          plan_data.counts_rebalancing_finished);
+          plan_data.counts_rebalancing_finished,
+          _cur_term->_force_health_report_refresh);
     }
 
     auto moves_before = _state.topics().updates_in_progress().size();

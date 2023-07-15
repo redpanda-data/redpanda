@@ -137,6 +137,7 @@ private:
           last_tick_decommission_realloc_failures;
 
         bool _ondemand_rebalance_requested = false;
+        bool _force_health_report_refresh = false;
     };
     std::optional<per_term_state> _cur_term;
 
