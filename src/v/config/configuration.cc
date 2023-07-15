@@ -1659,6 +1659,16 @@ configuration::configuration()
       true,
       property<bool>::noop_validator,
       legacy_default<bool>(false, legacy_version{9}))
+  , disk_reservation_percent(
+      *this,
+      "disk_reservation_percent",
+      "The percenage of the disk capacity reserved that Redpanda will not use.",
+      {.needs_restart = needs_restart::no,
+       .example = "20.0",
+       .visibility = visibility::tunable},
+      25.0,
+      property<double>::noop_validator,
+      legacy_default<double>(0.0, legacy_version{9}))
   , cloud_storage_cache_size(
       *this,
       "cloud_storage_cache_size",

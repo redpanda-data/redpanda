@@ -325,6 +325,7 @@ struct configuration final : public config_store {
     property<std::chrono::milliseconds> retention_local_trim_interval;
     property<double> retention_local_trim_overage_coeff;
     property<bool> space_management_enable;
+    property<double> disk_reservation_percent;
 
     // Archival cache
     property<uint64_t> cloud_storage_cache_size;
