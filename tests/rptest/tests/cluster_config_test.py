@@ -1739,3 +1739,85 @@ class ClusterConfigNodeAddTest(RedpandaTest):
         status = self.admin.get_cluster_config_status()
         for n in status:
             assert n['restart'] is False
+
+
+class ClusterConfigLegacyDefaultTest(RedpandaTest, ClusterConfigHelpersMixin):
+    """
+    Test config::legacy_default feature, that defaults for features can be
+    dependent on the original version of an upgraded cluster.
+    """
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+        self.admin = Admin(self.redpanda)
+        self.rpk = RpkTool(self.redpanda)
+        self.installer = self.redpanda._installer
+
+        self.legacy_version = (23, 1)
+
+        # this is synchronized with configuration.cc
+        self.key = 'topic_partitions_per_shard'
+        self.legacy_default = 7000
+        self.new_default = 1000
+
+    def setUp(self):
+        pass
+
+    def _upgrade(self, wipe_cache):
+        self.installer.install(self.redpanda.nodes, RedpandaInstaller.HEAD)
+        for node in self.redpanda.nodes:
+            self.redpanda.stop_node(node)
+
+            if wipe_cache:
+                # Erase the cluster config cache, so that the node will replay from
+                # controller log and/or controller snapshots
+                cache_path = f"{self.redpanda.DATA_DIR}/config_cache.yaml"
+                self.logger.info(
+                    "Erasing config cache on {node.name} at {cache_path}")
+                assert node.account.exists(cache_path)
+                node.account.remove(cache_path)
+
+            self.redpanda.start_node(node)
+
+    @cluster(num_nodes=3)
+    @parametrize(wipe_cache=True)
+    @parametrize(wipe_cache=False)
+    def test_legacy_default(self, wipe_cache: bool):
+        old_version, _ = self.installer.latest_for_line(self.legacy_version)
+        self.installer.install(self.redpanda.nodes, old_version)
+        self.redpanda.start()
+
+        self._check_value_everywhere(self.key, self.legacy_default)
+        self._upgrade(wipe_cache)
+        self._check_value_everywhere(self.key, self.legacy_default)
+
+    @cluster(num_nodes=3)
+    @parametrize(wipe_cache=True)
+    @parametrize(wipe_cache=False)
+    def test_legacy_default_explicit_before_upgrade(self, wipe_cache: bool):
+        old_version, _ = self.installer.latest_for_line(self.legacy_version)
+        self.installer.install(self.redpanda.nodes, old_version)
+
+        expected = self.legacy_default + 1
+        self.redpanda.add_extra_rp_conf({self.key: expected})
+        self.redpanda.start()
+
+        self._check_value_everywhere(self.key, expected)
+        self._upgrade(wipe_cache)
+        self._check_value_everywhere(self.key, expected)
+
+    @cluster(num_nodes=3)
+    @parametrize(wipe_cache=True)
+    @parametrize(wipe_cache=False)
+    def test_legacy_default_explicit_after_upgrade(self, wipe_cache: bool):
+        old_version, _ = self.installer.latest_for_line(self.legacy_version)
+        self.installer.install(self.redpanda.nodes, old_version)
+        self.redpanda.start()
+
+        self._check_value_everywhere(self.key, self.legacy_default)
+
+        self._upgrade(wipe_cache)
+        expected = self.new_default + 1
+        self.redpanda.set_cluster_config({self.key: expected})
+
+        self._check_value_everywhere(self.key, expected)
