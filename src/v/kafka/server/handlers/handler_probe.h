@@ -13,6 +13,9 @@
 
 #include "kafka/protocol/types.h"
 #include "ssx/metrics.h"
+#include "utils/log_hist.h"
+
+#include <optional>
 
 namespace kafka {
 
@@ -22,6 +25,8 @@ namespace kafka {
  */
 class handler_probe {
 public:
+    using hist_t = log_hist_internal;
+
     explicit handler_probe();
     handler_probe(const handler_probe&) = delete;
     handler_probe& operator=(const handler_probe&) = delete;
@@ -48,6 +53,12 @@ public:
 
     void add_bytes_sent(size_t bytes) { _bytes_sent += bytes; }
 
+    void initialize() { _latency = hist_t(); }
+
+    std::unique_ptr<hist_t::measurement> auto_latency_measurement() {
+        return _latency->auto_measure();
+    }
+
 private:
     uint64_t _requests_completed{0};
     uint64_t _requests_errored{0};
@@ -59,6 +70,8 @@ private:
 
     uint64_t _bytes_received{0};
     uint64_t _bytes_sent{0};
+
+    std::optional<hist_t> _latency{std::nullopt};
 };
 
 /**
