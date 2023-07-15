@@ -556,7 +556,10 @@ class LogStorageMaxSizeSI(RedpandaTest):
         # start redpanda with specific config like segment size
         si_settings = SISettings(test_context=self.test_context,
                                  log_segment_size=log_segment_size)
-        extra_rp_conf = {}
+        extra_rp_conf = {
+            'disk_reservation_percent': 0,
+            'retention_local_target_capacity_percent': 100,
+        }
         self.redpanda.set_extra_rp_conf(extra_rp_conf)
         self.redpanda.set_si_settings(si_settings)
         self.redpanda.start()

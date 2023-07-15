@@ -94,6 +94,8 @@ class LogStorageTargetSizeTest(RedpandaTest):
             self.retention_local_trim_interval,
             'retention_local_target_capacity_bytes': target_size,
             'retention_local_is_nonstrict': advisory,
+            'disk_reservation_percent': 0,
+            'retention_local_target_capacity_percent': 100,
         }
 
         # when local retention is advisory, data can expand past the local
