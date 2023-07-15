@@ -506,8 +506,11 @@ class EndToEndShadowIndexingTest(EndToEndShadowIndexingBase):
                                        n=6,
                                        original_snapshot=original_snapshot)
 
+        # Wipe everything and restore from tiered storage.
         self.redpanda.stop()
-        self.redpanda.remove_local_data(self.redpanda.nodes[0])
+        for n in self.redpanda.nodes:
+            self.redpanda.remove_local_data(n)
+
         self.redpanda.restart_nodes(self.redpanda.nodes,
                                     auto_assign_node_id=True,
                                     omit_seeds_on_idx_one=False)
