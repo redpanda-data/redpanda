@@ -130,6 +130,7 @@ class TxKafkaApiTest(RedpandaTest):
         producer2.flush()
 
         txs_info = self.kafka_cli.list_transactions()
+        assert len(txs_info) > 0
         for tx in txs_info:
             tx_info = self.kafka_cli.describe_transaction(
                 tx["TransactionalId"])
