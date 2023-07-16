@@ -330,6 +330,7 @@ struct configuration final : public config_store {
 
     // Archival cache
     property<uint64_t> cloud_storage_cache_size;
+    property<std::optional<double>> cloud_storage_cache_size_percent;
     property<uint32_t> cloud_storage_cache_max_objects;
     property<std::chrono::milliseconds> cloud_storage_cache_check_interval_ms;
     property<std::optional<uint32_t>>
