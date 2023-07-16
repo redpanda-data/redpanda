@@ -55,7 +55,10 @@ public:
         sharded_cache
           .start(
             CACHE_DIR,
+            30_GiB, // disk size
+            config::mock_binding<double>(0.0),
             config::mock_binding<uint64_t>(1_MiB + 500_KiB),
+            config::mock_binding<std::optional<double>>(std::nullopt),
             config::mock_binding<uint32_t>(100000))
           .get();
         sharded_cache
