@@ -1631,6 +1631,17 @@ configuration::configuration()
        .example = "2147483648000",
        .visibility = visibility::user},
       std::nullopt)
+  , retention_local_target_capacity_percent(
+      *this,
+      "retention_local_target_capacity_percent",
+      "The target capacity in percent of unreserved space that log storage "
+      "will try to use before additional retention rules will take over to "
+      "trim data in order to meet the target. When no target is specified "
+      "storage usage is unbounded.",
+      {.needs_restart = needs_restart::no,
+       .example = "70.0",
+       .visibility = visibility::user},
+      std::nullopt)
   , retention_local_trim_interval(
       *this,
       "retention_local_trim_interval",

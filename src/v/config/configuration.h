@@ -322,6 +322,7 @@ struct configuration final : public config_store {
     property<std::chrono::milliseconds> retention_local_target_ms_default;
     property<bool> retention_local_is_nonstrict;
     property<std::optional<uint64_t>> retention_local_target_capacity_bytes;
+    property<std::optional<double>> retention_local_target_capacity_percent;
     property<std::chrono::milliseconds> retention_local_trim_interval;
     property<double> retention_local_trim_overage_coeff;
     property<bool> space_management_enable;
