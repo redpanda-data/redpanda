@@ -56,6 +56,16 @@ struct local_state
         }
     }
 
+    // The non-const version above is used by some internal routines that
+    // manipulate state. This is just for reading.
+    const storage::disk& get_cache_disk() const {
+        if (cache_disk.has_value()) {
+            return cache_disk.value();
+        } else {
+            return data_disk;
+        }
+    }
+
     bool shared_disk() const { return !cache_disk.has_value(); }
 
     /// Report a generalized node-wide disk alert state: this is the worst of
