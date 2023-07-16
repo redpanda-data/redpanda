@@ -1318,8 +1318,16 @@ void application::wire_up_redpanda_services(model::node_id node_id) {
         construct_service(
           shadow_index_cache,
           config::node().cloud_storage_cache_path(),
+          local_monitor.local().get_state_cached().get_cache_disk().total,
+          ss::sharded_parameter([] {
+              return config::shard_local_cfg().disk_reservation_percent.bind();
+          }),
           ss::sharded_parameter([] {
               return config::shard_local_cfg().cloud_storage_cache_size.bind();
+          }),
+          ss::sharded_parameter([] {
+              return config::shard_local_cfg()
+                .cloud_storage_cache_size_percent.bind();
           }),
           ss::sharded_parameter([] {
               return config::shard_local_cfg()
