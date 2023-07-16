@@ -62,26 +62,30 @@ static constexpr std::string_view tmp_extension{".part"};
 
 cache::cache(
   std::filesystem::path cache_dir,
-  config::binding<uint64_t> max_bytes,
+  config::binding<uint64_t> max_bytes_cfg,
   config::binding<uint32_t> max_objects) noexcept
   : _cache_dir(std::move(cache_dir))
-  , _max_bytes(std::move(max_bytes))
+  , _max_bytes_cfg(std::move(max_bytes_cfg))
+  , _max_bytes(_max_bytes_cfg())
   , _max_objects(std::move(max_objects))
   , _cnt(0)
   , _total_cleaned(0) {
     if (ss::this_shard_id() == ss::shard_id{0}) {
-        _max_bytes.watch([this]() {
-            vlog(
-              cst_log.info,
-              "Cache max_bytes adjusted to {} (current size {})",
-              _max_bytes(),
-              _current_cache_size);
-            if (_current_cache_size > _max_bytes()) {
-                ssx::spawn_with_gate(_gate, [this]() {
-                    return ss::with_semaphore(
-                      _cleanup_sm, 1, [this]() { return trim_throttled(); });
-                });
-            }
+        _max_bytes_cfg.watch([this]() { update_max_bytes(); });
+    }
+}
+
+void cache::update_max_bytes() {
+    _max_bytes = _max_bytes_cfg();
+    vlog(
+      cst_log.info,
+      "Cache max_bytes adjusted to {} (current size {})",
+      _max_bytes,
+      _current_cache_size);
+    if (_current_cache_size > _max_bytes) {
+        ssx::spawn_with_gate(_gate, [this]() {
+            return ss::with_semaphore(
+              _cleanup_sm, 1, [this]() { return trim_throttled(); });
         });
     }
 }
@@ -252,7 +256,7 @@ ss::future<> cache::trim(
     // from cache directory by the user manually.
     co_await _access_time_tracker.trim(candidates_for_deletion);
 
-    auto size_limit = size_limit_override.value_or(_max_bytes());
+    auto size_limit = size_limit_override.value_or(_max_bytes);
     auto object_limit = object_limit_override.value_or(_max_objects());
 
     // We aim to trim to within the upper size limit, and additionally
@@ -1062,7 +1066,7 @@ void cache::do_reserve_space_release(
     probe.set_size(_current_cache_size);
     probe.set_num_files(_current_cache_objects);
     if (
-      _current_cache_size > _max_bytes()
+      _current_cache_size > _max_bytes
       || _current_cache_objects > _max_objects()) {
         // This should not happen, because callers to put() should have used
         // reserve_space() to ensure they stay within the cache size limit. This
@@ -1079,14 +1083,14 @@ void cache::do_reserve_space_release(
           _reserved_cache_objects,
           _reservations_pending,
           _reservations_pending_objects,
-          _max_bytes(),
+          _max_bytes,
           _max_objects());
     }
 }
 
 bool cache::may_reserve_space(uint64_t bytes, size_t objects) {
     auto bytes_available = _current_cache_size + _reserved_cache_size + bytes
-                           <= _max_bytes();
+                           <= _max_bytes;
     auto objects_available = _current_cache_objects + _reserved_cache_objects
                                + objects
                              <= _max_objects();
@@ -1107,7 +1111,7 @@ bool cache::may_exceed_limits(uint64_t bytes, size_t objects) {
     // - the put must be blocked by actual cache space unavailable, not just
     //   other reservations.
 
-    auto would_fit_in_cache = _current_cache_size + bytes <= _max_bytes();
+    auto would_fit_in_cache = _current_cache_size + bytes <= _max_bytes;
 
     return !_block_puts && _free_space > bytes * 10
            && _current_cache_objects + _reserved_cache_objects + objects
@@ -1209,7 +1213,7 @@ ss::future<> cache::do_reserve_space(uint64_t bytes, size_t objects) {
                       cst_log.info,
                       "Intentionally exceeding cache size limit {},"
                       "there are {} bytes of free space on the cache disk",
-                      _max_bytes(),
+                      _max_bytes,
                       _free_space);
 
                     // Deduct the amount by which we're about to violate the
