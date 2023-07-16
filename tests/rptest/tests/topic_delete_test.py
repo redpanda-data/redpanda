@@ -259,8 +259,11 @@ class TopicDeleteAfterMovementTest(RedpandaTest):
     topics = (TopicSpec(partition_count=partition_count), )
 
     def __init__(self, test_context):
+        rp_conf = {"partition_autobalancing_mode": "off"}
         super(TopicDeleteAfterMovementTest,
-              self).__init__(test_context=test_context, num_brokers=4)
+              self).__init__(test_context=test_context,
+                             num_brokers=4,
+                             extra_rp_conf=rp_conf)
 
         self.kafka_tools = KafkaCliTools(self.redpanda)
 

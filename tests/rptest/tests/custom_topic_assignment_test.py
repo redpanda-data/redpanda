@@ -20,8 +20,12 @@ from rptest.clients.kafka_cli_tools import KafkaCliTools
 
 class CustomTopicAssignmentTest(RedpandaTest):
     def __init__(self, test_context):
+        # Disable balancer so replicas are not shuffled around after creation
+        rp_conf = {"partition_autobalancing_mode": "off"}
         super(CustomTopicAssignmentTest,
-              self).__init__(test_context=test_context, num_brokers=5)
+              self).__init__(test_context=test_context,
+                             num_brokers=5,
+                             extra_rp_conf=rp_conf)
 
     def create_and_validate(self, name, custom_assignment):
         self.redpanda.logger.info(
