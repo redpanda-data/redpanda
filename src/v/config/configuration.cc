@@ -1654,7 +1654,9 @@ configuration::configuration()
       "space_management_enable",
       "Enable automatic space management.",
       {.needs_restart = needs_restart::no, .visibility = visibility::user},
-      true)
+      true,
+      property<bool>::noop_validator,
+      legacy_default<bool>(false, legacy_version{9}))
   , cloud_storage_cache_size(
       *this,
       "cloud_storage_cache_size",
