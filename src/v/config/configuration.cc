@@ -1689,7 +1689,18 @@ configuration::configuration()
       "cloud_storage_cache_size",
       "Max size of archival cache",
       {.needs_restart = needs_restart::no, .visibility = visibility::user},
-      20_GiB)
+      0,
+      property<uint64_t>::noop_validator,
+      legacy_default<uint64_t>(20_GiB, legacy_version{9}))
+  , cloud_storage_cache_size_percent(
+      *this,
+      "cloud_storage_cache_size_percent",
+      "The maximum size of the archival cache as a percentage of unreserved "
+      "disk space.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::user},
+      20.0,
+      property<std::optional<double>>::noop_validator,
+      legacy_default<std::optional<double>>(std::nullopt, legacy_version{9}))
   , cloud_storage_cache_max_objects(
       *this,
       "cloud_storage_cache_max_objects",
