@@ -1611,9 +1611,9 @@ configuration::configuration()
       "write enabled",
       {.needs_restart = needs_restart::no, .visibility = visibility::user},
       24h)
-  , retention_local_is_advisory(
+  , retention_local_is_nonstrict(
       *this,
-      "retention_local_is_advisory",
+      "retention_local_is_nonstrict",
       "Allow log data to expand past local retention. When enabled, non-local "
       "retention settings are used, and local retention settings are used to "
       "inform data removal policies in low-disk space scenarios.",
