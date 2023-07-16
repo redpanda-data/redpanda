@@ -62,26 +62,71 @@ static constexpr std::string_view tmp_extension{".part"};
 
 cache::cache(
   std::filesystem::path cache_dir,
+  size_t disk_size,
+  config::binding<double> disk_reservation,
   config::binding<uint64_t> max_bytes_cfg,
+  config::binding<std::optional<double>> max_percent,
   config::binding<uint32_t> max_objects) noexcept
   : _cache_dir(std::move(cache_dir))
+  , _disk_size(disk_size)
+  , _disk_reservation(std::move(disk_reservation))
   , _max_bytes_cfg(std::move(max_bytes_cfg))
+  , _max_percent(std::move(max_percent))
   , _max_bytes(_max_bytes_cfg())
   , _max_objects(std::move(max_objects))
   , _cnt(0)
   , _total_cleaned(0) {
     if (ss::this_shard_id() == ss::shard_id{0}) {
+        update_max_bytes(); // initialize _max_bytes
+        _disk_reservation.watch([this]() { update_max_bytes(); });
         _max_bytes_cfg.watch([this]() { update_max_bytes(); });
+        _max_percent.watch([this]() { update_max_bytes(); });
     }
 }
 
 void cache::update_max_bytes() {
-    _max_bytes = _max_bytes_cfg();
+    // amount of data disk reserved for non-redpanda use
+    const uint64_t reservation_size = _disk_size
+                                      * (_disk_reservation() / 100.0);
+
+    // unreserved data disk space
+    const auto usable_size = _disk_size - reservation_size;
+
+    // percent-based target size
+    const uint64_t max_size_pct = usable_size
+                                  * (_max_percent().value_or(0) / 100.0);
+
+    auto max_size_bytes = _max_bytes_cfg();
+    if (max_size_bytes > usable_size) {
+        vlog(
+          cst_log.info,
+          "Clamping requested max bytes {} to usable size {}",
+          max_size_bytes,
+          usable_size);
+        max_size_bytes = usable_size;
+    }
+
+    if (max_size_pct > 0 && max_size_bytes == 0) {
+        // only percent target
+        _max_bytes = max_size_pct;
+    } else if (max_size_pct == 0 && max_size_bytes > 0) {
+        // only bytes target
+        _max_bytes = max_size_bytes;
+    } else {
+        _max_bytes = std::min(max_size_pct, max_size_bytes);
+    }
+
     vlog(
       cst_log.info,
-      "Cache max_bytes adjusted to {} (current size {})",
+      "Cache max_bytes adjusted to {} (current size {}). Disk size {} "
+      "reservation {}% max size {} / {}%",
       _max_bytes,
-      _current_cache_size);
+      _current_cache_size,
+      _disk_size,
+      _disk_reservation(),
+      _max_bytes_cfg(),
+      _max_percent());
+
     if (_current_cache_size > _max_bytes) {
         ssx::spawn_with_gate(_gate, [this]() {
             return ss::with_semaphore(
