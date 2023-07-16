@@ -1630,7 +1630,9 @@ configuration::configuration()
       {.needs_restart = needs_restart::no,
        .example = "2147483648000",
        .visibility = visibility::user},
-      std::nullopt)
+      std::nullopt,
+      property<std::optional<size_t>>::noop_validator,
+      legacy_default<std::optional<size_t>>(std::nullopt, legacy_version{9}))
   , retention_local_target_capacity_percent(
       *this,
       "retention_local_target_capacity_percent",
@@ -1641,7 +1643,9 @@ configuration::configuration()
       {.needs_restart = needs_restart::no,
        .example = "70.0",
        .visibility = visibility::user},
-      std::nullopt)
+      80.0,
+      property<std::optional<double>>::noop_validator,
+      legacy_default<std::optional<double>>(std::nullopt, legacy_version{9}))
   , retention_local_trim_interval(
       *this,
       "retention_local_trim_interval",
