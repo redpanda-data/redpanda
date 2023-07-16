@@ -686,7 +686,7 @@ gc_config disk_log_impl::maybe_override_retention_config(gc_config cfg) const {
      * don't override with local retention settings--let partition data expand
      * up to standard retention settings.
      */
-    if (config::shard_local_cfg().retention_local_is_advisory()) {
+    if (config::shard_local_cfg().retention_local_is_nonstrict()) {
         vlog(
           gclog.trace,
           "[{}] Skipped retention override for topic with remote write "
