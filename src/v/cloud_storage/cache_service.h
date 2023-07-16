@@ -256,8 +256,10 @@ private:
     void set_block_puts(bool);
 
     std::filesystem::path _cache_dir;
-    config::binding<uint64_t> _max_bytes;
+    config::binding<uint64_t> _max_bytes_cfg;
+    uint64_t _max_bytes;
     config::binding<uint32_t> _max_objects;
+    void update_max_bytes();
 
     ss::abort_source _as;
     ss::gate _gate;
