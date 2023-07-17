@@ -71,6 +71,7 @@ add_subdirectory(compat)
 add_subdirectory(rp_util)
 add_subdirectory(resource_mgmt)
 add_subdirectory(migrations)
+add_subdirectory(wasm)
 
 option(ENABLE_GIT_VERSION "Build with Git metadata" OFF)
 
