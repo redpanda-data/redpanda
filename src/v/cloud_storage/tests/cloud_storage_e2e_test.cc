@@ -114,7 +114,7 @@ FIXTURE_TEST(test_produce_consume_from_cloud_with_spillover, e2e_fixture) {
       false);
 
     config::shard_local_cfg().enable_metrics_reporter.set_value(false);
-    config::shard_local_cfg().retention_local_is_nonstrict.set_value(false);
+    config::shard_local_cfg().retention_local_strict.set_value(true);
 
     const model::topic topic_name("tapioca");
     model::ntp ntp(model::kafka_namespace, topic_name, 0);
