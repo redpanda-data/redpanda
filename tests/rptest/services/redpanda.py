@@ -1305,13 +1305,15 @@ class RedpandaServiceCloud(RedpandaServiceK8s):
             resp.raise_for_status()
             return resp.json()
 
-        def _http_post(self, endpoint='', **kwargs):
+        def _http_post(self, base_url=None, endpoint='', **kwargs):
             token = self._get_token()
             headers = {
                 'Authorization': f'Bearer {token}',
                 'Accept': 'application/json'
             }
-            resp = requests.post(f'{self._api_url}{endpoint}',
+            if base_url is None:
+                base_url = self._api_url
+            resp = requests.post(f'{base_url}{endpoint}',
                                  headers=headers,
                                  **kwargs)
             resp.raise_for_status()
