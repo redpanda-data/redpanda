@@ -218,12 +218,14 @@ class RpkTool:
                  username: str = None,
                  password: str = None,
                  sasl_mechanism: str = None,
-                 tls_cert: Optional[tls.Certificate] = None):
+                 tls_cert: Optional[tls.Certificate] = None,
+                 tls_enabled: Optional[bool] = None):
         self._redpanda = redpanda
         self._username = username
         self._password = password
         self._sasl_mechanism = sasl_mechanism
         self._tls_cert = tls_cert
+        self._tls_enabled = tls_enabled
 
     def create_topic(self, topic, partitions=1, replicas=None, config=None):
         def create_topic():
@@ -1011,6 +1013,11 @@ class RpkTool:
                 "tls.cert=" + self._tls_cert.crt,
                 "-X",
                 "tls.ca=" + self._tls_cert.ca.crt,
+            ]
+        if self._tls_enabled:
+            flags += [
+                "-X",
+                "tls.enabled=" + self._tls_enabled,
             ]
         return flags
 
