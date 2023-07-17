@@ -225,8 +225,10 @@ public:
             return;
         }
 
-        if (ov < _legacy_default.value().max_original_version) {
+        if (
+          ov <= _legacy_default.value().max_original_version && is_default()) {
             _default = _legacy_default.value().value;
+            _value = _default;
             // In case someone already made a binding to us early in startup
             notify_watchers(_default);
         }
