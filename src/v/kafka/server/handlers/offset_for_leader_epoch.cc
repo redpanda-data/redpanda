@@ -86,7 +86,7 @@ static ss::future<std::vector<epoch_end_offset>> fetch_offsets_from_shard(
             ret.push_back(response_t::make_epoch_end_offset(
               r.ntp.tp.partition,
               get_epoch_end_offset(r.requested_epoch, *p),
-              p->leader_epoch()));
+              r.requested_epoch));
         }
         return ret;
     });

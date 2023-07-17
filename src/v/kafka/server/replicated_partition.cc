@@ -284,6 +284,11 @@ std::optional<model::offset> replicated_partition::get_leader_epoch_last_offset(
     const model::term_id term(epoch);
     const auto first_local_offset = _partition->start_offset();
     const auto first_local_term = _partition->get_term(first_local_offset);
+    const auto last_local_term = _partition->term();
+    if (term > last_local_term) {
+        // Request for term that is in the future
+        return std::nullopt;
+    }
     // Look for the highest offset in the requested term, or the first offset
     // in the next term. This mirrors behavior in Kafka, see
     // https://github.com/apache/kafka/blob/97105a8e5812135515f5a0fa4d5ff554d80df2fe/storage/src/main/java/org/apache/kafka/storage/internals/epoch/LeaderEpochFileCache.java#L255-L281
