@@ -9,10 +9,12 @@
 
 #include "compression/compression.h"
 
+#include "compression/async_stream_zstd.h"
 #include "compression/internal/gzip_compressor.h"
 #include "compression/internal/lz4_frame_compressor.h"
 #include "compression/internal/snappy_java_compressor.h"
 #include "compression/internal/zstd_compressor.h"
+#include "units.h"
 #include "vassert.h"
 #include "vlog.h"
 
@@ -51,7 +53,7 @@ iobuf compressor::compress(const iobuf& io, type t) {
 iobuf compressor::uncompress(const iobuf& io, type t) {
     if (io.empty()) {
         throw std::runtime_error(
-          fmt::format("Asked to decomrpess:{} an empty buffer:{}", (int)t, io));
+          fmt::format("Asked to decompress:{} an empty buffer:{}", (int)t, io));
     }
     switch (t) {
     case type::none:
@@ -67,6 +69,32 @@ iobuf compressor::uncompress(const iobuf& io, type t) {
         return internal::zstd_compressor::uncompress(io);
     default:
         vassert(false, "Cannot uncompress type {}", t);
+    }
+}
+
+ss::future<iobuf> stream_compressor::compress(iobuf io, type t) {
+    switch (t) {
+    case type::none:
+        return ss::make_exception_future<iobuf>(
+          std::runtime_error("compressor: nothing to compress for 'none'"));
+    case type::zstd:
+        return compression::async_stream_zstd_instance().compress(
+          std::move(io));
+    default:
+        return ss::make_ready_future<iobuf>(compressor::compress(io, t));
+    }
+}
+ss::future<iobuf> stream_compressor::uncompress(iobuf io, type t) {
+    if (io.empty()) {
+        return ss::make_exception_future<iobuf>(std::runtime_error(fmt::format(
+          "Asked to decompress:{} an empty buffer:{}", (int)t, io)));
+    }
+    switch (t) {
+    case type::zstd:
+        return compression::async_stream_zstd_instance().uncompress(
+          std::move(io));
+    default:
+        return ss::make_ready_future<iobuf>(compressor::uncompress(io, t));
     }
 }
 
