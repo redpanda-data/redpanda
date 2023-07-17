@@ -904,6 +904,7 @@ class ShadowIndexingManyPartitionsTest(PreallocNodesTest):
         Test that reproduces an OOM when doing recovery with a large dataset in
         the bucket.
         """
+        # A dummy change so I can run this a bunch on CI
         producer = KgoVerifierProducer(self.test_context,
                                        self.redpanda,
                                        self.topic,
