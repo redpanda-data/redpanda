@@ -313,6 +313,12 @@ FIXTURE_TEST(retention_by_time_with_remote_write, gc_fixture) {
 
     config::shard_local_cfg().get("cloud_storage_enabled").set_value(true);
 
+    // this test assumes that retention overrides are applied, which they are
+    // not, if operating in nonstrict mode.
+    config::shard_local_cfg()
+      .get("retention_local_is_nonstrict")
+      .set_value(false);
+
     storage::ntp_config config{
       storage::log_builder_ntp(), builder.get_log_config().base_dir};
 
