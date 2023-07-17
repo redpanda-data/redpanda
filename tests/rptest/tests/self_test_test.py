@@ -22,6 +22,12 @@ from math import comb
 
 class SelfTestTest(RedpandaTest):
     """Tests for the redpanda self test feature."""
+
+    SELF_TEST_SHUTDOWN_LOG = [
+        re.compile(
+            ".*self test finished with error: rpc::errc::shutting_down.*")
+    ]
+
     def __init__(self, ctx):
         super(SelfTestTest, self).__init__(test_context=ctx)
         self._rpk = RpkTool(self.redpanda)
@@ -105,7 +111,8 @@ class SelfTestTest(RedpandaTest):
                 sxs = netcheck_pairings.get(server, [])
                 assert client not in sxs
 
-    @cluster(num_nodes=3, log_allow_list=RESTART_LOG_ALLOW_LIST)
+    @cluster(num_nodes=3,
+             log_allow_list=RESTART_LOG_ALLOW_LIST + SELF_TEST_SHUTDOWN_LOG)
     def test_self_test_node_crash(self):
         """Assert the self test starts/completes with success."""
         self._rpk.self_test_start(3000, 3000)
