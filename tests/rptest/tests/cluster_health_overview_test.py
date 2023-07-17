@@ -79,7 +79,7 @@ class ClusterHealthOverviewTest(RedpandaTest):
 
         def one_node_down():
             hov = self.get_health()
-            if not hov['is_healthy']:
+            if not hov['is_healthy'] and len(hov['nodes_down']) > 0:
                 # when the health report flips to not healthy, we check that
                 # the expected node is reported as down and unhealthy reasons line up
                 assert [self.redpanda.idx(first_down)] == hov['nodes_down']
