@@ -1293,7 +1293,7 @@ class RedpandaServiceCloud(RedpandaServiceK8s):
                 self._token = j['access_token']
             return self._token
 
-        def _http_get(self, endpoint, **kwargs):
+        def _http_get(self, endpoint='', **kwargs):
             token = self._get_token()
             headers = {
                 'Authorization': f'Bearer {token}',
@@ -1305,7 +1305,7 @@ class RedpandaServiceCloud(RedpandaServiceK8s):
             resp.raise_for_status()
             return resp.json()
 
-        def _http_post(self, endpoint, **kwargs):
+        def _http_post(self, endpoint='', **kwargs):
             token = self._get_token()
             headers = {
                 'Authorization': f'Bearer {token}',
@@ -1317,7 +1317,7 @@ class RedpandaServiceCloud(RedpandaServiceK8s):
             resp.raise_for_status()
             return resp.json()
 
-        def _http_delete(self, endpoint, **kwargs):
+        def _http_delete(self, endpoint='', **kwargs):
             token = self._get_token()
             headers = {
                 'Authorization': f'Bearer {token}',
@@ -1333,14 +1333,15 @@ class RedpandaServiceCloud(RedpandaServiceK8s):
             name = f'rp-ducktape-ns-{self._unique_id}'  # e.g. rp-ducktape-ns-3b36f516
             self._logger.debug(f'creating namespace name {name}')
             body = {'name': name}
-            r = self._http_post('/api/v1/namespaces', json=body)
+            r = self._http_post(endpoint='/api/v1/namespaces', json=body)
             self._logger.debug(f'created namespaceUuid {r["id"]}')
             return r['id']
 
         def _cluster_ready(self, namespace_uuid, name):
             self._logger.debug(f'checking readiness of cluster {name}')
             params = {'namespaceUuid': namespace_uuid}
-            clusters = self._http_get('/api/v1/clusters', params=params)
+            clusters = self._http_get(endpoint='/api/v1/clusters',
+                                      params=params)
             for c in clusters:
                 if c['name'] == name:
                     if c['state'] == 'ready':
@@ -1357,7 +1358,8 @@ class RedpandaServiceCloud(RedpandaServiceK8s):
             """
 
             params = {'namespaceUuid': namespace_uuid}
-            clusters = self._http_get('/api/v1/clusters', params=params)
+            clusters = self._http_get(endpoint='/api/v1/clusters',
+                                      params=params)
             for c in clusters:
                 if c['name'] == name:
                     return c['id']
@@ -1370,7 +1372,7 @@ class RedpandaServiceCloud(RedpandaServiceK8s):
             """
 
             versions = self._http_get(
-                '/api/v1/clusters-resources/install-pack-versions')
+                endpoint='/api/v1/clusters-resources/install-pack-versions')
             latest_version = ''
             for v in versions:
                 if v['certified'] and v['version'] > latest_version:
@@ -1389,8 +1391,8 @@ class RedpandaServiceCloud(RedpandaServiceK8s):
             """
 
             params = {'cluster_type': cluster_type}
-            regions = self._http_get('/api/v1/clusters-resources/regions',
-                                     params=params)
+            regions = self._http_get(
+                endpoint='/api/v1/clusters-resources/regions', params=params)
             for r in regions[provider]:
                 if r['name'] == region:
                     return r['id']
@@ -1418,8 +1420,8 @@ class RedpandaServiceCloud(RedpandaServiceK8s):
                 'region': region,
                 'install_pack_version': install_pack_ver
             }
-            products = self._http_get('/api/v1/clusters-resources/products',
-                                      params=params)
+            products = self._http_get(
+                endpoint='/api/v1/clusters-resources/products', params=params)
             for p in products:
                 if p['redpandaConfigProfileName'] == config_profile_name:
                     return p['id']
@@ -1484,7 +1486,8 @@ class RedpandaServiceCloud(RedpandaServiceK8s):
 
             self._logger.debug(f'body: {json.dumps(body)}')
 
-            r = self._http_post('/api/v1/workflows/network-cluster', json=body)
+            r = self._http_post(endpoint='/api/v1/workflows/network-cluster',
+                                json=body)
 
             self._logger.info(
                 f'waiting for creation of cluster {name} namespaceUuid {r["namespaceUuid"]}, checking every {self.CHECK_BACKOFF_SEC} seconds'
@@ -1510,17 +1513,19 @@ class RedpandaServiceCloud(RedpandaServiceK8s):
                     f'cluster_id is empty, unable to delete cluster')
                 return
 
-            resp = self._http_get(f'/api/v1/clusters/{self.cluster_id}')
+            resp = self._http_get(
+                endpoint=f'/api/v1/clusters/{self.cluster_id}')
             namespace_uuid = resp['namespaceUuid']
 
-            resp = self._http_delete(f'/api/v1/clusters/{self.cluster_id}')
+            resp = self._http_delete(
+                endpoint=f'/api/v1/clusters/{self.cluster_id}')
             self._logger.debug(f'resp: {json.dumps(resp)}')
             self._cluster_id = ''
 
             # skip namespace deletion to avoid error because cluster delete not complete yet
             if self._delete_namespace:
                 resp = self._http_delete(
-                    f'/api/v1/namespaces/{namespace_uuid}')
+                    endpoint=f'/api/v1/namespaces/{namespace_uuid}')
                 self._logger.debug(f'resp: {json.dumps(resp)}')
 
     def __init__(self, context, num_brokers, tier_name: str):
