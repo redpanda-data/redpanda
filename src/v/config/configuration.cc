@@ -1618,7 +1618,9 @@ configuration::configuration()
       "retention settings are used, and local retention settings are used to "
       "inform data removal policies in low-disk space scenarios.",
       {.needs_restart = needs_restart::no, .visibility = visibility::user},
-      false)
+      true,
+      property<bool>::noop_validator,
+      legacy_default<bool>(false, legacy_version{9}))
   , retention_local_target_capacity_bytes(
       *this,
       "retention_local_target_capacity_bytes",
