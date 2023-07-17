@@ -324,3 +324,18 @@ ExternalProject_Add(protobuf
     -Dprotobuf_BUILD_TESTS=OFF
     ${common_cmake_args}
 )
+
+ExternalProject_Add(WasmEdge
+  GIT_REPOSITORY https://github.com/WasmEdge/WasmEdge
+  GIT_TAG 0.13.1
+  DEPENDS ${default_depends}
+  INSTALL_DIR @REDPANDA_DEPS_INSTALL_DIR@
+  CMAKE_COMMAND ${CMAKE_COMMAND} -E env ${cmake_build_env} ${CMAKE_COMMAND}
+  CMAKE_ARGS
+    ${common_cmake_args}
+    -DBUILD_SHARED_LIBS=OFF
+    -DWASMEDGE_BUILD_SHARED_LIB=ON
+    -DWASMEDGE_BUILD_AOT_RUNTIME=OFF
+    -DWASMEDGE_BUILD_STATIC_LIB=OFF
+    -DWASMEDGE_BUILD_PLUGINS=OFF
+)
