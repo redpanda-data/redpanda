@@ -187,6 +187,11 @@ public:
 
     result<partition_info> get_partition_info() const final;
 
+    cluster::notification_id_type
+    register_on_write_notification(ss::noncopyable_function<void()> cb) final;
+
+    void unregister_on_write_notification(cluster::notification_id_type) final;
+
 private:
     // Returns the Kafka offset corresponding to the lowest offset in the
     // log, including local and cloud storage. Doesn't take into account any

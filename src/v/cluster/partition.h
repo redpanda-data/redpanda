@@ -432,6 +432,15 @@ public:
 
     ss::future<> unsafe_reset_remote_partition_manifest(iobuf buf);
 
+    /**
+     * **Best effort** notifications for when new writes are committed (have
+     * been replicated on the majority) on the partition.
+     */
+    cluster::notification_id_type
+      register_on_write_notification(ss::noncopyable_function<void()>);
+
+    void unregister_on_write_notification(cluster::notification_id_type);
+
 private:
     ss::future<std::optional<storage::timequery_result>>
       cloud_storage_timequery(storage::timequery_config);
@@ -440,6 +449,9 @@ private:
 
     ss::future<std::optional<storage::timequery_result>>
       local_timequery(storage::timequery_config);
+
+    void notify_write_completion() const;
+    kafka_stages wrap_in_write_notification_on_completion(kafka_stages);
 
     consensus_ptr _raft;
     ss::shared_ptr<util::mem_tracker> _partition_mem_tracker;
@@ -474,6 +486,14 @@ private:
     ss::sharded<archival::upload_housekeeping_service>& _upload_housekeeping;
 
     storage::kvstore& _kvstore;
+
+    cluster::notification_id_type _latest_id
+      = cluster::notification_id_type_invalid;
+
+    absl::flat_hash_map<
+      cluster::notification_id_type,
+      ss::noncopyable_function<void()>>
+      _write_notifications;
 
     friend std::ostream& operator<<(std::ostream& o, const partition& x);
 };

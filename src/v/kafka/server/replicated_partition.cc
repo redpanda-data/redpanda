@@ -510,4 +510,15 @@ result<partition_info> replicated_partition::get_partition_info() const {
     return {std::move(ret)};
 }
 
+cluster::notification_id_type
+replicated_partition::register_on_write_notification(
+  ss::noncopyable_function<void()> cb) {
+    return _partition->register_on_write_notification(std::move(cb));
+}
+
+void replicated_partition::unregister_on_write_notification(
+  cluster::notification_id_type id) {
+    _partition->unregister_on_write_notification(id);
+}
+
 } // namespace kafka
