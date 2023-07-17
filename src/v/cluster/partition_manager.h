@@ -53,11 +53,12 @@ public:
 
     using manage_cb_t
       = ss::noncopyable_function<void(ss::lw_shared_ptr<partition>)>;
-    using unmanage_cb_t = ss::noncopyable_function<void(model::partition_id)>;
+    using unmanage_cb_t
+      = ss::noncopyable_function<void(model::topic_partition_view)>;
 
     /// \brief Copies table with ntps matching a given topic namespace
     ntp_table_container
-    get_topic_partition_table(const model::topic_namespace&) const;
+      get_topic_partition_table(model::topic_namespace_view) const;
 
     inline ss::lw_shared_ptr<partition>
     get(const model::any_ntp auto& ntp) const {
@@ -105,9 +106,6 @@ public:
      * synchronously so the caller must be prepared for that.
      *
      * the callback must not block.
-     *
-     * we don't currently have any mechanism for un-managing partitions, so
-     * that interface is non-existent.
      */
     notification_id_type register_manage_notification(
       const model::ns& ns, const model::topic& topic, manage_cb_t cb) {
@@ -117,8 +115,9 @@ public:
          * partitions.
          */
         ntp_callbacks<manage_cb_t> init;
-        init.register_notify(
-          ns, topic, [&cb](ss::lw_shared_ptr<partition> p) { cb(p); });
+        init.register_notify(ns, topic, [&cb](ss::lw_shared_ptr<partition> p) {
+            cb(std::move(p));
+        });
         for (auto& e : _ntp_table) {
             init.notify(e.first, e.second);
         }
@@ -126,20 +125,28 @@ public:
         // now setup the permenant callback for new partitions
         return _manage_watchers.register_notify(ns, topic, std::move(cb));
     }
+    notification_id_type
+    register_manage_notification(const model::ns& ns, manage_cb_t cb) {
+        ntp_callbacks<manage_cb_t> init;
+        init.register_notify(
+          ns, [&cb](ss::lw_shared_ptr<partition> p) { cb(std::move(p)); });
+        for (auto& e : _ntp_table) {
+            init.notify(e.first, e.second);
+        }
+        return _manage_watchers.register_notify(ns, std::move(cb));
+    }
 
     /*
      * register for notification of partitions within the specific topic
-     * being removed from manager. this will invoke the callback for existing
-     * partitions synchronously so the caller must be prepared for that.
-     *
-     * the callback must not block.
-     *
-     * we don't currently have any mechanism for un-managing partitions, so
-     * that interface is non-existent.
+     * being removed from manager. the callback must not block.
      */
     notification_id_type register_unmanage_notification(
       const model::ns& ns, const model::topic& topic, unmanage_cb_t cb) {
         return _unmanage_watchers.register_notify(ns, topic, std::move(cb));
+    }
+    notification_id_type
+    register_unmanage_notification(const model::ns& ns, unmanage_cb_t cb) {
+        return _unmanage_watchers.register_notify(ns, std::move(cb));
     }
 
     void unregister_manage_notification(notification_id_type id) {

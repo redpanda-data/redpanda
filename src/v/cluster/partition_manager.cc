@@ -96,7 +96,7 @@ partition_manager::~partition_manager() {
 
 partition_manager::ntp_table_container
 partition_manager::get_topic_partition_table(
-  const model::topic_namespace& tn) const {
+  model::topic_namespace_view tn) const {
     ntp_table_container rs;
     for (const auto& p : _ntp_table) {
         if (p.second->ntp().ns == tn.ns && p.second->ntp().tp.topic == tn.tp) {
@@ -302,7 +302,7 @@ partition_manager::do_shutdown(ss::lw_shared_ptr<partition> partition) {
     try {
         auto ntp = partition->ntp();
         co_await _raft_manager.local().shutdown(partition->raft());
-        _unmanage_watchers.notify(ntp, ntp.tp.partition);
+        _unmanage_watchers.notify(ntp, model::topic_partition_view(ntp.tp));
         co_await partition->stop();
         co_await _storage.log_mgr().shutdown(partition->ntp());
     } catch (...) {
@@ -334,7 +334,9 @@ partition_manager::remove(const model::ntp& ntp, partition_removal_mode mode) {
 
     return _raft_manager.local()
       .remove(partition->raft())
-      .then([this, ntp] { _unmanage_watchers.notify(ntp, ntp.tp.partition); })
+      .then([this, ntp] {
+          _unmanage_watchers.notify(ntp, model::topic_partition_view(ntp.tp));
+      })
       .then([partition] { return partition->stop(); })
       .then([partition] { return partition->remove_persistent_state(); })
       .then([this, ntp] { return _storage.log_mgr().remove(ntp); })
