@@ -18,7 +18,7 @@ import (
 	"encoding/json"
 	"k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	runtime "k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime"
 	timex "time"
 )
 
@@ -1077,7 +1077,8 @@ func (in *RedpandaConsole) DeepCopyInto(out *RedpandaConsole) {
 	}
 	if in.Config != nil {
 		in, out := &in.Config, &out.Config
-		*out = (*in).DeepCopy()
+		*out = new(runtime.RawExtension)
+		(*in).DeepCopyInto(*out)
 	}
 }
 
