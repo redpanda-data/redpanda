@@ -694,6 +694,71 @@ FIXTURE_TEST(test_async_manifest_view_retention, async_manifest_view_fixture) {
     BOOST_REQUIRE_EQUAL(rr6.value().delta, prefix_delta);
 }
 
+FIXTURE_TEST(test_async_manifest_view_after_gc, async_manifest_view_fixture) {
+    /*
+     * This test checks that that retention uses the archive clean offset
+     * as its starting point. It artificially advances the archive start
+     * offset and expects for the truncation point to be set past the end
+     * of the first segment in the "active" archive.
+     */
+    std::vector<segment_meta> expected;
+    collect_segments_to(expected);
+    for (int i = 0; i < 2; i++) {
+        generate_manifest_section(100);
+    }
+
+    listen();
+
+    size_t total_size = 0;
+    for (const auto& meta : expected) {
+        total_size += meta.size_bytes;
+    }
+
+    const auto& first_seg = expected[0];
+    const auto& second_seg = expected[1];
+    const auto& third_seg = expected[2];
+
+    BOOST_REQUIRE(first_seg.size_bytes == second_seg.size_bytes);
+
+    stm_manifest.set_archive_start_offset(
+      second_seg.base_offset, second_seg.delta_offset);
+
+    size_t size_limit = total_size - 2 * first_seg.size_bytes;
+
+    // The first attempt to compute retention is before the clean offset was
+    // advanced. At this point the manifest has not updated it's archive size
+    // (it's total_size).
+    vlog(
+      test_log.info,
+      "Triggering size based retention, current archive start offset: "
+      "{}, current archive clean offset: {}, expected offset: {}",
+      stm_manifest.get_archive_start_offset(),
+      stm_manifest.get_archive_clean_offset(),
+      second_seg.base_offset);
+    auto res = view.compute_retention(size_limit, std::nullopt).get();
+
+    BOOST_REQUIRE(res.has_value());
+    BOOST_REQUIRE_EQUAL(res.value().offset, third_seg.base_offset);
+    BOOST_REQUIRE_EQUAL(res.value().delta, third_seg.delta_offset);
+
+    // Compute retention again after updating the clean offset and the archive
+    // size. In order to get the correct result, `first_seg` must be skipped.
+    stm_manifest.set_archive_clean_offset(
+      second_seg.base_offset, first_seg.size_bytes);
+    vlog(
+      test_log.info,
+      "Triggering size based retention, current archive start offset: "
+      "{}, current archive clean offset: {}, expected offset: {}",
+      stm_manifest.get_archive_start_offset(),
+      stm_manifest.get_archive_clean_offset(),
+      second_seg.base_offset);
+    auto res2 = view.compute_retention(size_limit, std::nullopt).get();
+
+    BOOST_REQUIRE(res2.has_value());
+    BOOST_REQUIRE_EQUAL(res2.value().offset, third_seg.base_offset);
+    BOOST_REQUIRE_EQUAL(res2.value().delta, third_seg.delta_offset);
+}
+
 FIXTURE_TEST(
   test_async_manifest_view_last_offset_term, async_manifest_view_fixture) {
     // Test prologue: set up two spillover manifests and the stm
