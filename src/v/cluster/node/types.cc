@@ -69,7 +69,7 @@ void local_state::serde_read(iobuf_parser& in, const serde::header& h) {
         }
     }
 
-    if (h._version >= 1) {
+    if (h._version >= 2) {
         log_data_size = serde::read_nested<std::optional<log_data_state>>(
           in, 0);
     }
