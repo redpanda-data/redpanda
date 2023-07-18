@@ -1641,10 +1641,10 @@ configuration::configuration()
       "trim data in order to meet the target. When no target is specified "
       "storage usage is unbounded.",
       {.needs_restart = needs_restart::no,
-       .example = "70.0",
+       .example = "80.0",
        .visibility = visibility::user},
       80.0,
-      property<std::optional<double>>::noop_validator,
+      {.min = 0.0, .max = 100.0},
       legacy_default<std::optional<double>>(std::nullopt, legacy_version{9}))
   , retention_local_trim_interval(
       *this,
@@ -1679,10 +1679,10 @@ configuration::configuration()
       "disk_reservation_percent",
       "The percenage of the disk capacity reserved that Redpanda will not use.",
       {.needs_restart = needs_restart::no,
-       .example = "20.0",
+       .example = "25.0",
        .visibility = visibility::tunable},
       25.0,
-      property<double>::noop_validator,
+      {.min = 0.0, .max = 100.0},
       legacy_default<double>(0.0, legacy_version{9}))
   , cloud_storage_cache_size(
       *this,
@@ -1697,9 +1697,11 @@ configuration::configuration()
       "cloud_storage_cache_size_percent",
       "The maximum size of the archival cache as a percentage of unreserved "
       "disk space.",
-      {.needs_restart = needs_restart::no, .visibility = visibility::user},
+      {.needs_restart = needs_restart::no,
+       .example = "20.0",
+       .visibility = visibility::user},
       20.0,
-      property<std::optional<double>>::noop_validator,
+      {.min = 0.0, .max = 100.0},
       legacy_default<std::optional<double>>(std::nullopt, legacy_version{9}))
   , cloud_storage_cache_max_objects(
       *this,
