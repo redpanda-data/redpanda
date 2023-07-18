@@ -53,10 +53,8 @@ public:
 
     void add_bytes_sent(size_t bytes) { _bytes_sent += bytes; }
 
-    void initialize() { _latency = hist_t(); }
-
     std::unique_ptr<hist_t::measurement> auto_latency_measurement() {
-        return _latency->auto_measure();
+        return _latency.auto_measure();
     }
 
 private:
