@@ -99,6 +99,7 @@ public:
         config::shard_local_cfg()
           .cloud_storage_spillover_manifest_size.set_value(
             std::optional<size_t>{});
+        config::shard_local_cfg().retention_local_strict.set_value(true);
 
         topic_name = model::topic("tapioca");
         ntp = model::ntp(model::kafka_namespace, topic_name, 0);

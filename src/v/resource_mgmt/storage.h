@@ -27,7 +27,10 @@ class cache;
 
 namespace cluster {
 class partition_manager;
+namespace node {
+class local_monitor;
 }
+} // namespace cluster
 
 namespace storage {
 
@@ -215,7 +218,10 @@ class disk_space_manager {
 public:
     disk_space_manager(
       config::binding<bool> enabled,
-      config::binding<std::optional<uint64_t>> log_storage_target_size,
+      config::binding<std::optional<uint64_t>> retention_target_capacity_bytes,
+      config::binding<std::optional<double>> retention_target_capacity_percent,
+      config::binding<double> disk_reservation_percent,
+      ss::sharded<cluster::node::local_monitor>* local_monitor,
       ss::sharded<storage::api>* storage,
       ss::sharded<storage::node>* storage_node,
       ss::sharded<cloud_storage::cache>* cache,
@@ -232,6 +238,7 @@ public:
 
 private:
     config::binding<bool> _enabled;
+    ss::sharded<cluster::node::local_monitor>* _local_monitor;
     ss::sharded<storage::api>* _storage;
     ss::sharded<storage::node>* _storage_node;
     ss::sharded<cloud_storage::cache>* _cache;
@@ -244,7 +251,12 @@ private:
     node::disk_space_info _data_disk_info{};
 
     ss::future<> manage_data_disk(uint64_t target_size);
-    config::binding<std::optional<uint64_t>> _log_storage_target_size;
+    config::binding<std::optional<uint64_t>> _retention_target_capacity_bytes;
+    config::binding<std::optional<double>> _retention_target_capacity_percent;
+    config::binding<double> _disk_reservation_percent;
+    size_t _data_disk_size;
+    size_t _target_size;
+    void update_target_size();
 
     eviction_policy _policy;
 

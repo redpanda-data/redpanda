@@ -1611,14 +1611,17 @@ configuration::configuration()
       "write enabled",
       {.needs_restart = needs_restart::no, .visibility = visibility::user},
       24h)
-  , retention_local_is_advisory(
+  , retention_local_strict(
       *this,
-      "retention_local_is_advisory",
-      "Allow log data to expand past local retention. When enabled, non-local "
-      "retention settings are used, and local retention settings are used to "
-      "inform data removal policies in low-disk space scenarios.",
+      "retention_local_strict",
+      "Trim log data when a cloud topic reaches its local retention limit. "
+      "When this option is disabled Redpanda will allow partitions to grow "
+      "past the local retention limit, and will be trimmed automatically as "
+      "storage reaches the configured target size.",
       {.needs_restart = needs_restart::no, .visibility = visibility::user},
-      false)
+      false,
+      property<bool>::noop_validator,
+      legacy_default<bool>(true, legacy_version{9}))
   , retention_local_target_capacity_bytes(
       *this,
       "retention_local_target_capacity_bytes",
@@ -1628,7 +1631,22 @@ configuration::configuration()
       {.needs_restart = needs_restart::no,
        .example = "2147483648000",
        .visibility = visibility::user},
-      std::nullopt)
+      std::nullopt,
+      property<std::optional<size_t>>::noop_validator,
+      legacy_default<std::optional<size_t>>(std::nullopt, legacy_version{9}))
+  , retention_local_target_capacity_percent(
+      *this,
+      "retention_local_target_capacity_percent",
+      "The target capacity in percent of unreserved space (see "
+      "disk_reservation_percent) that log storage will try to use before "
+      "additional retention rules will take over to trim data in order to meet "
+      "the target. When no target is specified storage usage is unbounded.",
+      {.needs_restart = needs_restart::no,
+       .example = "80.0",
+       .visibility = visibility::user},
+      80.0,
+      {.min = 0.0, .max = 100.0},
+      legacy_default<std::optional<double>>(std::nullopt, legacy_version{9}))
   , retention_local_trim_interval(
       *this,
       "retention_local_trim_interval",
@@ -1649,12 +1667,50 @@ configuration::configuration()
        .example = "1.8",
        .visibility = visibility::tunable},
       2.0)
+  , space_management_enable(
+      *this,
+      "space_management_enable",
+      "Enable automatic space management.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::user},
+      true,
+      property<bool>::noop_validator,
+      legacy_default<bool>(false, legacy_version{9}))
+  , disk_reservation_percent(
+      *this,
+      "disk_reservation_percent",
+      "The percenage of total disk capacity that Redpanda will avoid using. "
+      "This applies both when cloud cache and log data share a disk, as well "
+      "as when cloud cache uses a dedicated disk. It is recommended to not run "
+      "disks near capacity to avoid blocking I/O due to low disk space, as "
+      "well as avoiding performance issues associated with SSD garbage "
+      "collection.",
+      {.needs_restart = needs_restart::no,
+       .example = "25.0",
+       .visibility = visibility::tunable},
+      25.0,
+      {.min = 0.0, .max = 100.0},
+      legacy_default<double>(0.0, legacy_version{9}))
   , cloud_storage_cache_size(
       *this,
       "cloud_storage_cache_size",
       "Max size of archival cache",
       {.needs_restart = needs_restart::no, .visibility = visibility::user},
-      20_GiB)
+      0,
+      property<uint64_t>::noop_validator,
+      legacy_default<uint64_t>(20_GiB, legacy_version{9}))
+  , cloud_storage_cache_size_percent(
+      *this,
+      "cloud_storage_cache_size_percent",
+      "The maximum size of the archival cache as a percentage of unreserved "
+      "disk space (see disk_reservation_percent). The default value for this "
+      "option is tuned for a shared disk configuration. When using a dedicated "
+      "cache disk consider increasing the value.",
+      {.needs_restart = needs_restart::no,
+       .example = "20.0",
+       .visibility = visibility::user},
+      20.0,
+      {.min = 0.0, .max = 100.0},
+      legacy_default<std::optional<double>>(std::nullopt, legacy_version{9}))
   , cloud_storage_cache_max_objects(
       *this,
       "cloud_storage_cache_max_objects",
@@ -2003,13 +2059,6 @@ configuration::configuration()
       "the data directory. Redpanda will refuse to start if it is not found.",
       {.needs_restart = needs_restart::no, .visibility = visibility::user},
       false)
-  , enable_storage_space_manager(
-      *this,
-      "enable_storage_space_manager",
-      "Enable the storage space manager that coordinates and control space "
-      "usage between log data and the cloud storage cache.",
-      {.needs_restart = needs_restart::no, .visibility = visibility::user},
-      true)
   , memory_abort_on_alloc_failure(
       *this,
       "memory_abort_on_alloc_failure",

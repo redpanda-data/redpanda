@@ -87,6 +87,13 @@ ss::future<> local_monitor::update_state() {
     update_alert_state(new_state);
 
     _state = new_state;
+
+    /*
+     * this is overriden by space management once it starts up. the default
+     * value is nullopt which indicates this early state.
+     */
+    _state.log_data_size = _log_data_state;
+
     co_return co_await update_disk_metrics();
 }
 

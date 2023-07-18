@@ -61,6 +61,22 @@ namespace storage {
  * transaction manager topic.
  *
  * Once controller snapshots are enabled this rule will relaxed accordingly.
+ *
+ * Interaction with space management
+ * =================================
+ *
+ * We leave some topics exempt (for now) from trimming even when space
+ * management is turned on.
+ *
+ *    * Controller: control space using new snapshot mechanism
+ *    * Consumer groups, transactions, producer ids, etc...
+ *
+ * The main concern with consumer groups is performance: changes in leadership
+ * of a CG partition trigger a full replay of the consumer group partition. If
+ * it is allowed to be swapped to cloud tier, then performance issues will arise
+ * from normal cluster operation (leadershp movement) and this cost is not
+ * driven / constrained by historical reads. Similarly for transactions and
+ * idempotence. Controller topic should space can be managed by snapshots.
  */
 bool deletion_exempt(const model::ntp& ntp) {
     bool is_internal_namespace = ntp.ns() == model::redpanda_ns
@@ -670,7 +686,7 @@ gc_config disk_log_impl::maybe_override_retention_config(gc_config cfg) const {
      * don't override with local retention settings--let partition data expand
      * up to standard retention settings.
      */
-    if (config::shard_local_cfg().retention_local_is_advisory()) {
+    if (!config::shard_local_cfg().retention_local_strict()) {
         vlog(
           gclog.trace,
           "[{}] Skipped retention override for topic with remote write "
@@ -1969,12 +1985,21 @@ log make_disk_backed_log(
  * assumes that the compaction gate is held.
  */
 ss::future<std::pair<usage, reclaim_size_limits>>
-disk_log_impl::disk_usage_and_reclaimable_space(gc_config cfg) {
+disk_log_impl::disk_usage_and_reclaimable_space(gc_config input_cfg) {
     std::optional<model::offset> max_offset;
     if (config().is_collectable()) {
-        cfg = apply_overrides(cfg);
+        auto cfg = apply_overrides(input_cfg);
         max_offset = retention_offset(cfg);
     }
+
+    /*
+     * offset calculation for local retention reclaimable is different than the
+     * retention above and takes into account local retention advisory flag.
+     */
+    auto local_retention_cfg = apply_base_overrides(input_cfg);
+    local_retention_cfg = override_retention_config(local_retention_cfg);
+    const auto local_retention_offset
+      = co_await maybe_adjusted_retention_offset(local_retention_cfg);
 
     /*
      * evicting data based on the retention policy is a coordinated effort
@@ -2012,6 +2037,7 @@ disk_log_impl::disk_usage_and_reclaimable_space(gc_config cfg) {
     fragmented_vector<segment_set::type> retention_segments;
     fragmented_vector<segment_set::type> available_segments;
     fragmented_vector<segment_set::type> remaining_segments;
+    fragmented_vector<segment_set::type> local_retention_segments;
     for (auto& seg : _segs) {
         if (
           retention_offset.has_value()
@@ -2024,9 +2050,26 @@ disk_log_impl::disk_usage_and_reclaimable_space(gc_config cfg) {
         } else {
             remaining_segments.push_back(seg);
         }
+
+        /*
+         * track segments that are reclaimable and above local retention.
+         * effectively identcal to the condition in get_reclaimable_offsets. it
+         * is repeated here because it is convenient to roll up these stats into
+         * the usage information for consumption by the health monitor. the end
+         * state is that the usage reporting here and the work in
+         * get_reclaimable_offsets is going to be merged together.
+         */
+        if (
+          !config().is_read_replica_mode_enabled()
+          && is_cloud_retention_active() && seg != _segs.back()
+          && seg->offsets().dirty_offset <= max_collectible
+          && local_retention_offset.has_value()
+          && seg->offsets().dirty_offset <= local_retention_offset.value()) {
+            local_retention_segments.push_back(seg);
+        }
     }
 
-    auto [retention, available, remaining] = co_await ss::when_all_succeed(
+    auto [retention, available, remaining, lcl] = co_await ss::when_all_succeed(
       // reduce segment subject to retention policy
       ss::map_reduce(
         retention_segments,
@@ -2046,6 +2089,13 @@ disk_log_impl::disk_usage_and_reclaimable_space(gc_config cfg) {
         remaining_segments,
         [](const segment_set::type& seg) { return seg->persistent_size(); },
         usage{},
+        [](usage acc, usage u) { return acc + u; }),
+
+      // reduce segments not available for reclaim
+      ss::map_reduce(
+        local_retention_segments,
+        [](const segment_set::type& seg) { return seg->persistent_size(); },
+        usage{},
         [](usage acc, usage u) { return acc + u; }));
 
     /*
@@ -2061,6 +2111,7 @@ disk_log_impl::disk_usage_and_reclaimable_space(gc_config cfg) {
     reclaim_size_limits reclaim{
       .retention = retention.total(),
       .available = retention.total() + available.total(),
+      .local_retention = lcl.total(),
     };
 
     co_return std::make_pair(usage, reclaim);
@@ -2325,6 +2376,13 @@ void disk_log_impl::set_cloud_gc_offset(model::offset offset) {
           config().ntp());
         return;
     }
+    if (deletion_exempt(config().ntp())) {
+        vlog(
+          stlog.debug,
+          "Ignoring request to trim at GC offset for exempt partition {}",
+          config().ntp());
+        return;
+    }
     _cloud_gc_offset = offset;
 }
 
@@ -2355,6 +2413,15 @@ disk_log_impl::get_reclaimable_offsets(gc_config cfg) {
         vlog(
           stlog.debug,
           "Reporting no reclaimable offsets for read replica partition {}",
+          config().ntp());
+        co_return res;
+    }
+
+    // see comment on deletion_exempt
+    if (deletion_exempt(config().ntp())) {
+        vlog(
+          stlog.debug,
+          "Reporting no reclaimable space for exempt partition {}",
           config().ntp());
         co_return res;
     }
