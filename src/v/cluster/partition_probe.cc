@@ -200,7 +200,7 @@ void replicated_partition_probe::setup_public_metrics(const model::ntp& ntp) {
         sm::make_gauge(
           "max_offset",
           [this] {
-              auto log_offset = _partition.committed_offset();
+              auto log_offset = _partition.high_watermark();
               auto translator = _partition.get_offset_translator_state();
 
               try {
@@ -213,8 +213,7 @@ void replicated_partition_probe::setup_public_metrics(const model::ntp& ntp) {
               }
           },
           sm::description(
-            "Latest committed offset for the partition (i.e. the offset of the "
-            "last message safely persisted on most replicas)"),
+            "Latest readable offset of the partition (i.e. high watermark)"),
           labels)
           .aggregate({sm::shard_label}),
         sm::make_gauge(
