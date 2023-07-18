@@ -34,11 +34,15 @@ namespace {
 
 using ret_res = checked<cluster::rm_stm::transaction_set, kafka::error_code>;
 
-int64_t
-convert_rm_stm_time_to_milliseconds(cluster::rm_stm::time_point_type time) {
-    auto diff = cluster::rm_stm::clock_type::now() - time;
-    auto now = std::chrono::steady_clock::now();
-    return now.time_since_epoch() / 1ms - diff / 1ms;
+static int64_t
+convert_rm_stm_time_to_ts_ms(cluster::rm_stm::time_point_type time) {
+    auto diff = std::chrono::duration_cast<std::chrono::milliseconds>(
+                  cluster::rm_stm::clock_type::now() - time)
+                  .count();
+    auto now = std::chrono::duration_cast<std::chrono::milliseconds>(
+                 ss::lowres_system_clock::now().time_since_epoch())
+                 .count();
+    return now - diff;
 }
 
 ss::future<checked<cluster::rm_stm::transaction_set, kafka::error_code>>
@@ -140,7 +144,7 @@ describe_producers_handler::handle(request_context ctx, ss::smp_service_group) {
 
                     if (tx.second.info) {
                         producer_info.last_timestamp
-                          = convert_rm_stm_time_to_milliseconds(
+                          = convert_rm_stm_time_to_ts_ms(
                             tx.second.info->last_update);
                     }
 
