@@ -418,14 +418,25 @@ FIXTURE_TEST(test_scan_while_shutting_down, cloud_storage_fixture) {
 
     ss::gate g;
     ssx::background = scan_until_close(*partition, reader_config, g);
+
+    test_log.info("yielding control - 1");
     auto close_fut = ss::maybe_yield()
-                       .then([] { return ss::maybe_yield(); })
-                       .then([] { return ss::maybe_yield(); })
                        .then([] {
+                           test_log.info("yielding control - 2");
+                           return ss::maybe_yield();
+                       })
+                       .then([] {
+                           test_log.info("yielding control - 3");
+                           return ss::maybe_yield();
+                       })
+                       .then([] {
+                           test_log.info("sleeping for 10ms");
                            return ss::sleep(std::chrono::milliseconds(10));
                        })
                        .then([this, &g]() mutable {
+                           test_log.info("shutting down pool");
                            pool.local().shutdown_connections();
+                           test_log.info("pool shut down");
                            return g.close();
                        });
     ss::with_timeout(model::timeout_clock::now() + 60s, std::move(close_fut))
