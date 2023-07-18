@@ -18,7 +18,7 @@ import (
 	"testing"
 	"time"
 
-	. "github.com/onsi/ginkgo"
+	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	admissionv1beta1 "k8s.io/api/admission/v1beta1" //nolint:goimports // crlfmt
 
@@ -49,7 +49,7 @@ func TestAPIs(t *testing.T) {
 	RunSpecs(t, "Webhook Suite")
 }
 
-var _ = BeforeSuite(func() {
+var _ = BeforeSuite(func(suiteCtx SpecContext) {
 	logf.SetLogger(zap.New(zap.WriteTo(GinkgoWriter), zap.UseDevMode(true)))
 
 	ctx, cancel = context.WithCancel(context.TODO())
@@ -115,7 +115,7 @@ var _ = BeforeSuite(func() {
 		conn.Close()
 		return nil
 	}).Should(Succeed())
-}, 60)
+}, NodeTimeout(20*time.Second))
 
 var _ = AfterSuite(func() {
 	cancel()

@@ -25,7 +25,7 @@ import (
 	helper "github.com/fluxcd/pkg/runtime/controller"
 	sourcev1 "github.com/fluxcd/source-controller/api/v1beta2"
 	helmSourceController "github.com/fluxcd/source-controller/controllers"
-	. "github.com/onsi/ginkgo"
+	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/onsi/gomega/gexec"
 	"helm.sh/helm/v3/pkg/getter"
@@ -84,7 +84,7 @@ func TestAPIs(t *testing.T) {
 	RunSpecs(t, "Controller Suite")
 }
 
-var _ = BeforeSuite(func(done Done) {
+var _ = BeforeSuite(func(suiteCtx SpecContext) {
 	logf.SetLogger(zap.New(zap.WriteTo(GinkgoWriter), zap.UseDevMode(true)))
 
 	By("bootstrapping test environment")
@@ -262,9 +262,7 @@ var _ = BeforeSuite(func(done Done) {
 
 	k8sClient = k8sManager.GetClient()
 	Expect(k8sClient).ToNot(BeNil())
-
-	close(done)
-}, 60)
+}, NodeTimeout(20*time.Second))
 
 var _ = BeforeEach(func() {
 	By("Cleaning the admin API")
