@@ -20,14 +20,27 @@
 
 namespace cluster::node {
 
+std::ostream&
+operator<<(std::ostream& o, const local_state::log_data_state& s) {
+    fmt::print(
+      o,
+      "{{target: {} current: {} reclaimable: {}}}",
+      human::bytes(s.data_target_size),
+      human::bytes(s.data_current_size),
+      human::bytes(s.data_reclaimable_size));
+    return o;
+}
+
 std::ostream& operator<<(std::ostream& o, const local_state& s) {
     fmt::print(
       o,
-      "{{redpanda_version: {}, uptime: {}, data_disk: {}, cache_disk: {}}}",
+      "{{redpanda_version: {}, uptime: {}, data_disk: {}, cache_disk: {} log "
+      "data {}}}",
       s.redpanda_version,
       s.uptime,
       s.data_disk,
-      s.cache_disk);
+      s.cache_disk,
+      s.log_data_size);
     return o;
 }
 
@@ -55,6 +68,11 @@ void local_state::serde_read(iobuf_parser& in, const serde::header& h) {
             d.alert = storage_space_alert;
         }
     }
+
+    if (h._version >= 2) {
+        log_data_size = serde::read_nested<std::optional<log_data_state>>(
+          in, 0);
+    }
 }
 
 void local_state::serde_write(iobuf& out) const {
@@ -63,6 +81,7 @@ void local_state::serde_write(iobuf& out) const {
     serde::write(out, uptime);
     serde::write(out, disks());
     serde::write(out, get_disk_alert());
+    serde::write(out, log_data_size);
 }
 
 storage::disk_space_alert local_state::get_disk_alert() const {

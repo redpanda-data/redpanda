@@ -38,7 +38,10 @@ struct cloud_storage_fixture : s3_imposter_fixture {
         cache
           .start(
             tmp_directory.get_path(),
+            30_GiB, // disk size
+            config::mock_binding<double>(0.0),
             config::mock_binding<uint64_t>(1024 * 1024 * 1024),
+            config::mock_binding<std::optional<double>>(std::nullopt),
             config::mock_binding<uint32_t>(100000))
           .get();
 
