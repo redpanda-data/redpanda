@@ -1614,9 +1614,10 @@ configuration::configuration()
   , retention_local_strict(
       *this,
       "retention_local_strict",
-      "Allow log data to expand past local retention. When enabled, non-local "
-      "retention settings are used, and local retention settings are used to "
-      "inform data removal policies in low-disk space scenarios.",
+      "Trim log data when a cloud topic reaches its local retention limit. "
+      "When this option is disabled Redpanda will allow partitions to grow "
+      "past the local retention limit, and will be trimmed automatically as "
+      "storage reaches the configured target size.",
       {.needs_restart = needs_restart::no, .visibility = visibility::user},
       false,
       property<bool>::noop_validator,
@@ -1636,10 +1637,10 @@ configuration::configuration()
   , retention_local_target_capacity_percent(
       *this,
       "retention_local_target_capacity_percent",
-      "The target capacity in percent of unreserved space that log storage "
-      "will try to use before additional retention rules will take over to "
-      "trim data in order to meet the target. When no target is specified "
-      "storage usage is unbounded.",
+      "The target capacity in percent of unreserved space (see "
+      "disk_reservation_percent) that log storage will try to use before "
+      "additional retention rules will take over to trim data in order to meet "
+      "the target. When no target is specified storage usage is unbounded.",
       {.needs_restart = needs_restart::no,
        .example = "80.0",
        .visibility = visibility::user},
@@ -1677,7 +1678,12 @@ configuration::configuration()
   , disk_reservation_percent(
       *this,
       "disk_reservation_percent",
-      "The percenage of the disk capacity reserved that Redpanda will not use.",
+      "The percenage of total disk capacity that Redpanda will avoid using. "
+      "This applies both when cloud cache and log data share a disk, as well "
+      "as when cloud cache uses a dedicated disk. It is recommended to not run "
+      "disks near capacity to avoid blocking I/O due to low disk space, as "
+      "well as avoiding performance issues associated with SSD garbage "
+      "collection.",
       {.needs_restart = needs_restart::no,
        .example = "25.0",
        .visibility = visibility::tunable},
@@ -1696,7 +1702,9 @@ configuration::configuration()
       *this,
       "cloud_storage_cache_size_percent",
       "The maximum size of the archival cache as a percentage of unreserved "
-      "disk space.",
+      "disk space (see disk_reservation_percent). The default value for this "
+      "option is tuned for a shared disk configuration. When using a dedicated "
+      "cache disk consider increasing the value.",
       {.needs_restart = needs_restart::no,
        .example = "20.0",
        .visibility = visibility::user},
