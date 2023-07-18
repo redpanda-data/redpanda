@@ -135,6 +135,7 @@ spec:
                     properties:
                       config:
                         type: object
+                        x-kubernetes-preserve-unknown-fields: true
                       configMap:
                         properties:
                           create:
@@ -1957,9 +1958,6 @@ spec:
                         - labels
                         - storageClass
                         type: object
-                    required:
-                    - hostPath
-                    - persistentVolume
                     type: object
                   tls:
                     description: TLS is a top level field of the values file
