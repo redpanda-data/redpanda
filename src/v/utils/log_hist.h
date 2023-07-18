@@ -113,7 +113,10 @@ public:
     log_hist()
       : _canary(seastar::make_lw_shared(true))
       , _counts(number_of_buckets) {}
-
+    log_hist(const log_hist& o) = delete;
+    log_hist& operator=(const log_hist&) = delete;
+    log_hist(log_hist&& o) = delete;
+    log_hist& operator=(log_hist&& o) = delete;
     ~log_hist() {
         // Notify any active measurements that this object no longer exists.
         *_canary = false;
