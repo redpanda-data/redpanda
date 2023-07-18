@@ -889,7 +889,7 @@ class RpkTool:
             timeout = DEFAULT_TIMEOUT
 
         # Unconditionally enable verbose logging
-        cmd += ['-v']
+        cmd += ['--verbose', 'debug']
 
         if log_cmd:
             self._redpanda.logger.debug("Executing command: %s", cmd)

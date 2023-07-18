@@ -898,7 +898,7 @@ class ShadowIndexingManyPartitionsTest(PreallocNodesTest):
         self.redpanda.stop_node(self.redpanda.nodes[0])
 
     @skip_debug_mode
-    @cluster(num_nodes=2)
+    @cluster(num_nodes=2, check_allowed_error_logs=False)
     def test_many_partitions_recovery(self):
         """
         Test that reproduces an OOM when doing recovery with a large dataset in
