@@ -2041,7 +2041,7 @@ ss::future<> ntp_archiver::apply_archive_retention() {
     if (
       res.value().offset == model::offset{}
       || res.value().offset
-           == _manifest_view->stm_manifest().get_archive_start_offset()) {
+           <= _manifest_view->stm_manifest().get_archive_start_offset()) {
         co_return;
     }
 
