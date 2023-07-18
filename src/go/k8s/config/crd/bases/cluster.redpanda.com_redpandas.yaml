@@ -132,6 +132,33 @@ spec:
                         type: string
                     type: object
                   console:
+                    properties:
+                      config:
+                        type: object
+                        x-kubernetes-preserve-unknown-fields: true
+                      configMap:
+                        properties:
+                          create:
+                            type: boolean
+                        required:
+                        - create
+                        type: object
+                      deployment:
+                        properties:
+                          create:
+                            type: boolean
+                        required:
+                        - create
+                        type: object
+                      enabled:
+                        type: boolean
+                      secret:
+                        properties:
+                          create:
+                            type: boolean
+                        required:
+                        - create
+                        type: object
                     type: object
                   external:
                     description: External is a top level field of the values file
@@ -155,7 +182,7 @@ spec:
                         type: string
                     type: object
                   fullNameOverride:
-                    description: FullnameOverride is the override to give your redpanda
+                    description: FullNameOverride is the override to give your redpanda
                       release
                     type: string
                   image:
@@ -1931,9 +1958,6 @@ spec:
                         - labels
                         - storageClass
                         type: object
-                    required:
-                    - hostPath
-                    - persistentVolume
                     type: object
                   tls:
                     description: TLS is a top level field of the values file

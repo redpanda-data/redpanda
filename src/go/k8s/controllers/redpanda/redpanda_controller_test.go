@@ -18,7 +18,7 @@ import (
 	"github.com/fluxcd/helm-controller/api/v2beta1"
 	"github.com/fluxcd/source-controller/api/v1beta2"
 	"github.com/moby/moby/pkg/namesgenerator"
-	. "github.com/onsi/ginkgo"
+	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"

@@ -4,17 +4,17 @@ import (
 	"encoding/json"
 	"time"
 
-	"k8s.io/apimachinery/pkg/api/resource"
-
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 )
 
 // RedpandaClusterSpec defines the desired state of Redpanda Cluster
 type RedpandaClusterSpec struct {
 	// NameOverride is the override to give your redpanda release
 	NameOverride string `json:"nameOverride,omitempty"`
-	// FullnameOverride is the override to give your redpanda release
-	FullnameOverride string `json:"fullNameOverride,omitempty"`
+	// FullNameOverride is the override to give your redpanda release
+	FullNameOverride string `json:"fullNameOverride,omitempty"`
 	// ClusterDomain is the override to give your redpanda release
 	ClusterDomain string `json:"clusterDomain,omitempty"`
 	// CommonLabels is the override to give your redpanda release
@@ -93,7 +93,16 @@ type RackAwareness struct {
 }
 
 type RedpandaConsole struct {
-	// to be filled in
+	Enabled    *bool             `json:"enabled,omitempty"`
+	ConfigMap  *ConsoleCreateObj `json:"configMap,omitempty"`
+	Secret     *ConsoleCreateObj `json:"secret,omitempty"`
+	Deployment *ConsoleCreateObj `json:"deployment,omitempty"`
+	// +kubebuilder:pruning:PreserveUnknownFields
+	Config *unstructured.Unstructured `json:"config,omitempty"`
+}
+
+type ConsoleCreateObj struct {
+	Create bool `json:"create"`
 }
 
 // Auth is a top level field of the values file
@@ -186,10 +195,10 @@ type Requests struct {
 
 // Storage is a top level field of the values file
 type Storage struct {
-	HostPath                      string                         `json:"hostPath"`
-	PersistentVolume              *PersistentVolume              `json:"persistentVolume"`
+	HostPath                      *string                        `json:"hostPath,omitempty"`
+	PersistentVolume              *PersistentVolume              `json:"persistentVolume,omitempty"`
 	TieredConfig                  *TieredConfig                  `json:"tieredConfig,omitempty"`
-	TieredStorageHostPath         string                         `json:"tieredStorageHostPath,omitempty"`
+	TieredStorageHostPath         *string                        `json:"tieredStorageHostPath,omitempty"`
 	TieredStoragePersistentVolume *TieredStoragePersistentVolume `json:"tieredStoragePersistentVolume,omitempty"`
 }
 
@@ -232,10 +241,10 @@ type TieredStoragePersistentVolume struct {
 // PersistentVolume is a top level field of the values file
 type PersistentVolume struct {
 	Annotations  map[string]string `json:"annotations,omitempty"`
-	Enabled      bool              `json:"enabled"`
+	Enabled      *bool             `json:"enabled"`
 	Labels       map[string]string `json:"labels,omitempty"`
-	Size         string            `json:"size,omitempty"`
-	StorageClass string            `json:"storageClass,omitempty"`
+	Size         *string           `json:"size,omitempty"`
+	StorageClass *string           `json:"storageClass,omitempty"`
 }
 
 // PostInstallJob is a top level field of the values file
