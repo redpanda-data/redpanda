@@ -1854,6 +1854,37 @@ func Test_buildRedpandaFlags(t *testing.T) {
 	}
 }
 
+func Test_ParseFlags(t *testing.T) {
+	for _, tt := range []struct {
+		name string
+		in   []string
+		exp  map[string]string
+	}{
+		{
+			name: "empty flags",
+			in:   []string{"", "-", "--"},
+			exp:  map[string]string{},
+		}, {
+			name: "bool flags - no value",
+			in:   []string{"--overprovisioned", "-true"},
+			exp:  map[string]string{"overprovisioned": "", "true": ""},
+		}, {
+			name: "flags with value",
+			in:   []string{"--smp=2", "--memory=4G", "--default-log-level=info"},
+			exp:  map[string]string{"smp": "2", "memory": "4G", "default-log-level": "info"},
+		}, {
+			name: "flags with value and quotes",
+			in:   []string{`--logger-log-level="rpc=debug"`},
+			exp:  map[string]string{"logger-log-level": "rpc=debug"},
+		},
+	} {
+		t.Run(tt.name, func(st *testing.T) {
+			got := parseFlags(tt.in)
+			require.Equal(st, tt.exp, got)
+		})
+	}
+}
+
 func intPtr(i int) *int {
 	return &i
 }
