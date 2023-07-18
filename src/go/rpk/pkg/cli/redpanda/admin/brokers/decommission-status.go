@@ -22,7 +22,48 @@ func newDecommissionBrokerStatus(fs afero.Fs, p *config.Params) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "decommission-status [BROKER ID]",
 		Short: "Show the progress of a node decommissioning",
-		Args:  cobra.ExactArgs(1),
+		Long: `Show the progrss of a node decommissioning.
+
+When a node is being decommissioned, this command reports the decommissioning
+progress as follows, where PARTITION-SIZE is in bytes.
+
+$ rpk redpanda admin brokers decommission-status 4
+DECOMMISSION PROGRESS
+=====================
+NAMESPACE-TOPIC              PARTITION  MOVING-TO  COMPLETION-%  PARTITION-SIZE
+kafka/test                   0          3          9             1699470920
+kafka/test                   4          3          0             1614258779
+kafka/test2                  3          3          3             2722706514
+kafka/test2                  4          3          4             2945518089
+kafka_internal/id_allocator  0          3          0             3562
+
+Using --detailed / -d, it additionally prints granular reports.
+
+$ rpk redpanda admin brokers decommission-status 4 -d
+DECOMMISSION PROGRESS
+=====================
+NAMESPACE-TOPIC  PARTITION  MOVING-TO  COMPLETION-%  PARTITION-SIZE  BYTES-MOVED  BYTES-REMAINING
+kafka/test       0          3          13            1731773243      228114727    1503658516
+kafka/test       4          3          1             1645952961      18752660     1627200301
+kafka/test2      3          3          5             2752632301      140975805    2611656496
+kafka/test2      4          3          6             2975443783      181581219    2793862564
+
+If a partition cannot be moved with some reason, the command reports the
+problematic partition in the 'ALLOCATION FAILURES' section and decommission
+never succeeds. Typical scenarios the failure occurs are; there's no node
+that has enough space to allocate a partition or that can satisfy rack
+constraints, etc.
+
+ALLOCATION FAILURES
+==================
+kafka/foo/2
+kafka/test/0
+
+Note that the command reports allocation failed partitions only when
+'partition_autobalancing_mode' is set to 'continuous'. See the current value
+using 'rpk cluster config get partition_autobalancing_mode'.
+`,
+		Args: cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
 			broker, _ := strconv.Atoi(args[0])
 			p, err := p.LoadVirtualProfile(fs)
@@ -55,7 +96,7 @@ func newDecommissionBrokerStatus(fs afero.Fs, p *config.Params) *cobra.Command {
 
 			if dbs.AllocationFailures != nil {
 				sort.Strings(dbs.AllocationFailures)
-				out.Section("allocation falures")
+				out.Section("allocation failures")
 				for _, f := range dbs.AllocationFailures {
 					fmt.Println(f)
 				}
