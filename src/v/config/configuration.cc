@@ -1644,7 +1644,7 @@ configuration::configuration()
        .example = "70.0",
        .visibility = visibility::user},
       80.0,
-      property<std::optional<double>>::noop_validator,
+      {.min = 0.0, .max = 1.0},
       legacy_default<std::optional<double>>(std::nullopt, legacy_version{9}))
   , retention_local_trim_interval(
       *this,
@@ -1682,7 +1682,7 @@ configuration::configuration()
        .example = "20.0",
        .visibility = visibility::tunable},
       25.0,
-      property<double>::noop_validator,
+      {.min = 0.0, .max = 1.0},
       legacy_default<double>(0.0, legacy_version{9}))
   , cloud_storage_cache_size(
       *this,
@@ -1699,7 +1699,7 @@ configuration::configuration()
       "disk space.",
       {.needs_restart = needs_restart::no, .visibility = visibility::user},
       20.0,
-      property<std::optional<double>>::noop_validator,
+      {.min = 0.0, .max = 1.0},
       legacy_default<std::optional<double>>(std::nullopt, legacy_version{9}))
   , cloud_storage_cache_max_objects(
       *this,
