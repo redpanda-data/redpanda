@@ -6,7 +6,7 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
-	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime"
 )
 
 // RedpandaClusterSpec defines the desired state of Redpanda Cluster
@@ -97,8 +97,9 @@ type RedpandaConsole struct {
 	ConfigMap  *ConsoleCreateObj `json:"configMap,omitempty"`
 	Secret     *ConsoleCreateObj `json:"secret,omitempty"`
 	Deployment *ConsoleCreateObj `json:"deployment,omitempty"`
+
 	// +kubebuilder:pruning:PreserveUnknownFields
-	Config *unstructured.Unstructured `json:"config,omitempty"`
+	Config *runtime.RawExtension `json:"config,omitempty"`
 }
 
 type ConsoleCreateObj struct {
