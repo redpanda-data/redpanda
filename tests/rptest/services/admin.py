@@ -1045,3 +1045,10 @@ class Admin:
             f"debug/storage/offset_translator/kafka/{topic}/{partition}?translate_to={translate_to}",
             node=node,
             json=offsets).json()
+
+    def set_storage_failure_injection(self, node, value: bool):
+        str_value = "true" if value else "false"
+        return self._request(
+            "PUT",
+            f"debug/set_storage_failure_injection_enabled?value={str_value}",
+            node=node)
