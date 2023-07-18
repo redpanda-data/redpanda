@@ -164,7 +164,7 @@ RUN /k8s && \
 
 #################################
 
-FROM base as final
+FROM librdkafka as final
 
 COPY --chown=0:0 --chmod=0755 tests/docker/ducktape-deps/arroyo /
 RUN /arroyo && \
@@ -222,8 +222,6 @@ COPY --from=java-verifiers /opt/verifiers /opt/verifiers
 COPY --from=java-verifiers /opt/kafka-serde /opt/kafka-serde
 COPY --from=java-verifiers /root/.m2 /root/.m2
 COPY --from=kafka-tools /opt /opt
-COPY --from=librdkafka /opt/librdkafka /opt/librdkafka
-COPY --from=librdkafka /usr/local/lib /usr/local/lib
 COPY --from=kcat /usr/local/bin/kcat /usr/local/bin/
 COPY --from=sarama-examples /opt/sarama /opt/sarama
 COPY --from=golang-test-clients /opt/redpanda-tests/go /opt/redpanda-tests/go
