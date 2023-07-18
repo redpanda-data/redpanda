@@ -42,7 +42,12 @@ public:
         _requests_completed++;
         _requests_in_progress--;
     }
-    void request_errored() { _requests_errored++; }
+    void request_errored() {
+        sample_in_progress();
+
+        _requests_errored++;
+        _requests_in_progress--;
+    }
     void request_started() {
         sample_in_progress();
 
@@ -69,7 +74,7 @@ private:
     uint64_t _bytes_received{0};
     uint64_t _bytes_sent{0};
 
-    std::optional<hist_t> _latency{std::nullopt};
+    hist_t _latency{};
 };
 
 /**
