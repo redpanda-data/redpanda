@@ -657,6 +657,9 @@ class PartitionBalancerTest(PartitionBalancerService):
                 "raft_learner_recovery_rate": 100_000_000,
                 "health_monitor_max_metadata_age": 3000,
                 "log_segment_size": 104857600,  # 100 MiB
+                "retention_local_target_capacity_percent": 100.0,
+                "disk_reservation_percent": 0.0,
+                "retention_local_trim_interval": 3000
             },
             environment={"__REDPANDA_TEST_DISK_SIZE": disk_size})
 
