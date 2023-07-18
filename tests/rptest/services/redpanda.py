@@ -128,6 +128,9 @@ PREV_VERSION_LOG_ALLOW_LIST = [
     "raft - .*recovery append entries error.*client_request_timeout"
 ]
 
+# Path to the LSAN suppressions file
+LSAN_SUPPRESSIONS_FILE = "/opt/lsan_suppressions.txt"
+
 
 class MetricSamples:
     def __init__(self, samples: list[MetricSample]):
@@ -611,6 +614,15 @@ class RedpandaService(Service):
 
         if environment is None:
             environment = dict()
+
+        # If lsan_suppressions.txt exists, then include it
+        if os.path.exists(LSAN_SUPPRESSIONS_FILE):
+            self.logger.debug(f'{LSAN_SUPPRESSIONS_FILE} exists')
+            environment[
+                'LSAN_OPTIONS'] = f'suppressions={LSAN_SUPPRESSIONS_FILE}'
+        else:
+            self.logger.debug(f'{LSAN_SUPPRESSIONS_FILE} does not exist')
+
         self._environment = environment
 
         self.config_file_lock = threading.Lock()
@@ -1181,8 +1193,8 @@ class RedpandaService(Service):
 
     def start_node_with_rpk(self, node, additional_args="", clean_node=True):
         """
-        Start a single instance of redpanda using rpk. similar to start_node, 
-        this function will not return until redpanda appears to have started 
+        Start a single instance of redpanda using rpk. similar to start_node,
+        this function will not return until redpanda appears to have started
         successfully.
         """
         self.logger.debug(
