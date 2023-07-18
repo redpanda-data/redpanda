@@ -901,7 +901,10 @@ class RpkTool:
             output, stderror = p.communicate(input=stdin, timeout=timeout)
         except subprocess.TimeoutExpired:
             p.kill()
-            raise RpkException(f"command {' '.join(cmd)} timed out")
+            output, stderr = p.communicate()
+            raise RpkException(
+                f"command {' '.join(cmd)} timed out, output: {output} \n error: {stderr}",
+                stderr, None, output)
 
         self._redpanda.logger.debug(f'\n{output}')
 
