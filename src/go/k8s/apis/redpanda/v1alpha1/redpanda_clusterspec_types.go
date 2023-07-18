@@ -93,11 +93,12 @@ type RackAwareness struct {
 }
 
 type RedpandaConsole struct {
-	Enabled    *bool                      `json:"enabled,omitempty"`
-	ConfigMap  *ConsoleCreateObj          `json:"configMap,omitempty"`
-	Secret     *ConsoleCreateObj          `json:"secret,omitempty"`
-	Deployment *ConsoleCreateObj          `json:"deployment,omitempty"`
-	Config     *unstructured.Unstructured `json:"config,omitempty"`
+	Enabled    *bool             `json:"enabled,omitempty"`
+	ConfigMap  *ConsoleCreateObj `json:"configMap,omitempty"`
+	Secret     *ConsoleCreateObj `json:"secret,omitempty"`
+	Deployment *ConsoleCreateObj `json:"deployment,omitempty"`
+	// +kubebuilder:pruning:PreserveUnknownFields
+	Config *unstructured.Unstructured `json:"config,omitempty"`
 }
 
 type ConsoleCreateObj struct {
