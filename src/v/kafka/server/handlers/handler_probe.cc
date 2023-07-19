@@ -33,7 +33,6 @@ handler_probe_manager::handler_probe_manager()
         auto key = api_key{i};
 
         if (handler_for_key(key) || i == unknown_handler_key) {
-            _probes[i].initialize();
             _probes[i].setup_metrics(_metrics, key);
         }
     }
@@ -107,7 +106,7 @@ void handler_probe::setup_metrics(
           "latency_microseconds",
           sm::description("Latency histogram of kafka requests"),
           labels,
-          [this] { return _latency->seastar_histogram_logform(1); })
+          [this] { return _latency.seastar_histogram_logform(1); })
           .aggregate(aggregate_labels),
       });
 }
