@@ -199,7 +199,7 @@ func newAdminAPI(urls []string, auth Auth, tlsConfig *tls.Config, forCloud bool)
 	client.LogHook = func(e pester.ErrEntry) {
 		// Only log from here when retrying: a final error propagates to caller
 		if e.Err != nil && e.Retry <= client.MaxRetries {
-			fmt.Printf("Retrying %s for error: %s\n", e.Verb, e.Err.Error())
+			zap.L().Sugar().Debugf("Retrying %s for error: %s\n", e.Verb, e.Err.Error())
 		}
 	}
 
