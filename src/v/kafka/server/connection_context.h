@@ -288,7 +288,12 @@ private:
      * stage of processing and allows for some request handling overlap.
      */
     ss::future<> dispatch_method_once(request_header, size_t sz);
-    ss::future<> handle_response(ss::lw_shared_ptr<connection_context>, ss::future<response_ptr>, ss::lw_shared_ptr<session_resources>, sequence_id, correlation_id);
+    ss::future<> handle_response(
+      ss::lw_shared_ptr<connection_context>,
+      ss::future<response_ptr>,
+      ss::lw_shared_ptr<session_resources>,
+      sequence_id,
+      correlation_id);
 
     class ctx_log {
     public:

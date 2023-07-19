@@ -356,145 +356,142 @@ connection_context::reserve_request_units(api_key key, size_t size) {
 ss::future<>
 connection_context::dispatch_method_once(request_header hdr, size_t size) {
     auto sres_in = co_await throttle_request(hdr, size);
-          if (_server.abort_requested()) {
-              // protect against shutdown behavior
-              co_return;
-          }
-          if (_kafka_throughput_controlled_api_keys().at(hdr.key)) {
-              // Normally we can only get here after a prior call to
-              // snc_quota_mgr().get_or_create_quota_context() in
-              // record_tp_and_calculate_throttle(), but there is possibility
-              // that the changing configuration could still take us into this
-              // branch with unmatching (and even null) _snc_quota_context.
-              // Simply an unmatching _snc_quota_context is no big deal because
-              // it is a one off event, but we need protection from it being
-              // nullptr
-              if (likely(_snc_quota_context)) {
-                  _server.snc_quota_mgr().record_request_intake(
-                    *_snc_quota_context, size);
-              }
-          }
+    if (_server.abort_requested()) {
+        // protect against shutdown behavior
+        co_return;
+    }
+    if (_kafka_throughput_controlled_api_keys().at(hdr.key)) {
+        // Normally we can only get here after a prior call to
+        // snc_quota_mgr().get_or_create_quota_context() in
+        // record_tp_and_calculate_throttle(), but there is possibility
+        // that the changing configuration could still take us into this
+        // branch with unmatching (and even null) _snc_quota_context.
+        // Simply an unmatching _snc_quota_context is no big deal because
+        // it is a one off event, but we need protection from it being
+        // nullptr
+        if (likely(_snc_quota_context)) {
+            _server.snc_quota_mgr().record_request_intake(
+              *_snc_quota_context, size);
+        }
+    }
 
-          auto sres = ss::make_lw_shared(std::move(sres_in));
+    auto sres = ss::make_lw_shared(std::move(sres_in));
 
-          auto remaining = size - request_header_size
-                           - hdr.client_id_buffer.size() - hdr.tags_size_bytes;
-          auto buf = co_await read_iobuf_exactly(conn->input(), remaining);
-                if (_server.abort_requested()) {
-                    // _server._cntrl etc might not be alive
-                    co_return;
-                }
-                auto self = shared_from_this();
-                auto rctx = request_context(
-                  self,
-                  std::move(hdr),
-                  std::move(buf),
-                  sres->backpressure_delay);
-                /*
-                 * we process requests in order since all subsequent requests
-                 * are dependent on authentication having completed.
-                 *
-                 * the other important reason for disabling pipeling is because
-                 * when a sasl handshake with version=0 is processed, the next
-                 * data on the wire is _not_ another request: it is a
-                 * size-prefixed authentication payload without a request
-                 * envelope, and requires special handling.
-                 *
-                 * a well behaved client should implicitly provide a data stream
-                 * that invokes this behavior in the server: that is, it won't
-                 * send auth data (or any other requests) until handshake or the
-                 * full auth-process completes, etc... but representing these
-                 * nuances of the protocol _explicitly_ in the server makes its
-                 * behavior easier to understand and avoids misbehaving clients
-                 * creating server-side errors that will appear as a corrupted
-                 * stream at best and at worst some odd behavior.
-                 */
+    auto remaining = size - request_header_size - hdr.client_id_buffer.size()
+                     - hdr.tags_size_bytes;
+    auto buf = co_await read_iobuf_exactly(conn->input(), remaining);
+    if (_server.abort_requested()) {
+        // _server._cntrl etc might not be alive
+        co_return;
+    }
+    auto self = shared_from_this();
+    auto rctx = request_context(
+      self, std::move(hdr), std::move(buf), sres->backpressure_delay);
+    /*
+     * we process requests in order since all subsequent requests
+     * are dependent on authentication having completed.
+     *
+     * the other important reason for disabling pipeling is because
+     * when a sasl handshake with version=0 is processed, the next
+     * data on the wire is _not_ another request: it is a
+     * size-prefixed authentication payload without a request
+     * envelope, and requires special handling.
+     *
+     * a well behaved client should implicitly provide a data stream
+     * that invokes this behavior in the server: that is, it won't
+     * send auth data (or any other requests) until handshake or the
+     * full auth-process completes, etc... but representing these
+     * nuances of the protocol _explicitly_ in the server makes its
+     * behavior easier to understand and avoids misbehaving clients
+     * creating server-side errors that will appear as a corrupted
+     * stream at best and at worst some odd behavior.
+     */
 
-                const auto correlation = rctx.header().correlation;
-                const sequence_id seq = _seq_idx;
-                _seq_idx = _seq_idx + sequence_id(1);
-                auto res = kafka::process_request(
-                  std::move(rctx), _server.smp_group(), *sres);
-                /**
-                 * first stage processed in a foreground.
-                 */
-                std::exception_ptr dispatch_eptr;
-                try {
-                          co_await std::move(res.dispatched);
-                } catch (...) {
-                    dispatch_eptr = std::current_exception();
-                }
+    const auto correlation = rctx.header().correlation;
+    const sequence_id seq = _seq_idx;
+    _seq_idx = _seq_idx + sequence_id(1);
+    auto res = kafka::process_request(
+      std::move(rctx), _server.smp_group(), *sres);
+    /**
+     * first stage processed in a foreground.
+     */
+    std::exception_ptr dispatch_eptr;
+    try {
+        co_await std::move(res.dispatched);
+    } catch (...) {
+        dispatch_eptr = std::current_exception();
+    }
 
-                      /*
-                       * if the dispatch/first stage failed, then we need to
-                       * need to consume the second stage since it might be
-                       * an exceptional future. if we captured `f` in the
-                       * lambda but didn't use `then_wrapped` then the
-                       * lambda would be destroyed and an ignored
-                       * exceptional future would be caught by seastar.
-                       */
-                if (dispatch_eptr) {
-                    try {
-                        co_await std::move(res.response);
-                    } catch (...) {
-                                vlog(
-                                  klog.info,
-                                  "Discarding second stage failure {}",
-                                  std::current_exception());
-                    }
-                                sres->tracker->mark_errored();
-                      vlog(
-                        klog.info, "Detected error dispatching request: {}", dispatch_eptr);
-                      self->conn->shutdown_input();
-                      sres->tracker->mark_errored();
-                      co_return;
-                }
+    /*
+     * if the dispatch/first stage failed, then we need to
+     * need to consume the second stage since it might be
+     * an exceptional future. if we captured `f` in the
+     * lambda but didn't use `then_wrapped` then the
+     * lambda would be destroyed and an ignored
+     * exceptional future would be caught by seastar.
+     */
+    if (dispatch_eptr) {
+        try {
+            co_await std::move(res.response);
+        } catch (...) {
+            vlog(
+              klog.info,
+              "Discarding second stage failure {}",
+              std::current_exception());
+        }
+        sres->tracker->mark_errored();
+        vlog(
+          klog.info, "Detected error dispatching request: {}", dispatch_eptr);
+        self->conn->shutdown_input();
+        sres->tracker->mark_errored();
+        co_return;
+    }
 
-                      /**
-                       * second stage processed in background.
-                       */
-                      ssx::background
-                        = ssx::spawn_with_gate_then(
-                            _server.conn_gate(),
-                            [&] { return handle_response(self, std::move(res.response), sres, seq, correlation); });
+    /**
+     * second stage processed in background.
+     */
+    ssx::background = ssx::spawn_with_gate_then(_server.conn_gate(), [&] {
+        return handle_response(
+          self, std::move(res.response), sres, seq, correlation);
+    });
 }
 
-ss::future<> connection_context::handle_response(ss::lw_shared_ptr<connection_context> self, ss::future<response_ptr> f, ss::lw_shared_ptr<session_resources> sres, sequence_id seq, correlation_id correlation) {
-                            try {
-                                auto r = co_await std::move(f);
-                                    r->set_correlation(correlation);
-                                    response_and_resources randr{
-                                      std::move(r), sres};
-                                    _responses.insert({seq, std::move(randr)});
-                                    co_return co_await maybe_process_responses();
-                            } catch (...) {
-                                  // ssx::spawn_with_gate already caught
-                                  // shutdown-like exceptions, so we should only
-                                  // be taking this path for real errors.  That
-                                  // also means that on shutdown we don't bother
-                                  // to call shutdown_input on the connection,
-                                  // so rely on any future reader to check the
-                                  // abort source before considering reading the
-                                  // connection.
-                                  auto e = std::current_exception();
-                                  auto disconnected
-                                    = net::is_disconnect_exception(e);
-                                  if (disconnected) {
-                                      vlog(
-                                        klog.info,
-                                        "Disconnected {} ({})",
-                                        self->conn->addr,
-                                        disconnected.value());
-                                  } else {
-                                      vlog(
-                                        klog.warn,
-                                        "Error processing request: {}",
-                                        e);
-                                  }
+ss::future<> connection_context::handle_response(
+  ss::lw_shared_ptr<connection_context> self,
+  ss::future<response_ptr> f,
+  ss::lw_shared_ptr<session_resources> sres,
+  sequence_id seq,
+  correlation_id correlation) {
+    try {
+        auto r = co_await std::move(f);
+        r->set_correlation(correlation);
+        response_and_resources randr{std::move(r), sres};
+        _responses.insert({seq, std::move(randr)});
+        co_return co_await maybe_process_responses();
+    } catch (...) {
+        // ssx::spawn_with_gate already caught
+        // shutdown-like exceptions, so we should only
+        // be taking this path for real errors.  That
+        // also means that on shutdown we don't bother
+        // to call shutdown_input on the connection,
+        // so rely on any future reader to check the
+        // abort source before considering reading the
+        // connection.
+        auto e = std::current_exception();
+        auto disconnected = net::is_disconnect_exception(e);
+        if (disconnected) {
+            vlog(
+              klog.info,
+              "Disconnected {} ({})",
+              self->conn->addr,
+              disconnected.value());
+        } else {
+            vlog(klog.warn, "Error processing request: {}", e);
+        }
 
-                                  sres->tracker->mark_errored();
-                                  self->conn->shutdown_input();
-                            }
+        sres->tracker->mark_errored();
+        self->conn->shutdown_input();
+    }
 }
 
 /**
