@@ -138,6 +138,8 @@ ss::future<> connection_context::process_one_request() {
           klog.error,
           "Request from {} failed on memory exhaustion (std::bad_alloc)",
           conn->addr);
+    } catch (const ss::sleep_aborted&) {
+        // shutdown started while force-throttling
     }
 }
 
@@ -353,15 +355,10 @@ connection_context::reserve_request_units(api_key key, size_t size) {
 
 ss::future<>
 connection_context::dispatch_method_once(request_header hdr, size_t size) {
-    // clang-tidy 16.0.4 is reporting an erroneous 'use-after-move' error when
-    // calling `then` after `throttle_request`.
-    auto sres_in = throttle_request(hdr, size);
-    return sres_in
-      .then([this, hdr = std::move(hdr), size](
-              session_resources sres_in) mutable {
+    auto sres_in = co_await throttle_request(hdr, size);
           if (_server.abort_requested()) {
               // protect against shutdown behavior
-              return ss::make_ready_future<>();
+              co_return;
           }
           if (_kafka_throughput_controlled_api_keys().at(hdr.key)) {
               // Normally we can only get here after a prior call to
@@ -382,7 +379,7 @@ connection_context::dispatch_method_once(request_header hdr, size_t size) {
 
           auto remaining = size - request_header_size
                            - hdr.client_id_buffer.size() - hdr.tags_size_bytes;
-          return read_iobuf_exactly(conn->input(), remaining)
+          co_return co_await read_iobuf_exactly(conn->input(), remaining)
             .then([this, hdr = std::move(hdr), sres = std::move(sres)](
                     iobuf buf) mutable {
                 if (_server.abort_requested()) {
@@ -511,11 +508,6 @@ connection_context::dispatch_method_once(request_header hdr, size_t size) {
                       sres->tracker->mark_errored();
                   });
             });
-      })
-      .handle_exception_type([](const ss::sleep_aborted&) {
-          // shutdown started while force-throttling
-          return ss::make_ready_future<>();
-      });
 }
 
 /**
