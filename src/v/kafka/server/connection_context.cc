@@ -418,13 +418,13 @@ connection_context::dispatch_method_once(request_header hdr, size_t size) {
                 /**
                  * first stage processed in a foreground.
                  */
-                co_return co_await res.dispatched
-                  .then_wrapped([this,
-                                 f = std::move(res.response),
-                                 seq,
-                                 correlation,
-                                 self,
-                                 sres](ss::future<> d) mutable {
+                std::exception_ptr dispatch_eptr;
+                try {
+                          co_await std::move(res.dispatched);
+                } catch (...) {
+                    dispatch_eptr = std::current_exception();
+                }
+
                       /*
                        * if the dispatch/first stage failed, then we need to
                        * need to consume the second stage since it might be
@@ -433,19 +433,23 @@ connection_context::dispatch_method_once(request_header hdr, size_t size) {
                        * lambda would be destroyed and an ignored
                        * exceptional future would be caught by seastar.
                        */
-                      if (d.failed()) {
-                          return f.discard_result()
-                            .handle_exception([](std::exception_ptr e) {
+                if (dispatch_eptr) {
+                    try {
+                        co_await std::move(res.response);
+                    } catch (...) {
                                 vlog(
                                   klog.info,
                                   "Discarding second stage failure {}",
-                                  e);
-                            })
-                            .finally([self, d = std::move(d), sres]() mutable {
+                                  std::current_exception());
+                    }
                                 sres->tracker->mark_errored();
-                                return std::move(d);
-                            });
-                      }
+                      vlog(
+                        klog.info, "Detected error dispatching request: {}", dispatch_eptr);
+                      self->conn->shutdown_input();
+                      sres->tracker->mark_errored();
+                      co_return;
+                }
+
                       /**
                        * second stage processed in background.
                        */
@@ -453,7 +457,7 @@ connection_context::dispatch_method_once(request_header hdr, size_t size) {
                         = ssx::spawn_with_gate_then(
                             _server.conn_gate(),
                             [this,
-                             f = std::move(f),
+                             f = std::move(res.response),
                              sres,
                              seq,
                              correlation]() mutable {
@@ -497,14 +501,6 @@ connection_context::dispatch_method_once(request_header hdr, size_t size) {
                                   sres->tracker->mark_errored();
                                   self->conn->shutdown_input();
                               });
-                      return d;
-                  })
-                  .handle_exception([self, sres](std::exception_ptr e) {
-                      vlog(
-                        klog.info, "Detected error dispatching request: {}", e);
-                      self->conn->shutdown_input();
-                      sres->tracker->mark_errored();
-                  });
 }
 
 /**
