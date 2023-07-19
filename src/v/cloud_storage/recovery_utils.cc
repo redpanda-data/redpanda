@@ -14,6 +14,7 @@
 #include "cloud_storage/remote.h"
 #include "storage/ntp_config.h"
 
+#include <boost/algorithm/string/join.hpp>
 #include <boost/uuid/uuid_generators.hpp>
 #include <boost/uuid/uuid_io.hpp>
 
@@ -124,12 +125,17 @@ ss::future<> clear_recovery_results(
   std::optional<std::vector<recovery_result>> items_to_delete) {
     retry_chain_node fib{&parent};
     if (!items_to_delete.has_value()) {
+        vlog(
+          cst_log.debug,
+          "no items to delete supplied, collecting results from bucket to "
+          "delete");
         auto r = co_await gather_recovery_results(remote, bucket, fib);
         items_to_delete.emplace(std::move(r));
     }
 
     if (items_to_delete->empty()) {
-        vlog(cst_log.info, "skipping clear recovery results, nothing to clear");
+        vlog(
+          cst_log.debug, "skipping clear recovery results, nothing to clear");
         co_return;
     }
 
@@ -157,6 +163,10 @@ ss::future<> clear_recovery_results(
           "deleting {} of {} result files",
           to_delete.size(),
           keys.size());
+
+        for (const auto& key : to_delete) {
+            vlog(cst_log.trace, "deleting key: {}", key);
+        }
 
         keys.erase(keys.begin(), end);
 
