@@ -551,8 +551,8 @@ result<node_health_report> health_monitor_backend::process_node_reply(
           clusterlog.info,
           "received node {} health report, marking node as up",
           id);
-        it->second.is_alive = alive::yes;
     }
+    it->second.is_alive = alive::yes;
 
     return res;
 }
