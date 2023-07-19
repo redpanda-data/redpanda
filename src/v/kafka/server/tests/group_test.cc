@@ -52,6 +52,8 @@ static group get() {
       group_state::empty,
       conf,
       nullptr,
+      nullptr,
+      model::term_id(),
       fr,
       feature_table,
       make_backward_compatible_serializer(),
