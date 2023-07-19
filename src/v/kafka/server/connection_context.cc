@@ -425,10 +425,7 @@ connection_context::dispatch_method_once(request_header hdr, size_t size) {
     /*
      * if the dispatch/first stage failed, then we need to
      * need to consume the second stage since it might be
-     * an exceptional future. if we captured `f` in the
-     * lambda but didn't use `then_wrapped` then the
-     * lambda would be destroyed and an ignored
-     * exceptional future would be caught by seastar.
+     * an exceptional future.
      */
     if (dispatch_eptr) {
         try {
