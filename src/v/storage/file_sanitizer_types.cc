@@ -96,20 +96,24 @@ from_json(const json::Value& key, const json::Value& value) {
     if (auto it = value.FindMember("delay_probability");
         it != value.MemberEnd()) {
         op_config.delay_probability = it->value.GetDouble();
-    }
 
-    if (auto it = value.FindMember("min_delay_ms"); it != value.MemberEnd()) {
-        op_config.min_delay_ms = it->value.GetInt();
-    } else {
-        throw std::runtime_error("JSON failure injection config specifies "
-                                 "'delay_probability', but no 'min_delay_ms'");
-    }
+        if (auto it = value.FindMember("min_delay_ms");
+            it != value.MemberEnd()) {
+            op_config.min_delay_ms = it->value.GetInt();
+        } else {
+            throw std::runtime_error(
+              "JSON failure injection config specifies "
+              "'delay_probability', but no 'min_delay_ms'");
+        }
 
-    if (auto it = value.FindMember("max_delay_ms"); it != value.MemberEnd()) {
-        op_config.max_delay_ms = it->value.GetInt();
-    } else {
-        throw std::runtime_error("JSON failure injection config specifies "
-                                 "'delay_probability', but no 'max_delay_ms'");
+        if (auto it = value.FindMember("max_delay_ms");
+            it != value.MemberEnd()) {
+            op_config.max_delay_ms = it->value.GetInt();
+        } else {
+            throw std::runtime_error(
+              "JSON failure injection config specifies "
+              "'delay_probability', but no 'max_delay_ms'");
+        }
     }
 
     return op_config;

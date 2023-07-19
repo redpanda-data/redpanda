@@ -136,6 +136,9 @@ class BatchType(Enum):
     cluster_config_cmd = 20
     feature_update = 21
     cluster_bootstrap_cmd = 22
+    version_fence = 23
+    tx_tm_hosted_trasactions = 24
+    prefix_truncate = 25
     unknown = -1
 
     @classmethod

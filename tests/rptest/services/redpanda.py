@@ -57,6 +57,7 @@ from rptest.services.admin import Admin
 from rptest.services.redpanda_installer import RedpandaInstaller, VERSION_RE as RI_VERSION_RE, int_tuple as ri_int_tuple
 from rptest.services.rolling_restarter import RollingRestarter
 from rptest.services.storage import ClusterStorage, NodeStorage, NodeCacheStorage
+from rptest.services.storage_failure_injection import FailureInjectionConfig
 from rptest.services.utils import BadLogLines, NodeCrash
 from rptest.util import inject_remote_script, ssh_output_stderr, wait_until_result
 
@@ -157,6 +158,14 @@ PREV_VERSION_LOG_ALLOW_LIST = [
 
 # Path to the LSAN suppressions file
 LSAN_SUPPRESSIONS_FILE = "/opt/lsan_suppressions.txt"
+
+FAILURE_INJECTION_LOG_ALLOW_LIST = [
+    re.compile(
+        "Assert failure: .* filesystem error: Injected Failure: Input/output error"
+    ),
+    re.compile("assert - Backtrace below:"),
+    re.compile("finject - .* flush called concurrently with other operations")
+]
 
 
 class MetricSamples:
@@ -666,6 +675,9 @@ class LoggingConfig:
         self.default_level = default_level
         self.logger_levels = logger_levels
 
+    def enable_finject_logging(self):
+        self.logger_levels["finject"] = "trace"
+
     def to_args(self) -> str:
         """
         Generate redpanda CLI arguments for this logging config
@@ -754,6 +766,8 @@ class RedpandaServiceBase(Service):
 
     # Where we put a compressed binary if saving it after failure
     EXECUTABLE_SAVE_PATH = "/tmp/redpanda.gz"
+
+    FAILURE_INJECTION_CONFIG_PATH = "/etc/redpanda/failure_injection_config.json"
 
     # When configuring multiple listeners for testing, a secondary port to use
     # instead of the default.
@@ -1612,6 +1626,8 @@ class RedpandaService(RedpandaServiceBase):
         self._installer: RedpandaInstaller = RedpandaInstaller(self)
         self._pandaproxy_config = pandaproxy_config
         self._schema_registry_config = schema_registry_config
+        self._failure_injection_enabled = False
+        self._tolerate_crashes = False
 
         if node_ready_timeout_s is None:
             node_ready_timeout_s = RedpandaService.DEFAULT_NODE_READY_TIMEOUT_SEC
@@ -2074,6 +2090,19 @@ class RedpandaService(RedpandaServiceBase):
 
         node.account.ssh(cmd)
 
+    def check_node(self, node):
+        pid = self.redpanda_pid(node)
+        if not pid:
+            self.logger.warn(f"No redpanda PIDs found on {node.name}")
+            return False
+
+        if not node.account.exists(f"/proc/{pid}"):
+            self.logger.warn(f"PID {pid} (node {node.name}) dead")
+            return False
+
+        # fall through
+        return True
+
     def all_up(self):
         def check_node(node):
             pid = self.redpanda_pid(node)
@@ -2108,7 +2137,7 @@ class RedpandaService(RedpandaServiceBase):
             r = fn()
             if not r and time.time() > t_initial + grace_period:
                 # Check the cluster is up before waiting + retrying
-                assert self.all_up()
+                assert self.all_up() or self._tolerate_crashes
             return r
 
         wait_until(wrapped,
@@ -2575,7 +2604,12 @@ class RedpandaService(RedpandaServiceBase):
                         (node, "Redpanda process unexpectedly stopped"))
 
         if crashes:
-            raise NodeCrash(crashes)
+            if self._tolerate_crashes:
+                self.logger.warn(
+                    f"Detected crashes, but RedpandaService is configured to allow them: {crashes}"
+                )
+            else:
+                raise NodeCrash(crashes)
 
     def cloud_storage_diagnostics(self):
         """
@@ -3041,7 +3075,7 @@ class RedpandaService(RedpandaServiceBase):
     def remove_local_data(self, node):
         node.account.remove(f"{RedpandaService.PERSISTENT_ROOT}/data/*")
 
-    def redpanda_pid(self, node):
+    def redpanda_pid(self, node, timeout=None):
         try:
             cmd = "pgrep --list-full --exact redpanda"
             for line in node.account.ssh_capture(cmd,
@@ -3658,6 +3692,17 @@ class RedpandaService(RedpandaServiceBase):
         self.logger.warn(f"{self.COV_KEY} should be one of 'ON', or 'OFF'")
         return False
 
+    def count_log_node(self, node: ClusterNode, pattern: str):
+        accum = 0
+        for line in node.account.ssh_capture(
+                f"grep \"{pattern}\" {RedpandaService.STDOUT_STDERR_CAPTURE} || true",
+                timeout_sec=60):
+            # We got a match
+            self.logger.debug(f"Found {pattern} on node {node.name}: {line}")
+            accum += 1
+
+        return accum
+
     def search_log_node(self, node: ClusterNode, pattern: str):
         for line in node.account.ssh_capture(
                 f"grep \"{pattern}\" {RedpandaService.STDOUT_STDERR_CAPTURE} || true",
@@ -3934,6 +3979,44 @@ class RedpandaService(RedpandaServiceBase):
 
     def set_expected_controller_records(self, max_records: Optional[int]):
         self._expect_max_controller_records = max_records
+
+    def set_up_failure_injection(self, finject_cfg: FailureInjectionConfig,
+                                 enabled: bool, nodes: list[ClusterNode],
+                                 tolerate_crashes: bool):
+        """
+        Deploy the given failure injection configuration to the
+        requested nodes. Should be called before
+        `RedpandaService.start`.
+        """
+        tmp_file = "/tmp/failure_injection_config.json"
+        finject_cfg.write_to_file(tmp_file)
+        for node in nodes:
+            node.account.mkdirs(
+                os.path.dirname(RedpandaService.FAILURE_INJECTION_CONFIG_PATH))
+            node.account.copy_to(tmp_file,
+                                 RedpandaService.FAILURE_INJECTION_CONFIG_PATH)
+
+            self._extra_node_conf[node].update({
+                "storage_failure_injection_enabled":
+                enabled,
+                "storage_failure_injection_config_path":
+                RedpandaService.FAILURE_INJECTION_CONFIG_PATH
+            })
+
+        # Disable segment size jitter in order to get more deterministic
+        # failure injection.
+        self.add_extra_rp_conf({"log_segment_size_jitter_percent": 0})
+
+        # This flag prevents RedpandaService from asserting out when it
+        # detects that a Redpanda node has crashed. See
+        # `RedpandaService.wait_until`.
+        self._failure_injection_enabled = True
+
+        self._tolerate_crashes = tolerate_crashes
+
+        self._log_config.enable_finject_logging()
+
+        self.logger.info(f"Set up failure injection config for nodes: {nodes}")
 
     def validate_controller_log(self):
         """
