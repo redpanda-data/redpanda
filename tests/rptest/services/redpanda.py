@@ -1104,10 +1104,16 @@ class RedpandaServiceBase(Service):
 
 
 class RedpandaServiceK8s(RedpandaServiceBase):
-    def __init__(self, context, num_brokers, cluster_spec=None):
+    def __init__(self,
+                 context,
+                 num_brokers,
+                 *,
+                 cluster_spec=None,
+                 superuser: Optional[SaslCredentials] = None):
         super(RedpandaServiceK8s, self).__init__(context,
                                                  num_brokers,
-                                                 cluster_spec=cluster_spec)
+                                                 cluster_spec=cluster_spec,
+                                                 superuser=superuser)
         self._trim_logs = False
         self._helm = None
         self._kubectl = None
@@ -1429,7 +1435,9 @@ class RedpandaServiceCloud(RedpandaServiceK8s):
                     return p['id']
             return None
 
-        def create(self, config_profile_name='tier-1-aws'):
+        def create(self,
+                   config_profile_name: str = 'tier-1-aws',
+                   superuser: Optional[SaslCredentials] = None) -> str:
             """Create a cloud cluster and a new namespace; block until cluster is finished creating.
 
             :param config_profile_name: config profile name, default 'tier-1-aws'
@@ -1503,6 +1511,13 @@ class RedpandaServiceCloud(RedpandaServiceK8s):
                 f'Unable to deterimine readiness of cloud cluster {name}')
             self._cluster_id = self._get_cluster_id(namespace_uuid, name)
 
+            if superuser is not None:
+                self._logger.debug(
+                    f'super username: {superuser.username}, algorithm: {superuser.algorithm}'
+                )
+                self._create_user(superuser)
+                self._create_acls(superuser.username)
+
             return self._cluster_id
 
         def delete(self):
@@ -1530,16 +1545,84 @@ class RedpandaServiceCloud(RedpandaServiceK8s):
                     endpoint=f'/api/v1/namespaces/{namespace_uuid}')
                 self._logger.debug(f'resp: {json.dumps(resp)}')
 
-    def __init__(self, context, num_brokers, tier_name: str):
-        """
-        Initialize a RedpandaServiceCloud object.
+        def _create_user(self, user: SaslCredentials):
+            """Create SASL user
+            """
+
+            cluster = self._http_get(
+                endpoint=f'/api/v1/clusters/{self._cluster_id}')
+            base_url = cluster['status']['listeners']['redpandaConsole'][
+                'default']['urls'][0]
+            payload = {
+                'mechanism': user.algorithm,
+                'password': user.password,
+                'username': user.username,
+            }
+            # use the console api url to create sasl users; uses the same auth token
+            return self._http_post(base_url=base_url,
+                                   endpoint='/api/users',
+                                   json=payload)
+
+        def _create_acls(self, username):
+            """Create ACLs for user
+            """
+
+            cluster = self._http_get(
+                endpoint=f'/api/v1/clusters/{self._cluster_id}')
+            base_url = cluster['status']['listeners']['redpandaConsole'][
+                'default']['urls'][0]
+            for rt in ('Topic', 'Group', 'TransactionalID'):
+                payload = {
+                    'host': '*',
+                    'operation': 'All',
+                    'permissionType': 'Allow',
+                    'principal': f'User:{username}',
+                    'resourceName': '*',
+                    'resourcePatternType': 'Literal',
+                    'resourceType': rt,
+                }
+                self._http_post(base_url=base_url,
+                                endpoint='/api/acls',
+                                json=payload)
+
+            payload = {
+                'host': '*',
+                'operation': 'All',
+                'permissionType': 'Allow',
+                'principal': f'User:{username}',
+                'resourceName': 'kafka-cluster',
+                'resourcePatternType': 'Literal',
+                'resourceType': 'Cluster',
+            }
+            self._http_post(base_url=base_url,
+                            endpoint='/api/acls',
+                            json=payload)
+
+        def get_broker_address(self):
+            cluster = self._http_get(
+                endpoint=f'/api/v1/clusters/{self._cluster_id}')
+            return cluster['status']['listeners']['kafka']['default']['urls'][
+                0]
+
+    def __init__(self,
+                 context,
+                 num_brokers,
+                 *,
+                 superuser: Optional[SaslCredentials] = None,
+                 tier_name: Optional[str] = None):
+        """Initialize a RedpandaServiceCloud object.
 
         :param context: test context object
         :param num_brokers: ignored because Redpanda Cloud will launch the number of brokers necessary to satisfy the product needs
+        :param superuser:  if None, then create SUPERUSER_CREDENTIALS with full acls
+        :param tier_name:  the redpanda cloud tier name to create
         """
 
         super(RedpandaServiceCloud,
-              self).__init__(context, None, cluster_spec=ClusterSpec.empty())
+              self).__init__(context,
+                             None,
+                             cluster_spec=ClusterSpec.empty(),
+                             superuser=superuser)
         if num_brokers is not None:
             self.logger.info(
                 f'num_brokers is {num_brokers}, but setting to None for cloud')
@@ -1576,7 +1659,10 @@ class RedpandaServiceCloud(RedpandaServiceK8s):
         pass
 
     def start(self, **kwargs):
-        cluster_id = self._cloud_cluster.create()
+        superuser = None
+        if not self._skip_create_superuser:
+            superuser = self._superuser
+        cluster_id = self._cloud_cluster.create(superuser=superuser)
         remote_uri = f'redpanda@{cluster_id}-agent'
         self._kubectl = KubectlTool(self,
                                     remote_uri=remote_uri,
@@ -1599,6 +1685,9 @@ class RedpandaServiceCloud(RedpandaServiceK8s):
 
     def node_id(self, node, force_refresh=False, timeout_sec=30):
         pass
+
+    def brokers(self, limit=None, listener: str = "dnslistener") -> str:
+        return self._cloud_cluster.get_broker_address()
 
 
 class RedpandaService(RedpandaServiceBase):
@@ -4171,7 +4260,9 @@ def make_redpanda_service(context: TestContext,
             context.logger.info(
                 f"extra_rp_conf is ignored with RedpandaServiceCloud")
 
-        service = RedpandaServiceCloud(context, num_brokers, cloud_tier.value,
+        service = RedpandaServiceCloud(context,
+                                       num_brokers,
+                                       tier_name=cloud_tier.value,
                                        **kwargs)
 
     else:
