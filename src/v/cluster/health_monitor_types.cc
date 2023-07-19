@@ -106,16 +106,10 @@ node_health_report::operator=(const node_health_report& other) {
 std::ostream& operator<<(std::ostream& o, const node_health_report& r) {
     fmt::print(
       o,
-      "{{id: {}, data_disk: {}, cache_disk: {}, topics: {}, redpanda_version: "
-      "{}, uptime: "
-      "{}, logical_version: {}, drain_status: {}}}",
+      "{{id: {}, topics: {}, local_state: {}, drain_status: {}}}",
       r.id,
-      r.local_state.data_disk,
-      r.local_state.cache_disk,
       r.topics,
-      r.local_state.redpanda_version,
-      r.local_state.uptime,
-      r.local_state.logical_version,
+      r.local_state,
       r.drain_status);
     return o;
 }

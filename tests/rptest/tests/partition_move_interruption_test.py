@@ -41,7 +41,8 @@ class PartitionMoveInterruption(PartitionMovementMixin, EndToEndTest):
             extra_rp_conf={
                 # Disable leader balancer, as this test is doing its own
                 # partition movement and the balancer would interfere
-                'enable_leader_balancer': False
+                'enable_leader_balancer': False,
+                'partition_autobalancing_mode': 'off'
             },
             **kwargs)
 

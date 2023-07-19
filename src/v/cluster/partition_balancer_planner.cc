@@ -163,6 +163,44 @@ private:
     ss::abort_source& _as;
 };
 
+std::pair<uint64_t, uint64_t> partition_balancer_planner::get_node_bytes_info(
+  const node::local_state& node_state) {
+    const auto& state = node_state.log_data_size;
+    if (likely(state)) {
+        // It is okay to account reclaimable space as free space even through
+        // the space is not readily available. During the partition move if the
+        // disk is filled up, trimmer cleans up reclaimable space to make room
+        // for the move.
+        auto target_size = state.value().data_target_size;
+        auto current_size = state.value().data_current_size;
+        auto reclaimable_size = state.value().data_reclaimable_size;
+
+        auto total_free = 0UL;
+        if (likely(target_size > current_size)) {
+            // to avoid any underflow with substraction with misreporting
+            total_free = target_size - current_size + reclaimable_size;
+        } else {
+            auto overage = current_size - target_size;
+            if (reclaimable_size > overage) {
+                total_free = reclaimable_size - overage;
+            }
+        }
+        // Clamp the free space to be conservative and account for any error
+        // from space monitoring logic.
+        total_free = std::min(total_free, node_state.data_disk.free);
+        // Clamp to total available target size.
+        total_free = std::min(target_size, total_free);
+        return std::make_pair(target_size, total_free);
+    }
+    // This can happen in the following scenarios
+    // - During an upgrade - not yet upgradaded health report (temporary state).
+    // - No space management configuration in place, fall back to disk usage.
+    // - Configuration in place but local monitor has not yet computed the
+    //   usage information, eg: right after broker bootstrap.
+    return std::make_pair(
+      node_state.data_disk.total, node_state.data_disk.free);
+}
+
 void partition_balancer_planner::init_per_node_state(
   const cluster_health_report& health_report,
   request_context& ctx,
@@ -231,9 +269,7 @@ void partition_balancer_planner::init_per_node_state(
     }
 
     for (const auto& node_report : health_report.node_reports) {
-        const uint64_t total = node_report.local_state.data_disk.total;
-        const uint64_t free = node_report.local_state.data_disk.free;
-
+        const auto [total, free] = get_node_bytes_info(node_report.local_state);
         ctx.node_disk_reports.emplace(
           node_report.id, node_disk_space(node_report.id, total, total - free));
     }
