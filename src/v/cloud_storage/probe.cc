@@ -22,8 +22,7 @@ namespace cloud_storage {
 remote_probe::remote_probe(
   remote_metrics_disabled disabled,
   remote_metrics_disabled public_disabled,
-  materialized_resources& ms)
-  : _public_metrics(ssx::metrics::public_metrics_handle) {
+  materialized_resources& ms) {
     namespace sm = ss::metrics;
 
     if (!disabled) {

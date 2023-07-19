@@ -149,7 +149,7 @@ partition_balancer_state::probe::probe(const partition_balancer_state& parent)
 }
 
 void partition_balancer_state::probe::setup_metrics(
-  ss::metrics::metric_groups& metrics) {
+  ssx::metrics::metric_groups& metrics) {
     namespace sm = ss::metrics;
     metrics.add_group(
       prometheus_sanitize::metrics_name("cluster:partition"),

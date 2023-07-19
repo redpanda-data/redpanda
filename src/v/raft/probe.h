@@ -74,8 +74,9 @@ private:
     uint64_t _replicate_request_error = 0;
     uint64_t _recovery_request_error = 0;
 
-    ss::metrics::metric_groups _metrics;
-    ss::metrics::metric_groups _public_metrics{
-      ssx::metrics::public_metrics_handle};
+    ssx::metrics::metric_groups _metrics
+      = ssx::metrics::metric_groups::make_internal();
+    ssx::metrics::metric_groups _public_metrics
+      = ssx::metrics::metric_groups::make_public();
 };
 } // namespace raft

@@ -12,6 +12,7 @@
 #pragma once
 #include "bytes/iobuf.h"
 #include "seastarx.h"
+#include "ssx/metrics.h"
 #include "storage/ntp_config.h"
 #include "storage/parser.h"
 #include "storage/segment_set.h"
@@ -227,7 +228,8 @@ private:
         uint64_t entries_removed{0};
         size_t cached_bytes{0};
 
-        ss::metrics::metric_groups metrics;
+        ssx::metrics::metric_groups metrics
+          = ssx::metrics::metric_groups::make_internal();
     };
 
     probe _probe;

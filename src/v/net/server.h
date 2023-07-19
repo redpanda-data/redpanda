@@ -16,6 +16,7 @@
 #include "net/connection.h"
 #include "net/connection_rate.h"
 #include "net/types.h"
+#include "ssx/metrics.h"
 #include "ssx/semaphore.h"
 #include "utils/hdr_hist.h"
 
@@ -106,8 +107,8 @@ class server {
 public:
     explicit server(server_configuration, ss::logger&);
     explicit server(ss::sharded<server_configuration>* s, ss::logger&);
-    server(server&&) noexcept = default;
-    server& operator=(server&&) noexcept = delete;
+    server(server&&) = delete;
+    server& operator=(server&&) = delete;
     server(const server&) = delete;
     server& operator=(const server&) = delete;
     virtual ~server();
@@ -171,8 +172,10 @@ private:
     ss::gate _conn_gate;
     hdr_hist _hist;
     std::unique_ptr<server_probe> _probe;
-    ss::metrics::metric_groups _metrics;
-    ss::metrics::metric_groups _public_metrics;
+    ssx::metrics::metric_groups _metrics
+      = ssx::metrics::metric_groups::make_internal();
+    ssx::metrics::metric_groups _public_metrics
+      = ssx::metrics::metric_groups::make_public();
 
     std::optional<config_connection_rate_bindings> connection_rate_bindings;
     std::optional<connection_rate<>> _connection_rates;

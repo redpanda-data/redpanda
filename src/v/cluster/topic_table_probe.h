@@ -51,9 +51,10 @@ private:
     model::node_id _node_id;
     absl::flat_hash_map<model::topic_namespace, ss::metrics::metric_groups>
       _topics_metrics;
-    ss::metrics::metric_groups _internal_metrics;
-    ss::metrics::metric_groups _public_metrics{
-      ssx::metrics::public_metrics_handle};
+    ssx::metrics::metric_groups _internal_metrics
+      = ssx::metrics::metric_groups::make_internal();
+    ssx::metrics::metric_groups _public_metrics
+      = ssx::metrics::metric_groups::make_public();
     int32_t _moving_to_partitions = 0;
     int32_t _moving_from_partitions = 0;
     int32_t _cancelling_movements = 0;

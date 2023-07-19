@@ -28,9 +28,9 @@ public:
     explicit rpc_server(ss::sharded<net::server_configuration>* s)
       : net::server(s, rpclog) {}
 
-    rpc_server(rpc_server&&) noexcept = default;
-    ~rpc_server() = default;
+    ~rpc_server() override = default;
 
+    rpc_server(rpc_server&&) noexcept = delete;
     rpc_server& operator=(rpc_server&&) noexcept = delete;
     rpc_server(const rpc_server&) = delete;
     rpc_server& operator=(const rpc_server&) = delete;

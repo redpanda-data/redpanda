@@ -13,6 +13,7 @@
 #include "cloud_storage/types.h"
 #include "model/fundamental.h"
 #include "seastarx.h"
+#include "ssx/metrics.h"
 
 #include <seastar/core/metrics_registration.hh>
 
@@ -270,8 +271,10 @@ private:
     hdr_hist _client_acquisition_latency;
     hdr_hist _segment_download_latency;
 
-    ss::metrics::metric_groups _metrics;
-    ss::metrics::metric_groups _public_metrics;
+    ssx::metrics::metric_groups _metrics
+      = ssx::metrics::metric_groups::make_internal();
+    ssx::metrics::metric_groups _public_metrics
+      = ssx::metrics::metric_groups::make_public();
 };
 
 } // namespace cloud_storage

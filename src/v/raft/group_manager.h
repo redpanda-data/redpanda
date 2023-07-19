@@ -17,6 +17,7 @@
 #include "raft/recovery_memory_quota.h"
 #include "raft/types.h"
 #include "rpc/fwd.h"
+#include "ssx/metrics.h"
 #include "storage/fwd.h"
 #include "utils/notification_list.h"
 
@@ -99,7 +100,8 @@ private:
     std::vector<ss::lw_shared_ptr<raft::consensus>> _groups;
     notification_list<leader_cb_t, cluster::notification_id_type>
       _notifications;
-    ss::metrics::metric_groups _metrics;
+    ssx::metrics::metric_groups _metrics
+      = ssx::metrics::metric_groups::make_internal();
     storage::api& _storage;
     coordinated_recovery_throttle& _recovery_throttle;
     recovery_memory_quota _recovery_mem_quota;

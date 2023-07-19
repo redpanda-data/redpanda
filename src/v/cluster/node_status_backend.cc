@@ -298,7 +298,7 @@ node_status_backend::process_request(node_status_request request) {
 }
 
 void node_status_backend::setup_metrics(
-  ss::metrics::metric_groups& metric_groups) {
+  ssx::metrics::metric_groups& metric_groups) {
     namespace sm = ss::metrics;
 
     metric_groups.add_group(

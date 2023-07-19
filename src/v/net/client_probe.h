@@ -14,6 +14,7 @@
 #include "net/unresolved_address.h"
 #include "rpc/logger.h"
 #include "rpc/types.h"
+#include "ssx/metrics.h"
 
 #include <seastar/core/metrics_registration.hh>
 
@@ -76,7 +77,7 @@ public:
     void waiting_for_available_memory() { ++_requests_blocked_memory; }
 
     void setup_metrics(
-      ss::metrics::metric_groups& mgs,
+      ssx::metrics::metric_groups& mgs,
       const std::optional<rpc::connection_cache_label>& label,
       const std::optional<model::node_id>& node_id,
       const net::unresolved_address& target_addr);
@@ -97,7 +98,8 @@ private:
     uint32_t _server_correlation_errors = 0;
     uint32_t _client_correlation_errors = 0;
     uint32_t _requests_blocked_memory = 0;
-    ss::metrics::metric_groups _metrics;
+    ssx::metrics::metric_groups _metrics
+      = ssx::metrics::metric_groups::make_internal();
 
     friend std::ostream& operator<<(std::ostream& o, const client_probe& p);
 };

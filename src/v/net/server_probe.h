@@ -12,6 +12,7 @@
 #pragma once
 
 #include "seastarx.h"
+#include "ssx/metrics.h"
 
 #include <seastar/core/metrics_registration.hh>
 
@@ -59,10 +60,11 @@ public:
 
     void waiting_for_conection_rate() { ++_connections_wait_rate; }
 
-    void setup_metrics(ss::metrics::metric_groups& mgs, std::string_view proto);
+    void
+    setup_metrics(ssx::metrics::metric_groups& mgs, std::string_view proto);
 
     void setup_public_metrics(
-      ss::metrics::metric_groups& mgs, std::string_view proto);
+      ssx::metrics::metric_groups& mgs, std::string_view proto);
 
 private:
     uint64_t _requests_completed = 0;

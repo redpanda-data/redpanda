@@ -33,8 +33,7 @@ server::server(server_configuration c, ss::logger& log)
   : cfg(std::move(c))
   , _log(log)
   , _memory{size_t{static_cast<size_t>(cfg.max_service_memory_per_core)}, "net/server-mem"}
-  , _probe(std::make_unique<server_probe>())
-  , _public_metrics(ssx::metrics::public_metrics_handle) {
+  , _probe(std::make_unique<server_probe>()) {
     vlog(
       _log.info, "Creating net::server for {} with config {}", cfg.name, cfg);
 }

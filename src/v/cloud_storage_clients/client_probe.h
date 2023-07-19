@@ -112,9 +112,10 @@ private:
     hdr_hist _lease_duration;
     /// Current utilization of the client pool
     uint64_t _pool_utilization;
-    ss::metrics::metric_groups _metrics;
-    ss::metrics::metric_groups _public_metrics{
-      ssx::metrics::public_metrics_handle};
+    ssx::metrics::metric_groups _metrics
+      = ssx::metrics::metric_groups::make_internal();
+    ssx::metrics::metric_groups _public_metrics
+      = ssx::metrics::metric_groups::make_public();
 };
 
 } // namespace cloud_storage_clients

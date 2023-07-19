@@ -266,7 +266,8 @@ private:
     std::unique_ptr<monitor_unsafe_log_flag> _monitor_unsafe_log_flag;
     ss::sharded<archival::scrubber> _archival_scrubber;
 
-    ss::metrics::metric_groups _metrics;
+    ssx::metrics::metric_groups _metrics
+      = ssx::metrics::metric_groups::make_internal();
     ss::sharded<ssx::metrics::public_metrics_group> _public_metrics;
     std::unique_ptr<kafka::rm_group_proxy_impl> _rm_group_proxy;
 

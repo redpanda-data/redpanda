@@ -132,9 +132,10 @@ private:
     ss::gate _gate;
     ss::timer<clock_t> _coordinator;
 
-    ss::metrics::metric_groups _internal_metrics;
-    ss::metrics::metric_groups _public_metrics{
-      ssx::metrics::public_metrics_handle};
+    ssx::metrics::metric_groups _internal_metrics
+      = ssx::metrics::metric_groups::make_internal();
+    ssx::metrics::metric_groups _public_metrics
+      = ssx::metrics::metric_groups::make_public();
 };
 
 } // namespace raft

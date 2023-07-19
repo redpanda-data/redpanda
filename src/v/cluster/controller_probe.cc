@@ -61,7 +61,7 @@ void controller_probe::setup_metrics() {
         return;
     }
 
-    _public_metrics = std::make_unique<ss::metrics::metric_groups>(
+    _public_metrics = std::make_unique<ssx::metrics::metric_groups>(
       ssx::metrics::public_metrics_handle);
     _public_metrics->add_group(
       prometheus_sanitize::metrics_name("cluster"),

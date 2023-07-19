@@ -11,6 +11,7 @@
 #pragma once
 
 #include "model/fundamental.h"
+#include "ssx/metrics.h"
 #include "utils/hdr_hist.h"
 
 #include <seastar/core/metrics_registration.hh>
@@ -76,7 +77,8 @@ private:
 
     uint64_t _chunk_size = 0;
 
-    ss::metrics::metric_groups _metrics;
+    ssx::metrics::metric_groups _metrics
+      = ssx::metrics::metric_groups::make_internal();
 };
 
 } // namespace cloud_storage

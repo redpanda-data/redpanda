@@ -34,6 +34,7 @@
 #include "raft/timeout_jitter.h"
 #include "raft/types.h"
 #include "seastarx.h"
+#include "ssx/metrics.h"
 #include "ssx/semaphore.h"
 #include "storage/fwd.h"
 #include "storage/log.h"
@@ -756,7 +757,8 @@ private:
     std::chrono::milliseconds _replicate_append_timeout;
     std::chrono::milliseconds _recovery_append_timeout;
     size_t _heartbeat_disconnect_failures;
-    ss::metrics::metric_groups _metrics;
+    ssx::metrics::metric_groups _metrics
+      = ssx::metrics::metric_groups::make_internal();
     ss::abort_source _as;
     storage::api& _storage;
     std::optional<std::reference_wrapper<coordinated_recovery_throttle>>

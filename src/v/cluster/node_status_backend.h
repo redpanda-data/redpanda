@@ -80,7 +80,7 @@ private:
     ss::future<ss::shard_id>
       maybe_create_client(model::node_id, net::unresolved_address);
 
-    void setup_metrics(ss::metrics::metric_groups&);
+    void setup_metrics(ssx::metrics::metric_groups&);
 
     struct statistics {
         int64_t rpcs_sent;
@@ -115,9 +115,10 @@ private:
     notification_id_type _members_table_notification_handle;
 
     statistics _stats{};
-    ss::metrics::metric_groups _metrics;
-    ss::metrics::metric_groups _public_metrics{
-      ssx::metrics::public_metrics_handle};
+    ssx::metrics::metric_groups _metrics
+      = ssx::metrics::metric_groups::make_internal();
+    ssx::metrics::metric_groups _public_metrics
+      = ssx::metrics::metric_groups::make_public();
 
     ss::sharded<ss::abort_source>& _as;
     struct member_notification {
