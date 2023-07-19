@@ -125,16 +125,25 @@ class NodeDecommissionWaiter():
             )
 
     def _not_decommissioned_node(self):
-        return [
+        return random.choice([
             n for n in self._nodes_with_decommission_progress_api()
             if self.redpanda.node_id(n) != self.node_id
-        ][0]
+        ])
 
     def _made_progress(self):
         return (time.time() - self.last_update) < self.progress_timeout
 
     def _node_removed(self):
-        brokers = self.admin.get_brokers(node=self._not_decommissioned_node())
+        brokers = []
+        node_to_query = self._not_decommissioned_node()
+        try:
+            brokers = self.admin.get_brokers(node=node_to_query)
+        except:
+            # Failure injection is not coordinated, some nodes may
+            # not be reachable, ignore and retry.
+            self.logger.debug(f"Unable to query {node_to_query}",
+                              exc_info=True)
+            return False
         for b in brokers:
             if b['node_id'] == self.node_id:
                 return False
@@ -199,7 +208,8 @@ class NodeDecommissionWaiter():
         assert self._made_progress(
         ), f"Node {self.node_id} decommissioning stopped making progress"
 
-        assert self._node_removed(
+        wait_until(
+            self._node_removed, timeout_sec=60, backoff_sec=1
         ), f"Node {self.node_id} still exists in the cluster but decommission operation status reported it is finished"
 
 
