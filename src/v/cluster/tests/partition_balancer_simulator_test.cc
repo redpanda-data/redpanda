@@ -569,6 +569,10 @@ private:
             storage::disk node_disk{.free = total - used, .total = total};
             report.id = id;
             report.local_state.set_disk(node_disk);
+            report.local_state.log_data_size = {
+              .data_target_size = total,
+              .data_current_size = used,
+              .data_reclaimable_size = 0};
 
             absl::flat_hash_map<
               model::topic_namespace,

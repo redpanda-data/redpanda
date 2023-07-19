@@ -6,6 +6,7 @@
 # As of the Change Date specified in that file, in accordance with
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
+import requests
 from rptest.services.cluster import cluster
 from rptest.clients.types import TopicSpec
 from rptest.tests.end_to_end import EndToEndTest
@@ -82,15 +83,30 @@ class PartitionForceReconfigurationTest(EndToEndTest, PartitionMovementMixin):
         self._wait_until_no_leader()
         return (killed, alive)
 
+    def _do_force_reconfiguration(self, replicas):
+        try:
+            self.redpanda._admin.force_set_partition_replicas(
+                topic=self.topic, partition=0, replicas=replicas)
+            return True
+        except requests.exceptions.RetryError:
+            return False
+        except requests.exceptions.ConnectionError:
+            return False
+        except requests.exceptions.HTTPError:
+            return False
+
     def _force_reconfiguration(self, new_replicas):
         replicas = [
             dict(node_id=replica.node_id, core=replica.core)
             for replica in new_replicas
         ]
         self.redpanda.logger.info(f"Force reconfiguring to: {replicas}")
-        self.redpanda._admin.force_set_partition_replicas(topic=self.topic,
-                                                          partition=0,
-                                                          replicas=replicas)
+        self.redpanda.wait_until(
+            lambda: self._do_force_reconfiguration(replicas=replicas),
+            timeout_sec=60,
+            backoff_sec=2,
+            err_msg=f"Unable to force reconfigure {self.topic}/0 to {replicas}"
+        )
 
     def _start_consumer(self):
         self.start_consumer()

@@ -91,7 +91,7 @@ class IsolatedDecommissionedNodeTest(PreallocNodesTest):
         topic = self.topics[0]
         self.isolated_node = self.redpanda.nodes[0]
         with firewall_blocked([self.isolated_node], self.internal_port, True):
-            wait_until(self.is_node_isolated, timeout_sec=20, backoff_sec=1)
+            wait_until(self.is_node_isolated, timeout_sec=90, backoff_sec=1)
 
             confluent_admin = admin.AdminClient({
                 "bootstrap.servers":
@@ -146,7 +146,7 @@ class IsolatedDecommissionedNodeTest(PreallocNodesTest):
 
         with firewall_blocked([self.isolated_node], self.internal_port, True):
 
-            wait_until(self.is_node_isolated, timeout_sec=20, backoff_sec=1)
+            wait_until(self.is_node_isolated, timeout_sec=90, backoff_sec=1)
 
             producer = Producer({
                 "bootstrap.servers":

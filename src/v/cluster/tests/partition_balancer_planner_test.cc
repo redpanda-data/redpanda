@@ -467,8 +467,10 @@ FIXTURE_TEST(test_move_part_of_replicas, partition_balancer_planner_fixture) {
     populate_node_status_table().get();
 
     // Set order of full nodes
-    hr.node_reports[1].local_state.data_disk.free -= 1_MiB;
-    hr.node_reports[2].local_state.data_disk.free -= 2_MiB;
+    hr.node_reports[1].local_state.log_data_size.value().data_current_size
+      += 1_MiB;
+    hr.node_reports[2].local_state.log_data_size.value().data_current_size
+      += 2_MiB;
 
     auto planner = make_planner();
     auto plan_data = planner.plan_actions(hr, as).get();
@@ -512,7 +514,8 @@ FIXTURE_TEST(
     populate_node_status_table().get();
 
     // Set order of full nodes
-    hr.node_reports[0].local_state.data_disk.free -= 1_MiB;
+    hr.node_reports[0].local_state.log_data_size.value().data_current_size
+      += 1_MiB;
 
     // Set partition sizes
     for (auto& topic : hr.node_reports[0].topics) {
@@ -692,8 +695,9 @@ FIXTURE_TEST(test_rack_awareness, partition_balancer_planner_fixture) {
     auto hr = create_health_report();
     // Make node_4 disk free size less to make partition allocator disk usage
     // constraint prefer node_3 rather than node_4
-    hr.node_reports[4].local_state.data_disk.free
-      = hr.node_reports[3].local_state.data_disk.free - 10_MiB;
+    hr.node_reports[4].local_state.log_data_size.value().data_current_size
+      = hr.node_reports[3].local_state.log_data_size.value().data_current_size
+        - 10_MiB;
 
     std::set<size_t> unavailable_nodes = {0};
     populate_node_status_table(unavailable_nodes).get();
