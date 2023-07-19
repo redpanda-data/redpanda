@@ -290,26 +290,32 @@ FIXTURE_TEST(test_async_manifest_view_fetch, async_manifest_view_fixture) {
         auto cursor = view.get_cursor(so).get();
         BOOST_REQUIRE(cursor.has_value());
 
-        cursor.value()->with_manifest([so](const partition_manifest& m) {
-            BOOST_REQUIRE_EQUAL(m.get_start_offset().value(), so);
-        });
+        cursor.value()
+          ->with_manifest([so](const partition_manifest& m) {
+              BOOST_REQUIRE_EQUAL(m.get_start_offset().value(), so);
+          })
+          .get();
 
         auto next = std::upper_bound(
           spillover_start_offsets.begin(), spillover_start_offsets.end(), so);
 
         if (next != spillover_start_offsets.end()) {
-            cursor.value()->with_manifest([next](const partition_manifest& m) {
-                vlog(test_log.info, "Checking spillover manifest");
-                BOOST_REQUIRE_EQUAL(
-                  model::next_offset(m.get_last_offset()), *next);
-            });
+            cursor.value()
+              ->with_manifest([next](const partition_manifest& m) {
+                  vlog(test_log.info, "Checking spillover manifest");
+                  BOOST_REQUIRE_EQUAL(
+                    model::next_offset(m.get_last_offset()), *next);
+              })
+              .get();
         } else {
-            cursor.value()->with_manifest([this](const partition_manifest& m) {
-                vlog(test_log.info, "Checking STM manifest");
-                BOOST_REQUIRE_EQUAL(
-                  m.get_start_offset(),
-                  stm_manifest.get_start_offset().value());
-            });
+            cursor.value()
+              ->with_manifest([this](const partition_manifest& m) {
+                  vlog(test_log.info, "Checking STM manifest");
+                  BOOST_REQUIRE_EQUAL(
+                    m.get_start_offset(),
+                    stm_manifest.get_start_offset().value());
+              })
+              .get();
         }
     }
 }
@@ -335,11 +341,13 @@ FIXTURE_TEST(test_async_manifest_view_iter, async_manifest_view_fixture) {
     }
     auto cursor = std::move(maybe_cursor.value());
     do {
-        cursor->with_manifest([&](const partition_manifest& m) {
-            for (auto meta : m) {
-                actual.push_back(meta);
-            }
-        });
+        cursor
+          ->with_manifest([&](const partition_manifest& m) {
+              for (auto meta : m) {
+                  actual.push_back(meta);
+              }
+          })
+          .get();
     } while (cursor->next().get().value() != eof::yes);
     print_diff(actual, expected);
     BOOST_REQUIRE_EQUAL(expected.size(), actual.size());
@@ -380,17 +388,19 @@ FIXTURE_TEST(test_async_manifest_view_truncate, async_manifest_view_fixture) {
     std::vector<segment_meta> actual;
     auto cursor = std::move(maybe_cursor.value());
     do {
-        cursor->with_manifest([&](const partition_manifest& m) {
-            vlog(
-              test_log.info,
-              "Looking at the manifest [{}/{}], archive start: {}",
-              m.get_start_offset(),
-              m.get_last_offset(),
-              stm_manifest.get_archive_start_offset());
-            for (auto meta : m) {
-                actual.push_back(meta);
-            }
-        });
+        cursor
+          ->with_manifest([&](const partition_manifest& m) {
+              vlog(
+                test_log.info,
+                "Looking at the manifest [{}/{}], archive start: {}",
+                m.get_start_offset(),
+                m.get_last_offset(),
+                stm_manifest.get_archive_start_offset());
+              for (auto meta : m) {
+                  actual.push_back(meta);
+              }
+          })
+          .get();
     } while (cursor->next().get().value() != eof::yes);
     print_diff(actual, expected);
     BOOST_REQUIRE_EQUAL(expected.size(), actual.size());
@@ -402,17 +412,19 @@ FIXTURE_TEST(test_async_manifest_view_truncate, async_manifest_view_fixture) {
     actual.clear();
     cursor = std::move(backlog_cursor.value());
     do {
-        cursor->with_manifest([&](const partition_manifest& m) {
-            vlog(
-              test_log.info,
-              "Looking at the backlog manifest [{}/{}], archive start: {}",
-              m.get_start_offset(),
-              m.get_last_offset(),
-              stm_manifest.get_archive_start_offset());
-            for (auto meta : m) {
-                actual.push_back(meta);
-            }
-        });
+        cursor
+          ->with_manifest([&](const partition_manifest& m) {
+              vlog(
+                test_log.info,
+                "Looking at the backlog manifest [{}/{}], archive start: {}",
+                m.get_start_offset(),
+                m.get_last_offset(),
+                stm_manifest.get_archive_start_offset());
+              for (auto meta : m) {
+                  actual.push_back(meta);
+              }
+          })
+          .get();
     } while (cursor->next().get().value() != eof::yes);
     print_diff(actual, removed);
     BOOST_REQUIRE_EQUAL(removed.size(), actual.size());
@@ -429,17 +441,19 @@ FIXTURE_TEST(test_async_manifest_view_truncate, async_manifest_view_fixture) {
     BOOST_REQUIRE(!backlog_cursor.has_failure());
     cursor = std::move(backlog_cursor.value());
     do {
-        cursor->with_manifest([&](const partition_manifest& m) {
-            vlog(
-              test_log.info,
-              "Looking at the backlog manifest [{}/{}], archive start: {}",
-              m.get_start_offset(),
-              m.get_last_offset(),
-              stm_manifest.get_archive_start_offset());
-            for (auto meta : m) {
-                actual.push_back(meta);
-            }
-        });
+        cursor
+          ->with_manifest([&](const partition_manifest& m) {
+              vlog(
+                test_log.info,
+                "Looking at the backlog manifest [{}/{}], archive start: {}",
+                m.get_start_offset(),
+                m.get_last_offset(),
+                stm_manifest.get_archive_start_offset());
+              for (auto meta : m) {
+                  actual.push_back(meta);
+              }
+          })
+          .get();
     } while (cursor->next().get().value() != eof::yes);
     print_diff(actual, removed);
     BOOST_REQUIRE_EQUAL(removed.size(), actual.size());
@@ -492,25 +506,28 @@ FIXTURE_TEST(
     std::vector<segment_meta> actual;
     auto cursor = std::move(maybe_cursor.value());
     do {
-        cursor->with_manifest([&](const partition_manifest& m) {
-            vlog(
-              test_log.info,
-              "Looking at the manifest {}/{}",
-              m.get_start_offset(),
-              m.get_last_offset());
-            for (auto meta : m) {
-                if (
-                  meta.base_offset < stm_manifest.get_archive_start_offset()) {
-                    // The cursor only returns full manifests. If the new
-                    // archive start offset is in the middle of the manifest
-                    // it will return the whole manifest and the user has
-                    // to skip all segments below the archive start offset
-                    // manually.
-                    continue;
-                }
-                actual.push_back(meta);
-            }
-        });
+        cursor
+          ->with_manifest([&](const partition_manifest& m) {
+              vlog(
+                test_log.info,
+                "Looking at the manifest {}/{}",
+                m.get_start_offset(),
+                m.get_last_offset());
+              for (auto meta : m) {
+                  if (
+                    meta.base_offset
+                    < stm_manifest.get_archive_start_offset()) {
+                      // The cursor only returns full manifests. If the new
+                      // archive start offset is in the middle of the manifest
+                      // it will return the whole manifest and the user has
+                      // to skip all segments below the archive start offset
+                      // manually.
+                      continue;
+                  }
+                  actual.push_back(meta);
+              }
+          })
+          .get();
     } while (cursor->next().get().value() != eof::yes);
     print_diff(actual, expected);
     BOOST_REQUIRE_EQUAL(expected.size(), actual.size());
@@ -523,24 +540,27 @@ FIXTURE_TEST(
     actual.clear();
     cursor = std::move(backlog_cursor.value());
     do {
-        cursor->with_manifest([&](const partition_manifest& m) {
-            vlog(
-              test_log.info,
-              "Looking at the manifest {}/{}",
-              m.get_start_offset(),
-              m.get_last_offset());
-            for (auto meta : m) {
-                if (
-                  meta.base_offset >= stm_manifest.get_archive_start_offset()) {
-                    // The cursor only returns full manifests. If the new
-                    // archive start offset is in the middle of the manifest
-                    // the backlog will contain full manifest and the user has
-                    // to read up until the start offset of the manifest.
-                    break;
-                }
-                actual.push_back(meta);
-            }
-        });
+        cursor
+          ->with_manifest([&](const partition_manifest& m) {
+              vlog(
+                test_log.info,
+                "Looking at the manifest {}/{}",
+                m.get_start_offset(),
+                m.get_last_offset());
+              for (auto meta : m) {
+                  if (
+                    meta.base_offset
+                    >= stm_manifest.get_archive_start_offset()) {
+                      // The cursor only returns full manifests. If the new
+                      // archive start offset is in the middle of the manifest
+                      // the backlog will contain full manifest and the user has
+                      // to read up until the start offset of the manifest.
+                      break;
+                  }
+                  actual.push_back(meta);
+              }
+          })
+          .get();
     } while (cursor->next().get().value() != eof::yes);
     print_diff(actual, removed);
     BOOST_REQUIRE_EQUAL(removed.size(), actual.size());
@@ -570,9 +590,11 @@ FIXTURE_TEST(test_async_manifest_view_evict, async_manifest_view_fixture) {
         auto tmp_cursor = view.get_cursor(o).get();
         BOOST_REQUIRE(!tmp_cursor.has_failure());
         auto cursor = std::move(tmp_cursor.value());
-        cursor->with_manifest([o](const partition_manifest& m) {
-            BOOST_REQUIRE_EQUAL(o, m.get_start_offset().value());
-        });
+        cursor
+          ->with_manifest([o](const partition_manifest& m) {
+              BOOST_REQUIRE_EQUAL(o, m.get_start_offset().value());
+          })
+          .get();
         cursors.emplace_back(std::move(cursor));
     }
     BOOST_REQUIRE_EQUAL(cursors.size(), spillover_start_offsets.size() - 1);
