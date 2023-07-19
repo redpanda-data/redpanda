@@ -432,7 +432,6 @@ connection_context::dispatch_method_once(request_header hdr, size_t size) {
               "Discarding second stage failure {}",
               std::current_exception());
         }
-        sres->tracker->mark_errored();
         vlog(
           klog.info,
           "Detected error dispatching request: {}",
