@@ -31,6 +31,7 @@
 #include <chrono>
 #include <exception>
 #include <map>
+#include <type_traits>
 #include <variant>
 
 namespace cloud_storage {
@@ -293,13 +294,45 @@ public:
     /// any scheduling point. The reference will be invalidated in this
     /// case.
     template<class Fn>
-    auto with_manifest(Fn fn) {
-        auto ref = manifest();
-        vassert(ref.has_value(), "Invalid cursor, {}", _view.get_ntp());
-        return fn(*ref);
+    auto with_manifest(Fn fn)
+      -> ss::future<decltype(fn(std::declval<const partition_manifest>()))> {
+        int quota = 4;
+        while (quota-- > 0) {
+            if (manifest_needs_sync()) {
+                // If the concurrent spillover event happens interim we will
+                // retry the operation after re-fetching the manifest.
+                co_await maybe_sync_manifest();
+                continue;
+            }
+            auto ref = manifest();
+            if (!ref.has_value()) {
+                throw std::runtime_error(fmt_with_ctx(
+                  fmt::format, "Invalid cursor, {}", _view.get_ntp()));
+            }
+            co_return fn(*ref);
+        }
+        // This shouldn't happen normally because spillover events are supposed
+        // to be rare. This might happen though when the spillover was disabled
+        // and then enabled for the first time. In this case ntp_archiver will
+        // spill several manifests in a row and the reader might get stuck.
+        throw std::runtime_error(fmt_with_ctx(
+          fmt::format,
+          "Failed to fetch manifest because concurrent spills, {}",
+          _view.get_ntp()));
     }
 
+    /// Make sure that the cursor points to the right manifest
+    ///
+    /// If the cursor points at the STM manifest it may get out
+    /// of range after a scheduling point.
+    ss::future<> maybe_sync_manifest();
+
+    /// Returns 'false' if the manifest was changed concurrently
+    /// and the user could see a gap in segments.
+    bool manifest_needs_sync() const;
+
 private:
+    using stm_manifest_t = std::reference_wrapper<const partition_manifest>;
     void on_timeout();
 
     bool manifest_in_range(const manifest_section_t& m);
@@ -313,6 +346,80 @@ private:
     ss::timer<ss::lowres_clock> _timer;
     const model::offset _begin;
     const model::offset _end;
+    std::optional<model::offset> _stm_start_offset{std::nullopt};
 };
+
+/// Invoke functor with every segment_meta accessible by the cursor
+/// The functor is expected to return stop_iteration::yes if the processing
+/// is completed.
+template<class Fn>
+ss::future<>
+for_each_segment(std::unique_ptr<async_manifest_view_cursor> cursor, Fn func) {
+    while (true) {
+        int quota = 4;
+        while (quota-- > 0) {
+            if (cursor->manifest_needs_sync()) {
+                // If the concurrent spillover event happens interim we will
+                // retry the operation after re-fetching the manifest.
+                co_await cursor->maybe_sync_manifest();
+                continue;
+            }
+            break;
+        }
+        if (cursor->manifest_needs_sync()) {
+            throw std::runtime_error(fmt_with_ctx(
+              fmt::format,
+              "Failed to iterate to the next manifest due to contention"));
+        }
+        // Invoke functor
+        for (const auto& meta : *cursor->manifest()) {
+            auto stop = func(meta);
+            if (stop == ss::stop_iteration::yes) {
+                break;
+            }
+        }
+        if (co_await cursor->next_iter() == ss::stop_iteration::yes) {
+            break;
+        }
+    }
+}
+
+/// Invoke functor with every manifest accessible by the cursor
+/// The functor is expected to return stop_iteration::yes if the processing
+/// is completed.
+/// \param cursor is an initialized cursor, the cursor should be pointing
+///               somewhere
+/// \param func is a functor that accepts
+///             ssx::task_local_ptr<const partition_manifest>
+template<class Fn>
+ss::future<>
+for_each_manifest(std::unique_ptr<async_manifest_view_cursor> cursor, Fn func) {
+    while (true) {
+        int quota = 4;
+        while (quota-- > 0) {
+            if (cursor->manifest_needs_sync()) {
+                // If the concurrent spillover event happens interim we will
+                // retry the operation after re-fetching the manifest.
+                co_await cursor->maybe_sync_manifest();
+                continue;
+            }
+            break;
+        }
+        if (cursor->manifest_needs_sync()) {
+            throw std::runtime_error(fmt_with_ctx(
+              fmt::format,
+              "Failed to iterate to the next manifest due to contention"));
+        }
+
+        // Invoke functor
+        auto stop = func(cursor->manifest());
+        if (stop == ss::stop_iteration::yes) {
+            break;
+        }
+        if (co_await cursor->next_iter() == ss::stop_iteration::yes) {
+            break;
+        }
+    }
+}
 
 } // namespace cloud_storage

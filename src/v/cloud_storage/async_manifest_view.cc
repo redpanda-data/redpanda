@@ -123,6 +123,31 @@ async_manifest_view_cursor::get_status() const {
       });
 }
 
+ss::future<> async_manifest_view_cursor::maybe_sync_manifest() {
+    if (manifest_needs_sync()) {
+        auto res = co_await seek(_stm_start_offset.value());
+        if (res.has_failure()) {
+            throw std::system_error(res.error());
+        }
+        if (!res.value()) {
+            vlog(_view._ctxlog.error, "Can't sync manifest");
+            _current = stale_manifest();
+        }
+    }
+}
+
+bool async_manifest_view_cursor::manifest_needs_sync() const {
+    if (std::holds_alternative<stm_manifest_t>(_current)) {
+        // Invariant: if _current points to the STM manifest the
+        //            _stm_start_offset is set
+        vassert(_stm_start_offset.has_value(), "STM start offset is not set");
+        const auto& m = std::get<stm_manifest_t>(_current).get();
+        auto so = m.get_start_offset().value_or(model::offset{});
+        return so != _stm_start_offset.value();
+    }
+    return false;
+}
+
 ss::future<result<bool, error_outcome>>
 async_manifest_view_cursor::seek(async_view_search_query_t q) {
     if (std::holds_alternative<model::offset>(q)) {
@@ -151,7 +176,7 @@ async_manifest_view_cursor::seek(async_view_search_query_t q) {
           vlog(
             _view._ctxlog.debug,
             "Seeking STM manifest [{}-{}]",
-            p.get().get_start_offset().value(),
+            p.get().get_start_offset(),
             p.get().get_last_offset());
           return contains(p, q);
       },
@@ -159,7 +184,7 @@ async_manifest_view_cursor::seek(async_view_search_query_t q) {
           vlog(
             _view._ctxlog.debug,
             "Seeking spillover manifest [{}-{}]",
-            m->manifest.get_start_offset().value(),
+            m->manifest.get_start_offset(),
             m->manifest.get_last_offset());
           return contains(m->manifest, q);
       });
@@ -188,6 +213,17 @@ async_manifest_view_cursor::seek(async_view_search_query_t q) {
         co_return false;
     }
     _current = res.value();
+    if (std::holds_alternative<stm_manifest_t>(_current)) {
+        // Invariant: if cursor points to the STM manifest _stm_start_offset is
+        //            set to expected base offset
+        auto so = std::get<stm_manifest_t>(_current)
+                    .get()
+                    .get_start_offset()
+                    .value_or(model::offset{});
+        _stm_start_offset = std::clamp(so, _begin, _end);
+    } else {
+        _stm_start_offset = std::nullopt;
+    }
     _timer.rearm(_idle_timeout + ss::lowres_clock::now());
     co_return true;
 }
@@ -201,11 +237,25 @@ bool async_manifest_view_cursor::manifest_in_range(
       [this](std::reference_wrapper<const partition_manifest> p) {
           auto so = p.get().get_start_offset().value_or(model::offset{});
           auto lo = p.get().get_last_offset();
+          vlog(
+            _view._ctxlog.debug,
+            "Spill manifest range: [{}/{}], cursor range: [{}/{}]",
+            so,
+            lo,
+            _begin,
+            _end);
           return !(_end < so || _begin > lo);
       },
       [this](const ss::shared_ptr<materialized_manifest>& m) {
           auto so = m->manifest.get_start_offset().value_or(model::offset{});
           auto lo = m->manifest.get_last_offset();
+          vlog(
+            _view._ctxlog.debug,
+            "STM manifest range: [{}/{}], cursor range: [{}/{}]",
+            so,
+            lo,
+            _begin,
+            _end);
           return !(_end < so || _begin > lo);
       });
 }
@@ -222,16 +272,6 @@ async_manifest_view_cursor::next() {
           return model::next_offset(m->manifest.get_last_offset());
       });
 
-    // TODO: address the general race:
-    // - spillover manifests are [0, 10], [11, 20], [21, 30]
-    // - STM manifest has segments [31, 40], [41, 50], [51, 60]
-    // - cursor is iterated over through the spillover manifests
-    // - next() called, moving cursor to offset 31, and STM manifest is
-    //   selected and "materialized"
-    // - STM spills over to create new manifest [31, 50], new STM manifest only
-    //   has [51, 60]
-    // - users of the cursor see manifest starting at offset 51 instead of 31
-
     if (next_base_offset == EOS || next_base_offset > _end) {
         co_return eof::yes;
     }
@@ -243,6 +283,11 @@ async_manifest_view_cursor::next() {
         co_return error_outcome::out_of_range;
     }
     _current = manifest.value();
+    if (std::holds_alternative<stm_manifest_t>(_current)) {
+        // Invariant: if cursor points to the STM manifest _stm_start_offset is
+        //            set to expected base offset
+        _stm_start_offset = std::clamp(next_base_offset, _begin, _end);
+    }
     _timer.rearm(_idle_timeout + ss::lowres_clock::now());
     co_return eof::no;
 }
@@ -909,7 +954,7 @@ async_manifest_view::time_based_retention(
             while (
               cursor->get_status()
               == async_manifest_view_cursor_status::materialized_spillover) {
-                auto eof = cursor->with_manifest(
+                auto eof = co_await cursor->with_manifest(
                   [boundary, &result](const partition_manifest& manifest) {
                       for (const auto& meta : manifest) {
                           if (meta.max_timestamp > boundary) {
@@ -1024,9 +1069,9 @@ async_manifest_view::size_based_retention(size_t size_limit) noexcept {
                 // go to the STM manifest and should only include archive.
                 // The end condition is the lambda returned true, otherwise
                 // we should keep scanning.
-                auto eof = cursor->with_manifest(
+                auto eof = co_await cursor->with_manifest(
                   [this, &to_remove, &result, clean_offset](
-                    const auto& manifest) mutable {
+                    const partition_manifest& manifest) mutable {
                       for (const auto& meta : manifest) {
                           // Skip segments below the clean offset as they're
                           // already eligible for GC. The reason why we are
