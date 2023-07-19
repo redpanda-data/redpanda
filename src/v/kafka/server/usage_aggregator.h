@@ -76,6 +76,7 @@ protected:
 private:
     std::chrono::seconds reset_state(fragmented_vector<usage_window> buckets);
     void close_window();
+    void rearm_window_timer();
     bool is_bucket_stale(size_t idx, uint64_t close_ts) const;
 
 private:
