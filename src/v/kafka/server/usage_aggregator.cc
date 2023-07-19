@@ -169,7 +169,7 @@ usage_aggregator<clock_type>::usage_aggregator(
                               return close_window();
                           }).finally([this] {
             if (!_gate.is_closed()) {
-                _timer.arm(_usage_window_width_interval);
+                rearm_window_timer();
             }
         });
     });
@@ -179,6 +179,26 @@ usage_aggregator<clock_type>::usage_aggregator(
         _buckets.push_back(usage_window{});
     }
     _buckets[_current_window].reset(ss::lowres_system_clock::now());
+}
+
+template<typename clock_type>
+void usage_aggregator<clock_type>::rearm_window_timer() {
+    /// Calculate the next time the timer should fire, to adjust for skew ensure
+    /// the timer always fires at the top of the interval, weather it be hour,
+    /// minute, second, etc.
+    static_assert(
+      std::
+        is_same_v<decltype(_usage_window_width_interval), std::chrono::seconds>,
+      "Interval is assumed to be in units of seconds");
+    const auto now = clock_type::now();
+    /// This modulo trick only works because epoch time is hour aligned
+    const auto delta = std::chrono::seconds(
+      epoch_time_secs(now) % _usage_window_width_interval.count());
+    const auto duration_until_next_close = _usage_window_width_interval - delta;
+    vassert(
+      duration_until_next_close >= 0s,
+      "Error correctly detecting last window delta");
+    _timer.arm(duration_until_next_close);
 }
 
 template<typename clock_type>
@@ -205,10 +225,7 @@ ss::future<> usage_aggregator<clock_type>::start() {
         }
     }
 
-    vassert(
-      last_window_delta <= _usage_window_width_interval,
-      "Error correctly detecting last window delta");
-    _timer.arm(_usage_window_width_interval - last_window_delta);
+    rearm_window_timer();
     _persist_disk_timer.arm(_usage_disk_persistance_interval);
 }
 
