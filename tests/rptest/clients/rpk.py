@@ -1020,7 +1020,7 @@ class RpkTool:
         if self._tls_enabled:
             flags += [
                 "-X",
-                "tls.enabled=" + self._tls_enabled,
+                "tls.enabled=" + str(self._tls_enabled),
             ]
         return flags
 
