@@ -456,6 +456,7 @@ ss::future<> connection_context::handle_response(
   ss::lw_shared_ptr<session_resources> sres,
   sequence_id seq,
   correlation_id correlation) {
+    std::exception_ptr e;
     try {
         auto r = co_await std::move(f);
         r->set_correlation(correlation);
@@ -463,29 +464,29 @@ ss::future<> connection_context::handle_response(
         _responses.insert({seq, std::move(randr)});
         co_return co_await maybe_process_responses();
     } catch (...) {
-        // ssx::spawn_with_gate already caught
-        // shutdown-like exceptions, so we should only
-        // be taking this path for real errors.  That
-        // also means that on shutdown we don't bother
-        // to call shutdown_input on the connection,
-        // so rely on any future reader to check the
-        // abort source before considering reading the
-        // connection.
-        auto e = std::current_exception();
-        auto disconnected = net::is_disconnect_exception(e);
-        if (disconnected) {
-            vlog(
-              klog.info,
-              "Disconnected {} ({})",
-              self->conn->addr,
-              disconnected.value());
-        } else {
-            vlog(klog.warn, "Error processing request: {}", e);
-        }
-
-        sres->tracker->mark_errored();
-        self->conn->shutdown_input();
+        e = std::current_exception();
     }
+
+    // on shutdown we don't bother to call shutdown_input on the connection, so
+    // rely on any future reader to check the abort source before considering
+    // reading the connection.
+    if (ssx::is_shutdown_exception(e)) {
+        co_return;
+    }
+
+    auto disconnected = net::is_disconnect_exception(e);
+    if (disconnected) {
+        vlog(
+          klog.info,
+          "Disconnected {} ({})",
+          self->conn->addr,
+          disconnected.value());
+    } else {
+        vlog(klog.warn, "Error processing request: {}", e);
+    }
+
+    sres->tracker->mark_errored();
+    self->conn->shutdown_input();
 }
 
 /**
