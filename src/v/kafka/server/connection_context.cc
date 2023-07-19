@@ -379,12 +379,10 @@ connection_context::dispatch_method_once(request_header hdr, size_t size) {
 
           auto remaining = size - request_header_size
                            - hdr.client_id_buffer.size() - hdr.tags_size_bytes;
-          co_return co_await read_iobuf_exactly(conn->input(), remaining)
-            .then([this, hdr = std::move(hdr), sres = std::move(sres)](
-                    iobuf buf) mutable {
+          auto buf = co_await read_iobuf_exactly(conn->input(), remaining);
                 if (_server.abort_requested()) {
                     // _server._cntrl etc might not be alive
-                    return ss::now();
+                    co_return;
                 }
                 auto self = shared_from_this();
                 auto rctx = request_context(
@@ -420,7 +418,7 @@ connection_context::dispatch_method_once(request_header hdr, size_t size) {
                 /**
                  * first stage processed in a foreground.
                  */
-                return res.dispatched
+                co_return co_await res.dispatched
                   .then_wrapped([this,
                                  f = std::move(res.response),
                                  seq,
@@ -507,7 +505,6 @@ connection_context::dispatch_method_once(request_header hdr, size_t size) {
                       self->conn->shutdown_input();
                       sres->tracker->mark_errored();
                   });
-            });
 }
 
 /**
