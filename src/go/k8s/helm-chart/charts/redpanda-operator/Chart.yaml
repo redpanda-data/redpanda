@@ -4,7 +4,7 @@ description: Redpanda operator helm chart
 type: application
 
 # This is the chart version. This is only placeholder that will be set during release process
-version: 0.3.0
+version: 0.3.1
 
 # This is the version number of the application being deployed. This is only placeholder that
 # will be set during release process.
