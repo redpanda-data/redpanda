@@ -36,6 +36,7 @@
 #include <seastar/core/shared_ptr.hh>
 #include <seastar/core/sleep.hh>
 #include <seastar/core/with_timeout.hh>
+#include <seastar/coroutine/as_future.hh>
 
 #include <chrono>
 #include <memory>
@@ -412,22 +413,17 @@ connection_context::dispatch_method_once(request_header hdr, size_t size) {
     _seq_idx = _seq_idx + sequence_id(1);
     auto res = kafka::process_request(
       std::move(rctx), _server.smp_group(), *sres);
-    /**
-     * first stage processed in a foreground.
-     */
-    std::exception_ptr dispatch_eptr;
-    try {
-        co_await std::move(res.dispatched);
-    } catch (...) {
-        dispatch_eptr = std::current_exception();
-    }
 
     /*
+     * first stage processed in a foreground.
+     *
      * if the dispatch/first stage failed, then we need to
      * need to consume the second stage since it might be
      * an exceptional future.
      */
-    if (dispatch_eptr) {
+    auto dispatch = co_await ss::coroutine::as_future(
+      std::move(res.dispatched));
+    if (dispatch.failed()) {
         try {
             co_await std::move(res.response);
         } catch (...) {
@@ -438,7 +434,9 @@ connection_context::dispatch_method_once(request_header hdr, size_t size) {
         }
         sres->tracker->mark_errored();
         vlog(
-          klog.info, "Detected error dispatching request: {}", dispatch_eptr);
+          klog.info,
+          "Detected error dispatching request: {}",
+          dispatch.get_exception());
         self->conn->shutdown_input();
         sres->tracker->mark_errored();
         co_return;
