@@ -4,11 +4,11 @@ description: Redpanda operator helm chart
 type: application
 
 # This is the chart version. This is only placeholder that will be set during release process
-version: 0.2.0
+version: 0.3.0
 
 # This is the version number of the application being deployed. This is only placeholder that
 # will be set during release process.
-appVersion: v21.3.4
+appVersion: v23.1.13
 
 home: https://vectorized.io
 sources:
