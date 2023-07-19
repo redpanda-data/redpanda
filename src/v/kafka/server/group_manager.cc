@@ -69,8 +69,8 @@ ss::future<> group_manager::start() {
       });
 
     _unmanage_notify_handle = _pm.local().register_unmanage_notification(
-      _tp_ns.ns, _tp_ns.tp, [this](model::partition_id p_id) {
-          detach_partition(model::ntp(_tp_ns.ns, _tp_ns.tp, p_id));
+      _tp_ns.ns, _tp_ns.tp, [this](model::topic_partition_view tp_p) {
+          detach_partition(model::ntp(_tp_ns.ns, _tp_ns.tp, tp_p.partition));
       });
 
     /*
