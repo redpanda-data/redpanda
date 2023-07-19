@@ -347,7 +347,7 @@ FIXTURE_TEST(test_async_manifest_view_iter, async_manifest_view_fixture) {
 }
 
 FIXTURE_TEST(test_async_manifest_view_truncate, async_manifest_view_fixture) {
-    // Check that segments in the truncated part are not accessible
+    // Check archive truncation
     std::vector<segment_meta> expected;
     collect_segments_to(expected);
     generate_manifest_section(100);
@@ -370,8 +370,9 @@ FIXTURE_TEST(test_async_manifest_view_truncate, async_manifest_view_fixture) {
 
     model::offset so = model::offset{0};
     auto maybe_cursor = view.get_cursor(so).get();
-    BOOST_REQUIRE(maybe_cursor.has_failure());
-    BOOST_REQUIRE(maybe_cursor.error() == error_outcome::out_of_range);
+    // The clean offset should still be accesible such that retention
+    // can operate above it.
+    BOOST_REQUIRE(!maybe_cursor.has_failure());
 
     maybe_cursor = view.get_cursor(new_so).get();
     BOOST_REQUIRE(!maybe_cursor.has_failure());
@@ -703,60 +704,69 @@ FIXTURE_TEST(test_async_manifest_view_after_gc, async_manifest_view_fixture) {
      */
     std::vector<segment_meta> expected;
     collect_segments_to(expected);
-    for (int i = 0; i < 2; i++) {
-        generate_manifest_section(100);
+    for (int i = 0; i < 3; i++) {
+        generate_manifest_section(5);
     }
 
     listen();
 
-    size_t total_size = 0;
-    for (const auto& meta : expected) {
-        total_size += meta.size_bytes;
-    }
+    // This test expects all generated segments to have the same size.
+    const auto segments_to_keep = 6;
+    const size_t size_limit = segments_to_keep * expected[0].size_bytes;
+    const auto truncation_point = expected[expected.size() - segments_to_keep];
 
-    const auto& first_seg = expected[0];
-    const auto& second_seg = expected[1];
-    const auto& third_seg = expected[2];
-
-    BOOST_REQUIRE(first_seg.size_bytes == second_seg.size_bytes);
+    // The test created 3 spillover manifest with 5 segments each.
+    // The STM manifest also has 5 segments. Advance the start offset
+    // to the second segment in the second spillover manifest.
+    BOOST_REQUIRE(spillover_start_offsets.size() == 3);
+    const auto second_spill_start = spillover_start_offsets[0];
+    auto iter = std::next(std::find_if(
+      expected.begin(), expected.end(), [second_spill_start](const auto& meta) {
+          return meta.base_offset == second_spill_start;
+      }));
+    const auto second_seg_second_spill = *iter;
 
     stm_manifest.set_archive_start_offset(
-      second_seg.base_offset, second_seg.delta_offset);
+      second_seg_second_spill.base_offset,
+      second_seg_second_spill.delta_offset);
 
-    size_t size_limit = total_size - 2 * first_seg.size_bytes;
+    // Advance the clean archive offset through each possible position given
+    // the current start offset and verify that the truncation point is correct
+    // (it should be the same every time).
+    size_t prev_segment_size = 0;
+    for (const auto& pre_start_seg : expected) {
+        if (
+          pre_start_seg.base_offset > stm_manifest.get_archive_start_offset()) {
+            break;
+        }
 
-    // The first attempt to compute retention is before the clean offset was
-    // advanced. At this point the manifest has not updated it's archive size
-    // (it's total_size).
-    vlog(
-      test_log.info,
-      "Triggering size based retention, current archive start offset: "
-      "{}, current archive clean offset: {}, expected offset: {}",
-      stm_manifest.get_archive_start_offset(),
-      stm_manifest.get_archive_clean_offset(),
-      second_seg.base_offset);
-    auto res = view.compute_retention(size_limit, std::nullopt).get();
+        stm_manifest.set_archive_clean_offset(
+          pre_start_seg.base_offset, prev_segment_size);
+        vlog(
+          test_log.info,
+          "Triggering size based retention, current archive start offset: "
+          "{}, current archive clean offset: {}, expected offset: {}",
+          stm_manifest.get_archive_start_offset(),
+          stm_manifest.get_archive_clean_offset(),
+          truncation_point.base_offset);
 
-    BOOST_REQUIRE(res.has_value());
-    BOOST_REQUIRE_EQUAL(res.value().offset, third_seg.base_offset);
-    BOOST_REQUIRE_EQUAL(res.value().delta, third_seg.delta_offset);
+        auto res = view.compute_retention(size_limit, std::nullopt).get();
+        BOOST_REQUIRE(res.has_value());
 
-    // Compute retention again after updating the clean offset and the archive
-    // size. In order to get the correct result, `first_seg` must be skipped.
-    stm_manifest.set_archive_clean_offset(
-      second_seg.base_offset, first_seg.size_bytes);
-    vlog(
-      test_log.info,
-      "Triggering size based retention, current archive start offset: "
-      "{}, current archive clean offset: {}, expected offset: {}",
-      stm_manifest.get_archive_start_offset(),
-      stm_manifest.get_archive_clean_offset(),
-      second_seg.base_offset);
-    auto res2 = view.compute_retention(size_limit, std::nullopt).get();
+        if (res.value().offset > truncation_point.base_offset) {
+            vlog(
+              test_log.error,
+              "Retention collected too much data:"
+              "truncation offset: {}, expected : {}",
+              res.value().offset,
+              truncation_point.base_offset);
+        }
 
-    BOOST_REQUIRE(res2.has_value());
-    BOOST_REQUIRE_EQUAL(res2.value().offset, third_seg.base_offset);
-    BOOST_REQUIRE_EQUAL(res2.value().delta, third_seg.delta_offset);
+        BOOST_CHECK_EQUAL(res.value().offset, truncation_point.base_offset);
+        BOOST_CHECK_EQUAL(res.value().delta, truncation_point.delta_offset);
+
+        prev_segment_size = pre_start_seg.size_bytes;
+    }
 }
 
 FIXTURE_TEST(

@@ -512,7 +512,7 @@ async_manifest_view::get_cursor(
         if (_stm_manifest.get_archive_start_offset() == model::offset{}) {
             begin = _stm_manifest.get_start_offset().value_or(begin);
         } else {
-            begin = _stm_manifest.get_archive_start_offset();
+            begin = _stm_manifest.get_archive_clean_offset();
         }
 
         if (end < begin) {
@@ -719,7 +719,7 @@ bool async_manifest_view::in_archive(async_view_search_query_t o) {
     return ss::visit(
       o,
       [this](model::offset ro) {
-          return ro >= _stm_manifest.get_archive_start_offset()
+          return ro >= _stm_manifest.get_archive_clean_offset()
                  && ro < _stm_manifest.get_start_offset().value_or(
                       model::offset::min());
       },
@@ -1005,7 +1005,7 @@ async_manifest_view::size_based_retention(size_t size_limit) noexcept {
             }
 
             auto res = co_await get_cursor(
-              _stm_manifest.get_archive_start_offset(),
+              _stm_manifest.get_archive_clean_offset(),
               model::prev_offset(_stm_manifest.get_start_offset().value()));
             if (res.has_failure()) {
                 vlog(
