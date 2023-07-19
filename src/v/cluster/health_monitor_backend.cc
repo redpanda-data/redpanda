@@ -518,11 +518,7 @@ map_reply_result(result<get_node_health_reply> reply) {
 
 result<node_health_report> health_monitor_backend::process_node_reply(
   model::node_id id, result<get_node_health_reply> reply) {
-    auto it = _last_replies.find(id);
-    if (it == _last_replies.end()) {
-        auto [inserted, _] = _last_replies.emplace(id, reply_status{});
-        it = inserted;
-    }
+    auto [it, _] = _last_replies.try_emplace(id);
 
     auto res = map_reply_result(reply);
     if (!res) {
