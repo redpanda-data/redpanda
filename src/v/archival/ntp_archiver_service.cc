@@ -2041,7 +2041,7 @@ ss::future<> ntp_archiver::apply_archive_retention() {
     if (
       res.value().offset == model::offset{}
       || res.value().offset
-           == _manifest_view->stm_manifest().get_archive_start_offset()) {
+           <= _manifest_view->stm_manifest().get_archive_start_offset()) {
         co_return;
     }
 
@@ -2092,6 +2092,23 @@ ss::future<> ntp_archiver::garbage_collect_archive() {
       "Garbage collecting archive segments in offest range [{}, {})",
       clean_offset,
       start_offset);
+
+    if (clean_offset == start_offset) {
+        vlog(
+          _rtclog.debug,
+          "Garbage collection in the archive not required as clean offset "
+          "equals the start offset ({})",
+          clean_offset);
+        co_return;
+    } else if (clean_offset > start_offset) {
+        vlog(
+          _rtclog.error,
+          "Garbage collection requested until offset {}, but start offset is "
+          "at {}. Skipping garbage collection.",
+          clean_offset,
+          start_offset);
+        co_return;
+    }
 
     model::offset new_clean_offset;
     // Value includes segments but doesn't include manifests
@@ -2162,9 +2179,11 @@ ss::future<> ntp_archiver::garbage_collect_archive() {
     }
 
     // Drop out if we have no work to do, avoid doing things like the following
-    // manifest flushing unnecessarily.
+    // manifest flushing unnecessarily. This is potentially problematic since,
+    // we've already checked that the clean offset is greater than the start
+    // offset.
     if (objects_to_remove.empty() && manifests_to_remove.empty()) {
-        vlog(_rtclog.debug, "Nothing to remove in archive GC");
+        vlog(_rtclog.warn, "Nothing to remove in archive GC");
         co_return;
     }
 

@@ -512,7 +512,7 @@ async_manifest_view::get_cursor(
         if (_stm_manifest.get_archive_start_offset() == model::offset{}) {
             begin = _stm_manifest.get_start_offset().value_or(begin);
         } else {
-            begin = _stm_manifest.get_archive_start_offset();
+            begin = _stm_manifest.get_archive_clean_offset();
         }
 
         if (end < begin) {
@@ -719,7 +719,7 @@ bool async_manifest_view::in_archive(async_view_search_query_t o) {
     return ss::visit(
       o,
       [this](model::offset ro) {
-          return ro >= _stm_manifest.get_archive_start_offset()
+          return ro >= _stm_manifest.get_archive_clean_offset()
                  && ro < _stm_manifest.get_start_offset().value_or(
                       model::offset::min());
       },
@@ -980,7 +980,8 @@ ss::future<
 async_manifest_view::size_based_retention(size_t size_limit) noexcept {
     archive_start_offset_advance result;
     try {
-        auto cloud_log_size = _stm_manifest.cloud_log_size();
+        const auto cloud_log_size = _stm_manifest.cloud_log_size();
+        const auto clean_offset = _stm_manifest.get_archive_clean_offset();
         if (cloud_log_size > size_limit) {
             auto to_remove = cloud_log_size - size_limit;
             vlog(
@@ -1004,7 +1005,7 @@ async_manifest_view::size_based_retention(size_t size_limit) noexcept {
             }
 
             auto res = co_await get_cursor(
-              _stm_manifest.get_archive_start_offset(),
+              _stm_manifest.get_archive_clean_offset(),
               model::prev_offset(_stm_manifest.get_start_offset().value()));
             if (res.has_failure()) {
                 vlog(
@@ -1025,8 +1026,25 @@ async_manifest_view::size_based_retention(size_t size_limit) noexcept {
                 // The end condition is the lambda returned true, otherwise
                 // we should keep scanning.
                 auto eof = cursor->with_manifest(
-                  [this, &to_remove, &result](const auto& manifest) mutable {
+                  [this, &to_remove, &result, clean_offset](
+                    const auto& manifest) mutable {
                       for (const auto& meta : manifest) {
+                          // Skip segments below the clean offset as they're
+                          // already eligible for GC. The reason why we are
+                          // using the clean offset and not the start offset
+                          // here is that the archive size (used above in
+                          // `partition_manifest::cloud_log_size` is updated
+                          // with the clean offset.
+                          if (meta.base_offset < clean_offset) {
+                              vlog(
+                                _ctxlog.debug,
+                                "Retention skip {}, as it's below the clean "
+                                "offset {}",
+                                meta,
+                                clean_offset);
+                              continue;
+                          }
+
                           result.offset = meta.base_offset;
                           result.delta = meta.delta_offset;
 
