@@ -460,19 +460,14 @@ connection_context::dispatch_method_once(request_header hdr, size_t size) {
 }
 
 ss::future<> connection_context::handle_response(ss::lw_shared_ptr<connection_context> self, ss::future<response_ptr> f, ss::lw_shared_ptr<session_resources> sres, sequence_id seq, correlation_id correlation) {
-                                co_return co_await f.then([this,
-                                               sres = std::move(sres),
-                                               seq,
-                                               correlation](
-                                                response_ptr r) mutable {
+                            try {
+                                auto r = co_await std::move(f);
                                     r->set_correlation(correlation);
                                     response_and_resources randr{
-                                      std::move(r), std::move(sres)};
+                                      std::move(r), sres};
                                     _responses.insert({seq, std::move(randr)});
-                                    return maybe_process_responses();
-                                })
-                            .handle_exception(
-                              [self, sres](std::exception_ptr e) {
+                                    co_return co_await maybe_process_responses();
+                            } catch (...) {
                                   // ssx::spawn_with_gate already caught
                                   // shutdown-like exceptions, so we should only
                                   // be taking this path for real errors.  That
@@ -481,6 +476,7 @@ ss::future<> connection_context::handle_response(ss::lw_shared_ptr<connection_co
                                   // so rely on any future reader to check the
                                   // abort source before considering reading the
                                   // connection.
+                                  auto e = std::current_exception();
                                   auto disconnected
                                     = net::is_disconnect_exception(e);
                                   if (disconnected) {
@@ -498,7 +494,7 @@ ss::future<> connection_context::handle_response(ss::lw_shared_ptr<connection_co
 
                                   sres->tracker->mark_errored();
                                   self->conn->shutdown_input();
-                              });
+                            }
 }
 
 /**
