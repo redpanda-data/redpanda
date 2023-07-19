@@ -600,8 +600,10 @@ ss::future<> topic_recovery_service::do_check_for_downloads() {
 
         vlog(
           cst_log.debug,
-          "processing result for {}: [{}]. current status: {}",
+          "processing UUID {} result for {}/{}: [{}]. current status: {}",
+          result.uuid,
           result.tp_ns,
+          result.partition,
           result.result,
           status);
     }
