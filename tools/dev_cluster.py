@@ -16,6 +16,7 @@
 #   [jerry@winterland]$ dev_cluster.py -e vbuild/debug/clang/bin/redpanda
 #
 import asyncio
+from typing import Optional
 import psutil
 import pathlib
 import yaml
@@ -40,6 +41,16 @@ class NetworkAddress:
 
 
 @dataclasses.dataclass
+class PandaproxyConfig:
+    pandaproxy_api: NetworkAddress
+
+
+@dataclasses.dataclass
+class SchemaRegistryConfig:
+    schema_registry_api: NetworkAddress
+
+
+@dataclasses.dataclass
 class RedpandaConfig:
     data_directory: pathlib.Path
     rpc_server: NetworkAddress
@@ -48,12 +59,14 @@ class RedpandaConfig:
     admin: NetworkAddress
     seed_servers: list[NetworkAddress]
     empty_seed_starts_cluster: bool = False
-    rack: str = None
+    rack: Optional[str] = None
 
 
 @dataclasses.dataclass
 class NodeConfig:
     redpanda: RedpandaConfig
+    pandaproxy: PandaproxyConfig
+    schema_registry: SchemaRegistryConfig
     config_path: str
 
     # This is _not_ the node_id, just the index into our array of nodes
@@ -70,7 +83,7 @@ class Redpanda:
         self.extra_args = extra_args
 
     def stop(self):
-        print(f"{self.process.pid}: dev_cluster stop requested")
+        print(f"node-{self.config.index}: dev_cluster stop requested")
         self.process.send_signal(signal.SIGINT)
 
     async def run(self):
@@ -108,7 +121,7 @@ class Redpanda:
             if not line:
                 break
             line = line.decode("utf8").rstrip()
-            print(f"{self.process.pid}: {line}")
+            print(f"node-{self.config.index}: {line}")
 
         await self.process.wait()
 
@@ -142,6 +155,16 @@ async def main():
                         type=int,
                         help="admin port",
                         default=9644)
+    parser.add_argument("--base-schema-registry-port",
+                        type=int,
+                        help="schema registry port",
+                        default=8081)
+    parser.add_argument(
+        "--base-pandaproxy-port",
+        type=int,
+        help="pandaproxy port",
+        # We can't use the "normal" pandaproxy port due to conflicts
+        default=8092)
     parser.add_argument("--listen-address",
                         type=str,
                         help="listening address",
@@ -176,10 +199,16 @@ async def main():
                                   seed_servers=rpc_addresses[:3],
                                   empty_seed_starts_cluster=False,
                                   rack=rack)
+        pandaproxy = PandaproxyConfig(
+            pandaproxy_api=make_address(args.base_pandaproxy_port))
+        schema_registry = SchemaRegistryConfig(
+            schema_registry_api=make_address(args.base_schema_registry_port))
         return NodeConfig(redpanda=redpanda,
                           index=i,
                           config_path=config_path,
-                          cluster_size=args.nodes)
+                          cluster_size=args.nodes,
+                          pandaproxy=pandaproxy,
+                          schema_registry=schema_registry)
 
     def pathlib_path_representer(dumper, path):
         return dumper.represent_scalar("!Path", str(path))
