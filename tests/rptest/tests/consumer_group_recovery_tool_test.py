@@ -31,8 +31,9 @@ class ConsumerOffsetsRecoveryToolTest(PreallocNodesTest):
             test_ctx,
             num_brokers=3,
             *args,
-            # disable leader balancer to make sure that group will not be realoaded because of leadership changes
+            # disable leader balancer to make sure that group will not be reloaded or removed because of leadership changes
             extra_rp_conf={
+                "enable_leader_balancer": False,
                 # clear topics from the the kafka_nodelete_topics to allow for
                 # __consumer_offsets to be configured in this test.
                 "kafka_nodelete_topics": [],
