@@ -17,6 +17,7 @@ from rptest.services.openmessaging_benchmark import OpenMessagingBenchmark
 from rptest.services.kgo_repeater_service import repeater_traffic
 from rptest.services.kgo_verifier_services import KgoVerifierRandomConsumer, KgoVerifierSeqConsumer, KgoVerifierConsumerGroupConsumer, KgoVerifierProducer
 from rptest.tests.prealloc_nodes import PreallocNodesTest
+from rptest.utils.mode_checks import skip_debug_mode
 
 
 class OpenBenchmarkSelfTest(RedpandaTest):
@@ -31,6 +32,7 @@ class OpenBenchmarkSelfTest(RedpandaTest):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, num_brokers=3, **kwargs)
 
+    @skip_debug_mode  # Sends meaningful traffic, and not intended to test Redpanda
     @cluster(num_nodes=6)
     @matrix(driver=["SIMPLE_DRIVER"], workload=["SIMPLE_WORKLOAD"])
     def test_default_omb_configuration(self, driver, workload):
@@ -49,6 +51,7 @@ class KgoRepeaterSelfTest(RedpandaTest):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, num_brokers=3, **kwargs)
 
+    @skip_debug_mode  # Sends meaningful traffic, and not intended to test Redpanda
     @cluster(num_nodes=4)
     def test_kgo_repeater(self):
         topic = 'test'
@@ -73,6 +76,7 @@ class KgoVerifierSelfTest(PreallocNodesTest):
                          *args,
                          **kwargs)
 
+    @skip_debug_mode  # Sends meaningful traffic, and not intended to test Redpanda
     @cluster(num_nodes=4)
     def test_kgo_verifier(self):
         topic = 'test'
