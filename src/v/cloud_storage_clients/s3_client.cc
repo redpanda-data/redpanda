@@ -339,6 +339,8 @@ request_creator::make_delete_objects_request(
         return ec;
     }
 
+    vlog(s3_log.trace, "delete request body: \n{}", body);
+
     return {
       std::move(header),
       ss::input_stream<char>{ss::data_source{
