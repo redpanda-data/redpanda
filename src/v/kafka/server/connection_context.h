@@ -283,6 +283,8 @@ private:
     using sequence_id = named_type<uint64_t, struct kafka_protocol_sequence>;
     using map_t = absl::flat_hash_map<sequence_id, response_and_resources>;
 
+    ss::future<> handle_response(ss::lw_shared_ptr<connection_context>, ss::future<response_ptr>, ss::lw_shared_ptr<session_resources>, sequence_id, correlation_id);
+
     class ctx_log {
     public:
         ctx_log(const ss::net::inet_address& addr, uint16_t port)
