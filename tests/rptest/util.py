@@ -464,8 +464,13 @@ def ssh_output_stderr(source_service,
     stdin, stdout, stderr = client.exec_command(cmd, timeout=timeout_sec)
 
     try:
+        stderrdata = []
+        for log_entry in iter(lambda: stderr.readline().strip(), ''):
+            source_service.logger.debug(f'rp-storage-tool output: {log_entry}')
+            stderrdata.append(log_entry)
+
+        stderrdata = '\n'.join(stderrdata)
         stdoutdata = stdout.read()
-        stderrdata = stderr.read()
 
         exit_status = stdin.channel.recv_exit_status()
         if exit_status != 0:
@@ -482,4 +487,4 @@ def ssh_output_stderr(source_service,
         stderr.close()
     source_service.logger.debug(
         f"Returning ssh command output:\n{stdoutdata}\n")
-    return stdoutdata, stderrdata
+    return stdoutdata, stderrdata.encode()

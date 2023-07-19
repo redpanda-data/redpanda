@@ -3761,7 +3761,7 @@ class RedpandaService(RedpandaServiceBase):
          "segments_outside_manifest":[],
          "unknown_keys":[]}
         """
-        vars = {"RUST_LOG": "warn"}
+        vars = {"RUST_LOG": "info"}
         backend = ""
         if self.si_settings.cloud_storage_type == CloudStorageType.S3:
             backend = "aws"
