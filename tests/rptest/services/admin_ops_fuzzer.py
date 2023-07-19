@@ -529,6 +529,10 @@ class DeleteRecords(Operation):
                 return None
 
             deletable_topic = _random_choice(self.prefix, deletable_topics)
+
+            if deletable_topic is None:
+                return None
+
             deletable_partitions = [
                 p for p in ctx.rpk().describe_topic(deletable_topic)
                 if not is_partition_empty(p)
