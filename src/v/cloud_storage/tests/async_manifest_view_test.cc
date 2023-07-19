@@ -23,6 +23,7 @@
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/io_priority_class.hh>
+#include <seastar/core/loop.hh>
 #include <seastar/core/timed_out_error.hh>
 #include <seastar/testing/seastar_test.hh>
 #include <seastar/testing/thread_test_case.hh>
@@ -73,21 +74,7 @@ public:
 
     ~async_manifest_view_fixture() { view.stop().get(); }
 
-    // The current content of the manifest will be spilled over to the archive
-    // and new elements will be generated.
-    void generate_manifest_section(int num_segments, bool hydrate = true) {
-        if (stm_manifest.empty()) {
-            add_random_segments(stm_manifest, num_segments);
-        }
-        auto so = model::next_offset(stm_manifest.get_last_offset());
-        add_random_segments(stm_manifest, num_segments);
-        spillover_manifest spm(manifest_ntp, manifest_rev);
-        for (const auto& meta : stm_manifest) {
-            if (meta.committed_offset >= so) {
-                break;
-            }
-            spm.add(meta);
-        }
+    expectation spill_manifest(const spillover_manifest& spm, bool hydrate) {
         stm_manifest.spillover(spm.make_manifest_metadata());
         // update cache
         auto path = spm.get_manifest_path();
@@ -108,10 +95,28 @@ public:
         in_stream.close().get();
         out_stream.close().get();
         ss::sstring body = linearize_iobuf(std::move(tmp_buf));
-        expectation exp{
+        return expectation{
           .url = path().string(),
           .body = body,
         };
+    }
+
+    // The current content of the manifest will be spilled over to the archive
+    // and new elements will be generated.
+    void generate_manifest_section(int num_segments, bool hydrate = true) {
+        if (stm_manifest.empty()) {
+            add_random_segments(stm_manifest, num_segments);
+        }
+        auto so = model::next_offset(stm_manifest.get_last_offset());
+        add_random_segments(stm_manifest, num_segments);
+        spillover_manifest spm(manifest_ntp, manifest_rev);
+        for (const auto& meta : stm_manifest) {
+            if (meta.committed_offset >= so) {
+                break;
+            }
+            spm.add(meta);
+        }
+        auto exp = spill_manifest(spm, hydrate);
         _expectations.push_back(std::move(exp));
         spillover_start_offsets.push_back(so);
     }
@@ -868,4 +873,138 @@ FIXTURE_TEST(
     auto past_term_query = view.get_term_last_offset(model::term_id{100}).get();
     BOOST_REQUIRE(past_term_query.has_value());
     BOOST_REQUIRE(past_term_query.value() == std::nullopt);
+}
+
+FIXTURE_TEST(
+  test_async_manifest_view_spill_concurrently, async_manifest_view_fixture) {
+    // Enumerate all segments while spilling.
+    std::vector<segment_meta> expected;
+    collect_segments_to(expected);
+    generate_manifest_section(100);
+    generate_manifest_section(100);
+    generate_manifest_section(100);
+    generate_manifest_section(100);
+    generate_manifest_section(100);
+    generate_manifest_section(100);
+    generate_manifest_section(100);
+    generate_random_segments(stm_manifest, 10);
+    listen();
+
+    model::offset so = model::offset{0};
+    auto maybe_cursor = view.get_cursor(so).get();
+    BOOST_REQUIRE(!maybe_cursor.has_failure());
+
+    std::vector<segment_meta> actual;
+    auto cursor = std::move(maybe_cursor.value());
+    do {
+        vlog(
+          test_log.info,
+          "Manifest before sync [{}/{}], cursor status: {}",
+          cursor->manifest()->get_start_offset(),
+          cursor->manifest()->get_last_offset(),
+          cursor->get_status());
+
+        if (
+          cursor->get_status()
+          == cloud_storage::async_manifest_view_cursor_status::
+            materialized_stm) {
+            // Trigger fake spillover, spill manifest with one segment
+            spillover_manifest spm(manifest_ntp, manifest_rev);
+            for (const auto& meta : stm_manifest) {
+                spm.add(meta);
+                break;
+            }
+            spill_manifest(spm, true);
+            vlog(
+              test_log.info,
+              "Spilled new manifest with metadata: {}",
+              spm.make_manifest_metadata());
+        }
+
+        cursor->maybe_sync_manifest().get();
+
+        vlog(
+          test_log.info,
+          "Manifest after sync [{}/{}], cursor status: {}",
+          cursor->manifest()->get_start_offset(),
+          cursor->manifest()->get_last_offset(),
+          cursor->get_status());
+
+        for (auto meta : *cursor->manifest()) {
+            actual.push_back(meta);
+        }
+
+    } while (cursor->next().get().value() != eof::yes);
+
+    print_diff(actual, expected);
+    BOOST_REQUIRE_EQUAL(expected.size(), actual.size());
+    BOOST_REQUIRE(expected == actual);
+}
+
+FIXTURE_TEST(test_async_manifest_view_test_iter, async_manifest_view_fixture) {
+    // Enumerate all segments while spilling.
+    std::vector<segment_meta> expected;
+    collect_segments_to(expected);
+    generate_manifest_section(100);
+    generate_manifest_section(100);
+    generate_manifest_section(100);
+    generate_manifest_section(100);
+    generate_manifest_section(100);
+    generate_manifest_section(100);
+    generate_manifest_section(100);
+    generate_random_segments(stm_manifest, 10);
+    listen();
+
+    model::offset so = model::offset{0};
+    auto maybe_cursor = view.get_cursor(so).get();
+    BOOST_REQUIRE(!maybe_cursor.has_failure());
+
+    std::vector<segment_meta> actual;
+    auto cursor = std::move(maybe_cursor.value());
+    cloud_storage::for_each_segment(
+      std::move(cursor),
+      [&actual](const cloud_storage::segment_meta& m) mutable {
+          actual.push_back(m);
+          return ss::stop_iteration::no;
+      })
+      .get();
+
+    print_diff(actual, expected);
+    BOOST_REQUIRE_EQUAL(expected.size(), actual.size());
+    BOOST_REQUIRE(expected == actual);
+}
+
+FIXTURE_TEST(test_async_manifest_view_test_iter2, async_manifest_view_fixture) {
+    std::vector<segment_meta> expected;
+    collect_segments_to(expected);
+    generate_manifest_section(100);
+    generate_manifest_section(100);
+    generate_manifest_section(100);
+    generate_manifest_section(100);
+    generate_manifest_section(100);
+    generate_manifest_section(100);
+    generate_manifest_section(100);
+    generate_random_segments(stm_manifest, 10);
+    listen();
+
+    model::offset so = model::offset{0};
+    auto maybe_cursor = view.get_cursor(so).get();
+    BOOST_REQUIRE(!maybe_cursor.has_failure());
+
+    std::vector<segment_meta> actual;
+    auto cursor = std::move(maybe_cursor.value());
+    cloud_storage::for_each_manifest(
+      std::move(cursor),
+      [&actual](ssx::task_local_ptr<const cloud_storage::partition_manifest>
+                  p) mutable {
+          for (const auto& m : *p) {
+              actual.push_back(m);
+          }
+          return ss::stop_iteration::no;
+      })
+      .get();
+
+    print_diff(actual, expected);
+    BOOST_REQUIRE_EQUAL(expected.size(), actual.size());
+    BOOST_REQUIRE(expected == actual);
 }
