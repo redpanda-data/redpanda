@@ -107,16 +107,17 @@ usage& usage::operator+=(const usage& other) {
     return *this;
 }
 
-template<typename time_point>
-auto epoch_time_secs(time_point now) {
+template<typename clock_type, typename duration>
+auto epoch_time_secs(std::chrono::time_point<clock_type, duration> now) {
     return std::chrono::duration_cast<std::chrono::seconds>(
              now.time_since_epoch())
       .count();
 }
 
-static ss::lowres_system_clock::time_point round_to_interval(
+template<typename clock_type, typename duration>
+static std::chrono::time_point<clock_type, duration> round_to_interval(
   std::chrono::seconds usage_window_width_interval,
-  ss::lowres_system_clock::time_point t) {
+  std::chrono::time_point<clock_type, duration> t) {
     /// Downstream systems are particularly sensitive to minor issues with
     /// timestamps not triggering on the configured interval (hours, minutes,
     /// seconds, etc), this method rounds t to the nearest interval and logs an
@@ -139,23 +140,12 @@ static ss::lowres_system_clock::time_point round_to_interval(
     return t;
 }
 
-void usage_window::reset(ss::lowres_system_clock::time_point now) {
-    begin = epoch_time_secs(now);
+void usage_window::reset(uint64_t now) {
+    begin = now;
     end = 0;
     u.bytes_sent = 0;
     u.bytes_received = 0;
     u.bytes_cloud_storage = std::nullopt;
-}
-
-void usage_window::reset_to_nearest_interval(
-  std::chrono::seconds usage_window_width_interval,
-  ss::lowres_system_clock::time_point tp) {
-    /// Rounds now back to nearest hour, minute, second or more generally window
-    /// width, this way all windows are always aligned to eachother,
-    /// clusterwide.
-    const auto diff_secs = std::chrono::seconds(
-      epoch_time_secs(tp) % usage_window_width_interval.count());
-    reset(tp - diff_secs);
 }
 
 template<typename clock_type>
@@ -208,6 +198,7 @@ usage_aggregator<clock_type>::usage_aggregator(
     });
     _close_window_timer.set_callback([this] {
         close_window();
+        window_closed();
         rearm_window_timer();
     });
     /// TODO: This should be refactored when fragmented_vector::resize is
@@ -263,8 +254,10 @@ ss::future<> usage_aggregator<clock_type>::start() {
     }
 
     if (!successfully_restored) {
-        _buckets[_current_window].reset_to_nearest_interval(
-          _usage_window_width_interval, ss::lowres_system_clock::now());
+        const auto now = timestamp_t::now();
+        const auto diff_secs = std::chrono::seconds(
+          epoch_time_secs(now) % _usage_window_width_interval.count());
+        _buckets[_current_window].reset(epoch_time_secs(now - diff_secs));
     }
     rearm_window_timer();
     _persist_disk_timer.arm(_usage_disk_persistance_interval);
@@ -361,7 +354,7 @@ void usage_aggregator<clock_type>::close_window() {
     /// degree of tolerance
     const uint64_t interval = _usage_window_width_interval.count();
     const auto now = round_to_interval(
-      _usage_window_width_interval, ss::lowres_system_clock::now());
+      _usage_window_width_interval, timestamp_t::now());
     const auto now_ts = epoch_time_secs(now);
     auto& cur = _buckets[_current_window];
     cur.end = now_ts;
@@ -383,11 +376,11 @@ void usage_aggregator<clock_type>::close_window() {
         } else {
             vlog(klog.info, "{}", err_str);
         }
-        cur.reset(now);
+        cur.reset(now_ts);
     } else {
         const auto w = _current_window;
         _current_window = (_current_window + 1) % _buckets.size();
-        _buckets[_current_window].reset(now);
+        _buckets[_current_window].reset(now_ts);
         ssx::background = ssx::spawn_with_gate_then(
           _gate, [this, w]() { return grab_data(w); });
     }
@@ -413,17 +406,18 @@ void usage_aggregator<clock_type>::reset_state(
         /// Optimization to begin picking up if wall time is within
         /// window interval
         const auto begin = std::chrono::seconds(buckets[*open_index].begin);
-        const auto now_ts = ss::lowres_system_clock::now();
+        const auto now_ts = timestamp_t::now();
         const auto now = std::chrono::seconds(epoch_time_secs(now_ts));
         const auto delta = now - begin;
         if (delta >= _usage_window_width_interval) {
             /// Close window and open a new one
-            const auto begin_ts = ss::lowres_system_clock::time_point(begin);
+            const auto begin_ts = typename timestamp_t::time_point(begin);
             buckets[*open_index].end = epoch_time_secs(
               begin_ts + _usage_window_width_interval);
             _current_window = (*open_index + 1) % buckets.size();
-            buckets[_current_window].reset_to_nearest_interval(
-              _usage_window_width_interval, now_ts);
+            const auto diff_secs = std::chrono::seconds(
+              epoch_time_secs(now_ts) % _usage_window_width_interval.count());
+            buckets[_current_window].reset(epoch_time_secs(now_ts - diff_secs));
         }
     }
     _buckets = std::move(buckets);

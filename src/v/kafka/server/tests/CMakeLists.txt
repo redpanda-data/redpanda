@@ -46,6 +46,7 @@ set(srcs
   delete_topics_test.cc
   offset_fetch_test.cc
   api_versions_test.cc
+  usage_manager_test.cc
   create_topics_test.cc
   find_coordinator_test.cc
   list_offsets_test.cc

@@ -31,6 +31,16 @@ struct usage
     auto serde_fields() {
         return std::tie(bytes_sent, bytes_received, bytes_cloud_storage);
     }
+    friend std::ostream& operator<<(std::ostream& os, const usage& u) {
+        fmt::print(
+          os,
+          "{{ bytes_sent: {} bytes_received: {} bytes_cloud_storage: {} }}",
+          u.bytes_sent,
+          u.bytes_received,
+          u.bytes_cloud_storage ? std::to_string(*u.bytes_cloud_storage)
+                                : "n/a");
+        return os;
+    }
 };
 
 struct usage_window
@@ -44,10 +54,7 @@ struct usage_window
     bool is_uninitialized() const { return begin == 0 && end == 0; }
     bool is_open() const { return begin != 0 && end == 0; }
 
-    void reset(ss::lowres_system_clock::time_point now);
-    void reset_to_nearest_interval(
-      std::chrono::seconds usage_window_width_interval,
-      ss::lowres_system_clock::time_point tp);
+    void reset(uint64_t now);
 
     auto serde_fields() { return std::tie(begin, end, u); }
 };
@@ -55,6 +62,15 @@ struct usage_window
 template<typename clock_type = ss::lowres_clock>
 class usage_aggregator {
 public:
+    /// This type represents the type of the timestamps that are taken when
+    /// closing a window and filling in the value of the usage_windows begin/end
+    /// values. Whereas the clock_type value is the value of the clock used by
+    /// the ss::timer<>
+    using timestamp_t = std::conditional_t<
+      std::is_same_v<clock_type, ss::lowres_clock>,
+      ss::lowres_system_clock,
+      clock_type>;
+
     usage_aggregator(
       storage::kvstore& kvstore,
       size_t usage_num_windows,
@@ -76,6 +92,11 @@ protected:
     /// to obtain the data are not relevent to unit testing this class and
     /// can be broken out so this class can be made more testable
     virtual ss::future<usage> close_current_window() = 0;
+
+    /// When writing unit tests it will be useful to know exactly when the timer
+    /// has been armed so that moving forward the manual clock may actually
+    /// invoke the timer to fire.
+    virtual void window_closed() {}
 
 private:
     void reset_state(fragmented_vector<usage_window> buckets);
