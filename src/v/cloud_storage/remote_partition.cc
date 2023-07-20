@@ -457,49 +457,19 @@ private:
             query = model::offset_cast(config.start_offset);
         }
         // Find manifest that contains requested offset or timestamp
-        int retry_quota = 4;
-        while (retry_quota-- > 0) {
-            auto stm_start_offset
-              = _partition->_manifest_view->stm_manifest().get_start_offset();
-            if (!stm_start_offset.has_value()) {
-                vlog(
-                  _ctxlog.error, "STM manifest has no start offset; no data");
-                co_return;
-            }
-            auto cur = co_await _partition->_manifest_view->get_cursor(query);
-            if (cur.has_failure()) {
-                vlog(
-                  _ctxlog.error,
-                  "Failed to query spillover manifests: {}, query: {}",
-                  cur.error(),
-                  query);
-                co_return;
-            }
-            auto new_stm_start_offset
-              = _partition->_manifest_view->stm_manifest().get_start_offset();
-            if (likely(new_stm_start_offset == stm_start_offset.value())) {
-                _view_cursor = std::move(cur.value());
-                if (
-                  _view_cursor->manifest()->get_start_offset().value()
-                  == new_stm_start_offset) {
-                    _initial_stm_start_offset = new_stm_start_offset;
-                }
-                initialize_reader_state(
-                  _view_cursor->manifest().value(), config);
-                co_return;
-            }
+        auto cur = co_await _partition->_manifest_view->get_cursor(query);
+        if (cur.has_failure()) {
             vlog(
-              _ctxlog.info,
-              "STM manifest start offset moved from {} to {} due to spillover "
-              "or truncation; retrying lookup {}",
-              stm_start_offset,
-              new_stm_start_offset,
+              _ctxlog.error,
+              "Failed to query spillover manifests: {}, query: {}",
+              cur.error(),
               query);
+            co_return;
         }
-        vlog(
-          _ctxlog.warn,
-          "Couldn't initialize cursor for {} after retrying",
-          query);
+        _view_cursor = std::move(cur.value());
+        co_await _view_cursor->maybe_sync_manifest();
+        initialize_reader_state(_view_cursor->manifest().value(), config);
+        co_return;
     }
 
     // Initialize object using remote_partition as a source
@@ -843,51 +813,33 @@ remote_partition::aborted_transactions(offset_range offsets) {
         // Target archive section of the log
         std::deque<std::pair<segment_meta, remote_segment_path>>
           meta_to_materialize;
-        int retry_quota = 4;
-        while (retry_quota-- > 0) {
-            meta_to_materialize.clear();
-            auto cur_res = co_await _manifest_view->get_cursor(
-              stm_manifest.get_archive_start_offset());
-            const auto stm_start_offset = stm_manifest.get_start_offset();
-            if (cur_res.has_failure()) {
-                vlog(
-                  _ctxlog.error,
-                  "Failed to traverse archive part of the log: {}",
-                  cur_res.error());
-                throw std::runtime_error(fmt_with_ctx(
-                  fmt::format, "Failed to get the cursor {}", cur_res.error()));
-            }
-            auto cursor = std::move(cur_res.value());
-            co_await ss::repeat([&meta_to_materialize, &cursor, offsets] {
-                const auto& manifest = *cursor->manifest();
-                for (auto it = manifest.segment_containing(offsets.begin);
-                     it != manifest.end();
-                     ++it) {
-                    if (it->base_offset > offsets.end_rp) {
-                        break;
-                    }
-                    auto path = manifest.generate_segment_path(*it);
-                    meta_to_materialize.push_back(std::make_pair(*it, path));
-                }
-                return cursor->next_iter();
-            });
-            if (likely(
-                  _manifest_view->stm_manifest().get_start_offset()
-                  == stm_start_offset)) {
-                break;
-            }
-            // The STM manifest has been truncated while iterating. To avoid
-            // accidentally skipping segments, just try again.
-            if (retry_quota == 0) {
-                throw ss::timed_out_error();
-            }
+
+        meta_to_materialize.clear();
+        auto cur_res = co_await _manifest_view->get_cursor(offsets.begin);
+        if (cur_res.has_failure()) {
             vlog(
-              _ctxlog.info,
-              "STM manifest start offset moved from {} to {} due to spillover "
-              "or truncation while collecting aborted transactions",
-              stm_start_offset,
-              _manifest_view->stm_manifest().get_start_offset());
+              _ctxlog.error,
+              "Failed to traverse archive part of the log: {}",
+              cur_res.error());
+            throw std::runtime_error(fmt_with_ctx(
+              fmt::format, "Failed to get the cursor {}", cur_res.error()));
         }
+        auto cursor = std::move(cur_res.value());
+        co_await for_each_manifest(
+          std::move(cursor),
+          [&offsets, &meta_to_materialize](
+            ssx::task_local_ptr<const partition_manifest> manifest) {
+              for (auto it = manifest->segment_containing(offsets.begin);
+                   it != manifest->end();
+                   ++it) {
+                  if (it->base_offset > offsets.end_rp) {
+                      return ss::stop_iteration::yes;
+                  }
+                  auto path = manifest->generate_segment_path(*it);
+                  meta_to_materialize.emplace_back(*it, path);
+              }
+              return ss::stop_iteration::no;
+          });
 
         for (const auto& [meta, path] : meta_to_materialize) {
             // Segment might be materialized, we need a

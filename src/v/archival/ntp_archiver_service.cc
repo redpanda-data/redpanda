@@ -2142,7 +2142,7 @@ ss::future<> ntp_archiver::garbage_collect_archive() {
     while (cursor->get_status()
            == cloud_storage::async_manifest_view_cursor_status::
              materialized_spillover) {
-        auto stop = cursor->with_manifest(
+        auto stop = co_await cursor->with_manifest(
           [&](const cloud_storage::partition_manifest& manifest) {
               for (const auto& meta : manifest) {
                   if (meta.committed_offset < clean_offset) {
