@@ -7,6 +7,7 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
+#include "pandaproxy/json/rjson_util.h"
 #include "pandaproxy/schema_registry/avro.h"
 #include "pandaproxy/schema_registry/test/compatibility_avro.h"
 #include "pandaproxy/schema_registry/types.h"
@@ -15,6 +16,7 @@
 
 namespace pp = pandaproxy;
 namespace pps = pp::schema_registry;
+namespace ppj = pp::json;
 
 pps::unparsed_schema_definition not_minimal{
   R"({
@@ -90,6 +92,47 @@ pps::canonical_schema_definition record_of_obj_sanitized{
   R"({"type":"record","name":"sort_record_of_obj","fields":[{"name":"field","type":{"type":"string","connect.parameters":{"tidb_type":"TEXT"}},"default":""}]})",
   pps::schema_type::avro};
 
+pps::unparsed_schema_definition namespace_nested_same_unsanitized{
+  R"({
+  "type": "record",
+  "name": "Example",
+  "doc": "A simple name (attribute) and no namespace attribute: use the null namespace; the fullname is 'Example'.",
+  "fields": [
+    {
+      "name": "fullName",
+      "type": {
+        "type": "fixed",
+        "name": "a.full.Name",
+        "namespace": "explicit",
+        "doc": "A name (attribute) and a namespace (attribute). The fullname is 'a.full.Name', and the namespace is 'a.full'.",
+        "size": 12
+      }
+    }
+  ]
+})",
+  pps::schema_type::avro};
+
+pps::canonical_schema_definition namespace_nested_same_sanitized{
+  ppj::minify(
+    R"({
+  "type": "record",
+  "name": "Example",
+  "doc": "A simple name (attribute) and no namespace attribute: use the null namespace; the fullname is 'Example'.",
+  "fields": [
+    {
+      "name": "fullName",
+      "type": {
+        "type": "fixed",
+        "name": "Name",
+        "namespace": "a.full",
+        "doc": "A name (attribute) and a namespace (attribute). The fullname is 'a.full.Name', and the namespace is 'a.full'.",
+        "size": 12
+      }
+    }
+  ]
+})"),
+  pps::schema_type::avro};
+
 BOOST_AUTO_TEST_CASE(test_sanitize_avro_minify) {
     BOOST_REQUIRE_EQUAL(
       pps::sanitize_avro_schema_definition(not_minimal).value(),
@@ -142,6 +185,13 @@ BOOST_AUTO_TEST_CASE(test_sanitize_record_of_obj_sorting) {
     BOOST_REQUIRE_EQUAL(
       pps::sanitize_avro_schema_definition(record_of_obj_unsanitized).value(),
       record_of_obj_sanitized);
+}
+
+BOOST_AUTO_TEST_CASE(test_namespace_nested_same) {
+    BOOST_REQUIRE_EQUAL(
+      pps::sanitize_avro_schema_definition(namespace_nested_same_unsanitized)
+        .value(),
+      namespace_nested_same_sanitized);
 }
 
 pps::canonical_schema_definition debezium_schema{
