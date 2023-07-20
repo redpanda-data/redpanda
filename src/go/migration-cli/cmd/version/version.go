@@ -1,4 +1,4 @@
-// Copyright 2020 Redpanda Data, Inc.
+// Copyright 2023 Redpanda Data, Inc.
 //
 // Use of this software is governed by the Business Source License
 // included in the file licenses/BSL.md
@@ -15,14 +15,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var (
-	version string
-	rev     string
-)
-
-func Pretty() string {
-	return fmt.Sprintf("%s (rev %s)", version, rev)
-}
+var version string
 
 func NewCommand() *cobra.Command {
 	command := &cobra.Command{
@@ -30,7 +23,7 @@ func NewCommand() *cobra.Command {
 		Short: "Check the current version",
 		Long:  "",
 		Run: func(_ *cobra.Command, _ []string) {
-			fmt.Println(Pretty())
+			fmt.Printf("%s\n", version)
 		},
 	}
 	return command
