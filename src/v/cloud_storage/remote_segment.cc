@@ -741,33 +741,6 @@ ss::future<bool> remote_segment::maybe_materialize_index() {
     }
 }
 
-// NOTE: Aborted transactions handled using tx_range manifests.
-// The manifests are uploaded alongside the segments with (.tx)
-// suffix added to the name. The hydration of tx_range manifest
-// is not optional. We can't use the segment without it. The following
-// cases are possible:
-// - Both segment and tx-range are not hydrated;
-// - The segment is hydrated but tx-range isn't
-// - The segment is not hydrated but tx-range is
-// - Both segment and tx-range are hydrated
-// This doesn't include various 'in_progress' combinations which are
-// disallowed.
-//
-// Also, both segment and tx-range can be materialized or not. In case
-// of the segment this means that we're holding an opened file handler.
-// In case of tx-range this means that we parsed the json and populated
-// _tx_range collection.
-//
-// In order to be able to deal with the complexity this code combines
-// the flags and tries to handle all combinations that makes sense.
-enum class segment_txrange_status {
-    in_progress,
-    available,
-    not_available,
-    available_not_available,
-    not_available_available,
-};
-
 void remote_segment::set_waiter_errors(const std::exception_ptr& err) {
     while (!_wait_list.empty()) {
         auto& p = _wait_list.front();
