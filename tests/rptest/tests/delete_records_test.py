@@ -17,6 +17,7 @@ import ducktape
 
 from ducktape.mark import parametrize, matrix
 from rptest.services.admin import Admin
+from rptest.tests.partition_movement import PartitionMovementMixin
 from rptest.services.cluster import cluster
 from rptest.services.kgo_verifier_services import KgoVerifierConsumerGroupConsumer, KgoVerifierProducer
 from rptest.tests.redpanda_test import RedpandaTest
@@ -30,7 +31,7 @@ from rptest.services.redpanda import SISettings
 from rptest.utils.si_utils import BucketView, NTP
 
 
-class DeleteRecordsTest(RedpandaTest):
+class DeleteRecordsTest(RedpandaTest, PartitionMovementMixin):
     """
     The purpose of this test is to exercise the delete-records API which
     prefix truncates the log at a user defined offset.
@@ -561,7 +562,7 @@ class DeleteRecordsTest(RedpandaTest):
                                                     1,
                                                     max_msgs=20000)
 
-        def periodic_delete_records():
+        def issue_delete_records():
             topic_info = self.get_topic_info()
             start_offset = topic_info.start_offset + 1
             high_watermark = topic_info.high_watermark - 1
@@ -579,10 +580,15 @@ class DeleteRecordsTest(RedpandaTest):
             # moving the hwm forward
             self.assert_start_partition_boundaries(truncate_point)
 
-        def periodic_delete_records_loop(reporter,
-                                         iterations,
-                                         sleep_sec,
-                                         allowable_retrys=3):
+        def issue_partition_move():
+            self._dispatch_random_partition_move(self.topic, 0)
+            self._wait_for_move_in_progress(self.topic, 0, timeout=5)
+
+        def background_test_loop(reporter,
+                                 fn,
+                                 iterations=10,
+                                 sleep_sec=1,
+                                 allowable_retries=3):
             """
             Periodicially issue delete records requests within a loop. allowable_reties
             exists so that the test doesn't automatically fail when a leadership change occurs.
@@ -591,47 +597,59 @@ class DeleteRecordsTest(RedpandaTest):
             has occured. Have the test retry on some failures to account for this.
             """
             try:
-                try:
-                    while iterations > 0:
-                        periodic_delete_records()
-                        iterations -= 1
-                        time.sleep(sleep_sec)
-                except AssertionError as e:
-                    if allowable_retrys == 0:
-                        raise e
-                    allowable_retrys = allowable_retrys - 1
+                retries = allowable_retries
+                while iterations > 0:
+                    try:
+                        fn()
+                        retries = allowable_retries
+                    except Exception as e:
+                        if retries == 0:
+                            raise e
+                    time.sleep(sleep_sec)
+                    iterations -= 1
+                    retries -= 1
             except Exception as e:
                 reporter.exc = e
 
-        class ThreadReporter:
+        class DeleteRecordsExceptionReporter:
             exc = None
 
-        n_attempts = 10
-        thread_sleep = 1  # 10s of uptime, less if exception thrown
+        class PartitionMoveExceptionReporter:
+            exc = None
+
         delete_records_thread = threading.Thread(
-            target=periodic_delete_records_loop,
-            args=(
-                ThreadReporter,
-                n_attempts,
-                thread_sleep,
-            ))
+            target=background_test_loop,
+            args=(DeleteRecordsExceptionReporter, issue_delete_records))
+
+        partition_move_thread = threading.Thread(
+            target=background_test_loop,
+            args=(PartitionMoveExceptionReporter, issue_partition_move),
+            kwargs={
+                'iterations': 2,
+                'sleep_sec': 7
+            })
 
         # Start up producer/consumer and thread that periodically issues delete records requests
         delete_records_thread.start()
+        partition_move_thread.start()
         producer.start()
         consumer.start()
 
         # Shut down all threads started above
         self.redpanda.logger.info("Joining on delete-records thread")
         delete_records_thread.join()
+        self.redpanda.logger.info("Joining on partition move thread")
+        partition_move_thread.join()
         self.redpanda.logger.info("Joining on producer thread")
         producer.wait()
         self.redpanda.logger.info("Calling consumer::stop")
         consumer.stop()
         self.redpanda.logger.info("Joining on consumer thread")
         consumer.wait()
-        if ThreadReporter.exc is not None:
-            raise ThreadReporter.exc
+        if DeleteRecordsExceptionReporter.exc is not None:
+            raise DeleteRecordsExceptionReporter.exc
+        if PartitionMoveExceptionReporter.exc is not None:
+            raise PartitionMoveExceptionReporter.exc
 
         status = consumer.consumer_status
         assert status.validator.invalid_reads == 0

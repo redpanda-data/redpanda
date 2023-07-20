@@ -13,6 +13,7 @@
 #include "cloud_storage/types.h"
 #include "cluster/errc.h"
 #include "kafka/protocol/errors.h"
+#include "kafka/server/errors.h"
 #include "kafka/server/logger.h"
 #include "kafka/types.h"
 #include "model/fundamental.h"
@@ -394,33 +395,25 @@ ss::future<error_code> replicated_partition::prefix_truncate(
       model::offset_cast(kafka_truncation_offset),
       deadline);
 
-    /// Translate any std::error_codes into proper kafka error codes
-    auto kerr = error_code::unknown_server_error;
-    if (errc.category() == cluster::error_category()) {
-        switch (cluster::errc(errc.value())) {
-        case cluster::errc::success:
-            kerr = error_code::none;
-            break;
-        case cluster::errc::timeout:
-        case cluster::errc::shutting_down:
-            kerr = error_code::request_timed_out;
-            break;
-        case cluster::errc::topic_invalid_config:
-        case cluster::errc::feature_disabled:
+    if (errc.category() == raft::error_category()) {
+        switch (raft::errc(errc.value())) {
+        case raft::errc::success:
+            co_return kafka::error_code::none;
+        case raft::errc::not_leader:
+            co_return kafka::error_code::not_leader_for_partition;
         default:
             vlog(
-              klog.error,
-              "Unhandled cluster::errc encountered: {}",
-              errc.value());
-            kerr = error_code::unknown_server_error;
+              klog.error, "Unhandled raft error encountered: {}", errc.value());
+            co_return error_code::unknown_server_error;
         }
-    } else {
+    } else if (errc.category() != cluster::error_category()) {
         vlog(
           klog.error,
           "Unhandled error_category encountered: {}",
           errc.category().name());
+        co_return error_code::unknown_server_error;
     }
-    co_return kerr;
+    co_return map_topic_error_code(cluster::errc(errc.value()));
 }
 
 ss::future<error_code> replicated_partition::validate_fetch_offset(

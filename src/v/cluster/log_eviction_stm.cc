@@ -248,7 +248,7 @@ ss::future<log_eviction_stm::offset_result> log_eviction_stm::truncate(
     auto res = co_await replicate_command(std::move(batch), deadline, as);
     if (res.has_failure()) {
         vlog(
-          _logger.error,
+          _logger.info,
           "Failed to observe replicated command in log, reason: {}",
           res.error().message());
         co_return res.as_failure();
@@ -281,7 +281,7 @@ ss::future<log_eviction_stm::offset_result> log_eviction_stm::replicate_command(
 
     if (!result) {
         vlog(
-          _logger.error,
+          _logger.info,
           "Failed to replicate prefix_truncate command, reason: {}",
           result.error());
         co_return result.error();
