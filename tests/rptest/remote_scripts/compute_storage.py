@@ -10,6 +10,18 @@ import json
 from collections.abc import Iterable
 
 
+def safe_isdir(p: Path) -> bool:
+    """
+    It's valid for files to be deleted at any time, 
+    in that case that the file is missing, just return
+    that it's not a directory
+    """
+    try:
+        return p.is_dir()
+    except FileNotFoundError:
+        return False
+
+
 def safe_listdir(p: Path) -> Iterable[Path]:
     """
     It's valid for directories to be deleted at any time, 
@@ -25,7 +37,7 @@ def safe_listdir(p: Path) -> Iterable[Path]:
 def compute_size(data_dir: Path, sizes: bool):
     output = {}
     for ns in safe_listdir(data_dir):
-        if not ns.is_dir():
+        if not safe_isdir(ns):
             continue
         if ns.name == "cloud_storage_cache":
             continue
