@@ -424,6 +424,10 @@ connection_context::dispatch_method_once(request_header hdr, size_t size) {
     auto dispatch = co_await ss::coroutine::as_future(
       std::move(res.dispatched));
     if (dispatch.failed()) {
+        vlog(
+          klog.info,
+          "Detected error dispatching request: {}",
+          dispatch.get_exception());
         try {
             co_await std::move(res.response);
         } catch (...) {
@@ -432,10 +436,6 @@ connection_context::dispatch_method_once(request_header hdr, size_t size) {
               "Discarding second stage failure {}",
               std::current_exception());
         }
-        vlog(
-          klog.info,
-          "Detected error dispatching request: {}",
-          dispatch.get_exception());
         self->conn->shutdown_input();
         sres->tracker->mark_errored();
         co_return;
