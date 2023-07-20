@@ -306,9 +306,10 @@ result<void> sanitize(json::Value::Object& o, sanitize_context& ctx) {
                 std::string_view existing_namespace{
                   it->value.GetString(), it->value.GetStringLength()};
                 if (existing_namespace != new_namespace) {
-                    return error_info{
-                      error_code::schema_invalid,
-                      "name doesn't match namespace"};
+                    it->value.SetString(
+                      new_namespace.data(),
+                      new_namespace.length(),
+                      ctx.alloc);
                 }
             } else {
                 o.AddMember(
