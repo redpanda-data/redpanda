@@ -138,9 +138,17 @@ private:
     size_t _committed_offset{0};
     size_t _fallocation_offset{0};
     size_t _bytes_flush_pending{0};
+
+    // Ensures only a single fallocate at a time, and that writes do not
+    // coincide with a fallocate.
+    // If taken alongside _pending_head_write, take this first.
     ssx::semaphore _concurrent_flushes;
+
     ss::lw_shared_ptr<chunk> _head;
-    ss::lw_shared_ptr<ssx::semaphore> _prev_head_write;
+
+    // Ensures only a single dma_writer at a time.
+    // If taken or checked alongside _concurrent_flushes, take this second.
+    ss::lw_shared_ptr<ssx::semaphore> _pending_head_write;
 
     struct flush_op {
         explicit flush_op(size_t offset)

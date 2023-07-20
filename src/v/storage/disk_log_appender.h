@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include "ssx/rwlock.h"
 #include "storage/log_appender.h"
 #include "storage/segment.h"
 
@@ -50,7 +51,7 @@ private:
     model::offset _idx;
 
     ss::lw_shared_ptr<segment> _seg;
-    std::optional<ss::rwlock::holder> _seg_lock;
+    std::optional<ssx::logging_rwlock::holder> _seg_lock;
     size_t _bytes_left_in_segment{0};
 
     // below are just copied from append

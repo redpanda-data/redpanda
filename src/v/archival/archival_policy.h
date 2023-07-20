@@ -15,6 +15,7 @@
 #include "cloud_storage/partition_manifest.h"
 #include "cloud_storage/types.h"
 #include "model/fundamental.h"
+#include "ssx/rwlock.h"
 #include "storage/fwd.h"
 #include "storage/log_manager.h"
 #include "storage/ntp_config.h"
@@ -42,7 +43,7 @@ struct upload_candidate {
 
 struct upload_candidate_with_locks {
     upload_candidate candidate;
-    std::vector<ss::rwlock::holder> read_locks;
+    std::vector<ssx::logging_rwlock::holder> read_locks;
 };
 
 /// Archival policy is responsible for extracting segments from

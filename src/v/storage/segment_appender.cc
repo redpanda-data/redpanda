@@ -58,7 +58,7 @@ segment_appender::segment_appender(ss::file f, options opts)
   : _out(std::move(f))
   , _opts(opts)
   , _concurrent_flushes(ss::semaphore::max_counter(), "s/append-flush")
-  , _prev_head_write(ss::make_lw_shared<ssx::semaphore>(1, head_sem_name))
+  , _pending_head_write(ss::make_lw_shared<ssx::semaphore>(1, head_sem_name))
   , _inactive_timer([this] { handle_inactive_timer(); })
   , _chunk_size(internal::chunks().chunk_size()) {
     const auto alignment = _out.disk_write_dma_alignment();
@@ -75,9 +75,9 @@ segment_appender::~segment_appender() noexcept {
       _bytes_flush_pending == 0 && _closed,
       "Must flush & close before deleting {}",
       *this);
-    if (_prev_head_write) {
+    if (_pending_head_write) {
         vassert(
-          _prev_head_write->available_units() == 1,
+          _pending_head_write->available_units() == 1,
           "Unexpected pending head write {}",
           *this);
     }
@@ -99,7 +99,7 @@ segment_appender::segment_appender(segment_appender&& o) noexcept
   , _bytes_flush_pending(o._bytes_flush_pending)
   , _concurrent_flushes(std::move(o._concurrent_flushes))
   , _head(std::move(o._head))
-  , _prev_head_write(std::move(o._prev_head_write))
+  , _pending_head_write(std::move(o._pending_head_write))
   , _flush_ops(std::move(o._flush_ops))
   , _flushed_offset(o._flushed_offset)
   , _stable_offset(o._stable_offset)
@@ -339,7 +339,7 @@ ss::future<> segment_appender::do_next_adaptive_fallocation() {
              ss::semaphore::max_counter(),
              [this, step]() mutable {
                  vassert(
-                   _prev_head_write->available_units() == 1,
+                   _pending_head_write->available_units() == 1,
                    "Unexpected pending head write {}",
                    *this);
                  // step - compute step rounded to alignment(4096); this is
@@ -472,11 +472,11 @@ void segment_appender::dispatch_background_head_write() {
     auto h = full ? std::exchange(_head, nullptr) : _head;
 
     /*
-     * make sure that when the write is dispatched that is sequenced in-order on
-     * the correct semaphore by grabbing the units synchronously.
+     * make sure that when the write is dispatched that it is sequenced
+     * in-order on the correct semaphore (before _pending_head_write is swapped
+     * out) synchronously.
      */
-    auto prev = _prev_head_write;
-    auto units = ss::get_units(*prev, 1);
+    auto pending_write_sem = _pending_head_write;
 
     (void)ss::with_semaphore(
       _concurrent_flushes,
@@ -487,10 +487,9 @@ void segment_appender::dispatch_background_head_write() {
        start_offset,
        expected,
        src,
-       prev,
-       units = std::move(units),
+       pending_write_sem,
        full]() mutable {
-          return units
+          return ss::get_units(*pending_write_sem, 1)
             .then([this, h, w, start_offset, expected, src, full](
                     ssx::semaphore_units u) mutable {
                 return _out
@@ -513,7 +512,7 @@ void segment_appender::dispatch_background_head_write() {
                   })
                   .finally([u = std::move(u)] {});
             })
-            .finally([prev] {});
+            .finally([pending_write_sem] {});
       })
       .handle_exception([this](std::exception_ptr e) {
           vassert(false, "Could not dma_write: {} - {}", e, *this);
@@ -525,7 +524,8 @@ void segment_appender::dispatch_background_head_write() {
      * dependency chain is reset for the next head.
      */
     if (full) {
-        _prev_head_write = ss::make_lw_shared<ssx::semaphore>(1, head_sem_name);
+        _pending_head_write = ss::make_lw_shared<ssx::semaphore>(
+          1, head_sem_name);
     }
 }
 
@@ -574,7 +574,7 @@ ss::future<> segment_appender::hard_flush() {
              ss::semaphore::max_counter(),
              [this]() mutable {
                  vassert(
-                   _prev_head_write->available_units() == 1,
+                   _pending_head_write->available_units() == 1,
                    "Unexpected pending head write {}",
                    *this);
                  vassert(

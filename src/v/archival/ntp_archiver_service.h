@@ -24,6 +24,7 @@
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/record.h"
+#include "ssx/rwlock.h"
 #include "storage/fwd.h"
 #include "storage/segment.h"
 #include "utils/intrusive_list_helpers.h"
@@ -449,7 +450,7 @@ private:
     ss::future<ntp_archiver_upload_result> upload_segment(
       model::term_id archiver_term,
       upload_candidate candidate,
-      std::vector<ss::rwlock::holder> segment_read_locks,
+      std::vector<ssx::logging_rwlock::holder> segment_read_locks,
       std::optional<std::reference_wrapper<retry_chain_node>> source_rtc
       = std::nullopt);
 

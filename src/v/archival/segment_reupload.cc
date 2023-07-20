@@ -12,6 +12,7 @@
 
 #include "cloud_storage/partition_manifest.h"
 #include "logger.h"
+#include "ssx/rwlock.h"
 #include "storage/disk_log_impl.h"
 #include "storage/fs_utils.h"
 #include "storage/offset_to_filepos.h"
@@ -466,7 +467,7 @@ segment_collector::make_upload_candidate(
 
     // Take the locks before opening any readers on the segments.
     auto deadline = std::chrono::steady_clock::now() + segment_lock_duration;
-    std::vector<ss::future<ss::rwlock::holder>> locks;
+    std::vector<ss::future<ssx::logging_rwlock::holder>> locks;
     locks.reserve(_segments.size());
     std::transform(
       _segments.begin(),

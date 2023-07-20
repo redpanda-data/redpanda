@@ -12,6 +12,7 @@
 #include "compression/compression.h"
 #include "config/configuration.h"
 #include "ssx/future-util.h"
+#include "ssx/rwlock.h"
 #include "storage/compacted_index_writer.h"
 #include "storage/file_sanitizer.h"
 #include "storage/fs_utils.h"
@@ -60,6 +61,7 @@ segment::segment(
   , _appender(std::move(a))
   , _compaction_index(std::move(ci))
   , _cache(std::move(c))
+  , _destructive_ops(stlog, [this] { return filename(); })
   , _first_write(std::nullopt) {
     if (_appender) {
         _appender->set_callbacks(&_appender_callbacks);
@@ -263,7 +265,7 @@ ss::future<> segment::release_appender(readers_cache* readers_cache) {
      */
     if (_destructive_ops.try_write_lock()) {
         _destructive_ops.write_unlock();
-        return write_lock().then([this](ss::rwlock::holder h) {
+        return write_lock().then([this](ssx::logging_rwlock::holder h) {
             return do_flush()
               .then([this] {
                   auto a = std::exchange(_appender, nullptr);
@@ -278,13 +280,14 @@ ss::future<> segment::release_appender(readers_cache* readers_cache) {
               .finally([h = std::move(h)] {});
         });
     } else {
-        return read_lock().then([this, readers_cache](ss::rwlock::holder h) {
-            return do_flush()
-              .then([this, readers_cache] {
-                  release_appender_in_background(readers_cache);
-              })
-              .finally([h = std::move(h)] {});
-        });
+        return read_lock().then(
+          [this, readers_cache](ssx::logging_rwlock::holder h) {
+              return do_flush()
+                .then([this, readers_cache] {
+                    release_appender_in_background(readers_cache);
+                })
+                .finally([h = std::move(h)] {});
+          });
     }
 }
 
@@ -312,7 +315,8 @@ void segment::release_appender_in_background(readers_cache* readers_cache) {
                     .then([this,
                            a = std::move(a),
                            c = std::move(c),
-                           i = std::move(i)](ss::rwlock::holder h) mutable {
+                           i = std::move(i)](
+                            ssx::logging_rwlock::holder h) mutable {
                         return do_release_appender(
                                  std::move(a), std::move(c), std::move(i))
                           .finally([h = std::move(h)] {});
@@ -323,7 +327,7 @@ void segment::release_appender_in_background(readers_cache* readers_cache) {
 
 ss::future<> segment::flush() {
     check_segment_not_closed("flush()");
-    return read_lock().then([this](ss::rwlock::holder h) {
+    return read_lock().then([this](ssx::logging_rwlock::holder h) {
         return do_flush().finally([h = std::move(h)] {});
     });
 }
@@ -368,7 +372,7 @@ ss::future<> segment::truncate(
     check_segment_not_closed("truncate()");
     return write_lock().then(
       [this, prev_last_offset, physical, new_max_timestamp](
-        ss::rwlock::holder h) {
+        ssx::logging_rwlock::holder h) {
           return do_truncate(prev_last_offset, physical, new_max_timestamp)
             .finally([this, h = std::move(h)] { clear_cached_disk_usage(); });
       });

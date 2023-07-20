@@ -33,6 +33,7 @@
 #include "model/metadata.h"
 #include "model/record.h"
 #include "raft/types.h"
+#include "ssx/rwlock.h"
 #include "storage/disk_log_impl.h"
 #include "storage/fs_utils.h"
 #include "storage/ntp_config.h"
@@ -1095,7 +1096,7 @@ static ss::sstring make_index_path(const remote_segment_path& segment_path) {
 ss::future<ntp_archiver_upload_result> ntp_archiver::upload_segment(
   model::term_id archiver_term,
   upload_candidate candidate,
-  std::vector<ss::rwlock::holder> segment_read_locks,
+  std::vector<ssx::logging_rwlock::holder> segment_read_locks,
   std::optional<std::reference_wrapper<retry_chain_node>> source_rtc) {
     vassert(
       candidate.remote_sources.empty(),
