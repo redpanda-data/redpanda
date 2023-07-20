@@ -59,6 +59,7 @@ struct offset_to_file_pos_result {
     model::offset offset;
     size_t bytes;
     model::timestamp ts;
+    bool offset_inside_batch{false};
 
     auto operator<=>(const offset_to_file_pos_result&) const = default;
 };
