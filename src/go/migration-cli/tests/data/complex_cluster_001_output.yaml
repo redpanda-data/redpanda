@@ -75,6 +75,8 @@ spec:
           cert: schemaregistry-internal-0
           enabled: true
           requireClientAuth: false
+    nodeSelector:
+      redpanda-node: "true"
     resources:
       cpu:
         cores: "7"

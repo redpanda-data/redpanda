@@ -1,19 +1,38 @@
 
+IMAGE ?= "localhost/migration-cli:latest"
 LOCALBIN ?= $(shell pwd)/bin
 $(LOCALBIN):
 	mkdir -p $(LOCALBIN)
 
 GOLANGCI_LINT ?= $(LOCALBIN)/golangci-lint
 
-GOBUILD_CLI=go build -o $(LOCALBIN)/migration-cli/migration-cli
+ifeq (aarch64,$(uname -m))
+TARGETARCH = arm64
+else
+TARGETARCH = amd64
+endif
+
+GOOS ?= linux
+
+VERSION ?= v0.0.1
+VER_PKG=github.com/redpanda-data/redpanda/src/go/migration-cli/cmd/version
+LDFLAGS=-X $(VER_PKG).version=$(VERSION)
+
+GOBUILD_CLI=go build -ldflags '$(LDFLAGS)' -o $(LOCALBIN)/migration-cli/migration-cli
+
 
 clean: ## clean build output
 	rm -rf $(LOCALBIN)/migration-cli/*
 
 compile: clean ## build and place in local bin directory
 	mkdir -p $(LOCALBIN)/migration-cli/
-	${GOBUILD_CLI} ./main.go
+	GOOS=$(GOOS) GOARCH=$(TARGETARCH) ${GOBUILD_CLI} ./main.go
 	chmod +x $(LOCALBIN)/migration-cli/migration-cli
+
+compile-linux: GOOS=linux
+compile-linux: TARGETARCH=amd64
+compile-linux: compile
+
 
 .PHONY: gofumpt-install
 gofumpt-install:
@@ -31,7 +50,6 @@ gofumpt-lint: gofumpt-install
 goimports: goimports-install
 	goimports -w .
 
-
 .PHONY: golangci-lint-install
 golangci-lint-install:
 	mkdir -p $(GOLANGCI_LINT)
@@ -43,3 +61,9 @@ golangci-lint:
 
 .PHONY: lint
 lint: gofumpt-lint golangci-lint
+
+# Build the docker image
+docker-build: TARGETARCH=amd64
+docker-build: compile-linux
+	echo "~~~ Building migration-cli image :docker:"
+	docker buildx build -t ${IMAGE} .

@@ -1,3 +1,12 @@
+// Copyright 2023 Redpanda Data, Inc.
+//
+// Use of this software is governed by the Business Source License
+// included in the file licenses/BSL.md
+//
+// As of the Change Date specified in that file, in accordance with
+// the Business Source License, use of this software will be governed
+// by the Apache License, Version 2.0
+
 package migration
 
 import (
@@ -54,6 +63,11 @@ func MigrateClusterSpec(cluster *vectorizedv1alpha1.Cluster, rp *v1alpha1.Redpan
 
 	if rpImage.Tag == "" && rpImage.Repository == "" {
 		rpImage = nil
+	}
+
+	// -- NodeSelector ---
+	if len(oldSpec.NodeSelector) > 0 {
+		rpSpec.NodeSelector = oldSpec.NodeSelector
 	}
 
 	// -- Annotations ---
