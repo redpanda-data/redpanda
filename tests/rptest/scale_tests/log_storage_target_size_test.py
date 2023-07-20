@@ -44,7 +44,7 @@ class LogStorageTargetSizeTest(RedpandaTest):
     @cluster(num_nodes=4)
     @matrix(log_segment_size=[1024 * 1024, 100 * 1024 * 1024],
             strict=[True, False])
-    def streaming_cache_test(self, log_segment_size, strict):
+    def size_within_target_threshold_test(self, log_segment_size, strict):
         if self.redpanda.dedicated_nodes:
             partition_count = 64
             rate_limit_bps = int(120E6)
