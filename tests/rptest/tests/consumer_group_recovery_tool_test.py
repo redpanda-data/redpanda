@@ -13,6 +13,7 @@ from rptest.services.cluster import cluster
 
 from rptest.clients.rpk import RpkException, RpkTool
 from rptest.clients.types import TopicSpec
+from rptest.services.admin import Admin
 from rptest.services.kafka_cli_consumer import KafkaCliConsumer
 from rptest.services.kgo_verifier_services import KgoVerifierConsumerGroupConsumer, KgoVerifierProducer
 from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST
@@ -109,6 +110,12 @@ class ConsumerOffsetsRecoveryToolTest(PreallocNodesTest):
         wait_until(
             lambda: len(list(rpk.describe_topic("__consumer_offsets"))) == 16,
             20)
+
+        # Do leader transfer for a __consumer_offsets NTP
+        admin = Admin(self.redpanda)
+        admin.partition_transfer_leadership(namespace='kafka',
+                                            topic='__consumer_offsets',
+                                            partition=11)
 
         groups_post_migration = self.describe_all_groups()
 

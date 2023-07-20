@@ -556,7 +556,7 @@ ss::future<> group_manager::inject_noop(
 
 ss::future<>
 group_manager::gc_partition_state(ss::lw_shared_ptr<attached_partition> p) {
-    vlog(klog.trace, "Removing groups of {}", p->partition->ntp());
+    vlog(klog.info, "Removing groups of {}", p->partition->ntp());
 
     /**
      * since this operation is destructive for partitions group we hold a
@@ -571,7 +571,7 @@ group_manager::gc_partition_state(ss::lw_shared_ptr<attached_partition> p) {
     for (auto it = _groups.begin(); it != _groups.end();) {
         if (it->second->partition()->ntp() == p->partition->ntp()) {
             groups_for_shutdown.push_back(it->second);
-            vlog(klog.trace, "Removed group {}", it->second);
+            vlog(klog.info, "Removed group {}", it->second);
             _groups.erase(it++);
             continue;
         }

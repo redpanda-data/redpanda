@@ -179,7 +179,7 @@ public:
         }
 
         vlog(
-          klog.trace,
+          klog.info,
           "[{}:{}] sending {}:{} for {}, response {}",
           _conn->client_host(),
           _conn->client_port(),
