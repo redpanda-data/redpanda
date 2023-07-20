@@ -488,8 +488,23 @@ segment_collector::make_upload_candidate(
         co_return upload_candidate_with_locks{upload_candidate{}, {}};
     }
 
+    if (auto head = head_seek_result.value().offset; head != _begin_inclusive) {
+        vlog(
+          archival_log.debug,
+          "Seek offset {} does not match begin inclusive: {}, skipping "
+          "upload",
+          head,
+          _begin_inclusive);
+        co_return upload_candidate_with_locks{upload_candidate{}, {}};
+    }
+
     auto tail_seek_result = co_await storage::convert_end_offset_to_file_pos(
-      _end_inclusive, last, last->index().max_timestamp(), io_priority_class);
+      _end_inclusive,
+      last,
+      last->index().max_timestamp(),
+      io_priority_class,
+      storage::should_fail_on_missing_offset::yes,
+      storage::accept_batch_containing_offset::yes);
 
     if (tail_seek_result.has_error()) {
         co_return upload_candidate_with_locks{upload_candidate{}, {}};
@@ -497,6 +512,18 @@ segment_collector::make_upload_candidate(
 
     auto head_seek = head_seek_result.value();
     auto tail_seek = tail_seek_result.value();
+
+    auto final_offset = tail_seek.offset;
+    if (final_offset > _end_inclusive) {
+        vlog(
+          archival_log.debug,
+          "end offset seek {} is ahead of end inclusive {}. adjusting upload "
+          "candidate metadata to {}.",
+          final_offset,
+          _end_inclusive,
+          _end_inclusive);
+        final_offset = _end_inclusive;
+    }
 
     vlog(
       archival_log.debug,
@@ -513,30 +540,10 @@ segment_collector::make_upload_candidate(
                             - (head_seek.bytes + last_size_bytes);
     content_length += tail_seek.bytes;
 
-    auto starting_offset = head_seek.offset;
-    if (starting_offset != _begin_inclusive) {
-        vlog(
-          archival_log.debug,
-          "adjusting begin offset of upload candidate from {} to {}",
-          starting_offset,
-          _begin_inclusive);
-        starting_offset = _begin_inclusive;
-    }
-
-    auto final_offset = tail_seek.offset;
-    if (final_offset != _end_inclusive) {
-        vlog(
-          archival_log.debug,
-          "adjusting end offset of upload candidate from {} to {}",
-          final_offset,
-          _end_inclusive);
-        final_offset = _end_inclusive;
-    }
-
     co_return upload_candidate_with_locks{
       upload_candidate{
         .exposed_name = adjust_segment_name(),
-        .starting_offset = starting_offset,
+        .starting_offset = head_seek.offset,
         .file_offset = head_seek.bytes,
         .content_length = content_length,
         .final_offset = final_offset,

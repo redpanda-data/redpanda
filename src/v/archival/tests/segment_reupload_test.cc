@@ -1139,3 +1139,90 @@ SEASTAR_THREAD_TEST_CASE(test_adjacent_segment_collection) {
       candidate.candidate.starting_offset, model::offset{104});
     BOOST_REQUIRE_EQUAL(candidate.candidate.final_offset, model::offset{115});
 }
+
+SEASTAR_THREAD_TEST_CASE(test_upload_candidate_with_end_offset_in_batch) {
+    // This test asserts that if a collector run has the end offset inside a
+    // batch (for example due to compaction), then the upload candidate contains
+    // the entirety of the batch (including records after the offset), while its
+    // metadata claims to end at the end offset.
+    cloud_storage::partition_manifest m;
+
+    m.update(cloud_storage::manifest_format::json, make_manifest_stream(R"json({
+    "version": 1,
+    "namespace": "test-ns",
+    "topic": "test-topic",
+    "partition": 42,
+    "revision": 1,
+    "last_offset": 39,
+    "segments": {
+        "10-1-v1.log": {
+            "is_compacted": false,
+            "size_bytes": 1024,
+            "base_offset": 10,
+            "committed_offset": 19
+        },
+        "20-1-v1.log": {
+            "is_compacted": false,
+            "size_bytes": 204800,
+            "base_offset": 20,
+            "committed_offset": 29,
+            "max_timestamp": 1234567890
+        },
+        "30-1-v1.log": {
+            "is_compacted": false,
+            "size_bytes": 4096,
+            "base_offset": 30,
+            "committed_offset": 39,
+            "max_timestamp": 1234567890
+        }
+    }
+})json"))
+      .get();
+
+    temporary_dir tmp_dir("concat_segment_read");
+    auto data_path = tmp_dir.get_path();
+    using namespace storage;
+
+    auto b = make_log_builder(data_path.string());
+
+    b | start(ntp_config{{"test_ns", "test_tpc", 0}, {data_path}});
+    auto defer = ss::defer([&b] { b.stop().get(); });
+
+    // Segment from offset 20 to 34, with two batches.
+    b | storage::add_segment(20);
+    b
+      .add_random_batch(model::test::record_batch_spec{
+        .offset = model::offset{20}, .count = 5, .max_key_cardinality = 1})
+      .get();
+
+    // This batch contains the manifest entry end offset
+    b
+      .add_random_batch(model::test::record_batch_spec{
+        .offset = model::offset{25}, .count = 10, .max_key_cardinality = 1})
+      .get();
+
+    b.get_segment(0).mark_as_finished_self_compaction();
+
+    archival::segment_collector collector{
+      model::offset{5},
+      m,
+      b.get_disk_log_impl(),
+      b.get_segment(0).size_bytes()};
+
+    collector.collect_segments();
+    BOOST_REQUIRE(collector.should_replace_manifest_segment());
+
+    const auto upload = collector
+                          .make_upload_candidate(
+                            ss::default_priority_class(), segment_lock_timeout)
+                          .get()
+                          .candidate;
+
+    BOOST_REQUIRE(!upload.sources.empty());
+    BOOST_REQUIRE_EQUAL(upload.starting_offset, model::offset{20});
+    BOOST_REQUIRE_EQUAL(upload.final_offset, model::offset{29});
+
+    // Even though the upload candidate metadata spans offset 20->29, the
+    // upload file contains the full segment upto offset 34
+    BOOST_REQUIRE_EQUAL(b.get_segment(0).size_bytes(), upload.content_length);
+}
