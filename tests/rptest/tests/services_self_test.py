@@ -12,12 +12,13 @@ from ducktape.tests.test import Test
 
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.services.cluster import cluster
+from rptest.clients.rpk import RpkTool
 from rptest.clients.types import TopicSpec
 from rptest.services.failure_injector import FailureSpec, make_failure_injector
 from rptest.services.openmessaging_benchmark import OpenMessagingBenchmark
 from rptest.services.kgo_repeater_service import repeater_traffic
 from rptest.services.kgo_verifier_services import KgoVerifierRandomConsumer, KgoVerifierSeqConsumer, KgoVerifierConsumerGroupConsumer, KgoVerifierProducer
-from rptest.services.redpanda import SISettings, CloudStorageType, get_cloud_storage_type, make_redpanda_service
+from rptest.services.redpanda import SISettings, CloudStorageType, get_cloud_storage_type, make_redpanda_service, RedpandaServiceBase, RedpandaServiceCloud
 from rptest.tests.prealloc_nodes import PreallocNodesTest
 from rptest.utils.si_utils import BucketView
 from rptest.util import expect_exception
@@ -261,6 +262,20 @@ class SimpleSelfTest(Test):
 
         node_disk_free = self.redpanda.get_node_disk_free()
         assert node_disk_free > 0
+
+        if RedpandaServiceCloud.GLOBAL_CLOUD_API_URL in self.redpanda.context.globals:
+            # just run rpk against redpanda cloud for now since it has tls enabled by default
+            username, password, mechanism = self.redpanda._superuser
+            rpk = RpkTool(self.redpanda,
+                          username=username,
+                          password=password,
+                          sasl_mechanism=mechanism,
+                          tls_enabled=True)
+            topic_name = 'rp_ducktape_test_cloud_topic'
+            self.logger.info(f'creating topic {topic_name}')
+            rpk.create_topic(topic_name)
+            self.logger.info(f'deleting topic {topic_name}')
+            rpk.delete_topic(topic_name)
 
 
 class FailureInjectorSelfTest(Test):
