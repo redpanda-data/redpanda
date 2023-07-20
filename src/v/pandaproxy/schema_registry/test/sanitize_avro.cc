@@ -139,6 +139,44 @@ pps::unparsed_schema_definition namespace_nested_same_unsanitized{
                 "e"
               ]
             }
+          },
+          {
+            "name": "duplicateNamespace",
+            "type": {
+              "type": "enum",
+              "name": "Reduction",
+              "namespace": "explicit",
+              "doc": "A simple name (attribute) and namespace attribute: same namespace of the enclosing type 'explicit'. The fullname is 'explicit.Reduction'.",
+              "symbols": [
+                "d",
+                "e"
+              ]
+            }
+          },
+          {
+            "name": "emptyNamespace",
+            "type": {
+              "type": "enum",
+              "name": "NullNamespace",
+              "namespace": "",
+              "doc": "A simple name (attribute) and namespace attribute: namespace is explicitly null. The fullname is 'NullNamespace'.",
+              "symbols": [
+                "d",
+                "e"
+              ]
+            }
+          },
+          {
+            "name": "emptyFullname",
+            "type": {
+              "type": "enum",
+              "name": ".NullFullname",
+              "doc": "A name (attribute) and no namespace attribute: namespace is null. The fullname is 'NullFullname'.",
+              "symbols": [
+                "d",
+                "e"
+              ]
+            }
           }
         ]
       }
@@ -190,6 +228,44 @@ pps::canonical_schema_definition namespace_nested_same_sanitized{
               "type": "enum",
               "name": "Understanding",
               "doc": "A simple name (attribute) and no namespace attribute: inherit the namespace of the enclosing type 'explicit.Simple'. The fullname is 'explicit.Understanding'.",
+              "symbols": [
+                "d",
+                "e"
+              ]
+            }
+          },
+          {
+            "name": "duplicateNamespace",
+            "type": {
+              "type": "enum",
+              "name": "Reduction",
+              "doc": "A simple name (attribute) and namespace attribute: same namespace of the enclosing type 'explicit'. The fullname is 'explicit.Reduction'.",
+              "symbols": [
+                "d",
+                "e"
+              ]
+            }
+          },
+          {
+            "name": "emptyNamespace",
+            "type": {
+              "type": "enum",
+              "name": "NullNamespace",
+              "namespace": "",
+              "doc": "A simple name (attribute) and namespace attribute: namespace is explicitly null. The fullname is 'NullNamespace'.",
+              "symbols": [
+                "d",
+                "e"
+              ]
+            }
+          },
+          {
+            "name": "emptyFullname",
+            "type": {
+              "type": "enum",
+              "name": "NullFullname",
+              "namespace": "",
+              "doc": "A name (attribute) and no namespace attribute: namespace is null. The fullname is 'NullFullname'.",
               "symbols": [
                 "d",
                 "e"
