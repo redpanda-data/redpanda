@@ -90,6 +90,13 @@ offset_to_filepos_consumer::type offset_to_filepos_consumer::end_of_stream() {
     return _filepos;
 }
 
+bool is_offset_in_batch(
+  const model::record_batch_header& header, model::offset o) {
+    // Note: header.contains also matches if offset is on the boundary. This
+    // function checks if the offset lies strictly inside the batch.
+    return header.base_offset < o && header.last_offset() > o;
+}
+
 } // namespace internal
 
 ss::future<result<offset_to_file_pos_result>> convert_begin_offset_to_file_pos(
@@ -107,15 +114,17 @@ ss::future<result<offset_to_file_pos_result>> convert_begin_offset_to_file_pos(
     bool offset_found = false;
     auto handle = co_await segment->reader().data_stream(
       scan_from, io_priority);
+
+    bool offset_inside_batch = false;
     auto res = co_await storage::internal::with_segment_reader_handle(
       std::move(handle),
-      [&begin_inclusive, &sto, &offset_found, &ts](
+      [&begin_inclusive, &sto, &offset_found, &ts, &offset_inside_batch](
         segment_reader_handle& reader_handle) {
           auto ostr = make_null_output_stream();
           return transform_stream(
             reader_handle.take_stream(),
             std::move(ostr),
-            [begin_inclusive, &sto, &ts, &offset_found](
+            [begin_inclusive, &sto, &ts, &offset_found, &offset_inside_batch](
               model::record_batch_header& hdr) {
                 if (hdr.last_offset() < begin_inclusive) {
                     // The current record batch is accepted and will contribute
@@ -127,6 +136,11 @@ ss::future<result<offset_to_file_pos_result>> convert_begin_offset_to_file_pos(
                     sto = hdr.last_offset() + model::offset(1);
                     return batch_consumer::consume_result::accept_batch;
                 }
+
+                if (internal::is_offset_in_batch(hdr, begin_inclusive)) {
+                    offset_inside_batch = true;
+                }
+
                 offset_found = true;
                 ts = hdr.first_timestamp;
                 return batch_consumer::consume_result::stop_parser;
@@ -158,7 +172,8 @@ ss::future<result<offset_to_file_pos_result>> convert_begin_offset_to_file_pos(
       bytes_to_skip,
       sto);
     // Adjust content length and offsets at the begining of the file
-    co_return offset_to_file_pos_result{sto, bytes_to_skip, ts};
+    co_return offset_to_file_pos_result{
+      sto, bytes_to_skip, ts, offset_inside_batch};
 }
 
 ss::future<result<offset_to_file_pos_result>> convert_end_offset_to_file_pos(
@@ -203,16 +218,25 @@ ss::future<result<offset_to_file_pos_result>> convert_end_offset_to_file_pos(
     auto reader_handle = co_await segment->reader().data_stream(
       scan_from, io_priority);
 
+    bool offset_inside_batch = false;
     auto res = co_await storage::internal::with_segment_reader_handle(
       std::move(reader_handle),
-      [&max_timestamp, &end_inclusive, &fo, &offset_found, &ts](
-        segment_reader_handle& handle) {
+      [&max_timestamp,
+       &end_inclusive,
+       &fo,
+       &offset_found,
+       &ts,
+       &offset_inside_batch](segment_reader_handle& handle) {
           auto ostr = make_null_output_stream();
           return transform_stream(
             handle.take_stream(),
             std::move(ostr),
-            [off_end = end_inclusive, &fo, &ts, &offset_found, &max_timestamp](
-              model::record_batch_header& hdr) {
+            [off_end = end_inclusive,
+             &fo,
+             &ts,
+             &offset_found,
+             &max_timestamp,
+             &offset_inside_batch](model::record_batch_header& hdr) {
                 if (hdr.last_offset() <= off_end) {
                     // If last offset of the record batch is within the range
                     // we need to add it to the output stream (to calculate the
@@ -226,6 +250,11 @@ ss::future<result<offset_to_file_pos_result>> convert_end_offset_to_file_pos(
 
                     return batch_consumer::consume_result::accept_batch;
                 }
+
+                if (internal::is_offset_in_batch(hdr, off_end)) {
+                    offset_inside_batch = true;
+                }
+
                 offset_found = true;
 
                 if (ts == max_timestamp) {
@@ -259,7 +288,7 @@ ss::future<result<offset_to_file_pos_result>> convert_end_offset_to_file_pos(
       stop_at,
       fo);
 
-    co_return offset_to_file_pos_result{fo, stop_at, ts};
+    co_return offset_to_file_pos_result{fo, stop_at, ts, offset_inside_batch};
 }
 
 } // namespace storage
