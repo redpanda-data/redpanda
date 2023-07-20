@@ -33,6 +33,7 @@
 #include "rpc/types.h"
 #include "ssx/future-util.h"
 #include "storage/api.h"
+#include "storage/kvstore.h"
 #include "vlog.h"
 
 #include <seastar/core/condition-variable.hh>
@@ -625,7 +626,7 @@ ss::future<result<model::offset>> consensus::linearizable_barrier() {
           meta(),
           model::make_memory_record_batch_reader(
             ss::circular_buffer<model::record_batch>{}),
-          append_entries_request::flush_after_append::no);
+          append_entries_request::flush_after_append::yes);
         auto seq = next_follower_sequence(target);
         sequences.emplace(target, seq);
 
@@ -1200,215 +1201,208 @@ ss::future<> consensus::start() {
 }
 
 ss::future<> consensus::do_start() {
-    vlog(_ctxlog.info, "Starting");
-    return _op_lock
-      .with([this] {
-          read_voted_for();
+    try {
+        auto u = co_await _op_lock.get_units();
 
-          /*
-           * temporary workaround:
-           *
-           * if the group's ntp matches the pattern, then do not load the
-           * initial configuration snapshto from the keyvalue store. more info
-           * here:
-           *
-           * https://github.com/redpanda-data/redpanda/issues/1870
-           */
-          const auto& ntp = _log.config().ntp();
-          const auto normalized_ntp = fmt::format(
-            "{}.{}.{}", ntp.ns(), ntp.tp.topic(), ntp.tp.partition());
-          const auto& patterns = config::shard_local_cfg()
-                                   .full_raft_configuration_recovery_pattern();
-          auto initial_state = std::any_of(
-            patterns.cbegin(),
-            patterns.cend(),
-            [&normalized_ntp](const ss::sstring& pattern) {
-                return pattern == "*" || normalized_ntp.starts_with(pattern);
-            });
-          if (!initial_state) {
-              initial_state = is_initial_state();
-          }
+        read_voted_for();
 
-          vlog(
-            _ctxlog.info,
-            "Starting with voted_for {} term {} initial_state {}",
-            _voted_for,
-            _term,
-            initial_state);
+        /*
+         * temporary workaround:
+         *
+         * if the group's ntp matches the pattern, then do not load the
+         * initial configuration snapshot from the keyvalue store. more info
+         * here:
+         *
+         * https://github.com/redpanda-data/redpanda/issues/1870
+         */
+        const auto& ntp = _log.config().ntp();
+        const auto normalized_ntp = fmt::format(
+          "{}.{}.{}", ntp.ns(), ntp.tp.topic(), ntp.tp.partition());
+        const auto& patterns = config::shard_local_cfg()
+                                 .full_raft_configuration_recovery_pattern();
+        auto initial_state = std::any_of(
+          patterns.cbegin(),
+          patterns.cend(),
+          [&normalized_ntp](const ss::sstring& pattern) {
+              return pattern == "*" || normalized_ntp.starts_with(pattern);
+          });
+        if (!initial_state) {
+            initial_state = is_initial_state();
+        }
 
-          return _configuration_manager.start(initial_state, _self.revision())
-            .then([this] {
+        vlog(
+          _ctxlog.info,
+          "Starting with voted_for {} term {} initial_state {}",
+          _voted_for,
+          _term,
+          initial_state);
+
+        co_await _configuration_manager.start(initial_state, _self.revision());
+
+        vlog(
+          _ctxlog.trace,
+          "Configuration manager started: {}",
+          _configuration_manager);
+        offset_translator::must_reset must_reset{initial_state};
+
+        absl::btree_map<model::offset, int64_t> offset2delta;
+        for (const auto& it : _configuration_manager) {
+            offset2delta.emplace(it.first, it.second.idx());
+        }
+
+        auto bootstrap = offset_translator::bootstrap_state{
+          .offset2delta = std::move(offset2delta),
+          .highest_known_offset
+          = _configuration_manager.get_highest_known_offset(),
+        };
+
+        co_await _offset_translator.start(must_reset, std::move(bootstrap));
+
+        co_await _snapshot_lock.with([this] { return hydrate_snapshot(); });
+
+        vlog(
+          _ctxlog.debug,
+          "Starting raft bootstrap from {}",
+          _configuration_manager.get_highest_known_offset());
+        auto st = co_await details::read_bootstrap_state(
+          _log,
+          model::next_offset(_configuration_manager.get_highest_known_offset()),
+          _as);
+
+        const auto lstats = _log.offsets();
+
+        vlog(
+          _ctxlog.info,
+          "Current log offsets: {}, read bootstrap state: {}",
+          lstats,
+          st);
+
+        // if log term is newer than the one coming from voted_for
+        // state, we reset voted_for state
+        if (lstats.dirty_offset_term > _term) {
+            _term = lstats.dirty_offset_term;
+            _voted_for = {};
+        }
+        /**
+         * since we are starting, there were no new writes to the log
+         * before that point. It is safe to use dirty offset as a
+         * initial flushed offset since it is equal to last offset that
+         * exists on disk and was read in log recovery process.
+         */
+        _flushed_offset = lstats.dirty_offset;
+        /**
+         * The configuration manager state may be divereged from the log
+         * state, as log is flushed lazily, we have to make sure that
+         * the log and configuration manager has exactly the same
+         * offsets range
+         */
+        vlog(
+          _ctxlog.info, "Truncating configurations at {}", lstats.dirty_offset);
+
+        co_await _configuration_manager.truncate(
+          model::next_offset(lstats.dirty_offset));
+
+        /**
+         * We read some batches from the log and have to update the
+         * configuration manager.
+         */
+        if (st.config_batches_seen() > 0) {
+            co_await _configuration_manager.add(
+              std::move(st).release_configurations());
+        }
+
+        update_follower_stats(_configuration_manager.get_latest());
+
+        co_await _offset_translator.sync_with_log(_log, _as);
+
+        /**
+         * fix for incorrectly persisted configuration index. In
+         * previous version of redpanda due to the issue with
+         * incorrectly assigned raft configuration indicies
+         * (https://github.com/redpanda-data/redpanda/issues/2326) there
+         * may be a persistent corruption in offset translation caused
+         * by incorrectly persited configuration index. It may cause log
+         * offset to be negative. Here we check if this problem exists
+         * and if so apply necessary offset translation.
+         */
+        const auto so = start_offset();
+        const auto delta = _configuration_manager.offset_delta(start_offset());
+        // no prefix truncation was applied we do not need adjustment
+        if (so > model::offset(0) || so < delta) {
+            // if start offset is smaller than offset delta we need to apply
+            // adjustment
+            const configuration_manager::configuration_idx new_idx(so());
+            vlog(
+              _ctxlog.info,
+              "adjusting configuration index, current start offset: {}, "
+              "delta: {}, new initial index: {}",
+              so,
+              delta,
+              new_idx);
+            co_await _configuration_manager.adjust_configuration_idx(new_idx);
+        }
+
+        auto next_election = clock_type::now();
+        // set last heartbeat timestamp to prevent skipping first
+        // election
+        _hbeat = clock_type::time_point::min();
+        auto conf = _configuration_manager.get_latest().current_config();
+        if (!conf.voters.empty() && _self == conf.voters.front()) {
+            // Arm immediate election for single node scenarios
+            // or for the very first start of the preferred leader
+            // in a multi-node group.  Otherwise use standard election
+            // timeout.
+            if (conf.voters.size() > 1 && _term > model::term_id{0}) {
+                next_election += _jit.next_duration();
+            }
+        } else {
+            // current node is not a preselected leader, add 2x jitter
+            // to give opportunity to the preselected leader to win
+            // the first round
+            next_election += _jit.base_duration()
+                             + 2 * _jit.next_jitter_duration();
+        }
+        if (!_bg.is_closed()) {
+            _vote_timeout.rearm(next_election);
+        }
+
+        auto const last_applied = read_last_applied();
+        if (last_applied > lstats.dirty_offset) {
+            vlog(
+              _ctxlog.error,
+              "Inconsistency detected between KVStore last_applied offset({}) "
+              "and log end offset ({}).  If the storage directory was not "
+              "modified intentionally, this is a bug. Raft in initial state: "
+              "{}",
+              last_applied,
+              lstats.dirty_offset,
+              initial_state);
+        }
+
+        if (initial_state) {
+            co_await _storage.kvs().remove(
+              storage::kvstore::key_space::consensus, last_applied_key());
+        } else {
+            if (last_applied > _commit_index) {
+                _commit_index = last_applied;
+                maybe_update_last_visible_index(_commit_index);
                 vlog(
-                  _ctxlog.trace,
-                  "Configuration manager started: {}",
-                  _configuration_manager);
-            })
-            .then([this, initial_state] {
-                offset_translator::must_reset must_reset{initial_state};
+                  _ctxlog.trace, "Recovered commit_index: {}", _commit_index);
+            }
+        }
 
-                absl::btree_map<model::offset, int64_t> offset2delta;
-                for (auto it = _configuration_manager.begin();
-                     it != _configuration_manager.end();
-                     ++it) {
-                    offset2delta.emplace(it->first, it->second.idx());
-                }
+        co_await _event_manager.start();
+        _append_requests_buffer.start();
 
-                auto bootstrap = offset_translator::bootstrap_state{
-                  .offset2delta = std::move(offset2delta),
-                  .highest_known_offset
-                  = _configuration_manager.get_highest_known_offset(),
-                };
+        vlog(
+          _ctxlog.info,
+          "started raft, log offsets: {}, term: {}, configuration: {}",
+          lstats,
+          _term,
+          _configuration_manager.get_latest());
 
-                return _offset_translator.start(
-                  must_reset, std::move(bootstrap));
-            })
-            .then([this] {
-                return _snapshot_lock.with(
-                  [this] { return hydrate_snapshot(); });
-            })
-            .then([this] {
-                vlog(
-                  _ctxlog.debug,
-                  "Starting raft bootstrap from {}",
-                  _configuration_manager.get_highest_known_offset());
-                return details::read_bootstrap_state(
-                  _log,
-                  model::next_offset(
-                    _configuration_manager.get_highest_known_offset()),
-                  _as);
-            })
-            .then([this](configuration_bootstrap_state st) {
-                auto lstats = _log.offsets();
-
-                vlog(_ctxlog.info, "Read bootstrap state: {}", st);
-                vlog(_ctxlog.info, "Current log offsets: {}", lstats);
-
-                // if log term is newer than the one comming from voted_for
-                // state, we reset voted_for state
-                if (lstats.dirty_offset_term > _term) {
-                    _term = lstats.dirty_offset_term;
-                    _voted_for = {};
-                }
-                /**
-                 * since we are starting, there were no new writes to the log
-                 * before that point. It is safe to use dirty offset as a
-                 * initial flushed offset since it is equal to last offset that
-                 * exists on disk and was read in log recovery process.
-                 */
-                _flushed_offset = lstats.dirty_offset;
-                /**
-                 * The configuration manager state may be divereged from the log
-                 * state, as log is flushed lazily, we have to make sure that
-                 * the log and configuration manager has exactly the same
-                 * offsets range
-                 */
-                vlog(
-                  _ctxlog.info,
-                  "Truncating configurations at {}",
-                  lstats.dirty_offset);
-
-                auto f = _configuration_manager.truncate(
-                  model::next_offset(lstats.dirty_offset));
-
-                /**
-                 * We read some batches from the log and have to update the
-                 * configuration manager.
-                 */
-                if (st.config_batches_seen() > 0) {
-                    f = f.then([this, st = std::move(st)]() mutable {
-                        return _configuration_manager.add(
-                          std::move(st).release_configurations());
-                    });
-                }
-
-                return f.then([this] {
-                    update_follower_stats(_configuration_manager.get_latest());
-                });
-            })
-            .then(
-              [this] { return _offset_translator.sync_with_log(_log, _as); })
-            .then([this] {
-                /**
-                 * fix for incorrectly persisted configuration index. In
-                 * previous version of redpanda due to the issue with
-                 * incorrectly assigned raft configuration indicies
-                 * (https://github.com/redpanda-data/redpanda/issues/2326) there
-                 * may be a persistent corruption in offset translation caused
-                 * by incorrectly persited configuration index. It may cause log
-                 * offset to be negative. Here we check if this problem exists
-                 * and if so apply necessary offset translation.
-                 */
-                const auto so = start_offset();
-                // no prefix truncation was applied we do not need adjustment
-                if (so <= model::offset(0)) {
-                    return ss::now();
-                }
-                auto delta = _configuration_manager.offset_delta(
-                  start_offset());
-
-                if (so >= delta) {
-                    return ss::now();
-                }
-                // if start offset is smaller than offset delta we need to apply
-                // adjustment
-                const configuration_manager::configuration_idx new_idx(so());
-                vlog(
-                  _ctxlog.info,
-                  "adjusting configuration index, current start offset: {}, "
-                  "delta: {}, new initial index: {}",
-                  so,
-                  delta,
-                  new_idx);
-                return _configuration_manager.adjust_configuration_idx(new_idx);
-            })
-            .then([this] {
-                auto next_election = clock_type::now();
-                // set last heartbeat timestamp to prevent skipping first
-                // election
-                _hbeat = clock_type::time_point::min();
-                auto conf = _configuration_manager.get_latest().brokers();
-                if (!conf.empty() && _self.id() == conf.begin()->id()) {
-                    // Arm immediate election for single node scenarios
-                    // or for the very first start of the preferred leader
-                    // in a multi-node group.  Otherwise use standard election
-                    // timeout.
-                    if (conf.size() > 1 && _term > model::term_id{0}) {
-                        next_election += _jit.next_duration();
-                    }
-                } else {
-                    // current node is not a preselected leader, add 2x jitter
-                    // to give opportunity to the preselected leader to win
-                    // the first round
-                    next_election += _jit.base_duration()
-                                     + 2 * _jit.next_jitter_duration();
-                }
-                if (!_bg.is_closed()) {
-                    _vote_timeout.rearm(next_election);
-                }
-            })
-            .then([this] {
-                auto last_applied = read_last_applied();
-                if (last_applied > _commit_index) {
-                    _commit_index = last_applied;
-                    maybe_update_last_visible_index(_commit_index);
-                    vlog(
-                      _ctxlog.trace,
-                      "Recovered commit_index: {}",
-                      _commit_index);
-                }
-            })
-            .then([this] { return _event_manager.start(); })
-            .then([this] { _append_requests_buffer.start(); })
-            .then([this] {
-                vlog(
-                  _ctxlog.info,
-                  "started raft, log offsets: {}, term: {}, configuration: {}",
-                  _log.offsets(),
-                  _term,
-                  _configuration_manager.get_latest());
-            });
-      })
-      .handle_exception_type([](const ss::broken_semaphore&) {});
+    } catch (ss::broken_semaphore&) {
+    }
 }
 
 ss::future<>
@@ -1543,7 +1537,7 @@ consensus::get_last_entry_term(const storage::offset_stats& lstats) const {
     return _last_snapshot_term;
 }
 
-ss::future<vote_reply> consensus::do_vote(vote_request&& r) {
+ss::future<vote_reply> consensus::do_vote(vote_request r) {
     vote_reply reply;
     reply.term = _term;
     reply.target_node_id = r.node_id;
@@ -1552,12 +1546,13 @@ ss::future<vote_reply> consensus::do_vote(vote_request&& r) {
     auto last_log_index = lstats.dirty_offset;
     _probe.vote_request();
     auto last_entry_term = get_last_entry_term(lstats);
-    vlog(_ctxlog.trace, "Vote request: {}", r);
+    bool term_changed = false;
+    vlog(_ctxlog.trace, "Received vote request: {}", r);
 
     if (unlikely(is_request_target_node_invalid("vote", r))) {
         reply.log_ok = false;
         reply.granted = false;
-        return ss::make_ready_future<vote_reply>(reply);
+        co_return reply;
     }
 
     // Optimization: for vote requests from nodes that are likely
@@ -1581,10 +1576,8 @@ ss::future<vote_reply> consensus::do_vote(vote_request&& r) {
                   "Vote request from peer {} with heartbeat failures, "
                   "resetting backoff",
                   r.node_id);
-                return _client_protocol.reset_backoff(r.node_id.id())
-                  .then([reply]() {
-                      return ss::make_ready_future<vote_reply>(reply);
-                  });
+                co_await _client_protocol.reset_backoff(r.node_id.id());
+                co_return reply;
             }
         }
     }
@@ -1607,7 +1600,7 @@ ss::future<vote_reply> consensus::do_vote(vote_request&& r) {
           "Already heard from the leader, not granting vote to node {}",
           r.node_id);
         reply.granted = false;
-        return ss::make_ready_future<vote_reply>(std::move(reply));
+        co_return reply;
     }
 
     /// set to true if the caller's log is as up to date as the recipient's
@@ -1619,7 +1612,7 @@ ss::future<vote_reply> consensus::do_vote(vote_request&& r) {
 
     // raft.pdf: reply false if term < currentTerm (§5.1)
     if (r.term < _term) {
-        return ss::make_ready_future<vote_reply>(std::move(reply));
+        co_return reply;
     }
     auto n_priority = get_node_priority(r.node_id);
     // do not grant vote if voter priority is lower than current target
@@ -1633,14 +1626,13 @@ ss::future<vote_reply> consensus::do_vote(vote_request&& r) {
           n_priority,
           _target_priority);
         reply.granted = false;
-        return ss::make_ready_future<vote_reply>(reply);
+        co_return reply;
     }
 
     if (r.term > _term) {
         vlog(
           _ctxlog.info,
-          "Received vote request with larger term from node {}, received "
-          "{}, "
+          "Received vote request with larger term from node {}, received {}, "
           "current {}",
           r.node_id,
           r.term,
@@ -1648,6 +1640,7 @@ ss::future<vote_reply> consensus::do_vote(vote_request&& r) {
         reply.term = r.term;
         _term = r.term;
         _voted_for = {};
+        term_changed = true;
         do_step_down("voter_term_greater");
         if (_leader_id) {
             _leader_id = std::nullopt;
@@ -1660,44 +1653,42 @@ ss::future<vote_reply> consensus::do_vote(vote_request&& r) {
             // would cause subsequent votes to fail (_hbeat is updated by the
             // leader)
             _hbeat = clock_type::time_point::min();
-            return ss::make_ready_future<vote_reply>(reply);
+            co_return reply;
         }
     }
 
     // do not grant vote if log isn't ok
     if (!reply.log_ok) {
-        return ss::make_ready_future<vote_reply>(reply);
+        co_return reply;
     }
 
     if (_voted_for.id()() < 0) {
-        return write_voted_for({r.node_id, _term})
-          .then_wrapped([this, reply = std::move(reply), r = std::move(r)](
-                          ss::future<> f) mutable {
-              bool granted = false;
+        try {
+            co_await write_voted_for({r.node_id, _term});
+        } catch (...) {
+            vlog(
+              _ctxlog.warn,
+              "Unable to persist raft group state, vote not granted "
+              "- {}",
+              std::current_exception());
+            reply.granted = false;
+            co_return reply;
+        }
+        _voted_for = r.node_id;
+        reply.granted = true;
 
-              if (f.failed()) {
-                  vlog(
-                    _ctxlog.warn,
-                    "Unable to persist raft group state, vote not granted "
-                    "- {}",
-                    f.get_exception());
-              } else {
-                  _voted_for = r.node_id;
-                  _hbeat = clock_type::now();
-                  granted = true;
-              }
-
-              reply.granted = granted;
-
-              return ss::make_ready_future<vote_reply>(std::move(reply));
-          });
     } else {
         reply.granted = (r.node_id == _voted_for);
-        if (reply.granted) {
-            _hbeat = clock_type::now();
-        }
-        return ss::make_ready_future<vote_reply>(std::move(reply));
     }
+    /**
+     * Only update last heartbeat value, indicating existence of a leader if a
+     * term change i.e. a node is not processing prevote_request.
+     */
+    if (reply.granted && term_changed) {
+        _hbeat = clock_type::now();
+    }
+
+    co_return reply;
 }
 
 ss::future<append_entries_reply>
@@ -1724,7 +1715,7 @@ consensus::do_append_entries(append_entries_request&& r) {
         return ss::make_ready_future<append_entries_reply>(reply);
     }
     // no need to trigger timeout
-    vlog(_ctxlog.trace, "Append entries request: {}", r.meta);
+    vlog(_ctxlog.trace, "Received append entries request: {}", r.meta);
 
     // raft.pdf: Reply false if term < currentTerm (§5.1)
     if (r.meta.term < _term) {
@@ -1814,17 +1805,23 @@ consensus::do_append_entries(append_entries_request&& r) {
             return ss::make_ready_future<append_entries_reply>(
               std::move(reply));
         }
+        auto f = ss::now();
+        if (r.flush && lstats.dirty_offset > _flushed_offset) {
+            f = flush_log();
+        }
         auto last_visible = std::min(
           lstats.dirty_offset, r.meta.last_visible_index);
         // on the follower leader control visibility of entries in the log
         maybe_update_last_visible_index(last_visible);
-        return maybe_update_follower_commit_idx(
-                 model::offset(r.meta.commit_index))
-          .then([reply = std::move(reply)]() mutable {
-              reply.result = append_entries_reply::status::success;
-              return ss::make_ready_future<append_entries_reply>(
-                std::move(reply));
-          });
+        return f.then([this, reply, request_metadata = r.meta] {
+            return maybe_update_follower_commit_idx(
+                     model::offset(request_metadata.commit_index))
+              .then([this, reply]() mutable {
+                  reply.last_flushed_log_index = _flushed_offset;
+                  reply.result = append_entries_reply::status::success;
+                  return reply;
+              });
+        });
     }
 
     // section 3

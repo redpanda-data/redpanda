@@ -879,21 +879,13 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
       tests::random_named_int<model::term_id>(),
       tests::random_named_int<model::node_id>(),
       tests::random_named_int<model::revision_id>()));
-
-    roundtrip_test(cluster::update_leadership_request({
-      cluster::ntp_leader(
-        model::random_ntp(),
-        tests::random_named_int<model::term_id>(),
-        tests::random_named_int<model::node_id>()),
-    }));
-
-    roundtrip_test(cluster::update_leadership_request_v2({
-      cluster::ntp_leader_revision(
-        model::random_ntp(),
-        tests::random_named_int<model::term_id>(),
-        tests::random_named_int<model::node_id>(),
-        tests::random_named_int<model::revision_id>()),
-    }));
+    ss::chunked_fifo<cluster::ntp_leader_revision> l_revs;
+    l_revs.emplace_back(
+      model::random_ntp(),
+      tests::random_named_int<model::term_id>(),
+      tests::random_named_int<model::node_id>(),
+      tests::random_named_int<model::revision_id>());
+    roundtrip_test(cluster::update_leadership_request_v2(std::move(l_revs)));
 
     roundtrip_test(cluster::update_leadership_reply());
 
@@ -1507,7 +1499,7 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
         roundtrip_test(data);
     }
     {
-        std::vector<cluster::backend_operation> backend_operations;
+        ss::chunked_fifo<cluster::backend_operation> backend_operations;
         for (int i = 0, mi = random_generators::get_int(10); i < mi; i++) {
             backend_operations.push_back(cluster::backend_operation{
               .source_shard = random_generators::get_int<unsigned>(1000),
@@ -1515,18 +1507,19 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
               .type = cluster::topic_table_delta::op_type::del,
             });
         }
+
         cluster::ntp_reconciliation_state data{
           model::random_ntp(),
-          backend_operations,
+          std::move(backend_operations),
           cluster::reconciliation_status::error,
           cluster::errc::feature_disabled,
         };
-        roundtrip_test(data);
+        roundtrip_test(std::move(data));
     }
     {
         std::vector<cluster::ntp_reconciliation_state> results;
         for (int i = 0, mi = random_generators::get_int(10); i < mi; i++) {
-            std::vector<cluster::backend_operation> backend_operations;
+            ss::chunked_fifo<cluster::backend_operation> backend_operations;
             for (int j = 0, mj = random_generators::get_int(10); j < mj; j++) {
                 backend_operations.push_back(cluster::backend_operation{
                   .source_shard = random_generators::get_int<unsigned>(1000),
@@ -1534,17 +1527,16 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
                   .type = cluster::topic_table_delta::op_type::del,
                 });
             }
-            results.push_back(cluster::ntp_reconciliation_state{
+            results.emplace_back(
               model::random_ntp(),
-              backend_operations,
+              std::move(backend_operations),
               cluster::reconciliation_status::error,
-              cluster::errc::feature_disabled,
-            });
+              cluster::errc::feature_disabled);
         }
         cluster::reconciliation_state_reply data{
-          .results = results,
+          .results = std::move(results),
         };
-        roundtrip_test(data);
+        roundtrip_test(std::move(data));
     }
     {
         cluster::create_acls_cmd_data create_acls_data{};

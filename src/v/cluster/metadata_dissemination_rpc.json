@@ -6,11 +6,6 @@
     ],
     "methods": [
         {
-            "name": "update_leadership",
-            "input_type": "update_leadership_request",
-            "output_type": "update_leadership_reply"
-        },
-        {
             "name": "get_leadership",
             "input_type": "get_leadership_request",
             "output_type": "get_leadership_reply"

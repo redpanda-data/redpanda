@@ -45,6 +45,7 @@
 
 #include <absl/container/flat_hash_set.h>
 #include <absl/container/node_hash_map.h>
+#include <fmt/ranges.h>
 
 #include <algorithm>
 #include <exception>
@@ -472,7 +473,6 @@ controller_backend::deltas_t calculate_bootstrap_deltas(
     }
 
     auto start = std::next(it).base();
-    result_delta.reserve(std::distance(start, deltas.end()));
     std::move(start, deltas.end(), std::back_inserter(result_delta));
     return result_delta;
 }
@@ -1116,9 +1116,9 @@ bool controller_backend::can_finish_update(
   uint64_t current_retry,
   topic_table_delta::op_type update_type,
   const std::vector<model::broker_shard>& current_replicas) {
-    // force abort update may be finished by any node
     if (update_type == topic_table_delta::op_type::force_abort_update) {
-        return true;
+        // Wait for the leader to be elected in the new replica set.
+        return current_leader == _self;
     }
     /**
      * If the revert feature is active we use current leader to dispatch
@@ -1804,10 +1804,14 @@ ss::future<> controller_backend::delete_partition(
     co_await _partition_manager.local().remove(ntp, mode);
 }
 
-std::vector<controller_backend::delta_metadata>
+ss::chunked_fifo<controller_backend::delta_metadata>
 controller_backend::list_ntp_deltas(const model::ntp& ntp) const {
     if (auto it = _topic_deltas.find(ntp); it != _topic_deltas.end()) {
-        return it->second;
+        ss::chunked_fifo<controller_backend::delta_metadata> ret;
+        ret.reserve(it->second.size());
+        std::copy(
+          it->second.begin(), it->second.end(), std::back_inserter(ret));
+        return ret;
     }
 
     return {};

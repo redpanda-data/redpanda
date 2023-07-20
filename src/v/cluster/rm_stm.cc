@@ -256,6 +256,25 @@ rm_stm::rm_stm(
     auto_abort_timer.set_callback([this] { abort_old_txes(); });
     _log_stats_timer.set_callback([this] { log_tx_stats(); });
     _log_stats_timer.arm(clock_type::now() + _log_stats_interval_s());
+
+    /// Wait to determine when the raft committed offset has been set at
+    /// startup.
+    ssx::spawn_with_gate(_gate, [this]() {
+        return bootstrap_committed_offset()
+          .then([this](model::offset o) {
+              vlog(
+                _ctx_log.info, "Setting bootstrap committed offset to: {}", o);
+              _bootstrap_committed_offset = o;
+          })
+          .handle_exception_type([](const ss::abort_requested_exception&) {})
+          .handle_exception_type([](const ss::gate_closed_exception&) {})
+          .handle_exception([this](const std::exception_ptr& e) {
+              vlog(
+                _ctx_log.warn,
+                "Failed to set bootstrap committed index due to exception: {}",
+                e);
+          });
+    });
 }
 
 ss::future<checked<model::term_id, tx_errc>> rm_stm::begin_tx(
@@ -2314,9 +2333,6 @@ void rm_stm::apply_fence(model::record_batch&& b) {
 }
 
 ss::future<> rm_stm::apply(model::record_batch b) {
-    if (unlikely(!_bootstrap_committed_offset)) {
-        _bootstrap_committed_offset = _c->committed_offset();
-    }
     auto last_offset = b.last_offset();
 
     const auto& hdr = b.header();
@@ -2982,7 +2998,7 @@ ss::future<> rm_stm::do_remove_persistent_state() {
     co_return co_await persisted_stm::remove_persistent_state();
 }
 
-ss::future<> rm_stm::handle_eviction() {
+ss::future<> rm_stm::handle_raft_snapshot() {
     return _state_lock.hold_write_lock().then(
       [this]([[maybe_unused]] ss::basic_rwlock<>::holder unit) {
           _log_state.reset();

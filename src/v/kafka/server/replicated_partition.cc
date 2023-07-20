@@ -370,7 +370,7 @@ ss::future<error_code> replicated_partition::validate_fetch_offset(
           _partition->high_watermark());
     }
 
-    co_return fetch_offset >= start_offset() && fetch_offset <= high_watermark()
+    co_return fetch_offset >= start_offset() && fetch_offset <= log_end_offset()
       ? error_code::none
       : error_code::offset_out_of_range;
 }

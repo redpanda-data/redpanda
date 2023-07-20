@@ -92,7 +92,7 @@ void read_value(
   json::Value const& v, detail::base_named_type<T, Tag, IsConstexpr>& target) {
     auto t = T{};
     read_value(v, t);
-    target = detail::base_named_type<T, Tag, IsConstexpr>{t};
+    target = detail::base_named_type<T, Tag, IsConstexpr>{std::move(t)};
 }
 
 inline void
@@ -105,7 +105,7 @@ void read_value(json::Value const& v, std::vector<T>& target) {
     for (auto const& e : v.GetArray()) {
         auto t = T{};
         read_value(e, t);
-        target.push_back(t);
+        target.push_back(std::move(t));
     }
 }
 
@@ -123,7 +123,7 @@ void read_value(json::Value const& v, fragmented_vector<T>& target) {
     for (auto const& e : v.GetArray()) {
         auto t = T{};
         read_value(e, t);
-        target.push_back(t);
+        target.push_back(std::move(t));
     }
 }
 
@@ -134,7 +134,7 @@ void read_value(json::Value const& v, std::optional<T>& target) {
     } else {
         auto t = T{};
         read_value(v, t);
-        target = t;
+        target = std::move(t);
     }
 }
 
@@ -277,7 +277,7 @@ inline void read_value(json::Value const& rd, absl::node_hash_set<V>& obj) {
     for (const auto& e : rd.GetArray()) {
         auto v = V{};
         read_value(e, v);
-        obj.insert(v);
+        obj.insert(std::move(v));
     }
 }
 

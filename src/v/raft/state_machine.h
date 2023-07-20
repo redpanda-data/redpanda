@@ -21,6 +21,7 @@
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/file.hh>
 #include <seastar/core/gate.hh>
+#include <seastar/core/shared_future.hh>
 #include <seastar/util/log.hh>
 
 namespace raft {
@@ -87,6 +88,10 @@ public:
      */
     model::offset bootstrap_last_applied() const;
     /**
+     * Return when the committed offset has been established when STM starts.
+     */
+    ss::future<model::offset> bootstrap_committed_offset();
+    /**
      * Store last applied offset. If an offset is persisted it will be used by
      * consensus instance underlying this state machine to recovery committed
      * index on startup
@@ -108,7 +113,7 @@ public:
 
 protected:
     void set_next(model::offset offset);
-    virtual ss::future<> handle_eviction();
+    virtual ss::future<> handle_raft_snapshot();
 
     model::offset last_applied_offset() const {
         return model::prev_offset(_next);
@@ -140,6 +145,13 @@ private:
     model::offset _next;
     ss::abort_source _as;
     model::offset _bootstrap_last_applied;
+    /**
+     * Shared promise used to propagate barrier result to all the waiters. The
+     * shared promise allow us to share the result of ongoing linearizable
+     * barrier request with multiple callers.
+     */
+    using barrier_promise_t = ss::shared_promise<result<model::offset>>;
+    std::optional<barrier_promise_t> _barrier_promise;
 };
 
 } // namespace raft

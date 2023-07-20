@@ -342,7 +342,11 @@
                 },
                 "commited_index": {
                     "type": "long",
-                    "description": "Commited index for controller consensus"
+                    "description": "Committed index for controller consensus"
+                },
+                "dirty_offset": {
+                    "type": "long",
+                    "description": "Controller log dirty offset"
                 }
             }
         },

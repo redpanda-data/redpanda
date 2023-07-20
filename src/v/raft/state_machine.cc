@@ -15,6 +15,8 @@
 #include "storage/log.h"
 #include "storage/record_batch_builder.h"
 
+#include <seastar/util/later.hh>
+
 namespace raft {
 
 state_machine::state_machine(
@@ -39,7 +41,7 @@ void state_machine::set_next(model::offset offset) {
     _waiters.notify(model::prev_offset(offset));
 }
 
-ss::future<> state_machine::handle_eviction() {
+ss::future<> state_machine::handle_raft_snapshot() {
     vlog(
       _log.warn,
       "{} state_machine should support handle_eviction",
@@ -78,6 +80,15 @@ state_machine::batch_applicator::operator()(model::record_batch batch) {
         return ss::make_ready_future<ss::stop_iteration>(
           ss::stop_iteration::yes);
     }
+
+    const auto committed_offset = _machine->_raft->committed_offset();
+    vassert(
+      batch.last_offset() <= committed_offset,
+      "Can not apply not committed batches to stm [{}]. Applied batch "
+      "header: {}, raft committed offset: {}",
+      _machine->_raft->ntp(),
+      batch.header(),
+      committed_offset);
 
     auto last_offset = batch.last_offset();
     return _machine->apply(std::move(batch)).then([this, last_offset] {
@@ -123,12 +134,17 @@ ss::future<> state_machine::apply() {
       .then([this] {
           auto f = ss::now();
           if (_next < _raft->start_offset()) {
-              f = handle_eviction();
+              f = handle_raft_snapshot();
           }
           return f.then([this] {
-              // build a reader for log range [_next, +inf).
+              /**
+               * Raft make_reader method allows callers reading up to
+               * last_visible index. In order to make the STMs safe and working
+               * with the raft semantics (i.e. what is applied must be comitted)
+               * we have to limit reading to the committed offset.
+               */
               storage::log_reader_config config(
-                _next, model::model_limits<model::offset>::max(), _io_prio);
+                _next, _raft->committed_offset(), _io_prio);
               return _raft->make_reader(config);
           });
       })
@@ -167,10 +183,52 @@ ss::future<> state_machine::write_last_applied(model::offset o) {
 
 ss::future<result<model::offset>> state_machine::insert_linearizable_barrier(
   model::timeout_clock::time_point timeout) {
-    return ss::with_timeout(timeout, _raft->linearizable_barrier())
-      .handle_exception_type([](const ss::timed_out_error&) {
-          return result<model::offset>(errc::timeout);
-      });
+    /**
+     * Inject leader barrier and wait until returned offset is applied
+     */
+    if (_barrier_promise) {
+        return _barrier_promise->get_shared_future();
+    }
+    _barrier_promise = barrier_promise_t{};
+    auto f = _barrier_promise->get_shared_future();
+
+    return ss::with_timeout(
+             timeout,
+             _raft->linearizable_barrier().then(
+               [this, timeout](result<model::offset> r) {
+                   if (!r) {
+                       _barrier_promise->set_value(r);
+                       _barrier_promise.reset();
+                       return ss::now();
+                   }
+
+                   // wait for the returned offset to be applied
+                   return wait(r.value(), timeout).then([this, r] {
+                       _barrier_promise->set_value(r);
+                       _barrier_promise.reset();
+                   });
+               }))
+      .handle_exception_type([this](const ss::timed_out_error&) {
+          _barrier_promise->set_value(errc::timeout);
+          _barrier_promise.reset();
+      })
+      .handle_exception([this](const std::exception_ptr& e) {
+          vlog(_log.warn, "Linearizable barrier failed - {}", e);
+          _barrier_promise->set_value(errc::append_entries_dispatch_error);
+          _barrier_promise.reset();
+      })
+      .then([f = std::move(f)]() mutable { return std::move(f); });
+}
+
+ss::future<model::offset> state_machine::bootstrap_committed_offset() {
+    /// It is useful for some STMs to know what the committed offset is so they
+    /// may do things like block until they have consumed all known committed
+    /// records. To achieve this, this method waits on offset 0, so on the first
+    /// call to `event_manager::notify_commit_index`, it is known that the
+    /// committed offset is in an initialized state.
+    return _raft->events()
+      .wait(model::offset(0), model::no_timeout, _as)
+      .then([this] { return _raft->committed_offset(); });
 }
 
 } // namespace raft

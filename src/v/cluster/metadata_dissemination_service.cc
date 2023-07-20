@@ -34,6 +34,7 @@
 #include "vlog.h"
 
 #include <seastar/core/abort_source.hh>
+#include <seastar/core/chunked_fifo.hh>
 #include <seastar/core/future-util.hh>
 #include <seastar/core/future.hh>
 #include <seastar/core/gate.hh>
@@ -310,7 +311,8 @@ void metadata_dissemination_service::collect_pending_updates() {
             }
             if (!_pending_updates.contains(id)) {
                 _pending_updates.emplace(
-                  id, update_retry_meta{std::vector<ntp_leader_revision>{}});
+                  id,
+                  update_retry_meta{ss::chunked_fifo<ntp_leader_revision>{}});
             }
             vlog(
               clusterlog.trace,
@@ -408,23 +410,6 @@ ss::future<> metadata_dissemination_service::update_leaders_with_health_report(
     }
 }
 
-namespace {
-std::vector<cluster::ntp_leader> from_ntp_leader_revision_vector(
-  std::vector<cluster::ntp_leader_revision> leaders) {
-    std::vector<cluster::ntp_leader> old_leaders;
-    old_leaders.reserve(leaders.size());
-    std::transform(
-      leaders.begin(),
-      leaders.end(),
-      std::back_inserter(old_leaders),
-      [](cluster::ntp_leader_revision& leader) {
-          return cluster::ntp_leader(
-            std::move(leader.ntp), leader.term, leader.leader_id);
-      });
-    return old_leaders;
-}
-} // namespace
-
 ss::future<> metadata_dissemination_service::dispatch_one_update(
   model::node_id target_id, update_retry_meta& meta) {
     return _clients.local()
@@ -433,7 +418,7 @@ ss::future<> metadata_dissemination_service::dispatch_one_update(
         ss::this_shard_id(),
         target_id,
         _dissemination_interval,
-        [this, updates = meta.updates, target_id](
+        [this, updates = std::move(meta.updates), target_id](
           metadata_dissemination_rpc_client_protocol proto) mutable {
             vlog(
               clusterlog.trace,
@@ -447,34 +432,6 @@ ss::future<> metadata_dissemination_service::dispatch_one_update(
                   _dissemination_interval + rpc::clock_type::now()))
               .then(&rpc::get_ctx_data<update_leadership_reply>);
         })
-      .then([this, target_id, &meta](result<update_leadership_reply> r) {
-          if (r.has_error() && r.error() == rpc::errc::method_not_found) {
-              // old version of redpanda, not yet having the v2 method,
-              // fallback to old request
-              return _clients.local()
-                .with_node_client<metadata_dissemination_rpc_client_protocol>(
-                  _self.id(),
-                  ss::this_shard_id(),
-                  target_id,
-                  _dissemination_interval,
-                  [this, updates = meta.updates, target_id](
-                    metadata_dissemination_rpc_client_protocol proto) mutable {
-                      vlog(
-                        clusterlog.trace,
-                        "Falling back to old version to send {} metadata "
-                        "updates to {}",
-                        updates,
-                        target_id);
-                      return proto.update_leadership(
-                        update_leadership_request(
-                          from_ntp_leader_revision_vector(std::move(updates))),
-                        rpc::client_opts(
-                          _dissemination_interval + rpc::clock_type::now()));
-                  })
-                .then(&rpc::get_ctx_data<update_leadership_reply>);
-          }
-          return ss::make_ready_future<result<update_leadership_reply>>(r);
-      })
       .then([target_id, &meta](result<update_leadership_reply> r) {
           if (r) {
               vlog(
