@@ -74,12 +74,22 @@ ss::future<result<offset_to_file_pos_result>> convert_begin_offset_to_file_pos(
   should_fail_on_missing_offset fail_on_missing_offset
   = should_fail_on_missing_offset::yes);
 
+using accept_batch_containing_offset
+  = ss::bool_class<struct accept_batch_containing_offset_t>;
+
+/// \brief given an offset, seeks through a segment until the batch containing
+/// that offset is found. Search stops when the last offset of a batch exceeds
+/// the searched-for offset. If the search mode is set to accept the batch
+/// containing the searched-for offset, then the last offset of the batch
+/// _containing_ the searched-for offset is returned.
 ss::future<result<offset_to_file_pos_result>> convert_end_offset_to_file_pos(
   model::offset end_inclusive,
   ss::lw_shared_ptr<storage::segment> segment,
   model::timestamp max_timestamp,
   ss::io_priority_class io_priority,
   should_fail_on_missing_offset fail_on_missing_offset
-  = should_fail_on_missing_offset::yes);
+  = should_fail_on_missing_offset::yes,
+  accept_batch_containing_offset search_mode
+  = accept_batch_containing_offset::no);
 
 } // namespace storage

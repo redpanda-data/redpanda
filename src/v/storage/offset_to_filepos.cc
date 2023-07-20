@@ -166,7 +166,8 @@ ss::future<result<offset_to_file_pos_result>> convert_end_offset_to_file_pos(
   ss::lw_shared_ptr<segment> segment,
   model::timestamp max_timestamp,
   ss::io_priority_class io_priority,
-  should_fail_on_missing_offset fail_on_missing_offset) {
+  should_fail_on_missing_offset fail_on_missing_offset,
+  accept_batch_containing_offset search_mode) {
     // Handle truncated segment upload (if the upload was triggered by time
     // limit). Note that the upload is not necessarily started at the beginning
     // of the segment.
@@ -205,14 +206,18 @@ ss::future<result<offset_to_file_pos_result>> convert_end_offset_to_file_pos(
 
     auto res = co_await storage::internal::with_segment_reader_handle(
       std::move(reader_handle),
-      [&max_timestamp, &end_inclusive, &fo, &offset_found, &ts](
+      [&max_timestamp, &end_inclusive, &fo, &offset_found, &ts, search_mode](
         segment_reader_handle& handle) {
           auto ostr = make_null_output_stream();
           return transform_stream(
             handle.take_stream(),
             std::move(ostr),
-            [off_end = end_inclusive, &fo, &ts, &offset_found, &max_timestamp](
-              model::record_batch_header& hdr) {
+            [off_end = end_inclusive,
+             &fo,
+             &ts,
+             &offset_found,
+             &max_timestamp,
+             search_mode](model::record_batch_header& hdr) {
                 if (hdr.last_offset() <= off_end) {
                     // If last offset of the record batch is within the range
                     // we need to add it to the output stream (to calculate the
@@ -226,8 +231,23 @@ ss::future<result<offset_to_file_pos_result>> convert_end_offset_to_file_pos(
 
                     return batch_consumer::consume_result::accept_batch;
                 }
-                offset_found = true;
 
+                // If it is acceptable for the searched-for offset to lie inside
+                // a batch, then accept the batch containing the offset and
+                // continue. The next iteration will end the search.
+                if (
+                  search_mode == accept_batch_containing_offset::yes
+                  && hdr.base_offset <= off_end
+                  && hdr.last_offset() > off_end) {
+                    fo = hdr.last_offset();
+                    offset_found = true;
+                    if (ts == max_timestamp) {
+                        ts = hdr.max_timestamp;
+                    }
+                    return batch_consumer::consume_result::accept_batch;
+                }
+
+                offset_found = true;
                 if (ts == max_timestamp) {
                     ts = hdr.max_timestamp;
                 }
