@@ -91,7 +91,7 @@ class LogStorageTargetSizeTest(RedpandaTest):
             'cloud_storage_manifest_max_upload_interval_sec':
             self.manifest_upload_interval,
             'retention_local_trim_interval':
-            self.retention_local_trim_interval,
+            self.retention_local_trim_interval * 1000,
             'retention_local_target_capacity_bytes': target_size,
             'retention_local_strict': strict,
             'disk_reservation_percent': 0,
