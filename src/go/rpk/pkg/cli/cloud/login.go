@@ -110,7 +110,7 @@ and then re-specify the client credentials next time you log in.`)
 				fmt.Printf("    rpk profile create {name} --from-cloud {cluster_id}\n")
 				return
 			}
-			fmt.Println(msg)
+			fmt.Print(msg)
 		},
 	}
 
@@ -170,7 +170,7 @@ func loginProfileFlow(ctx context.Context, fs afero.Fs, cfg *config.Config, over
 	// * Multiple clusters exist: prompt which to choose and swap.
 	cl := cloudapi.NewClient(overrideCloudURL, auth.AuthToken, httpapi.ReqTimeout(10*time.Second))
 
-	p, requiresMTLS, requiresSASL, err := profile.PromptCloudClusterProfile(ctx, cl)
+	pres, err := profile.PromptCloudClusterProfile(ctx, cl)
 	if err != nil {
 		if errors.Is(err, profile.ErrNoCloudClusters) {
 			return `You currently have no cloud clusters, when you create one you can run
@@ -181,6 +181,7 @@ func loginProfileFlow(ctx context.Context, fs afero.Fs, cfg *config.Config, over
 
 	// Before pushing this profile, we first check if the name exists. If
 	// so, we prompt.
+	p := pres.Profile
 	name := p.Name
 	for {
 		if y.Profile(name) == nil {
@@ -193,12 +194,19 @@ func loginProfileFlow(ctx context.Context, fs afero.Fs, cfg *config.Config, over
 	}
 	y.CurrentProfile = y.PushProfile(p)
 
-	msg := fmt.Sprintf("Created profile %q and set it as the current profile.", p.Name)
-	if requiresMTLS {
+	// We always print the cloud cluster message first, and then optionally
+	// print a few extra things. Serverless never has MTLS nor SASL
+	// messages, we don't need to worry about ordering much.
+	msg := fmt.Sprintf("Created profile %q and set it as the current profile.\n", p.Name)
+	msg += profile.CloudClusterMessage(p, pres.ClusterName, pres.ClusterID)
+	if pres.MessageMTLS {
 		msg += profile.RequiresMTLSMessage()
 	}
-	if requiresSASL {
+	if pres.MessageSASL {
 		msg += profile.RequiresSASLMessage()
+	}
+	if pres.IsServerlessHello {
+		msg += profile.ServerlessHelloMessage()
 	}
 	return msg, y.Write(fs)
 }
