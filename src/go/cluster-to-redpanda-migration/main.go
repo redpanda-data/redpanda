@@ -13,7 +13,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/redpanda-data/redpanda/src/go/migration-cli/cmd"
+	"github.com/redpanda-data/redpanda/src/go/cluster-to-redpanda-migration/cmd"
 )
 
 func main() {

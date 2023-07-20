@@ -1,5 +1,5 @@
 
-IMAGE ?= "localhost/migration-cli:latest"
+IMAGE ?= "localhost/cluster-to-redpanda-migration:latest"
 LOCALBIN ?= $(shell pwd)/bin
 $(LOCALBIN):
 	mkdir -p $(LOCALBIN)
@@ -15,19 +15,19 @@ endif
 GOOS ?= linux
 
 VERSION ?= v0.0.1
-VER_PKG=github.com/redpanda-data/redpanda/src/go/migration-cli/cmd/version
+VER_PKG=github.com/redpanda-data/redpanda/src/go/cluster-to-redpanda-migration/cmd/version
 LDFLAGS=-X $(VER_PKG).version=$(VERSION)
 
-GOBUILD_CLI=go build -ldflags '$(LDFLAGS)' -o $(LOCALBIN)/migration-cli/migration-cli
+GOBUILD_CLI=go build -ldflags '$(LDFLAGS)' -o $(LOCALBIN)/cluster-to-redpanda-migration/cluster-to-redpanda-migration
 
 
 clean: ## clean build output
-	rm -rf $(LOCALBIN)/migration-cli/*
+	rm -rf $(LOCALBIN)/cluster-to-redpanda-migration/*
 
 compile: clean ## build and place in local bin directory
-	mkdir -p $(LOCALBIN)/migration-cli/
+	mkdir -p $(LOCALBIN)/cluster-to-redpanda-migration/
 	GOOS=$(GOOS) GOARCH=$(TARGETARCH) ${GOBUILD_CLI} ./main.go
-	chmod +x $(LOCALBIN)/migration-cli/migration-cli
+	chmod +x $(LOCALBIN)/cluster-to-redpanda-migration/cluster-to-redpanda-migration
 
 compile-linux: GOOS=linux
 compile-linux: TARGETARCH=amd64
@@ -65,5 +65,5 @@ lint: gofumpt-lint golangci-lint
 # Build the docker image
 docker-build: TARGETARCH=amd64
 docker-build: compile-linux
-	echo "~~~ Building migration-cli image :docker:"
+	echo "~~~ Building cluster-to-redpanda-migration image :docker:"
 	docker buildx build -t ${IMAGE} .

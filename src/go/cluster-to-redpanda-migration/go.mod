@@ -1,4 +1,4 @@
-module github.com/redpanda-data/redpanda/src/go/migration-cli
+module github.com/redpanda-data/redpanda/src/go/cluster-to-redpanda-migration
 
 go 1.20
 

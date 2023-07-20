@@ -14,8 +14,8 @@ import (
 	"os"
 
 	vectorizedv1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/vectorized/v1alpha1"
-	"github.com/redpanda-data/redpanda/src/go/migration-cli/cmd/version"
-	"github.com/redpanda-data/redpanda/src/go/migration-cli/pkg/migration"
+	"github.com/redpanda-data/redpanda/src/go/cluster-to-redpanda-migration/cmd/version"
+	"github.com/redpanda-data/redpanda/src/go/cluster-to-redpanda-migration/pkg/migration"
 	"github.com/spf13/cobra"
 	"k8s.io/kubectl/pkg/util/i18n"
 
@@ -43,7 +43,7 @@ func Execute() error {
 
 	// RootCmd represents the base command when called without any subcommands
 	root := &cobra.Command{
-		Use:   "migration-cli",
+		Use:   "cluster-to-redpanda-migration",
 		Short: i18n.T("Redpanda operator manifest migration tool"),
 		Long:  "",
 		RunE: func(cmd *cobra.Command, args []string) error {
