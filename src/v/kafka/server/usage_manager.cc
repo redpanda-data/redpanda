@@ -11,6 +11,7 @@
 
 #include "kafka/server/usage_manager.h"
 
+#include "cluster/controller.h"
 #include "cluster/health_monitor_frontend.h"
 #include "config/configuration.h"
 #include "kafka/server/logger.h"
@@ -21,6 +22,7 @@
 namespace kafka {
 
 usage_manager::usage_accounting_fiber::usage_accounting_fiber(
+  cluster::controller* controller,
   ss::sharded<usage_manager>& um,
   ss::sharded<cluster::health_monitor_frontend>& health_monitor,
   ss::sharded<storage::api>& storage,
@@ -32,6 +34,7 @@ usage_manager::usage_accounting_fiber::usage_accounting_fiber(
     usage_num_windows,
     usage_window_width_interval,
     usage_disk_persistance_interval)
+  , _controller(controller)
   , _health_monitor(health_monitor.local())
   , _um(um) {}
 
@@ -48,6 +51,14 @@ usage_manager::usage_accounting_fiber::close_current_window() {
 
 ss::future<std::optional<uint64_t>>
 usage_manager::usage_accounting_fiber::get_cloud_usage_data() {
+    vassert(
+      ss::this_shard_id() == usage_manager::usage_manager_main_shard
+        && ss::this_shard_id() == ss::shard_id(0),
+      "Usage manager accounting fiber must run on shard 0");
+    const auto is_leader = _controller->is_raft0_leader();
+    if (!is_leader) {
+        co_return std::nullopt;
+    }
     const auto expiry = std::min<std::chrono::seconds>(
       max_history(), std::chrono::seconds(10));
     co_await _health_monitor.maybe_refresh_cloud_health_stats();
@@ -57,6 +68,7 @@ usage_manager::usage_accounting_fiber::get_cloud_usage_data() {
 }
 
 usage_manager::usage_manager(
+  cluster::controller* controller,
   ss::sharded<cluster::health_monitor_frontend>& health_monitor,
   ss::sharded<storage::api>& storage)
   : _usage_enabled(config::shard_local_cfg().enable_usage.bind())
@@ -65,6 +77,7 @@ usage_manager::usage_manager(
       config::shard_local_cfg().usage_window_width_interval_sec.bind())
   , _usage_disk_persistance_interval(
       config::shard_local_cfg().usage_disk_persistance_interval_sec.bind())
+  , _controller(controller)
   , _health_monitor(health_monitor)
   , _storage(storage) {}
 
@@ -94,6 +107,7 @@ ss::future<> usage_manager::start_accounting_fiber() {
         co_return; /// Double start called, do-nothing
     }
     _accounting_fiber = std::make_unique<usage_accounting_fiber>(
+      _controller,
       this->container(),
       _health_monitor,
       _storage,
