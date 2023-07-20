@@ -1352,6 +1352,7 @@ void application::wire_up_redpanda_services(model::node_id node_id) {
     syschecks::systemd_message("Creating kafka usage manager frontend").get();
     construct_service(
       usage_manager,
+      controller.get(),
       std::ref(controller->get_health_monitor()),
       std::ref(storage))
       .get();
