@@ -252,8 +252,6 @@ private:
     ss::future<session_resources>
     throttle_request(const request_header&, size_t sz);
 
-    ss::future<> dispatch_method_once(request_header, size_t sz);
-
     /**
      * Process zero or more ready responses in request order.
      *
@@ -282,6 +280,20 @@ private:
 
     using sequence_id = named_type<uint64_t, struct kafka_protocol_sequence>;
     using map_t = absl::flat_hash_map<sequence_id, response_and_resources>;
+
+    /*
+     * dispatch_method_once is the first stage processing of a request and
+     * handles work synchronously such as sequencing data off the connection.
+     * handle_response waits for the response in the background as a second
+     * stage of processing and allows for some request handling overlap.
+     */
+    ss::future<> dispatch_method_once(request_header, size_t sz);
+    ss::future<> handle_response(
+      ss::lw_shared_ptr<connection_context>,
+      ss::future<response_ptr>,
+      ss::lw_shared_ptr<session_resources>,
+      sequence_id,
+      correlation_id);
 
     class ctx_log {
     public:
