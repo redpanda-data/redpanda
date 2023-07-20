@@ -99,16 +99,12 @@ rpk always switches to the newly created profile.
 
 			ctx, cancel := context.WithTimeout(cmd.Context(), 10*time.Second)
 			defer cancel()
-			name, cloudMTLS, cloudSASL, err := createProfile(ctx, fs, y, cfg, fromRedpanda, fromProfile, fromCloud, set, name, description)
+			name, msg, err := createProfile(ctx, fs, y, cfg, fromRedpanda, fromProfile, fromCloud, set, name, description)
 			out.MaybeDieErr(err)
 
 			fmt.Printf("Created and switched to new profile %q.\n", name)
-
-			if cloudMTLS {
-				fmt.Println(RequiresMTLSMessage())
-			}
-			if cloudSASL {
-				fmt.Println(RequiresSASLMessage())
+			if msg != "" {
+				fmt.Print(msg)
 			}
 		},
 	}
@@ -138,22 +134,26 @@ func createProfile(
 	set []string,
 	name string,
 	description string,
-) (finalName string, cloudMTLS, cloudSASL bool, err error) {
+) (finalName string, msg string, err error) {
 	if p := y.Profile(name); p != nil {
-		return "", false, false, fmt.Errorf("profile %q already exists", name)
+		return "", "", fmt.Errorf("profile %q already exists", name)
 	}
 
-	var p config.RpkProfile
+	var (
+		p config.RpkProfile
+		o CloudClusterOutputs
+	)
 	switch {
 	case fromCloud != "":
 		var err error
-		p, cloudMTLS, cloudSASL, err = createCloudProfile(ctx, y, cfg, fromCloud)
+		o, err = createCloudProfile(ctx, y, cfg, fromCloud)
 		if err != nil {
-			return "", false, false, err
+			return "", "", err
 		}
+		p = o.Profile
 		if name == "" {
 			if p := y.Profile(p.Name); p != nil {
-				return "", false, false, fmt.Errorf("profile %q already exists, please try again and specify a new name", p.Name)
+				return "", "", fmt.Errorf("profile %q already exists, please try again and specify a new name", p.Name)
 			}
 		}
 
@@ -165,19 +165,19 @@ func createProfile(
 			raw, err := afero.ReadFile(fs, fromProfile)
 			if err != nil {
 				if !errors.Is(err, os.ErrNotExist) {
-					return "", false, false, fmt.Errorf("unable to read file %q: %v", fromProfile, err)
+					return "", "", fmt.Errorf("unable to read file %q: %v", fromProfile, err)
 				}
 				y, err := cfg.ActualRpkYamlOrEmpty()
 				if err != nil {
-					return "", false, false, fmt.Errorf("file %q does not exist, and we cannot read rpk.yaml: %v", fromProfile, err)
+					return "", "", fmt.Errorf("file %q does not exist, and we cannot read rpk.yaml: %v", fromProfile, err)
 				}
 				src := y.Profile(fromProfile)
 				if src == nil {
-					return "", false, false, fmt.Errorf("unable to find profile %q", fromProfile)
+					return "", "", fmt.Errorf("unable to find profile %q", fromProfile)
 				}
 				p = *src
 			} else if err := yaml.Unmarshal(raw, &p); err != nil {
-				return "", false, false, fmt.Errorf("unable to yaml decode file %q: %v", fromProfile, err)
+				return "", "", fmt.Errorf("unable to yaml decode file %q: %v", fromProfile, err)
 			}
 		}
 
@@ -189,11 +189,11 @@ func createProfile(
 		default:
 			raw, err := afero.ReadFile(fs, fromRedpanda)
 			if err != nil {
-				return "", false, false, fmt.Errorf("unable to read file %q: %v", fromRedpanda, err)
+				return "", "", fmt.Errorf("unable to read file %q: %v", fromRedpanda, err)
 			}
 			var rpyaml config.RedpandaYaml
 			if err := yaml.Unmarshal(raw, &rpyaml); err != nil {
-				return "", false, false, fmt.Errorf("unable to yaml decode file %q: %v", fromRedpanda, err)
+				return "", "", fmt.Errorf("unable to yaml decode file %q: %v", fromRedpanda, err)
 			}
 			nodeCfg = rpyaml.Rpk
 		}
@@ -203,10 +203,7 @@ func createProfile(
 		}
 	}
 	if err := doSet(&p, set); err != nil {
-		return "", false, false, err
-	}
-	if cloudSASL && p.KafkaAPI.SASL != nil {
-		cloudSASL = false
+		return "", "", err
 	}
 
 	if name != "" {
@@ -217,25 +214,38 @@ func createProfile(
 	}
 	y.CurrentProfile = y.PushProfile(p)
 	if err := y.Write(fs); err != nil {
-		return "", false, false, fmt.Errorf("unable to write rpk file: %v", err)
+		return "", "", fmt.Errorf("unable to write rpk file: %v", err)
 	}
-	return y.CurrentProfile, cloudMTLS, cloudSASL, nil
+
+	// Now that we have successfully written a profile, we build any output
+	// message if this is a cloud based profile.
+	if fromCloud != "" {
+		msg += CloudClusterMessage(p, o.ClusterName, o.ClusterID)
+		if o.MessageSASL && p.KafkaAPI.SASL == nil {
+			msg += RequiresSASLMessage()
+		}
+		if o.MessageMTLS && p.KafkaAPI.TLS == nil {
+			msg += RequiresMTLSMessage()
+		}
+	}
+
+	return y.CurrentProfile, msg, nil
 }
 
-func createCloudProfile(ctx context.Context, y *config.RpkYaml, cfg *config.Config, clusterID string) (p config.RpkProfile, cloudMTLS, cloudSASL bool, err error) {
+func createCloudProfile(ctx context.Context, y *config.RpkYaml, cfg *config.Config, clusterID string) (CloudClusterOutputs, error) {
 	a := y.Auth(y.CurrentCloudAuth)
 	if a == nil {
-		return p, false, false, fmt.Errorf("missing auth for current_cloud_auth %q", y.CurrentCloudAuth)
+		return CloudClusterOutputs{}, fmt.Errorf("missing auth for current_cloud_auth %q", y.CurrentCloudAuth)
 	}
 
 	overrides := cfg.DevOverrides()
 	auth0Cl := auth0.NewClient(overrides)
 	expired, err := oauth.ValidateToken(a.AuthToken, auth0Cl.Audience(), a.ClientID)
 	if err != nil {
-		return p, false, false, err
+		return CloudClusterOutputs{}, err
 	}
 	if expired {
-		return p, false, false, fmt.Errorf("token for %q has expired, please login again", y.CurrentCloudAuth)
+		return CloudClusterOutputs{}, fmt.Errorf("token for %q has expired, please login again", y.CurrentCloudAuth)
 	}
 	cl := cloudapi.NewClient(overrides.CloudAPIURL, a.AuthToken)
 
@@ -247,23 +257,22 @@ func createCloudProfile(ctx context.Context, y *config.RpkYaml, cfg *config.Conf
 	if err != nil { // if we fail for a vcluster, we try again for a normal cluster
 		c, err := cl.Cluster(ctx, clusterID)
 		if err != nil {
-			return p, false, false, fmt.Errorf("unable to request details for cluster %q: %w", clusterID, err)
+			return CloudClusterOutputs{}, fmt.Errorf("unable to request details for cluster %q: %w", clusterID, err)
 		}
-		p, cloudMTLS, cloudSASL = fromCloudCluster(c)
-		return p, cloudMTLS, cloudSASL, nil
+		return fromCloudCluster(c), nil
 	}
-	p, cloudMTLS, cloudSASL = fromVirtualCluster(vc)
-	return p, cloudMTLS, cloudSASL, nil
+	return fromVirtualCluster(vc, ""), nil // we do not print the serverless hello world when creating a profile directly
 }
 
 // fromCloudCluster returns an rpk profile from a cloud cluster, as well
 // as if the cluster requires mtls or sasl.
-func fromCloudCluster(c cloudapi.Cluster) (p config.RpkProfile, isMTLS, isSASL bool) {
-	p = config.RpkProfile{
+func fromCloudCluster(c cloudapi.Cluster) CloudClusterOutputs {
+	p := config.RpkProfile{
 		Name:      c.Name,
 		FromCloud: true,
 	}
 	p.KafkaAPI.Brokers = c.Status.Listeners.Kafka.Default.URLs
+	var isMTLS, isSASL bool
 	if l := c.Spec.KafkaListeners.Listeners; len(l) > 0 {
 		if l[0].TLS != nil {
 			p.KafkaAPI.TLS = new(config.TLS)
@@ -271,11 +280,17 @@ func fromCloudCluster(c cloudapi.Cluster) (p config.RpkProfile, isMTLS, isSASL b
 		}
 		isSASL = l[0].SASL != nil
 	}
-	return p, isMTLS, isSASL
+	return CloudClusterOutputs{
+		Profile:     p,
+		ClusterName: c.Name,
+		ClusterID:   c.ID,
+		MessageMTLS: isMTLS,
+		MessageSASL: isSASL,
+	}
 }
 
-func fromVirtualCluster(vc cloudapi.VirtualCluster) (p config.RpkProfile, isMTLS, isSASL bool) {
-	p = config.RpkProfile{
+func fromVirtualCluster(vc cloudapi.VirtualCluster, selectedNamespaceCluster string) CloudClusterOutputs {
+	p := config.RpkProfile{
 		Name:      vc.Name,
 		FromCloud: true,
 		KafkaAPI: config.RpkKafkaAPI{
@@ -290,8 +305,21 @@ func fromVirtualCluster(vc cloudapi.VirtualCluster) (p config.RpkProfile, isMTLS
 			TLS:       new(config.TLS),
 		},
 	}
-	return p, false, false // we do not need to print any required message; we generate the config in full
+
+	return CloudClusterOutputs{
+		Profile:           p,
+		ClusterName:       vc.Name,
+		ClusterID:         vc.ID,
+		MessageMTLS:       false, // we do not need to print any required message; we generate the config in full
+		MessageSASL:       false, // same
+		IsServerlessHello: serverlessHelloNamespaceCluster == selectedNamespaceCluster,
+	}
 }
+
+const (
+	serverlessHelloTopic            = "hello-world"
+	serverlessHelloNamespaceCluster = "default/" + serverlessHelloTopic
+)
 
 // RequiresMTLSMessage returns the message to print if the cluster requires
 // mTLS.
@@ -311,17 +339,46 @@ func RequiresSASLMessage() string {
 If your cluster requires SASL, generate SASL credentials in the UI and then set
 them in rpk with
     rpk profile set user {sasl_username}
-    rpk profile set pass {sasl_password}`
+    rpk profile set pass {sasl_password}
+`
+}
+
+// CloudClusterMessage returns details to always print for cloud clusters.
+func CloudClusterMessage(p config.RpkProfile, clusterName, clusterID string) string {
+	return fmt.Sprintf(`
+Cluster %s
+  Web UI: https://cloudv2.redpanda.com/clusters/%s/overview
+  Redpanda Seed Brokers: [%s]
+`, clusterName, clusterID, strings.Join(p.KafkaAPI.Brokers, ", "))
+}
+
+// ServerlessHelloMessage returns the message to print if the cluster
+// is the serverless hello world cluster.
+func ServerlessHelloMessage() string {
+	return fmt.Sprintf(`
+Consume messages from the %[1]s topic as a guide for your next steps:
+  rpk topic consume %[1]s -o :end -f '%%v\n'
+`, serverlessHelloTopic)
 }
 
 // ErrNoCloudClusters is returned when the user has no cloud clusters.
 var ErrNoCloudClusters = errors.New("no clusters found")
 
+// CloudClusterOutputs contains outputs from a cloud based profile.
+type CloudClusterOutputs struct {
+	Profile           config.RpkProfile
+	ClusterID         string
+	ClusterName       string
+	MessageMTLS       bool
+	MessageSASL       bool
+	IsServerlessHello bool
+}
+
 // PromptCloudClusterProfile returns a profile for the cluster selected by the
 // user. If their cloud account has only one cluster, a profile is created for
 // it automatically. This returns ErrNoCloudClusters if the user has no cloud
 // clusters.
-func PromptCloudClusterProfile(ctx context.Context, cl *cloudapi.Client) (p config.RpkProfile, requiresMTLS, requiresSASL bool, err error) {
+func PromptCloudClusterProfile(ctx context.Context, cl *cloudapi.Client) (CloudClusterOutputs, error) {
 	// We get the org name asynchronously because this is a slow request --
 	// doing it while the user does a slow operation of selecting a cluster
 	// hides the delay.
@@ -351,15 +408,15 @@ func PromptCloudClusterProfile(ctx context.Context, cl *cloudapi.Client) (p conf
 
 	vcs, cs, err := clusterList(ctx, cl)
 	if err != nil {
-		return p, false, false, err
+		return CloudClusterOutputs{}, err
 	}
 	if len(cs) == 0 && len(vcs) == 0 {
-		return p, false, false, ErrNoCloudClusters
+		return CloudClusterOutputs{}, ErrNoCloudClusters
 	}
 
 	<-nssDone
 	if nssErr != nil {
-		return p, false, false, fmt.Errorf("unable to get list of namespaces: %w", nssErr)
+		return CloudClusterOutputs{}, fmt.Errorf("unable to get list of namespaces: %w", nssErr)
 	}
 
 	findNamespace := func(id string) string {
@@ -396,34 +453,35 @@ func PromptCloudClusterProfile(ctx context.Context, cl *cloudapi.Client) (p conf
 		}
 		idx, err := out.PickIndex(names, "Which cloud namespace/cluster would you like to create a profile for?")
 		if err != nil {
-			return p, false, false, err
+			return CloudClusterOutputs{}, err
 		}
 		selected = nameAndCs[idx]
 	}
 
 	<-orgDone
 	if orgErr != nil {
-		return p, false, false, fmt.Errorf("unable to get organization: %w", orgErr)
+		return CloudClusterOutputs{}, fmt.Errorf("unable to get organization: %w", orgErr)
 	}
 
+	var o CloudClusterOutputs
 	// We have a cluster selected, but the list response does not return
 	// all information we need. We need to now directly request this
 	// cluster's information.
 	if selected.c != nil {
 		c, err := cl.Cluster(ctx, selected.c.ID)
 		if err != nil {
-			return p, false, false, fmt.Errorf("unable to get cluster %q information: %w", c.ID, err)
+			return CloudClusterOutputs{}, fmt.Errorf("unable to get cluster %q information: %w", c.ID, err)
 		}
-		p, requiresMTLS, requiresSASL = fromCloudCluster(c)
+		o = fromCloudCluster(c)
 	} else {
 		c, err := cl.VirtualCluster(ctx, selected.vc.ID)
 		if err != nil {
-			return p, false, false, fmt.Errorf("unable to get cluster %q information: %w", c.ID, err)
+			return CloudClusterOutputs{}, fmt.Errorf("unable to get cluster %q information: %w", c.ID, err)
 		}
-		p, requiresMTLS, requiresSASL = fromVirtualCluster(c)
+		o = fromVirtualCluster(c, selected.name)
 	}
-	p.Description = fmt.Sprintf("%s %q", org.Name, selected.name)
-	return p, requiresMTLS, requiresSASL, nil
+	o.Profile.Description = fmt.Sprintf("%s %q", org.Name, selected.name)
+	return o, nil
 }
 
 // nameAndCluster describes a cluster name in the form of
