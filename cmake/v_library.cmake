@@ -62,15 +62,11 @@ function(v_cc_library)
   set(_NAME "v_${V_CC_LIB_NAME}")
 
   # Check if this is a header-only library
-  # Note that as of February 2019, many popular OS's (for example, Ubuntu
-  # 16.04 LTS) only come with cmake 3.5 by default.  For this reason, we can't
-  # use list(FILTER...)
+  # We now have cmake minimum required version 3.12.0.
+  # For this reason, we now use list(FILTER...) rather 
+  # than list(REMOVE_ITEM ...)
   set(V_CC_SRCS "${V_CC_LIB_SRCS}")
-  foreach(src_file IN LISTS V_CC_SRCS)
-    if(${src_file} MATCHES ".*\\.(h|inc)")
-      list(REMOVE_ITEM V_CC_SRCS "${src_file}")
-    endif()
-  endforeach()
+  list(FILTER V_CC_SRCS EXCLUDE REGEX ".*\\.(h|inc)")
   if("${V_CC_SRCS}" STREQUAL "")
     set(V_CC_LIB_IS_INTERFACE 1)
   else()
