@@ -2860,7 +2860,7 @@ ss::future<stm_snapshot> rm_stm::take_snapshot() {
     vlog(
       _ctx_log.trace,
       "taking snapshot with last included offset of: {}",
-      model::prev_offset(start_offset));
+      model::prev_offset(_insync_offset));
 
     fragmented_vector<abort_index> abort_indexes;
     fragmented_vector<abort_index> expired_abort_indexes;

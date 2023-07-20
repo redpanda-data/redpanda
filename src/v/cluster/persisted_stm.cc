@@ -535,6 +535,7 @@ ss::future<> persisted_stm<T>::start() {
               next_offset);
             co_await apply_snapshot(snapshot.header, std::move(snapshot.data));
             set_next(next_offset);
+            _last_snapshot_offset = snapshot.header.offset;
         } else {
             // This can happen on an out-of-date replica that re-joins the group
             // after other replicas have already evicted logs to some offset
