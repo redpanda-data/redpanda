@@ -93,7 +93,6 @@ class LogStorageTargetSizeTest(RedpandaTest):
             'retention_local_trim_interval':
             self.retention_local_trim_interval * 1000,
             'retention_local_target_capacity_bytes': target_size,
-            'retention_local_strict': strict,
             'disk_reservation_percent': 0,
             'retention_local_target_capacity_percent': 100,
         }
@@ -109,6 +108,7 @@ class LogStorageTargetSizeTest(RedpandaTest):
             })
 
         si_settings = SISettings(test_context=self.test_context,
+                                 retention_local_strict=strict,
                                  log_segment_size=log_segment_size)
         self.redpanda.set_extra_rp_conf(extra_rp_conf)
         self.redpanda.set_si_settings(si_settings)
