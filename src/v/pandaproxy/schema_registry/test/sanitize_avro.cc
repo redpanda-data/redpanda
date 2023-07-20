@@ -99,6 +99,18 @@ pps::unparsed_schema_definition namespace_nested_same_unsanitized{
   "doc": "A simple name (attribute) and no namespace attribute: use the null namespace; the fullname is 'Example'.",
   "fields": [
     {
+      "name": "inheritNull",
+      "type": {
+        "type": "enum",
+        "name": "Simple",
+        "doc": "A simple name (attribute) and no namespace attribute: inherit the null namespace of the enclosing type 'Example'. The fullname is 'Simple'.",
+        "symbols": [
+          "a",
+          "b"
+        ]
+      }
+    },
+    {
       "name": "fullName",
       "type": {
         "type": "fixed",
@@ -106,6 +118,29 @@ pps::unparsed_schema_definition namespace_nested_same_unsanitized{
         "namespace": "explicit",
         "doc": "A name (attribute) and a namespace (attribute). The fullname is 'a.full.Name', and the namespace is 'a.full'.",
         "size": 12
+      }
+    },
+    {
+      "name": "explicitNamespace",
+      "type": {
+        "type": "record",
+        "name": "Simple",
+        "namespace": "explicit",
+        "doc": "A simple name (attribute) and a namespace (attribute); the fullname is 'explicit.Simple' (this is a different type than of the 'inheritNull' field).",
+        "fields": [
+          {
+            "name": "inheritNamespace",
+            "type": {
+              "type": "enum",
+              "name": "Understanding",
+              "doc": "A simple name (attribute) and no namespace attribute: inherit the namespace of the enclosing type 'explicit.Simple'. The fullname is 'explicit.Understanding'.",
+              "symbols": [
+                "d",
+                "e"
+              ]
+            }
+          }
+        ]
       }
     }
   ]
@@ -120,6 +155,18 @@ pps::canonical_schema_definition namespace_nested_same_sanitized{
   "doc": "A simple name (attribute) and no namespace attribute: use the null namespace; the fullname is 'Example'.",
   "fields": [
     {
+      "name": "inheritNull",
+      "type": {
+        "type": "enum",
+        "name": "Simple",
+        "doc": "A simple name (attribute) and no namespace attribute: inherit the null namespace of the enclosing type 'Example'. The fullname is 'Simple'.",
+        "symbols": [
+          "a",
+          "b"
+        ]
+      }
+    },
+    {
       "name": "fullName",
       "type": {
         "type": "fixed",
@@ -127,6 +174,29 @@ pps::canonical_schema_definition namespace_nested_same_sanitized{
         "namespace": "a.full",
         "doc": "A name (attribute) and a namespace (attribute). The fullname is 'a.full.Name', and the namespace is 'a.full'.",
         "size": 12
+      }
+    },
+    {
+      "name": "explicitNamespace",
+      "type": {
+        "type": "record",
+        "name": "Simple",
+        "namespace": "explicit",
+        "doc": "A simple name (attribute) and a namespace (attribute); the fullname is 'explicit.Simple' (this is a different type than of the 'inheritNull' field).",
+        "fields": [
+          {
+            "name": "inheritNamespace",
+            "type": {
+              "type": "enum",
+              "name": "Understanding",
+              "doc": "A simple name (attribute) and no namespace attribute: inherit the namespace of the enclosing type 'explicit.Simple'. The fullname is 'explicit.Understanding'.",
+              "symbols": [
+                "d",
+                "e"
+              ]
+            }
+          }
+        ]
       }
     }
   ]
