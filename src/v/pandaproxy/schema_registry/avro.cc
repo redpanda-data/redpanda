@@ -24,6 +24,7 @@
 
 #include <seastar/core/coroutine.hh>
 #include <seastar/coroutine/exception.hh>
+#include <seastar/util/defer.hh>
 
 #include <absl/container/flat_hash_set.h>
 #include <avro/Compiler.hh>
@@ -175,6 +176,8 @@ struct member_sorter {
 
 struct sanitize_context {
     json::MemoryPoolAllocator& alloc;
+    // The stack of namespaces, starting with implictly null
+    std::stack<ss::sstring> ns{{""}};
 };
 
 result<void> sanitize(json::Value& v, sanitize_context& ctx);
@@ -268,6 +271,9 @@ result<void> sanitize(json::Value& v, sanitize_context& ctx) {
 }
 
 result<void> sanitize(json::Value::Object& o, sanitize_context& ctx) {
+    auto pop_ns_impl = [&ctx]() { ctx.ns.pop(); };
+    std::optional<ss::deferred_action<decltype(pop_ns_impl)>> pop_ns;
+
     if (auto it = o.FindMember("name"); it != o.MemberEnd()) {
         // A name should have the leading dot stripped iff it's the only one
         // Otherwise split on the last dot into a name and a namespace
@@ -282,7 +288,7 @@ result<void> sanitize(json::Value::Object& o, sanitize_context& ctx) {
         std::string_view fullname_sv{name.GetString(), name.GetStringLength()};
         auto last_dot = fullname_sv.find_last_of('.');
 
-        ss::sstring new_namespace;
+        std::optional<ss::sstring> new_namespace;
         if (last_dot != std::string::npos) {
             // Take a copy, fullname_sv will be invalidated when new_name is
             // set, and SetString uses memcpy, the range musn't overlap.
@@ -296,7 +302,21 @@ result<void> sanitize(json::Value::Object& o, sanitize_context& ctx) {
             new_namespace = std::move(fullname);
         }
 
-        if (!new_namespace.empty()) {
+        if (!new_namespace.has_value()) {
+            if (auto it = o.FindMember("namespace"); it != o.MemberEnd()) {
+                if (!it->value.IsString()) {
+                    return error_info{
+                      error_code::schema_invalid,
+                      "Invalid JSON Field \"namespace\""};
+                }
+                new_namespace.emplace(
+                  it->value.GetString(), it->value.GetStringLength());
+            }
+        }
+
+        if (new_namespace.has_value() && ctx.ns.top() != new_namespace) {
+            ctx.ns.emplace(*new_namespace);
+            pop_ns.emplace(std::move(pop_ns_impl));
             if (auto it = o.FindMember("namespace"); it != o.MemberEnd()) {
                 if (!it->value.IsString()) {
                     return error_info{
@@ -307,17 +327,19 @@ result<void> sanitize(json::Value::Object& o, sanitize_context& ctx) {
                   it->value.GetString(), it->value.GetStringLength()};
                 if (existing_namespace != new_namespace) {
                     it->value.SetString(
-                      new_namespace.data(),
-                      new_namespace.length(),
+                      new_namespace->data(),
+                      new_namespace->length(),
                       ctx.alloc);
                 }
             } else {
                 o.AddMember(
                   json::Value("namespace"),
                   json::Value(
-                    new_namespace.data(), new_namespace.length(), ctx.alloc),
+                    new_namespace->data(), new_namespace->length(), ctx.alloc),
                   ctx.alloc);
             }
+        } else {
+            o.RemoveMember("namespace");
         }
     }
 
