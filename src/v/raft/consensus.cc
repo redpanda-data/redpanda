@@ -16,6 +16,7 @@
 #include "model/metadata.h"
 #include "model/namespace.h"
 #include "model/record_batch_reader.h"
+#include "model/record_batch_types.h"
 #include "model/timeout_clock.h"
 #include "prometheus/prometheus_sanitize.h"
 #include "raft/consensus_client_protocol.h"
@@ -78,11 +79,7 @@ namespace raft {
 std::vector<model::record_batch_type>
 offset_translator_batch_types(const model::ntp& ntp) {
     if (ntp.ns == model::kafka_namespace) {
-        return {
-          model::record_batch_type::raft_configuration,
-          model::record_batch_type::archival_metadata,
-          model::record_batch_type::version_fence,
-          model::record_batch_type::prefix_truncate};
+        return model::offset_translator_batch_types();
     } else {
         return {};
     }
