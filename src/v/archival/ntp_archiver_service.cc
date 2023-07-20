@@ -1332,6 +1332,27 @@ ntp_archiver::schedule_single_upload(const upload_context& upload_ctx) {
     auto upload = upload_with_locks.candidate;
     auto locks = std::move(upload_with_locks.read_locks);
 
+    if (
+      upload.sources.empty()
+      && upload_ctx.upload_kind == segment_upload_kind::compacted
+      && model::offset{} != upload.final_offset) {
+        vlog(
+          _rtclog.warn,
+          "Upload skipped for range: {}-{} because these offsets lie inside "
+          "batches",
+          upload.starting_offset,
+          upload.final_offset);
+        co_return scheduled_upload{
+          .result = std::nullopt,
+          .inclusive_last_offset = upload.final_offset,
+          .meta = std::nullopt,
+          .name = std::nullopt,
+          .delta = std::nullopt,
+          .stop = ss::stop_iteration::yes,
+          .upload_kind = upload_ctx.upload_kind,
+        };
+    }
+
     if (upload.sources.empty()) {
         vlog(
           _rtclog.debug,
