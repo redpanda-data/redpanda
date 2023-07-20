@@ -53,7 +53,7 @@ class ControllerAvailabilityTest(Test):
 
         if self.redpanda.node_id(controller) not in started_ids:
             self.logger.info(
-                f"Reported controller node {controller} is obsolete as it was stopped"
+                f"Reported controller node {controller.account.hostname} is obsolete as it was stopped"
             )
             return False
 
