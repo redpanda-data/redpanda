@@ -444,10 +444,16 @@ connection_context::dispatch_method_once(request_header hdr, size_t size) {
     /**
      * second stage processed in background.
      */
-    ssx::background = ssx::spawn_with_gate_then(_server.conn_gate(), [&] {
-        return handle_response(
-          self, std::move(res.response), sres, seq, correlation);
-    });
+    ssx::spawn_with_gate(
+      _server.conn_gate(),
+      [this,
+       self,
+       f = std::move(res.response),
+       sres,
+       seq,
+       correlation]() mutable {
+          return handle_response(self, std::move(f), sres, seq, correlation);
+      });
 }
 
 ss::future<> connection_context::handle_response(
