@@ -48,4 +48,12 @@ enum class record_batch_type : int8_t {
 
 std::ostream& operator<<(std::ostream& o, record_batch_type bt);
 
+inline std::vector<model::record_batch_type> offset_translator_batch_types() {
+    return {
+      model::record_batch_type::raft_configuration,
+      model::record_batch_type::archival_metadata,
+      model::record_batch_type::version_fence,
+      model::record_batch_type::prefix_truncate};
+}
+
 } // namespace model
