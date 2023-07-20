@@ -33,9 +33,9 @@ ss::future<stream_stats> offset_translator::copy_stream(
 
     auto pred =
       [this, &min_offset, &max_offset](model::record_batch_header& hdr) {
-          if (
-            hdr.type == model::record_batch_type::raft_configuration
-            || hdr.type == model::record_batch_type::archival_metadata) {
+          static const auto types = model::offset_translator_batch_types();
+          auto n = std::count(types.begin(), types.end(), hdr.type);
+          if (n > 0) {
               _ot_state->add_gap(hdr.base_offset, hdr.last_offset());
           }
           min_offset = std::min(min_offset, hdr.base_offset);

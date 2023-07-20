@@ -11,6 +11,7 @@
 
 #pragma once
 #include "model/record_batch_reader.h"
+#include "model/record_batch_types.h"
 #include "storage/compacted_index.h"
 #include "storage/compacted_index_reader.h"
 #include "storage/compacted_index_writer.h"
@@ -197,10 +198,10 @@ struct clean_segment_value
 };
 
 inline bool is_compactible(const model::record_batch& b) {
-    return !(
-      b.header().type == model::record_batch_type::raft_configuration
-      || b.header().type == model::record_batch_type::archival_metadata
-      || b.header().type == model::record_batch_type::version_fence);
+    static const auto filtered_types = model::offset_translator_batch_types();
+    auto n = std::count(
+      filtered_types.begin(), filtered_types.end(), b.header().type);
+    return n == 0;
 }
 
 offset_delta_time should_apply_delta_time_offset(
