@@ -44,7 +44,7 @@ class LogStorageTargetSizeTest(RedpandaTest):
     @cluster(num_nodes=4)
     @matrix(log_segment_size=[1024 * 1024, 100 * 1024 * 1024],
             strict=[True, False])
-    def streaming_cache_test(self, log_segment_size, strict):
+    def size_within_target_threshold_test(self, log_segment_size, strict):
         if self.redpanda.dedicated_nodes:
             partition_count = 64
             rate_limit_bps = int(120E6)
@@ -91,9 +91,8 @@ class LogStorageTargetSizeTest(RedpandaTest):
             'cloud_storage_manifest_max_upload_interval_sec':
             self.manifest_upload_interval,
             'retention_local_trim_interval':
-            self.retention_local_trim_interval,
+            self.retention_local_trim_interval * 1000,
             'retention_local_target_capacity_bytes': target_size,
-            'retention_local_strict': strict,
             'disk_reservation_percent': 0,
             'retention_local_target_capacity_percent': 100,
         }
@@ -109,6 +108,7 @@ class LogStorageTargetSizeTest(RedpandaTest):
             })
 
         si_settings = SISettings(test_context=self.test_context,
+                                 retention_local_strict=strict,
                                  log_segment_size=log_segment_size)
         self.redpanda.set_extra_rp_conf(extra_rp_conf)
         self.redpanda.set_si_settings(si_settings)
