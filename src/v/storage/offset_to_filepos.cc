@@ -90,13 +90,6 @@ offset_to_filepos_consumer::type offset_to_filepos_consumer::end_of_stream() {
     return _filepos;
 }
 
-bool is_offset_in_batch(
-  const model::record_batch_header& header, model::offset o) {
-    // Note: header.contains also matches if offset is on the boundary. This
-    // function checks if the offset lies strictly inside the batch.
-    return header.base_offset < o && header.last_offset() > o;
-}
-
 } // namespace internal
 
 ss::future<result<offset_to_file_pos_result>> convert_begin_offset_to_file_pos(
@@ -115,16 +108,15 @@ ss::future<result<offset_to_file_pos_result>> convert_begin_offset_to_file_pos(
     auto handle = co_await segment->reader().data_stream(
       scan_from, io_priority);
 
-    bool offset_inside_batch = false;
     auto res = co_await storage::internal::with_segment_reader_handle(
       std::move(handle),
-      [&begin_inclusive, &sto, &offset_found, &ts, &offset_inside_batch](
+      [&begin_inclusive, &sto, &offset_found, &ts](
         segment_reader_handle& reader_handle) {
           auto ostr = make_null_output_stream();
           return transform_stream(
             reader_handle.take_stream(),
             std::move(ostr),
-            [begin_inclusive, &sto, &ts, &offset_found, &offset_inside_batch](
+            [begin_inclusive, &sto, &ts, &offset_found](
               model::record_batch_header& hdr) {
                 if (hdr.last_offset() < begin_inclusive) {
                     // The current record batch is accepted and will contribute
@@ -135,10 +127,6 @@ ss::future<result<offset_to_file_pos_result>> convert_begin_offset_to_file_pos(
                     // This is why we need to update 'sto' per batch.
                     sto = hdr.last_offset() + model::offset(1);
                     return batch_consumer::consume_result::accept_batch;
-                }
-
-                if (internal::is_offset_in_batch(hdr, begin_inclusive)) {
-                    offset_inside_batch = true;
                 }
 
                 offset_found = true;
@@ -172,8 +160,7 @@ ss::future<result<offset_to_file_pos_result>> convert_begin_offset_to_file_pos(
       bytes_to_skip,
       sto);
     // Adjust content length and offsets at the begining of the file
-    co_return offset_to_file_pos_result{
-      sto, bytes_to_skip, ts, offset_inside_batch};
+    co_return offset_to_file_pos_result{sto, bytes_to_skip, ts};
 }
 
 ss::future<result<offset_to_file_pos_result>> convert_end_offset_to_file_pos(
@@ -181,7 +168,8 @@ ss::future<result<offset_to_file_pos_result>> convert_end_offset_to_file_pos(
   ss::lw_shared_ptr<segment> segment,
   model::timestamp max_timestamp,
   ss::io_priority_class io_priority,
-  should_fail_on_missing_offset fail_on_missing_offset) {
+  should_fail_on_missing_offset fail_on_missing_offset,
+  bool include_batch_after_gap) {
     // Handle truncated segment upload (if the upload was triggered by time
     // limit). Note that the upload is not necessarily started at the beginning
     // of the segment.
@@ -218,7 +206,6 @@ ss::future<result<offset_to_file_pos_result>> convert_end_offset_to_file_pos(
     auto reader_handle = co_await segment->reader().data_stream(
       scan_from, io_priority);
 
-    bool offset_inside_batch = false;
     auto res = co_await storage::internal::with_segment_reader_handle(
       std::move(reader_handle),
       [&max_timestamp,
@@ -226,8 +213,8 @@ ss::future<result<offset_to_file_pos_result>> convert_end_offset_to_file_pos(
        &fo,
        &offset_found,
        &ts,
-       &offset_inside_batch,
-       &segment](segment_reader_handle& handle) {
+       &segment,
+       include_batch_after_gap](segment_reader_handle& handle) {
           auto ostr = make_null_output_stream();
           return transform_stream(
             handle.take_stream(),
@@ -237,8 +224,8 @@ ss::future<result<offset_to_file_pos_result>> convert_end_offset_to_file_pos(
              &ts,
              &offset_found,
              &max_timestamp,
-             &offset_inside_batch,
-             &segment](model::record_batch_header& hdr) {
+             &segment,
+             include_batch_after_gap](model::record_batch_header& hdr) {
                 if (hdr.last_offset() <= off_end) {
                     // If last offset of the record batch is within the range
                     // we need to add it to the output stream (to calculate the
@@ -262,6 +249,37 @@ ss::future<result<offset_to_file_pos_result>> convert_end_offset_to_file_pos(
                     return batch_consumer::consume_result::accept_batch;
                 }
 
+                // If the searched for end-offset is in a gap, add an extra
+                // batch after the gap (if one exists in segment). When the end
+                // offset is used to create an upload candidate, this extra
+                // batch will allow remote segment batch reader consuming this
+                // upload candidate to progress past the gap.
+                if (
+                  include_batch_after_gap && hdr.base_offset > off_end
+                  && !offset_found) {
+                    vlog(
+                      stlog.trace,
+                      "segment {}, search offset {} lies in gap between {} and "
+                      "{}",
+                      segment,
+                      off_end,
+                      fo,
+                      hdr.base_offset);
+
+                    offset_found = true;
+
+                    // The timestamp is set to the max timestamp of the batch
+                    // following the gap.
+                    if (ts == max_timestamp) {
+                        ts = hdr.max_timestamp;
+                    }
+
+                    // Accept this batch. Because we set offset_found, the next
+                    // iteration of the loop will fall through and stop the
+                    // parser.
+                    return batch_consumer::consume_result::accept_batch;
+                }
+
                 vlog(
                   stlog.trace,
                   "segment {}, search offset {}, stop parser, start: {}, "
@@ -271,9 +289,6 @@ ss::future<result<offset_to_file_pos_result>> convert_end_offset_to_file_pos(
                   hdr.base_offset,
                   hdr.last_offset(),
                   hdr.record_count);
-                if (internal::is_offset_in_batch(hdr, off_end)) {
-                    offset_inside_batch = true;
-                }
 
                 offset_found = true;
 
@@ -308,7 +323,7 @@ ss::future<result<offset_to_file_pos_result>> convert_end_offset_to_file_pos(
       stop_at,
       fo);
 
-    co_return offset_to_file_pos_result{fo, stop_at, ts, offset_inside_batch};
+    co_return offset_to_file_pos_result{fo, stop_at, ts};
 }
 
 } // namespace storage

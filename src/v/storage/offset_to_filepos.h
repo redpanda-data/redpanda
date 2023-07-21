@@ -59,8 +59,6 @@ struct offset_to_file_pos_result {
     model::offset offset;
     size_t bytes;
     model::timestamp ts;
-    bool offset_inside_batch{false};
-
     auto operator<=>(const offset_to_file_pos_result&) const = default;
 };
 
@@ -81,6 +79,7 @@ ss::future<result<offset_to_file_pos_result>> convert_end_offset_to_file_pos(
   model::timestamp max_timestamp,
   ss::io_priority_class io_priority,
   should_fail_on_missing_offset fail_on_missing_offset
-  = should_fail_on_missing_offset::yes);
+  = should_fail_on_missing_offset::yes,
+  bool include_batch_after_gap = false);
 
 } // namespace storage
