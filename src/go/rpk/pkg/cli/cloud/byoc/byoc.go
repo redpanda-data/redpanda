@@ -50,7 +50,7 @@ func init() {
 			out.MaybeDie(err, "unable to ensure byoc plugin version: %v", err)
 
 			// Finally, exec.
-			run(cmd, append(pluginArgs, "--"+flagCloudAPIToken, token))
+			run(cmd, append(pluginArgs, "--"+flagCloudAPIToken, token, "--"+flagRedpandaID, redpandaID))
 		}
 		return cmd
 	})
@@ -145,7 +145,7 @@ and then come back to this command to complete the process.
 			path, token, _, err := loginAndEnsurePluginVersion(cmd.Context(), fs, cfg, redpandaID)
 			out.MaybeDie(err, "unable to ensure byoc plugin version: %v", err)
 
-			err = execFn(path, append(pluginArgs, "--"+flagCloudAPIToken, token))
+			err = execFn(path, append(pluginArgs, "--"+flagCloudAPIToken, token, "--"+flagRedpandaID, redpandaID))
 			out.MaybeDie(err, "unable to execute plugin: %v", err)
 		},
 	}
