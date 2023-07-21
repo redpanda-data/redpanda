@@ -14,14 +14,17 @@
 #include "pandaproxy/logger.h"
 #include "pandaproxy/schema_registry/errors.h"
 #include "pandaproxy/schema_registry/sharded_store.h"
+#include "ssx/sformat.h"
 #include "utils/base64.h"
 #include "vlog.h"
 
 #include <seastar/core/coroutine.hh>
 
 #include <absl/container/flat_hash_set.h>
+#include <boost/algorithm/string/trim.hpp>
 #include <confluent/meta.pb.h>
 #include <confluent/types/decimal.pb.h>
+#include <fmt/core.h>
 #include <fmt/ostream.h>
 #include <google/protobuf/any.pb.h>
 #include <google/protobuf/api.pb.h>
@@ -57,6 +60,7 @@
 #include <google/type/quaternion.pb.h>
 #include <google/type/timeofday.pb.h>
 
+#include <string_view>
 #include <unordered_set>
 
 namespace pandaproxy::schema_registry {
@@ -302,11 +306,60 @@ ss::future<const pb::FileDescriptor*> import_schema(
 struct protobuf_schema_definition::impl {
     pb::DescriptorPool _dp;
     const pb::FileDescriptor* fd{};
+
+    /**
+     * debug_string swaps the order of the import and package lines that
+     * DebugString produces, so that it conforms to
+     * https://protobuf.dev/programming-guides/style/#file-structure
+     *
+     * from:
+     * syntax
+     * imports
+     * package
+     * messages
+     *
+     * to:
+     * syntax
+     * package
+     * imports
+     * messages
+     */
+    ss::sstring debug_string() const {
+        auto s = fd->DebugString();
+
+        // reordering not required if no package or no dependencies
+        if (fd->package().empty() || fd->dependency_count() == 0) {
+            return s;
+        }
+
+        std::string_view sv{s};
+
+        constexpr size_t expected_syntax_len = 18;
+        auto syntax_pos = sv.find("syntax = \"proto");
+        auto syntax_end = syntax_pos + expected_syntax_len;
+
+        auto package = fmt::format("package {};", fd->package());
+        auto package_pos = sv.find(package);
+
+        auto imports_pos = syntax_end;
+        auto imports_len = package_pos - syntax_end;
+
+        auto trim = [](std::string_view sv) {
+            return boost::algorithm::trim_copy_if(
+              sv, [](char c) { return c == '\n'; });
+        };
+        auto header = trim(sv.substr(0, syntax_end));
+        auto imports = trim(sv.substr(imports_pos, imports_len));
+        auto footer = trim(sv.substr(package_pos + package.length()));
+
+        return ssx::sformat(
+          "{}\n{}\n\n{}\n\n{}\n", header, package, imports, footer);
+    }
 };
 
 canonical_schema_definition::raw_string
 protobuf_schema_definition::raw() const {
-    return canonical_schema_definition::raw_string{_impl->fd->DebugString()};
+    return canonical_schema_definition::raw_string{_impl->debug_string()};
 }
 
 bool operator==(
