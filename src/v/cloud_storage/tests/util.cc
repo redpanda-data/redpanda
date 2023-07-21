@@ -148,7 +148,7 @@ make_segment(model::offset base, const std::vector<batch_t>& batches) {
           }
           return acc + b.num_records;
       });
-    iobuf segment_bytes = generate_segment(base, batches);
+    auto [segment_bytes, next_offset] = generate_segment(base, batches);
     std::vector<model::record_batch_header> hdr;
     std::vector<iobuf> rec;
     std::vector<uint64_t> off;
@@ -159,7 +159,7 @@ make_segment(model::offset base, const std::vector<batch_t>& batches) {
     in_memory_segment s;
     s.bytes = linearize_iobuf(std::move(segment_bytes));
     s.base_offset = hdr.front().base_offset;
-    s.max_offset = hdr.back().last_offset();
+    s.max_offset = next_offset - model::offset(1);
     s.headers = std::move(hdr);
     s.records = std::move(rec);
     s.file_offsets = std::move(off);
