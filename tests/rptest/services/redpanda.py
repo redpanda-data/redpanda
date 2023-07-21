@@ -1609,7 +1609,8 @@ class RedpandaServiceCloud(RedpandaServiceK8s):
                  num_brokers,
                  *,
                  superuser: Optional[SaslCredentials] = None,
-                 tier_name: Optional[str] = None):
+                 tier_name: Optional[str] = None,
+                 **kwargs):
         """Initialize a RedpandaServiceCloud object.
 
         :param context: test context object
