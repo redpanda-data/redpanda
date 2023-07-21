@@ -13,6 +13,7 @@
 #include "cloud_storage/spillover_manifest.h"
 #include "cloud_storage/tests/produce_utils.h"
 #include "cloud_storage/tests/s3_imposter.h"
+#include "cluster/types.h"
 #include "config/configuration.h"
 #include "kafka/server/tests/produce_consume_utils.h"
 #include "model/fundamental.h"
@@ -467,4 +468,255 @@ FIXTURE_TEST(test_consume_during_spillover, cloud_storage_manual_e2e_test) {
         BOOST_CHECK(check.get());
     }
     cleanup.cancel();
+}
+
+class cloud_storage_manual_multinode_test
+  : public s3_imposter_fixture
+  , public redpanda_thread_fixture
+  , public enable_cloud_storage_fixture {
+public:
+    cloud_storage_manual_multinode_test()
+      : redpanda_thread_fixture(
+        redpanda_thread_fixture::init_cloud_storage_tag{},
+        httpd_port_number()) {
+        // No expectations: tests will PUT and GET organically.
+        set_expectations_and_listen({});
+
+        config::shard_local_cfg()
+          .cloud_storage_enable_segment_merging.set_value(false);
+        config::shard_local_cfg()
+          .cloud_storage_disable_upload_loop_for_tests.set_value(true);
+
+        wait_for_controller_leadership().get();
+    }
+
+    std::unique_ptr<redpanda_thread_fixture> start_second_fixture() {
+        return std::make_unique<redpanda_thread_fixture>(
+          model::node_id(2),
+          9092 + 10,
+          33145 + 10,
+          8082 + 10,
+          8081 + 10,
+          std::vector<config::seed_server>{
+            {.addr = net::unresolved_address("127.0.0.1", 33145)}},
+          ssx::sformat("test.second_dir{}", time(0)),
+          app.sched_groups,
+          true,
+          get_s3_config(httpd_port_number()),
+          get_archival_config(),
+          get_cloud_config(httpd_port_number()));
+    }
+};
+
+FIXTURE_TEST(
+  test_realigned_segment_reupload, cloud_storage_manual_multinode_test) {
+    const model::topic topic_name("tapioca");
+    model::ntp ntp(model::kafka_namespace, topic_name, 0);
+
+    auto fx2 = start_second_fixture();
+    tests::cooperative_spin_wait_with_timeout(3s, [this] {
+        return app.controller->get_members_table().local().node_ids().size()
+               == 2;
+    }).get();
+
+    cluster::topic_properties props;
+    props.shadow_indexing = model::shadow_indexing_mode::full;
+    props.cleanup_policy_bitflags = model::cleanup_policy_bitflags::compaction
+                                    | model::cleanup_policy_bitflags::deletion;
+    add_topic({model::kafka_namespace, topic_name}, 1, props, 2).get();
+
+    redpanda_thread_fixture* fx_l = nullptr;
+    redpanda_thread_fixture* fx_f = nullptr;
+    const auto wait_for_leader = [&] {
+        tests::cooperative_spin_wait_with_timeout(10s, [&] {
+            cluster::partition* prt_a
+              = app.partition_manager.local().get(ntp).get();
+            cluster::partition* prt_b
+              = fx2->app.partition_manager.local().get(ntp).get();
+            if (!prt_a || !prt_b) {
+                return false;
+            }
+            if (prt_a->is_leader()) {
+                fx_l = this;
+                fx_f = fx2.get();
+                return true;
+            }
+            if (prt_b->is_leader()) {
+                fx_l = fx2.get();
+                fx_f = this;
+                return true;
+            }
+            return false;
+        }).get();
+    };
+
+    wait_for_leader();
+    auto* prt_l = fx_l->app.partition_manager.local().get(ntp).get();
+    auto* log_l = dynamic_cast<storage::disk_log_impl*>(
+      prt_l->log().get_impl());
+    auto* archiver_l = &prt_l->archiver()->get();
+
+    auto* prt_f = fx_f->app.partition_manager.local().get(ntp).get();
+    auto* log_f = dynamic_cast<storage::disk_log_impl*>(
+      prt_f->log().get_impl());
+    auto* archiver_f = &prt_f->archiver()->get();
+
+    // Write data that would be compacted.
+    kafka_produce_transport producer(fx_l->make_kafka_client().get());
+    producer.start().get();
+    int key = -1;
+    for (int i = 0; i < 30; i++) {
+        if (i % 5 == 0) {
+            key++;
+        }
+        if (i == 5 || i == 25) {
+            // Generate segments with keys like:
+            // [00000][111112222233333...][nnnnn]
+            // NOTE: we intentionally want to be misalined between nodes.
+            log_f->flush().get();
+            log_f->force_roll(ss::default_priority_class()).get();
+        }
+        if (i == 10) {
+            // [0000011111][2222233333.....nnnnn]
+            log_l->flush().get();
+            log_l->force_roll(ss::default_priority_class()).get();
+        }
+        producer
+          .produce_to_partition(
+            topic_name, model::partition_id(0), tests::kv_t::sequence(key, 1))
+          .get();
+    }
+
+    // Force roll the leader. We should have the first ten keys, the rest of
+    // the keys, and a new active segment.
+    log_l->flush().get();
+    log_l->force_roll(ss::default_priority_class()).get();
+    tests::cooperative_spin_wait_with_timeout(3s, [log_l] {
+        return log_l->segment_count() == 3;
+    }).get();
+
+    // Upload and ensure the ones with data land in the manifest.
+    BOOST_REQUIRE(archiver_l->sync_for_tests().get());
+    archiver_l->upload_next_candidates().get();
+    BOOST_REQUIRE_EQUAL(
+      cloud_storage::upload_result::success,
+      archiver_l->upload_manifest("test").get());
+    archiver_l->flush_manifest_clean_offset().get();
+
+    BOOST_REQUIRE_EQUAL(2, archiver_l->manifest().size());
+    tests::cooperative_spin_wait_with_timeout(3s, [archiver_f] {
+        return archiver_f->manifest().size() == 2;
+    }).get();
+
+    // Compact on the leader so the first segment gets reduced and reuploaded.
+    // Since the other node has a different segment layout, this will help us
+    // exercise the adjustmens done during segment reupload.
+    ss::abort_source as;
+    auto* second_seg = std::next(log_l->segments().begin())->get();
+    storage::housekeeping_config compact_one_cfg(
+      model::timestamp::min(), // no time-based retention
+      std::nullopt,            // no size-based retention
+      // Don't compact the second segment yet.
+      second_seg->offsets().base_offset,
+      ss::default_priority_class(),
+      as);
+    log_l->housekeeping(compact_one_cfg).get();
+    BOOST_REQUIRE_EQUAL(3, log_l->segment_count());
+    BOOST_REQUIRE(log_l->segments().front()->finished_self_compaction());
+    BOOST_REQUIRE(!second_seg->finished_self_compaction());
+
+    // Upload and expect the compacted segment gets uploaded.
+    BOOST_REQUIRE(archiver_l->sync_for_tests().get());
+    auto res = archiver_l->upload_next_candidates().get();
+    BOOST_REQUIRE_EQUAL(1, res.compacted_upload_result.num_succeeded);
+    BOOST_REQUIRE_EQUAL(
+      cloud_storage::upload_result::success,
+      archiver_l->upload_manifest("test").get());
+    archiver_l->flush_manifest_clean_offset().get();
+
+    // Sanity check that the manifest says we compacted the segment.
+    BOOST_REQUIRE_EQUAL(2, archiver_l->manifest().size());
+    BOOST_REQUIRE(archiver_l->manifest()
+                    .segment_containing(model::offset(0))
+                    ->is_compacted);
+    BOOST_REQUIRE(!archiver_l->manifest()
+                     .segment_containing(second_seg->offsets().base_offset)
+                     ->is_compacted);
+
+    // Sanity check that the other node's log hasn't rolled at all.
+    BOOST_REQUIRE_EQUAL(3, log_f->segment_count());
+    BOOST_REQUIRE(!log_f->segments().front()->finished_self_compaction());
+
+    // Switch leaders so we can operate on the other node.
+    cluster::transfer_leadership_request transfer_req{
+      .group = prt_l->raft()->group(),
+      .target = prt_f->raft()->self().id(),
+    };
+    auto transfer_resp = prt_l->raft()->transfer_leadership(transfer_req).get();
+    BOOST_REQUIRE(transfer_resp.success);
+    tests::cooperative_spin_wait_with_timeout(3s, [&prt_f] {
+        return prt_f->raft()->is_leader();
+    }).get();
+    // One new segment for the new term.
+    BOOST_REQUIRE_EQUAL(4, log_f->segment_count());
+
+    // Remove the first segment so there is misalignment between local and
+    // manifest segment offsets.
+    size_t size_after_first_seg = 0;
+    auto second_seg_it = std::next(log_f->segments().begin());
+    for (auto it = second_seg_it; it != log_f->segments().end(); it++) {
+        size_after_first_seg += it->get()->file_size();
+    }
+    storage::gc_config remove_first_cfg(
+      model::timestamp::min(), // no time-based retention
+      size_after_first_seg);   // remove just the first segment
+    log_f->gc(remove_first_cfg).get();
+    tests::cooperative_spin_wait_with_timeout(3s, [log_f] {
+        return log_f->segment_count() == 3;
+    }).get();
+    BOOST_REQUIRE(!log_f->segments().front()->finished_self_compaction());
+
+    // Compact the next segments.
+    storage::housekeeping_config compact_all_cfg(
+      model::timestamp::min(), // no time-based retention
+      std::nullopt,            // no size-based retention
+      model::offset::max(),    // Everything is viable for compaction.
+      ss::default_priority_class(),
+      as);
+    log_f->housekeeping(compact_all_cfg).get();
+    log_f->housekeeping(compact_all_cfg).get();
+    BOOST_REQUIRE_EQUAL(3, log_f->segment_count());
+    BOOST_REQUIRE(log_f->segments().front()->finished_self_compaction());
+    BOOST_REQUIRE(
+      std::next(log_f->segments().begin())->get()->finished_self_compaction());
+
+    // Do a segment reupload.
+    BOOST_REQUIRE(archiver_f->sync_for_tests().get());
+    res = archiver_f->upload_next_candidates().get();
+    BOOST_REQUIRE_EQUAL(1, res.compacted_upload_result.num_succeeded);
+    BOOST_REQUIRE_EQUAL(
+      cloud_storage::upload_result::success,
+      archiver_f->upload_manifest("test").get());
+    archiver_f->flush_manifest_clean_offset().get();
+
+    // Now remove local segments so we're forced to look in cloud.
+    storage::gc_config remove_all_cfg(
+      model::timestamp::max(), // remove everything
+      1);                      // remove everything
+    log_f->gc(remove_all_cfg).get();
+    tests::cooperative_spin_wait_with_timeout(3s, [log_f] {
+        return log_f->segment_count() <= 2;
+    }).get();
+
+    // Any stuck_reader_exceptions?
+    // (no).
+    kafka_consume_transport consumer(fx_f->make_kafka_client().get());
+    consumer.start().get();
+    for (int i = 0; i < 30; i++) {
+        auto r = consumer
+                   .consume_from_partition(
+                     topic_name, model::partition_id(0), model::offset(i))
+                   .get();
+        BOOST_REQUIRE(!r.empty());
+    }
 }
