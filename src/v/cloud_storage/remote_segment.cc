@@ -1327,8 +1327,7 @@ remote_segment_batch_reader::read_some(
 
         _cur_ot_state = ot_state;
         auto deferred = ss::defer([this] { _cur_ot_state = std::nullopt; });
-        auto new_bytes_consumed = co_await _parser->consume(
-          _seg->get_segment_path()().native());
+        auto new_bytes_consumed = co_await _parser->consume();
         if (!new_bytes_consumed) {
             co_return new_bytes_consumed.error();
         }

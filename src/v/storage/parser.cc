@@ -262,57 +262,30 @@ static constexpr std::array<parser_errc, 3> benign_error_codes{
    parser_errc::end_of_stream,
    parser_errc::fallocated_file_read_zero_bytes_for_header}};
 
-ss::future<result<size_t>>
-continuous_batch_parser::consume(std::optional<ss::sstring> trace_token) {
+ss::future<result<size_t>> continuous_batch_parser::consume() {
     if (unlikely(!std::any_of(
           benign_error_codes.begin(),
           benign_error_codes.end(),
           [v = _err](parser_errc e) { return e == v; }))) {
         return ss::make_ready_future<result<size_t>>(_err);
     }
-    return ss::repeat([this, &trace_token] {
-               return consume_one().then(
-                 [this, &trace_token](result<stop_parser> s) {
-                     if (!s) {
-                         _err = parser_errc(s.error().value());
-                         vlog(
-                           stlog.debug,
-                           "{}:: !s - stop iteration, err {}",
-                           *trace_token,
-                           _err);
-                         return ss::stop_iteration::yes;
-                     }
-                     if (get_stream().eof()) {
-                         if (trace_token) {
-                             vlog(
-                               stlog.debug,
-                               "{}:: eof in stream - stop iteration",
-                               *trace_token);
-                         }
-                         return ss::stop_iteration::yes;
-                     }
-                     if (s.value() == stop_parser::yes) {
-                         if (trace_token) {
-                             vlog(
-                               stlog.debug,
-                               "{}:: consume_one returned stop",
-                               *trace_token);
-                         }
-                         return ss::stop_iteration::yes;
-                     }
-                     return ss::stop_iteration::no;
-                 });
+    return ss::repeat([this] {
+               return consume_one().then([this](result<stop_parser> s) {
+                   if (!s) {
+                       _err = parser_errc(s.error().value());
+                       return ss::stop_iteration::yes;
+                   }
+                   if (get_stream().eof()) {
+                       return ss::stop_iteration::yes;
+                   }
+                   if (s.value() == stop_parser::yes) {
+                       return ss::stop_iteration::yes;
+                   }
+                   return ss::stop_iteration::no;
+               });
            })
-      .then([this, &trace_token] {
+      .then([this] {
           if (_bytes_consumed) {
-              if (_err != parser_errc::none && trace_token) {
-                  vlog(
-                    stlog.debug,
-                    "{}:: early return after ss::repeat, err {}",
-                    *trace_token,
-                    _err);
-              }
-
               // support partial reads
               return result<size_t>(_bytes_consumed);
           }
@@ -320,14 +293,6 @@ continuous_batch_parser::consume(std::optional<ss::sstring> trace_token) {
                 benign_error_codes.begin(),
                 benign_error_codes.end(),
                 [v = _err](parser_errc e) { return e == v; })) {
-              if (trace_token) {
-                  vlog(
-                    stlog.debug,
-                    "{}:: benign error in stream {} - returning bytes {}",
-                    *trace_token,
-                    _err,
-                    _bytes_consumed);
-              }
               return result<size_t>(_bytes_consumed);
           }
           return result<size_t>(_err);
