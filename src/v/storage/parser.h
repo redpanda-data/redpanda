@@ -108,7 +108,8 @@ public:
     ~continuous_batch_parser() noexcept = default;
 
     // continues to parse until stop_parser is reached or end of stream
-    ss::future<result<size_t>> consume();
+    ss::future<result<size_t>>
+    consume(std::optional<ss::sstring> trace_token = std::nullopt);
 
     /// \brief cleans up async resources like the input stream
     ss::future<> close() { return _input.close(); }
