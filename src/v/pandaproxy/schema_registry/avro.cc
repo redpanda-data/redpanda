@@ -275,8 +275,14 @@ result<void> sanitize(json::Value::Object& o, sanitize_context& ctx) {
     std::optional<ss::deferred_action<decltype(pop_ns_impl)>> pop_ns;
 
     if (auto it = o.FindMember("name"); it != o.MemberEnd()) {
-        // A name should have the leading dot stripped iff it's the only one
-        // Otherwise split on the last dot into a name and a namespace
+        // Sanitize names and namespaces according to
+        // https://avro.apache.org/docs/1.11.1/specification/#names
+        //
+        // This sanitization:
+        // * Is not Parsing Canonical Form
+        // * Splits fullnames into a simple name and a namespace
+        //   * A namespace attribute is ignored if the name is a fullname
+        // * Removes namespaces that are redundant (same as parent scope)
 
         auto& name = it->value;
 
