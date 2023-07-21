@@ -9,6 +9,10 @@ spec:
   chartRef:
     chartVersion: 4.0.54
   clusterSpec:
+    config:
+      cluster:
+        append_chunk_size: 40960
+        segment_appender_flush_timeout_ms: 1003
     console:
       config:
         connect:
@@ -72,9 +76,9 @@ spec:
           min: 1250Mi
     statefulset:
       additionalRedpandaCmdFlags:
+        - --reserve-memory=100M
         - --abort-on-seastar-bad-alloc
         - --dump-memory-diagnostics-on-alloc-failure-kind=all
-        - --reserve-memory=100M
       replicas: 2
     storage:
       persistentVolume:

@@ -9,6 +9,10 @@ spec:
   chartRef:
     chartVersion: 4.0.54
   clusterSpec:
+    config:
+      cluster:
+        append_chunk_size: 40960
+        segment_appender_flush_timeout_ms: 1003
     console:
       config:
         connect:
