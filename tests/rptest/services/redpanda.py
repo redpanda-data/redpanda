@@ -861,6 +861,7 @@ class RedpandaServiceBase(Service):
         self._trim_logs = self._context.globals.get(self.TRIM_LOGS_KEY, True)
 
         self._node_id_by_idx = {}
+        self._security_config = dict()
 
     def start_node(self, node, **kwargs):
         pass
@@ -1101,6 +1102,9 @@ class RedpandaServiceBase(Service):
 
     def validate_controller_log(self):
         pass
+
+    def security_config(self):
+        return self._security_config
 
 
 class RedpandaServiceK8s(RedpandaServiceBase):
@@ -1749,7 +1753,6 @@ class RedpandaService(RedpandaServiceBase):
             })
 
         self._started = []
-        self._security_config = dict()
 
         self._raise_on_errors = self._context.globals.get(
             self.RAISE_ON_ERRORS_KEY, True)
@@ -2157,9 +2160,6 @@ class RedpandaService(RedpandaServiceBase):
                 self._schema_registry_config.server_key = RedpandaService.TLS_SERVER_KEY_FILE
                 self._schema_registry_config.server_crt = RedpandaService.TLS_SERVER_CRT_FILE
                 self._schema_registry_config.truststore_file = RedpandaService.TLS_CA_CRT_FILE
-
-    def security_config(self):
-        return self._security_config
 
     def start_redpanda(self, node):
         preamble, res_args = self._resource_settings.to_cli(
