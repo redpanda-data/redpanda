@@ -54,6 +54,8 @@ const (
 	FinalizerKey = "operator.redpanda.com/finalizer"
 
 	SecretAnnotationExternalCAKey = "operator.redpanda.com/external-ca"
+
+	NotManaged = "false"
 )
 
 var (
@@ -1080,7 +1082,7 @@ func isRedpandaClusterManaged(
 ) bool {
 	log := l.WithName("isRedpandaClusterManaged")
 	managedAnnotationKey := vectorizedv1alpha1.GroupVersion.Group + "/managed"
-	if managed, exists := redpandaCluster.Annotations[managedAnnotationKey]; exists && managed == "false" {
+	if managed, exists := redpandaCluster.Annotations[managedAnnotationKey]; exists && managed == NotManaged {
 		log.Info(fmt.Sprintf("management is disabled; to enable it, change the '%s' annotation to true or remove it",
 			managedAnnotationKey))
 		return false

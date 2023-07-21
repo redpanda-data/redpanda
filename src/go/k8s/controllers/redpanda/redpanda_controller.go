@@ -134,6 +134,10 @@ func (r *RedpandaReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		return r.reconcileDelete(ctx, rp)
 	}
 
+	if !isRedpandaManaged(ctx, rp) {
+		return ctrl.Result{}, nil
+	}
+
 	rp, result, err := r.reconcile(ctx, rp)
 
 	// Update status after reconciliation.
@@ -483,4 +487,15 @@ func helmChartRequiresUpdate(template, chart *helmv2beta1.HelmChartTemplate) boo
 	default:
 		return false
 	}
+}
+
+func isRedpandaManaged(ctx context.Context, redpandaCluster *v1alpha1.Redpanda) bool {
+	log := ctrl.LoggerFrom(ctx).WithName("RedpandaReconciler.isRedpandaManaged")
+
+	managedAnnotationKey := v1alpha1.GroupVersion.Group + "/managed"
+	if managed, exists := redpandaCluster.Annotations[managedAnnotationKey]; exists && managed == NotManaged {
+		log.Info(fmt.Sprintf("management is disabled; to enable it, change the '%s' annotation to true or remove it", managedAnnotationKey))
+		return false
+	}
+	return true
 }
