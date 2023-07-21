@@ -21,6 +21,7 @@ import (
 func MigrateConfigurations(configs map[string]string, rp *v1alpha1.Redpanda) {
 	if len(configs) > 0 {
 		migrateTieredConfigs(configs, rp)
+		migrateClusterConfigs(configs, rp)
 	}
 }
 
@@ -67,4 +68,38 @@ func migrateTieredConfigs(configs map[string]string, rp *v1alpha1.Redpanda) {
 
 	storage.TieredConfig = tieredConfig
 	rp.Spec.ClusterSpec.Storage = storage
+}
+
+func migrateClusterConfigs(configs map[string]string, rp *v1alpha1.Redpanda) {
+	rpConfigs := &v1alpha1.Config{}
+	if rp.Spec.ClusterSpec.Config != nil {
+		rpConfigs = rp.Spec.ClusterSpec.Config
+	}
+
+	clusterConfigs := make(map[string]interface{}, 0)
+	for k, v := range configs {
+		if !strings.Contains(k, "cloud_storage") {
+			key := strings.TrimPrefix(k, "redpanda.")
+			if val, err := strconv.ParseBool(v); err == nil {
+				clusterConfigs[key] = val
+				continue
+			}
+
+			if val, err := strconv.ParseInt(v, 10, 64); err == nil {
+				clusterConfigs[key] = val
+				continue
+			}
+
+			clusterConfigs[key] = v
+		}
+	}
+
+	// Convert the map to JSON
+	jsonData, err := json.Marshal(clusterConfigs)
+	if err != nil {
+		fmt.Printf("error in marshalling data: %s\n", err)
+	}
+
+	rpConfigs.Cluster = jsonData
+	rp.Spec.ClusterSpec.Config = rpConfigs
 }

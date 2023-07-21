@@ -13,6 +13,25 @@ spec:
       sasl:
         enabled: true
         users: null
+    config:
+      cluster:
+        aggregate_metrics: true
+        cluster_id: rp-blah
+        compacted_log_segment_size: 67108864
+        default_topic_replications: 3
+        enable_rack_awareness: true
+        group_topic_partitions: 16
+        internal_topic_replication_factor: 3
+        kafka_batch_max_bytes: 1048576
+        kafka_connection_rate_limit: 1000
+        kafka_connections_max: 15100
+        log_segment_size: 134217728
+        log_segment_size_max: 268435456
+        log_segment_size_min: 16777216
+        max_compacted_log_segment_size: 536870912
+        max_concurrent_producer_ids: 25000
+        partition_autobalancing_mode: continuous
+        topic_partitions_per_shard: 1000
     console:
       enabled: false
     external:

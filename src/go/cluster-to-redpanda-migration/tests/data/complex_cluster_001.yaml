@@ -12,7 +12,7 @@ spec:
     redpanda.cloud_storage_enable_remote_write: "true"
     redpanda.cloud_storage_secret_key: unused
     redpanda.cloud_storage_segment_max_upload_interval_sec: "3600"
-    redpanda.cluster_id: rp-chhnf2abksi1fj6tastg
+    redpanda.cluster_id: rp-blah
     redpanda.compacted_log_segment_size: "67108864"
     redpanda.default_topic_replications: "3"
     redpanda.enable_rack_awareness: "true"
