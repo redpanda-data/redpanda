@@ -4,9 +4,9 @@ builds:
     main: ./cmd/rpk
     binary: rpk
     ldflags:
-      - -X github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/version.version={{.Tag}}
-      - -X github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/version.rev={{.ShortCommit}}
-      - -X github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/container/common.tag={{.Tag}}
+      - -X github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/version.version={{.Tag}}
+      - -X github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/version.rev={{.ShortCommit}}
+      - -X github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/container/common.tag={{.Tag}}
     env:
       - CGO_ENABLED=0
     goos:
@@ -20,9 +20,9 @@ builds:
     main: ./cmd/rpk
     binary: rpk
     ldflags:
-      - -X github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/version.version={{.Tag}}
-      - -X github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/version.rev={{.ShortCommit}}
-      - -X github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/container/common.tag={{.Tag}}
+      - -X github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/version.version={{.Tag}}
+      - -X github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/version.rev={{.ShortCommit}}
+      - -X github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/container/common.tag={{.Tag}}
     env:
       - CGO_ENABLED=0
     goos:
