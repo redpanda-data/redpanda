@@ -7,23 +7,46 @@ Useful in tests if you want to know what files exist on a node or if they are a 
 from pathlib import Path
 import sys
 import json
+from collections.abc import Iterable
+
+
+def safe_isdir(p: Path) -> bool:
+    """
+    It's valid for files to be deleted at any time, 
+    in that case that the file is missing, just return
+    that it's not a directory
+    """
+    try:
+        return p.is_dir()
+    except FileNotFoundError:
+        return False
+
+
+def safe_listdir(p: Path) -> Iterable[Path]:
+    """
+    It's valid for directories to be deleted at any time, 
+    in that case that the directory is missing, just return
+    that there are no files.
+    """
+    try:
+        return p.iterdir()
+    except FileNotFoundError:
+        return []
 
 
 def compute_size(data_dir: Path, sizes: bool):
     output = {}
-    for ns in data_dir.iterdir():
-        if not ns.is_dir():
-            continue
-        if ns.name == ".coprocessor_offset_checkpoints":
+    for ns in safe_listdir(data_dir):
+        if not safe_isdir(ns):
             continue
         if ns.name == "cloud_storage_cache":
             continue
         ns_output = {}
-        for topic in ns.iterdir():
+        for topic in safe_listdir(ns):
             topic_output = {}
-            for partition in topic.iterdir():
+            for partition in safe_listdir(topic):
                 part_output = {}
-                for segment in partition.iterdir():
+                for segment in safe_listdir(partition):
                     seg_output = {}
                     if sizes:
                         try:
