@@ -507,9 +507,11 @@ public:
     ss::future<> add_topic(
       model::topic_namespace_view tp_ns,
       int partitions = 1,
-      std::optional<cluster::topic_properties> props = std::nullopt) {
+      std::optional<cluster::topic_properties> props = std::nullopt,
+      int16_t replication_factor = 1) {
         std::vector<cluster::topic_configuration> cfgs = {
-          cluster::topic_configuration{tp_ns.ns, tp_ns.tp, partitions, 1}};
+          cluster::topic_configuration{
+            tp_ns.ns, tp_ns.tp, partitions, replication_factor}};
         if (props.has_value()) {
             cfgs[0].properties = std::move(props.value());
         }
