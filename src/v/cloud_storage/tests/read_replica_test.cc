@@ -323,7 +323,8 @@ FIXTURE_TEST(
     auto& rr_archiver = rr_partition->archiver()->get();
     rr_archiver.sync_manifest().get();
 
-    tests::kafka_list_offsets_transport rr_lister(make_kafka_client().get());
+    tests::kafka_list_offsets_transport rr_lister(
+      rr_rp->make_kafka_client().get());
     rr_lister.start().get();
     auto rr_hwm = rr_lister
                     .high_watermark_for_partition(
