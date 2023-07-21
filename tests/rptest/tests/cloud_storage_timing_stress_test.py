@@ -568,10 +568,9 @@ class CloudStorageTimingStressTest(RedpandaTest, PartitionMovementMixin):
                     self.si_settings.cloud_storage_bucket):
                 path_to_file = obj.key.replace('/', '__')
                 with open(os.path.join(cloud_storage_path, path_to_file),
-                          'w+') as f:
+                          'wb+') as f:
                     f.write(
                         self.cloud_storage_client.get_object_data(
-                            self.si_settings.cloud_storage_bucket,
-                            obj.key).decode())
+                            self.si_settings.cloud_storage_bucket, obj.key))
 
         self.epilogue(cleanup_policy)
