@@ -5,6 +5,7 @@
 # the License. You may obtain a copy of the License at
 #
 # https://github.com/redpanda-data/redpanda/blob/master/licenses/rcl.md
+import os.path
 
 from rptest.clients.rpk import RpkTool
 from rptest.services.admin import Admin
@@ -262,7 +263,8 @@ class CloudStorageTimingStressTest(RedpandaTest, PartitionMovementMixin):
             cloud_storage_segment_size_min=2 * self.log_segment_size,
             retention_local_target_bytes_default=10 * self.log_segment_size,
             cloud_storage_enable_segment_merging=True,
-            cloud_storage_cache_chunk_size=self.chunk_size)
+            cloud_storage_cache_chunk_size=self.chunk_size,
+            cloud_storage_cache_size=1024 * self.mib)
 
         super(CloudStorageTimingStressTest,
               self).__init__(test_context=test_context,
@@ -283,7 +285,7 @@ class CloudStorageTimingStressTest(RedpandaTest, PartitionMovementMixin):
         self.logger.info(f"Will produce {bytes_count / self.mib}MiB at"
                          f"{bps / self.mib}MiB/s on topic={self.topic}")
 
-        key_set_cardinality = 10 if 'compact' in cleanup_policy else None
+        key_set_cardinality = 3 if 'compact' in cleanup_policy else None
         return KgoVerifierProducer(self.test_context,
                                    self.redpanda,
                                    self.topic,
@@ -535,12 +537,41 @@ class CloudStorageTimingStressTest(RedpandaTest, PartitionMovementMixin):
             partitions.extend([(topic.name, pid)
                                for pid in range(topic.partition_count)])
 
-        while not self.is_complete():
-            ntp_to_move = random.choice(partitions)
-            self._dispatch_random_partition_move(ntp_to_move[0],
-                                                 ntp_to_move[1])
+        try:
+            while not self.is_complete():
+                ntp_to_move = random.choice(partitions)
+                self._dispatch_random_partition_move(ntp_to_move[0],
+                                                     ntp_to_move[1])
 
-            self.do_checks()
-            time.sleep(self.check_interval)
+                self.do_checks()
+                time.sleep(self.check_interval)
+        except TimeoutError as e:
+            self.logger.info(f'copying data on error: {e}')
+            from ducktape.tests.test import TestContext
+            results_root = TestContext.results_dir(
+                self.test_context, self.test_context.test_index)
+            for node in self.redpanda.started_nodes():
+                self.logger.info(
+                    f'copying storage from {node.account.hostname}')
+                target = os.path.join(results_root,
+                                      f'storage_{node.account.hostname}')
+                if node.account.exists(self.redpanda.DATA_DIR):
+                    try:
+                        node.account.copy_from(self.redpanda.DATA_DIR, target)
+                    except FileNotFoundError:
+                        pass
+                self.logger.info(f'copied storage for {node.account.hostname}')
+            cloud_storage_path = os.path.join(results_root,
+                                              'cloud_storage_dump')
+            os.makedirs(cloud_storage_path)
+            for obj in self.cloud_storage_client.list_objects(
+                    self.si_settings.cloud_storage_bucket):
+                path_to_file = obj.key.replace('/', '__')
+                with open(os.path.join(cloud_storage_path, path_to_file),
+                          'w+') as f:
+                    f.write(
+                        self.cloud_storage_client.get_object_data(
+                            self.si_settings.cloud_storage_bucket,
+                            obj.key).decode())
 
         self.epilogue(cleanup_policy)
