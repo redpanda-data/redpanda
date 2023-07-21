@@ -1106,6 +1106,32 @@ class RedpandaServiceBase(Service):
     def security_config(self):
         return self._security_config
 
+    def wait_until(self, fn, timeout_sec, backoff_sec, err_msg=None):
+        """
+        Cluster-aware variant of wait_until, which will fail out
+        early if a node dies.
+
+        This is useful for long waits, which would otherwise not notice
+        a test failure until the end of the timeout, even if redpanda
+        already crashed.
+        """
+
+        t_initial = time.time()
+        # How long to delay doing redpanda liveness checks, to make short waits more efficient
+        grace_period = 15
+
+        def wrapped():
+            r = fn()
+            if not r and time.time() > t_initial + grace_period:
+                # Check the cluster is up before waiting + retrying
+                assert self.all_up() or self._tolerate_crashes
+            return r
+
+        wait_until(wrapped,
+                   timeout_sec=timeout_sec,
+                   backoff_sec=backoff_sec,
+                   err_msg=err_msg)
+
 
 class RedpandaServiceK8s(RedpandaServiceBase):
     def __init__(self,
@@ -2215,32 +2241,6 @@ class RedpandaService(RedpandaServiceBase):
             return True
 
         return all(self.for_nodes(self._started, check_node))
-
-    def wait_until(self, fn, timeout_sec, backoff_sec, err_msg=None):
-        """
-        Cluster-aware variant of wait_until, which will fail out
-        early if a node dies.
-
-        This is useful for long waits, which would otherwise not notice
-        a test failure until the end of the timeout, even if redpanda
-        already crashed.
-        """
-
-        t_initial = time.time()
-        # How long to delay doing redpanda liveness checks, to make short waits more efficient
-        grace_period = 15
-
-        def wrapped():
-            r = fn()
-            if not r and time.time() > t_initial + grace_period:
-                # Check the cluster is up before waiting + retrying
-                assert self.all_up() or self._tolerate_crashes
-            return r
-
-        wait_until(wrapped,
-                   timeout_sec=timeout_sec,
-                   backoff_sec=backoff_sec,
-                   err_msg=err_msg)
 
     def signal_redpanda(self, node, signal=signal.SIGKILL, idempotent=False):
         """
