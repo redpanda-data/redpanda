@@ -34,7 +34,7 @@ kafka_produce_transport::produce(
     tp.partitions = produce_partition_requests(records_per_partition, ts);
     std::vector<kafka::produce_request::topic> topics;
     topics.push_back(std::move(tp));
-    kafka::produce_request req(std::nullopt, 1, std::move(topics));
+    kafka::produce_request req(std::nullopt, -1, std::move(topics));
     req.data.timeout_ms = std::chrono::seconds(10);
     req.has_idempotent = false;
     req.has_transactional = false;
