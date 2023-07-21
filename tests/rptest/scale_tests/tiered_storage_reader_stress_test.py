@@ -91,12 +91,17 @@ class TieredStorageReaderStressTest(RedpandaTest):
     def _create_topic(self, topic_name: str, partition_count: int,
                       local_retention: int):
         rpk = RpkTool(self.redpanda)
-        rpk.create_topic(topic_name,
-                         partitions=partition_count,
-                         replicas=3,
-                         config={
-                             'retention.local.target.bytes': local_retention,
-                         })
+        rpk.create_topic(
+            topic_name,
+            partitions=partition_count,
+            replicas=3,
+            config={
+                'retention.local.target.bytes': local_retention,
+                # This test uses synthetic timestamps in the past, so
+                # disable time based retention to avoid it deleting our
+                # "old" data immediately.
+                'retention.ms': -1
+            })
 
     def _get_stats(self):
         """The stats we care about for reader stress, especially
