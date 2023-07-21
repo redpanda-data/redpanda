@@ -226,7 +226,8 @@ ss::future<result<offset_to_file_pos_result>> convert_end_offset_to_file_pos(
        &fo,
        &offset_found,
        &ts,
-       &offset_inside_batch](segment_reader_handle& handle) {
+       &offset_inside_batch,
+       &segment](segment_reader_handle& handle) {
           auto ostr = make_null_output_stream();
           return transform_stream(
             handle.take_stream(),
@@ -236,7 +237,8 @@ ss::future<result<offset_to_file_pos_result>> convert_end_offset_to_file_pos(
              &ts,
              &offset_found,
              &max_timestamp,
-             &offset_inside_batch](model::record_batch_header& hdr) {
+             &offset_inside_batch,
+             &segment](model::record_batch_header& hdr) {
                 if (hdr.last_offset() <= off_end) {
                     // If last offset of the record batch is within the range
                     // we need to add it to the output stream (to calculate the
@@ -248,9 +250,27 @@ ss::future<result<offset_to_file_pos_result>> convert_end_offset_to_file_pos(
                         ts = hdr.max_timestamp;
                     }
 
+                    vlog(
+                      stlog.trace,
+                      "segment {}, search offset {}, accept batch, start: {}, "
+                      "end {}, record count {}",
+                      segment,
+                      off_end,
+                      hdr.base_offset,
+                      hdr.last_offset(),
+                      hdr.record_count);
                     return batch_consumer::consume_result::accept_batch;
                 }
 
+                vlog(
+                  stlog.trace,
+                  "segment {}, search offset {}, stop parser, start: {}, "
+                  "end {}, record count {}",
+                  segment,
+                  off_end,
+                  hdr.base_offset,
+                  hdr.last_offset(),
+                  hdr.record_count);
                 if (internal::is_offset_in_batch(hdr, off_end)) {
                     offset_inside_batch = true;
                 }
