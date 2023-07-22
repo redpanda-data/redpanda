@@ -117,7 +117,11 @@ class RedpandaTest(Test):
         config = self.redpanda.security_config()
         user = config.get("sasl_plain_username")
         passwd = config.get("sasl_plain_password")
-        client = KafkaCliTools(self.redpanda, user=user, passwd=passwd)
+        protocol = config.get("security_protocol", "SASL_PLAINTEXT")
+        client = KafkaCliTools(self.redpanda,
+                               user=user,
+                               passwd=passwd,
+                               protocol=protocol)
         for spec in self.topics:
             self.logger.debug(f"Creating initial topic {spec}")
             client.create_topic(spec)
