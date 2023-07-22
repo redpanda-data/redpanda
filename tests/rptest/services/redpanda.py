@@ -1789,6 +1789,13 @@ class RedpandaServiceCloud(RedpandaServiceK8s):
         superuser = None
         if not self._skip_create_superuser:
             superuser = self._superuser
+
+        # set this for use in RedpandaTest
+        self._security_config = dict(security_protocol='SASL_SSL',
+                                     sasl_plain_username=superuser.username,
+                                     sasl_plain_password=superuser.password,
+                                     enable_tls=True)
+
         cluster_id = self._cloud_cluster.create(superuser=superuser)
         remote_uri = f'redpanda@{cluster_id}-agent'
         self._kubectl = KubectlTool(self,
