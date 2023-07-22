@@ -22,7 +22,8 @@ class cloud_storage_manual_multinode_test_base
   , public redpanda_thread_fixture
   , public enable_cloud_storage_fixture {
 public:
-    cloud_storage_manual_multinode_test_base()
+    cloud_storage_manual_multinode_test_base(
+      bool disable_local_housekeeping = false)
       : redpanda_thread_fixture(
         redpanda_thread_fixture::init_cloud_storage_tag{},
         httpd_port_number()) {
@@ -33,6 +34,10 @@ public:
           .cloud_storage_enable_segment_merging.set_value(false);
         config::shard_local_cfg()
           .cloud_storage_disable_upload_loop_for_tests.set_value(true);
+        if (disable_local_housekeeping) {
+            config::shard_local_cfg()
+              .log_disable_housekeeping_for_tests.set_value(true);
+        }
 
         wait_for_controller_leadership().get();
     }

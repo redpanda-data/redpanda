@@ -44,6 +44,7 @@ rp_test(
     remote_segment_test.cc
     remote_partition_test.cc
     topic_recovery_service_test.cc
+    cloud_storage_e2e_fuzz_test.cc
     cloud_storage_e2e_test.cc
     delete_records_e2e_test.cc
     async_manifest_view_test.cc
