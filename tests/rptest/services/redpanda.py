@@ -821,6 +821,7 @@ class RedpandaServiceBase(Service):
                  resource_settings: Optional[ResourceSettings] = None,
                  si_settings: Optional[SISettings] = None,
                  superuser: Optional[SaslCredentials] = None,
+                 skip_if_no_redpanda_log: Optional[bool] = False,
                  disable_cloud_storage_diagnostics=True):
 
         self.advertised_tier_config: AdvertisedTierConfig = None
@@ -862,6 +863,8 @@ class RedpandaServiceBase(Service):
 
         self._node_id_by_idx = {}
         self._security_config = dict()
+
+        self._skip_if_no_redpanda_log = skip_if_no_redpanda_log
 
     def start_node(self, node, **kwargs):
         pass
@@ -1132,6 +1135,94 @@ class RedpandaServiceBase(Service):
                    backoff_sec=backoff_sec,
                    err_msg=err_msg)
 
+    def set_skip_if_no_redpanda_log(self, v: bool):
+        self._skip_if_no_redpanda_log = v
+
+    def raise_on_bad_logs(self, allow_list=None):
+        """
+        Raise a BadLogLines exception if any nodes' logs contain errors
+        not permitted by `allow_list`
+
+        :param logger: the test's logger, so that reports of bad lines are
+                       prefixed with test name.
+        :param allow_list: list of compiled regexes, or None for default
+        :return: None
+        """
+
+        if allow_list is None:
+            allow_list = DEFAULT_LOG_ALLOW_LIST
+        else:
+            combined_allow_list = DEFAULT_LOG_ALLOW_LIST.copy()
+            # Accept either compiled or string regexes
+            for a in allow_list:
+                if not isinstance(a, re.Pattern):
+                    a = re.compile(a)
+                combined_allow_list.append(a)
+            allow_list = combined_allow_list
+
+        test_name = self._context.function_name
+
+        bad_lines = collections.defaultdict(list)
+        for node in self.nodes:
+
+            if self._skip_if_no_redpanda_log and not node.account.exists(
+                    RedpandaServiceBase.STDOUT_STDERR_CAPTURE):
+                self.logger.info(
+                    f"{RedpandaServiceBase.STDOUT_STDERR_CAPTURE} not found on {node.account.hostname}. Skipping log scan."
+                )
+                continue
+
+            self.logger.info(
+                f"Scanning node {node.account.hostname} log for errors...")
+
+            # List of regexes that will fail the test on if they appear in the log
+            match_terms = [
+                "Segmentation fault", "[Aa]ssert",
+                "Exceptional future ignored", "UndefinedBehaviorSanitizer"
+            ]
+            if self._raise_on_errors:
+                match_terms.append("^ERROR")
+            match_expr = " ".join(f"-e \"{t}\"" for t in match_terms)
+
+            for line in node.account.ssh_capture(
+                    f"grep {match_expr} {RedpandaService.STDOUT_STDERR_CAPTURE} || true",
+                    timeout_sec=60):
+                line = line.strip()
+
+                allowed = False
+                for a in allow_list:
+                    if a.search(line) is not None:
+                        self.logger.warn(
+                            f"Ignoring allow-listed log line '{line}'")
+                        allowed = True
+                        break
+
+                if 'LeakSanitizer' in line:
+                    # Special case for LeakSanitizer errors, where tiny leaks
+                    # are permitted, as they can occur during Seastar shutdown.
+                    # See https://github.com/redpanda-data/redpanda/issues/3626
+                    for summary_line in node.account.ssh_capture(
+                            f"grep -e \"SUMMARY: AddressSanitizer:\" {RedpandaService.STDOUT_STDERR_CAPTURE} || true",
+                            timeout_sec=60):
+                        m = re.match(
+                            "SUMMARY: AddressSanitizer: (\d+) byte\(s\) leaked in (\d+) allocation\(s\).",
+                            summary_line.strip())
+                        if m and int(m.group(1)) < 1024:
+                            self.logger.warn(
+                                f"Ignoring memory leak, small quantity: {summary_line}"
+                            )
+                            allowed = True
+                            break
+
+                if not allowed:
+                    bad_lines[node].append(line)
+                    self.logger.warn(
+                        f"[{test_name}] Unexpected log line on {node.account.hostname}: {line}"
+                    )
+
+        if bad_lines:
+            raise BadLogLines(bad_lines)
+
 
 class RedpandaServiceK8s(RedpandaServiceBase):
     def __init__(self,
@@ -1139,11 +1230,14 @@ class RedpandaServiceK8s(RedpandaServiceBase):
                  num_brokers,
                  *,
                  cluster_spec=None,
-                 superuser: Optional[SaslCredentials] = None):
-        super(RedpandaServiceK8s, self).__init__(context,
-                                                 num_brokers,
-                                                 cluster_spec=cluster_spec,
-                                                 superuser=superuser)
+                 superuser: Optional[SaslCredentials] = None,
+                 skip_if_no_redpanda_log: Optional[bool] = False):
+        super(RedpandaServiceK8s,
+              self).__init__(context,
+                             num_brokers,
+                             cluster_spec=cluster_spec,
+                             superuser=superuser,
+                             skip_if_no_redpanda_log=skip_if_no_redpanda_log)
         self._trim_logs = False
         self._helm = None
         self._kubectl = None
@@ -1639,6 +1733,7 @@ class RedpandaServiceCloud(RedpandaServiceK8s):
                  num_brokers,
                  *,
                  superuser: Optional[SaslCredentials] = None,
+                 skip_if_no_redpanda_log: Optional[bool] = False,
                  tier_name: Optional[str] = None,
                  **kwargs):
         """Initialize a RedpandaServiceCloud object.
@@ -1653,7 +1748,8 @@ class RedpandaServiceCloud(RedpandaServiceK8s):
               self).__init__(context,
                              None,
                              cluster_spec=ClusterSpec.empty(),
-                             superuser=superuser)
+                             superuser=superuser,
+                             skip_if_no_redpanda_log=skip_if_no_redpanda_log)
         if num_brokers is not None:
             self.logger.info(
                 f'num_brokers is {num_brokers}, but setting to None for cloud')
@@ -1747,6 +1843,7 @@ class RedpandaService(RedpandaServiceBase):
             resource_settings=resource_settings,
             si_settings=si_settings,
             superuser=superuser,
+            skip_if_no_redpanda_log=skip_if_no_redpanda_log,
             disable_cloud_storage_diagnostics=disable_cloud_storage_diagnostics
         )
         self._security = security
@@ -1814,8 +1911,6 @@ class RedpandaService(RedpandaServiceBase):
         self._tls_cert = None
         self._init_tls()
 
-        self._skip_if_no_redpanda_log = skip_if_no_redpanda_log
-
         # Each time we start a node and write out its node_config (redpanda.yaml),
         # stash a copy here so that we can quickly look up e.g. addresses later.
         self._node_configs = {}
@@ -1827,9 +1922,6 @@ class RedpandaService(RedpandaServiceBase):
     def set_seed_servers(self, node_list):
         assert len(node_list) > 0
         self._seed_servers = node_list
-
-    def set_skip_if_no_redpanda_log(self, v: bool):
-        self._skip_if_no_redpanda_log = v
 
     def set_environment(self, environment: dict[str, str]):
         self._environment.update(environment)
@@ -2884,91 +2976,6 @@ class RedpandaService(RedpandaServiceBase):
         raise RuntimeError(
             f"Storage usage inconsistency on nodes {nodes}: max difference {max_diff} on node {max_node}"
         )
-
-    def raise_on_bad_logs(self, allow_list=None):
-        """
-        Raise a BadLogLines exception if any nodes' logs contain errors
-        not permitted by `allow_list`
-
-        :param logger: the test's logger, so that reports of bad lines are
-                       prefixed with test name.
-        :param allow_list: list of compiled regexes, or None for default
-        :return: None
-        """
-
-        if allow_list is None:
-            allow_list = DEFAULT_LOG_ALLOW_LIST
-        else:
-            combined_allow_list = DEFAULT_LOG_ALLOW_LIST.copy()
-            # Accept either compiled or string regexes
-            for a in allow_list:
-                if not isinstance(a, re.Pattern):
-                    a = re.compile(a)
-                combined_allow_list.append(a)
-            allow_list = combined_allow_list
-
-        test_name = self._context.function_name
-
-        bad_lines = collections.defaultdict(list)
-        for node in self.nodes:
-
-            if self._skip_if_no_redpanda_log and not node.account.exists(
-                    RedpandaService.STDOUT_STDERR_CAPTURE):
-                self.logger.info(
-                    f"{RedpandaService.STDOUT_STDERR_CAPTURE} not found on {node.account.hostname}. Skipping log scan."
-                )
-                continue
-
-            self.logger.info(
-                f"Scanning node {node.account.hostname} log for errors...")
-
-            # List of regexes that will fail the test on if they appear in the log
-            match_terms = [
-                "Segmentation fault", "[Aa]ssert",
-                "Exceptional future ignored", "UndefinedBehaviorSanitizer"
-            ]
-            if self._raise_on_errors:
-                match_terms.append("^ERROR")
-            match_expr = " ".join(f"-e \"{t}\"" for t in match_terms)
-
-            for line in node.account.ssh_capture(
-                    f"grep {match_expr} {RedpandaService.STDOUT_STDERR_CAPTURE} || true",
-                    timeout_sec=60):
-                line = line.strip()
-
-                allowed = False
-                for a in allow_list:
-                    if a.search(line) is not None:
-                        self.logger.warn(
-                            f"Ignoring allow-listed log line '{line}'")
-                        allowed = True
-                        break
-
-                if 'LeakSanitizer' in line:
-                    # Special case for LeakSanitizer errors, where tiny leaks
-                    # are permitted, as they can occur during Seastar shutdown.
-                    # See https://github.com/redpanda-data/redpanda/issues/3626
-                    for summary_line in node.account.ssh_capture(
-                            f"grep -e \"SUMMARY: AddressSanitizer:\" {RedpandaService.STDOUT_STDERR_CAPTURE} || true",
-                            timeout_sec=60):
-                        m = re.match(
-                            "SUMMARY: AddressSanitizer: (\d+) byte\(s\) leaked in (\d+) allocation\(s\).",
-                            summary_line.strip())
-                        if m and int(m.group(1)) < 1024:
-                            self.logger.warn(
-                                f"Ignoring memory leak, small quantity: {summary_line}"
-                            )
-                            allowed = True
-                            break
-
-                if not allowed:
-                    bad_lines[node].append(line)
-                    self.logger.warn(
-                        f"[{test_name}] Unexpected log line on {node.account.hostname}: {line}"
-                    )
-
-        if bad_lines:
-            raise BadLogLines(bad_lines)
 
     def decode_backtraces(self):
         """
