@@ -469,6 +469,35 @@ segment_collector::make_upload_candidate(
     auto head_seek = head_seek_result.value();
     auto tail_seek = tail_seek_result.value();
 
+    if (head_seek.offset_inside_batch || tail_seek.offset_inside_batch) {
+        vlog(
+          archival_log.warn,
+          "The upload candidate boundaries lie inside batch, skipping upload. "
+          "begin inclusive: {}, is inside batch: {}, seek result: {}, end "
+          "inclusive: {}, is "
+          "inside batch: {}, seek result: {}",
+          _begin_inclusive,
+          head_seek.offset_inside_batch,
+          head_seek.offset,
+          _end_inclusive,
+          tail_seek.offset_inside_batch,
+          tail_seek.offset);
+        co_return upload_candidate_with_locks{
+          upload_candidate{
+            .exposed_name = {},
+            .starting_offset = _begin_inclusive,
+            .file_offset = 0,
+            .content_length = 0,
+            .final_offset = _end_inclusive,
+            .final_file_offset = 0,
+            .base_timestamp = {},
+            .max_timestamp = {},
+            .term = {},
+            .sources = {},
+          },
+          {}};
+    }
+
     vlog(
       archival_log.debug,
       "collected size: {}, last segment {}-{}/{}, head seek bytes: {}, tail "
