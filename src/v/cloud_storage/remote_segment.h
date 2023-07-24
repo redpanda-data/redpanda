@@ -369,7 +369,9 @@ public:
         return _seg->get_base_kafka_offset();
     }
 
-    bool is_eof() const { return _cur_rp_offset > _seg->get_max_rp_offset(); }
+    bool is_eof() const {
+        return _is_unexpected_eof || _cur_rp_offset > _seg->get_max_rp_offset();
+    }
 
     void set_eof() {
         _cur_rp_offset = _seg->get_max_rp_offset() + model::offset{1};
@@ -410,6 +412,8 @@ private:
     size_t _bytes_consumed{0};
     ss::gate _gate;
     bool _stopped{false};
+    /// Set when EOF is reached earlier than expected
+    bool _is_unexpected_eof{false};
 
     /// Units for limiting concurrently-instantiated readers, they belong
     /// to materialized_segments.
