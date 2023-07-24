@@ -8,6 +8,7 @@
 # by the Apache License, Version 2.0
 
 import random
+from rptest.clients.default import DefaultClient
 
 from rptest.services.admin import Admin
 from rptest.tests.redpanda_test import RedpandaTest
@@ -251,3 +252,31 @@ class MaintenanceTest(RedpandaTest):
             raise
         else:
             raise Exception("Expected maintenance enable to fail")
+
+    @cluster(num_nodes=3)
+    @matrix(use_rpk=[True, False])
+    def test_maintenance_with_single_replicas(self, use_rpk):
+        self._use_rpk = use_rpk
+        single_replica_topic = TopicSpec(partition_count=18,
+                                         replication_factor=1)
+        DefaultClient(self.redpanda).create_topic(single_replica_topic)
+
+        target = random.choice(self.redpanda.nodes)
+
+        self._enable_maintenance(target)
+        self.redpanda.restart_nodes(target)
+        rpk = RpkTool(self.redpanda)
+
+        def all_partitions_have_leaders():
+            partitions = list(
+                rpk.describe_topic(single_replica_topic.name, tolerant=True))
+            for p in partitions:
+                self.logger.info(f"DBG: {p.high_watermark}")
+            return len(
+                partitions) == single_replica_topic.partition_count and all(
+                    [p.high_watermark is not None for p in partitions])
+
+        wait_until(all_partitions_have_leaders,
+                   30,
+                   backoff_sec=1,
+                   err_msg="Error waiting for all partitions to have leaders")
