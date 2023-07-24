@@ -14,9 +14,17 @@ on:
       - '*'
     branches:
       - '*'
+    paths:
+      - 'src/go/transform-sdk/**'
+      - '.github/workflows/transform-sdk-build.yml'
   pull_request:
     branches:
       - dev
+      # Run on any backports
+      - 'v*'
+    paths:
+      - 'src/go/transform-sdk/**'
+      - '.github/workflows/transform-sdk-build.yml'
 
 jobs:
   test:
