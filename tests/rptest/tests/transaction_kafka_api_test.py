@@ -14,6 +14,8 @@ import confluent_kafka as ck
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.clients.kafka_cli_tools import KafkaCliTools
 from rptest.clients.rpk import RpkTool
+import time
+import json
 
 
 class TxKafkaApiTest(RedpandaTest):
@@ -76,6 +78,34 @@ class TxKafkaApiTest(RedpandaTest):
                 for producer in txs_info:
                     assert (self.extract_producer(producer)
                             in expected_producers)
+
+    @cluster(num_nodes=3)
+    def test_last_timestamp_of_describe_producers(self):
+        producer1 = ck.Producer({
+            'bootstrap.servers': self.redpanda.brokers(),
+            'transactional.id': '0',
+        })
+        producer1.init_transactions()
+        producer1.begin_transaction()
+
+        for _ in range(2):
+            for topic in self.topics:
+                for partition in range(topic.partition_count):
+                    producer1.produce(topic.name, '0', '0', partition)
+            producer1.flush()
+
+        now_ms = int(time.time() * 1000)
+
+        for topic in self.topics:
+            for partition in range(topic.partition_count):
+                producers = self.kafka_cli.describe_producers(
+                    topic.name, partition)
+                self.redpanda.logger.debug(json.dumps(producers))
+                for producer in producers:
+                    assert int(producer["LastSequence"]) > 0
+                    # checking that the producer's info was recently updated
+                    assert abs(now_ms -
+                               int(producer["LastTimestamp"])) < 120 * 1000
 
     @cluster(num_nodes=3)
     def test_describe_transactions(self):
