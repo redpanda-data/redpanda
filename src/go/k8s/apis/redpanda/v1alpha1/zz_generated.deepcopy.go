@@ -15,7 +15,6 @@
 package v1alpha1
 
 import (
-	"encoding/json"
 	timex "time"
 
 	"k8s.io/api/core/v1"
@@ -168,18 +167,18 @@ func (in *Config) DeepCopyInto(out *Config) {
 	*out = *in
 	if in.Cluster != nil {
 		in, out := &in.Cluster, &out.Cluster
-		*out = make(json.RawMessage, len(*in))
-		copy(*out, *in)
+		*out = new(runtime.RawExtension)
+		(*in).DeepCopyInto(*out)
 	}
 	if in.Node != nil {
 		in, out := &in.Node, &out.Node
-		*out = make(json.RawMessage, len(*in))
-		copy(*out, *in)
+		*out = new(runtime.RawExtension)
+		(*in).DeepCopyInto(*out)
 	}
 	if in.Tunable != nil {
 		in, out := &in.Tunable, &out.Tunable
-		*out = make(json.RawMessage, len(*in))
-		copy(*out, *in)
+		*out = new(runtime.RawExtension)
+		(*in).DeepCopyInto(*out)
 	}
 }
 
@@ -725,8 +724,8 @@ func (in *PodAntiAffinity) DeepCopyInto(out *PodAntiAffinity) {
 	*out = *in
 	if in.Custom != nil {
 		in, out := &in.Custom, &out.Custom
-		*out = make(json.RawMessage, len(*in))
-		copy(*out, *in)
+		*out = new(runtime.RawExtension)
+		(*in).DeepCopyInto(*out)
 	}
 }
 
@@ -793,13 +792,17 @@ func (in *PostUpgradeJob) DeepCopyInto(out *PostUpgradeJob) {
 	}
 	if in.ExtraEnv != nil {
 		in, out := &in.ExtraEnv, &out.ExtraEnv
-		*out = make(json.RawMessage, len(*in))
-		copy(*out, *in)
+		*out = make([]v1.EnvVar, len(*in))
+		for i := range *in {
+			(*in)[i].DeepCopyInto(&(*out)[i])
+		}
 	}
 	if in.ExtraEnvFrom != nil {
 		in, out := &in.ExtraEnvFrom, &out.ExtraEnvFrom
-		*out = make(json.RawMessage, len(*in))
-		copy(*out, *in)
+		*out = make([]v1.EnvFromSource, len(*in))
+		for i := range *in {
+			(*in)[i].DeepCopyInto(&(*out)[i])
+		}
 	}
 	if in.Resources != nil {
 		in, out := &in.Resources, &out.Resources
@@ -1511,12 +1514,12 @@ func (in *Statefulset) DeepCopyInto(out *Statefulset) {
 	}
 	if in.PodAffinity != nil {
 		in, out := &in.PodAffinity, &out.PodAffinity
-		*out = make(json.RawMessage, len(*in))
-		copy(*out, *in)
+		*out = new(v1.PodAffinity)
+		(*in).DeepCopyInto(*out)
 	}
 	if in.PodAntiAffinity != nil {
 		in, out := &in.PodAntiAffinity, &out.PodAntiAffinity
-		*out = new(PodAntiAffinity)
+		*out = new(v1.PodAntiAffinity)
 		(*in).DeepCopyInto(*out)
 	}
 	if in.ReadinessProbe != nil {

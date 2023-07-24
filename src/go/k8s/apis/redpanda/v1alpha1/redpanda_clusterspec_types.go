@@ -1,7 +1,6 @@
 package v1alpha1
 
 import (
-	"encoding/json"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
@@ -258,11 +257,13 @@ type PostInstallJob struct {
 
 // PostUpgradeJob is a top level field of the values file
 type PostUpgradeJob struct {
-	Annotations  map[string]string            `json:"annotations,omitempty"`
-	Enabled      bool                         `json:"enabled"`
-	Labels       map[string]string            `json:"labels,omitempty"`
-	ExtraEnv     json.RawMessage              `json:"extraEnv,omitempty"`
-	ExtraEnvFrom json.RawMessage              `json:"extraEnvFrom,omitempty"`
+	Annotations map[string]string `json:"annotations,omitempty"`
+	Enabled     bool              `json:"enabled"`
+	Labels      map[string]string `json:"labels,omitempty"`
+	// +patchMergeKey=name
+	// +patchStrategy=merge
+	ExtraEnv     []corev1.EnvVar              `json:"extraEnv,omitempty" patchStrategy:"merge" patchMergeKey:"name"`
+	ExtraEnvFrom []corev1.EnvFromSource       `json:"extraEnvFrom,omitempty"`
 	Resources    *corev1.ResourceRequirements `json:"resources,omitempty"`
 }
 
@@ -275,8 +276,8 @@ type Statefulset struct {
 	InitContainers                *InitContainers            `json:"initContainers,omitempty"`
 	LivenessProbe                 *LivenessProbe             `json:"livenessProbe,omitempty"`
 	NodeSelector                  map[string]string          `json:"nodeSelector,omitempty"`
-	PodAffinity                   json.RawMessage            `json:"podAffinity,omitempty"`
-	PodAntiAffinity               *PodAntiAffinity           `json:"podAntiAffinity,omitempty"`
+	PodAffinity                   *corev1.PodAffinity        `json:"podAffinity,omitempty"`
+	PodAntiAffinity               *corev1.PodAntiAffinity    `json:"podAntiAffinity,omitempty"`
 	PriorityClassName             string                     `json:"priorityClassName,omitempty"`
 	ReadinessProbe                *ReadinessProbe            `json:"readinessProbe,omitempty"`
 	Replicas                      int                        `json:"replicas,omitempty"`
@@ -318,10 +319,11 @@ type StartupProbe struct {
 
 // PodAntiAffinity is a top level field of the values file
 type PodAntiAffinity struct {
-	TopologyKey string          `json:"topologyKey"`
-	Type        string          `json:"type"`
-	Weight      int             `json:"weight"`
-	Custom      json.RawMessage `json:"custom,omitempty"`
+	TopologyKey string `json:"topologyKey"`
+	Type        string `json:"type"`
+	Weight      int    `json:"weight"`
+	// +kubebuilder:pruning:PreserveUnknownFields
+	Custom *runtime.RawExtension `json:"custom,omitempty"`
 }
 
 // TopologySpreadConstraints is a top level field of the values file
@@ -405,9 +407,12 @@ type SchemaRegistry struct {
 
 // Config is a top level field of the values file
 type Config struct {
-	Cluster json.RawMessage `json:"cluster,omitempty"`
-	Node    json.RawMessage `json:"node,omitempty"`
-	Tunable json.RawMessage `json:"tunable,omitempty"`
+	// +kubebuilder:pruning:PreserveUnknownFields
+	Cluster *runtime.RawExtension `json:"cluster,omitempty"`
+	// +kubebuilder:pruning:PreserveUnknownFields
+	Node *runtime.RawExtension `json:"node,omitempty"`
+	// +kubebuilder:pruning:PreserveUnknownFields
+	Tunable *runtime.RawExtension `json:"tunable,omitempty"`
 }
 
 // SideCars is a field that stores sidecars in the statefulset
