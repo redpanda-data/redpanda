@@ -486,7 +486,7 @@ ss::future<> recovery_stm::replicate(
           // If AppendEntries fails because of log inconsistency: decrement
           // nextIndex and retry(§5.3)
 
-          if (r.value().result == append_entries_reply::status::failure) {
+          if (r.value().result == reply_status::failure) {
               auto meta = get_follower_meta();
               if (!meta) {
                   _stop_requested = true;

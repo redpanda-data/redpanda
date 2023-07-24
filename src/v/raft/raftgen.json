@@ -21,6 +21,11 @@
             "output_type": "heartbeat_reply"
         },
         {
+            "name": "heartbeat_v2",
+            "input_type": "heartbeat_request_v2",
+            "output_type": "heartbeat_reply_v2"
+        },
+        {
             "name": "install_snapshot",
             "input_type": "install_snapshot_request",
             "output_type": "install_snapshot_reply"

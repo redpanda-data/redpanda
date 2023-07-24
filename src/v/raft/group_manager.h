@@ -42,6 +42,7 @@ public:
         config::binding<std::chrono::milliseconds> heartbeat_interval;
         config::binding<std::chrono::milliseconds> heartbeat_timeout;
         config::binding<std::chrono::milliseconds> raft_io_timeout_ms;
+        config::binding<bool> enable_lw_heartbeat;
     };
     using config_provider_fn = ss::noncopyable_function<configuration()>;
 

@@ -336,10 +336,10 @@ struct instance_generator<raft::append_entries_reply> {
           .last_dirty_log_index = tests::random_named_int<model::offset>(),
           .last_term_base_offset = tests::random_named_int<model::offset>(),
           .result = random_generators::random_choice(
-            {raft::append_entries_reply::status::success,
-             raft::append_entries_reply::status::failure,
-             raft::append_entries_reply::status::group_unavailable,
-             raft::append_entries_reply::status::timeout}),
+            {raft::reply_status::success,
+             raft::reply_status::failure,
+             raft::reply_status::group_unavailable,
+             raft::reply_status::timeout}),
         };
     }
 

@@ -15,6 +15,7 @@
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/namespace.h"
+#include "model/record.h"
 #include "model/record_batch_reader.h"
 #include "model/timeout_clock.h"
 #include "prometheus/prometheus_sanitize.h"
@@ -306,7 +307,7 @@ consensus::success_reply consensus::update_follower_index(
         // current node may change it.
         return success_reply::yes;
     }
-    auto config = _configuration_manager.get_latest();
+    auto& config = _configuration_manager.get_latest();
     if (!config.contains(node)) {
         // We might have sent an append_entries just before removing
         // a node from configuration: ignore its reply, to avoid
@@ -314,7 +315,7 @@ consensus::success_reply consensus::update_follower_index(
         vlog(
           _ctxlog.debug,
           "Ignoring reply from node {}, it is not in members list",
-          physical_node);
+          node);
         return success_reply::no;
     }
 
@@ -342,13 +343,12 @@ consensus::success_reply consensus::update_follower_index(
         return success_reply::no;
     }
 
-    if (unlikely(reply.result == append_entries_reply::status::timeout)) {
+    if (unlikely(reply.result == reply_status::timeout)) {
         // ignore this response, timed out on the receiver node
         vlog(_ctxlog.trace, "Append entries request timedout at node {}", node);
         return success_reply::no;
     }
-    if (unlikely(
-          reply.result == append_entries_reply::status::group_unavailable)) {
+    if (unlikely(reply.result == reply_status::group_unavailable)) {
         // ignore this response since group is not yet bootstrapped at the
         // follower
         vlog(_ctxlog.trace, "Raft group not yet initialized at node {}", node);
@@ -368,7 +368,7 @@ consensus::success_reply consensus::update_follower_index(
         return success_reply::no;
     }
 
-    update_node_reply_timestamp(node);
+    idx.last_received_reply_timestamp = clock_type::now();
 
     if (
       seq < idx.last_received_seq
@@ -431,7 +431,7 @@ consensus::success_reply consensus::update_follower_index(
         idx.next_index = model::next_offset(idx.last_dirty_log_index);
     }
 
-    if (reply.result == append_entries_reply::status::success) {
+    if (reply.result == reply_status::success) {
         successfull_append_entries_reply(idx, std::move(reply));
         return success_reply::yes;
     } else {
@@ -1791,7 +1791,7 @@ consensus::do_append_entries(append_entries_request&& r) {
     reply.term = _term;
     reply.last_dirty_log_index = lstats.dirty_offset;
     reply.last_flushed_log_index = _flushed_offset;
-    reply.result = append_entries_reply::status::failure;
+    reply.result = reply_status::failure;
     _probe->append_request();
 
     if (unlikely(is_request_target_node_invalid("append_entries", r))) {
@@ -1803,7 +1803,7 @@ consensus::do_append_entries(append_entries_request&& r) {
 
     // raft.pdf: Reply false if term < currentTerm (§5.1)
     if (request_metadata.term < _term) {
-        reply.result = append_entries_reply::status::failure;
+        reply.result = reply_status::failure;
         return ss::make_ready_future<append_entries_reply>(std::move(reply));
     }
     /**
@@ -1875,7 +1875,7 @@ consensus::do_append_entries(append_entries_request&& r) {
           request_metadata.prev_log_index,
           last_log_term,
           request_metadata.prev_log_term);
-        reply.result = append_entries_reply::status::failure;
+        reply.result = reply_status::failure;
         return ss::make_ready_future<append_entries_reply>(std::move(reply));
     }
 
@@ -1885,7 +1885,7 @@ consensus::do_append_entries(append_entries_request&& r) {
     if (r.batches().is_end_of_stream()) {
         if (request_metadata.prev_log_index < last_log_offset) {
             // do not tuncate on heartbeat just response with false
-            reply.result = append_entries_reply::status::failure;
+            reply.result = reply_status::failure;
             return ss::make_ready_future<append_entries_reply>(
               std::move(reply));
         }
@@ -1904,7 +1904,7 @@ consensus::do_append_entries(append_entries_request&& r) {
                      model::offset(request_metadata.commit_index))
               .then([this, reply]() mutable {
                   reply.last_flushed_log_index = _flushed_offset;
-                  reply.result = append_entries_reply::status::success;
+                  reply.result = reply_status::success;
                   return reply;
               });
         });
@@ -1913,7 +1913,7 @@ consensus::do_append_entries(append_entries_request&& r) {
     // section 3
     if (request_metadata.prev_log_index < last_log_offset) {
         if (unlikely(request_metadata.prev_log_index < _commit_index)) {
-            reply.result = append_entries_reply::status::success;
+            reply.result = reply_status::success;
             vlog(
               _ctxlog.info,
               "Stale append entries request processed, entry is already "
@@ -1977,7 +1977,7 @@ consensus::do_append_entries(append_entries_request&& r) {
           })
           .handle_exception([this, reply](const std::exception_ptr& e) mutable {
               vlog(_ctxlog.warn, "Error occurred while truncating log - {}", e);
-              reply.result = append_entries_reply::status::failure;
+              reply.result = reply_status::failure;
               return ss::make_ready_future<append_entries_reply>(reply);
           });
     }
@@ -2001,7 +2001,7 @@ consensus::do_append_entries(append_entries_request&& r) {
       .handle_exception([this, reply](const std::exception_ptr& e) mutable {
           vlog(
             _ctxlog.warn, "Error occurred while appending log entries - {}", e);
-          reply.result = append_entries_reply::status::failure;
+          reply.result = reply_status::failure;
           return ss::make_ready_future<append_entries_reply>(reply);
       })
       .finally([this] {
@@ -2469,7 +2469,7 @@ append_entries_reply consensus::make_append_entries_reply(
     reply.term = _term;
     reply.last_dirty_log_index = disk_results.last_offset;
     reply.last_flushed_log_index = _flushed_offset;
-    reply.result = append_entries_reply::status::success;
+    reply.result = reply_status::success;
     return reply;
 }
 
@@ -2633,9 +2633,6 @@ void consensus::maybe_update_node_reply_timestamp(vnode id) {
     if (auto it = _fstats.find(id); it != _fstats.end()) {
         it->second.last_received_reply_timestamp = clock_type::now();
     }
-}
-void consensus::update_node_reply_timestamp(vnode id) {
-    _fstats.get(id).last_received_reply_timestamp = clock_type::now();
 }
 
 follower_req_seq consensus::next_follower_sequence(vnode id) {
@@ -3367,6 +3364,7 @@ void consensus::update_suppress_heartbeats(
 void consensus::update_heartbeat_status(vnode id, bool success) {
     if (auto it = _fstats.find(id); it != _fstats.end()) {
         if (success) {
+            it->second.last_received_reply_timestamp = clock_type::now();
             it->second.heartbeats_failed = 0;
         } else {
             it->second.heartbeats_failed++;
@@ -3532,4 +3530,74 @@ std::optional<uint8_t> consensus::get_under_replicated() const {
     return count;
 }
 
+ss::future<hb_reply_envelope> consensus::heartbeat(
+  model::node_id source_node,
+  model::node_id target_node,
+  const hb_request_envelope& req) {
+    hb_reply_envelope reply{
+      .group = _group,
+      .result = reply_status::success,
+    };
+    /**
+     * Handle lightweight heartbeat
+     */
+    if (unlikely(target_node != _self.id())) {
+        vlog(
+          _ctxlog.warn,
+          "received lw_heartbeat request addressed to different node: {}, "
+          "current node: {}, source: {}",
+          target_node,
+          _self,
+          source_node);
+        reply.result = reply_status::failure;
+        co_return reply;
+    }
+
+    if (!req.data) {
+        _hbeat = clock_type::now();
+        co_return reply;
+    }
+
+    const vnode target_vnode(target_node, req.data->target_revision);
+    const vnode source_vnode(source_node, req.data->source_revision);
+    if (unlikely(target_vnode != _self)) {
+        vlog(
+          _ctxlog.warn,
+          "received lw_heartbeat request addressed to node with different "
+          "revision: {}, current node: {}, source: {}",
+          target_vnode,
+          _self,
+          source_vnode);
+        reply.result = reply_status::failure;
+        co_return reply;
+    }
+    /**
+     * IMPORTANT: do not use request reference after the scheduling point
+     */
+    append_entries_reply r = co_await append_entries(append_entries_request(
+      source_vnode,
+      target_vnode,
+      protocol_metadata{
+        .group = req.group,
+        .commit_index = req.data->commit_index,
+        .term = req.data->term,
+        .prev_log_index = req.data->prev_log_index,
+        .prev_log_term = req.data->prev_log_term,
+        .last_visible_index = req.data->last_visible_index,
+      },
+      model::make_memory_record_batch_reader(
+        ss::circular_buffer<model::record_batch>{}),
+      flush_after_append::no));
+
+    reply.result = r.result;
+    reply.data = heartbeat_reply_state{
+      .source_revision = _self.revision(),
+      .target_revision = source_vnode.revision(),
+      .term = r.term,
+      .last_flushed_log_index = r.last_flushed_log_index,
+      .last_dirty_log_index = r.last_dirty_log_index,
+      .last_term_base_offset = r.last_term_base_offset,
+    };
+    co_return reply;
+}
 } // namespace raft

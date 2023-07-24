@@ -41,7 +41,8 @@ group_manager::group_manager(
       _configuration.heartbeat_interval,
       _client,
       _self,
-      _configuration.heartbeat_timeout)
+      _configuration.heartbeat_timeout,
+      _configuration.enable_lw_heartbeat)
   , _storage(storage.local())
   , _recovery_throttle(recovery_throttle.local())
   , _recovery_mem_quota(std::move(recovery_mem_cfg))

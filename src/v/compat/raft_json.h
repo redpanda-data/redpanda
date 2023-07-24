@@ -94,16 +94,16 @@ inline void read_value(json::Value const& rd, raft::append_entries_reply& out) {
     auto result = read_enum_ut(rd, "result", obj.result);
     switch (result) {
     case 0:
-        obj.result = raft::append_entries_reply::status::success;
+        obj.result = raft::reply_status::success;
         break;
     case 1:
-        obj.result = raft::append_entries_reply::status::failure;
+        obj.result = raft::reply_status::failure;
         break;
     case 2:
-        obj.result = raft::append_entries_reply::status::group_unavailable;
+        obj.result = raft::reply_status::group_unavailable;
         break;
     case 3:
-        obj.result = raft::append_entries_reply::status::timeout;
+        obj.result = raft::reply_status::timeout;
         break;
     default:
         vassert(false, "invalid result {}", result);

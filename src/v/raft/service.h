@@ -12,7 +12,9 @@
 #pragma once
 
 #include "likely.h"
+#include "model/metadata.h"
 #include "raft/consensus.h"
+#include "raft/group_configuration.h"
 #include "raft/raftgen_service.h"
 #include "raft/types.h"
 #include "seastarx.h"
@@ -54,11 +56,13 @@ public:
       ss::smp_service_group ssg,
       ss::sharded<ConsensusManager>& mngr,
       ShardLookup& tbl,
-      clock_type::duration heartbeat_interval)
+      clock_type::duration heartbeat_interval,
+      model::node_id self)
       : raftgen_service(sc, ssg)
       , _group_manager(mngr)
       , _shard_table(tbl)
-      , _heartbeat_interval(heartbeat_interval) {
+      , _heartbeat_interval(heartbeat_interval)
+      , _self(self) {
         finjector::shard_local_badger().register_probe(
           failure_probes::name(), &_probe);
     }
@@ -89,7 +93,7 @@ public:
           [](heartbeat_metadata& r) {
               return append_entries_reply{
                 .group = r.meta.group,
-                .result = append_entries_reply::status::group_unavailable};
+                .result = reply_status::group_unavailable};
           });
 
         return ss::when_all_succeed(futures.begin(), futures.end())
@@ -104,6 +108,47 @@ public:
               std::move(
                 missing.begin(), missing.end(), std::back_inserter(ret));
               return heartbeat_reply{std::move(ret)};
+          });
+    }
+
+    [[gnu::always_inline]] ss::future<heartbeat_reply_v2>
+    heartbeat_v2(heartbeat_request_v2&& r, rpc::streaming_context&) final {
+        auto const req_sz = r.group_requests.size();
+        auto grouped = group_hbeats_by_shard(std::move(r.group_requests));
+        std::vector<ss::future<std::vector<hb_reply_envelope>>> futures;
+        futures.reserve(grouped.shard_requests.size());
+        for (auto& [shard, req] : grouped.shard_requests) {
+            // dispatch to each core in parallel
+            futures.push_back(dispatch_hbeats_to_core_v2(
+              shard, r.source_node, r.target_node, std::move(req)));
+        }
+        // replies for groups that are not yet registered at this node
+        std::vector<hb_reply_envelope> group_missing_replies;
+        group_missing_replies.reserve(grouped.group_missing_requests.size());
+        std::transform(
+          std::begin(grouped.group_missing_requests),
+          std::end(grouped.group_missing_requests),
+          std::back_inserter(group_missing_replies),
+          [](hb_request_envelope& r) {
+              return hb_reply_envelope{
+                .group = r.group, .result = reply_status::group_unavailable};
+          });
+
+        return ss::when_all_succeed(futures.begin(), futures.end())
+          .then([self = _self,
+                 target = r.source_node,
+                 req_sz,
+                 missing = std::move(group_missing_replies)](
+                  std::vector<std::vector<hb_reply_envelope>> replies) mutable {
+              std::vector<hb_reply_envelope> ret;
+              ret.reserve(req_sz);
+              // flatten responses
+              for (auto& part : replies) {
+                  std::move(part.begin(), part.end(), std::back_inserter(ret));
+              }
+              std::move(
+                missing.begin(), missing.end(), std::back_inserter(ret));
+              return heartbeat_reply_v2{self, target, std::move(ret)};
           });
     }
 
@@ -194,6 +239,11 @@ private:
           shard_requests;
         std::vector<heartbeat_metadata> group_missing_requests;
     };
+    struct shard_groupped_hbeat_requests_v2 {
+        absl::flat_hash_map<ss::shard_id, ss::chunked_fifo<hb_request_envelope>>
+          shard_requests;
+        std::vector<hb_request_envelope> group_missing_requests;
+    };
 
     static ss::future<vote_reply> make_failed_vote_reply() {
         return ss::make_ready_future<vote_reply>(vote_reply{
@@ -210,8 +260,7 @@ private:
     static ss::future<append_entries_reply>
     make_missing_group_reply(raft::group_id group) {
         return ss::make_ready_future<append_entries_reply>(append_entries_reply{
-          .group = group,
-          .result = append_entries_reply::status::group_unavailable});
+          .group = group, .result = reply_status::group_unavailable});
     }
 
     static ss::future<timeout_now_reply> make_failed_timeout_now_reply() {
@@ -268,12 +317,53 @@ private:
           });
     }
 
+    ss::future<std::vector<hb_reply_envelope>> dispatch_hbeats_to_core_v2(
+      ss::shard_id shard,
+      model::node_id source_node,
+      model::node_id target_node,
+      ss::chunked_fifo<hb_request_envelope> heartbeats) {
+        return with_scheduling_group(
+          get_scheduling_group(),
+          [this,
+           shard,
+           r = std::move(heartbeats),
+           source_node,
+           target_node]() mutable {
+              return _group_manager.invoke_on(
+                shard,
+                get_smp_service_group(),
+                [this, r = std::move(r), source_node, target_node](
+                  ConsensusManager& m) mutable {
+                    return dispatch_hbeats_to_groups(
+                      m, source_node, target_node, std::move(r));
+                });
+          });
+    }
+
     static append_entries_request
     make_append_entries_request(const heartbeat_metadata& hb) {
         return {
           hb.node_id,
           hb.target_node_id,
           hb.meta,
+          model::make_memory_record_batch_reader(
+            ss::circular_buffer<model::record_batch>{}),
+          flush_after_append::no};
+    }
+    static append_entries_request make_append_entries_request(
+      model::node_id source_node,
+      model::node_id target_node,
+      const hb_request_envelope& hb) {
+        return {
+          raft::vnode(source_node, hb.data->source_revision),
+          raft::vnode(target_node, hb.data->target_revision),
+          raft::protocol_metadata{
+            .group = hb.group,
+            .commit_index = hb.data->commit_index,
+            .prev_log_index = hb.data->prev_log_index,
+            .prev_log_term = hb.data->prev_log_term,
+            .last_visible_index = hb.data->last_visible_index,
+          },
           model::make_memory_record_batch_reader(
             ss::circular_buffer<model::record_batch>{}),
           flush_after_append::no};
@@ -296,8 +386,34 @@ private:
               return ss::with_timeout(timeout, std::move(f))
                 .handle_exception_type([group](const ss::timed_out_error&) {
                     return append_entries_reply{
-                      .group = group,
-                      .result = append_entries_reply::status::timeout};
+                      .group = group, .result = reply_status::timeout};
+                });
+          });
+
+        return ss::when_all_succeed(futures.begin(), futures.end());
+    }
+
+    ss::future<std::vector<hb_reply_envelope>> dispatch_hbeats_to_groups(
+      ConsensusManager& m,
+      model::node_id source_node,
+      model::node_id target_node,
+      ss::chunked_fifo<hb_request_envelope> reqs) {
+        std::vector<ss::future<hb_reply_envelope>> futures;
+        futures.reserve(reqs.size());
+        // dispatch requests in parallel
+        auto timeout = clock_type::now() + _heartbeat_interval;
+        std::transform(
+          reqs.begin(),
+          reqs.end(),
+          std::back_inserter(futures),
+          [this, &m, timeout, source_node, target_node](
+            hb_request_envelope& hb) mutable {
+              auto group = hb.group;
+              auto f = dispatch_heartbeat(source_node, target_node, m, hb);
+              return ss::with_timeout(timeout, std::move(f))
+                .handle_exception_type([group](const ss::timed_out_error&) {
+                    return hb_reply_envelope{
+                      .group = group, .result = reply_status::timeout};
                 });
           });
 
@@ -321,20 +437,50 @@ private:
 
         return ret;
     }
+    shard_groupped_hbeat_requests_v2
+    group_hbeats_by_shard(std::vector<hb_request_envelope> reqs) {
+        shard_groupped_hbeat_requests_v2 ret;
+
+        for (auto& r : reqs) {
+            if (unlikely(!_shard_table.contains(r.group))) {
+                ret.group_missing_requests.push_back(r);
+                continue;
+            }
+
+            auto shard = _shard_table.shard_for(r.group);
+            auto [it, _] = ret.shard_requests.try_emplace(shard);
+            it->second.push_back(r);
+        }
+
+        return ret;
+    }
 
     ss::future<append_entries_reply>
     dispatch_append_entries(ConsensusManager& m, append_entries_request&& r) {
-        auto group = group_id(r.metadata().group);
-        auto c = m.consensus_for(group);
+        auto c = m.consensus_for(r.metadata().group);
         if (unlikely(!c)) {
-            return make_missing_group_reply(group);
+            return make_missing_group_reply(r.metadata().group);
         }
         return c->append_entries(std::move(r));
+    }
+
+    ss::future<hb_reply_envelope> dispatch_heartbeat(
+      model::node_id source_node,
+      model::node_id target_node,
+      ConsensusManager& m,
+      hb_request_envelope req) {
+        auto c = m.consensus_for(req.group);
+        if (unlikely(!c)) {
+            co_return hb_reply_envelope{
+              .group = req.group, .result = reply_status::group_unavailable};
+        }
+        co_return co_await c->heartbeat(source_node, target_node, req);
     }
 
     failure_probes _probe;
     ss::sharded<ConsensusManager>& _group_manager;
     ShardLookup& _shard_table;
     clock_type::duration _heartbeat_interval;
+    model::node_id _self;
 };
 } // namespace raft

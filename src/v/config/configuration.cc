@@ -236,6 +236,12 @@ configuration::configuration()
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       512_KiB,
       {.min = 128, .max = 5_MiB})
+  , enable_lw_heartbeat(
+      *this,
+      "enable_lw_heartbeat",
+      "enables raft optimization of heartbeats",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      true)
   , enable_usage(
       *this,
       "enable_usage",

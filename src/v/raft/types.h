@@ -178,6 +178,8 @@ struct follower_index_metadata {
     heartbeats_suppressed suppress_heartbeats = heartbeats_suppressed::no;
     follower_req_seq last_suppress_heartbeats_seq{0};
 
+    std::optional<protocol_metadata> last_sent_protocol_meta;
+
     friend std::ostream&
     operator<<(std::ostream& o, const follower_index_metadata& i);
 };
@@ -290,6 +292,12 @@ private:
     append_entries_request _request;
 };
 
+enum class reply_status : uint8_t {
+    success,
+    failure,
+    group_unavailable,
+    timeout
+};
 /*
  * append_entries_reply uses two different types of serialization: when
  * encoding/decoding directly normal adl/serde per-field serialization is used.
@@ -302,12 +310,7 @@ struct append_entries_reply
       serde::version<0>,
       serde::compat_version<0>> {
     using rpc_adl_exempt = std::true_type;
-    enum class status : uint8_t {
-        success,
-        failure,
-        group_unavailable,
-        timeout
-    };
+
     // node id to validate on receiver
     vnode target_node_id;
     /// \brief callee's node_id; work-around for batched heartbeats
@@ -324,7 +327,7 @@ struct append_entries_reply
     // only valid for not successfull append_entries reply
     model::offset last_term_base_offset;
     /// \brief did the rpc succeed or not
-    status result = status::failure;
+    reply_status result = reply_status::failure;
 
     friend std::ostream&
     operator<<(std::ostream& o, const append_entries_reply& r);
@@ -343,6 +346,181 @@ struct append_entries_reply
           last_dirty_log_index,
           last_term_base_offset,
           result);
+    }
+};
+
+struct heartbeat_request_state {
+    model::revision_id source_revision;
+    model::revision_id target_revision;
+    model::offset commit_index;
+    model::term_id term;
+    model::offset prev_log_index;
+    model::term_id prev_log_term;
+    model::offset last_visible_index;
+
+    friend inline void read_nested(
+      iobuf_parser& in,
+      heartbeat_request_state& state,
+      size_t const bytes_left_limit) {
+        serde::read_nested(in, state.source_revision, bytes_left_limit);
+        serde::read_nested(in, state.target_revision, bytes_left_limit);
+        serde::read_nested(in, state.commit_index, bytes_left_limit);
+        serde::read_nested(in, state.term, bytes_left_limit);
+        serde::read_nested(in, state.prev_log_index, bytes_left_limit);
+        serde::read_nested(in, state.prev_log_term, bytes_left_limit);
+        serde::read_nested(in, state.last_visible_index, bytes_left_limit);
+    }
+    friend inline void write(iobuf& out, heartbeat_request_state state) {
+        serde::write(out, state.source_revision);
+        serde::write(out, state.target_revision);
+        serde::write(out, state.commit_index);
+        serde::write(out, state.term);
+        serde::write(out, state.prev_log_index);
+        serde::write(out, state.prev_log_term);
+        serde::write(out, state.last_visible_index);
+    }
+
+    friend bool
+    operator==(const heartbeat_request_state&, const heartbeat_request_state&)
+      = default;
+};
+
+struct heartbeat_reply_state {
+    model::revision_id source_revision;
+    model::revision_id target_revision;
+    model::term_id term;
+
+    model::offset last_flushed_log_index;
+    model::offset last_dirty_log_index;
+    model::offset last_term_base_offset;
+
+    friend inline void read_nested(
+      iobuf_parser& in,
+      heartbeat_reply_state& state,
+      size_t const bytes_left_limit) {
+        serde::read_nested(in, state.source_revision, bytes_left_limit);
+        serde::read_nested(in, state.target_revision, bytes_left_limit);
+        serde::read_nested(in, state.term, bytes_left_limit);
+        serde::read_nested(in, state.last_flushed_log_index, bytes_left_limit);
+        serde::read_nested(in, state.last_dirty_log_index, bytes_left_limit);
+        serde::read_nested(in, state.last_term_base_offset, bytes_left_limit);
+    }
+    friend inline void write(iobuf& out, heartbeat_reply_state state) {
+        serde::write(out, state.source_revision);
+        serde::write(out, state.target_revision);
+        serde::write(out, state.term);
+        serde::write(out, state.last_flushed_log_index);
+        serde::write(out, state.last_dirty_log_index);
+        serde::write(out, state.last_term_base_offset);
+    }
+
+    friend bool
+    operator==(const heartbeat_reply_state&, const heartbeat_reply_state&)
+      = default;
+};
+
+struct hb_request_envelope {
+    raft::group_id group;
+    std::optional<heartbeat_request_state> data;
+
+    friend inline void read_nested(
+      iobuf_parser& in,
+      hb_request_envelope& req,
+      size_t const bytes_left_limit) {
+        serde::read_nested(in, req.group, bytes_left_limit);
+        serde::read_nested(in, req.data, bytes_left_limit);
+    }
+
+    friend inline void write(iobuf& out, hb_request_envelope req) {
+        serde::write(out, req.group);
+        serde::write(out, req.data);
+    }
+    friend bool
+    operator==(const hb_request_envelope&, const hb_request_envelope&)
+      = default;
+};
+
+struct hb_reply_envelope {
+    raft::group_id group;
+    reply_status result = reply_status::failure;
+    std::optional<heartbeat_reply_state> data;
+
+    friend inline void read_nested(
+      iobuf_parser& in, hb_reply_envelope& req, size_t const bytes_left_limit) {
+        serde::read_nested(in, req.group, bytes_left_limit);
+        serde::read_nested(in, req.result, bytes_left_limit);
+        serde::read_nested(in, req.data, bytes_left_limit);
+    }
+
+    friend inline void write(iobuf& out, hb_reply_envelope req) {
+        serde::write(out, req.group);
+        serde::write(out, req.result);
+        serde::write(out, req.data);
+    }
+
+    friend bool operator==(const hb_reply_envelope&, const hb_reply_envelope&)
+      = default;
+};
+
+struct heartbeat_request_v2
+  : serde::envelope<
+      heartbeat_request_v2,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    using rpc_adl_exempt = std::true_type;
+    model::node_id source_node;
+    model::node_id target_node;
+
+    std::vector<hb_request_envelope> group_requests;
+
+    heartbeat_request_v2() noexcept = default;
+    explicit heartbeat_request_v2(
+      model::node_id source_node,
+      model::node_id target_node,
+      std::vector<hb_request_envelope> requests)
+      : source_node(source_node)
+      , target_node(target_node)
+      , group_requests(std::move(requests)) {}
+
+    friend std::ostream&
+    operator<<(std::ostream& o, const heartbeat_request_v2& r);
+
+    friend bool
+    operator==(const heartbeat_request_v2&, const heartbeat_request_v2&)
+      = default;
+
+    auto serde_fields() {
+        return std::tie(source_node, target_node, group_requests);
+    }
+};
+
+struct heartbeat_reply_v2
+  : serde::envelope<
+      heartbeat_reply_v2,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    using rpc_adl_exempt = std::true_type;
+    model::node_id source_node;
+    model::node_id target_node;
+    std::vector<hb_reply_envelope> group_replies;
+
+    heartbeat_reply_v2() noexcept = default;
+    explicit heartbeat_reply_v2(
+      model::node_id source_node,
+      model::node_id target_node,
+      std::vector<hb_reply_envelope> replies)
+      : source_node(source_node)
+      , target_node(target_node)
+      , group_replies(std::move(replies)) {}
+
+    friend std::ostream&
+    operator<<(std::ostream& o, const heartbeat_reply_v2& r);
+
+    friend bool operator==(const heartbeat_reply_v2&, const heartbeat_reply_v2&)
+      = default;
+
+    auto serde_fields() {
+        return std::tie(source_node, target_node, group_replies);
     }
 };
 
@@ -818,7 +996,7 @@ struct scheduling_config {
 };
 
 std::ostream& operator<<(std::ostream& o, const consistency_level& l);
-std::ostream& operator<<(std::ostream& o, const append_entries_reply::status&);
+std::ostream& operator<<(std::ostream& o, const reply_status&);
 
 using with_learner_recovery_throttle
   = ss::bool_class<struct with_recovery_throttle_tag>;

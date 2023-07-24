@@ -451,6 +451,11 @@ public:
 
     model::offset get_flushed_offset() const { return _flushed_offset; }
 
+    ss::future<hb_reply_envelope> heartbeat(
+      model::node_id source_node,
+      model::node_id target_node,
+      const hb_request_envelope& heartbeat_rq);
+
 private:
     friend replicate_entries_stm;
     friend vote_stm;
@@ -539,7 +544,6 @@ private:
 
     void arm_vote_timeout();
     void update_node_append_timestamp(vnode);
-    void update_node_reply_timestamp(vnode);
     void maybe_update_node_reply_timestamp(vnode);
 
     void update_follower_stats(const group_configuration&);

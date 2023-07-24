@@ -77,7 +77,7 @@ ss::future<result<append_entries_reply>> replicate_entries_stm::flush_log() {
                    // we just flushed offsets are the same
                    reply.last_dirty_log_index = new_committed_offset;
                    reply.last_flushed_log_index = new_committed_offset;
-                   reply.result = append_entries_reply::status::success;
+                   reply.result = reply_status::success;
                    return ret_t(reply);
                })
                .handle_exception(
@@ -294,6 +294,7 @@ ss::future<result<replicate_result>> replicate_entries_stm::apply(units_t u) {
             auto it = _ptr->_fstats.find(rni);
             if (it != _ptr->_fstats.end()) {
                 it->second.last_sent_offset = _dirty_offset;
+                it->second.last_sent_protocol_meta = _meta;
             }
         }
         ++_requests_count;
