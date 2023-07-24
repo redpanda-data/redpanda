@@ -8,7 +8,7 @@ spec:
       containers:
         - resources:
             requests:
-              memory: 99M
+              memory: 990M
 ---
 apiVersion: redpanda.vectorized.io/v1alpha1
 kind: Cluster
