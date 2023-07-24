@@ -888,12 +888,12 @@ class ManyPartitionsTest(PreallocNodesTest):
 
     # TODO: re-enable once infra has stabilitized
     # https://github.com/redpanda-data/redpanda/issues/9569
-    # @ok_to_fail  # https://github.com/redpanda-data/redpanda/issues/8777
-    # @cluster(num_nodes=12, log_allow_list=RESTART_LOG_ALLOW_LIST)
-    # @matrix(compacted=[False])  # FIXME: run with compaction
-    # def test_many_partitions_tiered_storage(self, compacted):
-    #     self._test_many_partitions(compacted=compacted,
-    #                                tiered_storage_enabled=True)
+    @ok_to_fail  # https://github.com/redpanda-data/redpanda/issues/8777
+    @cluster(num_nodes=12, log_allow_list=RESTART_LOG_ALLOW_LIST)
+    @matrix(compacted=[False])  # FIXME: run with compaction
+    def test_many_partitions_tiered_storage(self, compacted):
+        self._test_many_partitions(compacted=compacted,
+                                   tiered_storage_enabled=True)
 
     @cluster(num_nodes=12, log_allow_list=RESTART_LOG_ALLOW_LIST)
     def test_omb(self):
