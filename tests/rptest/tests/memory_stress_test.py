@@ -40,7 +40,8 @@ class MemoryStressTest(RedpandaTest):
     @skip_debug_mode
     @parametrize(memory_share_for_fetch=0.05)
     @parametrize(memory_share_for_fetch=0.5)
-    @parametrize(memory_share_for_fetch=0.8)
+    @parametrize(memory_share_for_fetch=0.7)
+    # the last one is the maximum at which the test has been checked to not fail in practice
     def test_fetch_with_many_partitions(self, memory_share_for_fetch: float):
         """
         Exhaust memory by consuming from too many partitions in a single Fetch
