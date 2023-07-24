@@ -1529,11 +1529,15 @@ ntp_archiver::find_reupload_candidate(manifest_scanner_t scanner) {
             vlog(_rtclog.warn, "Failed to make upload candidate");
             co_return std::make_pair(std::nullopt, std::nullopt);
         }
-        if (candidate.candidate.content_length != run->meta.size_bytes) {
+        if (
+          candidate.candidate.content_length != run->meta.size_bytes
+          || candidate.candidate.starting_offset != run->meta.base_offset
+          || candidate.candidate.final_offset != run->meta.committed_offset) {
             vlog(
               _rtclog.error,
-              "Failed to make upload candidate with correct size, expected {}, "
-              "actual {}",
+              "Failed to make upload candidate to match the run, candidate: "
+              "{}, "
+              "run: {}",
               candidate.candidate,
               run->meta);
             co_return std::make_pair(std::nullopt, std::nullopt);
