@@ -411,3 +411,198 @@ SEASTAR_THREAD_TEST_CASE(
     BOOST_REQUIRE(check_compatible(
       pps::compatibility_level::full_transitive, recursive, recursive));
 }
+
+auto sanitize(std::string_view raw_proto) {
+    simple_sharded_store s;
+    return pps::make_canonical_protobuf_schema(
+             s.store,
+             pps::unparsed_schema{
+               pps::subject{"foo"},
+               pps::unparsed_schema_definition{
+                 raw_proto, pps::schema_type::protobuf}})
+      .get()
+      .def()
+      .raw()();
+}
+
+constexpr auto foobar_proto = R"(syntax = "proto3";
+package foo;
+
+import "google/protobuf/timestamp.proto";
+
+message Bar {
+  .google.protobuf.Timestamp timestamp = 1;
+}
+)";
+
+SEASTAR_THREAD_TEST_CASE(test_protobuf_sanitize_strip_comments_and_newlines) {
+    BOOST_REQUIRE_EQUAL(
+      sanitize(R"(
+
+/* comment */
+
+syntax = "proto3";
+
+/* comment */
+
+package foo;
+
+/* comment */
+
+import "google/protobuf/timestamp.proto";
+
+/* comment */
+
+message Bar {
+  google.protobuf.Timestamp timestamp = 1; //comment
+}
+
+/* comment */
+
+)"),
+      foobar_proto);
+}
+
+SEASTAR_THREAD_TEST_CASE(test_protobuf_sanitize_ordering_no_newlines) {
+    BOOST_REQUIRE_EQUAL(
+      sanitize(R"(syntax = "proto3";
+import "google/protobuf/timestamp.proto";
+package foo;
+message Bar {
+  google.protobuf.Timestamp timestamp = 1; //comment
+}
+)"),
+      foobar_proto);
+}
+
+SEASTAR_THREAD_TEST_CASE(test_protobuf_sanitize_ordering_more_newlines) {
+    BOOST_REQUIRE_EQUAL(
+      sanitize(R"(
+
+syntax = "proto3";
+
+
+import "google/protobuf/timestamp.proto";
+
+
+package foo;
+
+
+message Bar {
+  google.protobuf.Timestamp timestamp = 1; //comment
+}
+
+)"),
+      foobar_proto);
+}
+
+SEASTAR_THREAD_TEST_CASE(test_protobuf_sanitize_no_syntax) {
+    BOOST_REQUIRE_EQUAL(
+      sanitize(R"(
+package foo;
+
+import "google/protobuf/timestamp.proto";
+
+message Bar {
+  optional google.protobuf.Timestamp timestamp = 1; //comment
+}
+)"),
+      R"(syntax = "proto2";
+package foo;
+
+import "google/protobuf/timestamp.proto";
+
+message Bar {
+  optional .google.protobuf.Timestamp timestamp = 1;
+}
+)");
+}
+
+SEASTAR_THREAD_TEST_CASE(test_protobuf_sanitize_no_package) {
+    BOOST_REQUIRE_EQUAL(
+      sanitize(R"(syntax = "proto3";
+
+import "google/protobuf/timestamp.proto";
+
+message Bar {
+  google.protobuf.Timestamp timestamp = 1; //comment
+}
+)"),
+      R"(syntax = "proto3";
+
+import "google/protobuf/timestamp.proto";
+message Bar {
+  .google.protobuf.Timestamp timestamp = 1;
+}
+
+)");
+}
+
+SEASTAR_THREAD_TEST_CASE(test_protobuf_sanitize_no_syntax_package) {
+    BOOST_REQUIRE_EQUAL(
+      sanitize(R"(
+
+import "google/protobuf/timestamp.proto";
+
+message Bar {
+  optional google.protobuf.Timestamp timestamp = 1; //comment
+}
+)"),
+      R"(syntax = "proto2";
+
+import "google/protobuf/timestamp.proto";
+message Bar {
+  optional .google.protobuf.Timestamp timestamp = 1;
+}
+
+)");
+}
+
+SEASTAR_THREAD_TEST_CASE(test_protobuf_sanitize_no_imports) {
+    BOOST_REQUIRE_EQUAL(
+      sanitize(R"(syntax = "proto3";
+package foo;
+
+message Bar {
+  int64 val = 1;
+}
+)"),
+      R"(syntax = "proto3";
+
+package foo;
+
+message Bar {
+  int64 val = 1;
+}
+
+)");
+}
+
+SEASTAR_THREAD_TEST_CASE(test_protobuf_sanitize_multiple_imports) {
+    BOOST_REQUIRE_EQUAL(
+      sanitize(R"(syntax = "proto3";
+
+package foo;
+
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/any.proto";
+
+
+message Bar {
+  .google.protobuf.Timestamp timestamp = 1;
+  .google.protobuf.Any any = 2;
+}
+
+)"),
+      R"(syntax = "proto3";
+package foo;
+
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/any.proto";
+
+message Bar {
+  .google.protobuf.Timestamp timestamp = 1;
+  .google.protobuf.Any any = 2;
+}
+)");
+}
