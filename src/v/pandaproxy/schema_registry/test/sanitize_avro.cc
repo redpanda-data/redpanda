@@ -7,6 +7,7 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
+#include "pandaproxy/json/rjson_util.h"
 #include "pandaproxy/schema_registry/avro.h"
 #include "pandaproxy/schema_registry/test/compatibility_avro.h"
 #include "pandaproxy/schema_registry/types.h"
@@ -15,6 +16,7 @@
 
 namespace pp = pandaproxy;
 namespace pps = pp::schema_registry;
+namespace ppj = pp::json;
 
 pps::unparsed_schema_definition not_minimal{
   R"({
@@ -90,6 +92,193 @@ pps::canonical_schema_definition record_of_obj_sanitized{
   R"({"type":"record","name":"sort_record_of_obj","fields":[{"name":"field","type":{"type":"string","connect.parameters":{"tidb_type":"TEXT"}},"default":""}]})",
   pps::schema_type::avro};
 
+pps::unparsed_schema_definition namespace_nested_same_unsanitized{
+  R"({
+  "type": "record",
+  "name": "Example",
+  "doc": "A simple name (attribute) and no namespace attribute: use the null namespace; the fullname is 'Example'.",
+  "fields": [
+    {
+      "name": "inheritNull",
+      "type": {
+        "type": "enum",
+        "name": "Simple",
+        "doc": "A simple name (attribute) and no namespace attribute: inherit the null namespace of the enclosing type 'Example'. The fullname is 'Simple'.",
+        "symbols": [
+          "a",
+          "b"
+        ]
+      }
+    },
+    {
+      "name": "fullName",
+      "type": {
+        "type": "fixed",
+        "name": "a.full.Name",
+        "namespace": "explicit",
+        "doc": "A name (attribute) and a namespace (attribute). The fullname is 'a.full.Name', and the namespace is 'a.full'.",
+        "size": 12
+      }
+    },
+    {
+      "name": "explicitNamespace",
+      "type": {
+        "type": "record",
+        "name": "Simple",
+        "namespace": "explicit",
+        "doc": "A simple name (attribute) and a namespace (attribute); the fullname is 'explicit.Simple' (this is a different type than of the 'inheritNull' field).",
+        "fields": [
+          {
+            "name": "inheritNamespace",
+            "type": {
+              "type": "enum",
+              "name": "Understanding",
+              "doc": "A simple name (attribute) and no namespace attribute: inherit the namespace of the enclosing type 'explicit.Simple'. The fullname is 'explicit.Understanding'.",
+              "symbols": [
+                "d",
+                "e"
+              ]
+            }
+          },
+          {
+            "name": "duplicateNamespace",
+            "type": {
+              "type": "enum",
+              "name": "Reduction",
+              "namespace": "explicit",
+              "doc": "A simple name (attribute) and namespace attribute: same namespace of the enclosing type 'explicit'. The fullname is 'explicit.Reduction'.",
+              "symbols": [
+                "d",
+                "e"
+              ]
+            }
+          },
+          {
+            "name": "emptyNamespace",
+            "type": {
+              "type": "enum",
+              "name": "NullNamespace",
+              "namespace": "",
+              "doc": "A simple name (attribute) and namespace attribute: namespace is explicitly null. The fullname is 'NullNamespace'.",
+              "symbols": [
+                "d",
+                "e"
+              ]
+            }
+          },
+          {
+            "name": "emptyFullname",
+            "type": {
+              "type": "enum",
+              "name": ".NullFullname",
+              "doc": "A name (attribute) and no namespace attribute: namespace is null. The fullname is 'NullFullname'.",
+              "symbols": [
+                "d",
+                "e"
+              ]
+            }
+          }
+        ]
+      }
+    }
+  ]
+})",
+  pps::schema_type::avro};
+
+pps::canonical_schema_definition namespace_nested_same_sanitized{
+  ppj::minify(
+    R"({
+  "type": "record",
+  "name": "Example",
+  "doc": "A simple name (attribute) and no namespace attribute: use the null namespace; the fullname is 'Example'.",
+  "fields": [
+    {
+      "name": "inheritNull",
+      "type": {
+        "type": "enum",
+        "name": "Simple",
+        "doc": "A simple name (attribute) and no namespace attribute: inherit the null namespace of the enclosing type 'Example'. The fullname is 'Simple'.",
+        "symbols": [
+          "a",
+          "b"
+        ]
+      }
+    },
+    {
+      "name": "fullName",
+      "type": {
+        "type": "fixed",
+        "name": "Name",
+        "namespace": "a.full",
+        "doc": "A name (attribute) and a namespace (attribute). The fullname is 'a.full.Name', and the namespace is 'a.full'.",
+        "size": 12
+      }
+    },
+    {
+      "name": "explicitNamespace",
+      "type": {
+        "type": "record",
+        "name": "Simple",
+        "namespace": "explicit",
+        "doc": "A simple name (attribute) and a namespace (attribute); the fullname is 'explicit.Simple' (this is a different type than of the 'inheritNull' field).",
+        "fields": [
+          {
+            "name": "inheritNamespace",
+            "type": {
+              "type": "enum",
+              "name": "Understanding",
+              "doc": "A simple name (attribute) and no namespace attribute: inherit the namespace of the enclosing type 'explicit.Simple'. The fullname is 'explicit.Understanding'.",
+              "symbols": [
+                "d",
+                "e"
+              ]
+            }
+          },
+          {
+            "name": "duplicateNamespace",
+            "type": {
+              "type": "enum",
+              "name": "Reduction",
+              "doc": "A simple name (attribute) and namespace attribute: same namespace of the enclosing type 'explicit'. The fullname is 'explicit.Reduction'.",
+              "symbols": [
+                "d",
+                "e"
+              ]
+            }
+          },
+          {
+            "name": "emptyNamespace",
+            "type": {
+              "type": "enum",
+              "name": "NullNamespace",
+              "namespace": "",
+              "doc": "A simple name (attribute) and namespace attribute: namespace is explicitly null. The fullname is 'NullNamespace'.",
+              "symbols": [
+                "d",
+                "e"
+              ]
+            }
+          },
+          {
+            "name": "emptyFullname",
+            "type": {
+              "type": "enum",
+              "name": "NullFullname",
+              "namespace": "",
+              "doc": "A name (attribute) and no namespace attribute: namespace is null. The fullname is 'NullFullname'.",
+              "symbols": [
+                "d",
+                "e"
+              ]
+            }
+          }
+        ]
+      }
+    }
+  ]
+})"),
+  pps::schema_type::avro};
+
 BOOST_AUTO_TEST_CASE(test_sanitize_avro_minify) {
     BOOST_REQUIRE_EQUAL(
       pps::sanitize_avro_schema_definition(not_minimal).value(),
@@ -142,6 +331,13 @@ BOOST_AUTO_TEST_CASE(test_sanitize_record_of_obj_sorting) {
     BOOST_REQUIRE_EQUAL(
       pps::sanitize_avro_schema_definition(record_of_obj_unsanitized).value(),
       record_of_obj_sanitized);
+}
+
+BOOST_AUTO_TEST_CASE(test_namespace_nested_same) {
+    BOOST_REQUIRE_EQUAL(
+      pps::sanitize_avro_schema_definition(namespace_nested_same_unsanitized)
+        .value(),
+      namespace_nested_same_sanitized);
 }
 
 pps::canonical_schema_definition debezium_schema{
