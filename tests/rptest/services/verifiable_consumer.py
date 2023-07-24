@@ -201,7 +201,7 @@ class VerifiableConsumer(BackgroundThreadService):
                 msg = "%s: Consumed position %d is behind the current "\
                     "committed offset %d for partition %s" % \
                     (self.account_str, min_offset, self.committed[tp], str(tp))
-                if self.verify_offsets:
+                if verify_offsets:
                     raise AssertionError(msg)
                 else:
                     logger.warn(msg)
@@ -286,6 +286,7 @@ class VerifiableConsumer(BackgroundThreadService):
         # shutdown, when the first consumer is stopped, consumer group is
         # rebalanced and other consumer begin receiving from its partitions
         self.global_state = {}
+        self.interrupted_with_error = None
 
     def _worker(self, idx, node):
         state = VerifiableConsumer.WorkerState(node.account)
@@ -321,32 +322,38 @@ class VerifiableConsumer(BackgroundThreadService):
 
         for line in node.account.ssh_capture(cmd):
             event = self.try_parse_json(node, line.strip())
-            if event is not None:
-                with self.lock:
-                    name = event["name"]
-                    if name == "shutdown_complete":
-                        handler.handle_shutdown_complete()
-                    elif name == "startup_complete":
-                        handler.handle_startup_complete()
-                    elif name == "offsets_committed":
-                        handler.handle_offsets_committed(
-                            event, node, self.logger)
-                        self._update_global_committed(event, state)
-                    elif name == "records_consumed":
-                        handler.handle_records_consumed(event, self.logger)
-                        self._update_global_position(event, state)
-                    elif name == "record_data" and self.on_record_consumed:
-                        self.on_record_consumed(event, node)
-                    elif name == "partitions_revoked":
-                        handler.handle_partitions_revoked(event)
-                    elif name == "partitions_assigned":
-                        handler.handle_partitions_assigned(event)
-                    elif name == "offsets_fetched":
-                        handler.handle_offsets_fetched(event)
-                        self._update_global_committed_fetched(event, state)
-                    else:
-                        self.logger.debug("%s: ignoring unknown event: %s" %
-                                          (str(node.account), event))
+            try:
+                if event is not None:
+                    with self.lock:
+                        name = event["name"]
+                        if name == "shutdown_complete":
+                            handler.handle_shutdown_complete()
+                        elif name == "startup_complete":
+                            handler.handle_startup_complete()
+                        elif name == "offsets_committed":
+                            handler.handle_offsets_committed(
+                                event, node, self.logger)
+                            self._update_global_committed(event, state)
+                        elif name == "records_consumed":
+                            handler.handle_records_consumed(event, self.logger)
+                            self._update_global_position(event, state)
+                        elif name == "record_data" and self.on_record_consumed:
+                            self.on_record_consumed(event, node)
+                        elif name == "partitions_revoked":
+                            handler.handle_partitions_revoked(event)
+                        elif name == "partitions_assigned":
+                            handler.handle_partitions_assigned(event)
+                        elif name == "offsets_fetched":
+                            handler.handle_offsets_fetched(event)
+                            self._update_global_committed_fetched(event, state)
+                        else:
+                            self.logger.debug(
+                                "%s: ignoring unknown event: %s" %
+                                (str(node.account), event))
+            except AssertionError as e:
+                self.logger.warn(f"consumer interrupted with {e}")
+                self.interrupted_with_error = e
+                raise e
 
     def _update_global_position(self, consumed_event, state: WorkerState):
         for consumed_partition in consumed_event["partitions"]:

@@ -2758,6 +2758,10 @@ ss::future<> rm_stm::offload_aborted_txns() {
 // https://github.com/redpanda-data/redpanda/issues/6768
 ss::future<stm_snapshot> rm_stm::take_snapshot() {
     auto start_offset = _raft->start_offset();
+    vlog(
+      _ctx_log.trace,
+      "taking snapshot with last included offset of: {}",
+      model::prev_offset(_insync_offset));
 
     fragmented_vector<abort_index> abort_indexes;
     fragmented_vector<abort_index> expired_abort_indexes;

@@ -133,15 +133,21 @@ class DeleteTopicOperation(Operation):
         if self.topic is None:
             return False
         ctx.redpanda.logger.info(f"Validating topic {self.topic} deletion")
-
+        try:
+            brokers = ctx.admin().get_brokers()
+        except:
+            return False
         # since metadata in Redpanda and Kafka are eventually consistent
         # we must check all the nodes before proceeding
-        for n in ctx.redpanda.started_nodes():
+        for b in brokers:
+            n = ctx.redpanda.get_node_by_id(b["node_id"])
+            if n not in ctx.redpanda.started_nodes():
+                continue
             # we will check does topic_table contain any info about our topic and partition 0. If not we can assume that topic was deleted
             try:
-                info = ctx.admin().get_partitions(node=n,
-                                                  topic=self.topic,
-                                                  partition=0)
+                ctx.admin().get_partitions(node=n,
+                                           topic=self.topic,
+                                           partition=0)
                 ctx.redpanda.logger.info(
                     f"found deleted topic {self.topic} on node {n.account.hostname}"
                 )
@@ -227,7 +233,14 @@ class AddPartitionsOperation(Operation):
     def _current_partition_count(self, ctx):
 
         per_node_count = set()
-        for n in ctx.redpanda.started_nodes():
+        try:
+            brokers = ctx.admin().get_brokers()
+        except:
+            return None
+        for b in brokers:
+            n = ctx.redpanda.get_node_by_id(b['node_id'])
+            if n not in ctx.redpanda.started_nodes():
+                continue
             node_version = int_tuple(
                 VERSION_RE.findall(ctx.redpanda.get_version(n))[0])
             # do not query nodes with redpanda version prior to v23.1.x
@@ -462,9 +475,14 @@ class AdminOperationsFuzzer():
         self._pause_reached = False
 
     def start(self):
+        self.create_initial_entities()
+
         self.thread = threading.Thread(target=lambda: self.thread_loop(),
                                        args=())
         self.thread.daemon = True
+        self.thread.start()
+
+    def create_initial_entities(self):
         # pre-populate cluster with users and topics
         for i in range(0, self.initial_entities):
             tp = CreateTopicOperation(self.prefix, 1, self.min_replication,
@@ -476,7 +494,27 @@ class AdminOperationsFuzzer():
             self.append_to_history(user)
             user.execute(self.operation_ctx)
 
-        self.thread.start()
+    def thread_loop(self):
+        while not self._stopping.is_set():
+            with self._pause_cond:
+                if self._pause_requested:
+                    self._pause_reached = True
+                    self._pause_cond.notify()
+
+                while self._pause_requested:
+                    self._pause_cond.wait()
+
+                self._pause_reached = False
+
+            try:
+                self.execute_one()
+            except Exception as e:
+                self.error = e
+                self._stopping.set()
+
+        with self._pause_cond:
+            self._pause_reached = True
+            self._pause_cond.notify()
 
     def pause(self):
         with self._pause_cond:
@@ -498,50 +536,40 @@ class AdminOperationsFuzzer():
         d['timestamp'] = int(time.time())
         self.history.append(d)
 
-    def thread_loop(self):
-        while not self._stopping.is_set():
-            with self._pause_cond:
-                if self._pause_requested:
-                    self._pause_reached = True
-                    self._pause_cond.notify()
+    def execute_one(self):
+        op_type, op = self.make_random_operation()
+        self.append_to_history(op)
 
-                while self._pause_requested:
-                    self._pause_cond.wait()
-
-                self._pause_reached = False
-
-            op_type, op = self.make_random_operation()
-            self.append_to_history(op)
-
-            def validate_result():
-                try:
-                    return op.validate(self.operation_ctx)
-                except Exception as e:
-                    self.redpanda.logger.debug(
-                        f"Error validating operation {op_type}", exc_info=True)
-                    return False
-
+        def validate_result():
             try:
-                self.attempted += 1
-                if self.execute_with_retries(op_type, op):
-                    wait_until(validate_result,
-                               timeout_sec=self.operation_timeout,
-                               backoff_sec=1)
-                    self.executed += 1
-                    sleep(self.operations_interval)
-                else:
-                    self.redpanda.logger.info(
-                        f"Skipped operation: {op_type}, current cluster state does not allow executing the operation"
-                    )
+                return op.validate(self.operation_ctx)
             except Exception as e:
-                self.redpanda.logger.debug(f"Operation: {op_type}",
-                                           exc_info=True)
-                self.error = e
-                self._stopping.set()
+                self.redpanda.logger.debug(
+                    f"Error validating operation {op_type}", exc_info=True)
+                return False
 
-        with self._pause_cond:
-            self._pause_reached = True
-            self._pause_cond.notify()
+        try:
+            self.attempted += 1
+            if self.execute_with_retries(op_type, op):
+                wait_until(
+                    validate_result,
+                    timeout_sec=self.operation_timeout,
+                    backoff_sec=1,
+                    err_msg=
+                    f"Timeout waiting for {op.describe()} operation validation"
+                )
+                self.executed += 1
+                sleep(self.operations_interval)
+                return True
+            else:
+                self.redpanda.logger.info(
+                    f"Skipped operation: {op_type}, current cluster state does not allow executing the operation"
+                )
+                return False
+        except Exception as e:
+            self.redpanda.logger.error(f"Operation: {op.describe()} failed",
+                                       exc_info=True)
+            raise e
 
     def execute_with_retries(self, op_type, op):
         self.redpanda.logger.info(
