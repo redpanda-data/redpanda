@@ -200,7 +200,7 @@ void client_probe::setup_internal_metrics(
           sm::description("Lease duration histogram"),
           labels),
         sm::make_gauge(
-          "client_pool_utiliazation",
+          "client_pool_utilization",
           [this] { return _pool_utilization; },
           sm::description("Utilization of the cloud storage pool(0 - unused, "
                           "100 - fully utilized)"),
@@ -282,7 +282,7 @@ void client_probe::setup_public_metrics(
           sm::description("Lease duration histogram"),
           labels),
         sm::make_gauge(
-          "client_pool_utiliazation",
+          "client_pool_utilization",
           [this] { return _pool_utilization; },
           sm::description("Utilization of the cloud storage pool(0 - unused, "
                           "100 - fully utilized)"),
