@@ -93,11 +93,20 @@ class HighThroughputTest2(PreallocNodesTest):
             f"Producing {msg_count} messages of {msg_size} B, "
             f"{msg_count*msg_size} B total, target rate {ingress_rate} B/s")
 
+        # if this is a redpanda cloud cluster,
+        # use the default test superuser user/pass
+        security_config = self.redpanda.security_config()
+        username = security_config.get('sasl_plain_username', None)
+        password = security_config.get('sasl_plain_password', None)
+        enable_tls = security_config.get('enable_tls', False)
         producer0 = KgoVerifierProducer(self.test_context,
                                         self.redpanda,
                                         self.topic,
                                         msg_size=msg_size,
-                                        msg_count=msg_count)
+                                        msg_count=msg_count,
+                                        username=username,
+                                        password=password,
+                                        enable_tls=enable_tls)
         producer0.start()
         start = time.time()
 

@@ -40,7 +40,12 @@ class KafkaCliTools:
     # See tests/docker/Dockerfile to add new versions
     VERSIONS = ("3.0.0", "2.7.0", "2.5.0", "2.4.1", "2.3.1")
 
-    def __init__(self, redpanda, version=None, user=None, passwd=None):
+    def __init__(self,
+                 redpanda,
+                 version=None,
+                 user=None,
+                 passwd=None,
+                 protocol='SASL_PLAINTEXT'):
         self._redpanda = redpanda
         self._version = version
         assert self._version is None or \
@@ -50,7 +55,7 @@ class KafkaCliTools:
             self._command_config = tempfile.NamedTemporaryFile(mode="w")
             config = f"""
 sasl.mechanism=SCRAM-SHA-256
-security.protocol=SASL_PLAINTEXT
+security.protocol={protocol}
 sasl.jaas.config=org.apache.kafka.common.security.scram.ScramLoginModule required username="{user}" password="{passwd}";
 """
             self._command_config.write(config)

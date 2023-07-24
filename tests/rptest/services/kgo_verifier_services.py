@@ -29,8 +29,17 @@ class KgoVerifierService(Service):
     To validate produced record user should run consumer and producer in one node.
     Use ctx.cluster.alloc(ClusterSpec.simple_linux(1)) to allocate node and pass it to constructor
     """
-    def __init__(self, context, redpanda, topic, msg_size, custom_node,
-                 debug_logs, trace_logs):
+    def __init__(self,
+                 context,
+                 redpanda,
+                 topic,
+                 msg_size,
+                 custom_node,
+                 debug_logs,
+                 trace_logs,
+                 username=None,
+                 password=None,
+                 enable_tls=False):
         self.use_custom_node = custom_node is not None
 
         # We should pass num_nodes to allocate for our service in BackgroundThreadService,
@@ -55,6 +64,9 @@ class KgoVerifierService(Service):
         self._remote_port = None
         self._debug_logs = debug_logs
         self._trace_logs = trace_logs
+        self._username = username
+        self._password = password
+        self._enable_tls = enable_tls
 
         for node in self.nodes:
             if not hasattr(node, "kgo_verifier_ports"):
@@ -495,10 +507,14 @@ class KgoVerifierProducer(KgoVerifierService):
                  transaction_abort_rate=None,
                  msgs_per_transaction=None,
                  rate_limit_bps=None,
-                 key_set_cardinality=None):
+                 key_set_cardinality=None,
+                 username=None,
+                 password=None,
+                 enable_tls=False):
         super(KgoVerifierProducer,
               self).__init__(context, redpanda, topic, msg_size, custom_node,
-                             debug_logs, trace_logs)
+                             debug_logs, trace_logs, username, password,
+                             enable_tls)
         self._msg_count = msg_count
         self._status = ProduceStatus()
         self._batch_max_bytes = batch_max_bytes
@@ -565,6 +581,15 @@ class KgoVerifierProducer(KgoVerifierService):
 
         cmd = f"{TESTS_DIR}/kgo-verifier --brokers {self._redpanda.brokers()} --topic {self._topic} --msg_size {self._msg_size} --produce_msgs {self._msg_count} --rand_read_msgs 0 --seq_read=0 --client-name {self.who_am_i()}"
 
+        if self._username is not None:
+            cmd = cmd + f' --username {self._username}'
+
+        if self._password is not None:
+            cmd = cmd + f' --password {self._password}'
+
+        if self._enable_tls:
+            cmd = cmd + f' --enable-tls'
+
         if self._batch_max_bytes is not None:
             cmd = cmd + f' --batch_max_bytes {self._batch_max_bytes}'
 
@@ -608,10 +633,14 @@ class KgoVerifierSeqConsumer(KgoVerifierService):
             debug_logs=False,
             trace_logs=False,
             loop=True,
-            producer: Optional[KgoVerifierProducer] = None):
+            producer: Optional[KgoVerifierProducer] = None,
+            username: Optional[str] = None,
+            password: Optional[str] = None,
+            enable_tls: Optional[bool] = False):
         super(KgoVerifierSeqConsumer,
               self).__init__(context, redpanda, topic, msg_size, nodes,
-                             debug_logs, trace_logs)
+                             debug_logs, trace_logs, username, password,
+                             enable_tls)
         self._max_msgs = max_msgs
         self._max_throughput_mb = max_throughput_mb
         self._status = ConsumerStatus()
@@ -628,6 +657,12 @@ class KgoVerifierSeqConsumer(KgoVerifierService):
 
         loop = "--loop" if self._loop else ""
         cmd = f"{TESTS_DIR}/kgo-verifier --brokers {self._redpanda.brokers()} --topic {self._topic} --produce_msgs 0 --rand_read_msgs 0 --seq_read=1 {loop} --client-name {self.who_am_i()}"
+        if self._username is not None:
+            cmd = cmd + f' --username {self._username}'
+        if self._password is not None:
+            cmd = cmd + f' --password {self._password}'
+        if self._enable_tls:
+            cmd = cmd + f' --enable-tls'
         if self._max_msgs is not None:
             cmd += f" --seq_read_msgs {self._max_msgs}"
         if self._max_throughput_mb is not None:
@@ -678,9 +713,12 @@ class KgoVerifierRandomConsumer(KgoVerifierService):
                  parallel,
                  nodes=None,
                  debug_logs=False,
-                 trace_logs=False):
+                 trace_logs=False,
+                 username=None,
+                 password=None,
+                 enable_tls=False):
         super().__init__(context, redpanda, topic, msg_size, nodes, debug_logs,
-                         trace_logs)
+                         trace_logs, username, password, enable_tls)
         self._rand_read_msgs = rand_read_msgs
         self._parallel = parallel
         self._status = ConsumerStatus()
@@ -694,6 +732,13 @@ class KgoVerifierRandomConsumer(KgoVerifierService):
             self.clean_node(node)
 
         cmd = f"{TESTS_DIR}/kgo-verifier --brokers {self._redpanda.brokers()} --topic {self._topic} --produce_msgs 0 --rand_read_msgs {self._rand_read_msgs} --parallel {self._parallel} --seq_read=0 --loop --client-name {self.who_am_i()}"
+        if self._username is not None:
+            cmd = cmd + f' --username {self._username}'
+        if self._password is not None:
+            cmd = cmd + f' --password {self._password}'
+        if self._enable_tls:
+            cmd = cmd + f' --enable-tls'
+
         self.spawn(cmd, node)
 
         self._status_thread = StatusThread(self, node, ConsumerStatus)
@@ -712,9 +757,12 @@ class KgoVerifierConsumerGroupConsumer(KgoVerifierService):
                  max_throughput_mb=None,
                  nodes=None,
                  debug_logs=False,
-                 trace_logs=False):
+                 trace_logs=False,
+                 username=None,
+                 password=None,
+                 enable_tls=False):
         super().__init__(context, redpanda, topic, msg_size, nodes, debug_logs,
-                         trace_logs)
+                         trace_logs, username, password, enable_tls)
 
         self._readers = readers
         self._loop = loop
@@ -731,6 +779,12 @@ class KgoVerifierConsumerGroupConsumer(KgoVerifierService):
             self.clean_node(node)
 
         cmd = f"{TESTS_DIR}/kgo-verifier --brokers {self._redpanda.brokers()} --topic {self._topic} --produce_msgs 0 --rand_read_msgs 0 --seq_read=0 --consumer_group_readers={self._readers} --client-name {self.who_am_i()}"
+        if self._username is not None:
+            cmd = cmd + f' --username {self._username}'
+        if self._password is not None:
+            cmd = cmd + f' --password {self._password}'
+        if self._enable_tls:
+            cmd = cmd + f' --enable-tls'
         if self._loop:
             cmd += " --loop"
         if self._max_msgs is not None:
