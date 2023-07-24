@@ -12,8 +12,10 @@
 #include "cloud_storage/tests/produce_utils.h"
 #include "cluster/types.h"
 #include "config/configuration.h"
+#include "kafka/server/tests/list_offsets_utils.h"
 #include "kafka/server/tests/produce_consume_utils.h"
 #include "model/fundamental.h"
+#include "redpanda/tests/fixture.h"
 #include "storage/disk_log_impl.h"
 
 #include <seastar/core/io_priority_class.hh>
@@ -259,32 +261,169 @@ public:
     ss::future<> switch_leader(int node_idx);
 
     ss::future<> run_workload(std::vector<test_op> ops);
+    ss::future<> validate_consume();
+
+    // Set up the second fixture and index them in 'fixtures' based on who is
+    // the first partition leader.
+    void initialize_fixtures() {
+        vassert(second_fixture == nullptr, "Fixture already initialized");
+        config::shard_local_cfg().enable_leader_balancer.set_value(false);
+        second_fixture = start_second_fixture();
+        tests::cooperative_spin_wait_with_timeout(3s, [this] {
+            return app.controller->get_members_table().local().node_ids().size()
+                   == 2;
+        }).get();
+        cluster::topic_properties props;
+        props.shadow_indexing = model::shadow_indexing_mode::full;
+        props.cleanup_policy_bitflags
+          = model::cleanup_policy_bitflags::compaction
+            | model::cleanup_policy_bitflags::deletion;
+        add_topic({model::kafka_namespace, topic_name}, 1, props, 2).get();
+        boost_require_eventually(15s, [&] {
+            cluster::partition* prt_a
+              = app.partition_manager.local().get(ntp).get();
+            cluster::partition* prt_b
+              = second_fixture->app.partition_manager.local().get(ntp).get();
+            if (!prt_a || !prt_b) {
+                return false;
+            }
+            if (prt_a->is_leader()) {
+                fixtures.emplace_back(this);
+                fixtures.emplace_back(second_fixture.get());
+                return true;
+            }
+            if (prt_b->is_leader()) {
+                fixtures.emplace_back(second_fixture.get());
+                fixtures.emplace_back(this);
+                return true;
+            }
+            return false;
+        });
+        for (auto* f : fixtures) {
+            produce_transports.emplace_back(f->make_kafka_client().get());
+            produce_transports.back().start().get();
+            consume_transports.emplace_back(f->make_kafka_client().get());
+            consume_transports.back().start().get();
+            list_transports.emplace_back(f->make_kafka_client().get());
+            list_transports.back().start().get();
+        }
+    }
+
+private:
+    int cur_leader_idx{0};
+    std::unique_ptr<redpanda_thread_fixture> second_fixture;
+    std::vector<redpanda_thread_fixture*> fixtures;
+    std::vector<tests::kafka_produce_transport> produce_transports;
+    std::vector<tests::kafka_consume_transport> consume_transports;
+    std::vector<tests::kafka_list_offsets_transport> list_transports;
 };
 
 ss::future<>
 cloud_storage_e2e_fuzz_test::produce(int num_records, int cardinality) {
-    co_return;
+    auto& producer = produce_transports[cur_leader_idx];
+    for (int i = 0; i < num_records; i++) {
+        co_await producer.produce_to_partition(
+          topic_name,
+          model::partition_id(0),
+          tests::kv_t::sequence(i % cardinality, 1));
+    }
 }
 
 ss::future<> cloud_storage_e2e_fuzz_test::local_roll(int node_idx) {
-    co_return;
+    auto* prt
+      = fixtures[node_idx]->app.partition_manager.local().get(ntp).get();
+    auto* log = dynamic_cast<storage::disk_log_impl*>(prt->log().get());
+    co_await log->flush();
+    co_await log->force_roll(ss::default_priority_class());
 }
 
 ss::future<>
 cloud_storage_e2e_fuzz_test::local_gc(int node_idx, int num_segments) {
-    co_return;
+    auto* prt
+      = fixtures[node_idx]->app.partition_manager.local().get(ntp).get();
+    auto* log = dynamic_cast<storage::disk_log_impl*>(prt->log().get());
+    co_await log->flush();
+    size_t total_size = 0;
+    size_t size_to_remove = 0;
+    for (int i = 0; i < log->segment_count(); i++) {
+        const auto size = log->segments()[i]->size_bytes();
+        if (i < num_segments) {
+            size_to_remove += size;
+        }
+        total_size += size;
+    }
+    size_t size_to_retain = total_size - size_to_remove;
+    storage::gc_config cfg(model::timestamp::min(), size_to_retain);
+    co_await log->gc(cfg);
+    // XXX: a later commit will replace this with a wait on the eviction_stm.
+    co_await ss::sleep(1s);
 }
 
 ss::future<> cloud_storage_e2e_fuzz_test::local_compact(int node_idx) {
-    co_return;
+    ss::abort_source as;
+    auto* prt
+      = fixtures[node_idx]->app.partition_manager.local().get(ntp).get();
+    storage::housekeeping_config compact_all_cfg(
+      model::timestamp::min(),
+      std::nullopt,
+      prt->archival_meta_stm()->max_collectible_offset(),
+      ss::default_priority_class(),
+      as);
+    auto* log = dynamic_cast<storage::disk_log_impl*>(prt->log().get());
+    co_await log->housekeeping(compact_all_cfg);
 }
 
-ss::future<> cloud_storage_e2e_fuzz_test::upload_segments() { co_return; }
+ss::future<> cloud_storage_e2e_fuzz_test::upload_segments() {
+    auto* prt
+      = fixtures[cur_leader_idx]->app.partition_manager.local().get(ntp).get();
+    auto& archiver = prt->archiver()->get();
+    BOOST_REQUIRE(co_await archiver.sync_for_tests());
+    auto res = co_await archiver.upload_next_candidates();
+    BOOST_REQUIRE_EQUAL(0, res.compacted_upload_result.num_failed);
+    BOOST_REQUIRE_EQUAL(0, res.non_compacted_upload_result.num_failed);
+}
 
-ss::future<> cloud_storage_e2e_fuzz_test::upload_manifest() { co_return; }
+ss::future<> cloud_storage_e2e_fuzz_test::upload_manifest() {
+    auto* prt
+      = fixtures[cur_leader_idx]->app.partition_manager.local().get(ntp).get();
+    auto& archiver = prt->archiver()->get();
+
+    BOOST_REQUIRE(co_await archiver.sync_for_tests());
+    auto res = co_await archiver.upload_manifest("test");
+    BOOST_REQUIRE_EQUAL(cloud_storage::upload_result::success, res);
+    co_await archiver.flush_manifest_clean_offset();
+}
 
 ss::future<> cloud_storage_e2e_fuzz_test::switch_leader(int node_idx) {
-    co_return;
+    auto* prt_l
+      = fixtures[cur_leader_idx]->app.partition_manager.local().get(ntp).get();
+    auto* prt_f
+      = fixtures[node_idx]->app.partition_manager.local().get(ntp).get();
+    cluster::transfer_leadership_request transfer_req{
+      .group = prt_l->raft()->group(),
+      .target = prt_f->raft()->self().id(),
+    };
+    auto transfer_resp = co_await prt_l->raft()->transfer_leadership(
+      transfer_req);
+    BOOST_REQUIRE(transfer_resp.success);
+    co_await tests::cooperative_spin_wait_with_timeout(
+      3s, [&] { return prt_f->is_leader(); });
+    cur_leader_idx = node_idx;
+}
+
+ss::future<> cloud_storage_e2e_fuzz_test::validate_consume() {
+    auto& lister = list_transports[cur_leader_idx];
+    auto start_offset = co_await lister.start_offset_for_partition(
+      topic_name, model::partition_id(0));
+    auto hwm = co_await lister.high_watermark_for_partition(
+      topic_name, model::partition_id(0));
+
+    auto& consumer = consume_transports[cur_leader_idx];
+    for (auto i = start_offset(); i < hwm(); i++) {
+        vlog(fuzz_log.debug, "Consuming from offset {}", i);
+        co_await consumer.consume_from_partition(
+          topic_name, model::partition_id(0), model::offset(i));
+    }
 }
 
 ss::future<>
@@ -324,6 +463,7 @@ cloud_storage_e2e_fuzz_test::run_workload(std::vector<test_op> ops) {
             co_await switch_leader(op.arg1);
             break;
         }
+        co_await validate_consume();
     }
 }
 
@@ -332,5 +472,6 @@ FIXTURE_TEST(e2e_fuzz, cloud_storage_e2e_fuzz_test) {
     for (const auto& op : ops) {
         vlog(fuzz_log.info, "  {},", op.to_string());
     }
+    initialize_fixtures();
     run_workload(std::move(ops)).get();
 }
