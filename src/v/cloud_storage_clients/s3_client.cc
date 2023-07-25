@@ -128,10 +128,7 @@ result<http::client::request_header> request_creator::make_head_object_request(
 
 result<http::client::request_header>
 request_creator::make_unsigned_put_object_request(
-  bucket_name const& name,
-  object_key const& key,
-  size_t payload_size_bytes,
-  const object_tag_formatter& tags) {
+  bucket_name const& name, object_key const& key, size_t payload_size_bytes) {
     // PUT /my-image.jpg HTTP/1.1
     // Host: myBucket.s3.<Region>.amazonaws.com
     // Date: Wed, 12 Oct 2009 17:50:00 GMT
@@ -154,10 +151,6 @@ request_creator::make_unsigned_put_object_request(
     header.insert(
       boost::beast::http::field::content_length,
       std::to_string(payload_size_bytes));
-
-    if (!tags.empty()) {
-        header.insert(aws_header_names::x_amz_tagging, tags.str());
-    }
 
     auto ec = _apply_credentials->add_auth(header);
     if (ec) {
@@ -624,10 +617,9 @@ ss::future<result<s3_client::no_response, error_outcome>> s3_client::put_object(
   object_key const& key,
   size_t payload_size,
   ss::input_stream<char> body,
-  const object_tag_formatter& tags,
   ss::lowres_clock::duration timeout) {
     return send_request(
-      do_put_object(name, key, payload_size, std::move(body), tags, timeout)
+      do_put_object(name, key, payload_size, std::move(body), timeout)
         .then(
           []() { return ss::make_ready_future<no_response>(no_response{}); }),
       name,
@@ -639,10 +631,9 @@ ss::future<> s3_client::do_put_object(
   object_key const& id,
   size_t payload_size,
   ss::input_stream<char> body,
-  const object_tag_formatter& tags,
   ss::lowres_clock::duration timeout) {
     auto header = _requestor.make_unsigned_put_object_request(
-      name, id, payload_size, tags);
+      name, id, payload_size);
     if (!header) {
         return body.close().then([header] {
             return ss::make_exception_future<>(

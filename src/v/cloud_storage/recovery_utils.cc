@@ -68,14 +68,11 @@ ss::future<> place_download_result(
   retry_chain_node& parent) {
     retry_chain_node fib{&parent};
     auto result_path = generate_result_path(ntp_cfg, result_completed);
-    cloud_storage_clients::object_tag_formatter tags{
-      {"rp-type", "download-result"}};
     auto result = co_await remote.upload_object(
       bucket,
       cloud_storage_clients::object_key{result_path},
       iobuf{},
       fib,
-      tags,
       "download result file");
     if (result != upload_result::success) {
         vlog(

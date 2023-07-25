@@ -354,7 +354,6 @@ SEASTAR_TEST_CASE(test_put_object_success) {
             cloud_storage_clients::object_key("test"),
             expected_payload_size,
             std::move(payload_stream),
-            {},
             100ms)
           .get();
         // shouldn't throw
@@ -378,7 +377,6 @@ SEASTAR_TEST_CASE(test_put_object_failure) {
                                 cloud_storage_clients::object_key("test-error"),
                                 expected_payload_size,
                                 std::move(payload_stream),
-                                {},
                                 100ms)
                               .get();
         BOOST_REQUIRE(!result);

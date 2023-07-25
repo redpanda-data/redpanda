@@ -99,8 +99,6 @@ static iobuf make_iobuf_from_string(std::string_view s) {
     return b;
 }
 
-static const cloud_storage_clients::object_tag_formatter upload_tags{{}};
-
 struct noop_mixin_t {};
 
 template<model::cloud_storage_backend backend>
@@ -605,8 +603,7 @@ FIXTURE_TEST(test_list_bucket, remote_fixture) {
                 cloud_storage_clients::object_key path{
                   fmt::format("{}/{}/{}", i, j, k)};
                 auto result = remote.local()
-                                .upload_object(
-                                  bucket, path, iobuf{}, fib, upload_tags)
+                                .upload_object(bucket, path, iobuf{}, fib)
                                 .get();
                 BOOST_REQUIRE_EQUAL(
                   cloud_storage::upload_result::success, result);
@@ -652,10 +649,8 @@ FIXTURE_TEST(test_list_bucket_with_prefix, remote_fixture) {
         for (const char second : {'a', 'b'}) {
             cloud_storage_clients::object_key path{
               fmt::format("{}/{}", first, second)};
-            auto result = remote.local()
-                            .upload_object(
-                              bucket, path, iobuf{}, fib, upload_tags)
-                            .get();
+            auto result
+              = remote.local().upload_object(bucket, path, iobuf{}, fib).get();
             BOOST_REQUIRE_EQUAL(cloud_storage::upload_result::success, result);
         }
     }
@@ -681,9 +676,8 @@ FIXTURE_TEST(test_list_bucket_with_filter, remote_fixture) {
     retry_chain_node fib(never_abort, 100ms, 20ms);
     cloud_storage_clients::bucket_name bucket{"test"};
     cloud_storage_clients::object_key path{"b"};
-    auto upl_result = remote.local()
-                        .upload_object(bucket, path, iobuf{}, fib, upload_tags)
-                        .get();
+    auto upl_result
+      = remote.local().upload_object(bucket, path, iobuf{}, fib).get();
     BOOST_REQUIRE_EQUAL(cloud_storage::upload_result::success, upl_result);
 
     auto result = remote.local()
@@ -708,11 +702,10 @@ FIXTURE_TEST(test_put_string, remote_fixture) {
     retry_chain_node fib(never_abort, 100ms, 20ms);
 
     cloud_storage_clients::object_key path{"p"};
-    auto result
-      = remote.local()
-          .upload_object(
-            bucket, path, make_iobuf_from_string("p"), fib, upload_tags)
-          .get();
+    auto result = remote.local()
+                    .upload_object(
+                      bucket, path, make_iobuf_from_string("p"), fib)
+                    .get();
     BOOST_REQUIRE_EQUAL(cloud_storage::upload_result::success, result);
 
     auto request = get_requests()[0];
@@ -771,8 +764,7 @@ FIXTURE_TEST(test_delete_objects_on_unknown_backend, gcs_remote_fixture) {
           bucket,
           cloud_storage_clients::object_key{"p"},
           make_iobuf_from_string("p"),
-          fib,
-          upload_tags)
+          fib)
         .get());
     BOOST_REQUIRE_EQUAL(
       cloud_storage::upload_result::success,
@@ -781,8 +773,7 @@ FIXTURE_TEST(test_delete_objects_on_unknown_backend, gcs_remote_fixture) {
           bucket,
           cloud_storage_clients::object_key{"q"},
           make_iobuf_from_string("q"),
-          fib,
-          upload_tags)
+          fib)
         .get());
 
     std::vector<cloud_storage_clients::object_key> to_delete{
@@ -818,8 +809,7 @@ FIXTURE_TEST(
           bucket,
           cloud_storage_clients::object_key{"p"},
           make_iobuf_from_string("p"),
-          fib,
-          upload_tags)
+          fib)
         .get());
 
     std::vector<cloud_storage_clients::object_key> to_delete{

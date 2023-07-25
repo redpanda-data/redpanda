@@ -1068,7 +1068,6 @@ struct finalize_data {
     model::initial_revision_id revision;
     cloud_storage_clients::bucket_name bucket;
     cloud_storage_clients::object_key key;
-    cloud_storage_clients::object_tag_formatter tags;
     iobuf serialized_manifest;
     model::offset insync_offset;
 };
@@ -1123,7 +1122,6 @@ ss::future<> finalize_background(remote& api, finalize_data data) {
           data.key,
           std::move(data.serialized_manifest),
           local_rtc,
-          data.tags,
           "manifest");
 
         if (manifest_put_result != upload_result::success) {
@@ -1167,8 +1165,6 @@ void remote_partition::finalize() {
       .bucket = _bucket,
       .key
       = cloud_storage_clients::object_key{stm_manifest.get_manifest_path()()},
-      .tags = cloud_storage::remote::make_partition_manifest_tags(
-        stm_manifest.get_ntp(), stm_manifest.get_revision_id()),
       .serialized_manifest = std::move(serialized_manifest),
       .insync_offset = stm_manifest.get_insync_offset()};
 

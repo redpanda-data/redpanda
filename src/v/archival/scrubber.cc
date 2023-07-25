@@ -548,8 +548,6 @@ scrubber::write_remote_lifecycle_marker(
       marker_key,
       serde::to_iobuf(std::move(remote_marker)),
       marker_rtc,
-      _api.make_lifecycle_marker_tags(
-        nt_revision.nt.ns, nt_revision.nt.tp, nt_revision.initial_revision_id),
       "remote_lifecycle_marker");
 }
 

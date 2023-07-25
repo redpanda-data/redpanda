@@ -116,17 +116,6 @@ enum class api_activity_notification {
 /// things like reconnects, backpressure and backoff.
 class remote : public ss::peering_sharded_service<remote> {
 public:
-    /// Default tags applied to objects
-    static const cloud_storage_clients::object_tag_formatter
-      default_segment_tags;
-    static const cloud_storage_clients::object_tag_formatter
-      default_partition_manifest_tags;
-    static const cloud_storage_clients::object_tag_formatter
-      default_topic_manifest_tags;
-    static const cloud_storage_clients::object_tag_formatter default_index_tags;
-    static const cloud_storage_clients::object_tag_formatter
-      default_lifecycle_marker_tags;
-
     /// Functor that returns fresh input_stream object that can be used
     /// to re-upload and will return all data that needs to be uploaded
     using reset_input_stream = ss::noncopyable_function<
@@ -247,9 +236,7 @@ public:
     ss::future<upload_result> upload_manifest(
       const cloud_storage_clients::bucket_name& bucket,
       const base_manifest& manifest,
-      retry_chain_node& parent,
-      const cloud_storage_clients::object_tag_formatter& tags
-      = default_partition_manifest_tags);
+      retry_chain_node& parent);
 
     /// \brief Upload segment to S3
     ///
@@ -265,9 +252,7 @@ public:
       uint64_t content_length,
       const reset_input_stream& reset_str,
       retry_chain_node& parent,
-      lazy_abort_source& lazy_abort_source,
-      const cloud_storage_clients::object_tag_formatter& tags
-      = default_segment_tags);
+      lazy_abort_source& lazy_abort_source);
 
     /// \brief Download segment from S3
     ///
@@ -361,7 +346,6 @@ public:
       const cloud_storage_clients::object_key& object_path,
       iobuf payload,
       retry_chain_node& parent,
-      const cloud_storage_clients::object_tag_formatter& tags,
       const char* log_object_type = "object");
 
     ss::future<download_result> do_download_manifest(
@@ -432,28 +416,6 @@ public:
     /// \return the future which will be available after the next cloud storage
     ///         API operation.
     ss::future<api_activity_notification> subscribe(event_filter& filter);
-
-    /// Add partition manifest tags (includes partition id)
-    static cloud_storage_clients::object_tag_formatter
-    make_partition_manifest_tags(
-      const model::ntp& ntp, model::initial_revision_id rev);
-    /// Add topic manifest tags (no partition id)
-    static cloud_storage_clients::object_tag_formatter make_topic_manifest_tags(
-      const model::topic_namespace& ntp, model::initial_revision_id rev);
-    /// Add segment level tags
-    static cloud_storage_clients::object_tag_formatter
-    make_segment_tags(const model::ntp& ntp, model::initial_revision_id rev);
-    /// Add tags for tx-manifest
-    static cloud_storage_clients::object_tag_formatter make_tx_manifest_tags(
-      const model::ntp& ntp, model::initial_revision_id rev);
-
-    static cloud_storage_clients::object_tag_formatter make_segment_index_tags(
-      const model::ntp& ntp, model::initial_revision_id rev);
-    static cloud_storage_clients::object_tag_formatter
-    make_lifecycle_marker_tags(
-      const model::ns& ns,
-      const model::topic& topic,
-      const model::initial_revision_id rev);
 
     // If you need to spawn a background task that relies on
     // this object staying alive, spawn it with this gate.

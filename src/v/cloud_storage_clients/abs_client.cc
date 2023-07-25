@@ -40,7 +40,6 @@ constexpr std::array<boost::beast::http::status, 6> retryable_http_codes = {
 constexpr boost::beast::string_view content_type_value = "text/plain";
 constexpr boost::beast::string_view blob_type_value = "BlockBlob";
 constexpr boost::beast::string_view blob_type_name = "x-ms-blob-type";
-constexpr boost::beast::string_view tags_name = "x-ms-tags";
 constexpr boost::beast::string_view delete_snapshot_name
   = "x-ms-delete-snapshots";
 constexpr boost::beast::string_view delete_snapshot_value = "include";
@@ -129,15 +128,11 @@ result<http::client::request_header> abs_request_creator::make_get_blob_request(
 }
 
 result<http::client::request_header> abs_request_creator::make_put_blob_request(
-  bucket_name const& name,
-  object_key const& key,
-  size_t payload_size_bytes,
-  const object_tag_formatter& tags) {
+  bucket_name const& name, object_key const& key, size_t payload_size_bytes) {
     // PUT /{container-id}/{blob-id} HTTP/1.1
     // Host: {storage-account-id}.blob.core.windows.net
     // x-ms-date:{req-datetime in RFC9110} # added by 'add_auth'
     // x-ms-version:"2021-08-06"           # added by 'add_auth'
-    // x-ms-tags:{object-formatter-tags}
     // Authorization:{signature}           # added by 'add_auth'
     // Content-Length:{payload-size}
     // Content-Type: text/plain
@@ -153,10 +148,6 @@ result<http::client::request_header> abs_request_creator::make_put_blob_request(
       boost::beast::http::field::content_length,
       std::to_string(payload_size_bytes));
     header.insert(blob_type_name, blob_type_value);
-
-    if (!tags.empty()) {
-        header.insert(tags_name, tags.str());
-    }
 
     auto error_code = _apply_credentials->add_auth(header);
     if (error_code) {
@@ -429,10 +420,9 @@ abs_client::put_object(
   object_key const& key,
   size_t payload_size,
   ss::input_stream<char> body,
-  const object_tag_formatter& tags,
   ss::lowres_clock::duration timeout) {
     return send_request(
-      do_put_object(name, key, payload_size, std::move(body), tags, timeout)
+      do_put_object(name, key, payload_size, std::move(body), timeout)
         .then(
           []() { return ss::make_ready_future<no_response>(no_response{}); }),
       name,
@@ -445,10 +435,8 @@ ss::future<> abs_client::do_put_object(
   object_key const& key,
   size_t payload_size,
   ss::input_stream<char> body,
-  const object_tag_formatter& tags,
   ss::lowres_clock::duration timeout) {
-    auto header = _requestor.make_put_blob_request(
-      name, key, payload_size, tags);
+    auto header = _requestor.make_put_blob_request(name, key, payload_size);
     if (!header) {
         co_await body.close();
 
