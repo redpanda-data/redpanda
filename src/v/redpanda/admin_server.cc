@@ -4007,6 +4007,13 @@ void fill_raft_state(
             raft_state.followers.push(std::move(follower_state));
         }
     }
+    for (const auto& stm : state.raft_state.stms) {
+        ss::httpd::debug_json::stm_state state;
+        state.name = stm.name;
+        state.last_applied_offset = stm.last_applied_offset;
+        state.max_collectible_offset = stm.last_applied_offset;
+        raft_state.stms.push(std::move(state));
+    }
     replica.raft_state = std::move(raft_state);
 }
 } // namespace

@@ -3489,10 +3489,26 @@ struct partition_state_request
     auto serde_fields() { return std::tie(ntp); }
 };
 
+struct partition_stm_state
+  : serde::envelope<
+      partition_stm_state,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    using rpc_adl_exempt = std::true_type;
+
+    ss::sstring name;
+    model::offset last_applied_offset;
+    model::offset max_collectible_offset;
+
+    auto serde_fields() {
+        return std::tie(name, last_applied_offset, max_collectible_offset);
+    }
+};
+
 struct partition_raft_state
   : serde::envelope<
       partition_raft_state,
-      serde::version<0>,
+      serde::version<1>,
       serde::compat_version<0>> {
     using rpc_adl_exempt = std::true_type;
 
@@ -3513,6 +3529,7 @@ struct partition_raft_state
     bool has_pending_flushes;
     bool is_leader;
     bool is_elected_leader;
+    std::vector<partition_stm_state> stms;
 
     struct follower_state
       : serde::envelope<
@@ -3577,7 +3594,8 @@ struct partition_raft_state
           has_pending_flushes,
           is_leader,
           is_elected_leader,
-          followers);
+          followers,
+          stms);
     }
 
     friend bool

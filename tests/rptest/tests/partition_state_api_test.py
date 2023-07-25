@@ -26,6 +26,9 @@ class PartitionStateAPItest(RedpandaTest):
             leaders = list(
                 filter(lambda r: r["raft_state"]["is_elected_leader"],
                        s["replicas"]))
+            stms = list(
+                filter(lambda r: r["raft_state"]["stms"], s["replicas"]))
+            assert all(map(lambda stm: len(stm) > 0, stms)), stms
             assert (has_leader
                     and len(leaders) == 1) or (not has_leader
                                                and len(leaders) == 0), leaders
