@@ -39,7 +39,7 @@ class AdjacentSegmentMergingTest(RedpandaTest):
         si_settings = SISettings(
             test_context,
             cloud_storage_max_connections=10,
-            log_segment_size=0x10000,
+            log_segment_size=1024 * 1024,
             cloud_storage_segment_max_upload_interval_sec=1,
             cloud_storage_enable_remote_write=True)
 
