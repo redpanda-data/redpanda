@@ -1466,6 +1466,10 @@ class RedpandaService(Service):
             [f"{k}={v}" for (k, v) in self._environment.items()])
         rpk = RpkRemoteTool(self, node)
 
+        _, args = self._resource_settings.to_cli(
+            dedicated_node=self._dedicated_nodes)
+        additional_args += " " + args
+
         def start_rp():
             rpk.redpanda_start(RedpandaService.STDOUT_STDERR_CAPTURE,
                                additional_args, env_vars)
