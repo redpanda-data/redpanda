@@ -295,9 +295,11 @@ ss::future<> partition_balancer_backend::do_tick() {
 
     _tick_in_progress = ss::abort_source{};
 
+    const bool force_refresh_this_tick
+      = _cur_term->_force_health_report_refresh;
     auto health_report = co_await _health_monitor.get_cluster_health(
       cluster_report_filter{},
-      force_refresh(_cur_term->_force_health_report_refresh),
+      force_refresh(force_refresh_this_tick),
       model::timeout_clock::now() + controller_stm_sync_timeout);
     _cur_term->_force_health_report_refresh = false;
 
@@ -346,7 +348,11 @@ ss::future<> partition_balancer_backend::do_tick() {
       _state.topics().has_updates_in_progress()
       || plan_data.status == planner_status::actions_planned) {
         _cur_term->last_status = partition_balancer_status::in_progress;
-    } else if (plan_data.status == planner_status::missing_sizes) {
+    } else if (
+      plan_data.status == planner_status::missing_sizes
+      && !force_refresh_this_tick) {
+        // If we are missing partition sizes and haven't yet force-refreshed the
+        // health monitor, do it immediately on the next tick.
         _cur_term->_force_health_report_refresh = true;
         _cur_term->last_status = partition_balancer_status::in_progress;
     } else if (plan_data.status == planner_status::waiting_for_reports) {
