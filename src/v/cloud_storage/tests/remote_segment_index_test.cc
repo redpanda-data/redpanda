@@ -150,7 +150,7 @@ SEASTAR_THREAD_TEST_CASE(test_remote_segment_index_builder) {
         };
         batches.push_back(std::move(batch));
     }
-    auto segment = generate_segment(base_offset, batches);
+    auto [segment, co] = generate_segment(base_offset, batches);
     auto is = make_iobuf_input_stream(std::move(segment));
     offset_index ix(
       base_offset, kbase_offset, 0, 0, model::timestamp{0xdeadbeef});
@@ -199,7 +199,7 @@ SEASTAR_THREAD_TEST_CASE(test_remote_segment_build_coarse_index) {
     expected_last_offset = base_offset
                            + model::offset(
                              expected_conf_records + expected_data_records - 1);
-    auto segment = generate_segment(base_offset, batches);
+    auto [segment, so] = generate_segment(base_offset, batches);
     auto is = make_iobuf_input_stream(std::move(segment));
     offset_index ix(
       base_offset, kbase_offset, 0, 0, model::timestamp{0xdeadbeef});
@@ -286,7 +286,7 @@ SEASTAR_THREAD_TEST_CASE(
         };
         batches.push_back(std::move(batch));
     }
-    auto segment = generate_segment(base_offset, batches);
+    auto [segment, co] = generate_segment(base_offset, batches);
     auto is = make_iobuf_input_stream(std::move(segment));
     offset_index ix(
       base_offset, kbase_offset, 0, 0, model::timestamp{0xdeadbeef});
