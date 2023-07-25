@@ -93,6 +93,8 @@ public:
     // log eviction attempts to offsets not greater than this.
     virtual model::offset max_collectible_offset() = 0;
 
+    virtual model::offset last_applied() const = 0;
+
     virtual const ss::sstring& name() = 0;
 
     // Only valid for state machines maintaining transactional state.
