@@ -70,11 +70,24 @@ func loginAndEnsurePluginVersion(ctx context.Context, fs afero.Fs, cfg *config.C
 		return "", "", false, fmt.Errorf("unable to determine managed plugin path: %w", err)
 	}
 	overrides := cfg.DevOverrides()
-	token, err = oauth.LoadFlow(ctx, fs, cfg, auth0.NewClient(overrides))
-	if err != nil {
-		return "", "", false, fmt.Errorf("unable to load the cloud token: %w", err)
+	if overrides.CloudToken != "" {
+		token = overrides.CloudToken
+	} else {
+		token, err = oauth.LoadFlow(ctx, fs, cfg, auth0.NewClient(overrides))
+		if err != nil {
+			return "", "", false, fmt.Errorf("unable to load the cloud token: %w", err)
+		}
 	}
 
+	byoc, pluginExists := plugin.ListPlugins(fs, []string{pluginDir}).Find("byoc")
+
+	// If the plugin exists, and we don't want a version check we want to exit
+	// early and avoid calling the Cloud API.
+	if c := overrides.BYOCSkipVersionCheck; pluginExists && (c == "1" || c == "true") {
+		return byoc.Path, token, false, nil
+	}
+
+	// If not, we query the Cloud API for the plugin.
 	cloudURL := cloudapi.ProdURL
 	if u := overrides.CloudAPIURL; u != "" {
 		cloudURL = u
@@ -109,13 +122,9 @@ func loginAndEnsurePluginVersion(ctx context.Context, fs afero.Fs, cfg *config.C
 
 	// Check if the plugin is downloaded and matches the remote version. We
 	// require the FilenameSHA to have at least 20 characters.
-	byoc, pluginExists := plugin.ListPlugins(fs, []string{pluginDir}).Find("byoc")
 	if pluginExists {
 		if !byoc.Managed {
 			return "", "", false, fmt.Errorf("found external plugin at %s, the old plugin must be removed first", byoc.Path)
-		}
-		if c := overrides.BYOCSkipVersionCheck; c == "1" || c == "true" {
-			return byoc.Path, token, false, nil
 		}
 		currentSha, err := plugin.Sha256Path(fs, byoc.Path)
 		if err != nil {
