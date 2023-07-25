@@ -95,6 +95,33 @@ tm_stm_cache::find(model::term_id term, kafka::transactional_id tx_id) {
     return tx_it->second;
 }
 
+std::optional<tm_transaction>
+tm_stm_cache::find_mem(kafka::transactional_id tx_id) {
+    if (_mem_term == std::nullopt) {
+        return std::nullopt;
+    }
+    auto term = _mem_term.value();
+    auto entry_it = _state.find(term);
+    if (entry_it == _state.end()) {
+        return std::nullopt;
+    }
+    auto& entry = entry_it->second;
+    auto tx_it = entry.txes.find(tx_id);
+    if (tx_it == entry.txes.end()) {
+        return std::nullopt;
+    }
+    return tx_it->second;
+}
+
+std::optional<tm_transaction>
+tm_stm_cache::find_log(kafka::transactional_id tx_id) {
+    auto tx_it = _log_txes.find(tx_id);
+    if (tx_it == _log_txes.end()) {
+        return std::nullopt;
+    }
+    return tx_it->second;
+}
+
 void tm_stm_cache::set_log(tm_transaction tx) {
     vlog(
       txlog.trace,
@@ -127,6 +154,39 @@ void tm_stm_cache::erase_log(kafka::transactional_id tx_id) {
     _log_txes.erase(tx_id);
 }
 
+fragmented_vector<tm_transaction> tm_stm_cache::get_log_transactions() {
+    fragmented_vector<tm_transaction> txes;
+    for (auto& entry : _log_txes) {
+        txes.push_back(entry.second);
+    }
+    return txes;
+}
+
+void tm_stm_cache::set_mem(
+  model::term_id term, kafka::transactional_id tx_id, tm_transaction tx) {
+    auto entry_it = _state.find(term);
+    if (entry_it == _state.end()) {
+        _state[term] = tm_stm_cache_entry{.term = term};
+        entry_it = _state.find(term);
+    }
+    entry_it->second.txes[tx_id] = tx;
+
+    if (!_mem_term) {
+        if (!_sealed_term || _sealed_term.value() < term) {
+            _mem_term = term;
+        }
+    } else if (_mem_term.value() < term) {
+        _mem_term = term;
+    }
+}
+
+void tm_stm_cache::clear_mem() {
+    if (_mem_term) {
+        _sealed_term = _mem_term.value();
+    }
+    _mem_term = std::nullopt;
+}
+
 void tm_stm_cache::clear_log() {
     vlog(txlog.trace, "clearing log");
     _log_txes.clear();
@@ -153,6 +213,55 @@ void tm_stm_cache::erase_mem(kafka::transactional_id tx_id) {
       tx.pid,
       tx.tx_seq);
     entry_it->second.txes.erase(tx_id);
+}
+
+fragmented_vector<tm_transaction> tm_stm_cache::get_all_transactions() {
+    fragmented_vector<tm_transaction> ans;
+    if (_mem_term) {
+        auto entry_it = _state.find(_mem_term.value());
+        if (entry_it != _state.end()) {
+            for (const auto& [_, tx] : entry_it->second.txes) {
+                ans.push_back(tx);
+            }
+            for (const auto& [id, tx] : _log_txes) {
+                auto tx_it = entry_it->second.txes.find(id);
+                if (tx_it == entry_it->second.txes.end()) {
+                    ans.push_back(tx);
+                }
+            }
+            return ans;
+        }
+    }
+    return get_log_transactions();
+}
+
+std::deque<tm_transaction> tm_stm_cache::checkpoint() {
+    std::deque<tm_transaction> txes_to_checkpoint;
+
+    if (_mem_term == std::nullopt) {
+        return txes_to_checkpoint;
+    }
+    auto term = _mem_term.value();
+
+    auto entry_it = _state.find(term);
+    if (entry_it == _state.end()) {
+        return txes_to_checkpoint;
+    }
+    auto& entry = entry_it->second;
+
+    auto can_transfer = [](const tm_transaction& tx) {
+        return !tx.transferring
+               && (tx.status == tm_transaction::ready || tx.status == tm_transaction::ongoing);
+    };
+    // Loop through all ongoing/pending txns in memory and checkpoint.
+
+    for (auto& [_, tx] : entry.txes) {
+        if (can_transfer(tx)) {
+            txes_to_checkpoint.push_back(tx);
+        }
+    }
+
+    return txes_to_checkpoint;
 }
 
 } // namespace cluster
