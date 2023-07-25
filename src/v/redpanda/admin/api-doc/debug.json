@@ -829,6 +829,24 @@
                 }
             }
         },
+        "stm_state": {
+            "id" : "stm_state",
+            "description": "Stm related state for a given replica.",
+            "properties": {
+                "name": {
+                    "type": "string",
+                    "description": "name of the stm"
+                },
+                "last_applied_offset": {
+                    "type": "long",
+                    "description": "Last applied offset"
+                },
+                "max_collectible_offset": {
+                    "type": "long",
+                    "description": "Max collectible offset"
+                }
+            }
+        },
         "raft_replica_state": {
             "id": "raft_replica_state",
             "description": "Raft level state for a single replica of a partition",
@@ -907,6 +925,13 @@
                         "type" : "raft_follower_state"
                     },
                     "description": "Follower metadata for this leader."
+                },
+                "stms": {
+                    "type": "array",
+                    "items": {
+                        "type": "stm_state"
+                    },
+                    "description": "All snapshottable stms attached to this replica"
                 }
             }
         },
