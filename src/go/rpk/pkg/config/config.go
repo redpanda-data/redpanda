@@ -51,6 +51,9 @@ type DevOverrides struct {
 	// continue to use an admin command even if the command is technically
 	// not supported because the cluster is a cloud cluster.
 	AllowRpkCloudAdmin bool `env:"ALLOW_RPK_CLOUD_ADMIN"`
+	// CloudToken bypasses the oauth.LoadFlow, allowing you to pass a cloud
+	// token instead of logging in.
+	CloudToken string `env:"RPK_CLOUD_TOKEN"`
 }
 
 // Config encapsulates a redpanda.yaml and/or an rpk.yaml. This is the
