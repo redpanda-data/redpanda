@@ -1278,3 +1278,25 @@ class RpkTool:
 
         output = self._execute(cmd)
         return list(filter(None, map(parse, output.splitlines())))
+
+    def plugin_list(self):
+        cmd = [self._rpk_binary(), "plugin", "list", "--local"]
+
+        return self._execute(cmd)
+
+    def cloud_byoc_aws_apply(self, redpanda_id, token, extra_flags=[]):
+        envs = {
+            "RPK_CLOUD_SKIP_VERSION_CHECK": "true",
+            "RPK_CLOUD_TOKEN": token
+        }
+
+        cmd = [
+            self._rpk_binary(), "cloud", "byoc", "aws", "apply",
+            "--redpanda-id", redpanda_id
+        ]
+
+        if len(extra_flags) > 0:
+            cmd += extra_flags
+
+        out = self._execute(cmd, env=envs)
+        return json.loads(out)
