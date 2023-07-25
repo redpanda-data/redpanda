@@ -140,7 +140,7 @@ public:
                  req_sz,
                  missing = std::move(group_missing_replies)](
                   std::vector<std::vector<hb_reply_envelope>> replies) mutable {
-              std::vector<hb_reply_envelope> ret;
+              ss::chunked_fifo<hb_reply_envelope> ret;
               ret.reserve(req_sz);
               // flatten responses
               for (auto& part : replies) {
@@ -438,7 +438,7 @@ private:
         return ret;
     }
     shard_groupped_hbeat_requests_v2
-    group_hbeats_by_shard(std::vector<hb_request_envelope> reqs) {
+    group_hbeats_by_shard(ss::chunked_fifo<hb_request_envelope> reqs) {
         shard_groupped_hbeat_requests_v2 ret;
 
         for (auto& r : reqs) {

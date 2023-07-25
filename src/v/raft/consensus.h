@@ -454,7 +454,9 @@ public:
     ss::future<hb_reply_envelope> heartbeat(
       model::node_id source_node,
       model::node_id target_node,
-      const hb_request_envelope& heartbeat_rq);
+      const hb_request_envelope& heartbeat_rq);    
+      
+      void reset_last_sent_heartbeat(const vnode&);
 
 private:
     friend replicate_entries_stm;

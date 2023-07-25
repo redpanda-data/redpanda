@@ -25,6 +25,7 @@
 #include "serde/envelope.h"
 #include "utils/named_type.h"
 
+#include <seastar/core/chunked_fifo.hh>
 #include <seastar/core/condition-variable.hh>
 #include <seastar/core/io_priority_class.hh>
 #include <seastar/core/scheduling.hh>
@@ -468,16 +469,22 @@ struct heartbeat_request_v2
       serde::version<0>,
       serde::compat_version<0>> {
     using rpc_adl_exempt = std::true_type;
+
+    /**
+     * Source and target nodes
+     */
     model::node_id source_node;
     model::node_id target_node;
-
-    std::vector<hb_request_envelope> group_requests;
+    /**
+     * Per raft group protocol metadata
+     */
+    ss::chunked_fifo<hb_request_envelope> group_requests;
 
     heartbeat_request_v2() noexcept = default;
     explicit heartbeat_request_v2(
       model::node_id source_node,
       model::node_id target_node,
-      std::vector<hb_request_envelope> requests)
+      ss::chunked_fifo<hb_request_envelope> requests)
       : source_node(source_node)
       , target_node(target_node)
       , group_requests(std::move(requests)) {}
@@ -485,13 +492,21 @@ struct heartbeat_request_v2
     friend std::ostream&
     operator<<(std::ostream& o, const heartbeat_request_v2& r);
 
-    friend bool
-    operator==(const heartbeat_request_v2&, const heartbeat_request_v2&)
-      = default;
+    friend bool operator==(
+      const heartbeat_request_v2& lhs, const heartbeat_request_v2& rhs) {
+        return lhs.source_node == rhs.source_node
+               && lhs.target_node == rhs.target_node
+               && lhs.group_requests.size() == rhs.group_requests.size()
+               && std::equal(
+                 lhs.group_requests.begin(),
+                 lhs.group_requests.end(),
+                 rhs.group_requests.begin());
+    };
 
-    auto serde_fields() {
-        return std::tie(source_node, target_node, group_requests);
-    }
+    ss::future<> serde_async_write(iobuf& out);
+    ss::future<> serde_async_read(iobuf_parser&, const serde::header&);
+
+    heartbeat_request_v2 copy() const;
 };
 
 struct heartbeat_reply_v2
@@ -502,13 +517,13 @@ struct heartbeat_reply_v2
     using rpc_adl_exempt = std::true_type;
     model::node_id source_node;
     model::node_id target_node;
-    std::vector<hb_reply_envelope> group_replies;
+    ss::chunked_fifo<hb_reply_envelope> group_replies;
 
     heartbeat_reply_v2() noexcept = default;
     explicit heartbeat_reply_v2(
       model::node_id source_node,
       model::node_id target_node,
-      std::vector<hb_reply_envelope> replies)
+      ss::chunked_fifo<hb_reply_envelope> replies)
       : source_node(source_node)
       , target_node(target_node)
       , group_replies(std::move(replies)) {}
@@ -516,12 +531,21 @@ struct heartbeat_reply_v2
     friend std::ostream&
     operator<<(std::ostream& o, const heartbeat_reply_v2& r);
 
-    friend bool operator==(const heartbeat_reply_v2&, const heartbeat_reply_v2&)
-      = default;
+    friend bool
+    operator==(const heartbeat_reply_v2& lhs, const heartbeat_reply_v2& rhs) {
+        return lhs.source_node == rhs.source_node
+               && lhs.target_node == rhs.target_node
+               && lhs.group_replies.size() == rhs.group_replies.size()
+               && std::equal(
+                 lhs.group_replies.begin(),
+                 lhs.group_replies.end(),
+                 rhs.group_replies.begin());
+    };
 
-    auto serde_fields() {
-        return std::tie(source_node, target_node, group_replies);
-    }
+    ss::future<> serde_async_write(iobuf& out);
+    ss::future<> serde_async_read(iobuf_parser&, const serde::header&);
+
+    heartbeat_reply_v2 copy() const;
 };
 
 struct heartbeat_metadata {

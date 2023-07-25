@@ -3600,4 +3600,9 @@ ss::future<hb_reply_envelope> consensus::heartbeat(
     };
     co_return reply;
 }
+void consensus::reset_last_sent_heartbeat(const vnode& node) {
+    if (auto it = _fstats.find(node); it != _fstats.end()) {
+        it->second.last_sent_protocol_meta.reset();
+    }
+}
 } // namespace raft

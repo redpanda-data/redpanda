@@ -24,11 +24,14 @@
 #include "vassert.h"
 #include "vlog.h"
 
+#include <seastar/core/chunked_fifo.hh>
 #include <seastar/coroutine/maybe_yield.hh>
 
 #include <fmt/ostream.h>
 
+#include <algorithm>
 #include <chrono>
+#include <iterator>
 #include <type_traits>
 
 namespace {
@@ -745,6 +748,68 @@ std::ostream& operator<<(std::ostream& o, const append_entries_request& r) {
       r._meta,
       r._batches);
     return o;
+}
+heartbeat_request_v2 heartbeat_request_v2::copy() const {
+    heartbeat_request_v2 ret;
+    ret.source_node = source_node;
+    ret.target_node = target_node;
+    ret.group_requests.reserve(group_requests.size());
+
+    std::copy(
+      group_requests.begin(),
+      group_requests.end(),
+      std::back_inserter(ret.group_requests));
+
+    return ret;
+}
+
+ss::future<> heartbeat_request_v2::serde_async_write(iobuf& out) {
+    using serde::write;
+    using serde::write_async;
+    serde::write(out, source_node);
+    serde::write(out, target_node);
+    co_await serde::write_async(out, std::move(group_requests));
+}
+
+ss::future<> heartbeat_request_v2::serde_async_read(
+  iobuf_parser& in, const serde::header& hdr) {
+    using serde::read_async_nested;
+    using serde::read_nested;
+    source_node = serde::read_nested<model::node_id>(in, hdr._bytes_left_limit);
+    target_node = serde::read_nested<model::node_id>(in, hdr._bytes_left_limit);
+    co_await serde::read_async_nested<ss::chunked_fifo<hb_request_envelope>>(
+      in, hdr._bytes_left_limit);
+}
+heartbeat_reply_v2 heartbeat_reply_v2::copy() const {
+    heartbeat_reply_v2 ret;
+    ret.source_node = source_node;
+    ret.target_node = target_node;
+    ret.group_replies.reserve(group_replies.size());
+
+    std::copy(
+      group_replies.begin(),
+      group_replies.end(),
+      std::back_inserter(ret.group_replies));
+
+    return ret;
+}
+
+ss::future<> heartbeat_reply_v2::serde_async_write(iobuf& out) {
+    using serde::write;
+    using serde::write_async;
+    serde::write(out, source_node);
+    serde::write(out, target_node);
+    co_await serde::write_async(out, std::move(group_replies));
+}
+
+ss::future<> heartbeat_reply_v2::serde_async_read(
+  iobuf_parser& in, const serde::header& hdr) {
+    using serde::read_async_nested;
+    using serde::read_nested;
+    source_node = serde::read_nested<model::node_id>(in, hdr._bytes_left_limit);
+    target_node = serde::read_nested<model::node_id>(in, hdr._bytes_left_limit);
+    co_await serde::read_async_nested<ss::chunked_fifo<hb_reply_envelope>>(
+      in, hdr._bytes_left_limit);
 }
 
 } // namespace raft

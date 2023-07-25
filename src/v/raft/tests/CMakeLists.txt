@@ -54,3 +54,13 @@ rp_test(
   LABELS kafka
   ARGS "-- -c 8"
 )
+
+rp_test(
+  BENCHMARK_TEST
+  BINARY_NAME heartbeat_bench
+  SOURCES heartbeat_bench.cc
+  LIBRARIES Seastar::seastar_perf_testing Boost::unit_test_framework v::raft
+  # the args below are just to keep it fast
+  ARGS "-c 1 --duration=1 --runs=1 --memory=1G"
+  LABELS raft
+)

@@ -200,7 +200,7 @@ heartbeat_manager::requests_for_range_v2() {
     std::vector<heartbeat_manager::node_heartbeat_v2> reqs;
     reqs.reserve(pending_beats.size());
     for (auto& p : pending_beats) {
-        std::vector<hb_request_envelope> requests;
+        ss::chunked_fifo<hb_request_envelope> requests;
         absl::node_hash_map<
           raft::group_id,
           heartbeat_manager::follower_request_meta>
@@ -366,9 +366,6 @@ void heartbeat_manager::process_reply(
           n,
           r.error().message());
         for (auto& [g, req_meta] : groups) {
-            if (req_meta.seq == follower_req_seq{}) {
-                continue;
-            }
             auto it = _consensus_groups.find(g);
             if (it == _consensus_groups.end()) {
                 vlog(
@@ -390,14 +387,17 @@ void heartbeat_manager::process_reply(
                 consensus->update_heartbeat_status(
                   req_meta.follower_vnode, false);
             }
-
+            consensus->get_probe().heartbeat_request_error();
+            if (req_meta.seq == follower_req_seq{}) {
+                consensus->reset_last_sent_heartbeat(req_meta.follower_vnode);
+                continue;
+            }
             // propagate error
             consensus->process_append_entries_reply(
               n,
               result<append_entries_reply>(r.error()),
               req_meta.seq,
               req_meta.dirty_offset);
-            consensus->get_probe().heartbeat_request_error();
         }
         return;
     }
