@@ -338,8 +338,7 @@ ss::future<download_result> remote::do_download_manifest(
 ss::future<upload_result> remote::upload_manifest(
   const cloud_storage_clients::bucket_name& bucket,
   const base_manifest& manifest,
-  retry_chain_node& parent,
-  const cloud_storage_clients::object_tag_formatter& tags) {
+  retry_chain_node& parent) {
     gate_guard guard{_gate};
     retry_chain_node fib(&parent);
     retry_chain_logger ctxlog(cst_log, fib);
@@ -354,7 +353,7 @@ ss::future<upload_result> remote::upload_manifest(
           api_activity_notification::manifest_upload, parent);
         auto [is, size] = co_await manifest.serialize();
         const auto res = co_await lease.client->put_object(
-          bucket, path, size, std::move(is), tags, fib.get_timeout());
+          bucket, path, size, std::move(is), fib.get_timeout());
 
         if (res) {
             vlog(
@@ -457,8 +456,7 @@ ss::future<upload_result> remote::upload_segment(
   uint64_t content_length,
   const reset_input_stream& reset_str,
   retry_chain_node& parent,
-  lazy_abort_source& lazy_abort_source,
-  const cloud_storage_clients::object_tag_formatter& tags) {
+  lazy_abort_source& lazy_abort_source) {
     gate_guard guard{_gate};
     retry_chain_node fib(&parent);
     retry_chain_logger ctxlog(cst_log, fib);
@@ -495,7 +493,6 @@ ss::future<upload_result> remote::upload_segment(
           path,
           content_length,
           reader_handle->take_stream(),
-          tags,
           fib.get_timeout());
 
         // `put_object` closed the encapsulated input_stream, but we must
@@ -1122,7 +1119,6 @@ ss::future<upload_result> remote::upload_object(
   const cloud_storage_clients::object_key& object_path,
   iobuf payload,
   retry_chain_node& parent,
-  const cloud_storage_clients::object_tag_formatter& tags,
   const char* log_object_type) {
     gate_guard guard{_gate};
     retry_chain_node fib(&parent);
@@ -1147,7 +1143,6 @@ ss::future<upload_result> remote::upload_object(
           path,
           content_length,
           make_iobuf_input_stream(std::move(to_upload)),
-          tags,
           fib.get_timeout());
 
         if (res) {
@@ -1349,79 +1344,6 @@ ss::future<> auth_refresh_bg_op::stop() {
         co_await _refresh_credentials.value().stop();
     }
 }
-
-cloud_storage_clients::object_tag_formatter
-remote::make_partition_manifest_tags(
-  const model::ntp& ntp, model::initial_revision_id rev) {
-    auto tags = default_partition_manifest_tags;
-    tags.add("rp-ns", ntp.ns());
-    tags.add("rp-topic", ntp.tp.topic());
-    tags.add("rp-part", ntp.tp.partition());
-    tags.add("rp-rev", rev());
-    return tags;
-}
-
-cloud_storage_clients::object_tag_formatter remote::make_topic_manifest_tags(
-  const model::topic_namespace& tns, model::initial_revision_id rev) {
-    auto tags = default_topic_manifest_tags;
-    tags.add("rp-ns", tns.ns());
-    tags.add("rp-topic", tns.tp());
-    tags.add("rp-rev", rev());
-    return tags;
-}
-
-cloud_storage_clients::object_tag_formatter remote::make_segment_tags(
-  const model::ntp& ntp, model::initial_revision_id rev) {
-    auto tags = default_segment_tags;
-    tags.add("rp-ns", ntp.ns());
-    tags.add("rp-topic", ntp.tp.topic());
-    tags.add("rp-part", ntp.tp.partition());
-    tags.add("rp-rev", rev());
-    return tags;
-}
-
-cloud_storage_clients::object_tag_formatter remote::make_segment_index_tags(
-  const model::ntp& ntp, model::initial_revision_id rev) {
-    auto tags = default_index_tags;
-    tags.add("rp-ns", ntp.ns());
-    tags.add("rp-topic", ntp.tp.topic());
-    tags.add("rp-part", ntp.tp.partition());
-    tags.add("rp-rev", rev());
-    return tags;
-}
-
-cloud_storage_clients::object_tag_formatter remote::make_lifecycle_marker_tags(
-  const model::ns& ns,
-  const model::topic& topic,
-  const model::initial_revision_id rev) {
-    auto tags = default_lifecycle_marker_tags;
-    tags.add("rp-ns", ns());
-    tags.add("rp-topic", topic());
-    tags.add("rp-rev", rev());
-    return tags;
-}
-
-cloud_storage_clients::object_tag_formatter remote::make_tx_manifest_tags(
-  const model::ntp& ntp, model::initial_revision_id rev) {
-    // Note: tx-manifest is related to segment (contains data which are used
-    // to consume data from the segment). Because of that it has the same
-    // tags as the segment.
-    return make_segment_tags(ntp, rev);
-}
-
-const cloud_storage_clients::object_tag_formatter remote::default_segment_tags
-  = {{"rp-type", "segment"}};
-const cloud_storage_clients::object_tag_formatter
-  remote::default_topic_manifest_tags
-  = {{"rp-type", "topic-manifest"}};
-const cloud_storage_clients::object_tag_formatter
-  remote::default_partition_manifest_tags
-  = {{"rp-type", "partition-manifest"}};
-const cloud_storage_clients::object_tag_formatter remote::default_index_tags = {
-  {"rp-type", "segment-index"}};
-const cloud_storage_clients::object_tag_formatter
-  remote::default_lifecycle_marker_tags
-  = {{"rp-type", "lifecycle-marker"}};
 
 ss::future<api_activity_notification>
 remote::subscribe(remote::event_filter& filter) {

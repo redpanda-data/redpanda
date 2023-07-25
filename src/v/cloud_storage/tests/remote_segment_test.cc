@@ -193,8 +193,7 @@ void upload_index(
                           cloud_storage_clients::object_key{
                             path().native() + ".index"},
                           std::move(ixbuf),
-                          fib,
-                          remote::default_index_tags)
+                          fib)
                         .get();
     BOOST_REQUIRE(upload_res == upload_result::success);
 }
