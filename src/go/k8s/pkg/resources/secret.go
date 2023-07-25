@@ -168,7 +168,8 @@ postStartHook () {
 	done
 }
 
-timeout %d postStartHook
+export -f postStartHook
+timeout %d bash -c "postStartHook"
 true
 `, curlNodeIDCommand, curlCommand, terminationGracePeriodSeconds/2)
 }
@@ -203,7 +204,8 @@ preStopHook () {
 	done
 }
 
-timeout %d preStopHook
+export -f preStopHook
+timeout %d bash -c "preStopHook"
 true
 `, curlNodeIDCommand, curlMaintenanceCommand, curlGetMaintenanceCommand, terminationGracePeriodSeconds/2)
 }
