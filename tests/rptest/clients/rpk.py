@@ -13,6 +13,7 @@ import re
 import typing
 import time
 import itertools
+import os
 from collections import namedtuple
 from typing import Iterator, Optional
 from ducktape.cluster.cluster import ClusterNode
@@ -884,7 +885,7 @@ class RpkTool:
         ]
         return self._execute(cmd)
 
-    def _execute(self, cmd, stdin=None, timeout=None, log_cmd=True):
+    def _execute(self, cmd, stdin=None, timeout=None, log_cmd=True, env=None):
         if timeout is None:
             timeout = DEFAULT_TIMEOUT
 
@@ -894,10 +895,14 @@ class RpkTool:
         if log_cmd:
             self._redpanda.logger.debug("Executing command: %s", cmd)
 
+        if env is not None:
+            env.update(os.environ.copy())
+
         p = subprocess.Popen(cmd,
                              stdout=subprocess.PIPE,
                              stdin=subprocess.PIPE,
                              stderr=subprocess.PIPE,
+                             env=env,
                              text=True)
         try:
             output, stderror = p.communicate(input=stdin, timeout=timeout)
