@@ -59,6 +59,11 @@ ss::future<> log_eviction_stm::stop() {
 
 ss::future<> log_eviction_stm::enqueue_eviction_event(
   model::offset offset, wait_for_success wait) {
+    vlog(
+      _log.trace,
+      "log eviction event at offset: {}, waiting for truncation: {}",
+      offset,
+      wait);
     co_await _queue_mutex.get_units();
     co_await _queue.push_eventually(eviction_event{
       .prefix_truncate_offset = offset, .wait_for_truncation = wait});
@@ -170,6 +175,10 @@ ss::future<> log_eviction_stm::monitor_log_eviction() {
 }
 
 ss::future<> log_eviction_stm::do_write_raft_snapshot(model::offset index_lb) {
+    vlog(
+      _log.trace,
+      "requested to write raft snapshot (prefix_truncate) at {}",
+      index_lb);
     if (index_lb <= _raft->last_snapshot_index()) {
         co_return;
     }
@@ -191,7 +200,8 @@ ss::future<> log_eviction_stm::do_write_raft_snapshot(model::offset index_lb) {
           max_collectible_offset,
           index_lb);
     }
-    vlog(_log.debug, "Truncating data up until offset: {}", index_lb);
+    vlog(
+      _log.debug, "Requesting raft snapshot with final offset: {}", index_lb);
     co_await _raft->write_snapshot(raft::write_snapshot_cfg(index_lb, iobuf()));
 }
 
@@ -353,8 +363,9 @@ ss::future<> log_eviction_stm::apply(model::record_batch batch) {
     auto truncate_offset = record.rp_start_offset - model::offset(1);
     if (truncate_offset > _delete_records_eviction_offset) {
         vlog(
-          _log.debug,
-          "Moving local to truncate_point: {} last_applied: {}",
+          _log.info,
+          "Applying prefix truncate batch with truncate offset: {} "
+          "last_applied: {}",
           truncate_offset,
           last_applied_offset());
 
