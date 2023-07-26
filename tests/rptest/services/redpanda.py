@@ -2046,17 +2046,17 @@ class RedpandaService(RedpandaServiceBase):
 
         return avail_kb * 1024
 
-    def get_node_disk_usage(self, node):
+    def get_node_disk_usage(self, node, percent=False):
         """
         get disk usage for the redpanda volume on a particular node
+        param percent: if true, return the disk usage in percent
         """
-
-        for line in node.account.ssh_capture(
-                f"df --block-size 1 {self.PERSISTENT_ROOT}", timeout_sec=10):
-            self.logger.debug(line.strip())
-            if self.PERSISTENT_ROOT in line:
-                return int(line.split()[2])
-        assert False, "couldn't parse df output"
+        # TODO merge this with get_node_disk_free?
+        cmd = f"df --block-size 1 {self.PERSISTENT_ROOT} --output={'pcent' if percent else 'used'}"
+        df_out = node.account.ssh_output(cmd, timeout_sec=10).strip()
+        self.logger.debug(df_out)
+        # first line is the header, second line is the measure. remove white spaces and a % suffix
+        return int(df_out.split(b"\n")[1].strip().rstrip(b"%"))
 
     def _startup_poll_interval(self, first_start):
         """
