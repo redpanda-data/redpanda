@@ -155,7 +155,7 @@ private:
     // version that we've tested with is used in field.
     //
     // Update this version to use a different storage API version.
-    static constexpr auto azure_storage_api_version = "2021-08-06";
+    static constexpr auto azure_storage_api_version = "2023-01-03";
 
     result<ss::sstring>
     get_string_to_sign(http::client::request_header& header) const;
