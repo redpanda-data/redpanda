@@ -7,6 +7,7 @@
 
 #include <boost/test/tools/old/interface.hpp>
 
+#include <chrono>
 #include <cstdint>
 #include <random>
 
@@ -145,4 +146,51 @@ SEASTAR_THREAD_TEST_CASE(test_public_hist_to_internal_hist) {
         BOOST_CHECK_EQUAL(pub_to_int_hist.buckets[i].count, 0);
         BOOST_CHECK_NE(int_to_int_hist.buckets[i].count, 0);
     }
+}
+
+SEASTAR_THREAD_TEST_CASE(test_log_hist_measure) {
+    log_hist_internal a;
+
+    {
+        auto m1 = a.auto_measure();
+        ss::sleep(std::chrono::microseconds(1)).get();
+        auto m2 = a.auto_measure();
+        ss::sleep(std::chrono::microseconds(1)).get();
+    }
+
+    auto hist = a.internal_histogram_logform();
+    BOOST_CHECK_EQUAL(hist.buckets.back().count, 2);
+}
+
+SEASTAR_THREAD_TEST_CASE(test_log_hist_measure_pause) {
+    using namespace std::chrono_literals;
+
+    log_hist_internal a;
+
+    {
+        auto m1 = a.auto_measure();
+        auto m2 = a.auto_measure();
+
+        m1->stop();
+        m2->stop();
+
+        auto m1_dur = m1->compute_total_latency();
+        auto m2_dur = m2->compute_total_latency();
+
+        ss::sleep(std::chrono::microseconds(1)).get();
+
+        BOOST_CHECK_EQUAL((m1->compute_total_latency() - m1_dur).count(), 0);
+        BOOST_CHECK_EQUAL((m2->compute_total_latency() - m2_dur).count(), 0);
+
+        m1->start();
+        m2->start();
+
+        ss::sleep(std::chrono::microseconds(1)).get();
+
+        BOOST_CHECK_GT((m1->compute_total_latency() - m1_dur).count(), 1);
+        BOOST_CHECK_GT((m2->compute_total_latency() - m2_dur).count(), 1);
+    }
+
+    auto hist = a.internal_histogram_logform();
+    BOOST_CHECK_EQUAL(hist.buckets.back().count, 2);
 }
