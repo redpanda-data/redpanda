@@ -128,7 +128,7 @@ public:
      */
     void record(uint64_t val) {
         _sample_sum += val;
-        const int i = std::clamp(
+        const unsigned i = std::clamp(
           first_bucket_clz - std::countl_zero(val),
           0,
           static_cast<int>(_counts.size() - 1));
