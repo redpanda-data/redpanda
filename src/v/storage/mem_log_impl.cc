@@ -401,17 +401,20 @@ struct mem_log_impl final : log::impl {
                                                  : b.base_offset();
 
         auto& e = _data.back();
-        auto it = std::lower_bound(
-          std::cbegin(_data), std::cend(_data), e.term(), entries_ordering{});
-        auto last_term_base_offset = it->base_offset();
 
         return storage::offset_stats{
           .start_offset = start_offset,
           .committed_offset = e.last_offset(),
           .committed_offset_term = e.term(),
           .dirty_offset = e.last_offset(),
-          .dirty_offset_term = e.term(),
-          .last_term_start_offset = last_term_base_offset};
+          .dirty_offset_term = e.term()};
+    }
+
+    model::offset find_last_term_start_offset() const final {
+        auto& e = _data.back();
+        auto it = std::lower_bound(
+          std::cbegin(_data), std::cend(_data), e.term(), entries_ordering{});
+        return it->base_offset();
     }
 
     model::timestamp start_timestamp() const final {
