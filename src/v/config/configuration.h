@@ -132,6 +132,7 @@ struct configuration final : public config_store {
     // same as transactional.id.expiration.ms in kafka
     property<std::chrono::milliseconds> transactional_id_expiration_ms;
     bounded_property<uint64_t> max_concurrent_producer_ids;
+    bounded_property<uint64_t> max_transactions_per_coordinator;
     property<bool> enable_idempotence;
     property<bool> enable_transactions;
     property<uint32_t> abort_index_segment_size;
