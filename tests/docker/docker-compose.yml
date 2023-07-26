@@ -34,7 +34,7 @@ services:
     restart: always
     ports:
     - 10000:10000
-    image: mcr.microsoft.com/azure-storage/azurite:3.21.0
+    image: mcr.microsoft.com/azure-storage/azurite:3.25.0
     networks:
     - redpanda-test
   rp:
