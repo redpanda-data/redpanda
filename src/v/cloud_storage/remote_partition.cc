@@ -339,66 +339,25 @@ public:
                   "{}",
                   _reader->config());
 
-                try {
-                    auto result = co_await _reader->read_some(
-                      deadline, *_ot_state);
-                    if (!result) {
-                        vlog(
-                          _ctxlog.debug,
-                          "Error while reading from stream '{}'",
-                          result.error());
-                        co_await set_end_of_stream();
-                        throw std::system_error(result.error());
-                    }
-                    data_t d = std::move(result.value());
-                    for (const auto& batch : d) {
-                        _partition->_probe.add_bytes_read(
-                          batch.header().size_bytes);
-                        _partition->_probe.add_records_read(
-                          batch.record_count());
-                    }
-                    if (
-                      _first_produced_offset == model::offset{} && !d.empty()) {
-                        _first_produced_offset = d.front().base_offset();
-                    }
-                    co_return storage_t{std::move(d)};
-                } catch (const stuck_reader_exception& ex) {
+                auto result = co_await _reader->read_some(deadline, *_ot_state);
+                if (!result) {
                     vlog(
-                      _ctxlog.warn,
-                      "stuck reader: current rp offset: {}, max rp offset: {}",
-                      ex.rp_offset,
-                      _reader->max_rp_offset());
-
-                    // If the reader is stuck because of a mismatch between
-                    // segment data and manifest entry, set reader to EOF and
-                    // try to reset reader on the next loop iteration. We only
-                    // do this when the reader has not reached eof. For example,
-                    // the segment ends at offset 10 but the manifest has max
-                    // offset at 11 for the segment, with offset 11 actually
-                    // present in the next segment. When the reader is stuck,
-                    // the current offset will be 10 which we will not be able
-                    // to read from. Switching to the next segment should enable
-                    // reads to proceed.
-                    if (
-                      model::next_offset(ex.rp_offset)
-                        >= _next_segment_base_offset
-                      && !_reader->is_eof()) {
-                        vlog(
-                          _ctxlog.info,
-                          "mismatch between current segment end and manifest "
-                          "data: current rp offset {}, manifest max rp offset "
-                          "{}, next segment base offset {}, reader is EOF: {}. "
-                          "set EOF on reader and try to "
-                          "reset",
-                          ex.rp_offset,
-                          _reader->max_rp_offset(),
-                          _next_segment_base_offset,
-                          _reader->is_eof());
-                        _reader->set_eof();
-                        continue;
-                    }
-                    throw;
+                      _ctxlog.debug,
+                      "Error while reading from stream '{}'",
+                      result.error());
+                    co_await set_end_of_stream();
+                    throw std::system_error(result.error());
                 }
+                data_t d = std::move(result.value());
+                for (const auto& batch : d) {
+                    _partition->_probe.add_bytes_read(
+                      batch.header().size_bytes);
+                    _partition->_probe.add_records_read(batch.record_count());
+                }
+                if (_first_produced_offset == model::offset{} && !d.empty()) {
+                    _first_produced_offset = d.front().base_offset();
+                }
+                co_return storage_t{std::move(d)};
             }
         } catch (const ss::gate_closed_exception&) {
             vlog(
@@ -467,8 +426,10 @@ private:
             co_return;
         }
         _view_cursor = std::move(cur.value());
-        co_await _view_cursor->maybe_sync_manifest();
-        initialize_reader_state(_view_cursor->manifest().value(), config);
+        co_await _view_cursor->with_manifest(
+          [this, &config](const partition_manifest& m) {
+              initialize_reader_state(m, config);
+          });
         co_return;
     }
 
