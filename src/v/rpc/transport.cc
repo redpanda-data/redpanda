@@ -363,14 +363,24 @@ ss::future<> transport::do_dispatch_send() {
 }
 
 void transport::dispatch_send() {
-    ssx::spawn_with_gate(_dispatch_gate, [this]() mutable {
-        return ssx::ignore_shutdown_exceptions(do_dispatch_send())
-          .handle_exception([this](std::exception_ptr e) {
-              vlog(rpclog.info, "Error dispatching socket write:{}", e);
-              _probe->request_error();
-              fail_outstanding_futures();
-          });
-    });
+    // Callers expect this function does not throw, so check if the gate is
+    // closed so we know that `hold()` will never throw.
+    if (_dispatch_gate.is_closed()) {
+        return;
+    }
+    auto holder = _dispatch_gate.hold();
+    ssx::background = ssx::ignore_shutdown_exceptions(do_dispatch_send())
+                        .then_wrapped(
+                          [this, h = std::move(holder)](ss::future<> fut) {
+                              if (fut.failed()) {
+                                  vlog(
+                                    rpclog.info,
+                                    "Error dispatching socket write:{}",
+                                    fut.get_exception());
+                                  _probe->request_error();
+                                  fail_outstanding_futures();
+                              }
+                          });
 }
 
 ss::future<> transport::do_reads() {
