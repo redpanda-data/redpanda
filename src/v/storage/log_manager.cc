@@ -249,6 +249,27 @@ log_manager::housekeeping_scan(model::timestamp collection_threshold) {
 }
 
 ss::future<> log_manager::housekeeping() {
+    while (!_open_gate.is_closed()) {
+        try {
+            co_await housekeeping_loop();
+        } catch (...) {
+            /*
+             * continue on shutdown exception because it may be bubbling up from
+             * a partition shutting down. we only stop running housekeeping when
+             * the log manager stops.
+             */
+            if (ssx::is_shutdown_exception(std::current_exception())) {
+                continue;
+            }
+            vlog(
+              stlog.info,
+              "Error processing housekeeping(): {}",
+              std::current_exception());
+        }
+    }
+}
+
+ss::future<> log_manager::housekeeping_loop() {
     /*
      * data older than this threshold may be garbage collected
      */
