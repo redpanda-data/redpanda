@@ -526,7 +526,7 @@ class SISettings:
             # larger, so that a test doing any significant amount of throughput will exercise trimming.
             conf[
                 "cloud_storage_cache_size"] = SISettings.cache_size_for_throughput(
-                    1024 * 1024 * 100),
+                    1024 * 1024 * 100)
         else:
             conf["cloud_storage_cache_size"] = self.cloud_storage_cache_size
 
