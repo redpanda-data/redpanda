@@ -124,7 +124,6 @@ private:
       std::optional<std::reference_wrapper<ss::abort_source>> as);
 
 private:
-    ss::logger& _logger;
     ss::abort_source& _as;
     model::offset _storage_eviction_offset;
     model::offset _delete_records_eviction_offset;

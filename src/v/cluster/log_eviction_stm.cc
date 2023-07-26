@@ -40,7 +40,6 @@ log_eviction_stm::log_eviction_stm(
   ss::abort_source& as,
   storage::kvstore& kvstore)
   : persisted_stm("log_eviction_stm.snapshot", logger, raft, kvstore)
-  , _logger(logger)
   , _as(as) {}
 
 ss::future<> log_eviction_stm::start() {
@@ -106,11 +105,9 @@ ss::future<> log_eviction_stm::write_raft_snapshots_in_background() {
             // ignore broken sem exception, shutting down
         } catch (const std::exception& e) {
             vlog(
-              _logger.error,
-              "Error occurred when attempting to write snapshot: "
-              "{}, ntp: {}",
-              e,
-              _raft->ntp());
+              _log.error,
+              "Error occurred when attempting to write snapshot: {}",
+              e);
         }
         wait_with_timeout = _raft->last_snapshot_index() < index_lb;
     }
@@ -139,11 +136,7 @@ ss::future<> log_eviction_stm::monitor_log_eviction() {
         } catch (const ss::gate_closed_exception&) {
             // ignore gate closed exception, shutting down
         } catch (const std::exception& e) {
-            vlog(
-              _logger.info,
-              "Error handling log eviction - {}, ntp: {}",
-              e,
-              _raft->ntp());
+            vlog(_log.info, "Error handling log eviction - {}", e);
         }
     }
 }
@@ -165,17 +158,12 @@ ss::future<> log_eviction_stm::do_write_raft_snapshot(model::offset index_lb) {
             co_return;
         }
         vlog(
-          _logger.trace,
-          "Can only evict up to offset: {}, asked to evict to: {} ntp: {}",
+          _log.trace,
+          "Can only evict up to offset: {}, asked to evict to: {} ",
           max_collectible_offset,
-          index_lb,
-          _raft->ntp());
+          index_lb);
     }
-    vlog(
-      _logger.debug,
-      "Truncating data up until offset: {} for ntp: {}",
-      index_lb,
-      _raft->ntp());
+    vlog(_log.debug, "Truncating data up until offset: {}", index_lb);
     co_await _raft->write_snapshot(raft::write_snapshot_cfg(index_lb, iobuf()));
     _last_snapshot_monitor.notify(index_lb);
 }
@@ -234,21 +222,19 @@ ss::future<log_eviction_stm::offset_result> log_eviction_stm::truncate(
     /// After command replication all that can be guaranteed is that the command
     /// was replicated
     vlog(
-      _logger.info,
+      _log.info,
       "Replicating prefix_truncate command, redpanda start offset: {}, kafka "
       "start offset: {} "
-      "current last snapshot offset: {}, current last visible offset: {} for "
-      "ntp: {}",
+      "current last snapshot offset: {}, current last visible offset: {}",
       val.rp_start_offset,
       val.kafka_start_offset,
       _raft->last_snapshot_index(),
-      _raft->last_visible_index(),
-      _raft->ntp());
+      _raft->last_visible_index());
 
     auto res = co_await replicate_command(std::move(batch), deadline, as);
     if (res.has_failure()) {
         vlog(
-          _logger.info,
+          _log.info,
           "Failed to observe replicated command in log, reason: {}",
           res.error().message());
         co_return res.as_failure();
@@ -281,7 +267,7 @@ ss::future<log_eviction_stm::offset_result> log_eviction_stm::replicate_command(
 
     if (!result) {
         vlog(
-          _logger.info,
+          _log.info,
           "Failed to replicate prefix_truncate command, reason: {}",
           result.error());
         co_return result.error();
@@ -318,9 +304,8 @@ ss::future<> log_eviction_stm::apply(model::record_batch batch) {
       batch.copy_records().begin()->release_key());
     if (batch_type != prefix_truncate_key) {
         vlog(
-          _logger.error,
-          "Unknown prefix_truncate batch type for {} at offset {}: {}",
-          _raft->ntp(),
+          _log.error,
+          "Unknown prefix_truncate batch type at offset {}: {}",
           batch.header().base_offset(),
           batch_type);
         co_return;
@@ -332,21 +317,19 @@ ss::future<> log_eviction_stm::apply(model::record_batch batch) {
         // time of replicating. We still need to have replicated it though so
         // other STMs can honor it (e.g. archival).
         vlog(
-          _logger.info,
-          "Replicated prefix_truncate batch for {} with no local redpanda "
+          _log.info,
+          "Replicated prefix_truncate batch with no local redpanda "
           "offset. Requested start Kafka offset {}",
-          _raft->ntp(),
           record.kafka_start_offset);
         co_return;
     }
     auto truncate_offset = record.rp_start_offset - model::offset(1);
     if (truncate_offset > _delete_records_eviction_offset) {
         vlog(
-          _logger.debug,
-          "Moving local to truncate_point: {} last_applied: {} ntp: {}",
+          _log.debug,
+          "Moving local to truncate_point: {} last_applied: {}",
           truncate_offset,
-          last_applied_offset(),
-          _raft->ntp());
+          last_applied_offset());
 
         /// Set the new in memory start offset
         _delete_records_eviction_offset = truncate_offset;
@@ -380,21 +363,16 @@ ss::future<> log_eviction_stm::handle_raft_snapshot() {
     _storage_eviction_offset = last_snapshot_index;
     set_next(model::next_offset(last_snapshot_index));
     vlog(
-      _logger.info,
-      "Handled log eviction new effective start offset: {} for ntp: {}",
-      effective_start_offset(),
-      _c->ntp());
+      _log.info,
+      "Handled log eviction new effective start offset: {}",
+      effective_start_offset());
 }
 
 ss::future<>
 log_eviction_stm::apply_snapshot(stm_snapshot_header header, iobuf&& data) {
     auto snapshot = serde::from_iobuf<snapshot_data>(std::move(data));
     vlog(
-      _logger.info,
-      "Applying snapshot {} at offset: {} for ntp: {}",
-      snapshot,
-      header.offset,
-      _raft->ntp());
+      _log.info, "Applying snapshot {} at offset: {}", snapshot, header.offset);
 
     _delete_records_eviction_offset = snapshot.effective_start_offset;
     _last_snapshot_offset = header.offset;
@@ -403,11 +381,7 @@ log_eviction_stm::apply_snapshot(stm_snapshot_header header, iobuf&& data) {
 }
 
 ss::future<stm_snapshot> log_eviction_stm::take_snapshot() {
-    vlog(
-      _logger.trace,
-      "Taking snapshot at offset: {} for ntp: {}",
-      last_applied_offset(),
-      _raft->ntp());
+    vlog(_log.trace, "Taking snapshot at offset: {}", last_applied_offset());
     iobuf snap_data = serde::to_iobuf(
       snapshot_data{.effective_start_offset = _delete_records_eviction_offset});
     co_return stm_snapshot::create(
