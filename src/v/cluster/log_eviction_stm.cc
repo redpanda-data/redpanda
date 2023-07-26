@@ -46,7 +46,7 @@ log_eviction_stm::log_eviction_stm(
 
 ss::future<> log_eviction_stm::start() {
     ssx::spawn_with_gate(
-      _gate, [this] { return write_raft_snapshots_in_background(); });
+      _gate, [this] { return handle_log_eviction_events(); });
     ssx::spawn_with_gate(_gate, [this] { return monitor_log_eviction(); });
     return persisted_stm::start();
 }
@@ -69,7 +69,7 @@ ss::future<> log_eviction_stm::enqueue_eviction_event(
       .prefix_truncate_offset = offset, .wait_for_truncation = wait});
 }
 
-ss::future<> log_eviction_stm::write_raft_snapshots_in_background() {
+ss::future<> log_eviction_stm::handle_log_eviction_events() {
     /// This method is executed as a background fiber and it attempts to write
     /// snapshots as close to effective_start_offset as possible.
     auto gh = _gate.hold();

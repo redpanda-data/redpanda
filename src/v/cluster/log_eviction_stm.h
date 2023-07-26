@@ -116,7 +116,7 @@ private:
 
     ss::future<> monitor_log_eviction();
     ss::future<> do_write_raft_snapshot(model::offset);
-    ss::future<> write_raft_snapshots_in_background();
+    ss::future<> handle_log_eviction_events();
     ss::future<> apply(model::record_batch) override;
     ss::future<> handle_raft_snapshot() override;
 
