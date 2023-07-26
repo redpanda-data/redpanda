@@ -183,7 +183,8 @@ tx_gateway_frontend::tx_gateway_frontend(
   rm_group_proxy* group_proxy,
   ss::sharded<cluster::rm_partition_frontend>& rm_partition_frontend,
   ss::sharded<features::feature_table>& feature_table,
-  ss::sharded<cluster::tm_stm_cache_manager>& tm_stm_cache_manager)
+  ss::sharded<cluster::tm_stm_cache_manager>& tm_stm_cache_manager,
+  config::binding<uint64_t> max_transactions_per_coordinator)
   : _ssg(ssg)
   , _partition_manager(partition_manager)
   , _shard_table(shard_table)
@@ -202,8 +203,8 @@ tx_gateway_frontend::tx_gateway_frontend(
       config::shard_local_cfg().metadata_dissemination_retry_delay_ms.value())
   , _transactional_id_expiration(
       config::shard_local_cfg().transactional_id_expiration_ms.value())
-  , _transactions_enabled(
-      config::shard_local_cfg().enable_transactions.value()) {
+  , _transactions_enabled(config::shard_local_cfg().enable_transactions.value())
+  , _max_transactions_per_coordinator(max_transactions_per_coordinator) {
     /**
      * do not start expriry timer when transactions are disabled
      */
