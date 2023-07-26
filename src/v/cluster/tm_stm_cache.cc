@@ -68,8 +68,8 @@ tm_stm_cache::find(model::term_id term, kafka::transactional_id tx_id) {
         return tx_it->second;
     }
 
-    tx_it = _log_txes.find(tx_id);
-    if (tx_it == _log_txes.end()) {
+    auto log_it = _log_txes.find(tx_id);
+    if (log_it == _log_txes.end()) {
         vlog(
           txlog.trace,
           "looking for tx:{} etag:{}: can't find tx:{} in log",
@@ -79,20 +79,20 @@ tm_stm_cache::find(model::term_id term, kafka::transactional_id tx_id) {
         return std::nullopt;
     }
 
-    if (tx_it->second.etag != term) {
+    if (log_it->second.tx.etag != term) {
         vlog(
           txlog.trace,
           "looking for tx:{} etag:{}: found a tx with etag:{} pid:{} tx_seq:{} "
           "(wrong etag)",
           tx_id,
           term,
-          tx_it->second.etag,
-          tx_it->second.pid,
-          tx_it->second.tx_seq);
+          log_it->second.tx.etag,
+          log_it->second.tx.pid,
+          log_it->second.tx.tx_seq);
         return std::nullopt;
     }
 
-    return tx_it->second;
+    return log_it->second.tx;
 }
 
 std::optional<tm_transaction>
@@ -119,7 +119,7 @@ tm_stm_cache::find_log(kafka::transactional_id tx_id) {
     if (tx_it == _log_txes.end()) {
         return std::nullopt;
     }
-    return tx_it->second;
+    return tx_it->second.tx;
 }
 
 void tm_stm_cache::set_log(tm_transaction tx) {
@@ -130,7 +130,17 @@ void tm_stm_cache::set_log(tm_transaction tx) {
       tx.etag,
       tx.pid,
       tx.tx_seq);
-    _log_txes[tx.id] = tx;
+
+    auto [tx_it, inserted] = _log_txes.try_emplace(tx.id, tx);
+    if (!inserted) {
+        tx_it->second.tx = tx;
+    }
+
+    if (tx_it->second._hook.is_linked()) {
+        tx_it->second._hook.unlink();
+    }
+    lru_txes.push_back(tx_it->second);
+
     for (auto& [term, entry] : _state) {
         if (term < tx.etag) {
             entry.txes.erase(tx.id);
@@ -143,7 +153,7 @@ void tm_stm_cache::erase_log(kafka::transactional_id tx_id) {
     if (tx_it == _log_txes.end()) {
         return;
     }
-    auto tx = tx_it->second;
+    auto& tx = tx_it->second.tx;
     vlog(
       txlog.trace,
       "erasing tx:{} etag:{} pid:{} tx_seq:{} from log",
@@ -151,13 +161,13 @@ void tm_stm_cache::erase_log(kafka::transactional_id tx_id) {
       tx.etag,
       tx.pid,
       tx.tx_seq);
-    _log_txes.erase(tx_id);
+    _log_txes.erase(tx_it);
 }
 
 fragmented_vector<tm_transaction> tm_stm_cache::get_log_transactions() {
     fragmented_vector<tm_transaction> txes;
     for (auto& entry : _log_txes) {
-        txes.push_back(entry.second);
+        txes.push_back(entry.second.tx);
     }
     return txes;
 }
@@ -226,7 +236,7 @@ fragmented_vector<tm_transaction> tm_stm_cache::get_all_transactions() {
             for (const auto& [id, tx] : _log_txes) {
                 auto tx_it = entry_it->second.txes.find(id);
                 if (tx_it == entry_it->second.txes.end()) {
-                    ans.push_back(tx);
+                    ans.push_back(tx.tx);
                 }
             }
             return ans;

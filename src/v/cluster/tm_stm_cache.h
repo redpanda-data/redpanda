@@ -26,6 +26,7 @@
 #include "raft/types.h"
 #include "storage/snapshot.h"
 #include "utils/expiring_promise.h"
+#include "utils/intrusive_list_helpers.h"
 #include "utils/mutex.h"
 
 #include <absl/container/btree_set.h>
@@ -199,6 +200,9 @@ public:
     std::optional<tm_transaction> find_log(kafka::transactional_id tx_id);
 
     void set_log(tm_transaction);
+    // It is important that we unlink entries from _log_txes before
+    // destroying the entries themselves so that the safe link does not
+    // assert.
     void erase_log(kafka::transactional_id);
 
     fragmented_vector<tm_transaction> get_log_transactions();
@@ -211,8 +215,8 @@ public:
     absl::btree_set<kafka::transactional_id>
     filter_all_txid_by_tx(Func&& func) {
         absl::btree_set<kafka::transactional_id> ids;
-        for (auto& [id, tx] : _log_txes) {
-            if (func(tx)) {
+        for (auto& [id, entry] : _log_txes) {
+            if (func(entry.tx)) {
                 ids.insert(id);
             }
         }
@@ -236,13 +240,28 @@ public:
     std::deque<tm_transaction> checkpoint();
 
 private:
+    struct tx_wrapper {
+        tx_wrapper() = default;
+
+        tx_wrapper(const tm_transaction& tx)
+          : tx(tx) {}
+
+        tm_transaction tx;
+        intrusive_list_hook _hook;
+    };
+
+    // Tracks the LRU order of tx sessions. When the count exceeds
+    // max_transactions_per_coordinator, we abort tx sessions in the
+    // LRU order.
+    intrusive_list<tx_wrapper, &tx_wrapper::_hook> lru_txes;
+
     ss::basic_rwlock<> _state_lock;
     // the cache stores all last known txes written by this nodes
     // when it was a leader. a node could be a leader multiple times
     // so the cache groups the txes by the leader's term to preserve
     // last tx per each term
     absl::node_hash_map<model::term_id, tm_stm_cache_entry> _state;
-    absl::node_hash_map<kafka::transactional_id, tm_transaction> _log_txes;
+    absl::node_hash_map<kafka::transactional_id, tx_wrapper> _log_txes;
     // when a node is a leader _mem_term contains its term to let find_mem
     // fetch txes without specifying it
     std::optional<model::term_id> _mem_term;
