@@ -24,6 +24,10 @@
 #include <boost/test/unit_test.hpp>
 #include <fmt/format.h>
 
+#include <cstdint>
+#include <iterator>
+#include <span>
+
 SEASTAR_THREAD_TEST_CASE(test_copy_equal) {
     iobuf buf;
     buf.reserve_memory(10000000);
@@ -659,4 +663,32 @@ SEASTAR_THREAD_TEST_CASE(iobuf_parser_peek) {
     auto dst_a = parser.peek(1000);
     auto dst_b = parser.copy(1000);
     BOOST_REQUIRE(dst_a == dst_b);
+}
+
+SEASTAR_THREAD_TEST_CASE(iobuf_parser_consume_to) {
+    auto frag_gen = [](std::span<const uint8_t> in) {
+        auto tmp = iobuf{};
+        tmp.append(in.data(), in.size());
+        return tmp;
+    };
+    auto reference_data = std::vector<uint8_t>{
+      0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14};
+
+    // create an interesting iobuf composed of more than one fragment
+    auto src = iobuf{};
+    src.append_fragments(frag_gen(std::span{reference_data}.first(5)));
+
+    src.append_fragments(frag_gen(std::span{reference_data}.subspan(5, 5)));
+    src.append_fragments(frag_gen(std::span{reference_data}.last(5)));
+
+    // construct iobuf_parser with the interesting iobuf
+    auto stream = iobuf_parser{std::move(src)};
+
+    // consume all the data to a std::vector
+    auto out = std::vector<uint8_t>{};
+    stream.consume_to(stream.bytes_left(), std::back_inserter(out));
+
+    BOOST_REQUIRE(out == reference_data);
+
+    BOOST_REQUIRE(stream.bytes_left() == 0);
 }
