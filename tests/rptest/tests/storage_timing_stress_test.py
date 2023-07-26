@@ -10,6 +10,8 @@ from rptest.clients.rpk import RpkTool
 from rptest.services.admin import Admin
 from rptest.services.cluster import cluster
 from rptest.services.kgo_verifier_services import KgoVerifierProducer, KgoVerifierSeqConsumer
+from rptest.services.redpanda import RedpandaService
+from rptest.services.storage import ClusterStorage
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.clients.types import TopicSpec
 from rptest.tests.partition_movement import PartitionMovementMixin
@@ -35,6 +37,49 @@ class StorageCheck:
     @property
     def name(self):
         return self._name
+
+
+def check_retention(test):
+    topic = test.topic_spec
+    test.logger.debug(
+        f"checking retention overshooting for topic {topic.name}")
+
+    def disk_size_greater():
+        # extract information about disk space usage
+        storage: ClusterStorage = test.redpanda.storage(all_nodes=True,
+                                                        sizes=True,
+                                                        scan_cache=False)
+        partitions = list(storage.partitions("kafka", topic.name))
+        for part in partitions:
+            test.logger.debug(
+                f"partition {part.num} total_size {part.total_size}")
+        return all(part.total_size > topic.retention_bytes
+                   for part in partitions)
+
+    # step 1: wait until disk usage is greater than retention
+    if not hasattr(test, '._check_disk_space_started'):
+        if not disk_size_greater():
+            return
+        test._check_disk_space_started = True
+
+    # step 2: assert that for remaining_interval, disk_size will be greater than retention
+    assert disk_size_greater(
+    ), f"storage usage is less than {topic.retention_bytes=}"
+
+
+def check_disk_space(test):
+    disk_reservation_percent = int(
+        test.rpk.cluster_config_get('disk_reservation_percent'))
+
+    redpanda: RedpandaService = test.redpanda
+
+    def disk_usage_good():
+        return all(
+            redpanda.get_node_disk_usage(node=n, percent=True) < (
+                100 - disk_reservation_percent) for n in redpanda.nodes)
+
+    assert disk_usage_good(
+    ), f"disk_space went below {disk_reservation_percent=}%"
 
 
 class StorageTimingStressTest(RedpandaTest, PartitionMovementMixin):
@@ -78,7 +123,10 @@ class StorageTimingStressTest(RedpandaTest, PartitionMovementMixin):
 
         self.rpk = RpkTool(self.redpanda)
         self.admin = Admin(self.redpanda)
-        self.checks = []
+        self.checks = [
+            StorageCheck(fn.__name__, fn)
+            for fn in [check_retention, check_disk_space]
+        ]
 
     def _create_producer(self, cleanup_policy: str) -> KgoVerifierProducer:
         bps = self.produce_byte_rate_per_ntp * self.topics[0].partition_count
@@ -232,7 +280,6 @@ class StorageTimingStressTest(RedpandaTest, PartitionMovementMixin):
         (e.g. isolate/kill nodes, isolate leader from cloud storage, change cloud storage
         topic/cluster configs on the fly).
         """
-        self.check_timeout = 15  # seconds
 
         self.prologue(cleanup_policy)
 
