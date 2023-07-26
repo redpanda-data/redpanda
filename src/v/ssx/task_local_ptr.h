@@ -18,6 +18,7 @@
 #include <seastar/core/thread.hh>
 
 #include <stdexcept>
+#include <utility>
 
 namespace ssx {
 
@@ -50,7 +51,12 @@ public:
       , _task(get_current_task()) {}
 
     explicit task_local(T&& val)
-      : _val(val)
+      : _val(std::move(val))
+      , _task(get_current_task()) {}
+
+    template<class... Args>
+    explicit task_local(std::in_place_t, Args&&... args)
+      : _val(std::in_place, std::forward<Args>(args)...)
       , _task(get_current_task()) {}
 
     task_local() = delete;
@@ -111,7 +117,7 @@ private:
 
 template<class T, class... Args>
 auto make_task_local(Args&&... args) {
-    return task_local<T>(T((std::forward<Args>(args))...));
+    return task_local<T>(std::in_place, (std::forward<Args>(args))...);
 }
 
 /// Non-owning smart pointer.
