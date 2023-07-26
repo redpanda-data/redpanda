@@ -15,6 +15,8 @@ import (
 	"strconv"
 	"strings"
 
+	"k8s.io/apimachinery/pkg/runtime"
+
 	"github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
 )
 
@@ -100,6 +102,12 @@ func migrateClusterConfigs(configs map[string]string, rp *v1alpha1.Redpanda) {
 		fmt.Printf("error in marshalling data: %s\n", err)
 	}
 
-	rpConfigs.Cluster = jsonData
+	jsonRuntime := &runtime.RawExtension{}
+	err = jsonRuntime.UnmarshalJSON(jsonData)
+	if err != nil {
+		fmt.Printf("error in unmarshalling data: %s\n", err)
+
+	}
+	rpConfigs.Cluster = jsonRuntime
 	rp.Spec.ClusterSpec.Config = rpConfigs
 }
