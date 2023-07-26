@@ -268,12 +268,14 @@ inline constexpr detail::background_t background;
 /// \brief Create a new future, handling common shutdown exception types.
 inline seastar::future<>
 ignore_shutdown_exceptions(seastar::future<> fut) noexcept {
-    return std::move(fut)
-      .handle_exception_type([](const seastar::abort_requested_exception&) {})
-      .handle_exception_type([](const seastar::gate_closed_exception&) {})
-      .handle_exception_type([](const seastar::broken_semaphore&) {})
-      .handle_exception_type([](const seastar::broken_promise&) {})
-      .handle_exception_type([](const seastar::broken_condition_variable&) {});
+    try {
+        co_await std::move(fut);
+    } catch (const seastar::abort_requested_exception&) {
+    } catch (const seastar::gate_closed_exception&) {
+    } catch (const seastar::broken_semaphore&) {
+    } catch (const seastar::broken_promise&) {
+    } catch (const seastar::broken_condition_variable&) {
+    }
 }
 
 /// \brief Create a future holding a gate, handling common shutdown exception
