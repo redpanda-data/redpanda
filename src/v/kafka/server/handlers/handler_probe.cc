@@ -106,7 +106,7 @@ void handler_probe::setup_metrics(
           "latency_microseconds",
           sm::description("Latency histogram of kafka requests"),
           labels,
-          [this] { return _latency.seastar_histogram_logform(1); })
+          [this] { return _latency.internal_histogram_logform(); })
           .aggregate(aggregate_labels),
       });
 }

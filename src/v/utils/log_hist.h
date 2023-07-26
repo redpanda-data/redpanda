@@ -14,12 +14,10 @@
 #include <seastar/core/metrics_types.hh>
 #include <seastar/core/shared_ptr.hh>
 
-#include <boost/intrusive/list.hpp>
-
+#include <array>
 #include <bit>
 #include <chrono>
 #include <cstdint>
-#include <vector>
 
 /*
  * A histogram implementation
@@ -112,7 +110,7 @@ public:
 
     log_hist()
       : _canary(seastar::make_lw_shared(true))
-      , _counts(number_of_buckets) {}
+      , _counts() {}
     log_hist(const log_hist& o) = delete;
     log_hist& operator=(const log_hist&) = delete;
     log_hist(log_hist&& o) = delete;
@@ -135,32 +133,38 @@ public:
         _counts[i]++;
     }
 
-    void record(std::unique_ptr<measurement> m) {
-        record(m->compute_duration());
-    }
+    template<int64_t _scale, uint64_t _first_bucket_bound, int _bucket_count>
+    struct logform_config {
+        static constexpr auto bound_is_pow_2 = _first_bucket_bound >= 1
+                                               && (_first_bucket_bound
+                                                   & (_first_bucket_bound - 1))
+                                                    == 0;
+        static_assert(
+          bound_is_pow_2, "_first_bucket_bound must be a power of 2");
 
-    seastar::metrics::histogram seastar_histogram_logform(int64_t scale) const {
-        seastar::metrics::histogram hist;
-        hist.buckets.resize(_counts.size());
-        hist.sample_sum = static_cast<double>(_sample_sum)
-                          / static_cast<double>(scale);
+        static constexpr auto scale = _scale;
+        static constexpr auto first_bucket_bound = _first_bucket_bound;
+        static constexpr auto bucket_count = _bucket_count;
+    };
 
-        uint64_t cumulative_count = 0;
-        for (uint64_t i = 0; i < _counts.size(); i++) {
-            auto& bucket = hist.buckets[i];
-
-            cumulative_count += _counts[i];
-            bucket.count = cumulative_count;
-            uint64_t unscaled_upper_bound = ((uint64_t)1
-                                             << (first_bucket_exp + i))
-                                            - 1;
-            bucket.upper_bound = static_cast<double>(unscaled_upper_bound)
-                                 / static_cast<double>(scale);
-        }
-
-        hist.sample_count = cumulative_count;
-        return hist;
-    }
+    template<typename cfg>
+    seastar::metrics::histogram seastar_histogram_logform() const;
+    /*
+     * Generates a Prometheus histogram with 18 buckets. The first bucket has an
+     * upper bound of 256 - 1 and subsequent buckets have an upper bound of 2
+     * times the upper bound of the previous bucket.
+     *
+     * This is the histogram type used in the `/public_metrics` endpoint
+     */
+    seastar::metrics::histogram public_histogram_logform() const;
+    /*
+     * Generates a Prometheus histogram with 26 buckets. The first bucket has an
+     * upper bound of 8 - 1 and subsequent buckets have an upper bound of 2
+     * times the upper bound of the previous bucket.
+     *
+     * This is the histogram type used in the `/metrics` endpoint
+     */
+    seastar::metrics::histogram internal_histogram_logform() const;
 
 private:
     friend measurement;
@@ -168,7 +172,7 @@ private:
     // Used to inform measurements whether `log_hist` has been destroyed
     measurement_canary_t _canary;
 
-    std::vector<uint64_t> _counts;
+    std::array<uint64_t, number_of_buckets> _counts;
     uint64_t _sample_sum{0};
 };
 
@@ -179,8 +183,7 @@ private:
  * will produce the same seastar histogram as
  * `ssx::metrics::report_default_histogram(hdr_hist)`.
  */
-using log_hist_public = log_hist<std::chrono::microseconds, 18, 256>;
-static constexpr int64_t log_hist_public_scale = 1'000'000;
+using log_hist_public = log_hist<std::chrono::microseconds, 18, 256ul>;
 
 /*
  * This histogram produces results that are similar, but not indentical to the
@@ -188,4 +191,4 @@ static constexpr int64_t log_hist_public_scale = 1'000'000;
  * following bounds; [log_hist_internal upper bounds, internal hdr_hist upper
  * bounds] [8, 10], [16, 20], [32, 41], [64, 83], [128, 167], [256, 335]
  */
-using log_hist_internal = log_hist<std::chrono::microseconds, 26, 8>;
+using log_hist_internal = log_hist<std::chrono::microseconds, 26, 8ul>;
