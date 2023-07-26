@@ -17,6 +17,7 @@
 #include "utils/gate_guard.h"
 
 #include <seastar/core/future-util.hh>
+#include <seastar/core/sleep.hh>
 
 namespace cluster {
 
@@ -40,56 +41,68 @@ log_eviction_stm::log_eviction_stm(
   ss::abort_source& as,
   storage::kvstore& kvstore)
   : persisted_stm("log_eviction_stm.snapshot", logger, raft, kvstore)
-  , _as(as) {}
+  , _as(as)
+  , _queue(max_event_queue_size) {}
 
 ss::future<> log_eviction_stm::start() {
-    ssx::spawn_with_gate(_gate, [this] { return monitor_log_eviction(); });
     ssx::spawn_with_gate(
       _gate, [this] { return write_raft_snapshots_in_background(); });
+    ssx::spawn_with_gate(_gate, [this] { return monitor_log_eviction(); });
     return persisted_stm::start();
 }
 
 ss::future<> log_eviction_stm::stop() {
-    _reap_condition.broken();
+    _queue_mutex.broken();
+    _queue.abort(std::make_exception_ptr(ss::abort_requested_exception()));
     co_await persisted_stm::stop();
+}
+
+ss::future<> log_eviction_stm::enqueue_eviction_event(
+  model::offset offset, wait_for_success wait) {
+    co_await _queue_mutex.get_units();
+    co_await _queue.push_eventually(eviction_event{
+      .prefix_truncate_offset = offset, .wait_for_truncation = wait});
 }
 
 ss::future<> log_eviction_stm::write_raft_snapshots_in_background() {
     /// This method is executed as a background fiber and it attempts to write
     /// snapshots as close to effective_start_offset as possible.
     auto gh = _gate.hold();
-    bool wait_with_timeout = false;
+
     while (!_as.abort_requested()) {
         /// This background fiber can be woken-up via apply() when special
         /// batches are processed or by the storage layer when local
         /// eviction is triggered.
         try {
-            static const auto eviction_event_wait_time = 5s;
-            if (wait_with_timeout) {
-                /// If after call to \ref do_write_snapshot() has not
-                /// truncated up until the desired point, it will be OK to
-                /// iterate again after some time to retry. Maybe
-                /// max_collectible_offset has moved forward.
-                co_await _reap_condition.wait(eviction_event_wait_time);
-            } else {
-                /// Last truncation had completed with success, there is no need
-                /// to wait for any other condition then for notify() to be
-                /// called.
-                co_await _reap_condition.wait();
-            }
-        } catch (const ss::condition_variable_timed_out&) {
-            /// There is still more data to truncate
+            co_await _queue.not_empty();
+        } catch (const ss::abort_requested_exception&) {
+            break;
         } catch (const ss::broken_condition_variable&) {
             /// stop() has been called
             break;
+        } catch (const ss::broken_semaphore&) {
+            /// stop() has been called
+            break;
         }
+
+        auto& event = _queue.front();
+        vlog(
+          _log.trace,
+          "processing prefix truncation event with offset: {}, waiting for "
+          "truncate: {}",
+          event.prefix_truncate_offset,
+          event.wait_for_truncation);
+
         auto evict_until = std::max(
-          _delete_records_eviction_offset, _storage_eviction_offset);
+          _delete_records_eviction_offset, event.prefix_truncate_offset);
         auto index_lb = _raft->log().index_lower_bound(evict_until);
         if (!index_lb) {
-            wait_with_timeout = false;
+            if (!event.wait_for_truncation) {
+                maybe_pop_queue();
+            }
             continue;
         }
+
         vassert(
           index_lb <= evict_until,
           "Calculated boundary {} must be <= effective_start {} ",
@@ -97,11 +110,24 @@ ss::future<> log_eviction_stm::write_raft_snapshots_in_background() {
           evict_until);
         try {
             co_await do_write_raft_snapshot(*index_lb);
+            if (
+              !event.wait_for_truncation
+              || _raft->last_snapshot_index() == index_lb) {
+                maybe_pop_queue();
+            } else {
+                vlog(
+                  _log.trace,
+                  "haven't yet been able to truncate at {} offset, waiting for "
+                  "next retry",
+                  event.prefix_truncate_offset);
+                co_await ss::sleep_abortable(5s, _as);
+            }
         } catch (const ss::abort_requested_exception&) {
             // ignore abort requested exception, shutting down
         } catch (const ss::gate_closed_exception&) {
             // ignore gate closed exception, shutting down
         } catch (const ss::broken_semaphore&) {
+        } catch (const ss::sleep_aborted&) {
             // ignore broken sem exception, shutting down
         } catch (const std::exception& e) {
             vlog(
@@ -109,12 +135,18 @@ ss::future<> log_eviction_stm::write_raft_snapshots_in_background() {
               "Error occurred when attempting to write snapshot: {}",
               e);
         }
-        wait_with_timeout = _raft->last_snapshot_index() < index_lb;
     }
 }
 
 ss::future<model::offset> log_eviction_stm::storage_eviction_event() {
     return _raft->monitor_log_eviction(_as);
+}
+
+void log_eviction_stm::maybe_pop_queue() {
+    // Since the queue is emptied when stopped we must check if it is empty
+    if (!_queue.empty()) {
+        _queue.pop();
+    }
 }
 
 ss::future<> log_eviction_stm::monitor_log_eviction() {
@@ -125,15 +157,8 @@ ss::future<> log_eviction_stm::monitor_log_eviction() {
     while (!_as.abort_requested()) {
         try {
             _storage_eviction_offset = co_await storage_eviction_event();
-            const auto max_collectible_offset
-              = _raft->log().stm_manager()->max_collectible_offset();
-            const auto next_eviction_offset = std::min(
-              max_collectible_offset, _storage_eviction_offset);
-            _reap_condition.signal();
-            /// Do not attempt to process another eviction event from storage
-            /// until the current has completed fully
-            co_await _last_snapshot_monitor.wait(
-              next_eviction_offset, model::no_timeout, _as);
+            co_await enqueue_eviction_event(
+              _storage_eviction_offset, wait_for_success::no);
         } catch (const ss::abort_requested_exception&) {
             // ignore abort requested exception, shutting down
         } catch (const ss::gate_closed_exception&) {
@@ -168,7 +193,6 @@ ss::future<> log_eviction_stm::do_write_raft_snapshot(model::offset index_lb) {
     }
     vlog(_log.debug, "Truncating data up until offset: {}", index_lb);
     co_await _raft->write_snapshot(raft::write_snapshot_cfg(index_lb, iobuf()));
-    _last_snapshot_monitor.notify(index_lb);
 }
 
 ss::future<result<model::offset, std::error_code>>
@@ -336,8 +360,7 @@ ss::future<> log_eviction_stm::apply(model::record_batch batch) {
 
         /// Set the new in memory start offset
         _delete_records_eviction_offset = truncate_offset;
-        /// Wake up the background reaping thread
-        _reap_condition.signal();
+        co_await enqueue_eviction_event(truncate_offset, wait_for_success::yes);
         /// Writing a local snapshot is just an optimization, delete-records
         /// is infrequently called and theres no better time to persist the
         /// fact that a new start offset has been written to disk
