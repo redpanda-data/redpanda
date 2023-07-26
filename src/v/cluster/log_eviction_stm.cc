@@ -134,6 +134,10 @@ ss::future<> log_eviction_stm::handle_log_eviction_events() {
     }
 }
 
+ss::future<model::offset> log_eviction_stm::storage_eviction_event() {
+    return _raft->monitor_log_eviction(_as);
+}
+
 ss::future<> log_eviction_stm::monitor_log_eviction() {
     /// This method is executed as a background fiber and is listening for
     /// eviction events from the storage layer. These events will trigger a
@@ -141,7 +145,7 @@ ss::future<> log_eviction_stm::monitor_log_eviction() {
     auto gh = _gate.hold();
     while (!_as.abort_requested()) {
         try {
-            auto eviction_offset = co_await _raft->monitor_log_eviction(_as);
+            auto eviction_offset = co_await storage_eviction_event();
             if (eviction_offset > _storage_eviction_offset) {
                 _storage_eviction_offset = eviction_offset;
                 _has_pending_truncation.signal();
