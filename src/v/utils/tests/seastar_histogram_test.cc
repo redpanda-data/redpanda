@@ -1,3 +1,4 @@
+#include "ssx/metrics.h"
 #include "utils/hdr_hist.h"
 #include "utils/log_hist.h"
 
@@ -34,42 +35,21 @@ bool approximately_equal(double a, double b) {
     return std::abs(a - b) <= precision_error;
 }
 
-struct hist_config {
-    int64_t scale;
-    bool use_approximately_equal;
-};
-
-constexpr std::array hist_configs = {
-  hist_config{log_hist_public_scale, true}, hist_config{1, false}};
-
 template<typename l_hist>
-void validate_histograms_equal(const hdr_hist& a, const l_hist& b) {
-    for (auto cfg : hist_configs) {
-        const auto logform_a = a.seastar_histogram_logform(
-          18, 250, 2.0, cfg.scale);
-        const auto logform_b = b.seastar_histogram_logform(cfg.scale);
+void validate_public_histograms_equal(const hdr_hist& a, const l_hist& b) {
+    const auto logform_a = ssx::metrics::report_default_histogram(a);
+    const auto logform_b = b.public_histogram_logform();
 
-        BOOST_CHECK_EQUAL(logform_a.sample_count, logform_b.sample_count);
-        if (cfg.use_approximately_equal) {
-            BOOST_CHECK(
-              approximately_equal(logform_a.sample_sum, logform_b.sample_sum));
-        } else {
-            BOOST_CHECK_EQUAL(logform_a.sample_sum, logform_b.sample_sum);
-        }
+    BOOST_CHECK_EQUAL(logform_a.sample_count, logform_b.sample_count);
+    BOOST_CHECK(
+      approximately_equal(logform_a.sample_sum, logform_b.sample_sum));
 
-        for (size_t idx = 0; idx < logform_a.buckets.size(); ++idx) {
-            if (cfg.use_approximately_equal) {
-                BOOST_CHECK(approximately_equal(
-                  logform_a.buckets[idx].upper_bound,
-                  logform_b.buckets[idx].upper_bound));
-            } else {
-                BOOST_CHECK_EQUAL(
-                  logform_a.buckets[idx].upper_bound,
-                  logform_b.buckets[idx].upper_bound);
-            }
-            BOOST_CHECK_EQUAL(
-              logform_a.buckets[idx].count, logform_b.buckets[idx].count);
-        }
+    for (size_t idx = 0; idx < logform_a.buckets.size(); ++idx) {
+        BOOST_CHECK(approximately_equal(
+          logform_a.buckets[idx].upper_bound,
+          logform_b.buckets[idx].upper_bound));
+        BOOST_CHECK_EQUAL(
+          logform_a.buckets[idx].count, logform_b.buckets[idx].count);
     }
 }
 } // namespace
@@ -77,8 +57,6 @@ void validate_histograms_equal(const hdr_hist& a, const l_hist& b) {
 // ensures both the log_hist_public and the public hdr_hist return identical
 // seastar histograms for values recorded around bucket bounds.
 SEASTAR_THREAD_TEST_CASE(test_public_log_hist_and_hdr_hist_equal_bounds) {
-    using namespace std::chrono_literals;
-
     hdr_hist a;
     log_hist_public b;
 
@@ -94,14 +72,12 @@ SEASTAR_THREAD_TEST_CASE(test_public_log_hist_and_hdr_hist_equal_bounds) {
         b.record(upper_bound + 1);
     }
 
-    validate_histograms_equal(a, b);
+    validate_public_histograms_equal(a, b);
 }
 
 // ensures both the log_hist_public and the public hdr_hist return identical
 // seastar histograms for randomly selected values.
 SEASTAR_THREAD_TEST_CASE(test_public_log_hist_and_hdr_hist_equal_rand) {
-    using namespace std::chrono_literals;
-
     hdr_hist a;
     log_hist_public b;
 
@@ -115,5 +91,58 @@ SEASTAR_THREAD_TEST_CASE(test_public_log_hist_and_hdr_hist_equal_rand) {
         b.record(sample);
     }
 
-    validate_histograms_equal(a, b);
+    validate_public_histograms_equal(a, b);
+}
+
+// Ensures that an internal histogram is properly converted to a public metrics
+// histogram.
+SEASTAR_THREAD_TEST_CASE(test_internal_hist_to_public_hist_bounds) {
+    hdr_hist a;
+    log_hist_internal b;
+
+    a.record(1);
+    b.record(1);
+
+    for (unsigned i = 0; i < 17; i++) {
+        auto upper_bound
+          = (((unsigned)1 << (log_hist_internal::first_bucket_exp + i)) - 1);
+        a.record(upper_bound);
+        a.record(upper_bound + 1);
+        b.record(upper_bound);
+        b.record(upper_bound + 1);
+    }
+
+    validate_public_histograms_equal(a, b);
+}
+
+// Ensures that generating a internal seastar histogram from log_hist_public
+// results in the additional buckets for the extended lower bounds having counts
+// of zero.
+SEASTAR_THREAD_TEST_CASE(test_public_hist_to_internal_hist) {
+    log_hist_public a;
+    log_hist_internal b;
+
+    a.record(1);
+    b.record(1);
+
+    for (unsigned i = 0; i < 17; i++) {
+        auto upper_bound
+          = (((unsigned)1 << (log_hist_internal::first_bucket_exp + i)) - 1);
+        a.record(upper_bound);
+        a.record(upper_bound + 1);
+        b.record(upper_bound);
+        b.record(upper_bound + 1);
+    }
+
+    auto pub_to_int_hist = a.internal_histogram_logform();
+    auto int_to_int_hist = b.internal_histogram_logform();
+
+    const auto public_ub_exp = 8;
+    const auto internal_ub_exp = 3;
+
+    // The buckets in the extended lower bounds should be empty
+    for (int i = 0; i < public_ub_exp - internal_ub_exp; i++) {
+        BOOST_CHECK_EQUAL(pub_to_int_hist.buckets[i].count, 0);
+        BOOST_CHECK_NE(int_to_int_hist.buckets[i].count, 0);
+    }
 }
