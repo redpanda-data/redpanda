@@ -251,6 +251,7 @@ private:
      *        runs inside a seastar thread
      */
     ss::future<> housekeeping();
+    ss::future<> housekeeping_loop();
     ssx::semaphore _housekeeping_sem{0, "log_manager::housekeeping"};
     disk_space_alert _disk_space_alert{disk_space_alert::ok};
     bool _gc_triggered{false};
