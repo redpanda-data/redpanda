@@ -1090,6 +1090,12 @@ ss::future<tm_stm::get_txs_result> tm_stm::get_all_transactions() {
     co_return _cache->get_all_transactions();
 }
 
+size_t tm_stm::tx_cache_size() const { return _cache->tx_cache_size(); }
+
+std::optional<tm_transaction> tm_stm::oldest_tx() const {
+    return _cache->oldest_tx();
+}
+
 ss::future<checked<tm_transaction, tm_stm::op_status>>
 tm_stm::delete_partition_from_tx(
   model::term_id term,
