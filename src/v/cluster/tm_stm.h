@@ -266,6 +266,12 @@ public:
         return _raft->ntp().tp.partition;
     }
 
+    mutex& get_tx_thrashing_lock() { return _tx_thrashing_lock; }
+
+    size_t tx_cache_size() const;
+
+    std::optional<tm_transaction> oldest_tx() const;
+
 protected:
     ss::future<> handle_raft_snapshot() override;
 
@@ -283,6 +289,7 @@ private:
     ss::sharded<features::feature_table>& _feature_table;
     ss::lw_shared_ptr<cluster::tm_stm_cache> _cache;
     tm_tx_hosted_transactions _hosted_txes;
+    mutex _tx_thrashing_lock;
 
     ss::future<> apply(model::record_batch b) override;
     ss::future<> apply_hosted_transactions(model::record_batch b);
