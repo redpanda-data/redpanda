@@ -116,6 +116,10 @@ ss::future<> log_eviction_stm::write_raft_snapshots_in_background() {
     }
 }
 
+ss::future<model::offset> log_eviction_stm::storage_eviction_event() {
+    return _raft->monitor_log_eviction(_as);
+}
+
 ss::future<> log_eviction_stm::monitor_log_eviction() {
     /// This method is executed as a background fiber and is listening for
     /// eviction events from the storage layer. These events will trigger a
@@ -123,8 +127,7 @@ ss::future<> log_eviction_stm::monitor_log_eviction() {
     auto gh = _gate.hold();
     while (!_as.abort_requested()) {
         try {
-            _storage_eviction_offset = co_await _raft->monitor_log_eviction(
-              _as);
+            _storage_eviction_offset = co_await storage_eviction_event();
             const auto max_collectible_offset
               = _raft->log().stm_manager()->max_collectible_offset();
             const auto next_eviction_offset = std::min(

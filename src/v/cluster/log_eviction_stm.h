@@ -42,8 +42,7 @@ class consensus;
  * stm will be searching for. Upon processing of this record a new snapshot will
  * be written which may also trigger deletion of data on disk.
  */
-class log_eviction_stm final
-  : public persisted_stm<kvstore_backed_stm_snapshot> {
+class log_eviction_stm : public persisted_stm<kvstore_backed_stm_snapshot> {
 public:
     using offset_result = result<model::offset, std::error_code>;
     log_eviction_stm(
@@ -107,6 +106,8 @@ protected:
     ss::future<> apply_snapshot(stm_snapshot_header, iobuf&&) override;
 
     ss::future<stm_snapshot> take_snapshot() override;
+
+    virtual ss::future<model::offset> storage_eviction_event();
 
 private:
     void increment_start_offset(model::offset);

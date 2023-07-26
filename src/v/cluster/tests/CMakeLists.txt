@@ -50,6 +50,7 @@ set(srcs
         configuration_change_test.cc
         autocreate_test.cc
         controller_api_tests.cc
+        eviction_stm_test.cc
         controller_state_test.cc
         create_partitions_test.cc
         decommissioning_tests.cc
