@@ -102,8 +102,8 @@ ss::future<> log_eviction_stm::write_raft_snapshots_in_background() {
 
         auto evict_until = std::max(
           _delete_records_eviction_offset, event.prefix_truncate_offset);
-        auto index_lb = _raft->log().index_lower_bound(evict_until);
-        if (!index_lb) {
+        auto truncation_point = _raft->log().index_lower_bound(evict_until);
+        if (!truncation_point) {
             vlog(
               _log.warn,
               "unable to find index lower bound for {}",
@@ -119,15 +119,15 @@ ss::future<> log_eviction_stm::write_raft_snapshots_in_background() {
         }
 
         vassert(
-          index_lb <= evict_until,
+          truncation_point <= evict_until,
           "Calculated boundary {} must be <= effective_start {} ",
-          index_lb,
+          truncation_point,
           evict_until);
         try {
-            co_await do_write_raft_snapshot(*index_lb);
+            co_await do_write_raft_snapshot(*truncation_point);
             if (
               !event.wait_for_success
-              || _raft->last_snapshot_index() >= index_lb) {
+              || _raft->last_snapshot_index() >= truncation_point) {
                 maybe_pop_queue();
             } else {
                 vlog(
@@ -180,23 +180,25 @@ ss::future<> log_eviction_stm::monitor_log_eviction() {
     }
 }
 
-ss::future<> log_eviction_stm::do_write_raft_snapshot(model::offset index_lb) {
+ss::future<>
+log_eviction_stm::do_write_raft_snapshot(model::offset truncation_point) {
     vlog(
       _log.trace,
       "requested to write raft snapshot (prefix_truncate) at {}",
-      index_lb);
-    if (index_lb <= _raft->last_snapshot_index()) {
+      truncation_point);
+    if (truncation_point <= _raft->last_snapshot_index()) {
         co_return;
     }
     co_await _raft->visible_offset_monitor().wait(
-      index_lb, model::no_timeout, _as);
+      truncation_point, model::no_timeout, _as);
     co_await _raft->refresh_commit_index();
-    co_await _raft->log().stm_manager()->ensure_snapshot_exists(index_lb);
+    co_await _raft->log().stm_manager()->ensure_snapshot_exists(
+      truncation_point);
     const auto max_collectible_offset
       = _raft->log().stm_manager()->max_collectible_offset();
-    if (index_lb > max_collectible_offset) {
-        index_lb = max_collectible_offset;
-        if (index_lb <= _raft->last_snapshot_index()) {
+    if (truncation_point > max_collectible_offset) {
+        truncation_point = max_collectible_offset;
+        if (truncation_point <= _raft->last_snapshot_index()) {
             /// Cannot truncate, have already reached maximum allowable
             co_return;
         }
@@ -204,11 +206,14 @@ ss::future<> log_eviction_stm::do_write_raft_snapshot(model::offset index_lb) {
           _log.trace,
           "Can only evict up to offset: {}, asked to evict to: {} ",
           max_collectible_offset,
-          index_lb);
+          truncation_point);
     }
     vlog(
-      _log.debug, "Requesting raft snapshot with final offset: {}", index_lb);
-    co_await _raft->write_snapshot(raft::write_snapshot_cfg(index_lb, iobuf()));
+      _log.debug,
+      "Requesting raft snapshot with final offset: {}",
+      truncation_point);
+    co_await _raft->write_snapshot(
+      raft::write_snapshot_cfg(truncation_point, iobuf()));
 }
 
 ss::future<result<model::offset, std::error_code>>
