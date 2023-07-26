@@ -66,13 +66,15 @@ public:
         explicit measurement(log_hist& h)
           : _canary(h._canary)
           , _h(std::ref(h))
-          , _begin_t(log_hist::clock_type::now()) {}
+          , _begin_t(log_hist::clock_type::now())
+          , _total_latency(duration_t(0)) {}
         measurement(const measurement&) = delete;
         measurement& operator=(const measurement&) = delete;
         measurement(measurement&& o) noexcept
           : _canary(o._canary)
           , _h(o._h)
-          , _begin_t(o._begin_t) {
+          , _begin_t(o._begin_t)
+          , _total_latency(o._total_latency) {
             o.cancel();
         }
         measurement& operator=(measurement&& o) noexcept {
@@ -84,7 +86,7 @@ public:
         }
         ~measurement() noexcept {
             if (_canary && *_canary) {
-                _h.get().record(compute_duration());
+                _h.get().record(compute_total_latency().count());
             }
         }
 
@@ -92,16 +94,35 @@ public:
         // being recorded to the underlying histogram.
         void cancel() { _canary = nullptr; }
 
-    private:
-        int64_t compute_duration() const {
-            return std::chrono::duration_cast<duration_t>(
-                     log_hist::clock_type::now() - _begin_t)
-              .count();
+        // Temporarily stops measuring latency.
+        void stop() {
+            _total_latency = compute_total_latency();
+            _begin_t = std::nullopt;
         }
 
+        // Resumes measuring latency.
+        void start() {
+            if (!_begin_t.has_value()) {
+                _begin_t = log_hist::clock_type::now();
+            }
+        }
+
+        // Returns the total latency that has been measured so far.
+        duration_t compute_total_latency() const {
+            if (_begin_t) {
+                return _total_latency
+                       + std::chrono::duration_cast<duration_t>(
+                         log_hist::clock_type::now() - *_begin_t);
+            } else {
+                return _total_latency;
+            }
+        }
+
+    private:
         measurement_canary_t _canary;
         std::reference_wrapper<log_hist> _h;
-        log_hist::clock_type::time_point _begin_t;
+        std::optional<log_hist::clock_type::time_point> _begin_t;
+        duration_t _total_latency;
     };
 
     std::unique_ptr<measurement> auto_measure() {
