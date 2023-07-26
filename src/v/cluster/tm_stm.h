@@ -244,6 +244,12 @@ public:
     ss::future<checked<tm_transaction, tm_stm::op_status>>
       update_tx(tm_transaction, model::term_id);
 
+    mutex& get_tx_thrashing_lock() { return _tx_thrashing_lock; }
+
+    size_t tx_cache_size() const;
+
+    std::optional<tm_transaction> oldest_tx() const;
+
 protected:
     ss::future<> handle_raft_snapshot() override;
 
@@ -260,6 +266,7 @@ private:
       _tx_locks;
     ss::sharded<features::feature_table>& _feature_table;
     ss::sharded<cluster::tm_stm_cache>& _cache;
+    mutex _tx_thrashing_lock;
 
     ss::future<> apply(model::record_batch b) override;
 

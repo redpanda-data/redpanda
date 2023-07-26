@@ -274,4 +274,14 @@ std::deque<tm_transaction> tm_stm_cache::checkpoint() {
     return txes_to_checkpoint;
 }
 
+std::optional<tm_transaction> tm_stm_cache::oldest_tx() const {
+    if (lru_txes.empty()) {
+        return std::nullopt;
+    }
+
+    return lru_txes.front().tx;
+}
+
+size_t tm_stm_cache::tx_cache_size() const { return lru_txes.size(); }
+
 } // namespace cluster

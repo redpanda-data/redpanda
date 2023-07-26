@@ -239,6 +239,10 @@ public:
 
     std::deque<tm_transaction> checkpoint();
 
+    std::optional<tm_transaction> oldest_tx() const;
+
+    size_t tx_cache_size() const;
+
 private:
     struct tx_wrapper {
         tx_wrapper() = default;

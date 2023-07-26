@@ -1045,7 +1045,56 @@ ss::future<cluster::init_tm_tx_reply> tx_gateway_frontend::limit_init_tm_tx(
     }
     auto term = term_opt.value();
 
+    if (stm->tx_cache_size() > _max_transactions_per_coordinator()) {
+        // lock is sloppy and doesn't guarantee that tx_cache_size
+        // never exceeds _max_transactions_per_coordinator. init_tm_tx
+        // request may pass limit_init_tm_tx but not yet increase
+        // tx_cache_size so there is a small window of time when the
+        // next init tx request may pass too even if the first request
+        // eventually tip tx cache over max transactions per coordinator.
+        // it isn't the problem, the next request will correct it
+        auto init_units = co_await stm->get_tx_thrashing_lock().get_units();
+
+        // similar to double-checked locking pattern
+        // it protects concurrent access to oldest_tx
+        if (stm->tx_cache_size() > _max_transactions_per_coordinator()) {
+            auto tx_opt = stm->oldest_tx();
+            if (!tx_opt) {
+                vlog(
+                  txlog.warn,
+                  "oldest_tx shouldn't return empty when tx cache is at "
+                  "capacity");
+                co_return init_tm_tx_reply{tx_errc::not_coordinator};
+            }
+
+            auto tx = tx_opt.value();
+            vlog(
+              txlog.info,
+              "tx cache is at capacity; expiring oldest tx with id:{}",
+              tx.id);
+            auto tx_units = co_await stm->lock_tx(tx_id, "init_tm_tx");
+            auto ec = co_await do_expire_old_tx(
+              stm,
+              term,
+              tx.id,
+              config::shard_local_cfg().create_topic_timeout_ms(),
+              true);
+            if (ec != tx_errc::none) {
+                vlog(
+                  txlog.trace,
+                  "do_expire_old_tx with tx_id={} returned ec={}",
+                  tx.id,
+                  ec);
+                co_return init_tm_tx_reply{tx_errc::not_coordinator};
+            }
+            tx_units.return_all();
+        }
+
+        init_units.return_all();
+    }
+
     auto units = co_await stm->lock_tx(tx_id, "init_tm_tx");
+
     co_return co_await do_init_tm_tx(
       stm, term, tx_id, transaction_timeout_ms, timeout, expected_pid);
 }
