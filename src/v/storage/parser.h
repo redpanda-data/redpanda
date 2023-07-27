@@ -113,6 +113,8 @@ public:
     /// \brief cleans up async resources like the input stream
     ss::future<> close() { return _input.close(); }
 
+    parser_errc error() const { return _err; }
+
 private:
     /// \brief consumes _one_ full batch.
     ss::future<result<batch_consumer::stop_parser>> consume_one();
