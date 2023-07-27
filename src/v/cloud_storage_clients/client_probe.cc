@@ -12,7 +12,6 @@
 
 #include "prometheus/prometheus_sanitize.h"
 #include "ssx/metrics.h"
-#include "utils/hdr_hist.h"
 
 #include <seastar/core/metrics.hh>
 #include <seastar/core/metrics_types.hh>
@@ -94,7 +93,8 @@ void client_probe::register_retryable_failure(
 
 void client_probe::register_borrow() { _total_borrows += 1; }
 
-std::unique_ptr<hdr_hist::measurement> client_probe::register_lease_duration() {
+std::unique_ptr<client_probe::hist_t::measurement>
+client_probe::register_lease_duration() {
     return _lease_duration.auto_measure();
 }
 
@@ -194,9 +194,7 @@ void client_probe::setup_internal_metrics(
           labels),
         sm::make_histogram(
           "lease_duration",
-          [this] {
-              return ssx::metrics::report_default_histogram(_lease_duration);
-          },
+          [this] { return _lease_duration.public_histogram_logform(); },
           sm::description("Lease duration histogram"),
           labels),
         sm::make_gauge(
@@ -276,9 +274,7 @@ void client_probe::setup_public_metrics(
           labels),
         sm::make_histogram(
           "lease_duration",
-          [this] {
-              return ssx::metrics::report_default_histogram(_lease_duration);
-          },
+          [this] { return _lease_duration.public_histogram_logform(); },
           sm::description("Lease duration histogram"),
           labels),
         sm::make_gauge(

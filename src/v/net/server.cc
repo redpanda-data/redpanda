@@ -334,7 +334,7 @@ void server::setup_metrics() {
            "{}: Memory consumed by request processing", cfg.name))),
        sm::make_histogram(
          "dispatch_handler_latency",
-         [this] { return _hist.seastar_histogram_logform(); },
+         [this] { return _hist.internal_histogram_logform(); },
          sm::description(ssx::sformat("{}: Latency ", cfg.name)))});
 }
 
@@ -355,7 +355,7 @@ void server::setup_public_metrics() {
          "latency_seconds",
          sm::description("RPC latency"),
          {server_label(server_name)},
-         [this] { return ssx::metrics::report_default_histogram(_hist); })
+         [this] { return _hist.public_histogram_logform(); })
          .aggregate({sm::shard_label})});
 }
 

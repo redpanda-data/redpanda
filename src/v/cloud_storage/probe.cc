@@ -132,15 +132,13 @@ remote_probe::remote_probe(
             sm::make_histogram(
               "client_acquisition_latency",
               [this] {
-                  return ssx::metrics::report_default_histogram(
-                    _client_acquisition_latency);
+                  return _client_acquisition_latency.public_histogram_logform();
               },
               sm::description("Client acquisition latency histogram")),
             sm::make_histogram(
               "segment_download_latency",
               [this] {
-                  return ssx::metrics::report_default_histogram(
-                    _segment_download_latency);
+                  return _segment_download_latency.public_histogram_logform();
               },
               sm::description("Segment download latency histogram")),
           });

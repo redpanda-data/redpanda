@@ -977,7 +977,7 @@ ss::future<> remote_segment::hydrate_chunk(segment_chunk_range range) {
     auto res = co_await _api.download_segment(
       _bucket, _path, std::move(consumer), rtc, std::make_pair(start, end));
     if (res != download_result::success) {
-        measurement->set_trace(false);
+        measurement->cancel();
         throw download_exception{res, _path};
     }
 }

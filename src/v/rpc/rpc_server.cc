@@ -262,7 +262,8 @@ ss::future<> rpc_server::dispatch_method_once(
                     }
                     return send_reply(ctx, std::move(reply_buf))
                       .finally([m, l = std::move(l)]() mutable {
-                          m->probes.latency_hist().record(std::move(l));
+                          m->probes.latency_hist().record(
+                            l->compute_total_latency().count());
                       });
                 });
           })

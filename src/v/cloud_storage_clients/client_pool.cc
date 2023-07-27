@@ -188,7 +188,7 @@ client_pool::acquire(ss::abort_source& as) {
       normalized_num_clients_in_use(),
       source_sid.has_value());
 
-    std::unique_ptr<hdr_hist::measurement> measurement;
+    std::unique_ptr<client_probe::hist_t::measurement> measurement;
     if (_probe) {
         measurement = _probe->register_lease_duration();
     }

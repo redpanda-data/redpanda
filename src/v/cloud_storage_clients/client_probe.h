@@ -18,7 +18,7 @@
 #include "model/fundamental.h"
 #include "net/types.h"
 #include "ssx/metrics.h"
-#include "utils/hdr_hist.h"
+#include "utils/log_hist.h"
 
 #include <seastar/core/metrics_registration.hh>
 #include <seastar/core/metrics_types.hh>
@@ -47,6 +47,8 @@ enum class op_type_tag { upload, download };
 ///       time-series.
 class client_probe : public http::client_probe {
 public:
+    using hist_t = log_hist_internal;
+
     /// \brief Probe c-tor for S3 client
     ///
     /// \param disable is used to switch the internal monitoring off
@@ -81,7 +83,7 @@ public:
     /// Call on a shard which needs to borrow a client
     void register_borrow();
     /// Register total lease duration
-    std::unique_ptr<hdr_hist::measurement> register_lease_duration();
+    std::unique_ptr<hist_t::measurement> register_lease_duration();
     /// Utilization metric which is used to decide if borrowing is possible
     void register_utilization(unsigned clients_in_use);
 
@@ -109,7 +111,7 @@ private:
     /// Number of times this shard borrowed resources from other shards
     uint64_t _total_borrows{0};
     /// Total time the lease is held by the ntp_archiver (or another user)
-    hdr_hist _lease_duration;
+    hist_t _lease_duration;
     /// Current utilization of the client pool
     uint64_t _pool_utilization;
     ssx::metrics::metric_groups _metrics
