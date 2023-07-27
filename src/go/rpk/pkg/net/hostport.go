@@ -91,7 +91,7 @@ func splitSchemeHostPort(h string) (scheme, host, port string, err error) {
 //   - We optionally allow a port :\d+.
 //   - We optionally allow the single path, "/".
 //
-// This regexp is compilicated, but what FindStringSubmatch will return if it
+// This regexp is complicated, but what FindStringSubmatch will return if it
 // matches at all:
 //   - index 0: the full match
 //   - index 1: the scheme, if present

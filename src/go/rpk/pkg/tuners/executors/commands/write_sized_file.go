@@ -26,11 +26,11 @@ type writeSizedFileCommand struct {
 	sizeBytes int64
 }
 
-// Creates a file of size sizeBytes at the given path.
+// NewWriteSizedFileCmd creates a file of size sizeBytes at the given path.
 // When executed through DirectExecutor, it uses fallocate to create
 // the file. If the file already existed, then it uses ftruncate to shrink it
 // down if needed.
-// The script rendered throug a ScriptRenderingExecutor calls `truncate`,
+// The script rendered through a ScriptRenderingExecutor calls `truncate`,
 // which has the same behavior.
 func NewWriteSizedFileCmd(path string, sizeBytes int64) Command {
 	return &writeSizedFileCommand{path, sizeBytes}

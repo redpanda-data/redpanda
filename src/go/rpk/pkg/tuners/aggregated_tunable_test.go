@@ -40,7 +40,7 @@ func Test_aggregatedTunable_Tune(t *testing.T) {
 		want   TuneResult
 	}{
 		{
-			name: "shall return success when all tune opertions are suceessful",
+			name: "shall return success when all tune operations are successful",
 			fields: fields{
 				tunables: []Tunable{
 					&mockedTunable{
@@ -148,7 +148,7 @@ func Test_aggregatedTunable_CheckIfSupported(t *testing.T) {
 			wantReason:    "",
 		},
 		{
-			name: "shall forward reson when one of tunables is not supported",
+			name: "shall forward reason when one of tunables is not supported",
 			tunables: []Tunable{
 				&mockedTunable{
 					checkIfSupported: func() (bool, string) {

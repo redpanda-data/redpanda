@@ -169,7 +169,7 @@ func TestOptionsNeedChange(t *testing.T) {
 			want:      true,
 		},
 		{
-			name:      "shall return true as key/value option differes",
+			name:      "shall return true as key/value option differs",
 			current:   []string{"opt1=val1", "noht", "opt_2=val_2"},
 			requested: []string{"opt1=val1", "noht", "opt_2=val_3"},
 			want:      true,

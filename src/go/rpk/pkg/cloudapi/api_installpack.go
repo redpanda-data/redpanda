@@ -27,7 +27,7 @@ type InstallPackArtifact struct {
 
 type InstallPackArtifacts []InstallPackArtifact
 
-// Find returns the arftifact if it exists.
+// Find returns the artifact if it exists.
 func (as InstallPackArtifacts) Find(name string) (InstallPackArtifact, bool) {
 	for _, a := range as {
 		if a.Name == name {
