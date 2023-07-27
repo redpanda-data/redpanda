@@ -2022,41 +2022,41 @@ class RedpandaService(RedpandaServiceBase):
                 "cat /proc/cpuinfo | grep ^processor | wc -l", timeout_sec=10)
             return int(core_count_str.strip())
 
-    def get_node_disk_free(self):
-        # Assume nodes are symmetric, so we can just ask one
-        node = self.nodes[0]
-
+    def get_node_disk_measure(self, node, metric: str):
+        """
+        use df to query a stat of a disk. metric that makes sense: 'itotal' for total space available in bytes, 'used' for used space in bytes, 'pcent' for used space in percent, 'avail' for available space in bytes
+        """
         if node.account.exists(self.PERSISTENT_ROOT):
             df_path = self.PERSISTENT_ROOT
         else:
             # If dir doesn't exist yet, use the parent.
             df_path = os.path.dirname(self.PERSISTENT_ROOT)
+        cmd = f"df --block-size 1 {df_path} --output={metric}"
+        df_out = node.account.ssh_output(cmd, timeout_sec=10).strip()
+        self.logger.debug(df_out)
+        # first line is the header, second line is the measure. remove white spaces and a % suffix
+        return int(df_out.split(b"\n")[1].strip().rstrip(b"%"))
 
-        df_out = node.account.ssh_output(f"df --output=avail {df_path}",
-                                         timeout_sec=10)
-
-        avail_kb = int(df_out.strip().split(b"\n")[1].strip())
+    def get_node_disk_free(self):
+        # Assume nodes are symmetric, so we can just ask one
+        node = self.nodes[0]
+        avail = self.get_node_disk_measure(node, 'avail')
 
         if not self.dedicated_nodes:
             # Assume docker images share a filesystem.  This may not
             # be the truth (e.g. in CI they get indepdendent XFS
             # filesystems), but it's the safe assumption on e.g.
             # a workstation.
-            avail_kb = int(avail_kb / len(self.nodes))
+            avail = int(avail / len(self.nodes))
 
-        return avail_kb * 1024
+        return avail
 
     def get_node_disk_usage(self, node, percent=False):
         """
         get disk usage for the redpanda volume on a particular node
         param percent: if true, return the disk usage in percent
         """
-        # TODO merge this with get_node_disk_free?
-        cmd = f"df --block-size 1 {self.PERSISTENT_ROOT} --output={'pcent' if percent else 'used'}"
-        df_out = node.account.ssh_output(cmd, timeout_sec=10).strip()
-        self.logger.debug(df_out)
-        # first line is the header, second line is the measure. remove white spaces and a % suffix
-        return int(df_out.split(b"\n")[1].strip().rstrip(b"%"))
+        return self.get_node_disk_measure(node, 'pcent' if percent else 'used')
 
     def _startup_poll_interval(self, first_start):
         """
