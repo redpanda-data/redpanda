@@ -43,8 +43,7 @@ class consensus;
  * stm will be searching for. Upon processing of this record a new snapshot will
  * be written which may also trigger deletion of data on disk.
  */
-class log_eviction_stm final
-  : public persisted_stm<kvstore_backed_stm_snapshot> {
+class log_eviction_stm : public persisted_stm<kvstore_backed_stm_snapshot> {
 public:
     using offset_result = result<model::offset, std::error_code>;
     log_eviction_stm(
@@ -109,6 +108,8 @@ protected:
 
     ss::future<stm_snapshot> take_snapshot() override;
 
+    virtual ss::future<model::offset> storage_eviction_event();
+
 private:
     void increment_start_offset(model::offset);
     bool should_process_evict(model::offset);
@@ -125,36 +126,20 @@ private:
       std::optional<std::reference_wrapper<ss::abort_source>> as);
 
 private:
-    using retry_event_until_success = ss::bool_class<struct wait_for_tag>;
-    /**
-     * Eviction event represents an eviction request coming either from storage
-     * offset monitor notification or the delete records special batch.
-     *
-     * The event stores the trucation point offset and information if truncation
-     * related should be retried. It may be the case that the truncation
-     * may not yet be executed as max_collectible offsets of the partition
-     * related STMs hasn't advanced yet.
-     */
-    struct eviction_event {
-        model::offset prefix_truncate_offset;
-        retry_event_until_success wait_for_success;
-    };
-
-    ss::future<>
-      enqueue_eviction_event(model::offset, retry_event_until_success);
-
-    void maybe_pop_queue();
-
     ss::abort_source& _as;
+
+    // Offset we are able to truncate based on local retention policy, as
+    // signaled by the storage layer. This value is not maintained via the
+    // persisted_stm and may be different across replicas.
     model::offset _storage_eviction_offset;
+
+    // Offset corresponding to a delete-records request from the user. This
+    // value is maintained via the persisted_stm and is identical on every
+    // replica.
     model::offset _delete_records_eviction_offset;
-    /**
-     * Since the ss::queue is a SPSC type of queue we use additional mutex to
-     * hold the two producers i.e. apply fiber and log eviction monitoring fiber
-     */
-    static constexpr size_t max_event_queue_size = 4;
-    mutex _queue_mutex;
-    ss::queue<eviction_event> _queue;
+
+    // Should be signaled every time either of the above offsets are updated.
+    ss::condition_variable _has_pending_truncation;
 };
 
 } // namespace cluster
