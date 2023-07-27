@@ -117,10 +117,7 @@ ts_read_path_probe::ts_read_path_probe() {
 
         sm::make_histogram(
           "spillover_manifest_latency",
-          [this] {
-              return ssx::metrics::report_default_histogram(
-                _spillover_mat_latency);
-          },
+          [this] { return _spillover_mat_latency.public_histogram_logform(); },
           sm::description(
             "Spillover manifest materialization latency histogram"))
           .aggregate(aggregate_labels),
@@ -135,8 +132,7 @@ ts_read_path_probe::ts_read_path_probe() {
         sm::make_histogram(
           "chunk_hydration_latency",
           [this] {
-              return ssx::metrics::report_default_histogram(
-                _chunk_hydration_latency);
+              return _chunk_hydration_latency.public_histogram_logform();
           },
           sm::description("Chunk hydration latency histogram"))
           .aggregate(aggregate_labels),

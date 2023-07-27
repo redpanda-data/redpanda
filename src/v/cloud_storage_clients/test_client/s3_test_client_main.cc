@@ -15,7 +15,6 @@
 #include "http/client.h"
 #include "seastarx.h"
 #include "syschecks/syschecks.h"
-#include "utils/hdr_hist.h"
 #include "vlog.h"
 
 #include <seastar/core/app-template.hh>

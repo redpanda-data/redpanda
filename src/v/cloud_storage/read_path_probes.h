@@ -11,7 +11,7 @@
 #pragma once
 
 #include "model/fundamental.h"
-#include "utils/hdr_hist.h"
+#include "utils/log_hist.h"
 
 #include <seastar/core/metrics_registration.hh>
 
@@ -19,6 +19,8 @@ namespace cloud_storage {
 
 class partition_probe {
 public:
+    using hist_t = log_hist_internal;
+
     explicit partition_probe(const model::ntp& ntp);
 
     void add_bytes_read(uint64_t read) { _bytes_read += read; }
@@ -35,7 +37,7 @@ private:
 
 class ts_read_path_probe {
 public:
-    using hist_t = hdr_hist;
+    using hist_t = log_hist_internal;
 
     explicit ts_read_path_probe();
 
@@ -82,7 +84,7 @@ private:
     int64_t _spillover_manifest_materialized = 0;
     int64_t _spillover_manifest_hydrated = 0;
     /// Spillover manifest materialization latency
-    hdr_hist _spillover_mat_latency;
+    hist_t _spillover_mat_latency;
 
     size_t _chunks_hydrated = 0;
     hist_t _chunk_hydration_latency;

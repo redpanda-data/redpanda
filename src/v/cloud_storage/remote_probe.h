@@ -13,6 +13,7 @@
 #include "cloud_storage/types.h"
 #include "model/fundamental.h"
 #include "seastarx.h"
+#include "utils/log_hist.h"
 
 #include <seastar/core/metrics_registration.hh>
 
@@ -25,6 +26,8 @@ class materialized_resources;
 /// Cloud storage endpoint level probe
 class remote_probe {
 public:
+    using hist_t = log_hist_internal;
+
     explicit remote_probe(
       remote_metrics_disabled disabled,
       remote_metrics_disabled public_disabled,
@@ -267,8 +270,8 @@ private:
     /// Number of spillover manifest downloads
     uint64_t _cnt_spillover_manifest_downloads{0};
 
-    hdr_hist _client_acquisition_latency;
-    hdr_hist _segment_download_latency;
+    hist_t _client_acquisition_latency;
+    hist_t _segment_download_latency;
 
     ss::metrics::metric_groups _metrics;
     ss::metrics::metric_groups _public_metrics;
