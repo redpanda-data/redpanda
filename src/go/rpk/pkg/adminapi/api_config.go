@@ -19,7 +19,7 @@ import (
 )
 
 // Config represents a Redpanda configuration. There are many keys returned, so
-// the raw response is just unmarshaled into an interface.
+// the raw response is just unmarshalled into an interface.
 type Config map[string]interface{}
 
 // Config returns a single admin endpoint's configuration. This errors if

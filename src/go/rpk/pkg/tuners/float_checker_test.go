@@ -58,7 +58,7 @@ func Test_floatChecker_Check(t *testing.T) {
 			},
 		},
 		{
-			name:           "Shall return result with an error when getCurretn returns an error",
+			name:           "Shall return result with an error when getCurrent returns an error",
 			check:          func(c float64) bool { return c < 10.0 },
 			renderRequired: func() string { return "< 10" },
 			getCurrent:     func() (float64, error) { return 0.0, errors.New("err") },
