@@ -55,7 +55,9 @@ void probe::setup_metrics() {
          "request_latency",
          sm::description("Request latency"),
          labels,
-         [this] { return _request_metrics.hist().seastar_histogram_logform(); })
+         [this] {
+             return _request_metrics.hist().internal_histogram_logform();
+         })
          .aggregate(internal_aggregate_labels)});
 }
 
@@ -82,10 +84,7 @@ void probe::setup_public_metrics() {
          sm::description(
            ssx::sformat("Internal latency of request for {}", _group_name)),
          labels,
-         [this] {
-             return ssx::metrics::report_default_histogram(
-               _request_metrics.hist());
-         })
+         [this] { return _request_metrics.hist().public_histogram_logform(); })
          .aggregate(aggregate_labels),
 
        sm::make_counter(

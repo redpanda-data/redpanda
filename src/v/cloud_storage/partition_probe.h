@@ -11,6 +11,7 @@
 #pragma once
 
 #include "model/fundamental.h"
+#include "utils/log_hist.h"
 
 #include <seastar/core/metrics_registration.hh>
 
@@ -18,6 +19,8 @@ namespace cloud_storage {
 
 class partition_probe {
 public:
+    using hist_t = log_hist_internal;
+
     explicit partition_probe(const model::ntp& ntp);
 
     void add_bytes_read(uint64_t read) { _bytes_read += read; }

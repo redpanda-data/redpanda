@@ -68,7 +68,7 @@ public:
     ~server() noexcept override = default;
     server(const server&) = delete;
     server& operator=(const server&) = delete;
-    server(server&&) noexcept = default;
+    server(server&&) noexcept = delete;
     server& operator=(server&&) noexcept = delete;
 
     std::string_view name() const final { return "kafka rpc protocol"; }

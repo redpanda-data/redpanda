@@ -13,6 +13,7 @@
 #include "cloud_storage/types.h"
 #include "model/fundamental.h"
 #include "seastarx.h"
+#include "utils/log_hist.h"
 
 #include <seastar/core/metrics_registration.hh>
 
@@ -25,6 +26,8 @@ class materialized_segments;
 /// Cloud storage endpoint level probe
 class remote_probe {
 public:
+    using hist_t = log_hist_internal;
+
     explicit remote_probe(
       remote_metrics_disabled disabled,
       remote_metrics_disabled public_disabled,

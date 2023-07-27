@@ -363,7 +363,7 @@ static void fill_fetch_responses(
   op_context& octx,
   std::vector<read_result> results,
   std::vector<op_context::response_placeholder_ptr> responses,
-  std::vector<std::unique_ptr<hdr_hist::measurement>> metrics) {
+  std::vector<std::unique_ptr<shard_fetch::hist_t::measurement>> metrics) {
     auto range = boost::irange<size_t>(0, results.size());
     if (unlikely(
           results.size() != responses.size()
@@ -389,7 +389,7 @@ static void fill_fetch_responses(
         if (unlikely(res.error != error_code::none)) {
             resp_it->set(
               make_partition_response_error(res.partition, res.error));
-            metric->set_trace(false);
+            metric->cancel();
             continue;
         }
 

@@ -14,6 +14,7 @@
 #include "kafka/server/handlers/handler.h"
 #include "kafka/types.h"
 #include "utils/intrusive_list_helpers.h"
+#include "utils/log_hist.h"
 
 namespace kafka {
 
@@ -293,10 +294,12 @@ struct read_result {
 // struct aggregating fetch requests and corresponding response iterators for
 // the same shard
 struct shard_fetch {
+    using hist_t = log_hist_internal;
+
     void push_back(
       ntp_fetch_config config,
       op_context::response_placeholder_ptr r_ph,
-      std::unique_ptr<hdr_hist::measurement> m) {
+      std::unique_ptr<hist_t::measurement> m) {
         requests.push_back(std::move(config));
         responses.push_back(r_ph);
         metrics.push_back(std::move(m));
@@ -306,7 +309,7 @@ struct shard_fetch {
     ss::shard_id shard;
     std::vector<ntp_fetch_config> requests;
     std::vector<op_context::response_placeholder_ptr> responses;
-    std::vector<std::unique_ptr<hdr_hist::measurement>> metrics;
+    std::vector<std::unique_ptr<hist_t::measurement>> metrics;
 
     friend std::ostream& operator<<(std::ostream& o, const shard_fetch& sf) {
         fmt::print(o, "{}", sf.requests);

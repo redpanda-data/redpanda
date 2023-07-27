@@ -16,8 +16,9 @@
 #include "net/connection.h"
 #include "net/connection_rate.h"
 #include "net/types.h"
+#include "ssx/metrics.h"
 #include "ssx/semaphore.h"
-#include "utils/hdr_hist.h"
+#include "utils/log_hist.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/gate.hh>
@@ -104,9 +105,11 @@ struct server_configuration {
 
 class server {
 public:
+    using hist_t = log_hist_internal;
+
     explicit server(server_configuration, ss::logger&);
     explicit server(ss::sharded<server_configuration>* s, ss::logger&);
-    server(server&&) noexcept = default;
+    server(server&&) noexcept = delete;
     server& operator=(server&&) noexcept = delete;
     server(const server&) = delete;
     server& operator=(const server&) = delete;
@@ -131,7 +134,7 @@ public:
     ss::future<> stop();
 
     const server_configuration cfg; // NOLINT
-    const hdr_hist& histogram() const { return _hist; }
+    const hist_t& histogram() const { return _hist; }
 
     virtual std::string_view name() const = 0;
     virtual ss::future<> apply(ss::lw_shared_ptr<net::connection>) = 0;
@@ -139,7 +142,7 @@ public:
     server_probe& probe() { return _probe; }
     ssx::semaphore& memory() { return _memory; }
     ss::gate& conn_gate() { return _conn_gate; }
-    hdr_hist& hist() { return _hist; }
+    hist_t& hist() { return _hist; }
     ss::abort_source& abort_source() { return _as; }
     bool abort_requested() const { return _as.abort_requested(); }
 
@@ -169,7 +172,7 @@ private:
     boost::intrusive::list<net::connection> _connections;
     ss::abort_source _as;
     ss::gate _conn_gate;
-    hdr_hist _hist;
+    hist_t _hist;
     server_probe _probe;
     ss::metrics::metric_groups _metrics;
     ss::metrics::metric_groups _public_metrics;
