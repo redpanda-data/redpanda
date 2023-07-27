@@ -24,7 +24,7 @@ import (
 )
 
 func NewDescribeCommand(fs afero.Fs, p *config.Params) *cobra.Command {
-	var summary, commits bool
+	var summary, commits, lagPerTopic bool
 	cmd := &cobra.Command{
 		Use:   "describe [GROUPS...]",
 		Short: "Describe group offset status & lag",
@@ -49,6 +49,10 @@ information about the members.
 			if err != nil {
 				out.Die("unable to describe groups: %v", err)
 			}
+			if lagPerTopic {
+				printLagPerTopic(lags)
+				return
+			}
 			if summary {
 				printDescribedSummary(lags)
 				return
@@ -56,9 +60,11 @@ information about the members.
 			printDescribed(commits, lags)
 		},
 	}
+	cmd.Flags().BoolVarP(&lagPerTopic, "print-lag-per-topic", "t", false, "Print the aggregated lag per topic")
 	cmd.Flags().BoolVarP(&summary, "print-summary", "s", false, "Print only the group summary section")
 	cmd.Flags().BoolVarP(&commits, "print-commits", "c", false, "Print only the group commits section")
 	cmd.MarkFlagsMutuallyExclusive("print-summary", "print-commits")
+	cmd.MarkFlagsMutuallyExclusive("print-lag-per-topic", "print-commits")
 	return cmd
 }
 
@@ -130,6 +136,7 @@ func printDescribedSummary(groups kadm.DescribedGroupLags) {
 
 func printDescribedGroupSummary(group kadm.DescribedGroupLag) {
 	tw := out.NewTabWriter()
+	defer fmt.Println()
 	defer tw.Flush()
 	fmt.Fprintf(tw, "GROUP\t%s\n", group.Group)
 	fmt.Fprintf(tw, "COORDINATOR\t%d\n", group.Coordinator.NodeID)
@@ -206,5 +213,16 @@ func printDescribedGroup(
 	defer tw.Flush()
 	for _, row := range rows {
 		tw.Print(args(&row)...)
+	}
+}
+
+func printLagPerTopic(groups kadm.DescribedGroupLags) {
+	printDescribedSummary(groups)
+	tw := out.NewTable("TOPIC", "LAG")
+	defer tw.Flush()
+	for _, group := range groups.Sorted() {
+		for _, topicLag := range group.Lag.TotalByTopic().Sorted() {
+			tw.Print(topicLag.Topic, topicLag.Lag)
+		}
 	}
 }
