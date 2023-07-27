@@ -77,6 +77,12 @@ ss::future<> log_eviction_stm::handle_log_eviction_events() {
     auto gh = _gate.hold();
 
     while (!_as.abort_requested()) {
+        if (_raft->stopped()) {
+            _queue_mutex.broken();
+            _queue.abort(
+              std::make_exception_ptr(ss::abort_requested_exception()));
+            break;
+        }
         /// This background fiber can be woken-up via apply() when special
         /// batches are processed or by the storage layer when local
         /// eviction is triggered.
