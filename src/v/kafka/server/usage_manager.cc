@@ -61,7 +61,6 @@ usage_manager::usage_accounting_fiber::get_cloud_usage_data() {
     }
     const auto expiry = std::min<std::chrono::seconds>(
       max_history(), std::chrono::seconds(10));
-    co_await _health_monitor.maybe_refresh_cloud_health_stats();
     auto health_overview = co_await _health_monitor.get_cluster_health_overview(
       ss::lowres_clock::now() + expiry);
     co_return health_overview.bytes_in_cloud_storage;
