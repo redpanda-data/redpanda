@@ -1344,11 +1344,11 @@ remote_segment_batch_reader::read_some(
             vlog(
               _ctxlog.error,
               "segment_reader is stuck, segment ntp: {}, _cur_rp_offset: {}, "
-              "_bytes_consumed: "
-              "{}",
+              "_bytes_consumed: {}, parser error state: {}",
               _seg->get_ntp(),
               _cur_rp_offset,
-              _bytes_consumed);
+              _bytes_consumed,
+              _parser->error());
             _is_unexpected_eof = true;
             co_return ss::circular_buffer<model::record_batch>{};
         }
