@@ -450,6 +450,8 @@ public:
 
     model::offset get_flushed_offset() const { return _flushed_offset; }
 
+    bool stopped() const { return _bg.is_closed(); }
+
 private:
     friend replicate_entries_stm;
     friend vote_stm;
