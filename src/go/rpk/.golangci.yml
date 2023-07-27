@@ -63,7 +63,7 @@ linters-settings:
   #
   # https://github.com/mvdan/gofumpt/issues/137
   gofumpt:
-    lang-version: "1.20.4"
+    lang-version: "1.20"
 
   # Revive is yet another metalinter with a lot of useful lints. 
   # The below opts in to all the ones we would like to use.
