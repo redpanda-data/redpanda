@@ -204,8 +204,15 @@ private:
       model::timeout_clock::duration,
       model::producer_identity,
       model::partition_id);
+    ss::future<cluster::init_tm_tx_reply> limit_init_tm_tx(
+      ss::shared_ptr<tm_stm>,
+      kafka::transactional_id,
+      std::chrono::milliseconds,
+      model::timeout_clock::duration,
+      model::producer_identity);
     ss::future<cluster::init_tm_tx_reply> do_init_tm_tx(
       ss::shared_ptr<tm_stm>,
+      model::term_id,
       kafka::transactional_id,
       std::chrono::milliseconds,
       model::timeout_clock::duration,

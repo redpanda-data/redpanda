@@ -1076,23 +1076,13 @@ ss::future<cluster::init_tm_tx_reply> tx_gateway_frontend::init_tm_tx_locally(
                          transaction_timeout_ms,
                          expected_pid,
                          timeout](ss::basic_rwlock<>::holder unit) {
-                            return with(
-                                     stm,
-                                     tx_id,
-                                     "init_tm_tx",
-                                     [&self,
-                                      stm,
-                                      tx_id,
-                                      transaction_timeout_ms,
-                                      expected_pid,
-                                      timeout]() {
-                                         return self.do_init_tm_tx(
-                                           stm,
-                                           tx_id,
-                                           transaction_timeout_ms,
-                                           timeout,
-                                           expected_pid);
-                                     })
+                            return self
+                              .limit_init_tm_tx(
+                                stm,
+                                tx_id,
+                                transaction_timeout_ms,
+                                timeout,
+                                expected_pid)
                               .finally([u = std::move(unit)] {});
                         });
                   });
@@ -1196,7 +1186,7 @@ bool is_valid_producer(
 
 } // namespace
 
-ss::future<cluster::init_tm_tx_reply> tx_gateway_frontend::do_init_tm_tx(
+ss::future<cluster::init_tm_tx_reply> tx_gateway_frontend::limit_init_tm_tx(
   ss::shared_ptr<tm_stm> stm,
   kafka::transactional_id tx_id,
   std::chrono::milliseconds transaction_timeout_ms,
@@ -1213,13 +1203,25 @@ ss::future<cluster::init_tm_tx_reply> tx_gateway_frontend::do_init_tm_tx(
         }
         vlog(
           txlog.warn,
-          "got error {} on loading tx.id={}",
+          "got error {} on syncing (initializing tx.id={})",
           term_opt.error(),
           tx_id);
         co_return init_tm_tx_reply{tx_errc::not_coordinator};
     }
     auto term = term_opt.value();
 
+    auto units = co_await stm->lock_tx(tx_id, "init_tm_tx");
+    co_return co_await do_init_tm_tx(
+      stm, term, tx_id, transaction_timeout_ms, timeout, expected_pid);
+}
+
+ss::future<cluster::init_tm_tx_reply> tx_gateway_frontend::do_init_tm_tx(
+  ss::shared_ptr<tm_stm> stm,
+  model::term_id term,
+  kafka::transactional_id tx_id,
+  std::chrono::milliseconds transaction_timeout_ms,
+  model::timeout_clock::duration timeout,
+  model::producer_identity expected_pid) {
     if (!stm->hosts(tx_id)) {
         co_return tx_errc::not_coordinator;
     }
