@@ -6,6 +6,7 @@
 # As of the Change Date specified in that file, in accordance with
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
+import time
 
 from rptest.services.cluster import cluster
 from rptest.tests.redpanda_test import RedpandaTest
@@ -69,17 +70,37 @@ class StorageFailureInjectionTest(RedpandaTest):
         Admin(self.redpanda).set_storage_failure_injection(lonely_node,
                                                            value=True)
 
-        with expect_exception(RpkException, lambda _: True):
-            rpk.produce(self.ntp.topic,
-                        key="poisoned",
-                        msg="chalice",
-                        timeout=1)
+        # Perform a few writes and expect Redpanda to crash.
+        # An error should be injected when the first write is dispatched
+        # to disk. That should happen as part of handling the first request.
+        # Subsequent produce requests are a convenient way of detecting the crash.
+        exception = None
+        for _ in range(3):
+            try:
+                rpk.produce(self.ntp.topic,
+                            key="poisoned",
+                            msg="chalice",
+                            timeout=1)
+            except RpkException as e:
+                exception = e
+
+            if exception:
+                break
+
+            time.sleep(1)
+
+        if exception is None:
+            assert False, "Expected produce to trigger an assertion within Redpanda"
 
         wait_until(
-            lambda: next(rpk.describe_topic(self.ntp.topic)
-                         ).high_watermark == 1,
-            timeout_sec=30,
-            backoff_sec=5,
+            lambda: next(rpk.describe_topic(self.ntp.topic)).high_watermark ==
+            1,
+            # After the assertion caused by the failure injection,
+            # the kernel needs to release resources associated with the process.
+            # For some reason, this takes suprisingly long on CDT nodes,
+            # hence the generous timeout.
+            timeout_sec=60 * 4,
+            backoff_sec=10,
             err_msg="Node did not come back after crash or HWM is wrong",
             retry_on_exc=True)
 
