@@ -68,18 +68,51 @@ def check_retention(test):
 
 
 def check_disk_space(test):
+    assert isinstance(test.admin, Admin)
+    assert isinstance(test.redpanda, RedpandaService)
+    assert isinstance(test.rpk, RpkTool)
+    test.logger.debug(f"checking disk space for topic {test.topic_spec.name}")
+
     disk_reservation_percent = int(
         test.rpk.cluster_config_get('disk_reservation_percent'))
+    disk_usable_percent = (100 - disk_reservation_percent)
+    retention_local_target_capacity_percent = int(
+        test.rpk.cluster_config_get('retention_local_target_capacity_percent'))
+    # space effectively available for local storage is a percentage of disk_usable_percent. as in, disk_reservation_percent dictates how much space can be used for other size computations
+    effective_retention_percent = retention_local_target_capacity_percent * disk_usable_percent / 100
 
-    redpanda: RedpandaService = test.redpanda
+    # gather measures for all the nodes
+    measures = [{
+        'node':
+        n.name,
+        'disk_total':
+        test.redpanda.get_node_disk_measure(n, 'itotal'),
+        'disk_used_percent':
+        test.redpanda.get_node_disk_usage(node=n, percent=True),
+        'local_storage_use':
+        test.admin.get_local_storage_usage(node=n)
+    } for n in test.redpanda.nodes]
 
+    # check that disk used is below disk usable percent (this should be enforced by redpanda, triggering cleanup)
     def disk_usage_good():
-        return all(
-            redpanda.get_node_disk_usage(node=n, percent=True) < (
-                100 - disk_reservation_percent) for n in redpanda.nodes)
+        return all(m['disk_used_percent'] < disk_usable_percent
+                   for m in measures)
+
+    # check that local storage is below effective retention percent
+    def local_retention_good():
+        # data used a as fraction of total disk space
+        total_data_fract = [
+            (m['local_storage_use']['data'] + m['local_storage_use']['index'] +
+             m['local_storage_use']['compaction']) / m['disk_total']
+            for m in measures
+        ]
+        return all(t < (effective_retention_percent / 100)
+                   for t in total_data_fract)
 
     assert disk_usage_good(
-    ), f"disk_space went below {disk_reservation_percent=}%"
+    ), f"disk_space went below {disk_reservation_percent=}%. {measures=}"
+    assert local_retention_good(
+    ), f"local_retention went above {retention_local_target_capacity_percent=}%. {measures=}"
 
 
 class StorageTimingStressTest(RedpandaTest, PartitionMovementMixin):
@@ -98,8 +131,8 @@ class StorageTimingStressTest(RedpandaTest, PartitionMovementMixin):
 
     mib = 1024 * 1024
     message_size = 32 * 1024  # 32KiB
-    log_segment_size = 128 * 1024  # 4MiB
-    produce_byte_rate_per_ntp = 8 * mib  # 8 MiB
+    log_segment_size = 128 * 1024  # 128kb
+    produce_byte_rate_per_ntp = 32 * mib  # 32 MiB
     target_runtime = 5 * 60  # seconds
     check_interval = 10  # seconds
     check_timeout = 10  # seconds
@@ -112,9 +145,16 @@ class StorageTimingStressTest(RedpandaTest, PartitionMovementMixin):
 
     def __init__(self, test_context):
 
-        extra_rp_conf = dict(log_compaction_interval_ms=1000,
-                             compacted_log_segment_size=self.log_segment_size,
-                             cloud_storage_enabled=False)
+        extra_rp_conf = dict(
+            log_compaction_interval_ms=1000,
+            log_segment_size_min=self.log_segment_size,
+            compacted_log_segment_size=self.log_segment_size,
+            disk_reservation_percent=
+            80,  # require to not use this space, to exercise disk space management
+            retention_local_target_capacity_percent=
+            10,  # require that local data stays into this threshold
+            retention_local_trim_interval=2,  # speedup local trim loop
+            cloud_storage_enabled=False)
 
         super(StorageTimingStressTest,
               self).__init__(test_context=test_context,
