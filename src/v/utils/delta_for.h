@@ -18,6 +18,11 @@
 
 #include <seastar/util/log.hh>
 
+#include <concepts>
+#include <cstddef>
+#include <cstdint>
+#include <span>
+#include <type_traits>
 #include <variant>
 
 namespace details {
@@ -33,8 +38,8 @@ struct delta_xor {
     template<class value_t, size_t row_width>
     constexpr uint8_t encode(
       value_t last,
-      const std::array<value_t, row_width>& row,
-      std::array<value_t, row_width>& buf) const {
+      std::span<const value_t, row_width> row,
+      std::span<value_t, row_width> buf) const {
         auto p = last;
         uint64_t agg = 0;
         for (uint32_t i = 0; i < row_width; ++i) {
@@ -48,7 +53,7 @@ struct delta_xor {
 
     template<class value_t, size_t row_width>
     constexpr value_t
-    decode(value_t initial, std::array<value_t, row_width>& row) const {
+    decode(value_t initial, std::span<value_t, row_width> row) const {
         auto p = initial;
         for (unsigned i = 0; i < row_width; i++) {
             row[i] = row[i] ^ p;
@@ -78,8 +83,8 @@ struct delta_delta {
     template<class value_t, size_t row_width>
     constexpr uint8_t encode(
       value_t last,
-      const std::array<value_t, row_width>& row,
-      std::array<value_t, row_width>& buf) const {
+      std::span<const value_t, row_width> row,
+      std::span<value_t, row_width> buf) const {
         auto p = last;
         uint64_t agg = 0;
         for (uint32_t i = 0; i < row_width; ++i) {
@@ -104,7 +109,7 @@ struct delta_delta {
 
     template<class value_t, size_t row_width>
     constexpr value_t
-    decode(value_t initial, std::array<value_t, row_width>& row) const {
+    decode(value_t initial, std::span<value_t, row_width> row) const {
         auto p = initial;
         for (unsigned i = 0; i < row_width; i++) {
             row[i] = row[i] + p + _step_size;
@@ -118,6 +123,125 @@ struct delta_delta {
     bool operator==(delta_delta const&) const = default;
 };
 
+namespace decomp {
+// this namespace contains instruction on how to decompose N_BITS (<=64) into a
+// collection of unsigned types (uint64,32,16,8) and a bunch of residual bits it
+// is used to serialize a collection of values reducing the total space used.
+// everything is done in alittle endian fashion. example: N_BITS=41, get
+// decomposed as a uint32_t for [bits[0], bits[32]), uint8_t for [bits[32],
+// bits[40]) and one residual bit for bits[40]
+
+// detail: an array of 4 (is-unsigned-type-used, number-of-bits-of-this-type)
+// pairs, from uint64_t to uint8_t, that describes if N_BITS will be decomposed
+// with a particular type or not.
+template<size_t N_BITS>
+constexpr auto detail_decomp = [] {
+    auto decomp = std::to_array<std::pair<bool, size_t>>({
+      {false, 8 * sizeof(uint64_t)},
+      {false, 8 * sizeof(uint32_t)},
+      {false, 8 * sizeof(uint16_t)},
+      {false, 8 * sizeof(uint8_t)},
+    });
+
+    auto rem_bits = N_BITS;
+    for (auto& [in_use, sz_bits] : decomp) {
+        in_use = rem_bits >= sz_bits;
+        if (in_use) {
+            rem_bits -= sz_bits;
+        }
+    }
+    return decomp;
+}();
+
+// an array of pairs (bytes-to-save, bit-index-of-this-type-in-decomposition)
+// that describes how to decompose N_BITS and remains only with a residual part
+// < 8 bits
+template<size_t N_BITS>
+constexpr auto unsigned_decomposition = [] {
+    auto decomposition = std::array<
+      std::pair<size_t, size_t>,
+      std::ranges::count_if(
+        detail_decomp<N_BITS>, [](auto& elem) { return elem.first; })>{};
+    auto it = decomposition.begin();
+    size_t acc = 0;
+    for (auto [in_use, sz_bits] : detail_decomp<N_BITS>) {
+        if (in_use) {
+            *(it++) = std::pair{sz_bits / 8, acc};
+            acc += sz_bits;
+        }
+    }
+    if (acc > N_BITS) {
+        throw std::runtime_error("unsigned_decomposition: internal error");
+    }
+    return decomposition;
+}();
+
+template<size_t N_BITS>
+constexpr auto whole_bytes = N_BITS / 8;
+template<size_t N_BITS>
+constexpr auto residual_bits = N_BITS % 8;
+template<size_t N_BITS>
+constexpr auto residual_save_mask = N_BITS == 64
+                                      ? uint64_t(-1)
+                                      : (uint64_t(1) << (N_BITS)) - 1u;
+
+template<size_t N_BITS, size_t NUM_ELEMENTS>
+constexpr auto serialized_size = whole_bytes<N_BITS> * NUM_ELEMENTS
+                                 + residual_bits<N_BITS> * NUM_ELEMENTS / 8;
+
+static_assert(
+  unsigned_decomposition<41>
+  == std::to_array<std::pair<size_t, size_t>>({{4, 0}, {1, 32}}));
+static_assert(
+  unsigned_decomposition<0> == std::array<std::pair<size_t, size_t>, 0>{});
+static_assert(
+  unsigned_decomposition<63>
+  == std::to_array<std::pair<size_t, size_t>>({{4, 0}, {2, 32}, {1, 48}}));
+static_assert(
+  unsigned_decomposition<64> == std::array{std::pair{size_t{8}, size_t{0}}});
+
+static_assert(whole_bytes<41> == 5);
+static_assert(residual_bits<41> == 1);
+static_assert(residual_save_mask<41> == 0x1'ff'ffffffff);
+
+// __uint128_t being non-standard needs some special treatment
+template<typename T>
+concept unsigned_serializable = std::unsigned_integral<T>
+                                || std::same_as<T, __uint128_t>;
+
+template<size_t bytes_to_save>
+auto serialize_little_endian(unsigned_serializable auto bits, uint8_t* output) {
+    if constexpr (bytes_to_save > 0) {
+        static_assert(
+          std::endian::native == std::endian::little,
+          "to work on a big-endian machine, insert "
+          "`bits=std::byteswap(bits);`");
+        // little endian view of bits
+        auto buff = std::bit_cast<std::array<uint8_t, sizeof(bits)>>(bits);
+
+        return std::ranges::copy_n(buff.begin(), bytes_to_save, output).out;
+    }
+
+    return output;
+}
+
+template<size_t bytes_to_read>
+auto deserialize_little_endian(
+  uint8_t const* input, unsigned_serializable auto& output) {
+    if constexpr (bytes_to_read > 0) {
+        static_assert(
+          std::endian::native == std::endian::little,
+          "to work on a big-endian machine, insert "
+          "`output=std::byteswap(output);`");
+
+        auto buff = std::array<uint8_t, sizeof(output)>{};
+        auto in = std::ranges::copy_n(input, bytes_to_read, buff.begin()).in;
+        output = std::bit_cast<std::decay_t<decltype(output)>>(buff);
+        return in;
+    }
+    return input;
+}
+} // namespace decomp
 } // namespace details
 
 /// Position in the delta_for encoded data stream
@@ -259,7 +383,7 @@ public:
     // This c-tor creates shallow copy of the encoder.
     //
     // The underlying iobuf is shared which makes the operation
-    // relatively lightweiht. The signature is different from
+    // relatively lightweight. The signature is different from
     // copy c-tor on purpose. The 'other' object is modified
     // and not just copied. If the c-tor throws the 'other' is
     // not affected.
@@ -273,16 +397,16 @@ public:
     using row_t = std::array<TVal, row_width>;
 
     /// Encode single row
-    void add(const row_t& row) {
-        row_t buf;
-        uint8_t nbits = _delta.encode(_last, row, buf);
+    void add(std::span<const TVal, row_width> row) {
+        std::array<TVal, row_width> buf;
+        uint8_t nbits = _delta.encode(_last, row, std::span{buf});
         _last = row.back();
         _data.append(&nbits, 1);
         pack(buf, nbits);
         _cnt++;
     }
 
-    /// Return ppsition inside the stream
+    /// Return position inside the stream
     deltafor_stream_pos_t<TVal> get_position() const {
         return {
           .initial = _last,
@@ -299,7 +423,7 @@ public:
           = deltafor_encoder<TVal, DeltaStep, use_nttp_deltastep, delta_alg>;
         self_t uncommitted;
 
-        void add(const row_t& row) { uncommitted.add(row); }
+        void add(std::span<const TVal, row_width> row) { uncommitted.add(row); }
     };
 
     // Create tx-state object and start transaction
@@ -360,422 +484,70 @@ public:
     }
 
 private:
-    template<typename T>
-    void _pack_as(const row_t& input) {
-        static_assert(
-          std::is_unsigned<T>::value,
-          "Only unsigned integer can be used as a type parameter");
-        for (unsigned i = 0; i < row_width; i++) {
-            T bits = static_cast<T>(input[i]);
-            uint8_t buf[sizeof(bits)];
-            std::memcpy(&buf, &bits, sizeof(bits));
-            _data.append(buf, sizeof(bits));
+    static_assert(
+      row_width == 16,
+      "pack<N_BITS> assumes row_width = 16, to move N_BITS into a __uint128_t "
+      "and to compute how may bytes of the buffer are non-zero");
+    template<size_t N_BITS>
+    void pack(std::span<const TVal, row_width> input) {
+        if constexpr (N_BITS > 0) {
+            using namespace details::decomp;
+            std::array<uint8_t, serialized_size<N_BITS, row_width>> buff;
+
+            auto end_iter = buff.begin();
+            // step 1: extract and serialize whole bytes, following
+            // decomposition in words
+            constexpr static auto decom = unsigned_decomposition<N_BITS>;
+            [&]<size_t... Is>(std::index_sequence<Is...>) {
+                (
+                  [&] {
+                      constexpr auto bytes_to_save = decom[Is].first;
+                      constexpr auto shift_of_to_save_section
+                        = decom[Is].second;
+                      for (auto& e : input) {
+                          end_iter = serialize_little_endian<bytes_to_save>(
+                            std::make_unsigned_t<TVal>(e)
+                              >> shift_of_to_save_section,
+                            end_iter);
+                      }
+                  }(),
+                  ...);
+            }(std::make_index_sequence<decom.size()>{});
+
+            // step 2: pack leftover bits into a single __uint128_t, little
+            // endian wise, and serialize it.
+            // masking is not strictly necessary, but it ensures that the
+            // elements to not clash once packed
+            constexpr static auto residual = residual_bits<N_BITS>;
+
+            if constexpr (residual > 0) {
+                constexpr static auto prev_saved_bits = whole_bytes<N_BITS> * 8;
+                constexpr static auto mask = residual_save_mask<N_BITS>;
+                auto bits = [&]<size_t... Is>(std::index_sequence<Is...>) {
+                    // select residual bits, shift them down to zero and then
+                    // shift them to the appropriate position
+                    return (
+                      (__uint128_t{(input[Is] & mask) >> prev_saved_bits}
+                       << (residual * Is))
+                      | ...);
+                }(std::make_index_sequence<input.size()>());
+
+                // find out how many bytes will be non-zero, once the buffer is
+                // packed with row_width*N_BITS (this assumes row_width is 16)
+                constexpr static auto bytes_to_save = residual * input.size()
+                                                      / 8;
+                serialize_little_endian<bytes_to_save>(bits, end_iter);
+            }
+            _data.append(buff.data(), buff.size());
         }
     }
 
-    template<typename T>
-    void _shift_as(row_t& input) {
-        for (uint32_t i = 0; i < row_width; i++) {
-            input[i] >>= 8 * sizeof(T);
-        }
-    }
-
-    template<typename T>
-    void _pack_shift(row_t& input) {
-        _pack_as<T>(input);
-        _shift_as<T>(input);
-    }
-
-    template<typename... Ts>
-    void _pack_shift_all(row_t& input) {
-        (_pack_shift<Ts>(input), ...);
-    }
-
-    void _pack1(const row_t& input) {
-        uint16_t bits = 0;
-        for (uint32_t i = 0; i < row_width; i++) {
-            bits |= static_cast<uint16_t>((input[i] & 1) << i);
-        }
-        _data.append(reinterpret_cast<uint8_t*>(&bits), sizeof(bits));
-    }
-
-    void _pack2(const row_t& input) {
-        uint32_t bits = 0;
-        for (uint32_t i = 0; i < row_width; i++) {
-            bits |= static_cast<uint32_t>((input[i] & 3) << (2 * i));
-        }
-        _data.append(reinterpret_cast<uint8_t*>(&bits), sizeof(bits));
-    }
-
-    void _pack3(const row_t& input) {
-        uint32_t bits0 = 0;
-        uint16_t bits1 = 0;
-        bits0 |= static_cast<uint32_t>((input[0] & 7));
-        bits0 |= static_cast<uint32_t>((input[1] & 7) << 3);
-        bits0 |= static_cast<uint32_t>((input[2] & 7) << 6);
-        bits0 |= static_cast<uint32_t>((input[3] & 7) << 9);
-        bits0 |= static_cast<uint32_t>((input[4] & 7) << 12);
-        bits0 |= static_cast<uint32_t>((input[5] & 7) << 15);
-        bits0 |= static_cast<uint32_t>((input[6] & 7) << 18);
-        bits0 |= static_cast<uint32_t>((input[7] & 7) << 21);
-        bits0 |= static_cast<uint32_t>((input[8] & 7) << 24);
-        bits0 |= static_cast<uint32_t>((input[9] & 7) << 27);
-        bits0 |= static_cast<uint32_t>((input[10] & 3) << 30);
-        bits1 |= static_cast<uint32_t>((input[10] & 4) >> 2);
-        bits1 |= static_cast<uint32_t>((input[11] & 7) << 1);
-        bits1 |= static_cast<uint32_t>((input[12] & 7) << 4);
-        bits1 |= static_cast<uint32_t>((input[13] & 7) << 7);
-        bits1 |= static_cast<uint32_t>((input[14] & 7) << 10);
-        bits1 |= static_cast<uint32_t>((input[15] & 7) << 13);
-        _data.append(reinterpret_cast<uint8_t*>(&bits0), sizeof(bits0));
-        _data.append(reinterpret_cast<uint8_t*>(&bits1), sizeof(bits1));
-    }
-
-    void _pack4(const row_t& input) {
-        uint64_t bits0 = 0;
-        bits0 |= static_cast<uint64_t>((input[0] & 0xF));
-        bits0 |= static_cast<uint64_t>((input[1] & 0xF) << 4);
-        bits0 |= static_cast<uint64_t>((input[2] & 0xF) << 8);
-        bits0 |= static_cast<uint64_t>((input[3] & 0xF) << 12);
-        bits0 |= static_cast<uint64_t>((input[4] & 0xF) << 16);
-        bits0 |= static_cast<uint64_t>((input[5] & 0xF) << 20);
-        bits0 |= static_cast<uint64_t>((input[6] & 0xF) << 24);
-        bits0 |= static_cast<uint64_t>((input[7] & 0xF) << 28);
-        bits0 |= static_cast<uint64_t>((input[8] & 0xF) << 32);
-        bits0 |= static_cast<uint64_t>((input[9] & 0xF) << 36);
-        bits0 |= static_cast<uint64_t>((input[10] & 0xF) << 40);
-        bits0 |= static_cast<uint64_t>((input[11] & 0xF) << 44);
-        bits0 |= static_cast<uint64_t>((input[12] & 0xF) << 48);
-        bits0 |= static_cast<uint64_t>((input[13] & 0xF) << 52);
-        bits0 |= static_cast<uint64_t>((input[14] & 0xF) << 56);
-        bits0 |= static_cast<uint64_t>((input[15] & 0xF) << 60);
-        _data.append(reinterpret_cast<uint8_t*>(&bits0), sizeof(bits0));
-    }
-
-    void _pack5(const row_t& input) {
-        uint64_t bits0 = 0;
-        uint16_t bits1 = 0;
-        bits0 |= static_cast<uint64_t>((input[0] & 0x1F));
-        bits0 |= static_cast<uint64_t>((input[1] & 0x1F) << 5);
-        bits0 |= static_cast<uint64_t>((input[2] & 0x1F) << 10);
-        bits0 |= static_cast<uint64_t>((input[3] & 0x1F) << 15);
-        bits0 |= static_cast<uint64_t>((input[4] & 0x1F) << 20);
-        bits0 |= static_cast<uint64_t>((input[5] & 0x1F) << 25);
-        bits0 |= static_cast<uint64_t>((input[6] & 0x1F) << 30);
-        bits0 |= static_cast<uint64_t>((input[7] & 0x1F) << 35);
-        bits0 |= static_cast<uint64_t>((input[8] & 0x1F) << 40);
-        bits0 |= static_cast<uint64_t>((input[9] & 0x1F) << 45);
-        bits0 |= static_cast<uint64_t>((input[10] & 0x1F) << 50);
-        bits0 |= static_cast<uint64_t>((input[11] & 0x1F) << 55);
-        bits0 |= static_cast<uint64_t>((input[12] & 0x0F) << 60);
-        bits1 |= static_cast<uint32_t>((input[12] & 0x10) >> 4);
-        bits1 |= static_cast<uint32_t>((input[13] & 0x1F) << 1);
-        bits1 |= static_cast<uint32_t>((input[14] & 0x1F) << 6);
-        bits1 |= static_cast<uint32_t>((input[15] & 0x1F) << 11);
-        _data.append(reinterpret_cast<uint8_t*>(&bits0), sizeof(bits0));
-        _data.append(reinterpret_cast<uint8_t*>(&bits1), sizeof(bits1));
-    }
-
-    void _pack6(const row_t& input) {
-        uint64_t bits0 = 0;
-        uint32_t bits1 = 0;
-        bits0 |= static_cast<uint64_t>((input[0] & 0x3F));
-        bits0 |= static_cast<uint64_t>((input[1] & 0x3F) << 6);
-        bits0 |= static_cast<uint64_t>((input[2] & 0x3F) << 12);
-        bits0 |= static_cast<uint64_t>((input[3] & 0x3F) << 18);
-        bits0 |= static_cast<uint64_t>((input[4] & 0x3F) << 24);
-        bits0 |= static_cast<uint64_t>((input[5] & 0x3F) << 30);
-        bits0 |= static_cast<uint64_t>((input[6] & 0x3F) << 36);
-        bits0 |= static_cast<uint64_t>((input[7] & 0x3F) << 42);
-        bits0 |= static_cast<uint64_t>((input[8] & 0x3F) << 48);
-        bits0 |= static_cast<uint64_t>((input[9] & 0x3F) << 54);
-        bits0 |= static_cast<uint64_t>((input[10] & 0x0F) << 60);
-        bits1 |= static_cast<uint32_t>((input[10] & 0x30) >> 4);
-        bits1 |= static_cast<uint32_t>((input[11] & 0x3F) << 2);
-        bits1 |= static_cast<uint32_t>((input[12] & 0x3F) << 8);
-        bits1 |= static_cast<uint32_t>((input[13] & 0x3F) << 14);
-        bits1 |= static_cast<uint32_t>((input[14] & 0x3F) << 20);
-        bits1 |= static_cast<uint32_t>((input[15] & 0x3F) << 26);
-        _data.append(reinterpret_cast<uint8_t*>(&bits0), sizeof(bits0));
-        _data.append(reinterpret_cast<uint8_t*>(&bits1), sizeof(bits1));
-    }
-
-    void _pack7(const row_t& input) {
-        uint64_t bits0 = 0;
-        uint32_t bits1 = 0;
-        uint16_t bits2 = 0;
-        bits0 |= static_cast<uint64_t>((input[0] & 0x7F));
-        bits0 |= static_cast<uint64_t>((input[1] & 0x7F) << 7);
-        bits0 |= static_cast<uint64_t>((input[2] & 0x7F) << 14);
-        bits0 |= static_cast<uint64_t>((input[3] & 0x7F) << 21);
-        bits0 |= static_cast<uint64_t>((input[4] & 0x7F) << 28);
-        bits0 |= static_cast<uint64_t>((input[5] & 0x7F) << 35);
-        bits0 |= static_cast<uint64_t>((input[6] & 0x7F) << 42);
-        bits0 |= static_cast<uint64_t>((input[7] & 0x7F) << 49);
-        bits0 |= static_cast<uint64_t>((input[8] & 0x7F) << 56);
-        bits0 |= static_cast<uint64_t>((input[9] & 0x01) << 63);
-        bits1 |= static_cast<uint32_t>((input[9] & 0x7E) >> 1);
-        bits1 |= static_cast<uint32_t>((input[10] & 0x7F) << 6);
-        bits1 |= static_cast<uint32_t>((input[11] & 0x7F) << 13);
-        bits1 |= static_cast<uint32_t>((input[12] & 0x7F) << 20);
-        bits1 |= static_cast<uint32_t>((input[13] & 0x1F) << 27);
-        bits2 |= static_cast<uint16_t>((input[13] & 0x60) >> 5);
-        bits2 |= static_cast<uint16_t>((input[14] & 0x7F) << 2);
-        bits2 |= static_cast<uint16_t>((input[15] & 0x7F) << 9);
-        _data.append(reinterpret_cast<uint8_t*>(&bits0), sizeof(bits0));
-        _data.append(reinterpret_cast<uint8_t*>(&bits1), sizeof(bits1));
-        _data.append(reinterpret_cast<uint8_t*>(&bits2), sizeof(bits2));
-    }
-
-    void pack(row_t& input, int n) {
-        switch (n) {
-        case 0:
-            break;
-        case 1:
-            _pack1(input);
-            break;
-        case 2:
-            _pack2(input);
-            break;
-        case 3:
-            _pack3(input);
-            break;
-        case 4:
-            _pack4(input);
-            break;
-        case 5:
-            _pack5(input);
-            break;
-        case 6:
-            _pack6(input);
-            break;
-        case 7:
-            _pack7(input);
-            break;
-        case 8:
-            _pack_as<uint8_t>(input);
-            break;
-        case 9:
-            _pack_shift<uint8_t>(input);
-            _pack1(input);
-            break;
-        case 10:
-            _pack_shift<uint8_t>(input);
-            _pack2(input);
-            break;
-        case 11:
-            _pack_shift<uint8_t>(input);
-            _pack3(input);
-            break;
-        case 12:
-            _pack_shift<uint8_t>(input);
-            _pack4(input);
-            break;
-        case 13:
-            _pack_shift<uint8_t>(input);
-            _pack5(input);
-            break;
-        case 14:
-            _pack_shift<uint8_t>(input);
-            _pack6(input);
-            break;
-        case 15:
-            _pack_shift<uint8_t>(input);
-            _pack7(input);
-            break;
-        case 16:
-            _pack_as<uint16_t>(input);
-            break;
-        case 17:
-            _pack_shift<uint16_t>(input);
-            _pack1(input);
-            break;
-        case 18:
-            _pack_shift<uint16_t>(input);
-            _pack2(input);
-            break;
-        case 19:
-            _pack_shift<uint16_t>(input);
-            _pack3(input);
-            break;
-        case 20:
-            _pack_shift<uint16_t>(input);
-            _pack4(input);
-            break;
-        case 21:
-            _pack_shift<uint16_t>(input);
-            _pack5(input);
-            break;
-        case 22:
-            _pack_shift<uint16_t>(input);
-            _pack6(input);
-            break;
-        case 23:
-            _pack_shift<uint16_t>(input);
-            _pack7(input);
-            break;
-        case 24:
-            _pack_shift<uint16_t>(input);
-            _pack_as<uint8_t>(input);
-            break;
-        case 25:
-            _pack_shift_all<uint16_t, uint8_t>(input);
-            _pack1(input);
-            break;
-        case 26:
-            _pack_shift_all<uint16_t, uint8_t>(input);
-            _pack2(input);
-            break;
-        case 27:
-            _pack_shift_all<uint16_t, uint8_t>(input);
-            _pack3(input);
-            break;
-        case 28:
-            _pack_shift_all<uint16_t, uint8_t>(input);
-            _pack4(input);
-            break;
-        case 29:
-            _pack_shift_all<uint16_t, uint8_t>(input);
-            _pack5(input);
-            break;
-        case 30:
-            _pack_shift_all<uint16_t, uint8_t>(input);
-            _pack6(input);
-            break;
-        case 31:
-            _pack_shift_all<uint16_t, uint8_t>(input);
-            _pack7(input);
-            break;
-        case 32:
-            _pack_as<uint32_t>(input);
-            break;
-        case 33:
-            _pack_shift<uint32_t>(input);
-            _pack1(input);
-            break;
-        case 34:
-            _pack_shift<uint32_t>(input);
-            _pack2(input);
-            break;
-        case 35:
-            _pack_shift<uint32_t>(input);
-            _pack3(input);
-            break;
-        case 36:
-            _pack_shift<uint32_t>(input);
-            _pack4(input);
-            break;
-        case 37:
-            _pack_shift<uint32_t>(input);
-            _pack5(input);
-            break;
-        case 38:
-            _pack_shift<uint32_t>(input);
-            _pack6(input);
-            break;
-        case 39:
-            _pack_shift<uint32_t>(input);
-            _pack7(input);
-            break;
-        case 40:
-            _pack_shift<uint32_t>(input);
-            _pack_as<uint8_t>(input);
-            break;
-        case 41:
-            _pack_shift_all<uint32_t, uint8_t>(input);
-            _pack1(input);
-            break;
-        case 42:
-            _pack_shift_all<uint32_t, uint8_t>(input);
-            _pack2(input);
-            break;
-        case 43:
-            _pack_shift_all<uint32_t, uint8_t>(input);
-            _pack3(input);
-            break;
-        case 44:
-            _pack_shift_all<uint32_t, uint8_t>(input);
-            _pack4(input);
-            break;
-        case 45:
-            _pack_shift_all<uint32_t, uint8_t>(input);
-            _pack5(input);
-            break;
-        case 46:
-            _pack_shift_all<uint32_t, uint8_t>(input);
-            _pack6(input);
-            break;
-        case 47:
-            _pack_shift_all<uint32_t, uint8_t>(input);
-            _pack7(input);
-            break;
-        case 48:
-            _pack_shift<uint32_t>(input);
-            _pack_as<uint16_t>(input);
-            break;
-        case 49:
-            _pack_shift_all<uint32_t, uint16_t>(input);
-            _pack1(input);
-            break;
-        case 50:
-            _pack_shift_all<uint32_t, uint16_t>(input);
-            _pack2(input);
-            break;
-        case 51:
-            _pack_shift_all<uint32_t, uint16_t>(input);
-            _pack3(input);
-            break;
-        case 52:
-            _pack_shift_all<uint32_t, uint16_t>(input);
-            _pack4(input);
-            break;
-        case 53:
-            _pack_shift_all<uint32_t, uint16_t>(input);
-            _pack5(input);
-            break;
-        case 54:
-            _pack_shift_all<uint32_t, uint16_t>(input);
-            _pack6(input);
-            break;
-        case 55:
-            _pack_shift_all<uint32_t, uint16_t>(input);
-            _pack7(input);
-            break;
-        case 56:
-            _pack_shift_all<uint32_t, uint16_t>(input);
-            _pack_as<uint8_t>(input);
-            break;
-        case 57:
-            _pack_shift_all<uint32_t, uint16_t, uint8_t>(input);
-            _pack1(input);
-            break;
-        case 58:
-            _pack_shift_all<uint32_t, uint16_t, uint8_t>(input);
-            _pack2(input);
-            break;
-        case 59:
-            _pack_shift_all<uint32_t, uint16_t, uint8_t>(input);
-            _pack3(input);
-            break;
-        case 60:
-            _pack_shift_all<uint32_t, uint16_t, uint8_t>(input);
-            _pack4(input);
-            break;
-        case 61:
-            _pack_shift_all<uint32_t, uint16_t, uint8_t>(input);
-            _pack5(input);
-            break;
-        case 62:
-            _pack_shift_all<uint32_t, uint16_t, uint8_t>(input);
-            _pack6(input);
-            break;
-        case 63:
-            _pack_shift_all<uint32_t, uint16_t, uint8_t>(input);
-            _pack7(input);
-            break;
-        case 64:
-            return _pack_as<uint64_t>(input);
-        }
+    void pack(std::span<TVal, row_width> input, size_t nbits) {
+        // poor man runtime index to constexpr index conversion, a.k.a. switch
+        // constexpr
+        [&]<size_t... Is>(std::index_sequence<Is...>) {
+            ((void)(nbits == Is ? (pack<Is>(input), true) : false), ...);
+        }(std::make_index_sequence<sizeof(uint64_t) * 8 + 1>());
     }
 
 protected:
@@ -811,12 +583,11 @@ public:
     using row_t = std::array<TVal, row_width>;
 
     /// Decode single row
-    bool read(row_t& row) {
+    bool read(std::span<TVal, row_width> row) {
         if (_pos == _total) {
             return false;
         }
-        auto bytes = _data.read_bytes(1);
-        uint8_t nbits = *bytes.data();
+        auto nbits = _data.consume_type<uint8_t>();
         unpack(row, nbits);
         _initial = _delta.decode(_initial, row);
         _pos++;
@@ -831,466 +602,62 @@ public:
     }
 
 private:
-    template<typename T>
-    void _unpack_as(row_t& input, unsigned shift) {
-        static_assert(
-          std::is_unsigned<T>::value,
-          "Only unsigned integer can be used as a type parameter");
-        for (uint32_t i = 0; i < row_width; i++) {
-            static_assert(sizeof(T) <= sizeof(uint64_t));
-            T val{};
-            auto bytes = _data.read_bytes(sizeof(T));
-            std::memcpy(&val, bytes.data(), bytes.size());
-            input[i] |= static_cast<uint64_t>(val) << shift;
+    template<size_t N_BITS>
+    void unpack(std::span<TVal, row_width> output) {
+        std::ranges::fill(output, TVal{0});
+        if constexpr (N_BITS > 0) {
+            using namespace details::decomp;
+
+            std::array<uint8_t, serialized_size<N_BITS, row_width>> tmp_buffer;
+            _data.consume_to(tmp_buffer.size(), tmp_buffer.begin());
+
+            auto end_it = tmp_buffer.cbegin();
+            // step 1: deserialize whole bytes and paste them in place,
+            // following decomposition in words
+            constexpr static auto decom = unsigned_decomposition<N_BITS>;
+            [&]<size_t... Is>(std::index_sequence<Is...>) {
+                (
+                  [&] {
+                      constexpr auto bytes_to_restore = decom[Is].first;
+                      constexpr auto shift_of_restored = decom[Is].second;
+                      for (auto& e : output) {
+                          auto tmp = std::make_unsigned_t<TVal>{};
+                          end_it = deserialize_little_endian<bytes_to_restore>(
+                            end_it, tmp);
+                          e |= tmp << shift_of_restored;
+                      }
+                  }(),
+                  ...);
+            }(std::make_index_sequence<decom.size()>{});
+
+            // step 2: unpack leftover bits into from a single __uint128_t,
+            // little endian wise. masking is not strictly necessary, but it
+            // ensures that the elements to not clash once unpacked
+            constexpr static auto residual = residual_bits<N_BITS>;
+            if constexpr (residual > 0) {
+                constexpr static auto prev_saved_bits = whole_bytes<N_BITS> * 8;
+                constexpr static auto mask = residual_save_mask<N_BITS>;
+
+                constexpr static auto bytes_to_restore = residual
+                                                         * output.size() / 8;
+                auto bits = __uint128_t{};
+                deserialize_little_endian<bytes_to_restore>(end_it, bits);
+
+                [&]<size_t... Is>(std::index_sequence<Is...>) {
+                    // select residual bits, shift them down to zero and then
+                    // shift them to the appropriate position
+                    return (
+                      (output[Is]
+                       |= ((bits >> (residual * Is)) << prev_saved_bits) & mask)
+                      | ...);
+                }(std::make_index_sequence<output.size()>());
+            }
         }
     }
-
-    void _unpack1(row_t& output, unsigned shift) {
-        uint16_t bits{};
-        auto bytes = _data.read_bytes(sizeof(bits));
-        std::memcpy(&bits, bytes.data(), bytes.size());
-        for (uint32_t i = 0; i < row_width; i++) {
-            output[i] |= static_cast<uint64_t>((bits & (1U << i)) >> i)
-                         << shift;
-        }
-    }
-
-    void _unpack2(row_t& output, unsigned shift) {
-        uint32_t bits{};
-        auto bytes = _data.read_bytes(sizeof(bits));
-        std::memcpy(&bits, bytes.data(), bytes.size());
-        for (uint32_t i = 0; i < row_width; i++) {
-            output[i] |= static_cast<uint64_t>((bits & (3U << 2 * i)) >> 2 * i)
-                         << shift;
-        }
-    }
-
-    void _unpack3(row_t& output, unsigned shift) {
-        uint32_t tmp32{};
-        auto bytes = _data.read_bytes(sizeof(tmp32));
-        std::memcpy(&tmp32, bytes.data(), bytes.size());
-        uint64_t bits0 = tmp32;
-        uint16_t tmp16{};
-        bytes = _data.read_bytes(sizeof(tmp16));
-        std::memcpy(&tmp16, bytes.data(), bytes.size());
-        uint64_t bits1 = tmp16;
-        output[0] |= ((bits0 & 7U)) << shift;
-        output[1] |= ((bits0 & (7U << 3U)) >> 3U) << shift;
-        output[2] |= ((bits0 & (7U << 6U)) >> 6U) << shift;
-        output[3] |= ((bits0 & (7U << 9U)) >> 9U) << shift;
-        output[4] |= ((bits0 & (7U << 12U)) >> 12U) << shift;
-        output[5] |= ((bits0 & (7U << 15U)) >> 15U) << shift;
-        output[6] |= ((bits0 & (7U << 18U)) >> 18U) << shift;
-        output[7] |= ((bits0 & (7U << 21U)) >> 21U) << shift;
-        output[8] |= ((bits0 & (7U << 24U)) >> 24U) << shift;
-        output[9] |= ((bits0 & (7U << 27U)) >> 27U) << shift;
-        output[10] |= (((bits0 & (3U << 30U)) >> 30U) | ((bits1 & 1U) << 2U))
-                      << shift;
-        output[11] |= ((bits1 & (7U << 1U)) >> 1U) << shift;
-        output[12] |= ((bits1 & (7U << 4U)) >> 4U) << shift;
-        output[13] |= ((bits1 & (7U << 7U)) >> 7U) << shift;
-        output[14] |= ((bits1 & (7U << 10U)) >> 10U) << shift;
-        output[15] |= ((bits1 & (7U << 13U)) >> 13U) << shift;
-    }
-
-    void _unpack4(row_t& output, unsigned shift) {
-        uint64_t bits0{};
-        auto bytes = _data.read_bytes(sizeof(bits0));
-        std::memcpy(&bits0, bytes.data(), bytes.size());
-        output[0] |= ((bits0 & 15U)) << shift;
-        output[1] |= ((bits0 & (15ULL << 4U)) >> 4U) << shift;
-        output[2] |= ((bits0 & (15ULL << 8U)) >> 8U) << shift;
-        output[3] |= ((bits0 & (15ULL << 12U)) >> 12U) << shift;
-        output[4] |= ((bits0 & (15ULL << 16U)) >> 16U) << shift;
-        output[5] |= ((bits0 & (15ULL << 20U)) >> 20U) << shift;
-        output[6] |= ((bits0 & (15ULL << 24U)) >> 24U) << shift;
-        output[7] |= ((bits0 & (15ULL << 28U)) >> 28U) << shift;
-        output[8] |= ((bits0 & (15ULL << 32U)) >> 32U) << shift;
-        output[9] |= ((bits0 & (15ULL << 36U)) >> 36U) << shift;
-        output[10] |= ((bits0 & (15ULL << 40U)) >> 40U) << shift;
-        output[11] |= ((bits0 & (15ULL << 44U)) >> 44U) << shift;
-        output[12] |= ((bits0 & (15ULL << 48U)) >> 48U) << shift;
-        output[13] |= ((bits0 & (15ULL << 52U)) >> 52U) << shift;
-        output[14] |= ((bits0 & (15ULL << 56U)) >> 56U) << shift;
-        output[15] |= ((bits0 & (15ULL << 60U)) >> 60U) << shift;
-    }
-
-    void _unpack5(row_t& output, unsigned shift) {
-        uint64_t bits0{};
-        auto bytes = _data.read_bytes(sizeof(bits0));
-        std::memcpy(&bits0, bytes.data(), bytes.size());
-        uint16_t tmp16{};
-        bytes = _data.read_bytes(sizeof(tmp16));
-        std::memcpy(&tmp16, bytes.data(), bytes.size());
-        uint64_t bits1 = tmp16;
-        output[0] |= ((bits0 & 0x1FU)) << shift;
-        output[1] |= ((bits0 & (0x1FULL << 5U)) >> 5U) << shift;
-        output[2] |= ((bits0 & (0x1FULL << 10U)) >> 10U) << shift;
-        output[3] |= ((bits0 & (0x1FULL << 15U)) >> 15U) << shift;
-        output[4] |= ((bits0 & (0x1FULL << 20U)) >> 20U) << shift;
-        output[5] |= ((bits0 & (0x1FULL << 25U)) >> 25U) << shift;
-        output[6] |= ((bits0 & (0x1FULL << 30U)) >> 30U) << shift;
-        output[7] |= ((bits0 & (0x1FULL << 35U)) >> 35U) << shift;
-        output[8] |= ((bits0 & (0x1FULL << 40U)) >> 40U) << shift;
-        output[9] |= ((bits0 & (0x1FULL << 45U)) >> 45U) << shift;
-        output[10] |= ((bits0 & (0x1FULL << 50U)) >> 50U) << shift;
-        output[11] |= ((bits0 & (0x1FULL << 55U)) >> 55U) << shift;
-        output[12]
-          |= (((bits0 & (0x0FULL << 60U)) >> 60U) | ((bits1 & 1U) << 4U))
-             << shift;
-        output[13] |= ((bits1 & (0x1FULL << 1U)) >> 1U) << shift;
-        output[14] |= ((bits1 & (0x1FULL << 6U)) >> 6U) << shift;
-        output[15] |= ((bits1 & (0x1FULL << 11U)) >> 11U) << shift;
-    }
-
-    void _unpack6(row_t& output, unsigned shift) {
-        uint64_t bits0{};
-        auto bytes = _data.read_bytes(sizeof(bits0));
-        std::memcpy(&bits0, bytes.data(), bytes.size());
-        uint32_t tmp32{};
-        bytes = _data.read_bytes(sizeof(tmp32));
-        std::memcpy(&tmp32, bytes.data(), bytes.size());
-        uint64_t bits1 = tmp32;
-        output[0] |= ((bits0 & 0x3FU)) << shift;
-        output[1] |= ((bits0 & (0x3FULL << 6U)) >> 6U) << shift;
-        output[2] |= ((bits0 & (0x3FULL << 12U)) >> 12U) << shift;
-        output[3] |= ((bits0 & (0x3FULL << 18U)) >> 18U) << shift;
-        output[4] |= ((bits0 & (0x3FULL << 24U)) >> 24U) << shift;
-        output[5] |= ((bits0 & (0x3FULL << 30U)) >> 30U) << shift;
-        output[6] |= ((bits0 & (0x3FULL << 36U)) >> 36U) << shift;
-        output[7] |= ((bits0 & (0x3FULL << 42U)) >> 42U) << shift;
-        output[8] |= ((bits0 & (0x3FULL << 48U)) >> 48U) << shift;
-        output[9] |= ((bits0 & (0x3FULL << 54U)) >> 54U) << shift;
-        output[10]
-          |= (((bits0 & (0xFULL << 60U)) >> 60U) | (bits1 & 0x3U) << 4U)
-             << shift;
-        output[11] |= ((bits1 & (0x3FULL << 2U)) >> 2U) << shift;
-        output[12] |= ((bits1 & (0x3FULL << 8U)) >> 8U) << shift;
-        output[13] |= ((bits1 & (0x3FULL << 14U)) >> 14U) << shift;
-        output[14] |= ((bits1 & (0x3FULL << 20U)) >> 20U) << shift;
-        output[15] |= ((bits1 & (0x3FULL << 26U)) >> 26U) << shift;
-    }
-
-    void _unpack7(row_t& output, unsigned shift) {
-        uint64_t bits0{};
-        auto bytes = _data.read_bytes(sizeof(bits0));
-        std::memcpy(&bits0, bytes.data(), bytes.size());
-        uint32_t tmp32{};
-        bytes = _data.read_bytes(sizeof(tmp32));
-        std::memcpy(&tmp32, bytes.data(), bytes.size());
-        uint64_t bits1 = tmp32;
-        uint16_t tmp16{};
-        bytes = _data.read_bytes(sizeof(tmp16));
-        std::memcpy(&tmp16, bytes.data(), bytes.size());
-        uint64_t bits2 = tmp16;
-        output[0] |= ((bits0 & 0x7FU)) << shift;
-        output[1] |= ((bits0 & (0x7FULL << 7U)) >> 7U) << shift;
-        output[2] |= ((bits0 & (0x7FULL << 14U)) >> 14U) << shift;
-        output[3] |= ((bits0 & (0x7FULL << 21U)) >> 21U) << shift;
-        output[4] |= ((bits0 & (0x7FULL << 28U)) >> 28U) << shift;
-        output[5] |= ((bits0 & (0x7FULL << 35U)) >> 35U) << shift;
-        output[6] |= ((bits0 & (0x7FULL << 42U)) >> 42U) << shift;
-        output[7] |= ((bits0 & (0x7FULL << 49U)) >> 49U) << shift;
-        output[8] |= ((bits0 & (0x7FULL << 56U)) >> 56U) << shift;
-        output[9]
-          |= (((bits0 & (0x01ULL << 63U)) >> 63U) | ((bits1 & 0x3FU) << 1U))
-             << shift;
-        output[10] |= ((bits1 & (0x7FULL << 6U)) >> 6U) << shift;
-        output[11] |= ((bits1 & (0x7FULL << 13U)) >> 13U) << shift;
-        output[12] |= ((bits1 & (0x7FULL << 20U)) >> 20U) << shift;
-        output[13]
-          |= (((bits1 & (0x1FULL << 27U)) >> 27U) | ((bits2 & 0x03U) << 5U))
-             << shift;
-        output[14] |= ((bits2 & (0x7FULL << 2U)) >> 2U) << shift;
-        output[15] |= ((bits2 & (0x7FULL << 9U)) >> 9U) << shift;
-    }
-
-    void unpack(row_t& output, int n) {
-        switch (n) {
-        case 0:
-            break;
-        case 1:
-            _unpack1(output, 0);
-            break;
-        case 2:
-            _unpack2(output, 0);
-            break;
-        case 3:
-            _unpack3(output, 0);
-            break;
-        case 4:
-            _unpack4(output, 0);
-            break;
-        case 5:
-            _unpack5(output, 0);
-            break;
-        case 6:
-            _unpack6(output, 0);
-            break;
-        case 7:
-            _unpack7(output, 0);
-            break;
-        case 8:
-            _unpack_as<uint8_t>(output, 0);
-            break;
-        case 9:
-            _unpack_as<uint8_t>(output, 0);
-            _unpack1(output, 8);
-            break;
-        case 10:
-            _unpack_as<uint8_t>(output, 0);
-            _unpack2(output, 8);
-            break;
-        case 11:
-            _unpack_as<uint8_t>(output, 0);
-            _unpack3(output, 8);
-            break;
-        case 12:
-            _unpack_as<uint8_t>(output, 0);
-            _unpack4(output, 8);
-            break;
-        case 13:
-            _unpack_as<uint8_t>(output, 0);
-            _unpack5(output, 8);
-            break;
-        case 14:
-            _unpack_as<uint8_t>(output, 0);
-            _unpack6(output, 8);
-            break;
-        case 15:
-            _unpack_as<uint8_t>(output, 0);
-            _unpack7(output, 8);
-            break;
-        case 16:
-            _unpack_as<uint16_t>(output, 0);
-            break;
-        case 17:
-            _unpack_as<uint16_t>(output, 0);
-            _unpack1(output, 16);
-            break;
-        case 18:
-            _unpack_as<uint16_t>(output, 0);
-            _unpack2(output, 16);
-            break;
-        case 19:
-            _unpack_as<uint16_t>(output, 0);
-            _unpack3(output, 16);
-            break;
-        case 20:
-            _unpack_as<uint16_t>(output, 0);
-            _unpack4(output, 16);
-            break;
-        case 21:
-            _unpack_as<uint16_t>(output, 0);
-            _unpack5(output, 16);
-            break;
-        case 22:
-            _unpack_as<uint16_t>(output, 0);
-            _unpack6(output, 16);
-            break;
-        case 23:
-            _unpack_as<uint16_t>(output, 0);
-            _unpack7(output, 16);
-            break;
-        case 24:
-            _unpack_as<uint16_t>(output, 0);
-            _unpack_as<uint8_t>(output, 16);
-            break;
-        case 25:
-            _unpack_as<uint16_t>(output, 0);
-            _unpack_as<uint8_t>(output, 16);
-            _unpack1(output, 24);
-            break;
-        case 26:
-            _unpack_as<uint16_t>(output, 0);
-            _unpack_as<uint8_t>(output, 16);
-            _unpack2(output, 24);
-            break;
-        case 27:
-            _unpack_as<uint16_t>(output, 0);
-            _unpack_as<uint8_t>(output, 16);
-            _unpack3(output, 24);
-            break;
-        case 28:
-            _unpack_as<uint16_t>(output, 0);
-            _unpack_as<uint8_t>(output, 16);
-            _unpack4(output, 24);
-            break;
-        case 29:
-            _unpack_as<uint16_t>(output, 0);
-            _unpack_as<uint8_t>(output, 16);
-            _unpack5(output, 24);
-            break;
-        case 30:
-            _unpack_as<uint16_t>(output, 0);
-            _unpack_as<uint8_t>(output, 16);
-            _unpack6(output, 24);
-            break;
-        case 31:
-            _unpack_as<uint16_t>(output, 0);
-            _unpack_as<uint8_t>(output, 16);
-            _unpack7(output, 24);
-            break;
-        case 32:
-            _unpack_as<uint32_t>(output, 0);
-            break;
-        case 33:
-            _unpack_as<uint32_t>(output, 0);
-            _unpack1(output, 32);
-            break;
-        case 34:
-            _unpack_as<uint32_t>(output, 0);
-            _unpack2(output, 32);
-            break;
-        case 35:
-            _unpack_as<uint32_t>(output, 0);
-            _unpack3(output, 32);
-            break;
-        case 36:
-            _unpack_as<uint32_t>(output, 0);
-            _unpack4(output, 32);
-            break;
-        case 37:
-            _unpack_as<uint32_t>(output, 0);
-            _unpack5(output, 32);
-            break;
-        case 38:
-            _unpack_as<uint32_t>(output, 0);
-            _unpack6(output, 32);
-            break;
-        case 39:
-            _unpack_as<uint32_t>(output, 0);
-            _unpack7(output, 32);
-            break;
-        case 40:
-            _unpack_as<uint32_t>(output, 0);
-            _unpack_as<uint8_t>(output, 32);
-            break;
-        case 41:
-            _unpack_as<uint32_t>(output, 0);
-            _unpack_as<uint8_t>(output, 32);
-            _unpack1(output, 40);
-            break;
-        case 42:
-            _unpack_as<uint32_t>(output, 0);
-            _unpack_as<uint8_t>(output, 32);
-            _unpack2(output, 40);
-            break;
-        case 43:
-            _unpack_as<uint32_t>(output, 0);
-            _unpack_as<uint8_t>(output, 32);
-            _unpack3(output, 40);
-            break;
-        case 44:
-            _unpack_as<uint32_t>(output, 0);
-            _unpack_as<uint8_t>(output, 32);
-            _unpack4(output, 40);
-            break;
-        case 45:
-            _unpack_as<uint32_t>(output, 0);
-            _unpack_as<uint8_t>(output, 32);
-            _unpack5(output, 40);
-            break;
-        case 46:
-            _unpack_as<uint32_t>(output, 0);
-            _unpack_as<uint8_t>(output, 32);
-            _unpack6(output, 40);
-            break;
-        case 47:
-            _unpack_as<uint32_t>(output, 0);
-            _unpack_as<uint8_t>(output, 32);
-            _unpack7(output, 40);
-            break;
-        case 48:
-            _unpack_as<uint32_t>(output, 0);
-            _unpack_as<uint16_t>(output, 32);
-            break;
-        case 49:
-            _unpack_as<uint32_t>(output, 0);
-            _unpack_as<uint16_t>(output, 32);
-            _unpack1(output, 48);
-            break;
-        case 50:
-            _unpack_as<uint32_t>(output, 0);
-            _unpack_as<uint16_t>(output, 32);
-            _unpack2(output, 48);
-            break;
-        case 51:
-            _unpack_as<uint32_t>(output, 0);
-            _unpack_as<uint16_t>(output, 32);
-            _unpack3(output, 48);
-            break;
-        case 52:
-            _unpack_as<uint32_t>(output, 0);
-            _unpack_as<uint16_t>(output, 32);
-            _unpack4(output, 48);
-            break;
-        case 53:
-            _unpack_as<uint32_t>(output, 0);
-            _unpack_as<uint16_t>(output, 32);
-            _unpack5(output, 48);
-            break;
-        case 54:
-            _unpack_as<uint32_t>(output, 0);
-            _unpack_as<uint16_t>(output, 32);
-            _unpack6(output, 48);
-            break;
-        case 55:
-            _unpack_as<uint32_t>(output, 0);
-            _unpack_as<uint16_t>(output, 32);
-            _unpack7(output, 48);
-            break;
-        case 56:
-            _unpack_as<uint32_t>(output, 0);
-            _unpack_as<uint16_t>(output, 32);
-            _unpack_as<uint8_t>(output, 48);
-            break;
-        case 57:
-            _unpack_as<uint32_t>(output, 0);
-            _unpack_as<uint16_t>(output, 32);
-            _unpack_as<uint8_t>(output, 48);
-            _unpack1(output, 56);
-            break;
-        case 58:
-            _unpack_as<uint32_t>(output, 0);
-            _unpack_as<uint16_t>(output, 32);
-            _unpack_as<uint8_t>(output, 48);
-            _unpack2(output, 56);
-            break;
-        case 59:
-            _unpack_as<uint32_t>(output, 0);
-            _unpack_as<uint16_t>(output, 32);
-            _unpack_as<uint8_t>(output, 48);
-            _unpack3(output, 56);
-            break;
-        case 60:
-            _unpack_as<uint32_t>(output, 0);
-            _unpack_as<uint16_t>(output, 32);
-            _unpack_as<uint8_t>(output, 48);
-            _unpack4(output, 56);
-            break;
-        case 61:
-            _unpack_as<uint32_t>(output, 0);
-            _unpack_as<uint16_t>(output, 32);
-            _unpack_as<uint8_t>(output, 48);
-            _unpack5(output, 56);
-            break;
-        case 62:
-            _unpack_as<uint32_t>(output, 0);
-            _unpack_as<uint16_t>(output, 32);
-            _unpack_as<uint8_t>(output, 48);
-            _unpack6(output, 56);
-            break;
-        case 63:
-            _unpack_as<uint32_t>(output, 0);
-            _unpack_as<uint16_t>(output, 32);
-            _unpack_as<uint8_t>(output, 48);
-            _unpack7(output, 56);
-            break;
-        case 64:
-            _unpack_as<uint64_t>(output, 0);
-            break;
-        }
+    void unpack(std::span<TVal, row_width> output, uint8_t n) {
+        [&]<size_t... Is>(std::index_sequence<Is...>) {
+            ((void)(n == Is ? (unpack<Is>(output), true) : false), ...);
+        }(std::make_index_sequence<sizeof(uint64_t) * 8 + 1>{});
     }
 
     TVal _initial;
