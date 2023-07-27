@@ -136,6 +136,7 @@ func printDescribedGroupSummary(group kadm.DescribedGroupLag) {
 	fmt.Fprintf(tw, "STATE\t%s\n", group.State)
 	fmt.Fprintf(tw, "BALANCER\t%s\n", group.Protocol)
 	fmt.Fprintf(tw, "MEMBERS\t%d\n", len(group.Members))
+	fmt.Fprintf(tw, "TOTAL-LAG\t%d\n", group.Lag.Total())
 	if group.Error() != nil {
 		fmt.Fprintf(tw, "ERROR\t%s\n", group.Error())
 	}
