@@ -3221,6 +3221,10 @@ tx_gateway_frontend::get_all_transactions() {
           model::tx_manager_nt.ns, model::tx_manager_nt.tp, pa.id);
         auto ntp_res = co_await get_all_transactions_for_one_tx_partition(
           tx_manager_ntp);
+        if (
+          ntp_res.has_error() && ntp_res.error() == tx_errc::not_coordinator) {
+            continue;
+        }
         if (ntp_res.has_error()) {
             co_return std::move(ntp_res);
         }
