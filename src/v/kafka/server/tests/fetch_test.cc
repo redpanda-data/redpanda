@@ -189,7 +189,7 @@ FIXTURE_TEST(read_from_ntp_max_bytes, redpanda_thread_fixture) {
         return res;
     };
     wait_for_controller_leadership().get0();
-    auto ntp = make_data(get_next_partition_revision_id().get());
+    auto ntp = make_data();
 
     auto shard = app.shard_table.local().shard_for(ntp);
     tests::cooperative_spin_wait_with_timeout(10s, [this, shard, ntp = ntp] {
