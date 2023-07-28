@@ -482,6 +482,11 @@ errc topics_frontend::validate_topic_configuration(
 ss::future<topic_result> topics_frontend::do_create_topic(
   custom_assignable_topic_configuration assignable_config,
   model::timeout_clock::time_point timeout) {
+    if (_topics.local().contains(assignable_config.cfg.tp_ns)) {
+        co_return topic_result(
+          assignable_config.cfg.tp_ns, errc::topic_already_exists);
+    }
+
     auto validation_err = validate_topic_configuration(assignable_config);
 
     if (validation_err != errc::success) {
