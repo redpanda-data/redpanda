@@ -13,7 +13,10 @@
 #include "security/scram_credential.h"
 #include "security/types.h"
 
+#include <seastar/util/variant_utils.hh>
+
 #include <absl/container/node_hash_map.h>
+#include <boost/range/adaptor/filtered.hpp>
 
 namespace security {
 
@@ -63,9 +66,25 @@ public:
         return _credentials.contains(name);
     }
 
-    const_iterator begin() const { return _credentials.cbegin(); }
-    const_iterator end() const { return _credentials.cend(); }
+    // Ephemeral credentials often require careful handling; they must not
+    // be serialized to disk, and in the general case, should not be displayed
+    // to users.
+    static constexpr auto is_not_ephemeral =
+      [](security::credential_store::container_type::value_type const& t) {
+          return ss::visit(t.second, [](security::scram_credential const& c) {
+              return !c.principal().has_value()
+                     || c.principal().value().type()
+                          != security::principal_type::ephemeral_user;
+          });
+      };
 
+    // Retrieve a list of credentials that satisfy the predicate.
+    //
+    // E.g.:
+    // _creds.range(credential_store::is_not_ephemeral);
+    auto range(auto pred) {
+        return boost::adaptors::filter(_credentials, std::move(pred));
+    }
     void clear() { _credentials.clear(); }
 
 private:
