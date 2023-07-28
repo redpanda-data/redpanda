@@ -29,7 +29,7 @@ FIXTURE_TEST(list_offsets, redpanda_thread_fixture) {
     // Synthetic default timestamp for produced data
     auto base_ts = model::timestamp{10000};
 
-    auto ntp = make_data(get_next_partition_revision_id().get(), base_ts);
+    auto ntp = make_data(base_ts);
     auto shard = app.shard_table.local().shard_for(ntp);
     tests::cooperative_spin_wait_with_timeout(10s, [this, shard, ntp = ntp] {
         return app.partition_manager.invoke_on(
@@ -72,7 +72,7 @@ FIXTURE_TEST(list_offsets, redpanda_thread_fixture) {
 
 FIXTURE_TEST(list_offsets_earliest, redpanda_thread_fixture) {
     wait_for_controller_leadership().get0();
-    auto ntp = make_data(get_next_partition_revision_id().get());
+    auto ntp = make_data();
     auto shard = app.shard_table.local().shard_for(ntp);
     tests::cooperative_spin_wait_with_timeout(10s, [this, shard, ntp = ntp] {
         return app.partition_manager.invoke_on(
@@ -107,7 +107,7 @@ FIXTURE_TEST(list_offsets_earliest, redpanda_thread_fixture) {
 
 FIXTURE_TEST(list_offsets_latest, redpanda_thread_fixture) {
     wait_for_controller_leadership().get0();
-    auto ntp = make_data(get_next_partition_revision_id().get());
+    auto ntp = make_data();
     auto shard = app.shard_table.local().shard_for(ntp);
     tests::cooperative_spin_wait_with_timeout(10s, [this, shard, ntp = ntp] {
         return app.partition_manager.invoke_on(
@@ -146,7 +146,7 @@ FIXTURE_TEST(list_offsets_not_found, redpanda_thread_fixture) {
     auto base_ts = model::timestamp{100000};
     auto future_ts = model::timestamp{9999999};
 
-    auto ntp = make_data(get_next_partition_revision_id().get(), base_ts);
+    auto ntp = make_data(base_ts);
     auto shard = app.shard_table.local().shard_for(ntp);
     tests::cooperative_spin_wait_with_timeout(10s, [this, shard, ntp = ntp] {
         return app.partition_manager.invoke_on(

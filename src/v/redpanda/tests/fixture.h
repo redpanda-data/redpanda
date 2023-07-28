@@ -529,44 +529,86 @@ public:
         auto ntp = model::controller_ntp;
         auto shard = app.shard_table.local().shard_for(ntp);
         assert(shard);
+        // flush any in flight changes for a consistent committed_offset.
+        app.partition_manager
+          .invoke_on(
+            *shard,
+            [ntp](cluster::partition_manager& mgr) {
+                auto partition = mgr.get(ntp);
+                assert(partition);
+                return partition->linearizable_barrier();
+            })
+          .get();
         return app.partition_manager.invoke_on(
           *shard, [ntp](cluster::partition_manager& mgr) -> model::revision_id {
               auto partition = mgr.get(ntp);
               assert(partition);
-              return model::revision_id{partition->last_stable_offset()}
-                     + model::revision_id{1};
+              return model::revision_id{partition->committed_offset()}
+                     + model::offset{1};
           });
     }
 
-    model::ntp make_data(
-      model::revision_id rev,
-      std::optional<model::timestamp> base_ts = std::nullopt) {
+    model::ntp
+    make_data(std::optional<model::timestamp> base_ts = std::nullopt) {
         auto topic_name = ssx::sformat("my_topic_{}", 0);
         model::ntp ntp(
           model::kafka_namespace,
           model::topic(topic_name),
           model::partition_id(0));
 
-        storage::ntp_config ntp_cfg(
-          ntp, config::node().data_directory().as_sstring(), nullptr, rev);
+        const auto& topic_table = app.controller->get_topics_state().local();
+        model::topic_namespace tp_ns{model::kafka_namespace, ntp.tp.topic};
+        model::topic_namespace_view tp_ns_view(ntp);
+        while (true) {
+            if (topic_table.contains(tp_ns_view)) {
+                delete_topic(tp_ns).get();
+            }
 
-        storage::disk_log_builder builder(make_default_config());
-        using namespace storage; // NOLINT
+            // Here we first request a potential revision from the controller
+            // and create an ntp structure on the disk. The expectation is that
+            // when the topic is eventually created, the segments are recovered
+            // at bootstrap and we have the exact data in the structure we
+            // populated.
 
-        builder | start(std::move(ntp_cfg)) | add_segment(model::offset(0))
-          | add_random_batches(
-            model::offset(0),
-            20,
-            maybe_compress_batches::yes,
-            log_append_config{
-              .should_fsync = log_append_config::fsync::yes,
-              .io_priority = ss::default_priority_class(),
-              .timeout = model::no_timeout},
-            disk_log_builder::should_flush_after::yes,
-            base_ts)
-          | stop();
+            // This is inherently racy because there could be other controller
+            // updates between the time we request a revision and create a
+            // table. That invalidates the revision as the topic is created with
+            // a newer revision and the desired segements are not recovered from
+            // disk. This loop mitigates this problem by deleting and recreating
+            // the topic if there is a revision mismatch.
 
-        add_topic(model::topic_namespace_view(ntp)).get();
+            // Get a potential revision for ntp.
+            auto rev = get_next_partition_revision_id().get();
+
+            storage::ntp_config ntp_cfg(
+              ntp, config::node().data_directory().as_sstring(), nullptr, rev);
+
+            storage::disk_log_builder builder(make_default_config());
+            using namespace storage; // NOLINT
+
+            builder | start(std::move(ntp_cfg)) | add_segment(model::offset(0))
+              | add_random_batches(
+                model::offset(0),
+                20,
+                maybe_compress_batches::yes,
+                log_append_config{
+                  .should_fsync = log_append_config::fsync::yes,
+                  .io_priority = ss::default_priority_class(),
+                  .timeout = model::no_timeout},
+                disk_log_builder::should_flush_after::yes,
+                base_ts)
+              | stop();
+
+            add_topic(tp_ns_view).get();
+            // validate if version matches
+            const auto& topic_meta = topic_table.get_topic_metadata(tp_ns_view);
+            assert(topic_meta);
+            // Check if the topic revision matches the desired revision, if not
+            // delete and recreate the topic.
+            if (topic_meta->get_revision() == rev) {
+                break;
+            }
+        }
 
         return ntp;
     }
