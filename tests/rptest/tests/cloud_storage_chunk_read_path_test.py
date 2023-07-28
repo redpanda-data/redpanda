@@ -339,7 +339,16 @@ class CloudStorageChunkReadTest(PreallocNodesTest):
 
         self._trim_and_verify()
 
-    @cluster(num_nodes=4, log_allow_list=["Exceeded cache size limit"])
+    @cluster(
+        num_nodes=4,
+        log_allow_list=[
+            "Exceeded cache size limit",
+            # Ignore trim related errors for small cache, expected
+            # due to part files being present when exhaustive trim
+            # runs, and being converted to full chunk files by the
+            # time trim gets to deleting them.
+            "failed to free sufficient space in exhaustive trim"
+        ])
     def test_read_when_cache_smaller_than_segment_size(self):
         self.si_settings.cloud_storage_cache_size = 1048576 * 4
         self.redpanda.set_si_settings(self.si_settings)
