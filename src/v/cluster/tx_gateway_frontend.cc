@@ -3095,29 +3095,46 @@ ss::future<> tx_gateway_frontend::expire_old_txs(ss::shared_ptr<tm_stm> stm) {
 
 ss::future<> tx_gateway_frontend::expire_old_tx(
   ss::shared_ptr<tm_stm> stm, kafka::transactional_id tx_id) {
-    return with(stm, tx_id, "expire_old_tx", [this, stm, tx_id]() {
-        return do_expire_old_tx(
-          stm, tx_id, config::shard_local_cfg().create_topic_timeout_ms());
-    });
-}
+    auto units = co_await stm->lock_tx(tx_id, "expire_old_tx");
 
-ss::future<> tx_gateway_frontend::do_expire_old_tx(
-  ss::shared_ptr<tm_stm> stm,
-  kafka::transactional_id tx_id,
-  model::timeout_clock::duration timeout) {
     auto term_opt = co_await stm->sync();
     if (!term_opt.has_value()) {
+        if (term_opt.error() == tm_stm::op_status::not_leader) {
+            vlog(
+              txlog.trace,
+              "this node isn't a leader for tx.id={} coordinator",
+              tx_id);
+        }
+        vlog(
+          txlog.warn,
+          "got error {} on syncing state machine (loading tx.id={})",
+          term_opt.error(),
+          tx_id);
         co_return;
     }
+
     auto term = term_opt.value();
+
+    co_await do_expire_old_tx(
+      stm,
+      term,
+      tx_id,
+      config::shard_local_cfg().create_topic_timeout_ms());
+}
+
+ss::future<tx_errc> tx_gateway_frontend::do_expire_old_tx(
+  ss::shared_ptr<tm_stm> stm,
+  model::term_id term,
+  kafka::transactional_id tx_id,
+  model::timeout_clock::duration timeout) {
     auto r0 = co_await get_tx(term, stm, tx_id, timeout);
     if (!r0.has_value()) {
         // either timeout or already expired
-        co_return;
+        co_return tx_errc::tx_not_found;
     }
     auto tx = r0.value();
     if (!stm->is_expired(tx)) {
-        co_return;
+        co_return tx_errc::none;
     }
 
     checked<tm_transaction, tx_errc> r(tx);
@@ -3136,12 +3153,20 @@ ss::future<> tx_gateway_frontend::do_expire_old_tx(
         r = co_await do_abort_tm_tx(term, stm, tx, timeout);
     }
     if (!r.has_value()) {
-        co_return;
+        vlog(txlog.warn, "got error {} on aborting tx.id={}", r.error(), tx_id);
+
+        co_return r.error();
     }
 
     // it's ok not to check ec because if the expiration isn't passed
     // it will be retried and it's an idempotent operation
-    co_await stm->expire_tx(term, tx_id).discard_result();
+    auto ec = co_await stm->expire_tx(term, tx_id);
+    if (ec != tm_stm::op_status::success) {
+        vlog(txlog.warn, "got error {} on expiring tx.id={}", ec, tx.id);
+        co_return tx_errc::not_coordinator;
+    }
+
+    co_return tx_errc::none;
 }
 
 ss::future<tx_gateway_frontend::return_all_txs_res>
