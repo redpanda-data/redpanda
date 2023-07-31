@@ -7,7 +7,9 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
+import concurrent
 import random
+import time
 
 import requests
 from rptest.clients.kafka_cat import KafkaCat
@@ -27,7 +29,7 @@ from ducktape.mark import matrix
 from rptest.clients.types import TopicSpec
 from rptest.tests.end_to_end import EndToEndTest
 from rptest.services.admin import Admin
-from rptest.services.redpanda import CHAOS_LOG_ALLOW_LIST, RESTART_LOG_ALLOW_LIST, RedpandaService, make_redpanda_service
+from rptest.services.redpanda import CHAOS_LOG_ALLOW_LIST, RESTART_LOG_ALLOW_LIST, RedpandaService, make_redpanda_service, SISettings
 from rptest.utils.node_operations import NodeDecommissionWaiter
 
 
@@ -924,6 +926,130 @@ class NodeDecommissionFailureReportingTest(RedpandaTest):
         self.redpanda.start(nodes=[self.redpanda.nodes[-1]],
                             auto_assign_node_id=True,
                             omit_seeds_on_idx_one=False)
+        waiter = NodeDecommissionWaiter(self.redpanda,
+                                        to_decommission_id,
+                                        self.logger,
+                                        progress_timeout=60)
+        waiter.wait_for_removal()
+
+
+class NodeDecommissionSpaceManagementTest(RedpandaTest):
+    segment_upload_interval_sec = 5
+    manifest_upload_interval_sec = 3
+    retention_local_trim_interval_ms = 5_000
+
+    def __init__(self, test_context, *args, **kwargs):
+        super().__init__(test_context, num_brokers=4, *args, **kwargs)
+
+    def setUp(self):
+        # defer redpanda startup to the test
+        pass
+
+    def _kafka_usage(self):
+        with concurrent.futures.ThreadPoolExecutor(
+                max_workers=len(self.redpanda.nodes)) as executor:
+            return list(
+                executor.map(
+                    lambda n: self.redpanda.data_dir_usage("kafka", n),
+                    self.redpanda.nodes))
+
+    @skip_debug_mode
+    @cluster(num_nodes=5)
+    def test_decommission(self):
+        log_segment_size = 1024 * 1024
+
+        partition_count = 16
+        replication_factor = 3
+        segments_per_partition = 50
+        segments_per_partition_trimmed = 20
+
+        # decommission gets stuck with the following:
+        # partition_count = 4
+        # replication_factor = 1
+
+        target_size = log_segment_size * (
+            segments_per_partition * partition_count * replication_factor //
+            len(self.redpanda.nodes))
+
+        # write a lot more data into the system than the target size to make
+        # sure that we are definitely exercising target size enforcement.
+        data_size = 2 * target_size * len(
+            self.redpanda.nodes) // replication_factor
+
+        msg_size = 16384
+        msg_count = data_size // msg_size
+        topic_name = "test_topic"
+
+        # configure and start redpanda
+        extra_rp_conf = {
+            'cloud_storage_segment_max_upload_interval_sec':
+            self.segment_upload_interval_sec,
+            'cloud_storage_manifest_max_upload_interval_sec':
+            self.manifest_upload_interval_sec,
+            'retention_local_trim_interval':
+            self.retention_local_trim_interval_ms,
+            'retention_local_trim_overage_coeff':
+            1.0,
+            'retention_local_target_capacity_bytes':
+            target_size,
+            'retention_local_strict':
+            False,
+            'disk_reservation_percent':
+            0,
+            'retention_local_target_capacity_percent':
+            100,
+            'retention_local_target_bytes_default':
+            segments_per_partition_trimmed * log_segment_size,
+            # small fallocation step because the balancer adds it to the partition size
+            'segment_fallocation_step':
+            4096,
+        }
+
+        si_settings = SISettings(test_context=self.test_context,
+                                 log_segment_size=log_segment_size,
+                                 retention_local_strict=False)
+        self.redpanda.set_extra_rp_conf(extra_rp_conf)
+        self.redpanda.set_si_settings(si_settings)
+        self.redpanda.start()
+
+        # Sanity check test parameters against the nodes we are running on
+        disk_space_required = data_size
+        assert self.redpanda.get_node_disk_free(
+        ) >= disk_space_required, f"Need at least {disk_space_required} bytes space"
+
+        # create the target topic
+        rpk = RpkTool(self.redpanda)
+        rpk.create_topic(topic_name,
+                         partitions=partition_count,
+                         replicas=replication_factor)
+
+        # setup and start the background producer
+        producer = KgoVerifierProducer(self.test_context,
+                                       self.redpanda,
+                                       topic_name,
+                                       msg_size=msg_size,
+                                       msg_count=msg_count,
+                                       batch_max_bytes=msg_size * 8)
+        producer.start()
+        produce_start_time = time.time()
+
+        # helper: bytes to MBs / human readable
+        def hmb(bs):
+            convert = lambda b: round(b / (1024 * 1024), 1)
+            if isinstance(bs, int):
+                return convert(bs)
+            return [convert(b) for b in bs]
+
+        producer.wait(timeout_sec=300)
+        produce_duration = time.time() - produce_start_time
+        self.logger.info(
+            f"Produced {hmb([data_size])} in {produce_duration} seconds")
+
+        totals = self._kafka_usage()
+        self.logger.info(f"totals: {hmb(totals)}")
+
+        to_decommission_id = self.redpanda.node_id(self.redpanda.nodes[3])
+        Admin(self.redpanda).decommission_broker(to_decommission_id)
         waiter = NodeDecommissionWaiter(self.redpanda,
                                         to_decommission_id,
                                         self.logger,
