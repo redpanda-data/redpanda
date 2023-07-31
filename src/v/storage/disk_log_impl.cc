@@ -1261,6 +1261,15 @@ ss::future<> disk_log_impl::apply_segment_ms() {
         co_return;
     }
     auto last = _segs.back();
+
+    // Holding the append lock blocks writes to the last open segment.
+    // This is required in order to avoid the logic in this function
+    // racing with an inflight append. Contention on this lock should
+    // be very light, since we wouldn't need to enforce segment.ms
+    // if this partition was high throughput (segment would have rolled
+    // naturally).
+    auto append_lock_holder = co_await last->append_lock();
+
     if (!last->has_appender()) {
         // skip, rolling is already happening
         co_return;

@@ -159,21 +159,33 @@ public:
 
     /*
      * Segment Locking
+     * ===============
      *
      * When performing operations on an open segment a lock must be
      * acquired. The appropriate type of lock depends on the operation.
      *
+     * Read locks:
      * Readers should always grab the read lock via `segment::read_lock`.
      * This ensures that no destructive mutations which impact the reader
      * can occur while the lock is held. Multiple callers may hold the read lock
      * at the same time.
      *
+     * Destructive op locks:
      * When performing operations which require total mutual exclusion
      * (e.g. compaction, truncation, etc.) the destructibe lock must be held
      * (acquired via segment::destructive_op_lock). Only one caller may hold
      * this lock at any given time and no read locks may be outstanding.
      *
-     * Lock holders will be granted in the order they were requested.
+     * Read and destructive op lock holders will be granted in the order they
+     * were requested.
+     *
+     * Append locks:
+     * The main purpose of the append lock (`segment::append_lock`) is to
+     * enforce the invariant that only one disk append may be in flight for the
+     * segment at any given time. Internally, `segment` grabs the append lock
+     * every time it performs an append operation. If an external caller holds
+     * the lock that will prevent appends from reaching the disk. Hence, use
+     * with care!
      */
 
     ss::future<ss::rwlock::holder> read_lock(
@@ -181,6 +193,8 @@ public:
 
     ss::future<ss::rwlock::holder> destructive_op_lock(
       ss::semaphore::time_point timeout = ss::semaphore::time_point::max());
+
+    ss::future<ssx::semaphore_units> append_lock();
 
     /*
      * return an estimate of how much data on disk is associated with this
@@ -279,6 +293,7 @@ private:
 
     std::optional<batch_cache_index> _cache;
     ss::rwlock _destructive_ops;
+    mutex _append_lock;
     ss::gate _gate;
 
     absl::btree_map<size_t, model::offset> _inflight;
@@ -441,6 +456,9 @@ segment::read_lock(ss::semaphore::time_point timeout) {
 inline ss::future<ss::rwlock::holder>
 segment::destructive_op_lock(ss::semaphore::time_point timeout) {
     return _destructive_ops.hold_write_lock(timeout);
+}
+inline ss::future<ssx::semaphore_units> segment::append_lock() {
+    return _append_lock.get_units();
 }
 inline void segment::tombstone() { _flags |= bitflags::mark_tombstone; }
 inline bool segment::has_outstanding_locks() const {

@@ -596,6 +596,17 @@ ss::future<append_result> segment::append(const model::record_batch& b) {
             co_return ss::coroutine::exception(std::current_exception());
         }
     }
+
+    // We use a fast path here since this lock should very rarely be contested.
+    // An open segment may only have one in-flight append at any given time
+    // and the only other place this lock is held is when enforcing segment.ms
+    // (which should rarely happen in high throughput scenarios).
+    auto append_lock_holder = _append_lock.try_get_units();
+    if (!append_lock_holder) {
+        vlog(stlog.warn, "Append lock contested for {}", _reader->filename());
+        append_lock_holder = co_await _append_lock.get_units();
+    }
+
     co_return co_await do_append(b);
 }
 
