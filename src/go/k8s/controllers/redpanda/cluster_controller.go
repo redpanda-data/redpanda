@@ -530,7 +530,7 @@ func (r *ClusterReconciler) decommissionBroker(
 	}
 
 	err = adminClient.DecommissionBroker(ctx, nodeID)
-	if err != nil {
+	if err != nil && !strings.Contains(err.Error(), "failed: Not Found") {
 		return fmt.Errorf("unable to decommission broker: %w", err)
 	}
 	return nil
