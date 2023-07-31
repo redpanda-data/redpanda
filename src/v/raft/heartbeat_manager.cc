@@ -255,8 +255,7 @@ void heartbeat_manager::process_reply(
         }
         auto consensus = *it;
 
-        if (unlikely(
-              m.result == append_entries_reply::status::group_unavailable)) {
+        if (unlikely(m.result == reply_result::group_unavailable)) {
             // We may see these if the responding node is still starting up and
             // the replica has yet to bootstrap.
             vlog(
@@ -267,7 +266,7 @@ void heartbeat_manager::process_reply(
             continue;
         }
 
-        if (unlikely(m.result == append_entries_reply::status::timeout)) {
+        if (unlikely(m.result == reply_result::timeout)) {
             vlog(
               hbeatlog.debug,
               "Heartbeat request for group {} timed out on the node {}",
