@@ -1746,7 +1746,7 @@ FIXTURE_TEST(many_segment_locking, storage_test_fixture) {
     }
 
     {
-        auto lock = segments[2]->write_lock().get0();
+        auto lock = segments[2]->destructive_op_lock().get0();
         BOOST_REQUIRE_THROW(
           storage::internal::write_lock_segments(
             segments, std::chrono::seconds(1), 1)

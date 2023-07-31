@@ -88,7 +88,7 @@ ss::future<> segment::close() {
      */
     vlog(stlog.trace, "closing segment: {} ", *this);
     co_await _gate.close();
-    auto locked = co_await write_lock();
+    auto locked = co_await destructive_op_lock();
 
     auto units = co_await _resources.get_close_flush_units();
 
@@ -263,7 +263,7 @@ ss::future<> segment::release_appender(readers_cache* readers_cache) {
      */
     if (_destructive_ops.try_write_lock()) {
         _destructive_ops.write_unlock();
-        return write_lock().then([this](ss::rwlock::holder h) {
+        return destructive_op_lock().then([this](ss::rwlock::holder h) {
             return do_flush()
               .then([this] {
                   auto a = std::exchange(_appender, nullptr);
@@ -308,7 +308,7 @@ void segment::release_appender_in_background(readers_cache* readers_cache) {
                 readers_cache::range_lock_holder readers_cache_lock) mutable {
                   return ss::do_with(
                            std::move(readers_cache_lock),
-                           [this](auto&) { return write_lock(); })
+                           [this](auto&) { return destructive_op_lock(); })
                     .then([this,
                            a = std::move(a),
                            c = std::move(c),
@@ -366,7 +366,7 @@ ss::future<> segment::truncate(
   size_t physical,
   model::timestamp new_max_timestamp) {
     check_segment_not_closed("truncate()");
-    return write_lock().then(
+    return destructive_op_lock().then(
       [this, prev_last_offset, physical, new_max_timestamp](
         ss::rwlock::holder h) {
           return do_truncate(prev_last_offset, physical, new_max_timestamp)

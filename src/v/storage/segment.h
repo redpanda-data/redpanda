@@ -157,10 +157,29 @@ public:
       bool skip_lru_promote);
     void cache_put(const model::record_batch& batch);
 
+    /*
+     * Segment Locking
+     *
+     * When performing operations on an open segment a lock must be
+     * acquired. The appropriate type of lock depends on the operation.
+     *
+     * Readers should always grab the read lock via `segment::read_lock`.
+     * This ensures that no destructive mutations which impact the reader
+     * can occur while the lock is held. Multiple callers may hold the read lock
+     * at the same time.
+     *
+     * When performing operations which require total mutual exclusion
+     * (e.g. compaction, truncation, etc.) the destructibe lock must be held
+     * (acquired via segment::destructive_op_lock). Only one caller may hold
+     * this lock at any given time and no read locks may be outstanding.
+     *
+     * Lock holders will be granted in the order they were requested.
+     */
+
     ss::future<ss::rwlock::holder> read_lock(
       ss::semaphore::time_point timeout = ss::semaphore::time_point::max());
 
-    ss::future<ss::rwlock::holder> write_lock(
+    ss::future<ss::rwlock::holder> destructive_op_lock(
       ss::semaphore::time_point timeout = ss::semaphore::time_point::max());
 
     /*
@@ -420,7 +439,7 @@ segment::read_lock(ss::semaphore::time_point timeout) {
     return _destructive_ops.hold_read_lock(timeout);
 }
 inline ss::future<ss::rwlock::holder>
-segment::write_lock(ss::semaphore::time_point timeout) {
+segment::destructive_op_lock(ss::semaphore::time_point timeout) {
     return _destructive_ops.hold_write_lock(timeout);
 }
 inline void segment::tombstone() { _flags |= bitflags::mark_tombstone; }

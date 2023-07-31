@@ -516,7 +516,7 @@ ss::future<std::optional<size_t>> do_self_compact_segment(
 
     auto rdr_holder = co_await readers_cache.evict_segment_readers(s);
 
-    auto write_lock_holder = co_await s->write_lock();
+    auto destructibe_op_lock_holder = co_await s->destructive_op_lock();
     if (segment_generation != s->get_generation_id()) {
         vlog(
           stlog.debug,
@@ -920,8 +920,8 @@ ss::future<std::vector<ss::rwlock::holder>> write_lock_segments(
             std::vector<ss::future<ss::rwlock::holder>> held_f;
             held_f.reserve(segments.size());
             for (auto& segment : segments) {
-                held_f.push_back(
-                  segment->write_lock(ss::semaphore::clock::now() + timeout));
+                held_f.push_back(segment->destructive_op_lock(
+                  ss::semaphore::clock::now() + timeout));
             }
             held = co_await ss::when_all_succeed(held_f.begin(), held_f.end());
             break;
