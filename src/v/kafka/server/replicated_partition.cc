@@ -401,6 +401,11 @@ ss::future<error_code> replicated_partition::prefix_truncate(
             co_return kafka::error_code::none;
         case raft::errc::not_leader:
             co_return kafka::error_code::not_leader_for_partition;
+        case raft::errc::shutting_down:
+            // it's not clear if the request succeeded or not before the
+            // shutdown so mark this request as timed out. This is similar to
+            // what the produce handler does.
+            co_return kafka::error_code::request_timed_out;
         default:
             vlog(
               klog.error, "Unhandled raft error encountered: {}", errc.value());
