@@ -76,11 +76,16 @@ jobs:
 
     - name: Run clang-format
       run: |
-        wget https://apt.llvm.org/llvm.sh
-        chmod +x llvm.sh
-        sudo ./llvm.sh 16
-        sudo apt-get install -y clang-format-16
-        find . -type f -regex '.*\.\(cpp\|h\|hpp\|cc\|proto\|java\)' | xargs -n1 clang-format-16 -i -style=file -fallback-style=none
+        docker run \
+        -v $PWD:/redpanda ubuntu \
+        bash -c "cd /redpanda && \
+          apt update && \
+          apt install -y wget git lsb-release wget software-properties-common gnupg && \
+          wget https://apt.llvm.org/llvm.sh && \
+          chmod +x llvm.sh && \
+          ./llvm.sh 16 && \
+          apt-get install -y clang-format-16 && \
+          find . -type f -regex '.*\.\(cpp\|h\|hpp\|cc\|proto\|java\)' | xargs -n1 clang-format-16 -i -style=file -fallback-style=none"
         git diff --exit-code
 
   sh:
