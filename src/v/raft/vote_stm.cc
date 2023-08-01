@@ -264,7 +264,7 @@ ss::future<> vote_stm::update_vote_state(ssx::semaphore_units u) {
     _ptr->_hbeat = clock_type::time_point::max();
     vlog(_ctxlog.info, "becoming the leader term:{}", term);
     _ptr->_last_quorum_replicated_index = _ptr->_flushed_offset;
-
+    _ptr->trigger_leadership_notification();
     auto ec = co_await replicate_config_as_new_leader(std::move(u));
 
     // if we didn't replicated configuration, step down
