@@ -106,7 +106,6 @@ func migrateClusterConfigs(configs map[string]string, rp *v1alpha1.Redpanda) {
 	err = jsonRuntime.UnmarshalJSON(jsonData)
 	if err != nil {
 		fmt.Printf("error in unmarshalling data: %s\n", err)
-
 	}
 	rpConfigs.Cluster = jsonRuntime
 	rp.Spec.ClusterSpec.Config = rpConfigs
