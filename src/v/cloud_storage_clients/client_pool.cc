@@ -27,7 +27,72 @@ client_pool::client_pool(
   : _capacity(size)
   , _config(std::move(conf))
   , _probe(std::visit([](auto&& p) { return p._probe; }, _config))
-  , _policy(policy) {}
+  , _policy(policy) {
+    if (ss::this_shard_id() == ss::shard_id{0}) {
+        ssx::spawn_with_gate(
+          _gate, [this]() { return client_self_configure(); });
+    }
+}
+
+ss::future<> client_pool::client_self_configure() {
+    if (!_apply_credentials) {
+        vlog(pool_log.trace, "Awaiting credentials ...");
+        co_await wait_for_credentials();
+    }
+
+    std::optional<client_self_configuration_result> self_config_result;
+
+    const bool requires_self_config = std::visit(
+      [](const auto& cfg) -> bool { return cfg.requires_self_configuration; },
+      _config);
+    if (requires_self_config) {
+        vlog(
+          pool_log.info,
+          "Client requires self configuration step. Proceeding ...");
+        auto client = make_client();
+        self_config_result = co_await client->self_configure();
+        vlog(
+          pool_log.info,
+          "Client self configuration completed with result {} ",
+          *self_config_result);
+    }
+
+    co_await container().invoke_on_all([self_config_result](client_pool& svc) {
+        return svc.accept_self_configure_result(self_config_result)
+          .handle_exception_type([](const ss::gate_closed_exception&) {})
+          .handle_exception_type([](const ss::broken_condition_variable&) {})
+          .handle_exception([](std::exception_ptr e) {
+              vlog(
+                pool_log.error,
+                "Unexpected exception thrown while accepting self "
+                "configuration: {}",
+                e);
+          });
+    });
+}
+
+ss::future<> client_pool::accept_self_configure_result(
+  std::optional<client_self_configuration_result> result) {
+    if (!_apply_credentials) {
+        vlog(pool_log.trace, "Awaiting credentials ...");
+        co_await wait_for_credentials();
+    }
+
+    if (_gate.is_closed() || _as.abort_requested()) {
+        throw ss::gate_closed_exception();
+    }
+
+    if (result) {
+        cloud_storage_clients::apply_self_configuration_result(
+          _config, *result);
+    }
+
+    populate_client_pool();
+
+    // We signal the waiters only after the client pool is initialized, so
+    // that any upload operations waiting are ready to proceed.
+    _self_config_barrier.signal(_self_config_barrier.max_counter());
+}
 
 ss::future<> client_pool::stop() {
     vlog(pool_log.info, "Stopping client pool: {}", _pool.size());
@@ -36,6 +101,8 @@ ss::future<> client_pool::stop() {
         _as.request_abort();
     }
     _cvar.broken();
+    _self_config_barrier.broken();
+    _credentials_var.broken();
     // Wait until all leased objects are returned
     co_await _gate.close();
 
@@ -52,6 +119,9 @@ void client_pool::shutdown_connections() {
 
     _as.request_abort();
     _cvar.broken();
+    _self_config_barrier.broken();
+    _credentials_var.broken();
+
     for (auto& it : _leased) {
         it.client->shutdown();
     }
@@ -104,8 +174,10 @@ client_pool::acquire(ss::abort_source& as) {
         // starts, and we have not had a response from the credentials API yet,
         // but we have scheduled an upload. This wait ensures that when we call
         // the storage API we have a set of valid credentials.
-        if (unlikely(!_apply_credentials)) {
-            co_await wait_for_credentials();
+        if (std::optional<ssx::semaphore_units> u = ss::try_get_units(
+              _self_config_barrier, 1);
+            !u.has_value()) {
+            u = co_await ss::get_units(_self_config_barrier, 1);
         }
 
         while (unlikely(
@@ -293,6 +365,8 @@ void client_pool::populate_client_pool() {
     for (size_t i = 0; i < _capacity; i++) {
         _pool.emplace_back(make_client());
     }
+
+    _cvar.signal();
 }
 
 client_pool::http_client_ptr client_pool::make_client() const {
@@ -316,10 +390,9 @@ void client_pool::release(http_client_ptr leased) {
       "releasing a client, pool size: {}, capacity: {}",
       _pool.size(),
       _capacity);
-    if (_pool.size() == _capacity) {
-        return;
+    if (_pool.size() < _capacity) {
+        _pool.emplace_back(std::move(leased));
     }
-    _pool.emplace_back(std::move(leased));
     _cvar.signal();
 }
 
@@ -327,9 +400,6 @@ void client_pool::load_credentials(cloud_roles::credentials credentials) {
     if (unlikely(!_apply_credentials)) {
         _apply_credentials = ss::make_lw_shared(
           cloud_roles::make_credentials_applier(std::move(credentials)));
-        populate_client_pool();
-        // We signal the waiter only after the client pool is initialized, so
-        // that any upload operations waiting are ready to proceed.
         _credentials_var.signal();
     } else {
         _apply_credentials->reset_creds(std::move(credentials));
@@ -339,7 +409,7 @@ void client_pool::load_credentials(cloud_roles::credentials credentials) {
 ss::future<> client_pool::wait_for_credentials() {
     co_await _credentials_var.wait([this]() {
         return _gate.is_closed() || _as.abort_requested()
-               || (bool{_apply_credentials} && !_pool.empty());
+               || bool{_apply_credentials};
     });
 
     if (_gate.is_closed() || _as.abort_requested()) {

@@ -127,6 +127,8 @@ ss::future<abs_configuration> abs_configuration::make_configuration(
   net::public_metrics_disabled disable_public_metrics) {
     abs_configuration client_cfg;
 
+    client_cfg.requires_self_configuration = true;
+
     const auto endpoint_uri = [&]() -> ss::sstring {
         if (overrides.endpoint) {
             return overrides.endpoint.value();
@@ -160,15 +162,77 @@ ss::future<abs_configuration> abs_configuration::make_configuration(
     co_return client_cfg;
 }
 
+void apply_self_configuration_result(
+  client_configuration& cfg, const client_self_configuration_result& res) {
+    std::visit(
+      [&res](auto& cfg) -> void {
+          using cfg_type = std::decay_t<decltype(cfg)>;
+          if constexpr (std::is_same_v<s3_configuration, cfg_type>) {
+              vassert(
+                std::holds_alternative<s3_self_configuration_result>(res),
+                "Incompatible client configuration {} and self configuration "
+                "result {}",
+                cfg,
+                res);
+              // No self configuration for S3 at this point
+          } else if constexpr (std::is_same_v<abs_configuration, cfg_type>) {
+              vassert(
+                std::holds_alternative<abs_self_configuration_result>(res),
+                "Incompatible client configuration {} and self configuration "
+                "result {}",
+                cfg,
+                res);
+
+              cfg.is_hns_enabled
+                = std::get<abs_self_configuration_result>(res).is_hns_enabled;
+          } else {
+              static_assert(always_false_v<cfg_type>, "Unknown client type");
+          }
+      },
+      cfg);
+}
+
 std::ostream& operator<<(std::ostream& o, const abs_configuration& c) {
     o << "{storage_account_name: " << c.storage_account_name()
-      << "shared_key:****"
-      << ",access_point_uri:" << c.uri() << ",server_addr:" << c.server_addr
-      << ",max_idle_time:"
+      << ", shared_key:****"
+      << ", access_point_uri:" << c.uri() << ", server_addr:" << c.server_addr
+      << ", max_idle_time:"
       << std::chrono::duration_cast<std::chrono::milliseconds>(c.max_idle_time)
            .count()
+      << ", is_hns_enabled:" << c.is_hns_enabled
       << "}";
     return o;
+}
+
+std::ostream&
+operator<<(std::ostream& o, const abs_self_configuration_result& r) {
+    o << "{is_hns_enabled: " << r.is_hns_enabled << "}";
+    return o;
+}
+
+std::ostream&
+operator<<(std::ostream& o, const s3_self_configuration_result&) {
+    o << "{}";
+    return o;
+}
+
+std::ostream&
+operator<<(std::ostream& o, const client_self_configuration_result& r) {
+    return std::visit(
+      [&o](const auto& self_cfg) -> std::ostream& {
+          using cfg_type = std::decay_t<decltype(self_cfg)>;
+          if constexpr (std::
+                          is_same_v<s3_self_configuration_result, cfg_type>) {
+              return o << "{s3_self_configuration_result: " << self_cfg << "}";
+          } else if constexpr (std::is_same_v<
+                                 abs_self_configuration_result,
+                                 cfg_type>) {
+              return o << "{abs_self_configuration_result: " << self_cfg << "}";
+          } else {
+              static_assert(always_false_v<cfg_type>, "Unknown client type");
+          }
+      },
+      r);
 }
 
 model::cloud_storage_backend infer_backend_from_configuration(
@@ -226,6 +290,21 @@ model::cloud_storage_backend infer_backend_from_configuration(
       uri());
 
     return result;
+}
+
+std::ostream& operator<<(std::ostream& o, const client_configuration& c) {
+    return std::visit(
+      [&o](const auto& cfg) -> std::ostream& {
+          using cfg_type = std::decay_t<decltype(cfg)>;
+          if constexpr (std::is_same_v<s3_configuration, cfg_type>) {
+              return o << "{s3_configuration: " << cfg << "}";
+          } else if constexpr (std::is_same_v<abs_configuration, cfg_type>) {
+              return o << "{abs_configuration: " << cfg << "}";
+          } else {
+              static_assert(always_false_v<cfg_type>, "Unknown client type");
+          }
+      },
+      c);
 }
 
 } // namespace cloud_storage_clients
