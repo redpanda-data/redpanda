@@ -1340,6 +1340,9 @@ class RedpandaServiceCloud(RedpandaServiceK8s):
     GLOBAL_CLOUD_DELETE_CLUSTER = 'cloud_delete_cluster'
     GLOBAL_TELEPORT_AUTH_SERVER = 'cloud_teleport_auth_server'
     GLOBAL_TELEPORT_BOT_TOKEN = 'cloud_teleport_bot_token'
+    GLOBAL_CLOUD_CLUSTER_REGION = 'cloud_cluster_region'
+    GLOBAL_CLOUD_CLUSTER_PROVIDER = 'cloud_provider'
+    GLOBAL_CLOUD_CLUSTER_TYPE = 'cloud_cluster_type'
 
     class CloudCluster():
         """
@@ -1360,7 +1363,10 @@ class RedpandaServiceCloud(RedpandaServiceK8s):
                      oauth_audience,
                      api_url,
                      cluster_id='',
-                     delete_namespace=False):
+                     delete_namespace=False,
+                     cloud_cluster_region="us-west-2",
+                     cloud_cluster_provider="AWS",
+                     cloud_cluster_type="FMC"):
             """
             Initializes the object, but does not create clusters. Use
             `create` method to create a cluster.
@@ -1383,6 +1389,9 @@ class RedpandaServiceCloud(RedpandaServiceK8s):
             self._oauth_audience = oauth_audience
             self._api_url = api_url
             self._cluster_id = cluster_id
+            self._coud_cluster_region = cloud_cluster_region
+            self._coud_cluster_provider = cloud_cluster_provider
+            self._coud_cluster_type = cloud_cluster_type
             self._delete_namespace = delete_namespace
             self._token = None
 
@@ -1577,9 +1586,12 @@ class RedpandaServiceCloud(RedpandaServiceK8s):
             namespace_uuid = self._create_namespace()
             name = f'rp-ducktape-cluster-{self._unique_id}'  # e.g. rp-ducktape-cluster-3b36f516
             install_pack_ver = self._get_install_pack_ver()
-            cluster_type = 'FMC'
-            provider = 'AWS'
-            region = 'us-west-2'
+            # 'FMC'
+            cluster_type = self._coud_cluster_type
+            # 'AWS'
+            provider = self._coud_cluster_provider
+            # 'us-west-2'
+            region = self._coud_cluster_region
             region_id = self._get_region_id(cluster_type, provider, region)
             zones = ['usw2-az1']
             product_id = self._get_product_id(config_profile_name, provider,
@@ -1774,12 +1786,25 @@ class RedpandaServiceCloud(RedpandaServiceK8s):
             self.GLOBAL_CLOUD_CLUSTER_ID, '')
         self._cloud_delete_cluster = context.globals.get(
             self.GLOBAL_CLOUD_DELETE_CLUSTER, True)
+        self._cloud_cluster_provider = context.globals.get(
+            self.GLOBAL_CLOUD_CLUSTER_PROVIDER, "AWS").upper()
+        self._cloud_cluster_region = context.globals.get(
+            self.GLOBAL_CLOUD_CLUSTER_REGION, "us-west-2")
+        self._cloud_cluster_type = context.globals.get(
+            self.GLOBAL_CLOUD_CLUSTER_TYPE, "FMC").upper()
         self.logger.debug(f'initial cluster_id: {self._cloud_cluster_id}')
 
         self._cloud_cluster = self.CloudCluster(
-            self.logger, self._cloud_oauth_url, self._cloud_oauth_client_id,
-            self._cloud_oauth_client_secret, self._cloud_oauth_audience,
-            self._cloud_api_url, self._cloud_cluster_id)
+            self.logger,
+            self._cloud_oauth_url,
+            self._cloud_oauth_client_id,
+            self._cloud_oauth_client_secret,
+            self._cloud_oauth_audience,
+            self._cloud_api_url,
+            self._cloud_cluster_id,
+            cloud_cluster_region=self._cloud_cluster_region,
+            cloud_cluster_provider=self._cloud_cluster_provider,
+            cloud_cluster_type=self._cloud_cluster_type)
         self._kubectl = None
 
     def start_node(self, node, **kwargs):
