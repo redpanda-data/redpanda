@@ -106,6 +106,7 @@ class RpkGroup(typing.NamedTuple):
     state: str
     balancer: str
     members: int
+    total_lag: int
     partitions: list[RpkGroupPartition]
 
 
@@ -666,8 +667,9 @@ class RpkTool:
             state = parse_field("STATE", lines[2])
             balancer = parse_field("BALANCER", lines[3])
             members = parse_field("MEMBERS", lines[4])
+            total_lag = parse_field("TOTAL-LAG", lines[5])
             partitions = []
-            for l in lines[5:]:
+            for l in lines[6:]:
                 #skip header line
                 if l.startswith("TOPIC") or len(l) < 2:
                     continue
@@ -683,7 +685,8 @@ class RpkTool:
                             state=state,
                             balancer=balancer,
                             members=int(members),
-                            partitions=partitions)
+                            partitions=partitions,
+                            total_lag=int(total_lag))
 
         attempts = 10
         rpk_group = None
