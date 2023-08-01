@@ -303,7 +303,7 @@ consensus::success_reply consensus::update_follower_index(
         // current node may change it.
         return success_reply::yes;
     }
-    auto config = _configuration_manager.get_latest();
+    const auto& config = _configuration_manager.get_latest();
     if (!config.contains(node)) {
         // We might have sent an append_entries just before removing
         // a node from configuration: ignore its reply, to avoid
