@@ -17,6 +17,9 @@
 #include "storage/segment_appender.h"
 #include "vlog.h"
 
+#include <seastar/coroutine/exception.hh>
+
+#include <exception>
 #include <type_traits>
 
 namespace storage {
@@ -76,33 +79,35 @@ disk_log_appender::operator()(model::record_batch& batch) {
         release_lock();
     }
     _last_term = batch.term();
-    auto f = ss::make_ready_future<>();
-    if (unlikely(needs_to_roll_log(batch.term()))) {
-        f = ss::do_until(
-          [this, term = batch.term()] {
-              // we might actually have space in the current log, but the terms
-              // do not match for the current append, so we must roll
-              return !needs_to_roll_log(term)
-                     // we might have gotten the lock, but in a concurrency
-                     // situation - say a segment eviction we need to double
-                     // check that _after_ we got the lock, the segment wasn't
-                     // somehow closed before the append
-                     && _bytes_left_in_segment > 0;
-          },
-          [this] {
-              release_lock();
-              return _log.maybe_roll(_last_term, _idx, _config.io_priority)
-                .then([this] { return initialize(); });
-          });
+    try {
+        if (unlikely(needs_to_roll_log(batch.term()))) {
+            while (true) {
+                // we might actually have space in the current log, but the
+                // terms do not match for the current append, so we must roll
+                release_lock();
+                co_await _log.maybe_roll(_last_term, _idx, _config.io_priority);
+                co_await initialize();
+
+                // we might have gotten the lock, but in a concurrency
+                // situation - say a segment eviction we need to double
+                // check that _after_ we got the lock, the segment wasn't
+                // somehow closed before the append
+                if (!needs_to_roll_log(batch.term())) {
+                    break;
+                }
+            }
+        }
+        co_return co_await append_batch_to_segment(batch);
+    } catch (...) {
+        release_lock();
+        vlog(
+          stlog.info,
+          "Could not append batch: {} - {}",
+          std::current_exception(),
+          *this);
+        _log.get_probe().batch_write_error(std::current_exception());
+        throw;
     }
-    return f
-      .then([this, &batch]() mutable { return append_batch_to_segment(batch); })
-      .handle_exception([this](std::exception_ptr e) {
-          release_lock();
-          vlog(stlog.info, "Could not append batch: {} - {}", e, *this);
-          _log.get_probe().batch_write_error(e);
-          return ss::make_exception_future<ss::stop_iteration>(e);
-      });
 }
 
 ss::future<ss::stop_iteration>
