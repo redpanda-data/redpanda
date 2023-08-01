@@ -528,6 +528,13 @@ void group_manager::handle_leader_change(
              */
             if (leader == _self.id()) {
                 it->second->loading = true;
+                vlog(
+                  klog.info,
+                  "EEE handle leader change partition {}, leader {}, loading "
+                  "{}",
+                  it->second->partition->ntp(),
+                  leader,
+                  it->second->loading);
             }
             return ss::with_semaphore(
                      it->second->sem,
@@ -588,6 +595,11 @@ ss::future<> group_manager::reload_groups() {
         auto leader = attached->partition->get_leader_id();
         if (leader == _self.id()) {
             attached->loading = true;
+            vlog(
+              klog.info,
+              "FFF reload groups leader {}, loading {}",
+              leader,
+              attached->loading);
         }
         auto term = attached->partition->term();
         auto f = ss::with_semaphore(
@@ -608,12 +620,24 @@ ss::future<> group_manager::handle_partition_leader_change(
   std::optional<model::node_id> leader_id) {
     if (leader_id != _self.id()) {
         p->loading = false;
+        vlog(
+          klog.info,
+          "GGG do gc_part_state partition {}, leader {}, loading {}",
+          p->partition->ntp(),
+          leader_id,
+          p->loading);
         return gc_partition_state(p);
     }
 
     vlog(klog.trace, "Recovering groups of {}", p->partition->ntp());
 
     p->loading = true;
+    vlog(
+      klog.info,
+      "HHH part_leader_change partition {}, leader {}, loading {}",
+      p->partition->ntp(),
+      leader_id,
+      p->loading);
     auto timeout
       = ss::lowres_clock::now()
         + config::shard_local_cfg().kafka_group_recovery_timeout_ms();
@@ -658,7 +682,15 @@ ss::future<> group_manager::handle_partition_leader_change(
                                 return ss::make_ready_future<>();
                             }
                             return recover_partition(term, p, std::move(state))
-                              .then([p] { p->loading = false; });
+                              .then([p] {
+                                  p->loading = false;
+                                  vlog(
+                                    klog.info,
+                                    "III after recovery partition {}, loading "
+                                    "{}",
+                                    p->partition->ntp(),
+                                    p->loading);
+                              });
                         });
                   });
             })
@@ -1364,6 +1396,12 @@ group_manager::list_groups() const {
       _partitions.cend(),
       [](const std::
            pair<const model::ntp, ss::lw_shared_ptr<attached_partition>>& p) {
+          vlog(
+            klog.info,
+            "JJJ ntp {}, group {}, term {}",
+            p.second->partition->ntp(),
+            p.second->partition->group(),
+            p.second->partition->term());
           return p.second->loading;
       });
 
@@ -1374,6 +1412,7 @@ group_manager::list_groups() const {
           {g->id(), g->protocol_type().value_or(protocol_type())});
     }
 
+    vlog(klog.info, "DDD loading {}", loading);
     auto error = loading ? error_code::coordinator_load_in_progress
                          : error_code::none;
 

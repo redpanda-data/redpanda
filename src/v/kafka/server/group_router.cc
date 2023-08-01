@@ -303,6 +303,8 @@ group_router::list_groups() {
       [](group_manager& mgr) { return mgr.list_groups(); },
       type{},
       [](type a, type b) {
+          vlog(klog.info, "BBB left groups {}, error {}", a.second, a.first);
+          vlog(klog.info, "CCC right groups {}, error {}", b.second, b.first);
           // reduce errors into `a` and retain the first
           if (a.first == error_code::none) {
               a.first = b.first;

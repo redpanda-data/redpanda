@@ -441,6 +441,8 @@ ss::future<response_ptr> list_groups_handler::handle(
     log_request(ctx.header(), request);
     auto&& [error, groups] = co_await ctx.groups().list_groups();
 
+    vlog(klog.info, "AAA groups {}, error {}", groups, error);
+
     list_groups_response resp;
     resp.data.error_code = error;
     resp.data.groups = std::move(groups);
