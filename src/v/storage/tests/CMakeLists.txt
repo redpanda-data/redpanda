@@ -108,3 +108,15 @@ rp_test(
   LABELS storage
 )
 
+set (fixture_srcs
+  storage_e2e_fixture_test.cc)
+
+rp_test(
+  FIXTURE_TEST
+  BINARY_NAME storage_e2e
+  SOURCES ${fixture_srcs}
+  LIBRARIES v::seastar_testing_main v::application v::raft v::config v::kafka_test_utils
+  ARGS "-- -c 1"
+  LABELS storage
+)
+
