@@ -29,8 +29,9 @@ ss::future<> controller_stm::on_batch_applied() {
         co_return;
     }
 
+    auto current_offset = model::next_offset(last_applied_offset());
     if (
-      get_last_applied_offset() > _raft->last_snapshot_index()
+      current_offset > _raft->last_snapshot_index()
       && !_snapshot_debounce_timer.armed()) {
         _snapshot_debounce_timer.arm(_snapshot_max_age());
     };
