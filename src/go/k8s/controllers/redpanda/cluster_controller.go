@@ -475,7 +475,8 @@ func (r *ClusterReconciler) setPodNodeIDAnnotation(
 		if pod.Annotations == nil {
 			pod.Annotations = make(map[string]string)
 		}
-		nodeIDStr, ok := pod.Annotations[resources.PodAnnotationNodeIDKey]
+		nodeIDStrAnnotation, annotationExist := pod.Annotations[resources.PodAnnotationNodeIDKey]
+		nodeIDStrLabel, labelExist := pod.Labels[resources.PodAnnotationNodeIDKey]
 
 		nodeID, err := r.fetchAdminNodeID(ctx, rp, pod, ar)
 		if err != nil {
@@ -485,15 +486,15 @@ func (r *ClusterReconciler) setPodNodeIDAnnotation(
 
 		realNodeIDStr := fmt.Sprintf("%d", nodeID)
 
-		if ok && realNodeIDStr == nodeIDStr {
+		if annotationExist && labelExist && realNodeIDStr == nodeIDStrAnnotation && realNodeIDStr == nodeIDStrLabel {
 			continue
 		}
 
 		var oldNodeID int
-		if ok {
-			oldNodeID, err = strconv.Atoi(nodeIDStr)
+		if annotationExist {
+			oldNodeID, err = strconv.Atoi(nodeIDStrAnnotation)
 			if err != nil {
-				return fmt.Errorf("unable to convert node ID (%s) to int: %w", nodeIDStr, err)
+				return fmt.Errorf("unable to convert node ID (%s) to int: %w", nodeIDStrAnnotation, err)
 			}
 
 			log.WithValues("pod-name", pod.Name, "old-node-id", oldNodeID).Info("decommission old node-id")
@@ -504,6 +505,7 @@ func (r *ClusterReconciler) setPodNodeIDAnnotation(
 
 		log.WithValues("pod-name", pod.Name, "new-node-id", nodeID).Info("setting node-id annotation")
 		pod.Annotations[resources.PodAnnotationNodeIDKey] = realNodeIDStr
+		pod.Labels[resources.PodAnnotationNodeIDKey] = realNodeIDStr
 		if err := r.Update(ctx, pod, &client.UpdateOptions{}); err != nil {
 			return fmt.Errorf(`unable to update pod "%s" with node-id annotation: %w`, pod.Name, err)
 		}
