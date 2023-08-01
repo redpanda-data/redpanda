@@ -1223,6 +1223,10 @@ class RedpandaServiceBase(Service):
         if bad_lines:
             raise BadLogLines(bad_lines)
 
+    def raise_on_crash(self,
+                       log_allow_list: list[str | re.Pattern] | None = None):
+        pass
+
 
 class RedpandaServiceK8s(RedpandaServiceBase):
     def __init__(self,
