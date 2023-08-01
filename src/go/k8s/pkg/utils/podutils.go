@@ -10,10 +10,16 @@
 package utils
 
 import (
+	"context"
+	"fmt"
 	"time"
 
+	"github.com/go-logr/logr"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 // SetStatusPodCondition sets the corresponding condition in conditions to newCondition.
@@ -91,4 +97,31 @@ func IsStatusPodConditionPresentAndEqual(conditions []corev1.PodCondition, condi
 		}
 	}
 	return false
+}
+
+func DeletePodPVCs(ctx context.Context, c client.Client, pod *corev1.Pod, l logr.Logger) error {
+	log := l.WithName("DeletePodPVCs")
+	//   delete the associated pvc
+	pvc := corev1.PersistentVolumeClaim{}
+	for i := range pod.Spec.Volumes {
+		v := &pod.Spec.Volumes[i]
+		if v.PersistentVolumeClaim != nil {
+			key := types.NamespacedName{
+				Name:      v.PersistentVolumeClaim.ClaimName,
+				Namespace: pod.GetNamespace(),
+			}
+			err := c.Get(ctx, key, &pvc)
+			if err != nil {
+				if !apierrors.IsNotFound(err) {
+					return fmt.Errorf(`unable to fetch PersistentVolumeClaim "%s/%s": %w`, key.Namespace, key.Name, err)
+				}
+				continue
+			}
+			log.WithValues("persistent-volume-claim", key).Info("deleting PersistentVolumeClaim")
+			if err := c.Delete(ctx, &pvc, &client.DeleteOptions{}); err != nil && !apierrors.IsNotFound(err) {
+				return fmt.Errorf(`unable to delete PersistentVolumeClaim "%s/%s": %w`, key.Name, key.Namespace, err)
+			}
+		}
+	}
+	return nil
 }

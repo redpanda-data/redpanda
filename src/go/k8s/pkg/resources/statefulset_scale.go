@@ -156,7 +156,7 @@ func (r *StatefulSetResource) handleDecommissionInProgress(ctx context.Context, 
 		log.WithValues("node_id", r.pandaCluster.GetDecommissionBrokerID()).Info("cannot recommission broker", "error", err)
 	}
 	// handleDecommission will return an error until the decommission is completed
-	if err := r.handleDecommission(ctx); err != nil {
+	if err := r.handleDecommission(ctx, log); err != nil {
 		return err
 	}
 
@@ -192,12 +192,12 @@ func (r *StatefulSetResource) handleDecommissionInProgress(ctx context.Context, 
 //
 // Before completing the process, it double-checks if the node is still not registered, for handling cases where the node was
 // about to start when the decommissioning process started. If the broker is found, the process is restarted.
-func (r *StatefulSetResource) handleDecommission(ctx context.Context) error {
+func (r *StatefulSetResource) handleDecommission(ctx context.Context, l logr.Logger) error {
 	brokerID := r.pandaCluster.GetDecommissionBrokerID()
 	if brokerID == nil {
 		return nil
 	}
-	log := r.logger.WithName("handleDecommission").WithValues("node_id", *brokerID)
+	log := l.WithName("handleDecommission").WithValues("node_id", *brokerID)
 	log.Info("handling broker decommissioning")
 
 	adminAPI, err := r.getAdminAPIClient(ctx)
