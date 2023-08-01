@@ -311,7 +311,7 @@ consensus::success_reply consensus::update_follower_index(
         vlog(
           _ctxlog.debug,
           "Ignoring reply from node {}, it is not in members list",
-          physical_node);
+          node);
         return success_reply::no;
     }
 
