@@ -24,6 +24,7 @@
 #include "raft/event_manager.h"
 #include "raft/follower_stats.h"
 #include "raft/group_configuration.h"
+#include "raft/heartbeats.h"
 #include "raft/logger.h"
 #include "raft/mutex_buffer.h"
 #include "raft/offset_translator.h"
@@ -32,7 +33,6 @@
 #include "raft/recovery_memory_quota.h"
 #include "raft/replicate_batcher.h"
 #include "raft/timeout_jitter.h"
-#include "raft/types.h"
 #include "seastarx.h"
 #include "ssx/metrics.h"
 #include "ssx/semaphore.h"
@@ -452,6 +452,17 @@ public:
     model::offset get_flushed_offset() const { return _flushed_offset; }
 
     bool stopped() const { return _bg.is_closed(); }
+
+    reply_result lightweight_heartbeat(
+      model::node_id source_node, model::node_id target_node);
+
+    ss::future<full_heartbeat_reply> full_heartbeat(
+      group_id group,
+      model::node_id source_node,
+      model::node_id target_node,
+      const heartbeat_request_data& hb_data);
+
+    void reset_last_sent_protocol_meta(const vnode&);
 
 private:
     friend replicate_entries_stm;

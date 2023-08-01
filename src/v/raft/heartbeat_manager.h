@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include "features/fwd.h"
 #include "model/metadata.h"
 #include "outcome.h"
 #include "raft/consensus.h"
@@ -120,12 +121,29 @@ public:
         // track a sequence per group
         absl::node_hash_map<raft::group_id, follower_request_meta> meta_map;
     };
+    struct node_heartbeat_v2 {
+        node_heartbeat_v2(
+          model::node_id t,
+          heartbeat_request_v2 req,
+          absl::node_hash_map<raft::group_id, follower_request_meta> seqs)
+          : target(t)
+          , request(std::move(req))
+          , meta_map(std::move(seqs)) {}
+
+        model::node_id target;
+        heartbeat_request_v2 request;
+        // each raft group has its own follower metadata hence we need map to
+        // track a sequence per group
+        absl::node_hash_map<raft::group_id, follower_request_meta> meta_map;
+    };
 
     heartbeat_manager(
-      config::binding<std::chrono::milliseconds>,
-      consensus_client_protocol,
-      model::node_id,
-      config::binding<std::chrono::milliseconds>);
+      config::binding<std::chrono::milliseconds> heartbeat_interval,
+      consensus_client_protocol client_protocol,
+      model::node_id self_node_id,
+      config::binding<std::chrono::milliseconds> heartbeat_timeout,
+      config::binding<bool> enable_lw_heartbeats,
+      features::feature_table& features);
 
     ss::future<> register_group(ss::lw_shared_ptr<consensus>);
     ss::future<> deregister_group(raft::group_id);
@@ -144,18 +162,36 @@ private:
         /// a transport reconnection before sending next heartbeat
         absl::flat_hash_set<model::node_id> reconnect_nodes;
     };
+    struct heartbeat_requests_v2 {
+        /// Requests to dispatch.  Can include request to self.
+        std::vector<heartbeat_manager::node_heartbeat_v2> requests;
+
+        /// These nodes' heartbeat status indicates they need
+        /// a transport reconnection before sending next heartbeat
+        absl::flat_hash_set<model::node_id> reconnect_nodes;
+    };
 
     void dispatch_heartbeats();
 
     clock_type::time_point next_heartbeat_timeout();
 
     /// \brief unprotected, must be used inside the gate & semaphore
+
+    ss::future<> do_dispatch_versioned();
     ss::future<> do_dispatch_heartbeats();
+    ss::future<> do_dispatch_heartbeats_v2();
 
     ss::future<> send_heartbeats(std::vector<node_heartbeat>);
+    ss::future<> send_heartbeats(std::vector<node_heartbeat_v2>);
 
     /// \brief sends a batch to one node
     ss::future<> do_heartbeat(node_heartbeat&&);
+    ss::future<> do_heartbeat(node_heartbeat_v2);
+
+    bool needs_full_heartbeat(
+      const follower_index_metadata& follower_metadata,
+      const protocol_metadata& leader_protocol_metadata,
+      model::offset leader_flushed_offset) const;
 
     /// \brief notifies the consensus groups about append_entries log offsets
     /// \param n the physical node that owns heart beats
@@ -166,7 +202,21 @@ private:
       const absl::node_hash_map<raft::group_id, follower_request_meta>& groups,
       result<heartbeat_reply> result);
 
+    void process_reply(
+      model::node_id n,
+      const absl::node_hash_map<raft::group_id, follower_request_meta>& groups,
+      result<heartbeat_reply_v2> result);
+
+    consensus_ptr validate_heartbeat_reply(
+      model::node_id reply_source_node,
+      model::node_id target_node,
+      const absl::node_hash_map<raft::group_id, follower_request_meta>& groups,
+      group_id group,
+      reply_result status);
+
     heartbeat_requests requests_for_range();
+
+    heartbeat_requests_v2 requests_for_range_v2();
     // private members
 
     mutex _lock;
@@ -181,5 +231,7 @@ private:
     consensus_set _consensus_groups;
     consensus_client_protocol _client_protocol;
     model::node_id _self;
+    config::binding<bool> _enable_lw_heartbeat;
+    features::feature_table& _feature_table;
 };
 } // namespace raft

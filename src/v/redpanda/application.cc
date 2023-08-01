@@ -1091,7 +1091,10 @@ void application::wire_up_redpanda_services(model::node_id node_id) {
               .heartbeat_timeout
               = config::shard_local_cfg().raft_heartbeat_timeout_ms.bind(),
               .raft_io_timeout_ms
-              = config::shard_local_cfg().raft_io_timeout_ms.bind()};
+              = config::shard_local_cfg().raft_io_timeout_ms.bind(),
+              .enable_lw_heartbeat
+              = config::shard_local_cfg().raft_enable_lw_heartbeat.bind(),
+            };
         },
         [] {
             return raft::recovery_memory_quota::configuration{
@@ -2141,7 +2144,8 @@ void application::start_runtime_services(
                 smp_service_groups.raft_smp_sg(),
                 partition_manager,
                 shard_table.local(),
-                config::shard_local_cfg().raft_heartbeat_interval_ms()));
+                config::shard_local_cfg().raft_heartbeat_interval_ms(),
+                config::node().node_id().value()));
               s.add_services(std::move(runtime_services));
           })
           .get();
@@ -2182,7 +2186,8 @@ void application::start_runtime_services(
                 smp_service_groups.raft_smp_sg(),
                 partition_manager,
                 shard_table.local(),
-                config::shard_local_cfg().raft_heartbeat_interval_ms()));
+                config::shard_local_cfg().raft_heartbeat_interval_ms(),
+                config::node().node_id().value()));
           }
 
           runtime_services.push_back(std::make_unique<cluster::service>(

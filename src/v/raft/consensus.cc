@@ -15,6 +15,7 @@
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/namespace.h"
+#include "model/record.h"
 #include "model/record_batch_reader.h"
 #include "model/record_batch_types.h"
 #include "model/timeout_clock.h"
@@ -3360,6 +3361,7 @@ void consensus::update_suppress_heartbeats(
 void consensus::update_heartbeat_status(vnode id, bool success) {
     if (auto it = _fstats.find(id); it != _fstats.end()) {
         if (success) {
+            it->second.last_received_reply_timestamp = clock_type::now();
             it->second.heartbeats_failed = 0;
         } else {
             it->second.heartbeats_failed++;
@@ -3525,4 +3527,101 @@ std::optional<uint8_t> consensus::get_under_replicated() const {
     return count;
 }
 
+reply_result consensus::lightweight_heartbeat(
+  model::node_id source_node, model::node_id target_node) {
+    /**
+     * Handle lightweight heartbeat
+     */
+    if (unlikely(target_node != _self.id())) {
+        vlog(
+          _ctxlog.warn,
+          "received lw_heartbeat request addressed to different node: {}, "
+          "current node: {}, source: {}",
+          target_node,
+          _self,
+          source_node);
+        return reply_result::failure;
+    }
+
+    /**
+     * If leader has changed force full heartbeat
+     */
+    if (unlikely(_leader_id.has_value() && (_leader_id->id() != source_node))) {
+        vlog(
+          _ctxlog.trace,
+          "requesting full heartbeat from {}, leadership changed",
+          source_node);
+        return reply_result::failure;
+    }
+    /**
+     * Not yet received heartbeats, follower was restarted while leader is
+     * sending out lightweight heartbeats, reply with failure to force sending
+     * full heartbeat.
+     */
+    if (unlikely(_hbeat == clock_type::time_point::min())) {
+        vlog(
+          _ctxlog.trace,
+          "requesting full heartbeat from {}, follower still in an initial "
+          "state",
+          source_node);
+        return reply_result::failure;
+    }
+
+    _hbeat = clock_type::now();
+    return reply_result::success;
+}
+ss::future<full_heartbeat_reply> consensus::full_heartbeat(
+  group_id group,
+  model::node_id source_node,
+  model::node_id target_node,
+  const heartbeat_request_data& hb_data) {
+    const vnode target_vnode(target_node, hb_data.target_revision);
+    const vnode source_vnode(source_node, hb_data.source_revision);
+    full_heartbeat_reply reply{.group = _group};
+
+    if (unlikely(target_vnode != _self)) {
+        vlog(
+          _ctxlog.warn,
+          "received full heartbeat request addressed to node with different "
+          "revision: {}, current node: {}, source: {}",
+          target_vnode,
+          _self,
+          source_vnode);
+        reply.result = reply_result::failure;
+        co_return reply;
+    }
+    /**
+     * IMPORTANT: do not use request reference after the scheduling point
+     */
+    append_entries_reply r = co_await append_entries(append_entries_request(
+      source_vnode,
+      target_vnode,
+      protocol_metadata{
+        .group = group,
+        .commit_index = hb_data.commit_index,
+        .term = hb_data.term,
+        .prev_log_index = hb_data.prev_log_index,
+        .prev_log_term = hb_data.prev_log_term,
+        .last_visible_index = hb_data.last_visible_index,
+      },
+      model::make_memory_record_batch_reader(
+        ss::circular_buffer<model::record_batch>{}),
+      flush_after_append::no));
+
+    reply.result = r.result;
+    reply.data = heartbeat_reply_data{
+      .source_revision = _self.revision(),
+      .target_revision = source_vnode.revision(),
+      .term = r.term,
+      .last_flushed_log_index = r.last_flushed_log_index,
+      .last_dirty_log_index = r.last_dirty_log_index,
+      .last_term_base_offset = r.last_term_base_offset,
+    };
+    co_return reply;
+}
+void consensus::reset_last_sent_protocol_meta(const vnode& node) {
+    if (auto it = _fstats.find(node); it != _fstats.end()) {
+        it->second.last_sent_protocol_meta.reset();
+    }
+}
 } // namespace raft

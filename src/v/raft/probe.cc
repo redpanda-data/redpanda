@@ -164,6 +164,18 @@ void probe::setup_metrics(const model::ntp& ntp) {
          [this] { return _replicate_batch_flushed; },
          sm::description("Number of replicate batch flushes"),
          labels)
+         .aggregate(aggregate_labels),
+       sm::make_counter(
+         "lightweight_heartbeat_requests",
+         [this] { return _lw_heartbeat_requests; },
+         sm::description("Number of lightweight heartbeats sent by the leader"),
+         labels)
+         .aggregate(aggregate_labels),
+       sm::make_counter(
+         "full_heartbeat_requests",
+         [this] { return _full_heartbeat_requests; },
+         sm::description("Number of full heartbeats sent by the leader"),
+         labels)
          .aggregate(aggregate_labels)});
 }
 
