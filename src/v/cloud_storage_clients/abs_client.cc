@@ -15,6 +15,7 @@
 #include "cloud_storage_clients/logger.h"
 #include "cloud_storage_clients/util.h"
 #include "cloud_storage_clients/xml_sax_parser.h"
+#include "config/configuration.h"
 #include "vlog.h"
 
 #include <utility>
@@ -191,6 +192,7 @@ abs_request_creator::make_delete_blob_request(
     // x-ms-version:"2021-08-06"           # added by 'add_auth'
     // Authorization:{signature}           # added by 'add_auth'
     const auto target = fmt::format("/{}/{}", name(), key().string());
+
     const boost::beast::string_view host{_ap().data(), _ap().length()};
 
     http::client::request_header header{};
@@ -262,6 +264,11 @@ abs_client::abs_client(
   : _requestor(conf, std::move(apply_credentials))
   , _client(conf, &as, conf._probe, conf.max_idle_time)
   , _probe(conf._probe) {}
+
+ss::future<client_self_configuration_result> abs_client::self_configure() {
+    // TODO: A future commit will plug in the implementation
+    co_return abs_self_configuration_result{.is_hns_enabled = false};
+}
 
 ss::future<> abs_client::stop() {
     vlog(abs_log.debug, "Stopping ABS client");

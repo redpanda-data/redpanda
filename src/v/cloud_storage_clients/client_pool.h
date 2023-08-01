@@ -127,6 +127,10 @@ public:
     size_t max_size() const noexcept;
 
 private:
+    ss::future<> client_self_configure();
+    ss::future<> accept_self_configure_result(
+      std::optional<client_self_configuration_result> result);
+
     void populate_client_pool();
     http_client_ptr make_client() const;
     void release(http_client_ptr leased);
@@ -158,6 +162,8 @@ private:
     /// enable rotating credentials to all clients.
     ss::lw_shared_ptr<cloud_roles::apply_credentials> _apply_credentials;
     ss::condition_variable _credentials_var;
+
+    ssx::semaphore _self_config_barrier{0, "self_config_barrier"};
 };
 
 } // namespace cloud_storage_clients
