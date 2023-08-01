@@ -541,7 +541,6 @@ private:
 
     void arm_vote_timeout();
     void update_node_append_timestamp(vnode);
-    void update_node_reply_timestamp(vnode);
     void maybe_update_node_reply_timestamp(vnode);
 
     void update_follower_stats(const group_configuration&);

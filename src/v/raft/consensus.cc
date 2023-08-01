@@ -364,7 +364,7 @@ consensus::success_reply consensus::update_follower_index(
         return success_reply::no;
     }
 
-    update_node_reply_timestamp(node);
+    idx.last_received_reply_timestamp = clock_type::now();
 
     if (
       seq < idx.last_received_seq
@@ -2629,9 +2629,6 @@ void consensus::maybe_update_node_reply_timestamp(vnode id) {
     if (auto it = _fstats.find(id); it != _fstats.end()) {
         it->second.last_received_reply_timestamp = clock_type::now();
     }
-}
-void consensus::update_node_reply_timestamp(vnode id) {
-    _fstats.get(id).last_received_reply_timestamp = clock_type::now();
 }
 
 follower_req_seq consensus::next_follower_sequence(vnode id) {
