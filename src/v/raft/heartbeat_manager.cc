@@ -94,6 +94,7 @@ heartbeat_manager::heartbeat_requests heartbeat_manager::requests_for_range() {
             }
             auto const seq_id = follower_metadata.last_sent_seq++;
             auto hb_meta = r->meta();
+            follower_metadata.last_sent_protocol_meta = hb_meta;
             pending_beats[id.id()].emplace_back(
               heartbeat_metadata{hb_meta, r->self(), id},
               heartbeat_manager::follower_request_meta(

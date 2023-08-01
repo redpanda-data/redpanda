@@ -444,6 +444,7 @@ ss::future<> recovery_stm::replicate(
         return ss::now();
     }
     meta.value()->last_sent_offset = _last_batch_offset;
+    meta.value()->last_sent_protocol_meta = r.metadata();
     _ptr->update_node_append_timestamp(_node_id);
 
     auto seq = _ptr->next_follower_sequence(_node_id);

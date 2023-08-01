@@ -178,6 +178,8 @@ struct follower_index_metadata {
     heartbeats_suppressed suppress_heartbeats = heartbeats_suppressed::no;
     follower_req_seq last_suppress_heartbeats_seq{0};
 
+    std::optional<protocol_metadata> last_sent_protocol_meta;
+
     friend std::ostream&
     operator<<(std::ostream& o, const follower_index_metadata& i);
 };

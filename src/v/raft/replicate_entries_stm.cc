@@ -294,6 +294,7 @@ ss::future<result<replicate_result>> replicate_entries_stm::apply(units_t u) {
             auto it = _ptr->_fstats.find(rni);
             if (it != _ptr->_fstats.end()) {
                 it->second.last_sent_offset = _dirty_offset;
+                it->second.last_sent_protocol_meta = _meta;
             }
         }
         ++_requests_count;
