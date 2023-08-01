@@ -51,7 +51,7 @@ func (tuner *diskTuner) Tune() TuneResult {
 func (tuner *diskTuner) CheckIfSupported() (supported bool, reason string) {
 	if len(tuner.directories) == 0 && len(tuner.devices) == 0 {
 		return false,
-			"Either direcories or devices must be provided for disk tuner"
+			"Either directories or devices must be provided for disk tuner"
 	}
 	tunables, err := tuner.createDeviceTuners()
 	if err != nil {

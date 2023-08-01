@@ -455,7 +455,7 @@ func (a *AdminAPI) sendOne(
 }
 
 // sendAll sends a request to all URLs in the admin client. The first successful
-// response will be unmarshaled into `into` if it is non-nil.
+// response will be unmarshalled into `into` if it is non-nil.
 //
 // As of v21.11.1, the Redpanda admin API redirects requests to the leader based
 // on certain assumptions about all nodes listening on the same admin port, and
@@ -536,7 +536,7 @@ func (a *AdminAPI) eachBroker(fn func(aa *AdminAPI) error) error {
 //
 // * If into is a *[]byte, the raw response put directly into `into`.
 // * If into is a *string, the raw response put directly into `into` as a string.
-// * Otherwise, the response is json unmarshaled into `into`.
+// * Otherwise, the response is json unmarshalled into `into`.
 func maybeUnmarshalRespInto(method, url string, resp *http.Response, into interface{}) error {
 	defer resp.Body.Close()
 	if into == nil {

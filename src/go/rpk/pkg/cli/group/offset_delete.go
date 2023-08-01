@@ -37,7 +37,7 @@ The broker will only allow the request to succeed if the group is in a dead
 state (no subscriptions) or there are no subscriptions for offsets for
 topic/partitions requested to be deleted.
 
-Use either the --from-file or the --topic option. They are mututally exclusive.
+Use either the --from-file or the --topic option. They are mutually exclusive.
 To indicate which topics or topic partitions you'd like to remove offsets from use
 the --topic (-t) flag, followed by a comma separated list of partition ids. Supplying
 no list will delete all offsets for all partitions for a given topic.
