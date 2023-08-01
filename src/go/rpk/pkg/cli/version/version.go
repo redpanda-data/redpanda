@@ -24,7 +24,7 @@ import (
 var (
 	version   string // Semver of rpk.
 	rev       string // Short git SHA.
-	buildTime string // Timestamp of build time, ISO 8601.
+	buildTime string // Timestamp of build time, RFC3339.
 	hostOs    string // OS that was used to built rpk (go env GOHOSTOS).
 	hostArch  string // Arch that was used to built rpk (go env GOHOSTARCH).
 )
