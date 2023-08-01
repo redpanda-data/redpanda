@@ -3047,17 +3047,25 @@ void tx_gateway_frontend::expire_old_txs() {
             return ss::now();
         }
 
-        return ss::do_for_each(
-          ntp_meta->get_assignments(), [this](partition_assignment pa) {
-              auto tx_ntp = model::ntp(
-                model::tx_manager_nt.ns, model::tx_manager_nt.tp, pa.id);
+        std::vector<model::partition_id> partitions;
+        partitions.reserve(ntp_meta->get_assignments().size());
+        for (auto& pa : ntp_meta->get_assignments()) {
+            partitions.push_back(pa.id);
+        }
 
-              return expire_old_txs(tx_ntp).finally([this] {
-                  // TODO: Create per shard timer
-                  // https://github.com/redpanda-data/redpanda/issues/9606
-                  // to consider: most likely it's ok to re-arm the timer
-                  // only once out of the do_for_each
-                  rearm_expire_timer();
+        return ss::do_with(
+          std::move(partitions),
+          [this](const std::vector<model::partition_id>& ps) {
+              return ss::do_for_each(ps, [this](model::partition_id pid) {
+                  auto tx_ntp = model::ntp(
+                    model::tx_manager_nt.ns, model::tx_manager_nt.tp, pid);
+                  return expire_old_txs(tx_ntp).finally([this] {
+                      // TODO: Create per shard timer
+                      // https://github.com/redpanda-data/redpanda/issues/9606
+                      // to consider: most likely it's ok to re-arm the timer
+                      // only once out of the do_for_each
+                      rearm_expire_timer();
+                  });
               });
           });
     });
