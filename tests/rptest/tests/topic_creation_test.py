@@ -16,7 +16,7 @@ from rptest.clients.default import DefaultClient
 from rptest.services.admin import Admin
 from rptest.services.cluster import cluster
 from rptest.clients.types import TopicSpec
-from rptest.clients.rpk import RpkTool
+from rptest.clients.rpk import RpkException, RpkTool
 from rptest.clients.kafka_cat import KafkaCat
 from rptest.services.producer_swarm import ProducerSwarm
 from rptest.services.redpanda import ResourceSettings, SISettings
@@ -31,6 +31,7 @@ from ducktape.utils.util import wait_until
 from ducktape.mark import matrix, parametrize
 
 from rptest.tests.redpanda_test import RedpandaTest
+from rptest.clients.offline_log_viewer import OfflineLogViewer
 
 
 class Workload():
@@ -222,6 +223,43 @@ class CreateTopicsTest(RedpandaTest):
             cfgs = rpk.describe_topic_configs(topic=name)
             assert str(cfgs[p][0]) == str(
                 property_value), f"{cfgs[p][0]=} != {property_value=}"
+
+    @cluster(num_nodes=3)
+    def test_no_log_bloat_when_recreating_existing_topics(self):
+        rpk = RpkTool(self.redpanda)
+        topic = "test"
+        rpk.create_topic(topic=topic)
+
+        for _ in range(0, 10):
+            try:
+                rpk.create_topic(topic=topic)
+                assert False, f"No exception receating existing topic: {topic}"
+            except RpkException as e:
+                if "TOPIC_ALREADY_EXISTS" not in e.msg:
+                    raise e
+
+        def create_topic_commands():
+            cmds = []
+            for node in self.redpanda.started_nodes():
+                log_viewer = OfflineLogViewer(self.redpanda)
+                records = log_viewer.read_controller(node=node)
+
+                def is_create_topic_cmd(r):
+                    return "type" in r.keys() and r["type"] == "topic_management_cmd" and\
+                        r["data"]["type"] == 0
+
+                create_topic_cmds = list(filter(is_create_topic_cmd, records))
+                self.redpanda.logger.debug(
+                    f"Node {node.account.hostname}, controller records: {records}"
+                )
+                cmds.append(len(create_topic_cmds) == 1)
+            return all(cmds)
+
+        self.redpanda.wait_until(
+            create_topic_commands,
+            timeout_sec=30,
+            backoff_sec=3,
+            err_msg="Timed out waiting for single create_topic command")
 
 
 class CreateSITopicsTest(RedpandaTest):
