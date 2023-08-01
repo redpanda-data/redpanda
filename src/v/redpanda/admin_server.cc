@@ -464,7 +464,7 @@ bool get_boolean_query_param(
     }
 
     const ss::sstring& str_param = req.query_parameters.at(key);
-    return ss::http::request::case_insensitive_cmp()(str_param, "true")
+    return ss::internal::case_insensitive_cmp()(str_param, "true")
            || str_param == "1";
 }
 
