@@ -16,6 +16,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/go-logr/logr"
 	"github.com/stretchr/testify/assert"
 	v1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -620,6 +621,79 @@ func Test_GetBrokerIDForPodFromPodList(t *testing.T) {
 			}
 			if *got != *tt.want {
 				t.Errorf("getBrokerIDForPodFromPodList() = %v, want %v", *got, *tt.want)
+			}
+		})
+	}
+}
+
+func TestStatefulSetResource_IsManagedDecommission(t *testing.T) {
+	type fields struct {
+		pandaCluster *vectorizedv1alpha1.Cluster
+		logger       logr.Logger
+	}
+	tests := []struct {
+		name    string
+		fields  fields
+		want    bool
+		wantErr bool
+	}{
+		{
+			name: "decommission annotation is in the future",
+			fields: fields{
+				pandaCluster: &vectorizedv1alpha1.Cluster{
+					ObjectMeta: metav1.ObjectMeta{
+						Annotations: map[string]string{
+							resources.ManagedDecommissionAnnotation: "2999-12-31T00:00:00Z",
+						},
+					},
+				},
+			},
+			want:    true,
+			wantErr: false,
+		},
+		{
+			name: "decommission annotation is in the past",
+			fields: fields{
+				pandaCluster: &vectorizedv1alpha1.Cluster{
+					ObjectMeta: metav1.ObjectMeta{
+						Annotations: map[string]string{
+							resources.ManagedDecommissionAnnotation: "1999-12-31T00:00:00Z",
+						},
+					},
+				},
+			},
+			want:    false,
+			wantErr: false,
+		},
+		{
+			name: "decommission annotation is not a valid timestamp",
+			fields: fields{
+				pandaCluster: &vectorizedv1alpha1.Cluster{
+					ObjectMeta: metav1.ObjectMeta{
+						Annotations: map[string]string{
+							resources.ManagedDecommissionAnnotation: "true",
+						},
+					},
+				},
+			},
+			want:    false,
+			wantErr: true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r := resources.NewStatefulSet(nil,
+				tt.fields.pandaCluster,
+				nil, "", "", types.NamespacedName{}, nil, nil, "", resources.ConfiguratorSettings{}, nil, nil, time.Hour,
+				tt.fields.logger,
+				time.Hour)
+			got, err := r.IsManagedDecommission()
+			if (err != nil) != tt.wantErr {
+				t.Errorf("StatefulSetResource.IsManagedDecommission() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if got != tt.want {
+				t.Errorf("StatefulSetResource.IsManagedDecommission() = %v, want %v", got, tt.want)
 			}
 		})
 	}

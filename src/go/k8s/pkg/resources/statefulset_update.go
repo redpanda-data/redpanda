@@ -132,6 +132,9 @@ func (r *StatefulSetResource) runUpdate(
 	if err = r.updateRestartingStatus(ctx, false); err != nil {
 		return fmt.Errorf("unable to turn off restarting status in cluster custom resource: %w", err)
 	}
+	if err = r.removeManagedDecommissionAnnotation(ctx); err != nil {
+		return fmt.Errorf("unable to remove managed decommission annotation: %w", err)
+	}
 
 	return nil
 }
@@ -417,7 +420,7 @@ func (r *StatefulSetResource) podEviction(ctx context.Context, pod, artificialPo
 		}
 		r.pandaCluster.SetDecommissionBrokerID(id)
 
-		if err = r.handleDecommissionInProgress(ctx, log); err != nil {
+		if err = r.handleDecommission(ctx, log); err != nil {
 			return err
 		}
 
@@ -550,7 +553,10 @@ func (r *StatefulSetResource) updateStatefulSet(
 func (r *StatefulSetResource) shouldUpdate(
 	current, modified *appsv1.StatefulSet,
 ) (bool, error) {
-	managedDecommission, _ := r.IsManagedDecommission() // we have already error checked and logged the error where necessary
+	managedDecommission, err := r.IsManagedDecommission()
+	if err != nil {
+		r.logger.WithName("shouldUpdate").Error(err, "isManagedDecommission")
+	}
 	if managedDecommission || r.getRestartingStatus() {
 		return true, nil
 	}
