@@ -165,6 +165,10 @@ public:
     virtual ss::future<> remove_persistent_state();
     const ss::sstring& name() override { return _snapshot_backend.name(); }
 
+    model::offset last_applied() const override {
+        return raft::state_machine::last_applied_offset();
+    }
+
     ss::future<> make_snapshot();
     virtual uint64_t get_snapshot_size() const;
     /*
