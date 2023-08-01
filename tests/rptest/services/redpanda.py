@@ -2879,7 +2879,7 @@ class RedpandaService(RedpandaServiceBase):
                             self.logger).decode_partition_manifest(
                                 body, self.logger)
                     except Exception as e:
-                        self.logger.warn(f"Failed to decode {m}")
+                        self.logger.warn(f"Failed to decode {m}: {e}")
                     else:
                         json_filename = f"{filename}_decoded.json"
                         json_bytes = json.dumps(decoded, indent=2)
