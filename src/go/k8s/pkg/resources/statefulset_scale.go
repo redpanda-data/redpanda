@@ -331,6 +331,7 @@ func (r *StatefulSetResource) disableMaintenanceModeOnDecommissionedNodes(
 ) error {
 	brokerID := r.pandaCluster.GetDecommissionBrokerID()
 	if brokerID == nil {
+		// Only if actually in a decommissioning phase
 		return nil
 	}
 	log := r.logger.WithName("disableMaintenanceModeOnDecommissionedNodes").WithValues("node_id", *brokerID)
@@ -339,10 +340,6 @@ func (r *StatefulSetResource) disableMaintenanceModeOnDecommissionedNodes(
 		return nil
 	}
 
-	if brokerID == nil {
-		// Only if actually in a decommissioning phase
-		return nil
-	}
 	pod, err := r.getPodByBrokerID(ctx, brokerID)
 	if err != nil {
 		return err
