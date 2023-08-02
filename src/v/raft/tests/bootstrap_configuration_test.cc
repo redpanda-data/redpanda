@@ -77,7 +77,7 @@ struct bootstrap_fixture : raft::simple_record_fixture {
         get_log()->flush().get();
         return res;
     }
-    ss::shared_ptr<storage::log> get_log() { return _storage.log_mgr().get(_ntp).value(); }
+    ss::shared_ptr<storage::log> get_log() { return _storage.log_mgr().get(_ntp); }
 
     ~bootstrap_fixture() {
         _storage.stop().get();

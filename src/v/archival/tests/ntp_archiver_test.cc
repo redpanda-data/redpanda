@@ -80,7 +80,7 @@ static void log_segment(const storage::segment& s) {
 
 static void log_segment_set(storage::log_manager& lm) {
     auto log = lm.get(manifest_ntp);
-    auto plog = dynamic_cast<const storage::disk_log_impl*>(log.value().get());
+    auto plog = dynamic_cast<const storage::disk_log_impl*>(log.get());
     BOOST_REQUIRE(plog != nullptr);
     const auto& sset = plog->segments();
     for (const auto& s : sset) {
@@ -831,7 +831,7 @@ FIXTURE_TEST(test_archiver_policy, archiver_fixture) {
     auto upload1
       = policy
           .get_next_candidate(
-            model::offset(0), lso, *log, tr, segment_read_lock_timeout)
+            model::offset(0), lso, log, tr, segment_read_lock_timeout)
           .get()
           .candidate;
     log_upload_candidate(upload1);
@@ -844,7 +844,7 @@ FIXTURE_TEST(test_archiver_policy, archiver_fixture) {
                    + model::offset(1);
     auto upload2 = policy
                      .get_next_candidate(
-                       start_offset, lso, *log, tr, segment_read_lock_timeout)
+                       start_offset, lso, log, tr, segment_read_lock_timeout)
                      .get()
                      .candidate;
     log_upload_candidate(upload2);
@@ -858,7 +858,7 @@ FIXTURE_TEST(test_archiver_policy, archiver_fixture) {
                    + model::offset(1);
     auto upload3 = policy
                      .get_next_candidate(
-                       start_offset, lso, *log, tr, segment_read_lock_timeout)
+                       start_offset, lso, log, tr, segment_read_lock_timeout)
                      .get()
                      .candidate;
     log_upload_candidate(upload3);
@@ -872,7 +872,7 @@ FIXTURE_TEST(test_archiver_policy, archiver_fixture) {
                    + model::offset(1);
     auto upload4 = policy
                      .get_next_candidate(
-                       start_offset, lso, *log, tr, segment_read_lock_timeout)
+                       start_offset, lso, log, tr, segment_read_lock_timeout)
                      .get()
                      .candidate;
     BOOST_REQUIRE(upload4.sources.empty());
@@ -880,7 +880,7 @@ FIXTURE_TEST(test_archiver_policy, archiver_fixture) {
     start_offset = lso + model::offset(1);
     auto upload5 = policy
                      .get_next_candidate(
-                       start_offset, lso, *log, tr, segment_read_lock_timeout)
+                       start_offset, lso, log, tr, segment_read_lock_timeout)
                      .get()
                      .candidate;
     BOOST_REQUIRE(upload5.sources.empty());
@@ -907,7 +907,7 @@ FIXTURE_TEST(
     BOOST_REQUIRE(log);
 
     ss::abort_source as{};
-    log.value()
+    log
       ->housekeeping(storage::housekeeping_config(
         model::timestamp::now(),
         std::nullopt,
@@ -916,7 +916,7 @@ FIXTURE_TEST(
         as))
       .get0();
 
-    auto plog = dynamic_cast<storage::disk_log_impl*>(log.value().get());
+    auto plog = dynamic_cast<storage::disk_log_impl*>(log.get());
 
     auto seg = plog->segments().begin();
 
@@ -929,7 +929,7 @@ FIXTURE_TEST(
                        .get_next_candidate(
                          model::offset(0),
                          lso,
-                         *log,
+                         log,
                          *partition->get_offset_translator_state(),
                          segment_read_lock_timeout)
                        .get()
@@ -1541,7 +1541,7 @@ FIXTURE_TEST(test_upload_segments_with_overlap, archiver_fixture) {
     // Starting offset is lower than offset1
     auto upload1 = policy
                      .get_next_candidate(
-                       start_offset, lso, *log, tr, segment_read_lock_timeout)
+                       start_offset, lso, log, tr, segment_read_lock_timeout)
                      .get()
                      .candidate;
     log_upload_candidate(upload1);
@@ -1552,7 +1552,7 @@ FIXTURE_TEST(test_upload_segments_with_overlap, archiver_fixture) {
                    + model::offset(1);
     auto upload2 = policy
                      .get_next_candidate(
-                       start_offset, lso, *log, tr, segment_read_lock_timeout)
+                       start_offset, lso, log, tr, segment_read_lock_timeout)
                      .get()
                      .candidate;
     log_upload_candidate(upload2);
@@ -1566,7 +1566,7 @@ FIXTURE_TEST(test_upload_segments_with_overlap, archiver_fixture) {
                    + model::offset(1);
     auto upload3 = policy
                      .get_next_candidate(
-                       start_offset, lso, *log, tr, segment_read_lock_timeout)
+                       start_offset, lso, log, tr, segment_read_lock_timeout)
                      .get()
                      .candidate;
     log_upload_candidate(upload3);
@@ -1580,7 +1580,7 @@ FIXTURE_TEST(test_upload_segments_with_overlap, archiver_fixture) {
                    + model::offset(1);
     auto upload4 = policy
                      .get_next_candidate(
-                       start_offset, lso, *log, tr, segment_read_lock_timeout)
+                       start_offset, lso, log, tr, segment_read_lock_timeout)
                      .get()
                      .candidate;
     BOOST_REQUIRE(upload4.sources.empty());
