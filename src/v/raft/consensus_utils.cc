@@ -143,7 +143,9 @@ share_n(model::record_batch_reader&& r, std::size_t ncopies) {
 }
 
 ss::future<configuration_bootstrap_state> read_bootstrap_state(
-  ss::shared_ptr<storage::log> log, model::offset start_offset, ss::abort_source& as) {
+  ss::shared_ptr<storage::log> log,
+  model::offset start_offset,
+  ss::abort_source& as) {
     // TODO(agallego, michal) - iterate the log in reverse
     // as an optimization
     auto lstats = log->offsets();

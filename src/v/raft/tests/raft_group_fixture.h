@@ -144,8 +144,7 @@ struct raft_node {
           std::make_unique<storage::ntp_config::default_overrides>(
             std::move(overrides)));
 
-        log =
-          storage.local().log_mgr().manage(std::move(ntp_cfg)).get0();
+        log = storage.local().log_mgr().manage(std::move(ntp_cfg)).get0();
 
         recovery_throttle
           .start(
