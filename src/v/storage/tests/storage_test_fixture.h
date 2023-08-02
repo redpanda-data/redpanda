@@ -348,7 +348,8 @@ public:
         return headers;
     }
 
-    void append_batch(ss::shared_ptr<storage::log> log, model::record_batch batch) {
+    void
+    append_batch(ss::shared_ptr<storage::log> log, model::record_batch batch) {
         model::record_batch_reader::data_t buffer;
         const auto last_offset_delta = model::offset(
           batch.header().last_offset_delta);
@@ -383,7 +384,9 @@ public:
     // model::offset max_offset = model::model_limits<model::offset>::max(); //
     // inclusive
     ss::circular_buffer<model::record_batch> read_range_to_vector(
-      ss::shared_ptr<storage::log> log, model::offset start, model::offset end) {
+      ss::shared_ptr<storage::log> log,
+      model::offset start,
+      model::offset end) {
         storage::log_reader_config cfg(
           start, end, ss::default_priority_class());
         tlog.info("read_range_to_vector: {}", cfg);

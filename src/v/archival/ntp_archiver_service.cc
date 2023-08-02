@@ -2717,8 +2717,7 @@ ntp_archiver::find_reupload_candidate(manifest_scanner_t scanner) {
     auto units = co_await ss::get_units(_mutex, 1, _as);
     if (run->meta.base_offset >= _parent.raft_start_offset()) {
         auto log_generic = _parent.log();
-        auto& log = dynamic_cast<storage::disk_log_impl&>(
-          *log_generic);
+        auto& log = dynamic_cast<storage::disk_log_impl&>(*log_generic);
         segment_collector collector(
           run->meta.base_offset,
           manifest(),

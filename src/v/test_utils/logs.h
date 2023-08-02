@@ -63,7 +63,8 @@ static inline ss::future<> persist_log_file(
         auto& mgr = storage.local().log_mgr();
         try {
             mgr.manage(storage::ntp_config(file_ntp, mgr.config().base_dir))
-              .then([b = std::move(batches)](ss::shared_ptr<storage::log> log) mutable {
+              .then([b = std::move(batches)](
+                      ss::shared_ptr<storage::log> log) mutable {
                   storage::log_append_config cfg{
                     storage::log_append_config::fsync::yes,
                     ss::default_priority_class(),

@@ -431,37 +431,39 @@ void append_custom_timestamp_batches(
 
 FIXTURE_TEST(
   test_timestamp_updates_when_max_timestamp_is_not_set, storage_test_fixture) {
-    auto append_batch_with_no_max_ts =
-      [](ss::shared_ptr<storage::log> log, model::term_id term, model::timestamp base_ts) {
-          auto current_ts = base_ts;
+    auto append_batch_with_no_max_ts = [](
+                                         ss::shared_ptr<storage::log> log,
+                                         model::term_id term,
+                                         model::timestamp base_ts) {
+        auto current_ts = base_ts;
 
-          iobuf key = bytes_to_iobuf(bytes("key"));
-          iobuf value = bytes_to_iobuf(bytes("v"));
+        iobuf key = bytes_to_iobuf(bytes("key"));
+        iobuf value = bytes_to_iobuf(bytes("v"));
 
-          storage::record_batch_builder builder(
-            model::record_batch_type::raft_data, model::offset(0));
+        storage::record_batch_builder builder(
+          model::record_batch_type::raft_data, model::offset(0));
 
-          builder.add_raw_kv(key.copy(), value.copy());
+        builder.add_raw_kv(key.copy(), value.copy());
 
-          auto batch = std::move(builder).build();
+        auto batch = std::move(builder).build();
 
-          batch.set_term(term);
-          batch.header().first_timestamp = current_ts;
-          // EXPLICITLY SET TO MISSING
-          batch.header().max_timestamp = model::timestamp::missing();
-          auto reader = model::make_memory_record_batch_reader(
-            {std::move(batch)});
-          storage::log_append_config cfg{
-            .should_fsync = storage::log_append_config::fsync::no,
-            .io_priority = ss::default_priority_class(),
-            .timeout = model::no_timeout,
-          };
+        batch.set_term(term);
+        batch.header().first_timestamp = current_ts;
+        // EXPLICITLY SET TO MISSING
+        batch.header().max_timestamp = model::timestamp::missing();
+        auto reader = model::make_memory_record_batch_reader(
+          {std::move(batch)});
+        storage::log_append_config cfg{
+          .should_fsync = storage::log_append_config::fsync::no,
+          .io_priority = ss::default_priority_class(),
+          .timeout = model::no_timeout,
+        };
 
-          std::move(reader)
-            .for_each_ref(log->make_appender(cfg), cfg.timeout)
-            .get();
-          current_ts = model::timestamp(current_ts() + 1);
-      };
+        std::move(reader)
+          .for_each_ref(log->make_appender(cfg), cfg.timeout)
+          .get();
+        current_ts = model::timestamp(current_ts() + 1);
+    };
 
     auto cfg = default_log_config(test_dir);
     ss::abort_source as;
@@ -3019,31 +3021,32 @@ do_compact_test(const compact_test_args args, storage_test_fixture& f) {
     auto log = mgr.manage(std::move(ntp_cfg)).get0();
     auto disk_log = get_disk_log(log);
 
-    auto append_batch = [](ss::shared_ptr<storage::log> log, model::term_id term) {
-        iobuf key = bytes_to_iobuf(bytes("key"));
-        iobuf value = random_generators::make_iobuf(100);
+    auto append_batch =
+      [](ss::shared_ptr<storage::log> log, model::term_id term) {
+          iobuf key = bytes_to_iobuf(bytes("key"));
+          iobuf value = random_generators::make_iobuf(100);
 
-        storage::record_batch_builder builder(
-          model::record_batch_type::raft_data, model::offset(0));
+          storage::record_batch_builder builder(
+            model::record_batch_type::raft_data, model::offset(0));
 
-        builder.add_raw_kv(key.copy(), value.copy());
+          builder.add_raw_kv(key.copy(), value.copy());
 
-        auto batch = std::move(builder).build();
+          auto batch = std::move(builder).build();
 
-        batch.set_term(term);
-        batch.header().first_timestamp = model::timestamp::now();
-        auto reader = model::make_memory_record_batch_reader(
-          {std::move(batch)});
-        storage::log_append_config cfg{
-          .should_fsync = storage::log_append_config::fsync::no,
-          .io_priority = ss::default_priority_class(),
-          .timeout = model::no_timeout,
-        };
+          batch.set_term(term);
+          batch.header().first_timestamp = model::timestamp::now();
+          auto reader = model::make_memory_record_batch_reader(
+            {std::move(batch)});
+          storage::log_append_config cfg{
+            .should_fsync = storage::log_append_config::fsync::no,
+            .io_priority = ss::default_priority_class(),
+            .timeout = model::no_timeout,
+          };
 
-        std::move(reader)
-          .for_each_ref(log->make_appender(cfg), cfg.timeout)
-          .get();
-    };
+          std::move(reader)
+            .for_each_ref(log->make_appender(cfg), cfg.timeout)
+            .get();
+      };
 
     for (int s = 0; s < args.segments; s++) {
         for (int i = 0; i < args.msg_per_segment; i++) {

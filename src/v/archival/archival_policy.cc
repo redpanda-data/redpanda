@@ -32,7 +32,8 @@
 
 namespace {
 
-std::optional<storage::disk_log_impl*> get_concrete_log_impl(ss::shared_ptr<storage::log> log) {
+std::optional<storage::disk_log_impl*>
+get_concrete_log_impl(ss::shared_ptr<storage::log> log) {
     // NOTE: we need to break encapsulation here to access underlying
     // implementation because upload policy and archival subsystem needs to
     // access individual log segments (disk backed).

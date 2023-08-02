@@ -972,7 +972,8 @@ SEASTAR_THREAD_TEST_CASE(test_archival_policy_timeboxed_uploads) {
     auto start_offset = model::offset{0};
 
     auto get_next_upload = [&]() {
-        auto last_stable_offset = log->offsets().dirty_offset + model::offset{1};
+        auto last_stable_offset = log->offsets().dirty_offset
+                                  + model::offset{1};
         auto ret = policy
                      .get_next_candidate(
                        start_offset,

@@ -330,8 +330,7 @@ ss::future<size_t> eviction_policy::install_schedule(shard_partitions shard) {
                 continue;
             }
 
-            auto log = dynamic_cast<storage::disk_log_impl*>(
-              p->log().get());
+            auto log = dynamic_cast<storage::disk_log_impl*>(p->log().get());
             log->set_cloud_gc_offset(partition.decision.value());
             ++decisions;
 

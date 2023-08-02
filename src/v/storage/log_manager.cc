@@ -341,8 +341,7 @@ ss::future<> log_manager::housekeeping_loop() {
                 }
 
                 auto ntp = log_meta.handle->config().ntp();
-                auto log = dynamic_cast<disk_log_impl*>(
-                  log_meta.handle.get());
+                auto log = dynamic_cast<disk_log_impl*>(log_meta.handle.get());
                 auto usage = co_await log->disk_usage(
                   gc_config(collection_threshold(), _config.retention_bytes()));
 
