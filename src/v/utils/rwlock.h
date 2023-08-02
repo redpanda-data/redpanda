@@ -38,6 +38,7 @@ public:
 
     rwlock_unit& operator=(rwlock_unit&& other) noexcept {
         if (this != &other) {
+            this->_lock = other._lock;
             other._lock = nullptr;
         }
         return *this;
