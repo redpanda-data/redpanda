@@ -8,8 +8,10 @@
 // by the Apache License, Version 2.0
 
 #include "bytes/iobuf.h"
+#include "delta_for_characterization_data.h"
 #include "random/generators.h"
 #include "utils/delta_for.h"
+#include "version.h"
 #include "vlog.h"
 
 #include <seastar/testing/test_case.hh>
@@ -18,6 +20,7 @@
 #include <boost/test/tools/old/interface.hpp>
 #include <boost/test/unit_test.hpp>
 
+#include <ranges>
 #include <stdexcept>
 
 template<class TVal, class DeltaT>
@@ -404,4 +407,127 @@ BOOST_AUTO_TEST_CASE(skip_test_4) {
       std::make_pair(10ULL, 100000000000000000ULL),
     };
     skip_test<uint64_t>(deltas, details::delta_delta<uint64_t>(10));
+}
+
+BOOST_AUTO_TEST_CASE(
+  test_deltafor_generate_characterization_data, *boost::unit_test::disabled()) {
+    /** this test is disabled because it generates a bunch of data to be used
+     * for characterization of deltafor, and prints it to stdout ready to paste
+     * in a file and use it for unit tests*/
+
+    struct datum {
+        std::array<int64_t, details::FOR_buffer_depth> ref;
+        std::vector<uint8_t> bytes;
+    };
+
+    auto to_save = std::vector<datum>{};
+
+    // generate a datum for each N_BITS [0, 64], with the bounds being the edge
+    // cases
+    for (auto i = 0u; i <= sizeof(int64_t) * 8; ++i) {
+        auto dfor = deltafor_datapoint::dfor_enc{};
+        auto buffer = std::array<int64_t, details::FOR_buffer_depth>{};
+        if (i > 0) {
+            // random bits
+            std::ranges::generate(buffer, [] {
+                return random_generators::get_int(
+                  std::numeric_limits<int64_t>::min(),
+                  std::numeric_limits<int64_t>::max());
+            });
+
+            // clear out upper bits, and set an odd number of msb to 1 to
+            // ensure that delta_xor produces N_BITS=i
+            auto keep_mask = ~(std::numeric_limits<uint64_t>::max() << (i - 1));
+            for (auto& e : buffer) {
+                e &= keep_mask;
+            }
+            buffer[2] |= uint64_t{1} << (i - 1);
+            buffer[5] |= uint64_t{1} << (i - 1);
+            buffer[11] |= uint64_t{1} << (i - 1);
+        }
+        {
+            auto tmp = std::array<int64_t, details::FOR_buffer_depth>{};
+            auto xor_reducer = details::delta_xor{};
+            // require that generated data will in fact be encoded in i bits,
+            // to fully test the code paths of deltafor
+            auto row_bitwidth
+              = xor_reducer.encode<int64_t, details::FOR_buffer_depth>(
+                0, buffer, tmp);
+            BOOST_REQUIRE_EQUAL(row_bitwidth, i);
+        }
+        dfor.add(buffer);
+        auto serialized = iobuf_parser{serde::to_iobuf(std::move(dfor))};
+        auto tmp = std::vector<uint8_t>(serialized.bytes_left(), 0);
+        serialized.consume_to(serialized.bytes_left(), tmp.begin());
+        to_save.emplace_back(buffer, std::move(tmp));
+    }
+
+    auto deltafor_datapoint_printer = [](auto& p) {
+        return fmt::format(
+          "{{ (int64_t[]) {{ {} }},\n(uint8_t[]) {{ {} }} }}",
+          fmt::join(p.ref, ","),
+          fmt::join(p.bytes, ","));
+    };
+    fmt::print(
+      R"cpp(
+
+#include "delta_for_characterization_data.h"
+
+#include <cstdint>
+
+// data produced from {}
+
+constexpr auto characterization_data = std::to_array<deltafor_datapoint>({{
+{}
+}});
+
+auto get_characterization_data() -> std::span<const deltafor_datapoint> {{
+    return characterization_data;
+}}
+)cpp",
+      redpanda_version(),
+      fmt::join(
+        to_save | std::views::transform(deltafor_datapoint_printer), ",\n"));
+}
+
+BOOST_AUTO_TEST_CASE(test_deltafor_characterization) {
+    using dfor_enc = deltafor_datapoint::dfor_enc;
+    using dfor_dec = deltafor_datapoint::dfor_dec;
+
+    for (auto [source_data, serialized_data] : get_characterization_data()) {
+        {
+            // check serializing source_data generates the same binary format
+            auto generated_serialization = [&] {
+                auto dfor = dfor_enc{};
+                auto tmp = std::array<int64_t, details::FOR_buffer_depth>{};
+                std::ranges::copy(source_data, tmp.begin());
+                dfor.add(tmp);
+                auto stream = iobuf_parser{serde::to_iobuf(std::move(dfor))};
+                auto res = std::vector<uint8_t>(stream.bytes_left(), 0);
+                stream.consume_to(stream.bytes_left(), res.begin());
+                return res;
+            }();
+
+            BOOST_CHECK(
+              std::ranges::equal(generated_serialization, serialized_data));
+        }
+
+        {
+            // check deserializing the binary format generates the same
+            // source_data
+            auto deserialized_data = [&] {
+                auto buf = iobuf{};
+                buf.append(serialized_data.data(), serialized_data.size());
+
+                auto enc = serde::from_iobuf<dfor_enc>(std::move(buf));
+                auto dec = dfor_dec{
+                  enc.get_initial_value(), enc.get_row_count(), enc.share()};
+
+                std::array<int64_t, details::FOR_buffer_depth> result{};
+                BOOST_CHECK(dec.read(result));
+                return result;
+            }();
+            BOOST_CHECK(std::ranges::equal(deserialized_data, source_data));
+        }
+    }
 }
