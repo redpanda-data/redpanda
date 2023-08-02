@@ -128,6 +128,7 @@
 #include <algorithm>
 #include <charconv>
 #include <chrono>
+#include <iterator>
 #include <limits>
 #include <memory>
 #include <numeric>
@@ -1963,21 +1964,17 @@ void admin_server::register_security_routes() {
       [this](std::unique_ptr<ss::http::request> req) {
           bool include_ephemeral = req->get_query_param("include_ephemeral")
                                    == "true";
-          constexpr auto is_ephemeral =
-            [](security::credential_store::credential_types const& t) {
-                return ss::visit(t, [](security::scram_credential const& c) {
-                    return c.principal().has_value()
-                           && c.principal().value().type()
-                                == security::principal_type::ephemeral_user;
-                });
-            };
 
-          std::vector<ss::sstring> users;
-          for (const auto& [user, type] :
-               _controller->get_credential_store().local()) {
-              if (include_ephemeral || !is_ephemeral(type)) {
-                  users.push_back(user());
-              }
+          auto pred = [include_ephemeral](auto const& c) {
+              return include_ephemeral
+                     || security::credential_store::is_not_ephemeral(c);
+          };
+          auto creds = _controller->get_credential_store().local().range(pred);
+
+          std::vector<ss::sstring> users{};
+          users.reserve(std::distance(creds.begin(), creds.end()));
+          for (const auto& [user, type] : creds) {
+              users.push_back(user());
           }
           return ss::make_ready_future<ss::json::json_return_type>(
             std::move(users));
