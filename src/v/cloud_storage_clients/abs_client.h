@@ -80,6 +80,9 @@ public:
       std::optional<size_t> max_keys,
       std::optional<char> delimiter = std::nullopt);
 
+    /// \brief Init http header for 'Get Account Information' request
+    result<http::client::request_header> make_get_account_info_request();
+
 private:
     access_point_uri _ap;
     /// Applies credentials to http requests by adding headers and signing
@@ -187,6 +190,16 @@ public:
       std::vector<object_key> keys,
       ss::lowres_clock::duration timeout) override;
 
+    struct storage_account_info {
+        bool is_hns_enabled{false};
+    };
+
+    /// Send Get Account Information request (used to detect
+    /// if the account has Hierarchical Namespace enabled).
+    /// \param timeout is a timeout of the operation
+    ss::future<result<storage_account_info, error_outcome>>
+    get_account_info(ss::lowres_clock::duration timeout);
+
 private:
     template<typename T>
     ss::future<result<T, error_outcome>> send_request(
@@ -228,6 +241,9 @@ private:
       ss::lowres_clock::duration timeout,
       std::optional<char> delimiter = std::nullopt,
       std::optional<item_filter> collect_item_if = std::nullopt);
+
+    ss::future<storage_account_info>
+    do_get_account_info(ss::lowres_clock::duration timeout);
 
     abs_request_creator _requestor;
     http::client _client;
