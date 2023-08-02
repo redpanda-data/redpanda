@@ -29,6 +29,8 @@ require (
 	github.com/emicklei/go-restful/v3 v3.10.1 // indirect
 	github.com/evanphx/json-patch v5.6.0+incompatible // indirect
 	github.com/evanphx/json-patch/v5 v5.6.0 // indirect
+	github.com/fluxcd/helm-controller/api v0.30.0 // indirect
+	github.com/fluxcd/pkg/apis/kustomize v0.8.0 // indirect
 	github.com/fluxcd/pkg/apis/meta v0.19.1 // indirect
 	github.com/fsnotify/fsnotify v1.6.0 // indirect
 	github.com/go-logr/logr v1.2.4 // indirect
