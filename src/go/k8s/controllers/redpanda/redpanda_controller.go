@@ -394,6 +394,31 @@ func (r *RedpandaReconciler) createHelmReleaseFromTemplate(ctx context.Context, 
 		timeout = &metav1.Duration{Duration: 15 * time.Minute}
 	}
 
+	rollBack := helmv2beta1.RemediationStrategy("rollback")
+
+	upgrade := &helmv2beta1.Upgrade{
+		Remediation: &helmv2beta1.UpgradeRemediation{
+			Retries:  1,
+			Strategy: &rollBack,
+		},
+	}
+
+	helmUpgrade := rp.Spec.ChartRef.Upgrade
+	if rp.Spec.ChartRef.Upgrade != nil {
+		if helmUpgrade.Force != nil {
+			upgrade.Force = pointer.BoolDeref(helmUpgrade.Force, false)
+		}
+		if helmUpgrade.CleanupOnFail != nil {
+			upgrade.CleanupOnFail = pointer.BoolDeref(helmUpgrade.CleanupOnFail, false)
+		}
+		if helmUpgrade.PreserveValues != nil {
+			upgrade.PreserveValues = pointer.BoolDeref(helmUpgrade.PreserveValues, false)
+		}
+		if helmUpgrade.Remediation != nil {
+			upgrade.Remediation = helmUpgrade.Remediation
+		}
+	}
+
 	return &helmv2beta1.HelmRelease{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      rp.GetHelmReleaseName(),
@@ -415,6 +440,7 @@ func (r *RedpandaReconciler) createHelmReleaseFromTemplate(ctx context.Context, 
 			Values:   values,
 			Interval: metav1.Duration{Duration: 30 * time.Second},
 			Timeout:  timeout,
+			Upgrade:  upgrade,
 		},
 	}, nil
 }

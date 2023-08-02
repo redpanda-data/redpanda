@@ -27,6 +27,15 @@ status:
   replicas: 1
   updatedReplicas: 1
 ---
+apiVersion: helm.toolkit.fluxcd.io/v2beta1
+kind: HelmRelease
+metadata:
+  name: redpanda
+status:
+  helmChart: redpanda/redpanda-redpanda
+  lastAppliedRevision: 5.0.7
+  lastAttemptedRevision: 5.0.7
+---
 apiVersion: kuttl.dev/v1beta1
 kind: TestAssert
 collectors:

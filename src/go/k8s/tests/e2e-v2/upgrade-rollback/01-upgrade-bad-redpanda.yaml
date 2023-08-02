@@ -5,8 +5,8 @@ metadata:
   name: redpanda
 spec:
   chartRef:
-    timeout: 2m
-    chartVersion: "5.0.x"
+    timeout: 1m
+    chartVersion: "5.0.7"
   clusterSpec:
     image:
       tag: v23.99.99
