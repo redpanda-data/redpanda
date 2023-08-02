@@ -881,8 +881,8 @@ class RpkTool:
         return f"{rp_install_path_root}/bin/rpk"
 
     def cluster_maintenance_enable(self, node, wait=False):
-        node_id = self._redpanda.idx(node) if isinstance(node,
-                                                         ClusterNode) else node
+        node_id = self._redpanda.node_id(node) if isinstance(
+            node, ClusterNode) else node
         cmd = [
             self._rpk_binary(), "--api-urls",
             self._admin_host(), "cluster", "maintenance", "enable",
@@ -893,7 +893,7 @@ class RpkTool:
         return self._execute(cmd)
 
     def cluster_maintenance_disable(self, node, timeout=None):
-        node_id = self._redpanda.idx(node) if isinstance(node,
+        node_id = self._redpanda.node_id(node) if isinstance(node,
                                                          ClusterNode) else node
         cmd = [
             self._rpk_binary(), "--api-urls",
