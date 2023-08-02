@@ -36,7 +36,7 @@ std::optional<storage::disk_log_impl*> get_concrete_log_impl(ss::shared_ptr<stor
     // NOTE: we need to break encapsulation here to access underlying
     // implementation because upload policy and archival subsystem needs to
     // access individual log segments (disk backed).
-    auto plog = dynamic_cast<storage::disk_log_impl*>(log->get_impl());
+    auto plog = dynamic_cast<storage::disk_log_impl*>(log.get());
     if (plog == nullptr || plog->segment_count() == 0) {
         return std::nullopt;
     }

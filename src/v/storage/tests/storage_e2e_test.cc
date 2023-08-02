@@ -51,7 +51,7 @@
 #include <vector>
 
 storage::disk_log_impl* get_disk_log(ss::shared_ptr<storage::log> log) {
-    return dynamic_cast<storage::disk_log_impl*>(log->get_impl());
+    return dynamic_cast<storage::disk_log_impl*>(log.get());
 }
 
 void validate_offsets(

@@ -61,7 +61,7 @@ public:
     ss::future<int> produce() {
         co_await _producer.start();
         auto* log = dynamic_cast<storage::disk_log_impl*>(
-          _partition.log()->get_impl());
+          _partition.log().get());
         auto& archiver = _partition.archiver().value().get();
 
         size_t total_records = 0;
