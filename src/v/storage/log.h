@@ -235,7 +235,7 @@ private:
 class log_manager;
 class segment_set;
 class kvstore;
-log make_disk_backed_log(
+ss::shared_ptr<log> make_disk_backed_log(
   ntp_config,
   log_manager&,
   segment_set,

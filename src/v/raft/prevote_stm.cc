@@ -155,7 +155,7 @@ ss::future<bool> prevote_stm::prevote(bool leadership_transfer) {
           _config->for_each_voter(
             [this](vnode id) { _replies.emplace(id, vmeta{}); });
 
-          auto lstats = _ptr->_log.offsets();
+          auto lstats = _ptr->_log->offsets();
           auto last_entry_term = _ptr->get_last_entry_term(lstats);
 
           _req = vote_request{

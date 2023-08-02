@@ -479,10 +479,10 @@ partition_raft_state get_partition_raft_state(consensus_ptr ptr) {
 
 std::vector<partition_stm_state> get_partition_stm_state(consensus_ptr ptr) {
     std::vector<partition_stm_state> result;
-    if (unlikely(!ptr) || unlikely(!ptr->log().stm_manager())) {
+    if (unlikely(!ptr) || unlikely(!ptr->log()->stm_manager())) {
         return result;
     }
-    const auto& stms = ptr->log().stm_manager()->stms();
+    const auto& stms = ptr->log()->stm_manager()->stms();
     result.reserve(stms.size());
     for (const auto& stm : stms) {
         partition_stm_state state;

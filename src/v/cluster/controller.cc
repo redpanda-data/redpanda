@@ -323,7 +323,7 @@ controller::start(cluster_discovery& discovery, ss::abort_source& shard0_as) {
           return _stm.invoke_on(controller_stm_shard, &controller_stm::start);
       })
       .then([this, &as = shard0_as] {
-          auto disk_dirty_offset = _raft0->log().offsets().dirty_offset;
+          auto disk_dirty_offset = _raft0->log()->offsets().dirty_offset;
 
           return _stm
             .invoke_on(

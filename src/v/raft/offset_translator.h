@@ -71,7 +71,7 @@ public:
 
     /// Searches for non-data batches up to the tip of the log. After this
     /// method succeeds, offset translator is usable.
-    ss::future<> sync_with_log(storage::log, storage::opt_abort_source_t);
+    ss::future<> sync_with_log(ss::shared_ptr<storage::log>, storage::opt_abort_source_t);
 
     /// Process the batch and add it to offset translation state if it is not
     /// a data batch.

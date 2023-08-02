@@ -455,7 +455,7 @@ FIXTURE_TEST(test_compacted_log_recovery, raft_test_fixture) {
     batch = model::test::make_random_batch(model::offset(68), 11, false);
     batch.set_term(model::term_id(2));
     builder.add_batch(std::move(batch)).get0();
-    builder.get_log().flush().get0();
+    builder.get_log()->flush().get0();
     builder.stop().get0();
 
     gr.enable_all();
