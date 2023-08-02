@@ -85,9 +85,15 @@ class ControllerAvailabilityTest(Test):
         to_kill = self._tolerated_failures(
             cluster_size) if stop == "minority" else 1
 
-        for i in range(0, to_kill):
-            self.logger.info(f"stopping node {i}")
-            self.redpanda.stop_node(self.redpanda.nodes[i], forced=True)
+        # stop first two nodes with the highest priorities
+        nodes = sorted(self.redpanda.nodes.copy(),
+                       key=lambda n: self.redpanda.node_id(n))
+
+        for n in nodes[0:to_kill]:
+            self.logger.info(
+                f"stopping node: {n.account.hostname} with id: {self.redpanda.node_id(n)}"
+            )
+            self.redpanda.stop_node(n, forced=True)
 
         wait_until(lambda: self._controller_stable(), 10, 0.5,
                    "Controller is not available")
