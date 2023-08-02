@@ -362,10 +362,10 @@ ss::future<> log_manager::housekeeping_loop() {
              */
             for (const auto& candidate : ntp_by_gc_size) {
                 auto log = get(candidate.second);
-                if (!log.has_value()) {
+                if (!log) {
                     continue;
                 }
-                co_await log.value()->gc(
+                co_await log->gc(
                   gc_config(collection_threshold(), _config.retention_bytes()));
             }
         }

@@ -166,12 +166,12 @@ ss::future<> disk_log_builder::stop() {
 // Low lever interface access
 // Access log impl
 ss::shared_ptr<log> disk_log_builder::get_log() {
-    vassert(_log.has_value(), "Log is unintialized. Please use start() first");
-    return *_log;
+    vassert(_log, "Log is unintialized. Please use start() first");
+    return _log;
 }
 
 disk_log_impl& disk_log_builder::get_disk_log_impl() {
-    return dynamic_cast<disk_log_impl&>(*_log.value());
+    return dynamic_cast<disk_log_impl&>(*_log);
 }
 
 segment_set& disk_log_builder::get_log_segments() {
@@ -221,7 +221,7 @@ ss::future<> disk_log_builder::write(
       .then([this, flush](storage::append_result ar) {
           _bytes_written += ar.byte_size;
           if (flush) {
-              return _log.value()->flush();
+              return _log->flush();
           }
           return ss::now();
       });

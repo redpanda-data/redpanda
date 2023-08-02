@@ -211,11 +211,11 @@ public:
     size_t size() const { return _logs.size(); }
 
     /// Returns the log for the specified ntp.
-    std::optional<ss::shared_ptr<log>> get(const model::ntp& ntp) {
+    ss::shared_ptr<log> get(const model::ntp& ntp) {
         if (auto it = _logs.find(ntp); it != _logs.end()) {
             return it->second->handle;
         }
-        return std::nullopt;
+        return nullptr;
     }
 
     /// Returns all ntp's managed by this instance

@@ -131,7 +131,7 @@ FIXTURE_TEST(test_random_remove, storage_test_fixture) {
         const model::ntp& ntp = ntps_to_fuzz[i];
         info("test... removing: {}", ntp);
         mngr.remove(ntp).get();
-        BOOST_REQUIRE(mngr.get(ntp) == std::nullopt);
+        BOOST_REQUIRE(!mngr.get(ntp));
     }
     std::sort(
       random_ntp_removal_sequence.begin(), random_ntp_removal_sequence.end());

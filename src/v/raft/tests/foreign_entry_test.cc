@@ -142,7 +142,7 @@ struct foreign_entry_fixture {
     ss::logger _test_logger{"foreign-test-logger"};
     ss::sharded<features::feature_table> _feature_table;
     storage::api _storage;
-    ss::shared_ptr<storage::log> get_log() { return _storage.log_mgr().get(_ntp).value(); }
+    ss::shared_ptr<storage::log> get_log() { return _storage.log_mgr().get(_ntp); }
     model::ntp _ntp{
       model::ns("test.bootstrap." + random_generators::gen_alphanum_string(8)),
       model::topic(random_generators::gen_alphanum_string(6)),

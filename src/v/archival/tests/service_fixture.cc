@@ -306,7 +306,7 @@ void archiver_fixture::initialize_shard(
             {nm->broker})
           .get();
         BOOST_CHECK_EQUAL(
-          api.log_mgr().get(ntp.first).value()->segment_count(), ntp.second);
+          api.log_mgr().get(ntp.first)->segment_count(), ntp.second);
 
         vlog(fixt_log.trace, "storage log {}", *api.log_mgr().get(ntp.first));
     }
@@ -321,7 +321,7 @@ segment_matcher<Fixture>::list_segments(const model::ntp& ntp) {
     std::vector<ss::lw_shared_ptr<storage::segment>> result;
     auto log
       = static_cast<Fixture*>(this)->get_local_storage_api().log_mgr().get(ntp);
-    if (auto dlog = dynamic_cast<storage::disk_log_impl*>(log.value().get());
+    if (auto dlog = dynamic_cast<storage::disk_log_impl*>(log.get());
         dlog) {
         std::copy_if(
           dlog->segments().begin(),
@@ -339,7 +339,7 @@ ss::lw_shared_ptr<storage::segment> segment_matcher<Fixture>::get_segment(
   const model::ntp& ntp, const archival::segment_name& name) {
     auto log
       = static_cast<Fixture*>(this)->get_local_storage_api().log_mgr().get(ntp);
-    if (auto dlog = dynamic_cast<storage::disk_log_impl*>(log.value().get());
+    if (auto dlog = dynamic_cast<storage::disk_log_impl*>(log.get());
         dlog) {
         for (const auto& s : dlog->segments()) {
             if (

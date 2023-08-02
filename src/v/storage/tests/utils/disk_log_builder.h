@@ -338,7 +338,7 @@ public:
     // Read interface
     // Default consume
     auto consume(log_reader_config config = reader_config()) {
-        return _log.value()->make_reader(config).then(
+        return _log->make_reader(config).then(
           [](model::record_batch_reader reader) {
               return model::consume_reader_to_memory(
                 std::move(reader), model::no_timeout);
@@ -361,7 +361,7 @@ public:
 
     ss::future<> update_configuration(ntp_config::default_overrides o) {
         if (_log) {
-            return _log.value()->update_configuration(o);
+            return _log->update_configuration(o);
         }
 
         return ss::make_ready_future<>();
@@ -379,7 +379,7 @@ public:
 private:
     template<typename Consumer>
     auto consume_impl(Consumer c, log_reader_config config) {
-        return _log.value()->make_reader(config).then(
+        return _log->make_reader(config).then(
           [c = std::move(c)](model::record_batch_reader reader) mutable {
               return std::move(reader).consume(std::move(c), model::no_timeout);
           });
@@ -408,7 +408,7 @@ private:
     ss::sharded<features::feature_table> _feature_table;
     storage::log_config _log_config;
     storage::api _storage;
-    std::optional<ss::shared_ptr<log>> _log;
+    ss::shared_ptr<log> _log;
     size_t _bytes_written{0};
     std::vector<std::vector<model::record_batch>> _batches;
     ss::abort_source _abort_source;
