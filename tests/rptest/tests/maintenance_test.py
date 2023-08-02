@@ -8,6 +8,7 @@
 # by the Apache License, Version 2.0
 
 import random
+from time import sleep
 from rptest.clients.default import DefaultClient
 
 from rptest.services.admin import Admin
@@ -280,3 +281,59 @@ class MaintenanceTest(RedpandaTest):
                    30,
                    backoff_sec=1,
                    err_msg="Error waiting for all partitions to have leaders")
+
+    @cluster(num_nodes=3)
+    @matrix(use_rpk=[True, False])
+    def test_maintenance_mode_of_stopped_node(self, use_rpk):
+        self._use_rpk = use_rpk
+
+        target = random.choice(self.redpanda.nodes)
+        target_id = self.redpanda.node_id(target)
+
+        self._enable_maintenance(target)
+        self.redpanda.stop_node(target)
+
+        def _node_is_not_alive():
+            all_brokers = []
+            for n in self.redpanda.started_nodes():
+                all_brokers += self.admin.get_brokers(n)
+
+            return all([
+                b['is_alive'] == False for b in all_brokers
+                if b['node_id'] == target_id
+            ])
+
+        wait_until(
+            _node_is_not_alive,
+            timeout_sec=30,
+            backoff_sec=5,
+            err_msg=
+            f"Timeout waiting for node {target_id} status update. Node should be marked as stopped."
+        )
+
+        def _check_maintenance_status_on_each_broker(status):
+            all_brokers = []
+            for n in self.redpanda.started_nodes():
+                all_brokers += self.admin.get_brokers(n)
+
+            return all([
+                b['maintenance_status']['draining'] == status
+                for b in all_brokers if b['node_id'] == target_id
+            ])
+
+        assert _check_maintenance_status_on_each_broker(
+            True
+        ), "All the nodes should keep reporting the state of node in maintenance mode"
+
+        if self._use_rpk:
+            self.rpk.cluster_maintenance_disable(target)
+        else:
+            self.admin.maintenance_stop(target)
+
+        wait_until(
+            lambda: _check_maintenance_status_on_each_broker(False),
+            timeout_sec=30,
+            backoff_sec=5,
+            err_msg=
+            f"Timeout waiting for maintenance mode to be disabled on node {target_id}"
+        )
