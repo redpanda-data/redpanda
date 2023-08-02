@@ -63,7 +63,7 @@ public:
     ss::future<ss::lw_shared_ptr<raft::consensus>> create_group(
       raft::group_id id,
       std::vector<model::broker> nodes,
-      storage::log log,
+      ss::shared_ptr<storage::log> log,
       with_learner_recovery_throttle enable_learner_recovery_throttle,
       keep_snapshotted_log = keep_snapshotted_log::no);
 

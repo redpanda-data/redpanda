@@ -36,16 +36,16 @@ FIXTURE_TEST(retention_test_time, gc_fixture) {
       | storage::add_segment(104) | storage::add_random_batches(104, 3);
     BOOST_TEST_MESSAGE(
       "Should not collect segments with timestamp older than 1");
-    BOOST_CHECK_EQUAL(builder.get_log().segment_count(), 3);
+    BOOST_CHECK_EQUAL(builder.get_log()->segment_count(), 3);
     builder | storage::garbage_collect(model::timestamp(1), std::nullopt);
-    BOOST_CHECK_EQUAL(builder.get_log().segment_count(), 3);
+    BOOST_CHECK_EQUAL(builder.get_log()->segment_count(), 3);
 
     BOOST_TEST_MESSAGE("Should not collect segments because size is infinity");
     builder
       | storage::garbage_collect(
         model::timestamp(1),
         std::make_optional<size_t>(std::numeric_limits<size_t>::max()));
-    BOOST_CHECK_EQUAL(builder.get_log().segment_count(), 3);
+    BOOST_CHECK_EQUAL(builder.get_log()->segment_count(), 3);
 
     BOOST_TEST_MESSAGE("Should leave one active segment");
     builder
@@ -53,7 +53,7 @@ FIXTURE_TEST(retention_test_time, gc_fixture) {
         model::timestamp{base_ts() + 1000}, std::nullopt)
       | storage::stop();
 
-    BOOST_CHECK_EQUAL(builder.get_log().segment_count(), 1);
+    BOOST_CHECK_EQUAL(builder.get_log()->segment_count(), 1);
 }
 
 FIXTURE_TEST(retention_test_size, gc_fixture) {
@@ -70,14 +70,14 @@ FIXTURE_TEST(retention_test_size, gc_fixture) {
         model::timestamp(1),
         std::make_optional(
           builder.get_disk_log_impl().get_probe().partition_size()));
-    BOOST_CHECK_EQUAL(builder.get_log().segment_count(), 3);
+    BOOST_CHECK_EQUAL(builder.get_log()->segment_count(), 3);
 
     BOOST_TEST_MESSAGE("Should collect all segments");
     builder
       | storage::garbage_collect(model::timestamp(1), std::optional<size_t>(0))
       | storage::stop();
 
-    BOOST_CHECK_EQUAL(builder.get_log().segment_count(), 0);
+    BOOST_CHECK_EQUAL(builder.get_log()->segment_count(), 0);
 }
 
 /*
@@ -223,7 +223,7 @@ FIXTURE_TEST(retention_test_size_time, gc_fixture) {
 
     builder | storage::stop();
 
-    BOOST_CHECK_EQUAL(builder.get_log().segment_count(), 0);
+    BOOST_CHECK_EQUAL(builder.get_log()->segment_count(), 0);
 }
 FIXTURE_TEST(retention_test_after_truncation, gc_fixture) {
     BOOST_TEST_MESSAGE("Should be safe to garbage collect after truncation");
@@ -232,7 +232,7 @@ FIXTURE_TEST(retention_test_after_truncation, gc_fixture) {
       | storage::truncate_log(model::offset(0))
       | storage::garbage_collect(model::timestamp::now(), std::nullopt)
       | storage::stop();
-    BOOST_CHECK_EQUAL(builder.get_log().segment_count(), 0);
+    BOOST_CHECK_EQUAL(builder.get_log()->segment_count(), 0);
     BOOST_CHECK_EQUAL(
       builder.get_disk_log_impl().get_probe().partition_size(), 0);
 }
@@ -280,13 +280,13 @@ FIXTURE_TEST(retention_by_size_with_remote_write, gc_fixture) {
         partition_size
           = builder.get_disk_log_impl().get_probe().partition_size();
 
-        auto segment_count_before_gc = builder.get_log().segment_count();
+        auto segment_count_before_gc = builder.get_log()->segment_count();
         builder
           .gc(
             model::timestamp(1),
             std::make_optional<size_t>(std::numeric_limits<size_t>::max()))
           .get();
-        auto segment_count_after_gc = builder.get_log().segment_count();
+        auto segment_count_after_gc = builder.get_log()->segment_count();
 
         if (partition_size > size_limit) {
             BOOST_CHECK_GE(segment_count_before_gc, segment_count_after_gc);
@@ -350,7 +350,7 @@ FIXTURE_TEST(retention_by_time_with_remote_write, gc_fixture) {
     // Try to garbage collet the segments. None should get collected
     // because we are currently using the default local target retention.
     builder | storage::garbage_collect(model::timestamp{1}, std::nullopt);
-    BOOST_CHECK_EQUAL(builder.get_log().segment_count(), 2);
+    BOOST_CHECK_EQUAL(builder.get_log()->segment_count(), 2);
 
     // Override the local target retention.
     storage::ntp_config::default_overrides time_override;
@@ -362,7 +362,7 @@ FIXTURE_TEST(retention_by_time_with_remote_write, gc_fixture) {
     // Collect again. All segments should be removed this time.
     builder | storage::garbage_collect(model::timestamp{1}, std::nullopt)
       | storage::stop();
-    BOOST_CHECK_EQUAL(builder.get_log().segment_count(), 0);
+    BOOST_CHECK_EQUAL(builder.get_log()->segment_count(), 0);
 }
 
 FIXTURE_TEST(non_collectible_disk_usage_test, gc_fixture) {

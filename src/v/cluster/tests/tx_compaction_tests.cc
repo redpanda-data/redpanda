@@ -44,11 +44,11 @@ using cluster::random_tx_generator;
     wait_for_confirmed_leader();                                               \
     wait_for_meta_initialized();                                               \
     auto log = _storage.local().log_mgr().get(_raft->ntp());                   \
-    log->stm_manager()->add_stm(stm);                                          \
+    log.value()->stm_manager()->add_stm(stm);                                          \
     BOOST_REQUIRE(log);
 
-storage::disk_log_impl* get_disk_log(storage::log& log) {
-    return dynamic_cast<storage::disk_log_impl*>(log.get_impl());
+storage::disk_log_impl* get_disk_log(ss::shared_ptr<storage::log> log) {
+    return dynamic_cast<storage::disk_log_impl*>(log->get_impl());
 }
 
 FIXTURE_TEST(test_tx_compaction_combinations, mux_state_machine_fixture) {

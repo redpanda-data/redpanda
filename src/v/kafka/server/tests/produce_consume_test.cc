@@ -607,7 +607,7 @@ FIXTURE_TEST(test_offset_for_leader_epoch, prod_consume_fixture) {
             auto partition = mgr.get(ntp);
             storage::truncate_prefix_config cfg(
               model::offset(1), ss::default_priority_class());
-            partition->log().truncate_prefix(cfg).get();
+            partition->log()->truncate_prefix(cfg).get();
         })
       .get();
 
@@ -648,7 +648,7 @@ FIXTURE_TEST(test_offset_for_leader_epoch, prod_consume_fixture) {
             *shard,
             [ntp](cluster::partition_manager& mgr) {
                 auto partition = mgr.get(ntp);
-                auto start_offset = partition->log().offsets().start_offset;
+                auto start_offset = partition->log()->offsets().start_offset;
                 return partition->get_offset_translator_state()
                   ->from_log_offset(start_offset);
             })
@@ -664,7 +664,7 @@ FIXTURE_TEST(test_basic_delete_around_batch, prod_consume_fixture) {
     const model::ntp ntp(tp_ns.ns, tp_ns.tp, pid);
     auto partition = app.partition_manager.local().get(ntp);
     auto* log = dynamic_cast<storage::disk_log_impl*>(
-      partition->log().get_impl());
+      partition->log()->get_impl());
 
     tests::kafka_produce_transport producer(make_kafka_client().get());
     producer.start().get();

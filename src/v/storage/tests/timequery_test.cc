@@ -73,11 +73,11 @@ FIXTURE_TEST(timequery, log_builder_fixture) {
 
         storage::timequery_config config(
           model::timestamp(ts),
-          log.offsets().dirty_offset,
+          log->offsets().dirty_offset,
           ss::default_priority_class(),
           std::nullopt);
 
-        auto res = log.timequery(config).get0();
+        auto res = log->timequery(config).get0();
         BOOST_TEST(res);
         BOOST_TEST(res->time == model::timestamp(ts));
         BOOST_TEST(res->offset == model::offset(ts));
@@ -95,13 +95,13 @@ FIXTURE_TEST(timequery, log_builder_fixture) {
 
         storage::timequery_config config(
           model::timestamp(ts),
-          log.offsets().dirty_offset,
+          log->offsets().dirty_offset,
           ss::default_priority_class(),
           std::nullopt);
 
         auto offset = (ts - 100) * 5 + 100;
 
-        auto res = log.timequery(config).get0();
+        auto res = log->timequery(config).get0();
         BOOST_TEST(res);
         BOOST_TEST(res->time == model::timestamp(ts));
         BOOST_TEST(res->offset == model::offset(offset));
@@ -128,17 +128,17 @@ FIXTURE_TEST(timequery_single_value, log_builder_fixture) {
     auto log = b.get_log();
     storage::timequery_config config(
       model::timestamp(1200),
-      log.offsets().dirty_offset,
+      log->offsets().dirty_offset,
       ss::default_priority_class(),
       std::nullopt);
 
-    auto empty_res = log.timequery(config).get0();
+    auto empty_res = log->timequery(config).get0();
     BOOST_TEST(!empty_res);
 
     // ask for 999 it should return first segment
     config.time = model::timestamp(999);
 
-    auto res = log.timequery(config).get0();
+    auto res = log->timequery(config).get0();
     BOOST_TEST(res);
     BOOST_TEST(res->time == model::timestamp(1000));
     BOOST_TEST(res->offset == model::offset(0));
@@ -174,11 +174,11 @@ FIXTURE_TEST(timequery_sparse_index, log_builder_fixture) {
     auto log = b.get_log();
     storage::timequery_config config(
       model::timestamp(1600),
-      log.offsets().dirty_offset,
+      log->offsets().dirty_offset,
       ss::default_priority_class(),
       std::nullopt);
 
-    auto res = log.timequery(config).get0();
+    auto res = log->timequery(config).get0();
     BOOST_TEST(res);
     BOOST_TEST(res->time == model::timestamp(1600));
     BOOST_TEST(res->offset == model::offset(1));
@@ -207,11 +207,11 @@ FIXTURE_TEST(timequery_one_element_index, log_builder_fixture) {
     auto log = b.get_log();
     storage::timequery_config config(
       model::timestamp(1000),
-      log.offsets().dirty_offset,
+      log->offsets().dirty_offset,
       ss::default_priority_class(),
       std::nullopt);
 
-    auto res = log.timequery(config).get0();
+    auto res = log->timequery(config).get0();
     BOOST_TEST(res);
     BOOST_TEST(res->time == model::timestamp(1000));
     BOOST_TEST(res->offset == model::offset(0));
@@ -256,11 +256,11 @@ FIXTURE_TEST(timequery_non_monotonic_log, log_builder_fixture) {
     for (const auto& [offset, ts] : batch_spec) {
         storage::timequery_config config(
           model::timestamp(ts),
-          log.offsets().dirty_offset,
+          log->offsets().dirty_offset,
           ss::default_priority_class(),
           std::nullopt);
 
-        auto res = log.timequery(config).get0();
+        auto res = log->timequery(config).get0();
 
         if (offset == model::offset(4)) {
             // A timequery will always return from within the
@@ -281,11 +281,11 @@ FIXTURE_TEST(timequery_non_monotonic_log, log_builder_fixture) {
     // We should return the first element in the log
     storage::timequery_config config(
       model::timestamp(-5000),
-      log.offsets().dirty_offset,
+      log->offsets().dirty_offset,
       ss::default_priority_class(),
       std::nullopt);
 
-    auto res = log.timequery(config).get0();
+    auto res = log->timequery(config).get0();
 
     BOOST_TEST(res);
     BOOST_TEST(res->offset == model::offset(0));
@@ -323,12 +323,12 @@ FIXTURE_TEST(timequery_clamp, log_builder_fixture) {
     auto log = b.get_log();
     storage::timequery_config config(
       model::timestamp(storage::offset_time_index::delta_time_max * 2 + 1),
-      log.offsets().dirty_offset,
+      log->offsets().dirty_offset,
       ss::default_priority_class(),
       std::nullopt);
 
     const auto& [expected_offset, expected_ts] = batch_spec.back();
-    auto res = log.timequery(config).get0();
+    auto res = log->timequery(config).get0();
     BOOST_TEST(res);
     BOOST_TEST(res->time == expected_ts);
     BOOST_TEST(res->offset == expected_offset);

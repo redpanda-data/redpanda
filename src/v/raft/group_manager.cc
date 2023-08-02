@@ -80,10 +80,10 @@ ss::future<> group_manager::stop_heartbeats() { return _heartbeats.stop(); }
 ss::future<ss::lw_shared_ptr<raft::consensus>> group_manager::create_group(
   raft::group_id id,
   std::vector<model::broker> nodes,
-  storage::log log,
+  ss::shared_ptr<storage::log> log,
   with_learner_recovery_throttle enable_learner_recovery_throttle,
   keep_snapshotted_log keep_snapshotted_log) {
-    auto revision = log.config().get_revision();
+    auto revision = log->config().get_revision();
     auto raft_cfg = create_initial_configuration(std::move(nodes), revision);
 
     auto raft = ss::make_lw_shared<raft::consensus>(

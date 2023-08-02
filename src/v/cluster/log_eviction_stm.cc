@@ -93,7 +93,7 @@ ss::future<> log_eviction_stm::handle_log_eviction_events() {
             previous_iter_truncated_everything = true;
             continue;
         }
-        auto truncation_point = _raft->log().index_lower_bound(evict_until);
+        auto truncation_point = _raft->log()->index_lower_bound(evict_until);
         if (!truncation_point) {
             vlog(
               _log.warn,
@@ -172,10 +172,10 @@ log_eviction_stm::do_write_raft_snapshot(model::offset truncation_point) {
     co_await _raft->visible_offset_monitor().wait(
       truncation_point, model::no_timeout, _as);
     co_await _raft->refresh_commit_index();
-    co_await _raft->log().stm_manager()->ensure_snapshot_exists(
+    co_await _raft->log()->stm_manager()->ensure_snapshot_exists(
       truncation_point);
     const auto max_collectible_offset
-      = _raft->log().stm_manager()->max_collectible_offset();
+      = _raft->log()->stm_manager()->max_collectible_offset();
     if (truncation_point > max_collectible_offset) {
         truncation_point = max_collectible_offset;
         if (truncation_point <= _raft->last_snapshot_index()) {

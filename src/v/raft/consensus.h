@@ -96,7 +96,7 @@ public:
       group_id,
       group_configuration,
       timeout_jitter,
-      storage::log,
+      ss::shared_ptr<storage::log>,
       scheduling_config,
       config::binding<std::chrono::milliseconds> disk_timeout,
       consensus_client_protocol,
@@ -192,7 +192,7 @@ public:
     raft::group_id group() const { return _group; }
     model::term_id term() const { return _term; }
     group_configuration config() const;
-    const model::ntp& ntp() const { return _log.config().ntp(); }
+    const model::ntp& ntp() const { return _log->config().ntp(); }
     clock_type::time_point last_heartbeat() const { return _hbeat; };
     clock_type::time_point became_leader_at() const {
         return _became_leader_at;
@@ -354,7 +354,7 @@ public:
         return model::next_offset(_last_snapshot_index);
     }
 
-    model::offset dirty_offset() const { return _log.offsets().dirty_offset; }
+    model::offset dirty_offset() const { return _log->offsets().dirty_offset; }
 
     ss::condition_variable& commit_index_updated() {
         return _commit_index_updated;
@@ -363,10 +363,10 @@ public:
     event_manager& events() { return _event_manager; }
 
     ss::future<model::offset> monitor_log_eviction(ss::abort_source& as) {
-        return _log.monitor_eviction(as);
+        return _log->monitor_eviction(as);
     }
 
-    const storage::ntp_config& log_config() const { return _log.config(); }
+    const storage::ntp_config& log_config() const { return _log->config(); }
 
     /*
      * Attempt to transfer leadership to another node in this raft group. If no
@@ -390,7 +390,7 @@ public:
 
     probe& get_probe() { return *_probe; };
 
-    storage::log& log() { return _log; }
+    ss::shared_ptr<storage::log> log() { return _log; }
 
     ss::lw_shared_ptr<const storage::offset_translator_state>
     get_offset_translator_state() {
@@ -595,8 +595,8 @@ private:
      */
     bool is_initial_state() const {
         static constexpr model::offset not_initialized{};
-        auto lstats = _log.offsets();
-        return _log.segment_count() == 0
+        auto lstats = _log->offsets();
+        return _log->segment_count() == 0
                && lstats.dirty_offset == not_initialized
                && lstats.start_offset == not_initialized
                && _last_snapshot_index == not_initialized;
@@ -644,7 +644,7 @@ private:
                           "not "
                           "exists",
                           request,
-                          _log.config().ntp());
+                          _log->config().ntp());
                     }
                     return result<Reply>(errc::group_not_exists);
                 }
@@ -693,7 +693,7 @@ private:
     vnode _self;
     raft::group_id _group;
     timeout_jitter _jit;
-    storage::log _log;
+    ss::shared_ptr<storage::log> _log;
     offset_translator _offset_translator;
     scheduling_config _scheduling;
     config::binding<std::chrono::milliseconds> _disk_timeout;

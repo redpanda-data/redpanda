@@ -110,7 +110,7 @@ struct mux_state_machine_fixture {
                     _data_dir,
                     std::make_unique<storage::ntp_config::default_overrides>(
                       overrides)))
-                  .then([this](storage::log&& log) mutable {
+                  .then([this](ss::shared_ptr<storage::log> log) mutable {
                       auto group = raft::group_id(0);
                       return _group_mgr.local()
                         .create_group(

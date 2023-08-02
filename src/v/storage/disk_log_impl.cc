@@ -1970,7 +1970,7 @@ std::ostream& operator<<(std::ostream& o, const disk_log_impl& d) {
     return d.print(o);
 }
 
-log make_disk_backed_log(
+ss::shared_ptr<log> make_disk_backed_log(
   ntp_config cfg,
   log_manager& manager,
   segment_set segs,
@@ -1978,7 +1978,7 @@ log make_disk_backed_log(
   ss::sharded<features::feature_table>& feature_table) {
     auto ptr = ss::make_shared<disk_log_impl>(
       std::move(cfg), manager, std::move(segs), kvstore, feature_table);
-    return log(ptr);
+    return ss::make_shared<log>(ptr);
 }
 
 /*

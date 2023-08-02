@@ -90,7 +90,7 @@ consensus::consensus(
   group_id group,
   group_configuration initial_cfg,
   timeout_jitter jit,
-  storage::log l,
+  ss::shared_ptr<storage::log> l,
   scheduling_config scheduling_config,
   config::binding<std::chrono::milliseconds> disk_timeout,
   consensus_client_protocol client,
@@ -107,9 +107,9 @@ consensus::consensus(
   , _jit(std::move(jit))
   , _log(l)
   , _offset_translator(
-      offset_translator_batch_types(_log.config().ntp()),
+      offset_translator_batch_types(_log->config().ntp()),
       group,
-      _log.config().ntp(),
+      _log->config().ntp(),
       storage)
   , _scheduling(scheduling_config)
   , _disk_timeout(std::move(disk_timeout))
@@ -122,7 +122,7 @@ consensus::consensus(
   , _batcher(this, config::shard_local_cfg().raft_replicate_batch_window_size())
   , _event_manager(this)
   , _probe(std::make_unique<probe>())
-  , _ctxlog(group, _log.config().ntp())
+  , _ctxlog(group, _log->config().ntp())
   , _replicate_append_timeout(
       config::shard_local_cfg().replicate_append_timeout_ms())
   , _recovery_append_timeout(
@@ -134,7 +134,7 @@ consensus::consensus(
   , _recovery_mem_quota(recovery_mem_quota)
   , _features(ft)
   , _snapshot_mgr(
-      std::filesystem::path(_log.config().work_directory()),
+      std::filesystem::path(_log->config().work_directory()),
       storage::simple_snapshot_manager::default_snapshot_filename,
       _scheduling.default_iopc)
   , _configuration_manager(std::move(initial_cfg), _group, _storage, _ctxlog)
@@ -157,8 +157,8 @@ void consensus::setup_metrics() {
         return;
     }
 
-    _probe->setup_metrics(_log.config().ntp());
-    auto labels = probe::create_metric_labels(_log.config().ntp());
+    _probe->setup_metrics(_log->config().ntp());
+    auto labels = probe::create_metric_labels(_log->config().ntp());
     auto aggregate_labels = config::shard_local_cfg().aggregate_metrics()
                               ? std::vector<sm::label>{sm::shard_label}
                               : std::vector<sm::label>{};
@@ -189,7 +189,7 @@ void consensus::setup_public_metrics() {
         return;
     }
 
-    _probe->setup_public_metrics(_log.config().ntp());
+    _probe->setup_public_metrics(_log->config().ntp());
 }
 
 void consensus::do_step_down(std::string_view ctx) {
@@ -200,7 +200,7 @@ void consensus::do_step_down(std::string_view ctx) {
           "[{}] Stepping down as leader in term {}, dirty offset {}",
           ctx,
           _term,
-          _log.offsets().dirty_offset);
+          _log->offsets().dirty_offset);
     }
     _fstats.reset();
     _vstate = vote_state::follower;
@@ -369,7 +369,7 @@ consensus::success_reply consensus::update_follower_index(
 
     if (
       seq < idx.last_received_seq
-      && reply.last_dirty_log_index < _log.offsets().dirty_offset) {
+      && reply.last_dirty_log_index < _log->offsets().dirty_offset) {
         vlog(
           _ctxlog.trace,
           "ignoring reordered reply {} from node {} - last: {} current: {} ",
@@ -548,7 +548,7 @@ bool consensus::needs_recovery(
 }
 
 void consensus::dispatch_recovery(follower_index_metadata& idx) {
-    auto lstats = _log.offsets();
+    auto lstats = _log->offsets();
     auto log_max_offset = lstats.dirty_offset;
     if (idx.last_dirty_log_index >= log_max_offset) {
         // follower is ahead of current leader
@@ -611,7 +611,7 @@ ss::future<result<model::offset>> consensus::linearizable_barrier() {
     }
     // store current commit index
     auto cfg = config();
-    auto dirty_offset = _log.offsets().dirty_offset;
+    auto dirty_offset = _log->offsets().dirty_offset;
     /**
      * Dispatch round of heartbeats
      */
@@ -799,7 +799,7 @@ ss::future<model::record_batch_reader>
 consensus::do_make_reader(storage::log_reader_config config) {
     // limit to last visible index
     config.max_offset = std::min(config.max_offset, last_visible_index());
-    return _log.make_reader(config);
+    return _log->make_reader(config);
 }
 
 ss::future<model::record_batch_reader> consensus::make_reader(
@@ -1294,7 +1294,7 @@ ss::future<> consensus::do_start() {
          *
          * https://github.com/redpanda-data/redpanda/issues/1870
          */
-        const auto& ntp = _log.config().ntp();
+        const auto& ntp = _log->config().ntp();
         const auto normalized_ntp = fmt::format(
           "{}.{}.{}", ntp.ns(), ntp.tp.topic(), ntp.tp.partition());
         const auto& patterns = config::shard_local_cfg()
@@ -1348,7 +1348,7 @@ ss::future<> consensus::do_start() {
           model::next_offset(_configuration_manager.get_highest_known_offset()),
           _as);
 
-        const auto lstats = _log.offsets();
+        const auto lstats = _log->offsets();
 
         vlog(
           _ctxlog.info,
@@ -1500,7 +1500,7 @@ ss::future<> consensus::write_last_applied(model::offset o) {
      * In order to keep an invariant that: 'last applied offset MUST be
      * readable' we limit it here to committed (leader flushed) offset.
      */
-    auto const limited_offset = std::min(o, _log.offsets().committed_offset);
+    auto const limited_offset = std::min(o, _log->offsets().committed_offset);
     auto key = last_applied_key();
     iobuf val = reflection::to_iobuf(limited_offset);
     return _storage.kvs().put(
@@ -1611,7 +1611,7 @@ consensus::get_last_entry_term(const storage::offset_stats& lstats) const {
       "offset. Log offsets: {}. Last snapshot index: {}. {}",
       lstats,
       _last_snapshot_index,
-      _log.config().ntp());
+      _log->config().ntp());
 
     return _last_snapshot_term;
 }
@@ -1621,7 +1621,7 @@ ss::future<vote_reply> consensus::do_vote(vote_request r) {
     reply.term = _term;
     reply.target_node_id = r.node_id;
     reply.node_id = _self;
-    auto lstats = _log.offsets();
+    auto lstats = _log->offsets();
     auto last_log_index = lstats.dirty_offset;
     _probe->vote_request();
     auto last_entry_term = get_last_entry_term(lstats);
@@ -1779,7 +1779,7 @@ consensus::append_entries(append_entries_request&& r) {
 
 ss::future<append_entries_reply>
 consensus::do_append_entries(append_entries_request&& r) {
-    auto lstats = _log.offsets();
+    auto lstats = _log->offsets();
     append_entries_reply reply;
     const auto request_metadata = r.metadata();
     reply.node_id = _self;
@@ -1939,7 +1939,7 @@ consensus::do_append_entries(append_entries_request&& r) {
         // we wouldn't retry and log and offset translator could diverge.
         return _offset_translator.truncate(truncate_at)
           .then([this, truncate_at] {
-              return _log.truncate(storage::truncate_config(
+              return _log->truncate(storage::truncate_config(
                 truncate_at, _scheduling.default_iopc));
           })
           .then([this, truncate_at] {
@@ -1956,7 +1956,7 @@ consensus::do_append_entries(append_entries_request&& r) {
               });
           })
           .then([this, r = std::move(r), truncate_at]() mutable {
-              auto lstats = _log.offsets();
+              auto lstats = _log->offsets();
               if (unlikely(
                     lstats.dirty_offset != r.metadata().prev_log_index)) {
                   vlog(
@@ -2049,7 +2049,7 @@ ss::future<> consensus::truncate_to_latest_snapshot() {
     // readers that started reading from the start of the log before we advanced
     // _last_snapshot_index and thus can still need offset translation info.
     return _log
-      .truncate_prefix(storage::truncate_prefix_config(
+      ->truncate_prefix(storage::truncate_prefix_config(
         model::next_offset(_last_snapshot_index), _scheduling.default_iopc))
       .then([this] {
           return _configuration_manager.prefix_truncate(_last_snapshot_index);
@@ -2116,7 +2116,7 @@ ss::future<> consensus::do_hydrate_snapshot(storage::snapshot_reader& reader) {
             .then([this] {
                 if (
                   _keep_snapshotted_log
-                  && _log.offsets().dirty_offset >= _last_snapshot_index) {
+                  && _log->offsets().dirty_offset >= _last_snapshot_index) {
                     // skip prefix truncating if we want to preserve the log
                     // (e.g. for the controller partition), but only if there is
                     // no gap between old end offset and new start offset,
@@ -2277,7 +2277,7 @@ ss::future<> consensus::write_snapshot(write_snapshot_cfg cfg) {
 
     // Release the lock when truncating the log because it can take some
     // time while we wait for readers to be evicted.
-    co_await _log.truncate_prefix(storage::truncate_prefix_config(
+    co_await _log->truncate_prefix(storage::truncate_prefix_config(
       model::next_offset(last_included_index), _scheduling.default_iopc));
 
     /*
@@ -2303,7 +2303,7 @@ consensus::do_write_snapshot(model::offset last_included_index, iobuf&& data) {
       last_included_index,
       data.size_bytes());
 
-    auto last_included_term = _log.get_term(last_included_index);
+    auto last_included_term = _log->get_term(last_included_index);
     vassert(
       last_included_term.has_value(),
       "Unable to get term for snapshot last included offset: {}, log: {}",
@@ -2476,9 +2476,9 @@ ss::future<> consensus::flush_log() {
     }
     _probe->log_flushed();
     _has_pending_flushes = false;
-    auto flushed_up_to = _log.offsets().dirty_offset;
-    return _log.flush().then([this, flushed_up_to] {
-        auto lstats = _log.offsets();
+    auto flushed_up_to = _log->offsets().dirty_offset;
+    return _log->flush().then([this, flushed_up_to] {
+        auto lstats = _log->offsets();
         /**
          * log flush may be interleaved with trucation, hence we need to check
          * if log was truncated, if so we do nothing, flushed offset will be
@@ -2535,9 +2535,9 @@ ss::future<storage::append_result> consensus::disk_append(
     };
 
     return details::for_each_ref_extract_configuration(
-             _log.offsets().dirty_offset,
+             _log->offsets().dirty_offset,
              std::move(reader),
-             consumer(_offset_translator, _log.make_appender(cfg)),
+             consumer(_offset_translator, _log->make_appender(cfg)),
              cfg.timeout)
       .then([this, should_update_last_quorum_idx](
               std::tuple<ret_t, std::vector<offset_configuration>> t) {
@@ -2592,14 +2592,14 @@ model::term_id consensus::get_term(model::offset o) const {
     if (unlikely(o < model::offset(0))) {
         return model::term_id{};
     }
-    auto lstat = _log.offsets();
+    auto lstat = _log->offsets();
 
     // if log is empty, return term from snapshot
     if (o == lstat.dirty_offset && lstat.start_offset > lstat.dirty_offset) {
         return _last_snapshot_term;
     }
 
-    return _log.get_term(o).value_or(model::term_id{});
+    return _log->get_term(o).value_or(model::term_id{});
 }
 
 clock_type::time_point
@@ -2608,7 +2608,7 @@ consensus::last_sent_append_entries_req_timestamp(vnode id) {
 }
 
 protocol_metadata consensus::meta() const {
-    auto lstats = _log.offsets();
+    auto lstats = _log->offsets();
     const auto prev_log_term = lstats.dirty_offset >= lstats.start_offset
                                  ? lstats.dirty_offset_term
                                  : _last_snapshot_term;
@@ -2766,7 +2766,7 @@ ss::future<> consensus::maybe_commit_configuration(ssx::semaphore_units u) {
 
 ss::future<>
 consensus::do_maybe_update_leader_commit_idx(ssx::semaphore_units u) {
-    auto lstats = _log.offsets();
+    auto lstats = _log->offsets();
     // Raft paper:
     //
     // If there exists an N such that N > commitIndex, a majority
@@ -3007,7 +3007,7 @@ ss::future<std::error_code> consensus::prepare_transfer_leadership(
       _ctxlog.trace,
       "transfer leadership: preparing target={}, dirty_offset={}",
       target_rni,
-      _log.offsets().dirty_offset);
+      _log->offsets().dirty_offset);
 
     // Enforce ordering wrt anyone currently doing an append under op_lock
     {
@@ -3032,7 +3032,7 @@ ss::future<std::error_code> consensus::prepare_transfer_leadership(
     auto& meta = _fstats.get(target_rni);
     if (
       !meta.is_recovering
-      && needs_recovery(meta, _log.offsets().dirty_offset)) {
+      && needs_recovery(meta, _log->offsets().dirty_offset)) {
         vlog(
           _ctxlog.debug,
           "transfer leadership: starting node {} recovery",
@@ -3045,7 +3045,7 @@ ss::future<std::error_code> consensus::prepare_transfer_leadership(
           "is already recovering (is_recovering {} dirty offset {})",
           target_rni,
           meta.is_recovering,
-          _log.offsets().dirty_offset);
+          _log->offsets().dirty_offset);
     }
 
     auto timeout = ss::semaphore::clock::duration(opts.recovery_timeout);
@@ -3077,7 +3077,7 @@ ss::future<std::error_code> consensus::prepare_transfer_leadership(
           "transfer leadership: node {} is not recovering, proceeding "
           "(dirty offset {})",
           target_rni,
-          _log.offsets().dirty_offset);
+          _log->offsets().dirty_offset);
     }
 
     co_return make_error_code(errc::success);
@@ -3233,7 +3233,7 @@ consensus::do_transfer_leadership(transfer_leadership_request req) {
               }
 
               auto& meta = _fstats.get(target_rni);
-              if (needs_recovery(meta, _log.offsets().dirty_offset)) {
+              if (needs_recovery(meta, _log->offsets().dirty_offset)) {
                   vlog(
                     _ctxlog.warn,
                     "Cannot transfer leadership: {} needs recovery ({}, {}, "
@@ -3241,7 +3241,7 @@ consensus::do_transfer_leadership(transfer_leadership_request req) {
                     target_rni,
                     meta.match_index,
                     meta.last_dirty_log_index,
-                    _log.offsets().dirty_offset);
+                    _log->offsets().dirty_offset);
 
                   return seastar::make_ready_future<std::error_code>(
                     make_error_code(errc::exponential_backoff));
@@ -3325,7 +3325,7 @@ void consensus::maybe_update_last_visible_index(model::offset offset) {
 void consensus::maybe_update_majority_replicated_index() {
     auto majority_match = config().quorum_match([this](vnode id) {
         if (id == _self) {
-            return _log.offsets().dirty_offset;
+            return _log->offsets().dirty_offset;
         }
         if (auto it = _fstats.find(id); it != _fstats.end()) {
             return it->second.last_dirty_log_index;
@@ -3467,7 +3467,7 @@ std::vector<follower_metrics> consensus::get_follower_metrics() const {
     }
     std::vector<follower_metrics> ret;
     ret.reserve(_fstats.size());
-    const auto offsets = _log.offsets();
+    const auto offsets = _log->offsets();
     for (const auto& f : _fstats) {
         ret.push_back(build_follower_metrics(
           f.first.id(),
@@ -3494,7 +3494,7 @@ consensus::get_follower_metrics(model::node_id id) const {
     }
     return build_follower_metrics(
       id,
-      _log.offsets(),
+      _log->offsets(),
       std::chrono::duration_cast<std::chrono::milliseconds>(
         _jit.base_duration()),
       it->second);
@@ -3506,7 +3506,7 @@ size_t consensus::get_follower_count() const {
 
 ss::future<std::optional<storage::timequery_result>>
 consensus::timequery(storage::timequery_config cfg) {
-    return _log.timequery(cfg);
+    return _log->timequery(cfg);
 }
 
 std::optional<uint8_t> consensus::get_under_replicated() const {
@@ -3518,7 +3518,7 @@ std::optional<uint8_t> consensus::get_under_replicated() const {
     for (const auto& f : _fstats) {
         auto f_metrics = build_follower_metrics(
           f.first.id(),
-          _log.offsets(),
+          _log->offsets(),
           std::chrono::duration_cast<std::chrono::milliseconds>(
             _jit.base_duration()),
           f.second);

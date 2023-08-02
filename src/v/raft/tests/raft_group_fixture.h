@@ -144,8 +144,8 @@ struct raft_node {
           std::make_unique<storage::ntp_config::default_overrides>(
             std::move(overrides)));
 
-        log = std::make_unique<storage::log>(
-          storage.local().log_mgr().manage(std::move(ntp_cfg)).get0());
+        log =
+          storage.local().log_mgr().manage(std::move(ntp_cfg)).get0();
 
         recovery_throttle
           .start(
@@ -166,7 +166,7 @@ struct raft_node {
           gr_id,
           std::move(cfg),
           std::move(jit),
-          *log,
+          log,
           raft::scheduling_config(
             seastar::default_scheduling_group(),
             seastar::default_priority_class()),
@@ -279,7 +279,7 @@ struct raft_node {
           })
           .then([this] {
               tstlog.info("Stopping storage at node {}", broker.id());
-              log.reset();
+              log = nullptr;
               return storage.stop();
           })
           .then([this] { return feature_table.stop(); })
@@ -343,7 +343,7 @@ struct raft_node {
     model::broker broker;
     ss::sharded<storage::api> storage;
     ss::sharded<raft::coordinated_recovery_throttle> recovery_throttle;
-    std::unique_ptr<storage::log> log;
+    ss::shared_ptr<storage::log> log;
     ss::sharded<ss::abort_source> as_service;
     ss::sharded<rpc::connection_cache> cache;
     ss::sharded<rpc::rpc_server> server;

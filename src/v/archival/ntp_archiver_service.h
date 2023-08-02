@@ -318,7 +318,7 @@ public:
     void complete_transfer_leadership();
 
     const storage::ntp_config& ntp_config() const {
-        return _parent.log().config();
+        return _parent.log()->config();
     }
 
     /// If we have a projected manifest clean offset, then flush it to

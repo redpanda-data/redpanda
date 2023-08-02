@@ -348,7 +348,7 @@ replicate_entries_stm::wait_for_majority() {
         const auto truncated = _ptr->term() > appended_term
                                && current_committed_offset
                                     > _initial_committed_offset
-                               && _ptr->_log.get_term(appended_offset)
+                               && _ptr->_log->get_term(appended_offset)
                                     != appended_term;
 
         return committed || truncated;
@@ -384,7 +384,7 @@ result<replicate_result> replicate_entries_stm::process_result(
     // if term has changed we have to check if entry was
     // replicated
     if (unlikely(appended_term != _ptr->term())) {
-        const auto current_term = _ptr->_log.get_term(appended_offset);
+        const auto current_term = _ptr->_log->get_term(appended_offset);
         if (current_term != appended_term) {
             vlog(
               _ctxlog.debug,

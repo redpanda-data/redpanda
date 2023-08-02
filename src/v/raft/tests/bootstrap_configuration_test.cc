@@ -69,15 +69,15 @@ struct bootstrap_fixture : raft::simple_record_fixture {
           model::no_timeout};
         std::vector<storage::append_result> res;
         res.push_back(datas(n)
-                        .for_each_ref(get_log().make_appender(cfg), cfg.timeout)
+                        .for_each_ref(get_log()->make_appender(cfg), cfg.timeout)
                         .get0());
         res.push_back(configs(n)
-                        .for_each_ref(get_log().make_appender(cfg), cfg.timeout)
+                        .for_each_ref(get_log()->make_appender(cfg), cfg.timeout)
                         .get0());
-        get_log().flush().get();
+        get_log()->flush().get();
         return res;
     }
-    storage::log get_log() { return _storage.log_mgr().get(_ntp).value(); }
+    ss::shared_ptr<storage::log> get_log() { return _storage.log_mgr().get(_ntp).value(); }
 
     ~bootstrap_fixture() {
         _storage.stop().get();

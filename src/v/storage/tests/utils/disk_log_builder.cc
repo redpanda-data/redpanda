@@ -101,12 +101,12 @@ ss::future<> disk_log_builder::start(storage::ntp_config cfg) {
       [this, cfg = std::move(cfg)]() mutable {
           return _storage.log_mgr()
             .manage(std::move(cfg))
-            .then([this](storage::log log) { _log = log; });
+            .then([this](ss::shared_ptr<storage::log> log) { _log = log; });
       });
 }
 
 ss::future<> disk_log_builder::truncate(model::offset o) {
-    return get_log().truncate(
+    return get_log()->truncate(
       storage::truncate_config(o, ss::default_priority_class()));
 }
 
@@ -114,10 +114,10 @@ ss::future<> disk_log_builder::gc(
   model::timestamp collection_upper_bound,
   std::optional<size_t> max_partition_retention_size) {
     ss::abort_source as;
-    auto eviction_future = get_log().monitor_eviction(as);
+    auto eviction_future = get_log()->monitor_eviction(as);
 
     get_log()
-      .housekeeping(housekeeping_config(
+      ->housekeeping(housekeeping_config(
         collection_upper_bound,
         max_partition_retention_size,
         model::offset::max(),
@@ -127,7 +127,7 @@ ss::future<> disk_log_builder::gc(
 
     if (eviction_future.available()) {
         auto evict_until = eviction_future.get();
-        return get_log().truncate_prefix(storage::truncate_prefix_config{
+        return get_log()->truncate_prefix(storage::truncate_prefix_config{
           model::next_offset(evict_until), ss::default_priority_class()});
     } else {
         as.request_abort();
@@ -165,13 +165,13 @@ ss::future<> disk_log_builder::stop() {
 
 // Low lever interface access
 // Access log impl
-log& disk_log_builder::get_log() {
+ss::shared_ptr<log> disk_log_builder::get_log() {
     vassert(_log.has_value(), "Log is unintialized. Please use start() first");
     return *_log;
 }
 
 disk_log_impl& disk_log_builder::get_disk_log_impl() {
-    return *reinterpret_cast<disk_log_impl*>(_log->get_impl());
+    return *reinterpret_cast<disk_log_impl*>(_log.value()->get_impl());
 }
 
 segment_set& disk_log_builder::get_log_segments() {
@@ -221,7 +221,7 @@ ss::future<> disk_log_builder::write(
       .then([this, flush](storage::append_result ar) {
           _bytes_written += ar.byte_size;
           if (flush) {
-              return _log->flush();
+              return _log.value()->flush();
           }
           return ss::now();
       });

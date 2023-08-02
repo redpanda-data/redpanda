@@ -208,15 +208,15 @@ ss::future<consensus_ptr> partition_manager::manage(
               ntp_cfg, manifest, max_offset);
         }
     }
-    storage::log log = co_await _storage.log_mgr().manage(std::move(ntp_cfg));
+    auto log = co_await _storage.log_mgr().manage(std::move(ntp_cfg));
     vlog(
       clusterlog.debug,
       "Log created manage completed, ntp: {}, rev: {}, {} "
       "segments, {} bytes",
-      log.config().ntp(),
-      log.config().get_revision(),
-      log.segment_count(),
-      log.size_bytes());
+      log->config().ntp(),
+      log->config().get_revision(),
+      log->segment_count(),
+      log->size_bytes());
 
     ss::lw_shared_ptr<raft::consensus> c
       = co_await _raft_manager.local().create_group(
@@ -239,7 +239,7 @@ ss::future<consensus_ptr> partition_manager::manage(
       _max_concurrent_producer_ids,
       read_replica_bucket);
 
-    _ntp_table.emplace(log.config().ntp(), p);
+    _ntp_table.emplace(log->config().ntp(), p);
     _raft_table.emplace(group, p);
 
     /*

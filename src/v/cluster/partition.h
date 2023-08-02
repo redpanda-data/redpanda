@@ -182,7 +182,7 @@ public:
     model::term_id term() { return _raft->term(); }
 
     model::offset dirty_offset() const {
-        return _raft->log().offsets().dirty_offset;
+        return _raft->log()->offsets().dirty_offset;
     }
 
     /// Return the offset up to which the storage layer would like to
@@ -199,7 +199,7 @@ public:
 
     const model::ntp& ntp() const { return _raft->ntp(); }
 
-    storage::log log() const { return _raft->log(); }
+    ss::shared_ptr<storage::log> log() const { return _raft->log(); }
 
     ss::shared_ptr<const cloud_storage::remote_partition>
     remote_partition() const {
@@ -273,14 +273,14 @@ public:
 
     ss::shared_ptr<cluster::rm_stm> rm_stm();
 
-    size_t size_bytes() const { return _raft->log().size_bytes(); }
+    size_t size_bytes() const { return _raft->log()->size_bytes(); }
 
     uint64_t non_log_disk_size_bytes() const;
 
     ss::future<> update_configuration(topic_properties);
 
     const storage::ntp_config& get_ntp_config() const {
-        return _raft->log().config();
+        return _raft->log()->config();
     }
 
     ss::shared_ptr<cluster::tm_stm> tm_stm() { return _tm_stm; }

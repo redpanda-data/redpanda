@@ -279,13 +279,13 @@ public:
     };
 
     ss::circular_buffer<model::record_batch>
-    read_and_validate_all_batches(storage::log log) {
-        auto lstats = log.offsets();
+    read_and_validate_all_batches(ss::shared_ptr<storage::log> log) {
+        auto lstats = log->offsets();
         storage::log_reader_config cfg(
           lstats.start_offset,
           lstats.committed_offset,
           ss::default_priority_class());
-        auto reader = log.make_reader(std::move(cfg)).get0();
+        auto reader = log->make_reader(std::move(cfg)).get0();
         return reader.consume(batch_validating_consumer{}, model::no_timeout)
           .get0();
     }
@@ -297,14 +297,14 @@ public:
         }
     // clang-format on
     std::vector<model::record_batch_header> append_random_batches(
-      storage::log log,
+      ss::shared_ptr<storage::log> log,
       int appends,
       model::term_id term = model::term_id(0),
       T batch_generator = T{},
       storage::log_append_config::fsync sync
       = storage::log_append_config::fsync::no,
       bool flush_after_append = true) {
-        auto lstats = log.offsets();
+        auto lstats = log->offsets();
         storage::log_append_config append_cfg{
           sync, ss::default_priority_class(), model::no_timeout};
 
@@ -333,22 +333,22 @@ public:
               std::move(batches));
             auto res = std::move(reader)
                          .for_each_ref(
-                           log.make_appender(append_cfg), append_cfg.timeout)
+                           log->make_appender(append_cfg), append_cfg.timeout)
                          .get0();
             if (flush_after_append) {
-                log.flush().get();
+                log->flush().get();
             }
             // Check if after append offset was updated correctly
             auto expected_offset = model::offset(total_records - 1)
                                    + base_offset;
-            BOOST_REQUIRE_EQUAL(log.offsets().dirty_offset, res.last_offset);
-            BOOST_REQUIRE_EQUAL(log.offsets().dirty_offset, expected_offset);
+            BOOST_REQUIRE_EQUAL(log->offsets().dirty_offset, res.last_offset);
+            BOOST_REQUIRE_EQUAL(log->offsets().dirty_offset, expected_offset);
         }
 
         return headers;
     }
 
-    void append_batch(storage::log log, model::record_batch batch) {
+    void append_batch(ss::shared_ptr<storage::log> log, model::record_batch batch) {
         model::record_batch_reader::data_t buffer;
         const auto last_offset_delta = model::offset(
           batch.header().last_offset_delta);
@@ -358,7 +358,7 @@ public:
           ss::default_priority_class(),
           model::no_timeout};
 
-        model::offset old_dirty_offset = log.offsets().dirty_offset;
+        model::offset old_dirty_offset = log->offsets().dirty_offset;
         model::offset base_offset = old_dirty_offset < model::offset(0)
                                       ? model::offset(0)
                                       : old_dirty_offset + model::offset(1);
@@ -366,13 +366,13 @@ public:
 
         auto res = model::make_memory_record_batch_reader(std::move(buffer))
                      .for_each_ref(
-                       log.make_appender(append_cfg), model::no_timeout)
+                       log->make_appender(append_cfg), model::no_timeout)
                      .get();
 
-        log.flush().get();
+        log->flush().get();
 
-        BOOST_REQUIRE_EQUAL(log.offsets().dirty_offset, res.last_offset);
-        BOOST_REQUIRE_EQUAL(log.offsets().dirty_offset, expected_offset);
+        BOOST_REQUIRE_EQUAL(log->offsets().dirty_offset, res.last_offset);
+        BOOST_REQUIRE_EQUAL(log->offsets().dirty_offset, expected_offset);
     }
 
     // model::offset start_offset;
@@ -383,11 +383,11 @@ public:
     // model::offset max_offset = model::model_limits<model::offset>::max(); //
     // inclusive
     ss::circular_buffer<model::record_batch> read_range_to_vector(
-      storage::log log, model::offset start, model::offset end) {
+      ss::shared_ptr<storage::log> log, model::offset start, model::offset end) {
         storage::log_reader_config cfg(
           start, end, ss::default_priority_class());
         tlog.info("read_range_to_vector: {}", cfg);
-        auto reader = log.make_reader(std::move(cfg)).get0();
+        auto reader = log->make_reader(std::move(cfg)).get0();
         return std::move(reader)
           .consume(batch_validating_consumer(), model::no_timeout)
           .get0();

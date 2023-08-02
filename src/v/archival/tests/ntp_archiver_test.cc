@@ -80,7 +80,7 @@ static void log_segment(const storage::segment& s) {
 
 static void log_segment_set(storage::log_manager& lm) {
     auto log = lm.get(manifest_ntp);
-    auto plog = dynamic_cast<const storage::disk_log_impl*>(log->get_impl());
+    auto plog = dynamic_cast<const storage::disk_log_impl*>(log.value()->get_impl());
     BOOST_REQUIRE(plog != nullptr);
     const auto& sset = plog->segments();
     for (const auto& s : sset) {
@@ -914,7 +914,7 @@ FIXTURE_TEST(
     BOOST_REQUIRE(log);
 
     ss::abort_source as{};
-    log
+    log.value()
       ->housekeeping(storage::housekeeping_config(
         model::timestamp::now(),
         std::nullopt,
@@ -923,7 +923,7 @@ FIXTURE_TEST(
         as))
       .get0();
 
-    auto plog = dynamic_cast<storage::disk_log_impl*>(log->get_impl());
+    auto plog = dynamic_cast<storage::disk_log_impl*>(log.value()->get_impl());
 
     auto seg = plog->segments().begin();
 
@@ -972,7 +972,7 @@ SEASTAR_THREAD_TEST_CASE(test_archival_policy_timeboxed_uploads) {
     auto start_offset = model::offset{0};
 
     auto get_next_upload = [&]() {
-        auto last_stable_offset = log.offsets().dirty_offset + model::offset{1};
+        auto last_stable_offset = log->offsets().dirty_offset + model::offset{1};
         auto ret = policy
                      .get_next_candidate(
                        start_offset,
@@ -1001,7 +1001,7 @@ SEASTAR_THREAD_TEST_CASE(test_archival_policy_timeboxed_uploads) {
         3,
         storage::maybe_compress_batches::no,
         model::record_batch_type::archival_metadata);
-    BOOST_REQUIRE_EQUAL(log.offsets().dirty_offset, model::offset{13});
+    BOOST_REQUIRE_EQUAL(log->offsets().dirty_offset, model::offset{13});
     tr.sync_with_log(log, std::nullopt).get();
 
     // should upload [0-13]
@@ -1015,7 +1015,7 @@ SEASTAR_THREAD_TEST_CASE(test_archival_policy_timeboxed_uploads) {
 
     // data[14-14]
     b | storage::add_random_batch(model::offset{14}, 1);
-    BOOST_REQUIRE_EQUAL(log.offsets().dirty_offset, model::offset{14});
+    BOOST_REQUIRE_EQUAL(log->offsets().dirty_offset, model::offset{14});
     tr.sync_with_log(log, std::nullopt).get();
 
     // should upload [14-14]
@@ -1034,7 +1034,7 @@ SEASTAR_THREAD_TEST_CASE(test_archival_policy_timeboxed_uploads) {
         2,
         storage::maybe_compress_batches::no,
         model::record_batch_type::archival_metadata);
-    BOOST_REQUIRE_EQUAL(log.offsets().dirty_offset, model::offset{16});
+    BOOST_REQUIRE_EQUAL(log->offsets().dirty_offset, model::offset{16});
     tr.sync_with_log(log, std::nullopt).get();
 
     // should skip uploading because there are no data batches to upload
@@ -1045,7 +1045,7 @@ SEASTAR_THREAD_TEST_CASE(test_archival_policy_timeboxed_uploads) {
 
     // data[17-17]
     b | storage::add_random_batch(model::offset{17}, 1);
-    BOOST_REQUIRE_EQUAL(log.offsets().dirty_offset, model::offset{17});
+    BOOST_REQUIRE_EQUAL(log->offsets().dirty_offset, model::offset{17});
     tr.sync_with_log(log, std::nullopt).get();
 
     // should upload [15-17]
@@ -1064,7 +1064,7 @@ SEASTAR_THREAD_TEST_CASE(test_archival_policy_timeboxed_uploads) {
         1,
         storage::maybe_compress_batches::no,
         model::record_batch_type::archival_metadata);
-    BOOST_REQUIRE_EQUAL(log.offsets().dirty_offset, model::offset{18});
+    BOOST_REQUIRE_EQUAL(log->offsets().dirty_offset, model::offset{18});
     tr.sync_with_log(log, std::nullopt).get();
 
     // should skip uploading because there are no data batches to upload

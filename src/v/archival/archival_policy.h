@@ -66,13 +66,13 @@ public:
     ss::future<upload_candidate_with_locks> get_next_candidate(
       model::offset begin_inclusive,
       model::offset end_exclusive,
-      storage::log,
+      ss::shared_ptr<storage::log>,
       const storage::offset_translator_state&,
       ss::lowres_clock::duration segment_lock_duration);
 
     ss::future<upload_candidate_with_locks> get_next_compacted_segment(
       model::offset begin_inclusive,
-      storage::log log,
+      ss::shared_ptr<storage::log> log,
       const cloud_storage::partition_manifest& manifest,
       ss::lowres_clock::duration segment_lock_duration);
 
@@ -93,7 +93,7 @@ private:
     lookup_result find_segment(
       model::offset last_offset,
       model::offset adjusted_lso,
-      storage::log,
+      ss::shared_ptr<storage::log>,
       const storage::offset_translator_state&);
 
     model::ntp _ntp;
