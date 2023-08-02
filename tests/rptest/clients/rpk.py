@@ -638,7 +638,7 @@ class RpkTool:
             try:
                 out = self._run_group(cmd)
             except RpkException as e:
-                if "COORDINATOR_NOT_AVAILABLE" in e.msg:
+                if "COORDINATOR_NOT_AVAILABLE" in e.msg + e.stderr:
                     # Transient, return None to retry
                     return None
                 elif "NOT_COORDINATOR" in e.msg:
