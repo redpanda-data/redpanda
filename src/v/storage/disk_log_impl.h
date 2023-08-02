@@ -61,7 +61,7 @@ public:
       kvstore&,
       ss::sharded<features::feature_table>& feature_table);
     ~disk_log_impl() override;
-    disk_log_impl(disk_log_impl&&) noexcept = default;
+    disk_log_impl(disk_log_impl&&) noexcept = delete;
     disk_log_impl& operator=(disk_log_impl&&) noexcept = delete;
     disk_log_impl(const disk_log_impl&) = delete;
     disk_log_impl& operator=(const disk_log_impl&) = delete;

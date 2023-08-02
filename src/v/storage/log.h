@@ -33,8 +33,8 @@ public:
         explicit log(ntp_config cfg) noexcept
           : _config(std::move(cfg))
           , _stm_manager(ss::make_lw_shared<storage::stm_manager>()) {}
-        log(log&&) noexcept = default;
-        log& operator=(log&&) noexcept = default;
+        log(log&&) noexcept = delete;
+        log& operator=(log&&) noexcept = delete;
         log(const log&) = delete;
         log& operator=(const log&) = delete;
         virtual ~log() noexcept = default;
