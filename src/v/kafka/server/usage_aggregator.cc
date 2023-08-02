@@ -359,15 +359,38 @@ void usage_aggregator<clock_type>::close_window() {
     /// rounding issues when converting to epoch time in seconds, we will force
     /// round to nearest interval as long as the difference is within a small
     /// degree of tolerance
+    const uint64_t interval = _usage_window_width_interval.count();
     const auto now = round_to_interval(
       _usage_window_width_interval, ss::lowres_system_clock::now());
     const auto now_ts = epoch_time_secs(now);
-    _buckets[_current_window].end = now_ts;
-    const auto w = _current_window;
-    _current_window = (_current_window + 1) % _buckets.size();
-    _buckets[_current_window].reset(now);
-    ssx::background = ssx::spawn_with_gate_then(
-      _gate, [this, w]() { return grab_data(w); });
+    auto& cur = _buckets[_current_window];
+    cur.end = now_ts;
+    if ((cur.end - cur.begin) != interval) {
+        const auto err_str = fmt::format(
+          "Observed a bucket (with index {}) that begin ts {} and end "
+          "ts of {}, this means a timer had fired earlier or later "
+          "then expected, then rounded to the equivalent value of the begin "
+          "timestamp. This current window will be dropped and a new one opened",
+          _current_window,
+          cur.begin,
+          cur.end);
+        /// Logging at error level for wider intervals because this is more
+        /// likely to be an issue for applications with second granularity
+        /// intervals which in reality would only be the ducktape tests, logging
+        /// at error would cause them to fail.
+        if (_usage_window_width_interval > 2min) {
+            vlog(klog.error, "{}", err_str);
+        } else {
+            vlog(klog.info, "{}", err_str);
+        }
+        cur.reset(now);
+    } else {
+        const auto w = _current_window;
+        _current_window = (_current_window + 1) % _buckets.size();
+        _buckets[_current_window].reset(now);
+        ssx::background = ssx::spawn_with_gate_then(
+          _gate, [this, w]() { return grab_data(w); });
+    }
 }
 
 template<typename clock_type>
