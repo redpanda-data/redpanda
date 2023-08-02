@@ -92,7 +92,7 @@ disk_log_impl::disk_log_impl(
   segment_set segs,
   kvstore& kvstore,
   ss::sharded<features::feature_table>& feature_table)
-  : log::impl(std::move(cfg))
+  : log(std::move(cfg))
   , _manager(manager)
   , _segment_size_jitter(
       internal::random_jitter(_manager.config().segment_size_jitter))
@@ -1976,9 +1976,8 @@ ss::shared_ptr<log> make_disk_backed_log(
   segment_set segs,
   kvstore& kvstore,
   ss::sharded<features::feature_table>& feature_table) {
-    auto ptr = ss::make_shared<disk_log_impl>(
+    return ss::make_shared<disk_log_impl>(
       std::move(cfg), manager, std::move(segs), kvstore, feature_table);
-    return ss::make_shared<log>(ptr);
 }
 
 /*
