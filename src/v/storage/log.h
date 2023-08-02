@@ -28,29 +28,49 @@
 
 namespace storage {
 
-/// \brief Non-synchronized log management class.
-/// The class follows the pimpl idiom for: appends,reads and concrete.
-/// there are 2 default implementations memory-backed and disk-backed
-///
-/// use like a seastar::shared_ptr<> (non-thread safe)
-///
-class log final {
+class log {
 public:
-    class impl {
-    public:
-        explicit impl(ntp_config cfg) noexcept
+        explicit log(ntp_config cfg) noexcept
           : _config(std::move(cfg))
           , _stm_manager(ss::make_lw_shared<storage::stm_manager>()) {}
-        impl(impl&&) noexcept = default;
-        impl& operator=(impl&&) noexcept = default;
-        impl(const impl&) = delete;
-        impl& operator=(const impl&) = delete;
-        virtual ~impl() noexcept = default;
+        log(log&&) noexcept = default;
+        log& operator=(log&&) noexcept = default;
+        log(const log&) = delete;
+        log& operator=(const log&) = delete;
+        virtual ~log() noexcept = default;
 
         // it shouldn't block for a long time as it will block other logs
         // eviction
         virtual ss::future<> housekeeping(housekeeping_config) = 0;
+
+        /**
+         * \brief Truncate the suffix of log at a base offset
+         *
+         * Having a segment:
+         * segment: {[10,10][11,30][31,100][101,103]}
+         * Truncate at offset (31) will result in
+         * segment: {[10,10][11,30]}
+         * Truncating mid-batch is forbidden:
+         * Truncate at offset 35 will result in an exception.
+         */
         virtual ss::future<> truncate(truncate_config) = 0;
+
+        /**
+         * \brief Truncate the prefix of a log at a base offset
+         *
+         * Having a segment:
+         * segment: {[10,10][11,30][31,100][101,103]}
+         * Truncate prefix at offset (31) will result in
+         * segment: {[31,100][101,103]}
+         * Truncate prefix mid-batch (at offset 35) will result in
+         * segment {[31, 100][101,103]}, but reported start_offset will be 35.
+         *
+         * The typical use case is installing a snapshot. In this case the snapshot
+         * covers a section of the log up to and including a position X (generally
+         * would be a batch's last offset). To prepare a log for a snapshot it would
+         * be prefix truncated at offset X+1, so that the next element in the log to
+         * be replayed against the snapshot is X+1.
+         */
         virtual ss::future<> truncate_prefix(truncate_prefix_config) = 0;
         virtual ss::future<> gc(gc_config) = 0;
 
@@ -86,6 +106,14 @@ public:
         virtual std::optional<model::offset>
         index_lower_bound(model::offset o) const = 0;
 
+        /**
+         * \brief Returns a future that resolves when log eviction is scheduled
+         *
+         * Important note: The api may throw ss::abort_requested_exception when
+         * passed in abort source was triggered or storage::segment_closed_exception
+         * when log was closed while waiting for eviction to happen.
+         *
+         */
         virtual ss::future<model::offset>
         monitor_eviction(ss::abort_source&) = 0;
         ss::lw_shared_ptr<storage::stm_manager> stm_manager() {
@@ -100,137 +128,19 @@ public:
 
         virtual int64_t compaction_backlog() const = 0;
 
+        log* get_impl() { return this; }
+
     private:
         ntp_config _config;
+
+        friend std::ostream& operator<<(std::ostream& o, const log& lg) {
+            return lg.print(o);
+        }
 
     protected:
         ntp_config& mutable_config() { return _config; }
         ss::lw_shared_ptr<storage::stm_manager> _stm_manager;
     };
-
-public:
-    explicit log(ss::shared_ptr<impl> i)
-      : _impl(std::move(i)) {}
-    ss::future<std::optional<ss::sstring>> close() { return _impl->close(); }
-    ss::future<> remove() { return _impl->remove(); }
-    ss::future<> flush() { return _impl->flush(); }
-
-    /**
-     * \brief Truncate the suffix of log at a base offset
-     *
-     * Having a segment:
-     * segment: {[10,10][11,30][31,100][101,103]}
-     * Truncate at offset (31) will result in
-     * segment: {[10,10][11,30]}
-     * Truncating mid-batch is forbidden:
-     * Truncate at offset 35 will result in an exception.
-     */
-    ss::future<> truncate(truncate_config cfg) { return _impl->truncate(cfg); }
-
-    /**
-     * \brief Truncate the prefix of a log at a base offset
-     *
-     * Having a segment:
-     * segment: {[10,10][11,30][31,100][101,103]}
-     * Truncate prefix at offset (31) will result in
-     * segment: {[31,100][101,103]}
-     * Truncate prefix mid-batch (at offset 35) will result in
-     * segment {[31, 100][101,103]}, but reported start_offset will be 35.
-     *
-     * The typical use case is installing a snapshot. In this case the snapshot
-     * covers a section of the log up to and including a position X (generally
-     * would be a batch's last offset). To prepare a log for a snapshot it would
-     * be prefix truncated at offset X+1, so that the next element in the log to
-     * be replayed against the snapshot is X+1.
-     */
-    ss::future<> truncate_prefix(truncate_prefix_config cfg) {
-        return _impl->truncate_prefix(cfg);
-    }
-
-    ss::future<model::record_batch_reader> make_reader(log_reader_config cfg) {
-        return _impl->make_reader(cfg);
-    }
-
-    log_appender make_appender(log_append_config cfg) {
-        return _impl->make_appender(cfg);
-    }
-
-    const ntp_config& config() const { return _impl->config(); }
-
-    size_t segment_count() const { return _impl->segment_count(); }
-
-    model::timestamp start_timestamp() const {
-        return _impl->start_timestamp();
-    }
-
-    storage::offset_stats offsets() const { return _impl->offsets(); }
-    model::offset find_last_term_start_offset() const {
-        return _impl->find_last_term_start_offset();
-    }
-    std::optional<model::term_id> get_term(model::offset o) const {
-        return _impl->get_term(o);
-    }
-
-    std::optional<model::offset>
-    get_term_last_offset(model::term_id term) const {
-        return _impl->get_term_last_offset(term);
-    }
-
-    std::optional<model::offset> index_lower_bound(model::offset o) const {
-        return _impl->index_lower_bound(o);
-    }
-
-    ss::future<std::optional<timequery_result>>
-    timequery(timequery_config cfg) {
-        return _impl->timequery(cfg);
-    }
-
-    ss::future<> housekeeping(housekeeping_config cfg) {
-        return _impl->housekeeping(cfg);
-    }
-
-    ss::future<> gc(gc_config cfg) { return _impl->gc(cfg); }
-
-    ss::future<> apply_segment_ms() { return _impl->apply_segment_ms(); }
-    /**
-     * \brief Returns a future that resolves when log eviction is scheduled
-     *
-     * Important note: The api may throw ss::abort_requested_exception when
-     * passed in abort source was triggered or storage::segment_closed_exception
-     * when log was closed while waiting for eviction to happen.
-     *
-     */
-    ss::future<model::offset> monitor_eviction(ss::abort_source& as) {
-        return _impl->monitor_eviction(as);
-    }
-
-    ss::lw_shared_ptr<storage::stm_manager> stm_manager() {
-        return _impl->stm_manager();
-    }
-
-    ss::future<> update_configuration(ntp_config::default_overrides o) {
-        return _impl->update_configuration(o);
-    }
-
-    int64_t compaction_backlog() const { return _impl->compaction_backlog(); }
-
-    std::ostream& print(std::ostream& o) const { return _impl->print(o); }
-
-    size_t size_bytes() const { return _impl->size_bytes(); }
-
-    uint64_t size_bytes_after_offset(model::offset o) const {
-        return _impl->size_bytes_after_offset(o);
-    }
-
-    impl* get_impl() const { return _impl.get(); }
-
-private:
-    ss::shared_ptr<impl> _impl;
-
-    friend std::ostream& operator<<(std::ostream& o, const log& lg) {
-        return lg.print(o);
-    }
-};
 
 class log_manager;
 class segment_set;

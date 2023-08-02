@@ -34,7 +34,7 @@
 
 namespace storage {
 
-class disk_log_impl final : public log::impl {
+class disk_log_impl final : public log {
 public:
     using failure_probes = storage::log_failure_probes;
 

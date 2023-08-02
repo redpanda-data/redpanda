@@ -2804,7 +2804,7 @@ FIXTURE_TEST(compaction_truncation_corner_cases, storage_test_fixture) {
     }
 }
 
-static storage::log_gap_analysis analyze(storage::log::impl& log) {
+static storage::log_gap_analysis analyze(storage::log& log) {
     // TODO factor out common constant
     storage::log_reader_config reader_cfg(
       model::offset(0),
