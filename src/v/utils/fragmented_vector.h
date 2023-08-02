@@ -129,6 +129,32 @@ public:
         }
     }
 
+    /*
+     * Replacement for `erase(some_it, end())` but more efficient than n
+     * `pop_back()s`
+     */
+    void pop_back_n(size_t n) {
+        vassert(
+          _size >= n, "Cannot pop more than size() elements in container");
+
+        if (_size == n) {
+            clear();
+            return;
+        }
+
+        _size -= n;
+
+        while (n >= _frags.back().size()) {
+            n -= _frags.back().size();
+            _frags.pop_back();
+            _capacity -= elems_per_frag;
+        }
+
+        for (size_t i = 0; i < n; ++i) {
+            _frags.back().pop_back();
+        }
+    }
+
     const T& operator[](size_t index) const {
         vassert(index < _size, "Index out of range {}/{}", index, _size);
         auto& frag = _frags.at(index / elems_per_frag);
