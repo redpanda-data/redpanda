@@ -474,7 +474,7 @@ FIXTURE_TEST(truncated_segment_recovery, storage_test_fixture) {
       [&rec_mgr]() mutable { rec_mgr.stop().get0(); });
     auto rec_log
       = rec_mgr.manage(storage::ntp_config(ntp, cfg.base_dir)).get0();
-    auto& impl = dynamic_cast<disk_log_impl&>(*rec_log->get_impl());
+    auto& impl = dynamic_cast<disk_log_impl&>(*rec_log);
 
     BOOST_REQUIRE_EQUAL(impl.segment_count(), 3);
 
@@ -549,8 +549,8 @@ FIXTURE_TEST(test_concurrent_prefix_truncate_and_gc, storage_test_fixture) {
     f1.get0();
     f2.get0();
 
-    storage::disk_log_impl& impl = *reinterpret_cast<storage::disk_log_impl*>(
-      log->get_impl());
+    auto& impl = dynamic_cast<storage::disk_log_impl&>(
+      *log);
 
     BOOST_REQUIRE_EQUAL(
       (*impl.segments().begin())->offsets().base_offset,
@@ -680,8 +680,8 @@ FIXTURE_TEST(test_index_max_timestamp_update, storage_test_fixture) {
         model::offset{20}, ss::default_priority_class()))
       .get();
 
-    storage::disk_log_impl& impl = *reinterpret_cast<storage::disk_log_impl*>(
-      log->get_impl());
+    auto& impl = dynamic_cast<storage::disk_log_impl&>(
+      *log);
 
     // The maximum timestamp in the index should be the maximum
     // timestamp of the batch preceeding the batch where the truncation

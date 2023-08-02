@@ -321,7 +321,7 @@ segment_matcher<Fixture>::list_segments(const model::ntp& ntp) {
     std::vector<ss::lw_shared_ptr<storage::segment>> result;
     auto log
       = static_cast<Fixture*>(this)->get_local_storage_api().log_mgr().get(ntp);
-    if (auto dlog = dynamic_cast<storage::disk_log_impl*>(log.value()->get_impl());
+    if (auto dlog = dynamic_cast<storage::disk_log_impl*>(log.value().get());
         dlog) {
         std::copy_if(
           dlog->segments().begin(),
@@ -339,7 +339,7 @@ ss::lw_shared_ptr<storage::segment> segment_matcher<Fixture>::get_segment(
   const model::ntp& ntp, const archival::segment_name& name) {
     auto log
       = static_cast<Fixture*>(this)->get_local_storage_api().log_mgr().get(ntp);
-    if (auto dlog = dynamic_cast<storage::disk_log_impl*>(log.value()->get_impl());
+    if (auto dlog = dynamic_cast<storage::disk_log_impl*>(log.value().get());
         dlog) {
         for (const auto& s : dlog->segments()) {
             if (

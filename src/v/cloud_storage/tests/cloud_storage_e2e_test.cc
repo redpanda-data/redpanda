@@ -61,7 +61,7 @@ FIXTURE_TEST(test_produce_consume_from_cloud, e2e_fixture) {
     // log, archiver, etc).
     auto partition = app.partition_manager.local().get(ntp);
     auto* log = dynamic_cast<storage::disk_log_impl*>(
-      partition->log()->get_impl());
+      partition->log().get());
     auto& archiver = partition->archiver().value().get();
     BOOST_REQUIRE(archiver.sync_for_tests().get());
 
@@ -129,7 +129,7 @@ FIXTURE_TEST(test_produce_consume_from_cloud_with_spillover, e2e_fixture) {
     // log, archiver, etc).
     auto partition = app.partition_manager.local().get(ntp);
     auto* log = dynamic_cast<storage::disk_log_impl*>(
-      partition->log()->get_impl());
+      partition->log().get());
     auto archiver_ref = partition->archiver();
     BOOST_REQUIRE(archiver_ref.has_value());
     auto& archiver = archiver_ref.value().get();
@@ -380,7 +380,7 @@ public:
         wait_for_leader(ntp).get();
         partition = app.partition_manager.local().get(ntp).get();
         log = dynamic_cast<storage::disk_log_impl*>(
-          partition->log()->get_impl());
+          partition->log().get());
         archiver = &partition->archiver()->get();
     }
 

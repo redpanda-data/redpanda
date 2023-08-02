@@ -48,7 +48,7 @@ using cluster::random_tx_generator;
     BOOST_REQUIRE(log);
 
 storage::disk_log_impl* get_disk_log(ss::shared_ptr<storage::log> log) {
-    return dynamic_cast<storage::disk_log_impl*>(log->get_impl());
+    return dynamic_cast<storage::disk_log_impl*>(log.get());
 }
 
 FIXTURE_TEST(test_tx_compaction_combinations, mux_state_machine_fixture) {

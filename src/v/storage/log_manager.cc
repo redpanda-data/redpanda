@@ -342,7 +342,7 @@ ss::future<> log_manager::housekeeping_loop() {
 
                 auto ntp = log_meta.handle->config().ntp();
                 auto log = dynamic_cast<disk_log_impl*>(
-                  log_meta.handle->get_impl());
+                  log_meta.handle.get());
                 auto usage = co_await log->disk_usage(
                   gc_config(collection_threshold(), _config.retention_bytes()));
 
@@ -765,7 +765,7 @@ ss::future<usage_report> log_manager::disk_usage() {
       logs.begin(),
       logs.end(),
       [this, collection_threshold](ss::shared_ptr<log> l) {
-          auto log = dynamic_cast<disk_log_impl*>(l->get_impl());
+          auto log = dynamic_cast<disk_log_impl*>(l.get());
           return log->disk_usage(
             gc_config(collection_threshold, _config.retention_bytes()));
       },

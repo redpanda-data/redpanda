@@ -1905,7 +1905,7 @@ uint64_t ntp_archiver::estimate_backlog_size() {
     auto last_offset = manifest().size() ? manifest().get_last_offset()
                                          : model::offset(0);
     auto log_generic = _parent.log();
-    auto log = dynamic_cast<storage::disk_log_impl*>(log_generic->get_impl());
+    auto log = dynamic_cast<storage::disk_log_impl*>(log_generic.get());
     uint64_t total_size = std::accumulate(
       std::begin(log->segments()),
       std::end(log->segments()),
@@ -2718,7 +2718,7 @@ ntp_archiver::find_reupload_candidate(manifest_scanner_t scanner) {
     if (run->meta.base_offset >= _parent.raft_start_offset()) {
         auto log_generic = _parent.log();
         auto& log = dynamic_cast<storage::disk_log_impl&>(
-          *log_generic->get_impl());
+          *log_generic);
         segment_collector collector(
           run->meta.base_offset,
           manifest(),

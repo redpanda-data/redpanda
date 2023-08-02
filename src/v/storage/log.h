@@ -128,8 +128,6 @@ public:
 
         virtual int64_t compaction_backlog() const = 0;
 
-        log* get_impl() { return this; }
-
     private:
         ntp_config _config;
 

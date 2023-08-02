@@ -171,7 +171,7 @@ ss::shared_ptr<log> disk_log_builder::get_log() {
 }
 
 disk_log_impl& disk_log_builder::get_disk_log_impl() {
-    return *reinterpret_cast<disk_log_impl*>(_log.value()->get_impl());
+    return dynamic_cast<disk_log_impl&>(*_log.value());
 }
 
 segment_set& disk_log_builder::get_log_segments() {
