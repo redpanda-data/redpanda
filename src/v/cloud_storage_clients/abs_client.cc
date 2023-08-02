@@ -43,7 +43,9 @@ constexpr boost::beast::string_view blob_type_value = "BlockBlob";
 constexpr boost::beast::string_view blob_type_name = "x-ms-blob-type";
 constexpr boost::beast::string_view delete_snapshot_name
   = "x-ms-delete-snapshots";
+constexpr boost::beast::string_view is_hns_enabled_name = "x-ms-is-hns-enabled";
 constexpr boost::beast::string_view delete_snapshot_value = "include";
+constexpr boost::beast::string_view error_code_name = "x-ms-error-code";
 
 bool is_error_retryable(
   const cloud_storage_clients::abs_rest_error_response& err) {
@@ -77,17 +79,14 @@ parse_rest_error_response(boost::beast::http::status result, iobuf buf) {
 
 static abs_rest_error_response
 parse_header_error_response(const http::http_response::header_type& hdr) {
-    ss::sstring code;
-    ss::sstring msg;
-    if (hdr.result() == boost::beast::http::status::not_found) {
-        code = "BlobNotFound";
-        msg = "Not found";
-    } else {
-        code = "Unknown";
-        msg = ss::sstring(hdr.reason().data(), hdr.reason().size());
+    ss::sstring code{"Unknown"};
+    if (auto it = hdr.find(error_code_name); it != hdr.end()) {
+        code = ss::sstring{it->value().data(), it->value().size()};
     }
 
-    return {std::move(code), std::move(msg), hdr.result()};
+    ss::sstring message{hdr.reason().data(), hdr.reason().size()};
+
+    return {code, message, hdr.result()};
 }
 
 abs_request_creator::abs_request_creator(
@@ -239,6 +238,25 @@ abs_request_creator::make_list_blobs_request(
 
     http::client::request_header header{};
     header.method(boost::beast::http::verb::get);
+    header.target(target);
+    header.insert(boost::beast::http::field::host, host);
+
+    auto error_code = _apply_credentials->add_auth(header);
+    if (error_code) {
+        return error_code;
+    }
+
+    return header;
+}
+
+result<http::client::request_header>
+abs_request_creator::make_get_account_info_request() {
+    const boost::beast::string_view target
+      = "/?restype=account&comp=properties";
+    const boost::beast::string_view host{_ap().data(), _ap().length()};
+
+    http::client::request_header header{};
+    header.method(boost::beast::http::verb::head);
     header.target(target);
     header.insert(boost::beast::http::field::host, host);
 
@@ -661,6 +679,48 @@ ss::future<abs_client::list_bucket_result> abs_client::do_list_objects(
                 return p.result();
             });
       });
+}
+
+ss::future<result<abs_client::storage_account_info, error_outcome>>
+abs_client::get_account_info(ss::lowres_clock::duration timeout) {
+    return send_request(
+      do_get_account_info(timeout), bucket_name{""}, object_key{""});
+}
+
+ss::future<abs_client::storage_account_info>
+abs_client::do_get_account_info(ss::lowres_clock::duration timeout) {
+    auto header = _requestor.make_get_account_info_request();
+    if (!header) {
+        vlog(
+          abs_log.warn, "Failed to create request header: {}", header.error());
+        throw std::system_error(header.error());
+    }
+
+    vlog(abs_log.trace, "send https request:\n{}", header.value());
+
+    auto response_stream = co_await _client.request(
+      std::move(header.value()), timeout);
+
+    co_await response_stream->prefetch_headers();
+    vassert(response_stream->is_header_done(), "Header is not received");
+    const auto& headers = response_stream->get_headers();
+
+    if (headers.result() != boost::beast::http::status::ok) {
+        throw parse_header_error_response(headers);
+    }
+
+    if (auto iter = headers.find(is_hns_enabled_name); iter != headers.end()) {
+        co_return storage_account_info{
+          .is_hns_enabled = iter->value() == "true"};
+    } else {
+        vlog(
+          abs_log.warn,
+          "x-ms-is-hns-enabled field not found in headers of account info "
+          "response: {}",
+          headers);
+
+        co_return storage_account_info{};
+    }
 }
 
 } // namespace cloud_storage_clients
