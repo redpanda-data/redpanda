@@ -2989,14 +2989,14 @@ tx_gateway_frontend::get_all_transactions() {
           auto read_lock = co_await stm->read_lock();
 
           auto res = co_await stm->get_all_transactions();
-          if (!res.has_value()) {
-              if (res.error() == tm_stm::op_status::not_leader) {
-                  co_return tx_errc::not_coordinator;
-              }
-              co_return tx_errc::unknown_server_error;
+          if (res.has_value()) {
+              co_return std::move(res).value();
+          }
+          if (res.error() == tm_stm::op_status::not_leader) {
+              co_return fragmented_vector<tm_transaction>();
           }
 
-          co_return std::move(res).value();
+          co_return tx_errc::unknown_server_error;
       });
 }
 
