@@ -46,16 +46,11 @@ static auto with(
   kafka::transactional_id tx_id,
   const std::string_view name,
   Func&& func) noexcept {
-    return stm->get_tx_lock(tx_id)
-      ->with([name, tx_id, func = std::forward<Func>(func)]() mutable {
-          vlog(txlog.trace, "got_lock name:{}, tx_id:{}", name, tx_id);
+    return stm->lock_tx(tx_id, name)
+      .then([stm, tx_id, func = std::forward<Func>(func)](auto units) mutable {
           return ss::futurize_invoke(std::forward<Func>(func))
-            .finally([name, tx_id]() {
-                vlog(
-                  txlog.trace, "released_lock name:{}, tx_id:{}", name, tx_id);
-            });
-      })
-      .finally([tx_id, stm]() { stm->try_rm_lock(tx_id); });
+            .finally([units = std::move(units)] {});
+      });
 }
 
 template<typename Func>
@@ -64,26 +59,17 @@ static auto with_free(
   kafka::transactional_id tx_id,
   const std::string_view name,
   Func&& func) noexcept {
+    auto units = stm->try_lock_tx(tx_id, name);
     auto f = ss::now();
-    auto lock = stm->get_tx_lock(tx_id);
-    if (!lock->ready()) {
+
+    if (!units) {
         f = ss::make_exception_future(ss::semaphore_timed_out());
     }
+
     return f.then(
-      [lock, stm, name, tx_id, func = std::forward<Func>(func)]() mutable {
-          return lock
-            ->with([name, tx_id, func = std::forward<Func>(func)]() mutable {
-                vlog(txlog.trace, "got_lock name:{}, tx_id:{}", name, tx_id);
-                return ss::futurize_invoke(std::forward<Func>(func))
-                  .finally([name, tx_id]() {
-                      vlog(
-                        txlog.trace,
-                        "released_lock name:{}, tx_id:{}",
-                        name,
-                        tx_id);
-                  });
-            })
-            .finally([tx_id, stm]() { stm->try_rm_lock(tx_id); });
+      [units = std::move(units), func = std::forward<Func>(func)]() mutable {
+          return ss::futurize_invoke(std::forward<Func>(func))
+            .finally([units = std::move(units)] {});
       });
 }
 

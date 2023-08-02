@@ -9,7 +9,6 @@
 
 #include "cluster/tm_stm.h"
 
-#include "cluster/logger.h"
 #include "cluster/types.h"
 #include "model/record.h"
 #include "raft/errc.h"
@@ -828,6 +827,37 @@ ss::future<> tm_stm::apply(model::record_batch b) {
 bool tm_stm::is_expired(const tm_transaction& tx) {
     auto now_ts = clock_type::now();
     return _transactional_id_expiration < now_ts - tx.last_update_ts;
+}
+
+ss::lw_shared_ptr<mutex> tm_stm::get_tx_lock(kafka::transactional_id tid) {
+    auto [lock_it, inserted] = _tx_locks.try_emplace(tid, nullptr);
+    if (inserted) {
+        lock_it->second = ss::make_lw_shared<mutex>();
+    }
+    return lock_it->second;
+}
+
+ss::future<txlock_unit>
+tm_stm::lock_tx(kafka::transactional_id tx_id, std::string_view lock_name) {
+    auto [lock_it, inserted] = _tx_locks.try_emplace(tx_id, nullptr);
+    if (inserted) {
+        lock_it->second = ss::make_lw_shared<mutex>();
+    }
+    auto units = co_await lock_it->second->get_units();
+    co_return txlock_unit(this, std::move(units), tx_id, lock_name);
+}
+
+std::optional<txlock_unit>
+tm_stm::try_lock_tx(kafka::transactional_id tx_id, std::string_view lock_name) {
+    auto [lock_it, inserted] = _tx_locks.try_emplace(tx_id, nullptr);
+    if (inserted) {
+        lock_it->second = ss::make_lw_shared<mutex>();
+    }
+    auto units = lock_it->second->try_get_units();
+    if (units) {
+        return txlock_unit(this, std::move(units.value()), tx_id, lock_name);
+    }
+    return std::nullopt;
 }
 
 absl::btree_set<kafka::transactional_id> tm_stm::get_expired_txs() {

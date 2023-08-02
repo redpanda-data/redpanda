@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include "cluster/logger.h"
 #include "cluster/persisted_stm.h"
 #include "cluster/tm_stm_cache.h"
 #include "config/configuration.h"
@@ -39,6 +40,70 @@ namespace cluster {
 
 using use_tx_version_with_last_pid_bool
   = ss::bool_class<struct use_tx_version_with_last_pid_tag>;
+
+class tm_stm;
+
+class txlock_unit {
+    tm_stm* _stm;
+    kafka::transactional_id _id;
+    std::string_view _name;
+    bool _is_locked;
+    ssx::semaphore_units _units;
+
+    txlock_unit(
+      tm_stm* stm,
+      ssx::semaphore_units&& units,
+      kafka::transactional_id id,
+      std::string_view name) noexcept
+      : _stm(stm)
+      , _id(id)
+      , _name(name) {
+        _is_locked = (bool)units;
+        _units = std::move(units);
+        vassert(_is_locked, "units must be initialized");
+        vlog(txlog.trace, "got_lock name:{}, tx_id:{}", _name, _id);
+    }
+
+    friend class tm_stm;
+
+public:
+    txlock_unit(txlock_unit&& token) noexcept
+      : _stm(token._stm)
+      , _id(token._id)
+      , _name(token._name)
+      , _is_locked(token._is_locked)
+      , _units(std::move(token._units)) {
+        token._stm = nullptr;
+        token._is_locked = false;
+    }
+    txlock_unit(const txlock_unit&) = delete;
+    txlock_unit(const txlock_unit&&) = delete;
+    txlock_unit() = delete;
+
+    bool return_all() {
+        if (_is_locked) {
+            _units.return_all();
+            _is_locked = false;
+            vlog(txlog.trace, "released_lock name:{}, tx_id:{}", _name, _id);
+            return true;
+        }
+        return false;
+    }
+
+    txlock_unit& operator=(txlock_unit&& other) noexcept {
+        if (this != &other) {
+            _stm = other._stm;
+            _units = std::move(other._units);
+            _id = other._id;
+            _name = other._name;
+            other._stm = nullptr;
+            other._is_locked = false;
+        }
+        return *this;
+    }
+
+    ~txlock_unit() noexcept;
+};
 
 struct tm_snapshot {
     model::offset offset;
@@ -72,7 +137,7 @@ public:
       ss::sharded<features::feature_table>&,
       ss::sharded<cluster::tm_stm_cache>&);
 
-    void try_rm_lock(kafka::transactional_id tid) {
+    void try_rm_lock(const kafka::transactional_id& tid) {
         auto tx_opt = _cache.local().find_mem(tid);
         if (tx_opt) {
             return;
@@ -157,13 +222,12 @@ public:
 
     // before calling a tm_stm modifying operation a caller should
     // take get_tx_lock mutex
-    ss::lw_shared_ptr<mutex> get_tx_lock(kafka::transactional_id tid) {
-        auto [lock_it, inserted] = _tx_locks.try_emplace(tid, nullptr);
-        if (inserted) {
-            lock_it->second = ss::make_lw_shared<mutex>();
-        }
-        return lock_it->second;
-    }
+    ss::lw_shared_ptr<mutex> get_tx_lock(kafka::transactional_id);
+
+    ss::future<txlock_unit> lock_tx(kafka::transactional_id, std::string_view);
+
+    std::optional<txlock_unit>
+      try_lock_tx(kafka::transactional_id, std::string_view);
 
     absl::btree_set<kafka::transactional_id> get_expired_txs();
 
@@ -231,5 +295,13 @@ private:
 
     model::record_batch serialize_tx(tm_transaction tx);
 };
+
+inline txlock_unit::~txlock_unit() noexcept {
+    return_all();
+    if (_stm) {
+        _stm->try_rm_lock(_id);
+        _stm = nullptr;
+    }
+}
 
 } // namespace cluster
