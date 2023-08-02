@@ -1,0 +1,14 @@
+---
+apiVersion: cluster.redpanda.com/v1alpha1
+kind: Redpanda
+metadata:
+  name: redpanda
+spec:
+  chartRef:
+    timeout: 2m
+    chartVersion: "5.0.x"
+  clusterSpec:
+    image:
+      tag: v23.99.99
+    statefulset:
+      replicas: 1

@@ -1,0 +1,75 @@
+apiVersion: cluster.redpanda.com/v1alpha1
+kind: Redpanda
+metadata:
+  finalizers:
+    - operator.redpanda.com/finalizer
+  generation: 2
+  name: redpanda
+  namespace: redpanda
+spec:
+  chartRef:
+    chartVersion: 5.0.0
+    timeout: 2m
+  clusterSpec:
+    image:
+      tag: v23.99.99
+    statefulset:
+      replicas: 1
+status:
+  conditions:
+    - message: HelmRelease 'redpanda/redpanda' is not ready
+      reason: ArtifactFailed
+      status: "False"
+      type: Ready
+  helmRelease: redpanda
+  helmReleaseReady: false
+  helmRepository: redpanda-repository
+  helmRepositoryReady: true
+  observedGeneration: 2
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: redpanda
+spec:
+  replicas: 1
+status:
+  availableReplicas: 1
+  currentReplicas: 1
+  readyReplicas: 1
+  replicas: 1
+  updatedReplicas: 1
+---
+apiVersion: helm.toolkit.fluxcd.io/v2beta1
+kind: HelmRelease
+metadata:
+  name: redpanda
+spec:
+  chart:
+    spec:
+      chart: redpanda
+      sourceRef:
+        kind: HelmRepository
+        name: redpanda-repository
+        namespace: redpanda
+      version: 5.0.x
+  upgrade:
+    remediation:
+      retries: 1
+      strategy: rollback
+  values:
+    image:
+      tag: v23.99.99
+    statefulset:
+      replicas: 1
+status:
+  failures: 3
+  helmChart: redpanda/redpanda-redpanda
+  lastAppliedRevision: 4.0.0
+  lastAttemptedRevision: 5.0.7
+  upgradeFailures: 2
+---
+apiVersion: kuttl.dev/v1beta1
+kind: TestAssert
+collectors:
+  - command: ../../../hack/get-redpanda-info.sh redpanda ../../_e2e_artifacts_v2
