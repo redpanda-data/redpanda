@@ -49,7 +49,7 @@ ss::future<> disk_log_appender::initialize() {
     });
 }
 
-bool disk_log_appender::needs_to_roll_log(model::term_id batch_term) const {
+bool disk_log_appender::segment_is_appendable(model::term_id batch_term) const {
     /**
      * _log._segs.empty() is a tricky condition. It is here to suppor concurrent
      * truncation (from 0) of an active log segment while we hold the lock of a
@@ -61,8 +61,8 @@ bool disk_log_appender::needs_to_roll_log(model::term_id batch_term) const {
      * _bytes_left_in_segment is for initial condition
      *
      */
-    return _bytes_left_in_segment == 0 || _log.term() != batch_term
-           || _log._segs.empty() /*see above before removing this condition*/;
+    return _bytes_left_in_segment > 0 && _log.term() == batch_term
+           && !_log._segs.empty() /*see above before removing this condition*/;
 }
 
 void disk_log_appender::release_lock() {
@@ -80,7 +80,7 @@ disk_log_appender::operator()(model::record_batch& batch) {
     }
     _last_term = batch.term();
     try {
-        if (unlikely(needs_to_roll_log(batch.term()))) {
+        if (unlikely(!segment_is_appendable(batch.term()))) {
             while (true) {
                 // we might actually have space in the current log, but the
                 // terms do not match for the current append, so we must roll
@@ -92,7 +92,7 @@ disk_log_appender::operator()(model::record_batch& batch) {
                 // situation - say a segment eviction we need to double
                 // check that _after_ we got the lock, the segment wasn't
                 // somehow closed before the append
-                if (!needs_to_roll_log(batch.term())) {
+                if (segment_is_appendable(batch.term())) {
                     break;
                 }
             }
