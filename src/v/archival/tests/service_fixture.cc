@@ -321,13 +321,13 @@ segment_matcher<Fixture>::list_segments(const model::ntp& ntp) {
     std::vector<ss::lw_shared_ptr<storage::segment>> result;
     auto log
       = static_cast<Fixture*>(this)->get_local_storage_api().log_mgr().get(ntp);
-        std::copy_if(
-          log->segments().begin(),
-          log->segments().end(),
-          std::back_inserter(result),
-          [](ss::lw_shared_ptr<storage::segment> seg) {
-              return !seg->has_appender();
-          });
+    std::copy_if(
+      log->segments().begin(),
+      log->segments().end(),
+      std::back_inserter(result),
+      [](ss::lw_shared_ptr<storage::segment> seg) {
+          return !seg->has_appender();
+      });
     return result;
 }
 
@@ -336,13 +336,13 @@ ss::lw_shared_ptr<storage::segment> segment_matcher<Fixture>::get_segment(
   const model::ntp& ntp, const archival::segment_name& name) {
     auto log
       = static_cast<Fixture*>(this)->get_local_storage_api().log_mgr().get(ntp);
-        for (const auto& s : log->segments()) {
-            if (
-              !s->has_appender()
-              && boost::ends_with(s->reader().filename(), name())) {
-                return s;
-            }
+    for (const auto& s : log->segments()) {
+        if (
+          !s->has_appender()
+          && boost::ends_with(s->reader().filename(), name())) {
+            return s;
         }
+    }
     return nullptr;
 }
 

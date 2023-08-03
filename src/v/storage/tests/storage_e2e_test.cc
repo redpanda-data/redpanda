@@ -1399,8 +1399,7 @@ FIXTURE_TEST(partition_size_while_cleanup, storage_test_fixture) {
 
     // Read back and validate content of log pre-compaction.
     BOOST_REQUIRE_EQUAL(
-      log->get_probe().partition_size(),
-      input_batch_count * batch_size);
+      log->get_probe().partition_size(), input_batch_count * batch_size);
     BOOST_REQUIRE_EQUAL(
       read_and_validate_all_batches(log).size(), input_batch_count);
     auto lstats_before = log->offsets();
