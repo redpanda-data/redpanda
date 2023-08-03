@@ -208,8 +208,14 @@ void consensus::do_step_down(std::string_view ctx) {
 }
 
 void consensus::maybe_step_down() {
+    // ignore stepdown if we are not the leader
+    if (_vstate != vote_state::leader) {
+        return;
+    }
+
     ssx::spawn_with_gate(_bg, [this] {
         return _op_lock.with([this] {
+            // check again while holding a lock
             if (_vstate == vote_state::leader) {
                 auto majority_hbeat = majority_heartbeat();
                 if (majority_hbeat < _became_leader_at) {
