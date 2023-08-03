@@ -171,3 +171,28 @@ FIXTURE_TEST(test_usage, kvstore_test_fixture) {
     usage_fiber->stop().get();
     kvstore->stop().get();
 }
+
+SEASTAR_THREAD_TEST_CASE(test_round_to_interval_method) {
+    using namespace std::chrono_literals;
+    /// Aug 3rd, 2023 4PM GMT
+    const auto ts = ss::lowres_system_clock::time_point(
+      std::chrono::seconds(1691078400));
+    /// 15min, 30min, 1hr, 2hrs
+    const auto intervals = std::to_array({900s, 1800s, 3600s, 7200s});
+
+    for (const auto& ival : intervals) {
+        /// Underneath the 2min threshold the method returns the input rounded
+        BOOST_CHECK(ts == kafka::detail::round_to_interval(ival, ts));
+        BOOST_CHECK(ts == kafka::detail::round_to_interval(ival, ts + 10s));
+        BOOST_CHECK(ts == kafka::detail::round_to_interval(ival, ts - 10s));
+        BOOST_CHECK(ts == kafka::detail::round_to_interval(ival, ts + 1min));
+        BOOST_CHECK(ts == kafka::detail::round_to_interval(ival, ts - 1min));
+        BOOST_CHECK(ts == kafka::detail::round_to_interval(ival, ts + 2min));
+        BOOST_CHECK(ts == kafka::detail::round_to_interval(ival, ts - 2min));
+        /// Past the 2min threshold the method returns the input unmodified
+        BOOST_CHECK(ts != kafka::detail::round_to_interval(ival, ts + 3min));
+        BOOST_CHECK(ts != kafka::detail::round_to_interval(ival, ts - 3min));
+        BOOST_CHECK(ts != kafka::detail::round_to_interval(ival, ts + 10min));
+        BOOST_CHECK(ts != kafka::detail::round_to_interval(ival, ts - 10min));
+    }
+}
