@@ -32,24 +32,25 @@ v_cc_library(
   NAME kafka
   SRCS
     ${handlers_srcs}
-    server/requests.cc
-    server/member.cc
+    server/connection_context.cc
+    server/fetch_session_cache.cc
+    server/group_manager.cc
+    server/group_metadata.cc
+    server/group_recovery_consumer.cc
+    server/group_router.cc
     server/group_stm.cc
     server/group.cc
-    server/group_router.cc
-    server/group_manager.cc
-    server/usage_manager.cc
-    server/rm_group_frontend.cc
-    server/connection_context.cc
-    server/server.cc
+    server/member.cc
+    server/partition_proxy.cc
     server/protocol_utils.cc
     server/quota_manager.cc
-    server/snc_quota_manager.cc
-    server/fetch_session_cache.cc
     server/replicated_partition.cc
-    server/partition_proxy.cc
-    server/group_recovery_consumer.cc
-    server/group_metadata.cc
+    server/requests.cc
+    server/rm_group_frontend.cc
+    server/server.cc
+    server/snc_quota_manager.cc
+    server/kafka_socheck.cc
+    server/usage_manager.cc
  DEPS
     Seastar::seastar
     v::bytes
