@@ -663,7 +663,7 @@ FIXTURE_TEST(test_basic_delete_around_batch, prod_consume_fixture) {
     const model::partition_id pid(0);
     const model::ntp ntp(tp_ns.ns, tp_ns.tp, pid);
     auto partition = app.partition_manager.local().get(ntp);
-    auto* log = dynamic_cast<storage::disk_log_impl*>(partition->log().get());
+    auto log = partition->log();
 
     tests::kafka_produce_transport producer(make_kafka_client().get());
     producer.start().get();
