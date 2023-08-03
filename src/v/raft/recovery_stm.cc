@@ -78,7 +78,7 @@ ss::future<> recovery_stm::do_recover(ss::io_priority_class iopc) {
         co_return;
     }
 
-    auto lstats = _ptr->_log.offsets();
+    auto lstats = _ptr->_log->offsets();
     // follower last index was already evicted at the leader, use snapshot
     if (meta.value()->next_index <= _ptr->_last_snapshot_index) {
         co_return co_await install_snapshot();
@@ -164,7 +164,7 @@ bool recovery_stm::state_changed() {
     if (!meta) {
         return true;
     }
-    auto lstats = _ptr->_log.offsets();
+    auto lstats = _ptr->_log->offsets();
     return lstats.dirty_offset > meta.value()->last_dirty_log_index
            || meta.value()->last_sent_offset == lstats.dirty_offset;
 }
@@ -173,7 +173,7 @@ flush_after_append
 recovery_stm::should_flush(model::offset follower_committed_match_index) const {
     constexpr size_t checkpoint_flush_size = 1_MiB;
 
-    auto lstats = _ptr->_log.offsets();
+    auto lstats = _ptr->_log->offsets();
 
     /**
      * We request follower to flush only when follower is fully caught
@@ -232,7 +232,7 @@ recovery_stm::read_range_for_recovery(
     }
 
     vlog(_ctxlog.trace, "Reading batches, starting from: {}", start_offset);
-    auto reader = co_await _ptr->_log.make_reader(cfg);
+    auto reader = co_await _ptr->_log->make_reader(cfg);
     try {
         auto batches = co_await model::consume_reader_to_fragmented_memory(
           std::move(reader),
@@ -410,7 +410,7 @@ ss::future<> recovery_stm::replicate(
 
     // get term for prev_log_idx batch
     if (prev_log_idx > _ptr->_last_snapshot_index) {
-        prev_log_term = *_ptr->_log.get_term(prev_log_idx);
+        prev_log_term = *_ptr->_log->get_term(prev_log_idx);
     } else if (prev_log_idx < model::offset(0)) {
         prev_log_term = model::term_id{};
     } else if (prev_log_idx == _ptr->_last_snapshot_index) {
@@ -448,7 +448,7 @@ ss::future<> recovery_stm::replicate(
 
     auto seq = _ptr->next_follower_sequence(_node_id);
     _ptr->update_suppress_heartbeats(_node_id, seq, heartbeats_suppressed::yes);
-    auto lstats = _ptr->_log.offsets();
+    auto lstats = _ptr->_log->offsets();
     std::vector<ssx::semaphore_units> units;
     units.push_back(std::move(mem_units));
     return dispatch_append_entries(std::move(r), std::move(units))
@@ -549,7 +549,7 @@ bool recovery_stm::is_recovery_finished() {
     if (!meta) {
         return true;
     }
-    auto leader_dirty_offset = _ptr->_log.offsets().dirty_offset;
+    auto leader_dirty_offset = _ptr->_log->offsets().dirty_offset;
     return meta.value()->last_dirty_log_index >= leader_dirty_offset
            && meta.value()->match_index == leader_dirty_offset;
 }

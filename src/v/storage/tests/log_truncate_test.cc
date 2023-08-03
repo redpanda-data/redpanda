@@ -48,16 +48,16 @@ FIXTURE_TEST(test_truncate_whole, storage_test_fixture) {
     std::vector<model::record_batch_header> headers;
     for (auto i = 0; i < 10; i++) {
         append_random_batches(log, 1, model::term_id(i));
-        log.flush().get();
+        log->flush().get();
     }
     model::offset truncate_offset{0};
     log
-      .truncate(
+      ->truncate(
         storage::truncate_config(truncate_offset, ss::default_priority_class()))
       .get0();
 
     auto read_batches = read_and_validate_all_batches(log);
-    auto lstats = log.offsets();
+    auto lstats = log->offsets();
     BOOST_REQUIRE_EQUAL(read_batches.size(), 0);
     BOOST_REQUIRE_EQUAL(lstats.committed_offset, model::offset{});
     BOOST_REQUIRE_EQUAL(lstats.dirty_offset, model::offset{});
@@ -72,7 +72,7 @@ FIXTURE_TEST(test_truncate_in_the_middle_of_segment, storage_test_fixture) {
     auto log
       = mgr.manage(storage::ntp_config(ntp, mgr.config().base_dir)).get0();
     append_random_batches(log, 6, model::term_id(0));
-    log.flush().get0();
+    log->flush().get0();
 
     auto all_batches = read_and_validate_all_batches(log);
     auto truncate_offset = all_batches[4].base_offset();
@@ -80,7 +80,7 @@ FIXTURE_TEST(test_truncate_in_the_middle_of_segment, storage_test_fixture) {
     // truncate in the middle
     info("Truncating at offset:{}", truncate_offset);
     log
-      .truncate(
+      ->truncate(
         storage::truncate_config(truncate_offset, ss::default_priority_class()))
       .get0();
     info("reading all batches");
@@ -89,7 +89,7 @@ FIXTURE_TEST(test_truncate_in_the_middle_of_segment, storage_test_fixture) {
     // one less
     auto expected = all_batches[3].last_offset();
 
-    auto lstats = log.offsets();
+    auto lstats = log->offsets();
     BOOST_REQUIRE_EQUAL(lstats.committed_offset, expected);
     BOOST_REQUIRE_EQUAL(lstats.dirty_offset, expected);
     if (truncate_offset != model::offset(0)) {
@@ -113,7 +113,7 @@ FIXTURE_TEST(test_truncate_in_the_middle_of_batch, storage_test_fixture) {
       log, model::test::make_random_batch(model::offset{0}, 5, true));
 
     auto truncate_at = [log](model::offset o) mutable {
-        log.truncate(storage::truncate_config(o, ss::default_priority_class()))
+        log->truncate(storage::truncate_config(o, ss::default_priority_class()))
           .get();
     };
 
@@ -121,7 +121,7 @@ FIXTURE_TEST(test_truncate_in_the_middle_of_batch, storage_test_fixture) {
     BOOST_CHECK_THROW(truncate_at(model::offset{12}), std::exception);
 
     truncate_at(model::offset{20});
-    BOOST_CHECK_EQUAL(log.offsets().dirty_offset, model::offset{14});
+    BOOST_CHECK_EQUAL(log->offsets().dirty_offset, model::offset{14});
     auto read_batches = read_and_validate_all_batches(log);
     BOOST_REQUIRE_EQUAL(read_batches.size(), 2);
     BOOST_CHECK_EQUAL(read_batches[1].last_offset(), model::offset{14});
@@ -135,10 +135,10 @@ FIXTURE_TEST(test_truncate_empty_log, storage_test_fixture) {
     auto log
       = mgr.manage(storage::ntp_config(ntp, mgr.config().base_dir)).get0();
     append_random_batches(log, 1, model::term_id(1));
-    log.flush().get0();
+    log->flush().get0();
 
     auto all_batches = read_and_validate_all_batches(log);
-    auto lstats = log.offsets();
+    auto lstats = log->offsets();
     BOOST_REQUIRE_EQUAL(
       lstats.committed_offset, all_batches.back().last_offset());
 }
@@ -155,7 +155,7 @@ FIXTURE_TEST(test_truncate_middle_of_old_segment, storage_test_fixture) {
     // Generate from 10 up to 100 batches
     for (auto i = 0; i < 10; i++) {
         auto part = append_random_batches(log, 1, model::term_id(i));
-        log.flush().get();
+        log->flush().get();
     }
     auto all_batches = read_and_validate_all_batches(log);
 
@@ -164,13 +164,13 @@ FIXTURE_TEST(test_truncate_middle_of_old_segment, storage_test_fixture) {
     }
     // truncate @ offset that belongs to an old segment
     log
-      .truncate(storage::truncate_config(
+      ->truncate(storage::truncate_config(
         all_batches.back().base_offset(), ss::default_priority_class()))
       .get0();
     all_batches.pop_back(); // we just removed the last one!
     auto final_batches = read_and_validate_all_batches(log);
     BOOST_REQUIRE_EQUAL(all_batches.size(), final_batches.size());
-    auto lstats = log.offsets();
+    auto lstats = log->offsets();
     BOOST_REQUIRE_EQUAL(
       lstats.committed_offset, all_batches.back().last_offset());
     BOOST_REQUIRE_EQUAL(lstats.dirty_offset, all_batches.back().last_offset());
@@ -191,22 +191,22 @@ FIXTURE_TEST(truncate_whole_log_and_then_again, storage_test_fixture) {
     std::vector<model::record_batch_header> headers;
     for (auto i = 0; i < 10; i++) {
         append_random_batches(log, 1, model::term_id(i));
-        log.flush().get();
+        log->flush().get();
     }
 
     const auto truncate_offset = model::offset{0};
     log
-      .truncate(
+      ->truncate(
         storage::truncate_config(truncate_offset, ss::default_priority_class()))
       .get0();
     log
-      .truncate(
+      ->truncate(
         storage::truncate_config(truncate_offset, ss::default_priority_class()))
       .get0();
 
     auto read_batches = read_and_validate_all_batches(log);
     BOOST_REQUIRE_EQUAL(read_batches.size(), 0);
-    auto lstats = log.offsets();
+    auto lstats = log->offsets();
     BOOST_REQUIRE_EQUAL(lstats.committed_offset, model::offset{});
     BOOST_REQUIRE_EQUAL(lstats.dirty_offset, model::offset{});
 }
@@ -221,7 +221,7 @@ FIXTURE_TEST(truncate_before_read, storage_test_fixture) {
     std::vector<model::record_batch_header> headers;
     for (auto i = 0; i < 10; i++) {
         append_random_batches(log, 1, model::term_id(i));
-        log.flush().get();
+        log->flush().get();
     }
     storage::log_reader_config cfg(
       model::offset(0),
@@ -230,9 +230,9 @@ FIXTURE_TEST(truncate_before_read, storage_test_fixture) {
 
     // first create the reader
     auto reader_ptr = std::make_unique<model::record_batch_reader>(
-      log.make_reader(std::move(cfg)).get0());
+      log->make_reader(std::move(cfg)).get0());
     // truncate
-    auto f = log.truncate(
+    auto f = log->truncate(
       storage::truncate_config(model::offset(0), ss::default_priority_class()));
     // Memory log works fine
     reader_ptr->consume(batch_validating_consumer{}, model::no_timeout).get0();
@@ -240,7 +240,7 @@ FIXTURE_TEST(truncate_before_read, storage_test_fixture) {
     f.get();
     auto read_batches = read_and_validate_all_batches(log);
     BOOST_REQUIRE_EQUAL(read_batches.size(), 0);
-    auto lstats = log.offsets();
+    auto lstats = log->offsets();
     BOOST_REQUIRE_EQUAL(lstats.committed_offset, model::offset{});
     BOOST_REQUIRE_EQUAL(lstats.dirty_offset, model::offset{});
 }
@@ -254,7 +254,7 @@ FIXTURE_TEST(
     auto log
       = mgr.manage(storage::ntp_config(ntp, mgr.config().base_dir)).get0();
     append_random_batches(log, 6, model::term_id(0));
-    log.flush().get0();
+    log->flush().get0();
 
     auto all_batches = read_and_validate_all_batches(log);
     auto truncate_offset = all_batches[4].base_offset();
@@ -262,7 +262,7 @@ FIXTURE_TEST(
     // truncate in the middle
     info("Truncating at offset:{}", truncate_offset);
     log
-      .truncate(
+      ->truncate(
         storage::truncate_config(truncate_offset, ss::default_priority_class()))
       .get0();
     info("reading all batches");
@@ -270,7 +270,7 @@ FIXTURE_TEST(
 
     // one less
     auto expected = all_batches[3].last_offset();
-    auto lstats = log.offsets();
+    auto lstats = log->offsets();
     BOOST_REQUIRE_EQUAL(lstats.committed_offset, expected);
     BOOST_REQUIRE_EQUAL(lstats.dirty_offset, expected);
     if (truncate_offset != model::offset(0)) {
@@ -280,7 +280,7 @@ FIXTURE_TEST(
     }
     // Append new batches
     auto headers = append_random_batches(log, 6, model::term_id(0));
-    log.flush().get0();
+    log->flush().get0();
     auto read_after_append = read_and_validate_all_batches(log);
     // 4 batches were not truncated
     BOOST_REQUIRE_EQUAL(read_after_append.size(), headers.size() + 4);
@@ -308,13 +308,13 @@ FIXTURE_TEST(test_truncate_last_single_record_batch, storage_test_fixture) {
             ts));
           return ret;
       });
-    log.flush().get0();
+    log->flush().get0();
 
-    for (auto lstats = log.offsets(); lstats.dirty_offset > model::offset{};
-         lstats = log.offsets()) {
+    for (auto lstats = log->offsets(); lstats.dirty_offset > model::offset{};
+         lstats = log->offsets()) {
         auto truncate_offset = lstats.dirty_offset;
         log
-          .truncate(storage::truncate_config(
+          ->truncate(storage::truncate_config(
             truncate_offset, ss::default_priority_class()))
           .get0();
         auto all_batches = read_and_validate_all_batches(log);
@@ -349,14 +349,14 @@ FIXTURE_TEST(
                  .get0();
     append_random_batches(log, 10, model::term_id(0));
     append_random_batches(log, 10, model::term_id(0));
-    log.flush().get0();
+    log->flush().get0();
     auto ts = now();
     append_random_batches(log, 10, model::term_id(0));
-    log.flush().get0();
+    log->flush().get0();
     // garbadge collect first append series
     ss::abort_source as;
     log
-      .housekeeping(housekeeping_config(
+      ->housekeeping(housekeeping_config(
         ts,
         std::nullopt,
         model::offset::max(),
@@ -365,11 +365,11 @@ FIXTURE_TEST(
       .get0();
     // truncate at 0, offset earlier then the one present in log
     log
-      .truncate(storage::truncate_config(
+      ->truncate(storage::truncate_config(
         model::offset(0), ss::default_priority_class()))
       .get0();
 
-    auto lstats = log.offsets();
+    auto lstats = log->offsets();
     BOOST_REQUIRE_EQUAL(lstats.dirty_offset, model::offset{});
 }
 
@@ -419,7 +419,7 @@ FIXTURE_TEST(test_truncate, storage_test_fixture) {
       | storage::truncate_log(220);
 
     BOOST_REQUIRE_EQUAL(
-      builder.get_log().offsets().dirty_offset, model::offset(219));
+      builder.get_log()->offsets().dirty_offset, model::offset(219));
     builder | storage::stop();
 }
 
@@ -436,7 +436,7 @@ FIXTURE_TEST(truncated_segment_recovery, storage_test_fixture) {
         auto log = mgr.manage(storage::ntp_config(ntp, cfg.base_dir)).get0();
 
         append_random_batches(log, 10, model::term_id(0));
-        log.flush().get0();
+        log->flush().get0();
 
         // truncate in the middle
         auto all_batches = read_and_validate_all_batches(log);
@@ -444,7 +444,7 @@ FIXTURE_TEST(truncated_segment_recovery, storage_test_fixture) {
 
         info("Truncating at offset:{}", truncate_offsets.back());
         log
-          .truncate(storage::truncate_config(
+          ->truncate(storage::truncate_config(
             truncate_offsets.back(), ss::default_priority_class()))
           .get();
 
@@ -457,14 +457,14 @@ FIXTURE_TEST(truncated_segment_recovery, storage_test_fixture) {
 
         info("Truncating at offset:{}", truncate_offsets.back());
         log
-          .truncate(storage::truncate_config(
+          ->truncate(storage::truncate_config(
             truncate_offsets.back(), ss::default_priority_class()))
           .get();
 
         // force segment roll
         append_random_batches(log, 3, model::term_id(2));
 
-        log.flush().get();
+        log->flush().get();
     }
 
     // recover log
@@ -474,7 +474,7 @@ FIXTURE_TEST(truncated_segment_recovery, storage_test_fixture) {
       [&rec_mgr]() mutable { rec_mgr.stop().get0(); });
     auto rec_log
       = rec_mgr.manage(storage::ntp_config(ntp, cfg.base_dir)).get0();
-    auto& impl = dynamic_cast<disk_log_impl&>(*rec_log.get_impl());
+    auto& impl = dynamic_cast<disk_log_impl&>(*rec_log);
 
     BOOST_REQUIRE_EQUAL(impl.segment_count(), 3);
 
@@ -521,40 +521,39 @@ FIXTURE_TEST(test_concurrent_prefix_truncate_and_gc, storage_test_fixture) {
                  .get0();
 
     append_random_batches(log, 10, model::term_id(0));
-    auto lstats = log.offsets();
+    auto lstats = log->offsets();
 
     append_random_batches(log, 10, model::term_id(1));
-    log.flush().get0();
+    log->flush().get0();
 
     auto ts = now();
 
     append_random_batches(log, 10, model::term_id(2));
-    log.flush().get0();
+    log->flush().get0();
     ss::abort_source as;
 
     // The call to 'compact' simply triggers a notification
     // for the log eviction stm with an offset until which
     // to evict. The test does not listen for the notification,
     // so this call is basically a no-op.
-    auto f1 = log.housekeeping(housekeeping_config(
+    auto f1 = log->housekeeping(housekeeping_config(
       ts,
       std::nullopt,
       model::offset::max(),
       ss::default_priority_class(),
       as));
 
-    auto f2 = log.truncate_prefix(storage::truncate_prefix_config(
+    auto f2 = log->truncate_prefix(storage::truncate_prefix_config(
       model::next_offset(lstats.dirty_offset), ss::default_priority_class()));
 
     f1.get0();
     f2.get0();
 
-    storage::disk_log_impl& impl = *reinterpret_cast<storage::disk_log_impl*>(
-      log.get_impl());
+    auto& impl = dynamic_cast<storage::disk_log_impl&>(*log);
 
     BOOST_REQUIRE_EQUAL(
       (*impl.segments().begin())->offsets().base_offset,
-      log.offsets().start_offset);
+      log->offsets().start_offset);
 }
 
 FIXTURE_TEST(
@@ -573,30 +572,30 @@ FIXTURE_TEST(
 
     auto truncate_at = [log](model::offset o) mutable {
         log
-          .truncate_prefix(
+          ->truncate_prefix(
             storage::truncate_prefix_config(o, ss::default_priority_class()))
           .get();
     };
 
     truncate_at(model::offset{7});
-    BOOST_CHECK_EQUAL(log.offsets().start_offset, model::offset{7});
+    BOOST_CHECK_EQUAL(log->offsets().start_offset, model::offset{7});
     auto batches1 = read_and_validate_all_batches(log);
     BOOST_REQUIRE_EQUAL(batches1.size(), 2);
     BOOST_CHECK_EQUAL(batches1[0].base_offset(), model::offset{0});
 
     truncate_at(model::offset{12});
-    BOOST_CHECK_EQUAL(log.offsets().start_offset, model::offset{12});
+    BOOST_CHECK_EQUAL(log->offsets().start_offset, model::offset{12});
     auto batches2 = read_and_validate_all_batches(log);
     BOOST_REQUIRE_EQUAL(batches2.size(), 1);
     BOOST_CHECK_EQUAL(batches2[0].base_offset(), model::offset{10});
 
     truncate_at(model::offset{20});
-    BOOST_CHECK_EQUAL(log.offsets().start_offset, model::offset{20});
+    BOOST_CHECK_EQUAL(log->offsets().start_offset, model::offset{20});
     auto batches3 = read_and_validate_all_batches(log);
     BOOST_CHECK_EQUAL(batches3.size(), 0);
 
     truncate_at(model::offset{3});
-    BOOST_CHECK_EQUAL(log.offsets().start_offset, model::offset{20});
+    BOOST_CHECK_EQUAL(log->offsets().start_offset, model::offset{20});
     auto batches4 = read_and_validate_all_batches(log);
     BOOST_CHECK_EQUAL(batches4.size(), 0);
 }
@@ -615,22 +614,22 @@ FIXTURE_TEST(test_prefix_truncate_then_truncate_all, storage_test_fixture) {
       log, model::test::make_random_batch(model::offset{0}, 5, true));
 
     log
-      .truncate_prefix(storage::truncate_prefix_config(
+      ->truncate_prefix(storage::truncate_prefix_config(
         model::offset{10}, ss::default_priority_class()))
       .get();
     log
-      .truncate(storage::truncate_config(
+      ->truncate(storage::truncate_config(
         model::offset{10}, ss::default_priority_class()))
       .get();
 
     // Check that even though the log is empty, start offset is saved.
 
-    BOOST_CHECK_EQUAL(log.offsets().start_offset, model::offset{10});
+    BOOST_CHECK_EQUAL(log->offsets().start_offset, model::offset{10});
     BOOST_CHECK_EQUAL(read_and_validate_all_batches(log).size(), 0);
 
     append_batch(
       log, model::test::make_random_batch(model::offset{0}, 3, true));
-    BOOST_CHECK_EQUAL(log.offsets().start_offset, model::offset{10});
+    BOOST_CHECK_EQUAL(log->offsets().start_offset, model::offset{10});
     auto read_batches = read_and_validate_all_batches(log);
     BOOST_REQUIRE_EQUAL(read_batches.size(), 1);
     BOOST_CHECK_EQUAL(read_batches[0].base_offset(), model::offset{10});
@@ -676,12 +675,11 @@ FIXTURE_TEST(test_index_max_timestamp_update, storage_test_fixture) {
         model::timestamp(30000)));
 
     log
-      .truncate(storage::truncate_config(
+      ->truncate(storage::truncate_config(
         model::offset{20}, ss::default_priority_class()))
       .get();
 
-    storage::disk_log_impl& impl = *reinterpret_cast<storage::disk_log_impl*>(
-      log.get_impl());
+    auto& impl = dynamic_cast<storage::disk_log_impl&>(*log);
 
     // The maximum timestamp in the index should be the maximum
     // timestamp of the batch preceeding the batch where the truncation

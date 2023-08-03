@@ -63,7 +63,8 @@ static inline ss::future<> persist_log_file(
         auto& mgr = storage.local().log_mgr();
         try {
             mgr.manage(storage::ntp_config(file_ntp, mgr.config().base_dir))
-              .then([b = std::move(batches)](storage::log log) mutable {
+              .then([b = std::move(batches)](
+                      ss::shared_ptr<storage::log> log) mutable {
                   storage::log_append_config cfg{
                     storage::log_append_config::fsync::yes,
                     ss::default_priority_class(),
@@ -71,9 +72,9 @@ static inline ss::future<> persist_log_file(
                   auto reader = model::make_memory_record_batch_reader(
                     std::move(b));
                   return std::move(reader)
-                    .for_each_ref(log.make_appender(cfg), cfg.timeout)
+                    .for_each_ref(log->make_appender(cfg), cfg.timeout)
                     .then([log](storage::append_result) mutable {
-                        return log.flush();
+                        return log->flush();
                     })
                     .finally([log] {});
               })
@@ -140,9 +141,9 @@ read_log_file(ss::sstring base_dir, model::ntp file_ntp) {
         try {
             auto batches
               = mgr.manage(storage::ntp_config(file_ntp, mgr.config().base_dir))
-                  .then([](storage::log log) mutable {
+                  .then([](ss::shared_ptr<storage::log> log) mutable {
                       return log
-                        .make_reader(storage::log_reader_config(
+                        ->make_reader(storage::log_reader_config(
                           model::offset(0),
                           model::model_limits<model::offset>::max(),
                           ss::default_priority_class()))

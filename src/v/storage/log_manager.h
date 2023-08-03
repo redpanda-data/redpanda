@@ -168,7 +168,7 @@ public:
       storage_resources&,
       ss::sharded<features::feature_table>&) noexcept;
 
-    ss::future<log> manage(ntp_config);
+    ss::future<ss::shared_ptr<log>> manage(ntp_config);
 
     ss::future<> shutdown(model::ntp);
 
@@ -211,11 +211,11 @@ public:
     size_t size() const { return _logs.size(); }
 
     /// Returns the log for the specified ntp.
-    std::optional<log> get(const model::ntp& ntp) {
+    ss::shared_ptr<log> get(const model::ntp& ntp) {
         if (auto it = _logs.find(ntp); it != _logs.end()) {
             return it->second->handle;
         }
-        return std::nullopt;
+        return nullptr;
     }
 
     /// Returns all ntp's managed by this instance
@@ -243,8 +243,8 @@ private:
     using compaction_list_type
       = intrusive_list<log_housekeeping_meta, &log_housekeeping_meta::link>;
 
-    ss::future<log> do_manage(ntp_config);
-    ss::future<> clean_close(storage::log&);
+    ss::future<ss::shared_ptr<log>> do_manage(ntp_config);
+    ss::future<> clean_close(ss::shared_ptr<storage::log>);
 
     /**
      * \brief delete old segments and trigger compacted segments

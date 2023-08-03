@@ -322,7 +322,7 @@ public:
 
     // Low lever interface access
     // Access log impl
-    log& get_log();
+    ss::shared_ptr<log> get_log();
     disk_log_impl& get_disk_log_impl();
     segment_set& get_log_segments();
     // Index range is [0....total_segments)
@@ -408,7 +408,7 @@ private:
     ss::sharded<features::feature_table> _feature_table;
     storage::log_config _log_config;
     storage::api _storage;
-    std::optional<log> _log;
+    ss::shared_ptr<log> _log;
     size_t _bytes_written{0};
     std::vector<std::vector<model::record_batch>> _batches;
     ss::abort_source _abort_source;

@@ -70,7 +70,7 @@ partition::partition(
       ss::make_shared<cloud_storage::partition_probe>(_raft->ntp()))
   , _upload_housekeeping(upload_hks)
   , _kvstore(kvstore) {
-    auto stm_manager = _raft->log().stm_manager();
+    auto stm_manager = _raft->log()->stm_manager();
 
     if (is_id_allocator_topic(_raft->ntp())) {
         _id_allocator_stm = ss::make_shared<cluster::id_allocator_stm>(
@@ -280,11 +280,11 @@ partition_cloud_storage_status partition::get_cloud_storage_status() const {
 
     status.mode = get_cloud_storage_mode();
 
-    const auto& local_log = _raft->log();
-    status.local_log_size_bytes = local_log.size_bytes();
-    status.local_log_segment_count = local_log.segment_count();
+    const auto local_log = _raft->log();
+    status.local_log_size_bytes = local_log->size_bytes();
+    status.local_log_segment_count = local_log->segment_count();
 
-    const auto local_log_offsets = local_log.offsets();
+    const auto local_log_offsets = local_log->offsets();
     status.local_log_start_offset = wrap_model_offset(
       local_log_offsets.start_offset);
     status.local_log_last_offset = wrap_model_offset(
@@ -309,7 +309,7 @@ partition_cloud_storage_status partition::get_cloud_storage_status() const {
 
         // Calculate local space usage that does not overlap with cloud space
         const auto local_space_excl = status.cloud_log_last_offset
-                                        ? _raft->log().size_bytes_after_offset(
+                                        ? _raft->log()->size_bytes_after_offset(
                                           manifest.get_last_offset())
                                         : status.local_log_size_bytes;
 
@@ -604,7 +604,7 @@ partition::timequery(storage::timequery_config cfg) {
         co_return co_await cloud_storage_timequery(cfg);
     }
 
-    if (_raft->log().start_timestamp() <= cfg.time) {
+    if (_raft->log()->start_timestamp() <= cfg.time) {
         // The query is ahead of the local data's start_timestamp: this means
         // it _might_ hit on local data: start_timestamp is not precise, so
         // once we query we might still fall back to cloud storage
@@ -688,7 +688,7 @@ partition::local_timequery(storage::timequery_config cfg) {
 
     if (result) {
         if (
-          _raft->log().start_timestamp() > cfg.time && may_answer_from_cloud) {
+          _raft->log()->start_timestamp() > cfg.time && may_answer_from_cloud) {
             // Query raced with prefix truncation
             vlog(
               clusterlog.debug,
@@ -696,13 +696,13 @@ partition::local_timequery(storage::timequery_config cfg) {
               "(start_timestamp {}, result {})",
               _raft->ntp(),
               cfg.time,
-              _raft->log().start_timestamp(),
+              _raft->log()->start_timestamp(),
               result->time);
             co_return std::nullopt;
         }
 
         if (
-          _raft->log().start_timestamp() <= cfg.time && result->time > cfg.time
+          _raft->log()->start_timestamp() <= cfg.time && result->time > cfg.time
           && may_answer_from_cloud) {
             // start_timestamp() points to the beginning of the oldest segment,
             // but start_offset points to somewhere within a segment.  If our
@@ -717,12 +717,12 @@ partition::local_timequery(storage::timequery_config cfg) {
               "{}, result {})",
               _raft->ntp(),
               cfg.time,
-              _raft->log().start_timestamp(),
+              _raft->log()->start_timestamp(),
               result->time);
             co_return std::nullopt;
         }
 
-        if (result->offset == _raft->log().offsets().start_offset) {
+        if (result->offset == _raft->log()->offsets().start_offset) {
             // If we hit at the start of the local log, this is ambiguous:
             // there could be earlier batches prior to start_offset which
             // have the same timestamp and are present in cloud storage.
@@ -731,9 +731,9 @@ partition::local_timequery(storage::timequery_config cfg) {
               "Timequery (raft) {} ts={} hit start_offset in local log "
               "(start_offset {} start_timestamp {}, result {})",
               _raft->ntp(),
-              _raft->log().offsets().start_offset,
+              _raft->log()->offsets().start_offset,
               cfg.time,
-              _raft->log().start_timestamp(),
+              _raft->log()->start_timestamp(),
               cfg.time);
             if (
               _cloud_storage_partition
@@ -765,7 +765,7 @@ void partition::maybe_construct_archiver() {
     // NOTE: construct and archiver even if shadow indexing isn't enabled, e.g.
     // in the case of read replicas -- we still need the archiver to drive
     // manifest updates, etc.
-    auto& ntp_config = _raft->log().config();
+    auto& ntp_config = _raft->log()->config();
     if (
       config::shard_local_cfg().cloud_storage_enabled()
       && _cloud_storage_api.local_is_initialized()
@@ -822,7 +822,7 @@ uint64_t partition::non_log_disk_size_bytes() const {
 }
 
 ss::future<> partition::update_configuration(topic_properties properties) {
-    auto& old_ntp_config = _raft->log().config();
+    auto& old_ntp_config = _raft->log()->config();
     auto new_ntp_config = properties.get_ntp_cfg_overrides();
 
     // Before applying change, consider whether it changes cloud storage
@@ -846,7 +846,7 @@ ss::future<> partition::update_configuration(topic_properties properties) {
     }
 
     // Pass the configuration update into the storage layer
-    co_await _raft->log().update_configuration(new_ntp_config);
+    co_await _raft->log()->update_configuration(new_ntp_config);
 
     // Update cached instance of topic properties
     if (_topic_cfg) {
@@ -893,7 +893,7 @@ ss::future<> partition::update_configuration(topic_properties properties) {
 
 std::optional<model::offset>
 partition::get_term_last_offset(model::term_id term) const {
-    auto o = _raft->log().get_term_last_offset(term);
+    auto o = _raft->log()->get_term_last_offset(term);
     if (!o) {
         return std::nullopt;
     }

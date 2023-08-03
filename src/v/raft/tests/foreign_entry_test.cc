@@ -79,13 +79,15 @@ struct foreign_entry_fixture {
           ss::default_priority_class(),
           model::no_timeout};
         std::vector<storage::append_result> res;
-        res.push_back(gen_data_record_batch_reader(n)
-                        .for_each_ref(get_log().make_appender(cfg), cfg.timeout)
-                        .get0());
-        res.push_back(gen_config_record_batch_reader(n)
-                        .for_each_ref(get_log().make_appender(cfg), cfg.timeout)
-                        .get0());
-        get_log().flush().get();
+        res.push_back(
+          gen_data_record_batch_reader(n)
+            .for_each_ref(get_log()->make_appender(cfg), cfg.timeout)
+            .get0());
+        res.push_back(
+          gen_config_record_batch_reader(n)
+            .for_each_ref(get_log()->make_appender(cfg), cfg.timeout)
+            .get0());
+        get_log()->flush().get();
         return res;
     }
     template<typename Func>
@@ -142,7 +144,9 @@ struct foreign_entry_fixture {
     ss::logger _test_logger{"foreign-test-logger"};
     ss::sharded<features::feature_table> _feature_table;
     storage::api _storage;
-    storage::log get_log() { return _storage.log_mgr().get(_ntp).value(); }
+    ss::shared_ptr<storage::log> get_log() {
+        return _storage.log_mgr().get(_ntp);
+    }
     model::ntp _ntp{
       model::ns("test.bootstrap." + random_generators::gen_alphanum_string(8)),
       model::topic(random_generators::gen_alphanum_string(6)),

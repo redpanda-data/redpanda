@@ -28,92 +28,20 @@
 
 namespace storage {
 
-/// \brief Non-synchronized log management class.
-/// The class follows the pimpl idiom for: appends,reads and concrete.
-/// there are 2 default implementations memory-backed and disk-backed
-///
-/// use like a seastar::shared_ptr<> (non-thread safe)
-///
-class log final {
+class log {
 public:
-    class impl {
-    public:
-        explicit impl(ntp_config cfg) noexcept
-          : _config(std::move(cfg))
-          , _stm_manager(ss::make_lw_shared<storage::stm_manager>()) {}
-        impl(impl&&) noexcept = default;
-        impl& operator=(impl&&) noexcept = default;
-        impl(const impl&) = delete;
-        impl& operator=(const impl&) = delete;
-        virtual ~impl() noexcept = default;
+    explicit log(ntp_config cfg) noexcept
+      : _config(std::move(cfg))
+      , _stm_manager(ss::make_lw_shared<storage::stm_manager>()) {}
+    log(log&&) noexcept = delete;
+    log& operator=(log&&) noexcept = delete;
+    log(const log&) = delete;
+    log& operator=(const log&) = delete;
+    virtual ~log() noexcept = default;
 
-        // it shouldn't block for a long time as it will block other logs
-        // eviction
-        virtual ss::future<> housekeeping(housekeeping_config) = 0;
-        virtual ss::future<> truncate(truncate_config) = 0;
-        virtual ss::future<> truncate_prefix(truncate_prefix_config) = 0;
-        virtual ss::future<> gc(gc_config) = 0;
-
-        // TODO should compact be merged in this?
-        // run housekeeping task, like rolling segments
-        virtual ss::future<> apply_segment_ms() = 0;
-
-        virtual ss::future<model::record_batch_reader>
-          make_reader(log_reader_config) = 0;
-        virtual log_appender make_appender(log_append_config) = 0;
-
-        // final operation. Invalid filesystem state after
-        virtual ss::future<std::optional<ss::sstring>> close() = 0;
-        // final operation. Invalid state after
-        virtual ss::future<> remove() = 0;
-
-        virtual ss::future<> flush() = 0;
-
-        virtual ss::future<std::optional<timequery_result>>
-          timequery(timequery_config) = 0;
-
-        const ntp_config& config() const { return _config; }
-
-        virtual size_t segment_count() const = 0;
-        virtual storage::offset_stats offsets() const = 0;
-        // Base offset of the first batch in the most recent term stored in log
-        virtual model::offset find_last_term_start_offset() const = 0;
-        virtual model::timestamp start_timestamp() const = 0;
-        virtual std::ostream& print(std::ostream& o) const = 0;
-        virtual std::optional<model::term_id> get_term(model::offset) const = 0;
-        virtual std::optional<model::offset>
-          get_term_last_offset(model::term_id) const = 0;
-        virtual std::optional<model::offset>
-        index_lower_bound(model::offset o) const = 0;
-
-        virtual ss::future<model::offset>
-        monitor_eviction(ss::abort_source&) = 0;
-        ss::lw_shared_ptr<storage::stm_manager> stm_manager() {
-            return _stm_manager;
-        }
-
-        virtual size_t size_bytes() const = 0;
-        // Byte size of the log for all segments after offset 'o'
-        virtual uint64_t size_bytes_after_offset(model::offset o) const = 0;
-        virtual ss::future<>
-          update_configuration(ntp_config::default_overrides) = 0;
-
-        virtual int64_t compaction_backlog() const = 0;
-
-    private:
-        ntp_config _config;
-
-    protected:
-        ntp_config& mutable_config() { return _config; }
-        ss::lw_shared_ptr<storage::stm_manager> _stm_manager;
-    };
-
-public:
-    explicit log(ss::shared_ptr<impl> i)
-      : _impl(std::move(i)) {}
-    ss::future<std::optional<ss::sstring>> close() { return _impl->close(); }
-    ss::future<> remove() { return _impl->remove(); }
-    ss::future<> flush() { return _impl->flush(); }
+    // it shouldn't block for a long time as it will block other logs
+    // eviction
+    virtual ss::future<> housekeeping(housekeeping_config) = 0;
 
     /**
      * \brief Truncate the suffix of log at a base offset
@@ -125,7 +53,7 @@ public:
      * Truncating mid-batch is forbidden:
      * Truncate at offset 35 will result in an exception.
      */
-    ss::future<> truncate(truncate_config cfg) { return _impl->truncate(cfg); }
+    virtual ss::future<> truncate(truncate_config) = 0;
 
     /**
      * \brief Truncate the prefix of a log at a base offset
@@ -143,55 +71,41 @@ public:
      * be prefix truncated at offset X+1, so that the next element in the log to
      * be replayed against the snapshot is X+1.
      */
-    ss::future<> truncate_prefix(truncate_prefix_config cfg) {
-        return _impl->truncate_prefix(cfg);
-    }
+    virtual ss::future<> truncate_prefix(truncate_prefix_config) = 0;
+    virtual ss::future<> gc(gc_config) = 0;
 
-    ss::future<model::record_batch_reader> make_reader(log_reader_config cfg) {
-        return _impl->make_reader(cfg);
-    }
+    // TODO should compact be merged in this?
+    // run housekeeping task, like rolling segments
+    virtual ss::future<> apply_segment_ms() = 0;
 
-    log_appender make_appender(log_append_config cfg) {
-        return _impl->make_appender(cfg);
-    }
+    virtual ss::future<model::record_batch_reader>
+      make_reader(log_reader_config) = 0;
+    virtual log_appender make_appender(log_append_config) = 0;
 
-    const ntp_config& config() const { return _impl->config(); }
+    // final operation. Invalid filesystem state after
+    virtual ss::future<std::optional<ss::sstring>> close() = 0;
+    // final operation. Invalid state after
+    virtual ss::future<> remove() = 0;
 
-    size_t segment_count() const { return _impl->segment_count(); }
+    virtual ss::future<> flush() = 0;
 
-    model::timestamp start_timestamp() const {
-        return _impl->start_timestamp();
-    }
+    virtual ss::future<std::optional<timequery_result>>
+      timequery(timequery_config) = 0;
 
-    storage::offset_stats offsets() const { return _impl->offsets(); }
-    model::offset find_last_term_start_offset() const {
-        return _impl->find_last_term_start_offset();
-    }
-    std::optional<model::term_id> get_term(model::offset o) const {
-        return _impl->get_term(o);
-    }
+    const ntp_config& config() const { return _config; }
 
-    std::optional<model::offset>
-    get_term_last_offset(model::term_id term) const {
-        return _impl->get_term_last_offset(term);
-    }
+    virtual size_t segment_count() const = 0;
+    virtual storage::offset_stats offsets() const = 0;
+    // Base offset of the first batch in the most recent term stored in log
+    virtual model::offset find_last_term_start_offset() const = 0;
+    virtual model::timestamp start_timestamp() const = 0;
+    virtual std::ostream& print(std::ostream& o) const = 0;
+    virtual std::optional<model::term_id> get_term(model::offset) const = 0;
+    virtual std::optional<model::offset>
+      get_term_last_offset(model::term_id) const = 0;
+    virtual std::optional<model::offset>
+    index_lower_bound(model::offset o) const = 0;
 
-    std::optional<model::offset> index_lower_bound(model::offset o) const {
-        return _impl->index_lower_bound(o);
-    }
-
-    ss::future<std::optional<timequery_result>>
-    timequery(timequery_config cfg) {
-        return _impl->timequery(cfg);
-    }
-
-    ss::future<> housekeeping(housekeeping_config cfg) {
-        return _impl->housekeeping(cfg);
-    }
-
-    ss::future<> gc(gc_config cfg) { return _impl->gc(cfg); }
-
-    ss::future<> apply_segment_ms() { return _impl->apply_segment_ms(); }
     /**
      * \brief Returns a future that resolves when log eviction is scheduled
      *
@@ -200,42 +114,35 @@ public:
      * when log was closed while waiting for eviction to happen.
      *
      */
-    ss::future<model::offset> monitor_eviction(ss::abort_source& as) {
-        return _impl->monitor_eviction(as);
-    }
-
+    virtual ss::future<model::offset> monitor_eviction(ss::abort_source&) = 0;
     ss::lw_shared_ptr<storage::stm_manager> stm_manager() {
-        return _impl->stm_manager();
+        return _stm_manager;
     }
 
-    ss::future<> update_configuration(ntp_config::default_overrides o) {
-        return _impl->update_configuration(o);
-    }
+    virtual size_t size_bytes() const = 0;
+    // Byte size of the log for all segments after offset 'o'
+    virtual uint64_t size_bytes_after_offset(model::offset o) const = 0;
+    virtual ss::future<>
+      update_configuration(ntp_config::default_overrides) = 0;
 
-    int64_t compaction_backlog() const { return _impl->compaction_backlog(); }
-
-    std::ostream& print(std::ostream& o) const { return _impl->print(o); }
-
-    size_t size_bytes() const { return _impl->size_bytes(); }
-
-    uint64_t size_bytes_after_offset(model::offset o) const {
-        return _impl->size_bytes_after_offset(o);
-    }
-
-    impl* get_impl() const { return _impl.get(); }
+    virtual int64_t compaction_backlog() const = 0;
 
 private:
-    ss::shared_ptr<impl> _impl;
+    ntp_config _config;
 
     friend std::ostream& operator<<(std::ostream& o, const log& lg) {
         return lg.print(o);
     }
+
+protected:
+    ntp_config& mutable_config() { return _config; }
+    ss::lw_shared_ptr<storage::stm_manager> _stm_manager;
 };
 
 class log_manager;
 class segment_set;
 class kvstore;
-log make_disk_backed_log(
+ss::shared_ptr<log> make_disk_backed_log(
   ntp_config,
   log_manager&,
   segment_set,

@@ -25,31 +25,31 @@ SEASTAR_THREAD_TEST_CASE(produce_consume_concurrency) {
       .should_fsync = storage::log_append_config::fsync::no,
       .io_priority = ss::default_priority_class(),
       .timeout = model::no_timeout};
-    auto& log = builder.get_log();
+    auto log = builder.get_log();
     auto range = boost::irange(0, 1000);
 
     auto prod = ss::do_for_each(
-      range.begin(), range.end(), [app_cfg, &log](int) {
-          auto appender = log.make_appender(app_cfg);
+      range.begin(), range.end(), [app_cfg, log](int) {
+          auto appender = log->make_appender(app_cfg);
           return ss::do_with(
             model::make_memory_record_batch_reader(
               model::test::make_random_batches(model::offset(0), 1)),
-            [app_cfg, &log](model::record_batch_reader& rdr) {
+            [app_cfg, log](model::record_batch_reader& rdr) {
                 return rdr
-                  .for_each_ref(log.make_appender(app_cfg), model::no_timeout)
-                  .then([&log](auto) { return log.flush(); });
+                  .for_each_ref(log->make_appender(app_cfg), model::no_timeout)
+                  .then([log](auto) { return log->flush(); });
             });
       });
 
-    auto consumer = ss::do_for_each(range.begin(), range.end(), [&log](int) {
-        auto lstats = log.offsets();
+    auto consumer = ss::do_for_each(range.begin(), range.end(), [log](int) {
+        auto lstats = log->offsets();
         storage::log_reader_config rdr_cfg(
           lstats.dirty_offset < model::offset(0)
             ? lstats.dirty_offset
             : lstats.dirty_offset - model::offset(1),
           std::max(model::offset(0), lstats.dirty_offset),
           ss::default_priority_class());
-        return log.make_reader(rdr_cfg)
+        return log->make_reader(rdr_cfg)
           .then([](model::record_batch_reader reader) {
               return model::consume_reader_to_memory(
                 std::move(reader), model::no_timeout);

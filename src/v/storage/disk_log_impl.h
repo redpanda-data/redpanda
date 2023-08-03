@@ -34,7 +34,7 @@
 
 namespace storage {
 
-class disk_log_impl final : public log::impl {
+class disk_log_impl final : public log {
 public:
     using failure_probes = storage::log_failure_probes;
 
@@ -61,7 +61,7 @@ public:
       kvstore&,
       ss::sharded<features::feature_table>& feature_table);
     ~disk_log_impl() override;
-    disk_log_impl(disk_log_impl&&) noexcept = default;
+    disk_log_impl(disk_log_impl&&) noexcept = delete;
     disk_log_impl& operator=(disk_log_impl&&) noexcept = delete;
     disk_log_impl(const disk_log_impl&) = delete;
     disk_log_impl& operator=(const disk_log_impl&) = delete;

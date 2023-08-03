@@ -157,7 +157,7 @@ offset_translator::start(must_reset reset, bootstrap_state&& bootstrap) {
 }
 
 ss::future<> offset_translator::sync_with_log(
-  storage::log log, storage::opt_abort_source_t as) {
+  ss::shared_ptr<storage::log> log, storage::opt_abort_source_t as) {
     if (_filtered_types.empty()) {
         co_return;
     }
@@ -167,7 +167,7 @@ ss::future<> offset_translator::sync_with_log(
       "ntp {}: offset translation state shouldn't be empty",
       _state->ntp());
 
-    auto log_offsets = log.offsets();
+    auto log_offsets = log->offsets();
 
     // Trim the offset2delta map to log dirty_offset (discrepancy can
     // happen if the offsets map was persisted, but the log wasn't flushed).
@@ -192,7 +192,7 @@ ss::future<> offset_translator::sync_with_log(
 
     auto reader_cfg = storage::log_reader_config(
       start_offset, log_offsets.dirty_offset, ss::default_priority_class(), as);
-    auto reader = co_await log.make_reader(reader_cfg);
+    auto reader = co_await log->make_reader(reader_cfg);
 
     struct log_consumer {
         explicit log_consumer(offset_translator& self)

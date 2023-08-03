@@ -147,18 +147,18 @@ log_manager::log_manager(
     });
 }
 
-ss::future<> log_manager::clean_close(storage::log& log) {
-    auto clean_segment = co_await log.close();
+ss::future<> log_manager::clean_close(ss::shared_ptr<storage::log> log) {
+    auto clean_segment = co_await log->close();
 
     if (clean_segment) {
         vlog(
           stlog.debug,
           "writing clean record for: {} {}",
-          log.config().ntp(),
+          log->config().ntp(),
           clean_segment.value());
         co_await _kvstore.put(
           kvstore::key_space::storage,
-          internal::clean_segment_key(log.config().ntp()),
+          internal::clean_segment_key(log->config().ntp()),
           serde::to_iobuf(internal::clean_segment_value{
             .segment_name = std::filesystem::path(clean_segment.value())
                               .filename()
@@ -207,7 +207,7 @@ log_manager::housekeeping_scan(model::timestamp collection_threshold) {
      *   compaction, the whole task could be made concurrent
      */
     for (auto& log_meta : _logs_list) {
-        co_await log_meta.handle.apply_segment_ms();
+        co_await log_meta.handle->apply_segment_ms();
     }
 
     for (auto& log_meta : _logs_list) {
@@ -228,11 +228,11 @@ log_manager::housekeeping_scan(model::timestamp collection_threshold) {
         current_log.last_compaction = ss::lowres_clock::now();
 
         auto ntp_sanitizer_cfg = _config.maybe_get_ntp_sanitizer_config(
-          current_log.handle.config().ntp());
-        co_await current_log.handle.housekeeping(housekeeping_config(
+          current_log.handle->config().ntp());
+        co_await current_log.handle->housekeeping(housekeeping_config(
           collection_threshold,
           _config.retention_bytes(),
-          current_log.handle.stm_manager()->max_collectible_offset(),
+          current_log.handle->stm_manager()->max_collectible_offset(),
           _config.compaction_priority,
           _abort_source,
           std::move(ntp_sanitizer_cfg)));
@@ -335,14 +335,13 @@ ss::future<> log_manager::housekeeping_loop() {
                  * applying segment.ms will make reclaimable data from the
                  * active segment visible.
                  */
-                co_await log_meta.handle.apply_segment_ms();
+                co_await log_meta.handle->apply_segment_ms();
                 if (!log_meta.link.is_linked()) {
                     continue;
                 }
 
-                auto ntp = log_meta.handle.config().ntp();
-                auto log = dynamic_cast<disk_log_impl*>(
-                  log_meta.handle.get_impl());
+                auto ntp = log_meta.handle->config().ntp();
+                auto log = dynamic_cast<disk_log_impl*>(log_meta.handle.get());
                 auto usage = co_await log->disk_usage(
                   gc_config(collection_threshold(), _config.retention_bytes()));
 
@@ -362,7 +361,7 @@ ss::future<> log_manager::housekeeping_loop() {
              */
             for (const auto& candidate : ntp_by_gc_size) {
                 auto log = get(candidate.second);
-                if (!log.has_value()) {
+                if (!log) {
                     continue;
                 }
                 co_await log->gc(
@@ -443,7 +442,7 @@ log_manager::create_cache(with_cache ntp_cache_enabled) {
     return batch_cache_index(_batch_cache);
 }
 
-ss::future<log> log_manager::manage(ntp_config cfg) {
+ss::future<ss::shared_ptr<log>> log_manager::manage(ntp_config cfg) {
     auto gate = _open_gate.hold();
 
     auto units = co_await _resources.get_recovery_units();
@@ -469,7 +468,7 @@ ss::future<> log_manager::recover_log_state(const ntp_config& cfg) {
       });
 }
 
-ss::future<log> log_manager::do_manage(ntp_config cfg) {
+ss::future<ss::shared_ptr<log>> log_manager::do_manage(ntp_config cfg) {
     if (_config.base_dir.empty()) {
         throw std::runtime_error(
           "log_manager:: cannot have empty config.base_dir");
@@ -507,7 +506,7 @@ ss::future<log> log_manager::do_manage(ntp_config cfg) {
     auto l = storage::make_disk_backed_log(
       std::move(cfg), *this, std::move(segments), _kvstore, _feature_table);
     auto [it, success] = _logs.emplace(
-      l.config().ntp(), std::make_unique<log_housekeeping_meta>(l));
+      l->config().ntp(), std::make_unique<log_housekeeping_meta>(l));
     _logs_list.push_back(*it->second);
     _resources.update_partition_count(_logs.size());
     vassert(success, "Could not keep track of:{} - concurrency issue", l);
@@ -534,16 +533,16 @@ ss::future<> log_manager::remove(model::ntp ntp) {
         co_return;
     }
     // 'ss::shared_ptr<>' make a copy
-    storage::log lg = handle.mapped()->handle;
+    auto lg = handle.mapped()->handle;
     vlog(stlog.info, "Removing: {}", lg);
     // NOTE: it is ok to *not* externally synchronize the log here
     // because remove, takes a write lock on each individual segments
     // waiting for all of them to be closed before actually removing the
     // underlying log. If there is a background operation like
     // compaction or so, it will block correctly.
-    auto ntp_dir = lg.config().work_directory();
-    ss::sstring topic_dir = lg.config().topic_directory().string();
-    co_await lg.remove();
+    auto ntp_dir = lg->config().work_directory();
+    ss::sstring topic_dir = lg->config().topic_directory().string();
+    co_await lg->remove();
     directory_walker walker;
     co_await walker.walk(
       ntp_dir, [&ntp_dir](const ss::directory_entry& de) -> ss::future<> {
@@ -714,7 +713,7 @@ int64_t log_manager::compaction_backlog() const {
       _logs.end(),
       int64_t(0),
       [](int64_t acc, const logs_type::value_type& p) {
-          return acc + p.second->handle.compaction_backlog();
+          return acc + p.second->handle->compaction_backlog();
       });
 }
 
@@ -756,7 +755,7 @@ ss::future<usage_report> log_manager::disk_usage() {
           - _config.delete_retention()->count());
     }
 
-    fragmented_vector<log> logs;
+    fragmented_vector<ss::shared_ptr<log>> logs;
     for (auto& it : _logs) {
         logs.push_back(it.second->handle);
     }
@@ -764,8 +763,8 @@ ss::future<usage_report> log_manager::disk_usage() {
     co_return co_await ss::map_reduce(
       logs.begin(),
       logs.end(),
-      [this, collection_threshold](log l) {
-          auto log = dynamic_cast<disk_log_impl*>(l.get_impl());
+      [this, collection_threshold](ss::shared_ptr<log> l) {
+          auto log = dynamic_cast<disk_log_impl*>(l.get());
           return log->disk_usage(
             gc_config(collection_threshold, _config.retention_bytes()));
       },

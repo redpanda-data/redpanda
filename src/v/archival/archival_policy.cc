@@ -32,11 +32,12 @@
 
 namespace {
 
-std::optional<storage::disk_log_impl*> get_concrete_log_impl(storage::log log) {
+std::optional<storage::disk_log_impl*>
+get_concrete_log_impl(ss::shared_ptr<storage::log> log) {
     // NOTE: we need to break encapsulation here to access underlying
     // implementation because upload policy and archival subsystem needs to
     // access individual log segments (disk backed).
-    auto plog = dynamic_cast<storage::disk_log_impl*>(log.get_impl());
+    auto plog = dynamic_cast<storage::disk_log_impl*>(log.get());
     if (plog == nullptr || plog->segment_count() == 0) {
         return std::nullopt;
     }
@@ -120,7 +121,7 @@ bool archival_policy::upload_deadline_reached() {
 archival_policy::lookup_result archival_policy::find_segment(
   model::offset start_offset,
   model::offset adjusted_lso,
-  storage::log log,
+  ss::shared_ptr<storage::log> log,
   const storage::offset_translator_state& ot_state) {
     vlog(
       archival_log.debug,
@@ -389,7 +390,7 @@ static ss::future<upload_candidate_with_locks> create_upload_candidate(
 ss::future<upload_candidate_with_locks> archival_policy::get_next_candidate(
   model::offset begin_inclusive,
   model::offset end_exclusive,
-  storage::log log,
+  ss::shared_ptr<storage::log> log,
   const storage::offset_translator_state& ot_state,
   ss::lowres_clock::duration segment_lock_duration) {
     // NOTE: end_exclusive (which is initialized with LSO) points to the first
@@ -427,7 +428,7 @@ ss::future<upload_candidate_with_locks> archival_policy::get_next_candidate(
 ss::future<upload_candidate_with_locks>
 archival_policy::get_next_compacted_segment(
   model::offset begin_inclusive,
-  storage::log log,
+  ss::shared_ptr<storage::log> log,
   const cloud_storage::partition_manifest& manifest,
   ss::lowres_clock::duration segment_lock_duration) {
     auto plog = get_concrete_log_impl(std::move(log));

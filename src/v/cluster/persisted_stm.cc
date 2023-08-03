@@ -460,9 +460,9 @@ persisted_stm<T>::sync(model::timeout_clock::duration timeout) {
     // committed index, so we won't need any additional flushes even if the
     // client produces with acks=1.
     model::offset sync_offset;
-    auto log_offsets = _c->log().offsets();
+    auto log_offsets = _c->log()->offsets();
     if (log_offsets.dirty_offset_term == term) {
-        auto last_term_start_offset = _c->log().find_last_term_start_offset();
+        auto last_term_start_offset = _c->log()->find_last_term_start_offset();
         if (last_term_start_offset > model::offset{0}) {
             sync_offset = last_term_start_offset - model::offset{1};
         } else {

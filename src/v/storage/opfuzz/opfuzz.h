@@ -27,7 +27,7 @@ class opfuzz {
 public:
     struct op_context {
         model::term_id* term;
-        storage::log* log;
+        ss::shared_ptr<storage::log> log;
         ss::abort_source* _as;
     };
     struct op {
@@ -61,7 +61,7 @@ public:
         max = term_roll,
     };
 
-    opfuzz(storage::log l, size_t ops_count)
+    opfuzz(ss::shared_ptr<storage::log> l, size_t ops_count)
       : _log(std::move(l)) {
         generate_workload(ops_count);
     }
@@ -72,7 +72,7 @@ public:
     opfuzz& operator=(opfuzz&&) noexcept = default;
 
     ss::future<> execute();
-    const storage::log& log() const { return _log; }
+    const ss::shared_ptr<storage::log> log() const { return _log; }
 
 private:
     std::unique_ptr<op> random_operation();
@@ -80,7 +80,7 @@ private:
 
     model::term_id _term = model::term_id(0);
     std::vector<std::unique_ptr<op>> _workload;
-    storage::log _log;
+    ss::shared_ptr<storage::log> _log;
     ss::abort_source _as;
 };
 } // namespace storage
