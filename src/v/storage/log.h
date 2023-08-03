@@ -135,6 +135,7 @@ public:
     virtual void set_cloud_gc_offset(model::offset) = 0;
 
     virtual const segment_set& segments() const = 0;
+    virtual segment_set& segments() = 0;
 
 private:
     ntp_config _config;
