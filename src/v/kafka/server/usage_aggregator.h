@@ -10,13 +10,46 @@
  */
 
 #pragma once
+#include "kafka/server/logger.h"
 #include "storage/kvstore.h"
 #include "utils/fragmented_vector.h"
+#include "vlog.h"
 
 #include <seastar/core/gate.hh>
 #include <seastar/core/timer.hh>
 
 namespace kafka {
+
+namespace detail {
+
+template<typename clock_type, typename duration>
+std::chrono::time_point<clock_type, duration> round_to_interval(
+  std::chrono::seconds usage_window_width_interval,
+  std::chrono::time_point<clock_type, duration> t) {
+    /// Downstream systems are particularly sensitive to minor issues with
+    /// timestamps not triggering on the configured interval (hours, minutes,
+    /// seconds, etc), this method rounds t to the nearest interval and logs an
+    /// error if this cannot be done within some threshold.
+    using namespace std::chrono_literals;
+    const auto interval = usage_window_width_interval;
+    const auto err_threshold = interval < 2min ? interval : 2min;
+    const auto cur_interval_start = t - (t.time_since_epoch() % interval);
+    const auto next_interval_start = cur_interval_start + interval;
+    if (t - cur_interval_start <= err_threshold) {
+        return {cur_interval_start};
+    } else if (next_interval_start - t <= err_threshold) {
+        return {next_interval_start};
+    }
+    vlog(
+      klog.error,
+      "usage has detected a timestamp '{}' that exceeds the preconfigured "
+      "threshold of 2min meaning a clock has fired later or earlier then "
+      "expected, this is unexpected behavior and should be investigated.",
+      t.time_since_epoch().count());
+    return t;
+}
+
+} // namespace detail
 
 /// Main structure of statistics that are being accounted for. These are
 /// periodically serialized to disk, hence why the struct inherits from the
