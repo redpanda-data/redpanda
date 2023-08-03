@@ -211,11 +211,9 @@ ss::future<> diskcheck::run_benchmark_fiber(
         }
         co_await m.measure([this, &iov, &file] {
             if constexpr (mode == read_or_write::write) {
-                return file.dma_write(
-                  get_pos(), iov, ss::default_priority_class(), &_intent);
+                return file.dma_write(get_pos(), iov, &_intent);
             } else {
-                return file.dma_read(
-                  get_pos(), iov, ss::default_priority_class(), &_intent);
+                return file.dma_read(get_pos(), iov, &_intent);
             }
         });
     }
