@@ -29,6 +29,7 @@
 namespace storage {
 
 class segment_set;
+class probe;
 
 class log {
 public:
@@ -139,6 +140,8 @@ public:
 
     // roll immediately with the current term.
     virtual ss::future<> force_roll(ss::io_priority_class) = 0;
+
+    virtual probe& get_probe() = 0;
 
 private:
     ntp_config _config;
