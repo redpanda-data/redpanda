@@ -80,7 +80,12 @@ def generate_random_workload(available_nodes):
 
 
 class NodeDecommissionWaiter():
-    def __init__(self, redpanda, node_id, logger, progress_timeout=30):
+    def __init__(self,
+                 redpanda,
+                 node_id,
+                 logger,
+                 progress_timeout=30,
+                 decommissioned_node_ids=None):
         self.redpanda = redpanda
         self.node_id = node_id
         self.logger = logger
@@ -89,6 +94,9 @@ class NodeDecommissionWaiter():
         self.last_replicas_left = None
         self.last_partitions_bytes_left = None
         self.progress_timeout = progress_timeout
+        self.decommissioned_node_ids = [
+            node_id
+        ] if decommissioned_node_ids == None else decommissioned_node_ids
 
     def _nodes_with_decommission_progress_api(self):
         def has_decommission_progress_api(node):
@@ -127,7 +135,7 @@ class NodeDecommissionWaiter():
     def _not_decommissioned_node(self):
         return random.choice([
             n for n in self._nodes_with_decommission_progress_api()
-            if self.redpanda.node_id(n) != self.node_id
+            if self.redpanda.node_id(n) not in self.decommissioned_node_ids
         ])
 
     def _made_progress(self):
