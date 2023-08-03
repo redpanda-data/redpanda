@@ -50,17 +50,22 @@ ss::future<> disk_log_appender::initialize() {
 }
 
 bool disk_log_appender::segment_is_appendable(model::term_id batch_term) const {
-    /**
-     * _log._segs.empty() is a tricky condition. It is here to suppor concurrent
-     * truncation (from 0) of an active log segment while we hold the lock of a
-     * valid segment.
-     *
-     * Checking for term is because we support multiple term appends which
-     * always roll
-     *
-     * _bytes_left_in_segment is for initial condition
-     *
-     */
+    if (!_seg || !_seg->has_appender()) {
+        // The latest segment with which this log_appender has called
+        // initialize() has been rolled and no longer has an segment appender
+        // (e.g. because segment.ms rolled onto a new segment). There is likely
+        // already a new segment and segment appender and we should reset to
+        // use them.
+        return false;
+    }
+    // _log._segs.empty() is a tricky condition. It is here to support
+    // concurrent truncation (from 0) of an active log segment while we hold the
+    // lock of a valid segment.
+    //
+    // Checking for term is because we support multiple term appends which
+    // always roll
+    //
+    // _bytes_left_in_segment is for initial condition
     return _bytes_left_in_segment > 0 && _log.term() == batch_term
            && !_log._segs.empty() /*see above before removing this condition*/;
 }
@@ -73,6 +78,19 @@ void disk_log_appender::release_lock() {
 
 ss::future<ss::stop_iteration>
 disk_log_appender::operator()(model::record_batch& batch) {
+    // We use a fast path here since this lock should very rarely be contested.
+    // An open segment may only have one in-flight append at any given time and
+    // the only other places this lock is held are during truncation
+    // (infrequent) or when enforcing segment.ms (which should rarely happen in
+    // high throughput scenarios).
+    auto segment_roll_lock_holder = _log.try_segment_roll_lock();
+    if (!segment_roll_lock_holder.has_value()) {
+        vlog(
+          stlog.warn,
+          "Segment roll lock contested for {}",
+          _log.config().ntp());
+        segment_roll_lock_holder = co_await _log.segment_roll_lock();
+    }
     batch.header().base_offset = _idx;
     batch.header().header_crc = model::internal_header_only_crc(batch.header());
     if (_last_term != batch.term()) {
@@ -88,7 +106,8 @@ disk_log_appender::operator()(model::record_batch& batch) {
             // we might actually have space in the current log, but the
             // terms do not match for the current append, so we must roll
             release_lock();
-            co_await _log.maybe_roll(_last_term, _idx, _config.io_priority);
+            co_await _log.maybe_roll_unlocked(
+              _last_term, _idx, _config.io_priority);
             co_await initialize();
         }
         co_return co_await append_batch_to_segment(batch);
