@@ -55,6 +55,7 @@ func newStartCommand() *cobra.Command {
 		nodes   uint
 		retries uint
 		image   string
+		pull    bool
 	)
 	command := &cobra.Command{
 		Use:   "start",
@@ -85,6 +86,7 @@ func newStartCommand() *cobra.Command {
 				checkBrokers,
 				retries,
 				image,
+				pull,
 				configKvs,
 			))
 		},
@@ -103,16 +105,21 @@ func newStartCommand() *cobra.Command {
 		"retries",
 		10,
 		"The amount of times to check for the cluster before"+
-			" considering it unstable and exiting.",
+			" considering it unstable and exiting",
 	)
 	imageFlag := "image"
 	command.Flags().StringVar(
 		&image,
 		imageFlag,
 		common.DefaultImage(),
-		"An arbitrary container image to use.",
+		"An arbitrary container image to use",
 	)
-	command.Flags().MarkHidden(imageFlag)
+	command.Flags().BoolVar(
+		&pull,
+		"pull",
+		false,
+		"Force pull the container image used",
+	)
 
 	return command
 }
@@ -123,6 +130,7 @@ func startCluster(
 	check func([]node) func() error,
 	retries uint,
 	image string,
+	pull bool,
 	extraArgs []string,
 ) error {
 	// Check if cluster exists and start it again.
@@ -140,17 +148,25 @@ func startCluster(
 		return nil
 	}
 
-	fmt.Println("Checking for a local image...")
-	present, checkErr := common.CheckIfImgPresent(c, image)
-	if checkErr != nil {
-		fmt.Printf("Error trying to list local images: %v\n", err)
-	}
-	if !present {
-		// If the image isn't present locally, try to pull it.
-		fmt.Println("Downloading latest version of redpanda")
+	if pull {
+		fmt.Println("Force pulling image...")
 		err = common.PullImage(c, image)
 		if err != nil {
 			return err
+		}
+	} else {
+		fmt.Println("Checking for a local image...")
+		present, checkErr := common.CheckIfImgPresent(c, image)
+		if checkErr != nil {
+			fmt.Printf("Error trying to list local images: %v\n", err)
+		}
+		if !present {
+			// If the image isn't present locally, try to pull it.
+			fmt.Printf("Version %q not found locally\n", image)
+			err = common.PullImage(c, image)
+			if err != nil {
+				return err
+			}
 		}
 	}
 
