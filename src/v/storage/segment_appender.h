@@ -17,6 +17,7 @@
 #include "seastarx.h"
 #include "storage/segment_appender_chunk.h"
 #include "storage/storage_resources.h"
+#include "utils/fragmented_vector.h"
 #include "utils/intrusive_list_helpers.h"
 
 #include <seastar/core/file.hh>
@@ -142,7 +143,12 @@ private:
         ss::promise<> p;
     };
 
-    std::vector<flush_op> _flush_ops;
+    // There is one segment_appender per partition replica so we don't want to
+    // allocate too many elements by default and hence limit.
+    // Limit to 16 elements which is about 640 bytes per chunk.
+    using flush_ops_container
+      = fragmented_vector<flush_op, sizeof(flush_op) * 16>;
+    flush_ops_container _flush_ops;
     size_t _flushed_offset{0};
     size_t _stable_offset{0};
 
