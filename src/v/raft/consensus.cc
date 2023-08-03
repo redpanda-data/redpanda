@@ -159,9 +159,11 @@ void consensus::setup_metrics() {
 
     _probe->setup_metrics(_log->config().ntp());
     auto labels = probe::create_metric_labels(_log->config().ntp());
-    auto aggregate_labels = config::shard_local_cfg().aggregate_metrics()
-                              ? std::vector<sm::label>{sm::shard_label}
-                              : std::vector<sm::label>{};
+    auto partition_label = sm::label("partition");
+    auto aggregate_labels
+      = config::shard_local_cfg().aggregate_metrics()
+          ? std::vector<sm::label>{sm::shard_label, partition_label}
+          : std::vector<sm::label>{};
 
     _metrics.add_group(
       prometheus_sanitize::metrics_name("raft"),
