@@ -24,11 +24,17 @@ partition_probe::partition_probe(const model::ntp& ntp) {
     }
 
     namespace sm = ss::metrics;
+    auto partition_label = sm::label("partition");
     const std::vector<sm::label_instance> labels = {
       sm::label("namespace")(ntp.ns()),
       sm::label("topic")(ntp.tp.topic()),
-      sm::label("partition")(ntp.tp.partition()),
+      partition_label(ntp.tp.partition()),
     };
+
+    auto aggregate_labels
+      = config::shard_local_cfg().aggregate_metrics()
+          ? std::vector<sm::label>{sm::shard_label, partition_label}
+          : std::vector<sm::label>{};
 
     _metrics.add_group(
       prometheus_sanitize::metrics_name("cloud_storage:partition"),
@@ -37,64 +43,74 @@ partition_probe::partition_probe(const model::ntp& ntp) {
           "read_bytes",
           [this] { return _bytes_read; },
           sm::description("Total bytes read from remote partition"),
-          labels),
+          labels)
+          .aggregate(aggregate_labels),
         sm::make_counter(
           "read_records",
           [this] { return _records_read; },
           sm::description("Total number of records read from remote partition"),
-          labels),
+          labels)
+          .aggregate(aggregate_labels),
 
         sm::make_gauge(
           "materialized_segments",
           [this] { return _cur_materialized_segments; },
           sm::description("Current number of materialized remote segments"),
-          labels),
+          labels)
+          .aggregate(aggregate_labels),
 
         sm::make_gauge(
           "readers",
           [this] { return _cur_readers; },
           sm::description("Current number of remote partition readers"),
-          labels),
+          labels)
+          .aggregate(aggregate_labels),
 
         sm::make_gauge(
           "spillover_manifest_bytes",
           [this] { return _spillover_manifest_bytes; },
           sm::description("Total amount of memory used by spillover manifests"),
-          labels),
+          labels)
+          .aggregate(aggregate_labels),
 
         sm::make_gauge(
           "spillover_manifest_instances",
           [this] { return _spillover_manifest_instances; },
           sm::description(
             "Total number of spillover manifests stored in memory"),
-          labels),
+          labels)
+          .aggregate(aggregate_labels),
 
         sm::make_counter(
           "spillover_manifest_hydrated",
           [this] { return _spillover_manifest_hydrated; },
           sm::description(
             "Number of times spillover manifests were saved to the cache"),
-          labels),
+          labels)
+          .aggregate(aggregate_labels),
 
         sm::make_counter(
           "spillover_manifest_materialized",
           [this] { return _spillover_manifest_materialized; },
           sm::description(
             "Number of times spillover manifests were loaded from the cache"),
-          labels),
+          labels)
+          .aggregate(aggregate_labels),
 
         sm::make_gauge(
           "segment_readers",
           [this] { return _cur_segment_readers; },
           sm::description("Current number of remote segment readers"),
-          labels),
+          labels)
+          .aggregate(aggregate_labels),
 
         sm::make_histogram(
           "spillover_manifest_latency",
           [this] { return _spillover_mat_latency.public_histogram_logform(); },
           sm::description(
             "Spillover manifest materialization latency histogram"),
-          labels),
+          labels)
+          .aggregate(aggregate_labels),
 
         sm::make_histogram(
           "chunk_hydration_latency",
@@ -102,12 +118,14 @@ partition_probe::partition_probe(const model::ntp& ntp) {
               return _chunk_hydration_latency.public_histogram_logform();
           },
           sm::description("Chunk hydration latency histogram"),
-          labels),
+          labels)
+          .aggregate(aggregate_labels),
         sm::make_gauge(
           "chunk_size",
           [this] { return _chunk_size; },
           sm::description("Size of chunk downloaded from cloud storage"),
-          labels),
+          labels)
+          .aggregate(aggregate_labels),
       });
 }
 
