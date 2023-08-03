@@ -179,6 +179,8 @@ public:
 
     const T& front() const { return _frags.front().front(); }
     const T& back() const { return _frags.back().back(); }
+    T& front() { return _frags.front().front(); }
+    T& back() { return _frags.back().back(); }
     bool empty() const noexcept { return _size == 0; }
     size_t size() const noexcept { return _size; }
 
