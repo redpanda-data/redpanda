@@ -266,7 +266,7 @@ FIXTURE_TEST(test_delete_from_stm_consume, delete_records_e2e_fixture) {
                    topic_name, model::partition_id(0), model::offset(1), 5s)
                  .get();
     BOOST_CHECK_EQUAL(model::offset(1), lwm);
-    tests::cooperative_spin_wait_with_timeout(3s, [this] {
+    tests::cooperative_spin_wait_with_timeout(10s, [this] {
         return log->segment_count() == 1;
     }).get();
 

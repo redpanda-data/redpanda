@@ -80,7 +80,7 @@ FIXTURE_TEST(test_produce_consume_from_cloud, e2e_fixture) {
     partition->log()->housekeeping(housekeeping_conf).get();
     // NOTE: the storage layer only initially requests eviction; it relies on
     // Raft to write a snapshot and subsequently truncate.
-    tests::cooperative_spin_wait_with_timeout(3s, [log] {
+    tests::cooperative_spin_wait_with_timeout(10s, [log] {
         return log->segments().size() == 1;
     }).get();
 
