@@ -172,7 +172,7 @@ void probe::setup_metrics(const model::ntp& ntp) {
          [this] { return _compaction_ratio; },
          sm::description("Average segment compaction ratio"),
          labels)
-         .aggregate({sm::shard_label})});
+         .aggregate(aggregate_labels)});
 }
 
 void probe::add_initial_segment(const segment& s) {
