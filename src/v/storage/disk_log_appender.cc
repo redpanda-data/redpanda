@@ -80,22 +80,16 @@ disk_log_appender::operator()(model::record_batch& batch) {
     }
     _last_term = batch.term();
     try {
-        if (unlikely(!segment_is_appendable(batch.term()))) {
-            while (true) {
-                // we might actually have space in the current log, but the
-                // terms do not match for the current append, so we must roll
-                release_lock();
-                co_await _log.maybe_roll(_last_term, _idx, _config.io_priority);
-                co_await initialize();
-
-                // we might have gotten the lock, but in a concurrency
-                // situation - say a segment eviction we need to double
-                // check that _after_ we got the lock, the segment wasn't
-                // somehow closed before the append
-                if (segment_is_appendable(batch.term())) {
-                    break;
-                }
-            }
+        // we might have gotten the lock, but in a concurrency
+        // situation - say a segment eviction we need to double
+        // check that _after_ we got the lock, the segment wasn't
+        // somehow closed before the append
+        while (unlikely(!segment_is_appendable(batch.term()))) {
+            // we might actually have space in the current log, but the
+            // terms do not match for the current append, so we must roll
+            release_lock();
+            co_await _log.maybe_roll(_last_term, _idx, _config.io_priority);
+            co_await initialize();
         }
         co_return co_await append_batch_to_segment(batch);
     } catch (...) {
