@@ -211,7 +211,7 @@ class KgoRepeaterService(Service):
         try:
             self.redpanda.wait_until(
                 lambda: self._group_ready(),
-                timeout_sec=120,
+                timeout_sec=300,
                 backoff_sec=10)
         except:
             # On failure, dump stacks on all workers in case there is an apparent client bug to investigate

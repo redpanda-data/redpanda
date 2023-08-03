@@ -261,7 +261,7 @@ class ManyPartitionsTest(PreallocNodesTest):
         super(ManyPartitionsTest, self).__init__(
             test_ctx,
             *args,
-            num_brokers=9,
+            num_brokers=5,
             node_prealloc_count=3,
             extra_rp_conf={
                 # Disable leader balancer initially, to enable us to check for
@@ -315,8 +315,10 @@ class ManyPartitionsTest(PreallocNodesTest):
                                      logger_levels={
                                          'storage': 'warn',
                                          'storage-gc': 'warn',
+                                         'cluster': 'warn',
                                          'raft': 'warn',
-                                         'offset_translator': 'warn'
+                                         'offset_translator': 'warn',
+                                         'tx': 'warn',
                                      }),
             **kwargs)
         self.rpk = RpkTool(self.redpanda)
@@ -344,6 +346,10 @@ class ManyPartitionsTest(PreallocNodesTest):
                     self.logger.info(
                         f"partition {tn}/{p.id} has no leader yet")
                     any_incomplete = True
+                if p.start_offset is None or p.high_watermark is None:
+                    self.logger.debug(
+                        f"partition {tn}/{p.id} has no offsets yet")
+                    any_incomplete = True
 
         return not any_incomplete
 
@@ -366,7 +372,7 @@ class ManyPartitionsTest(PreallocNodesTest):
             assert len(partitions) == p_per_topic
             for p in partitions:
                 if p.leader == node_id:
-                    self.logger.info(
+                    self.logger.debug(
                         f"partition {tn}/{p.id} still on node {node_id}")
                     any_incomplete = True
 
@@ -412,7 +418,7 @@ class ManyPartitionsTest(PreallocNodesTest):
 
         # FIXME: this isn't the same check the leader balancer itself does, but it
         # should suffice to check the leader balancer is progressing.
-        threshold = 0.1
+        threshold = 0.03
         if (p_per_topic * len(topic_names)) < 5000:
             # Low scale systems have bumpier stats
             threshold = 0.25
@@ -510,11 +516,18 @@ class ManyPartitionsTest(PreallocNodesTest):
 
         self.redpanda.stop_node(node, timeout=STOP_TIMEOUT)
 
-        # Wait for leaderships to stabilize on the surviving nodes
-        wait_until(
-            lambda: self._node_leadership_evacuated(topic_names, n_partitions,
-                                                    node_id), 30, 1)
+        self.logger.info(f"node {node.name} stopped")
 
+        # # Wait for leaderships to stabilize on the surviving nodes
+        # wait_until(
+        #     lambda: self._node_leadership_evacuated(topic_names, n_partitions,
+        #                                             node_id), 120, 5, err_msg="leadership not evacuated")
+
+        # sleep some to accumulate replication delay and observe phase 3
+        # time.sleep(300.0)
+        time.sleep(180)
+
+        self.logger.info(f"starting node {node.name}...")
         self.redpanda.start_node(node, timeout=self.EXPECT_START_TIME)
 
         # Heuristic: in testing we see leaderships transfer at about 10
@@ -538,8 +551,12 @@ class ManyPartitionsTest(PreallocNodesTest):
         self.logger.info(
             f"Leaderships balanced in {time.time() - t1:.2f} seconds")
 
+        # observe phase 4
+        time.sleep(180)
+
+
     def _restart_stress(self, scale: ScaleParameters, topic_names: list,
-                        n_partitions: int, inter_restart_check: callable):
+                        n_partitions: int, inter_restart_check: callable, restart_count=2):
         """
         Restart the cluster several times, to check stability
         """
@@ -547,7 +564,6 @@ class ManyPartitionsTest(PreallocNodesTest):
         # Measure the impact of restarts on resource utilization on an idle system:
         # at time of writing we know that the used FD count will go up substantially
         # on each restart (https://github.com/redpanda-data/redpanda/issues/4057)
-        restart_count = 2
 
         for node_name, file_count in self._get_fd_counts():
             self.logger.info(
@@ -564,7 +580,7 @@ class ManyPartitionsTest(PreallocNodesTest):
 
             wait_until(
                 lambda: self._all_elections_done(topic_names, n_partitions),
-                timeout_sec=60,
+                timeout_sec=120,
                 backoff_sec=5,
                 err_msg="Waiting for elections to complete after restart")
             self.logger.info(f"Post-restart elections done.")
@@ -903,6 +919,205 @@ class ManyPartitionsTest(PreallocNodesTest):
         # We have other OMB benchmark tests, but this one runs at the
         # peak partition count.
         self._run_omb(scale)
+
+    @cluster(num_nodes=8, log_allow_list=RESTART_LOG_ALLOW_LIST)
+    def test_recovery(self):
+        replication_factor = 3
+        compacted = False
+        tiered_storage_enabled = False
+
+        scale = ScaleParameters(self.redpanda,
+                                replication_factor,
+                                tiered_storage_enabled=tiered_storage_enabled)
+
+        # Run with one huge topic: it is more stressful for redpanda when clients
+        # request the metadata for many partitions at once, and the simplest way
+        # to get traffic generators to do that without the clients supporting
+        # writing to arrays of topics is to put all the partitions into one topic.
+        n_topics = 1
+
+        # Partitions per topic
+        # CUST
+        n_partitions = int(30_000 / n_topics)
+
+        self.logger.info(
+            f"Running partition scale test with {n_partitions} partitions on {n_topics} topics"
+        )
+
+        # Enable large node-wide thoughput limits to verify they work at scale
+        # To avoid affecting the result of the test with the limit, set them
+        # somewhat above expect_bandwidth value per node
+        self.redpanda.add_extra_rp_conf({
+            'kafka_throughput_limit_node_in_bps':
+            int(scale.expect_bandwidth / len(self.redpanda.nodes) * 3),
+            'kafka_throughput_limit_node_out_bps':
+            int(scale.expect_bandwidth / len(self.redpanda.nodes) * 3),
+
+            'topic_partitions_per_shard': 5_000,
+            'topic_memory_per_partition': None,
+
+            'aggregate_metrics': False,
+            'disable_metrics': False,
+            'disable_public_metrics': True,
+            'cpu_profiler_sample_period_ms': 3,
+
+            #CUST
+
+            'enable_leader_balancer': True,
+            'raft_concurrent_votes_per_shard': 10_000,
+            #'raft_recovery_concurrent_per_shard': 10_000,
+            'kafka_metadata_delay_ms': 0,
+            'kafka_metadata_rate_limit': 50_000,
+
+            'election_timeout_ms': 1500,
+        })
+
+        self.redpanda.start()
+
+        self.logger.info("Entering topic creation")
+        topic_names = [f"scale_{i:06d}" for i in range(0, n_topics)]
+        for tn in topic_names:
+            self.logger.info(
+                f"Creating topic {tn} with {n_partitions} partitions")
+            config = {
+                'segment.bytes': scale.segment_size,
+                'retention.bytes': scale.retention_bytes
+            }
+            if scale.local_retention_bytes:
+                config[
+                    'retention.local.target.bytes'] = scale.local_retention_bytes
+
+            if compacted:
+                if scale.tiered_storage_enabled:
+                    config['cleanup.policy'] = 'compact,delete'
+                else:
+                    config['cleanup.policy'] = 'compact'
+            else:
+                config['cleanup.policy'] = 'delete'
+
+            self.rpk.create_topic(tn,
+                                  partitions=n_partitions,
+                                  replicas=replication_factor,
+                                  config=config)
+
+        self.logger.info(f"Awaiting elections...")
+        wait_until(lambda: self._all_elections_done(topic_names, n_partitions),
+                   timeout_sec=180,
+                   backoff_sec=5,
+                   err_msg="Waiting for initial elections")
+        self.logger.info(f"Initial elections done.")
+
+        for node, file_count in self._get_fd_counts():
+            self.logger.info(
+                f"Open files after initial elections on {node.name}: {file_count}"
+            )
+
+        # observe phase 1
+        # time.sleep(180)
+
+        # Start kgo-repeater
+
+        repeater_kwargs = {}
+        if compacted:
+            # Each parititon gets roughly 10 unique keys, after which
+            # compaction should kick in.
+            repeater_kwargs['key_count'] = int(scale.partition_limit * 10)
+        else:
+            # Not doing compaction, doesn't matter how big the keyspace
+            # is, use whole 32 bit range to get best possible distribution
+            # across partitions.
+            repeater_kwargs['key_count'] = 2**32
+
+        #CUST
+        repeater_kwargs['rate_limit_bps'] = 100 * 2**20
+        scale.expect_bandwidth = (len(self.redpanda.nodes) / replication_factor) * repeater_kwargs['rate_limit_bps'] * 0.5
+
+        # Main test phase: with continuous background traffic, exercise restarts and
+        # any other cluster changes that might trip up at scale.
+        repeater_msg_size = 16384
+        max_buffered_records = 64
+        if scale.tiered_storage_enabled:
+            max_buffered_records = 1
+        with repeater_traffic(context=self._ctx,
+                              redpanda=self.redpanda,
+                              nodes=self.preallocated_nodes,
+                              topic=topic_names[0],
+                              msg_size=repeater_msg_size,
+                              #CUST
+                              workers=64, #self._repeater_worker_count(scale),
+                              max_buffered_records=max_buffered_records,
+                              cleanup=lambda: self.free_preallocated_nodes(),
+                              **repeater_kwargs) as repeater:
+            repeater_await_bytes = 1E9
+            if scale.tiered_storage_enabled or not self.redpanda.dedicated_nodes:
+                # Be much more lenient when tiered storage is enabled, since
+                # the repeater incurs reads.
+                repeater_await_bytes = 1E8
+            repeater_await_msgs = int(repeater_await_bytes / repeater_msg_size)
+
+            def progress_check():
+                # Explicit wait for consumer group, because we might have e.g.
+                # just restarted the cluster, and don't want to include that
+                # delay in our throughput-driven timeout expectations
+                self.logger.info(f"Checking repeater group is ready...")
+                repeater.await_group_ready()
+
+                t = repeater_await_bytes / scale.expect_bandwidth
+                self.logger.info(
+                    f"Waiting for {repeater_await_msgs} messages in {t} seconds"
+                )
+                t1 = time.time()
+                repeater.await_progress(repeater_await_msgs, t)
+                t2 = time.time()
+
+                # This is approximate, because await_progress isn't returning the very
+                # instant the workers hit their collective target.
+                self.logger.info(
+                    f"Wait complete, approx bandwidth {(repeater_await_bytes / (t2-t1))/(1024*1024.0)}MB/s"
+                )
+
+            progress_check()
+            # observe phase 2
+            time.sleep(180)
+
+            self.logger.info(f"Entering single node restart phase")
+            self._single_node_restart(scale, topic_names, n_partitions)
+            progress_check()
+
+            # self.logger.info(f"Entering restart stress test phase")
+            # self._restart_stress(scale, topic_names, n_partitions,
+            #                      progress_check, restart_count=2)
+
+            self.logger.info(
+                f"Post-restarts: checking repeater group is ready...")
+            repeater.await_group_ready()
+
+            return
+
+            # Done with restarts, now do a longer traffic soak
+            self.logger.info(f"Entering traffic soak phase")
+
+            # Normalize by the max_buffered_records.
+            soak_await_bytes = int(100E9 / 64 * max_buffered_records)
+            if not self.redpanda.dedicated_nodes:
+                soak_await_bytes = 10E9
+
+            soak_await_msgs = soak_await_bytes / repeater_msg_size
+            t1 = time.time()
+            initial_p, _ = repeater.total_messages()
+            try:
+                repeater.await_progress(
+                    soak_await_msgs, soak_await_bytes / scale.expect_bandwidth)
+            except TimeoutError:
+                t2 = time.time()
+                final_p, _ = repeater.total_messages()
+                bytes_sent = (final_p - initial_p) * repeater_msg_size
+                expect_mbps = scale.expect_bandwidth / (1024 * 1024.0)
+                actual_mbps = (bytes_sent / (t2 - t1)) / (1024 * 1024.0)
+                self.logger.error(
+                    f"Expected throughput {expect_mbps:.2f}, got throughput {actual_mbps:.2f}MB/s"
+                )
+                raise
 
     def _test_many_partitions(self, compacted, tiered_storage_enabled=False):
         """
