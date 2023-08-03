@@ -17,9 +17,9 @@
 #include "storage/compacted_index.h"
 #include "storage/compacted_index_writer.h"
 #include "storage/compacted_offset_list.h"
+#include "storage/fwd.h"
 #include "storage/index_state.h"
 #include "storage/logger.h"
-#include "storage/segment_appender.h"
 #include "units.h"
 #include "utils/fragmented_vector.h"
 

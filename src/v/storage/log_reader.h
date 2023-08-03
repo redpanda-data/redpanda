@@ -17,7 +17,7 @@
 #include "storage/lock_manager.h"
 #include "storage/parser.h"
 #include "storage/probe.h"
-#include "storage/segment_reader.h"
+#include "storage/segment.h"
 #include "storage/segment_set.h"
 #include "storage/types.h"
 

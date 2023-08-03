@@ -12,7 +12,6 @@
 #pragma once
 #include "bytes/iobuf.h"
 #include "model/record.h"
-#include "storage/segment_appender.h"
 
 namespace storage {
 

@@ -12,7 +12,6 @@
 #pragma once
 
 #include "storage/log_appender.h"
-#include "storage/segment.h"
 
 #include <seastar/core/rwlock.hh>
 

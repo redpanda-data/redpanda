@@ -22,6 +22,7 @@
 #include "storage/segment_appender_utils.h"
 #include "storage/segment_set.h"
 #include "storage/segment_utils.h"
+#include "storage/storage_resources.h"
 #include "storage/types.h"
 #include "storage/version.h"
 #include "vassert.h"

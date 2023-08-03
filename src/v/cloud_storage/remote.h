@@ -20,7 +20,6 @@
 #include "cloud_storage_clients/client_pool.h"
 #include "model/metadata.h"
 #include "random/simple_time_jitter.h"
-#include "storage/segment_reader.h"
 #include "utils/intrusive_list_helpers.h"
 #include "utils/retry_chain_node.h"
 

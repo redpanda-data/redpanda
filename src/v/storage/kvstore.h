@@ -13,11 +13,11 @@
 #include "bytes/iobuf.h"
 #include "seastarx.h"
 #include "ssx/metrics.h"
+#include "storage/fwd.h"
 #include "storage/ntp_config.h"
 #include "storage/parser.h"
 #include "storage/segment_set.h"
 #include "storage/snapshot.h"
-#include "storage/storage_resources.h"
 #include "storage/types.h"
 #include "utils/mutex.h"
 
@@ -106,6 +106,7 @@ public:
       kvstore_config kv_conf,
       storage_resources&,
       ss::sharded<features::feature_table>& feature_table);
+    ~kvstore() noexcept;
 
     ss::future<> start();
     ss::future<> stop();

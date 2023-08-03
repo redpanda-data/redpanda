@@ -8,8 +8,10 @@
 // by the Apache License, Version 2.0
 
 #include "config/configuration.h"
+#include "features/feature_table.h"
 #include "random/generators.h"
 #include "storage/kvstore.h"
+#include "storage/storage_resources.h"
 #include "test_utils/fixture.h"
 
 #include <seastar/util/file.hh>

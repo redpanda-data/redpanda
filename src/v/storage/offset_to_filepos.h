@@ -15,8 +15,8 @@
 #include "model/record.h"
 #include "outcome.h"
 #include "seastarx.h"
+#include "storage/fwd.h"
 #include "storage/logger.h"
-#include "storage/segment.h"
 
 #include <seastar/core/future-util.hh>
 #include <seastar/core/io_priority_class.hh>
