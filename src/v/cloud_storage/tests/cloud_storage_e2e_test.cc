@@ -17,7 +17,6 @@
 #include "kafka/server/tests/produce_consume_utils.h"
 #include "model/fundamental.h"
 #include "redpanda/tests/fixture.h"
-#include "storage/disk_log_impl.h"
 
 #include <seastar/core/io_priority_class.hh>
 
@@ -60,7 +59,7 @@ FIXTURE_TEST(test_produce_consume_from_cloud, e2e_fixture) {
     // Do some sanity checks that our partition looks the way we expect (has a
     // log, archiver, etc).
     auto partition = app.partition_manager.local().get(ntp);
-    auto* log = dynamic_cast<storage::disk_log_impl*>(partition->log().get());
+    auto log = partition->log();
     auto& archiver = partition->archiver().value().get();
     BOOST_REQUIRE(archiver.sync_for_tests().get());
 
@@ -127,7 +126,7 @@ FIXTURE_TEST(test_produce_consume_from_cloud_with_spillover, e2e_fixture) {
     // Do some sanity checks that our partition looks the way we expect (has a
     // log, archiver, etc).
     auto partition = app.partition_manager.local().get(ntp);
-    auto* log = dynamic_cast<storage::disk_log_impl*>(partition->log().get());
+    auto log = partition->log();
     auto archiver_ref = partition->archiver();
     BOOST_REQUIRE(archiver_ref.has_value());
     auto& archiver = archiver_ref.value().get();
@@ -377,14 +376,14 @@ public:
         add_topic({model::kafka_namespace, topic_name}, 1, props).get();
         wait_for_leader(ntp).get();
         partition = app.partition_manager.local().get(ntp).get();
-        log = dynamic_cast<storage::disk_log_impl*>(partition->log().get());
+        log = partition->log();
         archiver = &partition->archiver()->get();
     }
 
     model::topic topic_name;
     model::ntp ntp;
     cluster::partition* partition;
-    storage::disk_log_impl* log;
+    ss::shared_ptr<storage::log> log;
     archival::ntp_archiver* archiver;
 };
 
