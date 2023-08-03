@@ -85,13 +85,6 @@ public:
 
     ss::future<bool> does_raft0_have_leader();
 
-    /**
-     * All health metadata is refreshed automatically via the
-     * health_monitor_backend on a timer. The cloud storage stats are an
-     * exception, this method is for external events to trigger this refresh.
-     */
-    ss::future<> maybe_refresh_cloud_health_stats();
-
 private:
     template<typename Func>
     auto dispatch_to_backend(Func&& f) {

@@ -38,6 +38,7 @@ v_cc_library(
     server/group.cc
     server/group_router.cc
     server/group_manager.cc
+    server/usage_aggregator.cc
     server/usage_manager.cc
     server/rm_group_frontend.cc
     server/connection_context.cc
