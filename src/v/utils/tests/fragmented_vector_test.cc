@@ -359,3 +359,11 @@ BOOST_AUTO_TEST_CASE(fragmented_vector_pop_back_n) {
         }
     }
 }
+
+BOOST_AUTO_TEST_CASE(fragmented_vector_constructor_from_iter_range) {
+    std::vector<int> vals{1, 2, 3};
+
+    fragmented_vector<int, 8> fv(vals.begin(), vals.end());
+
+    test_details::fragmented_vector_accessor::check_consistency(fv);
+}
