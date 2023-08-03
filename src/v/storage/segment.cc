@@ -36,6 +36,7 @@
 #include <seastar/core/shared_ptr.hh>
 #include <seastar/core/smp.hh>
 
+#include <exception>
 #include <optional>
 #include <stdexcept>
 #include <utility>
@@ -210,39 +211,28 @@ ss::future<size_t> segment::remove_persistent_state() {
 }
 
 ss::future<> segment::do_close() {
-    auto f = _reader->close();
+    co_await _reader->close();
     if (_appender) {
-        f = f.then([this] { return _appender->close(); });
+        co_await _appender->close();
     }
     if (_compaction_index) {
-        f = f.then([this] { return _compaction_index->close(); });
+        co_await _compaction_index->close();
     }
     // after appender flushes to make sure we make things visible
     // only after appender flush
-    f = f.then([this] { return _idx.flush(); });
-    return f;
+    co_await _idx.flush();
 }
 
 ss::future<> segment::do_release_appender(
   segment_appender_ptr appender,
   std::optional<batch_cache_index> cache,
   std::optional<compacted_index_writer> compacted_index) {
-    return ss::do_with(
-      std::move(appender),
-      std::move(compacted_index),
-      [this, cache = std::move(cache)](
-        segment_appender_ptr& appender,
-        std::optional<compacted_index_writer>& compacted_index) {
-          return appender->close()
-            .then([this] { return _idx.flush(); })
-            .then([this, &compacted_index] {
-                if (compacted_index) {
-                    return compacted_index->close();
-                }
-                clear_cached_disk_usage();
-                return ss::now();
-            });
-      });
+    co_await appender->close();
+    co_await _idx.flush();
+    if (compacted_index) {
+        co_await compacted_index->close();
+    }
+    clear_cached_disk_usage();
 }
 
 ss::future<> segment::release_appender(readers_cache* readers_cache) {
@@ -263,29 +253,32 @@ ss::future<> segment::release_appender(readers_cache* readers_cache) {
      */
     if (_destructive_ops.try_write_lock()) {
         _destructive_ops.write_unlock();
-        return write_lock().then([this](ss::rwlock::holder h) {
-            return do_flush()
-              .then([this] {
-                  auto a = std::exchange(_appender, nullptr);
-                  auto c
-                    = config::shard_local_cfg().release_cache_on_segment_roll()
-                        ? std::exchange(_cache, std::nullopt)
-                        : std::nullopt;
-                  auto i = std::exchange(_compaction_index, std::nullopt);
-                  return do_release_appender(
-                    std::move(a), std::move(c), std::move(i));
-              })
-              .finally([h = std::move(h)] {});
-        });
+        auto wr_lock = co_await write_lock();
+        co_await do_flush();
+        auto a = std::exchange(_appender, nullptr);
+        auto c = config::shard_local_cfg().release_cache_on_segment_roll()
+                   ? std::exchange(_cache, std::nullopt)
+                   : std::nullopt;
+        auto i = std::exchange(_compaction_index, std::nullopt);
+        co_await do_release_appender(std::move(a), std::move(c), std::move(i));
     } else {
-        return read_lock().then([this, readers_cache](ss::rwlock::holder h) {
-            return do_flush()
-              .then([this, readers_cache] {
-                  release_appender_in_background(readers_cache);
-              })
-              .finally([h = std::move(h)] {});
-        });
+        auto rd_lock = co_await read_lock();
+        release_appender_in_background(readers_cache);
     }
+}
+
+ss::future<> segment::release_appender_and_evict_readers(
+  segment_appender_ptr appender,
+  std::optional<batch_cache_index> cache_index,
+  std::optional<compacted_index_writer> index_writer,
+  readers_cache* readers_cache) {
+    std::optional<readers_cache::range_lock_holder> range_lock
+      = co_await readers_cache->evict_range(
+        _tracker.base_offset, _tracker.dirty_offset);
+    auto wr_lock = co_await write_lock();
+    range_lock.reset();
+    co_await do_release_appender(
+      std::move(appender), std::move(cache_index), std::move(index_writer));
 }
 
 void segment::release_appender_in_background(readers_cache* readers_cache) {
@@ -301,64 +294,52 @@ void segment::release_appender_in_background(readers_cache* readers_cache) {
        a = std::move(a),
        c = std::move(c),
        i = std::move(i)]() mutable {
-          return readers_cache
-            ->evict_range(_tracker.base_offset, _tracker.dirty_offset)
-            .then(
-              [this, a = std::move(a), c = std::move(c), i = std::move(i)](
-                readers_cache::range_lock_holder readers_cache_lock) mutable {
-                  return ss::do_with(
-                           std::move(readers_cache_lock),
-                           [this](auto&) { return write_lock(); })
-                    .then([this,
-                           a = std::move(a),
-                           c = std::move(c),
-                           i = std::move(i)](ss::rwlock::holder h) mutable {
-                        return do_release_appender(
-                                 std::move(a), std::move(c), std::move(i))
-                          .finally([h = std::move(h)] {});
-                    });
-              });
+          return release_appender_and_evict_readers(
+            std::move(a), std::move(c), std::move(i), readers_cache);
       });
 }
 
 ss::future<> segment::flush() {
     check_segment_not_closed("flush()");
-    return read_lock().then([this](ss::rwlock::holder h) {
-        return do_flush().finally([h = std::move(h)] {});
-    });
+    auto rd_lock = read_lock();
+    co_await do_flush();
 }
 ss::future<> segment::do_flush() {
     _generation_id++;
     if (!_appender) {
-        return ss::make_ready_future<>();
+        co_return;
     }
+
     auto o = _tracker.dirty_offset;
     auto fsize = _appender->file_byte_offset();
-    return _appender->flush().then([this, o, fsize] {
-        // never move committed offset backward, there may be multiple
-        // outstanding flushes once the one executed later in terms of offset
-        // finishes we guarantee that all previous flushes finished.
-        _tracker.committed_offset = std::max(o, _tracker.committed_offset);
-        _tracker.stable_offset = _tracker.committed_offset;
-        _reader->set_file_size(std::max(fsize, _reader->file_size()));
-        clear_cached_disk_usage();
-    });
+    co_await _appender->flush();
+
+    // never move committed offset backward, there may be multiple
+    // outstanding flushes once the one executed later in terms of offset
+    // finishes we guarantee that all previous flushes finished.
+    _tracker.committed_offset = std::max(o, _tracker.committed_offset);
+    _tracker.stable_offset = _tracker.committed_offset;
+    _reader->set_file_size(std::max(fsize, _reader->file_size()));
+    clear_cached_disk_usage();
 }
 
-ss::future<> remove_compacted_index(const segment_full_path& reader_path) {
+ss::future<> remove_compacted_index(segment_full_path reader_path) {
     auto path = reader_path.to_compacted_index();
-    return ss::remove_file(path.string())
-      .handle_exception([path](const std::exception_ptr& e) {
-          try {
-              rethrow_exception(e);
-          } catch (const std::filesystem::filesystem_error& e) {
-              if (e.code() == std::errc::no_such_file_or_directory) {
-                  // Do not log: ENOENT on removal is success
-                  return;
-              }
-          }
-          vlog(stlog.warn, "error removing compacted index {} - {}", path, e);
-      });
+    try {
+        co_await ss::remove_file(path.string());
+    } catch (const std::filesystem::filesystem_error& e) {
+        if (e.code() == std::errc::no_such_file_or_directory) {
+            // Do not log: ENOENT on removal is success
+            co_return;
+        }
+        vlog(stlog.warn, "error removing compacted index {} - {}", path, e);
+    } catch (...) {
+        vlog(
+          stlog.warn,
+          "error removing compacted index {} - {}",
+          path,
+          std::current_exception());
+    }
 }
 
 ss::future<> segment::truncate(
@@ -366,12 +347,9 @@ ss::future<> segment::truncate(
   size_t physical,
   model::timestamp new_max_timestamp) {
     check_segment_not_closed("truncate()");
-    return write_lock().then(
-      [this, prev_last_offset, physical, new_max_timestamp](
-        ss::rwlock::holder h) {
-          return do_truncate(prev_last_offset, physical, new_max_timestamp)
-            .finally([this, h = std::move(h)] { clear_cached_disk_usage(); });
-      });
+    auto wr_lock = co_await write_lock();
+    co_await do_truncate(prev_last_offset, physical, new_max_timestamp);
+    clear_cached_disk_usage();
 }
 
 ss::future<> segment::do_truncate(
@@ -389,42 +367,32 @@ ss::future<> segment::do_truncate(
       prev_last_offset);
     _generation_id++;
     cache_truncate(prev_last_offset + model::offset(1));
-    auto f = ss::now();
     if (is_compacted_segment()) {
         // if compaction index is opened close it
         if (_compaction_index) {
-            f = ss::do_with(
-              std::exchange(_compaction_index, std::nullopt),
-              [](std::optional<compacted_index_writer>& c) {
-                  return c->close();
-              });
+            auto c = std::exchange(_compaction_index, std::nullopt);
+            co_await c->close();
         }
         // always remove compaction index when truncating compacted segments
-        f = f.then([this] { return remove_compacted_index(_reader->path()); });
+        co_await remove_compacted_index(_reader->path());
     }
 
-    f = f.then([this, prev_last_offset, new_max_timestamp] {
-        return _idx.truncate(prev_last_offset, new_max_timestamp);
-    });
+    co_await _idx.truncate(prev_last_offset, new_max_timestamp);
 
     // physical file only needs *one* truncation call
     if (_appender) {
-        f = f.then([this, physical] { return _appender->truncate(physical); });
+        co_await _appender->truncate(physical);
         // release appender to force segment roll
         if (is_compacted_segment()) {
-            f = f.then([this] {
-                auto appender = std::exchange(_appender, nullptr);
-                auto cache = std::exchange(_cache, std::nullopt);
-                auto c_idx = std::exchange(_compaction_index, std::nullopt);
-                return do_release_appender(
-                  std::move(appender), std::move(cache), std::move(c_idx));
-            });
+            auto appender = std::exchange(_appender, nullptr);
+            auto cache = std::exchange(_cache, std::nullopt);
+            auto c_idx = std::exchange(_compaction_index, std::nullopt);
+            co_await do_release_appender(
+              std::move(appender), std::move(cache), std::move(c_idx));
         }
     } else {
-        f = f.then([this, physical] { return _reader->truncate(physical); });
+        co_await _reader->truncate(physical);
     }
-
-    return f;
 }
 
 ss::future<bool> segment::materialize_index() {
@@ -432,14 +400,13 @@ ss::future<bool> segment::materialize_index() {
       _tracker.base_offset == model::next_offset(_tracker.dirty_offset),
       "Materializing the index must happen before tracking any data. {}",
       *this);
-    return _idx.materialize_index().then([this](bool yn) {
-        if (yn) {
-            _tracker.committed_offset = _idx.max_offset();
-            _tracker.stable_offset = _idx.max_offset();
-            _tracker.dirty_offset = _idx.max_offset();
-        }
-        return yn;
-    });
+    auto res = co_await _idx.materialize_index();
+    if (res) {
+        _tracker.committed_offset = _idx.max_offset();
+        _tracker.stable_offset = _idx.max_offset();
+        _tracker.dirty_offset = _idx.max_offset();
+    }
+    co_return res;
 }
 
 void segment::cache_truncate(model::offset offset) {
@@ -504,10 +471,10 @@ ss::future<append_result> segment::do_append(const model::record_batch& b) {
       *this,
       b.header());
     if (unlikely(b.compressed() && !b.header().attrs.is_valid_compression())) {
-        return ss::make_exception_future<
-          append_result>(std::runtime_error(fmt::format(
+        throw std::runtime_error(fmt_with_ctx(
+          fmt::format,
           "record batch marked as compressed, but has no valid compression:{}",
-          b.header())));
+          b.header()));
     }
     const auto start_physical_offset = _appender->file_byte_offset();
     _generation_id++;
@@ -539,7 +506,7 @@ ss::future<append_result> segment::do_append(const model::record_batch& b) {
           return ret;
       });
     auto index_fut = compaction_index_batch(b);
-    return ss::when_all(std::move(write_fut), std::move(index_fut))
+    co_return co_await ss::when_all(std::move(write_fut), std::move(index_fut))
       .then([this, batch_type = b.header().type](
               std::tuple<ss::future<append_result>, ss::future<>> p) {
           auto& [append_fut, index_fut] = p;
@@ -693,7 +660,7 @@ auto with_segment(ss::lw_shared_ptr<segment> s, Func&& f) {
     return f(s).then_wrapped([s](
                                ss::future<ss::lw_shared_ptr<segment>> new_seg) {
         try {
-            auto ptr = new_seg.get0();
+            auto ptr = new_seg.get();
             return ss::make_ready_future<ss::lw_shared_ptr<segment>>(ptr);
         } catch (...) {
             return s->close()
@@ -757,72 +724,70 @@ ss::future<ss::lw_shared_ptr<segment>> make_segment(
   std::optional<ntp_sanitizer_config> ntp_sanitizer_config) {
     auto path = segment_full_path(ntpc, base_offset, term, version);
     vlog(stlog.info, "Creating new segment {}", path);
-    return open_segment(
-             path,
-             std::move(batch_cache),
-             buf_size,
-             read_ahead,
-             resources,
-             feature_table,
-             ntp_sanitizer_config)
-      .then([path, &ntpc, pc, &resources, ntp_sanitizer_config](
-              ss::lw_shared_ptr<segment> seg) mutable {
-          return with_segment(
-            std::move(seg),
-            [path, &ntpc, pc, &resources, ntp_sanitizer_config](
-              const ss::lw_shared_ptr<segment>& seg) mutable {
-                return internal::make_segment_appender(
-                         path,
-                         internal::number_of_chunks_from_config(ntpc),
-                         internal::segment_size_from_config(ntpc),
-                         pc,
-                         resources,
-                         std::move(ntp_sanitizer_config))
-                  .then([seg, &resources](segment_appender_ptr a) {
-                      return ss::make_ready_future<ss::lw_shared_ptr<segment>>(
-                        ss::make_lw_shared<segment>(
-                          seg->offsets(),
-                          seg->release_segment_reader(),
-                          std::move(seg->index()),
-                          std::move(a),
-                          std::nullopt,
-                          seg->has_cache()
-                            ? std::optional(std::move(seg->cache()->get()))
-                            : std::nullopt,
-                          resources));
-                  });
-            });
-      })
-      .then([path, &ntpc, pc, &resources, ntp_sanitizer_config](
-              ss::lw_shared_ptr<segment> seg) mutable {
-          if (!ntpc.is_compacted()) {
-              return ss::make_ready_future<ss::lw_shared_ptr<segment>>(seg);
-          }
-          return with_segment(
-            seg,
-            [path, pc, &resources, ntp_sanitizer_config](
-              const ss::lw_shared_ptr<segment>& seg) mutable {
-                auto compacted_path = path.to_compacted_index();
-                return internal::make_compacted_index_writer(
-                         compacted_path,
-                         pc,
-                         resources,
-                         std::move(ntp_sanitizer_config))
-                  .then([seg, &resources](compacted_index_writer compact) {
-                      return ss::make_ready_future<ss::lw_shared_ptr<segment>>(
-                        ss::make_lw_shared<segment>(
-                          seg->offsets(),
-                          seg->release_segment_reader(),
-                          std::move(seg->index()),
-                          seg->release_appender(),
-                          std::move(compact),
-                          seg->has_cache()
-                            ? std::optional(std::move(seg->cache()->get()))
-                            : std::nullopt,
-                          resources));
-                  });
+
+    auto seg = co_await open_segment(
+      path,
+      std::move(batch_cache),
+      buf_size,
+      read_ahead,
+      resources,
+      feature_table,
+      ntp_sanitizer_config);
+
+    seg = co_await with_segment(
+      seg,
+      [path, &ntpc, pc, &resources, ntp_sanitizer_config](
+        const ss::lw_shared_ptr<segment>& seg) mutable {
+          return internal::make_segment_appender(
+                   path,
+                   internal::number_of_chunks_from_config(ntpc),
+                   internal::segment_size_from_config(ntpc),
+                   pc,
+                   resources,
+                   std::move(ntp_sanitizer_config))
+            .then([seg, &resources](segment_appender_ptr a) {
+                return ss::make_ready_future<ss::lw_shared_ptr<segment>>(
+                  ss::make_lw_shared<segment>(
+                    seg->offsets(),
+                    seg->release_segment_reader(),
+                    std::move(seg->index()),
+                    std::move(a),
+                    std::nullopt,
+                    seg->has_cache()
+                      ? std::optional(std::move(seg->cache()->get()))
+                      : std::nullopt,
+                    resources));
             });
       });
+
+    if (ntpc.is_compacted()) {
+        seg = co_await with_segment(
+          seg,
+          [path, pc, &resources, ntp_sanitizer_config](
+            const ss::lw_shared_ptr<segment>& seg) mutable {
+              auto compacted_path = path.to_compacted_index();
+              return internal::make_compacted_index_writer(
+                       compacted_path,
+                       pc,
+                       resources,
+                       std::move(ntp_sanitizer_config))
+                .then([seg, &resources](compacted_index_writer compact) {
+                    return ss::make_ready_future<ss::lw_shared_ptr<segment>>(
+                      ss::make_lw_shared<segment>(
+                        seg->offsets(),
+                        seg->release_segment_reader(),
+                        std::move(seg->index()),
+                        seg->release_appender(),
+                        std::move(compact),
+                        seg->has_cache()
+                          ? std::optional(std::move(seg->cache()->get()))
+                          : std::nullopt,
+                        resources));
+                });
+          });
+    }
+
+    co_return seg;
 }
 
 ss::future<model::timestamp> segment::get_file_timestamp() const {

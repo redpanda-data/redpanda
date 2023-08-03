@@ -213,6 +213,11 @@ private:
     ss::future<> compaction_index_batch(const model::record_batch&);
     ss::future<> do_compaction_index_batch(const model::record_batch&);
     void release_appender_in_background(readers_cache* readers_cache);
+    ss::future<> release_appender_and_evict_readers(
+      segment_appender_ptr,
+      std::optional<batch_cache_index>,
+      std::optional<compacted_index_writer>,
+      readers_cache* readers_cache);
 
     ss::future<size_t> remove_persistent_state(std::filesystem::path);
 
