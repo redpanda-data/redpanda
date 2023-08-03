@@ -47,10 +47,6 @@ using cluster::random_tx_generator;
     log->stm_manager()->add_stm(stm);                                          \
     BOOST_REQUIRE(log);
 
-storage::disk_log_impl* get_disk_log(ss::shared_ptr<storage::log> log) {
-    return dynamic_cast<storage::disk_log_impl*>(log.get());
-}
-
 FIXTURE_TEST(test_tx_compaction_combinations, mux_state_machine_fixture) {
     // This generates very interesting interleaved and non interleaved
     // transaction scopes with single and multi segment transactions. We
@@ -74,7 +70,7 @@ FIXTURE_TEST(test_tx_compaction_combinations, mux_state_machine_fixture) {
                         STM_BOOTSTRAP();
                         vlog(test_logger.info, "Running spec: {}", spec);
                         random_tx_generator{}.run_workload(
-                          spec, _raft->term(), stm, get_disk_log(log));
+                          spec, _raft->term(), stm, log);
                         vlog(test_logger.info, "Finished spec: {}", spec);
                     }
                 }

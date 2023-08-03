@@ -60,8 +60,7 @@ public:
     // Expects to be the only one mutating the underlying partition state.
     ss::future<int> produce() {
         co_await _producer.start();
-        auto* log = dynamic_cast<storage::disk_log_impl*>(
-          _partition.log().get());
+        auto log = _partition.log();
         auto& archiver = _partition.archiver().value().get();
 
         size_t total_records = 0;
