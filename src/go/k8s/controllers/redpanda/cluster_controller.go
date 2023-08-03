@@ -84,6 +84,7 @@ type ClusterReconciler struct {
 //+kubebuilder:rbac:groups=core,resources=persistentvolumeclaims,verbs=get;list;watch;delete;
 //+kubebuilder:rbac:groups=core,resources=pods,verbs=get;list;watch;update;delete
 //+kubebuilder:rbac:groups=core,resources=pods/finalizers,verbs=update
+//+kubebuilder:rbac:groups=core,resources=pods/status,verbs=update;patch
 //+kubebuilder:rbac:groups=core,resources=secrets,verbs=get;list;watch;create;update;patch;
 //+kubebuilder:rbac:groups=core,resources=serviceaccounts,verbs=get;list;watch;create;update;patch;
 //+kubebuilder:rbac:groups=core,resources=services,verbs=get;list;watch;create;update;patch;
@@ -404,27 +405,10 @@ func (r *ClusterReconciler) handlePodFinalizer(
 			return nil
 		}
 		//   delete the associated pvc
-		pvc := corev1.PersistentVolumeClaim{}
-		//nolint: gocritic // 248 bytes 6 times is not worth decreasing the readability over
-		for _, v := range pod.Spec.Volumes {
-			if v.PersistentVolumeClaim != nil {
-				key = types.NamespacedName{
-					Name:      v.PersistentVolumeClaim.ClaimName,
-					Namespace: pod.GetNamespace(),
-				}
-				err = r.Get(ctx, key, &pvc)
-				if err != nil {
-					if !apierrors.IsNotFound(err) {
-						return fmt.Errorf(`unable to fetch PersistentVolumeClaim "%s/%s": %w`, key.Namespace, key.Name, err)
-					}
-					continue
-				}
-				log.WithValues("persistent-volume-claim", key).Info("deleting PersistentVolumeClaim")
-				if err := r.Delete(ctx, &pvc, &client.DeleteOptions{}); err != nil && !apierrors.IsNotFound(err) {
-					return fmt.Errorf(`unable to delete PersistentVolumeClaim "%s/%s": %w`, key.Name, key.Namespace, err)
-				}
-			}
+		if err = utils.DeletePodPVCs(ctx, r.Client, pod, log); err != nil {
+			return fmt.Errorf(`unable to remove VPCs for pod "%s/%s: %w"`, pod.GetNamespace(), pod.GetName(), err)
 		}
+
 		//   remove the finalizer
 		if err := r.removePodFinalizer(ctx, pod, log); err != nil {
 			return fmt.Errorf(`unable to remove finalizer from pod "%s/%s: %w"`, pod.GetNamespace(), pod.GetName(), err)
@@ -547,7 +531,7 @@ func (r *ClusterReconciler) fetchAdminNodeID(ctx context.Context, rp *vectorized
 		return -1, fmt.Errorf("cluster %s: cannot convert pod name (%s) to ordinal: %w", rp.Name, pod.Name, err)
 	}
 
-	adminClient, err := r.AdminAPIClientFactory(ctx, r.Client, rp, ar.getHeadlessServiceFQDN(), pki.AdminAPIConfigProvider(), int32(ordinal))
+	adminClient, err := r.AdminAPIClientFactory(ctx, r.Client, rp, ar.getHeadlessServiceFQDN(), pki.AdminAPIConfigProvider(), ordinal)
 	if err != nil {
 		return -1, fmt.Errorf("unable to create admin client: %w", err)
 	}

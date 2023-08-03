@@ -23,7 +23,7 @@ func TestGetPodOrdinal(t *testing.T) {
 		podName         string
 		clusterName     string
 		expectedError   bool
-		expectedOrdinal int64
+		expectedOrdinal int32
 	}{
 		{"", "", true, -1},
 		{"test", "", true, -1},

@@ -14,6 +14,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/fluxcd/pkg/runtime/logger"
 	"github.com/go-logr/logr"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/api/admin"
 	appsv1 "k8s.io/api/apps/v1"
@@ -68,41 +69,11 @@ const (
 //nolint:nestif // for clarity
 func (r *StatefulSetResource) handleScaling(ctx context.Context) error {
 	log := r.logger.WithName("handleScaling")
-	// decommission already in progress
-	if r.pandaCluster.GetDecommissionBrokerID() != nil {
-		if *r.pandaCluster.Spec.Replicas >= r.pandaCluster.GetCurrentReplicas() {
-			// Decommissioning can also be canceled and we need to recommission
-			err := r.handleRecommission(ctx)
-			if !errors.Is(err, &RecommissionFatalError{}) {
-				return err
-			}
-			// if it's impossible to recommission, fall through and let the decommission complete
-			log.WithValues("node_id", r.pandaCluster.GetDecommissionBrokerID()).Info("cannot recommission broker", "error", err)
-		}
-		// handleDecommission will return an error until the decommission is completed
-		if err := r.handleDecommission(ctx); err != nil {
-			return err
-		}
 
-		// Broker is now removed
-		targetReplicas := r.pandaCluster.GetCurrentReplicas() - 1
-		log.WithValues("targetReplicas", targetReplicas).Info("broker decommission complete: scaling down StatefulSet")
-
-		// We set status.currentReplicas accordingly to trigger scaling down of the statefulset
-		if err := setCurrentReplicas(ctx, r, r.pandaCluster, targetReplicas, r.logger); err != nil {
-			return err
-		}
-
-		scaledDown, err := r.verifyRunningCount(ctx, targetReplicas)
-		if err != nil {
-			return err
-		}
-		if !scaledDown {
-			return &RequeueAfterError{
-				RequeueAfter: wait.Jitter(r.decommissionWaitInterval, decommissionWaitJitterFactor),
-				Msg:          fmt.Sprintf("Waiting for statefulset to downscale to %d replicas", targetReplicas),
-			}
-		}
+	// if a decommission is already in progress, handle it first. If it's not finished, it will return an error
+	// which will requeue the reconciliation. We can't do any further scaling until it's finished.
+	if err := r.handleDecommissionInProgress(ctx, log); err != nil {
+		return err
 	}
 
 	if r.pandaCluster.Status.CurrentReplicas == 0 {
@@ -112,6 +83,7 @@ func (r *StatefulSetResource) handleScaling(ctx context.Context) error {
 	}
 
 	if *r.pandaCluster.Spec.Replicas == r.pandaCluster.Status.CurrentReplicas {
+		r.logger.V(logger.DebugLevel).Info("No scaling changes required", "replicas", *r.pandaCluster.Spec.Replicas)
 		// No changes to replicas, we do nothing here
 		return nil
 	}
@@ -140,20 +112,74 @@ func (r *StatefulSetResource) handleScaling(ctx context.Context) error {
 	}
 
 	// User required replicas is lower than current replicas (currentReplicas): start the decommissioning process
+	r.logger.Info("Downscaling cluster", "replicas", *r.pandaCluster.Spec.Replicas)
+
 	targetOrdinal := r.pandaCluster.Status.CurrentReplicas - 1 // Always decommission last node
 	targetBroker, err := r.getBrokerIDForPod(ctx, targetOrdinal)
 	if err != nil {
-		return err
+		return fmt.Errorf("error getting broker ID for pod with ordinal %d when downscaling cluster: %w", targetOrdinal, err)
 	}
+	nonExistantBroker := int32(-1)
 	if targetBroker == nil {
-		return &RequeueAfterError{
-			RequeueAfter: RequeueDuration,
-			Msg:          fmt.Sprintf("cannot retrieve broker id for pod %d", targetOrdinal),
-		}
+		// The target pod isn't in the broker list. Just select a non-existing broker for decommission so the next
+		// reconcile loop will succeed.
+		targetBroker = &nonExistantBroker
 	}
 	log.WithValues("ordinal", targetOrdinal, "node_id", targetBroker).Info("start decommission broker")
 	r.pandaCluster.SetDecommissionBrokerID(targetBroker)
-	return r.Status().Update(ctx, r.pandaCluster)
+	err = r.Status().Update(ctx, r.pandaCluster)
+	if err != nil {
+		return err
+	}
+	if *targetBroker == nonExistantBroker {
+		return &RequeueAfterError{
+			RequeueAfter: RequeueDuration,
+			Msg:          fmt.Sprintf("the broker for pod with ordinal %d is not registered with the cluster. Requeuing.", targetOrdinal),
+		}
+	}
+	return nil
+}
+
+func (r *StatefulSetResource) handleDecommissionInProgress(ctx context.Context, l logr.Logger) error {
+	log := l.WithName("handleDecommissionInProgress")
+	if r.pandaCluster.GetDecommissionBrokerID() == nil {
+		return nil
+	}
+
+	if *r.pandaCluster.Spec.Replicas >= r.pandaCluster.GetCurrentReplicas() {
+		// Decommissioning can also be canceled and we need to recommission
+		err := r.handleRecommission(ctx)
+		if !errors.Is(err, &RecommissionFatalError{}) {
+			return err
+		}
+		// if it's impossible to recommission, fall through and let the decommission complete
+		log.WithValues("node_id", r.pandaCluster.GetDecommissionBrokerID()).Info("cannot recommission broker", "error", err)
+	}
+	// handleDecommission will return an error until the decommission is completed
+	if err := r.handleDecommission(ctx, log); err != nil {
+		return err
+	}
+
+	// Broker is now removed
+	targetReplicas := r.pandaCluster.GetCurrentReplicas() - 1
+	log.WithValues("targetReplicas", targetReplicas).Info("broker decommission complete: scaling down StatefulSet")
+
+	// We set status.currentReplicas accordingly to trigger scaling down of the statefulset
+	if err := setCurrentReplicas(ctx, r, r.pandaCluster, targetReplicas, r.logger); err != nil {
+		return err
+	}
+
+	scaledDown, err := r.verifyRunningCount(ctx, targetReplicas)
+	if err != nil {
+		return err
+	}
+	if !scaledDown {
+		return &RequeueAfterError{
+			RequeueAfter: wait.Jitter(r.decommissionWaitInterval, decommissionWaitJitterFactor),
+			Msg:          fmt.Sprintf("Waiting for statefulset to downscale to %d replicas", targetReplicas),
+		}
+	}
+	return nil
 }
 
 // handleDecommission manages the case of decommissioning of the last node of a cluster.
@@ -166,12 +192,12 @@ func (r *StatefulSetResource) handleScaling(ctx context.Context) error {
 //
 // Before completing the process, it double-checks if the node is still not registered, for handling cases where the node was
 // about to start when the decommissioning process started. If the broker is found, the process is restarted.
-func (r *StatefulSetResource) handleDecommission(ctx context.Context) error {
+func (r *StatefulSetResource) handleDecommission(ctx context.Context, l logr.Logger) error {
 	brokerID := r.pandaCluster.GetDecommissionBrokerID()
 	if brokerID == nil {
 		return nil
 	}
-	log := r.logger.WithName("handleDecommission").WithValues("node_id", *brokerID)
+	log := l.WithName("handleDecommission").WithValues("node_id", *brokerID)
 	log.Info("handling broker decommissioning")
 
 	adminAPI, err := r.getAdminAPIClient(ctx)
@@ -396,19 +422,20 @@ func setCurrentReplicas(
 	c k8sclient.Client,
 	pandaCluster *vectorizedv1alpha1.Cluster,
 	replicas int32,
-	logger logr.Logger,
+	l logr.Logger,
 ) error {
+	log := l.WithName("setCurrentReplicas")
 	if pandaCluster.Status.CurrentReplicas == replicas {
 		// Skip if already done
 		return nil
 	}
 
-	logger.Info("Scaling StatefulSet", "replicas", replicas)
+	log.Info("Scaling StatefulSet", "replicas", replicas)
 	pandaCluster.Status.CurrentReplicas = replicas
 	if err := c.Status().Update(ctx, pandaCluster); err != nil {
 		return fmt.Errorf("could not scale cluster %s to %d replicas: %w", pandaCluster.Name, replicas, err)
 	}
-	logger.Info("StatefulSet scaled", "replicas", replicas)
+	log.Info("StatefulSet scaled", "replicas", replicas)
 	return nil
 }
 

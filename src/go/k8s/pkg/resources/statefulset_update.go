@@ -23,10 +23,12 @@ import (
 
 	"github.com/cisco-open/k8s-objectmatcher/patch"
 	"github.com/fluxcd/pkg/runtime/logger"
+	"github.com/go-logr/logr"
 	"github.com/prometheus/common/expfmt"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/wait"
 	k8sclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	vectorizedv1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/vectorized/v1alpha1"
@@ -40,6 +42,9 @@ const (
 	// requeue resource reconciliation.
 	RequeueDuration        = time.Second * 10
 	defaultAdminAPITimeout = time.Second * 2
+
+	ManagedDecommissionAnnotation = "operator.redpanda.com/managed-decommission"
+	ClusterUpdatePodCondition     = corev1.PodConditionType("ClusterUpdate")
 )
 
 var (
@@ -66,6 +71,7 @@ var (
 func (r *StatefulSetResource) runUpdate(
 	ctx context.Context, current, modified *appsv1.StatefulSet,
 ) error {
+	log := r.logger.WithName("runUpdate")
 	// Keep existing central config hash annotation during standard reconciliation
 	if ann, ok := current.Spec.Template.Annotations[CentralizedConfigurationHashAnnotationKey]; ok {
 		if modified.Spec.Template.Annotations == nil {
@@ -74,7 +80,8 @@ func (r *StatefulSetResource) runUpdate(
 		modified.Spec.Template.Annotations[CentralizedConfigurationHashAnnotationKey] = ann
 	}
 
-	update, err := r.shouldUpdate(r.pandaCluster.Status.IsRestarting(), current, modified)
+	log.V(logger.DebugLevel).Info("Checking that we should update")
+	update, err := r.shouldUpdate(current, modified)
 	if err != nil {
 		return fmt.Errorf("unable to determine the update procedure: %w", err)
 	}
@@ -83,25 +90,50 @@ func (r *StatefulSetResource) runUpdate(
 		return nil
 	}
 
-	if err = r.updateRestartingStatus(ctx, true); err != nil {
-		return fmt.Errorf("unable to turn on restarting status in cluster custom resource: %w", err)
+	if !r.getRestartingStatus() {
+		log.V(logger.DebugLevel).Info("restarting is required. Updating Cluster restarting status")
+		if err = r.updateRestartingStatus(ctx, true); err != nil {
+			return fmt.Errorf("unable to turn on restarting status in cluster custom resource: %w", err)
+		}
+		log.V(logger.DebugLevel).Info("updating restarting status on pods")
+		if err = r.MarkPodsForUpdate(ctx); err != nil {
+			return fmt.Errorf("unable to mark pods for update: %w", err)
+		}
 	}
 
+	log.V(logger.DebugLevel).Info("updating statefulset")
 	if err = r.updateStatefulSet(ctx, current, modified); err != nil {
 		return err
 	}
 
+	log.V(logger.DebugLevel).Info("checking if cluster is healthy")
 	if err = r.isClusterHealthy(ctx); err != nil {
 		return err
 	}
 
+	log.V(logger.DebugLevel).Info("performing rolling update")
 	if err = r.rollingUpdate(ctx, &modified.Spec.Template); err != nil {
 		return err
 	}
 
-	// Update is complete for all pods (and all are ready). Set restarting status to false.
+	ok, err := r.areAllPodsUpdated(ctx)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return &RequeueAfterError{
+			RequeueAfter: wait.Jitter(r.decommissionWaitInterval, decommissionWaitJitterFactor),
+			Msg:          "waiting for all pods to be updated",
+		}
+	}
+
+	// If update is complete for all pods (and all are ready). Set restarting status to false.
+	log.V(logger.DebugLevel).Info("pod update complete, set Cluster restarting status to false")
 	if err = r.updateRestartingStatus(ctx, false); err != nil {
 		return fmt.Errorf("unable to turn off restarting status in cluster custom resource: %w", err)
+	}
+	if err = r.removeManagedDecommissionAnnotation(ctx); err != nil {
+		return fmt.Errorf("unable to remove managed decommission annotation: %w", err)
 	}
 
 	return nil
@@ -124,7 +156,7 @@ func (r *StatefulSetResource) isClusterHealthy(ctx context.Context) error {
 	}
 
 	restarting := "not restarting"
-	if r.pandaCluster.Status.IsRestarting() {
+	if r.getRestartingStatus() {
 		restarting = "restarting"
 	}
 
@@ -161,32 +193,91 @@ func sortPodList(podList *corev1.PodList, cluster *vectorizedv1alpha1.Cluster) *
 	return podList
 }
 
-func (r *StatefulSetResource) rollingUpdate(
-	ctx context.Context, template *corev1.PodTemplateSpec,
-) error {
+func (r *StatefulSetResource) MarkPodsForUpdate(ctx context.Context) error {
 	podList, err := r.getPodList(ctx)
 	if err != nil {
 		return fmt.Errorf("error getting pods %w", err)
 	}
+
+	for i := range podList.Items {
+		pod := &podList.Items[i]
+		podPatch := k8sclient.MergeFrom(pod.DeepCopy())
+		newCondition := corev1.PodCondition{
+			Type:    ClusterUpdatePodCondition,
+			Status:  corev1.ConditionTrue,
+			Message: "Cluster update pending",
+		}
+		utils.SetStatusPodCondition(&pod.Status.Conditions, &newCondition)
+		if err := r.Client.Status().Patch(ctx, pod, podPatch); err != nil {
+			return fmt.Errorf("error setting pod update condition: %w", err)
+		}
+	}
+	return nil
+}
+
+func (r *StatefulSetResource) areAllPodsUpdated(ctx context.Context) (bool, error) {
+	podList, err := r.getPodList(ctx)
+	if err != nil {
+		return false, fmt.Errorf("error getting pods %w", err)
+	}
+
+	for i := range podList.Items {
+		pod := &podList.Items[i]
+		cond := utils.FindStatusPodCondition(pod.Status.Conditions, ClusterUpdatePodCondition)
+		if cond != nil && cond.Status == corev1.ConditionTrue {
+			return false, nil
+		}
+	}
+	return true, nil
+}
+
+func (r *StatefulSetResource) rollingUpdate(
+	ctx context.Context, template *corev1.PodTemplateSpec,
+) error {
+	log := r.logger.WithName("rollingUpdate")
+	podList, err := r.getPodList(ctx)
+	if err != nil {
+		return fmt.Errorf("error getting pods %w", err)
+	}
+
+	updateItems, maintenanceItems := r.listPodsForUpdateOrMaintenance(log, podList)
+
+	if err = r.checkMaintenanceModeForPods(ctx, maintenanceItems); err != nil {
+		return fmt.Errorf("error checking maintenance mode for pods: %w", err)
+	}
+
+	// There are no pods left to update, we're done.
+	if len(updateItems) == 0 {
+		log.V(logger.DebugLevel).Info("no pods to roll")
+		return nil
+	}
+	log.V(logger.DebugLevel).Info("rolling pods", "number of pods", len(updateItems))
+
+	return r.updatePods(ctx, log, updateItems, template)
+}
+
+func (r *StatefulSetResource) updatePods(ctx context.Context, l logr.Logger, updateItems []*corev1.Pod, template *corev1.PodTemplateSpec) error {
+	log := l.WithName("updatePods")
 
 	var artificialPod corev1.Pod
 	artificialPod.Annotations = template.Annotations
 	artificialPod.Spec = template.Spec
 
 	volumes := make(map[string]interface{})
+
 	for i := range template.Spec.Volumes {
 		vol := template.Spec.Volumes[i]
 		volumes[vol.Name] = new(interface{})
 	}
+	for i := range updateItems {
+		pod := updateItems[i]
 
-	for i := range podList.Items {
-		pod := podList.Items[i]
-
-		if err = r.podEviction(ctx, &pod, &artificialPod, volumes); err != nil {
+		if err := r.podEviction(ctx, pod, &artificialPod, volumes); err != nil {
+			log.V(logger.DebugLevel).Error(err, "podEviction", "pod name", pod.Name)
 			return err
 		}
 
-		if !utils.IsPodReady(&pod) {
+		if !utils.IsPodReady(pod) {
 			return &RequeueAfterError{
 				RequeueAfter: RequeueDuration,
 				Msg:          fmt.Sprintf("wait for %s pod to become ready", pod.Name),
@@ -219,7 +310,7 @@ func (r *StatefulSetResource) rollingUpdate(
 
 		adminURL := url.URL{
 			Scheme: "http",
-			Host:   hostOverwrite(&pod, headlessServiceWithPort),
+			Host:   hostOverwrite(pod, headlessServiceWithPort),
 			Path:   "metrics",
 		}
 
@@ -239,6 +330,41 @@ func (r *StatefulSetResource) rollingUpdate(
 		}
 	}
 
+	log.V(logger.DebugLevel).Info("rollingUpdate completed")
+	return nil
+}
+
+func (r *StatefulSetResource) listPodsForUpdateOrMaintenance(l logr.Logger, podList *corev1.PodList) (updateItems, maintenanceItems []*corev1.Pod) {
+	log := l.WithName("listPodsForUpdateOrMaintenance")
+
+	// only roll pods marked with the ClusterUpdate condition
+	for i := range podList.Items {
+		pod := &podList.Items[i]
+		if utils.IsStatusPodConditionTrue(pod.Status.Conditions, ClusterUpdatePodCondition) {
+			log.V(logger.DebugLevel).Info("pod needs updated", "pod name", pod.GetName())
+			updateItems = append(updateItems, pod)
+		} else {
+			log.V(logger.DebugLevel).Info("pod needs maintenance check", "pod name", pod.GetName())
+			maintenanceItems = append(maintenanceItems, pod)
+		}
+	}
+	return updateItems, maintenanceItems
+}
+
+func (r *StatefulSetResource) checkMaintenanceModeForPods(ctx context.Context, maintenanceItems []*corev1.Pod) error {
+	for i := range maintenanceItems {
+		pod := maintenanceItems[i]
+		ordinal, err := utils.GetPodOrdinal(pod.GetName(), r.pandaCluster.GetName())
+		if err != nil {
+			return fmt.Errorf("cannot convert pod name to ordinal: %w", err)
+		}
+		if err = r.checkMaintenanceMode(ctx, ordinal); err != nil {
+			return &RequeueAfterError{
+				RequeueAfter: RequeueDuration,
+				Msg:          fmt.Sprintf("checking maintenance node %q: %v", pod.GetName(), err),
+			}
+		}
+	}
 	return nil
 }
 
@@ -252,6 +378,7 @@ func hostOverwrite(pod *corev1.Pod, headlessServiceWithPort string) string {
 }
 
 func (r *StatefulSetResource) podEviction(ctx context.Context, pod, artificialPod *corev1.Pod, newVolumes map[string]interface{}) error {
+	log := r.logger.WithName("podEviction").WithValues("pod", pod.GetName(), "namespace", pod.GetNamespace())
 	opts := []patch.CalculateOption{
 		patch.IgnoreStatusFields(),
 		ignoreKubernetesTokenVolumeMounts(),
@@ -264,39 +391,62 @@ func (r *StatefulSetResource) podEviction(ctx context.Context, pod, artificialPo
 		return err
 	}
 
-	var ordinal int64
+	var ordinal int32
 	ordinal, err = utils.GetPodOrdinal(pod.Name, r.pandaCluster.Name)
 	if err != nil {
 		return fmt.Errorf("cluster %s: cannot convert pod name (%s) to ordinal: %w", r.pandaCluster.Name, pod.Name, err)
 	}
 
-	if patchResult.IsEmpty() {
-		if err = r.checkMaintenanceMode(ctx, int32(ordinal)); err != nil {
-			return &RequeueAfterError{
-				RequeueAfter: RequeueDuration,
-				Msg:          fmt.Sprintf("checking maintenance node (%s): %v", pod.Name, err),
-			}
+	managedDecommission, err := r.IsManagedDecommission()
+	if err != nil {
+		log.Error(err, "not performing a managed decommission")
+	}
+
+	if *r.pandaCluster.Spec.Replicas == 1 {
+		log.Info("Changes in Pod definition other than activeDeadlineSeconds, configurator and Redpanda container name. Deleting pod",
+			"pod-name", pod.Name,
+			"patch", patchResult.Patch)
+
+		if err = r.Delete(ctx, pod); err != nil {
+			return fmt.Errorf("unable to remove Redpanda pod: %w", err)
 		}
 		return nil
 	}
-
-	if *r.pandaCluster.Spec.Replicas > 1 {
-		r.logger.Info("Put broker into maintenance mode",
-			"pod-name", pod.Name,
-			"patch", patchResult.Patch)
-		if err = r.putInMaintenanceMode(ctx, int32(ordinal)); err != nil {
-			// As maintenance mode can not be easily watched using controller runtime the requeue error
-			// is always returned. That way a rolling update will not finish when operator waits for
-			// maintenance mode finished.
-			return &RequeueAfterError{
-				RequeueAfter: RequeueDuration,
-				Msg:          fmt.Sprintf("putting node (%s) into maintenance mode: %v", pod.Name, err),
-			}
+	if managedDecommission {
+		log.Info("managed decommission is set: decommission broker")
+		var id *int32
+		if id, err = r.getBrokerIDForPod(ctx, ordinal); err != nil {
+			return fmt.Errorf("cannot get broker id for pod: %w", err)
 		}
+		r.pandaCluster.SetDecommissionBrokerID(id)
+
+		if err = r.handleDecommission(ctx, log); err != nil {
+			return err
+		}
+
+		if err = utils.DeletePodPVCs(ctx, r.Client, pod, log); err != nil {
+			return fmt.Errorf(`unable to remove VPCs for pod "%s/%s: %w"`, pod.GetNamespace(), pod.GetName(), err)
+		}
+
+		log.Info("deleting pod")
+		if err = r.Delete(ctx, pod); err != nil {
+			return fmt.Errorf("unable to remove Redpanda pod: %w", err)
+		}
+
+		return &RequeueAfterError{RequeueAfter: RequeueDuration, Msg: "wait for pod restart"}
 	}
 
-	r.logger.Info("Changes in Pod definition other than activeDeadlineSeconds, configurator and Redpanda container name. Deleting pod",
-		"pod-name", pod.Name,
+	log.Info("Put broker into maintenance mode", "patch", patchResult.Patch)
+	if err = r.putInMaintenanceMode(ctx, ordinal); err != nil {
+		// As maintenance mode can not be easily watched using controller runtime the requeue error
+		// is always returned. That way a rolling update will not finish when operator waits for
+		// maintenance mode finished.
+		return &RequeueAfterError{
+			RequeueAfter: RequeueDuration,
+			Msg:          fmt.Sprintf("putting node (%s) into maintenance mode: %v", pod.Name, err),
+		}
+	}
+	log.Info("Changes in Pod definition other than activeDeadlineSeconds, configurator and Redpanda container name. Deleting pod",
 		"patch", patchResult.Patch)
 
 	if err = r.Delete(ctx, pod); err != nil {
@@ -329,7 +479,7 @@ func (r *StatefulSetResource) putInMaintenanceMode(ctx context.Context, ordinal 
 
 	br, err := adminAPIClient.Broker(ctx, nodeConf.NodeID)
 	if err != nil {
-		return fmt.Errorf("getting broker infromations: %w", err)
+		return fmt.Errorf("getting broker information: %w", err)
 	}
 
 	if br.Maintenance == nil {
@@ -364,8 +514,7 @@ func (r *StatefulSetResource) checkMaintenanceMode(ctx context.Context, ordinal 
 	}
 
 	if br.Maintenance != nil && br.Maintenance.Draining {
-		r.logger.Info("Disable broker maintenance mode as patch is empty",
-			"pod-ordinal", ordinal)
+		r.logger.Info("Disable broker maintenance", "pod-ordinal", ordinal)
 		err = adminAPIClient.DisableMaintenanceMode(ctx, nodeConf.NodeID, false)
 		if err != nil {
 			return fmt.Errorf("disabling maintenance mode: %w", err)
@@ -402,8 +551,15 @@ func (r *StatefulSetResource) updateStatefulSet(
 
 // shouldUpdate returns true if changes on the CR require update
 func (r *StatefulSetResource) shouldUpdate(
-	isRestarting bool, current, modified *appsv1.StatefulSet,
+	current, modified *appsv1.StatefulSet,
 ) (bool, error) {
+	managedDecommission, err := r.IsManagedDecommission()
+	if err != nil {
+		r.logger.WithName("shouldUpdate").Error(err, "isManagedDecommission")
+	}
+	if managedDecommission || r.getRestartingStatus() {
+		return true, nil
+	}
 	prepareResourceForPatch(current, modified)
 	opts := []patch.CalculateOption{
 		patch.IgnoreStatusFields(),
@@ -412,16 +568,20 @@ func (r *StatefulSetResource) shouldUpdate(
 		utils.IgnoreAnnotation(CentralizedConfigurationHashAnnotationKey),
 	}
 	patchResult, err := patch.NewPatchMaker(patch.NewAnnotator(redpandaAnnotatorKey), &patch.K8sStrategicMergePatcher{}, &patch.BaseJSONMergePatcher{}).Calculate(current, modified, opts...)
-	if err != nil {
+	if err != nil || patchResult.IsEmpty() {
 		return false, err
 	}
-	return !patchResult.IsEmpty() || isRestarting, nil
+	return true, nil
+}
+
+func (r *StatefulSetResource) getRestartingStatus() bool {
+	return r.pandaCluster.Status.IsRestarting()
 }
 
 func (r *StatefulSetResource) updateRestartingStatus(
 	ctx context.Context, restarting bool,
 ) error {
-	if !reflect.DeepEqual(restarting, r.pandaCluster.Status.IsRestarting()) {
+	if !reflect.DeepEqual(restarting, r.getRestartingStatus()) {
 		r.pandaCluster.Status.SetRestarting(restarting)
 		r.logger.Info("Status updated",
 			"restarting", restarting,
@@ -431,6 +591,19 @@ func (r *StatefulSetResource) updateRestartingStatus(
 		}
 	}
 
+	return nil
+}
+
+func (r *StatefulSetResource) removeManagedDecommissionAnnotation(ctx context.Context) error {
+	p := k8sclient.MergeFrom(r.pandaCluster.DeepCopy())
+	for k := range r.pandaCluster.Annotations {
+		if k == ManagedDecommissionAnnotation {
+			delete(r.pandaCluster.Annotations, k)
+		}
+	}
+	if err := r.Patch(ctx, r.pandaCluster, p); err != nil {
+		return fmt.Errorf("unable to remove managed decommission annotation from Cluster %q: %w", r.pandaCluster.Name, err)
+	}
 	return nil
 }
 

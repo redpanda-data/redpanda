@@ -126,7 +126,7 @@ func (r *ClusterReconciler) reconcileConfiguration(
 	}
 
 	// Synchronized status with cluster, including triggering a restart if needed
-	conditionData, err := r.synchronizeStatusWithCluster(ctx, redpandaCluster, adminAPI, log)
+	conditionData, err := r.synchronizeStatusWithCluster(ctx, redpandaCluster, statefulSetResource, adminAPI, log)
 	if err != nil {
 		return err
 	}
@@ -309,6 +309,7 @@ func (r *ClusterReconciler) checkCentralizedConfigurationHashChange(
 func (r *ClusterReconciler) synchronizeStatusWithCluster(
 	ctx context.Context,
 	redpandaCluster *vectorizedv1alpha1.Cluster,
+	statefulset *resources.StatefulSetResource,
 	adminAPI adminutils.AdminAPIClient,
 	l logr.Logger,
 ) (*vectorizedv1alpha1.ClusterCondition, error) {
@@ -324,6 +325,7 @@ func (r *ClusterReconciler) synchronizeStatusWithCluster(
 	clusterNeedsRestart := needsRestart(status, log)
 	clusterSafeToRestart := isSafeToRestart(status, log)
 	restartingCluster := clusterNeedsRestart && clusterSafeToRestart
+	isRestarting := redpandaCluster.Status.IsRestarting()
 
 	log.Info("Synchronizing configuration state for cluster",
 		"status", conditionData.Status,
@@ -332,7 +334,7 @@ func (r *ClusterReconciler) synchronizeStatusWithCluster(
 		"needs_restart", clusterNeedsRestart,
 		"restarting", restartingCluster,
 	)
-	if conditionChanged || (restartingCluster && !redpandaCluster.Status.IsRestarting()) {
+	if conditionChanged || (restartingCluster && !isRestarting) {
 		log.Info("Updating configuration state for cluster")
 		// Trigger restart here if needed and safe to do it
 		if restartingCluster {
@@ -341,6 +343,11 @@ func (r *ClusterReconciler) synchronizeStatusWithCluster(
 
 		if err := r.Status().Update(ctx, redpandaCluster); err != nil {
 			return nil, errorWithContext(err, "could not update condition on cluster")
+		}
+	}
+	if restartingCluster && !isRestarting {
+		if err := statefulset.MarkPodsForUpdate(ctx); err != nil {
+			return nil, errorWithContext(err, "could not mark pods for update")
 		}
 	}
 	return redpandaCluster.Status.GetCondition(conditionData.Type), nil
