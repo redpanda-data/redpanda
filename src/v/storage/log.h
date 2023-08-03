@@ -137,6 +137,9 @@ public:
     virtual const segment_set& segments() const = 0;
     virtual segment_set& segments() = 0;
 
+    // roll immediately with the current term.
+    virtual ss::future<> force_roll(ss::io_priority_class) = 0;
+
 private:
     ntp_config _config;
 

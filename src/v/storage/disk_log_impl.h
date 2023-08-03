@@ -97,9 +97,7 @@ public:
     ss::future<> maybe_roll(
       model::term_id, model::offset next_offset, ss::io_priority_class);
 
-    // roll immediately with the current term. users should prefer the
-    // maybe_call interface which enforces sizing policies.
-    ss::future<> force_roll(ss::io_priority_class);
+    ss::future<> force_roll(ss::io_priority_class) override;
 
     probe& get_probe() { return *_probe; }
     model::term_id term() const;
