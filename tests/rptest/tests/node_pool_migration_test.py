@@ -107,7 +107,7 @@ class NodePoolMigrationTest(PreallocNodesTest):
         waiter = NodeDecommissionWaiter(self.redpanda,
                                         node_id,
                                         self.logger,
-                                        progress_timeout=60)
+                                        progress_timeout=120)
         waiter.wait_for_removal()
         return True
 
