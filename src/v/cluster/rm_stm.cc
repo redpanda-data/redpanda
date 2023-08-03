@@ -1763,8 +1763,7 @@ ss::future<result<kafka_result>> rm_stm::replicate_seq(
     session->cache.push_back(request);
 
     // request comes in the right order, it's ok to replicate
-    ss::lw_shared_ptr<raft::replicate_stages> ss;
-    auto has_failed = false;
+    std::optional<raft::replicate_stages> ss;
     try {
         ss = _c->replicate_in_stages(synced_term, std::move(br), opts);
         co_await std::move(ss->request_enqueued);
@@ -1774,12 +1773,11 @@ ss::future<result<kafka_result>> rm_stm::replicate_seq(
           "[pid: {}] replication failed with {}",
           bid.pid,
           std::current_exception());
-        has_failed = true;
     }
 
     result<raft::replicate_result> r = errc::success;
 
-    if (has_failed) {
+    if (!ss.has_value()) {
         if (_c->is_leader() && _c->term() == synced_term) {
             // we may not care about the requests waiting on the lock
             // as soon as we release the lock the leader or term will
