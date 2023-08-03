@@ -23,6 +23,7 @@
 #include <seastar/core/align.hh>
 #include <seastar/core/future-util.hh>
 #include <seastar/core/future.hh>
+#include <seastar/util/defer.hh>
 
 #include <fmt/format.h>
 
@@ -379,19 +380,19 @@ ss::future<> segment_appender::maybe_advance_stable_offset(
      */
     vassert(!_inflight.empty(), "expected non-empty inflight set");
     if (_inflight.front() == write) {
-        auto committed = _inflight.front()->offset;
+        auto committed = _inflight.front()->committed_offset;
         _inflight.pop_front();
 
         while (!_inflight.empty()) {
             auto next = _inflight.front();
-            if (next->done) {
+            if (next->state == DONE) {
                 _inflight.pop_front();
                 vassert(
-                  committed < next->offset,
+                  committed < next->committed_offset,
                   "invalid committed offset {} >= {}",
                   committed,
-                  next->offset);
-                committed = next->offset;
+                  next->committed_offset);
+                committed = next->committed_offset;
                 continue;
             }
             break;
@@ -403,7 +404,7 @@ ss::future<> segment_appender::maybe_advance_stable_offset(
         _stable_offset = committed;
         return process_flush_ops(committed);
     } else {
-        write->done = true;
+        write->set_state(DONE);
         return ss::now();
     }
 }
@@ -445,35 +446,64 @@ void segment_appender::dispatch_background_head_write() {
 
     const size_t start_offset = ss::align_down<size_t>(
       _committed_offset, _head->alignment());
-    const size_t expected = _head->dma_size();
-    const char* src = _head->dma_ptr();
-    vassert(
-      expected <= _chunk_size,
-      "Writes can be at most a full segment. Expected {}, attempted write: {}",
-      _chunk_size,
-      expected);
+
     // accounting synchronously
+    const auto prior_co = _committed_offset;
     _committed_offset += _head->bytes_pending();
     _bytes_flush_pending -= _head->bytes_pending();
+
+    inflight_write entry{
+      .chunk = _head,
+      .chunk_begin = _head->pending_aligned_begin(),
+      .chunk_end = _head->pending_aligned_end(),
+      .file_start_offset = start_offset,
+      .committed_offset = _committed_offset};
+
     // background write
     _head->flush();
+
+    entry.full = _head->is_full();
+
+    // defer to account for early exits
+    auto reap_head = ss::defer([this, full = entry.full] {
+        if (full) {
+            /*
+             * If _head is full then this is the last write to this chunk, so we
+             * clear out the head pointer synchronously here, then release it
+             * back into the chunk cache after the write completes. Otherwise,
+             * leave it in place so that new appends may accumulate. this
+             * optimization is meant to avoid redhydrating the chunk on append
+             * following a flush when the head has pending bytes and a write is
+             * dispatched.
+             */
+            _head = nullptr;
+            /*
+             * When the head becomes full it still needs to be properly
+             * sequenced with earlier writes to the same head, but no future
+             * writes to same head head are possible so the dependency chain is
+             * reset for the next head.
+             */
+            _prev_head_write = ss::make_lw_shared<ssx::semaphore>(
+              1, head_sem_name);
+        }
+    });
+
+    if (!_inflight.empty() && _inflight.back()->try_merge(entry, prior_co)) {
+        // Yay! The latest in-flight write is still queued (i.e., has not
+        // been dispatched to the disk) so we just append this write
+        // to that entry.
+        return;
+    }
+
     _inflight.emplace_back(
-      ss::make_lw_shared<inflight_write>(_committed_offset));
+      ss::make_lw_shared<inflight_write>(std::move(entry)));
+
     auto w = _inflight.back();
 
     /*
-     * if _head is full then take control of it for this final write and then
-     * release it back into the chunk cache. otherwise, leave it in place so
-     * that new appends may accumulate. this optimization is meant to avoid
-     * redhydrating the chunk on append following a flush when the head has
-     * pending bytes and a write is dispatched.
-     */
-    const auto full = _head->is_full();
-    auto h = full ? std::exchange(_head, nullptr) : _head;
-
-    /*
-     * make sure that when the write is dispatched that is sequenced in-order on
-     * the correct semaphore by grabbing the units synchronously.
+     * make sure that when the write is dispatched that is sequenced
+     * in-order on the correct semaphore by grabbing the units
+     * synchronously.
      */
     auto prev = _prev_head_write;
     auto units = ss::get_units(*prev, 1);
@@ -481,30 +511,48 @@ void segment_appender::dispatch_background_head_write() {
     (void)ss::with_semaphore(
       _concurrent_flushes,
       1,
-      [h,
-       w,
-       this,
-       start_offset,
-       expected,
-       src,
-       prev,
-       units = std::move(units),
-       full]() mutable {
+      [w, this, prev, units = std::move(units)]() mutable {
           return units
-            .then([this, h, w, start_offset, expected, src, full](
-                    ssx::semaphore_units u) mutable {
+            .then([this, w](ssx::semaphore_units u) mutable {
+                const auto dma_size = w->chunk_end - w->chunk_begin;
+
+                vassert(
+                  dma_size <= _chunk_size && w->chunk_end > w->chunk_begin
+                    && w->chunk_end <= _chunk_size,
+                  "Bad write bounds _chunk_size: {}, chunk_begin: {}, "
+                  "chunk_end: {}",
+                  _chunk_size,
+                  w->chunk_begin,
+                  w->chunk_end);
+
+                // prevent any more writes from merging into this entry
+                // as it is about to be dma_write'd.
+                w->set_state(DISPATCHED);
+
                 return _out
-                  .dma_write(start_offset, src, expected, _opts.priority)
-                  .then([this, h, w, expected, full](size_t got) {
+                  .dma_write(
+                    w->file_start_offset,
+                    w->chunk->data() + w->chunk_begin,
+                    w->chunk_end - w->chunk_begin,
+                    _opts.priority)
+                  .then([this, w](size_t got) {
                       /*
-                       * the continuation that captured full=true is the end of
-                       * the dependency chain for this chunk. it can be returned
-                       * to cache.
+                       * the continuation that captured full=true is the end
+                       * of the dependency chain for this chunk. it can be
+                       * returned to cache.
                        */
-                      if (full) {
-                          h->reset();
-                          internal::chunks().add(h);
+                      if (w->full) {
+                          w->chunk->reset();
+                          internal::chunks().add(w->chunk);
                       }
+
+                      // release our reference to the chunk since this
+                      // structure might hang around for a while in the
+                      // _inflight list but we can free this chunk to re-use
+                      // now as we won't use it again
+                      w->chunk = nullptr;
+
+                      const auto expected = w->chunk_end - w->chunk_begin;
                       if (unlikely(expected != got)) {
                           return size_missmatch_error(
                             "chunk::write", expected, got);
@@ -518,15 +566,6 @@ void segment_appender::dispatch_background_head_write() {
       .handle_exception([this](std::exception_ptr e) {
           vassert(false, "Could not dma_write: {} - {}", e, *this);
       });
-
-    /*
-     * when the head becomes full it still needs to be properly sequenced (see
-     * above), but no future writes to same head head are possible so the
-     * dependency chain is reset for the next head.
-     */
-    if (full) {
-        _prev_head_write = ss::make_lw_shared<ssx::semaphore>(1, head_sem_name);
-    }
 }
 
 ss::future<> segment_appender::flush() {
@@ -588,6 +627,44 @@ ss::future<> segment_appender::hard_flush() {
       });
 }
 
+bool segment_appender::inflight_write::try_merge(
+  const inflight_write& other, size_t pco) {
+    if (state == QUEUED && chunk == other.chunk) {
+        // this next check is an assert rather than a check since we always
+        // expect the writes to match up (i.e., right bound of prior write
+        // matches the left bound of the current one), since the in-flight
+        // writes should form a contiguous series of writes and we only check
+        // the last write for merging.
+        vassert(
+          committed_offset == pco, "in try_merge writes didn't touch: {} {}");
+
+        // the lhs write cannot be full since then how could the next write
+        // share its chunk: it must use a new chunk
+        vassert(!full, "the lhs write cannot be full");
+
+        // lhs chunk cannot start or end after rhs
+        vassert(
+          chunk_begin <= other.chunk_begin && chunk_end <= other.chunk_end,
+          "lhs {}-{}, rhs: {}-{}",
+          chunk_begin,
+          chunk_end,
+          other.chunk_begin,
+          other.chunk_end);
+
+        // we merge this write in by updating everything associated with the
+        // right boundary
+        committed_offset = other.committed_offset;
+        chunk_end = other.chunk_end;
+
+        // the only possible change here is false -> true, which occurs
+        // when the rhs completes the chunk
+        full = other.full;
+
+        return true;
+    }
+    return false;
+}
+
 std::ostream& operator<<(std::ostream& o, const segment_appender& a) {
     // NOTE: intrusivelist.size() == O(N) but often N is very small, ~8
     return o << "{no_of_chunks:" << a._opts.number_of_chunks
@@ -595,6 +672,13 @@ std::ostream& operator<<(std::ostream& o, const segment_appender& a) {
              << ", fallocation_offset:" << a._fallocation_offset
              << ", committed_offset:" << a._committed_offset
              << ", bytes_flush_pending:" << a._bytes_flush_pending << "}";
+}
+
+std::ostream&
+operator<<(std::ostream& s, const segment_appender::inflight_write& op) {
+    fmt::print(
+      s, "{{state: {}, committed_offest: {}}}", op.state, op.committed_offset);
+    return s;
 }
 
 } // namespace storage

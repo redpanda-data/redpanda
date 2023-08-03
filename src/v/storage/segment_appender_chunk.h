@@ -63,9 +63,19 @@ public:
         // must be 8192 bytes, starting at the bottom of the _flushed_pos
         // page, in this example, at offset 0.
         //
-        const auto prev_sz = ss::align_down<size_t>(_flushed_pos, _alignment);
-        const auto curr_sz = ss::align_up<size_t>(_pos, _alignment);
-        return curr_sz - prev_sz;
+        return pending_aligned_end() - pending_aligned_begin();
+    }
+
+    // The aligned start (inclusive) position within the chunk of the pending
+    // (unflushed) region, i.e., align_down(_pos).
+    size_t pending_aligned_begin() const {
+        return ss::align_down<size_t>(_flushed_pos, _alignment);
+    }
+
+    // The aligned end (exclusive) position within the chunk of the pending
+    // (unflushed) region, i.e., align_up(_pos).
+    size_t pending_aligned_end() const {
+        return ss::align_up<size_t>(_pos, _alignment);
     }
 
     const char* data() const { return _buf.get(); }
