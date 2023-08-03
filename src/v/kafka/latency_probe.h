@@ -14,13 +14,15 @@
 #include "config/configuration.h"
 #include "prometheus/prometheus_sanitize.h"
 #include "ssx/metrics.h"
-#include "utils/hdr_hist.h"
+#include "utils/log_hist.h"
 
 #include <seastar/core/metrics.hh>
 
 namespace kafka {
 class latency_probe {
 public:
+    using hist_t = log_hist_internal;
+
     latency_probe() = default;
     latency_probe(const latency_probe&) = delete;
     latency_probe& operator=(const latency_probe&) = delete;
@@ -45,13 +47,13 @@ public:
              "fetch_latency_us",
              sm::description("Fetch Latency"),
              labels,
-             [this] { return _fetch_latency.seastar_histogram_logform(); })
+             [this] { return _fetch_latency.internal_histogram_logform(); })
              .aggregate(aggregate_labels),
            sm::make_histogram(
              "produce_latency_us",
              sm::description("Produce Latency"),
              labels,
-             [this] { return _produce_latency.seastar_histogram_logform(); })
+             [this] { return _produce_latency.internal_histogram_logform(); })
              .aggregate(aggregate_labels)});
     }
 
@@ -68,23 +70,18 @@ public:
               "request_latency_seconds",
               sm::description("Internal latency of kafka produce requests"),
               {ssx::metrics::make_namespaced_label("request")("produce")},
-              [this] {
-                  return ssx::metrics::report_default_histogram(
-                    _produce_latency);
-              })
+              [this] { return _produce_latency.public_histogram_logform(); })
               .aggregate({sm::shard_label}),
             sm::make_histogram(
               "request_latency_seconds",
               sm::description("Internal latency of kafka consume requests"),
               {ssx::metrics::make_namespaced_label("request")("consume")},
-              [this] {
-                  return ssx::metrics::report_default_histogram(_fetch_latency);
-              })
+              [this] { return _fetch_latency.public_histogram_logform(); })
               .aggregate({sm::shard_label}),
           });
     }
 
-    std::unique_ptr<hdr_hist::measurement> auto_produce_measurement() {
+    std::unique_ptr<hist_t::measurement> auto_produce_measurement() {
         return _produce_latency.auto_measure();
     }
 
@@ -93,8 +90,8 @@ public:
     }
 
 private:
-    hdr_hist _produce_latency;
-    hdr_hist _fetch_latency;
+    hist_t _produce_latency;
+    hist_t _fetch_latency;
     ssx::metrics::metric_groups _metrics
       = ssx::metrics::metric_groups::make_internal();
     ssx::metrics::metric_groups _public_metrics

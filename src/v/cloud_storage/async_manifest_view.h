@@ -12,6 +12,7 @@
 
 #include "cloud_storage/fwd.h"
 #include "cloud_storage/materialized_manifest_cache.h"
+#include "cloud_storage/partition_probe.h"
 #include "cloud_storage/probe.h"
 #include "cloud_storage/types.h"
 #include "cloud_storage_clients/types.h"
@@ -217,7 +218,7 @@ private:
     struct materialization_request_t {
         segment_meta search_vec;
         ss::promise<result<manifest_section_t, error_outcome>> promise;
-        std::unique_ptr<hdr_hist::measurement> _measurement;
+        std::unique_ptr<partition_probe::hist_t::measurement> _measurement;
     };
     std::deque<materialization_request_t> _requests;
     ss::condition_variable _cvar;

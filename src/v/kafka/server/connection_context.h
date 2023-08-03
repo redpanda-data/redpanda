@@ -21,7 +21,6 @@
 #include "security/mtls.h"
 #include "security/sasl_authentication.h"
 #include "ssx/semaphore.h"
-#include "utils/hdr_hist.h"
 #include "utils/log_hist.h"
 #include "utils/named_type.h"
 
@@ -102,7 +101,7 @@ struct session_resources {
     ss::lowres_clock::duration backpressure_delay;
     ssx::semaphore_units memlocks;
     ssx::semaphore_units queue_units;
-    std::unique_ptr<hdr_hist::measurement> method_latency;
+    std::unique_ptr<server::hist_t::measurement> method_latency;
     std::unique_ptr<handler_probe::hist_t::measurement> handler_latency;
     std::unique_ptr<request_tracker> tracker;
     request_data request_data;

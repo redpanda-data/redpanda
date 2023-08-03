@@ -12,8 +12,8 @@
 
 #include "cloud_roles/apply_credentials.h"
 #include "cloud_storage_clients/client.h"
+#include "cloud_storage_clients/client_probe.h"
 #include "utils/gate_guard.h"
-#include "utils/hdr_hist.h"
 #include "utils/intrusive_list_helpers.h"
 
 #include <seastar/core/condition-variable.hh>
@@ -44,13 +44,13 @@ public:
         ss::deleter deleter;
         ss::abort_source::subscription as_sub;
         intrusive_list_hook _hook;
-        std::unique_ptr<hdr_hist::measurement> _track_duration;
+        std::unique_ptr<client_probe::hist_t::measurement> _track_duration;
 
         client_lease(
           http_client_ptr p,
           ss::abort_source& as,
           ss::deleter deleter,
-          std::unique_ptr<hdr_hist::measurement> m)
+          std::unique_ptr<client_probe::hist_t::measurement> m)
           : client(std::move(p))
           , deleter(std::move(deleter))
           , _track_duration(std::move(m)) {

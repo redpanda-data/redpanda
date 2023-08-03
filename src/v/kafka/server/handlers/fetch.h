@@ -17,8 +17,8 @@
 #include "model/fundamental.h"
 #include "model/ktp.h"
 #include "model/metadata.h"
-#include "utils/hdr_hist.h"
 #include "utils/intrusive_list_helpers.h"
+#include "utils/log_hist.h"
 
 #include <seastar/core/smp.hh>
 
@@ -32,7 +32,7 @@ using fetch_handler = single_stage_handler<fetch_api, 4, 11>;
  * Fetch operation context
  */
 struct op_context {
-    using latency_clock = hdr_hist::clock_type;
+    using latency_clock = log_hist_internal::clock_type;
     using latency_point = latency_clock::time_point;
 
     class response_placeholder {
