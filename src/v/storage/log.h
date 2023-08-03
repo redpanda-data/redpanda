@@ -28,6 +28,8 @@
 
 namespace storage {
 
+class segment_set;
+
 class log {
 public:
     explicit log(ntp_config cfg) noexcept
@@ -131,6 +133,8 @@ public:
     virtual ss::future<reclaimable_offsets>
     get_reclaimable_offsets(gc_config cfg) = 0;
     virtual void set_cloud_gc_offset(model::offset) = 0;
+
+    virtual const segment_set& segments() const = 0;
 
 private:
     ntp_config _config;
