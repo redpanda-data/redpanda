@@ -13,6 +13,7 @@
 #include "vassert.h"
 
 #include <cstddef>
+#include <iterator>
 #include <stdexcept>
 #include <type_traits>
 #include <utility>
@@ -96,6 +97,17 @@ public:
         return *this;
     }
     ~fragmented_vector() noexcept = default;
+
+    template<typename Iter>
+    requires std::input_iterator<Iter>
+    fragmented_vector(Iter begin, Iter end)
+      : fragmented_vector() {
+        // Improvement: Write a more efficient implementation for
+        // random_access_iterators
+        for (auto it = begin; it != end; ++it) {
+            push_back(*it);
+        }
+    }
 
     fragmented_vector copy() const noexcept { return *this; }
 
