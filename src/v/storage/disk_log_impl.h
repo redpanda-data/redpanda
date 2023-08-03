@@ -103,7 +103,7 @@ public:
 
     probe& get_probe() { return *_probe; }
     model::term_id term() const;
-    segment_set& segments() { return _segs; }
+    segment_set& segments() override { return _segs; }
     const segment_set& segments() const override { return _segs; }
     size_t bytes_left_before_roll() const;
 
