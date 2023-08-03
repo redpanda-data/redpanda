@@ -113,7 +113,7 @@ public:
 
     int64_t compaction_backlog() const final;
 
-    ss::future<usage_report> disk_usage(gc_config);
+    ss::future<usage_report> disk_usage(gc_config) override;
 
     /*
      * Interface for disk space management (see resource_mgmt/storage.cc).
@@ -131,9 +131,10 @@ public:
      */
     auto& gate() { return _compaction_housekeeping_gate; }
     fragmented_vector<ss::lw_shared_ptr<segment>> cloud_gc_eligible_segments();
-    void set_cloud_gc_offset(model::offset);
+    void set_cloud_gc_offset(model::offset) override;
 
-    ss::future<reclaimable_offsets> get_reclaimable_offsets(gc_config cfg);
+    ss::future<reclaimable_offsets>
+    get_reclaimable_offsets(gc_config cfg) override;
 
 private:
     friend class disk_log_appender; // for multi-term appends

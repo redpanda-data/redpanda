@@ -272,7 +272,7 @@ eviction_policy::collect_reclaimable_offsets() {
     fragmented_vector<partition> res;
     co_await ss::max_concurrent_for_each(
       partitions.begin(), partitions.end(), 20, [&res, cfg](const auto& p) {
-          auto log = dynamic_cast<storage::disk_log_impl*>(p->log().get());
+          auto log = p->log();
           return log->get_reclaimable_offsets(cfg)
             .then([&res, group = p->group()](auto offsets) {
                 res.push_back({
@@ -330,7 +330,7 @@ ss::future<size_t> eviction_policy::install_schedule(shard_partitions shard) {
                 continue;
             }
 
-            auto log = dynamic_cast<storage::disk_log_impl*>(p->log().get());
+            auto log = p->log();
             log->set_cloud_gc_offset(partition.decision.value());
             ++decisions;
 

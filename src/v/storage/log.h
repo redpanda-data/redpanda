@@ -127,6 +127,11 @@ public:
 
     virtual int64_t compaction_backlog() const = 0;
 
+    virtual ss::future<usage_report> disk_usage(gc_config) = 0;
+    virtual ss::future<reclaimable_offsets>
+    get_reclaimable_offsets(gc_config cfg) = 0;
+    virtual void set_cloud_gc_offset(model::offset) = 0;
+
 private:
     ntp_config _config;
 
