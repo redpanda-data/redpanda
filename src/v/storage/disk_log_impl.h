@@ -99,7 +99,7 @@ public:
 
     ss::future<> force_roll(ss::io_priority_class) override;
 
-    probe& get_probe() { return *_probe; }
+    probe& get_probe() override { return *_probe; }
     model::term_id term() const;
     segment_set& segments() override { return _segs; }
     const segment_set& segments() const override { return _segs; }
