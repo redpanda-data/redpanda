@@ -12,16 +12,40 @@
 #pragma once
 #include "model/timeout_clock.h"
 #include "seastarx.h"
+#include "vassert.h"
 
 #include <seastar/core/future-util.hh>
 #include <seastar/core/lowres_clock.hh>
 #include <seastar/core/reactor.hh>
 #include <seastar/core/sleep.hh>
 #include <seastar/core/thread.hh>
+#include <seastar/core/timed_out_error.hh>
 
 #include <chrono>
 
 using namespace std::chrono_literals;
+
+// NOLINTNEXTLINE(cppcoreguidelines-macro-usage)
+#define boost_await_eventually(...)                                            \
+    do {                                                                       \
+        try {                                                                  \
+            co_await tests::cooperative_spin_wait_with_timeout(__VA_ARGS__);   \
+        } catch (ss::timed_out_error&) {                                       \
+            BOOST_FAIL(                                                        \
+              ssx::sformat("Timed out at {}:{}", __FILE__, __LINE__));         \
+        }                                                                      \
+    } while (0);
+
+// NOLINTNEXTLINE(cppcoreguidelines-macro-usage)
+#define boost_require_eventually(...)                                          \
+    do {                                                                       \
+        try {                                                                  \
+            tests::cooperative_spin_wait_with_timeout(__VA_ARGS__).get();      \
+        } catch (ss::timed_out_error&) {                                       \
+            BOOST_FAIL(                                                        \
+              ssx::sformat("Timed out at {}:{}", __FILE__, __LINE__));         \
+        }                                                                      \
+    } while (0);
 
 namespace tests {
 
