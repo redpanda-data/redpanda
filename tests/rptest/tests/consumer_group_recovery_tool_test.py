@@ -19,8 +19,11 @@ from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST
 from rptest.services.rpk_producer import RpkProducer
 from rptest.tests.prealloc_nodes import PreallocNodesTest
 from rptest.tests.redpanda_test import RedpandaTest
+from rptest.util import wait_until_result
 from ducktape.utils.util import wait_until
 from ducktape.mark import parametrize
+
+import re
 
 
 class ConsumerOffsetsRecoveryToolTest(PreallocNodesTest):
@@ -31,7 +34,6 @@ class ConsumerOffsetsRecoveryToolTest(PreallocNodesTest):
             test_ctx,
             num_brokers=3,
             *args,
-            # disable leader balancer to make sure that group will not be realoaded because of leadership changes
             extra_rp_conf={
                 # clear topics from the the kafka_nodelete_topics to allow for
                 # __consumer_offsets to be configured in this test.
@@ -41,10 +43,36 @@ class ConsumerOffsetsRecoveryToolTest(PreallocNodesTest):
             node_prealloc_count=1,
             **kwargs)
 
-    def describe_all_groups(self):
+    def describe_all_groups(self, num_groups: int = 1):
         rpk = RpkTool(self.redpanda)
         all_groups = {}
-        for g in rpk.group_list():
+
+        # The one consumer group in this test comes from KgoVerifierConsumerGroupConsumer
+        # for example, kgo-verifier-1691097745-347-0
+        kgo_group_re = re.compile(r'^kgo-verifier-[0-9]+-[0-9]+-0$')
+
+        self.logger.debug(f"Issue ListGroups, expect {num_groups} groups")
+
+        def do_list_groups():
+            res = rpk.group_list()
+
+            if res is None:
+                return False
+
+            if len(res) != num_groups:
+                return False
+
+            kgo_group_m = kgo_group_re.match(res[0])
+            self.logger.debug(f"kgo group match {kgo_group_m}")
+            return False if kgo_group_m is None else (True, res)
+
+        group_list_res = wait_until_result(
+            do_list_groups,
+            timeout_sec=30,
+            backoff_sec=0.5,
+            err_msg="RPK failed to list consumer groups")
+
+        for g in group_list_res:
             gd = rpk.group_describe(g)
             all_groups[gd.name] = {}
             for p in gd.partitions:
