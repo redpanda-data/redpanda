@@ -20,6 +20,7 @@ import (
 	helmController "github.com/fluxcd/helm-controller/controllers"
 	"github.com/fluxcd/pkg/runtime/client"
 	helper "github.com/fluxcd/pkg/runtime/controller"
+	"github.com/fluxcd/pkg/runtime/events"
 	"github.com/fluxcd/pkg/runtime/logger"
 	sourcev1 "github.com/fluxcd/source-controller/api/v1beta2"
 	helmSourceController "github.com/fluxcd/source-controller/controllers"
@@ -100,6 +101,7 @@ func main() {
 		metricsTimeout              time.Duration
 		restrictToRedpandaVersion   string
 		namespace                   string
+		eventsAddr                  string
 
 		// allowPVCDeletion controls the PVC deletion feature in the Cluster custom resource.
 		// PVCs will be deleted when its Pod has been deleted and the Node that Pod is assigned to
@@ -109,6 +111,7 @@ func main() {
 		debug            bool
 	)
 
+	flag.StringVar(&eventsAddr, "events-addr", "", "The address of the events receiver.")
 	flag.StringVar(&metricsAddr, "metrics-bind-address", ":8080", "The address the metric endpoint binds to.")
 	flag.StringVar(&probeAddr, "health-probe-bind-address", ":8081", "The address the probe endpoint binds to.")
 	flag.StringVar(&pprofAddr, "pprof-bind-address", ":8082", "The address the metric endpoint binds to.")
@@ -193,12 +196,18 @@ func main() {
 			RateLimiter:               workqueue.NewItemExponentialFailureRateLimiter(30*time.Second, 60*time.Second),
 		}
 
+		var helmReleaseEventRecorder *events.Recorder
+		if helmReleaseEventRecorder, err = events.NewRecorder(mgr, ctrl.Log, eventsAddr, "HelmReleaseReconciler"); err != nil {
+			setupLog.Error(err, "unable to create event recorder for: HelmReleaseReconciler")
+			os.Exit(1)
+		}
+
 		// Helm Release Controller
 		helmRelease := helmController.HelmReleaseReconciler{
 			Client:         mgr.GetClient(),
 			Config:         mgr.GetConfig(),
 			Scheme:         mgr.GetScheme(),
-			EventRecorder:  mgr.GetEventRecorderFor("HelmReleaseReconciler"),
+			EventRecorder:  helmReleaseEventRecorder,
 			ClientOpts:     clientOptions,
 			KubeConfigOpts: kubeConfigOpts,
 		}
@@ -207,22 +216,34 @@ func main() {
 		}
 
 		// Helm Chart Controller
+		var helmChartEventRecorder *events.Recorder
+		if helmChartEventRecorder, err = events.NewRecorder(mgr, ctrl.Log, eventsAddr, "HelmChartReconciler"); err != nil {
+			setupLog.Error(err, "unable to create event recorder for: HelmChartReconciler")
+			os.Exit(1)
+		}
+
 		helmChart := helmSourceController.HelmChartReconciler{
 			Client:                  mgr.GetClient(),
 			RegistryClientGenerator: redpandacontrollers.ClientGenerator,
 			Getters:                 getters,
 			Metrics:                 metricsH,
 			Storage:                 storage,
-			EventRecorder:           mgr.GetEventRecorderFor("HelmChartReconciler"),
+			EventRecorder:           helmChartEventRecorder,
 		}
 		if err = helmChart.SetupWithManager(mgr); err != nil {
 			setupLog.Error(err, "Unable to create controller", "controller", "HelmChart")
 		}
 
 		// Helm Repository Controller
+		var helmRepositoryEventRecorder *events.Recorder
+		if helmRepositoryEventRecorder, err = events.NewRecorder(mgr, ctrl.Log, eventsAddr, "HelmRepositoryReconciler"); err != nil {
+			setupLog.Error(err, "unable to create event recorder for: HelmRepositoryReconciler")
+			os.Exit(1)
+		}
+
 		helmRepository := helmSourceController.HelmRepositoryReconciler{
 			Client:         mgr.GetClient(),
-			EventRecorder:  mgr.GetEventRecorderFor("HelmRepositoryReconciler"),
+			EventRecorder:  helmRepositoryEventRecorder,
 			Getters:        getters,
 			ControllerName: "redpanda-controller",
 			TTL:            15 * time.Minute,
@@ -241,11 +262,18 @@ func main() {
 
 			redpandacontrollers.StartFileServer(storage.BasePath, storageAddr, setupLog)
 		}()
+		// Redpanda Reconciler
+
+		var redpandaEventRecorder *events.Recorder
+		if redpandaEventRecorder, err = events.NewRecorder(mgr, ctrl.Log, eventsAddr, "RedpandaReconciler"); err != nil {
+			setupLog.Error(err, "unable to create event recorder for: RedpandaReconciler")
+			os.Exit(1)
+		}
 
 		if err = (&redpandacontrollers.RedpandaReconciler{
 			Client:          mgr.GetClient(),
 			Scheme:          mgr.GetScheme(),
-			EventRecorder:   mgr.GetEventRecorderFor("RedpandaReconciler"),
+			EventRecorder:   redpandaEventRecorder,
 			RequeueHelmDeps: 10 * time.Second,
 		}).SetupWithManager(mgr); err != nil {
 			setupLog.Error(err, "unable to create controller", "controller", "Redpanda")
