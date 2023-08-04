@@ -13,10 +13,6 @@ delete:
     kind: PersistentVolumeClaim
     name: datadir-decommission-1
     namespace: redpanda-system
-  - apiVersion: v1
-    kind: PersistentVolumeClaim
-    name: datadir-decommission-2
-    namespace: redpanda-system
   - apiVersion: batch/v1
     kind: Job
     name: get-broker-count-managed-decom
