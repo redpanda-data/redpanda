@@ -17,7 +17,7 @@ commands:
 artifactsDir: tests/_e2e_artifacts_v2
 timeout: 360
 reportFormat: xml
-parallel: 4
+parallel: 1
 namespace: redpanda
 suppress:
   - events

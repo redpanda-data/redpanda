@@ -134,6 +134,10 @@ func (r *RedpandaReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		return r.reconcileDelete(ctx, rp)
 	}
 
+	if !isRedpandaManaged(ctx, rp) {
+		return ctrl.Result{}, nil
+	}
+
 	rp, result, err := r.reconcile(ctx, rp)
 
 	// Update status after reconciliation.
@@ -390,6 +394,31 @@ func (r *RedpandaReconciler) createHelmReleaseFromTemplate(ctx context.Context, 
 		timeout = &metav1.Duration{Duration: 15 * time.Minute}
 	}
 
+	rollBack := helmv2beta1.RemediationStrategy("rollback")
+
+	upgrade := &helmv2beta1.Upgrade{
+		Remediation: &helmv2beta1.UpgradeRemediation{
+			Retries:  1,
+			Strategy: &rollBack,
+		},
+	}
+
+	helmUpgrade := rp.Spec.ChartRef.Upgrade
+	if rp.Spec.ChartRef.Upgrade != nil {
+		if helmUpgrade.Force != nil {
+			upgrade.Force = pointer.BoolDeref(helmUpgrade.Force, false)
+		}
+		if helmUpgrade.CleanupOnFail != nil {
+			upgrade.CleanupOnFail = pointer.BoolDeref(helmUpgrade.CleanupOnFail, false)
+		}
+		if helmUpgrade.PreserveValues != nil {
+			upgrade.PreserveValues = pointer.BoolDeref(helmUpgrade.PreserveValues, false)
+		}
+		if helmUpgrade.Remediation != nil {
+			upgrade.Remediation = helmUpgrade.Remediation
+		}
+	}
+
 	return &helmv2beta1.HelmRelease{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      rp.GetHelmReleaseName(),
@@ -411,6 +440,7 @@ func (r *RedpandaReconciler) createHelmReleaseFromTemplate(ctx context.Context, 
 			Values:   values,
 			Interval: metav1.Duration{Duration: 30 * time.Second},
 			Timeout:  timeout,
+			Upgrade:  upgrade,
 		},
 	}, nil
 }
@@ -483,4 +513,15 @@ func helmChartRequiresUpdate(template, chart *helmv2beta1.HelmChartTemplate) boo
 	default:
 		return false
 	}
+}
+
+func isRedpandaManaged(ctx context.Context, redpandaCluster *v1alpha1.Redpanda) bool {
+	log := ctrl.LoggerFrom(ctx).WithName("RedpandaReconciler.isRedpandaManaged")
+
+	managedAnnotationKey := v1alpha1.GroupVersion.Group + "/managed"
+	if managed, exists := redpandaCluster.Annotations[managedAnnotationKey]; exists && managed == NotManaged {
+		log.Info(fmt.Sprintf("management is disabled; to enable it, change the '%s' annotation to true or remove it", managedAnnotationKey))
+		return false
+	}
+	return true
 }
