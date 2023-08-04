@@ -2267,6 +2267,22 @@ class RedpandaService(RedpandaServiceBase):
         if start_si and self._si_settings is not None:
             self.start_si()
 
+        for node in self.nodes:
+            attempts = 5
+            while attempts > 0:
+                try:
+                    self._admin.stress_fiber_start(
+                        node,
+                        num_fibers=100,
+                        min_spins_per_scheduling_point=100,
+                        max_spins_per_scheduling_point=10000)
+                    break
+                except:
+                    attempts -= 1
+                    time.sleep(1)
+                    if attempts == 0:
+                        raise
+
     def write_tls_certs(self):
         if not self._security.tls_provider:
             return
@@ -3095,6 +3111,9 @@ class RedpandaService(RedpandaServiceBase):
 
         if not os.path.isdir(service_dir):
             mkdir_p(service_dir)
+
+        for node in self.nodes:
+            self._admin.stress_fiber_stop(node)
 
         try:
             rpk = RpkTool(self)
