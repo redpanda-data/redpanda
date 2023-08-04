@@ -149,7 +149,7 @@ make_segment(model::offset base, const std::vector<batch_t>& batches) {
           }
           return acc + b.num_records;
       });
-    iobuf segment_bytes = generate_segment(base, batches);
+    auto [segment_bytes, last_offset] = generate_segment(base, batches);
     std::vector<model::record_batch_header> hdr;
     std::vector<iobuf> rec;
     std::vector<uint64_t> off;
