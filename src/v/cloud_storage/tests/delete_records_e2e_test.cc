@@ -21,6 +21,7 @@
 #include "model/record.h"
 #include "redpanda/tests/fixture.h"
 #include "storage/disk_log_impl.h"
+#include "test_utils/async.h"
 
 #include <seastar/core/io_priority_class.hh>
 
@@ -266,9 +267,7 @@ FIXTURE_TEST(test_delete_from_stm_consume, delete_records_e2e_fixture) {
                    topic_name, model::partition_id(0), model::offset(1), 5s)
                  .get();
     BOOST_CHECK_EQUAL(model::offset(1), lwm);
-    tests::cooperative_spin_wait_with_timeout(10s, [this] {
-        return log->segment_count() == 1;
-    }).get();
+    boost_require_eventually(10s, [this] { return log->segment_count() == 1; });
 
     kafka_consume_transport consumer(make_kafka_client().get());
     consumer.start().get();
