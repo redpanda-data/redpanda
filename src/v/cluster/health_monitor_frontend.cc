@@ -50,12 +50,6 @@ health_monitor_frontend::get_cluster_health(
       });
 }
 
-ss::future<> health_monitor_frontend::maybe_refresh_cloud_health_stats() {
-    return dispatch_to_backend([](health_monitor_backend& be) {
-        return be.maybe_refresh_cloud_health_stats();
-    });
-}
-
 storage::disk_space_alert health_monitor_frontend::get_cluster_disk_health() {
     return _cluster_disk_health;
 }

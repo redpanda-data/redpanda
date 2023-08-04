@@ -11,41 +11,15 @@
 
 #pragma once
 #include "config/property.h"
+#include "kafka/server/usage_aggregator.h"
 #include "oncore.h"
 #include "storage/kvstore.h"
 #include "utils/fragmented_vector.h"
-#include "utils/mutex.h"
 
 #include <seastar/core/gate.hh>
 #include <seastar/core/timer.hh>
 
 namespace kafka {
-
-/// Main structure of statistics that are being accounted for. These are
-/// periodically serialized to disk, hence why the struct inherits from the
-/// serde::envelope
-struct usage
-  : serde::envelope<usage, serde::version<0>, serde::compat_version<0>> {
-    uint64_t bytes_sent{0};
-    uint64_t bytes_received{0};
-    std::optional<uint64_t> bytes_cloud_storage;
-    usage operator+(const usage&) const;
-    auto serde_fields() {
-        return std::tie(bytes_sent, bytes_received, bytes_cloud_storage);
-    }
-};
-
-struct usage_window
-  : serde::envelope<usage_window, serde::version<0>, serde::compat_version<0>> {
-    uint64_t begin{0};
-    uint64_t end{0};
-    usage u;
-
-    bool is_uninitialized() const { return begin == 0 && end == 0; }
-    bool is_open() const { return begin != 0 && end == 0; }
-    void reset(ss::lowres_system_clock::time_point now);
-    auto serde_fields() { return std::tie(begin, end, u); }
-};
 
 /// Class that manages all usage statistics. Usage stats are more accurate
 /// representation of node usage. This class maintains these stats windowed,
@@ -59,9 +33,10 @@ class usage_manager : public ss::peering_sharded_service<usage_manager> {
 public:
     static constexpr ss::shard_id usage_manager_main_shard{0};
 
-    class accounting_fiber {
+    class usage_accounting_fiber final : public usage_aggregator<> {
     public:
-        accounting_fiber(
+        usage_accounting_fiber(
+          cluster::controller* controller,
           ss::sharded<usage_manager>& um,
           ss::sharded<cluster::health_monitor_frontend>& health_monitor,
           ss::sharded<storage::api>& storage,
@@ -69,37 +44,15 @@ public:
           std::chrono::seconds usage_window_width_interval,
           std::chrono::seconds usage_disk_persistance_interval);
 
-        /// Starts a fiber that manage window interval evolution and disk
-        /// persistance
-        ss::future<> start();
-
-        /// Stops the fiber and flushes current in memory results to disk
-        ss::future<> stop();
-
-        /// Returns aggregate of all \ref usage stats across cores
-        std::vector<usage_window> get_usage_stats() const;
+    protected:
+        virtual ss::future<usage> close_current_window() final;
 
     private:
-        std::chrono::seconds
-        reset_state(fragmented_vector<usage_window> buckets);
-        void close_window();
-        ss::future<> async_data_fetch(size_t index, uint64_t close_ts);
+        ss::future<std::optional<uint64_t>> get_cloud_usage_data();
 
     private:
-        size_t _usage_num_windows;
-        std::chrono::seconds _usage_window_width_interval;
-        std::chrono::seconds _usage_disk_persistance_interval;
-
-        /// Timers for controlling window closure and disk persistance
-        ss::timer<ss::lowres_clock> _timer;
-        ss::timer<ss::lowres_clock> _persist_disk_timer;
-
-        ss::gate _bg_write_gate;
-        ss::gate _gate;
-        size_t _current_window{0};
-        fragmented_vector<usage_window> _buckets;
+        cluster::controller* _controller;
         cluster::health_monitor_frontend& _health_monitor;
-        storage::kvstore& _kvstore;
         ss::sharded<usage_manager>& _um;
     };
 
@@ -108,6 +61,7 @@ public:
     /// Context is to be in a sharded service, will grab \ref usage_num_windows
     /// and \ref usage_window_sec configuration parameters from cluster config
     explicit usage_manager(
+      cluster::controller* controller,
       ss::sharded<cluster::health_monitor_frontend>& health_monitor,
       ss::sharded<storage::api>& storage);
 
@@ -131,7 +85,7 @@ public:
 
     /// Obtain all current stats - for all shards
     ///
-    std::vector<usage_window> get_usage_stats() const;
+    ss::future<std::vector<usage_window>> get_usage_stats() const;
 
     /// Obtain all current stats - for 'this' shard, resets window
     ///
@@ -156,6 +110,7 @@ private:
     config::binding<std::chrono::seconds> _usage_window_width_interval;
     config::binding<std::chrono::seconds> _usage_disk_persistance_interval;
 
+    cluster::controller* _controller;
     ss::sharded<cluster::health_monitor_frontend>& _health_monitor;
     ss::sharded<storage::api>& _storage;
 
@@ -165,7 +120,7 @@ private:
     ss::gate _background_gate;
 
     /// Valid on core-0 when usage_enabled() == true
-    std::unique_ptr<accounting_fiber> _accounting_fiber;
+    std::unique_ptr<usage_aggregator<>> _accounting_fiber;
 };
 
 /// Bytes accounted for by the kafka::usage_manager will not take into
