@@ -467,8 +467,10 @@ private:
             co_return;
         }
         _view_cursor = std::move(cur.value());
-        co_await _view_cursor->maybe_sync_manifest();
-        initialize_reader_state(_view_cursor->manifest().value(), config);
+        co_await _view_cursor->with_manifest(
+          [this, config](const partition_manifest& manifest) {
+              initialize_reader_state(manifest, config);
+          });
         co_return;
     }
 
