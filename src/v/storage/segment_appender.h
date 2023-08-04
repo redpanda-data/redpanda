@@ -206,9 +206,11 @@ private:
     // still heavy weight operations compared to regular flush()
     ss::future<> hard_flush();
 
-    enum write_state { QUEUED = 1, DISPATCHED, DONE };
+    enum class write_state : char { QUEUED = 1, DISPATCHED, DONE };
 
     struct inflight_write {
+        using enum write_state;
+
         // true if the write extends to the end of the chunk, i.e., this
         // is the last write that will use the current chunk before it
         // is recycled
@@ -243,10 +245,10 @@ private:
             // the only allowed transitions are QUEUED -> DISPATCHED -> DONE
             vassert(
               (state == QUEUED || state == DISPATCHED)
-                && new_state == state + 1,
+                && (int)new_state == (int)state + 1,
               "bad transition {} -> {}",
-              state,
-              new_state);
+              (int)state,
+              (int)new_state);
             state = new_state;
         }
 

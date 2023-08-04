@@ -388,7 +388,7 @@ ss::future<> segment_appender::maybe_advance_stable_offset(
 
         while (!_inflight.empty()) {
             auto next = _inflight.front();
-            if (next->state == DONE) {
+            if (next->state == write_state::DONE) {
                 _inflight.pop_front();
                 vassert(
                   committed < next->committed_offset,
@@ -407,7 +407,7 @@ ss::future<> segment_appender::maybe_advance_stable_offset(
         _stable_offset = committed;
         return process_flush_ops(committed);
     } else {
-        write->set_state(DONE);
+        write->set_state(write_state::DONE);
         return ss::now();
     }
 }
@@ -530,7 +530,7 @@ void segment_appender::dispatch_background_head_write() {
 
                 // prevent any more writes from merging into this entry
                 // as it is about to be dma_write'd.
-                w->set_state(DISPATCHED);
+                w->set_state(write_state::DISPATCHED);
 
                 return _out
 #pragma clang diagnostic push
@@ -683,7 +683,10 @@ std::ostream& operator<<(std::ostream& o, const segment_appender& a) {
 std::ostream&
 operator<<(std::ostream& s, const segment_appender::inflight_write& op) {
     fmt::print(
-      s, "{{state: {}, committed_offest: {}}}", op.state, op.committed_offset);
+      s,
+      "{{state: {}, committed_offest: {}}}",
+      (int)op.state,
+      op.committed_offset);
     return s;
 }
 
