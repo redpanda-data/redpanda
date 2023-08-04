@@ -64,6 +64,47 @@ spec:
                       Helm action. Defaults to '15m0s'.
                     pattern: ^([0-9]+(\.[0-9]+)?(ms|s|m|h))+$
                     type: string
+                  upgrade:
+                    description: Upgrade contains the details for handling upgrades
+                      including failures
+                    properties:
+                      cleanupOnFail:
+                        type: boolean
+                      force:
+                        type: boolean
+                      preserveValues:
+                        type: boolean
+                      remediation:
+                        description: UpgradeRemediation holds the configuration for
+                          Helm upgrade remediation.
+                        properties:
+                          ignoreTestFailures:
+                            description: IgnoreTestFailures tells the controller to
+                              skip remediation when the Helm tests are run after an
+                              upgrade action but fail. Defaults to 'Test.IgnoreFailures'.
+                            type: boolean
+                          remediateLastFailure:
+                            description: RemediateLastFailure tells the controller
+                              to remediate the last failure, when no retries remain.
+                              Defaults to 'false' unless 'Retries' is greater than
+                              0.
+                            type: boolean
+                          retries:
+                            description: Retries is the number of retries that should
+                              be attempted on failures before bailing. Remediation,
+                              using 'Strategy', is performed between each attempt.
+                              Defaults to '0', a negative integer equals to unlimited
+                              retries.
+                            type: integer
+                          strategy:
+                            description: Strategy to use for failure remediation.
+                              Defaults to 'rollback'.
+                            enum:
+                            - rollback
+                            - uninstall
+                            type: string
+                        type: object
+                    type: object
                 type: object
               clusterSpec:
                 description: ClusterSpec defines the values to use in the cluster

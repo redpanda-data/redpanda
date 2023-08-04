@@ -5,4 +5,7 @@ metadata:
   name: redpanda
 spec:
   chartRef:
-    chartVersion: "4.0.13"
+    chartVersion: "5.0.7"
+  clusterSpec:
+    statefulset:
+      replicas: 1

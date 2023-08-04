@@ -46,7 +46,7 @@ run: generate vet manifests
 
 # Run against the configured Kubernetes cluster in ~/.kube/config
 run-v2: generate vet manifests
-	go run ./main.go --namespace=$(NAMESPACE)
+	go run ./main.go --namespace=$(NAMESPACE) --log-level=debug
 
 # Install CRDs into a cluster
 install: manifests kustomize

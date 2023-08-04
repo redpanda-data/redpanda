@@ -14,9 +14,3 @@ delete:
   - apiVersion: v1
     kind: PersistentVolumeClaim
     name: datadir-redpanda-0
-  - apiVersion: v1
-    kind: PersistentVolumeClaim
-    name: datadir-redpanda-1
-  - apiVersion: v1
-    kind: PersistentVolumeClaim
-    name: datadir-redpanda-2
