@@ -24,11 +24,16 @@ partition_probe::partition_probe(const model::ntp& ntp) {
     }
 
     namespace sm = ss::metrics;
+    const auto partition_label = sm::label("partition");
     const std::vector<sm::label_instance> labels = {
       sm::label("namespace")(ntp.ns()),
       sm::label("topic")(ntp.tp.topic()),
-      sm::label("partition")(ntp.tp.partition()),
+      partition_label(ntp.tp.partition()),
     };
+
+    auto aggregate_labels = config::shard_local_cfg().aggregate_metrics()
+                              ? std::vector<sm::label>{partition_label}
+                              : std::vector<sm::label>{};
 
     _metrics.add_group(
       prometheus_sanitize::metrics_name("cloud_storage:partition"),
@@ -94,7 +99,8 @@ partition_probe::partition_probe(const model::ntp& ntp) {
           [this] { return _spillover_mat_latency.public_histogram_logform(); },
           sm::description(
             "Spillover manifest materialization latency histogram"),
-          labels),
+          labels)
+          .aggregate(aggregate_labels),
 
         sm::make_histogram(
           "chunk_hydration_latency",
@@ -102,7 +108,8 @@ partition_probe::partition_probe(const model::ntp& ntp) {
               return _chunk_hydration_latency.public_histogram_logform();
           },
           sm::description("Chunk hydration latency histogram"),
-          labels),
+          labels)
+          .aggregate(aggregate_labels),
         sm::make_gauge(
           "chunk_size",
           [this] { return _chunk_size; },
