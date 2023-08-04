@@ -38,6 +38,8 @@ public:
     }
 
 private:
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
     priority_manager()
       : _raft_priority(ss::io_priority_class::register_one("raft", 1000))
       , _controller_priority(
@@ -56,6 +58,7 @@ private:
       // priority.
       , _archival_priority(
           ss::io_priority_class::register_one("archival", 200)) {}
+#pragma clang diagnostic pop
 
     ss::io_priority_class _raft_priority;
     ss::io_priority_class _controller_priority;
