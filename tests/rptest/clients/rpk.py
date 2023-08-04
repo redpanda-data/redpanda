@@ -141,6 +141,16 @@ class RpkTrimOffsetResponse(typing.NamedTuple):
     error_msg: str
 
 
+class RpkClusterHealthResponse(typing.NamedTuple):
+    is_healthy: bool
+    unhealthy_reasons: list[str]
+    controller_id: int
+    all_nodes: list[int]
+    nodes_down: list[int]
+    leaderless_partitions: list[str]
+    under_replicated_partitions: list[str]
+
+
 @dataclass
 class RpkColumnHeader:
     name: str
@@ -1451,3 +1461,56 @@ class RpkTool:
             cmd += ["--permanent"]
 
         return self._run_registry(cmd)
+
+    def cluster_health(self):
+        cmd = [
+            self._rpk_binary(), "-X", "admin.hosts=" + self._admin_host(),
+            "cluster", "health"
+        ]
+        out = self._execute(cmd)
+
+        # CLUSTER HEALTH OVERVIEW
+        # =======================
+        # Healthy:                     true
+        # Unhealthy reasons:           []
+        # Controller ID:               0
+        # All nodes:                   [0 1 2 3 4]
+        # Nodes down:                  []
+        # Leaderless partitions:       []
+        # Under-replicated partitions: []
+        def parse_field(field_name, string):
+            pattern = re.compile(f"^{field_name}: +(?P<value>.+)")
+            m = pattern.match(string)
+            assert m is not None, f"Field string '{string}' does not match the pattern"
+            return m['value']
+
+        def parse_list(list_str):
+            if list_str == "[]":
+                return []
+
+            elements = list_str.strip('[]').split()
+            parsed_list = elements
+            if all(e.isdigit() for e in elements):
+                parsed_list = [int(e) for e in elements]
+
+            return parsed_list
+
+        lines = out.splitlines()
+
+        # First 2 lines are section headers.
+        is_healthy = parse_field("Healthy", lines[2]) == "true"
+        unhealthy_reasons = parse_field("Unhealthy reasons", lines[3])
+        controller_id = parse_field("Controller ID", lines[4])
+        all_nodes = parse_field("All nodes", lines[5])
+        nodes_down = parse_field("Nodes down", lines[6])
+        leaderless_partitions = parse_field("Leaderless partitions", lines[7])
+        urp = parse_field("Under-replicated partitions", lines[8])
+
+        return RpkClusterHealthResponse(
+            is_healthy=is_healthy,
+            unhealthy_reasons=parse_list(unhealthy_reasons),
+            controller_id=int(controller_id),
+            all_nodes=parse_list(all_nodes),
+            nodes_down=parse_list(nodes_down),
+            leaderless_partitions=parse_list(leaderless_partitions),
+            under_replicated_partitions=parse_list(urp))
