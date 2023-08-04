@@ -2888,12 +2888,6 @@ spec:
                         type: string
                     type: object
                 type: object
-              helmRepositoryName:
-                description: HelmRepositoryName defines the repository to use, defaults
-                  to redpanda if not defined
-                type: string
-            required:
-            - chartRef
             type: object
           status:
             description: RedpandaStatus defines the observed state of Redpanda
