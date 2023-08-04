@@ -82,8 +82,6 @@ public:
 
     bool does_raft0_have_leader();
 
-    ss::future<> maybe_refresh_cloud_health_stats();
-
 private:
     /**
      * Struct used to track pending refresh request, it gives ability
