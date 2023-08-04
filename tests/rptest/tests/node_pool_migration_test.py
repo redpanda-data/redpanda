@@ -103,11 +103,13 @@ class NodePoolMigrationTest(PreallocNodesTest):
             "Error waiting for all the nodes to report consistent list of brokers in the cluster health and configuration."
         )
 
-    def _wait_for_node_removed(self, node_id):
-        waiter = NodeDecommissionWaiter(self.redpanda,
-                                        node_id,
-                                        self.logger,
-                                        progress_timeout=120)
+    def _wait_for_node_removed(self, node_id, decommissioned_ids):
+        waiter = NodeDecommissionWaiter(
+            self.redpanda,
+            node_id,
+            self.logger,
+            progress_timeout=120,
+            decommissioned_node_ids=decommissioned_ids)
         waiter.wait_for_removal()
         return True
 
@@ -115,8 +117,9 @@ class NodePoolMigrationTest(PreallocNodesTest):
 
         with ThreadPoolExecutor(
                 max_workers=len(decommissioned_ids)) as executor:
-            result = executor.map(lambda id: self._wait_for_node_removed(id),
-                                  decommissioned_ids)
+            result = executor.map(
+                lambda id: self._wait_for_node_removed(id, decommissioned_ids),
+                decommissioned_ids)
 
             return [r for r in result]
 
