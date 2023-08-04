@@ -414,8 +414,7 @@ archival_policy::get_next_compacted_segment(
     if (log->segment_count() == 0) {
         vlog(
           archival_log.warn,
-          "Upload policy find next compacted segment: cannot find log for ntp: "
-          "{}",
+          "Upload policy find next compacted segment: no segments ntp: {}",
           _ntp);
         co_return upload_candidate_with_locks{upload_candidate{}, {}};
     }
