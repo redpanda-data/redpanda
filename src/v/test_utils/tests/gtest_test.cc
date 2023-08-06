@@ -21,6 +21,7 @@ TEST_ASYNC(SeastarTest, Sleep) {
 
 TEST_CORO(SeastarTest, SleepCoro) {
     co_await seastar::sleep(std::chrono::milliseconds(100));
+    ASSERT_EQ_CORO(100, 100);
 }
 
 /*
@@ -37,6 +38,7 @@ TEST_F_ASYNC(MySeastarFixture, Sleep) {
 
 TEST_F_CORO(MySeastarFixture, SleepCoro) {
     co_await seastar::sleep(std::chrono::milliseconds(100));
+    ASSERT_EQ_CORO(message(), "hello");
 }
 
 /*
@@ -51,6 +53,8 @@ TEST_P_ASYNC(MySeastarParamFixture, Sleep) {
 
 TEST_P_CORO(MySeastarParamFixture, SleepCoro) {
     co_await seastar::sleep(std::chrono::milliseconds(100));
+    ASSERT_TRUE_CORO(true);
+    ASSERT_FALSE_CORO(false);
 }
 
 INSTANTIATE_TEST_SUITE_P(

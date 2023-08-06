@@ -152,3 +152,25 @@ public:
 
 #define TEST_P_CORO(test_suite_name, test_name)                                \
     TEST_P_SEASTAR_(test_suite_name, test_name, run, seastar::future<>)
+
+/*
+ * Support for coroutine safe assertions
+ */
+#define GTEST_FATAL_FAILURE_CORO_(message)                                     \
+    co_return GTEST_MESSAGE_(message, ::testing::TestPartResult::kFatalFailure)
+#define ASSERT_PRED_FORMAT2_CORO(pred_format, v1, v2)                          \
+    GTEST_PRED_FORMAT2_(pred_format, v1, v2, GTEST_FATAL_FAILURE_CORO_)
+#define GTEST_ASSERT_EQ_CORO(val1, val2)                                       \
+    ASSERT_PRED_FORMAT2_CORO(::testing::internal::EqHelper::Compare, val1, val2)
+
+/*
+ * Coroutine safe assertions
+ */
+#define ASSERT_TRUE_CORO(condition)                                            \
+    GTEST_TEST_BOOLEAN_(                                                       \
+      condition, #condition, false, true, GTEST_FATAL_FAILURE_CORO_)
+#define ASSERT_FALSE_CORO(condition)                                           \
+    GTEST_TEST_BOOLEAN_(                                                       \
+      !(condition), #condition, true, false, GTEST_FATAL_FAILURE_CORO_)
+
+#define ASSERT_EQ_CORO(val1, val2) GTEST_ASSERT_EQ_CORO(val1, val2)
