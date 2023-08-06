@@ -13,14 +13,18 @@
 #include <seastar/core/sleep.hh>
 
 /*
- * TEST_ASYNC() is the Seastar-enabled equivalent of TEST().
+ * TEST_(ASYNC|CORO)() is the Seastar-enabled equivalent of TEST().
  */
 TEST_ASYNC(SeastarTest, Sleep) {
     seastar::sleep(std::chrono::milliseconds(100)).get();
 }
 
+TEST_CORO(SeastarTest, SleepCoro) {
+    co_await seastar::sleep(std::chrono::milliseconds(100));
+}
+
 /*
- * TEST_F_ASYNC() is the Seastar-enabled equivalent of TEST_F()
+ * TEST_F_(ASYNC|CORO)() is the Seastar-enabled equivalent of TEST_F()
  */
 struct MySeastarFixture : public ::testing::Test {
     std::string_view message() const { return "hello"; }
@@ -31,14 +35,22 @@ TEST_F_ASYNC(MySeastarFixture, Sleep) {
     ASSERT_EQ(message(), "hello");
 }
 
+TEST_F_CORO(MySeastarFixture, SleepCoro) {
+    co_await seastar::sleep(std::chrono::milliseconds(100));
+}
+
 /*
- * TEST_P_ASYNC() is the Seastar-enabled equivalent of TEST_P()
+ * TEST_P_(ASYNC|CORO)() is the Seastar-enabled equivalent of TEST_P()
  */
 class MySeastarParamFixture : public ::testing::TestWithParam<int> {};
 
 TEST_P_ASYNC(MySeastarParamFixture, Sleep) {
     seastar::sleep(std::chrono::milliseconds(GetParam() * 10)).get();
     ASSERT_EQ(GetParam() % 11, 0);
+}
+
+TEST_P_CORO(MySeastarParamFixture, SleepCoro) {
+    co_await seastar::sleep(std::chrono::milliseconds(100));
 }
 
 INSTANTIATE_TEST_SUITE_P(

@@ -10,6 +10,7 @@
  */
 #pragma once
 
+#include <seastar/core/coroutine.hh>
 #include <seastar/core/thread.hh>
 #include <seastar/testing/test_runner.hh>
 
@@ -22,7 +23,8 @@ public:
     static void run_async(std::function<void()> task);
 };
 
-#define GTEST_TEST_ASYNC_(test_suite_name, test_name, parent_class, parent_id) \
+#define GTEST_TEST_SEASTAR_(                                                   \
+  test_suite_name, test_name, parent_class, parent_id, run, run_type)          \
     static_assert(                                                             \
       sizeof(GTEST_STRINGIFY_(test_suite_name)) > 1,                           \
       "test_suite_name must not be empty");                                    \
@@ -49,9 +51,9 @@ public:
                                                                                \
     private:                                                                   \
         void TestBody() override {                                             \
-            run_async([this] { TestBodyWrapped(); });                          \
+            (run)([this] { return TestBodyWrapped(); });                       \
         }                                                                      \
-        void TestBodyWrapped();                                                \
+        run_type TestBodyWrapped();                                            \
         static ::testing::TestInfo* const test_info_ GTEST_ATTRIBUTE_UNUSED_;  \
     };                                                                         \
                                                                                \
@@ -70,32 +72,55 @@ public:
           parent_class>::GetTearDownCaseOrSuite(__FILE__, __LINE__),           \
         new ::testing::internal::TestFactoryImpl<GTEST_TEST_CLASS_NAME_(       \
           test_suite_name, test_name)>);                                       \
-    void GTEST_TEST_CLASS_NAME_(test_suite_name, test_name)::TestBodyWrapped()
+    run_type GTEST_TEST_CLASS_NAME_(                                           \
+      test_suite_name, test_name)::TestBodyWrapped()
 
 #define TEST_ASYNC(test_suite_name, test_name)                                 \
-    GTEST_TEST_ASYNC_(                                                         \
+    GTEST_TEST_SEASTAR_(                                                       \
       test_suite_name,                                                         \
       test_name,                                                               \
       ::testing::Test,                                                         \
-      ::testing::internal::GetTestTypeId())
+      ::testing::internal::GetTestTypeId(),                                    \
+      run_async,                                                               \
+      void)
+
+#define TEST_CORO(test_suite_name, test_name)                                  \
+    GTEST_TEST_SEASTAR_(                                                       \
+      test_suite_name,                                                         \
+      test_name,                                                               \
+      ::testing::Test,                                                         \
+      ::testing::internal::GetTestTypeId(),                                    \
+      run,                                                                     \
+      seastar::future<>)
 
 #define TEST_F_ASYNC(test_fixture, test_name)                                  \
-    GTEST_TEST_ASYNC_(                                                         \
+    GTEST_TEST_SEASTAR_(                                                       \
       test_fixture,                                                            \
       test_name,                                                               \
       test_fixture,                                                            \
-      ::testing::internal::GetTypeId<test_fixture>())
+      ::testing::internal::GetTypeId<test_fixture>(),                          \
+      run_async,                                                               \
+      void)
 
-#define TEST_P_ASYNC(test_suite_name, test_name)                               \
+#define TEST_F_CORO(test_fixture, test_name)                                   \
+    GTEST_TEST_SEASTAR_(                                                       \
+      test_fixture,                                                            \
+      test_name,                                                               \
+      test_fixture,                                                            \
+      ::testing::internal::GetTypeId<test_fixture>(),                          \
+      run,                                                                     \
+      seastar::future<>)
+
+#define TEST_P_SEASTAR_(test_suite_name, test_name, run, run_type)             \
     class GTEST_TEST_CLASS_NAME_(test_suite_name, test_name)                   \
       : public seastar_test_mixin                                              \
       , public test_suite_name {                                               \
     public:                                                                    \
         GTEST_TEST_CLASS_NAME_(test_suite_name, test_name)() {}                \
         void TestBody() override {                                             \
-            run_async([this] { TestBodyWrapped(); });                          \
+            (run)([this] { return TestBodyWrapped(); });                       \
         }                                                                      \
-        void TestBodyWrapped();                                                \
+        run_type TestBodyWrapped();                                            \
                                                                                \
     private:                                                                   \
         static int AddToRegistry() {                                           \
@@ -119,4 +144,11 @@ public:
     int GTEST_TEST_CLASS_NAME_(                                                \
       test_suite_name, test_name)::gtest_registering_dummy_                    \
       = GTEST_TEST_CLASS_NAME_(test_suite_name, test_name)::AddToRegistry();   \
-    void GTEST_TEST_CLASS_NAME_(test_suite_name, test_name)::TestBodyWrapped()
+    run_type GTEST_TEST_CLASS_NAME_(                                           \
+      test_suite_name, test_name)::TestBodyWrapped()
+
+#define TEST_P_ASYNC(test_suite_name, test_name)                               \
+    TEST_P_SEASTAR_(test_suite_name, test_name, run_async, void)
+
+#define TEST_P_CORO(test_suite_name, test_name)                                \
+    TEST_P_SEASTAR_(test_suite_name, test_name, run, seastar::future<>)
