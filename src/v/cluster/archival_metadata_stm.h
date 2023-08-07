@@ -298,6 +298,12 @@ private:
     // The offset of the last record that modified this stm
     model::offset _last_dirty_at;
 
+    // Offset of the last applied replace_manifest command.
+    // NOTE: this field is not serialized in snapshots. After a restart, it is
+    // expected that replace_manifest commands will be replayed, or that the
+    // snapshot contains the entire contents of the replaced manifest.
+    std::optional<model::offset> _last_applied_replace_cmd{std::nullopt};
+
     cloud_storage::remote& _cloud_storage_api;
     features::feature_table& _feature_table;
     ss::abort_source _download_as;

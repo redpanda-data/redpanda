@@ -667,16 +667,6 @@ bool disk_log_impl::has_local_retention_override() const {
 }
 
 gc_config disk_log_impl::maybe_override_retention_config(gc_config cfg) const {
-    // Read replica topics have a different default retention
-    if (config().is_read_replica_mode_enabled()) {
-        cfg.eviction_time = std::max(
-          model::timestamp(
-            model::timestamp::now().value()
-            - ntp_config::read_replica_retention.count()),
-          cfg.eviction_time);
-        return cfg;
-    }
-
     // cloud_retention is disabled, do not override
     if (!is_cloud_retention_active()) {
         return cfg;
@@ -756,7 +746,7 @@ gc_config disk_log_impl::override_retention_config(gc_config cfg) const {
 
 bool disk_log_impl::is_cloud_retention_active() const {
     return config::shard_local_cfg().cloud_storage_enabled()
-           && (config().is_archival_enabled());
+           && (config().is_archival_enabled() || config().is_read_replica_mode_enabled());
 }
 
 /*
@@ -2059,8 +2049,7 @@ disk_log_impl::disk_usage_and_reclaimable_space(gc_config input_cfg) {
          * get_reclaimable_offsets is going to be merged together.
          */
         if (
-          !config().is_read_replica_mode_enabled()
-          && is_cloud_retention_active() && seg != _segs.back()
+          is_cloud_retention_active() && seg != _segs.back()
           && seg->offsets().dirty_offset <= max_collectible
           && local_retention_offset.has_value()
           && seg->offsets().dirty_offset <= local_retention_offset.value()) {
@@ -2396,22 +2385,6 @@ disk_log_impl::get_reclaimable_offsets(gc_config cfg) {
         vlog(
           stlog.debug,
           "Reporting no reclaimable offsets for non-cloud partition {}",
-          config().ntp());
-        co_return res;
-    }
-
-    /*
-     * there is currently a bug with read replicas that makes the max
-     * collectible offset unreliable. the read replica topics still have a
-     * retention setting, but we are going to exempt them from forced reclaim
-     * until this bug is fixed to avoid any complications.
-     *
-     * https://github.com/redpanda-data/redpanda/issues/11936
-     */
-    if (config().is_read_replica_mode_enabled()) {
-        vlog(
-          stlog.debug,
-          "Reporting no reclaimable offsets for read replica partition {}",
           config().ntp());
         co_return res;
     }
