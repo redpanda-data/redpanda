@@ -16,11 +16,10 @@
 #include "cloud_storage/types.h"
 #include "model/fundamental.h"
 #include "storage/fwd.h"
-#include "storage/log_manager.h"
 #include "storage/ntp_config.h"
-#include "storage/segment_set.h"
 
 #include <seastar/core/io_priority_class.hh>
+#include <seastar/core/rwlock.hh>
 
 namespace archival {
 

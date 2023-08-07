@@ -12,6 +12,7 @@
 #include "random/generators.h"
 #include "seastarx.h"
 #include "storage/segment_appender.h"
+#include "storage/storage_resources.h"
 
 #include <seastar/core/reactor.hh>
 #include <seastar/core/thread.hh>

@@ -11,10 +11,14 @@
 
 #pragma once
 
+#include "features/fwd.h"
+#include "storage/batch_cache.h"
+#include "storage/file_sanitizer_types.h"
 #include "storage/fs_utils.h"
-#include "storage/segment.h"
+#include "storage/fwd.h"
 
 #include <seastar/core/circular_buffer.hh>
+#include <seastar/core/sharded.hh>
 
 #include <deque>
 
@@ -46,7 +50,7 @@ public:
     using iterator = underlying_t::iterator;
 
     explicit segment_set(underlying_t);
-    ~segment_set() noexcept = default;
+    ~segment_set() noexcept;
     segment_set(segment_set&&) noexcept = default;
     segment_set& operator=(segment_set&& o) noexcept = default;
     segment_set(const segment_set&) = delete;

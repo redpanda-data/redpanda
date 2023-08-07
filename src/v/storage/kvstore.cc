@@ -19,6 +19,7 @@
 #include "reflection/adl.h"
 #include "storage/parser.h"
 #include "storage/record_batch_builder.h"
+#include "storage/segment.h"
 #include "storage/segment_set.h"
 #include "storage/types.h"
 #include "vlog.h"
@@ -52,6 +53,8 @@ kvstore::kvstore(
           _ntpc.ntp());
     }
 }
+
+kvstore::~kvstore() noexcept = default;
 
 ss::future<> kvstore::start() {
     vlog(lg.debug, "Starting kvstore: dir {}", _ntpc.work_directory());

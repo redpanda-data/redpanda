@@ -10,13 +10,15 @@
  */
 
 #pragma once
+#include "cluster/fwd.h"
 #include "config/property.h"
 #include "kafka/server/usage_aggregator.h"
 #include "oncore.h"
-#include "storage/kvstore.h"
+#include "storage/fwd.h"
 #include "utils/fragmented_vector.h"
 
 #include <seastar/core/gate.hh>
+#include <seastar/core/sharded.hh>
 #include <seastar/core/timer.hh>
 
 namespace kafka {

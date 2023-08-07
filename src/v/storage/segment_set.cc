@@ -12,6 +12,7 @@
 #include "storage/fs_utils.h"
 #include "storage/log_replayer.h"
 #include "storage/logger.h"
+#include "storage/segment.h"
 #include "utils/directory_walker.h"
 #include "utils/filtered_lower_bound.h"
 #include "vassert.h"
@@ -52,6 +53,8 @@ segment_set::segment_set(segment_set::underlying_t segs)
   : _handles(std::move(segs)) {
     std::sort(_handles.begin(), _handles.end(), segment_ordering{});
 }
+
+segment_set::~segment_set() noexcept = default;
 
 void segment_set::add(ss::lw_shared_ptr<segment> h) {
     if (!_handles.empty()) {

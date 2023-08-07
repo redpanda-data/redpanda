@@ -25,7 +25,6 @@
 #include "model/metadata.h"
 #include "model/record.h"
 #include "storage/fwd.h"
-#include "storage/segment.h"
 #include "utils/intrusive_list_helpers.h"
 #include "utils/retry_chain_node.h"
 

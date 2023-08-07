@@ -19,7 +19,6 @@
 #include "storage/segment_appender.h"
 #include "storage/segment_index.h"
 #include "storage/segment_reader.h"
-#include "storage/storage_resources.h"
 #include "storage/types.h"
 #include "storage/version.h"
 

@@ -20,6 +20,7 @@
 #include "storage/segment_appender_utils.h"
 #include "storage/segment_index.h"
 #include "storage/segment_reader.h"
+#include "storage/storage_resources.h"
 
 #include <seastar/core/reactor.hh>
 #include <seastar/core/thread.hh>
