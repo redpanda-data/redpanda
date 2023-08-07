@@ -372,8 +372,19 @@ abs_client::abs_client(
 }
 
 ss::future<client_self_configuration_result> abs_client::self_configure() {
-    // TODO: A future commit will plug in the implementation
-    co_return abs_self_configuration_result{.is_hns_enabled = false};
+    auto result = co_await get_account_info(5s);
+    if (!result) {
+        vlog(
+          abs_log.warn,
+          "Get Account Information request failed: {}. Proceeding without self "
+          "configuration ...",
+          result.error());
+
+        co_return abs_self_configuration_result{.is_hns_enabled = false};
+    } else {
+        co_return abs_self_configuration_result{
+          .is_hns_enabled = result.value().is_hns_enabled};
+    }
 }
 
 ss::future<> abs_client::stop() {
