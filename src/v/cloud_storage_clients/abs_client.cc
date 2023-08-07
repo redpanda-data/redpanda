@@ -340,6 +340,33 @@ abs_request_creator::make_get_account_info_request() {
     return header;
 }
 
+result<http::client::request_header>
+abs_request_creator::make_delete_file_request(
+  const access_point_uri& adls_ap,
+  bucket_name const& name,
+  object_key const& path) {
+    // DELETE /{container-id}/{path} HTTP/1.1
+    // Host: {storage-account-id}.dfs.core.windows.net
+    // x-ms-date:{req-datetime in RFC9110} # added by 'add_auth'
+    // x-ms-version:"2021-08-06"           # added by 'add_auth'
+    // Authorization:{signature}           # added by 'add_auth'
+    const auto target = fmt::format("/{}/{}", name(), path().string());
+
+    const boost::beast::string_view host{adls_ap().data(), adls_ap().length()};
+
+    http::client::request_header header{};
+    header.method(boost::beast::http::verb::delete_);
+    header.target(target);
+    header.insert(boost::beast::http::field::host, host);
+
+    auto error_code = _apply_credentials->add_auth(header);
+    if (error_code) {
+        return error_code;
+    }
+
+    return header;
+}
+
 abs_client::abs_client(
   const abs_configuration& conf,
   ss::lw_shared_ptr<const cloud_roles::apply_credentials> apply_credentials)
@@ -642,28 +669,32 @@ abs_client::delete_object(
   const object_key& key,
   ss::lowres_clock::duration timeout) {
     using ret_t = result<no_response, error_outcome>;
-    return send_request(
-             do_delete_object(name, key, timeout).then([]() {
-                 return ss::make_ready_future<no_response>(no_response{});
-             }),
-             name,
-             key)
-      .then([&name, &key](const ret_t& result) {
-          // ABS returns a 404 for attempts to delete a blob that doesn't exist.
-          // The remote doesn't expect this, so we map 404s to a successful
-          // response.
-          if (!result && result.error() == error_outcome::key_not_found) {
-              vlog(
-                abs_log.debug,
-                "Object to be deleted was not found in cloud storage: "
-                "object={}, bucket={}. Ignoring ...",
-                name,
-                key);
-              return ss::make_ready_future<ret_t>(no_response{});
-          } else {
-              return ss::make_ready_future<ret_t>(result);
-          }
-      });
+    if (!_adls_client) {
+        return send_request(
+                 do_delete_object(name, key, timeout).then([]() {
+                     return ss::make_ready_future<no_response>(no_response{});
+                 }),
+                 name,
+                 key)
+          .then([&name, &key](const ret_t& result) {
+              // ABS returns a 404 for attempts to delete a blob that doesn't
+              // exist. The remote doesn't expect this, so we map 404s to a
+              // successful response.
+              if (!result && result.error() == error_outcome::key_not_found) {
+                  vlog(
+                    abs_log.debug,
+                    "Object to be deleted was not found in cloud storage: "
+                    "object={}, bucket={}. Ignoring ...",
+                    name,
+                    key);
+                  return ss::make_ready_future<ret_t>(no_response{});
+              } else {
+                  return ss::make_ready_future<ret_t>(result);
+              }
+          });
+    } else {
+        return delete_path(name, key, timeout);
+    }
 }
 
 ss::future<> abs_client::do_delete_object(
@@ -832,6 +863,90 @@ abs_client::do_get_account_info(ss::lowres_clock::duration timeout) {
           headers);
 
         co_return storage_account_info{};
+    }
+}
+
+ss::future<> abs_client::do_delete_file(
+  const bucket_name& name,
+  object_key path,
+  ss::lowres_clock::duration timeout) {
+    vassert(
+      _adls_client && _data_lake_v2_client_config,
+      "Attempt to use ADLSv2 endpoint without having created a client");
+
+    auto header = _requestor.make_delete_file_request(
+      _data_lake_v2_client_config->uri, name, path);
+    if (!header) {
+        vlog(
+          abs_log.warn, "Failed to create request header: {}", header.error());
+        throw std::system_error(header.error());
+    }
+
+    vlog(abs_log.trace, "send https request:\n{}", header.value());
+
+    auto response_stream = co_await _adls_client->request(
+      std::move(header.value()), timeout);
+
+    co_await response_stream->prefetch_headers();
+    vassert(response_stream->is_header_done(), "Header is not received");
+
+    const auto status = response_stream->get_headers().result();
+    if (
+      status != boost::beast::http::status::accepted
+      && status != boost::beast::http::status::ok) {
+        const auto content_type = get_response_content_type(
+          response_stream->get_headers());
+        auto buf = co_await util::drain_response_stream(
+          std::move(response_stream));
+        throw parse_rest_error_response(content_type, status, std::move(buf));
+    }
+}
+
+ss::future<result<abs_client::no_response, error_outcome>>
+abs_client::delete_path(
+  const bucket_name& name,
+  object_key path,
+  ss::lowres_clock::duration timeout) {
+    return send_request(
+      do_delete_path(name, path, timeout).then([]() {
+          return ss::make_ready_future<no_response>(no_response{});
+      }),
+      name,
+      path);
+}
+
+ss::future<> abs_client::do_delete_path(
+  const bucket_name& name,
+  object_key path,
+  ss::lowres_clock::duration timeout) {
+    std::vector<object_key> blobs_to_delete = util::all_paths_to_file(path);
+    for (auto iter = blobs_to_delete.rbegin(); iter != blobs_to_delete.rend();
+         ++iter) {
+        try {
+            co_await do_delete_file(name, *iter, timeout);
+        } catch (const abs_rest_error_response& abs_error) {
+            if (abs_error.code() == abs_error_code::path_not_found) {
+                vlog(
+                  abs_log.debug,
+                  "Object to be deleted was not found in cloud storage: "
+                  "object={}, bucket={}. Ignoring ...",
+                  *iter,
+                  name);
+                continue;
+            }
+
+            if (abs_error.code() == abs_error_code::directory_not_empty) {
+                vlog(
+                  abs_log.debug,
+                  "Attempt to delete non-empty directory {} in bucket {}. "
+                  "Ignoring ...",
+                  *iter,
+                  name);
+                co_return;
+            }
+
+            throw;
+        }
     }
 }
 

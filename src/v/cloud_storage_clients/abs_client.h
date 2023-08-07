@@ -83,6 +83,18 @@ public:
     /// \brief Init http header for 'Get Account Information' request
     result<http::client::request_header> make_get_account_info_request();
 
+    /// \brief Create a 'Filesystem Delete' request header
+    ///
+    /// \param adls_ap is the acces point for the Azure Data Lake Storage v2
+    /// REST API
+    /// \param name is a container
+    /// \param key is a path
+    /// \return initialized and signed http header or error
+    result<http::client::request_header> make_delete_file_request(
+      const access_point_uri& adls_ap,
+      bucket_name const& name,
+      object_key const& path);
+
 private:
     access_point_uri _ap;
     /// Applies credentials to http requests by adding headers and signing
@@ -200,6 +212,25 @@ public:
     ss::future<result<storage_account_info, error_outcome>>
     get_account_info(ss::lowres_clock::duration timeout);
 
+    /// Send Delete File request to ADLSv2 endpoint.
+    ///
+    /// Should only be called when Hierarchical Namespaces are
+    /// enabled for the storage account.
+    ///
+    /// When HNS is enabled, the container has filesystem like semantics:
+    /// deleting a blob, does not delete the path that leads up to it.
+    /// This function deals with this by deleting elements from the path
+    /// sequentially. For instance, if path=a/b/log.txt, we issue a separate
+    /// delete requests for a/b/log.txt, a/b and a.
+    ///
+    /// \param name is a container name
+    /// \param key is the path to be deleted
+    /// \param timeout is a timeout of the operation
+    ss::future<result<no_response, error_outcome>> delete_path(
+      bucket_name const& name,
+      object_key path,
+      ss::lowres_clock::duration timeout);
+
 private:
     template<typename T>
     ss::future<result<T, error_outcome>> send_request(
@@ -244,6 +275,16 @@ private:
 
     ss::future<storage_account_info>
     do_get_account_info(ss::lowres_clock::duration timeout);
+
+    ss::future<> do_delete_path(
+      bucket_name const& name,
+      object_key path,
+      ss::lowres_clock::duration timeout);
+
+    ss::future<> do_delete_file(
+      const bucket_name& name,
+      object_key path,
+      ss::lowres_clock::duration timeout);
 
     std::optional<abs_configuration> _data_lake_v2_client_config;
     abs_request_creator _requestor;
