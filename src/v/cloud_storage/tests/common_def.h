@@ -58,13 +58,21 @@ struct batch_t {
     int num_records;
     model::record_batch_type type;
     std::vector<size_t> record_sizes;
+    /// Set to true to completely erase the batch from the segment
+    /// to check compacted segments.
+    bool hole{false};
 };
 
-inline ss::circular_buffer<model::record_batch>
+/// \returns generated batches and committed offset + 1
+inline std::pair<ss::circular_buffer<model::record_batch>, model::offset>
 make_random_batches(model::offset o, const std::vector<batch_t>& batches) {
     ss::circular_buffer<model::record_batch> ret;
     ret.reserve(batches.size());
     for (auto batch : batches) {
+        if (batch.hole) {
+            o += model::offset(batch.num_records);
+            continue;
+        }
         auto b = model::test::make_random_batch(
           o,
           batch.num_records,
@@ -77,18 +85,20 @@ make_random_batches(model::offset o, const std::vector<batch_t>& batches) {
         b.set_term(model::term_id(0));
         ret.push_back(std::move(b));
     }
-    return ret;
+    return std::make_pair(std::move(ret), o);
 }
-inline iobuf generate_segment(
+
+/// \returns generated segment body and committed offset + 1 (next offset)
+inline std::pair<iobuf, model::offset> generate_segment(
   model::offset base_offset, const std::vector<batch_t>& batches) {
-    auto buff = make_random_batches(base_offset, batches);
+    auto [buff, next_offset] = make_random_batches(base_offset, batches);
     iobuf result;
     for (auto&& batch : buff) {
         auto hdr = storage::disk_header_to_iobuf(batch.header());
         result.append(std::move(hdr));
         result.append(iobuf_deep_copy(batch.data()));
     }
-    return result;
+    return std::make_pair(std::move(result), next_offset);
 }
 
 class recording_batch_consumer : public storage::batch_consumer {

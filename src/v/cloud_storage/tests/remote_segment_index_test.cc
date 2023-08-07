@@ -130,7 +130,7 @@ SEASTAR_THREAD_TEST_CASE(test_remote_segment_index_builder) {
         };
         batches.push_back(std::move(batch));
     }
-    auto segment = generate_segment(base_offset, batches);
+    auto [segment, co] = generate_segment(base_offset, batches);
     auto is = make_iobuf_input_stream(std::move(segment));
     offset_index ix(base_offset, kbase_offset, 0, 0);
     auto parser = make_remote_segment_index_builder(

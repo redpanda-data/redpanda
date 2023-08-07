@@ -149,7 +149,7 @@ make_segment(model::offset base, const std::vector<batch_t>& batches) {
           }
           return acc + b.num_records;
       });
-    iobuf segment_bytes = generate_segment(base, batches);
+    auto [segment_bytes, last_offset] = generate_segment(base, batches);
     std::vector<model::record_batch_header> hdr;
     std::vector<iobuf> rec;
     std::vector<uint64_t> off;
@@ -2542,4 +2542,74 @@ FIXTURE_TEST(
             }
         }
     }
+}
+
+/// This test scans compacted segment support
+FIXTURE_TEST(
+  test_remote_partition_scan_compacted_hole_in_the_middle,
+  cloud_storage_fixture) {
+    constexpr int batches_per_segment = 10;
+    constexpr int num_segments = 3;
+    constexpr int total_batches = batches_per_segment * num_segments;
+    batch_t data = {
+      .num_records = 10, .type = model::record_batch_type::raft_data};
+    batch_t conf = {
+      .num_records = 1, .type = model::record_batch_type::raft_configuration};
+    batch_t hole = {
+      .num_records = 10,
+      .type = model::record_batch_type::raft_data,
+      .hole = true};
+
+    const std::vector<std::vector<batch_t>> batch_types = {
+      {conf, hole, data, data, data, data, data, data, data, data},
+      {conf, data, conf, data, hole, data, data, data, data, data},
+      {conf, data, data, data, data, data, data, hole, data, data},
+    };
+
+    auto num_holes = 3;
+    auto num_configs = 4;
+    auto segments = setup_s3_imposter(*this, batch_types);
+    auto base = segments[0].base_offset;
+    auto max = segments[num_segments - 1].max_offset;
+
+    vlog(test_log.debug, "offset range: {}-{}", base, max);
+    print_segments(segments);
+
+    auto headers_read = scan_remote_partition(*this, base, max);
+    BOOST_REQUIRE_EQUAL(
+      headers_read.size(), total_batches - num_configs - num_holes);
+}
+
+FIXTURE_TEST(
+  test_remote_partition_scan_compacted_hole_at_the_end, cloud_storage_fixture) {
+    constexpr int batches_per_segment = 10;
+    constexpr int num_segments = 3;
+    constexpr int total_batches = batches_per_segment * num_segments;
+    batch_t data = {
+      .num_records = 10, .type = model::record_batch_type::raft_data};
+    batch_t conf = {
+      .num_records = 1, .type = model::record_batch_type::raft_configuration};
+    batch_t hole = {
+      .num_records = 10,
+      .type = model::record_batch_type::raft_data,
+      .hole = true};
+
+    const std::vector<std::vector<batch_t>> batch_types = {
+      {conf, data, data, data, data, data, data, data, data, hole},
+      {conf, data, conf, data, data, data, data, data, data, hole},
+      {conf, data, data, data, data, data, data, data, data, hole},
+    };
+
+    auto num_holes = 3;
+    auto num_configs = 4;
+    auto segments = setup_s3_imposter(*this, batch_types);
+    auto base = segments[0].base_offset;
+    auto max = segments[num_segments - 1].max_offset;
+
+    vlog(test_log.debug, "offset range: {}-{}", base, max);
+    print_segments(segments);
+
+    auto headers_read = scan_remote_partition(*this, base, max);
+    BOOST_REQUIRE_EQUAL(
+      headers_read.size(), total_batches - num_configs - num_holes);
 }
