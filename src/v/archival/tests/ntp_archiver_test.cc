@@ -79,8 +79,7 @@ static void log_segment(const storage::segment& s) {
 }
 
 static void log_segment_set(storage::log_manager& lm) {
-    auto log = lm.get(manifest_ntp);
-    auto plog = dynamic_cast<const storage::disk_log_impl*>(log.get());
+    auto plog = lm.get(manifest_ntp);
     BOOST_REQUIRE(plog != nullptr);
     const auto& sset = plog->segments();
     for (const auto& s : sset) {
@@ -923,9 +922,7 @@ FIXTURE_TEST(
         as))
       .get0();
 
-    auto plog = dynamic_cast<storage::disk_log_impl*>(log.get());
-
-    auto seg = plog->segments().begin();
+    auto seg = log->segments().begin();
 
     BOOST_REQUIRE((*seg)->finished_self_compaction());
 

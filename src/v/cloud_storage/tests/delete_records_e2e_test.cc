@@ -114,7 +114,7 @@ public:
         add_topic({model::kafka_namespace, topic_name}, 1, props).get();
         wait_for_leader(ntp).get();
         partition = app.partition_manager.local().get(ntp).get();
-        log = dynamic_cast<storage::disk_log_impl*>(partition->log().get());
+        log = partition->log();
         auto archiver_ref = partition->archiver();
         BOOST_REQUIRE(archiver_ref.has_value());
         archiver = &archiver_ref.value().get();
@@ -135,7 +135,7 @@ public:
     model::topic topic_name;
     model::ntp ntp;
     cluster::partition* partition;
-    storage::disk_log_impl* log;
+    ss::shared_ptr<storage::log> log;
     archival::ntp_archiver* archiver;
 };
 

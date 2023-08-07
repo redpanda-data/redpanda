@@ -28,6 +28,9 @@
 
 namespace storage {
 
+class segment_set;
+class probe;
+
 class log {
 public:
     explicit log(ntp_config cfg) noexcept
@@ -126,6 +129,19 @@ public:
       update_configuration(ntp_config::default_overrides) = 0;
 
     virtual int64_t compaction_backlog() const = 0;
+
+    virtual ss::future<usage_report> disk_usage(gc_config) = 0;
+    virtual ss::future<reclaimable_offsets>
+    get_reclaimable_offsets(gc_config cfg) = 0;
+    virtual void set_cloud_gc_offset(model::offset) = 0;
+
+    virtual const segment_set& segments() const = 0;
+    virtual segment_set& segments() = 0;
+
+    // roll immediately with the current term.
+    virtual ss::future<> force_roll(ss::io_priority_class) = 0;
+
+    virtual probe& get_probe() = 0;
 
 private:
     ntp_config _config;

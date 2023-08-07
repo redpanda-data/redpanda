@@ -50,10 +50,6 @@
 #include <optional>
 #include <vector>
 
-storage::disk_log_impl* get_disk_log(ss::shared_ptr<storage::log> log) {
-    return dynamic_cast<storage::disk_log_impl*>(log.get());
-}
-
 void validate_offsets(
   model::offset base,
   const std::vector<model::record_batch_header>& write_headers,
@@ -71,7 +67,7 @@ void validate_offsets(
 }
 
 void compact_and_prefix_truncate(
-  storage::disk_log_impl& log, storage::housekeeping_config cfg) {
+  storage::log& log, storage::housekeeping_config cfg) {
     ss::abort_source as;
     auto eviction_future = log.monitor_eviction(as);
 
@@ -473,7 +469,7 @@ FIXTURE_TEST(
 
     storage::ntp_config ntp_cfg(ntp, mgr.config().base_dir);
     auto log = mgr.manage(std::move(ntp_cfg)).get0();
-    auto disk_log = get_disk_log(log);
+    auto disk_log = log;
 
     append_batch_with_no_max_ts(log, model::term_id(0), model::timestamp(100));
     append_batch_with_no_max_ts(log, model::term_id(0), model::timestamp(110));
@@ -507,7 +503,7 @@ FIXTURE_TEST(test_time_based_eviction, storage_test_fixture) {
 
     storage::ntp_config ntp_cfg(ntp, mgr.config().base_dir);
     auto log = mgr.manage(std::move(ntp_cfg)).get0();
-    auto disk_log = get_disk_log(log);
+    auto disk_log = log;
 
     // 1. segment timestamps from 100 to 110
     append_custom_timestamp_batches(
@@ -591,7 +587,7 @@ FIXTURE_TEST(test_size_based_eviction, storage_test_fixture) {
 
     storage::ntp_config ntp_cfg(ntp, mgr.config().base_dir);
     auto log = mgr.manage(std::move(ntp_cfg)).get0();
-    auto disk_log = get_disk_log(log);
+    auto disk_log = log;
     auto headers = append_random_batches(log, 10);
     log->flush().get0();
     auto all_batches = read_and_validate_all_batches(log);
@@ -1266,7 +1262,7 @@ FIXTURE_TEST(check_max_segment_size, storage_test_fixture) {
     auto ntp = model::ntp("default", "test", 0);
     storage::ntp_config ntp_cfg(ntp, mgr.config().base_dir);
     auto log = mgr.manage(std::move(ntp_cfg)).get0();
-    auto disk_log = get_disk_log(log);
+    auto disk_log = log;
 
     BOOST_REQUIRE_EQUAL(disk_log->segments().size(), 0);
 
@@ -1320,7 +1316,7 @@ FIXTURE_TEST(check_max_segment_size_limits, storage_test_fixture) {
         auto ntp = model::ntp("default", "test", 0);
         storage::ntp_config ntp_cfg(ntp, mgr.config().base_dir);
         auto log = mgr.manage(std::move(ntp_cfg)).get0();
-        auto disk_log = get_disk_log(log);
+        auto disk_log = log;
 
         BOOST_REQUIRE_EQUAL(disk_log->segments().size(), 0);
 
@@ -1386,7 +1382,7 @@ FIXTURE_TEST(partition_size_while_cleanup, storage_test_fixture) {
       ntp, mgr.config().base_dir, std::make_unique<overrides_t>(ov));
     auto log = mgr.manage(std::move(ntp_cfg)).get0();
 
-    auto sz_initial = get_disk_log(log)->get_probe().partition_size();
+    auto sz_initial = log->get_probe().partition_size();
     info("sz_initial={}", sz_initial);
     BOOST_REQUIRE_EQUAL(sz_initial, 0);
 
@@ -1403,8 +1399,7 @@ FIXTURE_TEST(partition_size_while_cleanup, storage_test_fixture) {
 
     // Read back and validate content of log pre-compaction.
     BOOST_REQUIRE_EQUAL(
-      get_disk_log(log)->get_probe().partition_size(),
-      input_batch_count * batch_size);
+      log->get_probe().partition_size(), input_batch_count * batch_size);
     BOOST_REQUIRE_EQUAL(
       read_and_validate_all_batches(log).size(), input_batch_count);
     auto lstats_before = log->offsets();
@@ -1422,9 +1417,9 @@ FIXTURE_TEST(partition_size_while_cleanup, storage_test_fixture) {
     // Compact 10 times, with a configuration calling for 60kiB max log size.
     // This results in prefix truncating at offset 50.
     for (int i = 0; i < 10; ++i) {
-        compact_and_prefix_truncate(*get_disk_log(log), ccfg);
+        compact_and_prefix_truncate(*log, ccfg);
     }
-    get_disk_log(log)->get_probe().partition_size();
+    log->get_probe().partition_size();
 
     as.request_abort();
     auto lstats_after = log->offsets();
@@ -1441,14 +1436,14 @@ FIXTURE_TEST(partition_size_while_cleanup, storage_test_fixture) {
           return sum + b.size_bytes();
       });
 
-    auto& segments = get_disk_log(log)->segments();
+    auto& segments = log->segments();
     // One historic segment (all historic batches compacted down to 1), plus
     // one active segment.
     BOOST_REQUIRE_EQUAL(segments.size(), 2);
 
     // The log-scope reported size must be equal to the sum of the batch sizes
     auto expected_size = total_batch_size;
-    auto actual_size = get_disk_log(log)->get_probe().partition_size();
+    auto actual_size = log->get_probe().partition_size();
     info("expected_size={}, actual_size={}", expected_size, actual_size);
     BOOST_REQUIRE_EQUAL(actual_size, expected_size);
 };
@@ -1476,7 +1471,7 @@ FIXTURE_TEST(check_segment_size_jitter, storage_test_fixture) {
     }
     std::vector<size_t> sizes;
     for (auto& l : logs) {
-        auto& segs = get_disk_log(l)->segments();
+        auto& segs = l->segments();
         sizes.push_back((*segs.begin())->size_bytes());
     }
     BOOST_REQUIRE_EQUAL(
@@ -1509,7 +1504,7 @@ FIXTURE_TEST(adjacent_segment_compaction, storage_test_fixture) {
                  .get0();
 
     // build some segments
-    auto disk_log = get_disk_log(log);
+    auto disk_log = log;
     append_single_record_batch(log, 20, model::term_id(1));
     disk_log->force_roll(ss::default_priority_class()).get();
     append_single_record_batch(log, 30, model::term_id(1));
@@ -1577,7 +1572,7 @@ FIXTURE_TEST(adjacent_segment_compaction_terms, storage_test_fixture) {
                  .get0();
 
     // build some segments
-    auto disk_log = get_disk_log(log);
+    auto disk_log = log;
     append_single_record_batch(log, 20, model::term_id(1));
     append_single_record_batch(log, 30, model::term_id(2));
     disk_log->force_roll(ss::default_priority_class()).get();
@@ -1642,7 +1637,7 @@ FIXTURE_TEST(max_adjacent_segment_compaction, storage_test_fixture) {
                      overrides)))
                  .get0();
 
-    auto disk_log = get_disk_log(log);
+    auto disk_log = log;
 
     // add a segment with random keys until a certain size
     auto add_segment = [&log, disk_log](size_t size, model::term_id term) {
@@ -1720,7 +1715,7 @@ FIXTURE_TEST(many_segment_locking, storage_test_fixture) {
                      overrides)))
                  .get0();
 
-    auto disk_log = get_disk_log(log);
+    auto disk_log = log;
     append_single_record_batch(log, 20, model::term_id(1));
     disk_log->force_roll(ss::default_priority_class()).get();
     append_single_record_batch(log, 30, model::term_id(2));
@@ -1844,7 +1839,7 @@ FIXTURE_TEST(compaction_backlog_calculation, storage_test_fixture) {
                      overrides)))
                  .get0();
 
-    auto disk_log = get_disk_log(log);
+    auto disk_log = log;
 
     // add a segment with random keys until a certain size
     auto add_segment = [&log, disk_log](size_t size, model::term_id term) {
@@ -1925,7 +1920,7 @@ FIXTURE_TEST(not_compacted_log_backlog, storage_test_fixture) {
                      overrides)))
                  .get0();
 
-    auto disk_log = get_disk_log(log);
+    auto disk_log = log;
 
     // add a segment with random keys until a certain size
     auto add_segment = [&log, disk_log](size_t size, model::term_id term) {
@@ -2127,7 +2122,7 @@ FIXTURE_TEST(changing_cleanup_policy_back_and_forth, storage_test_fixture) {
                      overrides)))
                  .get0();
 
-    auto disk_log = get_disk_log(log);
+    auto disk_log = log;
 
     // add a segment, some of the record keys in batches are random and some of
     // them are the same to generate offset gaps after compaction
@@ -2281,7 +2276,7 @@ FIXTURE_TEST(test_querying_term_last_offset, storage_test_fixture) {
     // append some batches in term 1
     append_random_batches(log, 10, model::term_id(1));
     {
-        auto disk_log = get_disk_log(log);
+        auto disk_log = log;
         // force segment roll
         disk_log->force_roll(ss::default_priority_class()).get();
     }
@@ -2380,7 +2375,7 @@ FIXTURE_TEST(test_compacting_batches_of_different_types, storage_test_fixture) {
                      overrides)))
                  .get0();
 
-    auto disk_log = get_disk_log(log);
+    auto disk_log = log;
 
     // the same key but three different batch types
     write_batch(log, "key_1", 1, model::record_batch_type::raft_data);
@@ -2838,7 +2833,7 @@ FIXTURE_TEST(test_max_compact_offset, storage_test_fixture) {
       mgr.config().base_dir,
       std::make_unique<storage::ntp_config::default_overrides>(overrides));
     auto log = mgr.manage(std::move(ntp_cfg)).get0();
-    auto disk_log = get_disk_log(log);
+    auto disk_log = log;
 
     // (1) append some random data, with limited number of distinct keys, so
     // compaction can make progress.
@@ -2905,7 +2900,7 @@ FIXTURE_TEST(test_self_compaction_while_reader_is_open, storage_test_fixture) {
       mgr.config().base_dir,
       std::make_unique<storage::ntp_config::default_overrides>(overrides));
     auto log = mgr.manage(std::move(ntp_cfg)).get0();
-    auto disk_log = get_disk_log(log);
+    auto disk_log = log;
 
     // (1) append some random data, with limited number of distinct keys, so
     // compaction can make progress.
@@ -2956,7 +2951,7 @@ FIXTURE_TEST(test_simple_compaction_rebuild_index, storage_test_fixture) {
       mgr.config().base_dir,
       std::make_unique<storage::ntp_config::default_overrides>(overrides));
     auto log = mgr.manage(std::move(ntp_cfg)).get0();
-    auto disk_log = get_disk_log(log);
+    auto disk_log = log;
 
     // Append some linear kv ints
     int num_appends = 5;
@@ -3019,7 +3014,7 @@ do_compact_test(const compact_test_args args, storage_test_fixture& f) {
       mgr.config().base_dir,
       std::make_unique<storage::ntp_config::default_overrides>(overrides));
     auto log = mgr.manage(std::move(ntp_cfg)).get0();
-    auto disk_log = get_disk_log(log);
+    auto disk_log = log;
 
     auto append_batch =
       [](ss::shared_ptr<storage::log> log, model::term_id term) {
@@ -3305,7 +3300,7 @@ FIXTURE_TEST(test_bytes_eviction_overrides, storage_test_fixture) {
         for (int i = 0; i < batch_cnt; ++i) {
             append_exactly(log, 1, batch_size).get();
         }
-        auto disk_log = get_disk_log(log);
+        auto disk_log = log;
 
         BOOST_REQUIRE_EQUAL(disk_log->segment_count(), 11);
 
@@ -3451,7 +3446,7 @@ FIXTURE_TEST(issue_8091, storage_test_fixture) {
     produce.get();
     read.get();
     truncate.get();
-    auto disk_log = get_disk_log(log);
+    auto disk_log = log;
 
     // at the end of this test there must be no batch parse errors
     BOOST_REQUIRE_EQUAL(disk_log->get_probe().get_batch_parse_errors(), 0);

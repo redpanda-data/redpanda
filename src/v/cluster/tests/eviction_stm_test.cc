@@ -66,8 +66,7 @@ FIXTURE_TEST(test_eviction_stm_deadlock, raft_test_fixture) {
     auto leader_raft = gr.get_member(leader_id).consensus;
 
     /// Publish records and open new segments
-    auto* impl = dynamic_cast<storage::disk_log_impl*>(
-      leader_raft->log().get());
+    auto impl = leader_raft->log();
     std::vector<storage::offset_stats> offsets;
     for (auto i = 0; i < 5; ++i) {
         replicate_random_batches(gr, 20).get0();

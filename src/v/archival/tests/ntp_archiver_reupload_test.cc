@@ -175,9 +175,8 @@ struct reupload_fixture : public archiver_fixture {
         init_archiver();
     }
 
-    storage::disk_log_impl* disk_log_impl() {
-        return dynamic_cast<storage::disk_log_impl*>(
-          get_local_storage_api().log_mgr().get(manifest_ntp).get());
+    ss::shared_ptr<storage::log> disk_log_impl() {
+        return get_local_storage_api().log_mgr().get(manifest_ntp);
     }
 
     cloud_storage::partition_manifest

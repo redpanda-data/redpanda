@@ -611,7 +611,7 @@ FIXTURE_TEST(test_aborted_transactions, mux_state_machine_fixture) {
 
     auto log = _storage.local().log_mgr().get(_raft->ntp());
     BOOST_REQUIRE(log);
-    auto* disk_log = dynamic_cast<storage::disk_log_impl*>(log.get());
+    auto disk_log = log;
 
     static int64_t pid_counter = 0;
     const auto tx_seq = model::tx_seq(0);
