@@ -91,7 +91,8 @@ public:
     std::optional<model::offset> index_lower_bound(model::offset o) const final;
     std::ostream& print(std::ostream&) const final;
 
-    ss::future<> maybe_roll(
+    // Must be called while _segments_rolling_lock is held.
+    ss::future<> maybe_roll_unlocked(
       model::term_id, model::offset next_offset, ss::io_priority_class);
 
     // roll immediately with the current term. users should prefer the
@@ -131,6 +132,14 @@ public:
     void set_cloud_gc_offset(model::offset);
 
     ss::future<reclaimable_offsets> get_reclaimable_offsets(gc_config cfg);
+
+    std::optional<ssx::semaphore_units> try_segment_roll_lock() {
+        return _segments_rolling_lock.try_get_units();
+    }
+
+    ss::future<ssx::semaphore_units> segment_roll_lock() {
+        return _segments_rolling_lock.get_units();
+    }
 
 private:
     friend class disk_log_appender; // for multi-term appends
@@ -271,6 +280,13 @@ private:
 
     // Mutually exclude operations that will cause segment rolling
     // do_housekeeping and maybe_roll
+    //
+    // This lock will only rarely be contended. If it is held, then we must
+    // wait for housekeeping or truncation to complete before proceeding,
+    // because the log might be in a state mid-roll where it has no appender.
+    // We need to take this irrespective of whether we're actually rolling or
+    // not, in order to ensure that writers wait for a background roll to
+    // complete if one is ongoing.
     mutex _segments_rolling_lock;
 
     std::optional<model::offset> _cloud_gc_offset;
