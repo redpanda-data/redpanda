@@ -307,6 +307,7 @@ class ManyPartitionsTest(PreallocNodesTest):
                 # to pad out tiered storage metadata, we don't want them to
                 # get merged together.
                 'cloud_storage_enable_segment_merging': False,
+                'fetch_reads_debounce_timeout': 10,
             },
             # Configure logging the same way a user would when they have
             # very many partitions: set logs with per-partition messages
