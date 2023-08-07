@@ -9,6 +9,7 @@
  */
 #pragma once
 
+#include "cloud_storage/remote.h"
 #include "cloud_storage_clients/types.h"
 #include "cluster/cloud_metadata/cluster_manifest.h"
 #include "cluster/types.h"
@@ -80,6 +81,17 @@ public:
     ss::future<error_outcome> upload_next_metadata(
       model::term_id synced_term,
       cluster_metadata_manifest& manifest,
+      retry_chain_node& retry_node);
+
+    // Uploads the controller snapshot if the local snapshot has a higher
+    // offset than that referenced by the manifest.
+    //
+    // Possible error results:
+    // - upload_failed: there was a physical error uploading to remote storage,
+    //   callers may retry with the resulting manifest in the same term.
+    ss::future<error_outcome> maybe_upload_controller_snapshot(
+      cluster_metadata_manifest& manifest,
+      cloud_storage::lazy_abort_source& lazy_as,
       retry_chain_node& retry_node);
 
 private:
