@@ -282,7 +282,6 @@ int main(int args, char** argv, char** env) {
                                                 lcfg.objects.front(),
                                                 payload_size,
                                                 std::move(payload),
-                                                {},
                                                 http::default_connect_timeout)
                                               .get0();
 

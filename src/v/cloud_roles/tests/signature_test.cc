@@ -188,7 +188,7 @@ SEASTAR_THREAD_TEST_CASE(test_abs_signature_computation) {
 
     std::string expected
       = "SharedKey "
-        "vladstorageaccount123:rDsCDHPhdsr7SMkt81ofyrnNNxL3VKFW7ydsDQeVPIM=";
+        "vladstorageaccount123:W5Xz1fJNgftpQm0ppLUcOJRzXStXct7OEe8pgj7Og5A=";
 
     BOOST_REQUIRE_EQUAL(
       header.at(boost::beast::http::field::authorization), expected);
@@ -216,7 +216,7 @@ SEASTAR_THREAD_TEST_CASE(test_abs_signature_computation_many_query_params) {
 
     std::string expected
       = "SharedKey "
-        "vladstorageaccount123:hWp74AgakkrSYVzYBKSabfLP4NWVa410CNRm/dMxX2M=";
+        "vladstorageaccount123:2P67qqyi833QDaUq+ghFvwewOJkJFjA8PY3hnssTy0M=";
 
     BOOST_REQUIRE_EQUAL(
       header.at(boost::beast::http::field::authorization), expected);

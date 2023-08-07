@@ -33,13 +33,11 @@ public:
     /// \param key is the blob identifier
     /// \param payload_size_bytes is a size of the object in bytes
     /// \param payload_size_bytes is a size of the object in bytes
-    /// \param tags are formatted tags for 'x-ms-tags'
     /// \return initialized and signed http header or error
     result<http::client::request_header> make_put_blob_request(
       bucket_name const& name,
       object_key const& key,
-      size_t payload_size_bytes,
-      const object_tag_formatter& tags);
+      size_t payload_size_bytes);
 
     /// \brief Create a 'Get Blob' request header
     ///
@@ -147,7 +145,6 @@ public:
       object_key const& key,
       size_t payload_size,
       ss::input_stream<char> body,
-      const object_tag_formatter& tags,
       ss::lowres_clock::duration timeout) override;
 
     /// Send List Blobs request
@@ -208,7 +205,6 @@ private:
       object_key const& key,
       size_t payload_size,
       ss::input_stream<char> body,
-      const object_tag_formatter& tags,
       ss::lowres_clock::duration timeout);
 
     ss::future<head_object_result> do_head_object(
