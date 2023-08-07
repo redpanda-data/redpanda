@@ -271,17 +271,33 @@ abs_request_creator::make_get_account_info_request() {
 abs_client::abs_client(
   const abs_configuration& conf,
   ss::lw_shared_ptr<const cloud_roles::apply_credentials> apply_credentials)
-  : _requestor(conf, std::move(apply_credentials))
+  : _data_lake_v2_client_config(
+    conf.is_hns_enabled ? std::make_optional(conf.make_adls_configuration())
+                        : std::nullopt)
+  , _requestor(conf, std::move(apply_credentials))
   , _client(conf)
-  , _probe(conf._probe) {}
+  , _adls_client(
+      conf.is_hns_enabled ? std::make_optional(*_data_lake_v2_client_config)
+                          : std::nullopt)
+  , _probe(conf._probe) {
+    vlog(abs_log.trace, "Created client with config:{}", conf);
+}
 
 abs_client::abs_client(
   const abs_configuration& conf,
   const ss::abort_source& as,
   ss::lw_shared_ptr<const cloud_roles::apply_credentials> apply_credentials)
-  : _requestor(conf, std::move(apply_credentials))
+  : _data_lake_v2_client_config(
+    conf.is_hns_enabled ? std::make_optional(conf.make_adls_configuration())
+                        : std::nullopt)
+  , _requestor(conf, std::move(apply_credentials))
   , _client(conf, &as, conf._probe, conf.max_idle_time)
-  , _probe(conf._probe) {}
+  , _adls_client(
+      conf.is_hns_enabled ? std::make_optional(*_data_lake_v2_client_config)
+                          : std::nullopt)
+  , _probe(conf._probe) {
+    vlog(abs_log.trace, "Created client with config:{}", conf);
+}
 
 ss::future<client_self_configuration_result> abs_client::self_configure() {
     // TODO: A future commit will plug in the implementation
@@ -293,6 +309,11 @@ ss::future<> abs_client::stop() {
 
     co_await _client.stop();
     co_await _client.wait_input_shutdown();
+
+    if (_adls_client) {
+        co_await _adls_client->stop();
+        co_await _adls_client->wait_input_shutdown();
+    }
 
     vlog(abs_log.debug, "Stopped ABS client");
 }

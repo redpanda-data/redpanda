@@ -245,8 +245,23 @@ private:
     ss::future<storage_account_info>
     do_get_account_info(ss::lowres_clock::duration timeout);
 
+    std::optional<abs_configuration> _data_lake_v2_client_config;
     abs_request_creator _requestor;
     http::client _client;
+
+    // Azure Storage accounts may have enabled Hierarchical Namespaces (HNS),
+    // in which case the container will emulate file system like semantics.
+    // For instance uploading blob "a/b/log.txt", creates two directory blobs
+    // ("a" and "a/b") and one file blob ("a/b/log.txt").
+    //
+    // This changes the semantics of certain Blob Storage REST API requests:
+    // * ListObjects will list both files and directories by default
+    // * DeleteBlob cannot delete directory files
+    //
+    // `_adls_client` connects to the Azure Data Lake Storage V2 REST API
+    // endpoint when HNS is enabled and is used for deletions.
+    std::optional<http::client> _adls_client;
+
     ss::shared_ptr<client_probe> _probe;
 };
 

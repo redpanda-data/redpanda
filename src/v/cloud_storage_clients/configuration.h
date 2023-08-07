@@ -78,6 +78,8 @@ struct abs_configuration : common_configuration {
     std::optional<cloud_roles::private_key_str> shared_key;
     bool is_hns_enabled{false};
 
+    abs_configuration make_adls_configuration() const;
+
     static ss::future<abs_configuration> make_configuration(
       const std::optional<cloud_roles::private_key_str>& shared_key,
       const cloud_roles::storage_account& storage_account_name,
