@@ -1894,8 +1894,7 @@ ss::future<ntp_archiver::batch_result> ntp_archiver::upload_next_candidates(
 }
 
 uint64_t ntp_archiver::estimate_backlog_size() {
-    auto last_offset = manifest().size() ? manifest().get_last_offset()
-                                         : model::offset(0);
+    auto last_offset = manifest().get_last_offset();
     auto log_generic = _parent.log();
     auto log = dynamic_cast<storage::disk_log_impl*>(log_generic.get());
     uint64_t total_size = std::accumulate(
