@@ -10,12 +10,16 @@
 
 #include "cloud_storage_clients/abs_client.h"
 
+#include "bytes/iostream.h"
+#include "bytes/streambuf.h"
 #include "cloud_storage_clients/abs_error.h"
 #include "cloud_storage_clients/configuration.h"
 #include "cloud_storage_clients/logger.h"
 #include "cloud_storage_clients/util.h"
 #include "cloud_storage_clients/xml_sax_parser.h"
 #include "config/configuration.h"
+#include "json/document.h"
+#include "json/istreamwrapper.h"
 #include "vlog.h"
 
 #include <utility>
@@ -46,6 +50,7 @@ constexpr boost::beast::string_view delete_snapshot_name
 constexpr boost::beast::string_view is_hns_enabled_name = "x-ms-is-hns-enabled";
 constexpr boost::beast::string_view delete_snapshot_value = "include";
 constexpr boost::beast::string_view error_code_name = "x-ms-error-code";
+constexpr boost::beast::string_view content_type_name = "Content-Type";
 
 bool is_error_retryable(
   const cloud_storage_clients::abs_rest_error_response& err) {
@@ -59,13 +64,30 @@ bool is_error_retryable(
 
 namespace cloud_storage_clients {
 
+enum class response_content_type : int8_t { unknown, xml, json };
+
+static response_content_type
+get_response_content_type(const http::client::response_header& headers) {
+    if (auto iter = headers.find(content_type_name); iter != headers.end()) {
+        if (iter->value().find("json") != std::string_view::npos) {
+            return response_content_type::json;
+        }
+
+        if (iter->value().find("xml") != std::string_view::npos) {
+            return response_content_type::xml;
+        }
+    }
+
+    return response_content_type::unknown;
+}
+
 static abs_rest_error_response
-parse_rest_error_response(boost::beast::http::status result, iobuf buf) {
+parse_xml_rest_error_response(boost::beast::http::status result, iobuf buf) {
     using namespace cloud_storage_clients;
 
     try {
         auto resp = util::iobuf_to_ptree(std::move(buf), abs_log);
-        auto code = resp.get<ss::sstring>("Error.Code", "");
+        auto code = resp.get<ss::sstring>("Error.Code", "Unknown");
         auto msg = resp.get<ss::sstring>("Error.Message", "");
         return {std::move(code), std::move(msg), result};
     } catch (...) {
@@ -75,6 +97,56 @@ parse_rest_error_response(boost::beast::http::status result, iobuf buf) {
           std::current_exception());
         throw;
     }
+}
+
+static abs_rest_error_response
+parse_json_rest_error_response(boost::beast::http::status result, iobuf buf) {
+    using namespace cloud_storage_clients;
+
+    iobuf_istreambuf strbuf{buf};
+    std::istream stream{&strbuf};
+    json::IStreamWrapper wrapper{stream};
+
+    json::Document doc;
+    if (doc.ParseStream(wrapper).HasParseError()) {
+        vlog(
+          cloud_storage_clients::abs_log.error,
+          "Failed to parse ABS error response: {}",
+          doc.GetParseError());
+
+        throw std::runtime_error(ssx::sformat(
+          "Failed to parse JSON ABS error response: {}", doc.GetParseError()));
+    }
+
+    std::optional<ss::sstring> code;
+    std::optional<ss::sstring> member;
+    if (auto error_it = doc.FindMember("error"); error_it != doc.MemberEnd()) {
+        const auto& error = error_it->value;
+        if (auto code_it = error.FindMember("code");
+            code_it != error.MemberEnd()) {
+            code = code_it->value.GetString();
+        }
+
+        if (auto member_it = error.FindMember("member");
+            member_it != error.MemberEnd()) {
+            member = member_it->value.GetString();
+        }
+    }
+
+    return {code.value_or("Unknown"), member.value_or(""), result};
+}
+
+static abs_rest_error_response parse_rest_error_response(
+  response_content_type type, boost::beast::http::status result, iobuf buf) {
+    if (type == response_content_type::xml) {
+        return parse_xml_rest_error_response(result, std::move(buf));
+    }
+
+    if (type == response_content_type::json) {
+        return parse_json_rest_error_response(result, std::move(buf));
+    }
+
+    return abs_rest_error_response{"Unknown", "", result};
 }
 
 static abs_rest_error_response
@@ -452,9 +524,11 @@ ss::future<http::client::response_stream_ref> abs_client::do_get_object(
               response_stream->get_headers());
         }
 
+        const auto content_type = get_response_content_type(
+          response_stream->get_headers());
         auto buf = co_await util::drain_response_stream(
           std::move(response_stream));
-        throw parse_rest_error_response(status, std::move(buf));
+        throw parse_rest_error_response(content_type, status, std::move(buf));
     }
 
     co_return response_stream;
@@ -502,9 +576,11 @@ ss::future<> abs_client::do_put_object(
 
     const auto status = response_stream->get_headers().result();
     if (status != boost::beast::http::status::created) {
+        const auto content_type = get_response_content_type(
+          response_stream->get_headers());
         auto buf = co_await util::drain_response_stream(
           std::move(response_stream));
-        throw parse_rest_error_response(status, std::move(buf));
+        throw parse_rest_error_response(content_type, status, std::move(buf));
     }
 }
 
@@ -600,9 +676,11 @@ ss::future<> abs_client::do_delete_object(
 
     const auto status = response_stream->get_headers().result();
     if (status != boost::beast::http::status::accepted) {
+        const auto content_type = get_response_content_type(
+          response_stream->get_headers());
         auto buf = co_await util::drain_response_stream(
           std::move(response_stream));
-        throw parse_rest_error_response(status, std::move(buf));
+        throw parse_rest_error_response(content_type, status, std::move(buf));
     }
 }
 
@@ -677,8 +755,10 @@ ss::future<abs_client::list_bucket_result> abs_client::do_list_objects(
     const auto status = response_stream->get_headers().result();
 
     if (status != boost::beast::http::status::ok) {
+        const auto content_type = get_response_content_type(
+          response_stream->get_headers());
         iobuf buf = co_await util::drain_response_stream(response_stream);
-        throw parse_rest_error_response(status, std::move(buf));
+        throw parse_rest_error_response(content_type, status, std::move(buf));
     }
 
     co_return co_await ss::do_with(
