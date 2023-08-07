@@ -15,4 +15,4 @@ area/redpanda:
 - src/v/**/*
 
 area/wasm:
-- src/js/**/*
+- src/go/transform-sdk/**/*
