@@ -165,10 +165,23 @@ ss::future<abs_configuration> abs_configuration::make_configuration(
 abs_configuration abs_configuration::make_adls_configuration() const {
     abs_configuration adls_config{*this};
 
-    const auto endpoint_uri = ssx::sformat("{}.dfs.core.windows.net", storage_account_name());
-    adls_config.tls_sni_hostname = endpoint_uri; 
+    const auto endpoint_uri = [&]() -> ss::sstring {
+        auto adls_endpoint_override
+          = config::shard_local_cfg().cloud_storage_azure_adls_endpoint.value();
+        if (adls_endpoint_override.has_value()) {
+            return adls_endpoint_override.value();
+        }
+        return ssx::sformat("{}.dfs.core.windows.net", storage_account_name());
+    }();
+
+    adls_config.tls_sni_hostname = endpoint_uri;
     adls_config.uri = access_point_uri{endpoint_uri};
-    adls_config.server_addr = net::unresolved_address{endpoint_uri, default_port};
+
+    auto adls_port_override
+      = config::shard_local_cfg().cloud_storage_azure_adls_port();
+    adls_config.server_addr = net::unresolved_address{
+      endpoint_uri,
+      adls_port_override.has_value() ? *adls_port_override : default_port};
 
     return adls_config;
 }
@@ -210,8 +223,7 @@ std::ostream& operator<<(std::ostream& o, const abs_configuration& c) {
       << ", max_idle_time:"
       << std::chrono::duration_cast<std::chrono::milliseconds>(c.max_idle_time)
            .count()
-      << ", is_hns_enabled:" << c.is_hns_enabled
-      << "}";
+      << ", is_hns_enabled:" << c.is_hns_enabled << "}";
     return o;
 }
 
@@ -221,8 +233,7 @@ operator<<(std::ostream& o, const abs_self_configuration_result& r) {
     return o;
 }
 
-std::ostream&
-operator<<(std::ostream& o, const s3_self_configuration_result&) {
+std::ostream& operator<<(std::ostream& o, const s3_self_configuration_result&) {
     o << "{}";
     return o;
 }
