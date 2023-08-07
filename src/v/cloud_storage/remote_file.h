@@ -42,6 +42,10 @@ public:
     // Throws an exception if there was an issue downloading or caching.
     ss::future<ss::file> hydrate_readable_file();
 
+    std::filesystem::path local_path() const {
+        return _cache.get_local_path(_remote_path);
+    }
+
 private:
     // Puts the given stream into the cache. Expected to be used as a
     // remote::try_consume_stream.

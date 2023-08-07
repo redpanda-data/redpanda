@@ -184,6 +184,11 @@ public:
       std::optional<uint64_t> size_limit_override,
       std::optional<size_t> object_limit_override);
 
+    std::filesystem::path
+    get_local_path(const std::filesystem::path& key) const {
+        return _cache_dir / key;
+    }
+
 private:
     /// Load access time tracker from file
     ss::future<> load_access_time_tracker();
