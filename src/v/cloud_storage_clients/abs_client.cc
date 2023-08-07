@@ -283,6 +283,7 @@ abs_request_creator::make_delete_blob_request(
 result<http::client::request_header>
 abs_request_creator::make_list_blobs_request(
   const bucket_name& name,
+  bool files_only,
   std::optional<object_key> prefix,
   [[maybe_unused]] std::optional<object_key> start_after,
   std::optional<size_t> max_keys,
@@ -304,6 +305,10 @@ abs_request_creator::make_list_blobs_request(
 
     if (delimiter) {
         target += fmt::format("&delimiter={}", delimiter.value());
+    }
+
+    if (files_only) {
+        target += fmt::format("&showonly=files");
     }
 
     const boost::beast::string_view host{_ap().data(), _ap().length()};
@@ -780,7 +785,12 @@ ss::future<abs_client::list_bucket_result> abs_client::do_list_objects(
   std::optional<char> delimiter,
   std::optional<item_filter> gather_item_if) {
     auto header = _requestor.make_list_blobs_request(
-      name, std::move(prefix), std::move(start_after), max_keys, delimiter);
+      name,
+      _adls_client.has_value(),
+      std::move(prefix),
+      std::move(start_after),
+      max_keys,
+      delimiter);
     if (!header) {
         vlog(
           abs_log.warn, "Failed to create request header: {}", header.error());

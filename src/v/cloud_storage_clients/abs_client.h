@@ -65,16 +65,19 @@ public:
     result<http::client::request_header>
     make_delete_blob_request(bucket_name const& name, object_key const& key);
 
+    // clang-format off
     /// \brief Initialize http header for 'List Blobs' request
     ///
     /// \param name of the container
+    /// \param files_only should always be set to true when HNS is enabled and false otherwise
     /// \param prefix prefix of returned blob's names
-    /// \param start_after is always ignored
-    /// \param max_keys is the max number of returned objects
+    /// \param start_after is always ignored \param max_keys is the max number of returned objects
     /// \param delimiter used to group common prefixes
     /// \return initialized and signed http header or error
+    // clang-format on
     result<http::client::request_header> make_list_blobs_request(
       const bucket_name& name,
+      bool files_only,
       std::optional<object_key> prefix,
       std::optional<object_key> start_after,
       std::optional<size_t> max_keys,
