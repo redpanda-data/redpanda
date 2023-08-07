@@ -56,8 +56,8 @@ std::string_view to_string_view(visibility v) {
 void base_property::assert_live_settable() const {
     vassert(
       _meta.needs_restart == needs_restart::no,
-      "Property must be be marked as "
-      "needs_restart::no");
+      "Property {} must be be marked as needs_restart::no",
+      name());
 }
 
 }; // namespace config
