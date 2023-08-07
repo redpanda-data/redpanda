@@ -162,6 +162,17 @@ ss::future<abs_configuration> abs_configuration::make_configuration(
     co_return client_cfg;
 }
 
+abs_configuration abs_configuration::make_adls_configuration() const {
+    abs_configuration adls_config{*this};
+
+    const auto endpoint_uri = ssx::sformat("{}.dfs.core.windows.net", storage_account_name());
+    adls_config.tls_sni_hostname = endpoint_uri; 
+    adls_config.uri = access_point_uri{endpoint_uri};
+    adls_config.server_addr = net::unresolved_address{endpoint_uri, default_port};
+
+    return adls_config;
+}
+
 void apply_self_configuration_result(
   client_configuration& cfg, const client_self_configuration_result& res) {
     std::visit(
