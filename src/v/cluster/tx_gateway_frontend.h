@@ -266,6 +266,7 @@ private:
       describe_tx(ss::shared_ptr<tm_stm>, kafka::transactional_id);
 
     void expire_old_txs();
+    ss::future<> expire_old_txs(model::ntp);
     ss::future<> expire_old_txs(ss::shared_ptr<tm_stm>);
     ss::future<> expire_old_tx(ss::shared_ptr<tm_stm>, kafka::transactional_id);
     ss::future<> do_expire_old_tx(
