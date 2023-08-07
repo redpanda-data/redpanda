@@ -1223,6 +1223,10 @@ class RedpandaServiceBase(Service):
         if bad_lines:
             raise BadLogLines(bad_lines)
 
+    def raise_on_crash(self,
+                       log_allow_list: list[str | re.Pattern] | None = None):
+        pass
+
 
 class RedpandaServiceK8s(RedpandaServiceBase):
     def __init__(self,
@@ -1817,6 +1821,7 @@ class RedpandaServiceCloud(RedpandaServiceK8s):
 
         # set this for use in RedpandaTest
         self._security_config = dict(security_protocol='SASL_SSL',
+                                     sasl_mechanism=superuser.algorithm,
                                      sasl_plain_username=superuser.username,
                                      sasl_plain_password=superuser.password,
                                      enable_tls=True)

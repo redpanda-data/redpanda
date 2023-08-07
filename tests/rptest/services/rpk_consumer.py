@@ -50,6 +50,18 @@ class RpkConsumer(BackgroundThreadService):
         self._fetch_max_bytes = fetch_max_bytes
         self._num_msgs = num_msgs
         self._retry_sec = retry_sec
+        self._mechanism = None
+        self._user = None
+        self._pass = None
+        self._tls_enabled = False
+
+        # if testing redpanda cloud, override with default superuser
+        if hasattr(redpanda, 'GLOBAL_CLOUD_API_URL'):
+            security_config = redpanda.security_config()
+            self._mechanism = security_config.get('sasl_mechanism', None)
+            self._user = security_config.get('sasl_plain_username', None)
+            self._pass = security_config.get('sasl_plain_password', None)
+            self._tls_enabled = security_config.get('enable_tls', False)
 
     def _worker(self, idx, node):
         err = None
@@ -122,6 +134,14 @@ class RpkConsumer(BackgroundThreadService):
 
         if self._num_msgs is not None:
             cmd += f' -n {self._num_msgs}'
+
+        if self._user:
+            cmd += f' -X user={self._user}'
+            cmd += f' -X pass={self._pass}'
+            cmd += f' -X sasl.mechanism={self._mechanism}'
+
+        if self._tls_enabled:
+            cmd += f' -X tls.enabled={str(self._tls_enabled)}'
 
         for line in node.account.ssh_capture(cmd):
             if self._stopping.is_set():

@@ -229,6 +229,11 @@ class RpkTool:
         self._tls_cert = tls_cert
         self._tls_enabled = tls_enabled
 
+        # if testing redpanda cloud, override with default superuser
+        if hasattr(redpanda, 'GLOBAL_CLOUD_API_URL'):
+            self._username, self._password, self._sasl_mechanism = redpanda._superuser
+            self._tls_enabled = True
+
     def create_topic(self, topic, partitions=1, replicas=None, config=None):
         def create_topic():
             try:
