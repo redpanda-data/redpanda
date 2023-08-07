@@ -38,7 +38,9 @@ enum class abs_error_code {
     blob_being_rehydrated,
     container_being_disabled,
     container_being_deleted,
-    container_not_found
+    container_not_found,
+    directory_not_empty,
+    path_not_found
 };
 
 /// Operators to use with lexical_cast

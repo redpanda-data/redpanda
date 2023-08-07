@@ -45,6 +45,8 @@ std::istream& operator>>(std::istream& i, abs_error_code& code) {
           .match(
             "ContainerBeingDeleted", abs_error_code::container_being_deleted)
           .match("ContainerNotFound", abs_error_code::container_not_found)
+          .match("DirectoryNotEmpty", abs_error_code::directory_not_empty)
+          .match("PathNotFound", abs_error_code::path_not_found)
           .default_match(abs_error_code::_unknown);
 
     return i;
