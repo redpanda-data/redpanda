@@ -138,8 +138,11 @@ public:
             return 0;                                                          \
         }                                                                      \
         static int gtest_registering_dummy_ GTEST_ATTRIBUTE_UNUSED_;           \
-        GTEST_DISALLOW_COPY_AND_ASSIGN_(                                       \
-          GTEST_TEST_CLASS_NAME_(test_suite_name, test_name));                 \
+        GTEST_TEST_CLASS_NAME_(test_suite_name, test_name)                     \
+        (GTEST_TEST_CLASS_NAME_(test_suite_name, test_name) const&) = delete;  \
+        GTEST_TEST_CLASS_NAME_(test_suite_name, test_name) &                   \
+        operator=(GTEST_TEST_CLASS_NAME_(test_suite_name, test_name) const&)   \
+          = delete;                                                            \
     };                                                                         \
     int GTEST_TEST_CLASS_NAME_(                                                \
       test_suite_name, test_name)::gtest_registering_dummy_                    \
