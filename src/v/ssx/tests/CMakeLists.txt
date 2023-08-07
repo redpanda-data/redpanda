@@ -10,6 +10,7 @@ rp_test(
     task_local_ptr_test.cc
     this_fiber_id_test.cc
     fiber_local_test.cc
+    deadlock_detector_test.cc
   DEFINITIONS BOOST_TEST_DYN_LINK
   LIBRARIES v::seastar_testing_main v::ssx
   LABELS ssx
