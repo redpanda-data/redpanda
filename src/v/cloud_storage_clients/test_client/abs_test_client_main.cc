@@ -97,6 +97,7 @@ void cli_opts(boost::program_options::options_description_easy_init opt) {
     opt("port", po::value<uint16_t>(), "alternative port for the api endpoint");
 
     opt("disable-tls", "disable tls for this connection");
+    opt("hns-enabled", "HNS enabled for the storage account");
 }
 
 struct test_conf {
@@ -166,6 +167,9 @@ test_conf cfg_from(boost::program_options::variables_map& m) {
             .disable_tls = m.contains("disable-tls") > 0,
           })
           .get0();
+    if (m.contains("hns-enabled")) {
+        client_cfg.is_hns_enabled = true;
+    }
     vlog(test_log.info, "connecting to {}", client_cfg.server_addr);
     return test_conf{
       .storage_account = storage_acc,
