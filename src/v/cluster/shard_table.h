@@ -31,11 +31,11 @@ class shard_table final {
     };
 
 public:
-    bool contains(const raft::group_id& group) {
-        return _group_idx.find(group) != _group_idx.end();
-    }
-    ss::shard_id shard_for(const raft::group_id& group) {
-        return _group_idx.find(group)->second.shard;
+    std::optional<ss::shard_id> shard_for(const raft::group_id& group) {
+        if (auto it = _group_idx.find(group); it != _group_idx.end()) {
+            return it->second.shard;
+        }
+        return std::nullopt;
     }
 
     std::optional<model::revision_id> revision_for(const model::ntp& ntp) {

@@ -1704,7 +1704,8 @@ admin_server::raft_transfer_leadership_handler(
           fmt::format("Invalid raft group id {}", group_id));
     }
 
-    if (!_shard_table.local().contains(group_id)) {
+    auto shard = _shard_table.local().shard_for(group_id);
+    if (!shard) {
         throw ss::httpd::not_found_exception(
           fmt::format("Raft group {} not found", group_id));
     }
@@ -1729,10 +1730,8 @@ admin_server::raft_transfer_leadership_handler(
       group_id,
       target);
 
-    auto shard = _shard_table.local().shard_for(group_id);
-
     co_return co_await _partition_manager.invoke_on(
-      shard,
+      *shard,
       [group_id, target, this, req = std::move(req)](
         cluster::partition_manager& pm) mutable {
           auto partition = pm.partition_for(group_id);

@@ -38,8 +38,7 @@ concept RaftGroupManager = requires(ConsensusManager m, group_id g) {
 
 template<typename ShardLookup>
 concept ShardLookupManager = requires(ShardLookup m, group_id g) {
-   { m.shard_for(g) } -> std::same_as<ss::shard_id>;
-   { m.contains(g) } -> std::same_as<bool>;
+   { m.shard_for(g) } -> std::same_as<std::optional<ss::shard_id>>;
 };
 
 template<typename ConsensusManager, typename ShardLookup>
@@ -226,15 +225,16 @@ private:
 
     template<typename Req, typename ErrorFactory, typename Func>
     auto dispatch_request(Req&& req, ErrorFactory&& ef, Func&& f) {
-        auto group = req.target_group();
-        if (unlikely(!_shard_table.contains(group))) {
+        const auto group = req.target_group();
+        const auto shard = _shard_table.shard_for(group);
+        if (unlikely(!shard)) {
             return ef();
         }
-        auto shard = _shard_table.shard_for(group);
+
         return with_scheduling_group(
           get_scheduling_group(),
           [this,
-           shard,
+           shard = *shard,
            r = std::forward<Req>(req),
            f = std::forward<Func>(f),
            ef = std::forward<ErrorFactory>(ef)]() mutable {
@@ -309,13 +309,13 @@ private:
         shard_groupped_hbeat_requests ret;
 
         for (auto& r : reqs) {
-            if (unlikely(!_shard_table.contains(r.meta.group))) {
+            auto const shard = _shard_table.shard_for(r.meta.group);
+            if (unlikely(!shard)) {
                 ret.group_missing_requests.push_back(r);
                 continue;
             }
 
-            auto shard = _shard_table.shard_for(r.meta.group);
-            auto [it, _] = ret.shard_requests.try_emplace(shard);
+            auto [it, _] = ret.shard_requests.try_emplace(*shard);
             it->second.push_back(r);
         }
 

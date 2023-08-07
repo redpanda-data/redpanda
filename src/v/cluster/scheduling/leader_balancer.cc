@@ -784,15 +784,16 @@ ss::future<bool> leader_balancer::do_transfer(reassignment transfer) {
 
 ss::future<bool>
 leader_balancer::do_transfer_local(reassignment transfer) const {
-    if (!_shard_table.local().contains(transfer.group)) {
+    auto shard = _shard_table.local().shard_for(transfer.group);
+    if (!shard) {
         vlog(
           clusterlog.info,
           "Cannot complete group {} leader transfer: shard not found",
           transfer.group);
         co_return false;
     }
-    auto shard = _shard_table.local().shard_for(transfer.group);
-    auto func = [transfer, shard](cluster::partition_manager& pm) {
+
+    auto func = [transfer, shard = *shard](cluster::partition_manager& pm) {
         auto partition = pm.partition_for(transfer.group);
         if (!partition) {
             vlog(
@@ -822,7 +823,7 @@ leader_balancer::do_transfer_local(reassignment transfer) const {
               return ss::make_ready_future<bool>(true);
           });
     };
-    co_return co_await _partition_manager.invoke_on(shard, std::move(func));
+    co_return co_await _partition_manager.invoke_on(*shard, std::move(func));
 }
 
 /**
