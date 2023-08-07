@@ -60,7 +60,22 @@ void check_reports_the_same(
           lr.topics.cend(),
           rr.topics.cbegin(),
           rr.topics.cend()));
-        BOOST_TEST_REQUIRE(lr.local_state.disks() == rr.local_state.disks());
+        BOOST_TEST_REQUIRE(
+          lr.local_state.disks().size() == rr.local_state.disks().size());
+        for (auto i = 0; i < lr.local_state.disks().size(); ++i) {
+            BOOST_REQUIRE_EQUAL(
+              lr.local_state.disks().at(i).alert,
+              rr.local_state.disks().at(i).alert);
+            BOOST_REQUIRE_EQUAL(
+              lr.local_state.disks().at(i).free,
+              rr.local_state.disks().at(i).free);
+            BOOST_REQUIRE_EQUAL(
+              lr.local_state.disks().at(i).path,
+              rr.local_state.disks().at(i).path);
+            BOOST_REQUIRE_EQUAL(
+              lr.local_state.disks().at(i).total,
+              rr.local_state.disks().at(i).total);
+        }
         BOOST_TEST_REQUIRE(
           lr.local_state.get_disk_alert() == rr.local_state.get_disk_alert());
     }
