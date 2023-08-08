@@ -125,10 +125,11 @@ public:
     }
 
     template<class... Args>
-    void emplace_back(Args&&... args) {
+    T& emplace_back(Args&&... args) {
         maybe_add_capacity();
         _frags.back().emplace_back(std::forward<Args>(args)...);
         ++_size;
+        return _frags.back().back();
     }
 
     void pop_back() {
