@@ -7,6 +7,7 @@
 
 #include <boost/iterator/filter_iterator.hpp>
 
+namespace ssx {
 namespace internal {
 
 template<class Tag, class ValueT>
@@ -39,6 +40,7 @@ public:
         _id = other._id;
         _value = std::move(other._value);
         _hook.swap_nodes(other._hook);
+        return *this;
     }
 
     static fiber_local_impl<Tag, ValueT>* get_fiber_local() {
@@ -95,8 +97,6 @@ thread_local typename fiber_local_impl<Tag, ValueT>::intr_list_t
   = intr_list_t();
 
 } // namespace internal
-
-namespace ssx {
 
 /// Fiber local storage instance.
 ///
