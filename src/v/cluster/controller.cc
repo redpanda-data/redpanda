@@ -464,6 +464,7 @@ controller::start(cluster_discovery& discovery, ss::abort_source& shard0_as) {
             std::ref(_tp_state),
             std::ref(_hm_frontend),
             std::ref(_config_frontend),
+            std::ref(_feature_table),
             std::ref(_as));
       })
       .then([this] {

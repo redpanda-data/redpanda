@@ -104,12 +104,14 @@ metrics_reporter::metrics_reporter(
   ss::sharded<topic_table>& topic_table,
   ss::sharded<health_monitor_frontend>& health_monitor,
   ss::sharded<config_frontend>& config_frontend,
+  ss::sharded<features::feature_table>& feature_table,
   ss::sharded<ss::abort_source>& as)
   : _raft0(std::move(raft0))
   , _members_table(members_table)
   , _topics(topic_table)
   , _health_monitor(health_monitor)
   , _config_frontend(config_frontend)
+  , _feature_table(feature_table)
   , _as(as)
   , _logger(logger, "metrics-reporter") {}
 
@@ -245,6 +247,11 @@ metrics_reporter::build_metrics_snapshot() {
     snapshot.has_kafka_gssapi = absl::c_any_of(
       config::shard_local_cfg().sasl_mechanisms(),
       [](auto const& mech) { return mech == "GSSAPI"; });
+
+    auto license = _feature_table.local().get_license();
+    if (license.has_value()) {
+        snapshot.id_hash = license->checksum;
+    }
 
     co_return snapshot;
 }
@@ -462,6 +469,10 @@ void rjson_serialize(
 
     w.Key("config");
     config::shard_local_cfg().to_json_for_metrics(w);
+
+    w.Key("id_hash");
+    w.String(snapshot.id_hash);
+
     w.EndObject();
 }
 

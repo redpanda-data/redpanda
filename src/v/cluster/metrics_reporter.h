@@ -16,6 +16,7 @@
 #include "cluster/members_table.h"
 #include "cluster/topic_table.h"
 #include "cluster/types.h"
+#include "features/fwd.h"
 #include "http/client.h"
 #include "model/metadata.h"
 #include "model/timestamp.h"
@@ -70,6 +71,8 @@ public:
 
         std::vector<node_metrics> nodes;
         bool has_kafka_gssapi;
+
+        ss::sstring id_hash;
     };
     static constexpr ss::shard_id shard = 0;
 
@@ -79,6 +82,7 @@ public:
       ss::sharded<topic_table>&,
       ss::sharded<health_monitor_frontend>&,
       ss::sharded<config_frontend>&,
+      ss::sharded<features::feature_table>&,
       ss::sharded<ss::abort_source>&);
 
     ss::future<> start();
@@ -100,6 +104,7 @@ private:
     ss::sharded<topic_table>& _topics;
     ss::sharded<health_monitor_frontend>& _health_monitor;
     ss::sharded<config_frontend>& _config_frontend;
+    ss::sharded<features::feature_table>& _feature_table;
     ss::sharded<ss::abort_source>& _as;
     model::timestamp _creation_timestamp;
     prefix_logger _logger;
