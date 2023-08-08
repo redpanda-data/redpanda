@@ -289,9 +289,9 @@ struct raft_node {
           });
     }
 
-    ss::shard_id shard_for(raft::group_id) { return ss::shard_id(0); }
-
-    bool contains(raft::group_id) { return true; }
+    std::optional<ss::shard_id> shard_for(raft::group_id) {
+        return ss::shard_id(0);
+    }
 
     ss::future<log_t> read_log() {
         auto max_offset = model::offset(consensus->last_visible_index());

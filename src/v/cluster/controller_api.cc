@@ -497,11 +497,7 @@ controller_api::get_node_decommission_progress(
 
 std::optional<ss::shard_id>
 controller_api::shard_for(const raft::group_id& group) const {
-    if (_shard_table.local().contains(group)) {
-        return _shard_table.local().shard_for(group);
-    } else {
-        return std::nullopt;
-    }
+    return _shard_table.local().shard_for(group);
 }
 
 std::optional<ss::shard_id>
