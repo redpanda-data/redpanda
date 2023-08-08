@@ -9,7 +9,7 @@
 
 from ducktape.tests.test import Test
 from rptest.services.cluster import cluster
-from rptest.services.redpanda import RedpandaServiceK8s
+from rptest.services.redpanda_cloud import RedpandaServiceK8s
 
 
 class SimpleK8sTest(Test):

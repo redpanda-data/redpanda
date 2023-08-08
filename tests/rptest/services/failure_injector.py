@@ -321,7 +321,7 @@ class FailureInjectorCloud(FailureInjectorBase):
 
 def make_failure_injector(redpanda):
     """Factory function for instatiating the appropriate FailureInjector subclass."""
-    if RedpandaServiceCloud.GLOBAL_CLOUD_API_URL in redpanda.context.globals:
+    if RedpandaServiceCloud.GLOBAL_CLOUD_CLUSTER_CONFIG in redpanda.context.globals:
         return FailureInjectorCloud(redpanda)
     else:
         return FailureInjector(redpanda)
