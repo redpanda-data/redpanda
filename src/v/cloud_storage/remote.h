@@ -105,6 +105,8 @@ enum class api_activity_notification {
     segment_delete,
     manifest_upload,
     manifest_download,
+    controller_snapshot_upload,
+    controller_snapshot_download,
 };
 
 /// \brief Represents remote endpoint
