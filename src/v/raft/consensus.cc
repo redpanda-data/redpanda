@@ -1500,7 +1500,7 @@ ss::future<> consensus::write_last_applied(model::offset o) {
      * In order to keep an invariant that: 'last applied offset MUST be
      * readable' we limit it here to committed (leader flushed) offset.
      */
-    auto const limited_offset = std::min(o, _log->offsets().committed_offset);
+    auto const limited_offset = std::min(o, _flushed_offset);
     auto key = last_applied_key();
     iobuf val = reflection::to_iobuf(limited_offset);
     return _storage.kvs().put(
