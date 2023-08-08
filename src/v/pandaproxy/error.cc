@@ -127,6 +127,8 @@ struct reply_error_category final : std::error_category {
             return "subject_version_soft_deleted";
         case reply_error_code::subject_version_not_deleted:
             return "subject_version_not_deleted";
+        case reply_error_code::compatibility_not_found:
+            return "compatibility_not_found";
         case reply_error_code::serialization_error:
             return "serialization_error";
         case reply_error_code::consumer_already_exists:

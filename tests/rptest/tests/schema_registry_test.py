@@ -752,7 +752,9 @@ class SchemaRegistryTestMethods(SchemaRegistryEndpoints):
         self.logger.debug("Get invalid subject config")
         result_raw = self._get_config_subject(subject="invalid_subject")
         assert result_raw.status_code == requests.codes.not_found
-        assert result_raw.json()["error_code"] == 40401
+        assert result_raw.json()["error_code"] == 40408
+        assert result_raw.json(
+        )["message"] == f"Subject 'invalid_subject' does not have subject-level compatibility configured"
 
         schema_1_data = json.dumps({"schema": schema1_def})
 
@@ -765,7 +767,9 @@ class SchemaRegistryTestMethods(SchemaRegistryEndpoints):
         self.logger.debug("Get subject config - should fail")
         result_raw = self._get_config_subject(subject=f"{topic}-key")
         assert result_raw.status_code == requests.codes.not_found
-        assert result_raw.json()["error_code"] == 40401
+        assert result_raw.json()["error_code"] == 40408
+        assert result_raw.json(
+        )["message"] == f"Subject '{topic}-key' does not have subject-level compatibility configured"
 
         self.logger.debug("Get subject config - fallback to global")
         result_raw = self._get_config_subject(subject=f"{topic}-key",
