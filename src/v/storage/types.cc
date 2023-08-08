@@ -34,10 +34,12 @@ model::offset stm_manager::max_collectible_offset() {
 std::ostream& operator<<(std::ostream& o, const disk& d) {
     fmt::print(
       o,
-      "{{path: {}, free: {}, total: {}}}",
+      "{{path: {}, free: {}, total: {}, alert: {}, fsid: {}}}",
       d.path,
       human::bytes(d.free),
-      human::bytes(d.total));
+      human::bytes(d.total),
+      d.alert,
+      d.fsid);
     return o;
 }
 
