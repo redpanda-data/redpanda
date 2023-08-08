@@ -312,7 +312,8 @@ remote_segment::offset_data_stream(
   kafka::offset start,
   kafka::offset end,
   std::optional<model::timestamp> first_timestamp,
-  ss::io_priority_class io_priority) {
+  ss::io_priority_class io_priority,
+  std::optional<std::reference_wrapper<remote_segment_batch_reader>> reader) {
     vlog(_ctxlog.debug, "remote segment file input stream at offset {}", start);
     ss::gate::holder g(_gate);
     co_await hydrate();
@@ -362,7 +363,8 @@ remote_segment::offset_data_stream(
           end,
           pos.file_pos,
           std::move(options),
-          prefetch_override);
+          prefetch_override,
+          reader);
         data_stream = ss::input_stream<char>{
           ss::data_source{std::move(chunk_ds)}};
     }
@@ -943,7 +945,8 @@ ss::future<> remote_segment::hydrate() {
       .discard_result();
 }
 
-ss::future<> remote_segment::hydrate_chunk(segment_chunk_range range) {
+ss::future<> remote_segment::hydrate_chunk(
+  segment_chunk_range range, eager_stream_ref eager_stream) {
     const auto start = range.first_offset();
     const auto path_to_start = get_path_to_chunk(start);
 
@@ -963,6 +966,10 @@ ss::future<> remote_segment::hydrate_chunk(segment_chunk_range range) {
           "skipping chunk hydration for chunk path {}, it is already in "
           "cache",
           path_to_start);
+        if (eager_stream) {
+            eager_stream->get().chunk_in_cache = true;
+            eager_stream->get().stream_available.signal();
+        }
         co_return;
     }
 
@@ -970,12 +977,28 @@ ss::future<> remote_segment::hydrate_chunk(segment_chunk_range range) {
       cache_hydration_timeout, cache_hydration_backoff, &_rtc};
 
     const auto end = range.last_offset().value_or(_size - 1);
-    auto consumer = split_segment_into_chunk_range_consumer{
-      *this, std::move(range)};
-
     auto measurement = _probe.chunk_hydration_latency();
+    auto consumer = split_segment_into_chunk_range_consumer(*this, range);
+
     auto res = co_await _api.download_segment(
-      _bucket, _path, std::move(consumer), rtc, std::make_pair(start, end));
+      _bucket,
+      _path,
+      [this, &eager_stream, &range, &consumer](auto size, auto stream) {
+          if (eager_stream.has_value()) {
+              vlog(_ctxlog.trace, "eager stream requested for range {}", range);
+              auto [disk_write_str, eager_str] = input_stream_fanout<2>(
+                std::move(stream), 10);
+              eager_stream->get().set_stream_and_signal(
+                std::move(eager_str),
+                range.first_offset(),
+                range.last_offset().value_or(_size - 1));
+              return consumer(size, std::move(disk_write_str));
+          } else {
+              return consumer(size, std::move(stream));
+          }
+      },
+      rtc,
+      std::make_pair(start, end));
     if (res != download_result::success) {
         measurement->cancel();
         throw download_exception{res, _path};
@@ -1297,7 +1320,7 @@ remote_segment_batch_reader::remote_segment_batch_reader(
   , _config(config)
   , _probe(probe)
   , _rtc(_seg->get_retry_chain_node())
-  , _ctxlog(cst_log, _rtc, _seg->get_ntp().path())
+  , _ctxlog(cst_log, _rtc, _seg->get_segment_path()().native())
   , _cur_rp_offset(_seg->get_base_rp_offset())
   , _cur_delta(_seg->get_base_offset_delta())
   , _units(std::move(units)) {
@@ -1348,6 +1371,19 @@ remote_segment_batch_reader::read_some(
         _bytes_consumed = new_bytes_consumed.value();
     }
     _total_size = 0;
+
+    if (_config.over_budget && _is_transient && _parser) {
+        vlog(
+          _ctxlog.debug,
+          "transient reader is overbudget, resetting parser to allow other "
+          "streams to progress: {}",
+          _config);
+        co_await _parser->close();
+        _parser.reset();
+        _bytes_consumed = 0;
+        vlog(_ctxlog.debug, "transient reader is closed: {}", _config);
+    }
+
     co_return std::move(_ringbuf);
 }
 
@@ -1363,7 +1399,8 @@ remote_segment_batch_reader::init_parser() {
       model::offset_cast(_config.start_offset),
       model::offset_cast(_config.max_offset),
       _config.first_timestamp,
-      priority_manager::local().shadow_indexing_priority());
+      priority_manager::local().shadow_indexing_priority(),
+      *this);
 
     auto parser = std::make_unique<storage::continuous_batch_parser>(
       std::make_unique<remote_segment_batch_consumer>(

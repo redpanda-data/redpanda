@@ -16,12 +16,45 @@
 #include "utils/retry_chain_node.h"
 
 #include <seastar/core/gate.hh>
+#include <seastar/core/iostream.hh>
 
 #include <absl/container/btree_map.h>
 
 namespace cloud_storage {
 
 class remote_segment;
+
+struct eager_chunk_stream {
+    ss::condition_variable stream_available;
+    std::optional<ss::input_stream<char>> stream;
+
+    chunk_start_offset_t first_offset;
+    chunk_start_offset_t last_offset;
+
+    bool download_skipped{true};
+    bool chunk_in_cache{false};
+
+    void set_stream_and_signal(
+      ss::input_stream<char> s,
+      chunk_start_offset_t start,
+      chunk_start_offset_t end) {
+        stream = std::move(s);
+        stream_available.signal();
+        first_offset = start;
+        last_offset = end;
+    }
+
+    ss::future<> wait_for_stream() {
+        if (download_skipped) {
+            return ss::now();
+        }
+        return stream_available.wait(
+          [this] { return stream.has_value() || chunk_in_cache; });
+    }
+};
+
+using eager_stream_ref
+  = std::optional<std::reference_wrapper<eager_chunk_stream>>;
 
 class segment_chunks {
 public:
@@ -47,7 +80,8 @@ public:
     // readers are added to wait list.
     ss::future<segment_chunk::handle_t> hydrate_chunk(
       chunk_start_offset_t chunk_start,
-      std::optional<uint16_t> prefetch_override = std::nullopt);
+      std::optional<uint16_t> prefetch_override = std::nullopt,
+      eager_stream_ref eager_stream = std::nullopt);
 
     // For all chunks between first and last, increment the
     // required_by_readers_in_future value by one, and increment the
@@ -79,7 +113,8 @@ private:
     // eviction between download and opening the file handle.
     ss::future<ss::file> do_hydrate_and_materialize(
       chunk_start_offset_t chunk_start,
-      std::optional<uint16_t> prefetch_override = std::nullopt);
+      std::optional<uint16_t> prefetch_override = std::nullopt,
+      eager_stream_ref eager_stream = std::nullopt);
 
     // Periodically closes chunk file handles for the space to be reclaimable by
     // cache eviction. The chunks are evicted when they are no longer opened for
@@ -188,5 +223,7 @@ public:
 private:
     map_t _chunks;
 };
+
+std::ostream& operator<<(std::ostream&, const segment_chunk_range&);
 
 } // namespace cloud_storage

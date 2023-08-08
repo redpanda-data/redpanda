@@ -23,7 +23,8 @@ chunk_data_source_impl::chunk_data_source_impl(
   kafka::offset end,
   int64_t begin_stream_at,
   ss::file_input_stream_options stream_options,
-  std::optional<uint16_t> prefetch_override)
+  std::optional<uint16_t> prefetch_override,
+  std::optional<std::reference_wrapper<remote_segment_batch_reader>> reader)
   : _chunks(chunks)
   , _segment(segment)
   , _first_chunk_start(_segment.get_chunk_start_for_kafka_offset(start))
@@ -33,7 +34,8 @@ chunk_data_source_impl::chunk_data_source_impl(
   , _stream_options(std::move(stream_options))
   , _rtc{_as}
   , _ctxlog{cst_log, _rtc, _segment.get_segment_path()().native()}
-  , _prefetch_override{prefetch_override} {
+  , _prefetch_override{prefetch_override}
+  , _attached_reader{reader} {
     vlog(
       _ctxlog.trace,
       "chunk data source initialized with file position {} to {}",
@@ -63,8 +65,27 @@ ss::future<ss::temporary_buffer<char>> chunk_data_source_impl::get() {
 
     auto buf = co_await _current_stream->read();
     while (buf.empty() && _current_chunk_start < _last_chunk_start) {
-        _current_chunk_start = _chunks.get_next_chunk_start(
-          _current_chunk_start);
+        switch (_current_stream_t) {
+        case stream_type::disk:
+            vlog(
+              _ctxlog.trace,
+              "advancing _current_chunk_start from {} to {}",
+              _current_chunk_start,
+              _chunks.get_next_chunk_start(_current_chunk_start));
+            _current_chunk_start = _chunks.get_next_chunk_start(
+              _current_chunk_start);
+            break;
+        case stream_type::download:
+            vlog(
+              _ctxlog.trace,
+              "advancing _current_chunk_start from {} to {}",
+              _current_chunk_start,
+              _last_download_end + 1);
+            _current_chunk_start = _last_download_end + 1;
+            break;
+        default:
+            vassert(false, "Unexpected stream type");
+        }
         co_await load_stream_for_chunk(_current_chunk_start);
         buf = co_await _current_stream->read();
     }
@@ -72,11 +93,19 @@ ss::future<ss::temporary_buffer<char>> chunk_data_source_impl::get() {
     co_return buf;
 }
 
-ss::future<>
-chunk_data_source_impl::load_chunk_handle(chunk_start_offset_t chunk_start) {
+ss::future<> chunk_data_source_impl::load_chunk_handle(
+  chunk_start_offset_t chunk_start, eager_stream_ref eager_stream) {
     try {
         _current_data_file = co_await _chunks.hydrate_chunk(
-          chunk_start, _prefetch_override);
+          chunk_start, _prefetch_override, eager_stream);
+        // Decrement the required_by_readers_in_future count by 1, we have
+        // acquired
+        // the file handle here. Once we are done with this handle, if it is not
+        // shared with any other data source, it should be eligible for
+        // trimming.
+        _chunks.mark_acquired_and_update_stats(
+          _current_chunk_start, _last_chunk_start);
+        vlog(_ctxlog.trace, "chunk handle loaded for {}", chunk_start);
     } catch (const ss::abort_requested_exception& ex) {
         throw;
     } catch (const ss::gate_closed_exception& ex) {
@@ -97,8 +126,28 @@ ss::future<> chunk_data_source_impl::load_stream_for_chunk(
 
     std::exception_ptr eptr;
 
+    eager_chunk_stream ecs;
     try {
-        co_await load_chunk_handle(chunk_start);
+        auto handle_loaded_f = ssx::spawn_with_gate_then(
+          _gate, [this, chunk_start, &ecs] {
+              return load_chunk_handle(chunk_start, ecs);
+          });
+        co_await ecs.wait_for_stream();
+        if (ecs.stream.has_value()) {
+            vlog(
+              _ctxlog.trace,
+              "chunk handle load backgrounded for {}",
+              chunk_start);
+            ssx::background = std::move(handle_loaded_f);
+        } else {
+            // Either we were put in queue for the chunk, or it was found in
+            // cache
+            vlog(
+              _ctxlog.trace,
+              "eager stream requested but not loaded for {}",
+              chunk_start);
+            co_await std::move(handle_loaded_f);
+        }
     } catch (...) {
         eptr = std::current_exception();
     }
@@ -107,12 +156,6 @@ ss::future<> chunk_data_source_impl::load_stream_for_chunk(
         co_await maybe_close_stream();
         std::rethrow_exception(eptr);
     }
-
-    // Decrement the required_by_readers_in_future count by 1, we have acquired
-    // the file handle here. Once we are done with this handle, if it is not
-    // shared with any other data source, it should be eligible for trimming.
-    _chunks.mark_acquired_and_update_stats(
-      _current_chunk_start, _last_chunk_start);
 
     if (_current_stream) {
         co_await _current_stream->close();
@@ -128,18 +171,65 @@ ss::future<> chunk_data_source_impl::load_stream_for_chunk(
     if (_current_chunk_start == _first_chunk_start) {
         begin = _begin_stream_at;
     }
-    vlog(
-      _ctxlog.trace,
-      "creating stream for chunk at {}, begin at {}",
-      _current_chunk_start,
-      begin);
 
-    _current_stream = ss::make_file_input_stream(
-      *_current_data_file, begin, _stream_options);
+    auto is_eager_stream_loaded = ecs.stream.has_value();
+    if (is_eager_stream_loaded) {
+        // TODO - this should be flipped if we switch to a disk based stream, or
+        // more specifically when we close a transient stream. This change would
+        // then need to be communicated back up to the reader so it can be
+        // cached.
+        _is_transient = true;
+        if (_attached_reader) {
+            _attached_reader->get().mark_transient(true);
+        }
+        vlog(
+          _ctxlog.trace,
+          "creating eager stream for chunk starting at {}, begin offset in "
+          "chunk {}, stream ends "
+          "at {}",
+          _current_chunk_start,
+          begin,
+          ecs.last_offset);
+        _current_stream_t = stream_type::download;
+        _last_download_end = ecs.last_offset;
+        _current_stream = std::move(ecs.stream);
+        co_await skip_stream_to(begin);
+    } else {
+        vlog(
+          _ctxlog.trace,
+          "creating file stream for chunk starting at {}, begin offset in "
+          "chunk {}",
+          _current_chunk_start,
+          begin);
+        _current_stream_t = stream_type::disk;
+        _current_stream = ss::make_file_input_stream(
+          *_current_data_file, begin, _stream_options);
+    }
+}
+
+ss::future<> chunk_data_source_impl::skip_stream_to(uint64_t begin) {
+    uint64_t to_read = begin;
+    while (to_read > 0) {
+        const auto buf = co_await _current_stream->read_up_to(to_read);
+        to_read -= buf.size();
+        vlog(
+          _ctxlog.trace,
+          "remaining to_read = {}, current read = {}",
+          to_read,
+          buf.size());
+    }
 }
 
 ss::future<> chunk_data_source_impl::close() {
+    if (
+      _attached_reader && _attached_reader->get().config().over_budget
+      && _current_stream_t == stream_type::download) {
+        vlog(_ctxlog.trace, "closing overbudget transient reader");
+        co_await maybe_close_stream();
+    }
+    vlog(_ctxlog.trace, "closing gate");
     co_await _gate.close();
+    vlog(_ctxlog.trace, "closed gate");
     co_await maybe_close_stream();
 }
 
@@ -149,5 +239,7 @@ ss::future<> chunk_data_source_impl::maybe_close_stream() {
         _current_stream = std::nullopt;
     }
 }
+
+bool chunk_data_source_impl::is_transient() const { return _is_transient; }
 
 } // namespace cloud_storage

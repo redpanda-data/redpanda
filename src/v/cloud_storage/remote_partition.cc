@@ -360,7 +360,9 @@ public:
                     if (!result) {
                         vlog(
                           _ctxlog.debug,
-                          "Error while reading from stream '{}'",
+                          "Error while reading from stream {}-{} '{}'",
+                          _reader->base_rp_offset(),
+                          _reader->config(),
                           result.error());
                         co_await set_end_of_stream();
                         throw std::system_error(result.error());
