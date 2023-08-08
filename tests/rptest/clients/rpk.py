@@ -220,12 +220,19 @@ class RpkTool:
                  username: str = None,
                  password: str = None,
                  sasl_mechanism: str = None,
-                 tls_cert: Optional[tls.Certificate] = None):
+                 tls_cert: Optional[tls.Certificate] = None,
+                 tls_enabled: Optional[bool] = None):
         self._redpanda = redpanda
         self._username = username
         self._password = password
         self._sasl_mechanism = sasl_mechanism
         self._tls_cert = tls_cert
+        self._tls_enabled = tls_enabled
+
+        # if testing redpanda cloud, override with default superuser
+        if hasattr(redpanda, 'GLOBAL_CLOUD_CLUSTER_CONFIG'):
+            self._username, self._password, self._sasl_mechanism = redpanda._superuser
+            self._tls_enabled = True
 
     def create_topic(self, topic, partitions=1, replicas=None, config=None):
         def create_topic():
