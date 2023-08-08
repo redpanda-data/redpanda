@@ -21,6 +21,7 @@
 #include "utils/retry_chain_node.h"
 
 #include <seastar/core/abort_source.hh>
+#include <seastar/core/fstream.hh>
 #include <seastar/core/loop.hh>
 #include <seastar/core/lowres_clock.hh>
 #include <seastar/core/sleep.hh>
@@ -450,27 +451,36 @@ void remote::notify_external_subscribers(
       [](const event_filter& f) { return !f._promise.has_value(); });
 }
 
-ss::future<upload_result> remote::upload_segment(
+template<
+  typename FailedUploadMetricFn,
+  typename SuccessfulUploadMetricFn,
+  typename UploadBackoffMetricFn>
+ss::future<upload_result> remote::upload_stream(
   const cloud_storage_clients::bucket_name& bucket,
   const remote_segment_path& segment_path,
   uint64_t content_length,
   const reset_input_stream& reset_str,
   retry_chain_node& parent,
-  lazy_abort_source& lazy_abort_source) {
+  lazy_abort_source& lazy_abort_source,
+  const std::string_view stream_label,
+  api_activity_notification event_type,
+  FailedUploadMetricFn failed_upload_metric,
+  SuccessfulUploadMetricFn successful_upload_metric,
+  UploadBackoffMetricFn upload_backoff_metric) {
     gate_guard guard{_gate};
     retry_chain_node fib(&parent);
     retry_chain_logger ctxlog(cst_log, fib);
     auto permit = fib.retry();
     vlog(
       ctxlog.debug,
-      "Uploading segment to path {}, length {}",
+      "Uploading {} to path {}, length {}",
+      stream_label,
       segment_path,
       content_length);
     std::optional<upload_result> result;
     while (!_gate.is_closed() && permit.is_allowed && !result) {
         auto lease = co_await _pool.local().acquire(fib.root_abort_source());
-        notify_external_subscribers(
-          api_activity_notification::segment_upload, parent);
+        notify_external_subscribers(event_type, parent);
 
         // Client acquisition can take some time. Do a check before starting
         // the upload if we can still continue.
@@ -481,7 +491,7 @@ ss::future<upload_result> remote::upload_segment(
               lazy_abort_source.abort_reason(),
               segment_path,
               bucket);
-            _probe.failed_upload();
+            failed_upload_metric();
             co_return upload_result::cancelled;
         }
 
@@ -500,7 +510,7 @@ ss::future<upload_result> remote::upload_segment(
         co_await reader_handle->close();
 
         if (res) {
-            _probe.successful_upload();
+            successful_upload_metric();
             _probe.register_upload_size(content_length);
             co_return upload_result::success;
         }
@@ -510,12 +520,13 @@ ss::future<upload_result> remote::upload_segment(
         case cloud_storage_clients::error_outcome::retry:
             vlog(
               ctxlog.debug,
-              "Uploading segment {} to {}, {} backoff required",
+              "Uploading {} {} to {}, {} backoff required",
+              stream_label,
               path,
               bucket,
               std::chrono::duration_cast<std::chrono::milliseconds>(
                 permit.delay));
-            _probe.upload_backoff();
+            upload_backoff_metric();
             if (!lazy_abort_source.abort_requested()) {
                 co_await ss::sleep_abortable(
                   permit.delay, fib.root_abort_source());
@@ -531,24 +542,48 @@ ss::future<upload_result> remote::upload_segment(
         }
     }
 
-    _probe.failed_upload();
+    failed_upload_metric();
 
     if (!result) {
         vlog(
           ctxlog.warn,
-          "Uploading segment {} to {}, backoff quota exceded, segment not "
+          "Uploading {} {} to {}, backoff quota exceded, {} not "
           "uploaded",
+          stream_label,
           segment_path,
-          bucket);
+          bucket,
+          stream_label);
     } else {
         vlog(
           ctxlog.warn,
-          "Uploading segment {} to {}, {}, segment not uploaded",
+          "Uploading {} {} to {}, {}, segment not uploaded",
+          stream_label,
           segment_path,
           bucket,
           *result);
     }
     co_return upload_result::timedout;
+}
+
+ss::future<upload_result> remote::upload_segment(
+  const cloud_storage_clients::bucket_name& bucket,
+  const remote_segment_path& segment_path,
+  uint64_t content_length,
+  const reset_input_stream& reset_str,
+  retry_chain_node& parent,
+  lazy_abort_source& lazy_abort_source) {
+    return upload_stream(
+      bucket,
+      segment_path,
+      content_length,
+      reset_str,
+      parent,
+      lazy_abort_source,
+      "segment",
+      api_activity_notification::segment_upload,
+      [this] { _probe.failed_upload(); },
+      [this] { _probe.successful_upload(); },
+      [this] { _probe.upload_backoff(); });
 }
 
 ss::future<download_result> remote::download_segment(

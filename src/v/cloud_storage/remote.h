@@ -426,6 +426,23 @@ public:
     ss::abort_source& as() { return _as; }
 
 private:
+    template<
+      typename FailedUploadMetricFn,
+      typename SuccessfulUploadMetricFn,
+      typename UploadBackoffMetricFn>
+    ss::future<upload_result> upload_stream(
+      const cloud_storage_clients::bucket_name& bucket,
+      const remote_segment_path& segment_path,
+      uint64_t content_length,
+      const reset_input_stream& reset_str,
+      retry_chain_node& parent,
+      lazy_abort_source& lazy_abort_source,
+      const std::string_view stream_label,
+      api_activity_notification event_type,
+      FailedUploadMetricFn failed_upload_metric,
+      SuccessfulUploadMetricFn successful_upload_metric,
+      UploadBackoffMetricFn upload_backoff_metric);
+
     ss::future<upload_result> delete_objects_sequentially(
       const cloud_storage_clients::bucket_name& bucket,
       std::vector<cloud_storage_clients::object_key> keys,
