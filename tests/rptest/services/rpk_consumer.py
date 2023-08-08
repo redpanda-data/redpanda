@@ -56,7 +56,7 @@ class RpkConsumer(BackgroundThreadService):
         self._tls_enabled = False
 
         # if testing redpanda cloud, override with default superuser
-        if hasattr(redpanda, 'GLOBAL_CLOUD_API_URL'):
+        if hasattr(redpanda, 'GLOBAL_CLOUD_CLUSTER_CONFIG'):
             security_config = redpanda.security_config()
             self._mechanism = security_config.get('sasl_mechanism', None)
             self._user = security_config.get('sasl_plain_username', None)
