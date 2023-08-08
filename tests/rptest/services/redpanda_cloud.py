@@ -126,6 +126,7 @@ class CloudClusterConfig:
     provider: str = "AWS"
     type: str = "FMC"
     network: str = "public"
+    install_pack_ver: str = "latest"
 
 
 @dataclass
@@ -276,10 +277,10 @@ class CloudCluster():
         return self.cloudv2._http_get(
             endpoint=f"/api/v1/networks/{self.current.network_id}")
 
-    def _get_install_pack_ver(self):
-        """Get the latest certified install pack version.
+    def _get_latest_install_pack_ver(self):
+        """Get latest certified install pack ver by searching list of avail.
 
-        :return: version, e.g. '23.2.20230707135118'
+        :return: version, e.g. '23.2.20230707135118', or None if not found
         """
 
         versions = self.cloudv2._http_get(
@@ -479,10 +480,10 @@ class CloudCluster():
         """
 
         if self.config.id == '':
-            self._logger.warn(f'cluster_id is empty, unable to delete cluster')
+            self._logger.warn('cluster_id is empty, unable to delete cluster')
             return
         elif not self.current.delete_cluster:
-            self._logger.warn(f'Cluster deletion skipped as configured')
+            self._logger.warn('Cluster deletion skipped as configured')
             return
 
         resp = self.cloudv2._http_get(

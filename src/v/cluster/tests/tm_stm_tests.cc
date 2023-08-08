@@ -34,14 +34,6 @@
 
 static ss::logger tm_logger{"tm_stm-test"};
 
-struct ftable_struct {
-    ftable_struct() { table.start().get(); }
-
-    ~ftable_struct() { table.stop().get(); }
-
-    ss::sharded<features::feature_table> table;
-};
-
 struct tm_cache_struct {
     tm_cache_struct() { cache = ss::make_lw_shared<cluster::tm_stm_cache>(); }
 
@@ -59,11 +51,13 @@ static tm_transaction expect_tx(checked<tm_transaction, op_status> maybe_tx) {
 
 FIXTURE_TEST(test_tm_stm_new_tx, mux_state_machine_fixture) {
     start_raft();
-    ftable_struct ftable;
     tm_cache_struct tm_cache;
 
     cluster::tm_stm stm(
-      tm_logger, _raft.get(), std::ref(ftable.table), std::ref(tm_cache.cache));
+      tm_logger,
+      _raft.get(),
+      std::ref(_feature_table),
+      std::ref(tm_cache.cache));
     auto c = _raft.get();
 
     stm.start().get0();
@@ -101,12 +95,6 @@ FIXTURE_TEST(test_tm_stm_new_tx, mux_state_machine_fixture) {
     BOOST_REQUIRE_EQUAL(tx2.status, tx_status::ongoing);
     BOOST_REQUIRE_GT(tx2.tx_seq, tx1.tx_seq);
     BOOST_REQUIRE_EQUAL(tx2.partitions.size(), 2);
-    auto tx3 = expect_tx(stm.mark_tx_preparing(c->term(), tx_id).get());
-    BOOST_REQUIRE_EQUAL(tx3.id, tx_id);
-    BOOST_REQUIRE_EQUAL(tx3.pid, pid);
-    BOOST_REQUIRE_EQUAL(tx3.status, tx_status::preparing);
-    BOOST_REQUIRE_EQUAL(tx3.tx_seq, tx2.tx_seq);
-    BOOST_REQUIRE_EQUAL(tx3.partitions.size(), 2);
     auto tx4 = expect_tx(stm.mark_tx_prepared(c->term(), tx_id).get());
     BOOST_REQUIRE_EQUAL(tx4.id, tx_id);
     BOOST_REQUIRE_EQUAL(tx4.pid, pid);
@@ -123,11 +111,13 @@ FIXTURE_TEST(test_tm_stm_new_tx, mux_state_machine_fixture) {
 
 FIXTURE_TEST(test_tm_stm_seq_tx, mux_state_machine_fixture) {
     start_raft();
-    ftable_struct ftable;
     tm_cache_struct tm_cache;
 
     cluster::tm_stm stm(
-      tm_logger, _raft.get(), std::ref(ftable.table), std::ref(tm_cache.cache));
+      tm_logger,
+      _raft.get(),
+      std::ref(_feature_table),
+      std::ref(tm_cache.cache));
     auto c = _raft.get();
 
     stm.start().get0();
@@ -155,7 +145,6 @@ FIXTURE_TEST(test_tm_stm_seq_tx, mux_state_machine_fixture) {
       stm.add_partitions(c->term(), tx_id, partitions).get0(),
       cluster::tm_stm::op_status::success);
     auto tx3 = expect_tx(stm.get_tx(tx_id).get0());
-    auto tx4 = expect_tx(stm.mark_tx_preparing(c->term(), tx_id).get());
     auto tx5 = expect_tx(stm.mark_tx_prepared(c->term(), tx_id).get());
     auto tx6 = expect_tx(stm.mark_tx_ongoing(c->term(), tx_id).get0());
     BOOST_REQUIRE_EQUAL(tx6.id, tx_id);
@@ -167,11 +156,13 @@ FIXTURE_TEST(test_tm_stm_seq_tx, mux_state_machine_fixture) {
 
 FIXTURE_TEST(test_tm_stm_re_tx, mux_state_machine_fixture) {
     start_raft();
-    ftable_struct ftable;
     tm_cache_struct tm_cache;
 
     cluster::tm_stm stm(
-      tm_logger, _raft.get(), std::ref(ftable.table), std::ref(tm_cache.cache));
+      tm_logger,
+      _raft.get(),
+      std::ref(_feature_table),
+      std::ref(tm_cache.cache));
     auto c = _raft.get();
 
     stm.start().get0();
@@ -199,7 +190,6 @@ FIXTURE_TEST(test_tm_stm_re_tx, mux_state_machine_fixture) {
       stm.add_partitions(c->term(), tx_id, partitions).get0(),
       cluster::tm_stm::op_status::success);
     auto tx3 = expect_tx(stm.get_tx(tx_id).get0());
-    auto tx4 = expect_tx(stm.mark_tx_preparing(c->term(), tx_id).get());
     auto tx5 = expect_tx(stm.mark_tx_prepared(c->term(), tx_id).get());
     auto tx6 = expect_tx(stm.mark_tx_ongoing(c->term(), tx_id).get0());
 
@@ -297,12 +287,13 @@ void test_tm_hosts_tx_include_exclude_saved_in_snapshot(
 
 FIXTURE_TEST(test_tm_stm_hosted_hash_1_partition, mux_state_machine_fixture) {
     start_raft();
-    ftable_struct ftable;
     tm_cache_struct tm_cache;
-    ftable.table.local().testing_activate_all();
 
     cluster::tm_stm stm(
-      tm_logger, _raft.get(), std::ref(ftable.table), std::ref(tm_cache.cache));
+      tm_logger,
+      _raft.get(),
+      std::ref(_feature_table),
+      std::ref(tm_cache.cache));
     auto c = _raft.get();
     stm.start().get0();
 
@@ -333,13 +324,11 @@ FIXTURE_TEST(test_tm_stm_hosted_hash_1_partition, mux_state_machine_fixture) {
 
     // Test load from snapshot
     start_raft();
-    ftable_struct ftable_new;
-    ftable_new.table.local().testing_activate_all();
     tm_cache_struct tm_cache_new;
     cluster::tm_stm new_stm(
       tm_logger,
       _raft.get(),
-      std::ref(ftable_new.table),
+      std::ref(_feature_table),
       std::ref(tm_cache_new.cache));
     new_stm.start().get0();
     auto stop = ss::defer([&new_stm] { new_stm.stop().get0(); });
@@ -353,12 +342,13 @@ FIXTURE_TEST(test_tm_stm_hosted_hash_1_partition, mux_state_machine_fixture) {
 
 FIXTURE_TEST(test_tm_stm_hosted_hash_16_partition, mux_state_machine_fixture) {
     start_raft();
-    ftable_struct ftable;
     tm_cache_struct tm_cache;
-    ftable.table.local().testing_activate_all();
 
     cluster::tm_stm stm(
-      tm_logger, _raft.get(), std::ref(ftable.table), std::ref(tm_cache.cache));
+      tm_logger,
+      _raft.get(),
+      std::ref(_feature_table),
+      std::ref(tm_cache.cache));
     auto c = _raft.get();
     stm.start().get0();
 
@@ -389,13 +379,11 @@ FIXTURE_TEST(test_tm_stm_hosted_hash_16_partition, mux_state_machine_fixture) {
 
     // Test load from snapshot
     start_raft();
-    ftable_struct ftable_new;
-    ftable_new.table.local().testing_activate_all();
     tm_cache_struct tm_cache_new;
     cluster::tm_stm new_stm(
       tm_logger,
       _raft.get(),
-      std::ref(ftable_new.table),
+      std::ref(_feature_table),
       std::ref(tm_cache_new.cache));
     new_stm.start().get0();
     auto stop = ss::defer([&new_stm] { new_stm.stop().get0(); });

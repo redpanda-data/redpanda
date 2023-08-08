@@ -12,10 +12,12 @@
 #include "serde/serde.h"
 #include "utils/fragmented_vector.h"
 
+#include <boost/test/tools/old/interface.hpp>
 #include <boost/test/unit_test.hpp>
 
 #include <initializer_list>
 #include <limits>
+#include <numeric>
 #include <type_traits>
 #include <vector>
 
@@ -193,7 +195,7 @@ BOOST_AUTO_TEST_CASE(fragmented_vector_test) {
 }
 
 template<typename T = int, size_t S = 8>
-static checker<T, S> make(std::initializer_list<T> in) {
+static checker<T, S> make(std::vector<T> in) {
     checker<T, S> ret;
     for (auto& e : in) {
         ret->push_back(e);
@@ -332,4 +334,36 @@ BOOST_AUTO_TEST_CASE(fragmented_vector_vector_assign) {
 
     v.get() = std::vector{2, 3, 4};
     BOOST_CHECK_EQUAL(v, (make({2, 3, 4})));
+}
+
+BOOST_AUTO_TEST_CASE(fragmented_vector_pop_back_n) {
+    const int elements = 6;
+    for (int i = 0; i <= elements; ++i) {
+        std::vector<int> start_values(elements);
+        std::iota(start_values.begin(), start_values.end(), 0);
+        auto vec = make(start_values);
+
+        vec->pop_back_n(i);
+
+        std::vector<int> expected_values(elements - i);
+        std::iota(expected_values.begin(), expected_values.end(), 0);
+        BOOST_REQUIRE_EQUAL(vec->size(), expected_values.size());
+        BOOST_REQUIRE_EQUAL_COLLECTIONS(
+          vec->begin(),
+          vec->end(),
+          expected_values.begin(),
+          expected_values.end());
+
+        if (elements - i > 0) {
+            BOOST_REQUIRE_EQUAL(vec->back(), expected_values.back());
+        }
+    }
+}
+
+BOOST_AUTO_TEST_CASE(fragmented_vector_constructor_from_iter_range) {
+    std::vector<int> vals{1, 2, 3};
+
+    fragmented_vector<int, 8> fv(vals.begin(), vals.end());
+
+    test_details::fragmented_vector_accessor::check_consistency(fv);
 }

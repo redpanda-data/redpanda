@@ -421,11 +421,11 @@ ss::future<> segment_appender::process_flush_ops(size_t committed) {
         return ss::now();
     }
 
-    std::vector<flush_op> ops(
+    flush_ops_container ops(
       std::make_move_iterator(flushable),
       std::make_move_iterator(_flush_ops.end()));
 
-    _flush_ops.erase(flushable, _flush_ops.end());
+    _flush_ops.pop_back_n(std::distance(flushable, _flush_ops.end()));
 
     return _out.flush().then([this, committed, ops = std::move(ops)]() mutable {
         _flushed_offset = committed;

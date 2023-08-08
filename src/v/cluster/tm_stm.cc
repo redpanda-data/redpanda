@@ -442,22 +442,6 @@ tm_stm::do_update_tx(tm_transaction tx, model::term_id term) {
     co_return tx_opt.value();
 }
 
-ss::future<checked<tm_transaction, tm_stm::op_status>>
-tm_stm::mark_tx_preparing(
-  model::term_id expected_term, kafka::transactional_id tx_id) {
-    auto tx_opt = _cache->find_mem(tx_id);
-    if (!tx_opt) {
-        co_return tm_stm::op_status::not_found;
-    }
-    auto tx = tx_opt.value();
-    if (tx.status != tm_transaction::tx_status::ongoing) {
-        co_return tm_stm::op_status::conflict;
-    }
-    tx.status = cluster::tm_transaction::tx_status::preparing;
-    tx.last_update_ts = clock_type::now();
-    co_return co_await update_tx(std::move(tx), expected_term);
-}
-
 ss::future<checked<tm_transaction, tm_stm::op_status>> tm_stm::mark_tx_aborting(
   model::term_id expected_term, kafka::transactional_id tx_id) {
     auto ptx = co_await get_tx(tx_id);

@@ -16,7 +16,6 @@ using cluster::random_tx_generator;
     o.cleanup_policy_bitflags = model::cleanup_policy_bitflags::compaction;    \
     start_raft(o);                                                             \
     ss::sharded<cluster::tx_gateway_frontend> tx_gateway_frontend;             \
-    ss::sharded<features::feature_table> feature_table;                        \
     config::config_store store;                                                \
     config::bounded_property<uint64_t> max_saved_pids_count(                   \
       store,                                                                   \
@@ -26,19 +25,17 @@ using cluster::random_tx_generator;
        .visibility = config::visibility::user},                                \
       std::numeric_limits<uint64_t>::max(),                                    \
       {.min = 1});                                                             \
-    feature_table.start().get0();                                              \
     auto stm = ss::make_shared<cluster::rm_stm>(                               \
       test_logger,                                                             \
       _raft.get(),                                                             \
       tx_gateway_frontend,                                                     \
-      feature_table,                                                           \
+      _feature_table,                                                          \
       max_saved_pids_count.bind());                                            \
     stm->testing_only_disable_auto_abort();                                    \
     stm->start().get0();                                                       \
     auto stop = ss::defer([&] {                                                \
         _data_dir = "test_dir_" + random_generators::gen_alphanum_string(6);   \
         stm->stop().get0();                                                    \
-        feature_table.stop().get0();                                           \
         stop_all();                                                            \
     });                                                                        \
     wait_for_confirmed_leader();                                               \

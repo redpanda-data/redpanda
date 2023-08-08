@@ -3698,6 +3698,7 @@ class RedpandaService(RedpandaServiceBase):
         # can be set to None for no timeout
 
         def all_partitions_uploaded_manifest():
+            manifest_not_uploaded = []
             for p in self.partitions():
                 try:
                     status = self._admin.get_partition_cloud_storage_status(
@@ -3717,8 +3718,13 @@ class RedpandaService(RedpandaServiceBase):
                     "metadata_update_pending"] is False or status.get(
                         'ms_since_last_manifest_upload', None) is not None
                 if remote_write and not has_uploaded_manifest:
-                    self.logger.info(f"Partition {p} hasn't yet uploaded")
-                    return False
+                    manifest_not_uploaded.append(p)
+
+            if len(manifest_not_uploaded) != 0:
+                self.logger.info(
+                    f"Partitions that haven't yet uploaded: {manifest_not_uploaded}"
+                )
+                return False
 
             return True
 
@@ -3726,8 +3732,11 @@ class RedpandaService(RedpandaServiceBase):
         # check tiered storage status to wait for uploads to complete.
         if self._started:
             # Aggressive retry because almost always this should already be done
+            # Each 1000 partititions add 30s of timeout
+            n_partitions = len(self.partitions())
+            timeout = 30 if n_partitions < 1000 else (n_partitions / 1000) * 30
             wait_until(all_partitions_uploaded_manifest,
-                       timeout_sec=30,
+                       timeout_sec=30 + timeout,
                        backoff_sec=1)
 
         # We stop because the scrubbing routine would otherwise interpret

@@ -94,18 +94,6 @@ void rjson_serialize(
 }
 
 void rjson_serialize(
-  json::Writer<json::StringBuffer>& w, const model::broker_endpoint& ep) {
-    w.StartObject();
-    w.Key("name");
-    w.String(ep.name);
-    w.Key("address");
-    w.String(ep.address.host());
-    w.Key("port");
-    w.Uint(ep.address.port());
-    w.EndObject();
-}
-
-void rjson_serialize(
   json::Writer<json::StringBuffer>& w, const std::filesystem::path& path) {
     rjson_serialize(w, std::string_view{path.native()});
 }

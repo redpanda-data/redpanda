@@ -150,6 +150,8 @@ public:
         }
     };
 
+    // note: support for tx_snapshot::version[0-2] was dropped
+    // in v23.3.x
     struct tx_snapshot {
         static constexpr uint8_t version = 4;
 
@@ -212,12 +214,6 @@ public:
       model::tx_seq,
       std::chrono::milliseconds,
       model::partition_id);
-    ss::future<tx_errc> prepare_tx(
-      model::term_id,
-      model::partition_id,
-      model::producer_identity,
-      model::tx_seq,
-      model::timeout_clock::duration);
     ss::future<tx_errc> commit_tx(
       model::producer_identity, model::tx_seq, model::timeout_clock::duration);
     ss::future<tx_errc> abort_tx(
@@ -335,86 +331,6 @@ public:
         }
     };
 
-    struct seq_entry_v0 {
-        model::producer_identity pid;
-        int32_t seq;
-        model::timestamp::type last_write_timestamp;
-
-        bool operator==(const seq_entry_v0&) const = default;
-    };
-
-    struct tx_snapshot_v0 {
-        static constexpr uint8_t version = 0;
-
-        fragmented_vector<model::producer_identity> fenced;
-        fragmented_vector<rm_stm::tx_range> ongoing;
-        fragmented_vector<rm_stm::prepare_marker> prepared;
-        fragmented_vector<rm_stm::tx_range> aborted;
-        fragmented_vector<rm_stm::abort_index> abort_indexes;
-        model::offset offset;
-        fragmented_vector<seq_entry_v0> seqs;
-
-        bool operator==(const tx_snapshot_v0&) const = default;
-    };
-
-    struct seq_cache_entry_v1 {
-        int32_t seq{-1};
-        model::offset offset;
-
-        bool operator==(const seq_cache_entry_v1&) const = default;
-    };
-
-    struct seq_entry_v1 {
-        model::producer_identity pid;
-        int32_t seq{-1};
-        model::offset last_offset{-1};
-        ss::circular_buffer<seq_cache_entry_v1> seq_cache;
-        model::timestamp::type last_write_timestamp;
-
-        bool operator==(const seq_entry_v1& other) const {
-            if (this == &other) {
-                return true;
-            }
-
-            return pid == other.pid && seq == other.seq
-                   && last_offset == other.last_offset
-                   && last_write_timestamp == other.last_write_timestamp
-                   && std::equal(
-                     seq_cache.begin(),
-                     seq_cache.end(),
-                     other.seq_cache.begin(),
-                     other.seq_cache.end());
-        };
-    };
-
-    struct tx_snapshot_v1 {
-        static constexpr uint8_t version = 1;
-
-        fragmented_vector<model::producer_identity> fenced;
-        fragmented_vector<rm_stm::tx_range> ongoing;
-        fragmented_vector<rm_stm::prepare_marker> prepared;
-        fragmented_vector<rm_stm::tx_range> aborted;
-        fragmented_vector<rm_stm::abort_index> abort_indexes;
-        model::offset offset;
-        fragmented_vector<seq_entry_v1> seqs;
-
-        bool operator==(const tx_snapshot_v1&) const = default;
-    };
-
-    struct tx_snapshot_v2 {
-        static constexpr uint8_t version = 2;
-
-        fragmented_vector<model::producer_identity> fenced;
-        fragmented_vector<rm_stm::tx_range> ongoing;
-        fragmented_vector<rm_stm::prepare_marker> prepared;
-        fragmented_vector<rm_stm::tx_range> aborted;
-        fragmented_vector<rm_stm::abort_index> abort_indexes;
-        model::offset offset;
-        fragmented_vector<rm_stm::seq_entry> seqs;
-
-        bool operator==(const tx_snapshot_v2&) const = default;
-    };
-
     struct tx_snapshot_v3 {
         static constexpr uint8_t version = 3;
 
@@ -466,12 +382,6 @@ private:
       model::tx_seq,
       std::chrono::milliseconds,
       model::partition_id);
-    ss::future<tx_errc> do_prepare_tx(
-      model::term_id,
-      model::partition_id,
-      model::producer_identity,
-      model::tx_seq,
-      model::timeout_clock::duration);
     ss::future<tx_errc> do_commit_tx(
       model::producer_identity, model::tx_seq, model::timeout_clock::duration);
     ss::future<tx_errc> do_abort_tx(
@@ -905,8 +815,6 @@ private:
     kafka::offset from_log_offset(model::offset old_offset) const;
     model::offset to_log_offset(kafka::offset new_offset) const;
 
-    transaction_info::status_t
-    get_tx_status(model::producer_identity pid) const;
     std::optional<expiration_info>
     get_expiration_info(model::producer_identity pid) const;
     std::optional<int32_t> get_seq_number(model::producer_identity pid) const;
@@ -919,11 +827,6 @@ private:
     bool is_transaction_partitioning() const {
         return _feature_table.local().is_active(
           features::feature::transaction_partitioning);
-    }
-
-    bool is_transaction_ga() const {
-        return _feature_table.local().is_active(
-          features::feature::transaction_ga);
     }
 
     friend std::ostream& operator<<(std::ostream&, const mem_state&);
@@ -988,8 +891,6 @@ struct fence_batch_data {
     std::optional<std::chrono::milliseconds> transaction_timeout_ms;
     model::partition_id tm;
 };
-
-model::record_batch make_fence_batch_v0(model::producer_identity pid);
 
 model::record_batch make_fence_batch_v1(
   model::producer_identity pid,

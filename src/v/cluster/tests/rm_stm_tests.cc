@@ -11,7 +11,6 @@
 #include "cluster/rm_stm.h"
 #include "cluster/tests/randoms.h"
 #include "cluster/tx_snapshot_adl_utils.h"
-#include "features/feature_table.h"
 #include "finjector/hbadger.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
@@ -114,21 +113,16 @@ FIXTURE_TEST(test_tx_happy_tx, mux_state_machine_fixture) {
     start_raft();
 
     ss::sharded<cluster::tx_gateway_frontend> tx_gateway_frontend;
-    ss::sharded<features::feature_table> feature_table;
-    feature_table.start().get0();
     cluster::rm_stm stm(
       logger,
       _raft.get(),
       tx_gateway_frontend,
-      feature_table,
+      _feature_table,
       get_config_bound());
     stm.testing_only_disable_auto_abort();
 
     stm.start().get0();
-    auto stop = ss::defer([&stm, &feature_table] {
-        stm.stop().get0();
-        feature_table.stop().get0();
-    });
+    auto stop = ss::defer([&stm] { stm.stop().get0(); });
     auto tx_seq = model::tx_seq(0);
 
     wait_for_confirmed_leader();
@@ -182,12 +176,7 @@ FIXTURE_TEST(test_tx_happy_tx, mux_state_machine_fixture) {
     aborted_txs = stm.aborted_transactions(min_offset, max_offset).get0();
     BOOST_REQUIRE_EQUAL(aborted_txs.size(), 0);
 
-    auto term = term_op.value();
-    auto op = stm
-                .prepare_tx(term, model::partition_id(0), pid2, tx_seq, 2'000ms)
-                .get0();
-    BOOST_REQUIRE_EQUAL(op, cluster::tx_errc::none);
-    op = stm.commit_tx(pid2, tx_seq, 2'000ms).get0();
+    auto op = stm.commit_tx(pid2, tx_seq, 2'000ms).get0();
     BOOST_REQUIRE_EQUAL(op, cluster::tx_errc::none);
     aborted_txs = stm.aborted_transactions(min_offset, max_offset).get0();
     BOOST_REQUIRE_EQUAL(aborted_txs.size(), 0);
@@ -205,21 +194,16 @@ FIXTURE_TEST(test_tx_aborted_tx_1, mux_state_machine_fixture) {
     start_raft();
 
     ss::sharded<cluster::tx_gateway_frontend> tx_gateway_frontend;
-    ss::sharded<features::feature_table> feature_table;
-    feature_table.start().get0();
     cluster::rm_stm stm(
       logger,
       _raft.get(),
       tx_gateway_frontend,
-      feature_table,
+      _feature_table,
       get_config_bound());
     stm.testing_only_disable_auto_abort();
 
     stm.start().get0();
-    auto stop = ss::defer([&stm, &feature_table] {
-        stm.stop().get0();
-        feature_table.stop().get0();
-    });
+    auto stop = ss::defer([&stm] { stm.stop().get0(); });
     auto tx_seq = model::tx_seq(0);
 
     wait_for_confirmed_leader();
@@ -300,21 +284,16 @@ FIXTURE_TEST(test_tx_aborted_tx_2, mux_state_machine_fixture) {
     start_raft();
 
     ss::sharded<cluster::tx_gateway_frontend> tx_gateway_frontend;
-    ss::sharded<features::feature_table> feature_table;
-    feature_table.start().get0();
     cluster::rm_stm stm(
       logger,
       _raft.get(),
       tx_gateway_frontend,
-      feature_table,
+      _feature_table,
       get_config_bound());
     stm.testing_only_disable_auto_abort();
 
     stm.start().get0();
-    auto stop = ss::defer([&stm, &feature_table] {
-        stm.stop().get0();
-        feature_table.stop().get0();
-    });
+    auto stop = ss::defer([&stm] { stm.stop().get0(); });
     auto tx_seq = model::tx_seq(0);
 
     wait_for_confirmed_leader();
@@ -367,13 +346,7 @@ FIXTURE_TEST(test_tx_aborted_tx_2, mux_state_machine_fixture) {
     aborted_txs = stm.aborted_transactions(min_offset, max_offset).get0();
     BOOST_REQUIRE_EQUAL(aborted_txs.size(), 0);
 
-    auto term = term_op.value();
-    auto op = stm
-                .prepare_tx(term, model::partition_id(0), pid2, tx_seq, 2'000ms)
-                .get0();
-    BOOST_REQUIRE_EQUAL(op, cluster::tx_errc::none);
-
-    op = stm.abort_tx(pid2, tx_seq, 2'000ms).get0();
+    auto op = stm.abort_tx(pid2, tx_seq, 2'000ms).get0();
     BOOST_REQUIRE_EQUAL(op, cluster::tx_errc::none);
     BOOST_REQUIRE(stm
                     .wait_no_throw(
@@ -400,21 +373,16 @@ FIXTURE_TEST(test_tx_unknown_produce, mux_state_machine_fixture) {
     start_raft();
 
     ss::sharded<cluster::tx_gateway_frontend> tx_gateway_frontend;
-    ss::sharded<features::feature_table> feature_table;
-    feature_table.start().get0();
     cluster::rm_stm stm(
       logger,
       _raft.get(),
       tx_gateway_frontend,
-      feature_table,
+      _feature_table,
       get_config_bound());
     stm.testing_only_disable_auto_abort();
 
     stm.start().get0();
-    auto stop = ss::defer([&stm, &feature_table] {
-        stm.stop().get0();
-        feature_table.stop().get0();
-    });
+    auto stop = ss::defer([&stm] { stm.stop().get0(); });
 
     wait_for_confirmed_leader();
     wait_for_meta_initialized();
@@ -446,21 +414,16 @@ FIXTURE_TEST(test_tx_begin_fences_produce, mux_state_machine_fixture) {
     start_raft();
 
     ss::sharded<cluster::tx_gateway_frontend> tx_gateway_frontend;
-    ss::sharded<features::feature_table> feature_table;
-    feature_table.start().get0();
     cluster::rm_stm stm(
       logger,
       _raft.get(),
       tx_gateway_frontend,
-      feature_table,
+      _feature_table,
       get_config_bound());
     stm.testing_only_disable_auto_abort();
 
     stm.start().get0();
-    auto stop = ss::defer([&stm, &feature_table] {
-        stm.stop().get0();
-        feature_table.stop().get0();
-    });
+    auto stop = ss::defer([&stm] { stm.stop().get0(); });
     auto tx_seq = model::tx_seq(0);
 
     wait_for_confirmed_leader();
@@ -516,21 +479,16 @@ FIXTURE_TEST(test_tx_post_aborted_produce, mux_state_machine_fixture) {
     start_raft();
 
     ss::sharded<cluster::tx_gateway_frontend> tx_gateway_frontend;
-    ss::sharded<features::feature_table> feature_table;
-    feature_table.start().get0();
     cluster::rm_stm stm(
       logger,
       _raft.get(),
       tx_gateway_frontend,
-      feature_table,
+      _feature_table,
       get_config_bound());
     stm.testing_only_disable_auto_abort();
 
     stm.start().get0();
-    auto stop = ss::defer([&stm, &feature_table] {
-        stm.stop().get0();
-        feature_table.stop().get0();
-    });
+    auto stop = ss::defer([&stm] { stm.stop().get0(); });
     auto tx_seq = model::tx_seq(0);
 
     wait_for_confirmed_leader();
@@ -590,22 +548,17 @@ FIXTURE_TEST(test_aborted_transactions, mux_state_machine_fixture) {
     start_raft();
 
     ss::sharded<cluster::tx_gateway_frontend> tx_gateway_frontend;
-    ss::sharded<features::feature_table> feature_table;
-    feature_table.start().get0();
     cluster::rm_stm stm(
       logger,
       _raft.get(),
       tx_gateway_frontend,
-      feature_table,
+      _feature_table,
       get_config_bound());
     stm.testing_only_disable_auto_abort();
 
     stm.start().get0();
 
-    auto stop = ss::defer([&stm, &feature_table] {
-        stm.stop().get0();
-        feature_table.stop().get0();
-    });
+    auto stop = ss::defer([&stm] { stm.stop().get0(); });
     wait_for_confirmed_leader();
     wait_for_meta_initialized();
 
@@ -619,8 +572,6 @@ FIXTURE_TEST(test_aborted_transactions, mux_state_machine_fixture) {
       std::numeric_limits<int32_t>::max());
     const auto opts = raft::replicate_options(
       raft::consistency_level::quorum_ack);
-    const auto term = _raft->term();
-    const auto partition = model::partition_id(0);
     size_t segment_count = 1;
 
     auto& segments = disk_log->segments();
@@ -661,9 +612,6 @@ FIXTURE_TEST(test_aborted_transactions, mux_state_machine_fixture) {
     };
 
     auto commit_tx = [&](auto pid) {
-        BOOST_REQUIRE_EQUAL(
-          stm.prepare_tx(term, partition, pid, tx_seq, timeout).get0(),
-          cluster::tx_errc::none);
         BOOST_REQUIRE_EQUAL(
           stm.commit_tx(pid, tx_seq, timeout).get0(), cluster::tx_errc::none);
     };
@@ -878,49 +826,6 @@ SEASTAR_THREAD_TEST_CASE(async_adl_snapshot_validation) {
 
     sync_ser_verify(make_tx_snapshot());
     async_ser_verify(make_tx_snapshot());
-
-    auto make_tx_snapshot_v0 = []() {
-        return reflection::tx_snapshot_v0{
-          .fenced = tests::random_frag_vector(model::random_producer_identity),
-          .ongoing = tests::random_frag_vector(model::random_tx_range),
-          .prepared = tests::random_frag_vector(cluster::random_prepare_marker),
-          .aborted = tests::random_frag_vector(model::random_tx_range),
-          .abort_indexes = tests::random_frag_vector(
-            cluster::random_abort_index),
-          .offset = model::random_offset(),
-          .seqs = tests::random_frag_vector(cluster::random_seq_entry_v0)};
-    };
-
-    sync_ser_verify(make_tx_snapshot_v0());
-    async_ser_verify(make_tx_snapshot_v0());
-
-    auto make_tx_snapshot_v1 = []() {
-        return reflection::tx_snapshot_v1{
-          .fenced = tests::random_frag_vector(model::random_producer_identity),
-          .ongoing = tests::random_frag_vector(model::random_tx_range),
-          .prepared = tests::random_frag_vector(cluster::random_prepare_marker),
-          .aborted = tests::random_frag_vector(model::random_tx_range),
-          .offset = model::random_offset(),
-          .seqs = tests::random_frag_vector(cluster::random_seq_entry_v1)};
-    };
-
-    sync_ser_verify(make_tx_snapshot_v1());
-    async_ser_verify(make_tx_snapshot_v1());
-
-    auto make_tx_snapshot_v2 = []() {
-        return reflection::tx_snapshot_v2{
-          .fenced = tests::random_frag_vector(model::random_producer_identity),
-          .ongoing = tests::random_frag_vector(model::random_tx_range),
-          .prepared = tests::random_frag_vector(cluster::random_prepare_marker),
-          .aborted = tests::random_frag_vector(model::random_tx_range),
-          .abort_indexes = tests::random_frag_vector(
-            cluster::random_abort_index),
-          .offset = model::random_offset(),
-          .seqs = tests::random_frag_vector(cluster::random_seq_entry)};
-    };
-
-    sync_ser_verify(make_tx_snapshot_v2());
-    async_ser_verify(make_tx_snapshot_v2());
 
     auto make_tx_snapshot_v3 = []() {
         return reflection::tx_snapshot_v3{

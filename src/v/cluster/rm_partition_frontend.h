@@ -39,13 +39,6 @@ public:
       std::chrono::milliseconds,
       model::timeout_clock::duration,
       model::partition_id);
-    ss::future<prepare_tx_reply> prepare_tx(
-      model::ntp,
-      model::term_id,
-      model::partition_id,
-      model::producer_identity,
-      model::tx_seq,
-      model::timeout_clock::duration);
     ss::future<commit_tx_reply> commit_tx(
       model::ntp,
       model::producer_identity,
@@ -95,28 +88,6 @@ private:
       model::tx_seq,
       std::chrono::milliseconds,
       model::partition_id);
-    ss::future<prepare_tx_reply> dispatch_prepare_tx(
-      model::node_id,
-      model::ntp,
-      model::term_id,
-      model::partition_id,
-      model::producer_identity,
-      model::tx_seq,
-      model::timeout_clock::duration);
-    ss::future<prepare_tx_reply> prepare_tx_locally(
-      model::ntp,
-      model::term_id,
-      model::partition_id,
-      model::producer_identity,
-      model::tx_seq,
-      model::timeout_clock::duration);
-    ss::future<prepare_tx_reply> do_prepare_tx(
-      model::ntp,
-      model::term_id,
-      model::partition_id,
-      model::producer_identity,
-      model::tx_seq,
-      model::timeout_clock::duration);
     ss::future<commit_tx_reply> dispatch_commit_tx(
       model::node_id,
       model::ntp,
