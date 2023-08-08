@@ -78,6 +78,7 @@ public:
 
         static constexpr int64_t max_size_for_rp_env = 80;
         ss::sstring redpanda_environment;
+        ss::sstring id_hash;
     };
     static constexpr ss::shard_id shard = 0;
 
