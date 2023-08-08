@@ -13,9 +13,9 @@ please keep this up to date with every new library use.
 | base64          | BSD 2                              |
 | boost libraries | Boost Software License Version 1.0 |
 | c-ares          | MIT                                |
+| CRoaring        | Apache License 2                   |
 | clang           | Apache License 2                   |
 | crc32c          | BSD 3                              |
-| CRoaring        | Apache License 2                   |
 | cryptopp        | Public Domain                      |
 | DPDK            | BSD                                |
 | fmt             | BSD                                |
@@ -33,17 +33,17 @@ please keep this up to date with every new library use.
 | nettle          | LGPL v3                            |
 | protobuf        | Apache License 2                   |
 | rapidjson       | MIT                                |
+| re2             | BSD 3-Clause                       |
 | sasl2           | https://github.com/cyrusimap/cyrus-sasl/blob/master/COPYING |
 | seastar         | Apache License 2                   |
 | snappy          | https://github.com/google/snappy/blob/master/COPYING |
-| v8              | https://github.com/v8/v8/blob/master/LICENSE |
-| xz:liblzma      | Public Domain                      |
+| WasmEdge        | Apache License 2                   |
 | xml2            | MIT                                |
 | xxhash          | BSD                                |
+| xz:liblzma      | Public Domain                      |
 | yaml-cpp        | MIT                                |
 | zlib            | Zlib                               |
 | zstd            | BSD                                |
-| re2             | BSD 3-Clause                       |
  
 # Go deps _used_ in production in RPK (exclude all test dependencies)
 
