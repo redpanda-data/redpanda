@@ -20,6 +20,8 @@
 #include "security/authorizer.h"
 #include "security/mtls.h"
 #include "security/sasl_authentication.h"
+#include "ssx/abort_source.h"
+#include "ssx/future-util.h"
 #include "ssx/semaphore.h"
 #include "utils/log_hist.h"
 #include "utils/named_type.h"
@@ -32,6 +34,7 @@
 #include <absl/container/flat_hash_map.h>
 
 #include <memory>
+#include <system_error>
 #include <vector>
 
 namespace kafka {
@@ -126,8 +129,36 @@ public:
     connection_context& operator=(const connection_context&) = delete;
     connection_context& operator=(connection_context&&) = delete;
 
+    ss::future<> start() {
+        co_await _as.start(_server.abort_source());
+        if (conn) {
+            ssx::background
+              = conn->wait_for_input_shutdown()
+                  .finally([this]() {
+                      vlog(
+                        klog.info,
+                        "Connection input_shutdown; aborting operations");
+                      return _as.request_abort_ex(std::system_error(
+                        std::make_error_code(std::errc::connection_aborted)));
+                  })
+                  .finally([this]() { _wait_input_shutdown.set_value(); });
+        } else {
+            _wait_input_shutdown.set_value();
+        }
+    }
+
+    ss::future<> stop() {
+        if (conn) {
+            conn->shutdown_input();
+        }
+        co_await _wait_input_shutdown.get_future();
+        co_await _as.stop();
+    }
+
     /// The instance of \ref kafka::server on the shard serving the connection
     server& server() { return _server; }
+    ssx::sharded_abort_source& abort_source() { return _as; }
+    bool abort_requested() const { return _as.abort_requested(); }
     const ss::sstring& listener() const { return conn->name(); }
     std::optional<security::sasl_server>& sasl() { return _sasl; }
 
@@ -349,6 +380,7 @@ private:
     sequence_id _next_response;
     sequence_id _seq_idx;
     map_t _responses;
+    ssx::sharded_abort_source _as;
     std::optional<security::sasl_server> _sasl;
     const ss::net::inet_address _client_addr;
     const bool _enable_authorizer;
@@ -358,6 +390,7 @@ private:
     config::conversion_binding<std::vector<bool>, std::vector<ss::sstring>>
       _kafka_throughput_controlled_api_keys;
     std::unique_ptr<snc_quota_context> _snc_quota_context;
+    ss::promise<> _wait_input_shutdown;
 };
 
 } // namespace kafka

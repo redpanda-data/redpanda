@@ -56,6 +56,7 @@ connection_context::connection_context(
     kafka_throughput_controlled_api_keys) noexcept
   : _server(s)
   , conn(conn)
+  , _as()
   , _sasl(std::move(sasl))
   // tests may build a context without a live connection
   , _client_addr(conn ? conn->addr.addr() : ss::net::inet_address{})
@@ -219,7 +220,7 @@ ss::future<> connection_context::handle_auth_v0(const size_t size) {
 }
 
 bool connection_context::is_finished_parsing() const {
-    return conn->input().eof() || _server.abort_requested();
+    return conn->input().eof() || abort_requested();
 }
 
 connection_context::delay_t
@@ -294,7 +295,7 @@ ss::future<session_resources> connection_context::throttle_request(
     auto tracker = std::make_unique<request_tracker>(_server.probe(), h_probe);
     auto fut = ss::now();
     if (delay.enforce > delay_t::clock::duration::zero()) {
-        fut = ss::sleep_abortable(delay.enforce, _server.abort_source());
+        fut = ss::sleep_abortable(delay.enforce, abort_source().local());
     }
     auto track = track_latency(hdr.key);
     return fut
@@ -357,7 +358,7 @@ connection_context::reserve_request_units(api_key key, size_t size) {
 ss::future<>
 connection_context::dispatch_method_once(request_header hdr, size_t size) {
     auto sres_in = co_await throttle_request(hdr, size);
-    if (_server.abort_requested()) {
+    if (abort_requested()) {
         // protect against shutdown behavior
         co_return;
     }
@@ -381,7 +382,7 @@ connection_context::dispatch_method_once(request_header hdr, size_t size) {
     auto remaining = size - request_header_size - hdr.client_id_buffer.size()
                      - hdr.tags_size_bytes;
     auto buf = co_await read_iobuf_exactly(conn->input(), remaining);
-    if (_server.abort_requested()) {
+    if (abort_requested()) {
         // _server._cntrl etc might not be alive
         co_return;
     }

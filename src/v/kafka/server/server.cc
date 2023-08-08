@@ -289,10 +289,18 @@ ss::future<> server::apply(ss::lw_shared_ptr<net::connection> conn) {
         .kafka_throughput_controlled_api_keys.bind<std::vector<bool>>(
           &convert_api_names_to_key_bitmap));
 
+    std::exception_ptr eptr;
     try {
+        co_await ctx->start();
         co_await ctx->process();
     } catch (...) {
-        auto eptr = std::current_exception();
+        eptr = std::current_exception();
+    }
+    if (!eptr) {
+        co_return co_await ctx->stop();
+    } else {
+        co_await ctx->abort_source().request_abort_ex(eptr);
+        co_await ctx->stop();
         auto disconnected = net::is_disconnect_exception(eptr);
         if (authn_method == config::broker_authn_method::sasl) {
             /*

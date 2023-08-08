@@ -17,6 +17,7 @@
 #include "model/fundamental.h"
 #include "model/ktp.h"
 #include "model/metadata.h"
+#include "ssx/abort_source.h"
 #include "utils/intrusive_list_helpers.h"
 #include "utils/log_hist.h"
 
@@ -109,7 +110,8 @@ struct op_context {
     bool should_stop_fetch() const {
         return !request.debounce_delay() || over_min_bytes()
                || is_empty_request() || contains_preferred_replica
-               || response_error || deadline <= model::timeout_clock::now();
+               || response_error || rctx.abort_requested()
+               || deadline <= model::timeout_clock::now();
     }
 
     bool over_min_bytes() const {
@@ -166,11 +168,13 @@ struct fetch_config {
     bool skip_read{false};
     bool read_from_follower{false};
     std::optional<model::rack_id> consumer_rack_id;
+    std::optional<std::reference_wrapper<ssx::sharded_abort_source>>
+      abort_source;
 
     friend std::ostream& operator<<(std::ostream& o, const fetch_config& cfg) {
         fmt::print(
           o,
-          R"({{"start_offset": {}, "max_offset": {}, "isolation_lvl": {}, "max_bytes": {}, "strict_max_bytes": {}, "skip_read": {}, "current_leader_epoch:" {}, "follower_read:" {}, "consumer_rack_id": {}}})",
+          R"({{"start_offset": {}, "max_offset": {}, "isolation_lvl": {}, "max_bytes": {}, "strict_max_bytes": {}, "skip_read": {}, "current_leader_epoch:" {}, "follower_read:" {}, "consumer_rack_id": {}, "abortable": {}, "aborted": {}}})",
           cfg.start_offset,
           cfg.max_offset,
           cfg.isolation_level,
@@ -179,7 +183,11 @@ struct fetch_config {
           cfg.skip_read,
           cfg.current_leader_epoch,
           cfg.read_from_follower,
-          cfg.consumer_rack_id);
+          cfg.consumer_rack_id,
+          cfg.abort_source.has_value(),
+          cfg.abort_source.has_value()
+            ? cfg.abort_source.value().get().abort_requested()
+            : false);
         return o;
     }
 };
