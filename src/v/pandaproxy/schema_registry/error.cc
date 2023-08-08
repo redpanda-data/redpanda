@@ -50,6 +50,9 @@ struct error_category final : std::error_category {
                    "permanently";
         case error_code::subject_version_not_deleted:
             return "Version not deleted before being permanently deleted";
+        case error_code::compatibility_not_found:
+            return "Subject does not have subject-level compatibility "
+                   "configured";
         case error_code::subject_version_operaton_not_permitted:
             return "Overwrite new schema is not permitted.";
         case error_code::subject_version_has_references:
@@ -88,6 +91,8 @@ struct error_category final : std::error_category {
             return reply_error_code::subject_version_soft_deleted; // 40406
         case error_code::subject_version_not_deleted:
             return reply_error_code::subject_version_not_deleted; // 40407
+        case error_code::compatibility_not_found:
+            return reply_error_code::compatibility_not_found; // 40408
         case error_code::subject_schema_invalid:
             return reply_error_code::internal_server_error; // 500
         case error_code::write_collision:

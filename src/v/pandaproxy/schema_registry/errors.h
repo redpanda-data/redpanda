@@ -150,4 +150,12 @@ inline error_info has_references(const subject& sub, schema_version ver) {
         ver())};
 }
 
+inline error_info compatibility_not_found(const subject& sub) {
+    return error_info{
+      error_code::compatibility_not_found,
+      fmt::format(
+        "Subject '{}' does not have subject-level compatibility configured",
+        sub())};
+}
+
 } // namespace pandaproxy::schema_registry
