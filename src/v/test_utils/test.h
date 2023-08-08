@@ -16,11 +16,22 @@
 
 #include <gtest/gtest.h>
 
-class seastar_test_mixin {
+class seastar_test : public ::testing::Test {
 public:
-    static void init_seastar_test_runner();
+    virtual void SetUpAsync() {}
+    virtual void TearDownAsync() {}
+
+protected:
     static void run(std::function<seastar::future<>()> task);
     static void run_async(std::function<void()> task);
+
+private:
+    void SetUp() override {
+        run_async([this] { SetUpAsync(); });
+    }
+    void TearDown() override {
+        run_async([this] { TearDownAsync(); });
+    }
 };
 
 #define GTEST_TEST_SEASTAR_(                                                   \
@@ -30,9 +41,10 @@ public:
       "test_suite_name must not be empty");                                    \
     static_assert(                                                             \
       sizeof(GTEST_STRINGIFY_(test_name)) > 1, "test_name must not be empty"); \
+    static_assert(                                                             \
+      std::is_base_of_v<seastar_test, parent_class>, "wrong base");            \
     class GTEST_TEST_CLASS_NAME_(test_suite_name, test_name)                   \
-      : public seastar_test_mixin                                              \
-      , public parent_class {                                                  \
+      : public parent_class {                                                  \
     public:                                                                    \
         GTEST_TEST_CLASS_NAME_(test_suite_name, test_name)() = default;        \
         ~GTEST_TEST_CLASS_NAME_(test_suite_name, test_name)() override         \
@@ -79,7 +91,7 @@ public:
     GTEST_TEST_SEASTAR_(                                                       \
       test_suite_name,                                                         \
       test_name,                                                               \
-      ::testing::Test,                                                         \
+      seastar_test,                                                            \
       ::testing::internal::GetTestTypeId(),                                    \
       run_async,                                                               \
       void)
@@ -88,7 +100,7 @@ public:
     GTEST_TEST_SEASTAR_(                                                       \
       test_suite_name,                                                         \
       test_name,                                                               \
-      ::testing::Test,                                                         \
+      seastar_test,                                                            \
       ::testing::internal::GetTestTypeId(),                                    \
       run,                                                                     \
       seastar::future<>)
@@ -112,9 +124,10 @@ public:
       seastar::future<>)
 
 #define TEST_P_SEASTAR_(test_suite_name, test_name, run, run_type)             \
+    static_assert(                                                             \
+      std::is_base_of_v<seastar_test, test_suite_name>, "wrong base");         \
     class GTEST_TEST_CLASS_NAME_(test_suite_name, test_name)                   \
-      : public seastar_test_mixin                                              \
-      , public test_suite_name {                                               \
+      : public test_suite_name {                                               \
     public:                                                                    \
         GTEST_TEST_CLASS_NAME_(test_suite_name, test_name)() {}                \
         void TestBody() override {                                             \

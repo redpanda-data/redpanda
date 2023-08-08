@@ -17,21 +17,21 @@ char** g_argv;
 
 // seastar runner is a singleton that needs to be initialized once
 std::once_flag seastar_runner_init_flag;
-} // namespace
 
-void seastar_test_mixin::init_seastar_test_runner() {
+void init_seastar_test_runner() {
     std::call_once(seastar_runner_init_flag, [] {
         seastar::testing::global_test_runner().start(g_argc, g_argv);
     });
 }
+} // namespace
 
-void seastar_test_mixin::run(std::function<seastar::future<>()> task) {
+void seastar_test::run(std::function<seastar::future<>()> task) {
     // first test to need seastar will initialize it
     init_seastar_test_runner();
     seastar::testing::global_test_runner().run_sync(std::move(task));
 }
 
-void seastar_test_mixin::run_async(std::function<void()> task) {
+void seastar_test::run_async(std::function<void()> task) {
     run([task = std::move(task)]() mutable {
         return seastar::async([task = std::move(task)] { task(); });
     });

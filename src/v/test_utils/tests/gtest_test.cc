@@ -27,8 +27,27 @@ TEST_CORO(SeastarTest, SleepCoro) {
 /*
  * TEST_F_(ASYNC|CORO)() is the Seastar-enabled equivalent of TEST_F()
  */
-struct MySeastarFixture : public ::testing::Test {
+struct MySeastarFixture : public seastar_test {
     std::string_view message() const { return "hello"; }
+
+    ~MySeastarFixture() override {
+        assert(setup_called);
+        assert(teardown_called);
+    }
+
+    void SetUpAsync() override {
+        seastar::sleep(std::chrono::milliseconds(100)).get();
+        setup_called = true;
+    }
+
+    void TearDownAsync() override {
+        seastar::sleep(std::chrono::milliseconds(100)).get();
+        teardown_called = true;
+    }
+
+private:
+    bool setup_called{false};
+    bool teardown_called{false};
 };
 
 TEST_F_ASYNC(MySeastarFixture, Sleep) {
@@ -44,7 +63,9 @@ TEST_F_CORO(MySeastarFixture, SleepCoro) {
 /*
  * TEST_P_(ASYNC|CORO)() is the Seastar-enabled equivalent of TEST_P()
  */
-class MySeastarParamFixture : public ::testing::TestWithParam<int> {};
+class MySeastarParamFixture
+  : public MySeastarFixture
+  , public ::testing::WithParamInterface<int> {};
 
 TEST_P_ASYNC(MySeastarParamFixture, Sleep) {
     seastar::sleep(std::chrono::milliseconds(GetParam() * 10)).get();
