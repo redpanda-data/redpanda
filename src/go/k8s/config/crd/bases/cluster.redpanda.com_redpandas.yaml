@@ -275,12 +275,7 @@ spec:
                                       type: boolean
                                     requireClientAuth:
                                       type: boolean
-                                  required:
-                                  - requireClientAuth
                                   type: object
-                              required:
-                              - advertisedPorts
-                              - port
                               type: object
                             type: object
                           port:
@@ -295,12 +290,7 @@ spec:
                                 type: boolean
                               requireClientAuth:
                                 type: boolean
-                            required:
-                            - requireClientAuth
                             type: object
-                        required:
-                        - external
-                        - port
                         type: object
                       http:
                         description: HTTP is a top level field of the values file`
@@ -328,12 +318,7 @@ spec:
                                       type: boolean
                                     requireClientAuth:
                                       type: boolean
-                                  required:
-                                  - requireClientAuth
                                   type: object
-                              required:
-                              - advertisedPorts
-                              - port
                               type: object
                             type: object
                           kafkaEndpoint:
@@ -350,14 +335,7 @@ spec:
                                 type: boolean
                               requireClientAuth:
                                 type: boolean
-                            required:
-                            - requireClientAuth
                             type: object
-                        required:
-                        - enabled
-                        - external
-                        - kafkaEndpoint
-                        - port
                         type: object
                       kafka:
                         description: Kafka is a top level field of the values file
@@ -383,12 +361,7 @@ spec:
                                       type: boolean
                                     requireClientAuth:
                                       type: boolean
-                                  required:
-                                  - requireClientAuth
                                   type: object
-                              required:
-                              - advertisedPorts
-                              - port
                               type: object
                             type: object
                           port:
@@ -403,12 +376,7 @@ spec:
                                 type: boolean
                               requireClientAuth:
                                 type: boolean
-                            required:
-                            - requireClientAuth
                             type: object
-                        required:
-                        - external
-                        - port
                         type: object
                       rpc:
                         description: RPC is a top level field of the values file
@@ -425,11 +393,7 @@ spec:
                                 type: boolean
                               requireClientAuth:
                                 type: boolean
-                            required:
-                            - requireClientAuth
                             type: object
-                        required:
-                        - port
                         type: object
                       schemaRegistry:
                         description: SchemaRegistry is a top level field of the values
@@ -458,12 +422,7 @@ spec:
                                       type: boolean
                                     requireClientAuth:
                                       type: boolean
-                                  required:
-                                  - requireClientAuth
                                   type: object
-                              required:
-                              - advertisedPorts
-                              - port
                               type: object
                             type: object
                           kafkaEndpoint:
@@ -480,14 +439,7 @@ spec:
                                 type: boolean
                               requireClientAuth:
                                 type: boolean
-                            required:
-                            - requireClientAuth
                             type: object
-                        required:
-                        - enabled
-                        - external
-                        - kafkaEndpoint
-                        - port
                         type: object
                     type: object
                   logging:
@@ -870,8 +822,6 @@ spec:
                                 - type: string
                                 pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
                                 x-kubernetes-int-or-string: true
-                            required:
-                            - max
                             type: object
                           enable_memory_locking:
                             type: boolean
@@ -896,9 +846,6 @@ spec:
                         required:
                         - container
                         type: object
-                    required:
-                    - cpu
-                    - memory
                     type: object
                   serviceAccount:
                     properties:
