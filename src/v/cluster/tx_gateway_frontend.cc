@@ -2953,6 +2953,12 @@ ss::future<> tx_gateway_frontend::do_expire_old_tx(
 
 ss::future<tx_gateway_frontend::return_all_txs_res>
 tx_gateway_frontend::get_all_transactions() {
+    if (!_metadata_cache.local().contains(model::tx_manager_nt)) {
+        if (!co_await try_create_tx_topic()) {
+            co_return tx_errc::unknown_server_error;
+        }
+    }
+
     auto shard = _shard_table.local().shard_for(model::tx_manager_ntp);
 
     if (!shard.has_value()) {
