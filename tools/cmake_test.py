@@ -177,12 +177,13 @@ class BacktraceCapture(threading.Thread):
 
 class TestRunner():
     def __init__(self, prepare_command, post_command, binary, repeat,
-                 copy_files, *args):
+                 copy_files, gtest, *args):
         self.prepare_command = prepare_command
         self.post_command = post_command
         self.binary = binary
         self.repeat = repeat if repeat is not None else 1
         self.copy_files = copy_files
+        self.gtest = gtest
         self.root = "/dev/shm/vectorized_io"
         os.makedirs(self.root, exist_ok=True)
 
@@ -227,6 +228,11 @@ class TestRunner():
                 args = args + unit_args
             else:
                 args = args + ["--"] + unit_args
+
+            # gtest doesn't understand the `--` protocol
+            if self.gtest:
+                args = [arg for arg in args if arg != "--"]
+
         elif "rpbench" in binary:
             args = args + COMMON_TEST_ARGS
         # aggregated args for test
@@ -374,6 +380,7 @@ def main():
                             type=str,
                             action="append",
                             help='copy file to test execution directory')
+        parser.add_argument('--gtest', action='store_true')
         return parser
 
     parser = generate_options()
@@ -389,7 +396,8 @@ def main():
     logger.info("%s *args=%s" % (options, program_options))
 
     runner = TestRunner(options.pre, options.post, options.binary,
-                        options.repeat, options.copy_file, *program_options)
+                        options.repeat, options.copy_file, options.gtest,
+                        *program_options)
     runner.run()
     return 0
 
