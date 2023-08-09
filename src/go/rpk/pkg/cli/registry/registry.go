@@ -23,6 +23,7 @@ func NewCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 		Short:   "Commands to interact with the schema registry",
 	}
 	cmd.AddCommand(
+		compatibilityLevelCommand(fs, p),
 		subjectCommand(fs, p),
 	)
 	return cmd
