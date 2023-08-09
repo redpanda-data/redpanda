@@ -84,55 +84,55 @@ type (
 		// If we read a config with a newer version, we exit with a
 		// message saying "we don't know how to parse this, please
 		// upgrade rpk".
-		Version int `yaml:"version"`
+		Version int `json:"version" yaml:"version"`
 
-		Globals RpkGlobals `yaml:"globals,omitempty"`
+		Globals RpkGlobals `json:"globals,omitempty" yaml:"globals,omitempty"`
 
-		CurrentProfile   string         `yaml:"current_profile"`
-		CurrentCloudAuth string         `yaml:"current_cloud_auth"`
-		Profiles         []RpkProfile   `yaml:"profiles,omitempty"`
-		CloudAuths       []RpkCloudAuth `yaml:"cloud_auth,omitempty"`
+		CurrentProfile   string         `json:"current_profile" yaml:"current_profile"`
+		CurrentCloudAuth string         `json:"current_cloud_auth" yaml:"current_cloud_auth"`
+		Profiles         []RpkProfile   `json:"profiles,omitempty" yaml:"profiles,omitempty"`
+		CloudAuths       []RpkCloudAuth `json:"cloud_auth,omitempty" yaml:"cloud_auth,omitempty"`
 	}
 
 	RpkGlobals struct {
 		// Prompt is the prompt to use for all profiles, unless the
 		// profile itself overrides it.
-		Prompt string `yaml:"prompt"`
+		Prompt string `json:"prompt" yaml:"prompt"`
 
 		// NoDefaultCluster disables localhost:{9092,9644} as a default
 		// profile when no other is selected.
-		NoDefaultCluster bool `yaml:"no_default_cluster"`
+		NoDefaultCluster bool `json:"no_default_cluster" yaml:"no_default_cluster"`
 
 		// DialTimeout is how long we allow for initiating a connection
 		// to brokers for the Admin API and Kafka API.
-		DialTimeout Duration `yaml:"dial_timeout"`
+		DialTimeout Duration `json:"dial_timeout" yaml:"dial_timeout"`
 
 		// RequestTimeoutOverhead, for Kafka API requests, how long do
 		// we give the request on top of any request's timeout field.
-		RequestTimeoutOverhead Duration `yaml:"request_timeout_overhead"`
+		RequestTimeoutOverhead Duration `json:"request_timeout_overhead" yaml:"request_timeout_overhead"`
 
 		// RetryTimeout allows us to retry requests. If see we need to
 		// retry before the retry timeout has elapsed, we do -- even if
 		// backing off after we know to retry pushes us past the
 		// timeout.
-		RetryTimeout Duration `yaml:"retry_timeout"`
+		RetryTimeout Duration `json:"retry_timeout" yaml:"retry_timeout"`
 
 		// FetchMaxWait is how long we give the broker to respond to
 		// fetch requests.
-		FetchMaxWait Duration `yaml:"fetch_max_wait"`
+		FetchMaxWait Duration `json:"fetch_max_wait" yaml:"fetch_max_wait"`
 
 		// KafkaProtocolReqClientID is the client ID to use for the Kafka API.
-		KafkaProtocolReqClientID string `yaml:"kafka_protocol_request_client_id"`
+		KafkaProtocolReqClientID string `json:"kafka_protocol_request_client_id" yaml:"kafka_protocol_request_client_id"`
 	}
 
 	RpkProfile struct {
-		Name         string           `yaml:"name"`
-		Description  string           `yaml:"description,omitempty"`
-		Prompt       string           `yaml:"prompt,omitempty"`
-		FromCloud    bool             `yaml:"from_cloud,omitempty"`
-		CloudCluster *RpkCloudCluster `yaml:"cloud_cluster,omitempty"`
-		KafkaAPI     RpkKafkaAPI      `yaml:"kafka_api,omitempty"`
-		AdminAPI     RpkAdminAPI      `yaml:"admin_api,omitempty"`
+		Name         string           `json:"name" yaml:"name"`
+		Description  string           `json:"description,omitempty" yaml:"description,omitempty"`
+		Prompt       string           `json:"prompt,omitempty" yaml:"prompt,omitempty"`
+		FromCloud    bool             `json:"from_cloud,omitempty" yaml:"from_cloud,omitempty"`
+		CloudCluster *RpkCloudCluster `json:"cloud_cluster,omitempty" yaml:"cloud_cluster,omitempty"`
+		KafkaAPI     RpkKafkaAPI      `json:"kafka_api,omitempty" yaml:"kafka_api,omitempty"`
+		AdminAPI     RpkAdminAPI      `json:"admin_api,omitempty" yaml:"admin_api,omitempty"`
 
 		// We stash the config struct itself so that we can provide
 		// the logger / dev overrides.
@@ -140,18 +140,18 @@ type (
 	}
 
 	RpkCloudCluster struct {
-		Namespace string `yaml:"namespace"`
-		Cluster   string `yaml:"cluster"`
-		Auth      string `yaml:"auth"`
+		Namespace string `json:"namespace" yaml:"namespace"`
+		Cluster   string `json:"cluster" yaml:"cluster"`
+		Auth      string `json:"auth" yaml:"auth"`
 	}
 
 	RpkCloudAuth struct {
-		Name         string `yaml:"name"`
-		Description  string `yaml:"description,omitempty"`
-		AuthToken    string `yaml:"auth_token,omitempty"`
-		RefreshToken string `yaml:"refresh_token,omitempty"`
-		ClientID     string `yaml:"client_id,omitempty"`
-		ClientSecret string `yaml:"client_secret,omitempty"`
+		Name         string `json:"name" yaml:"name"`
+		Description  string `json:"description,omitempty" yaml:"description,omitempty"`
+		AuthToken    string `json:"auth_token,omitempty" yaml:"auth_token,omitempty"`
+		RefreshToken string `json:"refresh_token,omitempty" yaml:"refresh_token,omitempty"`
+		ClientID     string `json:"client_id,omitempty" yaml:"client_id,omitempty"`
+		ClientSecret string `json:"client_secret,omitempty" yaml:"client_secret,omitempty"`
 	}
 
 	Duration struct{ time.Duration }
