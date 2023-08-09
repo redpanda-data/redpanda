@@ -856,7 +856,9 @@ class ShadowIndexingManyPartitionsTest(PreallocNodesTest):
                 'cloud_storage_cache_chunk_size': self.chunk_size,
             },
             environment={'__REDPANDA_TOPIC_REC_DL_CHECK_MILLIS': 5000},
-            si_settings=si_settings)
+            si_settings=si_settings,
+            # These tests write many objects; set a higher scrub timeout.
+            cloud_storage_scrub_timeout_s=120)
         self.kafka_tools = KafkaCliTools(self.redpanda)
 
     def setUp(self):
