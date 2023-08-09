@@ -324,3 +324,12 @@ ExternalProject_Add(protobuf
     -Dprotobuf_BUILD_TESTS=OFF
     ${common_cmake_args}
 )
+
+ExternalProject_Add(googletest
+  GIT_REPOSITORY https://github.com/google/googletest
+  GIT_TAG f8d7d77c06936315286eb55f8de22cd23c188571
+  INSTALL_DIR @REDPANDA_DEPS_INSTALL_DIR@
+  CMAKE_COMMAND ${CMAKE_COMMAND} -E env ${cmake_build_env} ${CMAKE_COMMAND}
+  LIST_SEPARATOR |
+  CMAKE_ARGS ${common_cmake_args}
+)
