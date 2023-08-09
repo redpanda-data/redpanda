@@ -23,6 +23,7 @@ func newListUsersCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 		Aliases: []string{"ls"},
 		Short:   "List SASL users",
 		Run: func(cmd *cobra.Command, _ []string) {
+			f := p.Formatter
 			p, err := p.LoadVirtualProfile(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)
 
@@ -31,7 +32,10 @@ func newListUsersCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 
 			users, err := cl.ListUsers(cmd.Context())
 			out.MaybeDie(err, "unable to list users: %v", err)
-
+			if isText, _, s, err := f.Format(users); !isText {
+				out.MaybeDie(err, "unable to print in the required format %q: %v", f.Kind, err)
+				out.Exit(s)
+			}
 			tw := out.NewTable("Username")
 			defer tw.Flush()
 			for _, u := range users {

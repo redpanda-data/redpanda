@@ -30,6 +30,7 @@ redpanda section of your redpanda.yaml.
 	}
 	p.InstallAdminFlags(cmd)
 	p.InstallKafkaFlags(cmd) // old ACL user commands have this, and Kafka SASL creds are used for admin API basic auth
+	p.InstallFormatFlag(cmd)
 	cmd.AddCommand(
 		newCreateUserCommand(fs, p),
 		newDeleteUserCommand(fs, p),
