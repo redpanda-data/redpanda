@@ -647,7 +647,6 @@ class HighThroughputTest(PreallocNodesTest):
             consumer = RpkConsumer(self._ctx,
                                    self.redpanda,
                                    self.topic_name,
-                                   offset="newest",
                                    num_msgs=consume_count)
             consumer.start()
             wait_until(lambda: random_stop_check(consumer),
