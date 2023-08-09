@@ -818,8 +818,15 @@ ss::future<> cache::start() {
         co_await clean_up_at_start();
 
         _tracker_timer.set_callback([this] {
-            ssx::spawn_with_gate(
-              _gate, [this] { return maybe_save_access_time_tracker(); });
+            ssx::spawn_with_gate(_gate, [this] {
+                return maybe_save_access_time_tracker().handle_exception(
+                  [](auto eptr) {
+                      vlog(
+                        cst_log.error,
+                        "failed to save access time tracker: {}",
+                        eptr);
+                  });
+            });
         });
         _tracker_timer.arm_periodic(access_timer_period);
     }
