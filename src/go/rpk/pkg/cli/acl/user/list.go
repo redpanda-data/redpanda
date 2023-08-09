@@ -24,6 +24,9 @@ func newListUsersCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 		Short:   "List SASL users",
 		Run: func(cmd *cobra.Command, _ []string) {
 			f := p.Formatter
+			if h, ok := f.Help([]string{}); ok {
+				out.Exit(h)
+			}
 			p, err := p.LoadVirtualProfile(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)
 
