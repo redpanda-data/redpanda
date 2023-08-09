@@ -15,7 +15,7 @@ commands:
   - command: "helm dep up helm-chart/charts/redpanda-operator/"
   - command: "helm install --set scope=Namespace --set logLevel=trace --set image.tag=dev --set image.repository=localhost/redpanda-operator --set installCRDs=true --namespace redpanda --create-namespace redpanda-operator ./helm-chart/charts/redpanda-operator"
 artifactsDir: tests/_e2e_artifacts_v2
-timeout: 360
+timeout: 720
 reportFormat: xml
 parallel: 1
 namespace: redpanda

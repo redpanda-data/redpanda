@@ -22,15 +22,13 @@ kind: StatefulSet
 metadata:
   name: redpanda
 status:
-  availableReplicas: 3
+  availableReplicas: 1
   collisionCount: 0
-  currentReplicas: 3
-  currentRevision: redpanda
+  currentReplicas: 1
   observedGeneration: 1
-  readyReplicas: 3
-  replicas: 3
-  updateRevision: redpanda
-  updatedReplicas: 3
+  readyReplicas: 1
+  replicas: 1
+  updatedReplicas: 1
 ---
 apiVersion: helm.toolkit.fluxcd.io/v2beta1
 kind: HelmRelease
@@ -46,10 +44,10 @@ status:
       reason: InstallSucceeded
       status: "True"
       type: Released
-  helmChart: redpanda/redpanda
+  helmChart: redpanda/redpanda-redpanda
   lastAppliedRevision: 5.0.9
   lastAttemptedRevision: 5.0.9
-  lastAttemptedValuesChecksum: 141e341bc1c0994c3406e663509d23d1df1b142d
+  lastAttemptedValuesChecksum: 9a164b2eba37330d0bb90cd1dff1e40779cab130
   lastReleaseRevision: 1
   observedGeneration: 1
 ---

@@ -5,9 +5,6 @@ delete:
   - apiVersion: cluster.redpanda.com/v1alpha1
     kind: Redpanda
     name: redpanda
-  - apiVersion: apps/v1
-    kind: Deployment
-    name: redpanda-console
   - apiVersion: batch/v1
     kind: Job
     name: redpanda-configuration
@@ -17,9 +14,3 @@ delete:
   - apiVersion: v1
     kind: PersistentVolumeClaim
     name: datadir-redpanda-0
-  - apiVersion: v1
-    kind: PersistentVolumeClaim
-    name: datadir-redpanda-1
-  - apiVersion: v1
-    kind: PersistentVolumeClaim
-    name: datadir-redpanda-2
