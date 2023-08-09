@@ -61,10 +61,6 @@ class CloudStorageChunkReadTest(PreallocNodesTest):
         # Do not start redpanda here, let the tests start with custom config options
         pass
 
-    def teardown(self):
-        self.redpanda.cloud_storage_client.empty_bucket(
-            self.si_settings.cloud_storage_bucket)
-
     def _set_params_and_start_redpanda(self, **kwargs):
         if kwargs:
             self.extra_rp_conf.update(kwargs)
