@@ -715,7 +715,7 @@ ss::chunked_fifo<ntp_report> collect_shard_local_reports(
                   .leader_id = partition->get_leader_id(),
                   .revision_id = partition->get_revision_id(),
                 },
-                .size_bytes = partition->size_bytes(),
+                .size_bytes = partition->size_bytes() + partition->non_log_disk_size_bytes(),
                 .under_replicated_replicas = partition->get_under_replicated(),
                 });
             }
