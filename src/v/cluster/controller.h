@@ -160,6 +160,10 @@ public:
         });
     }
 
+    ss::future<result<model::offset>> linearizable_barrier() {
+        return _raft0->linearizable_barrier();
+    }
+
     /// Helper for use during cluster join: a join RPC reply may
     /// tip us off about the last applied controller offset of some
     /// other node, and we may wait for that to ensure our controller

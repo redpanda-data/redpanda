@@ -27,6 +27,7 @@ public:
     service(
       ss::scheduling_group,
       ss::smp_service_group,
+      controller* controller,
       ss::sharded<topics_frontend>&,
       ss::sharded<plugin_frontend>&,
       ss::sharded<members_manager>&,
@@ -119,6 +120,10 @@ public:
     ss::future<partition_state_reply> get_partition_state(
       partition_state_request&&, rpc::streaming_context&) final;
 
+    ss::future<controller_committed_offset_reply>
+    get_controller_committed_offset(
+      controller_committed_offset_request&&, rpc::streaming_context&) final;
+
     ss::future<upsert_plugin_response>
     upsert_plugin(upsert_plugin_request&&, rpc::streaming_context&) final;
 
@@ -165,6 +170,7 @@ private:
     ss::future<partition_state_reply>
       do_get_partition_state(partition_state_request);
 
+    controller* _controller;
     ss::sharded<topics_frontend>& _topics_frontend;
     ss::sharded<members_manager>& _members_manager;
     ss::sharded<metadata_cache>& _md_cache;
