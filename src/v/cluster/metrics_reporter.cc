@@ -269,6 +269,11 @@ metrics_reporter::build_metrics_snapshot() {
           0, metrics_snapshot::max_size_for_rp_env);
     }
 
+    auto license = _feature_table.local().get_license();
+    if (license.has_value()) {
+        snapshot.id_hash = license->checksum;
+    }
+
     co_return snapshot;
 }
 
@@ -522,6 +527,9 @@ void rjson_serialize(
 
     w.Key("redpanda_environment");
     w.String(snapshot.redpanda_environment);
+
+    w.Key("id_hash");
+    w.String(snapshot.id_hash);
 
     w.EndObject();
 }
