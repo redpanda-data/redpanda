@@ -345,4 +345,91 @@ get_allocation_domain(const model::topic_namespace_view tp_ns) {
     return partition_allocation_domains::common;
 }
 
+std::optional<ss::sstring> check_result_configuration(
+  const members_table::broker_cache_t& current_brokers,
+  const model::broker& new_configuration) {
+    auto it = current_brokers.find(new_configuration.id());
+    vassert(
+      it != current_brokers.end(),
+      "When broker configuration is being updated the broker must exists. "
+      "Updating broker {} configuration.",
+      new_configuration);
+    auto& current_broker = it->second;
+    /**
+     * do no allow to decrease node core count
+     */
+    if (
+      current_broker->properties().cores
+      > new_configuration.properties().cores) {
+        return fmt::format(
+          "core count must not decrease on any broker, currently configured "
+          "core count: {}, requested core count: {}",
+          current_broker->properties().cores,
+          new_configuration.properties().cores);
+    }
+    /**
+     * When cluster member configuration changes Redpanda by default doesn't
+     * allow the change if a new cluster configuration would have two
+     * listeners pointing to the same address. This was in conflict with the
+     * logic of join request which didn't execute validation of resulting
+     * configuration. Change the validation logic to only check configuration
+     * fields which were changed and are going to be updated.
+     */
+    const bool rpc_address_changed = current_broker->rpc_address()
+                                     != new_configuration.rpc_address();
+    std::vector<model::broker_endpoint> changed_endpoints;
+    for (auto& new_ep : new_configuration.kafka_advertised_listeners()) {
+        auto it = std::find_if(
+          current_broker->kafka_advertised_listeners().begin(),
+          current_broker->kafka_advertised_listeners().end(),
+          [&new_ep](const model::broker_endpoint& ep) {
+              return ep.name == new_ep.name;
+          });
+
+        if (
+          it == current_broker->kafka_advertised_listeners().end()
+          || it->address != new_ep.address) {
+            changed_endpoints.push_back(new_ep);
+        }
+    }
+
+    for (const auto& [id, current] : current_brokers) {
+        if (id == new_configuration.id()) {
+            continue;
+        }
+
+        /**
+         * validate if any two of the brokers would listen on the same addresses
+         * after applying configuration update
+         */
+        if (
+          rpc_address_changed
+          && current->rpc_address() == new_configuration.rpc_address()) {
+            // error, nodes would listen on the same rpc addresses
+            return fmt::format(
+              "duplicate rpc endpoint {} with existing node {}",
+              new_configuration.rpc_address(),
+              id);
+        }
+
+        for (auto& changed_ep : changed_endpoints) {
+            auto any_is_the_same = std::any_of(
+              current->kafka_advertised_listeners().begin(),
+              current->kafka_advertised_listeners().end(),
+              [&changed_ep](const model::broker_endpoint& ep) {
+                  return changed_ep == ep;
+              });
+            // error, kafka endpoint would point to the same addresses
+            if (any_is_the_same) {
+                return fmt::format(
+                  "duplicated kafka advertised endpoint {} with existing node "
+                  "{}",
+                  changed_ep,
+                  id);
+                ;
+            }
+        }
+    }
+    return {};
+}
 } // namespace cluster

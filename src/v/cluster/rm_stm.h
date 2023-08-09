@@ -298,7 +298,7 @@ public:
     ss::future<> remove_persistent_state() override;
 
 protected:
-    ss::future<> handle_eviction() override;
+    ss::future<> handle_raft_snapshot() override;
 
 private:
     void setup_metrics();

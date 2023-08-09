@@ -340,6 +340,7 @@ private:
       model::ntp, ss::shard_id, partition_assignment);
 
     bool can_finish_update(
+      std::optional<model::node_id>,
       topic_table_delta::op_type,
       const std::vector<model::broker_shard>&,
       const std::vector<model::broker_shard>&);

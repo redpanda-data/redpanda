@@ -14,12 +14,15 @@ import string
 from threading import Event, Condition
 import threading
 import time
+from requests.exceptions import HTTPError
 from ducktape.utils.util import wait_until
 from rptest.clients.types import TopicSpec
 from time import sleep
 
 from rptest.clients.rpk import RpkTool
 from rptest.services.admin import Admin
+from rptest.services.redpanda_installer import VERSION_RE, int_tuple
+from tests.rptest.clients.kafka_cli_tools import KafkaCliTools
 
 
 # Operation context (used to save state between invocation of operations)
@@ -203,20 +206,59 @@ class AddPartitionsOperation(Operation):
         self.prefix = prefix
         self.topic = None
         self.total = None
+        self.current = None
+
+    def _current_partition_count(self, ctx):
+
+        per_node_count = set()
+        try:
+            brokers = ctx.admin().get_brokers()
+        except:
+            return None
+        for b in brokers:
+            n = ctx.redpanda.get_node_by_id(b['node_id'])
+            if n not in ctx.redpanda.started_nodes():
+                continue
+            node_version = int_tuple(
+                VERSION_RE.findall(ctx.redpanda.get_version(n))[0])
+            # do not query nodes with redpanda version prior to v23.1.x
+            if node_version[0] < 23:
+                return None
+            try:
+                partitions = ctx.admin().get_partitions(node=n,
+                                                        topic=self.topic)
+                per_node_count.add(len(partitions))
+            except HTTPError as err:
+                if err.response.status_code == 404:
+                    return None
+                else:
+                    raise
+
+        if len(per_node_count) != 1:
+            ctx.redpanda.logger.info(
+                f"inconsistent partition count for {self.topic}: {per_node_count}"
+            )
+            return None
+
+        return next(iter(per_node_count))
 
     def execute(self, ctx):
-        self.topic = _choice_random_topic(ctx, prefix=self.prefix)
+        if self.topic is None:
+            self.topic = _choice_random_topic(ctx, prefix=self.prefix)
         if self.topic is None:
             return False
 
-        rpk = ctx.rpk()
-        current = len(list(rpk.describe_topic(self.topic)))
-        to_add = random.randint(1, 5)
-        self.total = current + to_add
+        if self.current is None:
+            self.current = self._current_partition_count(ctx)
+        if self.current is None:
+            return False
+        if self.total is None:
+            self.total = random.randint(self.current + 1, self.current + 5)
         ctx.redpanda.logger.info(
-            f"Updating topic: {self.topic} partitions count, current: {current} adding: {to_add} partitions"
+            f"Updating topic: {self.topic} partitions count. Current partition count: {self.current} new partition count: {self.total}"
         )
-        rpk.add_topic_partitions(self.topic, to_add)
+        cli = KafkaCliTools(ctx.redpanda)
+        cli.create_topic_partitions(self.topic, self.total)
         return True
 
     def validate(self, ctx):

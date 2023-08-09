@@ -556,7 +556,7 @@ ss::future<> archival_metadata_stm::apply(model::record_batch b) {
     _manifest->advance_insync_offset(b.last_offset());
 }
 
-ss::future<> archival_metadata_stm::handle_eviction() {
+ss::future<> archival_metadata_stm::handle_raft_snapshot() {
     cloud_storage::partition_manifest manifest;
 
     auto bucket = config::shard_local_cfg().cloud_storage_bucket.value();

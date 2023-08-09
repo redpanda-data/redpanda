@@ -47,7 +47,7 @@ void partition_balancer_state::handle_ntp_update(
 
         model::ntp ntp(ns, tp, p_id);
         if (is_rack_constraint_violated) {
-            auto res = _ntps_with_broken_rack_constraint.insert(std::move(ntp));
+            auto res = _ntps_with_broken_rack_constraint.insert(ntp);
             if (res.second) {
                 vlog(
                   clusterlog.debug,

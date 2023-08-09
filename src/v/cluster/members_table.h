@@ -26,8 +26,11 @@ namespace cluster {
 class members_table {
 public:
     using broker_ptr = ss::lw_shared_ptr<model::broker>;
+    using broker_cache_t = absl::flat_hash_map<model::node_id, broker_ptr>;
 
     std::vector<broker_ptr> all_brokers() const;
+
+    const broker_cache_t& brokers_cache() const { return _brokers; };
 
     size_t all_brokers_count() const;
 
@@ -72,7 +75,6 @@ public:
     void unregister_members_updated_notification(notification_id_type);
 
 private:
-    using broker_cache_t = absl::flat_hash_map<model::node_id, broker_ptr>;
     broker_cache_t _brokers;
     model::revision_id _version;
 
