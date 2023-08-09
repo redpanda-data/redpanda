@@ -135,6 +135,11 @@
             "name": "get_partition_state",
             "input_type": "partition_state_request",
             "output_type": "partition_state_reply"
+        },
+        {
+            "name": "get_controller_committed_offset",
+            "input_type": "controller_committed_offset_request",
+            "output_type": "controller_committed_offset_reply"
         }
     ]
 }

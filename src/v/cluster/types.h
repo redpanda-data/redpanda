@@ -3909,6 +3909,26 @@ struct metrics_reporter_cluster_info
     auto serde_fields() { return std::tie(uuid, creation_timestamp); }
 };
 
+struct controller_committed_offset_request
+  : serde::envelope<
+      controller_committed_offset_request,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    using rpc_adl_exempt = std::true_type;
+};
+
+struct controller_committed_offset_reply
+  : serde::envelope<
+      controller_committed_offset_reply,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    using rpc_adl_exempt = std::true_type;
+    model::offset last_committed;
+    errc result;
+
+    auto serde_fields() { return std::tie(last_committed, result); }
+};
+
 template<typename V>
 std::ostream& operator<<(
   std::ostream& o, const configuration_with_assignment<V>& with_assignment) {
