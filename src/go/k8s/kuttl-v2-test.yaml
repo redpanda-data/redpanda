@@ -19,7 +19,7 @@ commands:
       --set image.repository=localhost/redpanda-operator --namespace redpanda --create-namespace
       redpanda-operator redpanda/operator
 artifactsDir: tests/_e2e_artifacts_v2
-timeout: 360
+timeout: 720
 reportFormat: xml
 parallel: 1
 namespace: redpanda

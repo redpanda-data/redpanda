@@ -31,25 +31,14 @@ spec:
       tag: dev
     listeners:
       admin:
-        external: {}
         port: 9644
-        tls:
-          cert: ""
-          enabled: false
-          requireClientAuth: false
       http:
         authenticationMethod: none
         enabled: true
-        external: {}
         kafkaEndpoint: kafka-default
         port: 8082
-        tls:
-          cert: ""
-          enabled: false
-          requireClientAuth: false
       kafka:
         authenticationMethod: none
-        external: {}
         port: 9092
         tls:
           cert: kafka-internal-0
@@ -60,7 +49,6 @@ spec:
       schemaRegistry:
         authenticationMethod: none
         enabled: true
-        external: {}
         kafkaEndpoint: kafka-default
         port: 8081
         tls:

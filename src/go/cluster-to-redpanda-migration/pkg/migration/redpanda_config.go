@@ -150,8 +150,10 @@ func MigrateRedpandaConfig(cluster *vectorizedv1alpha1.Cluster, rp *v1alpha1.Red
 
 	MigrateRPCServer(&oldConfig.RPCServer, rpcListener, rpTLS)
 
-	if rpcListener.Port != 0 {
+	if rpcListener.Port != nil && *rpcListener.Port != 0 {
 		rpListeners.RPC = rpcListener
+	} else {
+		rpListeners.RPC = nil
 	}
 
 	// -- Putting everything together ---
