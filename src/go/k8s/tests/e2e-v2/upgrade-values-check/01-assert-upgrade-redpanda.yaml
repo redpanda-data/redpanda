@@ -47,7 +47,7 @@ status:
   helmChart: redpanda/redpanda-redpanda
   lastAppliedRevision: 5.0.9
   lastAttemptedRevision: 5.0.9
-  lastAttemptedValuesChecksum: 35859673a62a6e3192ad8871d051ffa5f160d51d
+  lastAttemptedValuesChecksum: 1c9b2eec287c945a5a66d5562e998e108de18393
   lastReleaseRevision: 2
   observedGeneration: 2
 ---
