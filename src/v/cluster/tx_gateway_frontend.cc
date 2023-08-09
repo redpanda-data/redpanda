@@ -3046,47 +3046,58 @@ void tx_gateway_frontend::expire_old_txs() {
               model::tx_manager_nt);
             return ss::now();
         }
-        return ss::do_for_each(
-          ntp_meta->get_assignments(), [this](partition_assignment pa) {
-              auto tx_ntp = model::ntp(
-                model::tx_manager_nt.ns, model::tx_manager_nt.tp, pa.id);
 
-              auto shard = _shard_table.local().shard_for(tx_ntp);
+        std::vector<model::partition_id> partitions;
+        partitions.reserve(ntp_meta->get_assignments().size());
+        for (auto& pa : ntp_meta->get_assignments()) {
+            partitions.push_back(pa.id);
+        }
 
-              if (shard == std::nullopt) {
-                  // TODO: Create per shard timer
-                  // https://github.com/redpanda-data/redpanda/issues/9606
-                  rearm_expire_timer();
-                  return ss::now();
-              }
-
-              return container()
-                .invoke_on(
-                  *shard,
-                  _ssg,
-                  [tm = pa.id](tx_gateway_frontend& self) -> ss::future<void> {
-                      return ss::with_gate(
-                        self._gate, [tm, &self]() -> ss::future<void> {
-                            return self.with_stm(
-                              tm,
-                              [&self](
-                                checked<ss::shared_ptr<tm_stm>, tx_errc> r) {
-                                  if (!r) {
-                                      return ss::now();
-                                  }
-                                  auto stm = r.value();
-                                  return stm->read_lock().then(
-                                    [&self,
-                                     stm](ss::basic_rwlock<>::holder unit) {
-                                        return self.expire_old_txs(stm).finally(
-                                          [u = std::move(unit)] {});
-                                    });
-                              });
-                        });
-                  })
-                .finally([this] { rearm_expire_timer(); });
+        return ss::do_with(
+          std::move(partitions),
+          [this](const std::vector<model::partition_id>& ps) {
+              return ss::do_for_each(ps, [this](model::partition_id pid) {
+                  auto tx_ntp = model::ntp(
+                    model::tx_manager_nt.ns, model::tx_manager_nt.tp, pid);
+                  return expire_old_txs(tx_ntp).finally([this] {
+                      // TODO: Create per shard timer
+                      // https://github.com/redpanda-data/redpanda/issues/9606
+                      // to consider: most likely it's ok to re-arm the timer
+                      // only once out of the do_for_each
+                      rearm_expire_timer();
+                  });
+              });
           });
     });
+}
+
+ss::future<> tx_gateway_frontend::expire_old_txs(model::ntp tx_ntp) {
+    auto shard = _shard_table.local().shard_for(tx_ntp);
+
+    if (!shard) {
+        return ss::now();
+    }
+
+    return container().invoke_on(
+      *shard,
+      _ssg,
+      [tm = tx_ntp.tp.partition](
+        tx_gateway_frontend& self) -> ss::future<void> {
+          return ss::with_gate(self._gate, [tm, &self]() -> ss::future<void> {
+              return self.with_stm(
+                tm, [&self](checked<ss::shared_ptr<tm_stm>, tx_errc> r) {
+                    if (!r) {
+                        return ss::now();
+                    }
+                    auto stm = r.value();
+                    return stm->read_lock().then(
+                      [&self, stm](ss::basic_rwlock<>::holder unit) {
+                          return self.expire_old_txs(stm).finally(
+                            [u = std::move(unit)] {});
+                      });
+                });
+          });
+      });
 }
 
 ss::future<> tx_gateway_frontend::expire_old_txs(ss::shared_ptr<tm_stm> stm) {
