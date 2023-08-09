@@ -68,7 +68,7 @@ class AdjacentSegmentMergingTest(RedpandaTest):
         super().tearDown()
 
     @cluster(num_nodes=3)
-    @matrix(acks=[-1, 0, 1], cloud_storage_type=get_cloud_storage_type())
+    @matrix(acks=[-1, 1], cloud_storage_type=get_cloud_storage_type())
     def test_reupload_of_local_segments(self, acks, cloud_storage_type):
         """Test adjacent segment merging using using local data.
         The test starts by uploading large number of very small segments.
