@@ -78,6 +78,7 @@ enum class reply_error_code : uint16_t {
     subject_not_deleted = 40405,
     subject_version_soft_deleted = 40406,
     subject_version_not_deleted = 40407,
+    compatibility_not_found = 40408,
     serialization_error = 40801,
     consumer_already_exists = 40902,
     schema_empty = 42201,
