@@ -184,6 +184,11 @@ type (
 		TLS       *TLS     `yaml:"tls,omitempty" json:"tls,omitempty"`
 	}
 
+	RpkSchemaRegistryAPI struct {
+		Addresses []string `yaml:"addresses,omitempty" json:"addresses,omitempty"`
+		TLS       *TLS     `yaml:"tls,omitempty" json:"tls,omitempty"`
+	}
+
 	SASL struct {
 		User      string `yaml:"user,omitempty" json:"user,omitempty"`
 		Password  string `yaml:"password,omitempty" json:"password,omitempty"`

@@ -101,7 +101,7 @@ func TestLoadFlow(t *testing.T) {
 			y := cfg.VirtualRpkYaml()
 			file, err := afero.ReadFile(fs, y.FileLocation())
 			require.NoError(t, err)
-			expFile := fmt.Sprintf(`version: 1
+			expFile := fmt.Sprintf(`version: 2
 current_profile: ""
 current_cloud_auth: default
 cloud_auth:

@@ -38,7 +38,7 @@ func defaultVirtualRpkYaml() (RpkYaml, error) {
 	path, _ := DefaultRpkYamlPath() // if err is non-nil, we fail in Write
 	y := RpkYaml{
 		fileLocation: path,
-		Version:      1,
+		Version:      2,
 		Profiles:     []RpkProfile{DefaultRpkProfile()},
 		CloudAuths:   []RpkCloudAuth{DefaultRpkCloudAuth()},
 	}
@@ -67,7 +67,7 @@ func DefaultRpkCloudAuth() RpkCloudAuth {
 
 func emptyVirtualRpkYaml() RpkYaml {
 	return RpkYaml{
-		Version: 1,
+		Version: 2,
 	}
 }
 
@@ -126,13 +126,14 @@ type (
 	}
 
 	RpkProfile struct {
-		Name         string           `json:"name" yaml:"name"`
-		Description  string           `json:"description,omitempty" yaml:"description,omitempty"`
-		Prompt       string           `json:"prompt,omitempty" yaml:"prompt,omitempty"`
-		FromCloud    bool             `json:"from_cloud,omitempty" yaml:"from_cloud,omitempty"`
-		CloudCluster *RpkCloudCluster `json:"cloud_cluster,omitempty" yaml:"cloud_cluster,omitempty"`
-		KafkaAPI     RpkKafkaAPI      `json:"kafka_api,omitempty" yaml:"kafka_api,omitempty"`
-		AdminAPI     RpkAdminAPI      `json:"admin_api,omitempty" yaml:"admin_api,omitempty"`
+		Name         string               `json:"name" yaml:"name"`
+		Description  string               `json:"description,omitempty" yaml:"description,omitempty"`
+		Prompt       string               `json:"prompt,omitempty" yaml:"prompt,omitempty"`
+		FromCloud    bool                 `json:"from_cloud,omitempty" yaml:"from_cloud,omitempty"`
+		CloudCluster *RpkCloudCluster     `json:"cloud_cluster,omitempty" yaml:"cloud_cluster,omitempty"`
+		KafkaAPI     RpkKafkaAPI          `json:"kafka_api,omitempty" yaml:"kafka_api,omitempty"`
+		AdminAPI     RpkAdminAPI          `json:"admin_api,omitempty" yaml:"admin_api,omitempty"`
+		SR           RpkSchemaRegistryAPI `json:"schema_registry,omitempty" yaml:"schema_registry,omitempty"`
 
 		// We stash the config struct itself so that we can provide
 		// the logger / dev overrides.
