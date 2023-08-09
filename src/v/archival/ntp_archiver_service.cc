@@ -127,6 +127,8 @@ void ntp_archiver::run_sync_manifest_loop() {
     ssx::spawn_with_gate(_gate, [this] {
         return sync_manifest_loop()
           .handle_exception_type([](const ss::abort_requested_exception&) {})
+          .handle_exception_type([](const ss::broken_semaphore&) {})
+          .handle_exception_type([](const ss::broken_named_semaphore&) {})
           .handle_exception_type([](const ss::sleep_aborted&) {})
           .handle_exception_type([](const ss::gate_closed_exception&) {})
           .handle_exception_type([this](const ss::semaphore_timed_out& e) {
@@ -170,6 +172,8 @@ void ntp_archiver::run_upload_loop() {
           .handle_exception_type([](const ss::abort_requested_exception&) {})
           .handle_exception_type([](const ss::sleep_aborted&) {})
           .handle_exception_type([](const ss::gate_closed_exception&) {})
+          .handle_exception_type([](const ss::broken_semaphore&) {})
+          .handle_exception_type([](const ss::broken_named_semaphore&) {})
           .handle_exception_type([this](const ss::semaphore_timed_out& e) {
               vlog(
                 _rtclog.warn,
