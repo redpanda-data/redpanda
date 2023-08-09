@@ -53,7 +53,7 @@ partition::partition(
   storage::kvstore& kvstore,
   config::binding<uint64_t> max_concurrent_producer_ids,
   std::optional<cloud_storage_clients::bucket_name> read_replica_bucket)
-  : _raft(r)
+  : _raft(std::move(r))
   , _partition_mem_tracker(
       ss::make_shared<util::mem_tracker>(_raft->ntp().path()))
   , _probe(std::make_unique<replicated_partition_probe>(*this))
@@ -63,7 +63,7 @@ partition::partition(
   , _is_tx_enabled(config::shard_local_cfg().enable_transactions.value())
   , _is_idempotence_enabled(
       config::shard_local_cfg().enable_idempotence.value())
-  , _archival_conf(archival_conf)
+  , _archival_conf(std::move(archival_conf))
   , _cloud_storage_api(cloud_storage_api)
   , _cloud_storage_cache(cloud_storage_cache)
   , _cloud_storage_probe(
