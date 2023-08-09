@@ -58,22 +58,6 @@ struct node_state
 struct partition_status
   : serde::
       envelope<partition_status, serde::version<1>, serde::compat_version<0>> {
-    /**
-     * We increase a version here 'backward' since incorrect assertion would
-     * cause older redpanda versions to crash.
-     *
-     * Version: -1: added revision_id field
-     * Version: -2: added size_bytes field
-     *
-     * Same versioning should also be supported in get_node_health_request
-     */
-
-    static constexpr int8_t initial_version = 0;
-    static constexpr int8_t revision_id_version = -1;
-    static constexpr int8_t size_bytes_version = -2;
-
-    static constexpr int8_t current_version = size_bytes_version;
-
     static constexpr size_t invalid_size_bytes = size_t(-1);
 
     model::partition_id id;
