@@ -47,7 +47,7 @@ func MigrateKafkaAPI(oldKafka *vectorizedv1alpha1.KafkaAPI,
 
 	oldExternal := oldKafka.External
 	if !oldExternal.Enabled {
-		migratedKafkaAPI.Port = oldKafka.Port
+		migratedKafkaAPI.Port = pointer.Int(oldKafka.Port)
 
 		authenticationMethod := oldKafka.AuthenticationMethod
 		if authenticationMethod == "" {
@@ -56,15 +56,14 @@ func MigrateKafkaAPI(oldKafka *vectorizedv1alpha1.KafkaAPI,
 
 		migratedKafkaAPI.AuthenticationMethod = &authenticationMethod
 
-		cert := ""
 		if oldKafka.TLS.Enabled {
-			cert = fmt.Sprintf(kafkaInternalNamesTmpl, 0)
+			cert := fmt.Sprintf(kafkaInternalNamesTmpl, 0)
 			tls.Certs[cert] = GetCertificateFromKafkaTLS(oldKafka.TLS)
-		}
-		migratedKafkaAPI.TLS = &redpandav1alpha1.ListenerTLS{
-			Cert:              pointer.String(cert),
-			Enabled:           pointer.Bool(oldKafka.TLS.Enabled),
-			RequireClientAuth: oldKafka.TLS.RequireClientAuth,
+			migratedKafkaAPI.TLS = &redpandav1alpha1.ListenerTLS{
+				Cert:              pointer.String(cert),
+				Enabled:           pointer.Bool(oldKafka.TLS.Enabled),
+				RequireClientAuth: pointer.Bool(oldKafka.TLS.RequireClientAuth),
+			}
 		}
 
 		// we return since we are done with internal case
@@ -88,11 +87,11 @@ func MigrateKafkaAPI(oldKafka *vectorizedv1alpha1.KafkaAPI,
 
 	if oldKafka.TLS.Enabled {
 		rpExtListener = &redpandav1alpha1.ExternalListener{
-			Port: oldKafka.Port,
+			Port: pointer.Int(oldKafka.Port),
 			TLS: &redpandav1alpha1.ListenerTLS{
 				Cert:              &name,
 				Enabled:           pointer.Bool(true),
-				RequireClientAuth: oldKafka.TLS.RequireClientAuth,
+				RequireClientAuth: pointer.Bool(oldKafka.TLS.RequireClientAuth),
 			},
 			AdvertisedPorts: make([]int, 0),
 		}
@@ -101,11 +100,11 @@ func MigrateKafkaAPI(oldKafka *vectorizedv1alpha1.KafkaAPI,
 
 	} else {
 		rpExtListener = &redpandav1alpha1.ExternalListener{
-			Port: oldKafka.Port,
+			Port: pointer.Int(oldKafka.Port),
 			TLS: &redpandav1alpha1.ListenerTLS{
 				Cert:              pointer.String(""),
 				Enabled:           pointer.Bool(false),
-				RequireClientAuth: oldKafka.TLS.RequireClientAuth,
+				RequireClientAuth: pointer.Bool(oldKafka.TLS.RequireClientAuth),
 			},
 			AdvertisedPorts: make([]int, 0),
 		}
@@ -155,8 +154,8 @@ func MigrateSchemaRegistry(oldSchemaRegistry *vectorizedv1alpha1.SchemaRegistryA
 		tls.Certs = make(map[string]*redpandav1alpha1.Certificate, 0)
 	}
 
-	migratedSchemaRegistry.Port = oldSchemaRegistry.Port
-	migratedSchemaRegistry.Enabled = true // does not exist in old schema
+	migratedSchemaRegistry.Port = pointer.Int(oldSchemaRegistry.Port)
+	migratedSchemaRegistry.Enabled = pointer.Bool(true) // does not exist in old schema
 
 	authenticationMethod := oldSchemaRegistry.AuthenticationMethod
 	if authenticationMethod == "" {
@@ -164,20 +163,18 @@ func MigrateSchemaRegistry(oldSchemaRegistry *vectorizedv1alpha1.SchemaRegistryA
 	}
 	migratedSchemaRegistry.AuthenticationMethod = &authenticationMethod
 
-	migratedSchemaRegistry.KafkaEndpoint = kafkaDefaultListener
+	migratedSchemaRegistry.KafkaEndpoint = &kafkaDefaultListener
 	// update internal certificate
-	cert := ""
 	if oldSchemaRegistry.TLS != nil {
 		if oldSchemaRegistry.TLS.Enabled {
-			cert = fmt.Sprintf(schemaRegistryInternalNamesTmpl, 0)
+			cert := fmt.Sprintf(schemaRegistryInternalNamesTmpl, 0)
 			tls.Certs[cert] = GetCertificateFromSchemaRegistryAPITLS(oldSchemaRegistry.TLS)
 
-		}
-
-		migratedSchemaRegistry.TLS = &redpandav1alpha1.ListenerTLS{
-			Cert:              &cert,
-			Enabled:           pointer.Bool(oldSchemaRegistry.TLS.Enabled),
-			RequireClientAuth: oldSchemaRegistry.TLS.RequireClientAuth,
+			migratedSchemaRegistry.TLS = &redpandav1alpha1.ListenerTLS{
+				Cert:              &cert,
+				Enabled:           pointer.Bool(oldSchemaRegistry.TLS.Enabled),
+				RequireClientAuth: pointer.Bool(oldSchemaRegistry.TLS.RequireClientAuth),
+			}
 		}
 	}
 
@@ -193,7 +190,6 @@ func MigrateSchemaRegistry(oldSchemaRegistry *vectorizedv1alpha1.SchemaRegistryA
 	}
 
 	// TODO: There does not seem to be external here that we can translate
-	// determine what this must be
 }
 
 // TODO: This may require two certificate objects to be created but it is not clear
@@ -243,19 +239,20 @@ func MigrateAdminAPI(clusterName string,
 	}
 
 	if !oldAdminAPI.External.Enabled {
-		migratedAdminAPI.Port = oldAdminAPI.Port
+		migratedAdminAPI.Port = pointer.Int(oldAdminAPI.Port)
 
 		// update internal certificate
-		cert := ""
 		if oldAdminAPI.TLS.Enabled {
-			cert = fmt.Sprintf(adminAPIInternalNamesTmpl, 0)
+			cert := fmt.Sprintf(adminAPIInternalNamesTmpl, 0)
 			tls.Certs[cert] = GetCertificateFromAdminAPITLS(clusterName, &oldAdminAPI.TLS)
-		}
 
-		migratedAdminAPI.TLS = &redpandav1alpha1.ListenerTLS{
-			Cert:              &cert,
-			Enabled:           pointer.Bool(oldAdminAPI.TLS.Enabled),
-			RequireClientAuth: oldAdminAPI.TLS.RequireClientAuth,
+			if cert != "" {
+				migratedAdminAPI.TLS = &redpandav1alpha1.ListenerTLS{
+					Cert:              &cert,
+					Enabled:           pointer.Bool(oldAdminAPI.TLS.Enabled),
+					RequireClientAuth: pointer.Bool(oldAdminAPI.TLS.RequireClientAuth),
+				}
+			}
 		}
 
 		// we return since we are done with internal case
@@ -278,11 +275,11 @@ func MigrateAdminAPI(clusterName string,
 
 	if oldAdminAPI.TLS.Enabled {
 		rpExternalListeners = &redpandav1alpha1.ExternalListener{
-			Port: oldAdminAPI.Port,
+			Port: pointer.Int(oldAdminAPI.Port),
 			TLS: &redpandav1alpha1.ListenerTLS{
 				Cert:              &name,
 				Enabled:           pointer.Bool(oldAdminAPI.TLS.Enabled),
-				RequireClientAuth: oldAdminAPI.TLS.RequireClientAuth,
+				RequireClientAuth: pointer.Bool(oldAdminAPI.TLS.RequireClientAuth),
 			},
 			AdvertisedPorts: make([]int, 0),
 		}
@@ -291,11 +288,11 @@ func MigrateAdminAPI(clusterName string,
 
 	} else {
 		rpExternalListeners = &redpandav1alpha1.ExternalListener{
-			Port: oldAdminAPI.Port,
+			Port: pointer.Int(oldAdminAPI.Port),
 			TLS: &redpandav1alpha1.ListenerTLS{
 				Cert:              pointer.String(""),
 				Enabled:           pointer.Bool(false),
-				RequireClientAuth: oldAdminAPI.TLS.RequireClientAuth,
+				RequireClientAuth: pointer.Bool(oldAdminAPI.TLS.RequireClientAuth),
 			},
 			AdvertisedPorts: make([]int, 0),
 		}
@@ -340,8 +337,8 @@ func MigratePandaProxy(oldProxyAPI *vectorizedv1alpha1.PandaproxyAPI,
 	}
 
 	if !oldProxyAPI.External.Enabled {
-		migratedHTTP.Port = oldProxyAPI.Port
-		migratedHTTP.Enabled = true // does not exist in old schema
+		migratedHTTP.Port = pointer.Int(oldProxyAPI.Port)
+		migratedHTTP.Enabled = pointer.Bool(true) // does not exist in old schema
 
 		authenticationMethod := oldProxyAPI.AuthenticationMethod
 		if authenticationMethod == "" {
@@ -349,19 +346,18 @@ func MigratePandaProxy(oldProxyAPI *vectorizedv1alpha1.PandaproxyAPI,
 		}
 
 		migratedHTTP.AuthenticationMethod = &authenticationMethod
-		migratedHTTP.KafkaEndpoint = kafkaDefaultListener
+		migratedHTTP.KafkaEndpoint = &kafkaDefaultListener
 
 		// update internal certificate
-		cert := ""
 		if oldProxyAPI.TLS.Enabled {
-			cert = fmt.Sprintf(httpInternalNamesTmpl, 0)
+			cert := fmt.Sprintf(httpInternalNamesTmpl, 0)
 			tls.Certs[cert] = GetCertificateFromPandaProxy(&oldProxyAPI.TLS)
-		}
 
-		migratedHTTP.TLS = &redpandav1alpha1.ListenerTLS{
-			Cert:              &cert,
-			Enabled:           pointer.Bool(oldProxyAPI.TLS.Enabled),
-			RequireClientAuth: oldProxyAPI.TLS.RequireClientAuth,
+			migratedHTTP.TLS = &redpandav1alpha1.ListenerTLS{
+				Cert:              &cert,
+				Enabled:           pointer.Bool(oldProxyAPI.TLS.Enabled),
+				RequireClientAuth: pointer.Bool(oldProxyAPI.TLS.RequireClientAuth),
+			}
 		}
 
 		// we return since we are done with internal case
@@ -385,11 +381,11 @@ func MigratePandaProxy(oldProxyAPI *vectorizedv1alpha1.PandaproxyAPI,
 
 	if oldProxyAPI.TLS.Enabled {
 		rpExternalListeners = &redpandav1alpha1.ExternalListener{
-			Port: oldProxyAPI.Port,
+			Port: pointer.Int(oldProxyAPI.Port),
 			TLS: &redpandav1alpha1.ListenerTLS{
 				Cert:              &name,
 				Enabled:           pointer.Bool(true),
-				RequireClientAuth: oldProxyAPI.TLS.RequireClientAuth,
+				RequireClientAuth: pointer.Bool(oldProxyAPI.TLS.RequireClientAuth),
 			},
 			AdvertisedPorts: make([]int, 0),
 		}
@@ -398,11 +394,11 @@ func MigratePandaProxy(oldProxyAPI *vectorizedv1alpha1.PandaproxyAPI,
 
 	} else {
 		rpExternalListeners = &redpandav1alpha1.ExternalListener{
-			Port: oldProxyAPI.Port,
+			Port: pointer.Int(oldProxyAPI.Port),
 			TLS: &redpandav1alpha1.ListenerTLS{
 				Cert:              pointer.String(""),
 				Enabled:           pointer.Bool(false),
-				RequireClientAuth: oldProxyAPI.TLS.RequireClientAuth,
+				RequireClientAuth: pointer.Bool(oldProxyAPI.TLS.RequireClientAuth),
 			},
 			AdvertisedPorts: make([]int, 0),
 		}
@@ -449,5 +445,5 @@ func MigrateRPCServer(oldRPCServer *vectorizedv1alpha1.SocketAddress, migratedRP
 		return
 	}
 
-	migratedRPC.Port = oldRPCServer.Port
+	migratedRPC.Port = pointer.Int(oldRPCServer.Port)
 }

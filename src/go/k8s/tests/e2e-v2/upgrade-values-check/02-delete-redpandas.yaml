@@ -1,0 +1,16 @@
+---
+apiVersion: kuttl.dev/v1beta1
+kind: TestStep
+delete:
+  - apiVersion: cluster.redpanda.com/v1alpha1
+    kind: Redpanda
+    name: redpanda
+  - apiVersion: batch/v1
+    kind: Job
+    name: redpanda-configuration
+  - apiVersion: batch/v1
+    kind: Job
+    name: redpanda-post-upgrade
+  - apiVersion: v1
+    kind: PersistentVolumeClaim
+    name: datadir-redpanda-0

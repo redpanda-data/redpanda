@@ -50,18 +50,18 @@ func MigrateClusterSpec(cluster *vectorizedv1alpha1.Cluster, rp *v1alpha1.Redpan
 	}
 
 	if oldSpec.Image != "" {
-		rpImage.Repository = oldSpec.Image
+		rpImage.Repository = pointer.String(oldSpec.Image)
 	} else {
-		rpImage.Repository = repository
+		rpImage.Repository = pointer.String(repository)
 	}
 
 	if oldSpec.Version != "" {
-		rpImage.Tag = oldSpec.Version
+		rpImage.Tag = pointer.String(oldSpec.Version)
 	} else {
-		rpImage.Tag = imageVersion
+		rpImage.Tag = pointer.String(imageVersion)
 	}
 
-	if rpImage.Tag == "" && rpImage.Repository == "" {
+	if pointer.StringDeref(rpImage.Tag, "") == "" && pointer.StringDeref(rpImage.Repository, "") == "" {
 		rpImage = nil
 	}
 
@@ -88,7 +88,7 @@ func MigrateClusterSpec(cluster *vectorizedv1alpha1.Cluster, rp *v1alpha1.Redpan
 	}
 
 	// --- Replicas ---
-	rpStatefulset.Replicas = int(pointer.Int32Deref(oldSpec.Replicas, 3))
+	rpStatefulset.Replicas = pointer.Int(int(pointer.Int32Deref(oldSpec.Replicas, 3)))
 
 	// --- Resources ---
 	addResources := false
@@ -205,13 +205,15 @@ func MigrateClusterSpec(cluster *vectorizedv1alpha1.Cluster, rp *v1alpha1.Redpan
 			for i := range oldSpec.Superusers {
 				user := oldSpec.Superusers[i]
 				userItem := v1alpha1.UsersItems{
-					Name:      user.Username,
-					Password:  "",
-					Mechanism: "SCRAM-SHA-512",
+					Name:      pointer.String(user.Username),
+					Password:  pointer.String(""),
+					Mechanism: pointer.String("SCRAM-SHA-512"),
 				}
 
 				users = append(users, userItem) //nolint:staticcheck // placeholder for now
 			}
+		} else {
+			rpAuth.SASL.Users = nil
 		}
 	} else {
 		rpAuth = nil
@@ -220,9 +222,9 @@ func MigrateClusterSpec(cluster *vectorizedv1alpha1.Cluster, rp *v1alpha1.Redpan
 	// --- license details ---
 	if oldSpec.LicenseRef != nil {
 		if oldSpec.LicenseRef.Key != "" {
-			rpLicenseRef.SecretKey = oldSpec.LicenseRef.Key
+			rpLicenseRef.SecretKey = pointer.String(oldSpec.LicenseRef.Key)
 		}
-		rpLicenseRef.SecretName = oldSpec.LicenseRef.Name
+		rpLicenseRef.SecretName = pointer.String(oldSpec.LicenseRef.Name)
 	} else {
 		rpLicenseRef = nil
 	}

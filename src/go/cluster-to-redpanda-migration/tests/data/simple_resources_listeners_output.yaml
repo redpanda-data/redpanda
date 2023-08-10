@@ -16,20 +16,10 @@ spec:
       tag: v22.3.22
     listeners:
       admin:
-        external: {}
         port: 9644
-        tls:
-          cert: ""
-          enabled: false
-          requireClientAuth: false
       kafka:
         authenticationMethod: none
-        external: {}
         port: 9092
-        tls:
-          cert: ""
-          enabled: false
-          requireClientAuth: false
       rpc:
         port: 33145
     resources:

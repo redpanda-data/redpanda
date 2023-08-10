@@ -1,0 +1,12 @@
+apiVersion: cluster.redpanda.com/v1alpha1
+kind: Redpanda
+metadata:
+  name: redpanda
+spec:
+  clusterSpec:
+    listeners:
+      admin:
+        port: 9644
+        external:
+          default:
+            port: 9640
