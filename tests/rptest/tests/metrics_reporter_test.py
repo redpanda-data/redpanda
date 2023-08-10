@@ -17,6 +17,7 @@ from rptest.utils.rpenv import sample_license
 from ducktape.utils.util import wait_until
 
 from rptest.clients.types import TopicSpec
+from rptest.services.admin import Admin
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.services.http_server import HttpServer
 
@@ -52,9 +53,9 @@ class MetricsReporterTest(RedpandaTest):
         admin = Admin(self.redpanda)
         license = sample_license()
         if license is None:
-            self.logger.warn(
-                "REDPANDA_SAMPLE_LICENSE env var not found, ignoring license checks."
-            )
+            self.logger.info(
+                "Skipping test, REDPANDA_SAMPLE_LICENSE env var not found")
+            return
 
         assert admin.put_license(
             license).status_code == 200, "PUT License failed"
