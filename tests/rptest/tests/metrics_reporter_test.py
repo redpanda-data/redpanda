@@ -54,9 +54,9 @@ class MetricsReporterTest(RedpandaTest):
         admin = Admin(self.redpanda)
         license = sample_license()
         if license is None:
-            self.logger.warn(
-                "REDPANDA_SAMPLE_LICENSE env var not found, ignoring license checks."
-            )
+            self.logger.info(
+                "Skipping test, REDPANDA_SAMPLE_LICENSE env var not found")
+            return
 
         assert admin.put_license(
             license).status_code == 200, "PUT License failed"
