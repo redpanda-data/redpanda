@@ -868,6 +868,12 @@ class RedpandaServiceBase(Service):
 
         self._skip_if_no_redpanda_log = skip_if_no_redpanda_log
 
+        self._dedicated_nodes = self._context.globals.get(
+            self.DEDICATED_NODE_KEY, False)
+
+        self.logger.info(
+            f"ResourceSettings: dedicated_nodes={self._dedicated_nodes}")
+
     def start_node(self, node, **kwargs):
         pass
 
@@ -1229,6 +1235,17 @@ class RedpandaServiceBase(Service):
                        log_allow_list: list[str | re.Pattern] | None = None):
         pass
 
+    @property
+    def dedicated_nodes(self):
+        """
+        If true, the nodes are dedicated linux servers, e.g. EC2 instances.
+
+        If false, the nodes are containers that share CPUs and memory with
+        one another.
+        :return:
+        """
+        return self._dedicated_nodes
+
 
 class RedpandaServiceK8s(RedpandaServiceBase):
     def __init__(self,
@@ -1430,6 +1447,11 @@ class RedpandaServiceCloud(RedpandaServiceK8s):
         self._cloud_cluster = CloudCluster(self.logger, self._cc_config)
         self._kubectl = None
 
+        self._dedicated_nodes = True
+        self.logger.info(
+            'ResourceSettings: setting dedicated_nodes=True because serving from redpanda cloud'
+        )
+
     def start_node(self, node, **kwargs):
         pass
 
@@ -1537,12 +1559,6 @@ class RedpandaService(RedpandaServiceBase):
         self._raise_on_errors = self._context.globals.get(
             self.RAISE_ON_ERRORS_KEY, True)
 
-        self._dedicated_nodes = self._context.globals.get(
-            self.DEDICATED_NODE_KEY, False)
-
-        self.logger.info(
-            f"ResourceSettings: dedicated_nodes={self._dedicated_nodes}")
-
         self.cloud_storage_client: Optional[S3Client] = None
 
         # enable asan abort / core dumps by default
@@ -1624,17 +1640,6 @@ class RedpandaService(RedpandaServiceBase):
 
     def require_client_auth(self):
         return self._security.require_client_auth
-
-    @property
-    def dedicated_nodes(self):
-        """
-        If true, the nodes are dedicated linux servers, e.g. EC2 instances.
-
-        If false, the nodes are containers that share CPUs and memory with
-        one another.
-        :return:
-        """
-        return self._dedicated_nodes
 
     def get_node_memory_mb(self):
         if self._resource_settings.memory_mb is not None:
