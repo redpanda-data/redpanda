@@ -18,24 +18,20 @@
 
 class seastar_test : public ::testing::Test {
 public:
-    virtual void SetUpAsync() {}
-    virtual void TearDownAsync() {}
-
-protected:
-    static void run(std::function<seastar::future<>()> task);
-    static void run_async(std::function<void()> task);
+    virtual seastar::future<> SetUpAsync() {
+        return seastar::make_ready_future<>();
+    }
+    virtual seastar::future<> TearDownAsync() {
+        return seastar::make_ready_future<>();
+    }
 
 private:
-    void SetUp() override {
-        run_async([this] { SetUpAsync(); });
-    }
-    void TearDown() override {
-        run_async([this] { TearDownAsync(); });
-    }
+    void SetUp() override { SetUpAsync().get(); }
+    void TearDown() override { TearDownAsync().get(); }
 };
 
 #define GTEST_TEST_SEASTAR_(                                                   \
-  test_suite_name, test_name, parent_class, parent_id, run, run_type)          \
+  test_suite_name, test_name, parent_class, parent_id)                         \
     static_assert(                                                             \
       sizeof(GTEST_STRINGIFY_(test_suite_name)) > 1,                           \
       "test_suite_name must not be empty");                                    \
@@ -62,10 +58,8 @@ private:
           = delete; /* NOLINT */                                               \
                                                                                \
     private:                                                                   \
-        void TestBody() override {                                             \
-            (run)([this] { return TestBodyWrapped(); });                       \
-        }                                                                      \
-        run_type TestBodyWrapped();                                            \
+        void TestBody() override { TestBodyWrapped().get(); }                  \
+        seastar::future<> TestBodyWrapped();                                   \
         static ::testing::TestInfo* const test_info_ GTEST_ATTRIBUTE_UNUSED_;  \
     };                                                                         \
                                                                                \
@@ -84,56 +78,32 @@ private:
           parent_class>::GetTearDownCaseOrSuite(__FILE__, __LINE__),           \
         new ::testing::internal::TestFactoryImpl<GTEST_TEST_CLASS_NAME_(       \
           test_suite_name, test_name)>);                                       \
-    run_type GTEST_TEST_CLASS_NAME_(                                           \
+    seastar::future<> GTEST_TEST_CLASS_NAME_(                                  \
       test_suite_name, test_name)::TestBodyWrapped()
-
-#define TEST_ASYNC(test_suite_name, test_name)                                 \
-    GTEST_TEST_SEASTAR_(                                                       \
-      test_suite_name,                                                         \
-      test_name,                                                               \
-      seastar_test,                                                            \
-      ::testing::internal::GetTestTypeId(),                                    \
-      run_async,                                                               \
-      void)
 
 #define TEST_CORO(test_suite_name, test_name)                                  \
     GTEST_TEST_SEASTAR_(                                                       \
       test_suite_name,                                                         \
       test_name,                                                               \
       seastar_test,                                                            \
-      ::testing::internal::GetTestTypeId(),                                    \
-      run,                                                                     \
-      seastar::future<>)
-
-#define TEST_F_ASYNC(test_fixture, test_name)                                  \
-    GTEST_TEST_SEASTAR_(                                                       \
-      test_fixture,                                                            \
-      test_name,                                                               \
-      test_fixture,                                                            \
-      ::testing::internal::GetTypeId<test_fixture>(),                          \
-      run_async,                                                               \
-      void)
+      ::testing::internal::GetTestTypeId())
 
 #define TEST_F_CORO(test_fixture, test_name)                                   \
     GTEST_TEST_SEASTAR_(                                                       \
       test_fixture,                                                            \
       test_name,                                                               \
       test_fixture,                                                            \
-      ::testing::internal::GetTypeId<test_fixture>(),                          \
-      run,                                                                     \
-      seastar::future<>)
+      ::testing::internal::GetTypeId<test_fixture>())
 
-#define TEST_P_SEASTAR_(test_suite_name, test_name, run, run_type)             \
+#define TEST_P_SEASTAR_(test_suite_name, test_name)                            \
     static_assert(                                                             \
       std::is_base_of_v<seastar_test, test_suite_name>, "wrong base");         \
     class GTEST_TEST_CLASS_NAME_(test_suite_name, test_name)                   \
       : public test_suite_name {                                               \
     public:                                                                    \
         GTEST_TEST_CLASS_NAME_(test_suite_name, test_name)() {}                \
-        void TestBody() override {                                             \
-            (run)([this] { return TestBodyWrapped(); });                       \
-        }                                                                      \
-        run_type TestBodyWrapped();                                            \
+        void TestBody() override { TestBodyWrapped().get(); }                  \
+        seastar::future<> TestBodyWrapped();                                   \
                                                                                \
     private:                                                                   \
         static int AddToRegistry() {                                           \
@@ -160,14 +130,11 @@ private:
     int GTEST_TEST_CLASS_NAME_(                                                \
       test_suite_name, test_name)::gtest_registering_dummy_                    \
       = GTEST_TEST_CLASS_NAME_(test_suite_name, test_name)::AddToRegistry();   \
-    run_type GTEST_TEST_CLASS_NAME_(                                           \
+    seastar::future<> GTEST_TEST_CLASS_NAME_(                                  \
       test_suite_name, test_name)::TestBodyWrapped()
 
-#define TEST_P_ASYNC(test_suite_name, test_name)                               \
-    TEST_P_SEASTAR_(test_suite_name, test_name, run_async, void)
-
 #define TEST_P_CORO(test_suite_name, test_name)                                \
-    TEST_P_SEASTAR_(test_suite_name, test_name, run, seastar::future<>)
+    TEST_P_SEASTAR_(test_suite_name, test_name)
 
 /*
  * Support for coroutine safe assertions
