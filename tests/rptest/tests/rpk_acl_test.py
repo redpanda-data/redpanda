@@ -36,6 +36,37 @@ class RpkACLTest(RedpandaTest):
                             sasl_mechanism=self.mechanism)
         self.superuser = self.redpanda.SUPERUSER_CREDENTIALS
 
+    def _superclient(self):
+        return RpkTool(self.redpanda,
+                       username=self.superuser.username,
+                       password=self.superuser.password,
+                       sasl_mechanism=self.mechanism)
+
+    @cluster(num_nodes=3)
+    def test_modify_then_query(self):
+        """
+        This test ensures that sending a command to enable an ACL then
+        querying it (on a node that may be a follower) returns the most
+        up to data result
+        """
+        # All operations apart from 'ALL'
+        operations = [
+            'DESCRIBE', 'READ', 'WRITE', 'CREATE', 'DELETE', 'ALTER',
+            'DESCRIBE_CONFIGS', 'ALTER_CONFIGS'
+        ]
+        superclient = self._superclient()
+        superclient.acl_create_allow_cluster(self.superuser.username,
+                                             "describe")
+
+        for op in operations:
+            self._rpk.sasl_allow_principal(f'User:{self.username}', [op],
+                                           'topic', 'foo',
+                                           self.superuser.username,
+                                           self.superuser.password,
+                                           self.superuser.algorithm)
+            described = superclient.acl_list()
+            assert op in described, f"Failed looking for {op} in {described}"
+
     @cluster(num_nodes=1)
     def test_create_update(self):
         topic = "create-update"
