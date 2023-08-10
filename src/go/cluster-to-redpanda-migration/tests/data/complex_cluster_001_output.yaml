@@ -12,7 +12,6 @@ spec:
     auth:
       sasl:
         enabled: true
-        users: null
     config:
       cluster:
         aggregate_metrics: true
@@ -44,18 +43,12 @@ spec:
       secret_name: redpanda-someblah-license
     listeners:
       admin:
-        external: {}
         port: 9644
-        tls:
-          cert: ""
-          enabled: false
-          requireClientAuth: false
       http:
         authenticationMethod: none
         enabled: true
         external:
           http-default:
-            advertisedPorts: []
             port: 30082
             tls:
               cert: http-default
@@ -63,31 +56,21 @@ spec:
               requireClientAuth: false
         kafkaEndpoint: kafka-default
         port: 8082
-        tls:
-          cert: ""
-          enabled: false
-          requireClientAuth: false
       kafka:
         authenticationMethod: sasl
         external:
           kafka-default:
-            advertisedPorts: []
             port: 30092
             tls:
               cert: kafka-default
               enabled: true
               requireClientAuth: false
         port: 9092
-        tls:
-          cert: ""
-          enabled: false
-          requireClientAuth: false
       rpc:
         port: 33145
       schemaRegistry:
         authenticationMethod: http_basic
         enabled: true
-        external: {}
         kafkaEndpoint: kafka-default
         port: 30081
         tls:

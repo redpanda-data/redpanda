@@ -1,0 +1,57 @@
+---
+apiVersion: cluster.redpanda.com/v1alpha1
+kind: Redpanda
+metadata:
+  finalizers:
+    - operator.redpanda.com/finalizer
+  name: redpanda
+status:
+  conditions:
+    - message: Redpanda reconciliation succeeded
+      reason: RedpandaClusterDeployed
+      status: "True"
+      type: Ready
+  helmRelease: redpanda
+  helmReleaseReady: true
+  helmRepository: redpanda-repository
+  helmRepositoryReady: true
+  observedGeneration: 1
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: redpanda
+status:
+  availableReplicas: 1
+  collisionCount: 0
+  currentReplicas: 1
+  observedGeneration: 1
+  readyReplicas: 1
+  replicas: 1
+  updatedReplicas: 1
+---
+apiVersion: helm.toolkit.fluxcd.io/v2beta1
+kind: HelmRelease
+metadata:
+  name: redpanda
+status:
+  conditions:
+    - message: Release reconciliation succeeded
+      reason: ReconciliationSucceeded
+      status: "True"
+      type: Ready
+    - message: Helm install succeeded
+      reason: InstallSucceeded
+      status: "True"
+      type: Released
+  helmChart: redpanda/redpanda-redpanda
+  lastAppliedRevision: 5.0.9
+  lastAttemptedRevision: 5.0.9
+  lastAttemptedValuesChecksum: 9a164b2eba37330d0bb90cd1dff1e40779cab130
+  lastReleaseRevision: 1
+  observedGeneration: 1
+---
+apiVersion: kuttl.dev/v1beta1
+kind: TestAssert
+collectors:
+  - command: ../../../hack/get-redpanda-info.sh redpanda ../../_e2e_artifacts_v2

@@ -61,9 +61,3 @@ golangci-lint:
 
 .PHONY: lint
 lint: gofumpt-lint golangci-lint
-
-# Build the docker image
-docker-build: TARGETARCH=amd64
-docker-build: compile-linux
-	echo "~~~ Building cluster-to-redpanda-migration image :docker:"
-	docker buildx build -t ${IMAGE} .

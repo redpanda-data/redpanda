@@ -1,0 +1,37 @@
+---
+apiVersion: cluster.redpanda.com/v1alpha1
+kind: Redpanda
+metadata:
+  name: redpanda
+spec:
+  chartRef:
+    chartVersion: "5.0.9"
+  clusterSpec:
+    statefulset:
+      replicas: 1
+    tls:
+      enabled: false
+    auth:
+      sasl:
+        enabled: true
+        users:
+          - name: superuser
+            password: secretpassword
+    listeners:
+      admin:
+        port: 9644
+        external:
+          default:
+            port: 9645
+            tls:
+              requireClientAuth: false
+              cert: external
+            advertisedPorts:
+              - 31644
+        tls:
+          requireClientAuth: false
+          enabled: false
+    storage:
+      persistentVolume:
+        enabled: true
+        size: 20Gi

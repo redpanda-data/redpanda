@@ -485,7 +485,7 @@ func (r *RedpandaReconciler) helmReleaseRequiresUpdate(ctx context.Context, hr, 
 	log := ctrl.LoggerFrom(ctx).WithName("RedpandaReconciler.helmReleaseRequiresUpdate")
 
 	switch {
-	case !reflect.DeepEqual(hr.Spec.Values, hrTemplate.Spec.Values):
+	case !reflect.DeepEqual(hr.GetValues(), hrTemplate.GetValues()):
 		log.Info("values found different")
 		return true
 	case helmChartRequiresUpdate(&hr.Spec.Chart, &hrTemplate.Spec.Chart):
