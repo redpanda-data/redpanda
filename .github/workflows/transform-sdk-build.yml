@@ -1,0 +1,52 @@
+# Copyright 2023 Redpanda Data, Inc.
+#
+# Use of this software is governed by the Business Source License
+# included in the file licenses/BSL.md
+#
+# As of the Change Date specified in that file, in accordance with
+# the Business Source License, use of this software will be governed
+# by the Apache License, Version 2.0
+
+name: transform-sdk
+on:
+  push:
+    tags:
+      - '*'
+    branches:
+      - '*'
+    paths:
+      - 'src/go/transform-sdk/**'
+      - '.github/workflows/transform-sdk-build.yml'
+  pull_request:
+    branches:
+      - dev
+      # Run on any backports
+      - 'v*'
+    paths:
+      - 'src/go/transform-sdk/**'
+      - '.github/workflows/transform-sdk-build.yml'
+
+jobs:
+  test:
+    name: Run tests
+    runs-on: ubuntu-latest
+    steps:
+
+      - name: Check out code
+        uses: actions/checkout@v3
+
+      - name: Set up Go
+        uses: actions/setup-go@v3
+        with:
+          go-version: 1.20.6
+
+      - name: Run tests
+        working-directory: src/go/transform-sdk/
+        run: go test -v ./...
+
+      - name: Run golangci-lint
+        uses: golangci/golangci-lint-action@v3
+        with:
+          version: v1.52.2
+          args: --timeout 5m
+          working-directory: src/go/transform-sdk/
