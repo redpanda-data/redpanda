@@ -94,14 +94,9 @@ ss::future<std::vector<topic_result>> topics_frontend::create_topics(
     vlog(clusterlog.info, "Create topics {}", topics);
     // make sure that STM is up to date (i.e. we have the most recent state
     // available) before allocating topics
-    return _stm
-      .invoke_on(
-        controller_stm_shard,
-        [timeout](controller_stm& stm) {
-            return stm.quorum_write_empty_batch(timeout);
-        })
+    return stm_linearizable_barrier(timeout)
       .then([this, topics = std::move(topics), timeout](
-              result<raft::replicate_result> result) mutable {
+              result<model::offset> result) mutable {
           if (!result) {
               return ss::make_ready_future<std::vector<topic_result>>(
                 create_topic_results(topics, errc::not_leader_controller));
@@ -189,10 +184,7 @@ ss::future<std::vector<topic_result>> topics_frontend::update_topic_properties(
     // current node is a leader, just replicate
     if (cluster_leader == _self) {
         // replicate empty batch to make sure leader local state is up to date.
-        auto result = co_await _stm.invoke_on(
-          controller_stm_shard, [timeout](controller_stm& stm) {
-              return stm.quorum_write_empty_batch(timeout);
-          });
+        auto result = co_await stm_linearizable_barrier(timeout);
         if (!result) {
             co_return create_topic_results(updates, map_errc(result.error()));
         }
@@ -490,6 +482,11 @@ errc topics_frontend::validate_topic_configuration(
 ss::future<topic_result> topics_frontend::do_create_topic(
   custom_assignable_topic_configuration assignable_config,
   model::timeout_clock::time_point timeout) {
+    if (_topics.local().contains(assignable_config.cfg.tp_ns)) {
+        co_return topic_result(
+          assignable_config.cfg.tp_ns, errc::topic_already_exists);
+    }
+
     auto validation_err = validate_topic_configuration(assignable_config);
 
     if (validation_err != errc::success) {
