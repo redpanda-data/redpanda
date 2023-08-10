@@ -3721,8 +3721,10 @@ class RedpandaService(RedpandaServiceBase):
         if self._started:
             # Aggressive retry because almost always this should already be done
             # Each 1000 partititions add 30s of timeout
+            n_partitions = len(self.partitions())
+            timeout = 30 if n_partitions < 1000 else (n_partitions / 1000) * 30
             wait_until(all_partitions_uploaded_manifest,
-                       timeout_sec=30 + len(self.partitions()) // 33,
+                       timeout_sec=30 + timeout,
                        backoff_sec=1)
 
         # We stop because the scrubbing routine would otherwise interpret
