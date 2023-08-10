@@ -28,6 +28,7 @@ enum class error_code {
     subject_not_deleted,
     subject_version_soft_deleted,
     subject_version_not_deleted,
+    compatibility_not_found,
     subject_version_operaton_not_permitted,
     subject_version_has_references,
     subject_version_schema_id_already_exists,

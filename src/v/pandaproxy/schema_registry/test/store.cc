@@ -432,7 +432,7 @@ BOOST_AUTO_TEST_CASE(test_store_invalid_subject_compat) {
 
     BOOST_REQUIRE_EQUAL(
       s.get_compatibility(subject0, fallback).error().code(),
-      pps::error_code::subject_not_found);
+      pps::error_code::compatibility_not_found);
 
     expected = pps::compatibility_level::backward;
     BOOST_REQUIRE(
