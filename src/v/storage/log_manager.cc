@@ -167,6 +167,10 @@ ss::future<> log_manager::clean_close(ss::shared_ptr<storage::log> log) {
 }
 
 ss::future<> log_manager::start() {
+    if (unlikely(config::shard_local_cfg()
+                   .log_disable_housekeeping_for_tests.value())) {
+        co_return;
+    }
     ssx::spawn_with_gate(_open_gate, [this] { return housekeeping(); });
     co_return;
 }

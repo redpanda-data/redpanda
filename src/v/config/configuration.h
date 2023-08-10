@@ -140,6 +140,7 @@ struct configuration final : public config_store {
     // same as log.retention.ms in kafka
     retention_duration_property delete_retention_ms;
     property<std::chrono::milliseconds> log_compaction_interval_ms;
+    property<bool> log_disable_housekeeping_for_tests;
     // same as retention.size in kafka - TODO: size not implemented
     property<std::optional<size_t>> retention_bytes;
     property<int32_t> group_topic_partitions;

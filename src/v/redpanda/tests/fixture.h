@@ -97,6 +97,7 @@ public:
       : app(ssx::sformat("redpanda-{}", node_id()))
       , proxy_port(proxy_port)
       , schema_reg_port(schema_reg_port)
+      , kafka_port(kafka_port)
       , data_dir(std::move(base_dir))
       , remove_on_shutdown(remove_on_shutdown)
       , app_signal(std::make_unique<::stop_signal>()) {
@@ -465,7 +466,7 @@ public:
     make_kafka_client(std::optional<ss::sstring> client_id = "test_client") {
         return ss::make_ready_future<kafka::client::transport>(
           net::base_transport::configuration{
-            .server_addr = config::node().kafka_api()[0].address,
+            .server_addr = {"127.0.0.1", kafka_port},
           },
           std::move(client_id));
     }
@@ -506,9 +507,11 @@ public:
     ss::future<> add_topic(
       model::topic_namespace_view tp_ns,
       int partitions = 1,
-      std::optional<cluster::topic_properties> props = std::nullopt) {
+      std::optional<cluster::topic_properties> props = std::nullopt,
+      int16_t replication_factor = 1) {
         std::vector<cluster::topic_configuration> cfgs = {
-          cluster::topic_configuration{tp_ns.ns, tp_ns.tp, partitions, 1}};
+          cluster::topic_configuration{
+            tp_ns.ns, tp_ns.tp, partitions, replication_factor}};
         if (props.has_value()) {
             cfgs[0].properties = std::move(props.value());
         }
@@ -707,6 +710,7 @@ public:
     application app;
     uint16_t proxy_port;
     uint16_t schema_reg_port;
+    uint16_t kafka_port;
     std::filesystem::path data_dir;
     ss::sharded<net::server_configuration> configs;
     ss::sharded<kafka::server> proto;
