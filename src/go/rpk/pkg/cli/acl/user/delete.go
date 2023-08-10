@@ -32,6 +32,9 @@ delete any ACLs that may exist for this user.
 		Args: cobra.MaximumNArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
 			f := p.Formatter
+			if h, ok := f.Help(credentials{}); ok {
+				out.Exit(h)
+			}
 			p, err := p.LoadVirtualProfile(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)
 

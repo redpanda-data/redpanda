@@ -123,9 +123,9 @@ type (
 	// BACKCOMPAT 23-05-01: The CA used to be "truststore_file" in yaml; we
 	// deserialize truststore_file AND ca_file. See weak.go.
 	TLS struct {
-		KeyFile        string `yaml:"key_file,omitempty" json:"key_file"`
-		CertFile       string `yaml:"cert_file,omitempty" json:"cert_file"`
-		TruststoreFile string `yaml:"ca_file,omitempty" json:"ca_file"`
+		KeyFile        string `yaml:"key_file,omitempty" json:"key_file,omitempty"`
+		CertFile       string `yaml:"cert_file,omitempty" json:"cert_file,omitempty"`
+		TruststoreFile string `yaml:"ca_file,omitempty" json:"ca_file,omitempty"`
 	}
 
 	ServerTLS struct {
@@ -174,14 +174,14 @@ type (
 	}
 
 	RpkKafkaAPI struct {
-		Brokers []string `yaml:"brokers,omitempty" json:"brokers"`
-		TLS     *TLS     `yaml:"tls,omitempty" json:"tls"`
+		Brokers []string `yaml:"brokers,omitempty" json:"brokers,omitempty"`
+		TLS     *TLS     `yaml:"tls,omitempty" json:"tls,omitempty"`
 		SASL    *SASL    `yaml:"sasl,omitempty" json:"sasl,omitempty"`
 	}
 
 	RpkAdminAPI struct {
-		Addresses []string `yaml:"addresses,omitempty" json:"addresses"`
-		TLS       *TLS     `yaml:"tls,omitempty" json:"tls"`
+		Addresses []string `yaml:"addresses,omitempty" json:"addresses,omitempty"`
+		TLS       *TLS     `yaml:"tls,omitempty" json:"tls,omitempty"`
 	}
 
 	SASL struct {
