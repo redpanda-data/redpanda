@@ -2035,7 +2035,7 @@ admin_server::put_license_handler(std::unique_ptr<ss::httpd::request> req) {
     }
 
     try {
-        boost::trim_if(raw_license, boost::is_any_of(" \n"));
+        boost::trim_if(raw_license, boost::is_any_of(" \n\r"));
         auto license = security::make_license(raw_license);
         if (license.is_expired()) {
             throw ss::httpd::bad_request_exception(
