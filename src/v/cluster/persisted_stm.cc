@@ -18,6 +18,7 @@
 #include "storage/record_batch_builder.h"
 #include "storage/snapshot.h"
 
+#include <seastar/core/abort_source.hh>
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/future.hh>
 
@@ -313,9 +314,10 @@ ss::future<bool> persisted_stm::sync(model::timeout_clock::duration timeout) {
 }
 
 ss::future<bool> persisted_stm::wait_no_throw(
-  model::offset offset, model::timeout_clock::duration timeout) {
-    auto deadline = model::timeout_clock::now() + timeout;
-    return wait(offset, deadline)
+  model::offset offset,
+  model::timeout_clock::time_point deadline,
+  std::optional<std::reference_wrapper<ss::abort_source>> as) {
+    return wait(offset, deadline, as)
       .then([] { return true; })
       .handle_exception_type([](const ss::abort_requested_exception&) {
           // Shutting down
