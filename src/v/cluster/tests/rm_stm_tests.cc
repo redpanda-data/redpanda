@@ -272,8 +272,11 @@ FIXTURE_TEST(test_tx_aborted_tx_1, mux_state_machine_fixture) {
 
     auto op = stm.abort_tx(pid2, tx_seq, 2'000ms).get0();
     BOOST_REQUIRE_EQUAL(op, cluster::tx_errc::none);
-    BOOST_REQUIRE(
-      stm.wait_no_throw(_raft.get()->committed_offset(), 2'000ms).get0());
+    BOOST_REQUIRE(stm
+                    .wait_no_throw(
+                      _raft.get()->committed_offset(),
+                      model::timeout_clock::now() + 2'000ms)
+                    .get0());
     aborted_txs = stm.aborted_transactions(min_offset, max_offset).get0();
 
     BOOST_REQUIRE_EQUAL(aborted_txs.size(), 1);
@@ -369,8 +372,11 @@ FIXTURE_TEST(test_tx_aborted_tx_2, mux_state_machine_fixture) {
 
     op = stm.abort_tx(pid2, tx_seq, 2'000ms).get0();
     BOOST_REQUIRE_EQUAL(op, cluster::tx_errc::none);
-    BOOST_REQUIRE(
-      stm.wait_no_throw(_raft.get()->committed_offset(), 2'000ms).get0());
+    BOOST_REQUIRE(stm
+                    .wait_no_throw(
+                      _raft.get()->committed_offset(),
+                      model::timeout_clock::now() + 2'000ms)
+                    .get0());
     aborted_txs = stm.aborted_transactions(min_offset, max_offset).get0();
 
     BOOST_REQUIRE_EQUAL(aborted_txs.size(), 1);

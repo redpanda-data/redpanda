@@ -176,9 +176,10 @@ private:
       ss::lowres_clock::time_point,
       std::optional<std::reference_wrapper<ss::abort_source>>);
 
+    /// NOTE: no deadline provided, as it is expected further updates to the
+    /// archiver will depend on all record batches having been applied.
     ss::future<std::error_code> do_replicate_commands(
       model::record_batch,
-      ss::lowres_clock::time_point,
       std::optional<std::reference_wrapper<ss::abort_source>>);
 
     ss::future<> apply(model::record_batch batch) override;

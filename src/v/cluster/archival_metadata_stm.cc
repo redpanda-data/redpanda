@@ -195,8 +195,7 @@ ss::future<std::error_code> command_batch_builder::replicate() {
                 return ss::make_ready_future<std::error_code>(errc::timeout);
             }
             auto batch = std::move(_builder).build();
-            return _stm.get().do_replicate_commands(
-              std::move(batch), _deadline, _as);
+            return _stm.get().do_replicate_commands(std::move(batch), _as);
         });
     });
 }
@@ -387,45 +386,46 @@ ss::future<std::error_code> archival_metadata_stm::cleanup_metadata(
 
 ss::future<std::error_code> archival_metadata_stm::do_replicate_commands(
   model::record_batch batch,
-  ss::lowres_clock::time_point deadline,
   std::optional<std::reference_wrapper<ss::abort_source>> as) {
+    auto current_term = _insync_term;
     auto fut = _raft->replicate(
-      _insync_term,
+      current_term,
       model::make_memory_record_batch_reader(std::move(batch)),
       raft::replicate_options{raft::consistency_level::quorum_ack});
 
+    // Run with an abort source so shutdown doesn't have to wait a full
+    // replication timeout to proceed.
     if (as) {
-        fut = ssx::with_timeout_abortable(std::move(fut), deadline, *as);
-    } else {
-        fut = ss::with_timeout(deadline, std::move(fut));
+        fut = ssx::with_timeout_abortable(
+          std::move(fut), model::no_timeout, *as);
     }
 
-    result<raft::replicate_result> result{{}};
-    try {
-        result = co_await std::move(fut);
-    } catch (const ss::timed_out_error&) {
-        result = errc::timeout;
-    }
-
+    auto result = co_await std::move(fut);
     if (!result) {
         vlog(
           _logger.warn,
           "error on replicating remote segment metadata: {}",
           result.error());
+        // If there was an error for whatever reason, it is unsafe to make any
+        // assumptions about whether batches were replicated or not. Explicitly
+        // step down if we're still leader and force callers to re-sync in a
+        // new term with a new leader.
+        if (_c->is_leader() && _c->term() == current_term) {
+            co_await _c->step_down(ssx::sformat(
+              "failed to replicate archival batch in term {}", current_term));
+        }
         co_return result.error();
     }
 
-    bool applied = false;
-    {
-        auto now = ss::lowres_clock::now();
-        if (now >= deadline) {
-            co_return errc::replication_error;
-        }
-        auto timeout = deadline - now;
-        applied = co_await wait_no_throw(result.value().last_offset, timeout);
-    }
-
+    auto applied = co_await wait_no_throw(
+      result.value().last_offset, model::no_timeout, as);
     if (!applied) {
+        if (
+          as.has_value() && !as.value().get().abort_requested()
+          && _c->is_leader() && _c->term() == current_term) {
+            co_await _c->step_down(ssx::sformat(
+              "failed to replicate archival batch in term {}", current_term));
+        }
         co_return errc::replication_error;
     }
 
@@ -467,7 +467,7 @@ ss::future<std::error_code> archival_metadata_stm::do_truncate(
 
     auto batch = std::move(b).build();
 
-    auto ec = co_await do_replicate_commands(std::move(batch), deadline, as);
+    auto ec = co_await do_replicate_commands(std::move(batch), as);
     if (ec) {
         co_return ec;
     }
@@ -523,7 +523,7 @@ ss::future<std::error_code> archival_metadata_stm::do_cleanup_metadata(
 
     auto batch = std::move(b).build();
 
-    auto ec = co_await do_replicate_commands(std::move(batch), deadline, as);
+    auto ec = co_await do_replicate_commands(std::move(batch), as);
     if (ec) {
         co_return ec;
     }
@@ -578,7 +578,7 @@ ss::future<std::error_code> archival_metadata_stm::do_add_segments(
     }
 
     auto batch = std::move(b).build();
-    auto ec = co_await do_replicate_commands(std::move(batch), deadline, as);
+    auto ec = co_await do_replicate_commands(std::move(batch), as);
     if (ec) {
         co_return ec;
     }
