@@ -11,6 +11,7 @@
 #include "cloud_storage/segment_meta_cstore.h"
 
 #include "cloud_storage/types.h"
+#include "config/configuration.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/timestamp.h"
@@ -551,7 +552,13 @@ public:
         }
         auto bo = *base_offset_iter;
         auto ix = base_offset_iter.index();
-        auto hint_it = _hints.lower_bound(bo);
+        // escape hatch: disable the use of _hints if their value causes
+        // std::out_of_bound exceptions.
+        auto hint_it
+          = unlikely(
+              config::shard_local_cfg().storage_ignore_cstore_hints.value())
+              ? _hints.end()
+              : _hints.lower_bound(bo);
         if (hint_it == _hints.end() || hint_it->second == std::nullopt) {
             return iterators_t(
               _is_compacted.at_index(ix),
