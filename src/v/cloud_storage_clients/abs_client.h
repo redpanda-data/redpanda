@@ -238,7 +238,6 @@ private:
     template<typename T>
     ss::future<result<T, error_outcome>> send_request(
       ss::future<T> request_future,
-      const bucket_name& bucket,
       const object_key& key,
       std::optional<op_type_tag> op_type = std::nullopt);
 

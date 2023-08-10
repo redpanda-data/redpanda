@@ -438,7 +438,6 @@ void abs_client::shutdown() { _client.shutdown(); }
 template<typename T>
 ss::future<result<T, error_outcome>> abs_client::send_request(
   ss::future<T> request_future,
-  const bucket_name& bucket,
   const object_key& key,
   std::optional<op_type_tag> op_type) {
     using namespace boost::beast::http;
@@ -519,7 +518,6 @@ abs_client::get_object(
     return send_request(
       do_get_object(
         name, key, timeout, expect_no_such_key, std::move(byte_range)),
-      name,
       key,
       op_type_tag::download);
 }
@@ -588,7 +586,6 @@ abs_client::put_object(
       do_put_object(name, key, payload_size, std::move(body), timeout)
         .then(
           []() { return ss::make_ready_future<no_response>(no_response{}); }),
-      name,
       key,
       op_type_tag::upload);
 }
@@ -632,7 +629,7 @@ abs_client::head_object(
   bucket_name const& name,
   object_key const& key,
   ss::lowres_clock::duration timeout) {
-    return send_request(do_head_object(name, key, timeout), name, key);
+    return send_request(do_head_object(name, key, timeout), key);
 }
 
 ss::future<abs_client::head_object_result> abs_client::do_head_object(
@@ -679,7 +676,6 @@ abs_client::delete_object(
                  do_delete_object(name, key, timeout).then([]() {
                      return ss::make_ready_future<no_response>(no_response{});
                  }),
-                 name,
                  key)
           .then([&name, &key](const ret_t& result) {
               // ABS returns a 404 for attempts to delete a blob that doesn't
@@ -771,7 +767,6 @@ abs_client::list_objects(
         timeout,
         delimiter,
         std::move(collect_item_if)),
-      name,
       object_key{""});
 }
 
@@ -836,8 +831,7 @@ ss::future<abs_client::list_bucket_result> abs_client::do_list_objects(
 
 ss::future<result<abs_client::storage_account_info, error_outcome>>
 abs_client::get_account_info(ss::lowres_clock::duration timeout) {
-    return send_request(
-      do_get_account_info(timeout), bucket_name{""}, object_key{""});
+    return send_request(do_get_account_info(timeout), object_key{""});
 }
 
 ss::future<abs_client::storage_account_info>
@@ -921,7 +915,6 @@ abs_client::delete_path(
       do_delete_path(name, path, timeout).then([]() {
           return ss::make_ready_future<no_response>(no_response{});
       }),
-      name,
       path);
 }
 
