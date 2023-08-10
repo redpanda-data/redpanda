@@ -17,6 +17,9 @@
 #include "storage/segment_appender.h"
 #include "vlog.h"
 
+#include <seastar/coroutine/exception.hh>
+
+#include <exception>
 #include <type_traits>
 
 namespace storage {
@@ -46,20 +49,25 @@ ss::future<> disk_log_appender::initialize() {
     });
 }
 
-bool disk_log_appender::needs_to_roll_log(model::term_id batch_term) const {
-    /**
-     * _log._segs.empty() is a tricky condition. It is here to suppor concurrent
-     * truncation (from 0) of an active log segment while we hold the lock of a
-     * valid segment.
-     *
-     * Checking for term is because we support multiple term appends which
-     * always roll
-     *
-     * _bytes_left_in_segment is for initial condition
-     *
-     */
-    return _bytes_left_in_segment == 0 || _log.term() != batch_term
-           || _log._segs.empty() /*see above before removing this condition*/;
+bool disk_log_appender::segment_is_appendable(model::term_id batch_term) const {
+    if (!_seg || !_seg->has_appender()) {
+        // The latest segment with which this log_appender has called
+        // initialize() has been rolled and no longer has an segment appender
+        // (e.g. because segment.ms rolled onto a new segment). There is likely
+        // already a new segment and segment appender and we should reset to
+        // use them.
+        return false;
+    }
+    // _log._segs.empty() is a tricky condition. It is here to support
+    // concurrent truncation (from 0) of an active log segment while we hold the
+    // lock of a valid segment.
+    //
+    // Checking for term is because we support multiple term appends which
+    // always roll
+    //
+    // _bytes_left_in_segment is for initial condition
+    return _bytes_left_in_segment > 0 && _log.term() == batch_term
+           && !_log._segs.empty() /*see above before removing this condition*/;
 }
 
 void disk_log_appender::release_lock() {
@@ -70,39 +78,49 @@ void disk_log_appender::release_lock() {
 
 ss::future<ss::stop_iteration>
 disk_log_appender::operator()(model::record_batch& batch) {
+    // We use a fast path here since this lock should very rarely be contested.
+    // An open segment may only have one in-flight append at any given time and
+    // the only other places this lock is held are during truncation
+    // (infrequent) or when enforcing segment.ms (which should rarely happen in
+    // high throughput scenarios).
+    auto segment_roll_lock_holder = _log.try_segment_roll_lock();
+    if (!segment_roll_lock_holder.has_value()) {
+        vlog(
+          stlog.warn,
+          "Segment roll lock contested for {}",
+          _log.config().ntp());
+        segment_roll_lock_holder = co_await _log.segment_roll_lock();
+    }
     batch.header().base_offset = _idx;
     batch.header().header_crc = model::internal_header_only_crc(batch.header());
     if (_last_term != batch.term()) {
         release_lock();
     }
     _last_term = batch.term();
-    auto f = ss::make_ready_future<>();
-    if (unlikely(needs_to_roll_log(batch.term()))) {
-        f = ss::do_until(
-          [this, term = batch.term()] {
-              // we might actually have space in the current log, but the terms
-              // do not match for the current append, so we must roll
-              return !needs_to_roll_log(term)
-                     // we might have gotten the lock, but in a concurrency
-                     // situation - say a segment eviction we need to double
-                     // check that _after_ we got the lock, the segment wasn't
-                     // somehow closed before the append
-                     && _bytes_left_in_segment > 0;
-          },
-          [this] {
-              release_lock();
-              return _log.maybe_roll(_last_term, _idx, _config.io_priority)
-                .then([this] { return initialize(); });
-          });
+    try {
+        // we might have gotten the lock, but in a concurrency
+        // situation - say a segment eviction we need to double
+        // check that _after_ we got the lock, the segment wasn't
+        // somehow closed before the append
+        while (unlikely(!segment_is_appendable(batch.term()))) {
+            // we might actually have space in the current log, but the
+            // terms do not match for the current append, so we must roll
+            release_lock();
+            co_await _log.maybe_roll_unlocked(
+              _last_term, _idx, _config.io_priority);
+            co_await initialize();
+        }
+        co_return co_await append_batch_to_segment(batch);
+    } catch (...) {
+        release_lock();
+        vlog(
+          stlog.info,
+          "Could not append batch: {} - {}",
+          std::current_exception(),
+          *this);
+        _log.get_probe().batch_write_error(std::current_exception());
+        throw;
     }
-    return f
-      .then([this, &batch]() mutable { return append_batch_to_segment(batch); })
-      .handle_exception([this](std::exception_ptr e) {
-          release_lock();
-          vlog(stlog.info, "Could not append batch: {} - {}", e, *this);
-          _log.get_probe().batch_write_error(e);
-          return ss::make_exception_future<ss::stop_iteration>(e);
-      });
 }
 
 ss::future<ss::stop_iteration>
