@@ -174,7 +174,7 @@ result<http::client::request_header> abs_request_creator::make_get_blob_request(
     // GET /{container-id}/{blob-id} HTTP/1.1
     // Host: {storage-account-id}.blob.core.windows.net
     // x-ms-date:{req-datetime in RFC9110} # added by 'add_auth'
-    // x-ms-version:"2021-08-06"           # added by 'add_auth'
+    // x-ms-version:"2023-01-23"           # added by 'add_auth'
     // Authorization:{signature}           # added by 'add_auth'
     const auto target = fmt::format("/{}/{}", name(), key().string());
     const boost::beast::string_view host{_ap().data(), _ap().length()};
@@ -204,7 +204,7 @@ result<http::client::request_header> abs_request_creator::make_put_blob_request(
     // PUT /{container-id}/{blob-id} HTTP/1.1
     // Host: {storage-account-id}.blob.core.windows.net
     // x-ms-date:{req-datetime in RFC9110} # added by 'add_auth'
-    // x-ms-version:"2021-08-06"           # added by 'add_auth'
+    // x-ms-version:"2023-01-23"           # added by 'add_auth'
     // Authorization:{signature}           # added by 'add_auth'
     // Content-Length:{payload-size}
     // Content-Type: text/plain
@@ -235,7 +235,7 @@ abs_request_creator::make_get_blob_metadata_request(
     // HEAD /{container-id}/{blob-id}?comp=metadata HTTP/1.1
     // Host: {storage-account-id}.blob.core.windows.net
     // x-ms-date:{req-datetime in RFC9110} # added by 'add_auth'
-    // x-ms-version:"2021-08-06"           # added by 'add_auth'
+    // x-ms-version:"2023-01-23"           # added by 'add_auth'
     // Authorization:{signature}           # added by 'add_auth'
     const auto target = fmt::format(
       "/{}/{}?comp=metadata", name(), key().string());
@@ -260,7 +260,7 @@ abs_request_creator::make_delete_blob_request(
     // DELETE /{container-id}/{blob-id} HTTP/1.1
     // Host: {storage-account-id}.blob.core.windows.net
     // x-ms-date:{req-datetime in RFC9110} # added by 'add_auth'
-    // x-ms-version:"2021-08-06"           # added by 'add_auth'
+    // x-ms-version:"2023-01-23"           # added by 'add_auth'
     // Authorization:{signature}           # added by 'add_auth'
     const auto target = fmt::format("/{}/{}", name(), key().string());
 
@@ -292,7 +292,7 @@ abs_request_creator::make_list_blobs_request(
     // ...&max_results{max_keys}
     // HTTP/1.1 Host: {storage-account-id}.blob.core.windows.net
     // x-ms-date:{req-datetime in RFC9110} # added by 'add_auth'
-    // x-ms-version:"2021-08-06"           # added by 'add_auth'
+    // x-ms-version:"2023-01-23"           # added by 'add_auth'
     // Authorization:{signature}           # added by 'add_auth'
     auto target = fmt::format("/{}?restype=container&comp=list", name());
     if (prefix) {
@@ -353,7 +353,7 @@ abs_request_creator::make_delete_file_request(
     // DELETE /{container-id}/{path} HTTP/1.1
     // Host: {storage-account-id}.dfs.core.windows.net
     // x-ms-date:{req-datetime in RFC9110} # added by 'add_auth'
-    // x-ms-version:"2021-08-06"           # added by 'add_auth'
+    // x-ms-version:"2023-01-23"           # added by 'add_auth'
     // Authorization:{signature}           # added by 'add_auth'
     const auto target = fmt::format("/{}/{}", name(), path().string());
 
