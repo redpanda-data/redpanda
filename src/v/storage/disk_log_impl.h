@@ -143,6 +143,8 @@ public:
         return _segments_rolling_lock.get_units();
     }
 
+    size_t reclaimable_local_size_bytes() const override;
+
 private:
     friend class disk_log_appender; // for multi-term appends
     friend class disk_log_builder;  // for tests
@@ -292,6 +294,7 @@ private:
     mutex _segments_rolling_lock;
 
     std::optional<model::offset> _cloud_gc_offset;
+    size_t _reclaimable_local_size_bytes{0};
 };
 
 } // namespace storage
