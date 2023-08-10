@@ -44,3 +44,9 @@ jobs:
         working-directory: src/go/transform-sdk/
         run: go test -v ./...
 
+      - name: Run golangci-lint
+        uses: golangci/golangci-lint-action@v3
+        with:
+          version: v1.52.2
+          args: --timeout 5m
+          working-directory: src/go/transform-sdk/
