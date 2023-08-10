@@ -1,7 +1,7 @@
 #include "cluster/rm_stm.h"
 #include "config/config_store.h"
-#include "raft/tests/mux_state_machine_fixture.h"
 #include "raft/tests/raft_group_fixture.h"
+#include "raft/tests/simple_raft_fixture.h"
 #include "storage/tests/utils/disk_log_builder.h"
 #include "tx_compaction_utils.h"
 
@@ -44,7 +44,7 @@ using cluster::random_tx_generator;
     log->stm_manager()->add_stm(stm);                                          \
     BOOST_REQUIRE(log);
 
-FIXTURE_TEST(test_tx_compaction_combinations, mux_state_machine_fixture) {
+FIXTURE_TEST(test_tx_compaction_combinations, simple_raft_fixture) {
     // This generates very interesting interleaved and non interleaved
     // transaction scopes with single and multi segment transactions. We
     // Validate that the resulting output segment file has all the aborted

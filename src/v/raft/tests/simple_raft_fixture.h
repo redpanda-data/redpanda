@@ -34,8 +34,8 @@
 #include <memory>
 
 using namespace std::chrono_literals; // NOLINT
-struct mux_state_machine_fixture {
-    mux_state_machine_fixture()
+struct simple_raft_fixture {
+    simple_raft_fixture()
       : _self{0}
       , _data_dir("test_dir_" + random_generators::gen_alphanum_string(6)) {}
 
@@ -127,7 +127,7 @@ struct mux_state_machine_fixture {
 
         _started = true;
     }
-    ~mux_state_machine_fixture() { stop_all(); }
+    ~simple_raft_fixture() { stop_all(); }
 
     void stop_all() {
         if (_started) {

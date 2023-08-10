@@ -16,8 +16,8 @@
 #include "model/tests/random_batch.h"
 #include "model/timestamp.h"
 #include "raft/consensus_utils.h"
-#include "raft/tests/mux_state_machine_fixture.h"
 #include "raft/tests/raft_group_fixture.h"
+#include "raft/tests/simple_raft_fixture.h"
 #include "raft/types.h"
 #include "random/generators.h"
 #include "storage/record_batch_builder.h"
@@ -46,7 +46,7 @@ static config::binding<uint64_t> get_config_bound() {
 
 FIXTURE_TEST(
   test_rm_stm_doesnt_interfere_with_out_of_session_messages,
-  mux_state_machine_fixture) {
+  simple_raft_fixture) {
     start_raft();
 
     ss::sharded<cluster::tx_gateway_frontend> tx_gateway_frontend;
@@ -103,7 +103,7 @@ FIXTURE_TEST(
 }
 
 FIXTURE_TEST(
-  test_rm_stm_passes_monotonic_in_session_messages, mux_state_machine_fixture) {
+  test_rm_stm_passes_monotonic_in_session_messages, simple_raft_fixture) {
     start_raft();
 
     ss::sharded<cluster::tx_gateway_frontend> tx_gateway_frontend;
@@ -161,7 +161,7 @@ FIXTURE_TEST(
     BOOST_REQUIRE(r1.value().last_offset < r2.value().last_offset);
 }
 
-FIXTURE_TEST(test_rm_stm_caches_last_5_offsets, mux_state_machine_fixture) {
+FIXTURE_TEST(test_rm_stm_caches_last_5_offsets, simple_raft_fixture) {
     start_raft();
 
     ss::sharded<cluster::tx_gateway_frontend> tx_gateway_frontend;
@@ -231,7 +231,7 @@ FIXTURE_TEST(test_rm_stm_caches_last_5_offsets, mux_state_machine_fixture) {
     }
 }
 
-FIXTURE_TEST(test_rm_stm_doesnt_cache_6th_offset, mux_state_machine_fixture) {
+FIXTURE_TEST(test_rm_stm_doesnt_cache_6th_offset, simple_raft_fixture) {
     start_raft();
 
     ss::sharded<cluster::tx_gateway_frontend> tx_gateway_frontend;
@@ -296,7 +296,7 @@ FIXTURE_TEST(test_rm_stm_doesnt_cache_6th_offset, mux_state_machine_fixture) {
     }
 }
 
-FIXTURE_TEST(test_rm_stm_prevents_gaps, mux_state_machine_fixture) {
+FIXTURE_TEST(test_rm_stm_prevents_gaps, simple_raft_fixture) {
     start_raft();
 
     ss::sharded<cluster::tx_gateway_frontend> tx_gateway_frontend;
@@ -353,8 +353,7 @@ FIXTURE_TEST(test_rm_stm_prevents_gaps, mux_state_machine_fixture) {
       r2 == failure_type<cluster::errc>(cluster::errc::sequence_out_of_order));
 }
 
-FIXTURE_TEST(
-  test_rm_stm_prevents_odd_session_start_off, mux_state_machine_fixture) {
+FIXTURE_TEST(test_rm_stm_prevents_odd_session_start_off, simple_raft_fixture) {
     start_raft();
 
     ss::sharded<cluster::tx_gateway_frontend> tx_gateway_frontend;
@@ -395,7 +394,7 @@ FIXTURE_TEST(
       r == failure_type<cluster::errc>(cluster::errc::sequence_out_of_order));
 }
 
-FIXTURE_TEST(test_rm_stm_passes_immediate_retry, mux_state_machine_fixture) {
+FIXTURE_TEST(test_rm_stm_passes_immediate_retry, simple_raft_fixture) {
     start_raft();
 
     ss::sharded<cluster::tx_gateway_frontend> tx_gateway_frontend;

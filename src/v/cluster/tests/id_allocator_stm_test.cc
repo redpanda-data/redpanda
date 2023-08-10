@@ -13,7 +13,7 @@
 #include "model/record.h"
 #include "model/timeout_clock.h"
 #include "outcome.h"
-#include "raft/tests/mux_state_machine_fixture.h"
+#include "raft/tests/simple_raft_fixture.h"
 #include "raft/types.h"
 #include "random/generators.h"
 #include "reflection/adl.h"
@@ -37,7 +37,7 @@ using namespace std::chrono_literals;
 
 ss::logger idstmlog{"idstm-test"};
 
-FIXTURE_TEST(stm_monotonicity_test, mux_state_machine_fixture) {
+FIXTURE_TEST(stm_monotonicity_test, simple_raft_fixture) {
     start_raft();
 
     config::configuration cfg;
@@ -63,7 +63,7 @@ FIXTURE_TEST(stm_monotonicity_test, mux_state_machine_fixture) {
     }
 }
 
-FIXTURE_TEST(stm_restart_test, mux_state_machine_fixture) {
+FIXTURE_TEST(stm_restart_test, simple_raft_fixture) {
     start_raft();
 
     config::configuration cfg;

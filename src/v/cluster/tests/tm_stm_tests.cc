@@ -18,8 +18,8 @@
 #include "model/record.h"
 #include "model/timestamp.h"
 #include "raft/consensus_utils.h"
-#include "raft/tests/mux_state_machine_fixture.h"
 #include "raft/tests/raft_group_fixture.h"
+#include "raft/tests/simple_raft_fixture.h"
 #include "raft/types.h"
 #include "random/generators.h"
 #include "storage/record_batch_builder.h"
@@ -49,7 +49,7 @@ static tm_transaction expect_tx(checked<tm_transaction, op_status> maybe_tx) {
     return maybe_tx.value();
 }
 
-FIXTURE_TEST(test_tm_stm_new_tx, mux_state_machine_fixture) {
+FIXTURE_TEST(test_tm_stm_new_tx, simple_raft_fixture) {
     start_raft();
     tm_cache_struct tm_cache;
 
@@ -109,7 +109,7 @@ FIXTURE_TEST(test_tm_stm_new_tx, mux_state_machine_fixture) {
     BOOST_REQUIRE_EQUAL(tx5.partitions.size(), 0);
 }
 
-FIXTURE_TEST(test_tm_stm_seq_tx, mux_state_machine_fixture) {
+FIXTURE_TEST(test_tm_stm_seq_tx, simple_raft_fixture) {
     start_raft();
     tm_cache_struct tm_cache;
 
@@ -154,7 +154,7 @@ FIXTURE_TEST(test_tm_stm_seq_tx, mux_state_machine_fixture) {
     BOOST_REQUIRE_NE(tx6.tx_seq, tx1.tx_seq);
 }
 
-FIXTURE_TEST(test_tm_stm_re_tx, mux_state_machine_fixture) {
+FIXTURE_TEST(test_tm_stm_re_tx, simple_raft_fixture) {
     start_raft();
     tm_cache_struct tm_cache;
 
@@ -285,7 +285,7 @@ void test_tm_hosts_tx_include_exclude_saved_in_snapshot(
     }
 }
 
-FIXTURE_TEST(test_tm_stm_hosted_hash_1_partition, mux_state_machine_fixture) {
+FIXTURE_TEST(test_tm_stm_hosted_hash_1_partition, simple_raft_fixture) {
     start_raft();
     tm_cache_struct tm_cache;
 
@@ -340,7 +340,7 @@ FIXTURE_TEST(test_tm_stm_hosted_hash_1_partition, mux_state_machine_fixture) {
     test_tm_hosts_tx_include_exclude_saved_in_snapshot(new_stm, 1, c);
 }
 
-FIXTURE_TEST(test_tm_stm_hosted_hash_16_partition, mux_state_machine_fixture) {
+FIXTURE_TEST(test_tm_stm_hosted_hash_16_partition, simple_raft_fixture) {
     start_raft();
     tm_cache_struct tm_cache;
 

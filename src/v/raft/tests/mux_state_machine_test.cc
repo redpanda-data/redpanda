@@ -12,7 +12,7 @@
 #include "model/record_batch_types.h"
 #include "model/timeout_clock.h"
 #include "outcome.h"
-#include "raft/tests/mux_state_machine_fixture.h"
+#include "raft/tests/simple_raft_fixture.h"
 #include "raft/types.h"
 #include "random/generators.h"
 #include "reflection/adl.h"
@@ -214,8 +214,7 @@ serialize_cmd(T t, int8_t type, model::offset o = model::offset(0)) {
     return std::move(b).build();
 }
 
-FIXTURE_TEST(
-  test_mux_state_machine_simple_scenarios, mux_state_machine_fixture) {
+FIXTURE_TEST(test_mux_state_machine_simple_scenarios, simple_raft_fixture) {
     start_raft();
     simple_kv<batch_type_1> state;
     simple_kv_stm<batch_type_1> stm(
@@ -290,7 +289,7 @@ FIXTURE_TEST(
     BOOST_CHECK(state.kv_map.empty());
 }
 
-FIXTURE_TEST(test_concurrent_sets, mux_state_machine_fixture) {
+FIXTURE_TEST(test_concurrent_sets, simple_raft_fixture) {
     start_raft();
     simple_kv<batch_type_1> state;
     simple_kv_stm<batch_type_1> stm(
@@ -335,7 +334,7 @@ FIXTURE_TEST(test_concurrent_sets, mux_state_machine_fixture) {
     BOOST_REQUIRE_EQUAL(success_count, 1);
 }
 
-FIXTURE_TEST(test_stm_recovery, mux_state_machine_fixture) {
+FIXTURE_TEST(test_stm_recovery, simple_raft_fixture) {
     {
         auto cfg = storage::log_builder_config();
         cfg.base_dir = _data_dir;
@@ -434,7 +433,7 @@ FIXTURE_TEST(test_stm_recovery, mux_state_machine_fixture) {
     }
 }
 
-FIXTURE_TEST(test_mulitple_states, mux_state_machine_fixture) {
+FIXTURE_TEST(test_mulitple_states, simple_raft_fixture) {
     start_raft();
     simple_kv<batch_type_1> state_1;
     simple_kv<batch_type_2> state_2;
@@ -512,7 +511,7 @@ FIXTURE_TEST(test_mulitple_states, mux_state_machine_fixture) {
     BOOST_REQUIRE_EQUAL(state_2.kv_map.find("test")->second, 20);
 }
 
-FIXTURE_TEST(timeout_test, mux_state_machine_fixture) {
+FIXTURE_TEST(timeout_test, simple_raft_fixture) {
     start_raft();
     simple_kv<batch_type_1> state_1;
     simple_kv_stm<batch_type_1> stm(

@@ -19,8 +19,8 @@
 #include "model/metadata.h"
 #include "model/record.h"
 #include "model/timestamp.h"
-#include "raft/tests/mux_state_machine_fixture.h"
 #include "raft/tests/raft_group_fixture.h"
+#include "raft/tests/simple_raft_fixture.h"
 #include "raft/types.h"
 #include "storage/tests/utils/disk_log_builder.h"
 #include "test_utils/async.h"
@@ -44,11 +44,11 @@ ss::logger logger{"archival_metadata_stm_test"};
 static ss::abort_source never_abort;
 
 struct archival_metadata_stm_base_fixture
-  : mux_state_machine_fixture
+  : simple_raft_fixture
   , http_imposter_fixture {
-    using mux_state_machine_fixture::start_raft;
-    using mux_state_machine_fixture::wait_for_becoming_leader;
-    using mux_state_machine_fixture::wait_for_confirmed_leader;
+    using simple_raft_fixture::start_raft;
+    using simple_raft_fixture::wait_for_becoming_leader;
+    using simple_raft_fixture::wait_for_confirmed_leader;
 
     archival_metadata_stm_base_fixture(
       const archival_metadata_stm_base_fixture&)

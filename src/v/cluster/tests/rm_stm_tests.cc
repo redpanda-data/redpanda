@@ -19,8 +19,8 @@
 #include "model/tests/randoms.h"
 #include "model/timestamp.h"
 #include "raft/consensus_utils.h"
-#include "raft/tests/mux_state_machine_fixture.h"
 #include "raft/tests/raft_group_fixture.h"
+#include "raft/tests/simple_raft_fixture.h"
 #include "raft/types.h"
 #include "random/generators.h"
 #include "storage/record_batch_builder.h"
@@ -109,7 +109,7 @@ void check_snapshot_sizes(cluster::rm_stm& stm, raft::consensus* c) {
 // tests:
 //   - a simple tx execution succeeds
 //   - last_stable_offset doesn't advance past an ongoing transaction
-FIXTURE_TEST(test_tx_happy_tx, mux_state_machine_fixture) {
+FIXTURE_TEST(test_tx_happy_tx, simple_raft_fixture) {
     start_raft();
 
     ss::sharded<cluster::tx_gateway_frontend> tx_gateway_frontend;
@@ -190,7 +190,7 @@ FIXTURE_TEST(test_tx_happy_tx, mux_state_machine_fixture) {
 // tests:
 //   - a simple tx aborting before prepare succeeds
 //   - an aborted tx is reflected in aborted_transactions
-FIXTURE_TEST(test_tx_aborted_tx_1, mux_state_machine_fixture) {
+FIXTURE_TEST(test_tx_aborted_tx_1, simple_raft_fixture) {
     start_raft();
 
     ss::sharded<cluster::tx_gateway_frontend> tx_gateway_frontend;
@@ -280,7 +280,7 @@ FIXTURE_TEST(test_tx_aborted_tx_1, mux_state_machine_fixture) {
 // tests:
 //   - a simple tx aborting after prepare succeeds
 //   - an aborted tx is reflected in aborted_transactions
-FIXTURE_TEST(test_tx_aborted_tx_2, mux_state_machine_fixture) {
+FIXTURE_TEST(test_tx_aborted_tx_2, simple_raft_fixture) {
     start_raft();
 
     ss::sharded<cluster::tx_gateway_frontend> tx_gateway_frontend;
@@ -369,7 +369,7 @@ FIXTURE_TEST(test_tx_aborted_tx_2, mux_state_machine_fixture) {
 }
 
 // transactional writes of an unknown tx are rejected
-FIXTURE_TEST(test_tx_unknown_produce, mux_state_machine_fixture) {
+FIXTURE_TEST(test_tx_unknown_produce, simple_raft_fixture) {
     start_raft();
 
     ss::sharded<cluster::tx_gateway_frontend> tx_gateway_frontend;
@@ -410,7 +410,7 @@ FIXTURE_TEST(test_tx_unknown_produce, mux_state_machine_fixture) {
 }
 
 // begin fences off old transactions
-FIXTURE_TEST(test_tx_begin_fences_produce, mux_state_machine_fixture) {
+FIXTURE_TEST(test_tx_begin_fences_produce, simple_raft_fixture) {
     start_raft();
 
     ss::sharded<cluster::tx_gateway_frontend> tx_gateway_frontend;
@@ -475,7 +475,7 @@ FIXTURE_TEST(test_tx_begin_fences_produce, mux_state_machine_fixture) {
 }
 
 // transactional writes of an aborted tx are rejected
-FIXTURE_TEST(test_tx_post_aborted_produce, mux_state_machine_fixture) {
+FIXTURE_TEST(test_tx_post_aborted_produce, simple_raft_fixture) {
     start_raft();
 
     ss::sharded<cluster::tx_gateway_frontend> tx_gateway_frontend;
@@ -544,7 +544,7 @@ FIXTURE_TEST(test_tx_post_aborted_produce, mux_state_machine_fixture) {
 // transactions. Multiple subsystems that interact with transactions rely on
 // aborted transactions for correctness. These serve as regression tests so that
 // we do not break the semantics.
-FIXTURE_TEST(test_aborted_transactions, mux_state_machine_fixture) {
+FIXTURE_TEST(test_aborted_transactions, simple_raft_fixture) {
     start_raft();
 
     ss::sharded<cluster::tx_gateway_frontend> tx_gateway_frontend;
