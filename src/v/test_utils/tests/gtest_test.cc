@@ -12,22 +12,36 @@
 
 #include <seastar/core/sleep.hh>
 
-/*
- * TEST_(ASYNC|CORO)() is the Seastar-enabled equivalent of TEST().
+/**
+ * If you're looking for Google Test general documentation,
+ * there are excellent docs available online here:
+ * - http://google.github.io/googletest/
+ * - Assertion reference:
+ * http://google.github.io/googletest/reference/assertions.html
+ * - Matchers reference:
+ * http://google.github.io/googletest/reference/matchers.html
  */
-TEST_ASYNC(SeastarTest, Sleep) {
+
+/**
+ * By default gtest runs within an seastar::thread
+ */
+TEST(SeastarTest, Sleep) {
     seastar::sleep(std::chrono::milliseconds(100)).get();
 }
 
+/*
+ * TEST_CORO() is the coroutine-enabled equivalent of TEST().
+ */
 TEST_CORO(SeastarTest, SleepCoro) {
     co_await seastar::sleep(std::chrono::milliseconds(100));
     ASSERT_EQ_CORO(100, 100);
 }
 
 /*
- * TEST_F_(ASYNC|CORO)() is the Seastar-enabled equivalent of TEST_F()
+ * TEST_F() runs within a seastar thread
  */
-struct MySeastarFixture : public seastar_test {
+class MySeastarFixture : public testing::Test {
+public:
     std::string_view message() const { return "hello"; }
 
     ~MySeastarFixture() override {
@@ -35,12 +49,12 @@ struct MySeastarFixture : public seastar_test {
         assert(teardown_called);
     }
 
-    void SetUpAsync() override {
+    void SetUp() override {
         seastar::sleep(std::chrono::milliseconds(100)).get();
         setup_called = true;
     }
 
-    void TearDownAsync() override {
+    void TearDown() override {
         seastar::sleep(std::chrono::milliseconds(100)).get();
         teardown_called = true;
     }
@@ -50,36 +64,73 @@ private:
     bool teardown_called{false};
 };
 
-TEST_F_ASYNC(MySeastarFixture, Sleep) {
+TEST_F(MySeastarFixture, Sleep) {
     seastar::sleep(std::chrono::milliseconds(100)).get();
     ASSERT_EQ(message(), "hello");
 }
 
-TEST_F_CORO(MySeastarFixture, SleepCoro) {
+class MySeastarParamFixture
+  : public MySeastarFixture
+  , public ::testing::WithParamInterface<int> {};
+
+TEST_P(MySeastarParamFixture, Sleep) {
+    seastar::sleep(std::chrono::milliseconds(GetParam() * 10)).get();
+    ASSERT_EQ(GetParam() % 11, 0);
+}
+
+INSTANTIATE_TEST_SUITE_P(
+  Divisible, MySeastarParamFixture, testing::Values(11, 22, 33));
+
+/*
+ * TEST_F_CORO() is the coroutine-enabled equivalent of TEST_F()
+ *
+ * Extending seastar_test instead of testing::Test allows for
+ * using coroutines in setup/teardown functions
+ */
+class MySeastarCoroFixture : public seastar_test {
+public:
+    std::string_view message() const { return "hello"; }
+
+    ~MySeastarCoroFixture() override {
+        assert(setup_called);
+        assert(teardown_called);
+    }
+
+    seastar::future<> SetUpAsync() override {
+        co_await seastar::sleep(std::chrono::milliseconds(100));
+        setup_called = true;
+    }
+
+    seastar::future<> TearDownAsync() override {
+        co_await seastar::sleep(std::chrono::milliseconds(100));
+        teardown_called = true;
+    }
+
+private:
+    bool setup_called{false};
+    bool teardown_called{false};
+};
+
+TEST_F_CORO(MySeastarCoroFixture, SleepCoro) {
     co_await seastar::sleep(std::chrono::milliseconds(100));
     ASSERT_EQ_CORO(message(), "hello");
 }
 
 /*
- * TEST_P_(ASYNC|CORO)() is the Seastar-enabled equivalent of TEST_P()
+ * TEST_P_CORO() is the coroutine-enabled equivalent of TEST_P()
  */
-class MySeastarParamFixture
-  : public MySeastarFixture
+class MySeastarCoroParamFixture
+  : public MySeastarCoroFixture
   , public ::testing::WithParamInterface<int> {};
 
-TEST_P_ASYNC(MySeastarParamFixture, Sleep) {
-    seastar::sleep(std::chrono::milliseconds(GetParam() * 10)).get();
-    ASSERT_EQ(GetParam() % 11, 0);
-}
-
-TEST_P_CORO(MySeastarParamFixture, SleepCoro) {
+TEST_P_CORO(MySeastarCoroParamFixture, SleepCoro) {
     co_await seastar::sleep(std::chrono::milliseconds(100));
     ASSERT_TRUE_CORO(true);
     ASSERT_FALSE_CORO(false);
 }
 
 INSTANTIATE_TEST_SUITE_P(
-  Divisible, MySeastarParamFixture, testing::Values(11, 22, 33));
+  Divisible, MySeastarCoroParamFixture, testing::Values(11, 22, 33));
 
 /*
  * Normal test framework macros continues to work.
