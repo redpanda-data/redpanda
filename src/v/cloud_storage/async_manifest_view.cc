@@ -193,6 +193,10 @@ async_manifest_view_cursor::seek(async_view_search_query_t q) {
         // of hydrating/materializing/fetching the manifest
         co_return true;
     }
+    auto start_offset = std::clamp(
+      _view.stm_manifest().get_start_offset().value_or(model::offset{}),
+      _begin,
+      _end);
     auto res = co_await _view.get_materialized_manifest(q);
     if (res.has_failure()) {
         vlog(
@@ -216,11 +220,7 @@ async_manifest_view_cursor::seek(async_view_search_query_t q) {
     if (std::holds_alternative<stm_manifest_t>(_current)) {
         // Invariant: if cursor points to the STM manifest _stm_start_offset is
         //            set to expected base offset
-        auto so = std::get<stm_manifest_t>(_current)
-                    .get()
-                    .get_start_offset()
-                    .value_or(model::offset{});
-        _stm_start_offset = std::clamp(so, _begin, _end);
+        _stm_start_offset = start_offset;
     } else {
         _stm_start_offset = std::nullopt;
     }
