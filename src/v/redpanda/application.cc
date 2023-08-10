@@ -1702,7 +1702,6 @@ void application::wire_up_bootstrap_services() {
     ss::smp::invoke_on_all([] {
         return storage::internal::chunks().start();
     }).get();
-    construct_service(stress_fiber_manager).get();
     syschecks::systemd_message("Constructing storage services").get();
     construct_single_service_sharded(
       storage_node,
@@ -1952,6 +1951,11 @@ void application::start_bootstrap_services() {
 void application::wire_up_and_start(::stop_signal& app_signal, bool test_mode) {
     // Setup the app level abort service
     construct_service(_as).get();
+    construct_service(stress_fiber_manager).get();
+    _deferred.emplace_back([this] {
+        return stress_fiber_manager.invoke_on_all(
+          [](auto& local_mgr) { return local_mgr.stop(); });
+    });
 
     // Bootstrap services.
     wire_up_bootstrap_services();
