@@ -286,7 +286,7 @@ ss::future<> conn_quota::reclaim_to(
   ss::lw_shared_ptr<conn_quota::home_allowance> allowance,
   ss::net::inet_address addr,
   bool one_time) {
-    auto locked = allowance->reclaim_lock.get_units();
+    auto locked = co_await allowance->reclaim_lock.get_units();
     if (allowance->reclaim) {
         // We are already in reclaim mode: remote allowances will
         // not be holding any units belong to us, so don't waste
