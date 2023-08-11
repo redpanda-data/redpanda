@@ -265,6 +265,9 @@ func (r *ClusterReconciler) Reconcile(
 	if err := r.setPodNodeIDAnnotation(ctx, &vectorizedCluster, log, ar); err != nil {
 		return ctrl.Result{}, fmt.Errorf("setting pod node_id annotation: %w", err)
 	}
+	if err := r.setPodNodeIDLabel(ctx, &vectorizedCluster, log, ar); err != nil {
+		return ctrl.Result{}, fmt.Errorf("setting pod node_id label: %w", err)
+	}
 
 	// want: refactor above to resources (i.e. setInitialSuperUserPassword, reconcileConfiguration)
 	// ensuring license must be at the end when condition ClusterConfigured=true and AdminAPI is ready
@@ -462,7 +465,6 @@ func (r *ClusterReconciler) setPodNodeIDAnnotation(
 			pod.Annotations = make(map[string]string)
 		}
 		nodeIDStrAnnotation, annotationExist := pod.Annotations[resources.PodAnnotationNodeIDKey]
-		nodeIDStrLabel, labelExist := pod.Labels[resources.PodAnnotationNodeIDKey]
 
 		nodeID, err := r.fetchAdminNodeID(ctx, rp, pod, ar)
 		if err != nil {
@@ -472,7 +474,7 @@ func (r *ClusterReconciler) setPodNodeIDAnnotation(
 
 		realNodeIDStr := fmt.Sprintf("%d", nodeID)
 
-		if annotationExist && labelExist && realNodeIDStr == nodeIDStrAnnotation && realNodeIDStr == nodeIDStrLabel {
+		if annotationExist && realNodeIDStr == nodeIDStrAnnotation {
 			continue
 		}
 
@@ -491,6 +493,42 @@ func (r *ClusterReconciler) setPodNodeIDAnnotation(
 
 		log.WithValues("pod-name", pod.Name, "new-node-id", nodeID).Info("setting node-id annotation")
 		pod.Annotations[resources.PodAnnotationNodeIDKey] = realNodeIDStr
+		if err := r.Update(ctx, pod, &client.UpdateOptions{}); err != nil {
+			return fmt.Errorf(`unable to update pod "%s" with node-id annotation: %w`, pod.Name, err)
+		}
+	}
+	return nil
+}
+
+func (r *ClusterReconciler) setPodNodeIDLabel(
+	ctx context.Context, rp *vectorizedv1alpha1.Cluster, l logr.Logger, ar *attachedResources,
+) error {
+	log := l.WithName("setPodNodeIDLabel")
+	log.V(logger.DebugLevel).Info("setting pod node-id label")
+	pods, err := r.podList(ctx, rp)
+	if err != nil {
+		return fmt.Errorf("unable to fetch PodList: %w", err)
+	}
+	for i := range pods.Items {
+		pod := &pods.Items[i]
+		if pod.Labels == nil {
+			pod.Labels = make(map[string]string)
+		}
+		nodeIDStrLabel, labelExist := pod.Labels[resources.PodAnnotationNodeIDKey]
+
+		nodeID, err := r.fetchAdminNodeID(ctx, rp, pod, ar)
+		if err != nil {
+			log.Error(err, `cannot fetch node id for node-id annotation`)
+			continue
+		}
+
+		realNodeIDStr := fmt.Sprintf("%d", nodeID)
+
+		if labelExist && realNodeIDStr == nodeIDStrLabel {
+			continue
+		}
+
+		log.WithValues("pod-name", pod.Name, "new-node-id", nodeID).Info("setting node-id label")
 		pod.Labels[resources.PodAnnotationNodeIDKey] = realNodeIDStr
 		if err := r.Update(ctx, pod, &client.UpdateOptions{}); err != nil {
 			return fmt.Errorf(`unable to update pod "%s" with node-id annotation: %w`, pod.Name, err)
