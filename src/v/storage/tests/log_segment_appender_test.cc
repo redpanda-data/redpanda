@@ -21,7 +21,9 @@
 // test gate
 #include <seastar/core/gate.hh>
 #include <seastar/util/defer.hh>
+#include <seastar/util/later.hh>
 
+#include <boost/test/tools/interface.hpp>
 #include <fmt/format.h>
 
 #include <string_view>
@@ -54,6 +56,15 @@ make_segment_appender(ss::file file, storage::storage_resources& resources) {
 
 iobuf make_random_data(size_t len) {
     return bytes_to_iobuf(random_generators::get_bytes(len));
+}
+
+// fill an iobuf with len copies of char c
+iobuf make_iobuf_with_char(size_t len, unsigned char c) {
+    auto buf = ss::uninitialized_string<bytes>(len);
+    std::memset(buf.data(), c, len);
+    iobuf ret;
+    ret.append(buf.data(), buf.size());
+    return ret;
 }
 
 } // namespace
@@ -215,6 +226,91 @@ SEASTAR_THREAD_TEST_CASE(
   test_can_append_10MB_sequential_write_sequential_read) {
     run_test_can_append_10MB_sequential_write_sequential_read(16_KiB);
     run_test_can_append_10MB_sequential_write_sequential_read(32_MiB);
+}
+
+static void run_concurrent_append_flush(
+  size_t fallocate_size,
+  const size_t max_buf_size,
+  const size_t buf_count = 10000) {
+    auto filename = fmt::format(
+      "run_concurrent_append_flush_{}.log", fallocate_size);
+    auto f = open_file(filename);
+    storage::storage_resources resources(
+      config::mock_binding<size_t>(std::move(fallocate_size)));
+    auto appender = make_segment_appender(f, resources);
+    auto close = ss::defer([&appender] { appender.close().get(); });
+
+    std::vector<iobuf> bufs(buf_count);
+    unsigned char v = 1;
+    for (auto& buf : bufs) {
+        buf = make_iobuf_with_char(random_generators::get_int(max_buf_size), v);
+        if (++v == 0) {
+            v = 1;
+        }
+    }
+
+    // we do one of the following actions with equal probability,
+    // respecting the rule that any previous append must have resolved before a
+    // new one is invoked
+    enum action { APPEND, FLUSH, WAIT_APPEND, YIELD, LAST };
+
+    std::optional<ss::future<>> last_append;
+    std::vector<ss::future<>> futs;
+
+    for (size_t buf_index = 0; buf_index < bufs.size();) {
+        auto next_action = (action)random_generators::get_int(LAST - 1);
+
+        switch (next_action) {
+        case APPEND:
+            if (!last_append) { // only if the previous append has finished
+                last_append = appender.append(bufs[buf_index++]);
+            }
+            break;
+        case FLUSH:
+            futs.push_back(appender.flush());
+            break;
+        case WAIT_APPEND:
+            if (last_append) {
+                last_append->get();
+                last_append.reset();
+            }
+            break;
+        case YIELD:
+            ss::yield().get();
+            break;
+        default:
+            BOOST_TEST_FAIL("bad action");
+        }
+    }
+
+    // finally we need to wait for the last append, if any
+    if (last_append) {
+        last_append->get();
+    }
+    futs.push_back(appender.flush()); // and do a final flush
+
+    for (auto& f : futs) {
+        f.get();
+    }
+    auto in = make_file_input_stream(f);
+    auto closefile = ss::defer([&] { in.close().get(); });
+    for (auto& buf : bufs) {
+        size_t sz = buf.size_bytes();
+        iobuf result = read_iobuf_exactly(in, sz).get();
+        BOOST_REQUIRE_EQUAL(buf, result);
+    }
+}
+
+SEASTAR_THREAD_TEST_CASE(test_concurrent_append_flush) {
+    // we use smaller buffer counts for the large buffer size tests
+    // to keep the runtime manageable (less than ~2 seconds for this test)
+    run_concurrent_append_flush(16_KiB, 1);
+    run_concurrent_append_flush(16_KiB, 1000);
+    run_concurrent_append_flush(16_KiB, 20000, 100);
+
+    run_concurrent_append_flush(64_KiB, 1000);
+
+    run_concurrent_append_flush(32_MiB, 1000, 1000);
 }
 
 static void run_test_can_append_little_data(size_t fallocate_size) {
