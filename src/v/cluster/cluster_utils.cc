@@ -473,7 +473,25 @@ partition_raft_state get_partition_raft_state(consensus_ptr ptr) {
         }
         raft_state.followers = std::move(followers);
     }
+    raft_state.stms = get_partition_stm_state(ptr);
     return raft_state;
+}
+
+std::vector<partition_stm_state> get_partition_stm_state(consensus_ptr ptr) {
+    std::vector<partition_stm_state> result;
+    if (unlikely(!ptr) || unlikely(!ptr->log().stm_manager())) {
+        return result;
+    }
+    const auto& stms = ptr->log().stm_manager()->stms();
+    result.reserve(stms.size());
+    for (const auto& stm : stms) {
+        partition_stm_state state;
+        state.name = stm->name();
+        state.last_applied_offset = stm->last_applied();
+        state.max_collectible_offset = stm->last_applied();
+        result.push_back(std::move(state));
+    }
+    return result;
 }
 
 std::optional<ss::sstring> check_result_configuration(

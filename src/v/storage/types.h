@@ -93,6 +93,8 @@ public:
     // log eviction attempts to offsets not greater than this.
     virtual model::offset max_collectible_offset() = 0;
 
+    virtual model::offset last_applied() const = 0;
+
     virtual const ss::sstring& name() = 0;
 
     // Only valid for state machines maintaining transactional state.
@@ -174,6 +176,10 @@ public:
             return model::control_record_type::unknown;
         }
         return _tx_stm->parse_tx_control_batch(b);
+    }
+
+    const std::vector<ss::shared_ptr<snapshotable_stm>>& stms() const {
+        return _stms;
     }
 
     bool has_tx_stm() { return _tx_stm.get(); }

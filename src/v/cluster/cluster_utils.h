@@ -385,6 +385,7 @@ get_allocation_domain(const model::ntp& ntp) {
 
 partition_state get_partition_state(ss::lw_shared_ptr<cluster::partition>);
 partition_raft_state get_partition_raft_state(consensus_ptr);
+std::vector<partition_stm_state> get_partition_stm_state(consensus_ptr);
 
 /**
  * Check that the configuration is valid, if not return a string with the
