@@ -939,6 +939,13 @@ configuration::configuration()
        .example = "3600",
        .visibility = visibility::tunable},
       std::nullopt)
+  , storage_ignore_cstore_hints(
+      *this,
+      "storage_ignore_cstore_hints",
+      "if set, cstore hints will be ignored and will not be used for data "
+      "access (but will otherwise be generated)",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      false)
   , storage_reserve_min_segments(
       *this,
       "storage_reserve_min_segments",
