@@ -6,6 +6,7 @@ v_cc_library(
     v::bytes
     v::model
     absl::btree
+    v::config
 )
 
 v_cc_library(
