@@ -170,6 +170,9 @@ class ABSClient:
                 self.logger.debug(f"Skip {blob_props.name} for {topic}")
                 continue
 
+            if blob_props.content_settings.content_md5 is None:
+                continue
+
             yield ObjectMetadata(
                 bucket=blob_props.container,
                 key=blob_props.name,
