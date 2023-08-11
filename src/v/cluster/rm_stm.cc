@@ -1450,7 +1450,11 @@ rm_stm::replicate_tx(model::batch_identity bid, model::record_batch_reader br) {
         auto pid_seq = _log_state.seq_table.find(bid.pid);
         if (pid_seq == _log_state.seq_table.end()) {
             if (!check_seq(bid, synced_term)) {
-                co_return errc::sequence_out_of_order;
+                auto barrier = co_await _c->linearizable_barrier();
+                if (barrier) {
+                    co_return errc::sequence_out_of_order;
+                }
+                co_return errc::not_leader;
             }
         } else if (pid_seq->second.entry.seq == bid.last_seq) {
             if (pid_seq->second.entry.last_offset() == -1) {
@@ -1501,7 +1505,11 @@ rm_stm::replicate_tx(model::batch_identity bid, model::record_batch_reader br) {
                 }
             }
             if (!check_seq(bid, synced_term)) {
-                co_return errc::sequence_out_of_order;
+                auto barrier = co_await _c->linearizable_barrier();
+                if (barrier) {
+                    co_return errc::sequence_out_of_order;
+                }
+                co_return errc::not_leader;
             }
         }
     } else {
@@ -1711,45 +1719,59 @@ ss::future<result<kafka_result>> rm_stm::replicate_seq(
         auto tail = tail_seq(bid.pid);
         if (tail) {
             if (!is_sequence(tail.value(), bid.first_seq)) {
-                // there is a gap between the request'ss seq number
-                // and the seq number of the latest processed request
-                vlog(
-                  _ctx_log.warn,
-                  "[pid: {}] sequence number gap detected. batch first "
-                  "sequence: {}, last stored sequence: {}",
-                  bid.pid,
-                  bid.first_seq,
-                  tail.value());
-                co_return errc::sequence_out_of_order;
+                auto barrier = co_await _c->linearizable_barrier();
+                if (barrier) {
+                    // there is a gap between the request'ss seq number
+                    // and the seq number of the latest processed request
+                    vlog(
+                      _ctx_log.warn,
+                      "[pid: {}] sequence number gap detected. batch first "
+                      "sequence: {}, last stored sequence: {}",
+                      bid.pid,
+                      bid.first_seq,
+                      tail.value());
+                    co_return errc::sequence_out_of_order;
+                }
+                co_return errc::not_leader;
             }
         } else {
             if (bid.first_seq != 0) {
-                vlog(
-                  _ctx_log.warn,
-                  "[pid: {}] first sequence number in session must be zero, "
-                  "current seq: {}",
-                  bid.pid,
-                  bid.first_seq);
-                // first request in a session should have seq=0, client is
-                // misbehaving
-                co_return errc::sequence_out_of_order;
+                auto barrier = co_await _c->linearizable_barrier();
+                if (barrier) {
+                    vlog(
+                      _ctx_log.warn,
+                      "[pid: {}] first sequence number in session must be "
+                      "zero, "
+                      "current seq: {}",
+                      bid.pid,
+                      bid.first_seq);
+                    // first request in a session should have seq=0, client is
+                    // misbehaving
+                    co_return errc::sequence_out_of_order;
+                }
+                co_return errc::not_leader;
             }
         }
     } else {
         if (!is_sequence(session->tail_seq, bid.first_seq)) {
-            // there is a gap between the request's seq number
-            // and the seq number of the latest inflight request
-            // may happen when:
-            //   - batches were reordered on the wire
-            //   - client is misbehaving
-            vlog(
-              _ctx_log.warn,
-              "[pid: {}] sequence number gap detected. batch first sequence: "
-              "{}, last inflight sequence: {}",
-              bid.pid,
-              bid.first_seq,
-              session->tail_seq);
-            co_return errc::sequence_out_of_order;
+            auto barrier = co_await _c->linearizable_barrier();
+            if (barrier) {
+                // there is a gap between the request's seq number
+                // and the seq number of the latest inflight request
+                // may happen when:
+                //   - batches were reordered on the wire
+                //   - client is misbehaving
+                vlog(
+                  _ctx_log.warn,
+                  "[pid: {}] sequence number gap detected. batch first "
+                  "sequence: "
+                  "{}, last inflight sequence: {}",
+                  bid.pid,
+                  bid.first_seq,
+                  session->tail_seq);
+                co_return errc::sequence_out_of_order;
+            }
+            co_return errc::not_leader;
         }
     }
 
