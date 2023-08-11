@@ -135,7 +135,7 @@ ss::future<> chunk_data_source_impl::load_stream_for_chunk(
 
         try {
             co_await ecs.wait_for_stream();
-        } catch (const ss::timed_out_error&) {
+        } catch (const ss::condition_variable_timed_out&) {
             // If we timed out, log and continue. The next step will wait for
             // the chunk download to finish. If the timeout was because of an
             // abort or shutdown, the next wait will throw. If the timeout was
@@ -202,7 +202,6 @@ ss::future<> chunk_data_source_impl::load_stream_for_chunk(
         // more specifically when we close a transient stream. This change would
         // then need to be communicated back up to the reader so it can be
         // cached.
-        _is_transient = true;
         if (_attached_reader) {
             _attached_reader->get().mark_transient(true);
         }
@@ -245,15 +244,30 @@ ss::future<> chunk_data_source_impl::skip_stream_to(uint64_t begin) {
 }
 
 ss::future<> chunk_data_source_impl::close() {
+    // If the data source is attached to a transient, fanout stream, the other
+    // side of the split is a download in progress. Waiting for the gate to
+    // close before closing the transient stream will result in a deadlock,
+    // because a fanout stream cannot progress unless all of its components are
+    // progressing. The transient stream is no longer being read from, thus
+    // blocking the download stream, and the download stream holds the
+    // gate, causing a deadlock. Closing the transient stream will allow the
+    // download stream to finish the download and then release the gate.
+    const auto should_close_transient_stream
+      = _attached_reader
+        && (_attached_reader->get().config().over_budget
+              || _attached_reader->get().is_eof() || _attached_reader->get().is_stopped());
     if (
-      _attached_reader && _attached_reader->get().config().over_budget
-      && _current_stream_t == stream_type::download) {
-        vlog(_ctxlog.trace, "closing overbudget transient reader");
+      _current_stream_t == stream_type::download
+      && should_close_transient_stream) {
+        vlog(_ctxlog.trace, "closing transient stream");
         co_await maybe_close_stream();
     }
+
     vlog(_ctxlog.trace, "closing gate");
     co_await _gate.close();
     vlog(_ctxlog.trace, "closed gate");
+
+    // If we closed a transient stream earlier, then this is a no-op.
     co_await maybe_close_stream();
 }
 
@@ -263,7 +277,5 @@ ss::future<> chunk_data_source_impl::maybe_close_stream() {
         _current_stream = std::nullopt;
     }
 }
-
-bool chunk_data_source_impl::is_transient() const { return _is_transient; }
 
 } // namespace cloud_storage

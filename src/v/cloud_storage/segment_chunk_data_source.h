@@ -88,7 +88,6 @@ private:
 
     stream_type _current_stream_t;
     chunk_start_offset_t _last_download_end;
-    bool _is_transient{false};
     std::optional<std::reference_wrapper<remote_segment_batch_reader>>
       _attached_reader;
 };
