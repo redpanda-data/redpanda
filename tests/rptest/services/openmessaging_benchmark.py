@@ -236,7 +236,9 @@ class OpenMessagingBenchmark(Service):
         self.logger.info(
             f"Starting Open Messaging Benchmark with workers: {worker_nodes}")
 
-        rp_node = self.redpanda.nodes[0]
+        rp_node = None
+        if self.redpanda.num_nodes > 0:
+            rp_node = self.redpanda.nodes[0]
         rp_version = "unknown_version"
         try:
             rp_version = self.redpanda.get_version(rp_node)
