@@ -170,9 +170,10 @@ private:
     void start_bootstrap_services();
 
     // Constructs services across shards meant for Redpanda runtime.
-    void wire_up_runtime_services(model::node_id node_id);
+    void
+    wire_up_runtime_services(model::node_id node_id, ::stop_signal& app_signal);
     void configure_admin_server();
-    void wire_up_redpanda_services(model::node_id);
+    void wire_up_redpanda_services(model::node_id, ::stop_signal& app_signal);
 
     void load_feature_table_snapshot();
 

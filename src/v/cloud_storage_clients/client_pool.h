@@ -15,6 +15,7 @@
 #include "utils/gate_guard.h"
 #include "utils/hdr_hist.h"
 #include "utils/intrusive_list_helpers.h"
+#include "utils/stop_signal.h"
 
 #include <seastar/core/condition-variable.hh>
 #include <seastar/core/sharded.hh>
@@ -31,6 +32,8 @@ enum class client_pool_overdraft_policy {
     /// Client pool should try to borrow connection from another shard
     borrow_if_empty
 };
+
+constexpr ss::shard_id self_config_shard = ss::shard_id{0};
 
 /// Connection pool implementation
 /// All connections share the same configuration
@@ -95,11 +98,15 @@ public:
     /// \param conf is a client configuration
     /// \param policy controls what happens when the pool is empty (wait or try
     ///               to borrow from another shard)
+    /// \param application_abort_source abort source which can be used to stop
+    /// Redpanda gracefully
     client_pool(
       size_t size,
       client_configuration conf,
       client_pool_overdraft_policy policy
-      = client_pool_overdraft_policy::wait_if_empty);
+      = client_pool_overdraft_policy::wait_if_empty,
+      std::optional<std::reference_wrapper<stop_signal>> application_stop_signal
+      = std::nullopt);
 
     ss::future<> stop();
 
@@ -127,9 +134,14 @@ public:
     size_t max_size() const noexcept;
 
 private:
-    ss::future<> client_self_configure();
+    ss::future<>
+    client_self_configure(std::optional<std::reference_wrapper<stop_signal>>
+                            application_stop_signal);
+    ss::future<
+      std::optional<cloud_storage_clients::client_self_configuration_output>>
+    do_client_self_configure(http_client_ptr client);
     ss::future<> accept_self_configure_result(
-      std::optional<client_self_configuration_result> result);
+      std::optional<client_self_configuration_output> result);
 
     void populate_client_pool();
     http_client_ptr make_client() const;

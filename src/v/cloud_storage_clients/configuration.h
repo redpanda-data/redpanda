@@ -110,16 +110,16 @@ struct abs_self_configuration_result {
 
 struct s3_self_configuration_result {};
 
-using client_self_configuration_result
+using client_self_configuration_output
   = std::variant<abs_self_configuration_result, s3_self_configuration_result>;
 
 void apply_self_configuration_result(
-  client_configuration&, const client_self_configuration_result&);
+  client_configuration&, const client_self_configuration_output&);
 
 std::ostream& operator<<(std::ostream&, const abs_self_configuration_result&);
 std::ostream& operator<<(std::ostream&, const s3_self_configuration_result&);
 std::ostream&
-operator<<(std::ostream&, const client_self_configuration_result&);
+operator<<(std::ostream&, const client_self_configuration_output&);
 
 model::cloud_storage_backend infer_backend_from_configuration(
   const client_configuration& client_config,

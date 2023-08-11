@@ -20,27 +20,38 @@
 #include <algorithm>
 #include <random>
 
+namespace {
+constexpr auto self_configure_attempts = 3;
+constexpr auto self_configure_backoff = 1s;
+} // namespace
+
 namespace cloud_storage_clients {
 
 client_pool::client_pool(
-  size_t size, client_configuration conf, client_pool_overdraft_policy policy)
+  size_t size,
+  client_configuration conf,
+  client_pool_overdraft_policy policy,
+  std::optional<std::reference_wrapper<stop_signal>> application_stop_signal)
   : _capacity(size)
   , _config(std::move(conf))
   , _probe(std::visit([](auto&& p) { return p._probe; }, _config))
   , _policy(policy) {
-    if (ss::this_shard_id() == ss::shard_id{0}) {
+    if (ss::this_shard_id() == self_config_shard) {
         ssx::spawn_with_gate(
-          _gate, [this]() { return client_self_configure(); });
+          _gate, [this, app_stop_signal = application_stop_signal]() {
+              return client_self_configure(app_stop_signal);
+          });
     }
 }
 
-ss::future<> client_pool::client_self_configure() {
+ss::future<> client_pool::client_self_configure(
+  std::optional<std::reference_wrapper<stop_signal>> application_stop_signal) {
     if (!_apply_credentials) {
         vlog(pool_log.trace, "Awaiting credentials ...");
         co_await wait_for_credentials();
     }
 
-    std::optional<client_self_configuration_result> self_config_result;
+    std::optional<client_self_configuration_output> self_config_output;
 
     const bool requires_self_config = std::visit(
       [](const auto& cfg) -> bool { return cfg.requires_self_configuration; },
@@ -49,16 +60,37 @@ ss::future<> client_pool::client_self_configure() {
         vlog(
           pool_log.info,
           "Client requires self configuration step. Proceeding ...");
+
         auto client = make_client();
-        self_config_result = co_await client->self_configure();
+        auto result = co_await do_client_self_configure(client);
+        co_await client->stop();
+
+        if (!result) {
+            vlog(
+              pool_log.error,
+              "Self configuration of the cloud storage client failed. "
+              "This indicates a misconfiguration of Redpanda. "
+              "Aborting start-up ...");
+
+            vassert(
+              application_stop_signal.has_value(),
+              "Application abort source not present in client pool");
+
+            application_stop_signal->get().signaled();
+
+            // Return in order to drop _gate which allows stop() to proceed.
+            co_return;
+        }
+
+        self_config_output = *result;
         vlog(
           pool_log.info,
           "Client self configuration completed with result {} ",
-          *self_config_result);
+          *self_config_output);
     }
 
-    co_await container().invoke_on_all([self_config_result](client_pool& svc) {
-        return svc.accept_self_configure_result(self_config_result)
+    co_await container().invoke_on_all([self_config_output](client_pool& svc) {
+        return svc.accept_self_configure_result(self_config_output)
           .handle_exception_type([](const ss::gate_closed_exception&) {})
           .handle_exception_type([](const ss::broken_condition_variable&) {})
           .handle_exception([](std::exception_ptr e) {
@@ -71,8 +103,42 @@ ss::future<> client_pool::client_self_configure() {
     });
 }
 
+ss::future<
+  std::optional<cloud_storage_clients::client_self_configuration_output>>
+client_pool::do_client_self_configure(http_client_ptr client) {
+    try {
+        for (auto attempt = 1; attempt <= self_configure_attempts; ++attempt) {
+            auto result = co_await client->self_configure();
+            if (result) {
+                co_return result.value();
+            }
+
+            if (result.error() == cloud_storage_clients::error_outcome::retry) {
+                vlog(
+                  pool_log.error,
+                  "Self configuration attempt {}/{} failed with retryable "
+                  "error. "
+                  "Will retry in {}s.",
+                  attempt,
+                  self_configure_attempts,
+                  self_configure_backoff.count());
+                co_await ss::sleep_abortable(self_configure_backoff, _as);
+            } else {
+                break;
+            }
+        }
+    } catch (...) {
+        vlog(
+          pool_log.warn,
+          "Exception throw during client self configuration: {}",
+          std::current_exception());
+    }
+
+    co_return std::nullopt;
+}
+
 ss::future<> client_pool::accept_self_configure_result(
-  std::optional<client_self_configuration_result> result) {
+  std::optional<client_self_configuration_output> result) {
     if (!_apply_credentials) {
         vlog(pool_log.trace, "Awaiting credentials ...");
         co_await wait_for_credentials();

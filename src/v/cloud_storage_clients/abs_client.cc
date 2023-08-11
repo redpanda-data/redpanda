@@ -403,16 +403,11 @@ abs_client::abs_client(
     vlog(abs_log.trace, "Created client with config:{}", conf);
 }
 
-ss::future<client_self_configuration_result> abs_client::self_configure() {
-    auto result = co_await get_account_info(5s);
+ss::future<result<client_self_configuration_output, error_outcome>>
+abs_client::self_configure() {
+    auto result = co_await get_account_info(http::default_connect_timeout);
     if (!result) {
-        vlog(
-          abs_log.warn,
-          "Get Account Information request failed: {}. Proceeding without self "
-          "configuration ...",
-          result.error());
-
-        co_return abs_self_configuration_result{.is_hns_enabled = false};
+        co_return result.error();
     } else {
         co_return abs_self_configuration_result{
           .is_hns_enabled = result.value().is_hns_enabled};
