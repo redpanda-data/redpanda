@@ -108,8 +108,10 @@ type ClusterReconciler struct {
 //
 //nolint:funlen,gocyclo // todo break down
 func (r *ClusterReconciler) Reconcile(
-	ctx context.Context, req ctrl.Request,
+	c context.Context, req ctrl.Request,
 ) (ctrl.Result, error) {
+	ctx, done := context.WithCancel(c)
+	defer done()
 	log := ctrl.LoggerFrom(ctx).WithName("ClusterReconciler.Reconcile")
 
 	log.Info("Starting reconcile loop")
@@ -1163,6 +1165,8 @@ func newAttachedResources(ctx context.Context, r *ClusterReconciler, log logr.Lo
 	}
 }
 
+type resourceKey string
+
 func (a *attachedResources) Ensure() (ctrl.Result, error) {
 	result := ctrl.Result{}
 	var errs error
@@ -1170,7 +1174,7 @@ func (a *attachedResources) Ensure() (ctrl.Result, error) {
 		if resource == nil {
 			continue
 		}
-		err := resource.Ensure(a.ctx)
+		err := resource.Ensure(context.WithValue(a.ctx, resourceKey("resource"), key))
 		var e *resources.RequeueAfterError
 		if errors.As(err, &e) {
 			a.log.Info(e.Error())

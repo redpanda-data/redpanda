@@ -108,7 +108,10 @@ func (r *RedpandaReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Complete(r)
 }
 
-func (r *RedpandaReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+func (r *RedpandaReconciler) Reconcile(c context.Context, req ctrl.Request) (ctrl.Result, error) {
+	ctx, done := context.WithCancel(c)
+	defer done()
+
 	start := time.Now()
 	log := ctrl.LoggerFrom(ctx).WithName("RedpandaReconciler.Reconcile")
 
