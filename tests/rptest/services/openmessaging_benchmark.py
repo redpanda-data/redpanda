@@ -203,7 +203,11 @@ class OpenMessagingBenchmark(Service):
             self.driver['sasl_password'] = p
             self.driver['sasl_mechanism'] = m
             self.driver['security_protocol'] = 'SASL_SSL'
-        self.driver["redpanda_node"] = self.redpanda.nodes[0].account.hostname
+            self.driver["redpanda_node"] = self.redpanda.brokers().split(
+                ':')[0]
+        else:
+            self.driver["redpanda_node"] = self.redpanda.nodes[
+                0].account.hostname
         conf = self.render("omb_driver.yaml", **self.driver)
         self.logger.info("Rendered driver config: \n %s", conf)
         node.account.create_file(OpenMessagingBenchmark.DRIVER_FILE, conf)
