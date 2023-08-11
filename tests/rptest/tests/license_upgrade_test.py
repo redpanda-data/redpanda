@@ -12,11 +12,12 @@ import re
 import time
 
 from ducktape.utils.util import wait_until
+from ducktape.mark import matrix
 from rptest.utils.rpenv import sample_license
 from rptest.services.admin import Admin
 from ducktape.utils.util import wait_until
 from rptest.tests.redpanda_test import RedpandaTest
-from rptest.services.redpanda import SISettings
+from rptest.services.redpanda import SISettings, CloudStorageType, get_cloud_storage_type
 from rptest.services.cluster import cluster
 from requests.exceptions import HTTPError
 from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST
@@ -49,7 +50,9 @@ class UpgradeToLicenseChecks(RedpandaTest):
         super(UpgradeToLicenseChecks, self).setUp()
 
     @cluster(num_nodes=3, log_allow_list=RESTART_LOG_ALLOW_LIST)
-    def test_basic_upgrade(self):
+    @matrix(cloud_storage_type=get_cloud_storage_type(
+        applies_only_on=[CloudStorageType.S3]))
+    def test_basic_upgrade(self, cloud_storage_type):
         # Modified environment variables apply to processes restarted from this point onwards
         self.redpanda.set_environment({
             '__REDPANDA_LICENSE_CHECK_INTERVAL_SEC':
@@ -129,7 +132,9 @@ class UpgradeMigratingLicenseVersion(RedpandaTest):
         super(UpgradeMigratingLicenseVersion, self).setUp()
 
     @cluster(num_nodes=3, log_allow_list=RESTART_LOG_ALLOW_LIST)
-    def test_license_upgrade(self):
+    @matrix(cloud_storage_type=get_cloud_storage_type(
+        applies_only_on=[CloudStorageType.S3]))
+    def test_license_upgrade(self, cloud_storage_type):
         license = sample_license()
         if license is None:
             self.logger.info(
