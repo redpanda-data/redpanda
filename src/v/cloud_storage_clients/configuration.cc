@@ -187,7 +187,7 @@ abs_configuration abs_configuration::make_adls_configuration() const {
 }
 
 void apply_self_configuration_result(
-  client_configuration& cfg, const client_self_configuration_result& res) {
+  client_configuration& cfg, const client_self_configuration_output& res) {
     std::visit(
       [&res](auto& cfg) -> void {
           using cfg_type = std::decay_t<decltype(cfg)>;
@@ -239,7 +239,7 @@ std::ostream& operator<<(std::ostream& o, const s3_self_configuration_result&) {
 }
 
 std::ostream&
-operator<<(std::ostream& o, const client_self_configuration_result& r) {
+operator<<(std::ostream& o, const client_self_configuration_output& r) {
     return std::visit(
       [&o](const auto& self_cfg) -> std::ostream& {
           using cfg_type = std::decay_t<decltype(self_cfg)>;

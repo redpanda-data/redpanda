@@ -31,7 +31,8 @@ public:
 
     virtual ~client() = default;
 
-    virtual ss::future<client_self_configuration_result> self_configure() = 0;
+    virtual ss::future<result<client_self_configuration_output, error_outcome>>
+    self_configure() = 0;
 
     /// Stop the client
     virtual ss::future<> stop() = 0;

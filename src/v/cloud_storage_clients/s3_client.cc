@@ -470,7 +470,8 @@ s3_client::s3_client(
   , _client(conf, &as, conf._probe, conf.max_idle_time)
   , _probe(conf._probe) {}
 
-ss::future<client_self_configuration_result> s3_client::self_configure() {
+ss::future<result<client_self_configuration_output, error_outcome>>
+s3_client::self_configure() {
     vlog(
       s3_log.error,
       "Call to self_configure was made, but the S3 client doesn't require self "
