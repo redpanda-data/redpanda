@@ -174,7 +174,8 @@ ss::future<segment_chunk::handle_t> segment_chunks::hydrate_chunk(
               _ctxlog.trace,
               "marking eager stream download start for {}",
               chunk_start);
-            eager_stream->get().download_skipped = false;
+            eager_stream->get().state
+              = eager_chunk_stream::state::awaiting_hydration;
         }
 
         while (!done) {

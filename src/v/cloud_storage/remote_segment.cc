@@ -967,7 +967,8 @@ ss::future<> remote_segment::hydrate_chunk(
           "cache",
           path_to_start);
         if (eager_stream) {
-            eager_stream->get().chunk_in_cache = true;
+            eager_stream->get().state
+              = eager_chunk_stream::state::cache_hit_skip_download;
             eager_stream->get().stream_available.signal();
         }
         co_return;
@@ -984,7 +985,10 @@ ss::future<> remote_segment::hydrate_chunk(
       _bucket,
       _path,
       [this, &eager_stream, &range, &consumer](auto size, auto stream) {
-          if (eager_stream.has_value()) {
+          if (
+            eager_stream.has_value()
+            && eager_stream->get().state
+                 == eager_chunk_stream::state::awaiting_hydration) {
               vlog(_ctxlog.trace, "eager stream requested for range {}", range);
               auto [disk_write_str, eager_str] = input_stream_fanout<2>(
                 std::move(stream),

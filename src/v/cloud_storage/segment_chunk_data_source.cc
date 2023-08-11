@@ -132,7 +132,26 @@ ss::future<> chunk_data_source_impl::load_stream_for_chunk(
           _gate, [this, chunk_start, &ecs] {
               return load_chunk_handle(chunk_start, ecs);
           });
-        co_await ecs.wait_for_stream();
+
+        try {
+            co_await ecs.wait_for_stream();
+        } catch (const ss::timed_out_error&) {
+            // If we timed out, log and continue. The next step will wait for
+            // the chunk download to finish. If the timeout was because of an
+            // abort or shutdown, the next wait will throw. If the timeout was
+            // due to slow client acquisition, the data source will be connected
+            // to the chunk after download.
+            vlog(_ctxlog.info, "timed out while waiting for eager stream");
+
+            // If the timeout is due to delay in http client acquisition, we
+            // should cancel loading the eager stream, so that when the client
+            // is acquired, we do not end up with an extra unused stream which
+            // blocks the chunk download. The fanout implementation used for
+            // eager stream requires all split streams to be consumed from, in
+            // order to progress.
+            ecs.state = eager_chunk_stream::state::cancelled_timeout;
+        }
+
         if (ecs.stream.has_value()) {
             vlog(
               _ctxlog.trace,
