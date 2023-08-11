@@ -18,7 +18,7 @@
 //     bytes.Reader
 //   - If into is an io.Writer, the response is copied directly to the writer.
 //   - Otherwise, this attempts to json decode the response into 'into' and
-//     returns any json unmarshaling error.
+//     returns any json unmarshalling error.
 package httpapi
 
 import (

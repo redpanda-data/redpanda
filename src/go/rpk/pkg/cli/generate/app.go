@@ -354,9 +354,10 @@ specify how you would like your application to be created using flags.
 
 The --language option allows you to specify the language. There is no default.
 
-The --new-sasl--user <user>:<password> allows you to generate a new SASL user
-with admin ACLs. If you don't want to use your current profile user nor create a
-new one, you may use --no-user flag to generate the starter app without the user.
+The --new-sasl-credentials <user>:<password> allows you to generate a new SASL
+user with admin ACLs. If you don't want to use your current profile user nor
+create a new one, you may use --no-user flag to generate the starter app without
+the user.
 
 If you are having trouble connecting to your cluster, you can use -X
 admin.hosts=comma,delimited,host:ports to pass a specific admin api address.
@@ -370,7 +371,7 @@ Generate an app in a specified language with the existing SASL user:
   rpk generate app --language <lang>
 
 Generate an app in the specified language with a new SASL user:
-  rpk generate app -l <lang> --new-sasl-user <user>:<password>
+  rpk generate app -l <lang> --new-sasl-credentials <user>:<password>
 
 Generate an app in the 'tmp' dir, but take no action on the user:
   rpk generate app -l <lang> --no-user --output /tmp
