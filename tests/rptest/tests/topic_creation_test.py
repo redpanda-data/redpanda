@@ -19,12 +19,11 @@ from rptest.clients.types import TopicSpec
 from rptest.clients.rpk import RpkException, RpkTool
 from rptest.clients.kafka_cat import KafkaCat
 from rptest.services.producer_swarm import ProducerSwarm
-from rptest.services.redpanda import ResourceSettings, SISettings
+from rptest.services.redpanda import ResourceSettings, SISettings, CloudStorageType, get_cloud_storage_type
 from rptest.services.redpanda_installer import RedpandaInstaller
 from rptest.services.rpk_producer import RpkProducer
 from rptest.clients.kafka_cli_tools import KafkaCliTools
 from rptest.util import wait_for_local_storage_truncate, expect_exception
-from rptest.utils.mode_checks import skip_azure_blob_storage
 from rptest.clients.kcl import KCL
 
 from ducktape.utils.util import wait_until
@@ -560,8 +559,10 @@ class CreateTopicUpgradeTest(RedpandaTest):
                                         target_bytes=local_retention)
 
     @cluster(num_nodes=3)
-    @skip_azure_blob_storage
-    def test_cloud_storage_sticky_enablement_v22_2_to_v22_3(self):
+    @matrix(cloud_storage_type=get_cloud_storage_type(
+        applies_only_on=[CloudStorageType.S3]))
+    def test_cloud_storage_sticky_enablement_v22_2_to_v22_3(
+            self, cloud_storage_type):
         """
         In Redpanda 22.3, the cluster defaults for cloud storage change
         from being applied at runtime to being sticky at creation time,
@@ -628,8 +629,10 @@ class CreateTopicUpgradeTest(RedpandaTest):
         assert described['redpanda.remote.read'] == ('false', 'DEFAULT_CONFIG')
 
     @cluster(num_nodes=3)
-    @skip_azure_blob_storage
-    def test_retention_config_on_upgrade_from_v22_2_to_v22_3(self):
+    @matrix(cloud_storage_type=get_cloud_storage_type(
+        applies_only_on=[CloudStorageType.S3]))
+    def test_retention_config_on_upgrade_from_v22_2_to_v22_3(
+            self, cloud_storage_type):
         self.install_and_start()
 
         self.rpk.create_topic("test-topic-with-retention",
@@ -814,8 +817,10 @@ class CreateTopicUpgradeTest(RedpandaTest):
             assert len(deleted_objects) == 0
 
     @cluster(num_nodes=3)
-    @skip_azure_blob_storage
-    def test_retention_upgrade_with_cluster_remote_write(self):
+    @matrix(cloud_storage_type=get_cloud_storage_type(
+        applies_only_on=[CloudStorageType.S3]))
+    def test_retention_upgrade_with_cluster_remote_write(
+            self, cloud_storage_type):
         """
         Validate how the cluster-wide cloud_storage_enable_remote_write
         is handled on upgrades from <=22.2

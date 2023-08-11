@@ -464,7 +464,9 @@ class ReadReplicasUpgradeTest(EndToEndTest):
         self.second_cluster = None
 
     @cluster(num_nodes=8)
-    def test_upgrades(self):
+    @matrix(cloud_storage_type=get_cloud_storage_type(
+        applies_only_on=[CloudStorageType.S3]))
+    def test_upgrades(self, cloud_storage_type):
         partition_count = 1
         install_opts = InstallOptions(install_previous_version=True)
         self.start_redpanda(3,
