@@ -1529,7 +1529,18 @@ ss::future<> disk_log_impl::truncate_prefix(truncate_prefix_config cfg) {
     vassert(!_closed, "truncate_prefix() on closed log - {}", *this);
     return _failure_probes.truncate_prefix().then([this, cfg]() mutable {
         // dispatch the actual truncation
-        return do_truncate_prefix(cfg);
+        return do_truncate_prefix(cfg)
+          .then([this] {
+              /*
+               * after truncation do a quick refresh of cached variables that
+               * are computed during disk usage calculation. this is useful for
+               * providing more timely updates of reclaimable space through the
+               * health report.
+               */
+              return disk_usage_and_reclaimable_space(
+                _manager.default_gc_config());
+          })
+          .discard_result();
     });
 }
 
