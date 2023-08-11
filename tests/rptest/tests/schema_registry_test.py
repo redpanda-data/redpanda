@@ -372,7 +372,7 @@ class SchemaRegistryEndpoints(RedpandaTest):
             self, subject, version, headers=HTTP_GET_HEADERS, **kwargs):
         return self._request(
             "GET",
-            f"subjects/{subject}/versions/{version}/referencedBy",
+            f"subjects/{subject}/versions/{version}/referencedby",
             headers=headers,
             **kwargs)
 
