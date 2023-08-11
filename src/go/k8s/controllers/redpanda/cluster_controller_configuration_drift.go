@@ -52,8 +52,11 @@ type ClusterConfigurationDriftReconciler struct {
 //
 //nolint:funlen // May be broken down
 func (r *ClusterConfigurationDriftReconciler) Reconcile(
-	ctx context.Context, req ctrl.Request,
+	c context.Context, req ctrl.Request,
 ) (ctrl.Result, error) {
+	ctx, done := context.WithCancel(c)
+	defer done()
+
 	log := ctrl.LoggerFrom(ctx).WithName("ClusterConfigurationDriftReconciler.Reconcile")
 
 	log.V(logger.DebugLevel).Info("Starting configuration drift reconcile loop")
