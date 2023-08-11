@@ -45,11 +45,12 @@ struct eager_chunk_stream {
     }
 
     ss::future<> wait_for_stream() {
+        using namespace std::chrono_literals;
         if (download_skipped) {
             return ss::now();
         }
         return stream_available.wait(
-          [this] { return stream.has_value() || chunk_in_cache; });
+          30s, [this] { return stream.has_value() || chunk_in_cache; });
     }
 };
 

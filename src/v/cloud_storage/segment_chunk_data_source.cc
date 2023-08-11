@@ -128,7 +128,7 @@ ss::future<> chunk_data_source_impl::load_stream_for_chunk(
 
     eager_chunk_stream ecs;
     try {
-        auto handle_loaded_f = ssx::spawn_with_gate_then(
+        auto handle_loaded_f = ss::try_with_gate(
           _gate, [this, chunk_start, &ecs] {
               return load_chunk_handle(chunk_start, ecs);
           });
@@ -153,6 +153,11 @@ ss::future<> chunk_data_source_impl::load_stream_for_chunk(
     }
 
     if (eptr) {
+        vlog(
+          _ctxlog.warn,
+          "error during load_stream_for_chunk: {} - {}",
+          chunk_start,
+          eptr);
         co_await maybe_close_stream();
         std::rethrow_exception(eptr);
     }
