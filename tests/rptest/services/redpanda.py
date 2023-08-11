@@ -15,7 +15,6 @@ import socket
 import signal
 import tempfile
 import shutil
-from paramiko import SSHClient
 import requests
 import json
 import random
@@ -27,7 +26,7 @@ import zipfile
 import pathlib
 import shlex
 from enum import Enum, IntEnum
-from typing import Mapping, Optional, Tuple, Union, Any
+from typing import Mapping, Optional, Tuple, Any
 
 import yaml
 from ducktape.services.service import Service
@@ -55,8 +54,11 @@ from rptest.clients.rp_storage_tool import RpStorageTool
 from rptest.services import tls
 from rptest.services.admin import Admin
 from rptest.services.redpanda_installer import RedpandaInstaller, VERSION_RE as RI_VERSION_RE, int_tuple as ri_int_tuple
+from rptest.services.redpanda_cloud import CloudCluster
 from rptest.services.rolling_restarter import RollingRestarter
 from rptest.services.storage import ClusterStorage, NodeStorage, NodeCacheStorage
+from rptest.services.storage_tiers import AdvertisedTierConfig, AdvertisedTierConfigs, \
+    CloudTierName, load_tier_profiles, tiers_config_filename
 from rptest.services.storage_failure_injection import FailureInjectionConfig
 from rptest.services.utils import BadLogLines, NodeCrash
 from rptest.util import inject_remote_script, ssh_output_stderr, wait_until_result
@@ -1335,414 +1337,27 @@ class RedpandaServiceCloud(RedpandaServiceK8s):
     use `RedpandaServiceCloud`.
     """
 
+    # This parameter used in make_redpanda_service
+    # and multiple other services for detection
+    # TODO: Update it to GLOBAL_CLOUD_CLUSTER_CONFIG
     GLOBAL_CLOUD_OAUTH_URL = 'cloud_oauth_url'
-    GLOBAL_CLOUD_OAUTH_CLIENT_ID = 'cloud_oauth_client_id'
-    GLOBAL_CLOUD_OAUTH_CLIENT_SECRET = 'cloud_oauth_client_secret'
-    GLOBAL_CLOUD_OAUTH_AUDIENCE = 'cloud_oauth_audience'
-    GLOBAL_CLOUD_API_URL = 'cloud_api_url'
-    GLOBAL_CLOUD_CLUSTER_ID = 'cloud_cluster_id'
-    GLOBAL_CLOUD_DELETE_CLUSTER = 'cloud_delete_cluster'
-    GLOBAL_TELEPORT_AUTH_SERVER = 'cloud_teleport_auth_server'
-    GLOBAL_TELEPORT_BOT_TOKEN = 'cloud_teleport_bot_token'
-    GLOBAL_CLOUD_CLUSTER_REGION = 'cloud_cluster_region'
-    GLOBAL_CLOUD_CLUSTER_PROVIDER = 'cloud_provider'
-    GLOBAL_CLOUD_CLUSTER_TYPE = 'cloud_cluster_type'
+    # Deprecated. Left for future reference
+    # GLOBAL_CLOUD_OAUTH_CLIENT_ID = 'cloud_oauth_client_id'
+    # GLOBAL_CLOUD_OAUTH_CLIENT_SECRET = 'cloud_oauth_client_secret'
+    # GLOBAL_CLOUD_OAUTH_AUDIENCE = 'cloud_oauth_audience'
+    # GLOBAL_CLOUD_API_URL = 'cloud_api_url'
+    # GLOBAL_CLOUD_CLUSTER_ID = 'cloud_cluster_id'
+    # GLOBAL_CLOUD_DELETE_CLUSTER = 'cloud_delete_cluster'
+    # GLOBAL_TELEPORT_AUTH_SERVER = 'cloud_teleport_auth_server'
+    # GLOBAL_TELEPORT_BOT_TOKEN = 'cloud_teleport_bot_token'
+    # GLOBAL_CLOUD_CLUSTER_REGION = 'cloud_cluster_region'
+    # GLOBAL_CLOUD_CLUSTER_PROVIDER = 'cloud_provider'
+    # GLOBAL_CLOUD_CLUSTER_TYPE = 'cloud_cluster_type'
+    # GLOBAL_CLOUD_CLUSTER_NETWORK = 'cloud_cluster_network'
+    # GLOBAL_CLOUD_PEER_VPC_ID = 'cloud_cluster_peer_vpc_id'
+    # GLOBAL_CLOUD_PEER_OWNER_ID = 'cloud_cluster_peer_owner_id'
 
-    class CloudCluster():
-        """
-        Operations on a Redpanda Cloud cluster via the swagger API.
-
-        Creates and deletes a cluster. Will also create a new namespace for
-        that cluster.
-        """
-
-        CHECK_TIMEOUT_SEC = 3600
-        CHECK_BACKOFF_SEC = 60.0
-
-        def __init__(self,
-                     logger,
-                     oauth_url,
-                     oauth_client_id,
-                     oauth_client_secret,
-                     oauth_audience,
-                     api_url,
-                     cluster_id='',
-                     delete_namespace=False,
-                     cloud_cluster_region="us-west-2",
-                     cloud_cluster_provider="AWS",
-                     cloud_cluster_type="FMC"):
-            """
-            Initializes the object, but does not create clusters. Use
-            `create` method to create a cluster.
-
-
-            :param logger: logging object
-            :param oauth_url: full url of the oauth endpoint to get a token
-            :param oauth_client_id: client id from redpanda cloud ui page for clients
-            :param oauth_client_secret: client secret from redpanda cloud ui page for clients
-            :param oauth_audience: oauth audience
-            :param api_url: url of hostname for swagger api without trailing slash char
-            :param cluster_id: if not empty string, will skip creating a new cluster
-            :param delete_namespace: if False, will skip namespace deletion step after tests are run
-            """
-
-            self._logger = logger
-            self._oauth_url = oauth_url
-            self._oauth_client_id = oauth_client_id
-            self._oauth_client_secret = oauth_client_secret
-            self._oauth_audience = oauth_audience
-            self._api_url = api_url
-            self._cluster_id = cluster_id
-            self._coud_cluster_region = cloud_cluster_region
-            self._coud_cluster_provider = cloud_cluster_provider
-            self._coud_cluster_type = cloud_cluster_type
-            self._delete_namespace = delete_namespace
-            self._token = None
-
-            # unique 8-char identifier to be used when creating names of things for this cluster
-            self._unique_id = str(uuid.uuid1())[:8]
-
-        @property
-        def cluster_id(self):
-            """
-            The clusterId of the created cluster.
-            """
-
-            return self._cluster_id
-
-        def _get_token(self):
-            """
-            Returns access token to be used in subsequent api calls to cloud api.
-
-            To save on repeated token generation, this function will cache it in a local variable.
-            Assumes the token has an expiration that will last throughout the usage of this cluster.
-
-            :return: access token as a string
-            """
-
-            if self._token is None:
-                headers = {'Content-Type': "application/x-www-form-urlencoded"}
-                data = {
-                    'grant_type': 'client_credentials',
-                    'client_id': f'{self._oauth_client_id}',
-                    'client_secret': f'{self._oauth_client_secret}',
-                    'audience': f'{self._oauth_audience}'
-                }
-                resp = requests.post(f'{self._oauth_url}',
-                                     headers=headers,
-                                     data=data)
-                resp.raise_for_status()
-                j = resp.json()
-                self._token = j['access_token']
-            return self._token
-
-        def _http_get(self, endpoint='', **kwargs):
-            token = self._get_token()
-            headers = {
-                'Authorization': f'Bearer {token}',
-                'Accept': 'application/json'
-            }
-            resp = requests.get(f'{self._api_url}{endpoint}',
-                                headers=headers,
-                                **kwargs)
-            resp.raise_for_status()
-            return resp.json()
-
-        def _http_post(self, base_url=None, endpoint='', **kwargs):
-            token = self._get_token()
-            headers = {
-                'Authorization': f'Bearer {token}',
-                'Accept': 'application/json'
-            }
-            if base_url is None:
-                base_url = self._api_url
-            resp = requests.post(f'{base_url}{endpoint}',
-                                 headers=headers,
-                                 **kwargs)
-            resp.raise_for_status()
-            return resp.json()
-
-        def _http_delete(self, endpoint='', **kwargs):
-            token = self._get_token()
-            headers = {
-                'Authorization': f'Bearer {token}',
-                'Accept': 'application/json'
-            }
-            resp = requests.delete(f'{self._api_url}{endpoint}',
-                                   headers=headers,
-                                   **kwargs)
-            resp.raise_for_status()
-            return resp.json()
-
-        def _create_namespace(self):
-            name = f'rp-ducktape-ns-{self._unique_id}'  # e.g. rp-ducktape-ns-3b36f516
-            self._logger.debug(f'creating namespace name {name}')
-            body = {'name': name}
-            r = self._http_post(endpoint='/api/v1/namespaces', json=body)
-            self._logger.debug(f'created namespaceUuid {r["id"]}')
-            return r['id']
-
-        def _cluster_ready(self, namespace_uuid, name):
-            self._logger.debug(f'checking readiness of cluster {name}')
-            params = {'namespaceUuid': namespace_uuid}
-            clusters = self._http_get(endpoint='/api/v1/clusters',
-                                      params=params)
-            for c in clusters:
-                if c['name'] == name:
-                    if c['state'] == 'ready':
-                        return True
-            return False
-
-        def _get_cluster_id(self, namespace_uuid, name):
-            """
-            Get clusterId.
-
-            :param namespace_uuid: namespaceUuid the cluster is contained in
-            :param name: name of the cluster
-            :return: clusterId as a string or None if not found
-            """
-
-            params = {'namespaceUuid': namespace_uuid}
-            clusters = self._http_get(endpoint='/api/v1/clusters',
-                                      params=params)
-            for c in clusters:
-                if c['name'] == name:
-                    return c['id']
-            return None
-
-        def _get_install_pack_ver(self):
-            """Get the latest certified install pack version.
-
-            :return: version, e.g. '23.2.20230707135118'
-            """
-
-            versions = self._http_get(
-                endpoint='/api/v1/clusters-resources/install-pack-versions')
-            latest_version = ''
-            for v in versions:
-                if v['certified'] and v['version'] > latest_version:
-                    latest_version = v['version']
-            if latest_version == '':
-                return None
-            return latest_version
-
-        def _get_region_id(self, cluster_type, provider, region):
-            """Get the region id for a region.
-
-            :param cluster_type: cluster type, e.g. 'FMC'
-            :param provider: cloud provider, e.g. 'AWS'
-            :param region: region name, e.g. 'us-west-2'
-            :return: id, e.g. 'cckac9vvbr5ofm048jjg'
-            """
-
-            params = {'cluster_type': cluster_type}
-            regions = self._http_get(
-                endpoint='/api/v1/clusters-resources/regions', params=params)
-            for r in regions[provider]:
-                if r['name'] == region:
-                    return r['id']
-            return None
-
-        def _get_product_id(self,
-                            config_profile_name,
-                            provider,
-                            cluster_type=None,
-                            region=None,
-                            install_pack_ver=None):
-            """Get the product id for the first matching config profile name using filter parameters.
-
-            :param config_profile_name: config profile name, e.g. 'tier-1-aws'
-            :param provider: cloud provider filter, e.g. 'AWS'
-            :param cluster_type: cluster type filter, e.g. 'FMC'
-            :param region: region name filter, e.g. 'us-west-2'
-            :param install_pack_ver: install pack version filter, e.g. '23.2.20230707135118'
-            :return: productId, e.g. 'chqrd4q37efgkmohsbdg'
-            """
-
-            params = {
-                'cloud_provider': provider,
-                'cluster_type': cluster_type,
-                'region': region,
-                'install_pack_version': install_pack_ver
-            }
-            products = self._http_get(
-                endpoint='/api/v1/clusters-resources/products', params=params)
-            for p in products:
-                if p['redpandaConfigProfileName'] == config_profile_name:
-                    return p['id']
-            return None
-
-        def create(self,
-                   config_profile_name: str = 'tier-1-aws',
-                   superuser: Optional[SaslCredentials] = None) -> str:
-            """Create a cloud cluster and a new namespace; block until cluster is finished creating.
-
-            :param config_profile_name: config profile name, default 'tier-1-aws'
-            :return: clusterId, e.g. 'cimuhgmdcaa1uc1jtabc'
-            """
-
-            if self.cluster_id != '':
-                self._logger.warn(
-                    f'will not create cluster; already have cluster_id {self.cluster_id}'
-                )
-                return self.cluster_id
-
-            namespace_uuid = self._create_namespace()
-            name = f'rp-ducktape-cluster-{self._unique_id}'  # e.g. rp-ducktape-cluster-3b36f516
-            install_pack_ver = self._get_install_pack_ver()
-            # 'FMC'
-            cluster_type = self._coud_cluster_type
-            # 'AWS'
-            provider = self._coud_cluster_provider
-            # 'us-west-2'
-            region = self._coud_cluster_region
-            region_id = self._get_region_id(cluster_type, provider, region)
-            zones = ['usw2-az1']
-            product_id = self._get_product_id(config_profile_name, provider,
-                                              cluster_type, region,
-                                              install_pack_ver)
-
-            self._logger.info(f'creating cluster name {name}')
-            body = {
-                "cluster": {
-                    "name": name,
-                    "productId": product_id,
-                    "spec": {
-                        "clusterType": cluster_type,
-                        "connectors": {
-                            "enabled": True
-                        },
-                        "installPackVersion": install_pack_ver,
-                        "isMultiAz": False,
-                        "networkId": "",
-                        "provider": provider,
-                        "region": region,
-                        "zones": zones,
-                    }
-                },
-                "connectionType": "public",
-                "namespaceUuid": namespace_uuid,
-                "network": {
-                    "displayName": f"public-network-{name}",
-                    "spec": {
-                        "cidr": "10.1.0.0/16",
-                        "deploymentType": cluster_type,
-                        "installPackVersion": install_pack_ver,
-                        "provider": provider,
-                        "regionId": region_id,
-                    }
-                },
-            }
-
-            self._logger.debug(f'body: {json.dumps(body)}')
-
-            r = self._http_post(endpoint='/api/v1/workflows/network-cluster',
-                                json=body)
-
-            self._logger.info(
-                f'waiting for creation of cluster {name} namespaceUuid {r["namespaceUuid"]}, checking every {self.CHECK_BACKOFF_SEC} seconds'
-            )
-
-            wait_until(
-                lambda: self._cluster_ready(namespace_uuid, name),
-                timeout_sec=self.CHECK_TIMEOUT_SEC,
-                backoff_sec=self.CHECK_BACKOFF_SEC,
-                err_msg=
-                f'Unable to deterimine readiness of cloud cluster {name}')
-            self._cluster_id = self._get_cluster_id(namespace_uuid, name)
-
-            if superuser is not None:
-                self._logger.debug(
-                    f'super username: {superuser.username}, algorithm: {superuser.algorithm}'
-                )
-                self._create_user(superuser)
-                self._create_acls(superuser.username)
-
-            return self._cluster_id
-
-        def delete(self):
-            """
-            Deletes a cloud cluster and the namespace it belongs to.
-            """
-
-            if self._cluster_id == '':
-                self._logger.warn(
-                    f'cluster_id is empty, unable to delete cluster')
-                return
-
-            resp = self._http_get(
-                endpoint=f'/api/v1/clusters/{self.cluster_id}')
-            namespace_uuid = resp['namespaceUuid']
-
-            resp = self._http_delete(
-                endpoint=f'/api/v1/clusters/{self.cluster_id}')
-            self._logger.debug(f'resp: {json.dumps(resp)}')
-            self._cluster_id = ''
-
-            # skip namespace deletion to avoid error because cluster delete not complete yet
-            if self._delete_namespace:
-                resp = self._http_delete(
-                    endpoint=f'/api/v1/namespaces/{namespace_uuid}')
-                self._logger.debug(f'resp: {json.dumps(resp)}')
-
-        def _create_user(self, user: SaslCredentials):
-            """Create SASL user
-            """
-
-            cluster = self._http_get(
-                endpoint=f'/api/v1/clusters/{self._cluster_id}')
-            base_url = cluster['status']['listeners']['redpandaConsole'][
-                'default']['urls'][0]
-            payload = {
-                'mechanism': user.algorithm,
-                'password': user.password,
-                'username': user.username,
-            }
-            # use the console api url to create sasl users; uses the same auth token
-            return self._http_post(base_url=base_url,
-                                   endpoint='/api/users',
-                                   json=payload)
-
-        def _create_acls(self, username):
-            """Create ACLs for user
-            """
-
-            cluster = self._http_get(
-                endpoint=f'/api/v1/clusters/{self._cluster_id}')
-            base_url = cluster['status']['listeners']['redpandaConsole'][
-                'default']['urls'][0]
-            for rt in ('Topic', 'Group', 'TransactionalID'):
-                payload = {
-                    'host': '*',
-                    'operation': 'All',
-                    'permissionType': 'Allow',
-                    'principal': f'User:{username}',
-                    'resourceName': '*',
-                    'resourcePatternType': 'Literal',
-                    'resourceType': rt,
-                }
-                self._http_post(base_url=base_url,
-                                endpoint='/api/acls',
-                                json=payload)
-
-            payload = {
-                'host': '*',
-                'operation': 'All',
-                'permissionType': 'Allow',
-                'principal': f'User:{username}',
-                'resourceName': 'kafka-cluster',
-                'resourcePatternType': 'Literal',
-                'resourceType': 'Cluster',
-            }
-            self._http_post(base_url=base_url,
-                            endpoint='/api/acls',
-                            json=payload)
-
-        def get_broker_address(self):
-            cluster = self._http_get(
-                endpoint=f'/api/v1/clusters/{self._cluster_id}')
-            return cluster['status']['listeners']['kafka']['default']['urls'][
-                0]
+    GLOBAL_CLOUD_CLUSTER_CONFIG = 'cloud_cluster'
 
     def __init__(self,
                  context,
@@ -1772,43 +1387,47 @@ class RedpandaServiceCloud(RedpandaServiceK8s):
 
         self._trim_logs = False
 
-        self._cloud_oauth_url = context.globals.get(
-            self.GLOBAL_CLOUD_OAUTH_URL, None)
-        self._cloud_oauth_client_id = context.globals.get(
-            self.GLOBAL_CLOUD_OAUTH_CLIENT_ID, None)
-        self._cloud_oauth_client_secret = context.globals.get(
-            self.GLOBAL_CLOUD_OAUTH_CLIENT_SECRET, None)
-        self._cloud_oauth_audience = context.globals.get(
-            self.GLOBAL_CLOUD_OAUTH_AUDIENCE, None)
-        self._cloud_teleport_proxy = context.globals.get(
-            self.GLOBAL_TELEPORT_AUTH_SERVER, None)
-        self._cloud_teleport_bot_token = context.globals.get(
-            self.GLOBAL_TELEPORT_BOT_TOKEN, None)
-        self._cloud_api_url = context.globals.get(self.GLOBAL_CLOUD_API_URL,
-                                                  None)
-        self._cloud_cluster_id = context.globals.get(
-            self.GLOBAL_CLOUD_CLUSTER_ID, '')
-        self._cloud_delete_cluster = context.globals.get(
-            self.GLOBAL_CLOUD_DELETE_CLUSTER, True)
-        self._cloud_cluster_provider = context.globals.get(
-            self.GLOBAL_CLOUD_CLUSTER_PROVIDER, "AWS").upper()
-        self._cloud_cluster_region = context.globals.get(
-            self.GLOBAL_CLOUD_CLUSTER_REGION, "us-west-2")
-        self._cloud_cluster_type = context.globals.get(
-            self.GLOBAL_CLOUD_CLUSTER_TYPE, "FMC").upper()
-        self.logger.debug(f'initial cluster_id: {self._cloud_cluster_id}')
+        # Prepare values from globals.json to serialize
+        # later to dataclass
+        self._cc_config = context.globals.get(self.GLOBAL_CLOUD_CLUSTER_CONFIG,
+                                              None)
+        # log cloud cluster id
+        self.logger.debug(f"initial cluster_id: {self._cc_config['id']}")
 
-        self._cloud_cluster = self.CloudCluster(
-            self.logger,
-            self._cloud_oauth_url,
-            self._cloud_oauth_client_id,
-            self._cloud_oauth_client_secret,
-            self._cloud_oauth_audience,
-            self._cloud_api_url,
-            self._cloud_cluster_id,
-            cloud_cluster_region=self._cloud_cluster_region,
-            cloud_cluster_provider=self._cloud_cluster_provider,
-            cloud_cluster_type=self._cloud_cluster_type)
+        # Removed in favor to serialization
+        # self._cloud_oauth_url = context.globals.get(
+        #     self.GLOBAL_CLOUD_OAUTH_URL, None)
+        # self._cloud_oauth_client_id = context.globals.get(
+        #     self.GLOBAL_CLOUD_OAUTH_CLIENT_ID, None)
+        # self._cloud_oauth_client_secret = context.globals.get(
+        #     self.GLOBAL_CLOUD_OAUTH_CLIENT_SECRET, None)
+        # self._cloud_oauth_audience = context.globals.get(
+        #     self.GLOBAL_CLOUD_OAUTH_AUDIENCE, None)
+        # self._cloud_teleport_proxy = context.globals.get(
+        #     self.GLOBAL_TELEPORT_AUTH_SERVER, None)
+        # self._cloud_teleport_bot_token = context.globals.get(
+        #     self.GLOBAL_TELEPORT_BOT_TOKEN, None)
+        # self._cloud_api_url = context.globals.get(self.GLOBAL_CLOUD_API_URL,
+        #                                           None)
+        # self._cloud_cluster_id = context.globals.get(
+        #     self.GLOBAL_CLOUD_CLUSTER_ID, '')
+        # self._cloud_delete_cluster = context.globals.get(
+        #     self.GLOBAL_CLOUD_DELETE_CLUSTER, True)
+        # self._cloud_cluster_provider = context.globals.get(
+        #     self.GLOBAL_CLOUD_CLUSTER_PROVIDER, "AWS").upper()
+        # self._cloud_cluster_region = context.globals.get(
+        #     self.GLOBAL_CLOUD_CLUSTER_REGION, "us-west-2")
+        # self._cloud_cluster_type = context.globals.get(
+        #     self.GLOBAL_CLOUD_CLUSTER_TYPE, "FMC").upper()
+
+        # self._cloud_cluster_network = context.globals.get(
+        #     self.GLOBAL_CLOUD_CLUSTER_NETWORK, "public").lower()
+        # self._cloud_peer_vpc_id = context.globals.get(
+        #     self.GLOBAL_CLOUD_PEER_VPC_ID, None)
+        # self._cloud_peer_owner_id = context.globals.get(
+        #     self.GLOBAL_CLOUD_PEER_OWNER_ID, None)
+
+        self._cloud_cluster = CloudCluster(self.logger, self._cc_config)
         self._kubectl = None
 
     def start_node(self, node, **kwargs):
@@ -1828,21 +1447,22 @@ class RedpandaServiceCloud(RedpandaServiceK8s):
 
         cluster_id = self._cloud_cluster.create(superuser=superuser)
         remote_uri = f'redpanda@{cluster_id}-agent'
-        self._kubectl = KubectlTool(self,
-                                    remote_uri=remote_uri,
-                                    cluster_id=self._cloud_cluster.cluster_id,
-                                    tp_proxy=self._cloud_teleport_proxy,
-                                    tp_token=self._cloud_teleport_bot_token)
+        self._kubectl = KubectlTool(
+            self,
+            remote_uri=remote_uri,
+            cluster_id=self._cloud_cluster.config.id,
+            tp_proxy=self._cloud_cluster.config.teleport_auth_server,
+            tp_token=self._cloud_cluster.config.teleport_bot_token)
 
     def stop_node(self, node, **kwargs):
         pass
 
     def stop(self, **kwargs):
-        if self._cloud_delete_cluster:
+        if self._cloud_cluster.config.delete_cluster:
             self._cloud_cluster.delete()
         else:
             self.logger.info(
-                f'skipping delete of cluster {self._cloud_cluster.cluster_id}')
+                f'skipping delete of cluster {self._cloud_cluster.config.id}')
 
     def clean_node(self, node, **kwargs):
         pass
@@ -4216,83 +3836,6 @@ class RedpandaService(RedpandaServiceBase):
             return None
 
 
-class CloudTierName(Enum):
-    AWS_1 = 'tier-1-aws'
-    AWS_2 = 'tier-2-aws'
-    AWS_3 = 'tier-3-aws'
-    AWS_4 = 'tier-4-aws'
-    AWS_5 = 'tier-5-aws'
-    GCP_1 = 'tier-1-gcp'
-    GCP_2 = 'tier-2-gcp'
-    GCP_3 = 'tier-3-gcp'
-    GCP_4 = 'tier-4-gcp'
-    GCP_5 = 'tier-5-gcp'
-
-    @classmethod
-    def list(cls):
-        return list(map(lambda c: c.value, cls))
-
-
-class AdvertisedTierConfig:
-    def __init__(self, ingress_rate: float, egress_rate: float,
-                 num_brokers: int, segment_size: int, cloud_cache_size: int,
-                 partitions_min: int, partitions_max: int,
-                 connections_limit: Optional[int],
-                 memory_per_broker: int) -> None:
-        self.ingress_rate = int(ingress_rate)
-        self.egress_rate = int(egress_rate)
-        self.num_brokers = num_brokers
-        self.segment_size = segment_size
-        self.cloud_cache_size = cloud_cache_size
-        self.partitions_min = partitions_min
-        self.partitions_max = partitions_max
-        self.connections_limit = connections_limit
-        self.memory_per_broker = memory_per_broker
-
-
-kiB = 1024
-MiB = kiB * kiB
-GiB = MiB * kiB
-
-# yapf: disable
-AdvertisedTierConfigs = {
-    #   ingress|          segment size|       partitions max|
-    #             egress|       cloud cache size|connections # limit|
-    #           # of brokers|           partitions min|           memory per broker|
-    CloudTierName.AWS_1: AdvertisedTierConfig(
-         25*MiB,  75*MiB,  3,  512*MiB,  300*GiB,   20, 1000,  1500, 16*GiB
-    ),
-    CloudTierName.AWS_2: AdvertisedTierConfig(
-         50*MiB, 150*MiB,  3,  512*MiB,  500*GiB,   50, 2000,  3750, 32*GiB
-    ),
-    CloudTierName.AWS_3: AdvertisedTierConfig(
-        100*MiB, 200*MiB,  6,  512*MiB,  500*GiB,  100, 5000,  7500, 32*GiB
-    ),
-    CloudTierName.AWS_4: AdvertisedTierConfig(
-        200*MiB, 400*MiB,  6,    1*GiB, 1000*GiB,  100, 5000, 15000, 96*GiB
-    ),
-    CloudTierName.AWS_5: AdvertisedTierConfig(
-        300*MiB, 600*MiB,  9,    1*GiB, 1000*GiB,  150, 7500, 22500, 96*GiB
-    ),
-    CloudTierName.GCP_1: AdvertisedTierConfig(
-         25*MiB,  60*MiB,  3,  512*MiB,  150*GiB,   20,  500,  1500,  8*GiB
-    ),
-    CloudTierName.GCP_2: AdvertisedTierConfig(
-         50*MiB, 150*MiB,  3,  512*MiB,  300*GiB,   50, 1000,  3750, 32*GiB
-    ),
-    CloudTierName.GCP_3: AdvertisedTierConfig(
-        100*MiB, 200*MiB,  6,  512*MiB,  320*GiB,  100, 3000,  7500, 32*GiB
-    ),
-    CloudTierName.GCP_4: AdvertisedTierConfig(
-        200*MiB, 400*MiB,  9,  512*MiB,  350*GiB,  100, 5000, 15000, 32*GiB
-    ),
-    CloudTierName.GCP_5: AdvertisedTierConfig(
-        400*MiB, 600*MiB, 12,    1*GiB,  750*GiB,  100, 7500, 22500, 32*GiB
-    ),
-}
-# yapf: enable
-
-
 def make_redpanda_service(context: TestContext,
                           num_brokers: Optional[int],
                           *,
@@ -4302,7 +3845,7 @@ def make_redpanda_service(context: TestContext,
                           **kwargs) -> RedpandaServiceBase:
     """Factory function for instatiating the appropriate RedpandaServiceBase subclass."""
 
-    if RedpandaServiceCloud.GLOBAL_CLOUD_API_URL in context.globals:
+    if RedpandaServiceCloud.GLOBAL_CLOUD_CLUSTER_CONFIG in context.globals:
         if cloud_tier is None:
             cloud_tier = CloudTierName.AWS_1
         if extra_rp_conf is not None:
@@ -4316,14 +3859,11 @@ def make_redpanda_service(context: TestContext,
 
     else:
         if apply_cloud_tier_to_noncloud:
-            filename = "redpanda.cloud-tiers-config.yml"
-            with open(os.path.join(os.path.dirname(__file__), filename),
-                      "r") as f:
-                profiles = yaml.safe_load(f)['config_profiles']
+            profiles = load_tier_profiles()
             if not cloud_tier.value in profiles:
                 raise RuntimeError(
-                    f"The specified cloud tier {cloud_tier} is not found in the {filename}"
-                )
+                    f"The specified cloud tier {cloud_tier} "
+                    f"is not found in the {tiers_config_filename}")
 
             new_extra_rp_conf = profiles[cloud_tier.value]['cluster_config']
             if extra_rp_conf is not None:

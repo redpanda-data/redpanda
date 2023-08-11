@@ -230,7 +230,7 @@ class RpkTool:
         self._tls_enabled = tls_enabled
 
         # if testing redpanda cloud, override with default superuser
-        if hasattr(redpanda, 'GLOBAL_CLOUD_API_URL'):
+        if hasattr(redpanda, 'GLOBAL_CLOUD_CLUSTER_CONFIG'):
             self._username, self._password, self._sasl_mechanism = redpanda._superuser
             self._tls_enabled = True
 
