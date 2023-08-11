@@ -208,7 +208,11 @@ public:
             auto sub = config.abort_source->get().subscribe([this]() noexcept {
                 vlog(_ctxlog.debug, "abort requested via config.abort_source");
                 if (_reader) {
+                    vlog(_ctxlog.debug, "abort requested, evicting the reader");
                     _partition->evict_segment_reader(std::move(_reader));
+                } else {
+                    vlog(
+                      _ctxlog.debug, "abort requested but no reader to evict");
                 }
             });
             if (sub) {
@@ -287,7 +291,10 @@ public:
                 co_return storage_t{};
             }
             if (_reader->config().over_budget) {
-                vlog(_ctxlog.debug, "We're over-budget, stopping");
+                vlog(
+                  _ctxlog.debug,
+                  "We're over-budget, stopping {}",
+                  _reader->base_rp_offset());
                 // We need to stop in such way that will keep the
                 // reader in the reusable state, so we could reuse
                 // it on next iteration
@@ -904,8 +911,15 @@ ss::future<> remote_partition::stop() {
 
     // Signal to the eviction loop that it should terminate.
     _has_evictions_cvar.broken();
+    vlog(
+      _ctxlog.debug,
+      "remote partition stop - close gate. count: {}",
+      _gate.get_count());
 
     co_await _gate.close();
+
+    vlog(
+      _ctxlog.debug, "remote partition stop - gate closed, unlinking segments");
     // Remove materialized_segment_state from the list that contains it, to
     // avoid it getting registered for eviction and stop.
     for (auto& pair : _segments) {

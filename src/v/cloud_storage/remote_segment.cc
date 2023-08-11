@@ -987,7 +987,12 @@ ss::future<> remote_segment::hydrate_chunk(
           if (eager_stream.has_value()) {
               vlog(_ctxlog.trace, "eager stream requested for range {}", range);
               auto [disk_write_str, eager_str] = input_stream_fanout<2>(
-                std::move(stream), 10);
+                std::move(stream),
+                10,
+                std::nullopt,
+                {{fmt::format("write_to_disk:{}-{}", _path, range),
+                  fmt::format("eager_load:{}-{}", _path, range)}},
+                _path().native());
               eager_stream->get().set_stream_and_signal(
                 std::move(eager_str),
                 range.first_offset(),

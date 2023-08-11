@@ -14,7 +14,9 @@
 #include "seastarx.h"
 #include "ssx/semaphore.h"
 #include "utils/gate_guard.h"
+#include "utils/logger.h"
 #include "vassert.h"
+#include "vlog.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/circular_buffer.hh>
@@ -27,6 +29,7 @@
 #include <seastar/core/temporary_buffer.hh>
 
 #include <exception>
+#include <utility>
 
 namespace detail {
 
@@ -54,12 +57,14 @@ public:
       ss::input_stream<Ch> i,
       size_t num_clients,
       size_t read_ahead,
-      std::optional<size_t> max_size)
+      std::optional<size_t> max_size,
+      ss::sstring sn = "")
       : _num_clients(num_clients)
       , _bitmask(0)
       , _max_size(max_size ? *max_size / read_ahead : 0)
       , _in(std::move(i))
-      , _sem(read_ahead, "stream-fanout") {
+      , _sem(read_ahead, "stream-fanout")
+      , segment_name{std::move(sn)} {
         vassert(
           num_clients <= 10 && num_clients >= 2,
           "input_stream_fanout can have up to 10 clients, {} were given",
@@ -87,7 +92,7 @@ public:
     ///
     /// The remaining clients can proceed as usual.
     /// If the client is the last one, the stop method will be invoked.
-    ss::future<> detach(unsigned index) {
+    ss::future<> detach(unsigned index, ss::sstring token = "") {
         auto m = 1U << index;
         _bitmask |= m;
         if (_bitmask == (1U << _num_clients) - 1) {
@@ -113,20 +118,23 @@ public:
         // start scanning it. This will usually happen if some clients have read
         // the buffers and others exited early, resulting in a mask of all_bits.
         _buffer.erase(_buffer.begin(), cleanup_mark);
+        vlog(fanout::fanout_log.info, "detaching {}", token);
     }
 
     /// Get next buffer from original input stream
     ///
     /// \param index is an index of the consumer
     /// \return buffer
-    ss::future<ss::temporary_buffer<Ch>> get(unsigned index) {
+    ss::future<ss::temporary_buffer<Ch>>
+    get(unsigned index, ss::sstring token = "") {
         gate_guard g(_gate);
         while (!_gate.is_closed()) {
+            vlog(fanout::fanout_log.info, "get for {}", token);
             auto gen = _cnt;
             if (_producer_error) {
                 std::rethrow_exception(_producer_error);
             }
-            if (auto ob = maybe_get(index); ob.has_value()) {
+            if (auto ob = maybe_get(index, token); ob.has_value()) {
                 co_return std::move(ob.value());
             }
             // We need to wait for the data in the following scenarios:
@@ -146,7 +154,10 @@ private:
     /// Get next buffer from original input stream
     ///
     /// \return buffer or std::nullopt if the consumer need to repeat
-    std::optional<ss::temporary_buffer<Ch>> maybe_get(unsigned index) {
+    std::optional<ss::temporary_buffer<Ch>>
+    maybe_get(unsigned index, ss::sstring token = "") {
+        vlog(fanout::fanout_log.info, "maybe get for {}", token);
+
         vassert(
           index < _num_clients,
           "Consumer index {} is too large. Only {} consumers allowed.",
@@ -168,15 +179,28 @@ private:
         if (next != _buffer.end()) {
             if (next->mask == all_bits) {
                 // The item is consumed by all clients
+                vlog(
+                  fanout::fanout_log.info,
+                  "moving buffer from front when maybe_get for {}",
+                  token);
                 buf = std::move(next->buf);
                 vassert(
                   next == _buffer.begin(),
                   "broken input_stream_fanout invariant");
                 _buffer.pop_front();
             } else {
+                vlog(
+                  fanout::fanout_log.info,
+                  "sharing buffer at pos {} when maybe_get for {}",
+                  std::distance(_buffer.begin(), next),
+                  token);
                 // Other consumers will read this item
                 buf = next->buf.share();
             }
+        }
+
+        if (!buf) {
+            vlog(fanout::fanout_log.info, "returning nullopt for {}", token);
         }
         return buf;
     }
@@ -198,6 +222,14 @@ private:
                   .buf = std::move(buf),
                   .units = std::move(units),
                   .mask = _bitmask});
+                vlog(
+                  fanout::fanout_log.info,
+                  "read item from disk for segment {}, now queue size is {}, "
+                  "_cnt is {} - buffer size was {}",
+                  segment_name,
+                  _buffer.size(),
+                  _cnt,
+                  _buffer.back().buf.size());
                 _pcond.broadcast();
             }
         } catch (...) {
@@ -216,6 +248,7 @@ private:
     ss::gate _gate;
     uint64_t _cnt{0};
     std::exception_ptr _producer_error{nullptr};
+    ss::sstring segment_name{""};
 };
 
 template<class Ch>
@@ -225,24 +258,33 @@ struct fanout_data_source final : ss::data_source_impl {
       : _isf(std::move(i))
       , _id{source_id} {}
 
-    ss::future<> close() final { co_await _isf->detach(_id); }
+    ss::future<> close() final { co_await _isf->detach(_id, token); }
 
     ss::future<ss::temporary_buffer<char>> skip(uint64_t) final {
         vassert(false, "Not supported");
     }
     ss::future<ss::temporary_buffer<char>> get() final {
-        co_return co_await _isf->get(_id);
+        co_return co_await _isf->get(_id, token);
     }
     ss::lw_shared_ptr<input_stream_fanout<Ch>> _isf;
     size_t _id;
+
+    ss::sstring token{""};
 };
 
 template<typename Ch, size_t... ix>
 auto construct_data_sources(
   ss::lw_shared_ptr<input_stream_fanout<Ch>> fanout,
-  std::integer_sequence<size_t, ix...>) {
-    return (
-      std::make_tuple(std::make_unique<fanout_data_source<Ch>>(fanout, ix)...));
+  std::integer_sequence<size_t, ix...>,
+  std::optional<std::vector<ss::sstring>> tokens = std::nullopt) {
+    auto srcs = std::make_tuple(
+      std::make_unique<fanout_data_source<Ch>>(fanout, ix)...);
+
+    if (tokens.has_value() && tokens->size() == 2) {
+        std::get<0>(srcs)->token = tokens.value()[0];
+        std::get<1>(srcs)->token = tokens.value()[1];
+    }
+    return srcs;
 }
 
 } // namespace detail
@@ -251,13 +293,15 @@ template<size_t N, typename Ch>
 auto input_stream_fanout(
   ss::input_stream<Ch> in,
   size_t read_ahead,
-  std::optional<size_t> memory_limit = std::nullopt) {
+  std::optional<size_t> memory_limit = std::nullopt,
+  std::optional<std::vector<ss::sstring>> tokens = std::nullopt,
+  ss::sstring sn = "") {
     static_assert(N >= 2 && N <= 10, "N should be in 2..10 range");
     auto f = ss::make_lw_shared<detail::input_stream_fanout<Ch>>(
-      std::move(in), N, read_ahead, memory_limit);
+      std::move(in), N, read_ahead, memory_limit, sn);
     f->start();
     auto ixseq = std::make_index_sequence<N>{};
-    auto fds = detail::construct_data_sources(f, ixseq);
+    auto fds = detail::construct_data_sources(f, ixseq, tokens);
     auto is = std::apply(
       [](auto&&... ds) {
           return (std::make_tuple(
