@@ -300,7 +300,7 @@ template<typename clock_type>
 ss::future<> usage_aggregator<clock_type>::grab_data(size_t idx) {
     auto gh = _gate.hold();
     try {
-        auto units = _m.get_units();
+        auto units = co_await _m.get_units();
         const auto ts = _buckets[idx].begin;
         /// Grab the data, across this scheduling point we cannot assume things
         /// like _current_window have the same value as before this call, that
