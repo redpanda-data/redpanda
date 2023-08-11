@@ -154,7 +154,8 @@ class BucketScrubSelfTest(RedpandaTest):
     @skip_debug_mode  # We wait for a decent amount of traffic
     @cluster(num_nodes=4)
     #@matrix(cloud_storage_type=get_cloud_storage_type())
-    @matrix(cloud_storage_type=[CloudStorageType.S3])
+    @matrix(cloud_storage_type=get_cloud_storage_type(
+        applies_only_on=[CloudStorageType.S3]))
     def test_missing_segment(self, cloud_storage_type):
         topic = 'test'
 
