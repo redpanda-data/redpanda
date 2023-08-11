@@ -266,7 +266,9 @@ class TestReadReplicaService(EndToEndTest):
             return None
 
     @cluster(num_nodes=7, log_allow_list=READ_REPLICA_LOG_ALLOW_LIST)
-    @matrix(partition_count=[5], cloud_storage_type=[CloudStorageType.S3])
+    @matrix(
+        partition_count=[5],
+        cloud_storage_type=get_cloud_storage_type(docker_use_arbitrary=True))
     def test_identical_lwms_after_delete_records(
             self, partition_count: int,
             cloud_storage_type: CloudStorageType) -> None:
@@ -322,7 +324,9 @@ class TestReadReplicaService(EndToEndTest):
         check_lwm(7)
 
     @cluster(num_nodes=8, log_allow_list=READ_REPLICA_LOG_ALLOW_LIST)
-    @matrix(partition_count=[5], cloud_storage_type=[CloudStorageType.S3])
+    @matrix(
+        partition_count=[5],
+        cloud_storage_type=get_cloud_storage_type(docker_use_arbitrary=True))
     def test_identical_hwms(self, partition_count: int,
                             cloud_storage_type: CloudStorageType) -> None:
         self._setup_read_replica(partition_count=partition_count,
