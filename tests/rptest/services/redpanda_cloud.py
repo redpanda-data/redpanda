@@ -466,3 +466,8 @@ class CloudCluster():
         cluster = self.cloudv2._http_get(
             endpoint=f'/api/v1/clusters/{self.config.id}')
         return cluster['status']['listeners']['kafka']['default']['urls'][0]
+
+    def get_install_pack_version(self):
+        cluster = self.cloudv2._http_get(
+            endpoint=f'/api/v1/clusters/{self.config.id}')
+        return cluster['status']['installPackVersion']

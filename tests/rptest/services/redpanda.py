@@ -1246,6 +1246,12 @@ class RedpandaServiceBase(Service):
         """
         return self._dedicated_nodes
 
+    def get_version(self, node):
+        """
+        Returns the version as a string.
+        """
+        pass
+
 
 class RedpandaServiceK8s(RedpandaServiceBase):
     def __init__(self,
@@ -1494,6 +1500,9 @@ class RedpandaServiceCloud(RedpandaServiceK8s):
 
     def brokers(self, limit=None, listener: str = "dnslistener") -> str:
         return self._cloud_cluster.get_broker_address()
+
+    def get_version(self, node):
+        return self._cloud_cluster.get_install_pack_version()
 
 
 class RedpandaService(RedpandaServiceBase):
