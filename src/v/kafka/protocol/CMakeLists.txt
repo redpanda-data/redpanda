@@ -17,9 +17,9 @@ endforeach()
 
 add_custom_command(
   OUTPUT ${message_hdrs} ${msg_src}
-  COMMAND ${KAFKA_CODEGEN_VENV} ${message_gen}
+  COMMAND RedpandaPython::Interpreter ${message_gen}
   ARGS ${schema_srcs} ${message_hdrs} ${msg_src}
-  DEPENDS ${schema_srcs} ${message_gen} ${KAFKA_CODEGEN_VENV}
+  DEPENDS ${schema_srcs} ${message_gen}
   COMMENT "Running kafka request codegen on ${schemata}"
   VERBATIM)
 
