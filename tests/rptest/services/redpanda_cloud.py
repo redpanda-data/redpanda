@@ -123,6 +123,19 @@ class CloudClusterConfig:
     network: str = "public"
 
 
+@dataclass
+class LiveClusterParams:
+    isAlive: bool = False
+    connection_type: str = 'public'
+    namespace_uuid: str = None
+    name: str = None
+    network_id: str = None
+    install_pack_ver: str = None
+    product_id: str = None
+    region_id: str = None
+    zones: list = []
+
+
 class CloudCluster():
     """
     Operations on a Redpanda Cloud cluster via the swagger API.
@@ -141,27 +154,32 @@ class CloudCluster():
 
 
         :param logger: logging object
-        :param oauth_url: full url of the oauth endpoint to get a token
-        :param oauth_client_id: client id from redpanda cloud ui page for clients
-        :param oauth_client_secret: client secret from redpanda cloud ui page for clients
-        :param oauth_audience: oauth audience
-        :param api_url: url of hostname for swagger api without trailing slash char
-        :param cluster_id: if not empty string, will skip creating a new cluster
-        :param delete_namespace: if False, will skip namespace deletion step after tests are run
+        :param cluster_config: dict object loaded from
+               context.globals["cloud_cluster"]
+        :param delete_namespace: if False, will skip namespace deletion
+               step after tests are run
         """
 
         self._logger = logger
         self._delete_namespace = delete_namespace
         # JSON is serialized directly to dataclass
         self.config = CloudClusterConfig(**cluster_config)
-        # ensure that variables are in uppercase
+        # ensure that variables are in correct case
         self.config.type = self.config.type.upper()
         self.config.provider = self.config.provider.upper()
+        self.config.network = self.config.network.lower()
         # Init API client
         self.cloudv2 = RpCloudApiClient(self.config, logger)
 
-        # unique 8-char identifier to be used when creating names of things for this cluster
+        # Create helper bool variable
+        self.isPublicNetwork = self.config.network == 'public'
+
+        # unique 8-char identifier to be used when creating names of things
+        # for this cluster
         self._unique_id = str(uuid.uuid1())[:8]
+
+        # init live cluster params
+        self.current = LiveClusterParams()
 
     @property
     def cluster_id(self):
@@ -172,7 +190,8 @@ class CloudCluster():
         return self._cluster_id
 
     def _create_namespace(self):
-        name = f'rp-ducktape-ns-{self._unique_id}'  # e.g. rp-ducktape-ns-3b36f516
+        # format namespace name as 'rp-ducktape-ns-3b36f516
+        name = f'rp-ducktape-ns-{self._unique_id}'
         self._logger.debug(f'creating namespace name {name}')
         body = {'name': name}
         r = self.cloudv2._http_post(endpoint='/api/v1/namespaces', json=body)
@@ -181,18 +200,19 @@ class CloudCluster():
         self.config.namespace = name
         return r['id']
 
-    def _cluster_ready(self, namespace_uuid, name):
-        self._logger.debug(f'checking readiness of cluster {name}')
-        params = {'namespaceUuid': namespace_uuid}
+    def _cluster_ready(self):
+        self._logger.debug('checking readiness of '
+                           f'cluster {self.current.name}')
+        params = {'namespaceUuid': self.current.namespace_uuid}
         clusters = self.cloudv2._http_get(endpoint='/api/v1/clusters',
                                           params=params)
         for c in clusters:
-            if c['name'] == name:
+            if c['name'] == self.current.name:
                 if c['state'] == 'ready':
                     return True
         return False
 
-    def _get_cluster_id_and_network_id(self, namespace_uuid, name):
+    def _get_cluster_id_and_network_id(self):
         """
         Get clusterId and networkId.
 
@@ -201,11 +221,11 @@ class CloudCluster():
         :return: (clusterId, networkId) as tuple of strings or (None, None) if not found
         """
 
-        params = {'namespaceUuid': namespace_uuid}
+        params = {'namespaceUuid': self.current.namespace_uuid}
         clusters = self.cloudv2._http_get(endpoint='/api/v1/clusters',
                                           params=params)
         for c in clusters:
-            if c['name'] == name:
+            if c['name'] == self.current.name:
                 return (c['id'], c['spec']['networkId'])
         return None, None
 
@@ -225,7 +245,7 @@ class CloudCluster():
             return None
         return latest_version
 
-    def _get_region_id(self, cluster_type, provider, region):
+    def _get_region_id(self):
         """Get the region id for a region.
 
         :param cluster_type: cluster type, e.g. 'FMC'
@@ -234,20 +254,15 @@ class CloudCluster():
         :return: id, e.g. 'cckac9vvbr5ofm048jjg'
         """
 
-        params = {'cluster_type': cluster_type}
+        params = {'cluster_type': self.config.type}
         regions = self.cloudv2._http_get(
             endpoint='/api/v1/clusters-resources/regions', params=params)
-        for r in regions[provider]:
-            if r['name'] == region:
+        for r in regions[self.config.provider]:
+            if r['name'] == self.config.region:
                 return r['id']
         return None
 
-    def _get_product_id(self,
-                        config_profile_name,
-                        provider,
-                        cluster_type=None,
-                        region=None,
-                        install_pack_ver=None):
+    def _get_product_id(self, config_profile_name):
         """Get the product id for the first matching config profile name using filter parameters.
 
         :param config_profile_name: config profile name, e.g. 'tier-1-aws'
@@ -259,10 +274,10 @@ class CloudCluster():
         """
 
         params = {
-            'cloud_provider': provider,
-            'cluster_type': cluster_type,
-            'region': region,
-            'install_pack_version': install_pack_ver
+            'cloud_provider': self.config.provider,
+            'cluster_type': self.config.type,
+            'region': self.config.region,
+            'install_pack_version': self.current.install_pack_ver
         }
         products = self.cloudv2._http_get(
             endpoint='/api/v1/clusters-resources/products', params=params)
@@ -270,6 +285,38 @@ class CloudCluster():
             if p['redpandaConfigProfileName'] == config_profile_name:
                 return p['id']
         return None
+
+    def _create_cluster_payload(self):
+        return {
+            "cluster": {
+                "name": self.current.name,
+                "productId": self.current.product_id,
+                "spec": {
+                    "clusterType": self.config.type,
+                    "connectors": {
+                        "enabled": True
+                    },
+                    "installPackVersion": self.current.install_pack_ver,
+                    "isMultiAz": False,
+                    "networkId": "",
+                    "provider": self.config.provider,
+                    "region": self.config.region,
+                    "zones": self.current.zones,
+                }
+            },
+            "connectionType": self.current.connection_type,
+            "namespaceUuid": self.current.namespace_uuid,
+            "network": {
+                "displayName": f"{self.current.connection_type}-network-{self.current.name}",
+                "spec": {
+                    "cidr": "10.1.0.0/16",
+                    "deploymentType": self.config.type,
+                    "installPackVersion": self.current.install_pack_ver,
+                    "provider": self.config.provider,
+                    "regionId": self.current.region_id,
+                }
+            },
+        }
 
     def create(self,
                config_profile_name: str = 'tier-1-aws',
@@ -281,111 +328,57 @@ class CloudCluster():
         """
 
         if self.config.id != '':
-            self._logger.warn(
-                f'will not create cluster; already have cluster_id {self.config.id}'
+            self._logger.warn('will not create cluster; already have '
+                              f'cluster_id {self.config.id}'
             )
             return self.config.id
 
-        namespace_uuid = self._create_namespace()
-        name = f'rp-ducktape-cluster-{self._unique_id}'  # e.g. rp-ducktape-cluster-3b36f516
-        install_pack_ver = self._get_install_pack_ver()
-        # 'FMC'
-        cluster_type = self.config.type
-        # 'AWS'
-        provider = self.config.provider
-        # 'us-west-2'
-        region = self.config.region
-        region_id = self._get_region_id(cluster_type, provider, region)
-        zones = ['usw2-az1']
-        product_id = self._get_product_id(config_profile_name, provider,
-                                          cluster_type, region,
-                                          install_pack_ver)
-        public = True  # TODO get value from globals config setting
-        if public:
-            connection_type = 'public'
-        else:
-            connection_type = 'private'
+        # In order not to have long list of arguments in each internal
+        # functions, use self.current as a data store
+        # Each of the _*_payload functions and _get_* will use it as a source
+        # of data to create proper body for REST request
+        self.current.namespace_uuid = self._create_namespace()
+        # name rp-ducktape-cluster-3b36f516
+        self.current.name = f'rp-ducktape-cluster-{self._unique_id}'
+        self.current.install_pack_ver = self._get_install_pack_ver()
+        self.current.region_id = self._get_region_id()
+        self.current.zones = ['usw2-az1']
+        self.current.product_id = self._get_product_id(config_profile_name)
+        if not self.isPublicNetwork:
+            self.current.connection_type = 'private'
 
-        self._logger.info(f'creating cluster name {name}')
-        body = {
-            "cluster": {
-                "name": name,
-                "productId": product_id,
-                "spec": {
-                    "clusterType": cluster_type,
-                    "connectors": {
-                        "enabled": True
-                    },
-                    "installPackVersion": install_pack_ver,
-                    "isMultiAz": False,
-                    "networkId": "",
-                    "provider": provider,
-                    "region": region,
-                    "zones": zones,
-                }
-            },
-            "connectionType": connection_type,
-            "namespaceUuid": namespace_uuid,
-            "network": {
-                "displayName": f"{connection_type}-network-{name}",
-                "spec": {
-                    "cidr": "10.1.0.0/16",
-                    "deploymentType": cluster_type,
-                    "installPackVersion": install_pack_ver,
-                    "provider": provider,
-                    "regionId": region_id,
-                }
-            },
-        }
-
-        self._logger.debug(f'body: {json.dumps(body)}')
+        # Call Api to create cluster
+        self._logger.info(f'creating cluster name {self.current.name}')
+        _body = self._create_cluster_payload()
+        self._logger.debug(f'body: {json.dumps(_body)}')
 
         r = self.cloudv2._http_post(
-            endpoint='/api/v1/workflows/network-cluster', json=body)
+            endpoint='/api/v1/workflows/network-cluster', json=_body)
 
         self._logger.info(
-            f'waiting for creation of cluster {name} namespaceUuid {r["namespaceUuid"]}, checking every {self.CHECK_BACKOFF_SEC} seconds'
+            f'waiting for creation of cluster {self.current.name} '
+            f'namespaceUuid {r["namespaceUuid"]}, checking every '
+            f'{self.CHECK_BACKOFF_SEC} seconds'
         )
 
         wait_until(
-            lambda: self._cluster_ready(namespace_uuid, name),
+            lambda: self._cluster_ready(),
             timeout_sec=self.CHECK_TIMEOUT_SEC,
             backoff_sec=self.CHECK_BACKOFF_SEC,
-            err_msg=f'Unable to deterimine readiness of cloud cluster {name}')
-        self.config.id, network_id = self._get_cluster_id_and_network_id(
-            namespace_uuid, name)
+            err_msg='Unable to deterimine readiness '
+                    f'of cloud cluster {self.current.name}')
+        self.config.id, self.current.network_id = \
+            self._get_cluster_id_and_network_id()
 
         if superuser is not None:
             self._logger.debug(
-                f'super username: {superuser.username}, algorithm: {superuser.algorithm}'
-            )
+                f'super username: {superuser.username}, '
+                f'algorithm: {superuser.algorithm}')
             self._create_user(superuser)
             self._create_acls(superuser.username)
 
-        if not public:
-            # https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/instancedata-data-categories.html
-            # curl -s http://169.254.169.254/latest/meta-data/network/interfaces/macs/$(ip -br link show eth0 | awk '{print$3}')/owner-id
-            # curl -s http://169.254.169.254/latest/meta-data/network/interfaces/macs/$(ip -br link show eth0 | awk '{print$3}')/vpc-id
-            network_id = ''  # TODO get network ID from newly-created cluster
-            body = {
-                "networkPeering": {
-                    "displayName": f'peer-{name}',
-                    "spec": {
-                        "provider": "AWS",
-                        "cloudProvider": {
-                            "aws": {
-                                "peerOwnerId": self.config.peer_owner_id,
-                                "peerVpcId": self.config.peer_vpc_id
-                            }
-                        }
-                    }
-                },
-                "namespaceUuid": namespace_uuid
-            }
-            resp = self.cloudv2._http_post(
-                f'/api/v1/networks/{network_id}/network-peerings', json=body)
-            # TODO accept the AWS VPC peering request
-            # TODO create route between vpc and peering connection
+        if not self.isPublicNetwork:
+            self.create_vpc_peering()
 
         return self._cluster_id
 
@@ -475,3 +468,48 @@ class CloudCluster():
         cluster = self.cloudv2._http_get(
             endpoint=f'/api/v1/clusters/{self.config.id}')
         return cluster['status']['installPackVersion']
+
+    def create_vpc_peering(self):
+        """
+        Create VPC peering for deployed cloud with private network
+
+        Steps:
+        - Get networkID of deployed cloud
+        - Confirm by calling cloudv2 api
+        - Get Deployed Redpanda cluster's VCP
+        - Get VPC of the ducktape client instance
+        - Create initial peering
+            vpc-id <Requester, Redpanda Cluster>
+            peer-vpc-id <Accepter, Ducktape client>
+        - Create routes from Readpanda to Ducktape (10.10.xxx -> 172...)
+        - Create routes to Redpanda from Ducktape (172... -> 10.10.xxx)
+        - Accept
+
+        """
+
+        # https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/instancedata-data-categories.html
+        # curl -s http://169.254.169.254/latest/meta-data/network/interfaces/macs/$(ip -br link show eth0 | awk '{print$3}')/owner-id
+        # curl -s http://169.254.169.254/latest/meta-data/network/interfaces/macs/$(ip -br link show eth0 | awk '{print$3}')/vpc-id
+
+        network_id = ''  # TODO get network ID from newly-created cluster
+        body = {
+            "networkPeering": {
+                "displayName": f'peer-{self.current.name}',
+                "spec": {
+                    "provider": "AWS",
+                    "cloudProvider": {
+                        "aws": {
+                            "peerOwnerId": self.config.peer_owner_id,
+                            "peerVpcId": self.config.peer_vpc_id
+                        }
+                    }
+                }
+            },
+            "namespaceUuid": self.current.namespace_uuid
+        }
+        resp = self.cloudv2._http_post(
+            f'/api/v1/networks/{network_id}/network-peerings', json=body)
+        # TODO accept the AWS VPC peering request
+        # TODO create route between vpc and peering connection
+        # network_id
+        return
