@@ -10,6 +10,7 @@
 # Tests to run on a Redpanda Cloud cluster.
 cloud:
   included:
-    - tests/rpk_topic_test.py
+    - tests/rpk_topic_test.py::RpkToolTest.test_consume_from_partition
     - tests/services_self_test.py::SimpleSelfTest
+    - tests/services_self_test.py::OpenBenchmarkSelfTest
     - scale_tests/high_throughput_test.py::HighThroughputTest2.test_throughput_simple

@@ -9,6 +9,15 @@ topicConfig: |
 commonConfig: |
   bootstrap.servers={{redpanda_node}}:9092
   request.timeout.ms={{request_timeout}}
+  {% if sasl_username and sasl_password %}
+  sasl.jaas.config=org.apache.kafka.common.security.scram.ScramLoginModule required username="{{sasl_username}}" password="{{sasl_password}}";
+  {% endif %}
+  {% if sasl_mechanism %}
+  sasl.mechanism={{sasl_mechanism}}
+  {% endif %}
+  {% if security_protocol %}
+  security.protocol={{security_protocol}}
+  {% endif %}
 
 producerConfig: |
   enable.idempotence={{enable_idempotence}}

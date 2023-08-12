@@ -196,7 +196,18 @@ class OpenMessagingBenchmark(Service):
         node.account.create_file(OpenMessagingBenchmark.WORKLOAD_FILE, conf)
 
     def _create_benchmark_driver_file(self, node):
-        self.driver["redpanda_node"] = self.redpanda.nodes[0].account.hostname
+        # if testing redpanda cloud, override with default superuser
+        if hasattr(self.redpanda, 'GLOBAL_CLOUD_CLUSTER_CONFIG'):
+            u, p, m = self.redpanda._superuser
+            self.driver['sasl_username'] = u
+            self.driver['sasl_password'] = p
+            self.driver['sasl_mechanism'] = m
+            self.driver['security_protocol'] = 'SASL_SSL'
+            self.driver["redpanda_node"] = self.redpanda.brokers().split(
+                ':')[0]
+        else:
+            self.driver["redpanda_node"] = self.redpanda.nodes[
+                0].account.hostname
         conf = self.render("omb_driver.yaml", **self.driver)
         self.logger.info("Rendered driver config: \n %s", conf)
         node.account.create_file(OpenMessagingBenchmark.DRIVER_FILE, conf)
@@ -225,7 +236,9 @@ class OpenMessagingBenchmark(Service):
         self.logger.info(
             f"Starting Open Messaging Benchmark with workers: {worker_nodes}")
 
-        rp_node = self.redpanda.nodes[0]
+        rp_node = None
+        if self.redpanda.num_nodes > 0:
+            rp_node = self.redpanda.nodes[0]
         rp_version = "unknown_version"
         try:
             rp_version = self.redpanda.get_version(rp_node)
