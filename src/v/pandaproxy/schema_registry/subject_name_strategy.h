@@ -11,7 +11,6 @@
 
 #pragma once
 
-#include "pandaproxy/schema_registry/types.h"
 #include "utils/string_switch.h"
 
 namespace pandaproxy::schema_registry {
