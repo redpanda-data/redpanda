@@ -7,6 +7,8 @@ v_cc_library(
     logger.cc
   DEPS
     Seastar::seastar
+    v::ssx
+    v::config
   )
 
 v_cc_library(
