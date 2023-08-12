@@ -75,8 +75,10 @@ const (
 
 // Reconcile handles Console reconcile requests
 func (r *ConsoleReconciler) Reconcile(
-	ctx context.Context, req ctrl.Request,
+	c context.Context, req ctrl.Request,
 ) (ctrl.Result, error) {
+	ctx, done := context.WithCancel(c)
+	defer done()
 	log := ctrl.LoggerFrom(ctx).WithName("ConsoleReconciler.Reconcile")
 
 	log.Info("Starting reconcile loop")

@@ -72,8 +72,11 @@ func NewClusterMetricsController(c client.Client) *ClusterMetricController {
 
 // Reconcile gets all Redpanda cluster and registers metrics for them
 func (r *ClusterMetricController) Reconcile(
-	ctx context.Context, _ ctrl.Request,
+	c context.Context, _ ctrl.Request,
 ) (ctrl.Result, error) {
+	ctx, done := context.WithCancel(c)
+	defer done()
+
 	cl := vectorizedv1alpha1.ClusterList{}
 	err := r.List(ctx, &cl, &client.ListOptions{})
 	if err != nil {
