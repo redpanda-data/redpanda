@@ -38,6 +38,8 @@ if(REDPANDA_RUN_CLANG_TIDY)
     unset(clang_tidy_checks)
 endif()
 
+find_program(GO_PROGRAM go REQUIRED)
+
 # libraries
 add_subdirectory(test_utils)
 add_subdirectory(ssx)

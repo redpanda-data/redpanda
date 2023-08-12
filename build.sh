@@ -30,7 +30,6 @@ cmake -DCMAKE_BUILD_TYPE=Release \
   -GNinja \
   -DCMAKE_C_COMPILER=$CC \
   -DCMAKE_CXX_COMPILER=$CXX \
-  -DCMAKE_GO_BINARY="$go" \
   "$@"
 
 (cd "$root"/build && ninja)
