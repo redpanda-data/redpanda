@@ -11,7 +11,7 @@
 
 #pragma once
 
-#include "avro/ValidSchema.hh"
+#include <avro/ValidSchema.hh>
 #include "kafka/protocol/errors.h"
 #include "model/metadata.h"
 #include "outcome.h"
