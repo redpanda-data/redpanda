@@ -178,7 +178,7 @@ static ss::future<list_offset_partition_response> list_offsets_partition(
 
 static ss::future<list_offset_topic_response>
 list_offsets_topic(list_offsets_ctx& octx, list_offset_topic& topic) {
-    std::vector<ss::future<list_offset_partition_response>> partitions;
+    ss::chunked_fifo<ss::future<list_offset_partition_response>> partitions;
     partitions.reserve(topic.partitions.size());
 
     for (auto& part : topic.partitions) {
