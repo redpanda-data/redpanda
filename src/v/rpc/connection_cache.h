@@ -15,6 +15,7 @@
 #include "outcome.h"
 #include "outcome_future_utils.h"
 #include "rpc/backoff_policy.h"
+#include "rpc/connection_set.h"
 #include "rpc/errc.h"
 #include "rpc/reconnect_transport.h"
 #include "rpc/types.h"
@@ -44,10 +45,8 @@ public:
       ss::sharded<ss::abort_source>&,
       std::optional<connection_cache_label> label = std::nullopt);
 
-    bool contains(model::node_id n) const {
-        return _cache.find(n) != _cache.end();
-    }
-    transport_ptr get(model::node_id n) const { return _cache.find(n)->second; }
+    bool contains(model::node_id n) const { return _cache.contains(n); }
+    transport_ptr get(model::node_id n) const { return _cache.get(n); }
 
     /// \brief needs to be a future, because mutations may come from different
     /// fibers and they need to be synchronized
@@ -70,11 +69,11 @@ public:
      * RPC version to use for newly constructed `transport` objects
      */
     transport_version get_default_transport_version() {
-        return _default_transport_version;
+        return _cache.get_default_transport_version();
     }
 
     void set_default_transport_version(transport_version v) {
-        _default_transport_version = v;
+        _cache.set_default_transport_version(v);
     }
 
     template<typename Protocol, typename Func>
@@ -159,8 +158,7 @@ public:
 private:
     std::optional<connection_cache_label> _label;
     mutex _mutex; // to add/remove nodes
-    underlying _cache;
-    transport_version _default_transport_version{transport_version::v2};
+    connection_set _cache;
     ss::gate _gate;
     ss::optimized_optional<ss::abort_source::subscription> _as_subscription;
     bool _shutting_down = false;
