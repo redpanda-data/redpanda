@@ -14,6 +14,8 @@
 #include "cloud_storage/remote_segment.h"
 #include "utils/gate_guard.h"
 
+#include <seastar/util/defer.hh>
+
 namespace cloud_storage {
 
 chunk_data_source_impl::chunk_data_source_impl(
@@ -266,8 +268,8 @@ ss::future<> chunk_data_source_impl::maybe_close_stream() {
 ss::future<> chunk_data_source_impl::wait_for_download() {
     vassert(
       _download_task.has_value(), "waiting for download but no download task");
+    auto reset_download = ss::defer([this] { _download_task.reset(); });
     co_await _download_task->finish();
-    _download_task.reset();
 }
 
 chunk_data_source_impl::download_task::download_task(
@@ -284,6 +286,7 @@ void chunk_data_source_impl::download_task::start() {
 
 ss::future<> chunk_data_source_impl::download_task::finish() {
     if (_download) {
+        auto reset = ss::defer([this] { _download.reset(); });
         co_await std::move(_download.value());
     }
 }
