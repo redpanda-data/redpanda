@@ -130,6 +130,12 @@ void probe::setup_metrics(const model::ntp& ntp) {
          labels)
          .aggregate(aggregate_labels),
        sm::make_counter(
+         "step_downs",
+         [this] { return _step_downs; },
+         sm::description("Number of leader step downs"),
+         labels)
+         .aggregate(aggregate_labels),
+       sm::make_counter(
          "replicate_request_errors",
          [this] { return _replicate_request_error; },
          sm::description("Number of failed replicate requests"),

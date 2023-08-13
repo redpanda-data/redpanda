@@ -45,6 +45,7 @@ public:
     void configuration_update() { ++_configuration_updates; }
 
     void leadership_changed() { ++_leadership_changes; }
+    void step_down() { ++_step_downs; }
 
     static std::vector<ss::metrics::label_instance>
     create_metric_labels(const model::ntp& ntp);
@@ -78,6 +79,7 @@ private:
     uint64_t _recovery_request_error = 0;
     uint64_t _full_heartbeat_requests = 0;
     uint64_t _lw_heartbeat_requests = 0;
+    uint64_t _step_downs = 0;
 
     ssx::metrics::metric_groups _metrics
       = ssx::metrics::metric_groups::make_internal();
