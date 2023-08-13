@@ -124,14 +124,17 @@ ss::future<> chunk_data_source_impl::load_stream_for_chunk(
   chunk_start_offset_t chunk_start) {
     vlog(_ctxlog.debug, "loading stream for chunk starting at {}", chunk_start);
 
+    if (_download_task) {
+        vlog(_ctxlog.debug, "waiting for pending download: {}", _download_task);
+        co_await wait_for_download();
+    }
+
     std::exception_ptr eptr;
 
     eager_chunk_stream ecs;
     try {
-        auto handle_loaded_f = ss::try_with_gate(
-          _gate, [this, chunk_start, &ecs] {
-              return load_chunk_handle(chunk_start, ecs);
-          });
+        _download_task.emplace(*this, chunk_start, ecs);
+        _download_task->start();
 
         try {
             co_await ecs.wait_for_stream();
@@ -144,11 +147,12 @@ ss::future<> chunk_data_source_impl::load_stream_for_chunk(
             vlog(_ctxlog.info, "timed out while waiting for eager stream");
 
             // If the timeout is due to delay in http client acquisition, we
-            // should cancel loading the eager stream, so that when the client
-            // is acquired, we do not end up with an extra unused stream which
-            // blocks the chunk download. The fanout implementation used for
-            // eager stream requires all split streams to be consumed from, in
-            // order to progress.
+            // should cancel loading the eager stream, so that when eventually
+            // the client is acquired, we do not initialize the eager stream,
+            // which is not going to be used by this data source. If the eager
+            // stream is initialized and left unused, it will block the download
+            // because the fanout used to initialize the two streams depends on
+            // both streams being steadily consumed from.
             ecs.state = eager_chunk_stream::state::cancelled_timeout;
         }
 
@@ -157,7 +161,6 @@ ss::future<> chunk_data_source_impl::load_stream_for_chunk(
               _ctxlog.trace,
               "chunk handle load backgrounded for {}",
               chunk_start);
-            ssx::background = std::move(handle_loaded_f);
         } else {
             // Either we were put in queue for the chunk, or it was found in
             // cache
@@ -165,7 +168,7 @@ ss::future<> chunk_data_source_impl::load_stream_for_chunk(
               _ctxlog.trace,
               "eager stream requested but not loaded for {}",
               chunk_start);
-            co_await std::move(handle_loaded_f);
+            co_await wait_for_download();
         }
     } catch (...) {
         eptr = std::current_exception();
@@ -244,37 +247,44 @@ ss::future<> chunk_data_source_impl::skip_stream_to(uint64_t begin) {
 }
 
 ss::future<> chunk_data_source_impl::close() {
-    // If the data source is attached to a transient, fanout stream, the other
-    // side of the split is a download in progress. Waiting for the gate to
-    // close before closing the transient stream will result in a deadlock,
-    // because a fanout stream cannot progress unless all of its components are
-    // progressing. The transient stream is no longer being read from, thus
-    // blocking the download stream, and the download stream holds the
-    // gate, causing a deadlock. Closing the transient stream will allow the
-    // download stream to finish the download and then release the gate.
-    const auto should_close_transient_stream
-      = _attached_reader
-        && (_attached_reader->get().config().over_budget
-              || _attached_reader->get().is_eof() || _attached_reader->get().is_stopped());
-    if (
-      _current_stream_t == stream_type::download
-      && should_close_transient_stream) {
-        vlog(_ctxlog.trace, "closing transient stream");
-        co_await maybe_close_stream();
-    }
-
     vlog(_ctxlog.trace, "closing gate");
     co_await _gate.close();
     vlog(_ctxlog.trace, "closed gate");
-
-    // If we closed a transient stream earlier, then this is a no-op.
     co_await maybe_close_stream();
+    if (_download_task) {
+        co_await wait_for_download();
+    }
 }
 
 ss::future<> chunk_data_source_impl::maybe_close_stream() {
     if (_current_stream) {
         co_await _current_stream->close();
         _current_stream = std::nullopt;
+    }
+}
+
+ss::future<> chunk_data_source_impl::wait_for_download() {
+    vassert(
+      _download_task.has_value(), "waiting for download but no download task");
+    co_await _download_task->finish();
+    _download_task.reset();
+}
+
+chunk_data_source_impl::download_task::download_task(
+  chunk_data_source_impl& ds,
+  chunk_start_offset_t chunk_start,
+  eager_stream_ref ecs)
+  : _ds{ds}
+  , _chunk_start{chunk_start}
+  , _ecs{ecs} {}
+
+void chunk_data_source_impl::download_task::start() {
+    _download.emplace(_ds.load_chunk_handle(_chunk_start, _ecs));
+}
+
+ss::future<> chunk_data_source_impl::download_task::finish() {
+    if (_download) {
+        co_await std::move(_download.value());
     }
 }
 

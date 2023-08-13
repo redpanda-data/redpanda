@@ -61,6 +61,8 @@ private:
 
     ss::future<> skip_stream_to(uint64_t begin);
 
+    ss::future<> wait_for_download();
+
     segment_chunks& _chunks;
     remote_segment& _segment;
 
@@ -90,6 +92,31 @@ private:
     chunk_start_offset_t _last_download_end;
     std::optional<std::reference_wrapper<remote_segment_batch_reader>>
       _attached_reader;
+
+    class download_task {
+        friend std::ostream&
+        operator<<(std::ostream& os, const download_task& t) {
+            fmt::print(
+              os, "download_task{{chunk_start_offset:{}}}", t._chunk_start);
+            return os;
+        }
+
+    public:
+        explicit download_task(
+          chunk_data_source_impl& ds,
+          chunk_start_offset_t chunk_start,
+          eager_stream_ref ecs);
+        void start();
+        ss::future<> finish();
+
+    private:
+        chunk_data_source_impl& _ds;
+        chunk_start_offset_t _chunk_start;
+        eager_stream_ref _ecs;
+        std::optional<ss::future<>> _download;
+    };
+
+    std::optional<download_task> _download_task;
 };
 
 } // namespace cloud_storage
