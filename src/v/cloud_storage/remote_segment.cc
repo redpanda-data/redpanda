@@ -968,7 +968,7 @@ ss::future<> remote_segment::hydrate_chunk(
           path_to_start);
         if (eager_stream) {
             eager_stream->get().state
-              = eager_chunk_stream::state::cache_hit_skip_download;
+              = eager_chunk_stream::state::chunk_in_cache;
             eager_stream->get().stream_available.signal();
         }
         co_return;

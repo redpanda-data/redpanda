@@ -39,6 +39,32 @@ ss::future<cloud_storage::segment_chunk::handle_t> add_waiter_to_chunk(
 
 namespace cloud_storage {
 
+ss::future<> eager_chunk_stream::wait_for_stream() {
+    using namespace std::chrono_literals;
+
+    // If the chunk load operation was put in wait queue, wait for the download
+    // to finish. The eager stream cannot be loaded.
+    if (state == state::in_wait_queue) {
+        return ss::now();
+    }
+
+    return stream_available.wait(30s, [this] {
+        // Wait for either the stream to be initialized, or if the chunk is
+        // already in cache, the eager stream cannot be loaded.
+        return stream.has_value() || state == state::chunk_in_cache;
+    });
+}
+
+void eager_chunk_stream::set_stream_and_signal(
+  ss::input_stream<char> s,
+  chunk_start_offset_t start,
+  chunk_start_offset_t end) {
+    stream = std::move(s);
+    stream_available.signal();
+    first_offset = start;
+    last_offset = end;
+}
+
 void expiry_handler_impl(ss::promise<segment_chunk::handle_t>& pr) {
     pr.set_exception(ss::timed_out_error());
 }

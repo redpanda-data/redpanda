@@ -28,8 +28,8 @@ struct eager_chunk_stream {
     enum class state {
         in_wait_queue,
         awaiting_hydration,
-        cache_hit_skip_download,
-        cancelled_timeout,
+        chunk_in_cache,
+        download_cancelled_timeout,
     };
 
     ss::condition_variable stream_available;
@@ -43,23 +43,9 @@ struct eager_chunk_stream {
     void set_stream_and_signal(
       ss::input_stream<char> s,
       chunk_start_offset_t start,
-      chunk_start_offset_t end) {
-        stream = std::move(s);
-        stream_available.signal();
-        first_offset = start;
-        last_offset = end;
-    }
+      chunk_start_offset_t end);
 
-    ss::future<> wait_for_stream() {
-        using namespace std::chrono_literals;
-        if (state == state::in_wait_queue) {
-            return ss::now();
-        }
-        return stream_available.wait(30s, [this] {
-            return stream.has_value()
-                   || state == state::cache_hit_skip_download;
-        });
-    }
+    ss::future<> wait_for_stream();
 };
 
 using eager_stream_ref

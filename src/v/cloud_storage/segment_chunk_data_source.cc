@@ -153,7 +153,7 @@ ss::future<> chunk_data_source_impl::load_stream_for_chunk(
             // stream is initialized and left unused, it will block the download
             // because the fanout used to initialize the two streams depends on
             // both streams being steadily consumed from.
-            ecs.state = eager_chunk_stream::state::cancelled_timeout;
+            ecs.state = eager_chunk_stream::state::download_cancelled_timeout;
         }
 
         if (ecs.stream.has_value()) {
