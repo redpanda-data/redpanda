@@ -50,6 +50,7 @@ rp_test(
 set(gsrcs
     raft_fixture.cc
     basic_raft_fixture_test.cc
+    stm_manager_test.cc
 )
 
 rp_test(
