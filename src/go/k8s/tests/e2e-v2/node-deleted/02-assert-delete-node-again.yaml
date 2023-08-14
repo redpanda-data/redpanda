@@ -1,0 +1,14 @@
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: redpanda
+status:
+  availableReplicas: 5
+  collisionCount: 0
+  currentReplicas: 5
+  observedGeneration: 1
+  readyReplicas: 5
+  replicas: 5
+  updatedReplicas: 5
+# TestAssert cannot be used, since TestStep is used and this assertion is used there

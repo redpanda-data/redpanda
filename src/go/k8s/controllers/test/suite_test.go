@@ -7,7 +7,8 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
-package redpanda_test
+// nolint:testpackage // this name is ok
+package test
 
 import (
 	"context"
@@ -28,6 +29,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/onsi/gomega/gexec"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/api/admin"
 	"helm.sh/helm/v3/pkg/getter"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
@@ -38,11 +40,9 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
-	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/api/admin"
-
 	redpandav1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
 	vectorizedv1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/vectorized/v1alpha1"
-	redpandacontrollers "github.com/redpanda-data/redpanda/src/go/k8s/controllers/redpanda"
+	"github.com/redpanda-data/redpanda/src/go/k8s/controllers/redpanda"
 	adminutils "github.com/redpanda-data/redpanda/src/go/k8s/pkg/admin"
 	consolepkg "github.com/redpanda-data/redpanda/src/go/k8s/pkg/console"
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources"
@@ -155,7 +155,7 @@ var _ = BeforeSuite(func(suiteCtx SpecContext) {
 		return testKafkaAdmin, nil
 	}
 
-	err = (&redpandacontrollers.ClusterReconciler{
+	err = (&redpanda.ClusterReconciler{
 		Client:                   k8sManager.GetClient(),
 		Log:                      logf.Log.WithName("controllers").WithName("core").WithName("RedpandaCluster"),
 		Scheme:                   k8sManager.GetScheme(),
@@ -169,7 +169,7 @@ var _ = BeforeSuite(func(suiteCtx SpecContext) {
 	Expect(err).ToNot(HaveOccurred())
 
 	driftCheckPeriod := 500 * time.Millisecond
-	err = (&redpandacontrollers.ClusterConfigurationDriftReconciler{
+	err = (&redpanda.ClusterConfigurationDriftReconciler{
 		Client:                k8sManager.GetClient(),
 		Log:                   logf.Log.WithName("controllers").WithName("core").WithName("RedpandaCluster"),
 		Scheme:                k8sManager.GetScheme(),
@@ -178,7 +178,7 @@ var _ = BeforeSuite(func(suiteCtx SpecContext) {
 	}).WithClusterDomain("cluster.local").SetupWithManager(k8sManager)
 	Expect(err).ToNot(HaveOccurred())
 
-	err = (&redpandacontrollers.ConsoleReconciler{
+	err = (&redpanda.ConsoleReconciler{
 		Client:                  k8sManager.GetClient(),
 		Scheme:                  k8sManager.GetScheme(),
 		Log:                     logf.Log.WithName("controllers").WithName("redpanda").WithName("Console"),
@@ -190,8 +190,8 @@ var _ = BeforeSuite(func(suiteCtx SpecContext) {
 	Expect(err).ToNot(HaveOccurred())
 
 	storageAddr := ":9090"
-	storageAdvAddr := redpandacontrollers.DetermineAdvStorageAddr(storageAddr, logf.Log.WithName("controllers").WithName("core").WithName("Redpanda"))
-	storage := redpandacontrollers.MustInitStorage("/tmp", storageAdvAddr, 60*time.Second, 2, logf.Log.WithName("controllers").WithName("core").WithName("Redpanda"))
+	storageAdvAddr := redpanda.DetermineAdvStorageAddr(storageAddr, logf.Log.WithName("controllers").WithName("core").WithName("Redpanda"))
+	storage := redpanda.MustInitStorage("/tmp", storageAdvAddr, 60*time.Second, 2, logf.Log.WithName("controllers").WithName("core").WithName("Redpanda"))
 
 	metricsH := helper.MustMakeMetrics(k8sManager)
 	// TODO fill this in with options
@@ -215,7 +215,7 @@ var _ = BeforeSuite(func(suiteCtx SpecContext) {
 	// Helm Chart Controller
 	helmChart := helmSourceController.HelmChartReconciler{
 		Client:                  k8sManager.GetClient(),
-		RegistryClientGenerator: redpandacontrollers.ClientGenerator,
+		RegistryClientGenerator: redpanda.ClientGenerator,
 		Getters:                 getters,
 		Metrics:                 metricsH,
 		Storage:                 storage,
@@ -243,14 +243,27 @@ var _ = BeforeSuite(func(suiteCtx SpecContext) {
 		// to handle that.
 		<-k8sManager.Elected()
 
-		redpandacontrollers.StartFileServer(storage.BasePath, storageAddr, logf.Log.WithName("controllers").WithName("core").WithName("Redpanda"))
+		redpanda.StartFileServer(storage.BasePath, storageAddr, logf.Log.WithName("controllers").WithName("core").WithName("Redpanda"))
 	}()
 
-	err = (&redpandacontrollers.RedpandaReconciler{
+	// Redpanda Reconciler
+	err = (&redpanda.RedpandaReconciler{
 		Client:          k8sManager.GetClient(),
 		Scheme:          k8sManager.GetScheme(),
 		EventRecorder:   k8sManager.GetEventRecorderFor("RedpandaReconciler"),
 		RequeueHelmDeps: 10 * time.Second,
+	}).SetupWithManager(k8sManager)
+	Expect(err).ToNot(HaveOccurred())
+
+	err = (&redpanda.DecommissionReconciler{
+		Client:       k8sManager.GetClient(),
+		OperatorMode: false,
+	}).SetupWithManager(k8sManager)
+	Expect(err).ToNot(HaveOccurred())
+
+	err = (&redpanda.RedpandaNodePVCReconciler{
+		Client:       k8sManager.GetClient(),
+		OperatorMode: false,
 	}).SetupWithManager(k8sManager)
 	Expect(err).ToNot(HaveOccurred())
 
