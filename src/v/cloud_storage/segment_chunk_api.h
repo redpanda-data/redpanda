@@ -25,11 +25,12 @@ namespace cloud_storage {
 class remote_segment;
 
 struct eager_chunk_stream {
-    enum class state {
+    enum class stream_state {
         in_wait_queue,
         awaiting_hydration,
         chunk_in_cache,
         download_cancelled_timeout,
+        ready,
     };
 
     ss::condition_variable stream_available;
@@ -38,7 +39,7 @@ struct eager_chunk_stream {
     chunk_start_offset_t first_offset;
     chunk_start_offset_t last_offset;
 
-    state state{eager_chunk_stream::state::in_wait_queue};
+    stream_state state{eager_chunk_stream::stream_state::in_wait_queue};
 
     void set_stream_and_signal(
       ss::input_stream<char> s,
@@ -47,6 +48,9 @@ struct eager_chunk_stream {
 
     ss::future<> wait_for_stream();
 };
+
+std::ostream&
+operator<<(std::ostream& os, eager_chunk_stream::stream_state state);
 
 using eager_stream_ref
   = std::optional<std::reference_wrapper<eager_chunk_stream>>;

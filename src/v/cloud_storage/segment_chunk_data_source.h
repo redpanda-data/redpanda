@@ -54,6 +54,12 @@ private:
     // offset.
     ss::future<> load_stream_for_chunk(chunk_start_offset_t chunk_start);
 
+    using eager_stream_loaded_t = ss::bool_class<struct eager_stream_loaded_>;
+    ss::future<eager_stream_loaded_t> maybe_load_eager_stream(
+      chunk_start_offset_t chunk_start, eager_stream_ref ecs);
+
+    ss::future<> set_current_stream(uint64_t begin_at, eager_stream_ref ecs);
+
     ss::future<> maybe_close_stream();
     ss::future<> load_chunk_handle(
       chunk_start_offset_t chunk_start,
