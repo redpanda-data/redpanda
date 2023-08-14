@@ -671,6 +671,7 @@ struct ntp_report {
     ntp_leader leader;
     size_t size_bytes;
     std::optional<uint8_t> under_replicated_replicas;
+    size_t reclaimable_size_bytes;
 };
 
 partition_status to_partition_status(const ntp_report& ntpr) {
@@ -680,7 +681,8 @@ partition_status to_partition_status(const ntp_report& ntpr) {
       .leader_id = ntpr.leader.leader_id,
       .revision_id = ntpr.leader.revision_id,
       .size_bytes = ntpr.size_bytes,
-      .under_replicated_replicas = ntpr.under_replicated_replicas};
+      .under_replicated_replicas = ntpr.under_replicated_replicas,
+      .reclaimable_size_bytes = ntpr.reclaimable_size_bytes};
 }
 
 ss::chunked_fifo<ntp_report> collect_shard_local_reports(
@@ -703,6 +705,7 @@ ss::chunked_fifo<ntp_report> collect_shard_local_reports(
                 },
                 .size_bytes = p.second->size_bytes() + p.second->non_log_disk_size_bytes(),
                 .under_replicated_replicas = p.second->get_under_replicated(),
+                .reclaimable_size_bytes = p.second->reclaimable_local_size_bytes(),
               };
           });
     } else {
@@ -715,8 +718,9 @@ ss::chunked_fifo<ntp_report> collect_shard_local_reports(
                   .leader_id = partition->get_leader_id(),
                   .revision_id = partition->get_revision_id(),
                 },
-                .size_bytes = partition->size_bytes(),
+                .size_bytes = partition->size_bytes() + partition->non_log_disk_size_bytes(),
                 .under_replicated_replicas = partition->get_under_replicated(),
+                .reclaimable_size_bytes = partition->reclaimable_local_size_bytes(),
                 });
             }
         }

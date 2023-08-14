@@ -57,23 +57,7 @@ struct node_state
 
 struct partition_status
   : serde::
-      envelope<partition_status, serde::version<1>, serde::compat_version<0>> {
-    /**
-     * We increase a version here 'backward' since incorrect assertion would
-     * cause older redpanda versions to crash.
-     *
-     * Version: -1: added revision_id field
-     * Version: -2: added size_bytes field
-     *
-     * Same versioning should also be supported in get_node_health_request
-     */
-
-    static constexpr int8_t initial_version = 0;
-    static constexpr int8_t revision_id_version = -1;
-    static constexpr int8_t size_bytes_version = -2;
-
-    static constexpr int8_t current_version = size_bytes_version;
-
+      envelope<partition_status, serde::version<2>, serde::compat_version<0>> {
     static constexpr size_t invalid_size_bytes = size_t(-1);
 
     model::partition_id id;
@@ -83,6 +67,21 @@ struct partition_status
     size_t size_bytes;
     std::optional<uint8_t> under_replicated_replicas;
 
+    /*
+     * estimated amount of data above local retention that is subject to
+     * reclaim under disk pressure. this is useful for the partition balancer
+     * which is interested in free space on a node. a node may have very little
+     * physical free space, but have effective free space represented by
+     * reclaimable size bytes.
+     *
+     * an intuitive relationship between size_bytes and reclaimable_size_bytes
+     * would have the former being >= than the later. however due to the way
+     * that data is collected it is conceivable that this inequality doesn't
+     * hold. callers should check for this condition and normalize the values or
+     * ignore the update.
+     */
+    std::optional<size_t> reclaimable_size_bytes;
+
     auto serde_fields() {
         return std::tie(
           id,
@@ -90,7 +89,8 @@ struct partition_status
           leader_id,
           revision_id,
           size_bytes,
-          under_replicated_replicas);
+          under_replicated_replicas,
+          reclaimable_size_bytes);
     }
 
     friend std::ostream& operator<<(std::ostream&, const partition_status&);
