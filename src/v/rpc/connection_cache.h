@@ -155,6 +155,14 @@ public:
           });
     }
 
+    ss::future<> remove_broker_client(model::node_id self, model::node_id id);
+
+    ss::future<> update_broker_client(
+      model::node_id self,
+      model::node_id node,
+      net::unresolved_address addr,
+      config::tls_config tls_config);
+
 private:
     std::optional<connection_cache_label> _label;
     mutex _mutex; // to add/remove nodes
