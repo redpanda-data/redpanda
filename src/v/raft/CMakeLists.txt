@@ -35,6 +35,8 @@ v_cc_library(
     recovery_memory_quota.cc
     coordinated_recovery_throttle.cc
     heartbeats.cc
+    state_machine_manager.cc
+    state_machine_base.cc
   DEPS
     v::storage
     raft_rpc
