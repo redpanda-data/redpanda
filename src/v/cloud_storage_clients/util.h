@@ -47,4 +47,9 @@ void log_buffer_with_rate_limiting(
 
 bool has_abort_or_gate_close_exception(const ss::nested_exception& ex);
 
+/// \brief: Given a file system like path, generate the full list
+/// of valid prefix paths. For instance, if the input is: a/b/log.txt,
+/// return a, a/b, a/b/log.txt
+std::vector<object_key> all_paths_to_file(const object_key& path);
+
 } // namespace cloud_storage_clients::util

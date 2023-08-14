@@ -126,6 +126,9 @@ public:
       ss::lw_shared_ptr<const cloud_roles::apply_credentials>
         apply_credentials);
 
+    ss::future<result<client_self_configuration_output, error_outcome>>
+    self_configure() override;
+
     /// Stop the client
     ss::future<> stop() override;
     /// Shutdown the underlying connection

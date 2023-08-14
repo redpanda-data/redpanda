@@ -1581,6 +1581,22 @@ configuration::configuration()
        .secret = is_secret::yes},
       std::nullopt,
       &validate_non_empty_string_opt)
+  , cloud_storage_azure_adls_endpoint(
+      *this,
+      "cloud_storage_azure_adls_endpoint",
+      "Azure Data Lake Storage v2 endpoint override. Use when Hierarchical "
+      "Namespaces are enabled on your storage account and you have set up a "
+      "custom endpoint.",
+      {.needs_restart = needs_restart::yes, .visibility = visibility::user},
+      std::nullopt,
+      &validate_non_empty_string_opt)
+  , cloud_storage_azure_adls_port(
+      *this,
+      "cloud_storage_azure_adls_port",
+      "Azure Data Lake Storage v2 port override. Also see "
+      "cloud_storage_azure_adls_endpoint.",
+      {.needs_restart = needs_restart::yes, .visibility = visibility::user},
+      std::nullopt)
   , cloud_storage_upload_ctrl_update_interval_ms(
       *this,
       "cloud_storage_upload_ctrl_update_interval_ms",
