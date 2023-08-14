@@ -22,7 +22,7 @@ from time import sleep
 from rptest.clients.rpk import RpkTool
 from rptest.services.admin import Admin
 from rptest.services.redpanda_installer import VERSION_RE, int_tuple
-from tests.rptest.clients.kafka_cli_tools import KafkaCliTools
+from rptest.clients.kafka_cli_tools import KafkaCliTools
 
 
 # Operation context (used to save state between invocation of operations)

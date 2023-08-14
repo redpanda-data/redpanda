@@ -1689,10 +1689,12 @@ class RedpandaService(Service):
 
         self._stop_duration_seconds = time.time() - self._stop_time
 
-    def stop_node(self, node, timeout=None):
+    def stop_node(self, node, timeout=None, forced=False):
         pids = self.pids(node)
         for pid in pids:
-            node.account.signal(pid, signal.SIGTERM, allow_fail=False)
+            node.account.signal(pid,
+                                signal.SIGKILL if forced else signal.SIGTERM,
+                                allow_fail=False)
 
         if timeout is None:
             timeout = 30
@@ -1975,6 +1977,16 @@ class RedpandaService(Service):
                                 stop_timeout=stop_timeout,
                                 use_maintenance_mode=use_maintenance_mode,
                                 omit_seeds_on_idx_one=omit_seeds_on_idx_one)
+
+    def get_node_by_id(self, node_id):
+        """
+        Returns a node that has requested id or None if node is not found
+        """
+        for n in self.nodes:
+            if self.node_id(n) == node_id:
+                return n
+
+        return None
 
     def registered(self, node):
         """
