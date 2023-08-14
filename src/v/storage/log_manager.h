@@ -236,6 +236,8 @@ public:
      */
     void trigger_gc();
 
+    gc_config default_gc_config() const;
+
 private:
     using logs_type
       = absl::flat_hash_map<model::ntp, std::unique_ptr<log_housekeeping_meta>>;
