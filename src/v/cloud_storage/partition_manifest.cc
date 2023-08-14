@@ -988,6 +988,48 @@ partition_manifest partition_manifest::truncate() {
     return removed;
 }
 
+partition_manifest partition_manifest::clone() const {
+    struct segment_name_meta {
+        segment_name name;
+        segment_meta meta;
+    };
+    fragmented_vector<segment_name_meta> segments;
+    fragmented_vector<segment_name_meta> replaced;
+    fragmented_vector<segment_name_meta> spillover;
+    for (const auto& m : _segments) {
+        segments.push_back(
+          {.name = generate_local_segment_name(m.base_offset, m.segment_term),
+           .meta = m});
+    }
+    for (const auto& m : _replaced) {
+        replaced.push_back(
+          {.name = generate_local_segment_name(m.base_offset, m.segment_term),
+           .meta = lw_segment_meta::convert(m)});
+    }
+    for (const auto& m : _spillover_manifests) {
+        spillover.push_back(
+          {.name = generate_local_segment_name(m.base_offset, m.segment_term),
+           .meta = m});
+    }
+    partition_manifest tmp(
+      _ntp,
+      _rev,
+      _mem_tracker,
+      _start_offset,
+      _last_offset,
+      _last_uploaded_compacted_offset,
+      _insync_offset,
+      segments,
+      replaced,
+      _start_kafka_offset_override,
+      _archive_start_offset,
+      _archive_start_offset_delta,
+      _archive_clean_offset,
+      _archive_size_bytes,
+      spillover);
+    return tmp;
+}
+
 void partition_manifest::spillover(const segment_meta& spillover_meta) {
     auto start_offset = model::next_offset(spillover_meta.committed_offset);
     auto append_tx = _spillover_manifests.append(spillover_meta);

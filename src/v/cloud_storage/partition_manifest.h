@@ -340,6 +340,9 @@ public:
     partition_manifest truncate(model::offset starting_rp_offset);
     partition_manifest truncate();
 
+    /// Clone the entire manifest
+    partition_manifest clone() const;
+
     /// \brief Truncate the manifest (remove entries from the manifest)
     ///
     /// \note this works the same way as 'truncate' but the 'archive' size
