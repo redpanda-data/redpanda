@@ -193,11 +193,6 @@ private:
     ss::future<tx_errc>
       do_init_hosted_transactions(ss::shared_ptr<cluster::tm_stm>);
 
-    ss::future<cluster::init_tm_tx_reply> dispatch_init_tm_tx(
-      model::node_id,
-      kafka::transactional_id,
-      std::chrono::milliseconds,
-      model::timeout_clock::duration);
     ss::future<cluster::init_tm_tx_reply> init_tm_tx_locally(
       kafka::transactional_id,
       std::chrono::milliseconds,

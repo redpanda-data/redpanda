@@ -1003,37 +1003,16 @@ ss::future<cluster::init_tm_tx_reply> tx_gateway_frontend::init_tm_tx(
     auto leader = leader_opt.value();
     auto _self = _controller->self();
 
-    if (leader == _self) {
-        co_return co_await init_tm_tx_locally(
-          tx_id,
-          transaction_timeout_ms,
-          timeout,
-          expected_pid,
-          tx_ntp.tp.partition);
+    if (leader != _self) {
+        co_return cluster::init_tm_tx_reply{tx_errc::not_coordinator};
     }
 
-    // Kafka does not dispatch this request. So we should delete this logic in
-    // future TODO: https://github.com/redpanda-data/redpanda/issues/6418
-    co_return cluster::init_tm_tx_reply{tx_errc::not_coordinator};
-
-    vlog(
-      txlog.trace,
-      "dispatching name:init_tm_tx, tx_id:{}, from:{}, to:{}",
+    co_return co_await init_tm_tx_locally(
       tx_id,
-      _self,
-      leader);
-
-    auto reply = co_await dispatch_init_tm_tx(
-      leader, tx_id, transaction_timeout_ms, timeout);
-
-    vlog(
-      txlog.trace,
-      "received name:init_tm_tx, tx_id:{}, pid:{}, ec: {}",
-      tx_id,
-      reply.pid,
-      reply.ec);
-
-    co_return reply;
+      transaction_timeout_ms,
+      timeout,
+      expected_pid,
+      tx_ntp.tp.partition);
 }
 
 ss::future<cluster::init_tm_tx_reply> tx_gateway_frontend::init_tm_tx_locally(
@@ -1125,34 +1104,6 @@ ss::future<cluster::init_tm_tx_reply> tx_gateway_frontend::init_tm_tx_locally(
       reply.ec);
 
     co_return reply;
-}
-
-ss::future<init_tm_tx_reply> tx_gateway_frontend::dispatch_init_tm_tx(
-  model::node_id leader,
-  kafka::transactional_id tx_id,
-  std::chrono::milliseconds transaction_timeout_ms,
-  model::timeout_clock::duration timeout) {
-    return _connection_cache.local()
-      .with_node_client<cluster::tx_gateway_client_protocol>(
-        _controller->self(),
-        ss::this_shard_id(),
-        leader,
-        timeout,
-        [tx_id, transaction_timeout_ms, timeout](
-          tx_gateway_client_protocol cp) {
-            return cp.init_tm_tx(
-              init_tm_tx_request{tx_id, transaction_timeout_ms, timeout},
-              rpc::client_opts(model::timeout_clock::now() + timeout));
-        })
-      .then(&rpc::get_ctx_data<init_tm_tx_reply>)
-      .then([](result<init_tm_tx_reply> r) {
-          if (r.has_error()) {
-              vlog(txlog.warn, "got error {} on remote init tm tx", r.error());
-              return init_tm_tx_reply{tx_errc::invalid_txn_state};
-          }
-
-          return r.value();
-      });
 }
 
 namespace {
