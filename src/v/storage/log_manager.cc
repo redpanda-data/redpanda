@@ -750,14 +750,7 @@ ss::future<usage_report> log_manager::disk_usage() {
      * TODO: this will be factored out to make the sharing of settings easier to
      * maintain.
      */
-    model::timestamp collection_threshold;
-    if (!_config.delete_retention()) {
-        collection_threshold = model::timestamp(0);
-    } else {
-        collection_threshold = model::timestamp(
-          model::timestamp::now().value()
-          - _config.delete_retention()->count());
-    }
+    auto cfg = default_gc_config();
 
     fragmented_vector<ss::shared_ptr<log>> logs;
     for (auto& it : _logs) {
@@ -770,12 +763,9 @@ ss::future<usage_report> log_manager::disk_usage() {
     co_return co_await ss::map_reduce(
       logs.begin(),
       logs.end(),
-      [this, &limit, collection_threshold](ss::shared_ptr<log> log) {
+      [&limit, cfg](ss::shared_ptr<log> log) {
           return ss::with_semaphore(
-            limit, 1, [this, collection_threshold, log] {
-                return log->disk_usage(
-                  gc_config(collection_threshold, _config.retention_bytes()));
-            });
+            limit, 1, [cfg, log] { return log->disk_usage(cfg); });
       },
       usage_report{},
       [](usage_report acc, usage_report update) { return acc + update; });
@@ -808,6 +798,18 @@ void log_manager::trigger_gc() {
               _housekeeping_sem.signal();
           });
     });
+}
+
+gc_config log_manager::default_gc_config() const {
+    model::timestamp collection_threshold;
+    if (!_config.delete_retention()) {
+        collection_threshold = model::timestamp(0);
+    } else {
+        collection_threshold = model::timestamp(
+          model::timestamp::now().value()
+          - _config.delete_retention()->count());
+    }
+    return {collection_threshold, _config.retention_bytes()};
 }
 
 } // namespace storage
