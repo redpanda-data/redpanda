@@ -2,7 +2,7 @@ seastar_generate_swagger(
   TARGET rest_swagger
   VAR rest_file
   IN_FILE ${CMAKE_CURRENT_SOURCE_DIR}/../api/api-doc/rest.json
-  OUT_FILE ${CMAKE_CURRENT_BINARY_DIR}/../api/api-doc/rest.json.h
+  OUT_DIR ${CMAKE_CURRENT_BINARY_DIR}/../api/api-doc/
 )
 
 v_cc_library(
@@ -12,6 +12,7 @@ v_cc_library(
     configuration.cc
     handlers.cc
     proxy.cc
+    ${rest_file}
   DEPS
     v::pandaproxy_common
     v::pandaproxy_parsing
@@ -22,7 +23,5 @@ v_cc_library(
     v::ssx
     v::utils
   )
-
-add_dependencies(v_pandaproxy_rest rest_swagger)
 
 add_subdirectory(test)

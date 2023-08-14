@@ -111,28 +111,28 @@ endif()
 # from seastar/CMakeLists.txt. unfortunately this snippet doesn't appear to be
 # installed along with the rest of seastar.
 function (seastar_generate_swagger)
-  set (one_value_args TARGET VAR IN_FILE OUT_FILE)
+  set (one_value_args TARGET VAR IN_FILE OUT_DIR)
   cmake_parse_arguments (args "" "${one_value_args}" "" ${ARGN})
-  get_filename_component (out_dir ${args_OUT_FILE} DIRECTORY)
-  if(REDPANDA_DEPS_ONLY)
-    set (generator "${REDPANDA_DEPS_INSTALL_DIR}/bin/seastar-json2code.py")
-  else()
-    find_program(GENERATOR "seastar-json2code.py")
-    set (generator "${GENERATOR}")
-  endif()
+  get_filename_component (in_file_name ${args_IN_FILE} NAME)
+  find_program(GENERATOR "seastar-json2code.py")
+  set (generator "${GENERATOR}")
+  set (header_out ${args_OUT_DIR}/${in_file_name}.hh)
+  set (source_out ${args_OUT_DIR}/${in_file_name}.cc)
 
   add_custom_command (
     DEPENDS
       ${args_IN_FILE}
       ${generator}
-    OUTPUT ${args_OUT_FILE}
-    COMMAND ${CMAKE_COMMAND} -E make_directory ${out_dir}
-    COMMAND ${generator} -f ${args_IN_FILE} -o ${args_OUT_FILE})
+    OUTPUT ${header_out} ${source_out}
+    COMMAND ${CMAKE_COMMAND} -E make_directory ${args_OUT_DIR}
+    COMMAND ${generator} --create-cc -f ${args_IN_FILE} -o ${header_out})
 
   add_custom_target (${args_TARGET}
-    DEPENDS ${args_OUT_FILE})
+    DEPENDS
+      ${header_out}
+      ${source_out})
 
-  set (${args_VAR} ${args_OUT_FILE} PARENT_SCOPE)
+  set (${args_VAR} ${header_out} ${source_out} PARENT_SCOPE)
 endfunction ()
 
 if(REDPANDA_DEPS_ONLY)
