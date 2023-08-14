@@ -1019,8 +1019,6 @@ ss::future<> partition::serialize_json_manifest_to_output_stream(
           "{} not configured for cloud storage", _topic_cfg->tp_ns));
     }
 
-    auto lock = co_await _archival_meta_stm->acquire_manifest_lock();
-
     // The timeout here is meant to place an upper bound on the amount
     // of time the manifest lock is held for.
     co_await ss::with_timeout(
