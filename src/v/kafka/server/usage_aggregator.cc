@@ -193,6 +193,11 @@ void usage_aggregator<clock_type>::rearm_window_timer() {
     /// This modulo trick only works because epoch time is hour aligned
     const auto delta = std::chrono::seconds(
       epoch_time_secs(now) % _usage_window_width_interval.count());
+    vlog(
+      klog.debug,
+      "Usage based billing window_close timer fired, time_now: {} delta: {}",
+      now_ts,
+      delta.count());
     const auto duration_until_next_close = _usage_window_width_interval - delta;
     vassert(
       duration_until_next_close >= 0s
