@@ -17,7 +17,7 @@ rp_test(
     kafka
     kafka_protocol
   BUILD_DEPENDENCIES
-    kafka-request-generator
+    kafka_request_generator
   ENV
     "GENERATOR_BIN=${KAFKA_REQUEST_GENERATOR}"
 )
