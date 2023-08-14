@@ -348,3 +348,21 @@ ExternalProject_Add(WasmEdge
     -DWASMEDGE_BUILD_STATIC_LIB=OFF
     -DWASMEDGE_BUILD_PLUGINS=OFF
 )
+
+if(${CMAKE_SYSTEM_PROCESSOR} MATCHES "x86_64")
+  set(TINYGO_TARBALL "tinygo-linux-amd64.tar.gz")
+elseif(${CMAKE_SYSTEM_PROCESSOR} MATCHES "aarch64")
+  set(TINYGO_TARBALL "tinygo-linux-arm64.tar.gz")
+endif()
+
+ExternalProject_Add(
+    tinygo
+    PREFIX "tinygo"
+    URL https://github.com/redpanda-data/tinygo/releases/download/v0.28.1-rpk3/${TINYGO_TARBALL}
+    INSTALL_DIR @REDPANDA_DEPS_INSTALL_DIR@
+    CONFIGURE_COMMAND ""
+    BUILD_COMMAND ""
+    INSTALL_COMMAND
+    COMMAND ${CMAKE_COMMAND} -E copy_directory <SOURCE_DIR> <INSTALL_DIR>
+)
+
