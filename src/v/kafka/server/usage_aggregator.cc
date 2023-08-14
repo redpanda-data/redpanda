@@ -347,7 +347,11 @@ void usage_aggregator<clock_type>::close_window() {
         } else {
             vlog(klog.info, "{}", err_str);
         }
-        cur.reset(now_ts);
+        /// Reset the window to the nearest interval
+        const auto true_now = timestamp_t::now();
+        const auto diff_secs = std::chrono::seconds(
+          epoch_time_secs(true_now) % _usage_window_width_interval.count());
+        cur.reset(epoch_time_secs(true_now - diff_secs));
     } else {
         const auto w = _current_window;
         _current_window = (_current_window + 1) % _buckets.size();
