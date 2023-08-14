@@ -1415,6 +1415,14 @@ class RedpandaServiceCloud(RedpandaServiceK8s):
         # later to dataclass
         self._cc_config = context.globals.get(self.GLOBAL_CLOUD_CLUSTER_CONFIG,
                                               None)
+        self._provider_config = {
+            "access_key":
+            context.globals.get(SISettings.GLOBAL_S3_ACCESS_KEY, None),
+            "secret_key":
+            context.globals.get(SISettings.GLOBAL_S3_SECRET_KEY, None),
+            "region":
+            context.globals.get(SISettings.GLOBAL_S3_REGION_KEY, None)
+        }
         # log cloud cluster id
         self.logger.debug(f"initial cluster_id: {self._cc_config['id']}")
 
@@ -1451,7 +1459,11 @@ class RedpandaServiceCloud(RedpandaServiceK8s):
         # self._cloud_peer_owner_id = context.globals.get(
         #     self.GLOBAL_CLOUD_PEER_OWNER_ID, None)
 
-        self._cloud_cluster = CloudCluster(self.logger, self._cc_config)
+        self._cloud_cluster = CloudCluster(
+            self.logger,
+            self._cc_config,
+            provider_config=self._provider_config)
+
         self._kubectl = None
 
         self._dedicated_nodes = True

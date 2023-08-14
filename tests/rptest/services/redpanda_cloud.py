@@ -9,6 +9,8 @@ from typing import Optional
 
 from ducktape.utils.util import wait_until
 
+from rptest.services.provider_clients import make_provider_client
+
 SaslCredentials = collections.namedtuple("SaslCredentials",
                                          ["username", "password", "algorithm"])
 
@@ -134,6 +136,8 @@ class LiveClusterParams:
     product_id: str = None
     region_id: str = None
     zones: list = []
+    peer_vpc_id: str
+    peer_owner_id: str
 
 
 class CloudCluster():
@@ -147,7 +151,11 @@ class CloudCluster():
     CHECK_TIMEOUT_SEC = 3600
     CHECK_BACKOFF_SEC = 60.0
 
-    def __init__(self, logger, cluster_config, delete_namespace=False):
+    def __init__(self,
+                 logger,
+                 cluster_config,
+                 delete_namespace=False,
+                 provider_config=None):
         """
         Initializes the object, but does not create clusters. Use
         `create` method to create a cluster.
@@ -180,6 +188,15 @@ class CloudCluster():
 
         # init live cluster params
         self.current = LiveClusterParams()
+
+        self.cli = make_provider_client(self.config.provider, provider_config)
+        # Currently we need provider client only for VCP in private networking
+        # Raise exception is client in not implemented yet
+        if self.cli is None and self.config.network != 'public':
+            self._logger.error(
+                f"Current provider is not yet supports private networking ")
+            raise RuntimeError("Private networking is not implemented "
+                               f"for '{self.config.provider}'")
 
     @property
     def cluster_id(self):
@@ -307,7 +324,8 @@ class CloudCluster():
             "connectionType": self.current.connection_type,
             "namespaceUuid": self.current.namespace_uuid,
             "network": {
-                "displayName": f"{self.current.connection_type}-network-{self.current.name}",
+                "displayName":
+                f"{self.current.connection_type}-network-{self.current.name}",
                 "spec": {
                     "cidr": "10.1.0.0/16",
                     "deploymentType": self.config.type,
@@ -329,8 +347,7 @@ class CloudCluster():
 
         if self.config.id != '':
             self._logger.warn('will not create cluster; already have '
-                              f'cluster_id {self.config.id}'
-            )
+                              f'cluster_id {self.config.id}')
             return self.config.id
 
         # In order not to have long list of arguments in each internal
@@ -349,31 +366,29 @@ class CloudCluster():
 
         # Call Api to create cluster
         self._logger.info(f'creating cluster name {self.current.name}')
+        # Prepare cluster payload block
         _body = self._create_cluster_payload()
         self._logger.debug(f'body: {json.dumps(_body)}')
-
+        # Send API request
         r = self.cloudv2._http_post(
             endpoint='/api/v1/workflows/network-cluster', json=_body)
 
         self._logger.info(
             f'waiting for creation of cluster {self.current.name} '
             f'namespaceUuid {r["namespaceUuid"]}, checking every '
-            f'{self.CHECK_BACKOFF_SEC} seconds'
-        )
-
-        wait_until(
-            lambda: self._cluster_ready(),
-            timeout_sec=self.CHECK_TIMEOUT_SEC,
-            backoff_sec=self.CHECK_BACKOFF_SEC,
-            err_msg='Unable to deterimine readiness '
-                    f'of cloud cluster {self.current.name}')
+            f'{self.CHECK_BACKOFF_SEC} seconds')
+        # Poll API and wait for the cluster creation
+        wait_until(lambda: self._cluster_ready(),
+                   timeout_sec=self.CHECK_TIMEOUT_SEC,
+                   backoff_sec=self.CHECK_BACKOFF_SEC,
+                   err_msg='Unable to deterimine readiness '
+                   f'of cloud cluster {self.current.name}')
         self.config.id, self.current.network_id = \
             self._get_cluster_id_and_network_id()
 
         if superuser is not None:
-            self._logger.debug(
-                f'super username: {superuser.username}, '
-                f'algorithm: {superuser.algorithm}')
+            self._logger.debug(f'super username: {superuser.username}, '
+                               f'algorithm: {superuser.algorithm}')
             self._create_user(superuser)
             self._create_acls(superuser.username)
 
@@ -469,47 +484,77 @@ class CloudCluster():
             endpoint=f'/api/v1/clusters/{self.config.id}')
         return cluster['status']['installPackVersion']
 
-    def create_vpc_peering(self):
-        """
-        Create VPC peering for deployed cloud with private network
-
-        Steps:
-        - Get networkID of deployed cloud
-        - Confirm by calling cloudv2 api
-        - Get Deployed Redpanda cluster's VCP
-        - Get VPC of the ducktape client instance
-        - Create initial peering
-            vpc-id <Requester, Redpanda Cluster>
-            peer-vpc-id <Accepter, Ducktape client>
-        - Create routes from Readpanda to Ducktape (10.10.xxx -> 172...)
-        - Create routes to Redpanda from Ducktape (172... -> 10.10.xxx)
-        - Accept
-
-        """
-
-        # https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/instancedata-data-categories.html
-        # curl -s http://169.254.169.254/latest/meta-data/network/interfaces/macs/$(ip -br link show eth0 | awk '{print$3}')/owner-id
-        # curl -s http://169.254.169.254/latest/meta-data/network/interfaces/macs/$(ip -br link show eth0 | awk '{print$3}')/vpc-id
-
-        network_id = ''  # TODO get network ID from newly-created cluster
-        body = {
+    def _create_network_peering_payload(self):
+        return {
             "networkPeering": {
                 "displayName": f'peer-{self.current.name}',
                 "spec": {
                     "provider": "AWS",
                     "cloudProvider": {
                         "aws": {
-                            "peerOwnerId": self.config.peer_owner_id,
-                            "peerVpcId": self.config.peer_vpc_id
+                            "peerOwnerId": self.current.peer_owner_id,
+                            "peerVpcId": self.current.peer_vpc_id
                         }
                     }
                 }
             },
             "namespaceUuid": self.current.namespace_uuid
         }
+
+    def _get_ducktape_meta(self, url):
+        resp = requests.get(url)
+        if not resp:
+            self._logger.error("failed to get metadata from Ducktape node: "
+                               f"'{url}'")
+        return resp.text
+
+    def create_vpc_peering(self):
+        """
+        Create VPC peering for deployed cloud with private network
+
+        Steps:
+        1. Get networkID of deployed cloud
+        2. Confirm by calling cloudv2 api
+        3. Get Deployed Redpanda cluster's VCP
+        4. Get VPC of the ducktape client instance
+        5a. Create initial peering
+            vpc-id <Requester, Redpanda Cluster>
+            peer-vpc-id <Accepter, Ducktape client>
+            Create routes from Readpanda to Ducktape (10.10.xxx -> 172...)
+            Create routes to Redpanda from Ducktape (172... -> 10.10.xxx)
+        5b. Use CloudV2 API to create peering
+
+        6. Accept VPC Peering on AWS side
+
+        """
+
+        # Network id
+        network_id = self.current.network_id
+
+        # get CIDR from network
+        # _cidr =
+
+        # VPC for the client can be found in metadata
+        # https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/instancedata-data-categories.html
+        # curl -s http://169.254.169.254/latest/meta-data/network/interfaces/macs/$(ip -br link show eth0 | awk '{print$3}')/owner-id
+        # curl -s http://169.254.169.254/latest/meta-data/network/interfaces/macs/$(ip -br link show eth0 | awk '{print$3}')/vpc-id
+
+        _ducktape_client_ip = "0.0.0.0"
+        _baseurl = "http://169.254.169.254/latest/meta-data/network/interfaces/macs/"
+        # Prepare metadata
+        self.current.peer_vpc_id = self._get_ducktape_meta(
+            f"{_baseurl}{_ducktape_client_ip}/vpc-id")
+        self.current.peer_owner_id = self._get_ducktape_meta(
+            f"{_baseurl}{_ducktape_client_ip}/owner-id")
+
+        # Use Cloud API to create peering
+        # Alternatively, Use manual AWS commands to do the same
+        _body = self._create_network_peering_payload()
+        self._logger.debug(f"body: '{_body}'")
         resp = self.cloudv2._http_post(
-            f'/api/v1/networks/{network_id}/network-peerings', json=body)
+            f'/api/v1/networks/{network_id}/network-peerings', json=_body)
+
         # TODO accept the AWS VPC peering request
         # TODO create route between vpc and peering connection
-        # network_id
+
         return
