@@ -102,6 +102,11 @@ class RpCloudApiClient(object):
 
 @dataclass(kw_only=True)
 class CloudClusterConfig:
+    """
+    Configuration for the Cloud Cluster.
+    Should be the same as in context.globals['cloud_cluster']
+    Otherwise there will be error for not supplied parameters
+    """
     oauth_url: str
     oauth_client_id: str
     oauth_client_secret: str
@@ -116,8 +121,6 @@ class CloudClusterConfig:
     provider: str = "AWS"
     type: str = "FMC"
     network: str = "public"
-    peer_vpc_id: str
-    peer_owner_id: str
 
 
 class CloudCluster():
