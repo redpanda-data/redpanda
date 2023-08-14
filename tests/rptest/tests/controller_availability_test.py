@@ -16,7 +16,7 @@ from ducktape.utils.util import wait_until
 from ducktape.tests.test import Test
 from ducktape.mark import matrix
 
-from rptest.services.redpanda import make_redpanda_service
+from rptest.services.redpanda import RedpandaService
 from rptest.utils.mode_checks import cleanup_on_early_exit
 
 
@@ -28,8 +28,7 @@ class ControllerAvailabilityTest(Test):
         super().__init__(test_ctx, *args, **kwargs)
 
     def start_redpanda(self, cluster_size):
-        self.redpanda = make_redpanda_service(self.ctx,
-                                              num_brokers=cluster_size)
+        self.redpanda = RedpandaService(self.ctx, num_brokers=cluster_size)
         self.redpanda.start()
         self.admin = Admin(self.redpanda)
 
@@ -57,14 +56,15 @@ class ControllerAvailabilityTest(Test):
             )
             return False
 
-        statuses = []
+        leaders = []
         for n in self.redpanda.started_nodes():
-            controller_status = self.admin.get_controller_status(n)
+            controller_leader = self.admin.get_partition_leader(
+                namespace="redpanda", topic="controller", partition=0)
             self.logger.info(
-                f"Status: {controller_status} from {n.account.hostname}")
-            statuses.append(controller_status)
+                f"Leader: {controller_leader} from {n.account.hostname}")
+            leaders.append(controller_leader)
 
-        return all([cs == statuses[0] for cs in statuses[1:]])
+        return all([cs == leaders[0] for cs in leaders[1:]])
 
     def _check_metrics(self, cluster_size):
         sent_vote_metrics = self.redpanda.metrics_sample(
