@@ -757,6 +757,7 @@ class RedpandaServiceBase(Service):
     COVERAGE_PROFRAW_CAPTURE = os.path.join(PERSISTENT_ROOT,
                                             "redpanda.profraw")
     DEFAULT_NODE_READY_TIMEOUT_SEC = 20
+    DEFAULT_CLOUD_STORAGE_SCRUB_TIMEOUT_SEC = 60
     DEDICATED_NODE_KEY = "dedicated_nodes"
     RAISE_ON_ERRORS_KEY = "raise_on_error"
     LOG_LEVEL_KEY = "redpanda_log_level"
@@ -1523,7 +1524,8 @@ class RedpandaService(RedpandaServiceBase):
                  skip_if_no_redpanda_log: bool = False,
                  pandaproxy_config: Optional[PandaproxyConfig] = None,
                  schema_registry_config: Optional[SchemaRegistryConfig] = None,
-                 disable_cloud_storage_diagnostics=False):
+                 disable_cloud_storage_diagnostics=False,
+                 cloud_storage_scrub_timeout_s=None):
         super(RedpandaService, self).__init__(
             context,
             num_brokers,
@@ -1544,6 +1546,10 @@ class RedpandaService(RedpandaServiceBase):
         if node_ready_timeout_s is None:
             node_ready_timeout_s = RedpandaService.DEFAULT_NODE_READY_TIMEOUT_SEC
         self.node_ready_timeout_s = node_ready_timeout_s
+
+        if cloud_storage_scrub_timeout_s is None:
+            cloud_storage_scrub_timeout_s = RedpandaService.DEFAULT_CLOUD_STORAGE_SCRUB_TIMEOUT_SEC
+        self.cloud_storage_scrub_timeout_s = cloud_storage_scrub_timeout_s
 
         self._extra_node_conf = {}
         for node in self.nodes:
@@ -3718,7 +3724,8 @@ class RedpandaService(RedpandaServiceBase):
         # flushing data to remote storage.
         self.stop()
 
-        report = self._get_object_storage_report(timeout=run_timeout)
+        scrub_timeout = max(run_timeout, self.cloud_storage_scrub_timeout_s)
+        report = self._get_object_storage_report(timeout=scrub_timeout)
 
         # It is legal for tiered storage to leak objects under
         # certain circumstances: this will remain the case until

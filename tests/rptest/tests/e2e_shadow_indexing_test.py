@@ -856,7 +856,9 @@ class ShadowIndexingManyPartitionsTest(PreallocNodesTest):
                 'cloud_storage_cache_chunk_size': self.chunk_size,
             },
             environment={'__REDPANDA_TOPIC_REC_DL_CHECK_MILLIS': 5000},
-            si_settings=si_settings)
+            si_settings=si_settings,
+            # These tests write many objects; set a higher scrub timeout.
+            cloud_storage_scrub_timeout_s=120)
         self.kafka_tools = KafkaCliTools(self.redpanda)
 
     def setUp(self):
@@ -880,13 +882,15 @@ class ShadowIndexingManyPartitionsTest(PreallocNodesTest):
                                        self.topic,
                                        msg_size=1024,
                                        msg_count=10 * 1000 * 1000,
+                                       rate_limit_bps=256 *
+                                       self.small_segment_size,
                                        custom_node=self.preallocated_nodes)
         producer.start()
         try:
             wait_until(
                 lambda: nodes_report_cloud_segments(self.redpanda, 128 * 200),
-                timeout_sec=120,
-                backoff_sec=3)
+                timeout_sec=300,
+                backoff_sec=5)
         finally:
             producer.stop()
             producer.wait()
@@ -912,6 +916,8 @@ class ShadowIndexingManyPartitionsTest(PreallocNodesTest):
                                        self.topic,
                                        msg_size=1024,
                                        msg_count=10 * 1000 * 1000,
+                                       rate_limit_bps=256 *
+                                       self.small_segment_size,
                                        custom_node=self.preallocated_nodes)
         producer.start()
         try:
