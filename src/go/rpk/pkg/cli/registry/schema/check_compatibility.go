@@ -21,6 +21,10 @@ import (
 	"github.com/twmb/franz-go/pkg/sr"
 )
 
+type compatCheckResponse struct {
+	Compatible bool `json:"compatible" yaml:"compatible"`
+}
+
 func newCheckCompatibilityCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	var schemaFile, schemaType, sversion string
 	cmd := &cobra.Command{
@@ -29,6 +33,9 @@ func newCheckCompatibilityCommand(fs afero.Fs, p *config.Params) *cobra.Command 
 		Args:  cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
 			f := p.Formatter
+			if h, ok := f.Help(compatCheckResponse{}); ok {
+				out.Exit(h)
+			}
 			p, err := p.LoadVirtualProfile(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)
 
@@ -51,10 +58,7 @@ func newCheckCompatibilityCommand(fs afero.Fs, p *config.Params) *cobra.Command 
 			}
 			compatible, err := cl.CheckCompatibility(cmd.Context(), subject, version, schema)
 			out.MaybeDie(err, "unable to check compatibility: %v", err)
-			type res struct {
-				Compatible bool `json:"compatible" yaml:"compatible"`
-			}
-			if isText, _, s, err := f.Format(res{compatible}); !isText {
+			if isText, _, s, err := f.Format(compatCheckResponse{compatible}); !isText {
 				out.MaybeDie(err, "unable to print in the required format %q: %v", f.Kind, err)
 				out.Exit(s)
 			}

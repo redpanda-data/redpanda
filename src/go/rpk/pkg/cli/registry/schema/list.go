@@ -21,6 +21,14 @@ import (
 	"github.com/twmb/types"
 )
 
+type schemaResponse struct {
+	Subject string `json:"subject" yaml:"subject"`
+	Version int    `json:"version,omitempty" yaml:"version,omitempty"`
+	ID      int    `json:"id,omitempty" yaml:"id,omitempty"`
+	Type    string `json:"type,omitempty" yaml:"type,omitempty"`
+	Err     string `json:"error,omitempty" yaml:"error,omitempty"`
+}
+
 func newListCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	var deleted bool
 	cmd := &cobra.Command{
@@ -29,6 +37,9 @@ func newListCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 		Short:   "List the schemas for the requested subjects, or list all schemas",
 		Run: func(cmd *cobra.Command, subjects []string) {
 			f := p.Formatter
+			if h, ok := f.Help([]schemaResponse{}); ok {
+				out.Exit(h)
+			}
 			p, err := p.LoadVirtualProfile(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)
 
@@ -69,24 +80,17 @@ func newListCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 
 			types.Sort(results)
 
-			type schema struct {
-				Subject string `json:"subject" yaml:"subject"`
-				Version int    `json:"version,omitempty" yaml:"version,omitempty"`
-				ID      int    `json:"ID,omitempty" yaml:"ID,omitempty"`
-				Type    string `json:"type,omitempty" yaml:"type,omitempty"`
-				Err     string `json:"error,omitempty" yaml:"error,omitempty"`
-			}
 			// We use literal here to display an empty array when unmarshalling
 			// an empty list.
-			response := []schema{}
+			response := []schemaResponse{}
 			for _, res := range results {
 				if res.err != nil {
-					sc := schema{Subject: res.subject, Err: res.err.Error()}
+					sc := schemaResponse{Subject: res.subject, Err: res.err.Error()}
 					response = append(response, sc)
 					continue
 				}
 				for _, s := range res.ss {
-					sc := schema{
+					sc := schemaResponse{
 						Subject: s.Subject,
 						Version: s.Version,
 						ID:      s.ID,

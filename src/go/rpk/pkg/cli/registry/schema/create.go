@@ -36,6 +36,9 @@ for Avro and ".proto" for Protobuf. You can manually specify the type with the
 		Args: cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
 			f := p.Formatter
+			if h, ok := f.Help(subjectSchema{}); ok {
+				out.Exit(h)
+			}
 			p, err := p.LoadVirtualProfile(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)
 

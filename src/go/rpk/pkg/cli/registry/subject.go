@@ -47,6 +47,9 @@ func subjectListCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 		Args:    cobra.ExactArgs(0),
 		Run: func(*cobra.Command, []string) {
 			f := p.Formatter
+			if h, ok := f.Help([]string{}); ok {
+				out.Exit(h)
+			}
 			p, err := p.LoadVirtualProfile(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)
 
@@ -70,6 +73,12 @@ func subjectListCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	return cmd
 }
 
+type deleteResponse struct {
+	Subject  string `json:"subject" yaml:"subject"`
+	Versions []int  `json:"versions_deleted,omitempty" yaml:"versions_deleted,omitempty"`
+	Err      string `json:"error,omitempty" yaml:"error,omitempty"`
+}
+
 func subjectDeleteCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	var permanent bool
 	cmd := &cobra.Command{
@@ -78,21 +87,19 @@ func subjectDeleteCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 		Args:  cobra.MinimumNArgs(1),
 		Run: func(_ *cobra.Command, subjects []string) {
 			f := p.Formatter
+			if h, ok := f.Help([]deleteResponse{}); ok {
+				out.Exit(h)
+			}
 			p, err := p.LoadVirtualProfile(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)
 
 			cl, err := schemaregistry.NewClient(fs, p)
 			out.MaybeDie(err, "unable to initialize schema registry client: %v", err)
 
-			type res struct {
-				Subject  string `json:"subject" yaml:"subject"`
-				Versions []int  `json:"versions_deleted,omitempty" yaml:"versions_deleted,omitempty"`
-				Err      string `json:"error,omitempty" yaml:"error,omitempty"`
-			}
 			var (
 				wg      sync.WaitGroup
 				mu      sync.Mutex
-				results []res
+				results []deleteResponse
 			)
 
 			for i := range subjects {
@@ -107,7 +114,7 @@ func subjectDeleteCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 					if err != nil {
 						errStr = err.Error()
 					}
-					results = append(results, res{
+					results = append(results, deleteResponse{
 						subject,
 						versions,
 						errStr,

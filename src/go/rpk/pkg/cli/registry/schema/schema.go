@@ -38,16 +38,17 @@ func NewCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	return cmd
 }
 
+type subjectSchema struct {
+	Subject string `json:"subject" yaml:"subject"`
+	Version int    `json:"version" yaml:"version"`
+	ID      int    `json:"id" yaml:"id"`
+	Type    string `json:"type" yaml:"type"`
+}
+
 func printSubjectSchemaTable(f config.OutFormatter, single bool, ss ...sr.SubjectSchema) error {
-	type row struct {
-		Subject string `json:"subject" yaml:"subject"`
-		Version int    `json:"version" yaml:"version"`
-		ID      int    `json:"ID" yaml:"ID"`
-		Type    string `json:"type" yaml:"type"`
-	}
-	var rows []row
+	var rows []subjectSchema
 	for _, s := range ss {
-		rows = append(rows, row{
+		rows = append(rows, subjectSchema{
 			Subject: s.Subject,
 			Version: s.Version,
 			ID:      s.ID,

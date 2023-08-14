@@ -20,6 +20,11 @@ import (
 	"github.com/twmb/franz-go/pkg/sr"
 )
 
+type deleteResponse struct {
+	Subject string `json:"subject" yaml:"subject"`
+	Version string `json:"version" yaml:"version"`
+}
+
 func newDeleteCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	var sversion string
 	var isPermanent bool
@@ -30,6 +35,9 @@ func newDeleteCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 
 		Run: func(cmd *cobra.Command, args []string) {
 			f := p.Formatter
+			if h, ok := f.Help(deleteResponse{}); ok {
+				out.Exit(h)
+			}
 			p, err := p.LoadVirtualProfile(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)
 
@@ -42,11 +50,7 @@ func newDeleteCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 			subject := args[0]
 			err = cl.DeleteSchema(cmd.Context(), subject, version, sr.DeleteHow(isPermanent))
 			out.MaybeDieErr(err)
-			type res struct {
-				Subject string `json:"subject" yaml:"subject"`
-				Version string `json:"version" yaml:"version"`
-			}
-			if isText, _, s, err := f.Format(res{subject, sversion}); !isText {
+			if isText, _, s, err := f.Format(deleteResponse{subject, sversion}); !isText {
 				out.MaybeDie(err, "unable to print in the required format %q: %v", f.Kind, err)
 				out.Exit(s)
 			}
