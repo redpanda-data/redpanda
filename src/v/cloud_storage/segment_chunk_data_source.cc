@@ -16,6 +16,8 @@
 
 #include <seastar/util/defer.hh>
 
+#include <utility>
+
 namespace cloud_storage {
 
 chunk_data_source_impl::chunk_data_source_impl(
@@ -96,7 +98,7 @@ ss::future<ss::temporary_buffer<char>> chunk_data_source_impl::get() {
 }
 
 ss::future<> chunk_data_source_impl::load_chunk_handle(
-  chunk_start_offset_t chunk_start, eager_stream_ref eager_stream) {
+  chunk_start_offset_t chunk_start, eager_stream_ptr eager_stream) {
     try {
         _current_data_file = co_await _chunks.hydrate_chunk(
           chunk_start, _prefetch_override, eager_stream);
@@ -122,36 +124,36 @@ ss::future<> chunk_data_source_impl::load_chunk_handle(
     }
 }
 
-ss::future<chunk_data_source_impl::eager_stream_loaded_t>
-chunk_data_source_impl::maybe_load_eager_stream(
-  chunk_start_offset_t chunk_start, eager_stream_ref ecs) {
+ss::future<eager_stream_ptr> chunk_data_source_impl::maybe_load_eager_stream(
+  chunk_start_offset_t chunk_start) {
     std::exception_ptr eptr;
     try {
-        if (ecs.has_value()) {
-            _download_task.emplace(*this, chunk_start, ecs);
+        bool should_load_eager_stream = true;
+        if (should_load_eager_stream) {
+            auto p = ss::make_lw_shared<eager_chunk_stream>();
+            _download_task.emplace(*this, chunk_start, p);
             _download_task->start();
 
-            auto& stream_ref = ecs->get();
             try {
-                co_await stream_ref.wait_for_stream();
+                co_await p->wait_for_stream();
             } catch (const ss::condition_variable_timed_out&) {
                 vlog(_ctxlog.info, "timed out while waiting for eager stream");
-                stream_ref.state = eager_chunk_stream::stream_state::
+                p->state = eager_chunk_stream::stream_state::
                   download_cancelled_timeout;
             }
 
-            switch (stream_ref.state) {
+            switch (p->state) {
             case eager_chunk_stream::stream_state::ready:
                 vassert(
-                  stream_ref.stream.has_value(),
+                  p->stream.has_value(),
                   "stream state: {} but stream not loaded for {}",
-                  stream_ref.state,
+                  p->state,
                   chunk_start);
                 vlog(
                   _ctxlog.trace,
                   "chunk download in background for {}",
                   chunk_start);
-                co_return eager_stream_loaded_t::yes;
+                co_return std::move(p);
                 break;
             case eager_chunk_stream::stream_state::awaiting_hydration:
                 vassert(
@@ -165,13 +167,11 @@ chunk_data_source_impl::maybe_load_eager_stream(
                 vlog(
                   _ctxlog.trace,
                   "waiting for chunk download, state: {}",
-                  stream_ref.state);
+                  p->state);
                 co_await wait_for_download();
-                co_return eager_stream_loaded_t::no;
             }
         } else {
             co_await load_chunk_handle(chunk_start);
-            co_return eager_stream_loaded_t::no;
         }
     } catch (...) {
         eptr = std::current_exception();
@@ -187,7 +187,7 @@ chunk_data_source_impl::maybe_load_eager_stream(
         std::rethrow_exception(eptr);
     }
 
-    co_return eager_stream_loaded_t::no;
+    co_return nullptr;
 }
 
 ss::future<> chunk_data_source_impl::load_stream_for_chunk(
@@ -199,26 +199,7 @@ ss::future<> chunk_data_source_impl::load_stream_for_chunk(
         co_await wait_for_download();
     }
 
-    // TODO placeholder for config property
-    bool load_eager_stream{true};
-
-    eager_chunk_stream ecs;
-    eager_stream_ref stream_ref = std::nullopt;
-    if (load_eager_stream) {
-        stream_ref = ecs;
-    }
-
-    auto eager_stream_loaded = co_await maybe_load_eager_stream(
-      chunk_start, stream_ref);
-    if (
-      eager_stream_loaded == eager_stream_loaded_t::no
-      && stream_ref.has_value()) {
-        stream_ref.reset();
-    }
-
-    if (_current_stream) {
-        co_await _current_stream->close();
-    }
+    co_await maybe_close_stream();
 
     // The first read of the data source begins at _begin_stream_at. This is
     // necessary because the remote segment reader which uses this data source
@@ -231,12 +212,13 @@ ss::future<> chunk_data_source_impl::load_stream_for_chunk(
         begin = _begin_stream_at;
     }
 
-    co_await set_current_stream(begin, stream_ref);
+    auto maybe_stream = co_await maybe_load_eager_stream(chunk_start);
+    co_await set_current_stream(begin, std::move(maybe_stream));
 }
 
 ss::future<> chunk_data_source_impl::set_current_stream(
-  uint64_t begin_at, eager_stream_ref ecs) {
-    if (ecs.has_value()) {
+  uint64_t begin_at, eager_stream_ptr ecs) {
+    if (ecs) {
         // TODO - this should be flipped if we switch to a disk based stream, or
         // more specifically when we close a transient stream. This change would
         // then need to be communicated back up to the reader so it can be
@@ -251,10 +233,10 @@ ss::future<> chunk_data_source_impl::set_current_stream(
           "at {}",
           _current_chunk_start,
           begin_at,
-          ecs->get().last_offset);
+          ecs->last_offset);
         _current_stream_t = stream_type::download;
-        _last_download_end = ecs->get().last_offset;
-        _current_stream = std::move(ecs->get().stream);
+        _last_download_end = ecs->last_offset;
+        _current_stream = std::move(ecs->stream.value());
         co_await skip_stream_to(begin_at);
     } else {
         vlog(
@@ -309,10 +291,10 @@ ss::future<> chunk_data_source_impl::wait_for_download() {
 chunk_data_source_impl::download_task::download_task(
   chunk_data_source_impl& ds,
   chunk_start_offset_t chunk_start,
-  eager_stream_ref ecs)
+  eager_stream_ptr ecs)
   : _ds{ds}
   , _chunk_start{chunk_start}
-  , _ecs{ecs} {}
+  , _ecs{std::move(ecs)} {}
 
 void chunk_data_source_impl::download_task::start() {
     _download.emplace(_ds.load_chunk_handle(_chunk_start, _ecs));

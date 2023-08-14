@@ -54,16 +54,16 @@ private:
     // offset.
     ss::future<> load_stream_for_chunk(chunk_start_offset_t chunk_start);
 
-    using eager_stream_loaded_t = ss::bool_class<struct eager_stream_loaded_>;
-    ss::future<eager_stream_loaded_t> maybe_load_eager_stream(
-      chunk_start_offset_t chunk_start, eager_stream_ref ecs);
+    ss::future<eager_stream_ptr>
+    maybe_load_eager_stream(chunk_start_offset_t chunk_start);
 
-    ss::future<> set_current_stream(uint64_t begin_at, eager_stream_ref ecs);
+    ss::future<>
+    set_current_stream(uint64_t begin_at, eager_stream_ptr ecs = nullptr);
 
     ss::future<> maybe_close_stream();
     ss::future<> load_chunk_handle(
       chunk_start_offset_t chunk_start,
-      eager_stream_ref eager_stream = std::nullopt);
+      eager_stream_ptr eager_stream = nullptr);
 
     ss::future<> skip_stream_to(uint64_t begin);
 
@@ -111,14 +111,14 @@ private:
         explicit download_task(
           chunk_data_source_impl& ds,
           chunk_start_offset_t chunk_start,
-          eager_stream_ref ecs);
+          eager_stream_ptr ecs);
         void start();
         ss::future<> finish();
 
     private:
         chunk_data_source_impl& _ds;
         chunk_start_offset_t _chunk_start;
-        eager_stream_ref _ecs;
+        eager_stream_ptr _ecs;
         std::optional<ss::future<>> _download;
     };
 

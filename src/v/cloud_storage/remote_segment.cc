@@ -946,7 +946,7 @@ ss::future<> remote_segment::hydrate() {
 }
 
 ss::future<> remote_segment::hydrate_chunk(
-  segment_chunk_range range, eager_stream_ref eager_stream) {
+  segment_chunk_range range, eager_stream_ptr eager_stream) {
     const auto start = range.first_offset();
     const auto path_to_start = get_path_to_chunk(start);
 
@@ -967,9 +967,9 @@ ss::future<> remote_segment::hydrate_chunk(
           "cache",
           path_to_start);
         if (eager_stream) {
-            eager_stream->get().state
+            eager_stream->state
               = eager_chunk_stream::stream_state::chunk_in_cache;
-            eager_stream->get().stream_available.signal();
+            eager_stream->stream_available.signal();
         }
         co_return;
     }
@@ -984,10 +984,10 @@ ss::future<> remote_segment::hydrate_chunk(
     auto res = co_await _api.download_segment(
       _bucket,
       _path,
-      [this, &eager_stream, &range, &consumer](auto size, auto stream) {
+      [this, eager_stream, &range, &consumer](auto size, auto stream) {
           if (
-            eager_stream.has_value()
-            && eager_stream->get().state
+            eager_stream
+            && eager_stream->state
                  == eager_chunk_stream::stream_state::awaiting_hydration) {
               vlog(_ctxlog.trace, "eager stream requested for range {}", range);
               auto [disk_write_str, eager_str] = input_stream_fanout<2>(
@@ -997,7 +997,7 @@ ss::future<> remote_segment::hydrate_chunk(
                 {{fmt::format("write_to_disk:{}-{}", _path, range),
                   fmt::format("eager_load:{}-{}", _path, range)}},
                 _path().native());
-              eager_stream->get().set_stream_and_signal(
+              eager_stream->set_stream_and_signal(
                 std::move(eager_str),
                 range.first_offset(),
                 range.last_offset().value_or(_size - 1));

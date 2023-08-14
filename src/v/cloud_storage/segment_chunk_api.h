@@ -52,8 +52,7 @@ struct eager_chunk_stream {
 std::ostream&
 operator<<(std::ostream& os, eager_chunk_stream::stream_state state);
 
-using eager_stream_ref
-  = std::optional<std::reference_wrapper<eager_chunk_stream>>;
+using eager_stream_ptr = ss::lw_shared_ptr<eager_chunk_stream>;
 
 class segment_chunks {
 public:
@@ -80,7 +79,7 @@ public:
     ss::future<segment_chunk::handle_t> hydrate_chunk(
       chunk_start_offset_t chunk_start,
       std::optional<uint16_t> prefetch_override = std::nullopt,
-      eager_stream_ref eager_stream = std::nullopt);
+      eager_stream_ptr eager_stream = nullptr);
 
     // For all chunks between first and last, increment the
     // required_by_readers_in_future value by one, and increment the
@@ -113,7 +112,7 @@ private:
     ss::future<ss::file> do_hydrate_and_materialize(
       chunk_start_offset_t chunk_start,
       std::optional<uint16_t> prefetch_override = std::nullopt,
-      eager_stream_ref eager_stream = std::nullopt);
+      eager_stream_ptr eager_stream = nullptr);
 
     // Periodically closes chunk file handles for the space to be reclaimable by
     // cache eviction. The chunks are evicted when they are no longer opened for

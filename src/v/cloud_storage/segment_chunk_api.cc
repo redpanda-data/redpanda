@@ -161,7 +161,7 @@ bool segment_chunks::downloads_in_progress() const {
 ss::future<ss::file> segment_chunks::do_hydrate_and_materialize(
   chunk_start_offset_t chunk_start,
   std::optional<uint16_t> prefetch_override,
-  eager_stream_ref eager_stream) {
+  eager_stream_ptr eager_stream) {
     gate_guard g{_gate};
     vassert(_started, "chunk API is not started");
 
@@ -181,7 +181,7 @@ ss::future<ss::file> segment_chunks::do_hydrate_and_materialize(
 ss::future<segment_chunk::handle_t> segment_chunks::hydrate_chunk(
   chunk_start_offset_t chunk_start,
   std::optional<uint16_t> prefetch_override,
-  eager_stream_ref eager_stream) {
+  eager_stream_ptr eager_stream) {
     gate_guard g{_gate};
     vassert(_started, "chunk API is not started");
 
@@ -217,12 +217,12 @@ ss::future<segment_chunk::handle_t> segment_chunks::hydrate_chunk(
         // Mark the eager stream as usable (once the hydration finishes). The
         // path that ends up here has no other points where we yield, so the
         // caller can now wait on the eager stream safely.
-        if (eager_stream.has_value()) {
+        if (eager_stream) {
             vlog(
               _ctxlog.trace,
               "marking eager stream download start for {}",
               chunk_start);
-            eager_stream->get().state
+            eager_stream->state
               = eager_chunk_stream::stream_state::awaiting_hydration;
         }
 
