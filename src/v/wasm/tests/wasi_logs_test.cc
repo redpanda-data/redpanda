@@ -30,8 +30,6 @@ TEST_P(WasiLogTest, ChunksLogsCorrectly) {
     auto input = param.input;
     auto want = param.want;
     seastar::apply_logging_settings({
-      .logger_levels = {},
-      .default_level = ss::log_level::trace,
       .stdout_enabled = true,
       .syslog_enabled = false,
       .with_color = false,
@@ -41,6 +39,7 @@ TEST_P(WasiLogTest, ChunksLogsCorrectly) {
     constexpr std::array<uint32_t, 5> buf_sizes = {1, 8, 10, 32, 10000};
     for (uint32_t size : buf_sizes) {
         ss::logger logger("LOGGER_NAME");
+        logger.set_level(ss::log_level::trace);
         size_t amt = 0;
         std::stringstream ss;
         logger.set_ostream(ss);

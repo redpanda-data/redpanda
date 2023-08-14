@@ -14,7 +14,7 @@
 #include "wasm/errc.h"
 #include "wasm/tests/wasm_fixture.h"
 
-TEST_F_ASYNC(WasmTestFixture, IdentityFunction) {
+TEST_F(WasmTestFixture, IdentityFunction) {
     load_wasm("identity.wasm");
     auto batch = make_tiny_batch();
     auto transformed = transform(batch);
@@ -22,7 +22,7 @@ TEST_F_ASYNC(WasmTestFixture, IdentityFunction) {
     ASSERT_EQ(transformed, batch);
 }
 
-TEST_F_ASYNC(WasmTestFixture, CanRestartEngine) {
+TEST_F(WasmTestFixture, CanRestartEngine) {
     load_wasm("identity.wasm");
     engine()->stop().get();
     // Can be restarted without initialization
@@ -37,31 +37,21 @@ TEST_F_ASYNC(WasmTestFixture, CanRestartEngine) {
     ASSERT_EQ(transformed, batch);
 }
 
-// TODO(rockwood): Enable these tests after #12322 is merged and we can build
-// this in CMake
-/*
-TEST_F_ASYNC(WasmTestFixture, wasm_test_fixture) {
-    EXPECT_THROW(
-      load_wasm("setup-panic.wasm"),
-      wasm::wasm_exception);
+TEST_F(WasmTestFixture, HandlesSetupPanic) {
+    EXPECT_THROW(load_wasm("setup-panic.wasm"), wasm::wasm_exception);
 }
 
-TEST_F_ASYNC(WasmTestFixture, wasm_test_fixture) {
+TEST_F(WasmTestFixture, HandlesTransformPanic) {
     load_wasm("transform-panic.wasm");
-    EXPECT_THROW(
-      transform(make_tiny_batch()),
-      wasm::wasm_exception);
+    EXPECT_THROW(transform(make_tiny_batch()), wasm::wasm_exception);
 }
 
-TEST_F_ASYNC(WasmTestFixture, wasm_test_fixture) {
+TEST_F(WasmTestFixture, HandlesTransformErrors) {
     load_wasm("transform-error.wasm");
-    EXPECT_THROW(
-      transform(make_tiny_batch()),
-      wasm::wasm_exception);
+    EXPECT_THROW(transform(make_tiny_batch()), wasm::wasm_exception);
 }
-*/
 
-TEST_F_ASYNC(WasmTestFixture, CanComputeMemoryUsage) {
+TEST_F(WasmTestFixture, CanComputeMemoryUsage) {
     load_wasm("identity.wasm");
     ASSERT_GT(engine()->memory_usage_size_bytes(), 0);
 }

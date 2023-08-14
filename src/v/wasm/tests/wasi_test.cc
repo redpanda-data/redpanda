@@ -16,9 +16,7 @@
 
 #include <absl/container/flat_hash_set.h>
 
-// TODO(rockwood): Enable this after #12322 is checked in
-/*
-TEST_F_ASYNC(WasmTestFixture, Wasi) {
+TEST_F(WasmTestFixture, Wasi) {
     load_wasm("wasi.wasm");
     auto batch = make_tiny_batch();
     auto result = transform(batch);
@@ -53,10 +51,9 @@ TEST_F_ASYNC(WasmTestFixture, Wasi) {
     ASSERT_EQ(environment_variables, expected_env);
 
     using namespace std::chrono;
-    milliseconds now_ms = milliseconds(wasm_test_fixture::NOW());
+    milliseconds now_ms = milliseconds(batch.header().first_timestamp());
     nanoseconds now_ns = duration_cast<nanoseconds>(now_ms);
     ASSERT_EQ(doc["NowNanos"].GetInt64(), now_ns.count());
 
     ASSERT_EQ(doc["RandomNumber"].GetInt(), 240963032);
 }
-*/

@@ -21,12 +21,12 @@
 
 #include <memory>
 
-class WasmTestFixture : public seastar_test {
+class WasmTestFixture : public ::testing::Test {
 public:
     static constexpr model::timestamp NOW = model::timestamp(1687201340524ULL);
 
-    void SetUpAsync() override;
-    void TearDownAsync() override;
+    void SetUp() override;
+    void TearDown() override;
 
     void load_wasm(const std::string& path);
     model::record_batch make_tiny_batch();

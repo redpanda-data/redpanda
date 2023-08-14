@@ -29,7 +29,7 @@ namespace {
 static ss::logger dummy_logger("wasm_test_logger");
 } // namespace
 
-void WasmTestFixture::SetUpAsync() {
+void WasmTestFixture::SetUp() {
     _probe = std::make_unique<wasm::transform_probe>();
     // TODO: Create a custom runtime so that we can test with schema registry
     _runtime = wasm::runtime::create_default(nullptr);
@@ -41,7 +41,7 @@ void WasmTestFixture::SetUpAsync() {
       .source_ptr = model::offset(0),
     };
 }
-void WasmTestFixture::TearDownAsync() {
+void WasmTestFixture::TearDown() {
     if (_engine) {
         _engine->stop().get();
     }

@@ -10,6 +10,8 @@ v_cc_library(
     v::model_test_utils
 )
 
+set(TESTDATA_DIR "${CMAKE_BINARY_DIR}/src/go/transform-sdk/internal/testdata")
+
 rp_test(
   UNIT_TEST
   GTEST
@@ -20,8 +22,18 @@ rp_test(
   LIBRARIES 
     v::gtest_main
     v::wasm_test_fixture
-  INPUT_FILES 
-    ${CMAKE_CURRENT_SOURCE_DIR}/identity.wasm
+  BUILD_DEPENDENCIES
+    wasm_testdata_identity
+    wasm_testdata_transform_error
+    wasm_testdata_transform_panic
+    wasm_testdata_setup_panic
+    wasm_testdata_wasi
+  INPUT_FILES
+    "${TESTDATA_DIR}/identity.wasm"
+    "${TESTDATA_DIR}/transform-error.wasm"
+    "${TESTDATA_DIR}/transform-panic.wasm"
+    "${TESTDATA_DIR}/setup-panic.wasm"
+    "${TESTDATA_DIR}/wasi.wasm"
   ARGS "-- -c 1"
   LABELS wasm
 )
