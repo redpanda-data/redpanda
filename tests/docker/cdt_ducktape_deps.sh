@@ -21,6 +21,7 @@ REMOTE_FILES_PATH="/tmp" # https://github.com/redpanda-data/vtools/blob/dev/qa/i
 "$REMOTE_FILES_PATH/tests/docker/ducktape-deps/addr2line"
 "$REMOTE_FILES_PATH/tests/docker/ducktape-deps/kafka-streams-examples"
 "$REMOTE_FILES_PATH/tests/docker/ducktape-deps/arroyo"
+"$REMOTE_FILES_PATH/tests/docker/ducktape-deps/byoc-mock"
 
 mkdir -p /opt/redpanda-tests/ /opt/remote /opt/scripts
 pushd "$REMOTE_FILES_PATH"
