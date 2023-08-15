@@ -1779,12 +1779,6 @@ cluster::begin_group_tx_reply make_begin_tx_reply(cluster::tx_errc ec) {
     return reply;
 }
 
-cluster::prepare_group_tx_reply make_prepare_tx_reply(cluster::tx_errc ec) {
-    cluster::prepare_group_tx_reply reply;
-    reply.ec = ec;
-    return reply;
-}
-
 cluster::commit_group_tx_reply make_commit_tx_reply(cluster::tx_errc ec) {
     cluster::commit_group_tx_reply reply;
     reply.ec = ec;
@@ -1930,65 +1924,6 @@ group::begin_tx(cluster::begin_group_tx_request r) {
     reply.etag = _term;
     reply.ec = cluster::tx_errc::none;
     co_return reply;
-}
-
-ss::future<cluster::prepare_group_tx_reply>
-group::prepare_tx(cluster::prepare_group_tx_request r) {
-    if (_partition->term() != _term) {
-        co_return make_prepare_tx_reply(cluster::tx_errc::stale);
-    }
-
-    // checking fencing
-    auto fence_it = _fence_pid_epoch.find(r.pid.get_id());
-    if (fence_it == _fence_pid_epoch.end()) {
-        vlog(
-          _ctx_txlog.warn,
-          "Can't prepare tx: fence with pid {} isn't set",
-          r.pid);
-        co_return make_prepare_tx_reply(cluster::tx_errc::request_rejected);
-    }
-    if (r.pid.get_epoch() != fence_it->second) {
-        vlog(
-          _ctx_txlog.trace,
-          "Can't prepare tx with pid {} - the fence doesn't match {}",
-          r.pid,
-          fence_it->second);
-        co_return make_prepare_tx_reply(cluster::tx_errc::request_rejected);
-    }
-
-    auto txseq_it = _tx_data.find(r.pid.get_id());
-    if (txseq_it != _tx_data.end() && txseq_it->second.tx_seq != r.tx_seq) {
-        vlog(
-          _ctx_txlog.warn,
-          "Can't prepare pid {}: passed txseq {} doesn't match ongoing {}",
-          r.pid,
-          r.tx_seq,
-          txseq_it->second.tx_seq);
-        co_return make_prepare_tx_reply(cluster::tx_errc::request_rejected);
-    }
-
-    auto prepared_it = _prepared_txs.find(r.pid);
-    if (prepared_it == _prepared_txs.end()) {
-        vlog(
-          _ctx_txlog.warn, "Can't prepare tx with pid {}: unknown tx", r.pid);
-        co_return make_prepare_tx_reply(cluster::tx_errc::request_rejected);
-    }
-    if (prepared_it->second.tx_seq != r.tx_seq) {
-        vlog(
-          _ctx_txlog.warn,
-          "Can't prepare pid {}: passed txseq {} doesn't match known {}",
-          r.pid,
-          r.tx_seq,
-          prepared_it->second.tx_seq);
-        co_return make_prepare_tx_reply(cluster::tx_errc::request_rejected);
-    }
-
-    auto exp_it = _expiration_info.find(r.pid);
-    if (exp_it != _expiration_info.end()) {
-        exp_it->second.update_last_update_time();
-    }
-
-    co_return make_prepare_tx_reply(cluster::tx_errc::none);
 }
 
 cluster::abort_origin group::get_abort_origin(
@@ -2484,32 +2419,6 @@ group::handle_begin_tx(cluster::begin_group_tx_request r) {
     } else {
         vlog(_ctx_txlog.error, "Unexpected group state");
         cluster::begin_group_tx_reply reply;
-        reply.ec = cluster::tx_errc::timeout;
-        co_return reply;
-    }
-}
-
-ss::future<cluster::prepare_group_tx_reply>
-group::handle_prepare_tx(cluster::prepare_group_tx_request r) {
-    if (in_state(group_state::dead)) {
-        cluster::prepare_group_tx_reply reply;
-        reply.ec = cluster::tx_errc::coordinator_not_available;
-        co_return reply;
-    } else if (
-      in_state(group_state::stable) || in_state(group_state::empty)
-      || in_state(group_state::preparing_rebalance)) {
-        auto id = r.pid.get_id();
-        co_return co_await with_pid_lock(
-          id, [this, r = std::move(r)]() mutable {
-              return prepare_tx(std::move(r));
-          });
-    } else if (in_state(group_state::completing_rebalance)) {
-        cluster::prepare_group_tx_reply reply;
-        reply.ec = cluster::tx_errc::rebalance_in_progress;
-        co_return reply;
-    } else {
-        vlog(_ctx_txlog.error, "Unexpected group state");
-        cluster::prepare_group_tx_reply reply;
         reply.ec = cluster::tx_errc::timeout;
         co_return reply;
     }

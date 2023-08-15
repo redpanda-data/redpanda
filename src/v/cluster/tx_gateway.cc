@@ -97,8 +97,14 @@ ss::future<begin_group_tx_reply> tx_gateway::begin_group_tx(
 };
 
 ss::future<prepare_group_tx_reply> tx_gateway::prepare_group_tx(
-  prepare_group_tx_request&& request, rpc::streaming_context&) {
-    return _rm_group_proxy->prepare_group_tx_locally(std::move(request));
+  prepare_group_tx_request&&, rpc::streaming_context&) {
+    // group_prepare is no longer part of the transaction lifecycle after
+    // 22.3.0 redesign. There are no callers for this.
+    return ss::make_exception_future<cluster::prepare_group_tx_reply>(
+      std::runtime_error{
+        "prepare_group_tx is no longer supported, this is only possible if the "
+        "cluster is running mixed versions of Redpanda and the initiator of "
+        "this RPC is pre-22.3.x. Check your installation."});
 };
 
 ss::future<commit_group_tx_reply> tx_gateway::commit_group_tx(

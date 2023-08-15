@@ -108,7 +108,6 @@ std::ostream& operator<<(std::ostream&, group_state gs);
 
 ss::sstring group_state_to_kafka_name(group_state);
 cluster::begin_group_tx_reply make_begin_tx_reply(cluster::tx_errc);
-cluster::prepare_group_tx_reply make_prepare_tx_reply(cluster::tx_errc);
 cluster::commit_group_tx_reply make_commit_tx_reply(cluster::tx_errc);
 cluster::abort_group_tx_reply make_abort_tx_reply(cluster::tx_errc);
 kafka::error_code map_store_offset_error_code(std::error_code);
@@ -537,9 +536,6 @@ public:
     ss::future<cluster::begin_group_tx_reply>
       begin_tx(cluster::begin_group_tx_request);
 
-    ss::future<cluster::prepare_group_tx_reply>
-      prepare_tx(cluster::prepare_group_tx_request);
-
     ss::future<cluster::abort_group_tx_reply>
       abort_tx(cluster::abort_group_tx_request);
 
@@ -553,9 +549,6 @@ public:
 
     ss::future<cluster::begin_group_tx_reply>
     handle_begin_tx(cluster::begin_group_tx_request r);
-
-    ss::future<cluster::prepare_group_tx_reply>
-    handle_prepare_tx(cluster::prepare_group_tx_request r);
 
     ss::future<cluster::abort_group_tx_reply>
     handle_abort_tx(cluster::abort_group_tx_request r);
