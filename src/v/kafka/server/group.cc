@@ -183,15 +183,6 @@ static model::record_batch make_tx_batch(
 }
 
 static model::record_batch make_tx_fence_batch(
-  const model::producer_identity& pid, group_log_fencing_v0 cmd) {
-    return make_tx_batch(
-      model::record_batch_type::tx_fence,
-      group::fence_control_record_v0_version,
-      pid,
-      std::move(cmd));
-}
-
-static model::record_batch make_tx_fence_batch(
   const model::producer_identity& pid, group_log_fencing_v1 cmd) {
     return make_tx_batch(
       model::record_batch_type::tx_fence,
@@ -1723,13 +1714,11 @@ group::commit_tx(cluster::commit_group_tx_request r) {
 
     auto txseq_it = _tx_data.find(r.pid.get_id());
     if (txseq_it == _tx_data.end()) {
-        if (is_transaction_ga()) {
-            vlog(
-              _ctx_txlog.trace,
-              "can't find a tx {}, probably already comitted",
-              r.pid);
-            co_return make_commit_tx_reply(cluster::tx_errc::none);
-        }
+        vlog(
+          _ctx_txlog.trace,
+          "can't find a tx {}, probably already comitted",
+          r.pid);
+        co_return make_commit_tx_reply(cluster::tx_errc::none);
     } else if (txseq_it->second.tx_seq > r.tx_seq) {
         // rare situation:
         //   * tm_stm begins (tx_seq+1)
@@ -1901,14 +1890,11 @@ group::begin_tx(cluster::begin_group_tx_request r) {
           .transaction_timeout_ms = r.timeout,
           .tm_partition = r.tm_partition};
         batch = make_tx_fence_batch(r.pid, std::move(fence));
-    } else if (is_transaction_ga()) {
+    } else {
         group_log_fencing_v1 fence{
           .group_id = id(),
           .tx_seq = r.tx_seq,
           .transaction_timeout_ms = r.timeout};
-        batch = make_tx_fence_batch(r.pid, std::move(fence));
-    } else {
-        group_log_fencing_v0 fence{.group_id = id()};
         batch = make_tx_fence_batch(r.pid, std::move(fence));
     }
 
@@ -1936,10 +1922,6 @@ group::begin_tx(cluster::begin_group_tx_request r) {
     _fence_pid_epoch[r.pid.get_id()] = r.pid.get_epoch();
     _tx_data[r.pid.get_id()] = tx_data{r.tx_seq, r.tm_partition};
 
-    if (!is_transaction_ga()) {
-        _volatile_txs[r.pid] = volatile_tx{.tx_seq = r.tx_seq};
-    }
-
     auto [it, _] = _expiration_info.insert_or_assign(
       r.pid, expiration_info(r.timeout));
     try_arm(it->second.deadline());
@@ -1954,27 +1936,6 @@ ss::future<cluster::prepare_group_tx_reply>
 group::prepare_tx(cluster::prepare_group_tx_request r) {
     if (_partition->term() != _term) {
         co_return make_prepare_tx_reply(cluster::tx_errc::stale);
-    }
-
-    auto is_txn_ga = is_transaction_ga();
-    if (!is_txn_ga) {
-        auto tx_it = _volatile_txs.find(r.pid);
-        if (tx_it == _volatile_txs.end()) {
-            // impossible situation, a transaction coordinator tries
-            // to prepare a transaction which wasn't started
-            vlog(
-              _ctx_txlog.error,
-              "Can't prepare pid:{} - unknown session",
-              r.pid);
-            co_return make_prepare_tx_reply(cluster::tx_errc::request_rejected);
-        }
-        if (tx_it->second.tx_seq != r.tx_seq) {
-            // current prepare_tx call is stale, rejecting
-            co_return make_prepare_tx_reply(cluster::tx_errc::request_rejected);
-        }
-        if (r.etag != _term) {
-            co_return make_prepare_tx_reply(cluster::tx_errc::request_rejected);
-        }
     }
 
     // checking fencing
@@ -2022,10 +1983,6 @@ group::prepare_tx(cluster::prepare_group_tx_request r) {
         co_return make_prepare_tx_reply(cluster::tx_errc::request_rejected);
     }
 
-    if (!is_txn_ga) {
-        _volatile_txs.erase(r.pid);
-    }
-
     auto exp_it = _expiration_info.find(r.pid);
     if (exp_it != _expiration_info.end()) {
         exp_it->second.update_last_update_time();
@@ -2036,46 +1993,12 @@ group::prepare_tx(cluster::prepare_group_tx_request r) {
 
 cluster::abort_origin group::get_abort_origin(
   const model::producer_identity& pid, model::tx_seq tx_seq) const {
-    if (is_transaction_ga()) {
-        auto it = _tx_data.find(pid.get_id());
-        if (it != _tx_data.end()) {
-            if (tx_seq < it->second.tx_seq) {
-                return cluster::abort_origin::past;
-            }
-            if (it->second.tx_seq < tx_seq) {
-                return cluster::abort_origin::future;
-            }
-        }
-
-        return cluster::abort_origin::present;
-    }
-
-    auto txseq_it = _tx_data.find(pid.get_id());
-    if (txseq_it != _tx_data.end()) {
-        if (tx_seq < txseq_it->second.tx_seq) {
+    auto it = _tx_data.find(pid.get_id());
+    if (it != _tx_data.end()) {
+        if (tx_seq < it->second.tx_seq) {
             return cluster::abort_origin::past;
         }
-        if (txseq_it->second.tx_seq < tx_seq) {
-            return cluster::abort_origin::future;
-        }
-    }
-
-    auto expected_it = _volatile_txs.find(pid);
-    if (expected_it != _volatile_txs.end()) {
-        if (tx_seq < expected_it->second.tx_seq) {
-            return cluster::abort_origin::past;
-        }
-        if (expected_it->second.tx_seq < tx_seq) {
-            return cluster::abort_origin::future;
-        }
-    }
-
-    auto prepared_it = _prepared_txs.find(pid);
-    if (prepared_it != _prepared_txs.end()) {
-        if (tx_seq < prepared_it->second.tx_seq) {
-            return cluster::abort_origin::past;
-        }
-        if (prepared_it->second.tx_seq < tx_seq) {
+        if (it->second.tx_seq < tx_seq) {
             return cluster::abort_origin::future;
         }
     }
@@ -2111,13 +2034,11 @@ group::abort_tx(cluster::abort_group_tx_request r) {
 
     auto txseq_it = _tx_data.find(r.pid.get_id());
     if (txseq_it == _tx_data.end()) {
-        if (is_transaction_ga()) {
-            vlog(
-              _ctx_txlog.trace,
-              "can't find a tx {}, probably already aborted",
-              r.pid);
-            co_return make_abort_tx_reply(cluster::tx_errc::none);
-        }
+        vlog(
+          _ctx_txlog.trace,
+          "can't find a tx {}, probably already aborted",
+          r.pid);
+        co_return make_abort_tx_reply(cluster::tx_errc::none);
     } else if (txseq_it->second.tx_seq > r.tx_seq) {
         // rare situation:
         //   * tm_stm begins (tx_seq+1)
@@ -2219,14 +2140,6 @@ group::store_txn_offsets(txn_offset_commit_request r) {
           r, error_code::invalid_producer_epoch);
     }
     auto tx_seq = txseq_it->second.tx_seq;
-
-    if (!is_transaction_ga()) {
-        auto tx_it = _volatile_txs.find(pid);
-        if (tx_it == _volatile_txs.end()) {
-            co_return txn_offset_commit_response(
-              r, error_code::unknown_server_error);
-        }
-    }
 
     absl::node_hash_map<model::topic_partition, group_log_prepared_tx_offset>
       offsets;
@@ -3335,27 +3248,12 @@ group::do_try_abort_old_tx(model::producer_identity pid) {
 
         co_return cluster::tx_errc::stale;
     } else {
-        model::tx_seq tx_seq;
-        if (is_transaction_ga()) {
-            auto txseq_it = _tx_data.find(pid.get_id());
-            if (txseq_it == _tx_data.end()) {
-                vlog(
-                  _ctx_txlog.trace, "skipping pid:{} (can't find tx_seq)", pid);
-                co_return cluster::tx_errc::none;
-            }
-            tx_seq = txseq_it->second.tx_seq;
-        } else {
-            auto v_it = _volatile_txs.find(pid);
-            if (v_it == _volatile_txs.end()) {
-                vlog(
-                  _ctx_txlog.trace,
-                  "skipping pid:{} (can't find volatile)",
-                  pid);
-                co_return cluster::tx_errc::none;
-            }
-            tx_seq = v_it->second.tx_seq;
+        auto txseq_it = _tx_data.find(pid.get_id());
+        if (txseq_it == _tx_data.end()) {
+            vlog(_ctx_txlog.trace, "skipping pid:{} (can't find tx_seq)", pid);
+            co_return cluster::tx_errc::none;
         }
-
+        model::tx_seq tx_seq = txseq_it->second.tx_seq;
         auto res = co_await do_abort(_id, pid, tx_seq);
         if (res.ec != cluster::tx_errc::none) {
             vlog(

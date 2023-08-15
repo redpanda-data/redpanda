@@ -887,11 +887,6 @@ private:
           features::feature::transaction_partitioning);
     }
 
-    bool is_transaction_ga() const {
-        return _feature_table.local().is_active(
-          features::feature::transaction_ga);
-    }
-
     void update_subscriptions();
     std::optional<absl::node_hash_set<model::topic>> _subscriptions;
 
