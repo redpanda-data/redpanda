@@ -73,4 +73,7 @@ private:
     std::optional<ss::abort_source::subscription> _sub;
 };
 
+struct shutdown_requested_exception : ss::abort_requested_exception {};
+struct connection_aborted_exception : ss::abort_requested_exception {};
+
 } // namespace ssx

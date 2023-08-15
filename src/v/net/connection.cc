@@ -11,6 +11,7 @@
 
 #include "net/exceptions.h"
 #include "rpc/service.h"
+#include "ssx/abort_source.h"
 
 #include <seastar/core/future.hh>
 
@@ -89,6 +90,10 @@ std::optional<ss::sstring> is_disconnect_exception(std::exception_ptr e) {
             return fmt::format("invalid request: {}", e.what());
         }
         return "invalid request";
+    } catch (const ssx::connection_aborted_exception&) {
+        return "connection aborted";
+    } catch (const ssx::shutdown_requested_exception&) {
+        return "shutdown requested";
     } catch (const ss::nested_exception& e) {
         if (auto err = is_disconnect_exception(e.inner)) {
             return err;
