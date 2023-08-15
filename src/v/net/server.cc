@@ -12,6 +12,7 @@
 #include "config/configuration.h"
 #include "likely.h"
 #include "prometheus/prometheus_sanitize.h"
+#include "ssx/abort_source.h"
 #include "ssx/future-util.h"
 #include "ssx/metrics.h"
 #include "ssx/semaphore.h"
@@ -285,7 +286,7 @@ void server::shutdown_input() {
       "{} - Shutting down {} connections",
       name(),
       _connections.size());
-    _as.request_abort();
+    _as.request_abort_ex(ssx::shutdown_requested_exception{});
     // close the connections and wait for all dispatches to finish
     for (auto& c : _connections) {
         c.shutdown_input();
