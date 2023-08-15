@@ -2269,8 +2269,10 @@ ss::future<tx_errc> rm_stm::do_try_abort_old_tx(model::producer_identity pid) {
         if (tx_data != _log_state.current_txes.end()) {
             tm_partition = tx_data->second.tm_partition;
         }
-        auto r = co_await _tx_gateway_frontend.local().try_abort(
-          tm_partition, pid, *tx_seq, _sync_timeout);
+
+        auto r = co_await _tx_gateway_frontend.local().route_globally(
+          cluster::try_abort_request(
+            tm_partition, pid, tx_seq.value(), _sync_timeout));
         if (r.ec == tx_errc::none) {
             if (r.commited) {
                 vlog(

@@ -183,35 +183,6 @@ enum class partition_removal_mode : uint8_t {
     global = 1
 };
 
-struct try_abort_request
-  : serde::
-      envelope<try_abort_request, serde::version<0>, serde::compat_version<0>> {
-    model::partition_id tm;
-    model::producer_identity pid;
-    model::tx_seq tx_seq;
-    model::timeout_clock::duration timeout{};
-
-    try_abort_request() noexcept = default;
-
-    try_abort_request(
-      model::partition_id tm,
-      model::producer_identity pid,
-      model::tx_seq tx_seq,
-      model::timeout_clock::duration timeout)
-      : tm(tm)
-      , pid(pid)
-      , tx_seq(tx_seq)
-      , timeout(timeout) {}
-
-    friend bool operator==(const try_abort_request&, const try_abort_request&)
-      = default;
-
-    friend std::ostream&
-    operator<<(std::ostream& o, const try_abort_request& r);
-
-    auto serde_fields() { return std::tie(tm, pid, tx_seq, timeout); }
-};
-
 struct try_abort_reply
   : serde::
       envelope<try_abort_reply, serde::version<0>, serde::compat_version<0>> {
@@ -246,6 +217,38 @@ struct try_abort_reply
     }
 
     auto serde_fields() { return std::tie(commited, aborted, ec); }
+};
+
+struct try_abort_request
+  : serde::
+      envelope<try_abort_request, serde::version<0>, serde::compat_version<0>> {
+    using reply = try_abort_reply;
+    static constexpr const std::string_view name = "try_abort";
+
+    model::partition_id tm;
+    model::producer_identity pid;
+    model::tx_seq tx_seq;
+    model::timeout_clock::duration timeout{};
+
+    try_abort_request() noexcept = default;
+
+    try_abort_request(
+      model::partition_id tm,
+      model::producer_identity pid,
+      model::tx_seq tx_seq,
+      model::timeout_clock::duration timeout)
+      : tm(tm)
+      , pid(pid)
+      , tx_seq(tx_seq)
+      , timeout(timeout) {}
+
+    friend bool operator==(const try_abort_request&, const try_abort_request&)
+      = default;
+
+    friend std::ostream&
+    operator<<(std::ostream& o, const try_abort_request& r);
+
+    auto serde_fields() { return std::tie(tm, pid, tx_seq, timeout); }
 };
 
 struct init_tm_tx_request
