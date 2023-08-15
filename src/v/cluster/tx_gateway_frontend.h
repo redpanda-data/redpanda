@@ -47,16 +47,6 @@ public:
     ss::future<bool> hosts(model::partition_id, kafka::transactional_id);
     ss::future<fetch_tx_reply> fetch_tx_locally(
       kafka::transactional_id, model::term_id, model::partition_id);
-    ss::future<try_abort_reply> try_abort(
-      model::partition_id,
-      model::producer_identity,
-      model::tx_seq,
-      model::timeout_clock::duration);
-    ss::future<try_abort_reply> try_abort_locally(
-      model::partition_id,
-      model::producer_identity,
-      model::tx_seq,
-      model::timeout_clock::duration);
     ss::future<init_tm_tx_reply> init_tm_tx(
       kafka::transactional_id,
       std::chrono::milliseconds transaction_timeout_ms,
@@ -76,6 +66,9 @@ public:
     ss::future<return_all_txs_res> get_all_transactions();
     ss::future<result<tm_transaction, tx_errc>>
       describe_tx(kafka::transactional_id);
+
+    ss::future<try_abort_reply> route_globally(try_abort_request&&);
+    ss::future<try_abort_reply> route_locally(try_abort_request&&);
 
     ss::future<tx_errc> delete_partition_from_tx(
       kafka::transactional_id, tm_transaction::tx_partition);
@@ -173,17 +166,6 @@ private:
       model::partition_id,
       model::timeout_clock::duration,
       ss::lw_shared_ptr<available_promise<checked<tm_transaction, tx_errc>>>);
-    ss::future<try_abort_reply> dispatch_try_abort(
-      model::node_id,
-      model::partition_id,
-      model::producer_identity,
-      model::tx_seq,
-      model::timeout_clock::duration);
-    ss::future<try_abort_reply> do_try_abort(
-      ss::shared_ptr<tm_stm>,
-      model::producer_identity,
-      model::tx_seq,
-      model::timeout_clock::duration);
     ss::future<try_abort_reply> do_try_abort(
       model::term_id,
       ss::shared_ptr<tm_stm>,
@@ -277,6 +259,9 @@ private:
 
     ss::future<result<tm_transaction, tx_errc>>
       describe_tx(ss::shared_ptr<tm_stm>, kafka::transactional_id);
+
+    ss::future<try_abort_reply>
+    process_locally(ss::shared_ptr<tm_stm>, try_abort_request&&);
 
     void expire_old_txs();
     ss::future<> expire_old_txs(model::ntp);
