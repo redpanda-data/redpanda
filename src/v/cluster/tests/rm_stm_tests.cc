@@ -176,12 +176,7 @@ FIXTURE_TEST(test_tx_happy_tx, mux_state_machine_fixture) {
     aborted_txs = stm.aborted_transactions(min_offset, max_offset).get0();
     BOOST_REQUIRE_EQUAL(aborted_txs.size(), 0);
 
-    auto term = term_op.value();
-    auto op = stm
-                .prepare_tx(term, model::partition_id(0), pid2, tx_seq, 2'000ms)
-                .get0();
-    BOOST_REQUIRE_EQUAL(op, cluster::tx_errc::none);
-    op = stm.commit_tx(pid2, tx_seq, 2'000ms).get0();
+    auto op = stm.commit_tx(pid2, tx_seq, 2'000ms).get0();
     BOOST_REQUIRE_EQUAL(op, cluster::tx_errc::none);
     aborted_txs = stm.aborted_transactions(min_offset, max_offset).get0();
     BOOST_REQUIRE_EQUAL(aborted_txs.size(), 0);
@@ -351,13 +346,7 @@ FIXTURE_TEST(test_tx_aborted_tx_2, mux_state_machine_fixture) {
     aborted_txs = stm.aborted_transactions(min_offset, max_offset).get0();
     BOOST_REQUIRE_EQUAL(aborted_txs.size(), 0);
 
-    auto term = term_op.value();
-    auto op = stm
-                .prepare_tx(term, model::partition_id(0), pid2, tx_seq, 2'000ms)
-                .get0();
-    BOOST_REQUIRE_EQUAL(op, cluster::tx_errc::none);
-
-    op = stm.abort_tx(pid2, tx_seq, 2'000ms).get0();
+    auto op = stm.abort_tx(pid2, tx_seq, 2'000ms).get0();
     BOOST_REQUIRE_EQUAL(op, cluster::tx_errc::none);
     BOOST_REQUIRE(stm
                     .wait_no_throw(
@@ -583,8 +572,6 @@ FIXTURE_TEST(test_aborted_transactions, mux_state_machine_fixture) {
       std::numeric_limits<int32_t>::max());
     const auto opts = raft::replicate_options(
       raft::consistency_level::quorum_ack);
-    const auto term = _raft->term();
-    const auto partition = model::partition_id(0);
     size_t segment_count = 1;
 
     auto& segments = disk_log->segments();
@@ -625,9 +612,6 @@ FIXTURE_TEST(test_aborted_transactions, mux_state_machine_fixture) {
     };
 
     auto commit_tx = [&](auto pid) {
-        BOOST_REQUIRE_EQUAL(
-          stm.prepare_tx(term, partition, pid, tx_seq, timeout).get0(),
-          cluster::tx_errc::none);
         BOOST_REQUIRE_EQUAL(
           stm.commit_tx(pid, tx_seq, timeout).get0(), cluster::tx_errc::none);
     };

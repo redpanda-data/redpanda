@@ -214,12 +214,6 @@ public:
       model::tx_seq,
       std::chrono::milliseconds,
       model::partition_id);
-    ss::future<tx_errc> prepare_tx(
-      model::term_id,
-      model::partition_id,
-      model::producer_identity,
-      model::tx_seq,
-      model::timeout_clock::duration);
     ss::future<tx_errc> commit_tx(
       model::producer_identity, model::tx_seq, model::timeout_clock::duration);
     ss::future<tx_errc> abort_tx(
@@ -388,12 +382,6 @@ private:
       model::tx_seq,
       std::chrono::milliseconds,
       model::partition_id);
-    ss::future<tx_errc> do_prepare_tx(
-      model::term_id,
-      model::partition_id,
-      model::producer_identity,
-      model::tx_seq,
-      model::timeout_clock::duration);
     ss::future<tx_errc> do_commit_tx(
       model::producer_identity, model::tx_seq, model::timeout_clock::duration);
     ss::future<tx_errc> do_abort_tx(
