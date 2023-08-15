@@ -9,8 +9,6 @@
 
 #include "utils/named_type.h"
 
-#include <seastar/core/sstring.hh>
-
 #include <boost/test/tools/old/interface.hpp>
 
 #include <cstddef>
@@ -59,7 +57,7 @@ void test_incremental_hash(T test, V expected) {
 }
 
 BOOST_AUTO_TEST_CASE(overload_resolution) {
-    using named_str = named_type<ss::sstring, struct str_type>;
+    using named_str = named_type<std::string, struct str_type>;
     using named_integral = named_type<size_t, struct int_type>;
 
     test_incremental_hash(named_str{"named_str"}, "named_str");

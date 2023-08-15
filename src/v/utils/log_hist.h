@@ -18,6 +18,7 @@
 #include <bit>
 #include <chrono>
 #include <cstdint>
+#include <optional>
 
 /*
  * A histogram implementation

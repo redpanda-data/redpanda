@@ -10,7 +10,7 @@
  */
 #include "cluster_config_schema_util.h"
 
-#include "redpanda/admin/api-doc/cluster_config.json.h"
+#include "redpanda/admin/api-doc/cluster_config.json.hh"
 
 // This is factored out to make it a separate binary that can generate schema
 // without bringing up a redpanda cluster. Down stream tools can make use of

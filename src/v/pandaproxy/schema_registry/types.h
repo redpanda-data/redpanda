@@ -11,7 +11,6 @@
 
 #pragma once
 
-#include "avro/ValidSchema.hh"
 #include "kafka/protocol/errors.h"
 #include "model/metadata.h"
 #include "outcome.h"
@@ -21,6 +20,8 @@
 
 #include <seastar/core/sstring.hh>
 #include <seastar/util/bool_class.hh>
+
+#include <avro/ValidSchema.hh>
 
 #include <iosfwd>
 #include <type_traits>

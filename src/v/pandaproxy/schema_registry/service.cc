@@ -22,7 +22,7 @@
 #include "kafka/server/handlers/topics/types.h"
 #include "model/fundamental.h"
 #include "model/timeout_clock.h"
-#include "pandaproxy/api/api-doc/schema_registry.json.h"
+#include "pandaproxy/api/api-doc/schema_registry.json.hh"
 #include "pandaproxy/auth_utils.h"
 #include "pandaproxy/config_utils.h"
 #include "pandaproxy/error.h"

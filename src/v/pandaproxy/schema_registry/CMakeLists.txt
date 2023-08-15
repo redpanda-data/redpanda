@@ -2,7 +2,7 @@ seastar_generate_swagger(
   TARGET schema_registry_swagger
   VAR schema_registry_file
   IN_FILE ${CMAKE_CURRENT_SOURCE_DIR}/../api/api-doc/schema_registry.json
-  OUT_FILE ${CMAKE_CURRENT_BINARY_DIR}/../api/api-doc/schema_registry.json.h
+  OUT_DIR ${CMAKE_CURRENT_BINARY_DIR}/../api/api-doc/
 )
 
 find_package(Protobuf REQUIRED)
@@ -22,6 +22,7 @@ v_cc_library(
     avro.cc
     protobuf.cc
     validation.cc
+    ${schema_registry_file}
   DEPS
     v::pandaproxy_common
     v::pandaproxy_parsing
@@ -36,8 +37,6 @@ v_cc_library(
     protobuf::libprotobuf
     protobuf::libprotoc
   )
-
-add_dependencies(v_pandaproxy_schema_registry schema_registry_swagger)
 
 add_subdirectory(test)
 add_subdirectory(requests)

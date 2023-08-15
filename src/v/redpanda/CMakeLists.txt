@@ -20,7 +20,7 @@ foreach(swag ${swags})
     TARGET ${swag}_swagger
     VAR ${swag}_swagger_files
     IN_FILE ${CMAKE_CURRENT_SOURCE_DIR}/admin/api-doc/${swag}.json
-    OUT_FILE ${CMAKE_CURRENT_BINARY_DIR}/admin/api-doc/${swag}.json.h
+    OUT_DIR ${CMAKE_CURRENT_BINARY_DIR}/admin/api-doc/
   )
   list(APPEND swag_files ${${swag}_swagger_files})
 endforeach()

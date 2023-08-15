@@ -13,7 +13,7 @@
 #include "cluster/ephemeral_credential_frontend.h"
 #include "cluster/members_table.h"
 #include "net/unresolved_address.h"
-#include "pandaproxy/api/api-doc/rest.json.h"
+#include "pandaproxy/api/api-doc/rest.json.hh"
 #include "pandaproxy/auth_utils.h"
 #include "pandaproxy/config_utils.h"
 #include "pandaproxy/logger.h"
