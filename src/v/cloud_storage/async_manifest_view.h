@@ -61,16 +61,6 @@ using manifest_section_t = std::variant<
   ss::shared_ptr<materialized_manifest>,
   std::reference_wrapper<const partition_manifest>>;
 
-/// Result of the ListObjectsV2 scan
-struct spillover_manifest_list {
-    /// List of manifest paths
-    std::deque<remote_manifest_path> manifests;
-    /// List of decoded path components (offsets and timestamps)
-    std::deque<spillover_manifest_path_components> components;
-    /// List of manifest sizes (in binary format)
-    std::deque<size_t> sizes;
-};
-
 class async_manifest_view_cursor;
 
 /// Service that maintains a view of the entire

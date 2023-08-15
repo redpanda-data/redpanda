@@ -188,6 +188,7 @@ remote_segment::remote_segment(
   , _cache_backoff_jitter(cache_thrash_backoff)
   , _compacted(meta.is_compacted)
   , _sname_format(meta.sname_format)
+  , _metadata_size_hint(meta.metadata_size_hint)
   , _chunk_size(config::shard_local_cfg().cloud_storage_cache_chunk_size())
   // The max hydrated chunks per segment are either 0.5 of total number of
   // chunks possible, or in case of small segments the total number of chunks
@@ -197,13 +198,6 @@ remote_segment::remote_segment(
   , _chunks_in_segment(
       std::max(static_cast<uint64_t>(ceil(_size / _chunk_size)), 1UL))
   , _probe(probe) {
-    if (
-      meta.sname_format == segment_name_format::v3
-      && meta.metadata_size_hint == 0) {
-        // The tx-manifest is empty, no need to download it.
-        _tx_range.emplace();
-    }
-
     vassert(_chunk_size != 0, "cloud_storage_cache_chunk_size should not be 0");
 
     if (
@@ -555,6 +549,12 @@ ss::future<> remote_segment::do_hydrate_txrange() {
     ss::gate::holder guard(_gate);
     retry_chain_node local_rtc(
       cache_hydration_timeout, cache_hydration_backoff, &_rtc);
+    if (_sname_format == segment_name_format::v3 && _metadata_size_hint == 0) {
+        // The tx-manifest is empty, no need to download it, and
+        // avoid putting this empty manifest into the cache.
+        _tx_range.emplace();
+        co_return;
+    }
 
     tx_range_manifest manifest(_path);
 
@@ -740,33 +740,6 @@ ss::future<bool> remote_segment::maybe_materialize_index() {
         co_return false;
     }
 }
-
-// NOTE: Aborted transactions handled using tx_range manifests.
-// The manifests are uploaded alongside the segments with (.tx)
-// suffix added to the name. The hydration of tx_range manifest
-// is not optional. We can't use the segment without it. The following
-// cases are possible:
-// - Both segment and tx-range are not hydrated;
-// - The segment is hydrated but tx-range isn't
-// - The segment is not hydrated but tx-range is
-// - Both segment and tx-range are hydrated
-// This doesn't include various 'in_progress' combinations which are
-// disallowed.
-//
-// Also, both segment and tx-range can be materialized or not. In case
-// of the segment this means that we're holding an opened file handler.
-// In case of tx-range this means that we parsed the json and populated
-// _tx_range collection.
-//
-// In order to be able to deal with the complexity this code combines
-// the flags and tries to handle all combinations that makes sense.
-enum class segment_txrange_status {
-    in_progress,
-    available,
-    not_available,
-    available_not_available,
-    not_available_available,
-};
 
 void remote_segment::set_waiter_errors(const std::exception_ptr& err) {
     while (!_wait_list.empty()) {

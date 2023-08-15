@@ -293,6 +293,7 @@ private:
     bool _hydration_loop_running{false};
 
     segment_name_format _sname_format;
+    uint64_t _metadata_size_hint{0};
 
     using fallback_mode = ss::bool_class<struct fallback_mode_tag>;
     fallback_mode _fallback_mode{fallback_mode::no};
