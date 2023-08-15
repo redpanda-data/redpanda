@@ -19,6 +19,6 @@ rp_test(
   UNIT_TEST
   BINARY_NAME adl_collections_interop
   SOURCES collections_interop.cc
-  LIBRARIES v::seastar_testing_main absl::flat_hash_map v::reflection v::rprandom
+  LIBRARIES v::seastar_testing_main absl::flat_hash_map v::reflection v::rprandom v::model
   LABELS reflection
 )
