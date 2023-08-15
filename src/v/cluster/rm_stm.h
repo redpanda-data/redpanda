@@ -827,8 +827,6 @@ private:
     kafka::offset from_log_offset(model::offset old_offset) const;
     model::offset to_log_offset(kafka::offset new_offset) const;
 
-    transaction_info::status_t
-    get_tx_status(model::producer_identity pid) const;
     std::optional<expiration_info>
     get_expiration_info(model::producer_identity pid) const;
     std::optional<int32_t> get_seq_number(model::producer_identity pid) const;
@@ -841,11 +839,6 @@ private:
     bool is_transaction_partitioning() const {
         return _feature_table.local().is_active(
           features::feature::transaction_partitioning);
-    }
-
-    bool is_transaction_ga() const {
-        return _feature_table.local().is_active(
-          features::feature::transaction_ga);
     }
 
     friend std::ostream& operator<<(std::ostream&, const mem_state&);
