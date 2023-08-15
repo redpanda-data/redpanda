@@ -513,6 +513,7 @@ class HighThroughputTest(PreallocNodesTest):
                                  preserve_logs=True,
                                  preserve_current_install=True)
         self.redpanda.start_node(node,
+                                 timeout=180,
                                  auto_assign_node_id=False,
                                  omit_seeds_on_idx_one=False)
         wait_until(self.redpanda.healthy, timeout_sec=600, backoff_sec=1)
