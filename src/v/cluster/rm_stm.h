@@ -911,8 +911,6 @@ struct fence_batch_data {
     model::partition_id tm;
 };
 
-model::record_batch make_fence_batch_v0(model::producer_identity pid);
-
 model::record_batch make_fence_batch_v1(
   model::producer_identity pid,
   model::tx_seq tx_seq,

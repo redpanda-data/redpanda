@@ -46,23 +46,6 @@ static bool is_sequence(int32_t last_seq, int32_t next_seq) {
            || (next_seq == 0 && last_seq == std::numeric_limits<int32_t>::max());
 }
 
-model::record_batch make_fence_batch_v0(model::producer_identity pid) {
-    iobuf key;
-    auto pid_id = pid.id;
-    reflection::serialize(key, model::record_batch_type::tx_fence, pid_id);
-
-    iobuf value;
-    reflection::serialize(value, rm_stm::fence_control_record_v0_version);
-
-    storage::record_batch_builder builder(
-      model::record_batch_type::tx_fence, model::offset(0));
-    builder.set_producer_identity(pid.id, pid.epoch);
-    builder.set_control_type();
-    builder.add_raw_kv(std::move(key), std::move(value));
-
-    return std::move(builder).build();
-}
-
 model::record_batch make_fence_batch_v1(
   model::producer_identity pid,
   model::tx_seq tx_seq,
@@ -380,9 +363,8 @@ model::record_batch rm_stm::make_fence_batch(
         return make_fence_batch_v2(pid, tx_seq, transaction_timeout_ms, tm);
     } else if (is_transaction_ga()) {
         return make_fence_batch_v1(pid, tx_seq, transaction_timeout_ms);
-    } else {
-        return make_fence_batch_v0(pid);
     }
+    return make_fence_batch_v1(pid, tx_seq, transaction_timeout_ms);
 }
 
 ss::future<checked<model::term_id, tx_errc>> rm_stm::do_begin_tx(
