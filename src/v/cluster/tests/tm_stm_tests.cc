@@ -95,12 +95,6 @@ FIXTURE_TEST(test_tm_stm_new_tx, mux_state_machine_fixture) {
     BOOST_REQUIRE_EQUAL(tx2.status, tx_status::ongoing);
     BOOST_REQUIRE_GT(tx2.tx_seq, tx1.tx_seq);
     BOOST_REQUIRE_EQUAL(tx2.partitions.size(), 2);
-    auto tx3 = expect_tx(stm.mark_tx_preparing(c->term(), tx_id).get());
-    BOOST_REQUIRE_EQUAL(tx3.id, tx_id);
-    BOOST_REQUIRE_EQUAL(tx3.pid, pid);
-    BOOST_REQUIRE_EQUAL(tx3.status, tx_status::preparing);
-    BOOST_REQUIRE_EQUAL(tx3.tx_seq, tx2.tx_seq);
-    BOOST_REQUIRE_EQUAL(tx3.partitions.size(), 2);
     auto tx4 = expect_tx(stm.mark_tx_prepared(c->term(), tx_id).get());
     BOOST_REQUIRE_EQUAL(tx4.id, tx_id);
     BOOST_REQUIRE_EQUAL(tx4.pid, pid);
