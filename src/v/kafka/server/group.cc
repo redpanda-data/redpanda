@@ -3303,11 +3303,12 @@ group::do_try_abort_old_tx(model::producer_identity pid) {
               "pid {} doesn't exist in current transactions data",
               pid);
         }
-        auto r = co_await _tx_frontend.local().try_abort(
-          tm,
-          pid,
-          tx_seq,
-          config::shard_local_cfg().rm_sync_timeout_ms.value());
+        auto r = co_await _tx_frontend.local().route_globally(
+          cluster::try_abort_request(
+            tm,
+            pid,
+            tx_seq,
+            config::shard_local_cfg().rm_sync_timeout_ms.value()));
         if (r.ec != cluster::tx_errc::none) {
             co_return r.ec;
         }
