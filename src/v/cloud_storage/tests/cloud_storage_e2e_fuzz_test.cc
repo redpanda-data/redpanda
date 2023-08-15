@@ -252,7 +252,7 @@ class cloud_storage_e2e_fuzz_test
   : public cloud_storage_manual_multinode_test_base {
 public:
     cloud_storage_e2e_fuzz_test()
-      : cloud_storage_manual_multinode_test_base(true) {}
+      : cloud_storage_manual_multinode_test_base() {}
 
     ss::future<> produce(int num_records, int cardinality);
     ss::future<> local_roll(int node_idx);
