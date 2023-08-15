@@ -29,6 +29,12 @@ using namespace storage; // NOLINT
 
 namespace {
 
+struct segment_appender_test_accessor {
+    segment_appender& sa;
+};
+
+segment_appender_test_accessor access(segment_appender& sa) { return {sa}; }
+
 ss::file open_file(std::string_view filename) {
     return ss::open_file_dma(
              filename,
