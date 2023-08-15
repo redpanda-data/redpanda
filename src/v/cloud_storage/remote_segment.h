@@ -395,13 +395,17 @@ public:
 
     bool is_stopped() const { return _stopped; }
 
-    bool is_transient() const { return _is_transient; }
+    bool is_data_source_transient() const { return _is_transient; }
 
-    void mark_transient(bool transient) { _is_transient = transient; }
+    void mark_data_source_transient(bool transient) {
+        _is_transient = transient;
+    }
 
 private:
     friend class single_record_consumer;
     ss::future<std::unique_ptr<storage::continuous_batch_parser>> init_parser();
+
+    ss::future<> reset_state();
 
     size_t produce(model::record_batch batch);
 

@@ -52,6 +52,10 @@ chunk_data_source_impl::~chunk_data_source_impl() {
     vassert(
       !_current_stream.has_value(),
       "stream not closed before destroying data source");
+    vassert(
+      !_download_task.has_value(),
+      "a pending download task was not finished for chunk start {}",
+      _download_task);
     vlog(_ctxlog.debug, "chunk data source destroyed");
 }
 
@@ -219,13 +223,6 @@ ss::future<> chunk_data_source_impl::load_stream_for_chunk(
 ss::future<> chunk_data_source_impl::set_current_stream(
   uint64_t begin_at, eager_stream_ptr ecs) {
     if (ecs) {
-        // TODO - this should be flipped if we switch to a disk based stream, or
-        // more specifically when we close a transient stream. This change would
-        // then need to be communicated back up to the reader so it can be
-        // cached.
-        if (_attached_reader) {
-            _attached_reader->get().mark_transient(true);
-        }
         vlog(
           _ctxlog.trace,
           "creating eager stream for chunk starting at {}, begin offset in "
@@ -248,6 +245,18 @@ ss::future<> chunk_data_source_impl::set_current_stream(
         _current_stream_t = stream_type::disk;
         _current_stream = ss::make_file_input_stream(
           *_current_data_file, begin_at, _stream_options);
+    }
+
+    // Signal the attached reader if it needs to reset state when over-budget.
+    if (_attached_reader) {
+        switch (_current_stream_t) {
+        case stream_type::disk:
+            _attached_reader->get().mark_data_source_transient(false);
+            break;
+        case stream_type::download:
+            _attached_reader->get().mark_data_source_transient(true);
+            break;
+        }
     }
 }
 
@@ -295,6 +304,13 @@ chunk_data_source_impl::download_task::download_task(
   : _ds{ds}
   , _chunk_start{chunk_start}
   , _ecs{std::move(ecs)} {}
+
+chunk_data_source_impl::download_task::~download_task() {
+    vassert(
+      !_download.has_value(),
+      "a pending download was not finished for chunk start {}",
+      _chunk_start);
+}
 
 void chunk_data_source_impl::download_task::start() {
     _download.emplace(_ds.load_chunk_handle(_chunk_start, _ecs));

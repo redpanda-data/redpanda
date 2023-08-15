@@ -1381,19 +1381,24 @@ remote_segment_batch_reader::read_some(
     }
     _total_size = 0;
 
-    if (_config.over_budget && _is_transient && _parser) {
+    if (_config.over_budget && is_data_source_transient() && _parser) {
         vlog(
           _ctxlog.debug,
-          "transient reader is overbudget, resetting parser to allow other "
-          "streams to progress: {}",
+          "transient reader is overbudget, resetting to allow download to "
+          "progress: {}",
           _config);
-        co_await _parser->close();
-        _parser.reset();
-        _bytes_consumed = 0;
+        co_await reset_state();
         vlog(_ctxlog.debug, "transient reader is closed: {}", _config);
     }
 
     co_return std::move(_ringbuf);
+}
+
+ss::future<> remote_segment_batch_reader::reset_state() {
+    vassert(_parser, "cannot reset state, parser not initialized");
+    co_await _parser->close();
+    _parser.reset();
+    _bytes_consumed = 0;
 }
 
 ss::future<std::unique_ptr<storage::continuous_batch_parser>>

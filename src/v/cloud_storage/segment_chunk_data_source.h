@@ -115,6 +115,14 @@ private:
         void start();
         ss::future<> finish();
 
+        ~download_task();
+
+        download_task(const download_task&) = delete;
+        download_task& operator=(const download_task&) = delete;
+
+        download_task(download_task&&) = delete;
+        download_task&& operator=(download_task&&) = delete;
+
     private:
         chunk_data_source_impl& _ds;
         chunk_start_offset_t _chunk_start;
