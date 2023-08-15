@@ -172,28 +172,6 @@ inline rm_stm::seq_cache_entry random_seq_cache_entry() {
       tests::random_named_int<kafka::offset>()};
 }
 
-inline rm_stm::seq_cache_entry_v1 random_seq_cache_entry_v1() {
-    return {
-      random_generators::get_int<int32_t>(),
-      tests::random_named_int<model::offset>()};
-}
-
-inline rm_stm::seq_entry_v0 random_seq_entry_v0() {
-    return {
-      model::random_producer_identity(),
-      random_generators::get_int<int32_t>(),
-      random_generators::get_int<int64_t>()};
-}
-
-inline rm_stm::seq_entry_v1 random_seq_entry_v1() {
-    return {
-      model::random_producer_identity(),
-      random_generators::get_int<int32_t>(),
-      tests::random_named_int<model::offset>(),
-      tests::random_circular_buffer(random_seq_cache_entry_v1),
-      random_generators::get_int<int64_t>()};
-}
-
 inline rm_stm::seq_entry random_seq_entry() {
     return {
       model::random_producer_identity(),

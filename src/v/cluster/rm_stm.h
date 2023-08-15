@@ -150,6 +150,8 @@ public:
         }
     };
 
+    // note: support for tx_snapshot::version[0-2] was dropped
+    // in v23.3.x
     struct tx_snapshot {
         static constexpr uint8_t version = 4;
 
@@ -333,86 +335,6 @@ public:
 
             return info->timeout;
         }
-    };
-
-    struct seq_entry_v0 {
-        model::producer_identity pid;
-        int32_t seq;
-        model::timestamp::type last_write_timestamp;
-
-        bool operator==(const seq_entry_v0&) const = default;
-    };
-
-    struct tx_snapshot_v0 {
-        static constexpr uint8_t version = 0;
-
-        fragmented_vector<model::producer_identity> fenced;
-        fragmented_vector<rm_stm::tx_range> ongoing;
-        fragmented_vector<rm_stm::prepare_marker> prepared;
-        fragmented_vector<rm_stm::tx_range> aborted;
-        fragmented_vector<rm_stm::abort_index> abort_indexes;
-        model::offset offset;
-        fragmented_vector<seq_entry_v0> seqs;
-
-        bool operator==(const tx_snapshot_v0&) const = default;
-    };
-
-    struct seq_cache_entry_v1 {
-        int32_t seq{-1};
-        model::offset offset;
-
-        bool operator==(const seq_cache_entry_v1&) const = default;
-    };
-
-    struct seq_entry_v1 {
-        model::producer_identity pid;
-        int32_t seq{-1};
-        model::offset last_offset{-1};
-        ss::circular_buffer<seq_cache_entry_v1> seq_cache;
-        model::timestamp::type last_write_timestamp;
-
-        bool operator==(const seq_entry_v1& other) const {
-            if (this == &other) {
-                return true;
-            }
-
-            return pid == other.pid && seq == other.seq
-                   && last_offset == other.last_offset
-                   && last_write_timestamp == other.last_write_timestamp
-                   && std::equal(
-                     seq_cache.begin(),
-                     seq_cache.end(),
-                     other.seq_cache.begin(),
-                     other.seq_cache.end());
-        };
-    };
-
-    struct tx_snapshot_v1 {
-        static constexpr uint8_t version = 1;
-
-        fragmented_vector<model::producer_identity> fenced;
-        fragmented_vector<rm_stm::tx_range> ongoing;
-        fragmented_vector<rm_stm::prepare_marker> prepared;
-        fragmented_vector<rm_stm::tx_range> aborted;
-        fragmented_vector<rm_stm::abort_index> abort_indexes;
-        model::offset offset;
-        fragmented_vector<seq_entry_v1> seqs;
-
-        bool operator==(const tx_snapshot_v1&) const = default;
-    };
-
-    struct tx_snapshot_v2 {
-        static constexpr uint8_t version = 2;
-
-        fragmented_vector<model::producer_identity> fenced;
-        fragmented_vector<rm_stm::tx_range> ongoing;
-        fragmented_vector<rm_stm::prepare_marker> prepared;
-        fragmented_vector<rm_stm::tx_range> aborted;
-        fragmented_vector<rm_stm::abort_index> abort_indexes;
-        model::offset offset;
-        fragmented_vector<rm_stm::seq_entry> seqs;
-
-        bool operator==(const tx_snapshot_v2&) const = default;
     };
 
     struct tx_snapshot_v3 {

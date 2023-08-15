@@ -2642,71 +2642,6 @@ rm_stm::apply_snapshot(stm_snapshot_header hdr, iobuf&& tx_ss_buf) {
               .tx_seq = entry.tx_seq,
               .tm = model::legacy_tm_ntp.tp.partition});
         }
-
-    } else if (hdr.version == tx_snapshot_v2::version) {
-        auto data_v2 = co_await reflection::async_adl<tx_snapshot_v2>{}.from(
-          data_parser);
-        move_snapshot_wo_seqs(data, data_v2);
-        data.seqs = std::move(data_v2.seqs);
-
-        for (auto& entry : data_v2.prepared) {
-            data.tx_data.push_back(tx_snapshot::tx_data_snapshot{
-              .pid = entry.pid,
-              .tx_seq = entry.tx_seq,
-              .tm = model::legacy_tm_ntp.tp.partition});
-        }
-    } else if (hdr.version == tx_snapshot_v1::version) {
-        auto data_v1 = co_await reflection::async_adl<tx_snapshot_v1>{}.from(
-          data_parser);
-        move_snapshot_wo_seqs(data, data_v1);
-        for (auto& seq_v1 : data_v1.seqs) {
-            seq_entry seq;
-            seq.pid = seq_v1.pid;
-            seq.seq = seq_v1.seq;
-            try {
-                seq.last_offset = from_log_offset(seq_v1.last_offset);
-            } catch (...) {
-                // ignoring outside the translation range errors
-                continue;
-            }
-            seq.seq_cache.reserve(seq_v1.seq_cache.size());
-            for (auto& item : seq_v1.seq_cache) {
-                try {
-                    seq.seq_cache.push_back(seq_cache_entry{
-                      .seq = item.seq, .offset = from_log_offset(item.offset)});
-                } catch (...) {
-                    // ignoring outside the translation range errors
-                    continue;
-                }
-            }
-            seq.last_write_timestamp = seq_v1.last_write_timestamp;
-            data.seqs.push_back(std::move(seq));
-        }
-
-        for (auto& entry : data_v1.prepared) {
-            data.tx_data.push_back(tx_snapshot::tx_data_snapshot{
-              .pid = entry.pid,
-              .tx_seq = entry.tx_seq,
-              .tm = model::legacy_tm_ntp.tp.partition});
-        }
-    } else if (hdr.version == tx_snapshot_v0::version) {
-        auto data_v0 = co_await reflection::async_adl<tx_snapshot_v0>{}.from(
-          data_parser);
-        move_snapshot_wo_seqs(data, data_v0);
-        for (auto seq_v0 : data_v0.seqs) {
-            auto seq = seq_entry{
-              .pid = seq_v0.pid,
-              .seq = seq_v0.seq,
-              .last_offset = kafka::offset{-1},
-              .last_write_timestamp = seq_v0.last_write_timestamp};
-            data.seqs.push_back(std::move(seq));
-        }
-        for (auto& entry : data_v0.prepared) {
-            data.tx_data.push_back(tx_snapshot::tx_data_snapshot{
-              .pid = entry.pid,
-              .tx_seq = entry.tx_seq,
-              .tm = model::legacy_tm_ntp.tp.partition});
-        }
     } else {
         vassert(
           false, "unsupported tx_snapshot_header version {}", hdr.version);
@@ -2816,7 +2751,7 @@ uint8_t rm_stm::active_snapshot_version() {
         return tx_snapshot_v3::version;
     }
 
-    return tx_snapshot_v2::version;
+    return tx_snapshot_v3::version;
 }
 
 template<class T>
@@ -3003,46 +2938,6 @@ ss::future<stm_snapshot> rm_stm::take_snapshot() {
                   }
 
                   fut_serialize = reflection::async_adl<tx_snapshot_v3>{}.to(
-                    tx_ss_buf, std::move(tx_ss));
-              } else if (version == tx_snapshot_v2::version) {
-                  tx_snapshot_v2 tx_ss;
-                  fill_snapshot_wo_seqs(tx_ss);
-                  for (const auto& entry : _log_state.seq_table) {
-                      tx_ss.seqs.push_back(entry.second.entry.copy());
-                  }
-                  tx_ss.offset = _insync_offset;
-                  fut_serialize = reflection::async_adl<tx_snapshot_v2>{}.to(
-                    tx_ss_buf, std::move(tx_ss));
-              } else if (version == tx_snapshot_v1::version) {
-                  tx_snapshot_v1 tx_ss;
-                  fill_snapshot_wo_seqs(tx_ss);
-                  for (const auto& it : _log_state.seq_table) {
-                      auto& entry = it.second.entry;
-                      seq_entry_v1 seqs;
-                      seqs.pid = entry.pid;
-                      seqs.seq = entry.seq;
-                      try {
-                          seqs.last_offset = to_log_offset(entry.last_offset);
-                      } catch (...) {
-                          // ignoring outside the translation range errors
-                          continue;
-                      }
-                      seqs.last_write_timestamp = entry.last_write_timestamp;
-                      seqs.seq_cache.reserve(seqs.seq_cache.size());
-                      for (auto& item : entry.seq_cache) {
-                          try {
-                              seqs.seq_cache.push_back(seq_cache_entry_v1{
-                                .seq = item.seq,
-                                .offset = to_log_offset(item.offset)});
-                          } catch (...) {
-                              // ignoring outside the translation range errors
-                              continue;
-                          }
-                      }
-                      tx_ss.seqs.push_back(std::move(seqs));
-                  }
-                  tx_ss.offset = _insync_offset;
-                  fut_serialize = reflection::async_adl<tx_snapshot_v1>{}.to(
                     tx_ss_buf, std::move(tx_ss));
               } else {
                   vassert(false, "unsupported tx_snapshot version {}", version);
