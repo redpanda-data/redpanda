@@ -296,6 +296,7 @@ private:
 
     friend std::ostream& operator<<(std::ostream&, const segment_appender&);
     friend class file_io_sanitizer;
+    friend struct segment_appender_test_accessor;
 };
 
 using segment_appender_ptr = std::unique_ptr<segment_appender>;
