@@ -11,7 +11,6 @@
 #include "cluster/rm_stm.h"
 #include "cluster/tests/randoms.h"
 #include "cluster/tx_snapshot_adl_utils.h"
-#include "features/feature_table.h"
 #include "finjector/hbadger.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
@@ -114,21 +113,16 @@ FIXTURE_TEST(test_tx_happy_tx, mux_state_machine_fixture) {
     start_raft();
 
     ss::sharded<cluster::tx_gateway_frontend> tx_gateway_frontend;
-    ss::sharded<features::feature_table> feature_table;
-    feature_table.start().get0();
     cluster::rm_stm stm(
       logger,
       _raft.get(),
       tx_gateway_frontend,
-      feature_table,
+      _feature_table,
       get_config_bound());
     stm.testing_only_disable_auto_abort();
 
     stm.start().get0();
-    auto stop = ss::defer([&stm, &feature_table] {
-        stm.stop().get0();
-        feature_table.stop().get0();
-    });
+    auto stop = ss::defer([&stm] { stm.stop().get0(); });
     auto tx_seq = model::tx_seq(0);
 
     wait_for_confirmed_leader();
@@ -205,21 +199,16 @@ FIXTURE_TEST(test_tx_aborted_tx_1, mux_state_machine_fixture) {
     start_raft();
 
     ss::sharded<cluster::tx_gateway_frontend> tx_gateway_frontend;
-    ss::sharded<features::feature_table> feature_table;
-    feature_table.start().get0();
     cluster::rm_stm stm(
       logger,
       _raft.get(),
       tx_gateway_frontend,
-      feature_table,
+      _feature_table,
       get_config_bound());
     stm.testing_only_disable_auto_abort();
 
     stm.start().get0();
-    auto stop = ss::defer([&stm, &feature_table] {
-        stm.stop().get0();
-        feature_table.stop().get0();
-    });
+    auto stop = ss::defer([&stm] { stm.stop().get0(); });
     auto tx_seq = model::tx_seq(0);
 
     wait_for_confirmed_leader();
@@ -300,21 +289,16 @@ FIXTURE_TEST(test_tx_aborted_tx_2, mux_state_machine_fixture) {
     start_raft();
 
     ss::sharded<cluster::tx_gateway_frontend> tx_gateway_frontend;
-    ss::sharded<features::feature_table> feature_table;
-    feature_table.start().get0();
     cluster::rm_stm stm(
       logger,
       _raft.get(),
       tx_gateway_frontend,
-      feature_table,
+      _feature_table,
       get_config_bound());
     stm.testing_only_disable_auto_abort();
 
     stm.start().get0();
-    auto stop = ss::defer([&stm, &feature_table] {
-        stm.stop().get0();
-        feature_table.stop().get0();
-    });
+    auto stop = ss::defer([&stm] { stm.stop().get0(); });
     auto tx_seq = model::tx_seq(0);
 
     wait_for_confirmed_leader();
@@ -400,21 +384,16 @@ FIXTURE_TEST(test_tx_unknown_produce, mux_state_machine_fixture) {
     start_raft();
 
     ss::sharded<cluster::tx_gateway_frontend> tx_gateway_frontend;
-    ss::sharded<features::feature_table> feature_table;
-    feature_table.start().get0();
     cluster::rm_stm stm(
       logger,
       _raft.get(),
       tx_gateway_frontend,
-      feature_table,
+      _feature_table,
       get_config_bound());
     stm.testing_only_disable_auto_abort();
 
     stm.start().get0();
-    auto stop = ss::defer([&stm, &feature_table] {
-        stm.stop().get0();
-        feature_table.stop().get0();
-    });
+    auto stop = ss::defer([&stm] { stm.stop().get0(); });
 
     wait_for_confirmed_leader();
     wait_for_meta_initialized();
@@ -446,21 +425,16 @@ FIXTURE_TEST(test_tx_begin_fences_produce, mux_state_machine_fixture) {
     start_raft();
 
     ss::sharded<cluster::tx_gateway_frontend> tx_gateway_frontend;
-    ss::sharded<features::feature_table> feature_table;
-    feature_table.start().get0();
     cluster::rm_stm stm(
       logger,
       _raft.get(),
       tx_gateway_frontend,
-      feature_table,
+      _feature_table,
       get_config_bound());
     stm.testing_only_disable_auto_abort();
 
     stm.start().get0();
-    auto stop = ss::defer([&stm, &feature_table] {
-        stm.stop().get0();
-        feature_table.stop().get0();
-    });
+    auto stop = ss::defer([&stm] { stm.stop().get0(); });
     auto tx_seq = model::tx_seq(0);
 
     wait_for_confirmed_leader();
@@ -516,21 +490,16 @@ FIXTURE_TEST(test_tx_post_aborted_produce, mux_state_machine_fixture) {
     start_raft();
 
     ss::sharded<cluster::tx_gateway_frontend> tx_gateway_frontend;
-    ss::sharded<features::feature_table> feature_table;
-    feature_table.start().get0();
     cluster::rm_stm stm(
       logger,
       _raft.get(),
       tx_gateway_frontend,
-      feature_table,
+      _feature_table,
       get_config_bound());
     stm.testing_only_disable_auto_abort();
 
     stm.start().get0();
-    auto stop = ss::defer([&stm, &feature_table] {
-        stm.stop().get0();
-        feature_table.stop().get0();
-    });
+    auto stop = ss::defer([&stm] { stm.stop().get0(); });
     auto tx_seq = model::tx_seq(0);
 
     wait_for_confirmed_leader();
@@ -590,22 +559,17 @@ FIXTURE_TEST(test_aborted_transactions, mux_state_machine_fixture) {
     start_raft();
 
     ss::sharded<cluster::tx_gateway_frontend> tx_gateway_frontend;
-    ss::sharded<features::feature_table> feature_table;
-    feature_table.start().get0();
     cluster::rm_stm stm(
       logger,
       _raft.get(),
       tx_gateway_frontend,
-      feature_table,
+      _feature_table,
       get_config_bound());
     stm.testing_only_disable_auto_abort();
 
     stm.start().get0();
 
-    auto stop = ss::defer([&stm, &feature_table] {
-        stm.stop().get0();
-        feature_table.stop().get0();
-    });
+    auto stop = ss::defer([&stm] { stm.stop().get0(); });
     wait_for_confirmed_leader();
     wait_for_meta_initialized();
 
