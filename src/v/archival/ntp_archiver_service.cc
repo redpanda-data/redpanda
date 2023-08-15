@@ -920,7 +920,6 @@ ss::future<cloud_storage::upload_result> ntp_archiver::upload_manifest(
       _conf->cloud_storage_initial_backoff,
       &rtc.get());
     retry_chain_logger ctxlog(archival_log, fib, _ntp.path());
-    auto units = co_await _parent.archival_meta_stm()->acquire_manifest_lock();
 
     auto upload_insync_offset = manifest().get_insync_offset();
 

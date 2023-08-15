@@ -778,7 +778,8 @@ uint64_t remote_partition::cloud_log_size() const {
 
 ss::future<> remote_partition::serialize_json_manifest_to_output_stream(
   ss::output_stream<char>& output) const {
-    return _manifest_view->stm_manifest().serialize_json(output);
+    auto tmp = _manifest_view->stm_manifest().clone();
+    co_await tmp.serialize_json(output);
 }
 
 // returns term last kafka offset
