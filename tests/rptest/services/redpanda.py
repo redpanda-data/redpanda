@@ -59,7 +59,6 @@ from rptest.services.rolling_restarter import RollingRestarter
 from rptest.services.storage import ClusterStorage, NodeStorage, NodeCacheStorage
 from rptest.services.storage_tiers import AdvertisedTierConfig, AdvertisedTierConfigs, \
     CloudTierName, load_tier_profiles, tiers_config_filename
-from rptest.services.storage_failure_injection import FailureInjectionConfig
 from rptest.services.utils import BadLogLines, NodeCrash
 from rptest.util import inject_remote_script, ssh_output_stderr, wait_until_result
 
