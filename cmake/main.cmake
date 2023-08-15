@@ -146,6 +146,10 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 
 find_package(Valgrind REQUIRED)
 
+# normalize dependency naming.
+find_package(RapidJSON)
+add_library(RapidJSON::rapidjson ALIAS rapidjson)
+
 # add code
 include(testing)
 include(v_library)
