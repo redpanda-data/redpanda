@@ -28,12 +28,14 @@
 #include <string_view>
 
 using namespace storage; // NOLINT
+struct storage::segment_appender_test_accessor {
+    segment_appender& sa; // NOLINT
+
+    auto& inflight() { return sa._inflight; }
+    auto dispatched() { return sa._inflight_dispatched; }
+};
 
 namespace {
-
-struct segment_appender_test_accessor {
-    segment_appender& sa;
-};
 
 segment_appender_test_accessor access(segment_appender& sa) { return {sa}; }
 
