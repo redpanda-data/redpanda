@@ -273,6 +273,21 @@ public:
       std::optional<cloud_storage_clients::http_byte_range> byte_range
       = std::nullopt);
 
+    /// \brief Upload a controller snapshot file to S3
+    ///
+    /// The method uploads the snapshot while tolerating some errors. It can
+    /// retry after some errors.
+    /// \param remote_path is a snapshot's name in S3
+    /// \param file is a controller snapshot file
+    /// \param parent is used for logging and retries
+    /// \param lazy_abort_source is used to stop further upload attempts
+    ss::future<upload_result> upload_controller_snapshot(
+      const cloud_storage_clients::bucket_name& bucket,
+      const remote_segment_path& remote_path,
+      const ss::file& file,
+      retry_chain_node& parent,
+      lazy_abort_source& lazy_abort_source);
+
     /// \brief Download segment index from S3
     /// \param ix is the index which will be populated from data from the object
     /// store

@@ -451,6 +451,34 @@ void remote::notify_external_subscribers(
       [](const event_filter& f) { return !f._promise.has_value(); });
 }
 
+ss::future<upload_result> remote::upload_controller_snapshot(
+  const cloud_storage_clients::bucket_name& bucket,
+  const remote_segment_path& remote_path,
+  const ss::file& file,
+  retry_chain_node& parent,
+  lazy_abort_source& lazy_abort_source) {
+    auto reset_str = [&file] {
+        using provider_t = std::unique_ptr<storage::stream_provider>;
+        ss::file_input_stream_options opts;
+        return ss::make_ready_future<provider_t>(
+          std::make_unique<storage::segment_reader_handle>(
+            ss::make_file_input_stream(file, opts)));
+    };
+    auto file_size = co_await file.size();
+    co_return co_await upload_stream(
+      bucket,
+      remote_path,
+      file_size,
+      reset_str,
+      parent,
+      lazy_abort_source,
+      "controller snapshot",
+      api_activity_notification::controller_snapshot_upload,
+      [this] { _probe.controller_snapshot_failed_upload(); },
+      [this] { _probe.controller_snapshot_successful_upload(); },
+      [this] { _probe.controller_snapshot_upload_backoff(); });
+}
+
 template<
   typename FailedUploadMetricFn,
   typename SuccessfulUploadMetricFn,
