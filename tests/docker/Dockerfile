@@ -183,7 +183,7 @@ RUN /k8s && \
 
 FROM golang as byoc-mock
 
-COPY --chown=0:0 --chmod=0755 tests/go/byoc-mock /opt/redpanda-tests/byoc-mock
+COPY --chown=0:0 --chmod=0755 tests/go/byoc-mock /opt/redpanda-tests/go/byoc-mock
 COPY --chown=0:0 --chmod=0755 tests/docker/ducktape-deps/byoc-mock /
 RUN /byoc-mock && rm /byoc-mock
 
@@ -262,7 +262,7 @@ COPY --from=k8s /usr/local/bin/kubectl /usr/local/bin/helm /usr/local/bin/
 COPY --from=kaf /usr/local/bin/kaf /usr/local/bin/
 COPY --from=kcl /usr/local/bin/kcl /usr/local/bin/
 COPY --from=kgo-verifier /opt/kgo-verifier /opt/kgo-verifier
-COPY --from=byoc-mock /opt/redpanda-tests/byoc-mock/.rpk.managed-byoc /root/.local/bin/.rpk.managed-byoc
+COPY --from=byoc-mock /opt/redpanda-tests/go/byoc-mock/.rpk.managed-byoc /root/.local/bin/.rpk.managed-byoc
 
 RUN ldconfig
 
