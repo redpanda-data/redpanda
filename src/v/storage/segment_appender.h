@@ -282,9 +282,17 @@ private:
     friend std::ostream& operator<<(std::ostream& s, const inflight_write& op);
 
     ss::chunked_fifo<ss::lw_shared_ptr<inflight_write>> _inflight;
-    // the number of dispatched writes, equal to the count of elements in
-    // the _inflight container which have state == DISPATCHED
+    // A gauge of the current number of oustanding dispatched writes, equal to
+    // the count of elements in the _inflight container which have state ==
+    // DISPATCHED
     size_t _inflight_dispatched{0};
+    // A counter of the number of dispatched writes (i.e., dma_write calls) over
+    // the lifetime of the appender
+    size_t _dispatched_writes{0};
+    // A counter of the number of writes that were succesfully merged into a
+    // queued write prior to dispatch, hence don't need to be separately
+    // dispatched
+    size_t _merged_writes{0};
     callbacks* _callbacks = nullptr;
     ss::future<>
     maybe_advance_stable_offset(const ss::lw_shared_ptr<inflight_write>&);

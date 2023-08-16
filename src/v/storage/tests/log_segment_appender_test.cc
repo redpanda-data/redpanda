@@ -11,6 +11,7 @@
 #include "bytes/iostream.h"
 #include "random/generators.h"
 #include "seastarx.h"
+#include "storage/chunk_cache.h"
 #include "storage/segment_appender.h"
 #include "storage/storage_resources.h"
 
@@ -36,7 +37,9 @@ struct storage::segment_appender_test_accessor {
     segment_appender& sa; // NOLINT
 
     auto& inflight() { return sa._inflight; }
-    auto dispatched() { return sa._inflight_dispatched; }
+    auto inflight_dispatched() { return sa._inflight_dispatched; }
+    auto total_dispatched() { return sa._dispatched_writes; }
+    auto total_merged() { return sa._merged_writes; }
 };
 
 namespace {
@@ -71,6 +74,8 @@ iobuf make_iobuf_with_char(size_t len, unsigned char c) {
     ret.append(buf.data(), buf.size());
     return ret;
 }
+
+size_t default_chunk_size() { return internal::chunks().chunk_size(); }
 
 } // namespace
 
@@ -119,7 +124,8 @@ static void run_test_can_append_mixed(size_t fallocate_size) {
     auto appender = make_segment_appender(f, resources);
     auto close = ss::defer([&appender] { appender.close().get(); });
     auto alignment = f.disk_write_dma_alignment();
-    for (size_t i = 0, acc = 0; i < 100; ++i) {
+    constexpr size_t iterations = 100;
+    for (size_t i = 0, acc = 0; i < iterations; ++i) {
         iobuf original;
         const size_t step = random_generators::get_int<size_t>(0, alignment * 2)
                             + 1;
@@ -133,7 +139,7 @@ static void run_test_can_append_mixed(size_t fallocate_size) {
         appender.flush().get();
         BOOST_REQUIRE_EQUAL(acc + step, appender.file_byte_offset());
         // now there should be nothing in-flight
-        BOOST_CHECK_EQUAL(access(appender).dispatched(), 0);
+        BOOST_CHECK_EQUAL(access(appender).inflight_dispatched(), 0);
         BOOST_CHECK_EQUAL(access(appender).inflight().size(), 0);
         auto in = make_file_input_stream(f, acc);
         iobuf result = read_iobuf_exactly(in, step).get0();
@@ -171,6 +177,16 @@ static void run_test_can_append_mixed(size_t fallocate_size) {
         acc += step;
         in.close().get();
     }
+
+    // every iteration we do a append+flush+get, so there will be at least as
+    // many writes as iterations, but actually somewhat more because about 1 of
+    // every 4 appends gets split across a chunk which means 2 writes
+    auto write_count = access(appender).total_dispatched();
+    BOOST_CHECK_GE(write_count, iterations);
+    BOOST_CHECK_LT(write_count, 2 * iterations);
+
+    // we expect 0 merges with the A+F pattern
+    BOOST_CHECK_EQUAL(access(appender).total_merged(), 0);
 }
 
 SEASTAR_THREAD_TEST_CASE(test_can_append_mixed) {
@@ -185,14 +201,16 @@ static void run_test_can_append_10MB(size_t fallocate_size) {
     auto appender = make_segment_appender(f, resources);
     auto close = ss::defer([&appender] { appender.close().get(); });
 
-    for (size_t i = 0; i < 10; ++i) {
-        constexpr size_t one_meg = 1024 * 1024;
+    constexpr size_t iterations = 10;
+    constexpr size_t one_meg = 1024 * 1024;
+
+    for (size_t i = 0; i < iterations; ++i) {
         iobuf original = make_random_data(one_meg);
         appender.append(original).get();
         appender.flush().get();
 
         // now there should be nothing in-flight
-        BOOST_CHECK_EQUAL(access(appender).dispatched(), 0);
+        BOOST_CHECK_EQUAL(access(appender).inflight_dispatched(), 0);
         BOOST_CHECK_EQUAL(access(appender).inflight().size(), 0);
 
         auto in = make_file_input_stream(f, i * one_meg);
@@ -200,6 +218,18 @@ static void run_test_can_append_10MB(size_t fallocate_size) {
         BOOST_CHECK_EQUAL(original, result);
         in.close().get();
     }
+
+    // most of the writes will come from breaking the large 1 MiB writes up into
+    // chunks, the last term here is for the final flush of the partial chunk
+    // but is zero currently because the chunk size goes evenly into 1 MiB
+    auto expected_writes
+      = iterations
+        * (one_meg / default_chunk_size() + !!(one_meg % default_chunk_size()));
+    auto write_count = access(appender).total_dispatched();
+    BOOST_CHECK_EQUAL(write_count, expected_writes);
+
+    // we expect 0 merges with the A+F pattern
+    BOOST_CHECK_EQUAL(access(appender).total_merged(), 0);
 }
 
 SEASTAR_THREAD_TEST_CASE(test_can_append_10MB) {
@@ -277,7 +307,7 @@ static void run_concurrent_append_flush(
         max_inflight = std::max(
           max_inflight, access(appender).inflight().size());
         max_dispatched = std::max(
-          max_dispatched, access(appender).dispatched());
+          max_dispatched, access(appender).inflight_dispatched());
 
         switch (next_action) {
         case APPEND:
@@ -315,7 +345,7 @@ static void run_concurrent_append_flush(
     appender.flush().get();
 
     // now there should be nothing in-flight
-    BOOST_CHECK_EQUAL(access(appender).dispatched(), 0);
+    BOOST_CHECK_EQUAL(access(appender).inflight_dispatched(), 0);
     BOOST_CHECK_EQUAL(access(appender).inflight().size(), 0);
 
     // now we expect all the prior flush futures to be available
@@ -325,6 +355,10 @@ static void run_concurrent_append_flush(
         BOOST_REQUIRE(f.available());
         f.get(); // propagate any exception
     }
+
+    // check that we got some writes and merges (we don't know how many)
+    BOOST_CHECK_GT(access(appender).total_dispatched(), 0);
+    BOOST_CHECK_GT(access(appender).total_merged(), 0);
 
     // verify the output
     auto in = make_file_input_stream(f);
@@ -413,7 +447,7 @@ static void run_test_fallocate_size(size_t fallocate_size) {
         appender.flush().get();
 
         // now there should be nothing in-flight
-        BOOST_CHECK_EQUAL(access(appender).dispatched(), 0);
+        BOOST_CHECK_EQUAL(access(appender).inflight_dispatched(), 0);
         BOOST_CHECK_EQUAL(access(appender).inflight().size(), 0);
 
         auto in = make_file_input_stream(f, i * one_meg);
