@@ -902,8 +902,15 @@ ss::future<> remote_partition::stop() {
 
     // Signal to the eviction loop that it should terminate.
     _has_evictions_cvar.broken();
+    vlog(
+      _ctxlog.debug,
+      "remote partition stop - closing gate. holders: {}",
+      _gate.get_count());
 
     co_await _gate.close();
+
+    vlog(
+      _ctxlog.debug, "remote partition stop - gate closed, unlinking segments");
     // Remove materialized_segment_state from the list that contains it, to
     // avoid it getting registered for eviction and stop.
     for (auto& pair : _segments) {

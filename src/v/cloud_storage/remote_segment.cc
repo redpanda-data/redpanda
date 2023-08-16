@@ -1324,7 +1324,7 @@ remote_segment_batch_reader::remote_segment_batch_reader(
   , _config(config)
   , _probe(probe)
   , _rtc(_seg->get_retry_chain_node())
-  , _ctxlog(cst_log, _rtc, _seg->get_ntp().path())
+  , _ctxlog(cst_log, _rtc, _seg->get_segment_path()().native())
   , _cur_rp_offset(_seg->get_base_rp_offset())
   , _cur_delta(_seg->get_base_offset_delta())
   , _units(std::move(units)) {
