@@ -370,11 +370,18 @@ class SchemaRegistryEndpoints(RedpandaTest):
 
     def _get_subjects_subject_versions_version_referenced_by(
             self, subject, version, headers=HTTP_GET_HEADERS, **kwargs):
-        return self._request(
+        deprecated = self._request(
             "GET",
             f"subjects/{subject}/versions/{version}/referencedBy",
             headers=headers,
             **kwargs)
+        standard = self._request(
+            "GET",
+            f"subjects/{subject}/versions/{version}/referencedby",
+            headers=headers,
+            **kwargs)
+        assert standard.json() == deprecated.json()
+        return standard
 
     def _get_subjects_subject_versions(self,
                                        subject,
