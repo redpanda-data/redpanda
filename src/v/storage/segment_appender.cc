@@ -374,39 +374,40 @@ ss::future<> segment_appender::do_next_adaptive_fallocation() {
 
 ss::future<> segment_appender::maybe_advance_stable_offset(
   const ss::lw_shared_ptr<inflight_write>& write) {
+    vassert(!_inflight.empty(), "expected non-empty inflight set");
+    write->set_state(write_state::DONE);
+    std::optional<size_t> committed;
+
     /*
      * ack the largest committed offset such that all smaller
      * offsets have been written to disk.
      */
-    vassert(!_inflight.empty(), "expected non-empty inflight set");
-    if (_inflight.front() == write) {
-        auto committed = _inflight.front()->committed_offset;
+    while (!_inflight.empty()
+           && _inflight.front()->state == write_state::DONE) {
+        auto next_co = _inflight.front()->committed_offset;
+
+        // check that in-flight writes have increasing offsets
+        vassert(
+          !committed || committed < next_co,
+          "invalid committed offset {} >= {}",
+          committed,
+          next_co);
+
+        committed = next_co;
         _inflight.pop_front();
+    }
 
-        while (!_inflight.empty()) {
-            auto next = _inflight.front();
-            if (next->state == write_state::DONE) {
-                _inflight.pop_front();
-                vassert(
-                  committed < next->committed_offset,
-                  "invalid committed offset {} >= {}",
-                  committed,
-                  next->committed_offset);
-                committed = next->committed_offset;
-                continue;
-            }
-            break;
-        }
-
-        if (_callbacks) {
-            _callbacks->committed_physical_offset(committed);
-        }
-        _stable_offset = committed;
-        return process_flush_ops(committed);
-    } else {
-        write->set_state(write_state::DONE);
+    if (!committed) {
         return ss::now();
     }
+
+    // if we advanced the committed offset, do the callbacks and
+    // trigger any flush operations
+    if (_callbacks) {
+        _callbacks->committed_physical_offset(*committed);
+    }
+    _stable_offset = *committed;
+    return process_flush_ops(*committed);
 }
 
 ss::future<> segment_appender::process_flush_ops(size_t committed) {
