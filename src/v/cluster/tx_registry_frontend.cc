@@ -492,7 +492,6 @@ tx_registry_frontend::do_route_locally(T&& request) {
                             vlog(txlog.trace, "sending name:{} {}", T::name, r);
                             return r;
                         });
-                      ;
                   });
             });
       });

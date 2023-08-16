@@ -145,11 +145,116 @@ auto tx_gateway_frontend::with_stm(model::partition_id tm, Func&& func) {
         return func(tx_errc::not_coordinator);
     }
 
-    return ss::with_gate(stm->gate(), [func = std::forward<Func>(func), stm]() {
-        vlog(txlog.trace, "entered tm_stm's gate");
-        return func(stm).finally(
-          [] { vlog(txlog.trace, "leaving tm_stm's gate"); });
-    });
+    return ss::with_gate(
+      stm->gate(), [func = std::forward<Func>(func), stm]() mutable {
+          vlog(txlog.trace, "entered tm_stm's gate");
+          return func(stm).finally(
+            [] { vlog(txlog.trace, "leaving tm_stm's gate"); });
+      });
+}
+
+template<typename T>
+ss::future<typename T::reply>
+tx_gateway_frontend::do_route_globally(model::ntp tx_ntp, T&& request) {
+    if (!_metadata_cache.local().contains(tx_ntp)) {
+        vlog(txlog.warn, "can't find {} in the metadata cache", tx_ntp);
+        co_return typename T::reply(tx_errc::partition_not_exists);
+    }
+
+    auto leader_opt = _leaders.local().get_leader(tx_ntp);
+    if (!leader_opt) {
+        vlog(txlog.warn, "can't find a leader for {}", tx_ntp);
+        co_return typename T::reply(tx_errc::leader_not_found);
+    }
+    auto leader = leader_opt.value();
+
+    auto _self = _controller->self();
+    if (leader == _self) {
+        co_return co_await do_route_locally(tx_ntp, std::move(request));
+    }
+
+    co_return co_await do_dispatch(leader, std::move(request));
+}
+
+template<typename T>
+ss::future<typename T::reply>
+tx_gateway_frontend::do_dispatch(model::node_id target, T&& request) {
+    vlog(
+      txlog.trace,
+      "dispatching name:{}, from:{}, to:{}, request:{}",
+      T::name,
+      _controller->self(),
+      target,
+      request);
+    auto timeout = request.timeout;
+    return _connection_cache.local()
+      .with_node_client<tx_gateway_client_protocol>(
+        _controller->self(),
+        ss::this_shard_id(),
+        target,
+        timeout,
+        [this,
+         request = std::move(request)](tx_gateway_client_protocol cp) mutable {
+            return send(cp, std::move(request));
+        })
+      .then(&rpc::get_ctx_data<typename T::reply>)
+      .then([](result<typename T::reply> r) {
+          if (r.has_error()) {
+              vlog(txlog.warn, "received name:{} error:{}", T::name, r.error());
+              return typename T::reply(tx_errc::unknown_server_error);
+          }
+          auto reply = r.value();
+          vlog(txlog.trace, "received name:{} {}", T::name, reply);
+          return reply;
+      });
+}
+
+template<typename T>
+ss::future<typename T::reply>
+tx_gateway_frontend::do_route_locally(model::ntp tx_ntp, T&& request) {
+    vlog(txlog.trace, "processing name:{} {}", T::name, request);
+
+    auto shard = _shard_table.local().shard_for(tx_ntp);
+
+    if (!shard.has_value()) {
+        vlog(
+          txlog.warn,
+          "sending name:{} {} ec:{}",
+          T::name,
+          request,
+          tx_errc::shard_not_found);
+        co_return typename T::reply(tx_errc::shard_not_found);
+    }
+
+    co_return co_await container().invoke_on(
+      *shard,
+      _ssg,
+      [tm = tx_ntp.tp.partition, request = std::move(request)](
+        tx_gateway_frontend& self) -> ss::future<typename T::reply> {
+          if (self._gate.is_closed()) {
+              return ss::make_ready_future<typename T::reply>(
+                tx_errc::not_coordinator);
+          }
+
+          return ss::with_gate(
+            self._gate, [&self, tm, request = std::move(request)] {
+                return self.with_stm(
+                  tm,
+                  [&self, request = std::move(request)](
+                    checked<ss::shared_ptr<tm_stm>, tx_errc> r) mutable {
+                      if (!r) {
+                          return ss::make_ready_future<typename T::reply>(
+                            r.error());
+                      }
+                      auto stm = r.value();
+                      return self.process_locally(stm, std::move(request))
+                        .then([](typename T::reply r) {
+                            vlog(txlog.trace, "sending name:{} {}", T::name, r);
+                            return r;
+                        });
+                  });
+            });
+      });
 }
 
 static add_paritions_tx_reply make_add_partitions_error_response(
