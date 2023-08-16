@@ -673,7 +673,6 @@ bool segment_appender::inflight_write::try_merge(
 }
 
 std::ostream& operator<<(std::ostream& o, const segment_appender& a) {
-    // NOTE: intrusivelist.size() == O(N) but often N is very small, ~8
     return o << "{no_of_chunks:" << a._opts.number_of_chunks
              << ", closed:" << a._closed
              << ", fallocation_offset:" << a._fallocation_offset
