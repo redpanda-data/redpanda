@@ -16,12 +16,43 @@
 #include "utils/retry_chain_node.h"
 
 #include <seastar/core/gate.hh>
+#include <seastar/core/iostream.hh>
 
 #include <absl/container/btree_map.h>
 
 namespace cloud_storage {
 
 class remote_segment;
+
+struct eager_chunk_stream {
+    enum class stream_state {
+        in_wait_queue,
+        awaiting_hydration,
+        chunk_in_cache,
+        download_cancelled_timeout,
+        ready,
+    };
+
+    ss::condition_variable stream_available;
+    std::optional<ss::input_stream<char>> stream;
+
+    chunk_start_offset_t first_offset;
+    chunk_start_offset_t last_offset;
+
+    stream_state state{eager_chunk_stream::stream_state::in_wait_queue};
+
+    void set_stream_and_signal(
+      ss::input_stream<char> s,
+      chunk_start_offset_t start,
+      chunk_start_offset_t end);
+
+    ss::future<> wait_for_stream();
+};
+
+std::ostream&
+operator<<(std::ostream& os, eager_chunk_stream::stream_state state);
+
+using eager_stream_ptr = ss::lw_shared_ptr<eager_chunk_stream>;
 
 class segment_chunks {
 public:
