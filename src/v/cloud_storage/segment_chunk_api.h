@@ -189,4 +189,6 @@ private:
     map_t _chunks;
 };
 
+std::ostream& operator<<(std::ostream&, const segment_chunk_range&);
+
 } // namespace cloud_storage

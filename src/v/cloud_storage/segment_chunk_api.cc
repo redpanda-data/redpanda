@@ -486,4 +486,13 @@ segment_chunk_range::map_t::iterator segment_chunk_range::end() {
     return _chunks.end();
 }
 
+std::ostream& operator<<(std::ostream& os, const segment_chunk_range& range) {
+    fmt::print(
+      os,
+      "segment_chunk_range{{first: {}, last: {}}}",
+      range.first_offset(),
+      range.last_offset());
+    return os;
+}
+
 } // namespace cloud_storage
