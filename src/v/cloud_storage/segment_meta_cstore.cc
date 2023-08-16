@@ -37,15 +37,15 @@ using gauge_col_t = segment_meta_column<int64_t, int64_xor_alg>;
 
 /// Sampling rate of the indexer inside the column store, if
 /// sampling_rate == 1 every row is indexed, 2 - every second row, etc
-/// The value 8 with max_frame_size set to 64 will give us 8 hints per
+/// The value 8 with max_frame_size set to 1024 will give us 8 hints per
 /// frame (frame has 64 rows). There is no measurable difference between
 /// value 8 and smaller values.
-static constexpr uint32_t sampling_rate = 8;
-
 // Sampling rate should be proportional to max_frame_size so we will
 // sample first row of every frame.
 static_assert(
-  gauge_col_t::max_frame_size % sampling_rate == 0, "Invalid sampling rate");
+  cstore_max_frame_size % (details::FOR_buffer_depth * cstore_sampling_rate)
+    == 0,
+  "Invalid sampling rate");
 
 enum class segment_meta_ix {
     is_compacted,
@@ -286,7 +286,8 @@ public:
 
         if (
           ix
-            % static_cast<uint32_t>(::details::FOR_buffer_depth * sampling_rate)
+            % static_cast<uint32_t>(
+              ::details::FOR_buffer_depth * cstore_sampling_rate)
           == 0) {
             // At the beginning of every row we need to collect
             // a set of hints to speed up the subsequent random
