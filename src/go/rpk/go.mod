@@ -8,7 +8,6 @@ require (
 	github.com/avast/retry-go v3.0.0+incompatible
 	github.com/aws/aws-sdk-go v1.44.300
 	github.com/beevik/ntp v1.2.0
-	github.com/cespare/xxhash v1.1.0
 	github.com/coreos/go-systemd/v22 v22.5.0
 	github.com/docker/docker v24.0.4+incompatible
 	github.com/docker/go-connections v0.4.0
@@ -18,6 +17,7 @@ require (
 	github.com/lestrrat-go/jwx v1.2.26
 	github.com/lorenzosaino/go-sysctl v0.3.1
 	github.com/moby/term v0.5.0
+	github.com/opencontainers/go-digest v1.0.0
 	github.com/opencontainers/image-spec v1.1.0-rc4
 	github.com/pkg/browser v0.0.0-20210911075715-681adbf594b8
 	github.com/pkg/errors v0.9.1
@@ -89,7 +89,6 @@ require (
 	github.com/modern-go/reflect2 v1.0.2 // indirect
 	github.com/morikuni/aec v0.0.0-20170113033406-39771216ff4c // indirect
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 // indirect
-	github.com/opencontainers/go-digest v1.0.0 // indirect
 	github.com/pierrec/lz4/v4 v4.1.18 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/tklauser/numcpus v0.6.1 // indirect
