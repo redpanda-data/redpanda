@@ -150,6 +150,11 @@ server::routes_t get_schema_registry_routes(ss::gate& gate, one_shot& es) {
       wrap(gate, es, get_subject_versions_version_referenced_by)});
 
     routes.routes.emplace_back(server::route_t{
+      ss::httpd::schema_registry_json::
+        get_subject_versions_version_referenced_by_deprecated,
+      wrap(gate, es, get_subject_versions_version_referenced_by)});
+
+    routes.routes.emplace_back(server::route_t{
       ss::httpd::schema_registry_json::delete_subject,
       wrap(gate, es, delete_subject)});
 
