@@ -444,6 +444,7 @@ ss::future<> recovery_stm::replicate(
         return ss::now();
     }
     meta.value()->last_sent_offset = _last_batch_offset;
+    meta.value()->last_sent_protocol_meta = r.metadata();
     _ptr->update_node_append_timestamp(_node_id);
 
     auto seq = _ptr->next_follower_sequence(_node_id);
@@ -486,7 +487,7 @@ ss::future<> recovery_stm::replicate(
           // If AppendEntries fails because of log inconsistency: decrement
           // nextIndex and retry(§5.3)
 
-          if (r.value().result == append_entries_reply::status::failure) {
+          if (r.value().result == reply_result::failure) {
               auto meta = get_follower_meta();
               if (!meta) {
                   _stop_requested = true;

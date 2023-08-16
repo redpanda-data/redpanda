@@ -2,7 +2,8 @@
     "namespace": "raft",
     "service_name": "raftgen",
     "includes": [
-        "raft/types.h"
+        "raft/types.h",
+        "raft/heartbeats.h"
     ],
     "methods": [
         {
@@ -19,6 +20,11 @@
             "name": "heartbeat",
             "input_type": "heartbeat_request",
             "output_type": "heartbeat_reply"
+        },
+        {
+            "name": "heartbeat_v2",
+            "input_type": "heartbeat_request_v2",
+            "output_type": "heartbeat_reply_v2"
         },
         {
             "name": "install_snapshot",

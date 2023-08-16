@@ -147,6 +147,7 @@ void follower_index_metadata::reset() {
     last_successful_received_seq = follower_req_seq{0};
     last_suppress_heartbeats_seq = follower_req_seq{0};
     suppress_heartbeats = heartbeats_suppressed::no;
+    last_sent_protocol_meta.reset();
 }
 
 std::ostream& operator<<(std::ostream& o, const vnode& id) {
@@ -224,19 +225,18 @@ std::ostream& operator<<(std::ostream& o, const vote_reply& r) {
              << ", vote_granted: " << r.granted << ", log_ok:" << r.log_ok
              << "}";
 }
-std::ostream&
-operator<<(std::ostream& o, const append_entries_reply::status& r) {
+std::ostream& operator<<(std::ostream& o, const reply_result& r) {
     switch (r) {
-    case append_entries_reply::status::success:
+    case reply_result::success:
         o << "success";
         return o;
-    case append_entries_reply::status::failure:
+    case reply_result::failure:
         o << "failure";
         return o;
-    case append_entries_reply::status::group_unavailable:
+    case reply_result::group_unavailable:
         o << "group_unavailable";
         return o;
-    case append_entries_reply::status::timeout:
+    case reply_result::timeout:
         o << "timeout";
         return o;
     }
@@ -580,8 +580,7 @@ void heartbeat_reply::serde_read(iobuf_parser& src, const serde::header& hdr) {
     }
 
     for (size_t i = 0; i < size; ++i) {
-        reply.meta[i].result = read_nested<raft::append_entries_reply::status>(
-          in, 0U);
+        reply.meta[i].result = read_nested<raft::reply_result>(in, 0U);
     }
 
     for (auto& m : reply.meta) {

@@ -178,6 +178,8 @@ struct follower_index_metadata {
     heartbeats_suppressed suppress_heartbeats = heartbeats_suppressed::no;
     follower_req_seq last_suppress_heartbeats_seq{0};
 
+    std::optional<protocol_metadata> last_sent_protocol_meta;
+
     friend std::ostream&
     operator<<(std::ostream& o, const follower_index_metadata& i);
 };
@@ -290,6 +292,12 @@ private:
     append_entries_request _request;
 };
 
+enum class reply_result : uint8_t {
+    success,
+    failure,
+    group_unavailable,
+    timeout
+};
 /*
  * append_entries_reply uses two different types of serialization: when
  * encoding/decoding directly normal adl/serde per-field serialization is used.
@@ -302,12 +310,7 @@ struct append_entries_reply
       serde::version<0>,
       serde::compat_version<0>> {
     using rpc_adl_exempt = std::true_type;
-    enum class status : uint8_t {
-        success,
-        failure,
-        group_unavailable,
-        timeout
-    };
+
     // node id to validate on receiver
     vnode target_node_id;
     /// \brief callee's node_id; work-around for batched heartbeats
@@ -324,7 +327,7 @@ struct append_entries_reply
     // only valid for not successfull append_entries reply
     model::offset last_term_base_offset;
     /// \brief did the rpc succeed or not
-    status result = status::failure;
+    reply_result result = reply_result::failure;
 
     friend std::ostream&
     operator<<(std::ostream& o, const append_entries_reply& r);
@@ -818,7 +821,7 @@ struct scheduling_config {
 };
 
 std::ostream& operator<<(std::ostream& o, const consistency_level& l);
-std::ostream& operator<<(std::ostream& o, const append_entries_reply::status&);
+std::ostream& operator<<(std::ostream& o, const reply_result&);
 
 using with_learner_recovery_throttle
   = ss::bool_class<struct with_recovery_throttle_tag>;

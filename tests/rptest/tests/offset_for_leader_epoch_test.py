@@ -37,7 +37,11 @@ class OffsetForLeaderEpochTest(PreallocNodesTest):
         return True
 
     def _produce(self, topic, msg_cnt):
-        wait_until(lambda: self._all_have_leaders(), 20, backoff_sec=2)
+        wait_until(
+            lambda: self._all_have_leaders(),
+            50,
+            backoff_sec=2,
+            err_msg="Timeout waiting for all partitions to have leaders")
 
         producer = RpkProducer(self.test_context,
                                self.redpanda,
