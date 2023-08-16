@@ -1810,6 +1810,12 @@ configuration::configuration()
       "Number of chunks to prefetch ahead of every downloaded chunk",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       0)
+  , cloud_storage_enable_streaming_read(
+      *this,
+      "cloud_storage_enable_streaming_read",
+      "Stream response while downloading chunk",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      true)
   , superusers(
       *this,
       "superusers",

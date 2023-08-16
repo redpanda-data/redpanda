@@ -348,6 +348,7 @@ struct configuration final : public config_store {
     enum_property<model::cloud_storage_chunk_eviction_strategy>
       cloud_storage_chunk_eviction_strategy;
     property<uint16_t> cloud_storage_chunk_prefetch;
+    property<bool> cloud_storage_enable_streaming_read;
 
     one_or_many_property<ss::sstring> superusers;
 
