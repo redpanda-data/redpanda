@@ -175,6 +175,10 @@ private:
 
     uint32_t batch_types_to_write() const { return _batch_types_to_write; }
 
+    // called to assert that no writes are currently in progress, dying if
+    // there are
+    void check_no_dispatched_writes();
+
     ss::file _out;
     options _opts;
     bool _closed{false};
@@ -244,8 +248,7 @@ private:
         void set_state(write_state new_state) {
             // the only allowed transitions are QUEUED -> DISPATCHED -> DONE
             vassert(
-              (state == QUEUED || state == DISPATCHED)
-                && (int)new_state == (int)state + 1,
+              state < DONE && (int)new_state == (int)state + 1,
               "bad transition {} -> {}",
               (int)state,
               (int)new_state);
@@ -279,6 +282,9 @@ private:
     friend std::ostream& operator<<(std::ostream& s, const inflight_write& op);
 
     ss::chunked_fifo<ss::lw_shared_ptr<inflight_write>> _inflight;
+    // the number of dispatched writes, equal to the count of elements in
+    // the _inflight container which have state == DISPATCHED
+    size_t _inflight_dispatched{0};
     callbacks* _callbacks = nullptr;
     ss::future<>
     maybe_advance_stable_offset(const ss::lw_shared_ptr<inflight_write>&);

@@ -27,6 +27,7 @@
 
 #include <fmt/format.h>
 
+#include <optional>
 #include <ostream>
 
 namespace storage {
@@ -76,12 +77,7 @@ segment_appender::~segment_appender() noexcept {
       _bytes_flush_pending == 0 && _closed,
       "Must flush & close before deleting {}",
       *this);
-    if (_prev_head_write) {
-        vassert(
-          _prev_head_write->available_units() == 1,
-          "Unexpected pending head write {}",
-          *this);
-    }
+    check_no_dispatched_writes();
     vassert(
       _flush_ops.empty(),
       "Active flush operations on appender destroy {}",
@@ -105,6 +101,7 @@ segment_appender::segment_appender(segment_appender&& o) noexcept
   , _flushed_offset(o._flushed_offset)
   , _stable_offset(o._stable_offset)
   , _inflight(std::move(o._inflight))
+  , _inflight_dispatched(std::exchange(o._inflight_dispatched, 0))
   , _callbacks(std::exchange(o._callbacks, nullptr))
   , _inactive_timer([this] { handle_inactive_timer(); })
   , _chunk_size(o._chunk_size) {
@@ -195,6 +192,11 @@ ss::future<> segment_appender::do_append(const char* buf, const size_t n) {
                 return do_append(next_buf, next_sz);
             });
       });
+}
+
+void segment_appender::check_no_dispatched_writes() {
+    vassert(
+      _inflight_dispatched == 0, "Unexpected pending head write {}", *this);
 }
 
 void segment_appender::handle_inactive_timer() {
@@ -342,10 +344,7 @@ ss::future<> segment_appender::do_next_adaptive_fallocation() {
              _concurrent_flushes,
              ss::semaphore::max_counter(),
              [this, step]() mutable {
-                 vassert(
-                   _prev_head_write->available_units() == 1,
-                   "Unexpected pending head write {}",
-                   *this);
+                 check_no_dispatched_writes();
                  // step - compute step rounded to alignment(4096); this is
                  // needed because during a truncation the follow up fallocation
                  // might not be page aligned
@@ -378,12 +377,22 @@ ss::future<> segment_appender::do_next_adaptive_fallocation() {
 ss::future<> segment_appender::maybe_advance_stable_offset(
   const ss::lw_shared_ptr<inflight_write>& write) {
     vassert(!_inflight.empty(), "expected non-empty inflight set");
+
+    vassert(
+      write->state == write_state::DISPATCHED,
+      "write not in dispatched state: {}",
+      write);
+
     write->set_state(write_state::DONE);
+    --_inflight_dispatched;
+
     std::optional<size_t> committed;
 
     /*
-     * ack the largest committed offset such that all smaller
-     * offsets have been written to disk.
+     * Pop off the largest possible contiguous set of DONE writes
+     * (which may be zero or more as writes can finish out of order)
+     * and then ack the largest committed (i.e., last) offset, and
+     * process any pending flush operations.
      */
     while (!_inflight.empty()
            && _inflight.front()->state == write_state::DONE) {
@@ -532,6 +541,7 @@ void segment_appender::dispatch_background_head_write() {
                 // prevent any more writes from merging into this entry
                 // as it is about to be dma_write'd.
                 w->set_state(write_state::DISPATCHED);
+                ++_inflight_dispatched;
 
                 return _out
 #pragma clang diagnostic push
@@ -619,10 +629,7 @@ ss::future<> segment_appender::hard_flush() {
              _concurrent_flushes,
              ss::semaphore::max_counter(),
              [this]() mutable {
-                 vassert(
-                   _prev_head_write->available_units() == 1,
-                   "Unexpected pending head write {}",
-                   *this);
+                 check_no_dispatched_writes();
                  vassert(
                    _flush_ops.empty(),
                    "Pending flushes after hard flush {}",
@@ -677,6 +684,8 @@ std::ostream& operator<<(std::ostream& o, const segment_appender& a) {
              << ", closed:" << a._closed
              << ", fallocation_offset:" << a._fallocation_offset
              << ", committed_offset:" << a._committed_offset
+             << ", inflight_writes:" << a._inflight.size()
+             << ", dispatched_writes:" << a._inflight_dispatched
              << ", bytes_flush_pending:" << a._bytes_flush_pending << "}";
 }
 
