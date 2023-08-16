@@ -2192,7 +2192,7 @@ ss::future<> rm_stm::reduce_aborted_list() {
         return ss::now();
     }
     _is_abort_idx_reduction_requested = true;
-    return make_snapshot().finally(
+    return write_local_snapshot().finally(
       [this] { _is_abort_idx_reduction_requested = false; });
 }
 
@@ -2296,7 +2296,7 @@ static void move_snapshot_wo_seqs(rm_stm::tx_snapshot& target, T& source) {
 }
 
 ss::future<>
-rm_stm::apply_snapshot(stm_snapshot_header hdr, iobuf&& tx_ss_buf) {
+rm_stm::apply_local_snapshot(stm_snapshot_header hdr, iobuf&& tx_ss_buf) {
     vlog(
       _ctx_log.trace,
       "applying snapshot with last included offset: {}",
@@ -2479,7 +2479,7 @@ ss::future<> rm_stm::offload_aborted_txns() {
 
 // DO NOT coroutinize this method as it may cause issues on ARM:
 // https://github.com/redpanda-data/redpanda/issues/6768
-ss::future<stm_snapshot> rm_stm::take_snapshot() {
+ss::future<stm_snapshot> rm_stm::take_local_snapshot() {
     auto start_offset = _raft->start_offset();
     vlog(
       _ctx_log.trace,
@@ -2619,7 +2619,7 @@ ss::future<stm_snapshot> rm_stm::take_snapshot() {
     });
 }
 
-uint64_t rm_stm::get_snapshot_size() const {
+uint64_t rm_stm::get_local_snapshot_size() const {
     uint64_t abort_snapshots_size = 0;
     for (const auto& snapshot_size : _abort_snapshot_sizes) {
         abort_snapshots_size += snapshot_size.second;
@@ -2628,7 +2628,7 @@ uint64_t rm_stm::get_snapshot_size() const {
       clusterlog.trace,
       "rm_stm: aborted snapshots size {}",
       abort_snapshots_size);
-    return persisted_stm::get_snapshot_size() + abort_snapshots_size;
+    return persisted_stm::get_local_snapshot_size() + abort_snapshots_size;
 }
 
 ss::future<> rm_stm::save_abort_snapshot(abort_snapshot snapshot) {

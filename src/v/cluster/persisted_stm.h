@@ -15,6 +15,7 @@
 #include "kafka/protocol/errors.h"
 #include "model/fundamental.h"
 #include "model/record.h"
+#include "raft/consensus.h"
 #include "raft/errc.h"
 #include "raft/logger.h"
 #include "raft/state_machine.h"
@@ -63,14 +64,14 @@ public:
     file_backed_stm_snapshot(
       ss::sstring snapshot_name, prefix_logger& log, raft::consensus* c);
     ss::future<std::optional<stm_snapshot>> load_snapshot();
-    ss::future<> persist_snapshot(stm_snapshot&&);
+    ss::future<> persist_local_snapshot(stm_snapshot&&);
     const ss::sstring& name();
     ss::sstring store_path() const;
     ss::future<> remove_persistent_state();
     size_t get_snapshot_size() const;
 
     static ss::future<>
-    persist_snapshot(storage::simple_snapshot_manager&, stm_snapshot&&);
+    persist_local_snapshot(storage::simple_snapshot_manager&, stm_snapshot&&);
 
 private:
     model::ntp _ntp;
@@ -95,7 +96,7 @@ public:
       storage::kvstore& kvstore);
 
     ss::future<std::optional<stm_snapshot>> load_snapshot();
-    ss::future<> persist_snapshot(stm_snapshot&&);
+    ss::future<> persist_local_snapshot(stm_snapshot&&);
     const ss::sstring& name();
     ss::sstring store_path() const;
     ss::future<> remove_persistent_state();
@@ -116,7 +117,9 @@ concept supported_stm_snapshot = requires(T s, stm_snapshot&& snapshot) {
     {
         s.load_snapshot()
     } -> std::same_as<ss::future<std::optional<stm_snapshot>>>;
-    { s.persist_snapshot(std::move(snapshot)) } -> std::same_as<ss::future<>>;
+    {
+        s.persist_local_snapshot(std::move(snapshot))
+    } -> std::same_as<ss::future<>>;
     { s.remove_persistent_state() } -> std::same_as<ss::future<>>;
     { s.get_snapshot_size() } -> std::convertible_to<size_t>;
     { s.name() } -> std::convertible_to<const ss::sstring&>;
@@ -156,21 +159,24 @@ public:
     explicit persisted_stm(
       ss::sstring, ss::logger&, raft::consensus*, Args&&...);
 
-    void make_snapshot_in_background() final;
-    ss::future<> ensure_snapshot_exists(model::offset) override;
-    model::offset max_collectible_offset() override;
-    ss::future<fragmented_vector<model::tx_range>>
-      aborted_tx_ranges(model::offset, model::offset) override;
-
+    /**
+     * Takes and persists a local persisted_stm snapshot. This snapshot isn't
+     * replicated and it does not prefix truncate the log
+     */
+    ss::future<> write_local_snapshot();
+    /**
+     * Takes and persists local persisted_stm snapshot in background fiber
+     */
+    void write_local_snapshot_in_background() final;
+    /**
+     * Called by storage::stm_manager to make sure that stm snapshot exists
+     * before evicting log.
+     */
+    ss::future<> ensure_local_snapshot_exists(model::offset) override;
+    virtual uint64_t get_local_snapshot_size() const;
     virtual ss::future<> remove_persistent_state();
+
     const ss::sstring& name() override { return _snapshot_backend.name(); }
-
-    model::offset last_applied() const override {
-        return raft::state_machine::last_applied_offset();
-    }
-
-    ss::future<> make_snapshot();
-    virtual uint64_t get_snapshot_size() const;
     /*
      * Usually start() acts as a barrier and we don't call any methods on the
      * object before start returns control flow.
@@ -196,26 +202,39 @@ public:
      */
     ss::future<> start() override;
 
+    model::offset last_applied() const final {
+        return raft::state_machine::last_applied_offset();
+    }
+
     ss::future<bool> wait_no_throw(
       model::offset offset,
       model::timeout_clock::time_point,
       std::optional<std::reference_wrapper<ss::abort_source>> = std::nullopt);
+
+    model::offset max_collectible_offset() override;
+    ss::future<fragmented_vector<model::tx_range>>
+      aborted_tx_ranges(model::offset, model::offset) override;
 
 private:
     ss::future<> wait_offset_committed(
       model::timeout_clock::duration, model::offset, model::term_id);
     ss::future<bool>
       do_sync(model::timeout_clock::duration, model::offset, model::term_id);
+    ss::future<std::optional<stm_snapshot>> load_local_snapshot();
+    ss::future<> wait_for_snapshot_hydrated();
+
+    ss::future<> do_write_local_snapshot();
 
 protected:
-    virtual ss::future<> apply_snapshot(stm_snapshot_header, iobuf&&) = 0;
-    virtual ss::future<stm_snapshot> take_snapshot() = 0;
-    ss::future<std::optional<stm_snapshot>> load_snapshot();
-    ss::future<> wait_for_snapshot_hydrated();
-    ss::future<> persist_snapshot(stm_snapshot&&);
-    static ss::future<>
-    persist_snapshot(storage::simple_snapshot_manager&, stm_snapshot&&);
-    ss::future<> do_make_snapshot();
+    /**
+     * Called when local snapshot is applied to the state machine
+     */
+    virtual ss::future<> apply_local_snapshot(stm_snapshot_header, iobuf&&) = 0;
+
+    /**
+     * Called when a local snapshot is taken
+     */
+    virtual ss::future<stm_snapshot> take_local_snapshot() = 0;
 
     /*
      * `sync` checks that current node is a leader and if `sync` wasn't

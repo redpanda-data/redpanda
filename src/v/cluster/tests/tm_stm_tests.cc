@@ -311,7 +311,7 @@ FIXTURE_TEST(test_tm_stm_hosted_hash_1_partition, simple_raft_fixture) {
 
     for (size_t i = 0; i < 10; ++i) {
         try {
-            stm.make_snapshot().get0();
+            stm.write_local_snapshot().get0();
         } catch (const std::runtime_error err) {
             ss::sleep(10ms).get0();
             if (i == 9) {
@@ -366,7 +366,7 @@ FIXTURE_TEST(test_tm_stm_hosted_hash_16_partition, simple_raft_fixture) {
 
     for (size_t i = 0; i < 10; ++i) {
         try {
-            stm.make_snapshot().get0();
+            stm.write_local_snapshot().get0();
         } catch (const std::runtime_error err) {
             ss::sleep(10ms).get0();
             if (i == 9) {

@@ -491,7 +491,7 @@ ss::future<> archival_metadata_stm::make_snapshot(
       "archival_metadata.snapshot",
       raft_priority());
 
-    co_await file_backed_stm_snapshot::persist_snapshot(
+    co_await file_backed_stm_snapshot::persist_local_snapshot(
       tmp_snapshot_mgr, std::move(snapshot));
 }
 
@@ -859,7 +859,7 @@ ss::future<> archival_metadata_stm::handle_raft_snapshot() {
       get_last_offset());
 }
 
-ss::future<> archival_metadata_stm::apply_snapshot(
+ss::future<> archival_metadata_stm::apply_local_snapshot(
   stm_snapshot_header header, iobuf&& data) {
     auto snap = serde::from_iobuf<snapshot>(std::move(data));
 
@@ -924,7 +924,7 @@ ss::future<> archival_metadata_stm::apply_snapshot(
     co_return;
 }
 
-ss::future<stm_snapshot> archival_metadata_stm::take_snapshot() {
+ss::future<stm_snapshot> archival_metadata_stm::take_local_snapshot() {
     auto segments = segments_from_manifest(*_manifest);
     auto replaced = replaced_segments_from_manifest(*_manifest);
     auto spillover = spillover_from_manifest(*_manifest);

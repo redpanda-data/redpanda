@@ -790,22 +790,22 @@ uint64_t partition::non_log_disk_size_bytes() const {
 
     std::optional<uint64_t> rm_size;
     if (_rm_stm) {
-        rm_size = _rm_stm->get_snapshot_size();
+        rm_size = _rm_stm->get_local_snapshot_size();
     }
 
     std::optional<uint64_t> tm_size;
     if (_tm_stm) {
-        tm_size = _tm_stm->get_snapshot_size();
+        tm_size = _tm_stm->get_local_snapshot_size();
     }
 
     std::optional<uint64_t> archival_size;
     if (_archival_meta_stm) {
-        archival_size = _archival_meta_stm->get_snapshot_size();
+        archival_size = _archival_meta_stm->get_local_snapshot_size();
     }
 
     std::optional<uint64_t> idalloc_size;
     if (_id_allocator_stm) {
-        idalloc_size = _id_allocator_stm->get_snapshot_size();
+        idalloc_size = _id_allocator_stm->get_local_snapshot_size();
     }
 
     vlog(

@@ -83,7 +83,7 @@ public:
     /// regard
     ///
     /// Override to ensure it never unnecessarily waits
-    ss::future<> ensure_snapshot_exists(model::offset) override;
+    ss::future<> ensure_local_snapshot_exists(model::offset) override;
 
     /// The actual start offset of the log with the delta factored in
     model::offset effective_start_offset() const;
@@ -104,9 +104,9 @@ public:
     }
 
 protected:
-    ss::future<> apply_snapshot(stm_snapshot_header, iobuf&&) override;
+    ss::future<> apply_local_snapshot(stm_snapshot_header, iobuf&&) override;
 
-    ss::future<stm_snapshot> take_snapshot() override;
+    ss::future<stm_snapshot> take_local_snapshot() override;
 
     virtual ss::future<model::offset> storage_eviction_event();
 

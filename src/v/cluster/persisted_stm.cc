@@ -68,18 +68,14 @@ persisted_stm<T>::persisted_stm(
 }
 
 template<supported_stm_snapshot T>
-ss::future<std::optional<stm_snapshot>> persisted_stm<T>::load_snapshot() {
+ss::future<std::optional<stm_snapshot>>
+persisted_stm<T>::load_local_snapshot() {
     return _snapshot_backend.load_snapshot();
 }
 
 template<supported_stm_snapshot T>
 ss::future<> persisted_stm<T>::remove_persistent_state() {
     return _snapshot_backend.remove_persistent_state();
-}
-
-template<supported_stm_snapshot T>
-ss::future<> persisted_stm<T>::persist_snapshot(stm_snapshot&& snapshot) {
-    return _snapshot_backend.persist_snapshot(std::move(snapshot));
 }
 
 file_backed_stm_snapshot::file_backed_stm_snapshot(
@@ -128,7 +124,7 @@ file_backed_stm_snapshot::load_snapshot() {
     co_return snapshot;
 }
 
-ss::future<> file_backed_stm_snapshot::persist_snapshot(
+ss::future<> file_backed_stm_snapshot::persist_local_snapshot(
   storage::simple_snapshot_manager& snapshot_mgr, stm_snapshot&& snapshot) {
     iobuf data_size_buf;
 
@@ -164,11 +160,12 @@ ss::future<> file_backed_stm_snapshot::persist_snapshot(
 }
 
 ss::future<>
-file_backed_stm_snapshot::persist_snapshot(stm_snapshot&& snapshot) {
-    return persist_snapshot(_snapshot_mgr, std::move(snapshot)).then([this] {
-        return _snapshot_mgr.get_snapshot_size().then(
-          [this](uint64_t size) { _snapshot_size = size; });
-    });
+file_backed_stm_snapshot::persist_local_snapshot(stm_snapshot&& snapshot) {
+    return persist_local_snapshot(_snapshot_mgr, std::move(snapshot))
+      .then([this] {
+          return _snapshot_mgr.get_snapshot_size().then(
+            [this](uint64_t size) { _snapshot_size = size; });
+      });
 }
 
 const ss::sstring& file_backed_stm_snapshot::name() {
@@ -250,7 +247,7 @@ kvstore_backed_stm_snapshot::load_snapshot() {
 }
 
 ss::future<>
-kvstore_backed_stm_snapshot::persist_snapshot(stm_snapshot&& snapshot) {
+kvstore_backed_stm_snapshot::persist_local_snapshot(stm_snapshot&& snapshot) {
     stm_thin_snapshot thin_snapshot{
       .offset = snapshot.header.offset, .data = std::move(snapshot.data)};
     auto serialized_snapshot = serde::to_iobuf(std::move(thin_snapshot));
@@ -281,35 +278,35 @@ ss::future<> persisted_stm<T>::wait_for_snapshot_hydrated() {
 }
 
 template<supported_stm_snapshot T>
-ss::future<> persisted_stm<T>::do_make_snapshot() {
-    auto snapshot = co_await take_snapshot();
+ss::future<> persisted_stm<T>::do_write_local_snapshot() {
+    auto snapshot = co_await take_local_snapshot();
     auto offset = snapshot.header.offset;
 
-    co_await persist_snapshot(std::move(snapshot));
+    co_await _snapshot_backend.persist_local_snapshot(std::move(snapshot));
     _last_snapshot_offset = std::max(_last_snapshot_offset, offset);
 }
 
 template<supported_stm_snapshot T>
-void persisted_stm<T>::make_snapshot_in_background() {
-    ssx::spawn_with_gate(_gate, [this] { return make_snapshot(); });
+void persisted_stm<T>::write_local_snapshot_in_background() {
+    ssx::spawn_with_gate(_gate, [this] { return write_local_snapshot(); });
 }
 
 template<supported_stm_snapshot T>
-ss::future<> persisted_stm<T>::make_snapshot() {
+ss::future<> persisted_stm<T>::write_local_snapshot() {
     return _op_lock.with([this]() {
         auto f = wait_for_snapshot_hydrated();
-        return f.then([this] { return do_make_snapshot(); });
+        return f.then([this] { return do_write_local_snapshot(); });
     });
 }
 
 template<supported_stm_snapshot T>
-uint64_t persisted_stm<T>::get_snapshot_size() const {
+uint64_t persisted_stm<T>::get_local_snapshot_size() const {
     return _snapshot_backend.get_snapshot_size();
 }
 
 template<supported_stm_snapshot T>
 ss::future<>
-persisted_stm<T>::ensure_snapshot_exists(model::offset target_offset) {
+persisted_stm<T>::ensure_local_snapshot_exists(model::offset target_offset) {
     vlog(
       _log.debug,
       "ensure snapshot_exists with target offset: {}",
@@ -332,7 +329,7 @@ persisted_stm<T>::ensure_snapshot_exists(model::offset target_offset) {
                     name(),
                     target_offset,
                     _insync_offset);
-                  return do_make_snapshot();
+                  return do_write_local_snapshot();
               });
         });
     });
@@ -513,7 +510,7 @@ template<supported_stm_snapshot T>
 ss::future<> persisted_stm<T>::start() {
     std::optional<stm_snapshot> maybe_snapshot;
     try {
-        maybe_snapshot = co_await load_snapshot();
+        maybe_snapshot = co_await load_local_snapshot();
     } catch (...) {
         vassert(
           false,
@@ -533,7 +530,8 @@ ss::future<> persisted_stm<T>::start() {
               _log.debug,
               "start with applied snapshot, set_next {}",
               next_offset);
-            co_await apply_snapshot(snapshot.header, std::move(snapshot.data));
+            co_await apply_local_snapshot(
+              snapshot.header, std::move(snapshot.data));
             set_next(next_offset);
             _last_snapshot_offset = snapshot.header.offset;
         } else {

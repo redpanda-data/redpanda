@@ -78,7 +78,7 @@ static rich_reader make_rreader(
 }
 
 void check_snapshot_sizes(cluster::rm_stm& stm, raft::consensus* c) {
-    stm.make_snapshot().get();
+    stm.write_local_snapshot().get();
     const auto work_dir = c->log_config().work_directory();
     std::vector<ss::sstring> snapshot_files;
     directory_walker::walk(
@@ -103,7 +103,7 @@ void check_snapshot_sizes(cluster::rm_stm& stm, raft::consensus* c) {
         snapshots_size += ss::file_size(file_path.string()).get();
     }
 
-    BOOST_REQUIRE_EQUAL(stm.get_snapshot_size(), snapshots_size);
+    BOOST_REQUIRE_EQUAL(stm.get_local_snapshot_size(), snapshots_size);
 }
 
 // tests:

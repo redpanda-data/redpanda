@@ -362,7 +362,7 @@ public:
 
     ss::future<> remove_persistent_state() override;
 
-    uint64_t get_snapshot_size() const override;
+    uint64_t get_local_snapshot_size() const override;
 
 protected:
     ss::future<> handle_raft_snapshot() override;
@@ -388,8 +388,8 @@ private:
       model::producer_identity,
       std::optional<model::tx_seq>,
       model::timeout_clock::duration);
-    ss::future<> apply_snapshot(stm_snapshot_header, iobuf&&) override;
-    ss::future<stm_snapshot> take_snapshot() override;
+    ss::future<> apply_local_snapshot(stm_snapshot_header, iobuf&&) override;
+    ss::future<stm_snapshot> take_local_snapshot() override;
     ss::future<std::optional<abort_snapshot>> load_abort_snapshot(abort_index);
     ss::future<> save_abort_snapshot(abort_snapshot);
 

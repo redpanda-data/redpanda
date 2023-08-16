@@ -398,8 +398,8 @@ ss::future<> log_eviction_stm::handle_raft_snapshot() {
       effective_start_offset());
 }
 
-ss::future<>
-log_eviction_stm::apply_snapshot(stm_snapshot_header header, iobuf&& data) {
+ss::future<> log_eviction_stm::apply_local_snapshot(
+  stm_snapshot_header header, iobuf&& data) {
     auto snapshot = serde::from_iobuf<snapshot_data>(std::move(data));
     vlog(
       _log.info, "Applying snapshot {} at offset: {}", snapshot, header.offset);
@@ -410,7 +410,7 @@ log_eviction_stm::apply_snapshot(stm_snapshot_header header, iobuf&& data) {
     return ss::now();
 }
 
-ss::future<stm_snapshot> log_eviction_stm::take_snapshot() {
+ss::future<stm_snapshot> log_eviction_stm::take_local_snapshot() {
     vlog(_log.trace, "Taking snapshot at offset: {}", last_applied_offset());
     iobuf snap_data = serde::to_iobuf(
       snapshot_data{.effective_start_offset = _delete_records_eviction_offset});
@@ -418,7 +418,7 @@ ss::future<stm_snapshot> log_eviction_stm::take_snapshot() {
       0, last_applied_offset(), std::move(snap_data));
 }
 
-ss::future<> log_eviction_stm::ensure_snapshot_exists(model::offset) {
+ss::future<> log_eviction_stm::ensure_local_snapshot_exists(model::offset) {
     /// This class drives eviction, therefore it cannot wait until its own
     /// snapshot exists until writing a snapshot
     return ss::now();

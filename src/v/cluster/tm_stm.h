@@ -277,8 +277,8 @@ protected:
 
 private:
     std::optional<tm_transaction> find_tx(kafka::transactional_id);
-    ss::future<> apply_snapshot(stm_snapshot_header, iobuf&&) override;
-    ss::future<stm_snapshot> take_snapshot() override;
+    ss::future<> apply_local_snapshot(stm_snapshot_header, iobuf&&) override;
+    ss::future<stm_snapshot> take_local_snapshot() override;
 
     std::chrono::milliseconds _sync_timeout;
     std::chrono::milliseconds _transactional_id_expiration;

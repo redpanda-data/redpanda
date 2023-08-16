@@ -265,7 +265,7 @@ void check_snapshot_size(
     BOOST_REQUIRE(snapshot_exists);
 
     BOOST_REQUIRE(
-      archival_stm.get_snapshot_size()
+      archival_stm.get_local_snapshot_size()
       == ss::file_size(snapshot_file_path.string()).get());
 }
 
@@ -556,7 +556,7 @@ class archival_metadata_stm_accessor {
 public:
     static ss::future<> persist_snapshot(
       storage::simple_snapshot_manager& mgr, cluster::stm_snapshot&& snapshot) {
-        return file_backed_stm_snapshot::persist_snapshot(
+        return file_backed_stm_snapshot::persist_local_snapshot(
           mgr, std::move(snapshot));
     }
 };

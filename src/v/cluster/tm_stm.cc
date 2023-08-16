@@ -797,7 +797,7 @@ bool tm_stm::hosts(const kafka::transactional_id& tx_id) {
 }
 
 ss::future<>
-tm_stm::apply_snapshot(stm_snapshot_header hdr, iobuf&& tm_ss_buf) {
+tm_stm::apply_local_snapshot(stm_snapshot_header hdr, iobuf&& tm_ss_buf) {
     vassert(
       hdr.version >= tm_snapshot_v0::version
         && hdr.version <= tm_snapshot::version,
@@ -833,7 +833,7 @@ tm_stm::apply_snapshot(stm_snapshot_header hdr, iobuf&& tm_ss_buf) {
     return ss::now();
 }
 
-ss::future<stm_snapshot> tm_stm::take_snapshot() {
+ss::future<stm_snapshot> tm_stm::take_local_snapshot() {
     // Update hash ranges to always have batch in log
     // So it cannot be deleted with cleanup policy
     if (_c->is_leader()) {
