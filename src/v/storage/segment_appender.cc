@@ -23,7 +23,6 @@
 #include <seastar/core/align.hh>
 #include <seastar/core/future-util.hh>
 #include <seastar/core/future.hh>
-#include <seastar/util/defer.hh>
 
 #include <fmt/format.h>
 
