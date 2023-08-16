@@ -614,6 +614,26 @@ ss::future<upload_result> remote::upload_segment(
       [this] { _probe.upload_backoff(); });
 }
 
+ss::future<download_result> remote::download_stream(
+  const cloud_storage_clients::bucket_name& bucket,
+  const remote_segment_path& path,
+  const try_consume_stream& cons_str,
+  retry_chain_node& parent,
+  const std::string_view stream_label,
+  const download_metrics& metrics,
+  std::optional<cloud_storage_clients::http_byte_range> byte_range) {
+    return download_stream(
+      bucket,
+      path,
+      cons_str,
+      parent,
+      stream_label,
+      [&metrics] { return metrics.download_latency_measurement(); },
+      [&metrics] { metrics.failed_download_metric(); },
+      [&metrics] { metrics.download_backoff_metric(); },
+      byte_range);
+}
+
 ss::future<download_result> remote::download_segment(
   const cloud_storage_clients::bucket_name& bucket,
   const remote_segment_path& segment_path,

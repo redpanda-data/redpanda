@@ -21,6 +21,7 @@ v_cc_library(
     partition_manifest.cc
     recursive_directory_walker.cc
     remote.cc
+    remote_file.cc
     offset_translation_layer.cc
     remote_probe.cc
     read_path_probes.cc

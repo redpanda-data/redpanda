@@ -137,6 +137,15 @@ public:
     using list_objects_consumer = std::function<ss::stop_iteration(
       ss::sstring, std::chrono::system_clock::time_point, size_t, ss::sstring)>;
 
+    using latency_measurement_t
+      = std::unique_ptr<remote_probe::hist_t::measurement>;
+    struct download_metrics {
+        std::function<latency_measurement_t()> download_latency_measurement =
+          [] { return nullptr; };
+        std::function<void()> failed_download_metric = [] {};
+        std::function<void()> download_backoff_metric = [] {};
+    };
+
     /// \brief Initialize 'remote'
     ///
     /// \param limit is a number of simultaneous connections
@@ -286,6 +295,27 @@ public:
       const ss::file& file,
       retry_chain_node& parent,
       lazy_abort_source& lazy_abort_source);
+
+    /// \brief Download stream from S3
+    ///
+    /// The method downloads the segment while tolerating some errors. It can
+    /// retry after an error.
+    /// \param bucket is the remote bucket
+    /// \param path is an object name in S3
+    /// \param cons_str is a functor that consumes an input_stream
+    /// \param parent is used for logging and retries
+    /// \stream_label the type of stream, used for logging
+    /// \metrics download-related metric functions
+    /// \byte_range the range in the stream to download
+    ss::future<download_result> download_stream(
+      const cloud_storage_clients::bucket_name& bucket,
+      const remote_segment_path& path,
+      const try_consume_stream& cons_str,
+      retry_chain_node& parent,
+      const std::string_view stream_label,
+      const download_metrics& metrics,
+      std::optional<cloud_storage_clients::http_byte_range> byte_range
+      = std::nullopt);
 
     /// \brief Download segment index from S3
     /// \param ix is the index which will be populated from data from the object
