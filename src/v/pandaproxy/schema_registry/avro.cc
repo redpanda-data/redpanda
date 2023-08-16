@@ -40,6 +40,7 @@
 #include <rapidjson/error/en.h>
 
 #include <exception>
+#include <stack>
 #include <string_view>
 
 namespace pandaproxy::schema_registry {

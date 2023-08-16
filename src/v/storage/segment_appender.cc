@@ -254,8 +254,11 @@ ss::future<> segment_appender::hydrate_last_half_page() {
         return ss::make_ready_future<>();
     }
     return _out
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
       .dma_read(
         sz, buff, read_align /*must be full _write_ alignment*/, _opts.priority)
+#pragma clang diagnostic pop
       .then([this, bytes_to_read](size_t actual) {
           vassert(
             bytes_to_read <= actual && bytes_to_read == _head->flushed_pos(),
@@ -494,7 +497,10 @@ void segment_appender::dispatch_background_head_write() {
             .then([this, h, w, start_offset, expected, src, full](
                     ssx::semaphore_units u) mutable {
                 return _out
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
                   .dma_write(start_offset, src, expected, _opts.priority)
+#pragma clang diagnostic pop
                   .then([this, h, w, expected, full](size_t got) {
                       /*
                        * the continuation that captured full=true is the end of

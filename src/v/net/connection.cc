@@ -11,8 +11,10 @@
 
 #include "net/exceptions.h"
 #include "rpc/service.h"
+#include "seastarx.h"
 
 #include <seastar/core/future.hh>
+#include <seastar/net/tls.hh>
 
 #include <gnutls/gnutls.h>
 
@@ -26,10 +28,7 @@ namespace net {
 bool is_reconnect_error(const std::system_error& e) {
     auto v = e.code().value();
 
-    // The name() of seastar's gnutls_error_category class
-    constexpr std::string_view gnutls_category_name{"GnuTLS"};
-
-    if (e.code().category().name() == gnutls_category_name) {
+    if (e.code().category() == ss::tls::error_category()) {
         switch (v) {
         case GNUTLS_E_PUSH_ERROR:
         case GNUTLS_E_PULL_ERROR:

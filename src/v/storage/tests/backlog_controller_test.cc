@@ -38,7 +38,10 @@ struct backlog_controller_fixture {
     const std::map<ss::sstring, ss::sstring> sch_group_label = {
       {"group", "sch_control_gr"}, {"shard", "0"}};
     backlog_controller_fixture()
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
       : iopc(ss::io_priority_class::register_one("io_control_gr", 100)) {
+#pragma clang diagnostic pop
         sg = ss::create_scheduling_group("sch_control_gr", 100).get();
         /**
          * Controller settings:
