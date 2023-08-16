@@ -383,7 +383,6 @@ ss::future<> segment_appender::maybe_advance_stable_offset(
       write);
 
     write->set_state(write_state::DONE);
-    --_inflight_dispatched;
 
     std::optional<size_t> committed;
 
@@ -409,6 +408,7 @@ ss::future<> segment_appender::maybe_advance_stable_offset(
     }
 
     if (!committed) {
+        --_inflight_dispatched;
         return ss::now();
     }
 
@@ -428,6 +428,7 @@ ss::future<> segment_appender::process_flush_ops(size_t committed) {
       });
 
     if (flushable == _flush_ops.end()) {
+        --_inflight_dispatched;
         return ss::now();
     }
 
@@ -438,6 +439,25 @@ ss::future<> segment_appender::process_flush_ops(size_t committed) {
     _flush_ops.pop_back_n(std::distance(flushable, _flush_ops.end()));
 
     return _out.flush().then([this, committed, ops = std::move(ops)]() mutable {
+        // Inflight_dispatched is incremented right before a write is dispatched
+        // and then must be decremented when the write is "finished", where we
+        // don't consider the write finished until any associated flush
+        // operations that were triggered as part of write completion (i.e.,
+        // stuff in this method) are complete.
+        //
+        // We also don't want to decrement this too late, i.e., in a
+        // continuation attached the write completion path (which would be
+        // easier), because then it might be non-zero unexpectedly as observed
+        // by a client do does an append + flush and waits for the futures to
+        // resolve: the flush future resolves immediately below in the set_value
+        // loop, but the future returned by *this* method may resolve later,
+        // after the client observes a non-zero value. So we decrement the
+        // counter here, *after* the flush has completed but before we set the
+        // futures which have been returned to the callers.
+        //
+        // Unfortunately this means we need to decrement this counter in
+        // multiple places.
+        --_inflight_dispatched;
         _flushed_offset = committed;
         /*
          * TODO: as an optimization, add a little house keeping to determine if
