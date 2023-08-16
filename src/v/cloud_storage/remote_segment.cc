@@ -312,7 +312,8 @@ remote_segment::offset_data_stream(
   kafka::offset start,
   kafka::offset end,
   std::optional<model::timestamp> first_timestamp,
-  ss::io_priority_class io_priority) {
+  ss::io_priority_class io_priority,
+  std::optional<std::reference_wrapper<remote_segment_batch_reader>> reader) {
     vlog(_ctxlog.debug, "remote segment file input stream at offset {}", start);
     ss::gate::holder g(_gate);
     co_await hydrate();
@@ -362,7 +363,8 @@ remote_segment::offset_data_stream(
           end,
           pos.file_pos,
           std::move(options),
-          prefetch_override);
+          prefetch_override,
+          reader);
         data_stream = ss::input_stream<char>{
           ss::data_source{std::move(chunk_ds)}};
     }
@@ -1373,7 +1375,25 @@ remote_segment_batch_reader::read_some(
         _bytes_consumed = new_bytes_consumed.value();
     }
     _total_size = 0;
+
+    if (_config.over_budget && is_data_source_transient() && _parser) {
+        vlog(
+          _ctxlog.debug,
+          "transient reader is overbudget, resetting to allow download to "
+          "progress: {}",
+          _config);
+        co_await reset_state();
+        vlog(_ctxlog.debug, "transient reader is closed: {}", _config);
+    }
+
     co_return std::move(_ringbuf);
+}
+
+ss::future<> remote_segment_batch_reader::reset_state() {
+    vassert(_parser, "cannot reset state, parser not initialized");
+    co_await _parser->close();
+    _parser.reset();
+    _bytes_consumed = 0;
 }
 
 ss::future<std::unique_ptr<storage::continuous_batch_parser>>
@@ -1388,7 +1408,8 @@ remote_segment_batch_reader::init_parser() {
       model::offset_cast(_config.start_offset),
       model::offset_cast(_config.max_offset),
       _config.first_timestamp,
-      priority_manager::local().shadow_indexing_priority());
+      priority_manager::local().shadow_indexing_priority(),
+      *this);
 
     auto parser = std::make_unique<storage::continuous_batch_parser>(
       std::make_unique<remote_segment_batch_consumer>(

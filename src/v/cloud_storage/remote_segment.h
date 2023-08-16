@@ -70,6 +70,8 @@ public:
       : std::runtime_error(m) {}
 };
 
+class remote_segment_batch_reader;
+
 class remote_segment final {
 public:
     remote_segment(
@@ -123,7 +125,9 @@ public:
       kafka::offset start,
       kafka::offset end,
       std::optional<model::timestamp>,
-      ss::io_priority_class);
+      ss::io_priority_class,
+      std::optional<std::reference_wrapper<remote_segment_batch_reader>> reader
+      = std::nullopt);
 
     /// Hydrate the segment for segment meta version v2 or lower. For v3 or
     /// higher, only hydrate the index. If the index hydration fails, fall back
@@ -391,9 +395,17 @@ public:
 
     bool is_stopped() const { return _stopped; }
 
+    bool is_data_source_transient() const { return _is_transient; }
+
+    void mark_data_source_transient(bool transient) {
+        _is_transient = transient;
+    }
+
 private:
     friend class single_record_consumer;
     ss::future<std::unique_ptr<storage::continuous_batch_parser>> init_parser();
+
+    ss::future<> reset_state();
 
     size_t produce(model::record_batch batch);
 
@@ -419,6 +431,10 @@ private:
     /// Units for limiting concurrently-instantiated readers, they belong
     /// to materialized_segments.
     ssx::semaphore_units _units;
+
+    /// A reader which is transient should not be cached, and disposed off when
+    /// over-budget.
+    bool _is_transient{false};
 };
 
 struct hydration_request {

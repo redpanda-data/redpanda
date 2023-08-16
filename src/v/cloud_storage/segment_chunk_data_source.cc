@@ -246,6 +246,18 @@ ss::future<> chunk_data_source_impl::set_current_stream(
         _current_stream = ss::make_file_input_stream(
           *_current_data_file, begin_at, _stream_options);
     }
+
+    // Signal the attached reader if it needs to reset state when over-budget.
+    if (_attached_reader) {
+        switch (_current_stream_t) {
+        case stream_type::disk:
+            _attached_reader->get().mark_data_source_transient(false);
+            break;
+        case stream_type::download:
+            _attached_reader->get().mark_data_source_transient(true);
+            break;
+        }
+    }
 }
 
 ss::future<> chunk_data_source_impl::skip_stream_to(uint64_t begin) {
