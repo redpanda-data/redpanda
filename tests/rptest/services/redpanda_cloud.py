@@ -194,11 +194,11 @@ class CloudCluster():
 
     def _get_cluster_id_and_network_id(self, namespace_uuid, name):
         """
-        Get clusterId.
+        Get clusterId and networkId.
 
         :param namespace_uuid: namespaceUuid the cluster is contained in
         :param name: name of the cluster
-        :return: clusterId as a string or None if not found
+        :return: (clusterId, networkId) as tuple of strings or (None, None) if not found
         """
 
         params = {'namespaceUuid': namespace_uuid}
@@ -352,7 +352,8 @@ class CloudCluster():
             timeout_sec=self.CHECK_TIMEOUT_SEC,
             backoff_sec=self.CHECK_BACKOFF_SEC,
             err_msg=f'Unable to deterimine readiness of cloud cluster {name}')
-        self.config.id, network_id = self._get_cluster_id(namespace_uuid, name)
+        self.config.id, network_id = self._get_cluster_id_and_network_id(
+            namespace_uuid, name)
 
         if superuser is not None:
             self._logger.debug(
