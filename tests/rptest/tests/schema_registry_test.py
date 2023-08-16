@@ -43,7 +43,9 @@ HTTP_POST_HEADERS = {
 }
 
 schema1_def = '{"type":"record","name":"myrecord","fields":[{"name":"f1","type":"string"}]}'
-schema2_def = '{"type":"record","name":"myrecord","fields":[{"name":"f1","type":"string"},{"name":"f2","type":"string","default":"foo"}]}'
+# Schema 2 is only backwards compatible
+schema2_def = '{"type":"record","name":"myrecord","fields":[{"name":"f1","type":["null","string"]},{"name":"f2","type":"string","default":"foo"}]}'
+# Schema 3 is not backwards compatible
 schema3_def = '{"type":"record","name":"myrecord","fields":[{"name":"f1","type":"string"},{"name":"f2","type":"string"}]}'
 invalid_avro = '{"type":"notatype","name":"myrecord","fields":[{"name":"f1","type":"string"}]}'
 
@@ -1337,6 +1339,8 @@ class SchemaRegistryTestMethods(SchemaRegistryEndpoints):
                 "schema_ids": [],
                 "subject_versions": []
             }
+
+        self._set_config(data=json.dumps({"compatibility": "NONE"}))
 
         self.logger.debug("Register and check schemas before restart")
         for subject in subjects:
