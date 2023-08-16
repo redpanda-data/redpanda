@@ -156,7 +156,7 @@ type ClusterSpec struct {
 	// 1. versioning is not supported for map keys
 	// 2. key names not supported by Redpanda will lead to failure on start up
 	// 3. updating this map requires a manual restart of the Redpanda pods. Please be aware of
-	// sync period when one Redpandais POD is restarted
+	// sync period when one Redpanda POD is restarted
 	// 4. cannot have keys that conflict with existing struct fields - it leads to panic
 	//
 	// By default if Replicas is 3 or more and redpanda.default_topic_partitions is not set
@@ -178,6 +178,9 @@ type ClusterSpec struct {
 	// - it has XFS file system
 	// - it can create test file and delete it
 	InitialValidationForVolume *bool `json:"initialValidationForVolume,omitempty"`
+
+	// The name of the ServiceAccount to be used by the Redpanda pods
+	ServiceAccount *string `json:"serviceAccount,omitempty"`
 }
 
 // RestartConfig contains strategies to configure how the cluster behaves when restarting, because of upgrades

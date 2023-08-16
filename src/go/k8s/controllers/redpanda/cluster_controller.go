@@ -1441,6 +1441,7 @@ func (a *attachedResources) serviceAccount() {
 }
 
 func (a *attachedResources) getServiceAccount() *resources.ServiceAccountResource {
+	a.serviceAccount()
 	return a.items[serviceAccount].(*resources.ServiceAccountResource)
 }
 
