@@ -60,16 +60,15 @@ operator<<(std::ostream& os, eager_chunk_stream::stream_state state) {
     }
 }
 
-ss::future<> eager_chunk_stream::wait_for_stream() {
-    using namespace std::chrono_literals;
-
+ss::future<>
+eager_chunk_stream::wait_for_stream(ss::lowres_clock::duration timeout) {
     // If the chunk load operation was put in wait queue, wait for the download
     // to finish. The eager stream cannot be loaded.
     if (state == stream_state::in_wait_queue) {
         return ss::now();
     }
 
-    return stream_available.wait(30s, [this] {
+    return stream_available.wait(timeout, [this] {
         // Wait for either the stream to be initialized, or if the chunk is
         // already in cache, the eager stream cannot be loaded.
         return stream.has_value() || state == stream_state::chunk_in_cache;

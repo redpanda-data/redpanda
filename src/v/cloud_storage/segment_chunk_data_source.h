@@ -32,7 +32,9 @@ public:
       ss::file_input_stream_options stream_options,
       std::optional<uint16_t> prefetch_override = std::nullopt,
       std::optional<std::reference_wrapper<remote_segment_batch_reader>> reader
-      = std::nullopt);
+      = std::nullopt,
+      ss::lowres_clock::duration eager_stream_acquire_timeout
+      = std::chrono::seconds{30});
 
     chunk_data_source_impl(const chunk_data_source_impl&) = delete;
     chunk_data_source_impl& operator=(const chunk_data_source_impl&) = delete;
@@ -129,6 +131,7 @@ private:
     };
 
     std::optional<download_task> _download_task;
+    ss::lowres_clock::duration _eager_stream_acquire_timeout;
 };
 
 } // namespace cloud_storage

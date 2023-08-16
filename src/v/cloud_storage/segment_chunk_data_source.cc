@@ -28,7 +28,8 @@ chunk_data_source_impl::chunk_data_source_impl(
   int64_t begin_stream_at,
   ss::file_input_stream_options stream_options,
   std::optional<uint16_t> prefetch_override,
-  std::optional<std::reference_wrapper<remote_segment_batch_reader>> reader)
+  std::optional<std::reference_wrapper<remote_segment_batch_reader>> reader,
+  ss::lowres_clock::duration eager_stream_acquire_timeout)
   : _chunks(chunks)
   , _segment(segment)
   , _first_chunk_start(_segment.get_chunk_start_for_kafka_offset(start))
@@ -39,7 +40,8 @@ chunk_data_source_impl::chunk_data_source_impl(
   , _rtc{_as}
   , _ctxlog{cst_log, _rtc, _segment.get_segment_path()().native()}
   , _prefetch_override{prefetch_override}
-  , _attached_reader{reader} {
+  , _attached_reader{reader}
+  , _eager_stream_acquire_timeout{eager_stream_acquire_timeout} {
     vlog(
       _ctxlog.trace,
       "chunk data source initialized with file position {} to {}",
@@ -139,7 +141,7 @@ ss::future<eager_stream_ptr> chunk_data_source_impl::maybe_load_eager_stream(
             _download_task->start();
 
             try {
-                co_await p->wait_for_stream();
+                co_await p->wait_for_stream(_eager_stream_acquire_timeout);
             } catch (const ss::condition_variable_timed_out&) {
                 vlog(_ctxlog.info, "timed out while waiting for eager stream");
                 p->state = eager_chunk_stream::stream_state::

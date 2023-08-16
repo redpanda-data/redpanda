@@ -46,7 +46,7 @@ struct eager_chunk_stream {
       chunk_start_offset_t start,
       chunk_start_offset_t end);
 
-    ss::future<> wait_for_stream();
+    ss::future<> wait_for_stream(ss::lowres_clock::duration);
 };
 
 std::ostream&
