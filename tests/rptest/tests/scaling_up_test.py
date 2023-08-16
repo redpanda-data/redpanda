@@ -16,11 +16,29 @@ from ducktape.mark import matrix
 from rptest.clients.kafka_cat import KafkaCat
 from rptest.clients.types import TopicSpec
 from rptest.clients.default import DefaultClient
+from rptest.services.kgo_verifier_services import KgoVerifierConsumerGroupConsumer, KgoVerifierProducer
 from rptest.services.redpanda import make_redpanda_service
-from rptest.tests.end_to_end import EndToEndTest
+
+from rptest.tests.prealloc_nodes import PreallocNodesTest
 
 
-class ScalingUpTest(EndToEndTest):
+class ScalingUpTest(PreallocNodesTest):
+    def __init__(self, test_context):
+        super().__init__(
+            test_context,
+            num_brokers=6,
+            extra_rp_conf={
+                "group_topic_partitions": self.group_topic_partitions,
+                "partition_autobalancing_mode": "node_add"
+            },
+            node_prealloc_count=1,
+        )
+        self.redpanda.set_skip_if_no_redpanda_log(True)
+
+    def setup(self):
+        # defer starting Redpanda
+        pass
+
     """
     Adding nodes to the cluster should result in partition reallocations to new
     nodes
@@ -132,20 +150,72 @@ class ScalingUpTest(EndToEndTest):
         for spec in topics:
             DefaultClient(self.redpanda).create_topic(spec)
 
-        self.topic = random.choice(topics).name
+        self._topic = random.choice(topics).name
 
         return total_replicas
 
-    @cluster(num_nodes=5)
+    @property
+    def producer_throughput(self):
+        return 5 * (1024 * 1024) if not self.debug_mode else 1000
+
+    @property
+    def msg_count(self):
+        return 20 * int(self.producer_throughput / self.msg_size)
+
+    @property
+    def msg_size(self):
+        return 128
+
+    def start_producer(self):
+        self.logger.info(
+            f"starting kgo-verifier producer with {self.msg_count} messages of size {self.msg_size} and throughput: {self.producer_throughput} bps"
+        )
+        self.producer = KgoVerifierProducer(
+            self.test_context,
+            self.redpanda,
+            self._topic,
+            self.msg_size,
+            self.msg_count,
+            custom_node=self.preallocated_nodes,
+            rate_limit_bps=self.producer_throughput)
+
+        self.producer.start(clean=False)
+        self.producer.wait_for_acks(
+            5 * (self.producer_throughput / self.msg_size), 120, 1)
+
+    def start_consumer(self):
+        self.consumer = KgoVerifierConsumerGroupConsumer(
+            self.test_context,
+            self.redpanda,
+            self._topic,
+            self.msg_size,
+            readers=1,
+            nodes=self.preallocated_nodes)
+
+        self.consumer.start(clean=False)
+
+    def verify(self):
+        self.logger.info(
+            f"verifying workload: topic: {self._topic}, with [rate_limit: {self.producer_throughput}, message size: {self.msg_size}, message count: {self.msg_count}]"
+        )
+        self.producer.wait()
+
+        # Await the consumer that is reading only the subset of data that
+        # was written before it started.
+        self.consumer.wait()
+
+        assert self.consumer.consumer_status.validator.invalid_reads == 0, f"Invalid reads in topic: {self._topic}, invalid reads count: {self.consumer.consumer_status.validator.invalid_reads}"
+        del self.consumer
+
+        # Start a new consumer to read all data written
+        self.start_consumer()
+        self.consumer.wait()
+
+        assert self.consumer.consumer_status.validator.invalid_reads == 0, f"Invalid reads in topic: {self._topic}, invalid reads count: {self.consumer.consumer_status.validator.invalid_reads}"
+
+    @cluster(num_nodes=7)
     @matrix(partition_count=[1, 20])
     def test_adding_nodes_to_cluster(self, partition_count):
-        self.redpanda = make_redpanda_service(
-            self.test_context,
-            3,
-            extra_rp_conf={
-                "group_topic_partitions": self.group_topic_partitions,
-                "partition_autobalancing_mode": "node_add"
-            })
         # start single node cluster
         self.redpanda.start(nodes=[self.redpanda.nodes[0]])
         # create some topics
@@ -154,9 +224,9 @@ class ScalingUpTest(EndToEndTest):
         # include __consumer_offsets topic replica
         total_replicas += self.group_topic_partitions
 
-        self.start_producer(1)
-        self.start_consumer(1)
-        self.await_startup()
+        self.start_producer()
+        self.start_consumer()
+
         # add second node
         self.redpanda.start_node(self.redpanda.nodes[1])
         self.wait_for_partitions_rebalanced(total_replicas=total_replicas,
@@ -166,19 +236,12 @@ class ScalingUpTest(EndToEndTest):
         self.wait_for_partitions_rebalanced(total_replicas=total_replicas,
                                             timeout_sec=self.rebalance_timeout)
 
-        self.run_validation(enable_idempotence=False, consumer_timeout_sec=45)
+        self.verify()
 
-    @cluster(num_nodes=8)
+    @cluster(num_nodes=7)
     @matrix(partition_count=[1, 20])
     def test_adding_multiple_nodes_to_the_cluster(self, partition_count):
 
-        self.redpanda = make_redpanda_service(
-            self.test_context,
-            6,
-            extra_rp_conf={
-                "partition_autobalancing_mode": "node_add",
-                "group_topic_partitions": self.group_topic_partitions
-            })
         # start single node cluster
         self.redpanda.start(nodes=self.redpanda.nodes[0:3])
         # create some topics
@@ -188,10 +251,9 @@ class ScalingUpTest(EndToEndTest):
         # add consumer group topic replicas
         total_replicas += self.group_topic_partitions * 3
 
-        throughput = 100000 if not self.debug_mode else 1000
-        self.start_producer(1, throughput=throughput)
-        self.start_consumer(1)
-        self.await_startup(min_records=5 * throughput, timeout_sec=120)
+        self.start_producer()
+        self.start_consumer()
+
         # add three nodes at once
         for n in self.redpanda.nodes[3:]:
             self.redpanda.clean_node(n)
@@ -200,30 +262,22 @@ class ScalingUpTest(EndToEndTest):
         self.wait_for_partitions_rebalanced(total_replicas=total_replicas,
                                             timeout_sec=self.rebalance_timeout)
 
-    @cluster(num_nodes=8)
+    @cluster(num_nodes=7)
     @matrix(partition_count=[1, 20])
     def test_on_demand_rebalancing(self, partition_count):
-        # start redpanda with disabled rebalancing
-        self.redpanda = make_redpanda_service(
-            self.test_context,
-            6,
-            extra_rp_conf={
-                "partition_autobalancing_mode": "off",
-                "group_topic_partitions": self.group_topic_partitions
-            })
         # start single node cluster
         self.redpanda.start(nodes=self.redpanda.nodes[0:3])
+        self.redpanda.set_cluster_config(
+            {"partition_autobalancing_mode": "off"})
         # create some topics
         total_replicas = self.create_topics(rf=3,
                                             partition_count=partition_count)
         # add consumer group topic replicas
         total_replicas += self.group_topic_partitions * 3
 
-        throughput = 100000 if not self.debug_mode else 1000
-        self.start_producer(1, throughput=throughput)
-        self.start_consumer(1)
-        self.await_startup(min_records=5 * throughput,
-                           timeout_sec=self.rebalance_timeout)
+        self.start_producer()
+        self.start_consumer()
+
         # add three nodes
         for n in self.redpanda.nodes[3:]:
             self.redpanda.clean_node(n)
@@ -241,16 +295,10 @@ class ScalingUpTest(EndToEndTest):
 
         self.wait_for_partitions_rebalanced(total_replicas=total_replicas,
                                             timeout_sec=self.rebalance_timeout)
+        self.verify()
 
     @cluster(num_nodes=7)
     def test_topic_hot_spots(self):
-        self.redpanda = make_redpanda_service(
-            self.test_context,
-            5,
-            extra_rp_conf={
-                "group_topic_partitions": self.group_topic_partitions,
-                "partition_autobalancing_mode": "node_add"
-            })
         # start 3 nodes cluster
         self.redpanda.start(nodes=self.redpanda.nodes[0:3])
         # create some topics
@@ -265,14 +313,14 @@ class ScalingUpTest(EndToEndTest):
         for spec in topics:
             DefaultClient(self.redpanda).create_topic(spec)
 
-        self.topic = random.choice(topics).name
+        self._topic = random.choice(topics).name
 
         # include __consumer_offsets topic replica
         total_replicas += self.group_topic_partitions * 3
 
-        self.start_producer(1)
-        self.start_consumer(1)
-        self.await_startup()
+        self.start_producer()
+        self.start_consumer()
+
         # add second node
         self.redpanda.start_node(self.redpanda.nodes[3])
         self.wait_for_partitions_rebalanced(total_replicas=total_replicas,
@@ -282,23 +330,16 @@ class ScalingUpTest(EndToEndTest):
         self.wait_for_partitions_rebalanced(total_replicas=total_replicas,
                                             timeout_sec=self.rebalance_timeout)
 
-        self.run_validation(enable_idempotence=False, consumer_timeout_sec=45)
+        self.verify()
 
         topic_per_node = self._topic_replicas_per_node()
         for t, nodes in topic_per_node.items():
             self.logger.info(f"{t} spans {len(nodes)} nodes")
             # assert that each topic has replicas on all of the nodes
-            assert len(nodes) == len(self.redpanda.nodes)
+            assert len(nodes) == len(self.redpanda.started_nodes())
 
     @cluster(num_nodes=7)
     def test_adding_node_with_unavailable_node(self):
-        self.redpanda = make_redpanda_service(
-            self.test_context,
-            5,
-            extra_rp_conf={
-                "partition_autobalancing_mode": "off",
-                "group_topic_partitions": self.group_topic_partitions
-            })
         # start 3 nodes first
         self.redpanda.start(nodes=self.redpanda.nodes[0:3])
         # create some topics
@@ -306,10 +347,8 @@ class ScalingUpTest(EndToEndTest):
         # add consumer group topic replicas
         total_replicas += self.group_topic_partitions * 3
 
-        throughput = 100000 if not self.debug_mode else 1000
-        self.start_producer(1, throughput=throughput)
-        self.start_consumer(1)
-        self.await_startup(min_records=5 * throughput, timeout_sec=120)
+        self.start_producer()
+        self.start_consumer()
 
         # start a node just to register it (no partitions will be moved)
         unavailable_node = self.redpanda.nodes[3]
@@ -340,3 +379,4 @@ class ScalingUpTest(EndToEndTest):
         self.redpanda.start_node(unavailable_node)
         self.wait_for_partitions_rebalanced(total_replicas=total_replicas,
                                             timeout_sec=self.rebalance_timeout)
+        self.verify()
