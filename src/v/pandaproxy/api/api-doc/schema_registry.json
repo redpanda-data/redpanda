@@ -731,10 +731,65 @@
         }
       }
     },
-    "/subjects/{subject}/versions/{version}/referencedBy": {
+    "/subjects/{subject}/versions/{version}/referencedby": {
       "get": {
         "summary": "Retrieve a list of schema ids that reference the subject and version.",
         "operationId": "get_subject_versions_version_referenced_by",
+        "parameters": [
+          {
+            "name": "subject",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "version",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "produces": [
+          "application/vnd.schemaregistry.v1+json",
+          "application/vnd.schemaregistry+json",
+          "application/json"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "type": "array",
+              "items": {
+                  "type": "integer"
+              }
+            }
+          },
+          "404": {
+            "description": "Schema not found",
+            "schema": {
+              "$ref": "#/definitions/error_body"
+            }
+          },
+          "422": {
+            "description": "Invalid version",
+            "schema": {
+              "$ref": "#/definitions/error_body"
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "schema": {
+              "$ref": "#/definitions/error_body"
+            }
+          }
+        }
+      }
+    },
+    "/subjects/{subject}/versions/{version}/referencedBy": {
+      "get": {
+        "summary": "Retrieve a list of schema ids that reference the subject and version.",
+        "deprecated": true,
+        "operationId": "get_subject_versions_version_referenced_by_deprecated",
         "parameters": [
           {
             "name": "subject",
