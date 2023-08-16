@@ -24,11 +24,14 @@
 #include <seastar/util/later.hh>
 
 #include <boost/test/tools/interface.hpp>
+#include <boost/test/tools/old/interface.hpp>
 #include <fmt/format.h>
 
 #include <string_view>
 
 using namespace storage; // NOLINT
+using namespace std::chrono;
+
 struct storage::segment_appender_test_accessor {
     segment_appender& sa; // NOLINT
 
@@ -129,6 +132,9 @@ static void run_test_can_append_mixed(size_t fallocate_size) {
         appender.append(original).get();
         appender.flush().get();
         BOOST_REQUIRE_EQUAL(acc + step, appender.file_byte_offset());
+        // now there should be nothing in-flight
+        BOOST_CHECK_EQUAL(access(appender).dispatched(), 0);
+        BOOST_CHECK_EQUAL(access(appender).inflight().size(), 0);
         auto in = make_file_input_stream(f, acc);
         iobuf result = read_iobuf_exactly(in, step).get0();
         fmt::print(
@@ -185,6 +191,10 @@ static void run_test_can_append_10MB(size_t fallocate_size) {
         appender.append(original).get();
         appender.flush().get();
 
+        // now there should be nothing in-flight
+        BOOST_CHECK_EQUAL(access(appender).dispatched(), 0);
+        BOOST_CHECK_EQUAL(access(appender).inflight().size(), 0);
+
         auto in = make_file_input_stream(f, i * one_meg);
         iobuf result = read_iobuf_exactly(in, one_meg).get0();
         BOOST_CHECK_EQUAL(original, result);
@@ -235,7 +245,7 @@ static void run_concurrent_append_flush(
   const size_t max_buf_size,
   const size_t buf_count = 10000) {
     auto filename = fmt::format(
-      "run_concurrent_append_flush_{}.log", fallocate_size);
+      "run_concurrent_append_flush_{}_{}.log", fallocate_size, max_buf_size);
     auto f = open_file(filename);
     storage::storage_resources resources(
       config::mock_binding<size_t>(std::move(fallocate_size)));
@@ -259,8 +269,15 @@ static void run_concurrent_append_flush(
     std::optional<ss::future<>> last_append;
     std::vector<ss::future<>> futs;
 
+    size_t max_inflight = 0, max_dispatched = 0;
+
     for (size_t buf_index = 0; buf_index < bufs.size();) {
         auto next_action = (action)random_generators::get_int(LAST - 1);
+
+        max_inflight = std::max(
+          max_inflight, access(appender).inflight().size());
+        max_dispatched = std::max(
+          max_dispatched, access(appender).dispatched());
 
         switch (next_action) {
         case APPEND:
@@ -285,15 +302,31 @@ static void run_concurrent_append_flush(
         }
     }
 
-    // finally we need to wait for the last append, if any
+    // check that we got some visible inflight and dispatched IOs
+    BOOST_CHECK_GT(max_inflight, 0);
+    BOOST_CHECK_GT(max_dispatched, 0);
+
+    // now we need to wait for the last append, if any
     if (last_append) {
         last_append->get();
     }
-    futs.push_back(appender.flush()); // and do a final flush
 
+    // do a final flush and wait for it
+    appender.flush().get();
+
+    // now there should be nothing in-flight
+    BOOST_CHECK_EQUAL(access(appender).dispatched(), 0);
+    BOOST_CHECK_EQUAL(access(appender).inflight().size(), 0);
+
+    // now we expect all the prior flush futures to be available
+    // we don't guarantee this is in the API currently but it is how it
+    // works currently and we might as well assert it
     for (auto& f : futs) {
-        f.get();
+        BOOST_REQUIRE(f.available());
+        f.get(); // propagate any exception
     }
+
+    // verify the output
     auto in = make_file_input_stream(f);
     auto closefile = ss::defer([&] { in.close().get(); });
     for (auto& buf : bufs) {
@@ -378,6 +411,10 @@ static void run_test_fallocate_size(size_t fallocate_size) {
         BOOST_CHECK_EQUAL(one_meg, original.size_bytes());
         appender.append(original).get();
         appender.flush().get();
+
+        // now there should be nothing in-flight
+        BOOST_CHECK_EQUAL(access(appender).dispatched(), 0);
+        BOOST_CHECK_EQUAL(access(appender).inflight().size(), 0);
 
         auto in = make_file_input_stream(f, i * one_meg);
         iobuf result = read_iobuf_exactly(in, one_meg).get0();
