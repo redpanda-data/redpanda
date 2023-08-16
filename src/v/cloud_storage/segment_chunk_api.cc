@@ -159,7 +159,9 @@ bool segment_chunks::downloads_in_progress() const {
 }
 
 ss::future<ss::file> segment_chunks::do_hydrate_and_materialize(
-  chunk_start_offset_t chunk_start, std::optional<uint16_t> prefetch_override) {
+  chunk_start_offset_t chunk_start,
+  std::optional<uint16_t> prefetch_override,
+  eager_stream_ptr eager_stream) {
     gate_guard g{_gate};
     vassert(_started, "chunk API is not started");
 
@@ -172,12 +174,14 @@ ss::future<ss::file> segment_chunks::do_hydrate_and_materialize(
     const auto prefetch = prefetch_override.value_or(
       config::shard_local_cfg().cloud_storage_chunk_prefetch);
     co_await _segment.hydrate_chunk(
-      segment_chunk_range{_chunks, prefetch, chunk_start});
+      segment_chunk_range{_chunks, prefetch, chunk_start}, eager_stream);
     co_return co_await _segment.materialize_chunk(chunk_start);
 }
 
 ss::future<segment_chunk::handle_t> segment_chunks::hydrate_chunk(
-  chunk_start_offset_t chunk_start, std::optional<uint16_t> prefetch_override) {
+  chunk_start_offset_t chunk_start,
+  std::optional<uint16_t> prefetch_override,
+  eager_stream_ptr eager_stream) {
     gate_guard g{_gate};
     vassert(_started, "chunk API is not started");
 
@@ -208,9 +212,23 @@ ss::future<segment_chunk::handle_t> segment_chunks::hydrate_chunk(
 
         // Keep retrying if materialization fails.
         bool done = false;
+
+        // If we got this far, we are the first request to download this chunk.
+        // Mark the eager stream as usable (once the hydration finishes). The
+        // path that ends up here has no other points where we yield, so the
+        // caller can now wait on the eager stream safely.
+        if (eager_stream) {
+            vlog(
+              _ctxlog.trace,
+              "marking eager stream download start for {}",
+              chunk_start);
+            eager_stream->state
+              = eager_chunk_stream::stream_state::awaiting_hydration;
+        }
+
         while (!done) {
             auto handle = co_await do_hydrate_and_materialize(
-              chunk_start, prefetch_override);
+              chunk_start, prefetch_override, eager_stream);
             if (handle) {
                 done = true;
                 chunk.handle = ss::make_lw_shared(std::move(handle));

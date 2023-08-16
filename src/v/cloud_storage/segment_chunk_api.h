@@ -78,7 +78,8 @@ public:
     // readers are added to wait list.
     ss::future<segment_chunk::handle_t> hydrate_chunk(
       chunk_start_offset_t chunk_start,
-      std::optional<uint16_t> prefetch_override = std::nullopt);
+      std::optional<uint16_t> prefetch_override = std::nullopt,
+      eager_stream_ptr eager_stream = nullptr);
 
     // For all chunks between first and last, increment the
     // required_by_readers_in_future value by one, and increment the
@@ -110,7 +111,8 @@ private:
     // eviction between download and opening the file handle.
     ss::future<ss::file> do_hydrate_and_materialize(
       chunk_start_offset_t chunk_start,
-      std::optional<uint16_t> prefetch_override = std::nullopt);
+      std::optional<uint16_t> prefetch_override = std::nullopt,
+      eager_stream_ptr eager_stream = nullptr);
 
     // Periodically closes chunk file handles for the space to be reclaimable by
     // cache eviction. The chunks are evicted when they are no longer opened for

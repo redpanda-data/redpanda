@@ -19,6 +19,8 @@
 
 namespace cloud_storage {
 
+class remote_segment_batch_reader;
+
 class chunk_data_source_impl final : public ss::data_source_impl {
 public:
     chunk_data_source_impl(
@@ -28,7 +30,9 @@ public:
       kafka::offset end,
       int64_t begin_stream_at,
       ss::file_input_stream_options stream_options,
-      std::optional<uint16_t> prefetch_override = std::nullopt);
+      std::optional<uint16_t> prefetch_override = std::nullopt,
+      std::optional<std::reference_wrapper<remote_segment_batch_reader>> reader
+      = std::nullopt);
 
     chunk_data_source_impl(const chunk_data_source_impl&) = delete;
     chunk_data_source_impl& operator=(const chunk_data_source_impl&) = delete;
@@ -48,8 +52,20 @@ private:
     // offset.
     ss::future<> load_stream_for_chunk(chunk_start_offset_t chunk_start);
 
+    ss::future<eager_stream_ptr>
+    maybe_load_eager_stream(chunk_start_offset_t chunk_start);
+
+    ss::future<>
+    set_current_stream(uint64_t begin_at, eager_stream_ptr ecs = nullptr);
+
     ss::future<> maybe_close_stream();
-    ss::future<> load_chunk_handle(chunk_start_offset_t chunk_start);
+    ss::future<> load_chunk_handle(
+      chunk_start_offset_t chunk_start,
+      eager_stream_ptr eager_stream = nullptr);
+
+    ss::future<> skip_stream_to(uint64_t begin);
+
+    ss::future<> wait_for_download();
 
     segment_chunks& _chunks;
     remote_segment& _segment;
@@ -70,6 +86,17 @@ private:
     retry_chain_node _rtc;
     retry_chain_logger _ctxlog;
     std::optional<uint16_t> _prefetch_override;
+
+    enum class stream_type {
+        disk,
+        download,
+    };
+
+    stream_type _current_stream_t;
+    chunk_start_offset_t _last_download_end;
+    std::optional<std::reference_wrapper<remote_segment_batch_reader>>
+      _attached_reader;
+
     class download_task {
         friend std::ostream&
         operator<<(std::ostream& os, const download_task& t) {
@@ -100,6 +127,8 @@ private:
         eager_stream_ptr _ecs;
         std::optional<ss::future<>> _download;
     };
+
+    std::optional<download_task> _download_task;
 };
 
 } // namespace cloud_storage

@@ -135,7 +135,8 @@ public:
     /// Hydrate a part of a segment, identified by the given range. The range
     /// can contain data for multiple contiguous chunks, in which case multiple
     /// files are written to cache.
-    ss::future<> hydrate_chunk(segment_chunk_range range);
+    ss::future<>
+    hydrate_chunk(segment_chunk_range range, eager_stream_ptr eager_stream);
 
     /// Loads the segment chunk file from cache into an open file handle. If the
     /// file is not present in cache, the returned file handle is unopened.
