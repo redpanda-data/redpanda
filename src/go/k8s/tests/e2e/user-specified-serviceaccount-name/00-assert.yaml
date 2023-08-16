@@ -1,0 +1,20 @@
+apiVersion: redpanda.vectorized.io/v1alpha1
+kind: Cluster
+metadata:
+  name: user-specified-servicename
+status:
+  replicas: 1
+  restarting: false
+  conditions:
+    - type: ClusterConfigured
+      status: "True"
+---
+apiVersion: v1
+kind: serviceaccount
+metadata:
+  name: "slartibartfast"
+---
+apiVersion: kuttl.dev/v1beta1
+kind: TestAssert
+collectors:
+  - command: ../../../hack/get-redpanda-info.sh
