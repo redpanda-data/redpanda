@@ -2912,21 +2912,23 @@ ss::future<> tx_gateway_frontend::expire_old_tx(
       stm,
       term,
       tx_id,
-      config::shard_local_cfg().create_topic_timeout_ms());
+      config::shard_local_cfg().create_topic_timeout_ms(),
+      false);
 }
 
 ss::future<tx_errc> tx_gateway_frontend::do_expire_old_tx(
   ss::shared_ptr<tm_stm> stm,
   model::term_id term,
   kafka::transactional_id tx_id,
-  model::timeout_clock::duration timeout) {
+  model::timeout_clock::duration timeout,
+  bool ignore_update_ts) {
     auto r0 = co_await get_tx(term, stm, tx_id, timeout);
     if (!r0.has_value()) {
         // either timeout or already expired
         co_return tx_errc::tx_not_found;
     }
     auto tx = r0.value();
-    if (!stm->is_expired(tx)) {
+    if (!ignore_update_ts && !stm->is_expired(tx)) {
         co_return tx_errc::none;
     }
 

@@ -263,7 +263,8 @@ private:
       ss::shared_ptr<tm_stm>,
       model::term_id term,
       kafka::transactional_id,
-      model::timeout_clock::duration);
+      model::timeout_clock::duration,
+      bool ignore_update_ts);
 
     friend tx_gateway;
 };
