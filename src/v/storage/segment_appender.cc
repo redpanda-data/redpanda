@@ -102,6 +102,8 @@ segment_appender::segment_appender(segment_appender&& o) noexcept
   , _stable_offset(o._stable_offset)
   , _inflight(std::move(o._inflight))
   , _inflight_dispatched(std::exchange(o._inflight_dispatched, 0))
+  , _dispatched_writes(std::exchange(o._dispatched_writes, 0))
+  , _merged_writes(std::exchange(o._merged_writes, 0))
   , _callbacks(std::exchange(o._callbacks, nullptr))
   , _inactive_timer([this] { handle_inactive_timer(); })
   , _chunk_size(o._chunk_size) {
@@ -502,6 +504,7 @@ void segment_appender::dispatch_background_head_write() {
         // Yay! The latest in-flight write is still queued (i.e., has not
         // been dispatched to the disk) so we just append this write
         // to that entry.
+        ++_merged_writes;
         return;
     }
 
@@ -539,6 +542,7 @@ void segment_appender::dispatch_background_head_write() {
                 // as it is about to be dma_write'd.
                 w->set_state(write_state::DISPATCHED);
                 ++_inflight_dispatched;
+                ++_dispatched_writes;
 
                 return _out
                   .dma_write(
