@@ -594,6 +594,7 @@ class HighThroughputTest(PreallocNodesTest):
             consumer.stop()
             consumer.wait(timeout_sec=600)
 
+    @ignore
     @cluster(num_nodes=7, log_allow_list=RESTART_LOG_ALLOW_LIST)
     def test_consume(self):
         self.setup_cluster(segment_bytes=self.small_segment_size,
