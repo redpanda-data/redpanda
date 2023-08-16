@@ -4,7 +4,7 @@ import os
 import requests
 import uuid
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Optional
 
 from ducktape.utils.util import wait_until
@@ -105,9 +105,9 @@ class RpCloudApiClient(object):
 @dataclass(kw_only=True)
 class CloudClusterConfig:
     """
-    Configuration for the Cloud Cluster.
-    Should be the same as in context.globals['cloud_cluster']
-    Otherwise there will be error for not supplied parameters
+    Configuration of Cloud cluster.
+    Should be in sync with cloud_cluster subsection in
+    vtools/qa/deploy/ansible/roles/ducktape-setup/templates/ducktape_globals.json.j2
     """
     oauth_url: str
     oauth_client_id: str
@@ -127,17 +127,27 @@ class CloudClusterConfig:
 
 @dataclass
 class LiveClusterParams:
+    """
+    Active Cluster params.
+    Should not be used outside of the redpanda_cloud module
+    """
     isAlive: bool = False
     connection_type: str = 'public'
     namespace_uuid: str = None
     name: str = None
     network_id: str = None
+    network_cidr: str = None
     install_pack_ver: str = None
     product_id: str = None
     region_id: str = None
-    zones: list = []
-    peer_vpc_id: str
-    peer_owner_id: str
+    peer_vpc_id: str = None
+    peer_owner_id: str = None
+    rp_vpc_id: str = None
+    rp_owner_id: str = None
+
+    # Can't use mutables in defaults of dataclass
+    # https://docs.python.org/3/library/dataclasses.html#dataclasses.field
+    zones: list[str] = field(default_factory=list)
 
 
 class CloudCluster():
@@ -189,10 +199,11 @@ class CloudCluster():
         # init live cluster params
         self.current = LiveClusterParams()
 
-        self.cli = make_provider_client(self.config.provider, provider_config)
+        self.provider_cli = make_provider_client(
+            self.config.provider, logger, provider_config=provider_config)
         # Currently we need provider client only for VCP in private networking
         # Raise exception is client in not implemented yet
-        if self.cli is None and self.config.network != 'public':
+        if self.provider_cli is None and self.config.network != 'public':
             self._logger.error(
                 f"Current provider is not yet supports private networking ")
             raise RuntimeError("Private networking is not implemented "
@@ -232,10 +243,11 @@ class CloudCluster():
     def _get_cluster_id_and_network_id(self):
         """
         Get clusterId.
+        Uses self.current data as a source of needed params:
+        self.current.namespace_uuid: namespaceUuid the cluster is contained in
+        self.current.name: name of the cluster
 
-        :param namespace_uuid: namespaceUuid the cluster is contained in
-        :param name: name of the cluster
-        :return: clusterId as a string or None if not found
+        :return: clusterId, networkId as a string or None if not found
         """
 
         params = {'namespaceUuid': self.current.namespace_uuid}
@@ -394,8 +406,8 @@ class CloudCluster():
 
         if not self.isPublicNetwork:
             self.create_vpc_peering()
-
-        return self._cluster_id
+        self.current.isAlive = True
+        return self.config.id
 
     def delete(self):
         """
