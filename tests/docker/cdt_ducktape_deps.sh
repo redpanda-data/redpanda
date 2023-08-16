@@ -22,10 +22,6 @@ REMOTE_FILES_PATH="/tmp" # https://github.com/redpanda-data/vtools/blob/dev/qa/i
 "$REMOTE_FILES_PATH/tests/docker/ducktape-deps/kafka-streams-examples"
 "$REMOTE_FILES_PATH/tests/docker/ducktape-deps/arroyo"
 
-if [[ -d "$REMOTE_FILES_PATH/tests/docker/ducktape-deps/byoc-mock" ]]; then
-  "$REMOTE_FILES_PATH/ducktape-deps/byoc-mock"
-  install_mock_plugin
-fi
 if [[ -f "$REMOTE_FILES_PATH/ducktape-deps/keycloak" ]]; then
   "$REMOTE_FILES_PATH/ducktape-deps/keycloak"
 fi
