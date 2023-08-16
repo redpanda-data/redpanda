@@ -27,6 +27,7 @@
 #include <algorithm>
 #include <iterator>
 #include <limits>
+#include <ranges>
 
 using namespace cloud_storage;
 static ss::logger test("test-logger-s");
@@ -1106,4 +1107,45 @@ BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_insert_replacements) {
       store_result.end(),
       merged_result.begin(),
       merged_result.end()));
+}
+
+BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_append_retrieve_edge_case) {
+    // test to trigger a corner case, where the _hints vector is misaligned with
+    // the frames basically the first element of a frame is not tracked by a
+    // hint. this can happen with prefix_truncate, that will break the invariant
+    // that closed frames are max_frame_size big the content of metadata is not
+    // important, only the quantity. this should construct 3 frames, first two
+    // complete and the third one open (but with enough data to have
+    // compression)
+    auto metadata = generate_metadata(
+      cloud_storage::cstore_max_frame_size * 2 + details::FOR_buffer_depth);
+    segment_meta_cstore store{};
+    // step 1: generate two frames
+    for (auto& m :
+         metadata
+           | std::views::take(cloud_storage::cstore_max_frame_size * 2)) {
+        store.insert(m);
+    }
+    // step 1.5 make sure that data is compressed
+    BOOST_REQUIRE(store.size() == cloud_storage::cstore_max_frame_size * 2);
+    // step 2: prefix truncate to misalign hints vector
+    store.prefix_truncate(metadata[1].base_offset);
+    BOOST_REQUIRE(store.size() == cloud_storage::cstore_max_frame_size * 2 - 1);
+
+    // step 3: elements to the new frame
+    for (auto& m :
+         metadata
+           | std::views::drop(cloud_storage::cstore_max_frame_size * 2)) {
+        store.insert(m);
+    }
+    BOOST_REQUIRE(store.size() == metadata.size() - 1);
+
+    // retrieving this offset via lower_bound will first returns a _hint that
+    // belongs to the previous frame. without the fix, this would cause an
+    // out_of_range exception the fix is in
+    // segment_meta_cstore.cc::column_store::materialize() `_hint_initial <
+    // _hint_threashold -> return nullopt`
+    auto last_frame_first_offset
+      = metadata[cloud_storage::cstore_max_frame_size * 2].base_offset;
+    BOOST_CHECK_NO_THROW(store.lower_bound(last_frame_first_offset));
 }
