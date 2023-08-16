@@ -24,6 +24,7 @@
 #include "redpanda/application.h"
 #include "redpanda/tests/fixture.h"
 #include "storage/snapshot.h"
+#include "test_utils/async.h"
 
 #include <seastar/core/io_priority_class.hh>
 #include <seastar/core/lowres_clock.hh>
@@ -169,18 +170,15 @@ FIXTURE_TEST(test_upload_next_metadata, cluster_metadata_uploader_fixture) {
       cluster_uuid, bucket, remote, raft0);
     retry_chain_node retry_node(
       never_abort, ss::lowres_clock::time_point::max(), 10ms);
-    tests::cooperative_spin_wait_with_timeout(5s, [this] {
-        return raft0->is_leader();
-    }).get();
+    boost_require_eventually(5s, [this] { return raft0->is_leader(); });
     auto down_res
       = uploader.download_highest_manifest_or_create(retry_node).get();
     BOOST_REQUIRE(down_res.has_value());
     auto& manifest = down_res.value();
     BOOST_REQUIRE_EQUAL(manifest.metadata_id, cluster_metadata_id{});
 
-    tests::cooperative_spin_wait_with_timeout(5s, [this] {
-        return controller_stm.maybe_write_snapshot();
-    }).get();
+    boost_require_eventually(
+      5s, [this] { return controller_stm.maybe_write_snapshot(); });
     // Uploading the first time should set the metadata ID to 0, and we should
     // increment from there.
     ss::sstring first_controller_snapshot_path;
@@ -255,9 +253,8 @@ FIXTURE_TEST(test_upload_next_metadata, cluster_metadata_uploader_fixture) {
 // Test that the upload fiber uploads monotonically increasing metadata, and
 // that the fiber stop when leadership changes.
 FIXTURE_TEST(test_upload_in_term, cluster_metadata_uploader_fixture) {
-    tests::cooperative_spin_wait_with_timeout(5s, [this] {
-        return controller_stm.maybe_write_snapshot();
-    }).get();
+    boost_require_eventually(
+      5s, [this] { return controller_stm.maybe_write_snapshot(); });
     const auto get_local_snap_offset = [&] {
         auto snap = raft0->open_snapshot().get();
         BOOST_REQUIRE(snap.has_value());
@@ -279,9 +276,7 @@ FIXTURE_TEST(test_upload_in_term, cluster_metadata_uploader_fixture) {
     const auto check_uploads_in_term_and_stepdown =
       [&](model::offset expected_snap_offset) {
           // Wait to become leader before uploading.
-          tests::cooperative_spin_wait_with_timeout(5s, [this] {
-              return raft0->is_leader();
-          }).get();
+          boost_require_eventually(5s, [this] { return raft0->is_leader(); });
 
           // Start uploading in this term.
           auto upload_in_term = uploader.upload_until_term_change();
@@ -297,13 +292,10 @@ FIXTURE_TEST(test_upload_in_term, cluster_metadata_uploader_fixture) {
           // some non-zero value (indicating we've uploaded multiple manifests);
           auto initial_meta_id = highest_meta_id;
           cluster::cloud_metadata::cluster_metadata_manifest manifest;
-          tests::cooperative_spin_wait_with_timeout(
-            10s,
-            [&]() -> ss::future<bool> {
-                return downloaded_manifest_has_higher_id(
-                  initial_meta_id, &manifest);
-            })
-            .get();
+          boost_require_eventually(10s, [&]() -> ss::future<bool> {
+              return downloaded_manifest_has_higher_id(
+                initial_meta_id, &manifest);
+          });
           BOOST_REQUIRE_GT(manifest.metadata_id, highest_meta_id);
           highest_meta_id = manifest.metadata_id;
 
@@ -320,9 +312,7 @@ FIXTURE_TEST(test_upload_in_term, cluster_metadata_uploader_fixture) {
     }
 
     // Now do some action and write a new snapshot.
-    tests::cooperative_spin_wait_with_timeout(5s, [this] {
-        return raft0->is_leader();
-    }).get();
+    boost_require_eventually(5s, [this] { return raft0->is_leader(); });
     auto result = app.controller->get_config_frontend()
                     .local()
                     .do_patch(
@@ -331,9 +321,8 @@ FIXTURE_TEST(test_upload_in_term, cluster_metadata_uploader_fixture) {
                       model::timeout_clock::now() + 5s)
                     .get();
     BOOST_REQUIRE(!result.errc);
-    tests::cooperative_spin_wait_with_timeout(5s, [this] {
-        return controller_stm.maybe_write_snapshot();
-    }).get();
+    boost_require_eventually(
+      5s, [this] { return controller_stm.maybe_write_snapshot(); });
     const auto new_snap_offset = get_local_snap_offset();
     BOOST_REQUIRE_NE(new_snap_offset, snap_offset);
     check_uploads_in_term_and_stepdown(new_snap_offset);
@@ -342,16 +331,13 @@ FIXTURE_TEST(test_upload_in_term, cluster_metadata_uploader_fixture) {
 FIXTURE_TEST(
   test_upload_loop_deletes_orphans, cluster_metadata_uploader_fixture) {
     // Write a snapshot and begin the upload loop.
-    tests::cooperative_spin_wait_with_timeout(5s, [this] {
-        return controller_stm.maybe_write_snapshot();
-    }).get();
+    boost_require_eventually(
+      5s, [this] { return controller_stm.maybe_write_snapshot(); });
     config::shard_local_cfg()
       .cloud_storage_cluster_metadata_upload_interval_ms.set_value(1000ms);
     cluster::cloud_metadata::uploader uploader(
       cluster_uuid, bucket, remote, raft0);
-    tests::cooperative_spin_wait_with_timeout(5s, [this] {
-        return raft0->is_leader();
-    }).get();
+    boost_require_eventually(5s, [this] { return raft0->is_leader(); });
 
     auto upload_in_term = uploader.upload_until_term_change();
     auto defer = ss::defer([&] {
@@ -363,13 +349,13 @@ FIXTURE_TEST(
     });
     // Wait for some valid metadata to show up.
     cluster::cloud_metadata::cluster_metadata_manifest manifest;
-    tests::cooperative_spin_wait_with_timeout(5s, [this, &manifest] {
+    boost_require_eventually(5s, [this, &manifest] {
         return downloaded_manifest_has_higher_id(
           cluster::cloud_metadata::cluster_metadata_id{-1}, &manifest);
-    }).get();
-    tests::cooperative_spin_wait_with_timeout(5s, [this, &manifest] {
+    });
+    boost_require_eventually(5s, [this, &manifest] {
         return list_contains_manifest_contents(manifest);
-    }).get();
+    });
     // Now do something to trigger another controller snapshot.
     auto result = app.controller->get_config_frontend()
                     .local()
@@ -379,12 +365,11 @@ FIXTURE_TEST(
                       model::timeout_clock::now() + 5s)
                     .get();
     BOOST_REQUIRE(!result.errc);
-    tests::cooperative_spin_wait_with_timeout(5s, [this] {
-        return controller_stm.maybe_write_snapshot();
-    }).get();
+    boost_require_eventually(
+      5s, [this] { return controller_stm.maybe_write_snapshot(); });
 
     // The uploader should delete the stale manifest and snapshot.
-    tests::cooperative_spin_wait_with_timeout(5s, [this] {
+    boost_require_eventually(5s, [this] {
         auto& s3_reqs = get_requests();
         int num_deletes = 0;
         for (const auto& r : s3_reqs) {
@@ -393,5 +378,5 @@ FIXTURE_TEST(
             }
         }
         return num_deletes >= 2;
-    }).get();
+    });
 }
