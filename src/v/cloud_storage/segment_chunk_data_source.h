@@ -132,6 +132,8 @@ private:
 
     std::optional<download_task> _download_task;
     ss::lowres_clock::duration _eager_stream_acquire_timeout;
+
+    friend class segment_chunk_data_source_test_helper;
 };
 
 } // namespace cloud_storage
