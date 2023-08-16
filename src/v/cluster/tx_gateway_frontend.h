@@ -240,6 +240,15 @@ private:
     template<typename Func>
     auto with_stm(model::partition_id tm, Func&& func);
 
+    template<typename T>
+    ss::future<typename T::reply> do_dispatch(model::node_id, T&&);
+
+    template<typename T>
+    ss::future<typename T::reply> do_route_globally(model::ntp, T&&);
+
+    template<typename T>
+    ss::future<typename T::reply> do_route_locally(model::ntp, T&&);
+
     ss::future<add_paritions_tx_reply> do_add_partition_to_tx(
       ss::shared_ptr<tm_stm>,
       add_paritions_tx_request,
