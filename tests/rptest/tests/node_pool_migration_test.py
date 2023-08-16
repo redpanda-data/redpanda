@@ -123,13 +123,14 @@ class NodePoolMigrationTest(PreallocNodesTest):
 
             return [r for r in result]
 
-    def _decommission(self, node_id, node=None):
+    def _decommission(self, node_id, decommissioned_ids=[]):
         def decommissioned():
             try:
 
                 results = []
                 for n in self.redpanda.nodes:
-                    if self.redpanda.node_id(n) == node_id:
+                    # do not query decommissioned nodes
+                    if self.redpanda.node_id(n) in decommissioned_ids:
                         continue
 
                     brokers = self.admin.get_brokers(node=n)
@@ -141,7 +142,7 @@ class NodePoolMigrationTest(PreallocNodesTest):
                 if all(results):
                     return True
 
-                self.admin.decommission_broker(node_id, node=node)
+                self.admin.decommission_broker(node_id)
             except requests.exceptions.RetryError:
                 return False
             except requests.exceptions.ConnectionError:
@@ -149,7 +150,12 @@ class NodePoolMigrationTest(PreallocNodesTest):
             except requests.exceptions.HTTPError:
                 return False
 
-        wait_until(decommissioned, 30, 1)
+        wait_until(
+            decommissioned,
+            30,
+            1,
+            err_msg=
+            f"Timeout waiting for node {node_id} to start decommissioning")
 
     @property
     def msg_size(self):
@@ -257,16 +263,16 @@ class NodePoolMigrationTest(PreallocNodesTest):
             1,
             err_msg=
             "Not all nodes that were supposed to join the cluster are members")
-
-        for to_decommission in initial_pool:
-            to_decommission_id = self.redpanda.node_id(to_decommission)
-            self.logger.info(f"decommissioning node: {to_decommission_id}", )
-            self._decommission(to_decommission_id)
-
         decommissioned_ids = [
             self.redpanda.node_id(to_decommission)
             for to_decommission in initial_pool
         ]
+
+        for to_decommission_id in decommissioned_ids:
+
+            self.logger.info(f"decommissioning node: {to_decommission_id}", )
+            self._decommission(to_decommission_id,
+                               decommissioned_ids=decommissioned_ids)
 
         self._wait_for_nodes_removed(decommissioned_ids)
 
