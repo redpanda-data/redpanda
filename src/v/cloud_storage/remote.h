@@ -458,6 +458,22 @@ private:
       SuccessfulUploadMetricFn successful_upload_metric,
       UploadBackoffMetricFn upload_backoff_metric);
 
+    template<
+      typename DownloadLatencyMeasurementFn,
+      typename FailedDownloadMetricFn,
+      typename DownloadBackoffMetricFn>
+    ss::future<download_result> download_stream(
+      const cloud_storage_clients::bucket_name& bucket,
+      const remote_segment_path& path,
+      const try_consume_stream& cons_str,
+      retry_chain_node& parent,
+      const std::string_view stream_label,
+      DownloadLatencyMeasurementFn download_latency_measurement,
+      FailedDownloadMetricFn failed_download_metric,
+      DownloadBackoffMetricFn download_backoff_metric,
+      std::optional<cloud_storage_clients::http_byte_range> byte_range
+      = std::nullopt);
+
     ss::future<upload_result> delete_objects_sequentially(
       const cloud_storage_clients::bucket_name& bucket,
       std::vector<cloud_storage_clients::object_key> keys,

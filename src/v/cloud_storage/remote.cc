@@ -620,6 +620,32 @@ ss::future<download_result> remote::download_segment(
   const try_consume_stream& cons_str,
   retry_chain_node& parent,
   std::optional<cloud_storage_clients::http_byte_range> byte_range) {
+    return download_stream(
+      bucket,
+      segment_path,
+      cons_str,
+      parent,
+      "segment",
+      [this] { return _probe.segment_download(); },
+      [this] { _probe.failed_download(); },
+      [this] { _probe.download_backoff(); },
+      byte_range);
+}
+
+template<
+  typename DownloadLatencyMeasurementFn,
+  typename FailedDownloadMetricFn,
+  typename DownloadBackoffMetricFn>
+ss::future<download_result> remote::download_stream(
+  const cloud_storage_clients::bucket_name& bucket,
+  const remote_segment_path& segment_path,
+  const try_consume_stream& cons_str,
+  retry_chain_node& parent,
+  const std::string_view stream_label,
+  DownloadLatencyMeasurementFn download_latency_measurement,
+  FailedDownloadMetricFn failed_download_metric,
+  DownloadBackoffMetricFn download_backoff_metric,
+  std::optional<cloud_storage_clients::http_byte_range> byte_range) {
     gate_guard guard{_gate};
     retry_chain_node fib(&parent);
     retry_chain_logger ctxlog(cst_log, fib);
@@ -631,13 +657,13 @@ ss::future<download_result> remote::download_segment(
     }();
 
     auto permit = fib.retry();
-    vlog(ctxlog.debug, "Download segment {}", path);
+    vlog(ctxlog.debug, "Download {} {}", stream_label, path);
     std::optional<download_result> result;
     while (!_gate.is_closed() && permit.is_allowed && !result) {
         notify_external_subscribers(
           api_activity_notification::segment_download, parent);
 
-        auto download_latency_measure = _probe.segment_download();
+        auto download_latency_measure = download_latency_measurement();
         auto resp = co_await lease.client->get_object(
           bucket, path, fib.get_timeout(), false, byte_range);
 
@@ -672,11 +698,12 @@ ss::future<download_result> remote::download_segment(
         case cloud_storage_clients::error_outcome::retry:
             vlog(
               ctxlog.debug,
-              "Downloading segment from {}, {} backoff required",
+              "Downloading {} from {}, {} backoff required",
+              stream_label,
               bucket,
               std::chrono::duration_cast<std::chrono::milliseconds>(
                 permit.delay));
-            _probe.download_backoff();
+            download_backoff_metric();
             co_await ss::sleep_abortable(permit.delay, fib.root_abort_source());
             permit = fib.retry();
             break;
@@ -688,19 +715,21 @@ ss::future<download_result> remote::download_segment(
             break;
         }
     }
-    _probe.failed_download();
+    failed_download_metric();
     if (!result) {
         vlog(
           ctxlog.warn,
-          "Downloading segment from {}, backoff quota exceded, segment at {} "
+          "Downloading {} from {}, backoff quota exceded, segment at {} "
           "not available",
+          stream_label,
           bucket,
           path);
         result = download_result::timedout;
     } else {
         vlog(
           ctxlog.warn,
-          "Downloading segment from {}, {}, segment at {} not available",
+          "Downloading {} from {}, {}, segment at {} not available",
+          stream_label,
           bucket,
           *result,
           path);
