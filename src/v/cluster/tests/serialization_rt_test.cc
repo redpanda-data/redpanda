@@ -1955,7 +1955,7 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
               = tests::random_named_int<model::offset>(),
               .last_dirty_log_index = tests::random_named_int<model::offset>(),
               .last_term_base_offset = tests::random_named_int<model::offset>(),
-              .result = raft::append_entries_reply::status::group_unavailable,
+              .result = raft::reply_result::group_unavailable,
             };
             data.meta.push_back(reply);
         }
@@ -2056,7 +2056,7 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
           .last_flushed_log_index = tests::random_named_int<model::offset>(),
           .last_dirty_log_index = tests::random_named_int<model::offset>(),
           .last_term_base_offset = tests::random_named_int<model::offset>(),
-          .result = raft::append_entries_reply::status::group_unavailable,
+          .result = raft::reply_result::group_unavailable,
         };
         roundtrip_test(data);
     }

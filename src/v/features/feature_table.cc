@@ -73,6 +73,8 @@ std::string_view to_string_view(feature f) {
         return "raft_append_entries_serde";
     case feature::delete_records:
         return "delete_records";
+    case feature::lightweight_heartbeats:
+        return "lightweight_heartbeats";
 
     /*
      * testing features
@@ -117,12 +119,13 @@ std::string_view to_string_view(feature_state::state s) {
 //  22.3.1 -> 7  (22.3.6 later proceeds to verison 8)
 //  23.1.1 -> 9
 //  23.2.1 -> 10
+//  23.3.1 -> 11
 //
 // Although some previous stable branches have included feature version
 // bumps, this is _not_ the intended usage, as stable branches are
 // meant to be safely downgradable within the branch, and new features
 // imply that new data formats may be written.
-static constexpr cluster_version latest_version = cluster_version{10};
+static constexpr cluster_version latest_version = cluster_version{11};
 
 // The earliest version we can upgrade from.  This is the version that
 // a freshly initialized node will start at: e.g. a 23.1 Redpanda joining

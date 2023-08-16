@@ -86,6 +86,7 @@ struct mux_state_machine_fixture {
                   = config::mock_binding<std::chrono::milliseconds>(2000ms),
                   .raft_io_timeout_ms
                   = config::mock_binding<std::chrono::milliseconds>(30s),
+                  .enable_lw_heartbeat = config::mock_binding<bool>(true),
                 };
             },
             [] {

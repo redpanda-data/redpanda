@@ -204,7 +204,8 @@ struct raft_node {
                 ss::default_smp_service_group(),
                 raft_manager,
                 *this,
-                heartbeat_interval);
+                heartbeat_interval,
+                broker.id());
           })
           .get0();
         server.invoke_on_all(&rpc::rpc_server::start).get0();
@@ -214,7 +215,9 @@ struct raft_node {
           raft::make_rpc_client_protocol(broker.id(), cache),
           broker.id(),
           config::mock_binding<std::chrono::milliseconds>(
-            heartbeat_interval * 20));
+            heartbeat_interval * 20),
+          config::mock_binding<bool>(true),
+          feature_table.local());
         hbeats->start().get0();
         hbeats->register_group(consensus).get();
         started = true;

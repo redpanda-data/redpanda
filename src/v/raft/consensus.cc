@@ -15,6 +15,7 @@
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/namespace.h"
+#include "model/record.h"
 #include "model/record_batch_reader.h"
 #include "model/record_batch_types.h"
 #include "model/timeout_clock.h"
@@ -43,6 +44,7 @@
 #include <seastar/core/future.hh>
 #include <seastar/core/gate.hh>
 #include <seastar/core/semaphore.hh>
+#include <seastar/core/when_all.hh>
 #include <seastar/util/defer.hh>
 
 #include <fmt/ostream.h>
@@ -207,8 +209,14 @@ void consensus::do_step_down(std::string_view ctx) {
 }
 
 void consensus::maybe_step_down() {
+    // ignore stepdown if we are not the leader
+    if (_vstate != vote_state::leader) {
+        return;
+    }
+
     ssx::spawn_with_gate(_bg, [this] {
         return _op_lock.with([this] {
+            // check again while holding a lock
             if (_vstate == vote_state::leader) {
                 auto majority_hbeat = majority_heartbeat();
                 if (majority_hbeat < _became_leader_at) {
@@ -220,6 +228,8 @@ void consensus::maybe_step_down() {
                     if (_leader_id) {
                         _leader_id = std::nullopt;
                         trigger_leadership_notification();
+                        ssx::spawn_with_gate(
+                          _bg, [this] { return notify_stepdown(); });
                     }
                 }
             }
@@ -234,6 +244,9 @@ clock_type::time_point consensus::majority_heartbeat() const {
         }
 
         if (auto it = _fstats.find(rni); it != _fstats.end()) {
+            if (it->second.quiescent) {
+                return clock_type::now();
+            }
             return it->second.last_received_reply_timestamp;
         }
 
@@ -303,7 +316,7 @@ consensus::success_reply consensus::update_follower_index(
         // current node may change it.
         return success_reply::yes;
     }
-    auto config = _configuration_manager.get_latest();
+    auto& config = _configuration_manager.get_latest();
     if (!config.contains(node)) {
         // We might have sent an append_entries just before removing
         // a node from configuration: ignore its reply, to avoid
@@ -311,7 +324,7 @@ consensus::success_reply consensus::update_follower_index(
         vlog(
           _ctxlog.debug,
           "Ignoring reply from node {}, it is not in members list",
-          physical_node);
+          node);
         return success_reply::no;
     }
 
@@ -339,13 +352,12 @@ consensus::success_reply consensus::update_follower_index(
         return success_reply::no;
     }
 
-    if (unlikely(reply.result == append_entries_reply::status::timeout)) {
+    if (unlikely(reply.result == reply_result::timeout)) {
         // ignore this response, timed out on the receiver node
         vlog(_ctxlog.trace, "Append entries request timedout at node {}", node);
         return success_reply::no;
     }
-    if (unlikely(
-          reply.result == append_entries_reply::status::group_unavailable)) {
+    if (unlikely(reply.result == reply_result::group_unavailable)) {
         // ignore this response since group is not yet bootstrapped at the
         // follower
         vlog(_ctxlog.trace, "Raft group not yet initialized at node {}", node);
@@ -365,7 +377,7 @@ consensus::success_reply consensus::update_follower_index(
         return success_reply::no;
     }
 
-    update_node_reply_timestamp(node);
+    idx.last_received_reply_timestamp = clock_type::now();
 
     if (
       seq < idx.last_received_seq
@@ -428,7 +440,7 @@ consensus::success_reply consensus::update_follower_index(
         idx.next_index = model::next_offset(idx.last_dirty_log_index);
     }
 
-    if (reply.result == append_entries_reply::status::success) {
+    if (reply.result == reply_result::success) {
         successfull_append_entries_reply(idx, std::move(reply));
         return success_reply::yes;
     } else {
@@ -775,6 +787,7 @@ replicate_stages consensus::do_replicate(
         return replicate_stages(errc::shutting_down);
     }
 
+    leave_quiescent_state();
     if (!is_elected_leader() || unlikely(_transferring_leadership)) {
         return replicate_stages(errc::not_leader);
     }
@@ -960,7 +973,8 @@ void consensus::dispatch_vote(bool leadership_transfer) {
 
 void consensus::arm_vote_timeout() {
     if (!_bg.is_closed()) {
-        _vote_timeout.rearm(_jit());
+        _vote_timeout.cancel();
+        _vote_timeout.arm(_jit());
     }
 }
 
@@ -1181,6 +1195,8 @@ consensus::cancel_configuration_change(model::revision_id revision) {
                   return _op_lock
                     .with([this, ec] {
                         do_step_down("current leader is not voter");
+                        ssx::spawn_with_gate(
+                          _bg, [this] { return notify_stepdown(); });
                         return ec;
                     })
                     .handle_exception_type([](const ss::broken_semaphore&) {
@@ -1617,6 +1633,7 @@ consensus::get_last_entry_term(const storage::offset_stats& lstats) const {
 }
 
 ss::future<vote_reply> consensus::do_vote(vote_request r) {
+    leave_quiescent_state();
     vote_reply reply;
     reply.term = _term;
     reply.target_node_id = r.node_id;
@@ -1779,6 +1796,7 @@ consensus::append_entries(append_entries_request&& r) {
 
 ss::future<append_entries_reply>
 consensus::do_append_entries(append_entries_request&& r) {
+    leave_quiescent_state();
     auto lstats = _log->offsets();
     append_entries_reply reply;
     const auto request_metadata = r.metadata();
@@ -1788,7 +1806,7 @@ consensus::do_append_entries(append_entries_request&& r) {
     reply.term = _term;
     reply.last_dirty_log_index = lstats.dirty_offset;
     reply.last_flushed_log_index = _flushed_offset;
-    reply.result = append_entries_reply::status::failure;
+    reply.result = reply_result::failure;
     _probe->append_request();
 
     if (unlikely(is_request_target_node_invalid("append_entries", r))) {
@@ -1800,7 +1818,7 @@ consensus::do_append_entries(append_entries_request&& r) {
 
     // raft.pdf: Reply false if term < currentTerm (§5.1)
     if (request_metadata.term < _term) {
-        reply.result = append_entries_reply::status::failure;
+        reply.result = reply_result::failure;
         return ss::make_ready_future<append_entries_reply>(std::move(reply));
     }
     /**
@@ -1872,7 +1890,7 @@ consensus::do_append_entries(append_entries_request&& r) {
           request_metadata.prev_log_index,
           last_log_term,
           request_metadata.prev_log_term);
-        reply.result = append_entries_reply::status::failure;
+        reply.result = reply_result::failure;
         return ss::make_ready_future<append_entries_reply>(std::move(reply));
     }
 
@@ -1882,7 +1900,7 @@ consensus::do_append_entries(append_entries_request&& r) {
     if (r.batches().is_end_of_stream()) {
         if (request_metadata.prev_log_index < last_log_offset) {
             // do not tuncate on heartbeat just response with false
-            reply.result = append_entries_reply::status::failure;
+            reply.result = reply_result::failure;
             return ss::make_ready_future<append_entries_reply>(
               std::move(reply));
         }
@@ -1901,7 +1919,7 @@ consensus::do_append_entries(append_entries_request&& r) {
                      model::offset(request_metadata.commit_index))
               .then([this, reply]() mutable {
                   reply.last_flushed_log_index = _flushed_offset;
-                  reply.result = append_entries_reply::status::success;
+                  reply.result = reply_result::success;
                   return reply;
               });
         });
@@ -1910,7 +1928,7 @@ consensus::do_append_entries(append_entries_request&& r) {
     // section 3
     if (request_metadata.prev_log_index < last_log_offset) {
         if (unlikely(request_metadata.prev_log_index < _commit_index)) {
-            reply.result = append_entries_reply::status::success;
+            reply.result = reply_result::success;
             vlog(
               _ctxlog.info,
               "Stale append entries request processed, entry is already "
@@ -1974,7 +1992,7 @@ consensus::do_append_entries(append_entries_request&& r) {
           })
           .handle_exception([this, reply](const std::exception_ptr& e) mutable {
               vlog(_ctxlog.warn, "Error occurred while truncating log - {}", e);
-              reply.result = append_entries_reply::status::failure;
+              reply.result = reply_result::failure;
               return ss::make_ready_future<append_entries_reply>(reply);
           });
     }
@@ -1998,7 +2016,7 @@ consensus::do_append_entries(append_entries_request&& r) {
       .handle_exception([this, reply](const std::exception_ptr& e) mutable {
           vlog(
             _ctxlog.warn, "Error occurred while appending log entries - {}", e);
-          reply.result = append_entries_reply::status::failure;
+          reply.result = reply_result::failure;
           return ss::make_ready_future<append_entries_reply>(reply);
       })
       .finally([this] {
@@ -2013,6 +2031,7 @@ consensus::install_snapshot(install_snapshot_request&& r) {
     return with_gate(_bg, [this, r = std::move(r)]() mutable {
         return _op_lock
           .with([this, r = std::move(r)]() mutable {
+              leave_quiescent_state();
               return _snapshot_lock.with([this, r = std::move(r)]() mutable {
                   return do_install_snapshot(std::move(r));
               });
@@ -2466,7 +2485,7 @@ append_entries_reply consensus::make_append_entries_reply(
     reply.term = _term;
     reply.last_dirty_log_index = disk_results.last_offset;
     reply.last_flushed_log_index = _flushed_offset;
-    reply.result = append_entries_reply::status::success;
+    reply.result = reply_result::success;
     return reply;
 }
 
@@ -2631,9 +2650,6 @@ void consensus::maybe_update_node_reply_timestamp(vnode id) {
         it->second.last_received_reply_timestamp = clock_type::now();
     }
 }
-void consensus::update_node_reply_timestamp(vnode id) {
-    _fstats.get(id).last_received_reply_timestamp = clock_type::now();
-}
 
 follower_req_seq consensus::next_follower_sequence(vnode id) {
     if (auto it = _fstats.find(id); it != _fstats.end()) {
@@ -2761,6 +2777,7 @@ ss::future<> consensus::maybe_commit_configuration(ssx::semaphore_units u) {
           _ctxlog.trace,
           "current node is not longer group member, stepping down");
         do_step_down("not_longer_member");
+        ssx::spawn_with_gate(_bg, [this] { return notify_stepdown(); });
     }
 }
 
@@ -2899,7 +2916,7 @@ ss::future<timeout_now_reply> consensus::timeout_now(timeout_now_request&& r) {
             });
         });
     }
-
+    leave_quiescent_state();
     if (_vstate != vote_state::follower) {
         vlog(
           _ctxlog.debug,
@@ -2955,6 +2972,7 @@ ss::future<transfer_leadership_reply>
 consensus::transfer_leadership(transfer_leadership_request req) {
     transfer_leadership_reply reply;
     try {
+        leave_quiescent_state();
         auto err = co_await do_transfer_leadership(req);
         if (err) {
             vlog(
@@ -3361,10 +3379,13 @@ void consensus::update_suppress_heartbeats(
     }
 }
 
-void consensus::update_heartbeat_status(vnode id, bool success) {
+void consensus::update_heartbeat_status(
+  vnode id, bool success, in_quiescent_state quiescent) {
     if (auto it = _fstats.find(id); it != _fstats.end()) {
         if (success) {
+            it->second.last_received_reply_timestamp = clock_type::now();
             it->second.heartbeats_failed = 0;
+            it->second.quiescent = quiescent;
         } else {
             it->second.heartbeats_failed++;
         }
@@ -3527,6 +3548,116 @@ std::optional<uint8_t> consensus::get_under_replicated() const {
         }
     }
     return count;
+}
+
+reply_result consensus::lightweight_heartbeat(
+  model::node_id source_node, model::node_id target_node) {
+    /**
+     * Handle lightweight heartbeat
+     */
+    if (unlikely(target_node != _self.id())) {
+        vlog(
+          _ctxlog.warn,
+          "received lw_heartbeat request addressed to different node: {}, "
+          "current node: {}, source: {}",
+          target_node,
+          _self,
+          source_node);
+        return reply_result::failure;
+    }
+
+    _hbeat = clock_type::now();
+    enter_quiescent_state();
+    return reply_result::success;
+}
+ss::future<full_heartbeat_reply> consensus::full_heartbeat(
+  group_id group,
+  model::node_id source_node,
+  model::node_id target_node,
+  const heartbeat_request_data& hb_data) {
+    leave_quiescent_state();
+    const vnode target_vnode(target_node, hb_data.target_revision);
+    const vnode source_vnode(source_node, hb_data.source_revision);
+    full_heartbeat_reply reply{.group = _group};
+
+    if (unlikely(target_vnode != _self)) {
+        vlog(
+          _ctxlog.warn,
+          "received full heartbeat request addressed to node with different "
+          "revision: {}, current node: {}, source: {}",
+          target_vnode,
+          _self,
+          source_vnode);
+        reply.result = reply_result::failure;
+        co_return reply;
+    }
+    /**
+     * IMPORTANT: do not use request reference after the scheduling point
+     */
+    append_entries_reply r = co_await append_entries(append_entries_request(
+      source_vnode,
+      target_vnode,
+      protocol_metadata{
+        .group = group,
+        .commit_index = hb_data.commit_index,
+        .term = hb_data.term,
+        .prev_log_index = hb_data.prev_log_index,
+        .prev_log_term = hb_data.prev_log_term,
+        .last_visible_index = hb_data.last_visible_index,
+      },
+      model::make_memory_record_batch_reader(
+        ss::circular_buffer<model::record_batch>{}),
+      flush_after_append::no));
+
+    reply.result = r.result;
+    reply.data = heartbeat_reply_data{
+      .source_revision = _self.revision(),
+      .target_revision = source_vnode.revision(),
+      .term = r.term,
+      .last_flushed_log_index = r.last_flushed_log_index,
+      .last_dirty_log_index = r.last_dirty_log_index,
+      .last_term_base_offset = r.last_term_base_offset,
+    };
+    co_return reply;
+}
+void consensus::reset_last_sent_heartbeat(const vnode& node) {
+    if (auto it = _fstats.find(node); it != _fstats.end()) {
+        it->second.last_sent_protocol_meta.reset();
+        it->second.quiescent = in_quiescent_state::no;
+    }
+}
+
+void consensus::enter_quiescent_state() {
+    vlog(_ctxlog.info, "entering quiescent state");
+    _quiescent = in_quiescent_state::yes;
+    _vote_timeout.cancel();
+}
+
+void consensus::leave_quiescent_state() {
+    if (_quiescent) {
+        vlog(_ctxlog.info, "leaving quiescent state");
+        _quiescent = in_quiescent_state::no;
+        arm_vote_timeout();
+    }
+}
+
+ss::future<> consensus::notify_stepdown() {
+    auto configuration = _configuration_manager.get_latest();
+    auto timeout = clock_type::now() + _jit.base_duration();
+    std::vector<ss::future<result<timeout_now_reply>>> futures;
+    configuration.for_each_voter([this, timeout, &futures](const vnode& voter) {
+        timeout_now_request req{
+          .target_node_id = voter,
+          .node_id = _self,
+          .group = _group,
+          .term = _term};
+        futures.push_back(_client_protocol.timeout_now(
+          req.target_node_id.id(), std::move(req), rpc::client_opts(timeout)));
+    });
+
+    auto results = co_await ss::when_all_succeed(
+      futures.begin(), futures.end());
+    // TODO: handle results
 }
 
 } // namespace raft

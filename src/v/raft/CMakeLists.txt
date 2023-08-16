@@ -34,6 +34,7 @@ v_cc_library(
     offset_translator.cc
     recovery_memory_quota.cc
     coordinated_recovery_throttle.cc
+    heartbeats.cc
   DEPS
     v::storage
     raft_rpc

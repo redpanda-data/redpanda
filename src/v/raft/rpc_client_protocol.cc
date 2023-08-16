@@ -75,6 +75,20 @@ ss::future<result<heartbeat_reply>> rpc_client_protocol::heartbeat(
             .then(&rpc::get_ctx_data<heartbeat_reply>);
       });
 }
+ss::future<result<heartbeat_reply_v2>> rpc_client_protocol::heartbeat_v2(
+  model::node_id n, heartbeat_request_v2&& r, rpc::client_opts opts) {
+    auto timeout = opts.timeout;
+    return _connection_cache.local().with_node_client<raftgen_client_protocol>(
+      _self,
+      ss::this_shard_id(),
+      n,
+      timeout,
+      [r = std::move(r),
+       opts = std::move(opts)](raftgen_client_protocol client) mutable {
+          return client.heartbeat_v2(std::move(r), std::move(opts))
+            .then(&rpc::get_ctx_data<heartbeat_reply_v2>);
+      });
+}
 
 ss::future<result<install_snapshot_reply>>
 rpc_client_protocol::install_snapshot(

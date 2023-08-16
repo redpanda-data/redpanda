@@ -56,6 +56,9 @@ public:
     void replicate_request_error() { ++_replicate_request_error; };
     void recovery_request_error() { ++_recovery_request_error; };
 
+    void full_heartbeat() { ++_full_heartbeat_requests; }
+    void lw_heartbeat() { ++_lw_heartbeat_requests; }
+
 private:
     uint64_t _vote_requests = 0;
     uint64_t _append_requests = 0;
@@ -73,6 +76,8 @@ private:
     uint64_t _heartbeat_request_error = 0;
     uint64_t _replicate_request_error = 0;
     uint64_t _recovery_request_error = 0;
+    uint64_t _full_heartbeat_requests = 0;
+    uint64_t _lw_heartbeat_requests = 0;
 
     ssx::metrics::metric_groups _metrics
       = ssx::metrics::metric_groups::make_internal();
