@@ -549,7 +549,7 @@ void segment_appender::dispatch_background_head_write() {
                   .dma_write(
                     w->file_start_offset,
                     w->chunk->data() + w->chunk_begin,
-                    w->chunk_end - w->chunk_begin,
+                    dma_size,
                     _opts.priority)
 #pragma clang diagnostic pop
                   .then([this, w](size_t got) {
