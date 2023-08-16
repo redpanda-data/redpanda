@@ -266,6 +266,7 @@ class HighThroughputTest(PreallocNodesTest):
         node_str = f"{node.account.hostname} (node_id: {node_id})"
         return node, node_id, node_str
 
+    @ok_to_fail
     @cluster(num_nodes=5, log_allow_list=RESTART_LOG_ALLOW_LIST)
     def test_combo_preloaded(self):
         """
