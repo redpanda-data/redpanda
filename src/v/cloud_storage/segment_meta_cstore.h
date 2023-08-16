@@ -25,6 +25,13 @@
 
 namespace cloud_storage {
 
+// each frame contains up to #cstore_max_frame_size elements, compressed with
+// deltafor
+constexpr size_t cstore_max_frame_size = 0x400;
+// every #cstore_sampling_rate element inserted, the byte position in the
+// compressed buffer is recorded to speed up random access
+constexpr size_t cstore_sampling_rate = 8;
+
 template<class value_t, class decoder_t>
 class segment_meta_frame_const_iterator
   : public boost::iterator_facade<
@@ -530,7 +537,7 @@ public:
     /// index lookup operations
     using hint_t = typename frame_t::hint_t;
 
-    static constexpr size_t max_frame_size = 0x400;
+    static constexpr size_t max_frame_size = cstore_max_frame_size;
     using const_iterator
       = segment_meta_column_const_iterator<value_t, delta_alg>;
 
