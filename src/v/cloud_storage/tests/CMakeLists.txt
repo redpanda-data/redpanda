@@ -41,6 +41,7 @@ rp_test(
     util.cc
     s3_imposter.cc
     remote_test.cc
+    remote_file_test.cc
     remote_segment_test.cc
     remote_partition_test.cc
     topic_recovery_service_test.cc
