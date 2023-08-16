@@ -258,8 +258,22 @@ class CloudCluster():
                 return (c['id'], c['spec']['networkId'])
         return None, None
 
-    def _get_install_pack_ver(self):
-        """Get the latest certified install pack version.
+    def _prepare_network_vpc_info(self):
+        """
+        Calls CloudV2 API to get cidr_block, vpc_id
+        and owner_id of created cluster
+
+        """
+        _net = self.cloudv2._http_get(
+            endpoint=f"/api/v1/networks/{self.current.network_id}")
+        _info = _net['status']['created']['providerNetworkDetails'][
+            'cloudProvider'][self.config.provider.lower()]
+        self.current.rp_vpc_id = _info['vpcId']
+        self.current.rp_owner_id = _info['ownerId']
+        self.current.network_cidr = _info['cidrBlock']
+
+    def _get_latest_install_pack_ver(self):
+        """Get latest certified install pack ver by searching list of avail.
 
         :return: version, e.g. '23.2.20230707135118'
         """
@@ -292,13 +306,16 @@ class CloudCluster():
         return None
 
     def _get_product_id(self, config_profile_name):
-        """Get the product id for the first matching config profile name using filter parameters.
+        """Get the product id for the first matching config
+        profile name using filter parameters.
+        Uses self.current as a source of params
+            provider: cloud provider filter, e.g. 'AWS'
+            cluster_type: cluster type filter, e.g. 'FMC'
+            region: region name filter, e.g. 'us-west-2'
+            install_pack_ver: install pack version filter, 
+               e.g. '23.2.20230707135118'
 
         :param config_profile_name: config profile name, e.g. 'tier-1-aws'
-        :param provider: cloud provider filter, e.g. 'AWS'
-        :param cluster_type: cluster type filter, e.g. 'FMC'
-        :param region: region name filter, e.g. 'us-west-2'
-        :param install_pack_ver: install pack version filter, e.g. '23.2.20230707135118'
         :return: productId, e.g. 'chqrd4q37efgkmohsbdg'
         """
 
@@ -369,7 +386,7 @@ class CloudCluster():
         self.current.namespace_uuid = self._create_namespace()
         # name rp-ducktape-cluster-3b36f516
         self.current.name = f'rp-ducktape-cluster-{self._unique_id}'
-        self.current.install_pack_ver = self._get_install_pack_ver()
+        self.current.install_pack_ver = self._get_latest_install_pack_ver()
         self.current.region_id = self._get_region_id()
         self.current.zones = ['usw2-az1']
         self.current.product_id = self._get_product_id(config_profile_name)
@@ -513,12 +530,69 @@ class CloudCluster():
             "namespaceUuid": self.current.namespace_uuid
         }
 
-    def _get_ducktape_meta(self, url):
-        resp = requests.get(url)
-        if not resp:
-            self._logger.error("failed to get metadata from Ducktape node: "
-                               f"'{url}'")
-        return resp.text
+    def _get_ducktape_client_mac_uri(self):
+        """
+        Get MAC address from current interface.
+        Function assumes that there is a single interface on ducktape node
+        """
+        _url = "http://169.254.169.254/latest/meta-data/network/interfaces/macs"
+        resp = requests.get(_url)
+        if not resp.ok:
+            self._logger.error("failed to get MAC for Ducktape node: "
+                               f"'{_url}'")
+            return None
+        else:
+            # Example: '0a:97:f4:40:30:93/'
+            return f"{_url}/{resp.text}"
+
+    def _get_ducktape_meta(self):
+        """
+        Query meta from local node.
+        Source: https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/instancedata-data-categories.html
+        Available for AWS instance:
+            device-number
+            interface-id
+            ipv4-associations/
+            local-hostname
+            local-ipv4s
+            mac
+            owner-id
+            public-hostname
+            public-ipv4s
+            security-group-ids
+            security-groups
+            subnet-id
+            subnet-ipv4-cidr-block
+            vpc-id
+            vpc-ipv4-cidr-block
+            vpc-ipv4-cidr-blocks
+        """
+        _url = self._get_ducktape_client_mac_uri()
+        resp = requests.get(_url)
+        if not resp.ok:
+            self._logger.error(
+                "failed to get metadata list from Ducktape node: "
+                f"'{_url}'")
+            return None
+        else:
+            # Assume that since first request passed,
+            # There is no need to validate each one.
+            # build dict with meta
+            _keys = resp.text.split()
+            _values = [requests.get(f"{_url}/{key}").text for key in _keys]
+            _meta = {}
+            for item in zip(_keys, _values):
+                _meta[item[0]] = item[1]
+            return _meta
+
+    def _check_peering_status(self, endpoint, state):
+        _endpoint = f"{endpoint}/{self.vpc_peering['id']}"
+        _peering = self.cloudv2._http_get(endpoint=_endpoint)
+        if _peering['state'] == state:
+            self.vpc_peering = _peering
+            return True
+        else:
+            return False
 
     def create_vpc_peering(self):
         """
@@ -542,6 +616,7 @@ class CloudCluster():
 
         # Network id
         network_id = self.current.network_id
+        _endpoint = f'/api/v1/networks/{network_id}/network-peerings'
 
         # get CIDR from network
         # _cidr =
@@ -551,22 +626,40 @@ class CloudCluster():
         # curl -s http://169.254.169.254/latest/meta-data/network/interfaces/macs/$(ip -br link show eth0 | awk '{print$3}')/owner-id
         # curl -s http://169.254.169.254/latest/meta-data/network/interfaces/macs/$(ip -br link show eth0 | awk '{print$3}')/vpc-id
 
-        _ducktape_client_ip = "0.0.0.0"
-        _baseurl = "http://169.254.169.254/latest/meta-data/network/interfaces/macs/"
         # Prepare metadata
-        self.current.peer_vpc_id = self._get_ducktape_meta(
-            f"{_baseurl}{_ducktape_client_ip}/vpc-id")
-        self.current.peer_owner_id = self._get_ducktape_meta(
-            f"{_baseurl}{_ducktape_client_ip}/owner-id")
+        self._ducktape_meta = self._get_ducktape_meta()
+        self.current.peer_vpc_id = self._ducktape_meta['vpc-id']
+        self.current.peer_owner_id = self._ducktape_meta['owner-id']
+        # Prepare vpc_id, owner_id and cidrBlock for cloud cluster
+        self._prepare_network_vpc_info()
 
         # Use Cloud API to create peering
         # Alternatively, Use manual AWS commands to do the same
         _body = self._create_network_peering_payload()
         self._logger.debug(f"body: '{_body}'")
-        resp = self.cloudv2._http_post(
-            f'/api/v1/networks/{network_id}/network-peerings', json=_body)
 
-        # TODO accept the AWS VPC peering request
+        # Create peering
+        resp = self.cloudv2._http_post(endpoint=_endpoint, json=_body)
+        self._logger.debug(f"Created VPC peering: '{resp}'")
+        self.vpc_peering = resp
+
+        # Wait for "pending acceptance"
+        _state = "pending acceptance"
+        wait_until(lambda: self._check_peering_status(_endpoint, _state),
+                   timeout_sec=self.CHECK_TIMEOUT_SEC,
+                   backoff_sec=self.CHECK_BACKOFF_SEC,
+                   err_msg=f'Timeout waiting for {_state} status '
+                   f'of peering {self.current.name}')
+
+        # Find id of the correct peering VPC
+        _vpc_id = self.provider_cli.find_vpc_peering_connection(
+            "pending-acceptance", self.current.region_id,
+            self.current.network_cidr, self.current.rp_vpc_id,
+            self.current.rp_owner_id, self.current.peer_vpc_id,
+            self.current.peer_owner_id)
+        # Accept it
+        self.provider_cli.accept_vpc_peering(_vpc_id)
+
         # TODO create route between vpc and peering connection
 
         return
