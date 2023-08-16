@@ -468,6 +468,7 @@ void segment_appender::dispatch_background_head_write() {
     _bytes_flush_pending -= _head->bytes_pending();
 
     inflight_write entry{
+      .full = _head->is_full(),
       .chunk = _head,
       .chunk_begin = _head->pending_aligned_begin(),
       .chunk_end = _head->pending_aligned_end(),
@@ -477,31 +478,27 @@ void segment_appender::dispatch_background_head_write() {
     // background write
     _head->flush();
 
-    entry.full = _head->is_full();
+    auto head_sem = _prev_head_write;
 
-    // defer to account for early exits
-    auto reap_head = ss::defer([this, full = entry.full] {
-        if (full) {
-            /*
-             * If _head is full then this is the last write to this chunk, so we
-             * clear out the head pointer synchronously here, then release it
-             * back into the chunk cache after the write completes. Otherwise,
-             * leave it in place so that new appends may accumulate. this
-             * optimization is meant to avoid redhydrating the chunk on append
-             * following a flush when the head has pending bytes and a write is
-             * dispatched.
-             */
-            _head = nullptr;
-            /*
-             * When the head becomes full it still needs to be properly
-             * sequenced with earlier writes to the same head, but no future
-             * writes to same head head are possible so the dependency chain is
-             * reset for the next head.
-             */
-            _prev_head_write = ss::make_lw_shared<ssx::semaphore>(
-              1, head_sem_name);
-        }
-    });
+    if (entry.full) {
+        /*
+         * If _head is full then this is the last write to this chunk, so we
+         * clear out the head pointer synchronously here, then release it
+         * back into the chunk cache after the write completes. Otherwise,
+         * leave it in place so that new appends may accumulate. this
+         * optimization is meant to avoid redhydrating the chunk on append
+         * following a flush when the head has pending bytes and a write is
+         * dispatched.
+         */
+        _head = nullptr;
+        /*
+         * When the head becomes full it still needs to be properly
+         * sequenced with earlier writes to the same head, but no future
+         * writes to same head head are possible so the dependency chain is
+         * reset for the next head.
+         */
+        _prev_head_write = ss::make_lw_shared<ssx::semaphore>(1, head_sem_name);
+    }
 
     if (!_inflight.empty() && _inflight.back()->try_merge(entry, prior_co)) {
         // Yay! The latest in-flight write is still queued (i.e., has not
@@ -521,13 +518,12 @@ void segment_appender::dispatch_background_head_write() {
      * in-order on the correct semaphore by grabbing the units
      * synchronously.
      */
-    auto prev = _prev_head_write;
-    auto units = ss::get_units(*prev, 1);
+    auto units = ss::get_units(*head_sem, 1);
 
     (void)ss::with_semaphore(
       _concurrent_flushes,
       1,
-      [w, this, prev, units = std::move(units)]() mutable {
+      [w, this, head_sem, units = std::move(units)]() mutable {
           return units
             .then([this, w](ssx::semaphore_units u) mutable {
                 const auto dma_size = w->chunk_end - w->chunk_begin;
@@ -582,7 +578,7 @@ void segment_appender::dispatch_background_head_write() {
                   })
                   .finally([u = std::move(u)] {});
             })
-            .finally([prev] {});
+            .finally([head_sem] {});
       })
       .handle_exception([this](std::exception_ptr e) {
           vassert(false, "Could not dma_write: {} - {}", e, *this);
