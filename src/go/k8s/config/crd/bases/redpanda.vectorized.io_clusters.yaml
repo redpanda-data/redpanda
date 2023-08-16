@@ -47,9 +47,9 @@ spec:
                   \n Notes: 1. versioning is not supported for map keys 2. key names
                   not supported by Redpanda will lead to failure on start up 3. updating
                   this map requires a manual restart of the Redpanda pods. Please
-                  be aware of sync period when one Redpandais POD is restarted 4.
-                  cannot have keys that conflict with existing struct fields - it
-                  leads to panic \n By default if Replicas is 3 or more and redpanda.default_topic_partitions
+                  be aware of sync period when one Redpanda POD is restarted 4. cannot
+                  have keys that conflict with existing struct fields - it leads to
+                  panic \n By default if Replicas is 3 or more and redpanda.default_topic_partitions
                   is not set default webhook is setting redpanda.default_topic_partitions
                   to 3."
                 type: object
@@ -963,6 +963,10 @@ spec:
                       any lag."
                     type: integer
                 type: object
+              serviceAccount:
+                description: The name of the ServiceAccount to be used by the Redpanda
+                  pods
+                type: string
               sidecars:
                 description: Sidecars is list of sidecars run alongside redpanda container
                 properties:
