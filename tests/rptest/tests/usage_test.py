@@ -7,9 +7,11 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
+import re
 import time
 import random
 import operator
+from rptest.services.redpanda import RedpandaService
 from rptest.clients.rpk import RpkTool
 from requests.exceptions import HTTPError
 from rptest.services.cluster import cluster
@@ -25,7 +27,7 @@ from functools import reduce
 from rptest.services.admin import Admin
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.clients.types import TopicSpec
-from rptest.utils.functional import flat_map
+from rptest.utils.functional import flat_map, flatten
 
 
 class UsageWindow:
@@ -110,6 +112,7 @@ class UsageTest(RedpandaTest):
                                           window_interval=3,
                                           disk_write_interval=5)
         super(UsageTest, self).__init__(test_context=test_context,
+                                        log_level='debug',
                                         extra_rp_conf=self._settings)
         self._ctx = test_context
         self._admin = Admin(self.redpanda)
@@ -281,6 +284,41 @@ class UsageTest(RedpandaTest):
         consumer.stop()
         return total_produced
 
+    def _grab_log_lines(self, pattern):
+        def search_log_lines(node):
+            lines = []
+            for line in node.account.ssh_capture(
+                    f"grep \"{pattern}\" {RedpandaService.STDOUT_STDERR_CAPTURE} || true",
+                    timeout_sec=60):
+                lines.append(line.strip())
+            return lines
+
+        return [search_log_lines(node) for node in self.redpanda.nodes]
+
+    def _validate_timer_interval(self):
+        log_lines = self._grab_log_lines("Usage based billing window_close*")
+
+        assert len(log_lines) > 0, "Debug logging not enabled"
+        self.redpanda.logger.debug(f"Log lines: {log_lines}")
+
+        # Remove the first element as it is expected to not be aligned
+        log_lines = flatten([xs[1:] for xs in log_lines])
+
+        regex = re.compile(r".*delta: (?P<delta>\d*)")
+
+        # Parse the value from the log line for lines across all nodes
+        def delta_parse(x):
+            v = regex.match(x)
+            if v is None:
+                raise RuntimeError(f"Unexpected log line: {x}")
+            return int(v[1])
+
+        # Parse the contents to just grab the value of `delta` within the log
+        fire_times = [delta_parse(x) for x in log_lines]
+
+        # Ensure all deltas are 0 meaning there is no skew
+        return all([x == 0 for x in fire_times])
+
     @cluster(num_nodes=3)
     def test_usage_metrics_collection(self):
         # Assert windows are closing
@@ -316,6 +354,9 @@ class UsageTest(RedpandaTest):
 
             prev_usage = usage
             iterations += 1
+
+        # Additional validation to ensure there were no gaps and the timer fired exactly on time
+        assert self._validate_timer_interval()
 
     @cluster(num_nodes=4)
     def test_usage_collection_restart(self):

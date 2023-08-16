@@ -32,7 +32,7 @@ std::chrono::time_point<clock_type, duration> round_to_interval(
     /// error if this cannot be done within some threshold.
     using namespace std::chrono_literals;
     const auto interval = usage_window_width_interval;
-    const auto err_threshold = interval < 2min ? interval : 2min;
+    const auto err_threshold = interval < 2min ? 1s : 2min;
     const auto cur_interval_start = t - (t.time_since_epoch() % interval);
     const auto next_interval_start = cur_interval_start + interval;
     if (t - cur_interval_start <= err_threshold) {
@@ -43,8 +43,9 @@ std::chrono::time_point<clock_type, duration> round_to_interval(
     vlog(
       klog.error,
       "usage has detected a timestamp '{}' that exceeds the preconfigured "
-      "threshold of 2min meaning a clock has fired later or earlier then "
+      "threshold of {}s meaning a clock has fired later or earlier then "
       "expected, this is unexpected behavior and should be investigated.",
+      std::chrono::duration_cast<std::chrono::seconds>(interval),
       t.time_since_epoch().count());
     return t;
 }

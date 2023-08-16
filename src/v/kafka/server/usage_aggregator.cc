@@ -188,14 +188,23 @@ void usage_aggregator<clock_type>::rearm_window_timer() {
       std::
         is_same_v<decltype(_usage_window_width_interval), std::chrono::seconds>,
       "Interval is assumed to be in units of seconds");
-    const auto now = clock_type::now();
+    const auto now = timestamp_t::now();
+    const auto now_ts = epoch_time_secs(now);
     /// This modulo trick only works because epoch time is hour aligned
     const auto delta = std::chrono::seconds(
       epoch_time_secs(now) % _usage_window_width_interval.count());
+    vlog(
+      klog.debug,
+      "Usage based billing window_close timer fired, time_now: {} delta: {}",
+      now_ts,
+      delta.count());
     const auto duration_until_next_close = _usage_window_width_interval - delta;
     vassert(
-      duration_until_next_close >= 0s,
-      "Error correctly detecting last window delta");
+      duration_until_next_close >= 0s
+        && duration_until_next_close <= _usage_window_width_interval,
+      "Error correctly detecting last window delta: {} now: {}",
+      delta.count(),
+      now_ts);
     _close_window_timer.arm(duration_until_next_close);
 }
 
@@ -347,7 +356,11 @@ void usage_aggregator<clock_type>::close_window() {
         } else {
             vlog(klog.info, "{}", err_str);
         }
-        cur.reset(now_ts);
+        /// Reset the window to the nearest interval
+        const auto true_now = timestamp_t::now();
+        const auto diff_secs = std::chrono::seconds(
+          epoch_time_secs(true_now) % _usage_window_width_interval.count());
+        cur.reset(epoch_time_secs(true_now - diff_secs));
     } else {
         const auto w = _current_window;
         _current_window = (_current_window + 1) % _buckets.size();

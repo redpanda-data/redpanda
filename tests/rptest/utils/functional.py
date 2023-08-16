@@ -18,3 +18,12 @@ def flat_map(fn, input_list):
     each argument in `input_list`.
     """
     return reduce(lambda acc, x: acc + fn(x), input_list, [])
+
+
+def flatten(input_list):
+    """
+    Expects a list of lists
+
+    Returns all lists concatenated into one
+    """
+    return reduce(lambda acc, x: acc + x, input_list)
