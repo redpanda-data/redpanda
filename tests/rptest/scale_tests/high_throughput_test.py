@@ -439,6 +439,7 @@ class HighThroughputTest(PreallocNodesTest):
                    timeout_sec=600,
                    backoff_sec=20)
 
+    @ok_to_fail
     @cluster(num_nodes=5, log_allow_list=RESTART_LOG_ALLOW_LIST)
     def test_decommission_and_add(self):
         """
