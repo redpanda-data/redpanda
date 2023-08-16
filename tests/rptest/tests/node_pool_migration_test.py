@@ -190,6 +190,7 @@ class NodePoolMigrationTest(PreallocNodesTest):
             self.msg_size,
             readers=1,
             nodes=self.preallocated_nodes)
+        self.consumer.start(clean=False)
 
     def verify(self):
         self.logger.info(
