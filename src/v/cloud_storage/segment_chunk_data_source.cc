@@ -150,4 +150,29 @@ ss::future<> chunk_data_source_impl::maybe_close_stream() {
     }
 }
 
+chunk_data_source_impl::download_task::download_task(
+  chunk_data_source_impl& ds,
+  chunk_start_offset_t chunk_start,
+  eager_stream_ptr ecs)
+  : _ds{ds}
+  , _chunk_start{chunk_start}
+  , _ecs{std::move(ecs)} {}
+
+chunk_data_source_impl::download_task::~download_task() {
+    vassert(
+      !_download.has_value(),
+      "a pending download was not finished for chunk start {}",
+      _chunk_start);
+}
+
+void chunk_data_source_impl::download_task::start() {
+    _download.emplace(_ds.load_chunk_handle(_chunk_start, _ecs));
+}
+
+ss::future<> chunk_data_source_impl::download_task::finish() {
+    if (_download) {
+        auto reset = ss::defer([this] { _download.reset(); });
+        co_await std::move(_download.value());
+    }
+}
 } // namespace cloud_storage

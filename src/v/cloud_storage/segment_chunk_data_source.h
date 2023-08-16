@@ -70,6 +70,36 @@ private:
     retry_chain_node _rtc;
     retry_chain_logger _ctxlog;
     std::optional<uint16_t> _prefetch_override;
+    class download_task {
+        friend std::ostream&
+        operator<<(std::ostream& os, const download_task& t) {
+            fmt::print(
+              os, "download_task{{chunk_start_offset:{}}}", t._chunk_start);
+            return os;
+        }
+
+    public:
+        explicit download_task(
+          chunk_data_source_impl& ds,
+          chunk_start_offset_t chunk_start,
+          eager_stream_ptr ecs);
+        void start();
+        ss::future<> finish();
+
+        ~download_task();
+
+        download_task(const download_task&) = delete;
+        download_task& operator=(const download_task&) = delete;
+
+        download_task(download_task&&) = delete;
+        download_task&& operator=(download_task&&) = delete;
+
+    private:
+        chunk_data_source_impl& _ds;
+        chunk_start_offset_t _chunk_start;
+        eager_stream_ptr _ecs;
+        std::optional<ss::future<>> _download;
+    };
 };
 
 } // namespace cloud_storage
