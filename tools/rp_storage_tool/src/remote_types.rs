@@ -1159,7 +1159,6 @@ mod tests {
         assert_eq!(json_manifest.find("last_uploaded_compacted_offset"), None);
     }
 
-
     #[test_log::test(tokio::test)]
     async fn test_cluster_manifest_decode() {
         let manifest = read_cluster_manifest("/resources/test/cluster_manifest.json").await;
