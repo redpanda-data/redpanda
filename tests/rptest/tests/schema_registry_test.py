@@ -824,6 +824,7 @@ class SchemaRegistryTestMethods(SchemaRegistryEndpoints):
             subject=f"{topic}-key", data=schema_1_data)
         self.logger.debug(result_raw)
         assert result_raw.status_code == requests.codes.ok
+        v1_id = result_raw.json()["id"]
 
         self.logger.debug("Set subject config - NONE")
         result_raw = self._set_config_subject(subject=f"{topic}-key",
@@ -865,6 +866,25 @@ class SchemaRegistryTestMethods(SchemaRegistryEndpoints):
         result_raw = self._post_subjects_subject_versions(
             subject=f"{topic}-key", data=schema_2_data)
         assert result_raw.status_code == requests.codes.ok
+        v2_id = result_raw.json()["id"]
+        assert v1_id != v2_id
+
+        self.logger.debug("Posting schema 1 as a subject key again")
+        result_raw = self._post_subjects_subject_versions(
+            subject=f"{topic}-key", data=schema_1_data)
+        assert result_raw.status_code == requests.codes.ok
+        assert result_raw.json()["id"] == v1_id
+
+        self.logger.debug("Soft delete schema 1")
+        result_raw = self._delete_subject_version(subject=f"{topic}-key",
+                                                  version=1)
+        assert result_raw.status_code == requests.codes.ok
+
+        self.logger.debug("Posting schema 1 again, expect same version")
+        result_raw = self._post_subjects_subject_versions(
+            subject=f"{topic}-key", data=schema_1_data)
+        assert result_raw.status_code == requests.codes.ok
+        assert result_raw.json()["id"] == v1_id
 
     @cluster(num_nodes=3)
     def test_delete_subject(self):
