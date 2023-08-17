@@ -229,16 +229,6 @@ private:
 
         void execute() override {
             BOOST_REQUIRE_EQUAL(
-              _ctx._stm
-                ->prepare_tx(
-                  _ctx._term,
-                  model::partition_id(0),
-                  _ctx._pid,
-                  model::tx_seq{0},
-                  tx_timeout)
-                .get0(),
-              cluster::tx_errc::none);
-            BOOST_REQUIRE_EQUAL(
               _ctx._stm->commit_tx(_ctx._pid, model::tx_seq{0}, tx_timeout)
                 .get0(),
               cluster::tx_errc::none);

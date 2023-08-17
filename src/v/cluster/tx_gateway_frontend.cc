@@ -944,10 +944,6 @@ ss::future<cluster::init_tm_tx_reply> tx_gateway_frontend::init_tm_tx(
   std::chrono::milliseconds transaction_timeout_ms,
   model::timeout_clock::duration timeout,
   model::producer_identity expected_pid) {
-    if (expected_pid != model::unknown_pid && !is_transaction_ga()) {
-        co_return cluster::init_tm_tx_reply{tx_errc::not_coordinator};
-    }
-
     auto retries = _metadata_dissemination_retries;
     auto delay_ms = _metadata_dissemination_retry_delay_ms;
     auto aborted = false;
@@ -2117,87 +2113,6 @@ tx_gateway_frontend::do_commit_tm_tx(
     if (tx.status == tm_transaction::tx_status::prepared) {
         outcome->set_value(tx_errc::none);
         co_return co_await recommit_tm_tx(stm, expected_term, tx, timeout);
-    }
-
-    if (!is_transaction_ga()) {
-        try {
-            std::vector<ss::future<prepare_group_tx_reply>> pgfs;
-            pgfs.reserve(tx.groups.size());
-            std::vector<ss::future<prepare_tx_reply>> pfs;
-            pfs.reserve(tx.partitions.size());
-            auto ok = true;
-            auto rejected = false;
-
-            for (auto group : tx.groups) {
-                pgfs.push_back(_rm_group_proxy->prepare_group_tx(
-                  group.group_id, group.etag, tx.pid, tx.tx_seq, timeout));
-            }
-
-            for (auto rm : tx.partitions) {
-                pfs.push_back(_rm_partition_frontend.local().prepare_tx(
-                  rm.ntp,
-                  rm.etag,
-                  model::legacy_tm_ntp.tp.partition,
-                  tx.pid,
-                  tx.tx_seq,
-                  timeout));
-            }
-
-            auto preparing_tx = co_await stm->mark_tx_preparing(
-              expected_term, tx.id);
-            if (!preparing_tx.has_value()) {
-                if (preparing_tx.error() == tm_stm::op_status::not_leader) {
-                    outcome->set_value(tx_errc::not_coordinator);
-                    co_return tx_errc::not_coordinator;
-                }
-                if (preparing_tx.error() == tm_stm::op_status::timeout) {
-                    outcome->set_value(tx_errc::timeout);
-                    co_return tx_errc::timeout;
-                }
-                outcome->set_value(tx_errc::unknown_server_error);
-                co_return tx_errc::unknown_server_error;
-            }
-            tx = preparing_tx.value();
-
-            auto prs = co_await when_all_succeed(pfs.begin(), pfs.end());
-            for (const auto& r : prs) {
-                ok = ok && (r.ec == tx_errc::none);
-                rejected = rejected || (r.ec == tx_errc::request_rejected);
-            }
-            auto pgrs = co_await when_all_succeed(pgfs.begin(), pgfs.end());
-            for (const auto& r : pgrs) {
-                ok = ok && (r.ec == tx_errc::none);
-                rejected = rejected || (r.ec == tx_errc::request_rejected);
-            }
-
-            if (rejected) {
-                auto aborting_tx = co_await stm->mark_tx_killed(
-                  expected_term, tx.id);
-                if (!aborting_tx.has_value()) {
-                    if (aborting_tx.error() == tm_stm::op_status::not_leader) {
-                        outcome->set_value(tx_errc::not_coordinator);
-                        co_return tx_errc::not_coordinator;
-                    }
-                    outcome->set_value(tx_errc::invalid_txn_state);
-                    co_return tx_errc::invalid_txn_state;
-                }
-                outcome->set_value(tx_errc::invalid_txn_state);
-                co_return tx_errc::invalid_txn_state;
-            }
-            if (!ok) {
-                outcome->set_value(tx_errc::unknown_server_error);
-                co_return tx_errc::unknown_server_error;
-            }
-        } catch (...) {
-            vlog(
-              txlog.warn,
-              "got {} on committing {} with {}",
-              std::current_exception(),
-              tx.id,
-              tx.pid);
-            outcome->set_value(tx_errc::unknown_server_error);
-            throw;
-        }
     }
 
     vlog(

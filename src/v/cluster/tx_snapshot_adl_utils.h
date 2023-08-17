@@ -16,17 +16,13 @@ template<class T>
 using fvec = fragmented_vector<T>;
 
 using tx_snapshot = cluster::rm_stm::tx_snapshot;
-using tx_snapshot_v0 = cluster::rm_stm::tx_snapshot_v0;
-using tx_snapshot_v1 = cluster::rm_stm::tx_snapshot_v1;
-using tx_snapshot_v2 = cluster::rm_stm::tx_snapshot_v2;
 using tx_snapshot_v3 = cluster::rm_stm::tx_snapshot_v3;
+// note: tx_snapshot[v0-v2] cleaned up in 23.3.x
 
 using tx_range = cluster::rm_stm::tx_range;
 using prepare_marker = cluster::rm_stm::prepare_marker;
 using abort_index = cluster::rm_stm::abort_index;
 using seq_entry = cluster::rm_stm::seq_entry;
-using seq_entry_v0 = cluster::rm_stm::seq_entry_v0;
-using seq_entry_v1 = cluster::rm_stm::seq_entry_v1;
 
 template<>
 struct async_adl<tx_snapshot> {
@@ -83,143 +79,6 @@ struct async_adl<tx_snapshot> {
           .seqs = std::move(seqs),
           .tx_data = std::move(tx_data),
           .expiration = std::move(expiration)};
-    }
-};
-
-template<>
-struct async_adl<tx_snapshot_v0> {
-    ss::future<> to(iobuf& out, tx_snapshot_v0 snap) {
-        co_await detail::async_adl_list<
-          fragmented_vector<model::producer_identity>>{}
-          .to(out, std::move(snap.fenced));
-        co_await detail::async_adl_list<fvec<tx_range>>{}.to(
-          out, std::move(snap.ongoing));
-        co_await detail::async_adl_list<fvec<prepare_marker>>{}.to(
-          out, std::move(snap.prepared));
-        co_await detail::async_adl_list<fvec<tx_range>>{}.to(
-          out, std::move(snap.aborted));
-        co_await detail::async_adl_list<fvec<abort_index>>{}.to(
-          out, std::move(snap.abort_indexes));
-        reflection::serialize(out, snap.offset);
-        co_await detail::async_adl_list<fvec<seq_entry_v0>>{}.to(
-          out, std::move(snap.seqs));
-    }
-
-    ss::future<tx_snapshot_v0> from(iobuf_parser& in) {
-        auto fenced
-          = co_await detail::async_adl_list<fvec<model::producer_identity>>{}
-              .from(in);
-        auto ongoing = co_await detail::async_adl_list<fvec<tx_range>>{}.from(
-          in);
-        auto prepared
-          = co_await detail::async_adl_list<fvec<prepare_marker>>{}.from(in);
-        auto aborted = co_await detail::async_adl_list<fvec<tx_range>>{}.from(
-          in);
-        auto abort_indexes
-          = co_await detail::async_adl_list<fvec<abort_index>>{}.from(in);
-        auto offset = reflection::adl<model::offset>{}.from(in);
-        auto seqs = co_await detail::async_adl_list<fvec<seq_entry_v0>>{}.from(
-          in);
-
-        co_return tx_snapshot_v0{
-          .fenced = std::move(fenced),
-          .ongoing = std::move(ongoing),
-          .prepared = std::move(prepared),
-          .aborted = std::move(aborted),
-          .abort_indexes = std::move(abort_indexes),
-          .offset = offset,
-          .seqs = std::move(seqs)};
-    }
-};
-
-template<>
-struct async_adl<tx_snapshot_v1> {
-    ss::future<> to(iobuf& out, tx_snapshot_v1 snap) {
-        co_await detail::async_adl_list<
-          fragmented_vector<model::producer_identity>>{}
-          .to(out, std::move(snap.fenced));
-        co_await detail::async_adl_list<fvec<tx_range>>{}.to(
-          out, std::move(snap.ongoing));
-        co_await detail::async_adl_list<fvec<prepare_marker>>{}.to(
-          out, std::move(snap.prepared));
-        co_await detail::async_adl_list<fvec<tx_range>>{}.to(
-          out, std::move(snap.aborted));
-        co_await detail::async_adl_list<fvec<abort_index>>{}.to(
-          out, std::move(snap.abort_indexes));
-        reflection::serialize(out, snap.offset);
-        co_await detail::async_adl_list<fvec<seq_entry_v1>>{}.to(
-          out, std::move(snap.seqs));
-    }
-
-    ss::future<tx_snapshot_v1> from(iobuf_parser& in) {
-        auto fenced
-          = co_await detail::async_adl_list<fvec<model::producer_identity>>{}
-              .from(in);
-        auto ongoing = co_await detail::async_adl_list<fvec<tx_range>>{}.from(
-          in);
-        auto prepared
-          = co_await detail::async_adl_list<fvec<prepare_marker>>{}.from(in);
-        auto aborted = co_await detail::async_adl_list<fvec<tx_range>>{}.from(
-          in);
-        auto abort_indexes
-          = co_await detail::async_adl_list<fvec<abort_index>>{}.from(in);
-        auto offset = reflection::adl<model::offset>{}.from(in);
-        auto seqs = co_await detail::async_adl_list<fvec<seq_entry_v1>>{}.from(
-          in);
-
-        co_return tx_snapshot_v1{
-          .fenced = std::move(fenced),
-          .ongoing = std::move(ongoing),
-          .prepared = std::move(prepared),
-          .aborted = std::move(aborted),
-          .abort_indexes = std::move(abort_indexes),
-          .offset = offset,
-          .seqs = std::move(seqs)};
-    }
-};
-
-template<>
-struct async_adl<tx_snapshot_v2> {
-    ss::future<> to(iobuf& out, tx_snapshot_v2 snap) {
-        co_await detail::async_adl_list<
-          fragmented_vector<model::producer_identity>>{}
-          .to(out, std::move(snap.fenced));
-        co_await detail::async_adl_list<fvec<tx_range>>{}.to(
-          out, std::move(snap.ongoing));
-        co_await detail::async_adl_list<fvec<prepare_marker>>{}.to(
-          out, std::move(snap.prepared));
-        co_await detail::async_adl_list<fvec<tx_range>>{}.to(
-          out, std::move(snap.aborted));
-        co_await detail::async_adl_list<fvec<abort_index>>{}.to(
-          out, std::move(snap.abort_indexes));
-        reflection::serialize(out, snap.offset);
-        co_await detail::async_adl_list<fvec<seq_entry>>{}.to(
-          out, std::move(snap.seqs));
-    }
-
-    ss::future<tx_snapshot_v2> from(iobuf_parser& in) {
-        auto fenced
-          = co_await detail::async_adl_list<fvec<model::producer_identity>>{}
-              .from(in);
-        auto ongoing = co_await detail::async_adl_list<fvec<tx_range>>{}.from(
-          in);
-        auto prepared
-          = co_await detail::async_adl_list<fvec<prepare_marker>>{}.from(in);
-        auto aborted = co_await detail::async_adl_list<fvec<tx_range>>{}.from(
-          in);
-        auto abort_indexes
-          = co_await detail::async_adl_list<fvec<abort_index>>{}.from(in);
-        auto offset = reflection::adl<model::offset>{}.from(in);
-        auto seqs = co_await detail::async_adl_list<fvec<seq_entry>>{}.from(in);
-
-        co_return tx_snapshot_v2{
-          .fenced = std::move(fenced),
-          .ongoing = std::move(ongoing),
-          .prepared = std::move(prepared),
-          .aborted = std::move(aborted),
-          .abort_indexes = std::move(abort_indexes),
-          .offset = offset,
-          .seqs = std::move(seqs)};
     }
 };
 

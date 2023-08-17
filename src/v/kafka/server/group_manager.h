@@ -156,9 +156,6 @@ public:
     ss::future<cluster::begin_group_tx_reply>
     begin_tx(cluster::begin_group_tx_request&&);
 
-    ss::future<cluster::prepare_group_tx_reply>
-    prepare_tx(cluster::prepare_group_tx_request&&);
-
     ss::future<cluster::abort_group_tx_reply>
     abort_tx(cluster::abort_group_tx_request&&);
 

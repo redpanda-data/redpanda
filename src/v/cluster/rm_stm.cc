@@ -46,23 +46,6 @@ static bool is_sequence(int32_t last_seq, int32_t next_seq) {
            || (next_seq == 0 && last_seq == std::numeric_limits<int32_t>::max());
 }
 
-model::record_batch make_fence_batch_v0(model::producer_identity pid) {
-    iobuf key;
-    auto pid_id = pid.id;
-    reflection::serialize(key, model::record_batch_type::tx_fence, pid_id);
-
-    iobuf value;
-    reflection::serialize(value, rm_stm::fence_control_record_v0_version);
-
-    storage::record_batch_builder builder(
-      model::record_batch_type::tx_fence, model::offset(0));
-    builder.set_producer_identity(pid.id, pid.epoch);
-    builder.set_control_type();
-    builder.add_raw_kv(std::move(key), std::move(value));
-
-    return std::move(builder).build();
-}
-
 model::record_batch make_fence_batch_v1(
   model::producer_identity pid,
   model::tx_seq tx_seq,
@@ -164,25 +147,6 @@ fence_batch_data read_fence_batch(model::record_batch&& b) {
       bid.pid.id,
       p_id);
     return fence_batch_data{bid, tx_seq, transaction_timeout_ms, tm};
-}
-
-static model::record_batch make_prepare_batch(rm_stm::prepare_marker record) {
-    storage::record_batch_builder builder(
-      model::record_batch_type::tx_prepare, model::offset(0));
-    builder.set_producer_identity(record.pid.id, record.pid.epoch);
-    builder.set_control_type();
-
-    iobuf key;
-    reflection::serialize(key, model::record_batch_type::tx_prepare);
-    reflection::serialize(key, record.pid.id);
-
-    iobuf value;
-    reflection::serialize(value, rm_stm::prepare_control_record_version);
-    reflection::serialize(value, record.tm_partition());
-    reflection::serialize(value, record.tx_seq());
-
-    builder.add_raw_kv(std::move(key), std::move(value));
-    return std::move(builder).build();
 }
 
 static model::record_batch make_tx_control_batch(
@@ -327,6 +291,10 @@ rm_stm::rm_stm(
       config::shard_local_cfg().tx_log_stats_interval_s.bind())
   , _ctx_log(txlog, ssx::sformat("[{}]", c->ntp()))
   , _max_concurrent_producer_ids(max_concurrent_producer_ids) {
+    vassert(
+      _feature_table.local().is_active(features::feature::transaction_ga),
+      "unexpected state for transactions support. skipped a few "
+      "versions during upgrade?");
     setup_metrics();
     if (!_is_tx_enabled) {
         _is_autoabort_enabled = false;
@@ -378,11 +346,8 @@ model::record_batch rm_stm::make_fence_batch(
   model::partition_id tm) {
     if (is_transaction_partitioning()) {
         return make_fence_batch_v2(pid, tx_seq, transaction_timeout_ms, tm);
-    } else if (is_transaction_ga()) {
-        return make_fence_batch_v1(pid, tx_seq, transaction_timeout_ms);
-    } else {
-        return make_fence_batch_v0(pid);
     }
+    return make_fence_batch_v1(pid, tx_seq, transaction_timeout_ms);
 }
 
 ss::future<checked<model::term_id, tx_errc>> rm_stm::do_begin_tx(
@@ -551,38 +516,23 @@ ss::future<checked<model::term_id, tx_errc>> rm_stm::do_begin_tx(
         co_return tx_errc::leader_not_found;
     }
 
-    if (is_transaction_ga()) {
-        auto tx_seq_it = _log_state.current_txes.find(pid);
-        if (tx_seq_it == _log_state.current_txes.end()) {
-            vlog(
-              _ctx_log.error,
-              "tx_seqs should be updated after fencing pid:{} tx_seq:{}",
-              pid,
-              tx_seq);
-            co_return tx_errc::unknown_server_error;
-        }
-        if (tx_seq_it->second.tx_seq != tx_seq) {
-            vlog(
-              _ctx_log.error,
-              "expected tx_seq:{} for pid:{} got {}",
-              tx_seq,
-              pid,
-              tx_seq_it->second.tx_seq);
-            co_return tx_errc::unknown_server_error;
-        }
-    } else {
-        auto [_, inserted] = _mem_state.expected.emplace(pid, tx_seq);
-        if (!inserted) {
-            vlog(
-              _ctx_log.error,
-              "there is already an ongoing transaction with tx_seq:{} within "
-              "{} session",
-              tx_seq,
-              pid);
-            co_return tx_errc::unknown_server_error;
-        }
-
-        track_tx(pid, transaction_timeout_ms);
+    auto tx_seq_it = _log_state.current_txes.find(pid);
+    if (tx_seq_it == _log_state.current_txes.end()) {
+        vlog(
+          _ctx_log.error,
+          "tx_seqs should be updated after fencing pid:{} tx_seq:{}",
+          pid,
+          tx_seq);
+        co_return tx_errc::unknown_server_error;
+    }
+    if (tx_seq_it->second.tx_seq != tx_seq) {
+        vlog(
+          _ctx_log.error,
+          "expected tx_seq:{} for pid:{} got {}",
+          tx_seq,
+          pid,
+          tx_seq_it->second.tx_seq);
+        co_return tx_errc::unknown_server_error;
     }
 
     // a client may start new transaction only when the previous
@@ -592,145 +542,6 @@ ss::future<checked<model::term_id, tx_errc>> rm_stm::do_begin_tx(
     _log_state.erase_pid_from_seq_table(pid);
 
     co_return synced_term;
-}
-
-ss::future<tx_errc> rm_stm::prepare_tx(
-  model::term_id etag,
-  model::partition_id tm,
-  model::producer_identity pid,
-  model::tx_seq tx_seq,
-  model::timeout_clock::duration timeout) {
-    return _state_lock.hold_read_lock().then(
-      [this, etag, tm, pid, tx_seq, timeout](
-        ss::basic_rwlock<>::holder unit) mutable {
-          return get_tx_lock(pid.get_id())
-            ->with([this, etag, tm, pid, tx_seq, timeout]() {
-                return do_prepare_tx(etag, tm, pid, tx_seq, timeout);
-            })
-            .finally([u = std::move(unit)] {});
-      });
-}
-
-ss::future<tx_errc> rm_stm::do_prepare_tx(
-  model::term_id etag,
-  model::partition_id tm,
-  model::producer_identity pid,
-  model::tx_seq tx_seq,
-  model::timeout_clock::duration timeout) {
-    if (!check_tx_permitted()) {
-        co_return tx_errc::request_rejected;
-    }
-
-    if (!co_await sync(timeout)) {
-        co_return tx_errc::stale;
-    }
-    auto synced_term = _insync_term;
-
-    auto prepared_it = _log_state.prepared.find(pid);
-    if (prepared_it != _log_state.prepared.end()) {
-        if (prepared_it->second.tx_seq != tx_seq) {
-            // current prepare_tx call is stale, rejecting
-            co_return tx_errc::request_rejected;
-        }
-        // a tx was already prepared
-        co_return tx_errc::none;
-    }
-
-    // checking fencing
-    auto fence_it = _log_state.fence_pid_epoch.find(pid.get_id());
-    if (fence_it == _log_state.fence_pid_epoch.end()) {
-        // begin_tx should have set a fence
-        co_return tx_errc::request_rejected;
-    }
-    if (pid.get_epoch() != fence_it->second) {
-        vlog(
-          _ctx_log.error,
-          "Can't prepare pid:{} - fenced out by epoch {}",
-          pid,
-          fence_it->second);
-        co_return tx_errc::fenced;
-    }
-
-    if (_log_state.current_txes.contains(pid)) {
-        if (_log_state.current_txes[pid].tx_seq != tx_seq) {
-            vlog(
-              _ctx_log.warn,
-              "expectd tx_seq {} doesn't match gived {} for pid {}",
-              _log_state.current_txes[pid].tx_seq,
-              tx_seq,
-              pid);
-        }
-        co_return errc::invalid_producer_epoch;
-    }
-
-    if (synced_term != etag) {
-        vlog(
-          _ctx_log.warn,
-          "Can't prepare pid:{} - partition lost leadership current term: {} "
-          "expected term: {}",
-          pid,
-          synced_term,
-          etag);
-        // current partition changed leadership since a transaction started
-        // there is a chance that not all writes were replicated
-        // rejecting a tx to prevent data loss
-        co_return tx_errc::request_rejected;
-    }
-
-    if (!is_transaction_ga()) {
-        auto expected_it = _mem_state.expected.find(pid);
-        if (expected_it == _mem_state.expected.end()) {
-            // impossible situation, a transaction coordinator tries
-            // to prepare a transaction which wasn't started
-            vlog(_ctx_log.error, "Can't prepare pid:{} - unknown session", pid);
-            co_return tx_errc::request_rejected;
-        }
-        if (expected_it->second != tx_seq) {
-            // current prepare_tx call is stale, rejecting
-            co_return tx_errc::request_rejected;
-        }
-    }
-
-    auto marker = prepare_marker{
-      .tm_partition = tm, .tx_seq = tx_seq, .pid = pid};
-    auto [_, inserted] = _mem_state.preparing.try_emplace(pid, marker);
-    if (!inserted) {
-        vlog(
-          _ctx_log.error,
-          "Can't prepare pid:{} - concurrent operation on the same session",
-          pid);
-        co_return tx_errc::conflict;
-    }
-
-    auto batch = make_prepare_batch(marker);
-    auto reader = model::make_memory_record_batch_reader(std::move(batch));
-    auto r = co_await _c->replicate(
-      etag,
-      std::move(reader),
-      raft::replicate_options(raft::consistency_level::quorum_ack));
-
-    if (!r) {
-        vlog(
-          _ctx_log.error,
-          "Error \"{}\" on replicating pid:{} prepare batch",
-          r.error(),
-          pid);
-        if (_c->is_leader() && _c->term() == synced_term) {
-            co_await _c->step_down("prepare_tx replication error");
-        }
-        co_return tx_errc::unknown_server_error;
-    }
-
-    if (!co_await wait_no_throw(
-          model::offset(r.value().last_offset()),
-          model::timeout_clock::now() + timeout)) {
-        if (_c->is_leader() && _c->term() == synced_term) {
-            co_await _c->step_down("prepare_tx apply error");
-        }
-        co_return tx_errc::unknown_server_error;
-    }
-
-    co_return tx_errc::none;
 }
 
 ss::future<tx_errc> rm_stm::commit_tx(
@@ -909,52 +720,6 @@ ss::future<tx_errc> rm_stm::do_commit_tx(
 
 abort_origin rm_stm::get_abort_origin(
   const model::producer_identity& pid, model::tx_seq tx_seq) const {
-    if (is_transaction_ga()) {
-        auto tx_seq_for_pid = get_tx_seq(pid);
-        if (!tx_seq_for_pid) {
-            return abort_origin::present;
-        }
-
-        if (tx_seq < *tx_seq_for_pid) {
-            return abort_origin::past;
-        }
-        if (*tx_seq_for_pid < tx_seq) {
-            return abort_origin::future;
-        }
-
-        return abort_origin::present;
-    }
-
-    auto expected_it = _mem_state.expected.find(pid);
-    if (expected_it != _mem_state.expected.end()) {
-        if (tx_seq < expected_it->second) {
-            return abort_origin::past;
-        }
-        if (expected_it->second < tx_seq) {
-            return abort_origin::future;
-        }
-    }
-
-    auto preparing_it = _mem_state.preparing.find(pid);
-    if (preparing_it != _mem_state.preparing.end()) {
-        if (tx_seq < preparing_it->second.tx_seq) {
-            return abort_origin::past;
-        }
-        if (preparing_it->second.tx_seq < tx_seq) {
-            return abort_origin::future;
-        }
-    }
-
-    auto prepared_it = _log_state.prepared.find(pid);
-    if (prepared_it != _log_state.prepared.end()) {
-        if (tx_seq < prepared_it->second.tx_seq) {
-            return abort_origin::past;
-        }
-        if (prepared_it->second.tx_seq < tx_seq) {
-            return abort_origin::future;
-        }
-    }
-
     auto tx_seq_for_pid = get_tx_seq(pid);
     if (!tx_seq_for_pid) {
         return abort_origin::present;
@@ -1194,23 +959,6 @@ ss::future<> rm_stm::stop() {
 
 ss::future<> rm_stm::start() { return persisted_stm::start(); }
 
-rm_stm::transaction_info::status_t
-rm_stm::get_tx_status(model::producer_identity pid) const {
-    if (is_transaction_ga()) {
-        return transaction_info::status_t::ongoing;
-    }
-
-    if (_mem_state.preparing.contains(pid)) {
-        return transaction_info::status_t::preparing;
-    }
-
-    if (_log_state.prepared.contains(pid)) {
-        return transaction_info::status_t::prepared;
-    }
-
-    return transaction_info::status_t::ongoing;
-}
-
 std::optional<rm_stm::expiration_info>
 rm_stm::get_expiration_info(model::producer_identity pid) const {
     auto it = _log_state.expiration.find(pid);
@@ -1253,21 +1001,10 @@ ss::future<result<rm_stm::transaction_set>> rm_stm::get_transactions() {
         ans.emplace(id, tx_info);
     }
 
-    if (!is_transaction_ga()) {
-        for (auto& [id, offset] : _mem_state.tx_start) {
-            transaction_info tx_info;
-            tx_info.lso_bound = offset;
-            tx_info.status = get_tx_status(id);
-            tx_info.info = get_expiration_info(id);
-            tx_info.seq = get_seq_number(id);
-            ans.emplace(id, tx_info);
-        }
-    }
-
     for (auto& [id, offset] : _log_state.ongoing_map) {
         transaction_info tx_info;
         tx_info.lso_bound = offset.first;
-        tx_info.status = get_tx_status(id);
+        tx_info.status = transaction_info::status_t::ongoing;
         tx_info.info = get_expiration_info(id);
         tx_info.seq = get_seq_number(id);
         ans.emplace(id, tx_info);
@@ -1405,38 +1142,12 @@ rm_stm::replicate_tx(model::batch_identity bid, model::record_batch_reader br) {
         co_return errc::invalid_producer_epoch;
     }
 
-    auto is_txn_ga = is_transaction_ga();
-
-    if (is_txn_ga) {
-        if (!_log_state.current_txes.contains(bid.pid)) {
-            vlog(_ctx_log.warn, "can't find ongoing tx for pid:{}", bid.pid);
-            co_return errc::invalid_producer_epoch;
-        }
-        auto tx_seq = _log_state.current_txes[bid.pid].tx_seq;
-        vlog(_ctx_log.trace, "found tx_seq:{} for pid:{}", tx_seq, bid.pid);
-    } else {
-        if (!_mem_state.expected.contains(bid.pid)) {
-            // there is an inflight abort
-            // or this partition lost leadership => can't continue tx since
-            // there is
-            //  risk that ack=1 writes are lost
-            // or it's a client bug and it keeps producing after commit / abort
-            // or a replication of the first batch in a transaction has failed
-            vlog(
-              _ctx_log.warn,
-              "Partition doesn't expect record with pid:{}",
-              bid.pid);
-            co_return errc::invalid_producer_epoch;
-        }
-
-        if (_mem_state.preparing.contains(bid.pid)) {
-            vlog(
-              _ctx_log.warn,
-              "Client keeps producing after it attempted commit pid:{}",
-              bid.pid);
-            co_return errc::invalid_request;
-        }
+    if (!_log_state.current_txes.contains(bid.pid)) {
+        vlog(_ctx_log.warn, "can't find ongoing tx for pid:{}", bid.pid);
+        co_return errc::invalid_producer_epoch;
     }
+    auto tx_seq = _log_state.current_txes[bid.pid].tx_seq;
+    vlog(_ctx_log.trace, "found tx_seq:{} for pid:{}", tx_seq, bid.pid);
 
     if (_mem_state.estimated.contains(bid.pid)) {
         // we received second produce request while the first is still
@@ -1565,15 +1276,6 @@ rm_stm::replicate_tx(model::batch_identity bid, model::record_batch_reader br) {
     set_seq(bid, new_offset);
 
     _mem_state.estimated.erase(bid.pid);
-
-    if (!is_txn_ga) {
-        if (!_mem_state.tx_start.contains(bid.pid)) {
-            auto base_offset = model::offset(
-              old_offset() - (bid.record_count - 1));
-            _mem_state.tx_start.emplace(bid.pid, base_offset);
-            _mem_state.tx_starts.insert(base_offset);
-        }
-    }
 
     co_return kafka_result{.last_offset = new_offset};
 }
@@ -1958,13 +1660,6 @@ model::offset rm_stm::last_stable_offset() {
             first_tx_start = *_log_state.ongoing_set.begin();
         }
 
-        if (!is_transaction_ga()) {
-            if (!_mem_state.tx_starts.empty()) {
-                first_tx_start = std::min(
-                  first_tx_start, *_mem_state.tx_starts.begin());
-            }
-        }
-
         for (auto& entry : _mem_state.estimated) {
             first_tx_start = std::min(first_tx_start, entry.second);
         }
@@ -2230,32 +1925,8 @@ ss::future<tx_errc> rm_stm::do_try_abort_old_tx(model::producer_identity pid) {
     }
 
     _mem_state.expected.erase(pid);
-    auto is_txn_ga = is_transaction_ga();
 
-    std::optional<model::tx_seq> tx_seq;
-    if (!is_txn_ga) {
-        auto prepare_it = _log_state.prepared.find(pid);
-        if (prepare_it != _log_state.prepared.end()) {
-            tx_seq = prepare_it->second.tx_seq;
-        } else {
-            prepare_it = _mem_state.preparing.find(pid);
-            if (prepare_it != _mem_state.preparing.end()) {
-                tx_seq = prepare_it->second.tx_seq;
-            }
-        }
-    }
-
-    if (!tx_seq) {
-        tx_seq = get_tx_seq(pid);
-    }
-
-    if (is_txn_ga && !tx_seq) {
-        vlog(
-          _ctx_log.error,
-          "Can not find tx_seq for pid({}) to expire old tx",
-          pid);
-    }
-
+    std::optional<model::tx_seq> tx_seq = get_tx_seq(pid);
     if (tx_seq) {
         vlog(_ctx_log.trace, "trying to expire pid:{} tx_seq:{}", pid, tx_seq);
         // It looks like a partition is fixed now but actually partitioning
@@ -2374,7 +2045,10 @@ ss::future<tx_errc> rm_stm::do_try_abort_old_tx(model::producer_identity pid) {
             co_return tx_errc::timeout;
         }
     } else {
-        vlog(_ctx_log.trace, "expiring pid:{}", pid);
+        vlog(
+          _ctx_log.error,
+          "Can not find tx_seq for pid({}) to expire old tx",
+          pid);
         auto batch = make_tx_control_batch(
           pid, model::control_record_type::tx_abort);
 
@@ -2642,71 +2316,6 @@ rm_stm::apply_snapshot(stm_snapshot_header hdr, iobuf&& tx_ss_buf) {
               .tx_seq = entry.tx_seq,
               .tm = model::legacy_tm_ntp.tp.partition});
         }
-
-    } else if (hdr.version == tx_snapshot_v2::version) {
-        auto data_v2 = co_await reflection::async_adl<tx_snapshot_v2>{}.from(
-          data_parser);
-        move_snapshot_wo_seqs(data, data_v2);
-        data.seqs = std::move(data_v2.seqs);
-
-        for (auto& entry : data_v2.prepared) {
-            data.tx_data.push_back(tx_snapshot::tx_data_snapshot{
-              .pid = entry.pid,
-              .tx_seq = entry.tx_seq,
-              .tm = model::legacy_tm_ntp.tp.partition});
-        }
-    } else if (hdr.version == tx_snapshot_v1::version) {
-        auto data_v1 = co_await reflection::async_adl<tx_snapshot_v1>{}.from(
-          data_parser);
-        move_snapshot_wo_seqs(data, data_v1);
-        for (auto& seq_v1 : data_v1.seqs) {
-            seq_entry seq;
-            seq.pid = seq_v1.pid;
-            seq.seq = seq_v1.seq;
-            try {
-                seq.last_offset = from_log_offset(seq_v1.last_offset);
-            } catch (...) {
-                // ignoring outside the translation range errors
-                continue;
-            }
-            seq.seq_cache.reserve(seq_v1.seq_cache.size());
-            for (auto& item : seq_v1.seq_cache) {
-                try {
-                    seq.seq_cache.push_back(seq_cache_entry{
-                      .seq = item.seq, .offset = from_log_offset(item.offset)});
-                } catch (...) {
-                    // ignoring outside the translation range errors
-                    continue;
-                }
-            }
-            seq.last_write_timestamp = seq_v1.last_write_timestamp;
-            data.seqs.push_back(std::move(seq));
-        }
-
-        for (auto& entry : data_v1.prepared) {
-            data.tx_data.push_back(tx_snapshot::tx_data_snapshot{
-              .pid = entry.pid,
-              .tx_seq = entry.tx_seq,
-              .tm = model::legacy_tm_ntp.tp.partition});
-        }
-    } else if (hdr.version == tx_snapshot_v0::version) {
-        auto data_v0 = co_await reflection::async_adl<tx_snapshot_v0>{}.from(
-          data_parser);
-        move_snapshot_wo_seqs(data, data_v0);
-        for (auto seq_v0 : data_v0.seqs) {
-            auto seq = seq_entry{
-              .pid = seq_v0.pid,
-              .seq = seq_v0.seq,
-              .last_offset = kafka::offset{-1},
-              .last_write_timestamp = seq_v0.last_write_timestamp};
-            data.seqs.push_back(std::move(seq));
-        }
-        for (auto& entry : data_v0.prepared) {
-            data.tx_data.push_back(tx_snapshot::tx_data_snapshot{
-              .pid = entry.pid,
-              .tx_seq = entry.tx_seq,
-              .tm = model::legacy_tm_ntp.tp.partition});
-        }
     } else {
         vassert(
           false, "unsupported tx_snapshot_header version {}", hdr.version);
@@ -2811,12 +2420,7 @@ uint8_t rm_stm::active_snapshot_version() {
     if (is_transaction_partitioning()) {
         return tx_snapshot::version;
     }
-
-    if (is_transaction_ga()) {
-        return tx_snapshot_v3::version;
-    }
-
-    return tx_snapshot_v2::version;
+    return tx_snapshot_v3::version;
 }
 
 template<class T>
@@ -3003,46 +2607,6 @@ ss::future<stm_snapshot> rm_stm::take_snapshot() {
                   }
 
                   fut_serialize = reflection::async_adl<tx_snapshot_v3>{}.to(
-                    tx_ss_buf, std::move(tx_ss));
-              } else if (version == tx_snapshot_v2::version) {
-                  tx_snapshot_v2 tx_ss;
-                  fill_snapshot_wo_seqs(tx_ss);
-                  for (const auto& entry : _log_state.seq_table) {
-                      tx_ss.seqs.push_back(entry.second.entry.copy());
-                  }
-                  tx_ss.offset = _insync_offset;
-                  fut_serialize = reflection::async_adl<tx_snapshot_v2>{}.to(
-                    tx_ss_buf, std::move(tx_ss));
-              } else if (version == tx_snapshot_v1::version) {
-                  tx_snapshot_v1 tx_ss;
-                  fill_snapshot_wo_seqs(tx_ss);
-                  for (const auto& it : _log_state.seq_table) {
-                      auto& entry = it.second.entry;
-                      seq_entry_v1 seqs;
-                      seqs.pid = entry.pid;
-                      seqs.seq = entry.seq;
-                      try {
-                          seqs.last_offset = to_log_offset(entry.last_offset);
-                      } catch (...) {
-                          // ignoring outside the translation range errors
-                          continue;
-                      }
-                      seqs.last_write_timestamp = entry.last_write_timestamp;
-                      seqs.seq_cache.reserve(seqs.seq_cache.size());
-                      for (auto& item : entry.seq_cache) {
-                          try {
-                              seqs.seq_cache.push_back(seq_cache_entry_v1{
-                                .seq = item.seq,
-                                .offset = to_log_offset(item.offset)});
-                          } catch (...) {
-                              // ignoring outside the translation range errors
-                              continue;
-                          }
-                      }
-                      tx_ss.seqs.push_back(std::move(seqs));
-                  }
-                  tx_ss.offset = _insync_offset;
-                  fut_serialize = reflection::async_adl<tx_snapshot_v1>{}.to(
                     tx_ss_buf, std::move(tx_ss));
               } else {
                   vassert(false, "unsupported tx_snapshot version {}", version);

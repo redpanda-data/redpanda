@@ -207,7 +207,7 @@ class OffsetRetentionDisabledAfterUpgrade(RedpandaTest):
         assert not self._offset_removal_occurred(period, True, True)
 
         # in cluster upgraded from pre-v23 retention should not be active
-        self._perform_upgrade(initial_version, RedpandaInstaller.HEAD)
+        self._perform_upgrade(initial_version, (23, 1))
         rpk = RpkTool(self.redpanda)
         rpk.cluster_config_set("group_offset_retention_sec", str(period))
         rpk.cluster_config_set("group_offset_retention_check_ms", str(1000))

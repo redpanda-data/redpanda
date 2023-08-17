@@ -286,11 +286,6 @@ group_router::begin_tx(cluster::begin_group_tx_request request) {
     return route_tx(std::move(request), &group_manager::begin_tx);
 }
 
-ss::future<cluster::prepare_group_tx_reply>
-group_router::prepare_tx(cluster::prepare_group_tx_request request) {
-    return route_tx(std::move(request), &group_manager::prepare_tx);
-}
-
 ss::future<cluster::abort_group_tx_reply>
 group_router::abort_tx(cluster::abort_group_tx_request request) {
     return route_tx(std::move(request), &group_manager::abort_tx);

@@ -63,12 +63,6 @@ bool compare_batch(
 }
 
 SEASTAR_THREAD_TEST_CASE(fence_batch_compatibility) {
-    vlog(logger.info, "Test fence_batch_v0");
-    model::producer_identity pid0{1, 2};
-    auto batch_v0 = make_fence_batch_v0(pid0);
-    auto batch_data_v0 = read_fence_batch(std::move(batch_v0));
-    BOOST_REQUIRE(compare_batch(batch_data_v0, pid0));
-
     vlog(logger.info, "Test fence_batch_v1");
     model::producer_identity pid1{3, 4};
     model::tx_seq tx_seq_1{100};
