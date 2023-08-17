@@ -29,6 +29,7 @@
 #include <seastar/core/smp.hh>
 #include <seastar/coroutine/exception.hh>
 
+#include <absl/algorithm/container.h>
 #include <fmt/core.h>
 
 #include <functional>
@@ -126,29 +127,7 @@ sharded_store::project_ids(subject_schema schema) {
     // Validate the schema (may throw)
     co_await validate_schema(schema.schema);
 
-    // Check compatibility
-    std::vector<schema_version> versions;
-    try {
-        versions = co_await get_versions(
-          schema.schema.sub(), include_deleted::no);
-    } catch (const exception& e) {
-        if (e.code() != error_code::subject_not_found) {
-            throw;
-        }
-    }
-    if (!versions.empty()) {
-        auto compat = co_await is_compatible(versions.back(), schema.schema);
-        if (!compat) {
-            throw exception(
-              error_code::schema_incompatible,
-              fmt::format(
-                "Schema being registered is incompatible with an earlier "
-                "schema for subject \"{}\"",
-                schema.schema.sub()));
-        }
-    }
-
-    // Figure out if the definition already exists
+    // Determine if the definition already exists
     auto map = [&schema](store& s) {
         return s.get_schema_id(schema.schema.def());
     };
@@ -158,6 +137,7 @@ sharded_store::project_ids(subject_schema schema) {
     auto s_id = co_await _store.map_reduce0(
       map, std::optional<schema_id>{}, reduce);
 
+    // Determine if a provided schema id is appropriate
     if (schema.id != invalid_schema_id) {
         if (s_id.has_value() && s_id != schema.id) {
             co_return ss::coroutine::return_exception(exception(
@@ -178,19 +158,55 @@ sharded_store::project_ids(subject_schema schema) {
             s_id = schema.id;
             vlog(plog.debug, "project_ids: using supplied ID {}", s_id.value());
         }
-    } else if (!s_id) {
-        // New schema, project an ID for it.
-        s_id = co_await project_schema_id();
-        vlog(plog.debug, "project_ids: projected new ID {}", s_id.value());
-    } else {
+    } else if (s_id) {
         vlog(plog.debug, "project_ids: existing ID {}", s_id.value());
     }
 
-    auto sub_shard{shard_for(schema.schema.sub())};
-    auto v_id = co_await _store.invoke_on(
-      sub_shard,
+    // Determine if the subject already has a version that references this
+    // schema, deleted versions are seen.
+    const auto& sub = schema.schema.sub();
+    const auto versions = co_await _store.invoke_on(
+      shard_for(sub),
       _smp_opts,
-      [sub{schema.schema.sub()}, id{s_id.value()}](store& s) {
+      [sub](auto& s) -> std::vector<subject_version_entry> {
+          auto res = s.get_version_ids(sub, include_deleted::no);
+          if (
+            res.has_error()
+            && res.assume_error().code() == error_code::subject_not_found) {
+              return {};
+          }
+          return res.value();
+      });
+
+    auto has_version = s_id.has_value()
+                       && absl::c_any_of(
+                         versions, [id = *s_id](auto const& s_id_v) {
+                             return s_id_v.id == id;
+                         });
+
+    // Check compatibility of the schema
+    if (!has_version && !versions.empty()) {
+        auto compat = co_await is_compatible(
+          versions.back().version, schema.schema);
+        if (!compat) {
+            throw exception(
+              error_code::schema_incompatible,
+              fmt::format(
+                "Schema being registered is incompatible with an earlier "
+                "schema for subject \"{}\"",
+                sub));
+        }
+    }
+
+    if (!s_id) {
+        // New schema, project an ID for it.
+        s_id = co_await project_schema_id();
+        vlog(plog.debug, "project_ids: projected new ID {}", s_id.value());
+    }
+
+    auto sub_shard{shard_for(sub)};
+    auto v_id = co_await _store.invoke_on(
+      sub_shard, _smp_opts, [sub, id{s_id.value()}](store& s) {
           return s.project_version(sub, id);
       });
 
