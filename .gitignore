@@ -37,6 +37,9 @@ _helm_e2e_artifacts/
 /src/go/k8s/*-exit-code
 /src/go/k8s/kubeconfig
 
+# Compiled WebAssembly artifacts
+*.wasm
+
 # Test binary, build with `go test -c`
 *.test
 

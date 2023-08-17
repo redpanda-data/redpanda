@@ -7,8 +7,10 @@ v_cc_library(
     async_adl_serde.cc
     adl_serde.cc
     validation.cc
+    transform.cc
   DEPS
     v::bytes
+    v::utils
     v::rphashing
     v::reflection
     Seastar::seastar

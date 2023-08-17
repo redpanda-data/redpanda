@@ -14,7 +14,6 @@
 #include "json/_include_first.h"
 #include "json/stringbuffer.h"
 #include "json/writer.h"
-#include "model/metadata.h"
 #include "net/unresolved_address.h"
 #include "utils/fragmented_vector.h"
 #include "utils/named_type.h"
@@ -58,9 +57,6 @@ void rjson_serialize(
 
 void rjson_serialize(
   json::Writer<json::StringBuffer>& w, const std::chrono::seconds& v);
-
-void rjson_serialize(
-  json::Writer<json::StringBuffer>&, const model::broker_endpoint&);
 
 void rjson_serialize(
   json::Writer<json::StringBuffer>& w, const std::filesystem::path& path);
