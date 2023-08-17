@@ -359,7 +359,7 @@ ss::future<checked<model::term_id, tx_errc>> rm_stm::do_begin_tx(
         co_return tx_errc::request_rejected;
     }
 
-    if (!_c->is_leader()) {
+    if (!_raft->is_leader()) {
         vlog(
           _ctx_log.trace,
           "processing name:begin_tx pid:{}, tx_seq:{}, "
@@ -471,7 +471,7 @@ ss::future<checked<model::term_id, tx_errc>> rm_stm::do_begin_tx(
       pid, tx_seq, transaction_timeout_ms, tm);
 
     auto reader = model::make_memory_record_batch_reader(std::move(batch));
-    auto r = co_await _c->replicate(
+    auto r = co_await _raft->replicate(
       synced_term,
       std::move(reader),
       raft::replicate_options(raft::consistency_level::quorum_ack));
@@ -483,8 +483,8 @@ ss::future<checked<model::term_id, tx_errc>> rm_stm::do_begin_tx(
           r.error(),
           pid,
           tx_seq);
-        if (_c->is_leader() && _c->term() == synced_term) {
-            co_await _c->step_down("begin_tx replication error");
+        if (_raft->is_leader() && _raft->term() == synced_term) {
+            co_await _raft->step_down("begin_tx replication error");
         }
         // begin is idempotent so it's ok to return a retryable error
         co_return tx_errc::timeout;
@@ -499,18 +499,18 @@ ss::future<checked<model::term_id, tx_errc>> rm_stm::do_begin_tx(
           r.value().last_offset(),
           pid,
           tx_seq);
-        if (_c->is_leader() && _c->term() == synced_term) {
-            co_await _c->step_down("begin_tx apply error");
+        if (_raft->is_leader() && _raft->term() == synced_term) {
+            co_await _raft->step_down("begin_tx apply error");
         }
         co_return tx_errc::timeout;
     }
 
-    if (_c->term() != synced_term) {
+    if (_raft->term() != synced_term) {
         vlog(
           _ctx_log.trace,
           "term changed from {} to {} during fencing pid:{} tx_seq:{}",
           synced_term,
-          _c->term(),
+          _raft->term(),
           pid,
           tx_seq);
         co_return tx_errc::leader_not_found;
@@ -687,7 +687,7 @@ ss::future<tx_errc> rm_stm::do_commit_tx(
     auto batch = make_tx_control_batch(
       pid, model::control_record_type::tx_commit);
     auto reader = model::make_memory_record_batch_reader(std::move(batch));
-    auto r = co_await _c->replicate(
+    auto r = co_await _raft->replicate(
       synced_term,
       std::move(reader),
       raft::replicate_options(raft::consistency_level::quorum_ack));
@@ -698,15 +698,15 @@ ss::future<tx_errc> rm_stm::do_commit_tx(
           "Error \"{}\" on replicating pid:{} commit batch",
           r.error(),
           pid);
-        if (_c->is_leader() && _c->term() == synced_term) {
-            co_await _c->step_down("do_commit_tx replication error");
+        if (_raft->is_leader() && _raft->term() == synced_term) {
+            co_await _raft->step_down("do_commit_tx replication error");
         }
         co_return tx_errc::timeout;
     }
     if (!co_await wait_no_throw(
           r.value().last_offset, model::timeout_clock::now() + timeout)) {
-        if (_c->is_leader() && _c->term() == synced_term) {
-            co_await _c->step_down("do_commit_tx wait error");
+        if (_raft->is_leader() && _raft->term() == synced_term) {
+            co_await _raft->step_down("do_commit_tx wait error");
         }
         co_return tx_errc::timeout;
     }
@@ -862,7 +862,7 @@ ss::future<tx_errc> rm_stm::do_abort_tx(
     auto batch = make_tx_control_batch(
       pid, model::control_record_type::tx_abort);
     auto reader = model::make_memory_record_batch_reader(std::move(batch));
-    auto r = co_await _c->replicate(
+    auto r = co_await _raft->replicate(
       synced_term,
       std::move(reader),
       raft::replicate_options(raft::consistency_level::quorum_ack));
@@ -874,8 +874,8 @@ ss::future<tx_errc> rm_stm::do_abort_tx(
           r.error(),
           pid,
           tx_seq.value_or(model::tx_seq(-1)));
-        if (_c->is_leader() && _c->term() == synced_term) {
-            co_await _c->step_down("abort_tx replication error");
+        if (_raft->is_leader() && _raft->term() == synced_term) {
+            co_await _raft->step_down("abort_tx replication error");
         }
         co_return tx_errc::timeout;
     }
@@ -891,8 +891,8 @@ ss::future<tx_errc> rm_stm::do_abort_tx(
           r.value().last_offset,
           pid,
           tx_seq.value_or(model::tx_seq(-1)));
-        if (_c->is_leader() && _c->term() == synced_term) {
-            co_await _c->step_down("abort_tx apply error");
+        if (_raft->is_leader() && _raft->term() == synced_term) {
+            co_await _raft->step_down("abort_tx apply error");
         }
         co_return tx_errc::timeout;
     }
@@ -1161,7 +1161,7 @@ rm_stm::replicate_tx(model::batch_identity bid, model::record_batch_reader br) {
         auto pid_seq = _log_state.seq_table.find(bid.pid);
         if (pid_seq == _log_state.seq_table.end()) {
             if (!check_seq(bid, synced_term)) {
-                auto barrier = co_await _c->linearizable_barrier();
+                auto barrier = co_await _raft->linearizable_barrier();
                 if (barrier) {
                     co_return errc::sequence_out_of_order;
                 }
@@ -1216,7 +1216,7 @@ rm_stm::replicate_tx(model::batch_identity bid, model::record_batch_reader br) {
                 }
             }
             if (!check_seq(bid, synced_term)) {
-                auto barrier = co_await _c->linearizable_barrier();
+                auto barrier = co_await _raft->linearizable_barrier();
                 if (barrier) {
                     co_return errc::sequence_out_of_order;
                 }
@@ -1238,7 +1238,7 @@ rm_stm::replicate_tx(model::batch_identity bid, model::record_batch_reader br) {
     expiration_it->second.last_update = clock_type::now();
     expiration_it->second.is_expiration_requested = false;
 
-    auto r = co_await _c->replicate(
+    auto r = co_await _raft->replicate(
       synced_term,
       std::move(br),
       raft::replicate_options(raft::consistency_level::quorum_ack));
@@ -1252,8 +1252,8 @@ rm_stm::replicate_tx(model::batch_identity bid, model::record_batch_reader br) {
             // an error during replication, preventin tx from progress
             _mem_state.expected.erase(bid.pid);
         }
-        if (_c->is_leader() && _c->term() == synced_term) {
-            co_await _c->step_down("replicate_tx replication error");
+        if (_raft->is_leader() && _raft->term() == synced_term) {
+            co_await _raft->step_down("replicate_tx replication error");
         }
         co_return r.error();
     }
@@ -1264,8 +1264,8 @@ rm_stm::replicate_tx(model::batch_identity bid, model::record_batch_reader br) {
           _ctx_log.warn,
           "application of the replicated tx batch has timed out pid:{}",
           bid.pid);
-        if (_c->is_leader() && _c->term() == synced_term) {
-            co_await _c->step_down("replicate_tx wait error");
+        if (_raft->is_leader() && _raft->term() == synced_term) {
+            co_await _raft->step_down("replicate_tx wait error");
         }
         co_return tx_errc::timeout;
     }
@@ -1344,7 +1344,7 @@ ss::future<result<kafka_result>> rm_stm::replicate_seq(
     // if any of the request fail we expect that the leader step down
     auto u = co_await session->lock.get_units();
 
-    if (!_c->is_leader() || _c->term() != synced_term) {
+    if (!_raft->is_leader() || _raft->term() != synced_term) {
         vlog(
           _ctx_log.debug,
           "[pid: {}] resource manager sync failed, not leader",
@@ -1421,7 +1421,7 @@ ss::future<result<kafka_result>> rm_stm::replicate_seq(
         auto tail = tail_seq(bid.pid);
         if (tail) {
             if (!is_sequence(tail.value(), bid.first_seq)) {
-                auto barrier = co_await _c->linearizable_barrier();
+                auto barrier = co_await _raft->linearizable_barrier();
                 if (barrier) {
                     // there is a gap between the request'ss seq number
                     // and the seq number of the latest processed request
@@ -1438,7 +1438,7 @@ ss::future<result<kafka_result>> rm_stm::replicate_seq(
             }
         } else {
             if (bid.first_seq != 0) {
-                auto barrier = co_await _c->linearizable_barrier();
+                auto barrier = co_await _raft->linearizable_barrier();
                 if (barrier) {
                     vlog(
                       _ctx_log.warn,
@@ -1456,7 +1456,7 @@ ss::future<result<kafka_result>> rm_stm::replicate_seq(
         }
     } else {
         if (!is_sequence(session->tail_seq, bid.first_seq)) {
-            auto barrier = co_await _c->linearizable_barrier();
+            auto barrier = co_await _raft->linearizable_barrier();
             if (barrier) {
                 // there is a gap between the request's seq number
                 // and the seq number of the latest inflight request
@@ -1489,7 +1489,7 @@ ss::future<result<kafka_result>> rm_stm::replicate_seq(
     // request comes in the right order, it's ok to replicate
     std::optional<raft::replicate_stages> ss;
     try {
-        ss = _c->replicate_in_stages(synced_term, std::move(br), opts);
+        ss = _raft->replicate_in_stages(synced_term, std::move(br), opts);
         co_await std::move(ss->request_enqueued);
     } catch (...) {
         vlog(
@@ -1502,12 +1502,12 @@ ss::future<result<kafka_result>> rm_stm::replicate_seq(
     result<raft::replicate_result> r = errc::success;
 
     if (!ss.has_value()) {
-        if (_c->is_leader() && _c->term() == synced_term) {
+        if (_raft->is_leader() && _raft->term() == synced_term) {
             // we may not care about the requests waiting on the lock
             // as soon as we release the lock the leader or term will
             // be changed so the pending fibers won't pass the initial
             // checks and be rejected with not_leader
-            co_await _c->step_down("replicate_seq replication error");
+            co_await _raft->step_down("replicate_seq replication error");
         }
         u.return_all();
         r = errc::replication_error;
@@ -1552,8 +1552,9 @@ ss::future<result<kafka_result>> rm_stm::replicate_seq(
         // if r was failed at the consensus level (not because has_failed)
         // it should guarantee that all follow up replication requests fail
         // too but just in case stepping down to minimize the risk
-        if (_c->is_leader() && _c->term() == synced_term) {
-            co_await _c->step_down("replicate_seq replication finished error");
+        if (_raft->is_leader() && _raft->term() == synced_term) {
+            co_await _raft->step_down(
+              "replicate_seq replication finished error");
         }
         co_return request->r;
     }
@@ -1616,7 +1617,7 @@ ss::future<result<kafka_result>> rm_stm::replicate_msg(
         co_return errc::not_leader;
     }
 
-    auto ss = _c->replicate_in_stages(_insync_term, std::move(br), opts);
+    auto ss = _raft->replicate_in_stages(_insync_term, std::move(br), opts);
     co_await std::move(ss.request_enqueued);
     enqueued->set_value();
     auto r = co_await std::move(ss.replicate_finished);
@@ -1665,11 +1666,11 @@ model::offset rm_stm::last_stable_offset() {
         }
     }
 
-    auto synced_leader = _c->is_leader() && _c->term() == _insync_term
+    auto synced_leader = _raft->is_leader() && _raft->term() == _insync_term
                          && _mem_state.term == _insync_term;
 
     model::offset lso{-1};
-    auto last_visible_index = _c->last_visible_index();
+    auto last_visible_index = _raft->last_visible_index();
     auto next_to_apply = model::next_offset(last_applied);
     if (first_tx_start <= last_visible_index) {
         // There are in flight transactions < high water mark that may
@@ -1950,7 +1951,7 @@ ss::future<tx_errc> rm_stm::do_try_abort_old_tx(model::producer_identity pid) {
                   pid, model::control_record_type::tx_commit);
                 auto reader = model::make_memory_record_batch_reader(
                   std::move(batch));
-                auto cr = co_await _c->replicate(
+                auto cr = co_await _raft->replicate(
                   synced_term,
                   std::move(reader),
                   raft::replicate_options(raft::consistency_level::quorum_ack));
@@ -1962,8 +1963,8 @@ ss::future<tx_errc> rm_stm::do_try_abort_old_tx(model::producer_identity pid) {
                       cr.error(),
                       pid,
                       tx_seq);
-                    if (_c->is_leader() && _c->term() == synced_term) {
-                        co_await _c->step_down(
+                    if (_raft->is_leader() && _raft->term() == synced_term) {
+                        co_await _raft->step_down(
                           "try_abort(commit) replication error");
                     }
                     co_return tx_errc::unknown_server_error;
@@ -1981,8 +1982,9 @@ ss::future<tx_errc> rm_stm::do_try_abort_old_tx(model::producer_identity pid) {
                       "applied pid:{} tx_seq:{}",
                       pid,
                       tx_seq);
-                    if (_c->is_leader() && _c->term() == synced_term) {
-                        co_await _c->step_down("try_abort(commit) apply error");
+                    if (_raft->is_leader() && _raft->term() == synced_term) {
+                        co_await _raft->step_down(
+                          "try_abort(commit) apply error");
                     }
                     co_return tx_errc::timeout;
                 }
@@ -1994,7 +1996,7 @@ ss::future<tx_errc> rm_stm::do_try_abort_old_tx(model::producer_identity pid) {
                   pid, model::control_record_type::tx_abort);
                 auto reader = model::make_memory_record_batch_reader(
                   std::move(batch));
-                auto cr = co_await _c->replicate(
+                auto cr = co_await _raft->replicate(
                   synced_term,
                   std::move(reader),
                   raft::replicate_options(raft::consistency_level::quorum_ack));
@@ -2007,8 +2009,8 @@ ss::future<tx_errc> rm_stm::do_try_abort_old_tx(model::producer_identity pid) {
                       cr.error(),
                       pid,
                       tx_seq);
-                    if (_c->is_leader() && _c->term() == synced_term) {
-                        co_await _c->step_down(
+                    if (_raft->is_leader() && _raft->term() == synced_term) {
+                        co_await _raft->step_down(
                           "try_abort(abort) replication error");
                     }
                     co_return tx_errc::unknown_server_error;
@@ -2026,8 +2028,9 @@ ss::future<tx_errc> rm_stm::do_try_abort_old_tx(model::producer_identity pid) {
                       "pid:{} tx_seq:{}",
                       pid,
                       tx_seq);
-                    if (_c->is_leader() && _c->term() == synced_term) {
-                        co_await _c->step_down("try_abort(abort) apply error");
+                    if (_raft->is_leader() && _raft->term() == synced_term) {
+                        co_await _raft->step_down(
+                          "try_abort(abort) apply error");
                     }
                     co_return tx_errc::timeout;
                 }
@@ -2053,7 +2056,7 @@ ss::future<tx_errc> rm_stm::do_try_abort_old_tx(model::producer_identity pid) {
           pid, model::control_record_type::tx_abort);
 
         auto reader = model::make_memory_record_batch_reader(std::move(batch));
-        auto cr = co_await _c->replicate(
+        auto cr = co_await _raft->replicate(
           _insync_term,
           std::move(reader),
           raft::replicate_options(raft::consistency_level::quorum_ack));
@@ -2064,8 +2067,8 @@ ss::future<tx_errc> rm_stm::do_try_abort_old_tx(model::producer_identity pid) {
               "Error \"{}\" on replicating pid:{} autoabort/abort batch",
               cr.error(),
               pid);
-            if (_c->is_leader() && _c->term() == synced_term) {
-                co_await _c->step_down("try_abort(abort) replication error");
+            if (_raft->is_leader() && _raft->term() == synced_term) {
+                co_await _raft->step_down("try_abort(abort) replication error");
             }
             co_return tx_errc::unknown_server_error;
         }
@@ -2715,7 +2718,7 @@ ss::future<> rm_stm::handle_raft_snapshot() {
           vlog(_ctx_log.debug, "Resetting all state, reason: log eviction");
           _log_state.reset();
           _mem_state = mem_state{_tx_root_tracker};
-          set_next(_c->start_offset());
+          set_next(_raft->start_offset());
           _insync_offset = model::prev_offset(_raft->start_offset());
           return ss::now();
       });
@@ -2890,7 +2893,7 @@ void rm_stm::setup_metrics() {
                               ? std::vector<sm::label>{sm::shard_label}
                               : std::vector<sm::label>{};
 
-    const auto& ntp = _c->ntp();
+    const auto& ntp = _raft->ntp();
     const std::vector<sm::label_instance> labels = {
       ns_label(ntp.ns()),
       topic_label(ntp.tp.topic()),

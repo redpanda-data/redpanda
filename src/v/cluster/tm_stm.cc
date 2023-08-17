@@ -219,12 +219,12 @@ ss::future<checked<model::term_id, tm_stm::op_status>> tm_stm::barrier() {
 }
 
 ss::future<checked<model::term_id, tm_stm::op_status>> tm_stm::do_barrier() {
-    if (!_c->is_leader()) {
+    if (!_raft->is_leader()) {
         return ss::make_ready_future<
           checked<model::term_id, tm_stm::op_status>>(
           tm_stm::op_status::not_leader);
     }
-    if (_insync_term != _c->term()) {
+    if (_insync_term != _raft->term()) {
         return ss::make_ready_future<
           checked<model::term_id, tm_stm::op_status>>(
           tm_stm::op_status::not_leader);
@@ -238,7 +238,7 @@ ss::future<checked<model::term_id, tm_stm::op_status>> tm_stm::do_barrier() {
                 if (!f.get0().has_value()) {
                     return tm_stm::op_status::unknown;
                 }
-                if (term != _c->term()) {
+                if (term != _raft->term()) {
                     return tm_stm::op_status::unknown;
                 }
                 return term;
@@ -307,7 +307,7 @@ tm_stm::sync(model::timeout_clock::duration timeout) {
 
 ss::future<checked<model::term_id, tm_stm::op_status>>
 tm_stm::do_sync(model::timeout_clock::duration timeout) {
-    if (!_c->is_leader()) {
+    if (!_raft->is_leader()) {
         co_return tm_stm::op_status::not_leader;
     }
 
@@ -336,8 +336,8 @@ ss::future<tm_stm::op_status> tm_stm::do_update_hosted_transactions(
     auto r = co_await replicate_quorum_ack(term, std::move(batch));
     if (!r) {
         vlog(txlog.info, "got error {} on updating hash_ranges", r.error());
-        if (_c->is_leader() && _c->term() == term) {
-            co_await _c->step_down(
+        if (_raft->is_leader() && _raft->term() == term) {
+            co_await _raft->step_down(
               "txn coordinator update_hash_ranges replication error");
         }
         if (r.error() == raft::errc::shutting_down) {
@@ -353,12 +353,12 @@ ss::future<tm_stm::op_status> tm_stm::do_update_hosted_transactions(
           txlog.info,
           "timeout on waiting until {} is applied on updating hash_ranges",
           offset);
-        if (_c->is_leader() && _c->term() == term) {
-            co_await _c->step_down("txn coordinator apply timeout");
+        if (_raft->is_leader() && _raft->term() == term) {
+            co_await _raft->step_down("txn coordinator apply timeout");
         }
         co_return op_status::unknown;
     }
-    if (_c->term() != term) {
+    if (_raft->term() != term) {
         vlog(
           txlog.info,
           "lost leadership while waiting until {} is applied on updating hash "
@@ -389,8 +389,8 @@ tm_stm::do_update_tx(tm_transaction tx, model::term_id term) {
           tx.pid,
           tx.etag,
           tx.tx_seq);
-        if (_c->is_leader() && _c->term() == term) {
-            co_await _c->step_down(
+        if (_raft->is_leader() && _raft->term() == term) {
+            co_await _raft->step_down(
               "txn coordinator update_tx replication error");
         }
         if (r.error() == raft::errc::shutting_down) {
@@ -410,12 +410,12 @@ tm_stm::do_update_tx(tm_transaction tx, model::term_id term) {
           tx.id,
           tx.pid,
           tx.tx_seq);
-        if (_c->is_leader() && _c->term() == term) {
-            co_await _c->step_down("txn coordinator apply timeout");
+        if (_raft->is_leader() && _raft->term() == term) {
+            co_await _raft->step_down("txn coordinator apply timeout");
         }
         co_return tm_stm::op_status::unknown;
     }
-    if (_c->term() != term) {
+    if (_raft->term() != term) {
         vlog(
           txlog.info,
           "lost leadership while waiting until {} is applied on updating tx:{} "
@@ -645,8 +645,8 @@ ss::future<tm_stm::op_status> tm_stm::do_register_new_producer(
     auto r = co_await replicate_quorum_ack(expected_term, std::move(batch));
 
     if (!r) {
-        if (_c->is_leader() && _c->term() == expected_term) {
-            co_await _c->step_down(
+        if (_raft->is_leader() && _raft->term() == expected_term) {
+            co_await _raft->step_down(
               "txn coordinator register_new_producer replication error");
         }
         co_return tm_stm::op_status::unknown;
@@ -657,7 +657,7 @@ ss::future<tm_stm::op_status> tm_stm::do_register_new_producer(
           model::timeout_clock::now() + _sync_timeout)) {
         co_return tm_stm::op_status::unknown;
     }
-    if (_c->term() != expected_term) {
+    if (_raft->term() != expected_term) {
         // we lost leadership during waiting
         co_return tm_stm::op_status::unknown;
     }
@@ -832,7 +832,7 @@ tm_stm::apply_local_snapshot(stm_snapshot_header hdr, iobuf&& tm_ss_buf) {
 ss::future<stm_snapshot> tm_stm::take_local_snapshot() {
     // Update hash ranges to always have batch in log
     // So it cannot be deleted with cleanup policy
-    if (_c->is_leader()) {
+    if (_raft->is_leader()) {
         auto sync_res = co_await sync();
         if (sync_res.has_error()) {
             throw std::runtime_error(fmt::format(
@@ -1058,7 +1058,7 @@ absl::btree_set<kafka::transactional_id> tm_stm::get_expired_txs() {
 }
 
 ss::future<tm_stm::get_txs_result> tm_stm::get_all_transactions() {
-    if (!_c->is_leader()) {
+    if (!_raft->is_leader()) {
         co_return tm_stm::op_status::not_leader;
     }
 
@@ -1081,7 +1081,7 @@ tm_stm::delete_partition_from_tx(
   model::term_id term,
   kafka::transactional_id tid,
   tm_transaction::tx_partition ntp) {
-    if (!_c->is_leader()) {
+    if (!_raft->is_leader()) {
         co_return tm_stm::op_status::not_leader;
     }
 
@@ -1142,7 +1142,7 @@ ss::future<> tm_stm::handle_raft_snapshot() {
           _cache->clear_log();
           _cache->clear_mem();
           _pid_tx_id.clear();
-          set_next(_c->start_offset());
+          set_next(_raft->start_offset());
           _insync_offset = model::prev_offset(_raft->start_offset());
           return ss::now();
       });

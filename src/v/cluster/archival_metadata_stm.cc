@@ -601,8 +601,8 @@ ss::future<std::error_code> archival_metadata_stm::do_replicate_commands(
         // assumptions about whether batches were replicated or not. Explicitly
         // step down if we're still leader and force callers to re-sync in a
         // new term with a new leader.
-        if (_c->is_leader() && _c->term() == current_term) {
-            co_await _c->step_down(ssx::sformat(
+        if (_raft->is_leader() && _raft->term() == current_term) {
+            co_await _raft->step_down(ssx::sformat(
               "failed to replicate archival batch in term {}", current_term));
         }
         co_return result.error();
@@ -615,8 +615,8 @@ ss::future<std::error_code> archival_metadata_stm::do_replicate_commands(
             co_return errc::shutting_down;
         }
 
-        if (_c->is_leader() && _c->term() == current_term) {
-            co_await _c->step_down(ssx::sformat(
+        if (_raft->is_leader() && _raft->term() == current_term) {
+            co_await _raft->step_down(ssx::sformat(
               "failed to replicate archival batch in term {}", current_term));
         }
         co_return errc::replication_error;

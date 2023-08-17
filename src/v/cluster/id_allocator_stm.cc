@@ -72,7 +72,7 @@ ss::future<bool> id_allocator_stm::set_state(
     auto batch = serialize_cmd(
       state_cmd{.next_state = value}, model::record_batch_type::id_allocator);
     auto reader = model::make_memory_record_batch_reader(std::move(batch));
-    auto r = co_await _c->replicate(
+    auto r = co_await _raft->replicate(
       _insync_term,
       std::move(reader),
       raft::replicate_options(raft::consistency_level::quorum_ack));
@@ -182,7 +182,8 @@ ss::future<> id_allocator_stm::write_snapshot() {
         return ss::now();
     }
     _is_writing_snapshot = true;
-    return _c->write_snapshot(raft::write_snapshot_cfg(_next_snapshot, iobuf()))
+    return _raft
+      ->write_snapshot(raft::write_snapshot_cfg(_next_snapshot, iobuf()))
       .then([this] {
           _next_snapshot = _insync_offset;
           _processed = 0;
@@ -202,7 +203,7 @@ ss::future<stm_snapshot> id_allocator_stm::take_local_snapshot() {
 }
 
 ss::future<> id_allocator_stm::handle_raft_snapshot() {
-    _next_snapshot = _c->start_offset();
+    _next_snapshot = _raft->start_offset();
     _processed = 0;
     set_next(_next_snapshot);
     _insync_offset = model::prev_offset(_next_snapshot);

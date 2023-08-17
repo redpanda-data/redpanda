@@ -236,7 +236,6 @@ protected:
     bool _is_catching_up{false};
     model::term_id _insync_term;
     model::offset _insync_offset;
-    raft::consensus* _c;
     prefix_logger _log;
 
 private:

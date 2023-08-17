@@ -314,7 +314,7 @@ private:
 
     ss::future<result<raft::replicate_result>>
     replicate_quorum_ack(model::term_id term, model::record_batch&& batch) {
-        return _c->replicate(
+        return _raft->replicate(
           term,
           model::make_memory_record_batch_reader(std::move(batch)),
           raft::replicate_options{raft::consistency_level::quorum_ack});

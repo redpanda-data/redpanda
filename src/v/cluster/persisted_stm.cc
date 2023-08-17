@@ -62,8 +62,7 @@ persisted_stm<T>::persisted_stm(
   raft::consensus* c,
   Args&&... args)
   : raft::state_machine(c, logger, ss::default_priority_class())
-  , _c(c)
-  , _log(logger, ssx::sformat("[{} ({})]", _c->ntp(), snapshot_mgr_name))
+  , _log(logger, ssx::sformat("[{} ({})]", _raft->ntp(), snapshot_mgr_name))
   , _snapshot_backend(snapshot_mgr_name, _log, c, std::forward<Args>(args)...) {
 }
 
@@ -319,7 +318,7 @@ persisted_stm<T>::ensure_local_snapshot_exists(model::offset target_offset) {
                     "[{} ({})]  after we waited for target_offset ({}) "
                     "_insync_offset "
                     "({}) should have matched it or bypassed",
-                    _c->ntp(),
+                    _raft->ntp(),
                     name(),
                     target_offset,
                     _insync_offset);
@@ -346,10 +345,10 @@ ss::future<> persisted_stm<T>::wait_offset_committed(
   model::offset offset,
   model::term_id term) {
     auto stop_cond = [this, offset, term] {
-        return _c->committed_offset() >= offset || _c->term() > term;
+        return _raft->committed_offset() >= offset || _raft->term() > term;
     };
 
-    return _c->commit_index_updated().wait(timeout, stop_cond);
+    return _raft->commit_index_updated().wait(timeout, stop_cond);
 }
 
 template<supported_stm_snapshot T>
@@ -357,9 +356,9 @@ ss::future<bool> persisted_stm<T>::do_sync(
   model::timeout_clock::duration timeout,
   model::offset offset,
   model::term_id term) {
-    const auto committed = _c->committed_offset();
-    const auto ntp = _c->ntp();
-    _c->events().notify_commit_index();
+    const auto committed = _raft->committed_offset();
+    const auto ntp = _raft->ntp();
+    _raft->events().notify_commit_index();
 
     if (offset > committed) {
         try {
@@ -386,7 +385,7 @@ ss::future<bool> persisted_stm<T>::do_sync(
         offset = committed;
     }
 
-    if (_c->term() == term) {
+    if (_raft->term() == term) {
         try {
             co_await wait(offset, model::timeout_clock::now() + timeout);
         } catch (const ss::broken_condition_variable&) {
@@ -415,7 +414,7 @@ ss::future<bool> persisted_stm<T>::do_sync(
               committed);
             co_return false;
         }
-        if (_c->term() == term) {
+        if (_raft->term() == term) {
             _insync_term = term;
             co_return true;
         }
@@ -428,8 +427,8 @@ ss::future<bool> persisted_stm<T>::do_sync(
 template<supported_stm_snapshot T>
 ss::future<bool>
 persisted_stm<T>::sync(model::timeout_clock::duration timeout) {
-    auto term = _c->term();
-    if (!_c->is_leader()) {
+    auto term = _raft->term();
+    if (!_raft->is_leader()) {
         co_return false;
     }
     if (_insync_term == term) {
@@ -451,9 +450,10 @@ persisted_stm<T>::sync(model::timeout_clock::duration timeout) {
     // committed index, so we won't need any additional flushes even if the
     // client produces with acks=1.
     model::offset sync_offset;
-    auto log_offsets = _c->log()->offsets();
+    auto log_offsets = _raft->log()->offsets();
     if (log_offsets.dirty_offset_term == term) {
-        auto last_term_start_offset = _c->log()->find_last_term_start_offset();
+        auto last_term_start_offset
+          = _raft->log()->find_last_term_start_offset();
         if (last_term_start_offset > model::offset{0}) {
             sync_offset = last_term_start_offset - model::offset{1};
         } else {
@@ -486,18 +486,19 @@ ss::future<bool> persisted_stm<T>::wait_no_throw(
           return false;
       })
       .handle_exception_type(
-        [this, offset, ntp = _c->ntp()](const ss::timed_out_error&) {
+        [this, offset, ntp = _raft->ntp()](const ss::timed_out_error&) {
             vlog(_log.warn, "timed out while waiting for offset: {}", offset);
             return false;
         })
-      .handle_exception([this, offset, ntp = _c->ntp()](std::exception_ptr e) {
-          vlog(
-            _log.error,
-            "An error {} happened during waiting for offset: {}",
-            e,
-            offset);
-          return false;
-      });
+      .handle_exception(
+        [this, offset, ntp = _raft->ntp()](std::exception_ptr e) {
+            vlog(
+              _log.error,
+              "An error {} happened during waiting for offset: {}",
+              e,
+              offset);
+            return false;
+        });
 }
 
 template<supported_stm_snapshot T>
@@ -509,7 +510,7 @@ ss::future<> persisted_stm<T>::start() {
         vassert(
           false,
           "[[{}] ({})]Can't load snapshot from '{}'. Got error: {}",
-          _c->ntp(),
+          _raft->ntp(),
           name(),
           _snapshot_backend.store_path(),
           std::current_exception());
@@ -519,7 +520,7 @@ ss::future<> persisted_stm<T>::start() {
         stm_snapshot& snapshot = *maybe_snapshot;
 
         auto next_offset = model::next_offset(snapshot.header.offset);
-        if (next_offset >= _c->start_offset()) {
+        if (next_offset >= _raft->start_offset()) {
             vlog(
               _log.debug,
               "start with applied snapshot, set_next {}",
@@ -548,7 +549,7 @@ ss::future<> persisted_stm<T>::start() {
         }
 
     } else {
-        auto offset = _c->start_offset();
+        auto offset = _raft->start_offset();
         vlog(_log.debug, "start without snapshot, maybe set_next {}", offset);
 
         if (offset >= model::offset(0)) {
