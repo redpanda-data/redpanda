@@ -58,6 +58,7 @@
 #include "features/feature_table_snapshot.h"
 #include "features/fwd.h"
 #include "features/migrators.h"
+#include "finjector/stress_fiber.h"
 #include "kafka/client/configuration.h"
 #include "kafka/server/coordinator_ntp_mapper.h"
 #include "kafka/server/fetch_session_cache.h"
@@ -834,6 +835,7 @@ void application::configure_admin_server() {
     construct_service(
       _admin,
       admin_server_cfg_from_global_cfg(sched_groups),
+      std::ref(stress_fiber_manager),
       std::ref(partition_manager),
       std::ref(cp_partition_manager),
       controller.get(),
@@ -1565,6 +1567,7 @@ void application::wire_up_bootstrap_services() {
     ss::smp::invoke_on_all([] {
         return storage::internal::chunks().start();
     }).get();
+    construct_service(stress_fiber_manager).get();
     syschecks::systemd_message("Constructing storage services").get();
     construct_single_service_sharded(storage_node).get();
     construct_single_service_sharded(

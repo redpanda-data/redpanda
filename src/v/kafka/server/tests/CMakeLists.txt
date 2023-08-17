@@ -15,6 +15,19 @@ rp_test(
 )
 
 
+v_cc_library(
+  NAME
+    kafka_test_utils
+  HDRS
+    "produce_consume_utils.h"
+  SRCS
+    "produce_consume_utils.cc"
+  DEPS
+    v::bytes
+    v::kafka
+    v::storage
+)
+
 set(srcs
   consumer_groups_test.cc
   token_bucket_algorithm_test.cc

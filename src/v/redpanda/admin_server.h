@@ -14,6 +14,7 @@
 #include "cluster/fwd.h"
 #include "config/endpoint_tls_config.h"
 #include "coproc/partition_manager.h"
+#include "finjector/stress_fiber.h"
 #include "kafka/server/fwd.h"
 #include "model/metadata.h"
 #include "pandaproxy/rest/fwd.h"
@@ -58,6 +59,7 @@ class admin_server {
 public:
     explicit admin_server(
       admin_server_cfg,
+      ss::sharded<stress_fiber_manager>&,
       ss::sharded<cluster::partition_manager>&,
       ss::sharded<coproc::partition_manager>&,
       cluster::controller*,
@@ -433,6 +435,7 @@ private:
 
     ss::http_server _server;
     admin_server_cfg _cfg;
+    ss::sharded<stress_fiber_manager>& _stress_fiber_manager;
     ss::sharded<cluster::partition_manager>& _partition_manager;
     ss::sharded<coproc::partition_manager>& _cp_partition_manager;
     cluster::controller* _controller;

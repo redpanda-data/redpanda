@@ -46,6 +46,7 @@
 #include "config/endpoint_tls_config.h"
 #include "features/feature_table.h"
 #include "finjector/hbadger.h"
+#include "finjector/stress_fiber.h"
 #include "json/document.h"
 #include "json/schema.h"
 #include "json/stringbuffer.h"
@@ -149,6 +150,7 @@ private:
 
 admin_server::admin_server(
   admin_server_cfg cfg,
+  ss::sharded<stress_fiber_manager>& looper,
   ss::sharded<cluster::partition_manager>& pm,
   ss::sharded<coproc::partition_manager>& cpm,
   cluster::controller* controller,
@@ -166,6 +168,7 @@ admin_server::admin_server(
   : _log_level_timer([this] { log_level_timer_handler(); })
   , _server("admin")
   , _cfg(std::move(cfg))
+  , _stress_fiber_manager(looper)
   , _partition_manager(pm)
   , _cp_partition_manager(cpm)
   , _controller(controller)
@@ -3877,6 +3880,107 @@ admin_server::get_partition_state_handler(
 }
 
 void admin_server::register_debug_routes() {
+    register_route<user>(
+      ss::httpd::debug_json::stress_fiber_stop,
+      [this](std::unique_ptr<ss::httpd::request>) {
+          vlog(logger.info, "Stopping stress fiber");
+          return _stress_fiber_manager
+            .invoke_on_all([](auto& stress_mgr) { return stress_mgr.stop(); })
+            .then(
+              [] { return ss::json::json_return_type(ss::json::json_void()); });
+      });
+
+    register_route<user>(
+      ss::httpd::debug_json::stress_fiber_start,
+      [this](std::unique_ptr<ss::httpd::request> req) {
+          vlog(logger.info, "Requested stress fiber");
+          stress_config cfg;
+          const auto parse_int =
+            [&](const ss::sstring& param, std::optional<int>& val) {
+                if (auto e = req->get_query_param(param); !e.empty()) {
+                    try {
+                        val = boost::lexical_cast<int>(e);
+                    } catch (const boost::bad_lexical_cast&) {
+                        throw ss::httpd::bad_param_exception(fmt::format(
+                          "Invalid parameter '{}' value {{{}}}", param, e));
+                    }
+                } else {
+                    val = std::nullopt;
+                }
+            };
+          parse_int(
+            "min_spins_per_scheduling_point",
+            cfg.min_spins_per_scheduling_point);
+          parse_int(
+            "max_spins_per_scheduling_point",
+            cfg.max_spins_per_scheduling_point);
+          parse_int(
+            "min_ms_per_scheduling_point", cfg.min_ms_per_scheduling_point);
+          parse_int(
+            "max_ms_per_scheduling_point", cfg.max_ms_per_scheduling_point);
+          if (
+            cfg.max_spins_per_scheduling_point.has_value()
+            != cfg.min_spins_per_scheduling_point.has_value()) {
+              throw ss::httpd::bad_param_exception(
+                "Expected 'max_spins_per_scheduling_point' set with "
+                "'min_spins_per_scheduling_point'");
+          }
+          if (
+            cfg.max_ms_per_scheduling_point.has_value()
+            != cfg.min_ms_per_scheduling_point.has_value()) {
+              throw ss::httpd::bad_param_exception(
+                "Expected 'max_ms_per_scheduling_point' set with "
+                "'min_ms_per_scheduling_point'");
+          }
+          // Check that either delay or a spin count is defined.
+          if (
+            cfg.max_spins_per_scheduling_point.has_value()
+            == cfg.max_ms_per_scheduling_point.has_value()) {
+              throw ss::httpd::bad_param_exception(
+                "Expected either spins or delay to be defined");
+          }
+          if (
+            cfg.max_spins_per_scheduling_point.has_value()
+            && cfg.max_spins_per_scheduling_point.value()
+                 < cfg.min_spins_per_scheduling_point.value()) {
+              throw ss::httpd::bad_param_exception(fmt::format(
+                "Invalid parameter 'max_spins_per_scheduling_point' value "
+                "is too low: {} < {}",
+                cfg.max_spins_per_scheduling_point.value(),
+                cfg.min_spins_per_scheduling_point.value()));
+          }
+          if (
+            cfg.max_ms_per_scheduling_point.has_value()
+            && cfg.max_ms_per_scheduling_point.value()
+                 < cfg.min_ms_per_scheduling_point.value()) {
+              throw ss::httpd::bad_param_exception(fmt::format(
+                "Invalid parameter 'max_ms_per_scheduling_point' value "
+                "is too low: {} < {}",
+                cfg.max_ms_per_scheduling_point.value(),
+                cfg.min_ms_per_scheduling_point.value()));
+          }
+          cfg.num_fibers = 1;
+          if (auto e = req->get_query_param("num_fibers"); !e.empty()) {
+              try {
+                  cfg.num_fibers = boost::lexical_cast<int>(e);
+              } catch (const boost::bad_lexical_cast&) {
+                  throw ss::httpd::bad_param_exception(fmt::format(
+                    "Invalid parameter 'num_fibers' value {{{}}}", e));
+              }
+          }
+          return _stress_fiber_manager
+            .invoke_on_all([cfg](auto& stress_mgr) {
+                auto ran = stress_mgr.start(cfg);
+                if (ran) {
+                    vlog(logger.info, "Started stress fiber...");
+                } else {
+                    vlog(logger.info, "Stress fiber already running...");
+                }
+            })
+            .then(
+              [] { return ss::json::json_return_type(ss::json::json_void()); });
+      });
+
     register_route<user>(
       ss::httpd::debug_json::reset_leaders_info,
       [this](std::unique_ptr<ss::httpd::request>) {

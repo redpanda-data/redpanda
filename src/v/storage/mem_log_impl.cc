@@ -163,7 +163,7 @@ struct mem_log_impl final : log::impl {
         return gc(cfg.eviction_time, cfg.max_bytes);
     }
 
-    ss::future<> do_housekeeping() final override { return ss::now(); }
+    ss::future<> apply_segment_ms() final override { return ss::now(); }
     std::ostream& print(std::ostream& o) const final {
         fmt::print(o, "{{mem_log_impl:{}}}", offsets());
         return o;

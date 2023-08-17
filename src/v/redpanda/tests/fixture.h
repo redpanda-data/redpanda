@@ -413,6 +413,25 @@ public:
           });
     }
 
+    // Wait for the Raft leader of the given partition to become leader.
+    ss::future<> wait_for_leader(
+      model::ntp ntp, model::timeout_clock::duration timeout = 3s) {
+        return tests::cooperative_spin_wait_with_timeout(
+          timeout, [this, ntp = std::move(ntp)]() {
+              auto shard = app.shard_table.local().shard_for(ntp);
+              if (!shard) {
+                  return ss::make_ready_future<bool>(false);
+              }
+              return app.partition_manager.invoke_on(
+                *shard, [ntp](cluster::partition_manager& mgr) {
+                    auto partition = mgr.get(ntp);
+                    return partition
+                           && partition->raft()->term() != model::term_id{}
+                           && partition->raft()->is_leader();
+                });
+          });
+    }
+
     ss::future<kafka::client::transport>
     make_kafka_client(std::optional<ss::sstring> client_id = "test_client") {
         return ss::make_ready_future<kafka::client::transport>(
@@ -457,10 +476,15 @@ public:
           });
     }
 
-    ss::future<>
-    add_topic(model::topic_namespace_view tp_ns, int partitions = 1) {
-        std::vector<cluster::topic_configuration> cfgs{
-          cluster::topic_configuration(tp_ns.ns, tp_ns.tp, partitions, 1)};
+    ss::future<> add_topic(
+      model::topic_namespace_view tp_ns,
+      int partitions = 1,
+      std::optional<cluster::topic_properties> props = std::nullopt) {
+        std::vector<cluster::topic_configuration> cfgs = {
+          cluster::topic_configuration{tp_ns.ns, tp_ns.tp, partitions, 1}};
+        if (props.has_value()) {
+            cfgs[0].properties = std::move(props.value());
+        }
         return app.controller->get_topics_frontend()
           .local()
           .create_topics(

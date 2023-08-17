@@ -72,7 +72,7 @@ public:
     ss::future<> truncate(truncate_config) final;
     ss::future<> truncate_prefix(truncate_prefix_config) final;
     ss::future<> compact(compaction_config) final;
-    ss::future<> do_housekeeping() final override;
+    ss::future<> apply_segment_ms() final;
 
     ss::future<model::offset> monitor_eviction(ss::abort_source&) final;
     void set_collectible_offset(model::offset) final;
@@ -93,7 +93,8 @@ public:
     get_term_last_offset(model::term_id term) const final;
     std::ostream& print(std::ostream&) const final;
 
-    ss::future<> maybe_roll(
+    // Must be called while _segments_rolling_lock is held.
+    ss::future<> maybe_roll_unlocked(
       model::term_id, model::offset next_offset, ss::io_priority_class);
 
     // roll immediately with the current term. users should prefer the
@@ -110,6 +111,14 @@ public:
     ss::future<> update_configuration(ntp_config::default_overrides) final;
 
     int64_t compaction_backlog() const final;
+
+    std::optional<ssx::semaphore_units> try_segment_roll_lock() {
+        return _segments_rolling_lock.try_get_units();
+    }
+
+    ss::future<ssx::semaphore_units> segment_roll_lock() {
+        return _segments_rolling_lock.get_units();
+    }
 
 private:
     friend class disk_log_appender; // for multi-term appends
@@ -225,6 +234,13 @@ private:
 
     // Mutually exclude operations that will cause segment rolling
     // do_housekeeping and maybe_roll
+    //
+    // This lock will only rarely be contended. If it is held, then we must
+    // wait for housekeeping or truncation to complete before proceeding,
+    // because the log might be in a state mid-roll where it has no appender.
+    // We need to take this irrespective of whether we're actually rolling or
+    // not, in order to ensure that writers wait for a background roll to
+    // complete if one is ongoing.
     mutex _segments_rolling_lock;
 };
 
