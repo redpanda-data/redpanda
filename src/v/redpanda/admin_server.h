@@ -427,6 +427,8 @@ private:
       tx_registry_handler(std::unique_ptr<ss::http::request>);
     ss::future<ss::json::json_return_type>
       find_tx_coordinator_handler(std::unique_ptr<ss::http::request>);
+    ss::future<ss::json::json_return_type>
+      mark_transactions_draining_handler(std::unique_ptr<ss::http::request>);
 
     /// Cluster routes
     ss::future<ss::json::json_return_type>

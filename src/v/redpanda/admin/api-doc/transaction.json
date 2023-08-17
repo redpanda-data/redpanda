@@ -107,6 +107,36 @@
                     ]
                 }
             ]
+        },
+        {
+            "path": "/v1/transactions/draining_transactions",
+            "operations": [
+                {
+                    "method": "POST",
+                    "summary": "Start transactions draining",
+                    "type": "void",
+                    "nickname": "set_draining_transactions",
+                    "produces": [
+                        "application/json"
+                    ],
+                    "parameters": [
+                        {
+                            "name": "tm_partition",
+                            "in": "query",
+                            "required": true,
+                            "type": "integer"
+                        },
+                        {
+                            "name": "draining_transactions",
+                            "in": "body",
+                            "required": true,
+                            "schema": {
+                                "type":"draining_transactions"
+                            }
+                        }
+                    ]
+                }
+            ]
         }
     ],
     "models": {
@@ -305,6 +335,40 @@
                     "description": "Consumer groups for transaction"
                 }
             }
+        },
+        "hash_range": {
+            "id": "hash_range",
+            "description": "Tranactional hash range",
+            "properties": {
+                "from": {
+                    "type": "long"
+                  },
+                "to": {
+                    "type": "long"
+                }
+            }
+        },
+        "draining_transactions": {
+            "id": "draining_transactions",
+            "description": "Draining transactions",
+            "properties": {
+                "repartitioning_id": {
+                    "type": "long"
+                },
+                "transactional_ids": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                "hash_ranges": {
+                    "type": "array",
+                    "items": {
+                      "type": "hash_range"
+                    }
+                }
+            }
         }
+        
     }
 }
