@@ -201,6 +201,7 @@ public:
       exclude_hosted_transaction(model::term_id, kafka::transactional_id);
     ss::future<tm_stm::op_status>
       set_draining_transactions(model::term_id, draining_txs);
+    draining_txs get_draining_transactions() { return _hosted_txes.draining; }
 
     ss::future<ss::basic_rwlock<>::holder> read_lock() {
         return _cache->read_lock();

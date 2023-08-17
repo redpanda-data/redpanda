@@ -3324,6 +3324,63 @@ tx_gateway_frontend::route_locally(set_draining_transactions_request&& r) {
     return do_route_locally(ntp, std::move(r));
 }
 
+ss::future<result<cluster::draining_txs, tx_errc>>
+tx_gateway_frontend::get_draining_txes(model::ntp tx_ntp) {
+    auto shard = _shard_table.local().shard_for(tx_ntp);
+
+    if (!shard.has_value()) {
+        vlog(txlog.warn, "can't find a shard for {}", tx_ntp);
+        co_return tx_errc::shard_not_found;
+    }
+
+    co_return co_await container().invoke_on(
+      *shard,
+      _ssg,
+      [tm_ntp = std::move(tx_ntp)](tx_gateway_frontend& self)
+        -> ss::future<result<cluster::draining_txs, tx_errc>> {
+          auto partition = self._partition_manager.local().get(tm_ntp);
+          if (!partition) {
+              vlog(
+                txlog.warn,
+                "transaction manager partition: {} not found",
+                tm_ntp);
+              return ss::make_ready_future<
+                result<cluster::draining_txs, tx_errc>>(
+                tx_errc::partition_not_found);
+          }
+
+          auto stm = partition->tm_stm();
+
+          if (!stm) {
+              vlog(
+                txlog.error, "can't get tm stm of the {}' partition", tm_ntp);
+              return ss::make_ready_future<
+                result<cluster::draining_txs, tx_errc>>(tx_errc::stm_not_found);
+          }
+
+          return ss::with_gate(self._gate, [&stm, &self] {
+              return stm->read_lock().then(
+                [&self, stm](ss::basic_rwlock<>::holder unit) {
+                    return self.do_get_draining_txes(stm).finally(
+                      [u = std::move(unit)] {});
+                });
+          });
+      });
+}
+
+ss::future<result<cluster::draining_txs, tx_errc>>
+tx_gateway_frontend::do_get_draining_txes(ss::shared_ptr<tm_stm> stm) {
+    auto term_opt = co_await stm->sync();
+    if (!term_opt.has_value()) {
+        if (term_opt.error() == tm_stm::op_status::not_leader) {
+            co_return tx_errc::not_coordinator;
+        }
+        co_return tx_errc::coordinator_not_available;
+    }
+
+    co_return stm->get_draining_transactions();
+}
+
 ss::future<tx_errc> tx_gateway_frontend::delete_partition_from_tx(
   kafka::transactional_id tid, tm_transaction::tx_partition ntp) {
     auto tm_ntp = co_await get_ntp(tid);

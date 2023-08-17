@@ -66,6 +66,8 @@ public:
     ss::future<return_all_txs_res> get_all_transactions();
     ss::future<result<tm_transaction, tx_errc>>
       describe_tx(kafka::transactional_id);
+    ss::future<result<cluster::draining_txs, tx_errc>>
+    get_draining_txes(model::ntp tx_ntp);
 
     ss::future<try_abort_reply> route_globally(try_abort_request&&);
     ss::future<try_abort_reply> route_locally(try_abort_request&&);
@@ -256,6 +258,8 @@ private:
 
     ss::future<result<tm_transaction, tx_errc>>
       describe_tx(ss::shared_ptr<tm_stm>, kafka::transactional_id);
+    ss::future<result<cluster::draining_txs, tx_errc>>
+      do_get_draining_txes(ss::shared_ptr<tm_stm>);
 
     ss::future<try_abort_reply>
     process_locally(ss::shared_ptr<tm_stm>, try_abort_request&&);
