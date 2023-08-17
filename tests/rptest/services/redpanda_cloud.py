@@ -169,7 +169,7 @@ class CloudCluster():
         The clusterId of the created cluster.
         """
 
-        return self._cluster_id
+        return self.config.id
 
     def _create_namespace(self):
         name = f'rp-ducktape-ns-{self._unique_id}'  # e.g. rp-ducktape-ns-3b36f516
@@ -387,7 +387,7 @@ class CloudCluster():
             # TODO accept the AWS VPC peering request
             # TODO create route between vpc and peering connection
 
-        return self._cluster_id
+        return self.config.id
 
     def delete(self):
         """
