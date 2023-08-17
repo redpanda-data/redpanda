@@ -991,6 +991,25 @@ std::ostream& operator<<(std::ostream& o, const find_coordinator_reply& r) {
     return o;
 }
 
+std::ostream&
+operator<<(std::ostream& o, const set_draining_transactions_request& r) {
+    fmt::print(
+      o,
+      "{{ntp:{} timeout:{} draining:{{id:{} ranges:{} transactions:{}}}}}",
+      r.tm_ntp,
+      r.timeout,
+      r.draining.id,
+      r.draining.ranges.ranges.size(),
+      r.draining.transactions.size());
+    return o;
+}
+
+std::ostream&
+operator<<(std::ostream& o, const set_draining_transactions_reply& r) {
+    fmt::print(o, "{{ec {}}}", r.ec);
+    return o;
+}
+
 std::ostream& operator<<(std::ostream& o, const describe_tx_registry_request&) {
     fmt::print(o, "{{}}");
     return o;

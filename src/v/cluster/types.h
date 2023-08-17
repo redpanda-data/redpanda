@@ -1070,6 +1070,66 @@ struct find_coordinator_request
     auto serde_fields() { return std::tie(tid); }
 };
 
+struct set_draining_transactions_reply
+  : serde::envelope<
+      set_draining_transactions_reply,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    using rpc_adl_exempt = std::true_type;
+
+    tx_errc ec{};
+
+    set_draining_transactions_reply() noexcept = default;
+
+    set_draining_transactions_reply(tx_errc ec)
+      : ec(ec) {}
+
+    friend bool operator==(
+      const set_draining_transactions_reply&,
+      const set_draining_transactions_reply&)
+      = default;
+
+    friend std::ostream&
+    operator<<(std::ostream& o, const set_draining_transactions_reply& r);
+
+    auto serde_fields() { return std::tie(ec); }
+};
+
+struct set_draining_transactions_request
+  : serde::envelope<
+      set_draining_transactions_request,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    using rpc_adl_exempt = std::true_type;
+
+    using reply = set_draining_transactions_reply;
+    static constexpr const std::string_view name = "set_draining_transactions";
+
+    model::ntp tm_ntp;
+    cluster::draining_txs draining;
+    model::timeout_clock::duration timeout;
+
+    set_draining_transactions_request() noexcept = default;
+
+    set_draining_transactions_request(
+      model::ntp tm_ntp,
+      cluster::draining_txs draining,
+      model::timeout_clock::duration timeout)
+      : tm_ntp(tm_ntp)
+      , draining(std::move(draining))
+      , timeout(timeout) {}
+
+    friend bool operator==(
+      const set_draining_transactions_request&,
+      const set_draining_transactions_request&)
+      = default;
+
+    friend std::ostream&
+    operator<<(std::ostream& o, const set_draining_transactions_request& r);
+
+    auto serde_fields() { return std::tie(tm_ntp, draining, timeout); }
+};
+
 struct describe_tx_registry_reply {
     repartitioning_id id;
     absl::flat_hash_map<model::partition_id, hosted_txs> mapping;
