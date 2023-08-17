@@ -278,6 +278,25 @@ ignore_shutdown_exceptions(seastar::future<> fut) noexcept {
     }
 }
 
+/// \brief Check if the exception is a commonly ignored shutdown exception.
+inline bool is_shutdown_exception(const std::exception_ptr& e) {
+    try {
+        std::rethrow_exception(e);
+    } catch (const seastar::abort_requested_exception&) {
+        return true;
+    } catch (const seastar::gate_closed_exception&) {
+        return true;
+    } catch (const seastar::broken_semaphore&) {
+        return true;
+    } catch (const seastar::broken_promise&) {
+        return true;
+    } catch (const seastar::broken_condition_variable&) {
+        return true;
+    } catch (...) {
+    }
+    return false;
+}
+
 /// \brief Create a future holding a gate, handling common shutdown exception
 /// types.  Returns the resulting future, onto which further exception handling
 /// may be chained.
