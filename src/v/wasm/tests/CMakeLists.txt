@@ -8,6 +8,7 @@ v_cc_library(
     v::wasm 
     Seastar::seastar
     v::model_test_utils
+    v::gtest_main
 )
 
 set(TESTDATA_DIR "${CMAKE_BINARY_DIR}/src/go/transform-sdk/internal/testdata")
