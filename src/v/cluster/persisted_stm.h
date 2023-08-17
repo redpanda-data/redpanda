@@ -233,7 +233,6 @@ protected:
      */
     ss::future<bool> sync(model::timeout_clock::duration);
 
-    model::offset _last_snapshot_offset;
     bool _is_catching_up{false};
     model::term_id _insync_term;
     model::offset _insync_offset;
@@ -255,6 +254,7 @@ private:
     ss::condition_variable _on_snapshot_hydrated;
     bool _snapshot_hydrated{false};
     T _snapshot_backend;
+    model::offset _last_snapshot_offset;
 };
 
 } // namespace cluster

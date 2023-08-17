@@ -914,12 +914,10 @@ ss::future<> archival_metadata_stm::apply_local_snapshot(
       get_last_offset(),
       _manifest->get_spillover_map().size());
 
-    _last_snapshot_offset = header.offset;
-    _insync_offset = header.offset;
     if (snap.dirty == state_dirty::dirty) {
         _last_clean_at = model::offset{0};
     } else {
-        _last_clean_at = _insync_offset;
+        _last_clean_at = header.offset;
     }
     co_return;
 }

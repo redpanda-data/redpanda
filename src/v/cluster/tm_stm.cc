@@ -813,8 +813,6 @@ tm_stm::apply_local_snapshot(stm_snapshot_header hdr, iobuf&& tm_ss_buf) {
             _cache->set_log(entry);
             _pid_tx_id[entry.pid] = entry.id;
         }
-        _last_snapshot_offset = data.offset;
-        _insync_offset = data.offset;
     } else if (hdr.version == tm_snapshot::version) {
         auto data = reflection::adl<tm_snapshot>{}.from(data_parser);
 
@@ -824,8 +822,6 @@ tm_stm::apply_local_snapshot(stm_snapshot_header hdr, iobuf&& tm_ss_buf) {
             _cache->set_log(entry);
             _pid_tx_id[entry.pid] = entry.id;
         }
-        _last_snapshot_offset = data.offset;
-        _insync_offset = data.offset;
         _hosted_txes = std::move(data.hash_ranges);
         _hosted_txes.inited = true;
     }

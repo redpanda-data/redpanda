@@ -405,8 +405,6 @@ ss::future<> log_eviction_stm::apply_local_snapshot(
       _log.info, "Applying snapshot {} at offset: {}", snapshot, header.offset);
 
     _delete_records_eviction_offset = snapshot.effective_start_offset;
-    _last_snapshot_offset = header.offset;
-    _insync_offset = header.offset;
     return ss::now();
 }
 

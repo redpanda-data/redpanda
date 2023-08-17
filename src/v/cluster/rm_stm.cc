@@ -2411,9 +2411,6 @@ rm_stm::apply_local_snapshot(stm_snapshot_header hdr, iobuf&& tx_ss_buf) {
     for (auto it : sorted_pids) {
         _log_state.lru_idempotent_pids.push_back(it->second);
     }
-
-    _last_snapshot_offset = data.offset;
-    _insync_offset = data.offset;
 }
 
 uint8_t rm_stm::active_snapshot_version() {
