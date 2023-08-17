@@ -48,6 +48,8 @@ enum class tx_hash_ranges_errc {
     intersection = 2
 };
 
+std::ostream& operator<<(std::ostream&, const tx_hash_ranges_errc&);
+
 // Defines hash range as section where both ends are included
 struct tx_hash_range
   : serde::
@@ -76,6 +78,8 @@ struct tx_hash_range
         return (r.first >= first && r.first <= last)
                || (r.last >= first && r.last <= last) || r.contains(*this);
     }
+
+    friend std::ostream& operator<<(std::ostream& o, const tx_hash_range& self);
 };
 
 inline tx_hash_range default_hash_range(
@@ -161,6 +165,31 @@ struct tx_hash_ranges_set
 };
 
 using repartitioning_id = named_type<int64_t, struct repartitioning_id_type>;
+
+struct draining_txs
+  : serde::envelope<draining_txs, serde::version<0>, serde::compat_version<0>> {
+    repartitioning_id id;
+    tx_hash_ranges_set ranges{};
+    absl::btree_set<kafka::transactional_id> transactions{};
+
+    draining_txs() = default;
+
+    draining_txs(
+      repartitioning_id id,
+      tx_hash_ranges_set ranges,
+      absl::btree_set<kafka::transactional_id> txs)
+      : id(id)
+      , ranges(std::move(ranges))
+      , transactions(std::move(txs)) {}
+
+    auto serde_fields() { return std::tie(id, ranges, transactions); }
+
+    bool contains(kafka::transactional_id tx_id) {
+        return transactions.contains(tx_id);
+    }
+
+    bool contains(tx_hash_type hash) { return ranges.contains(hash); }
+};
 
 struct hosted_txs
   : serde::envelope<hosted_txs, serde::version<0>, serde::compat_version<0>> {
@@ -269,26 +298,20 @@ namespace reflection {
 
 template<>
 struct adl<cluster::tx_hash_range> {
-    void to(iobuf& out, cluster::tx_hash_range&& hr) {
-        reflection::serialize(out, hr.first, hr.last);
-    }
-    cluster::tx_hash_range from(iobuf_parser& in) {
-        auto first = reflection::adl<cluster::tx_hash_type>{}.from(in);
-        auto last = reflection::adl<cluster::tx_hash_type>{}.from(in);
-        return {first, last};
-    }
+    void to(iobuf& out, cluster::tx_hash_range&& hr);
+    cluster::tx_hash_range from(iobuf_parser& in);
 };
 
 template<>
 struct adl<cluster::tx_hash_ranges_set> {
-    void to(iobuf& out, cluster::tx_hash_ranges_set&& hr) {
-        reflection::serialize(out, hr.ranges);
-    }
-    cluster::tx_hash_ranges_set from(iobuf_parser& in) {
-        auto ranges
-          = reflection::adl<std::vector<cluster::tx_hash_range>>{}.from(in);
-        return {std::move(ranges)};
-    }
+    void to(iobuf& out, cluster::tx_hash_ranges_set&& hr);
+    cluster::tx_hash_ranges_set from(iobuf_parser& in);
+};
+
+template<>
+struct adl<cluster::draining_txs> {
+    void to(iobuf& out, cluster::draining_txs&& dr);
+    cluster::draining_txs from(iobuf_parser& in);
 };
 
 } // namespace reflection
