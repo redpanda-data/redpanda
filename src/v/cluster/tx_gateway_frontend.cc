@@ -1159,6 +1159,15 @@ ss::future<cluster::init_tm_tx_reply> tx_gateway_frontend::do_init_tm_tx(
         co_return tx_errc::not_coordinator;
     }
 
+    if (stm->is_transaction_draining(tx_id)) {
+        vlog(
+          txlog.warn,
+          "Attempt to init draining tx. tx_id: {}, tm partition: {}",
+          tx_id,
+          stm->get_partition());
+        co_return tx_errc::not_coordinator;
+    }
+
     auto r0 = co_await get_tx(term, stm, tx_id, timeout);
     if (!r0.has_value()) {
         if (r0.error() != tx_errc::tx_not_found) {
@@ -1381,6 +1390,18 @@ ss::future<add_paritions_tx_reply> tx_gateway_frontend::do_add_partition_to_tx(
     }
     auto tx = r.value();
 
+    if (tx.partitions.empty() && tx.groups.empty()) {
+        if (stm->is_transaction_draining(request.transactional_id)) {
+            vlog(
+              txlog.warn,
+              "Attempt to init draining tx. tx_id: {}, tm partition: {}",
+              request.transactional_id,
+              stm->get_partition());
+            co_return make_add_partitions_error_response(
+              request, tx_errc::not_coordinator);
+        }
+    }
+
     add_paritions_tx_reply response;
 
     std::vector<model::ntp> new_partitions;
@@ -1598,6 +1619,17 @@ ss::future<add_offsets_tx_reply> tx_gateway_frontend::do_add_offsets_to_tx(
         co_return add_offsets_tx_reply{.error_code = r.error()};
     }
     auto tx = r.value();
+
+    if (tx.partitions.empty() && tx.groups.empty()) {
+        if (stm->is_transaction_draining(request.transactional_id)) {
+            vlog(
+              txlog.warn,
+              "Attempt to init draining tx. tx_id: {}, tm partition: {}",
+              request.transactional_id,
+              stm->get_partition());
+            co_return add_offsets_tx_reply{tx_errc::not_coordinator};
+        }
+    }
 
     auto group_info = co_await _rm_group_proxy->begin_group_tx(
       request.group_id, pid, tx.tx_seq, tx.timeout_ms, stm->get_partition());

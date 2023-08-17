@@ -387,6 +387,10 @@ tm_stm::do_update_hosted_transactions(model::term_id term, hosted_txs hr) {
     co_return op_status::success;
 }
 
+bool tm_stm::is_transaction_draining(const kafka::transactional_id& tx_id) {
+    return _hosted_txes.is_draining(tx_id);
+}
+
 ss::future<checked<tm_transaction, tm_stm::op_status>>
 tm_stm::update_tx(tm_transaction tx, model::term_id term) {
     return ss::with_gate(
