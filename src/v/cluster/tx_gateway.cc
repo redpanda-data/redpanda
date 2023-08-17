@@ -114,4 +114,10 @@ ss::future<find_coordinator_reply> tx_gateway::find_coordinator(
     return _tx_registry_frontend.local().find_coordinator_locally(r.tid);
 }
 
+ss::future<set_draining_transactions_reply>
+tx_gateway::set_draining_transactions(
+  set_draining_transactions_request&& r, rpc::streaming_context&) {
+    co_return co_await _tx_gateway_frontend.local().route_locally(std::move(r));
+}
+
 } // namespace cluster

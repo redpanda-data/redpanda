@@ -105,6 +105,12 @@ std::ostream& operator<<(std::ostream& o, const tx_errc& err) {
     case tx_errc::tx_id_not_found:
         o << "tx_errc::tx_id_not_found";
         break;
+    case tx_errc::tx_hash_range_not_hosted:
+        o << "tx_errc::tx_hash_range_not_hosted";
+        break;
+    case tx_errc::tx_hash_range_not_inited:
+        o << "tx_errc::tx_hash_range_not_inited";
+        break;
     }
     return o;
 }

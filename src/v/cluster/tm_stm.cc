@@ -184,6 +184,20 @@ ss::future<tm_stm::op_status> tm_stm::exclude_hosted_transaction(
     }
 }
 
+ss::future<tm_stm::op_status>
+tm_stm::set_draining_transactions(model::term_id term, draining_txs draining) {
+    if (!_hosted_txes.inited) {
+        co_return op_status::unknown;
+    }
+    auto new_hosted_tx = _hosted_txes;
+    auto error = new_hosted_tx.set_draining(draining);
+    if (error != tx_hash_ranges_errc::success) {
+        co_return op_status::unknown;
+    }
+    co_return co_await update_hosted_transactions(
+      term, std::move(new_hosted_tx));
+}
+
 uint8_t tm_stm::active_snapshot_version() {
     if (_feature_table.local().is_active(
           features::feature::transaction_partitioning)) {

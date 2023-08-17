@@ -3241,6 +3241,31 @@ ss::future<result<tm_transaction, tx_errc>> tx_gateway_frontend::describe_tx(
     co_return co_await get_tx(term, stm, tid, timeout);
 }
 
+ss::future<set_draining_transactions_reply>
+tx_gateway_frontend::process_locally(
+  ss::shared_ptr<tm_stm> stm, set_draining_transactions_request&& request) {
+    auto unit = co_await stm->write_lock();
+    auto term_opt = co_await stm->sync();
+    if (!term_opt.has_value()) {
+        if (term_opt.error() == tm_stm::op_status::not_leader) {
+            co_return tx_errc::not_coordinator;
+        }
+        co_return tx_errc::coordinator_not_available;
+    }
+    auto term = term_opt.value();
+    auto res = co_await stm->set_draining_transactions(term, request.draining);
+    if (res == tm_stm::op_status::unknown) {
+        co_return tx_errc::tx_hash_range_not_inited;
+    } else if (res == tm_stm::op_status::not_found) {
+        co_return tx_errc::tx_hash_range_not_hosted;
+    } else if (res == tm_stm::op_status::not_leader) {
+        co_return tx_errc::not_coordinator;
+    } else if (res != tm_stm::op_status::success) {
+        co_return tx_errc::unknown_server_error;
+    }
+    co_return tx_errc::none;
+}
+
 ss::future<try_abort_reply>
 tx_gateway_frontend::route_globally(try_abort_request&& r) {
     auto ntp = model::ntp(
@@ -3252,6 +3277,18 @@ ss::future<try_abort_reply>
 tx_gateway_frontend::route_locally(try_abort_request&& r) {
     auto ntp = model::ntp(
       model::tx_manager_nt.ns, model::tx_manager_nt.tp, r.tm);
+    return do_route_locally(ntp, std::move(r));
+}
+
+ss::future<set_draining_transactions_reply>
+tx_gateway_frontend::route_globally(set_draining_transactions_request&& r) {
+    auto ntp = r.tm_ntp;
+    return do_route_globally(ntp, std::move(r));
+}
+
+ss::future<set_draining_transactions_reply>
+tx_gateway_frontend::route_locally(set_draining_transactions_request&& r) {
+    auto ntp = r.tm_ntp;
     return do_route_locally(ntp, std::move(r));
 }
 

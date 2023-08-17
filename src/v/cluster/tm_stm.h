@@ -93,6 +93,24 @@ public:
               included_transactions,
               draining);
         }
+
+        tx_hash_ranges_errc set_draining(draining_txs new_draining) {
+            for (const auto& range : new_draining.ranges.ranges) {
+                if (!hash_ranges.contains(range)) {
+                    return tx_hash_ranges_errc::not_hosted;
+                }
+            }
+            for (const auto& tx_id : new_draining.transactions) {
+                if (
+                  (!included_transactions.contains(tx_id)
+                   && !hash_ranges.contains(get_tx_id_hash(tx_id)))
+                  || excluded_transactions.contains(tx_id)) {
+                    return tx_hash_ranges_errc::not_hosted;
+                }
+            }
+            draining = std::move(new_draining);
+            return tx_hash_ranges_errc::success;
+        }
     };
 
     struct tm_snapshot_v0 {
@@ -172,9 +190,15 @@ public:
       include_hosted_transaction(model::term_id, kafka::transactional_id);
     ss::future<tm_stm::op_status>
       exclude_hosted_transaction(model::term_id, kafka::transactional_id);
+    ss::future<tm_stm::op_status>
+      set_draining_transactions(model::term_id, draining_txs);
 
     ss::future<ss::basic_rwlock<>::holder> read_lock() {
         return _cache->read_lock();
+    }
+
+    ss::future<ss::basic_rwlock<>::holder> write_lock() {
+        return _cache->write_lock();
     }
     uint8_t active_snapshot_version();
 
