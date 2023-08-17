@@ -186,6 +186,10 @@ public:
             draining = std::move(new_draining);
             return tx_hash_ranges_errc::success;
         }
+
+        bool is_draining(const kafka::transactional_id& tx_id) {
+            return draining.is_draining(tx_id);
+        }
     };
 
     struct tm_snapshot_v0 {
@@ -251,6 +255,7 @@ public:
         return r;
     }
     bool hosts(const kafka::transactional_id& tx_id);
+    bool is_transaction_draining(const kafka::transactional_id&);
 
     ss::future<checked<model::term_id, tm_stm::op_status>> barrier();
     ss::future<checked<model::term_id, tm_stm::op_status>>

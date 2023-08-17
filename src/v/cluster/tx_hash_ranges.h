@@ -162,6 +162,8 @@ struct tx_hash_ranges_set
               return range1.intersects(range2);
           });
     }
+
+    bool is_empty() const { return ranges.size() == 0; }
 };
 
 using repartitioning_id = named_type<int64_t, struct repartitioning_id_type>;
@@ -189,6 +191,16 @@ struct draining_txs
     }
 
     bool contains(tx_hash_type hash) { return ranges.contains(hash); }
+
+    bool is_empty() { return ranges.is_empty() && transactions.size() == 0; }
+
+    bool is_draining(const kafka::transactional_id& tx_id) {
+        if (contains(tx_id)) {
+            return true;
+        }
+        auto tx_id_hash = get_tx_id_hash(tx_id);
+        return contains(tx_id_hash);
+    }
 };
 
 struct hosted_txs

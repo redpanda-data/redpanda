@@ -407,6 +407,10 @@ ss::future<tm_stm::op_status> tm_stm::do_update_hosted_transactions(
     co_return op_status::success;
 }
 
+bool tm_stm::is_transaction_draining(const kafka::transactional_id& tx_id) {
+    return _hosted_txes.is_draining(tx_id);
+}
+
 ss::future<checked<tm_transaction, tm_stm::op_status>>
 tm_stm::update_tx(tm_transaction tx, model::term_id term) {
     return ss::with_gate(
@@ -1087,10 +1091,8 @@ tm_stm::try_lock_tx(kafka::transactional_id tx_id, std::string_view lock_name) {
 }
 
 absl::btree_set<kafka::transactional_id> tm_stm::get_expired_txs() {
-    auto now_ts = clock_type::now();
-    auto ids = _cache->filter_all_txid_by_tx([this, now_ts](auto tx) {
-        return _transactional_id_expiration < now_ts - tx.last_update_ts;
-    });
+    auto ids = _cache->filter_all_txid_by_tx(
+      [this](auto tx) { return is_expired(tx); });
     return ids;
 }
 
