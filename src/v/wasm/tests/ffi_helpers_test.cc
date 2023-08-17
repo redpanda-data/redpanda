@@ -10,7 +10,6 @@
  */
 
 #include "bytes/iobuf.h"
-#include "gmock/gmock.h"
 #include "model/fundamental.h"
 #include "model/namespace.h"
 #include "random/generators.h"
