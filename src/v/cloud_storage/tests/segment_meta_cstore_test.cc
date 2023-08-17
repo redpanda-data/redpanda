@@ -8,14 +8,19 @@
  * https://github.com/vectorizedio/redpanda/blob/master/licenses/rcl.md
  */
 
+#include "bytes/iobuf_parser.h"
 #include "cloud_storage/segment_meta_cstore.h"
 #include "cloud_storage/types.h"
 #include "common_def.h"
 #include "model/fundamental.h"
 #include "model/timestamp.h"
 #include "random/generators.h"
+#include "reflection/to_tuple.h"
+#include "segment_meta_cstore_characterization_data.h"
+#include "serde/serde.h"
 #include "utils/delta_for.h"
 #include "utils/human.h"
+#include "version.h"
 #include "vlog.h"
 
 #include <seastar/testing/test_case.hh>
@@ -1148,4 +1153,136 @@ BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_append_retrieve_edge_case) {
     auto last_frame_first_offset
       = metadata[cloud_storage::cstore_max_frame_size * 2].base_offset;
     BOOST_CHECK_NO_THROW(store.lower_bound(last_frame_first_offset));
+}
+BOOST_AUTO_TEST_CASE(
+  test_segment_meta_cstore_generate_characterization_data,
+  *boost::unit_test::disabled()) {
+    /** this test is disabled because it generates a bunch of data to be used
+     * for characterization of segment_meat_cstore, and prints it to stdout
+     * ready to paste in a file and use it for unit tests*/
+
+    constexpr static auto cstore_max_frame_size
+      = delta_delta_column::max_frame_size;
+    auto metadata = generate_metadata(
+      cstore_max_frame_size * 3 + details::FOR_buffer_depth);
+    auto cstore = segment_meta_cstore{};
+    // step 1: generate two frames
+    for (auto& m : metadata | std::views::take(cstore_max_frame_size * 2)) {
+        cstore.insert(m);
+    }
+    cstore.flush_write_buffer();
+
+    // step 2: prefix truncate to misalign hints vector
+    cstore.prefix_truncate(metadata[1].base_offset);
+    // step 3: add elements to the new frame
+    for (auto& m : metadata | std::views::drop(cstore_max_frame_size * 2)) {
+        cstore.insert(m);
+    }
+    cstore.flush_write_buffer();
+
+    // step 4: rewrite frame 3 (and 4 gets rewritten anyway) with a new_segment
+    // that merges a previously inserted run
+    auto to_merge = metadata | std::views::drop(cstore_max_frame_size * 2 + 3)
+                    | std::views::take(5);
+    auto new_segment = to_merge.front();
+    new_segment.committed_offset = to_merge.back().committed_offset;
+    cstore.insert(new_segment);
+    cstore.flush_write_buffer();
+
+    // dump the content into a easy to use cpp translation unit
+    auto uncompressed_serialized_reference = [&] {
+        auto result_manifest = std::vector<segment_meta>{};
+        for (auto it = cstore.begin(); it != cstore.end(); ++it) {
+            result_manifest.emplace_back(*it);
+        }
+
+        auto serialized_result = serde::to_iobuf(result_manifest.size());
+        for (auto& t : result_manifest) {
+            std::apply(
+              [&](auto... args) {
+                  using namespace serde; // needed for ADL for model::timestamp
+                  (write(serialized_result, args), ...);
+              },
+              reflection::to_tuple(t));
+        }
+
+        auto tmp = std::vector<uint8_t>(
+          serialized_result.size_bytes(), uint8_t{0});
+        iobuf_parser{std::move(serialized_result)}.consume_to(
+          tmp.size(), tmp.data());
+
+        return tmp;
+    }();
+
+    auto compressed_serialized_reference = [&] {
+        auto buf = iobuf_parser{cstore.to_iobuf()};
+        auto tmp = std::vector<uint8_t>(buf.bytes_left(), uint8_t{0});
+        buf.consume_to(tmp.size(), tmp.data());
+        return tmp;
+    }();
+
+    fmt::print(
+      R"cpp(
+#include "segment_meta_cstore_characterization_data.h"
+
+// data produced from {} 
+// redpanda version {} 
+
+constexpr auto characterization_data = segment_meta_cstore_datapoint{{
+.uncompressed=(uint8_t[]){{ {} }}, .compressed=(uint8_t[]){{ {} }},
+}};
+auto get_segment_meta_cstore_characterization_data() -> segment_meta_cstore_datapoint {{
+    return characterization_data;
+}}
+)cpp",
+      __PRETTY_FUNCTION__,
+      redpanda_version(),
+      fmt::join(uncompressed_serialized_reference, ", "),
+      fmt::join(compressed_serialized_reference, ", "));
+}
+
+BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_characterization) {
+    /** test segment_meta_cstore against a reference data set */
+    auto [uncompressed, compressed]
+      = get_segment_meta_cstore_characterization_data();
+
+    auto manifest = [&] {
+        // read back the uncompressed manifest with serde
+        auto buf = iobuf{};
+        buf.append(uncompressed.data(), uncompressed.size());
+        auto parser = iobuf_parser{std::move(buf)};
+        auto total_sz = serde::read_nested<size_t>(parser, 0u);
+        auto manifest = std::vector<segment_meta>{};
+        for (auto i = 0u; i < total_sz; ++i) {
+            segment_meta m{};
+            std::apply(
+              [&]<typename... Ts>(Ts&... args) {
+                  using namespace serde; // needed for ADL for model::timestamp
+                  ((args = read_nested<Ts>(parser, 0u)), ...);
+              },
+              reflection::to_tuple(m));
+            manifest.push_back(m);
+        }
+        BOOST_REQUIRE_EQUAL(parser.bytes_left(), 0);
+        return manifest;
+    }();
+    auto cstore = [&] {
+        auto buf = iobuf{};
+        buf.append(compressed.data(), compressed.size());
+        auto cs = segment_meta_cstore{};
+        cs.from_iobuf(std::move(buf));
+        return cs;
+    }();
+
+    // tests that reconstruction matches raw data
+    BOOST_REQUIRE_EQUAL(cstore.size(), manifest.size());
+
+    BOOST_REQUIRE(std::equal(
+      cstore.begin(), cstore.end(), manifest.begin(), std::equal_to<>{}));
+
+    // test that reconstruction serialize to reference data
+    auto cs_serialized = iobuf_parser{cstore.to_iobuf()};
+    auto image = std::vector<uint8_t>(cs_serialized.bytes_left(), uint8_t{0});
+    cs_serialized.consume_to(image.size(), image.data());
+    BOOST_REQUIRE(std::ranges::equal(compressed, image));
 }

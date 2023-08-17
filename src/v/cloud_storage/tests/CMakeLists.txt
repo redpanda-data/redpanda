@@ -25,6 +25,7 @@ rp_test(
     remote_segment_index_test.cc
     recovery_request_test.cc
     segment_meta_cstore_test.cc
+    segment_meta_cstore_characterization_data.cc
     segment_chunk_test.cc
     materialized_manifest_cache_test.cc
   DEFINITIONS BOOST_TEST_DYN_LINK
