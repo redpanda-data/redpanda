@@ -992,6 +992,18 @@ std::ostream& operator<<(std::ostream& o, const find_coordinator_reply& r) {
 }
 
 std::ostream&
+operator<<(std::ostream& o, const set_draining_transactions_request& r) {
+    fmt::print(o, "{{ntp: {}}}", r.tm_ntp);
+    return o;
+}
+
+std::ostream&
+operator<<(std::ostream& o, const set_draining_transactions_reply& r) {
+    fmt::print(o, "{{ec {}}}", r.ec);
+    return o;
+}
+
+std::ostream&
 operator<<(std::ostream& o, const configuration_update_request& cr) {
     fmt::print(o, "{{broker: {} target_node: {}}}", cr.node, cr.target_node);
     return o;

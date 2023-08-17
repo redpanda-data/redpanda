@@ -23,6 +23,7 @@ class log_eviction_stm;
 class tx_registry_frontend;
 class tx_registry_stm;
 class tx_coordinator_mapper;
+struct draining_txs;
 class tm_stm_cache;
 class tm_stm_cache_manager;
 class tx_gateway_frontend;
