@@ -183,14 +183,14 @@ tm_stm::set_draining_transactions(model::term_id term, draining_txs draining) {
     if (!_hosted_txes.inited) {
         co_return op_status::unknown;
     }
-    locally_hosted_txs new_hosted_tx = _hosted_txes;
+    locally_hosted_txs copy = _hosted_txes;
 
-    auto error = new_hosted_tx.set_draining(draining);
+    auto error = copy.set_draining(draining);
     if (error != tx_hash_ranges_errc::success) {
+        vlog(txlog.warn, "set_draining failed with ec:{}", error);
         co_return op_status::unknown;
     }
-    co_return co_await update_hosted_transactions(
-      term, std::move(new_hosted_tx));
+    co_return co_await update_hosted_transactions(term, std::move(copy));
 }
 
 uint8_t tm_stm::active_snapshot_version() {

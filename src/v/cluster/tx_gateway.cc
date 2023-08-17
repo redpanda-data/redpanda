@@ -127,4 +127,10 @@ tx_gateway::set_draining_transactions(
     co_return co_await _tx_gateway_frontend.local().route_locally(std::move(r));
 }
 
+ss::future<get_draining_transactions_reply>
+tx_gateway::get_draining_transactions(
+  get_draining_transactions_request&& r, rpc::streaming_context&) {
+    co_return co_await _tx_gateway_frontend.local().route_locally(std::move(r));
+}
+
 } // namespace cluster

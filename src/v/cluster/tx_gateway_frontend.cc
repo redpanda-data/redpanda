@@ -126,6 +126,14 @@ static tm_transaction as_tx(
     return tx;
 }
 
+auto send(
+  tx_gateway_client_protocol& cp, get_draining_transactions_request&& request) {
+    auto timeout = request.timeout;
+    return cp.get_draining_transactions(
+      std::move(request),
+      rpc::client_opts(model::timeout_clock::now() + timeout));
+}
+
 static auto send(tx_gateway_client_protocol& cp, try_abort_request&& request) {
     auto timeout = request.timeout;
     return cp.try_abort(
@@ -3344,6 +3352,41 @@ ss::future<set_draining_transactions_reply>
 tx_gateway_frontend::route_locally(set_draining_transactions_request&& r) {
     auto ntp = r.tm_ntp;
     return do_route_locally(ntp, std::move(r));
+}
+
+ss::future<get_draining_transactions_reply>
+tx_gateway_frontend::route_globally(get_draining_transactions_request&& r) {
+    auto ntp = r.tm_ntp;
+    return do_route_globally(ntp, std::move(r));
+}
+
+ss::future<get_draining_transactions_reply>
+tx_gateway_frontend::route_locally(get_draining_transactions_request&& r) {
+    auto ntp = r.tm_ntp;
+    return do_route_locally(ntp, std::move(r));
+}
+
+ss::future<get_draining_transactions_reply>
+tx_gateway_frontend::process_locally(
+  ss::shared_ptr<tm_stm> stm, get_draining_transactions_request&& request) {
+    auto unit = co_await stm->read_lock();
+    auto term_opt = co_await stm->sync();
+    if (!term_opt.has_value()) {
+        if (term_opt.error() == tm_stm::op_status::not_leader) {
+            co_return get_draining_transactions_reply(tx_errc::not_coordinator);
+        }
+        co_return get_draining_transactions_reply(
+          tx_errc::coordinator_not_available);
+    }
+
+    auto draining_txes = stm->get_draining_transactions();
+    if (draining_txes.is_empty()) {
+        co_return get_draining_transactions_reply(tx_errc::not_draining);
+    }
+    get_draining_transactions_reply reply;
+    reply.operation = draining_txes;
+    reply.ec = tx_errc::none;
+    co_return reply;
 }
 
 ss::future<tx_errc> tx_gateway_frontend::delete_partition_from_tx(

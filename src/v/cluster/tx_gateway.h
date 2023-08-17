@@ -77,6 +77,9 @@ public:
     ss::future<set_draining_transactions_reply> set_draining_transactions(
       set_draining_transactions_request&&, rpc::streaming_context&) override;
 
+    ss::future<get_draining_transactions_reply> get_draining_transactions(
+      get_draining_transactions_request&&, rpc::streaming_context&) override;
+
 private:
     ss::sharded<cluster::tx_gateway_frontend>& _tx_gateway_frontend;
     rm_group_proxy* _rm_group_proxy;
