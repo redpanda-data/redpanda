@@ -157,6 +157,7 @@ topic_recovery_service::start_recovery(ss::httpd::request req) {
         }
 
         recovery_request request{std::move(req)};
+        _state = state::starting;
         ssx::spawn_with_gate(_gate, [this, r = std::move(request)]() mutable {
             return start_bg_recovery_task(std::move(r)).then([](auto result) {
                 if (result.has_error()) {
@@ -221,79 +222,53 @@ topic_recovery_service::recovery_status_log() const {
     return {_status_log.begin(), _status_log.end()};
 }
 
-static ss::future<result<std::vector<remote_segment_path>, recovery_error_ctx>>
-collect_manifest_paths(
+// NOTE rewritten as continuations to address arm64 miscompilation of coroutines
+// under clang-14
+static ss::future<std::vector<remote_segment_path>> collect_manifest_paths(
   remote& remote, ss::abort_source& as, const recovery_task_config& cfg) {
-    const auto& bucket = cfg.bucket;
-    auto rtc = make_rtc(as, cfg);
+    // Look under each manifest prefix for topic manifests.
+    constexpr static auto hex_chars = std::string_view{"0123456789abcdef"};
+    return ss::do_with(std::vector<remote_segment_path>{}, [&](auto& paths) {
+        return ss::do_for_each(
+                 hex_chars,
+                 [&](char hex_ch) {
+                     return ss::do_with(
+                       std::make_unique<retry_chain_node>(
+                         as, cfg.operation_timeout_ms, cfg.backoff_ms),
+                       fmt::format("{}0000000/", hex_ch),
+                       [&](auto& rtc, auto& prefix) {
+                           return remote
+                             .list_objects(
+                               cfg.bucket,
+                               *rtc,
+                               cloud_storage_clients::object_key{prefix})
+                             .then([&](auto meta) {
+                                 if (meta.has_error()) {
+                                     vlog(
+                                       cst_log.error,
+                                       "Failed to list meta items: {}",
+                                       meta.error());
+                                     return;
+                                 }
 
-    // List only the items at the top of the bucket hierarchy. The delimiter
-    // ensures that any "directories" will be collected into the common_prefixes
-    // field of the result.
-    auto top_level = co_await remote.list_objects(
-      bucket, rtc, std::nullopt, '/');
-    if (top_level.has_error()) {
-        vlog(
-          cst_log.error,
-          "Failed to list top level items: {}",
-          top_level.error());
-        co_return recovery_error_ctx::make("failed to list top level items");
-    }
-
-    auto prefixes = top_level.value().common_prefixes;
-    for (const auto& prefix : prefixes) {
-        vlog(cst_log.trace, "found top level prefix: {}", prefix);
-    }
-
-    // Filter out prefixes which do not match the prefix expression that topic
-    // manifests use
-    auto it = std::remove_if(
-      prefixes.begin(), prefixes.end(), [](const auto& prefix) {
-          return !std::regex_match(prefix.cbegin(), prefix.cend(), prefix_expr);
-      });
-    prefixes.erase(it, prefixes.end());
-
-    for (auto& prefix : prefixes) {
-        vlog(cst_log.trace, "found possible topic meta prefix: {}", prefix);
-    }
-
-    std::vector<remote_segment_path> paths;
-    for (const auto& prefix : prefixes) {
-        auto rtc = make_rtc(as, cfg);
-
-        // This request is restricted to prefix, it should only return the
-        // metadata files for a topic.
-        auto meta = co_await remote.list_objects(
-          bucket, rtc, cloud_storage_clients::object_key{prefix});
-        if (meta.has_error()) {
-            vlog(cst_log.error, "Failed to list meta items: {}", meta.error());
-            continue;
-        }
-
-        for (auto&& item : meta.value().contents) {
-            vlog(cst_log.trace, "adding path {} for {}", item.key, prefix);
-            paths.emplace_back(item.key);
-        }
-    }
-
-    co_return paths;
+                                 for (auto&& item : meta.value().contents) {
+                                     vlog(
+                                       cst_log.trace,
+                                       "adding path {} for {}",
+                                       item.key,
+                                       prefix);
+                                     paths.emplace_back(item.key);
+                                 }
+                             });
+                       });
+                 })
+          .then([&] { return std::move(paths); });
+    });
 }
 
 ss::future<result<void, recovery_error_ctx>>
 topic_recovery_service::start_bg_recovery_task(recovery_request request) {
-    if (is_active()) {
-        vlog(cst_log.warn, "A recovery is already active");
-        co_return recovery_error_ctx::make(
-          "A recovery is already active",
-          recovery_error_code::recovery_already_running);
-    }
-
     vlog(cst_log.info, "Starting recovery task with request: {}", request);
-    // Setting this state here ensures that another request coming in soon after
-    // on the same shard is rejected. If we set this state after the RPC call,
-    // it is possible that two requests sent back to back on the controller
-    // leader assume that no other recovery is running.
-    _state = state::starting;
     if (_pending_status_timer.cancel()) {
         vlog(
           cst_log.warn,
@@ -320,20 +295,8 @@ topic_recovery_service::start_bg_recovery_task(recovery_request request) {
 
     set_state(state::scanning_bucket);
     vlog(cst_log.debug, "scanning bucket {}", _config.bucket);
-    auto bucket_contents_result = co_await collect_manifest_paths(
+    auto bucket_contents = co_await collect_manifest_paths(
       _remote.local(), _as, _config);
-
-    if (bucket_contents_result.has_error()) {
-        auto error = recovery_error_ctx::make(
-          fmt::format("error while listing items"),
-          recovery_error_code::error_listing_items);
-        vlog(cst_log.error, "{}", error.context);
-        _recovery_request = std::nullopt;
-        set_state(state::inactive);
-        co_return error;
-    }
-
-    auto bucket_contents = bucket_contents_result.value();
 
     auto manifests = co_await filter_existing_topics(
       bucket_contents, request, model::ns{"kafka"});

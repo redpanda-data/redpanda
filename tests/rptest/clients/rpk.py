@@ -684,6 +684,18 @@ class RpkTool:
         ]
         return self._execute(cmd)
 
+    def cluster_recovery_start(self, wait: bool = True, polling_interval='5s'):
+        cmd = [
+            self._rpk_binary(), '--api-urls',
+            self._admin_host(), 'cluster', 'storage', 'recovery', 'start'
+        ]
+        if wait:
+            cmd.append('--wait')
+            if polling_interval:
+                cmd.append('--polling-interval')
+                cmd.append(polling_interval)
+        return self._execute(cmd)
+
     def self_test_start(self,
                         disk_duration_ms=None,
                         network_duration_ms=None,

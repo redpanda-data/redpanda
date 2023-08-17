@@ -48,7 +48,10 @@ class EndToEndShadowIndexingBase(EndToEndTest):
         replication_factor=3,
     ), )
 
-    def __init__(self, test_context, extra_rp_conf=None, environment=None):
+    def __init__(self,
+                 test_context,
+                 extra_rp_conf=None,
+                 environment={'__REDPANDA_TOPIC_REC_DL_CHECK_MILLIS': 5000}):
         super(EndToEndShadowIndexingBase,
               self).__init__(test_context=test_context)
 
@@ -252,6 +255,50 @@ class EndToEndShadowIndexingTest(EndToEndShadowIndexingBase):
 
         self.start_consumer()
         self.run_validation()
+
+    @skip_debug_mode
+    @cluster(num_nodes=4)
+    def test_recover(self):
+        # Recovery will leave behind results files, which aren't tracked.
+        # TODO: remove when recovery is controller-driven instead of using
+        # results objects.
+        self.start_producer()
+        produce_until_segments(
+            redpanda=self.redpanda,
+            topic=self.topic,
+            partition_idx=0,
+            count=10,
+        )
+        original_snapshot = self.redpanda.storage(
+            all_nodes=True).segments_by_node("kafka", self.topic, 0)
+        self.kafka_tools.alter_topic_config(
+            self.topic,
+            {
+                TopicSpec.PROPERTY_RETENTION_LOCAL_TARGET_BYTES:
+                5 * self.segment_size,
+            },
+        )
+
+        wait_for_removal_of_n_segments(redpanda=self.redpanda,
+                                       topic=self.topic,
+                                       partition_idx=0,
+                                       n=6,
+                                       original_snapshot=original_snapshot)
+
+        self.redpanda.stop()
+        self.redpanda.remove_local_data(self.redpanda.nodes[0])
+        self.redpanda.restart_nodes(self.redpanda.nodes)
+        self.redpanda._admin.await_stable_leader("controller",
+                                                 partition=0,
+                                                 namespace='redpanda',
+                                                 timeout_s=60,
+                                                 backoff_s=2)
+
+        rpk = RpkTool(self.redpanda)
+        rpk.cluster_recovery_start(wait=True)
+        wait_until(lambda: len(set(rpk.list_topics())) == 1,
+                   timeout_sec=30,
+                   backoff_sec=1)
 
 
 class EndToEndShadowIndexingTestCompactedTopic(EndToEndShadowIndexingBase):
@@ -527,6 +574,7 @@ class ShadowIndexingManyPartitionsTest(PreallocNodesTest):
                 "cloud_storage_enable_segment_merging": False,
                 'log_segment_size_min': 1024,
             },
+            environment={'__REDPANDA_TOPIC_REC_DL_CHECK_MILLIS': 5000},
             si_settings=si_settings)
         self.kafka_tools = KafkaCliTools(self.redpanda)
 
@@ -570,6 +618,45 @@ class ShadowIndexingManyPartitionsTest(PreallocNodesTest):
         seq_consumer.start(clean=False)
         seq_consumer.wait()
         self.redpanda.stop_node(self.redpanda.nodes[0])
+
+    @skip_debug_mode
+    @cluster(num_nodes=2)
+    def test_many_partitions_recovery(self):
+        """
+        Test that reproduces an OOM when doing recovery with a large dataset in
+        the bucket.
+        """
+        producer = KgoVerifierProducer(self.test_context,
+                                       self.redpanda,
+                                       self.topic,
+                                       msg_size=1024,
+                                       msg_count=1000 * 1000,
+                                       custom_node=self.preallocated_nodes)
+        producer.start()
+        try:
+            wait_until(
+                lambda: nodes_report_cloud_segments(self.redpanda, 100 * 200),
+                timeout_sec=180,
+                backoff_sec=3)
+        finally:
+            producer.stop()
+            producer.wait()
+
+        node = self.redpanda.nodes[0]
+        self.redpanda.stop()
+        self.redpanda.remove_local_data(node)
+        self.redpanda.restart_nodes(self.redpanda.nodes)
+        self.redpanda._admin.await_stable_leader("controller",
+                                                 partition=0,
+                                                 namespace='redpanda',
+                                                 timeout_s=60,
+                                                 backoff_s=2)
+
+        rpk = RpkTool(self.redpanda)
+        rpk.cluster_recovery_start(wait=True)
+        wait_until(lambda: len(set(rpk.list_topics())) == 1,
+                   timeout_sec=120,
+                   backoff_sec=3)
 
 
 class ShadowIndexingWhileBusyTest(PreallocNodesTest):

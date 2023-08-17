@@ -64,19 +64,6 @@ static constexpr std::string_view manifest_payload = R"json({
     }
 })json";
 
-static constexpr std::string_view list_response = R"XML(
-<ListBucketResult>
-   <IsTruncated>false</IsTruncated>
-   <Contents>
-      <Key>a</Key>
-   </Contents>
-  <Contents>
-      <Key>b</Key>
-   </Contents>
-   <NextContinuationToken>n</NextContinuationToken>
-</ListBucketResult>
-)XML";
-
 static cloud_storage::lazy_abort_source always_continue{
   []() { return std::nullopt; }};
 
@@ -463,68 +450,109 @@ FIXTURE_TEST(test_concat_segment_upload, s3_imposter_fixture) {
 }
 
 FIXTURE_TEST(test_list_bucket, s3_imposter_fixture) {
-    set_expectations_and_listen(
-      {{.url = "/?list-type=2",
-        .body = ss::sstring{list_response.data(), list_response.size()}}});
+    set_expectations_and_listen({});
     auto conf = get_configuration();
     remote r{connection_limit{10}, conf, config_file};
     auto action = ss::defer([&r] { r.stop().get(); });
 
     cloud_storage_clients::bucket_name bucket{"test"};
-    retry_chain_node fib(never_abort, 100ms, 20ms);
-    auto result = r.list_objects(bucket, fib).get0();
-    BOOST_REQUIRE(result.has_value());
+    retry_chain_node fib(never_abort, 10s, 20ms);
 
-    auto items = result.value();
-    BOOST_REQUIRE_EQUAL(items.contents.size(), 2);
+    int first = 2;
+    int second = 3;
+    int third = 4;
+    for (int i = 0; i < first; i++) {
+        for (int j = 0; j < second; j++) {
+            for (int k = 0; k < third; k++) {
+                cloud_storage_clients::object_key path{
+                  fmt::format("{}/{}/{}", i, j, k)};
+                auto result = r.upload_object(bucket, path, "", fib).get();
+                BOOST_REQUIRE_EQUAL(
+                  cloud_storage::upload_result::success, result);
+            }
+        }
+    }
+    {
+        auto result = r.list_objects(bucket, fib).get();
+        BOOST_REQUIRE(result.has_value());
+        BOOST_REQUIRE_EQUAL(
+          result.value().contents.size(), first * second * third);
+        BOOST_REQUIRE(result.value().common_prefixes.empty());
+    }
+    {
+        cloud_storage_clients::object_key prefix("/");
+        auto result = r.list_objects(bucket, fib, prefix, '/').get();
+        BOOST_REQUIRE(result.has_value());
+        BOOST_REQUIRE(result.value().contents.empty());
+        BOOST_REQUIRE_EQUAL(result.value().common_prefixes.size(), first);
+    }
+    {
+        cloud_storage_clients::object_key prefix("/1/");
+        auto result = r.list_objects(bucket, fib, prefix).get();
+        BOOST_REQUIRE(result.has_value());
+        BOOST_REQUIRE_EQUAL(result.value().contents.size(), second * third);
+        BOOST_REQUIRE(result.value().common_prefixes.empty());
+    }
+    {
+        cloud_storage_clients::object_key prefix("/1/");
+        auto result = r.list_objects(bucket, fib, prefix, '/').get();
+        BOOST_REQUIRE(result.has_value());
+        BOOST_REQUIRE(result.value().contents.empty());
+        BOOST_REQUIRE_EQUAL(result.value().common_prefixes.size(), second);
+    }
 }
 
 FIXTURE_TEST(test_list_bucket_with_prefix, s3_imposter_fixture) {
-    set_expectations_and_listen(
-      {{.url = "/?list-type=2&prefix=x",
-        .body = ss::sstring{list_response.data(), list_response.size()}}});
+    set_expectations_and_listen({});
     auto conf = get_configuration();
     remote r{connection_limit{10}, conf, config_file};
     auto action = ss::defer([&r] { r.stop().get(); });
 
     cloud_storage_clients::bucket_name bucket{"test"};
     retry_chain_node fib(never_abort, 100ms, 20ms);
+    for (const char first : {'x', 'y'}) {
+        for (const char second : {'a', 'b'}) {
+            cloud_storage_clients::object_key path{
+              fmt::format("{}/{}", first, second)};
+            auto result = r.upload_object(bucket, path, "", fib).get();
+            BOOST_REQUIRE_EQUAL(cloud_storage::upload_result::success, result);
+        }
+    }
+
     auto result = r.list_objects(
-                     bucket, fib, cloud_storage_clients::object_key{"x"})
-                    .get0();
+                     bucket, fib, cloud_storage_clients::object_key{"/x/"})
+                    .get();
     BOOST_REQUIRE(result.has_value());
     auto items = result.value().contents;
     BOOST_REQUIRE_EQUAL(items.size(), 2);
-    BOOST_REQUIRE_EQUAL(items[0].key, "a");
-    BOOST_REQUIRE_EQUAL(items[1].key, "b");
-    auto request = get_requests()[0];
+    BOOST_REQUIRE_EQUAL(items[0].key, "/x/a");
+    BOOST_REQUIRE_EQUAL(items[1].key, "/x/b");
+    auto request = get_requests().back();
     BOOST_REQUIRE_EQUAL(request._method, "GET");
-    BOOST_REQUIRE_EQUAL(request.get_query_param("list-type"), "2");
-    BOOST_REQUIRE_EQUAL(request.get_query_param("prefix"), "x");
-    BOOST_REQUIRE_EQUAL(request.get_header("prefix"), "x");
 }
 
 FIXTURE_TEST(test_list_bucket_with_filter, s3_imposter_fixture) {
-    set_expectations_and_listen(
-      {{.url = "/?list-type=2",
-        .body = ss::sstring{list_response.data(), list_response.size()}}});
+    set_expectations_and_listen({});
     auto conf = get_configuration();
     remote r{connection_limit{10}, conf, config_file};
     auto action = ss::defer([&r] { r.stop().get(); });
-
-    cloud_storage_clients::bucket_name bucket{"test"};
     retry_chain_node fib(never_abort, 100ms, 20ms);
+    cloud_storage_clients::bucket_name bucket{"test"};
+    cloud_storage_clients::object_key path{"b"};
+    auto upl_result = r.upload_object(bucket, path, "", fib).get();
+    BOOST_REQUIRE_EQUAL(cloud_storage::upload_result::success, upl_result);
+
     auto result = r.list_objects(
                      bucket,
                      fib,
                      std::nullopt,
                      std::nullopt,
-                     [](const auto& item) { return item.key == "b"; })
-                    .get0();
+                     [](const auto& item) { return item.key == "/b"; })
+                    .get();
     BOOST_REQUIRE(result.has_value());
     auto items = result.value().contents;
     BOOST_REQUIRE_EQUAL(items.size(), 1);
-    BOOST_REQUIRE_EQUAL(items[0].key, "b");
+    BOOST_REQUIRE_EQUAL(items[0].key, "/b");
 }
 
 FIXTURE_TEST(test_put_string, s3_imposter_fixture) {
