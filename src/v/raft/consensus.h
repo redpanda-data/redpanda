@@ -197,6 +197,10 @@ public:
     clock_type::time_point became_leader_at() const {
         return _became_leader_at;
     };
+    std::chrono::milliseconds ms_since_last_leadership_change() const {
+        return std::chrono::duration_cast<std::chrono::milliseconds>(
+          steady_clock_type::now() - _last_leadership_update);
+    }
 
     clock_type::time_point last_sent_append_entries_req_timestamp(vnode);
     /**
@@ -475,6 +479,7 @@ private:
     friend heartbeat_manager;
     using update_last_quorum_index
       = ss::bool_class<struct update_last_quorum_index>;
+    using steady_clock_type = ss::steady_clock_type;
     // all these private functions assume that we are under exclusive operations
     // via the _op_sem
     void do_step_down(std::string_view);
@@ -805,6 +810,16 @@ private:
     offset_monitor _consumable_offset_monitor;
     ss::condition_variable _follower_reply;
     append_entries_buffer _append_requests_buffer;
+    // This tracks the timestamp of last leadership change. This information
+    // is used for robust leaderless partition reporting. We only want to
+    // to report a raft group as leaderless if it is leaderless for an extended
+    // period of time. This eliminates misreporting transient leadership loss
+    // during an election or leadership transfer.
+    // Initializing this to now() is a bit counter-intutive but it serves the
+    // purpose here by avoiding misreporting a raft group as leaderless
+    // immediately after it bootstraps.
+    steady_clock_type::time_point _last_leadership_update
+      = steady_clock_type::now();
     friend std::ostream& operator<<(std::ostream&, const consensus&);
 };
 

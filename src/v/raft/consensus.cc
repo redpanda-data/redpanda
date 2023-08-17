@@ -2848,6 +2848,7 @@ void consensus::update_follower_stats(const group_configuration& cfg) {
 }
 
 void consensus::trigger_leadership_notification() {
+    _last_leadership_update = steady_clock_type::now();
     _probe->leadership_changed();
     vlog(
       _ctxlog.debug,

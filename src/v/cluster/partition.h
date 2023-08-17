@@ -254,6 +254,10 @@ public:
         return _raft->get_leader_id();
     }
 
+    std::chrono::milliseconds ms_since_last_leadership_change() const {
+        return _raft->ms_since_last_leadership_change();
+    }
+
     std::optional<uint8_t> get_under_replicated() const {
         return _raft->get_under_replicated();
     }
