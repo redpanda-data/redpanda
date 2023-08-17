@@ -64,6 +64,8 @@
 #include "model/record.h"
 #include "model/timeout_clock.h"
 #include "net/dns.h"
+#include "pandaproxy/json/rjson_util.h"
+#include "pandaproxy/parsing/exceptions.h"
 #include "pandaproxy/rest/api.h"
 #include "pandaproxy/schema_registry/api.h"
 #include "pandaproxy/schema_registry/schema_id_validation.h"
@@ -83,6 +85,7 @@
 #include "redpanda/admin/api-doc/transaction.json.hh"
 #include "redpanda/admin/api-doc/transform.json.hh"
 #include "redpanda/admin/api-doc/usage.json.hh"
+#include "redpanda/txs_parsers.h"
 #include "resource_mgmt/memory_sampling.h"
 #include "rpc/errc.h"
 #include "rpc/rpc_utils.h"
@@ -1066,6 +1069,10 @@ ss::future<> admin_server::throw_on_error(
             }
             throw ss::httpd::bad_request_exception(error_msg);
         }
+        case cluster::tx_errc::tx_hash_range_not_hosted:
+            throw ss::httpd::bad_request_exception(fmt::format(
+              "Provided hash range is not hosted on one partition. {}",
+              ec.message()));
         case cluster::tx_errc::not_coordinator:
             throw ss::httpd::base_exception(
               fmt::format(
@@ -2812,6 +2819,64 @@ admin_server::mark_transaction_expired_handler(
       });
 }
 
+static int expect_query_int(
+  const std::unique_ptr<ss::http::request>& req, const ss::sstring& name) {
+    auto val = req->get_query_param(name);
+    if (val.empty()) {
+        throw ss::httpd::bad_param_exception(
+          fmt::format("{}:int must be provided in query_params", name));
+    }
+    try {
+        return static_cast<int>(std::stoi(val));
+    } catch (...) {
+        throw ss::httpd::bad_param_exception(
+          fmt::format("{} must be int; got: {}", name, val));
+    }
+}
+
+ss::future<ss::json::json_return_type>
+admin_server::mark_transactions_draining_handler(
+  std::unique_ptr<ss::http::request> req) {
+    if (!config::shard_local_cfg().enable_transactions) {
+        throw ss::httpd::bad_request_exception("Transaction are disabled");
+    }
+
+    int tx_tm_partition = expect_query_int(req, "tm_partition");
+
+    auto content = co_await ss::util::read_entire_stream_contiguous(
+      *req->content_stream);
+    vlog(
+      logger.info,
+      "mark_transactions_draining_handler request with data: {}",
+      content);
+
+    cluster::draining_txs req_data;
+    try {
+        req_data = pandaproxy::json::rjson_parse(
+          content.c_str(), pandaproxy::json::draining_txs_parser());
+    } catch (pandaproxy::json::parse_error e) {
+        throw ss::httpd::bad_param_exception("Invalid request data");
+    }
+
+    auto tx_ntp = model::ntp(
+      model::tx_manager_nt.ns, model::tx_manager_nt.tp, tx_tm_partition);
+
+    auto& tx_frontend = _partition_manager.local().get_tx_frontend();
+    if (!tx_frontend.local_is_initialized()) {
+        throw ss::httpd::bad_request_exception("Can not get tx_frontend");
+    }
+
+    // we need an upper boundary for happy case cluster wide replication
+    // and create_topic_timeout_ms is a good approximation
+    auto timeout = config::shard_local_cfg().create_topic_timeout_ms();
+    auto r = cluster::set_draining_transactions_request(
+      tx_ntp, req_data, timeout);
+    auto res = co_await tx_frontend.local().route_globally(std::move(r));
+    co_await throw_on_error(*req, res.ec, tx_ntp);
+
+    co_return ss::json::json_void();
+}
+
 ss::future<ss::json::json_return_type>
 admin_server::get_reconfigurations_handler(std::unique_ptr<ss::http::request>) {
     using reconfiguration = ss::httpd::partition_json::reconfiguration;
@@ -3758,6 +3823,12 @@ void admin_server::register_transaction_routes() {
       ss::httpd::transaction_json::describe_tx_registry,
       [this](std::unique_ptr<ss::http::request> req) {
           return describe_tx_registry_handler(std::move(req));
+      });
+
+    register_route<superuser>(
+      ss::httpd::transaction_json::set_draining_transactions,
+      [this](std::unique_ptr<ss::http::request> req) {
+          return mark_transactions_draining_handler(std::move(req));
       });
 }
 
