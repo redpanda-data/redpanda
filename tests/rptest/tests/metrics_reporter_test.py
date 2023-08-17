@@ -7,11 +7,13 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
+import hashlib
 import json
 import random
 
 from rptest.services.cluster import cluster
 from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST
+from rptest.utils.rpenv import sample_license
 from ducktape.utils.util import wait_until
 
 from rptest.clients.types import TopicSpec
@@ -47,6 +49,18 @@ class MetricsReporterTest(RedpandaTest):
         """
         Test that redpanda nodes send well formed messages to the metrics endpoint
         """
+
+        # Load and put a license at start. This is to check the SHA-256 checksum
+        admin = Admin(self.redpanda)
+        license = sample_license()
+        if license is None:
+            self.logger.info(
+                "Skipping test, REDPANDA_SAMPLE_LICENSE env var not found")
+            return
+
+        assert admin.put_license(
+            license).status_code == 200, "PUT License failed"
+
         total_topics = 5
         total_partitions = 0
         for _ in range(0, total_topics):
@@ -80,7 +94,6 @@ class MetricsReporterTest(RedpandaTest):
         def assert_fields_are_the_same(metadata, field):
             assert all(m[field] == metadata[0][field] for m in metadata)
 
-        admin = Admin(self.redpanda)
         features = admin.get_features()
 
         # cluster uuid and create timestamp should stay the same across requests
@@ -123,6 +136,7 @@ class MetricsReporterTest(RedpandaTest):
         wait_until(lambda: len(self.http.requests) > pre_restart_requests,
                    timeout_sec=20,
                    backoff_sec=1)
+        self.redpanda.logger.info("Checking metadata after restart")
         assert_fields_are_the_same(metadata, 'cluster_uuid')
         assert_fields_are_the_same(metadata, 'cluster_created_ts')
 
@@ -133,6 +147,11 @@ class MetricsReporterTest(RedpandaTest):
         assert "metrics_reporter_tick_interval" not in last["config"]
         assert last["config"]["log_message_timestamp_type"] == "CreateTime"
         assert last["redpanda_environment"] == "test"
+
+        raw_id_hash = hashlib.sha256(license.encode()).hexdigest()
+        last_post_restart = metadata.pop()
+        assert last_post_restart["id_hash"] == last["id_hash"]
+        assert last_post_restart["id_hash"] == raw_id_hash
 
 
 class MultiNodeMetricsReporterTest(MetricsReporterTest):
