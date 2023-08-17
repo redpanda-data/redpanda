@@ -245,7 +245,8 @@ protected:
 
     mutex _op_lock;
     std::vector<ss::lw_shared_ptr<expiring_promise<bool>>> _sync_waiters;
-    ss::shared_promise<> _resolved_when_snapshot_hydrated;
+    ss::condition_variable _on_snapshot_hydrated;
+    bool _snapshot_hydrated{false};
     model::offset _last_snapshot_offset;
     bool _is_catching_up{false};
     model::term_id _insync_term;

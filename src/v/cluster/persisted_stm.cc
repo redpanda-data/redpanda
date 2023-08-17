@@ -270,11 +270,7 @@ size_t kvstore_backed_stm_snapshot::get_snapshot_size() const {
 
 template<supported_stm_snapshot T>
 ss::future<> persisted_stm<T>::wait_for_snapshot_hydrated() {
-    auto f = ss::now();
-    if (unlikely(!_resolved_when_snapshot_hydrated.available())) {
-        f = _resolved_when_snapshot_hydrated.get_shared_future();
-    }
-    return f;
+    return _on_snapshot_hydrated.wait([this] { return _snapshot_hydrated; });
 }
 
 template<supported_stm_snapshot T>
@@ -294,8 +290,8 @@ void persisted_stm<T>::write_local_snapshot_in_background() {
 template<supported_stm_snapshot T>
 ss::future<> persisted_stm<T>::write_local_snapshot() {
     return _op_lock.with([this]() {
-        auto f = wait_for_snapshot_hydrated();
-        return f.then([this] { return do_write_local_snapshot(); });
+        return wait_for_snapshot_hydrated().then(
+          [this] { return do_write_local_snapshot(); });
     });
 }
 
@@ -312,9 +308,7 @@ persisted_stm<T>::ensure_local_snapshot_exists(model::offset target_offset) {
       "ensure snapshot_exists with target offset: {}",
       target_offset);
     return _op_lock.with([this, target_offset]() {
-        auto f = wait_for_snapshot_hydrated();
-
-        return f.then([this, target_offset] {
+        return wait_for_snapshot_hydrated().then([this, target_offset] {
             if (target_offset <= _last_snapshot_offset) {
                 return ss::now();
             }
@@ -552,7 +546,6 @@ ss::future<> persisted_stm<T>::start() {
             set_next(next_offset);
         }
 
-        _resolved_when_snapshot_hydrated.set_value();
     } else {
         auto offset = _c->start_offset();
         vlog(_log.debug, "start without snapshot, maybe set_next {}", offset);
@@ -561,8 +554,9 @@ ss::future<> persisted_stm<T>::start() {
             _insync_offset = model::prev_offset(offset);
             set_next(offset);
         }
-        _resolved_when_snapshot_hydrated.set_value();
     }
+    _snapshot_hydrated = true;
+    _on_snapshot_hydrated.broadcast();
     co_await state_machine::start();
 }
 
