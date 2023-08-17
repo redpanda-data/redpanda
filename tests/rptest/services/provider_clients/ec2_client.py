@@ -1,6 +1,12 @@
 import boto3
 from botocore.config import Config
-from botocore.exceptions import ClientError
+
+RESPONCE_META_LABEL = "ResponseMetadata"
+VPC_PEERING_LABEL = "VpcPeeringConnection"
+VPC_PEERING_ID_LABEL = "VpcPeeringConnectionId"
+VPCS_PEERING_LABEL = "VpcPeeringConnections"
+RTBS_LABEL = "RouteTables"
+RTB_ID_LABEL = "RouteTableId"
 
 
 class EC2Client:
@@ -33,44 +39,36 @@ class EC2Client:
                             endpoint_url=self._endpoint,
                             use_ssl=not self._disable_ssl)
 
-    def find_vpc_peering_connection(self, state, region_id, cidr, rp_vpc_id,
-                                    rp_owner_id, dt_vpc_id, dt_owner_id):
+    def find_vpc_peering_connection(self, state, params):
         """
         Identifies peering connections by comparing
         AcceptorVpcInfo and RequestorVpcInfo
         """
-        # Put all info values to the set
-        _source_info = set([
-            state, region_id, cidr, rp_vpc_id, rp_owner_id, dt_vpc_id,
-            dt_owner_id
-        ])
+        def _filter_item(key, value):
+            return {"Name": key, "Values": [value]}
+
+        # Create a filter to search for the peering connection
+        _filters = [
+            _filter_item("accepter-vpc-info.owner-id", params.peer_owner_id),
+            _filter_item("accepter-vpc-info.vpc-id", params.peer_vpc_id),
+            _filter_item("requester-vpc-info.owner-id", params.rp_owner_id),
+            _filter_item("requester-vpc-info.vpc-id", params.rp_vpc_id),
+            _filter_item("status-code", state),
+            _filter_item("requester-vpc-info.cidr-block", params.network_cidr)
+        ]
         # Get all available peering connections
-        _resp = self._cli.describe_vpc_peering_connections()
-        _ids = []
-        # iterate them to find ours
-        for _pvpc in _resp['VpcPeeringConnections']:
-            # get shortcuts
-            _id = _pvpc['VpcPeeringConnectionId']
-            _r = _pvpc['RequesterVpcInfo']
-            _a = _pvpc['AccepterVpcInfo']
-            # Check that this is our connection
-            # 1. Check that its from same region
-            if _r['Region'] != _a['Region']:
-                continue
-            else:
-                _info = [
-                    _pvpc['Status']['Code'], _r['Region'], _r['CidrBlock'],
-                    _r['OwnerId'], _r['VpcId'], _a['OwnerId'], _a['VpcId']
-                ]
-                if _source_info == _info:
-                    _ids.append(_id)
+        _resp = self._cli.describe_vpc_peering_connections(Filters=_filters)
+        # Extract IDs
+        _ids = [p[VPC_PEERING_ID_LABEL] for p in _resp[VPCS_PEERING_LABEL]]
+        # Validate
         if len(_ids) > 1:
             self._log.warning("Found multiple peering "
                               f"connections (cleaning?): {_ids}")
         elif len(_ids) < 1:
             self._log.error(
-                f"No peering connections found for given info: {_source_info}")
-
+                f"No peering connections found for given info: {_filters}")
+            return None
+        # At this point there surely is at least one item in the list
         self._log.info(f"Using peering connection with id: '{_ids[0]}'")
         return _ids[0]
 
@@ -79,5 +77,43 @@ class EC2Client:
         Accepts peering
         https://boto3.amazonaws.com/v1/documentation/api/latest/reference/services/ec2/client/accept_vpc_peering_connection.html#
         """
-        return self._cli.accept_vpc_peering_connection(
+        _r = self._cli.accept_vpc_peering_connection(
             DryRun=dry_run, VpcPeeringConnectionId=peering_id)
+        if _r[RESPONCE_META_LABEL]["HTTPStatusCode"] != 200:
+            self._log.warning("Unexpected return code while accepting peering"
+                              f" connection with id '{peering_id}'")
+        return _r[VPC_PEERING_LABEL] if VPC_PEERING_LABEL in _r else None
+
+    def get_vpc_peering_status(self, vpc_peering_id):
+        """
+        Gets VPC Peering connection status by its id
+        """
+        _filters = [{
+            "Name": "vpc-peering-connection-id",
+            "Values": [vpc_peering_id]
+        }]
+        _r = self._cli.describe_vpc_peering_connections(Filters=_filters)
+        # There can be only one such object, no need to validate
+        return _r[VPCS_PEERING_LABEL][0]["Status"]["Code"]
+
+    def get_route_table_ids_for_cluster(self, cluster_id):
+        _filters = [{
+            "Name": "tag:purpose",
+            "Values": ["private"]
+        }, {
+            "Name": "tag:Name",
+            "Values": [f"network-{cluster_id}"]
+        }]
+        _r = self._cli.describe_route_tables(Filters=_filters)
+        return [_t[RTB_ID_LABEL] for _t in _r[RTBS_LABEL]]
+
+    def get_route_table_ids_for_vpc(self, vpc_id):
+        _filters = [{"Name": "vpc-id", "Values": [vpc_id]}]
+        _r = self._cli.describe_route_tables(Filters=_filters)
+        return [_t[RTB_ID_LABEL] for _t in _r[RTBS_LABEL]]
+
+    def create_route(self, rtb_id, destCidrBlock, vpc_peering_id):
+        _r = self._cli.create_route(RouteTableId=rtb_id,
+                                    DestinationCidrBlock=destCidrBlock,
+                                    VpcPeeringConnectionId=vpc_peering_id)
+        return _r

@@ -109,15 +109,15 @@ class CloudClusterConfig:
     Should be in sync with cloud_cluster subsection in
     vtools/qa/deploy/ansible/roles/ducktape-setup/templates/ducktape_globals.json.j2
     """
-    oauth_url: str
-    oauth_client_id: str
-    oauth_client_secret: str
-    oauth_audience: str
-    api_url: str
-    teleport_auth_server: str
-    teleport_bot_token: str
-    id: str
-    delete_cluster: str
+    oauth_url: str = ""
+    oauth_client_id: str = ""
+    oauth_client_secret: str = ""
+    oauth_audience: str = ""
+    api_url: str = ""
+    teleport_auth_server: str = ""
+    teleport_bot_token: str = ""
+    id: str = ""
+    delete_cluster: bool = True
 
     region: str = "us-west-2"
     provider: str = "AWS"
@@ -144,10 +144,12 @@ class LiveClusterParams:
     peer_owner_id: str = None
     rp_vpc_id: str = None
     rp_owner_id: str = None
+    aws_vpc_peering_id: str = None
 
     # Can't use mutables in defaults of dataclass
     # https://docs.python.org/3/library/dataclasses.html#dataclasses.field
     zones: list[str] = field(default_factory=list)
+    aws_vpc_peering: dict = field(default_factory=dict)
 
 
 class CloudCluster():
@@ -585,11 +587,30 @@ class CloudCluster():
                 _meta[item[0]] = item[1]
             return _meta
 
-    def _check_peering_status(self, endpoint, state):
+    def _get_vpc_peering_connection(self, endpoint):
+        """
+        Get VPC peering connection from CloudV2
+        """
         _endpoint = f"{endpoint}/{self.vpc_peering['id']}"
-        _peering = self.cloudv2._http_get(endpoint=_endpoint)
+        return self.cloudv2._http_get(endpoint=_endpoint)
+
+    def _check_peering_status(self, endpoint, state):
+        """
+        Check VPC peering Status on CloudV2 side
+        """
+        _peering = self._get_vpc_peering_connection(endpoint)
         if _peering['state'] == state:
             self.vpc_peering = _peering
+            return True
+        else:
+            return False
+
+    def _check_aws_peering_status(self, _vpc_peering_id, state):
+        """
+        Check VPC Peering connection status on AWS side
+        """
+        _aws_state = self.provider_cli.get_vpc_peering_status(_vpc_peering_id)
+        if _aws_state == state:
             return True
         else:
             return False
@@ -609,31 +630,30 @@ class CloudCluster():
             Create routes from Readpanda to Ducktape (10.10.xxx -> 172...)
             Create routes to Redpanda from Ducktape (172... -> 10.10.xxx)
         5b. Use CloudV2 API to create peering
-
-        6. Accept VPC Peering on AWS side
+        6. Create routes from/to Cloud
+        7. Accept VPC Peering on AWS side
+        8. Ensute Peering is ready/active on both sides
 
         """
 
-        # Network id
+        # 1. Network id
         network_id = self.current.network_id
         _endpoint = f'/api/v1/networks/{network_id}/network-peerings'
-
-        # get CIDR from network
-        # _cidr =
 
         # VPC for the client can be found in metadata
         # https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/instancedata-data-categories.html
         # curl -s http://169.254.169.254/latest/meta-data/network/interfaces/macs/$(ip -br link show eth0 | awk '{print$3}')/owner-id
         # curl -s http://169.254.169.254/latest/meta-data/network/interfaces/macs/$(ip -br link show eth0 | awk '{print$3}')/vpc-id
 
-        # Prepare metadata
+        # 4.
         self._ducktape_meta = self._get_ducktape_meta()
         self.current.peer_vpc_id = self._ducktape_meta['vpc-id']
         self.current.peer_owner_id = self._ducktape_meta['owner-id']
+        # 2 and 3.
         # Prepare vpc_id, owner_id and cidrBlock for cloud cluster
         self._prepare_network_vpc_info()
 
-        # Use Cloud API to create peering
+        # 5b. Use Cloud API to create peering
         # Alternatively, Use manual AWS commands to do the same
         _body = self._create_network_peering_payload()
         self._logger.debug(f"body: '{_body}'")
@@ -652,14 +672,51 @@ class CloudCluster():
                    f'of peering {self.current.name}')
 
         # Find id of the correct peering VPC
-        _vpc_id = self.provider_cli.find_vpc_peering_connection(
-            "pending-acceptance", self.current.region_id,
-            self.current.network_cidr, self.current.rp_vpc_id,
-            self.current.rp_owner_id, self.current.peer_vpc_id,
-            self.current.peer_owner_id)
-        # Accept it
-        self.provider_cli.accept_vpc_peering(_vpc_id)
+        self.current.aws_vpc_peering_id = self.provider_cli.find_vpc_peering_connection(
+            "pending-acceptance", self.current)
 
-        # TODO create route between vpc and peering connection
+        # 7. Accept it on AWS
+        self.current.aws_vpc_peering = self.provider_cli.accept_vpc_peering(
+            self.current.aws_vpc_peering_id)
+
+        # 6.
+        # Create routes from CloudV2 to Ducktape (10.10.xxx -> 172...)
+        # aws ec2 describe-route-tables --filter "Name=tag:Name,Values=network-cjah1ecce8edpeoj0li0" "Name=tag:purpose,Values=private" | jq -r '.RouteTables[].RouteTableId' | while read -r route_table_id; do aws ec2 create-route --route-table-id $route_table_id --destination-cidr-block 172.31.0.0/16 --vpc-peering-connection-id pcx-0581b037d9e93593e; done;
+        # !!!! This is handled by CloudV2 and ID count get_rtb results in zero
+        # _rtbs = self.provider_cli.get_route_table_ids_for_cluster(
+        #     self.config.id)
+        # for _rtb_id in _rtbs:
+        #     self.provider_cli.create_route(
+        #         _rtb_id,
+        #         self.current.aws_vpc_peering['AccepterVpcInfo']['CidrBlock'],
+        #         self.current.aws_vpc_peering_id)
+
+        # Create routes from Ducktape to CloudV2
+        # aws ec2 --region us-west-2 create-route --route-table-id rtb-02e89e44cb4da000d --destination-cidr-block 10.10.0.0/16 --vpc-peering-connection-id pcx-0581b037d9e93593e
+        _rtbs = self.provider_cli.get_route_table_ids_for_vpc(
+            self.current.peer_vpc_id)
+        for _rtb_id in _rtbs:
+            self.provider_cli.create_route(
+                _rtb_id,
+                self.current.aws_vpc_peering['RequesterVpcInfo']['CidrBlock'],
+                self.current.aws_vpc_peering_id)
+
+        # 8.
+        # Wait for 'active' on AWS side
+        _state = "active"
+        wait_until(lambda: self._check_aws_peering_status(
+            self.current.aws_vpc_peering_id, _state),
+                   timeout_sec=self.CHECK_TIMEOUT_SEC,
+                   backoff_sec=self.CHECK_BACKOFF_SEC,
+                   err_msg=f'Timeout waiting for {_state} status '
+                   f'of peering {self.current.name}')
+
+        # Wait for 'ready' on CloudV2 side
+        _state = "ready"
+        wait_until(lambda: self._check_peering_status(_endpoint, _state),
+                   timeout_sec=self.CHECK_TIMEOUT_SEC,
+                   backoff_sec=self.CHECK_BACKOFF_SEC,
+                   err_msg=f'Timeout waiting for {_state} status '
+                   f'of peering {self.current.name}')
 
         return
