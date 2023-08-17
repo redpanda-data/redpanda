@@ -826,11 +826,17 @@ health_monitor_backend::get_cluster_health_overview(
     absl::node_hash_set<model::ntp> leaderless;
     absl::node_hash_set<model::ntp> under_replicated;
 
+    auto reporting_threshold
+      = config::shard_local_cfg().leaderless_reporting_threshold_ms();
     for (const auto& [_, report] : _reports) {
         for (const auto& [tp_ns, partitions] : report.topics) {
             for (const auto& partition : partitions) {
+                auto report_as_leaderless
+                  = !partition.leader_id
+                    && partition.ms_since_leadership_status_change
+                         >= reporting_threshold;
                 if (
-                  !partition.leader_id.has_value()
+                  report_as_leaderless
                   && leaderless.size() < max_partitions_report) {
                     leaderless.emplace(tp_ns.ns, tp_ns.tp, partition.id);
                 }
