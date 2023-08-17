@@ -2878,6 +2878,53 @@ admin_server::mark_transactions_draining_handler(
 }
 
 ss::future<ss::json::json_return_type>
+admin_server::get_draining_transactions_handler(
+  std::unique_ptr<ss::http::request> req) {
+    if (!config::shard_local_cfg().enable_transactions) {
+        throw ss::httpd::bad_request_exception("Transaction are disabled");
+    }
+
+    int tx_tm_partition = expect_query_int(req, "tm_partition");
+
+    auto tx_ntp = model::ntp(
+      model::tx_manager_nt.ns, model::tx_manager_nt.tp, tx_tm_partition);
+
+    auto& tx_frontend = _partition_manager.local().get_tx_frontend();
+    if (!tx_frontend.local_is_initialized()) {
+        throw ss::httpd::bad_request_exception("Can not get tx_frontend");
+    }
+
+    // we need an upper boundary for happy case cluster wide replication
+    // and create_topic_timeout_ms is a good approximation
+    auto timeout = config::shard_local_cfg().create_topic_timeout_ms();
+    ss::httpd::transaction_json::draining_status ans;
+    auto res = co_await tx_frontend.local().route_globally(
+      cluster::get_draining_transactions_request(tx_ntp, timeout));
+    if (res.ec == cluster::tx_errc::not_draining) {
+        co_return ss::json::json_return_type(ans);
+    }
+    if (res.ec != cluster::tx_errc::none) {
+        co_await throw_on_error(*req, res.ec, tx_ntp);
+    }
+
+    ss::httpd::transaction_json::draining_transactions op;
+    op.repartitioning_id = res.operation->id;
+    for (const auto& tx_id : res.operation->transactions) {
+        op.transactional_ids.push(tx_id);
+    }
+
+    for (const auto& tx_range : res.operation->ranges.ranges) {
+        ss::httpd::transaction_json::hash_range range;
+        range.first = tx_range.first;
+        range.last = tx_range.last;
+        op.hash_ranges.push(range);
+    }
+    ans.operation = op;
+
+    co_return ss::json::json_return_type(ans);
+}
+
+ss::future<ss::json::json_return_type>
 admin_server::get_reconfigurations_handler(std::unique_ptr<ss::http::request>) {
     using reconfiguration = ss::httpd::partition_json::reconfiguration;
 
@@ -3829,6 +3876,12 @@ void admin_server::register_transaction_routes() {
       ss::httpd::transaction_json::set_draining_transactions,
       [this](std::unique_ptr<ss::http::request> req) {
           return mark_transactions_draining_handler(std::move(req));
+      });
+
+    register_route<superuser>(
+      ss::httpd::transaction_json::get_draining_transactions,
+      [this](std::unique_ptr<ss::http::request> req) {
+          return get_draining_transactions_handler(std::move(req));
       });
 }
 

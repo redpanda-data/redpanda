@@ -137,6 +137,28 @@
                     ]
                 }
             ]
+        },
+        {
+            "path": "/v1/transactions/draining_transactions",
+            "operations": [
+                {
+                    "method": "GET",
+                    "summary": "Get draining transactions by tm partition",
+                    "type": "draining_transactions",
+                    "nickname": "get_draining_transactions",
+                    "produces": [
+                        "application/json"
+                    ],
+                    "parameters": [
+                        {
+                            "name": "tm_partition",
+                            "in": "query",
+                            "required": true,
+                            "type": "integer"
+                        }
+                    ]
+                }
+            ]
         }
     ],
     "models": {
@@ -356,14 +378,23 @@
                 "transactional_ids": {
                     "type": "array",
                     "items": {
-                      "type": "string"
+                        "type": "string"
                     }
-                  },
+                },
                 "hash_ranges": {
                     "type": "array",
                     "items": {
-                      "type": "hash_range"
+                        "type": "hash_range"
                     }
+                }
+            }
+        },
+        "draining_status": {
+            "id": "draining_status",
+            "description": "Status of draining transactions",
+            "properties": {
+                "operation": {
+                    "type": "draining_transactions"
                 }
             }
         }
