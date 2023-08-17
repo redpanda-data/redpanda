@@ -29,8 +29,6 @@
 #include "compat/metadata_dissemination_compat.h"
 #include "compat/model_compat.h"
 #include "compat/partition_balancer_compat.h"
-#include "compat/prepare_group_tx_compat.h"
-#include "compat/prepare_tx_compat.h"
 #include "compat/raft_compat.h"
 #include "compat/try_abort_compat.h"
 #include "json/document.h"
@@ -89,8 +87,6 @@ using compat_checks = type_list<
   cluster::begin_tx_reply,
   cluster::init_tm_tx_request,
   cluster::init_tm_tx_reply,
-  cluster::prepare_tx_request,
-  cluster::prepare_tx_reply,
   cluster::try_abort_request,
   cluster::try_abort_reply,
   cluster::allocate_id_request,
@@ -108,8 +104,6 @@ using compat_checks = type_list<
   cluster::abort_tx_reply,
   cluster::begin_group_tx_request,
   cluster::begin_group_tx_reply,
-  cluster::prepare_group_tx_request,
-  cluster::prepare_group_tx_reply,
   cluster::commit_tx_request,
   cluster::commit_tx_reply,
   cluster::create_acls_request,
