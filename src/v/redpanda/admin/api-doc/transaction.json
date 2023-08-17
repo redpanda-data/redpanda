@@ -137,6 +137,28 @@
                     ]
                 }
             ]
+        },
+        {
+            "path": "/v1/transactions/draining_transactions",
+            "operations": [
+                {
+                    "method": "GET",
+                    "summary": "Get draining transactions by tm partition",
+                    "type": "draining_transactions",
+                    "nickname": "get_draining_transactions",
+                    "produces": [
+                        "application/json"
+                    ],
+                    "parameters": [
+                        {
+                            "name": "tm_partition",
+                            "in": "query",
+                            "required": true,
+                            "type": "integer"
+                        }
+                    ]
+                }
+            ]
         }
     ],
     "models": {

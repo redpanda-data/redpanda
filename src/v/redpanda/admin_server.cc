@@ -2840,6 +2840,61 @@ admin_server::mark_transactions_draining_handler(
 }
 
 ss::future<ss::json::json_return_type>
+admin_server::get_draining_transactions_handler(
+  std::unique_ptr<ss::http::request> req) {
+    if (!config::shard_local_cfg().enable_transactions) {
+        throw ss::httpd::bad_request_exception("Transaction are disabled");
+    }
+
+    auto tx_tm_partition_str = req->get_query_param("tm_partition");
+    if (tx_tm_partition_str.empty()) {
+        throw ss::httpd::bad_param_exception(
+          fmt::format("tx_tm_partition_str must be "
+                      "provided in query_params"));
+    }
+    int tx_tm_partition;
+    try {
+        tx_tm_partition = static_cast<int>(std::stoi(tx_tm_partition_str));
+    } catch (...) {
+        throw ss::httpd::bad_param_exception(fmt::format(
+          "Hash range values must be positive integer. Got: {}",
+          tx_tm_partition_str));
+    }
+
+    auto tx_ntp = model::ntp(
+      model::tx_manager_nt.ns, model::tx_manager_nt.tp, tx_tm_partition);
+    if (need_redirect_to_leader(tx_ntp, _metadata_cache)) {
+        throw co_await redirect_to_leader(*req, tx_ntp);
+    }
+
+    auto& tx_frontend = _partition_manager.local().get_tx_frontend();
+    if (!tx_frontend.local_is_initialized()) {
+        throw ss::httpd::bad_request_exception("Can not get tx_frontend");
+    }
+
+    auto res_draining = co_await tx_frontend.local().get_draining_txes(tx_ntp);
+    if (res_draining.has_error()) {
+        co_await throw_on_error(*req, res_draining.error(), tx_ntp);
+    }
+    auto res = res_draining.value();
+
+    ss::httpd::transaction_json::draining_transactions ans;
+    ans.repartitioning_id = res.id;
+    for (const auto& tx_id : res.transactions) {
+        ans.transactional_ids.push(tx_id);
+    }
+
+    for (const auto& tx_range : res.ranges.ranges) {
+        ss::httpd::transaction_json::hash_range range;
+        range.from = tx_range.first;
+        range.to = tx_range.last;
+        ans.hash_ranges.push(range);
+    }
+
+    co_return ss::json::json_return_type(ans);
+}
+
+ss::future<ss::json::json_return_type>
 admin_server::get_reconfigurations_handler(std::unique_ptr<ss::http::request>) {
     using reconfiguration = ss::httpd::partition_json::reconfiguration;
 
@@ -3785,6 +3840,12 @@ void admin_server::register_transaction_routes() {
       ss::httpd::transaction_json::set_draining_transactions,
       [this](std::unique_ptr<ss::http::request> req) {
           return mark_transactions_draining_handler(std::move(req));
+      });
+
+    register_route<superuser>(
+      ss::httpd::transaction_json::get_draining_transactions,
+      [this](std::unique_ptr<ss::http::request> req) {
+          return get_draining_transactions_handler(std::move(req));
       });
 }
 
