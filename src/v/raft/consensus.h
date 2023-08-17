@@ -197,7 +197,7 @@ public:
     clock_type::time_point became_leader_at() const {
         return _became_leader_at;
     };
-    std::chrono::milliseconds ms_since_last_leadership_change() const {
+    std::chrono::milliseconds ms_since_leadership_status_change() const {
         return std::chrono::duration_cast<std::chrono::milliseconds>(
           steady_clock_type::now() - _last_leadership_update);
     }

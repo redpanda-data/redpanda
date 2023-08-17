@@ -57,8 +57,12 @@ struct node_state
 
 struct partition_status
   : serde::
-      envelope<partition_status, serde::version<2>, serde::compat_version<0>> {
+      envelope<partition_status, serde::version<3>, serde::compat_version<0>> {
     static constexpr size_t invalid_size_bytes = size_t(-1);
+    // max serde serializable duration.
+    static constexpr auto max_duration
+      = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::nanoseconds::max());
 
     model::partition_id id;
     model::term_id term;
@@ -82,6 +86,8 @@ struct partition_status
      */
     std::optional<size_t> reclaimable_size_bytes;
 
+    std::chrono::milliseconds ms_since_leadership_status_change = max_duration;
+
     auto serde_fields() {
         return std::tie(
           id,
@@ -90,7 +96,8 @@ struct partition_status
           revision_id,
           size_bytes,
           under_replicated_replicas,
-          reclaimable_size_bytes);
+          reclaimable_size_bytes,
+          ms_since_leadership_status_change);
     }
 
     friend std::ostream& operator<<(std::ostream&, const partition_status&);

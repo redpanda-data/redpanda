@@ -672,6 +672,7 @@ struct ntp_report {
     size_t size_bytes;
     std::optional<uint8_t> under_replicated_replicas;
     size_t reclaimable_size_bytes;
+    std::chrono::milliseconds ms_since_leadership_status_change;
 };
 
 partition_status to_partition_status(const ntp_report& ntpr) {
@@ -682,7 +683,9 @@ partition_status to_partition_status(const ntp_report& ntpr) {
       .revision_id = ntpr.leader.revision_id,
       .size_bytes = ntpr.size_bytes,
       .under_replicated_replicas = ntpr.under_replicated_replicas,
-      .reclaimable_size_bytes = ntpr.reclaimable_size_bytes};
+      .reclaimable_size_bytes = ntpr.reclaimable_size_bytes,
+      .ms_since_leadership_status_change
+      = ntpr.ms_since_leadership_status_change};
 }
 
 ss::chunked_fifo<ntp_report> collect_shard_local_reports(
@@ -706,6 +709,7 @@ ss::chunked_fifo<ntp_report> collect_shard_local_reports(
                 .size_bytes = p.second->size_bytes() + p.second->non_log_disk_size_bytes(),
                 .under_replicated_replicas = p.second->get_under_replicated(),
                 .reclaimable_size_bytes = p.second->reclaimable_local_size_bytes(),
+                .ms_since_leadership_status_change = p.second->ms_since_leadership_status_change(),
               };
           });
     } else {
@@ -721,6 +725,7 @@ ss::chunked_fifo<ntp_report> collect_shard_local_reports(
                 .size_bytes = partition->size_bytes() + partition->non_log_disk_size_bytes(),
                 .under_replicated_replicas = partition->get_under_replicated(),
                 .reclaimable_size_bytes = partition->reclaimable_local_size_bytes(),
+                .ms_since_leadership_status_change = partition->ms_since_leadership_status_change(),
                 });
             }
         }
