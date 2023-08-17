@@ -215,16 +215,6 @@ public:
     ss::future<fragmented_vector<model::tx_range>>
       aborted_tx_ranges(model::offset, model::offset) override;
 
-private:
-    ss::future<> wait_offset_committed(
-      model::timeout_clock::duration, model::offset, model::term_id);
-    ss::future<bool>
-      do_sync(model::timeout_clock::duration, model::offset, model::term_id);
-    ss::future<std::optional<stm_snapshot>> load_local_snapshot();
-    ss::future<> wait_for_snapshot_hydrated();
-
-    ss::future<> do_write_local_snapshot();
-
 protected:
     /**
      * Called when local snapshot is applied to the state machine
@@ -243,16 +233,27 @@ protected:
      */
     ss::future<bool> sync(model::timeout_clock::duration);
 
-    mutex _op_lock;
-    std::vector<ss::lw_shared_ptr<expiring_promise<bool>>> _sync_waiters;
-    ss::condition_variable _on_snapshot_hydrated;
-    bool _snapshot_hydrated{false};
     model::offset _last_snapshot_offset;
     bool _is_catching_up{false};
     model::term_id _insync_term;
     model::offset _insync_offset;
     raft::consensus* _c;
     prefix_logger _log;
+
+private:
+    ss::future<> wait_offset_committed(
+      model::timeout_clock::duration, model::offset, model::term_id);
+    ss::future<bool>
+      do_sync(model::timeout_clock::duration, model::offset, model::term_id);
+    ss::future<std::optional<stm_snapshot>> load_local_snapshot();
+    ss::future<> wait_for_snapshot_hydrated();
+
+    ss::future<> do_write_local_snapshot();
+
+    mutex _op_lock;
+    std::vector<ss::lw_shared_ptr<expiring_promise<bool>>> _sync_waiters;
+    ss::condition_variable _on_snapshot_hydrated;
+    bool _snapshot_hydrated{false};
     T _snapshot_backend;
 };
 
