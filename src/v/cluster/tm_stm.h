@@ -62,26 +62,6 @@ public:
         timeout
     };
 
-    struct draining_txs
-      : serde::
-          envelope<draining_txs, serde::version<0>, serde::compat_version<0>> {
-        repartitioning_id id;
-        tx_hash_ranges_set ranges{};
-        absl::btree_set<kafka::transactional_id> transactions{};
-
-        draining_txs() = default;
-
-        draining_txs(
-          repartitioning_id id,
-          tx_hash_ranges_set ranges,
-          absl::btree_set<kafka::transactional_id> txs)
-          : id(id)
-          , ranges(std::move(ranges))
-          , transactions(std::move(txs)) {}
-
-        auto serde_fields() { return std::tie(id, ranges, transactions); }
-    };
-
     struct hosted_txs
       : serde::
           envelope<hosted_txs, serde::version<0>, serde::compat_version<0>> {
@@ -321,20 +301,6 @@ private:
 } // namespace cluster
 
 namespace reflection {
-template<>
-struct adl<cluster::tm_stm::draining_txs> {
-    void to(iobuf& out, cluster::tm_stm::draining_txs&& dr) {
-        reflection::serialize(out, dr.id, dr.ranges, dr.transactions);
-    }
-    cluster::tm_stm::draining_txs from(iobuf_parser& in) {
-        auto id = reflection::adl<cluster::repartitioning_id>{}.from(in);
-        auto ranges
-          = reflection::adl<std::vector<cluster::tx_hash_range>>{}.from(in);
-        auto txs = reflection::adl<absl::btree_set<kafka::transactional_id>>{}
-                     .from(in);
-        return {id, std::move(ranges), std::move(txs)};
-    }
-};
 
 template<>
 struct adl<cluster::tm_stm::hosted_txs> {
@@ -358,8 +324,7 @@ struct adl<cluster::tm_stm::hosted_txs> {
         auto excluded_transactions
           = reflection::adl<absl::btree_set<kafka::transactional_id>>{}.from(
             in);
-        auto draining = reflection::adl<cluster::tm_stm::draining_txs>{}.from(
-          in);
+        auto draining = reflection::adl<cluster::draining_txs>{}.from(in);
         return {
           inited,
           std::move(hash_ranges_set),

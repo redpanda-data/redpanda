@@ -10,6 +10,7 @@
 #include "cluster/tm_stm.h"
 
 #include "cluster/logger.h"
+#include "cluster/tx_hash_ranges.h"
 #include "cluster/types.h"
 #include "model/record.h"
 #include "raft/errc.h"
