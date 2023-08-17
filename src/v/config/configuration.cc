@@ -2388,7 +2388,16 @@ configuration::configuration()
       "The sample period for the CPU profiler",
       {.needs_restart = needs_restart::no, .visibility = visibility::user},
       100ms,
-      {.min = 1ms}) {}
+      {.min = 1ms})
+  , leaderless_reporting_threshold_ms(
+      *this,
+      "leaderless_reporting_threshold_ms",
+      "Partitions are not reported as leaderless in health report unless they "
+      "remain leaderless for this duration. This is to avoid (mis)reporting "
+      "transient loss of leadership.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::user},
+      10s,
+      {.min = 0ms}) {}
 
 configuration::error_map_t configuration::load(const YAML::Node& root_node) {
     if (!root_node["redpanda"]) {

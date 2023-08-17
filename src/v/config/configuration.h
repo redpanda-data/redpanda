@@ -466,6 +466,8 @@ struct configuration final : public config_store {
     // debug controls
     property<bool> cpu_profiler_enabled;
     bounded_property<std::chrono::milliseconds> cpu_profiler_sample_period_ms;
+    bounded_property<std::chrono::milliseconds>
+      leaderless_reporting_threshold_ms;
 
     configuration();
 
