@@ -274,6 +274,8 @@ class NodesDecommissioningTest(PreallocNodesTest):
             readers=1,
             nodes=self.preallocated_nodes)
 
+        self.consumer.start(clean=False)
+
     def verify(self):
         self.logger.info(
             f"verifying workload: topic: {self._topic}, with [rate_limit: {self.producer_throughput}, message size: {self.msg_size}, message count: {self.msg_count}]"
