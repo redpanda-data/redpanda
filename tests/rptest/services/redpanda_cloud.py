@@ -114,7 +114,7 @@ class CloudClusterConfig:
     api_url: str
     teleport_auth_server: str
     teleport_bot_token: str
-    id: str
+    id: str = "" # empty string makes it easier to pass thru default value from duck.py
     delete_cluster: str
 
     region: str = "us-west-2"
