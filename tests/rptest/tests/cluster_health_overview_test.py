@@ -8,6 +8,7 @@
 # by the Apache License, Version 2.0
 
 import random
+from time import time
 from rptest.services.cluster import cluster
 from rptest.clients.types import TopicSpec
 from rptest.services.admin import Admin
@@ -23,6 +24,8 @@ class ClusterHealthOverviewTest(RedpandaTest):
             test_context=test_context,
             num_brokers=5,
             extra_rp_conf={
+                # For aggressive fetching of health reports
+                'health_monitor_max_metadata_age': 1000,
                 # Work around bug where leadership transfers cause bad health reports
                 # https://github.com/redpanda-data/redpanda/issues/5253
                 'enable_leader_balancer': False
@@ -97,6 +100,7 @@ class ClusterHealthOverviewTest(RedpandaTest):
         while self.redpanda.idx(second_down) == self.redpanda.idx(first_down):
             second_down = random.choice(self.redpanda.nodes)
 
+        stopped_at = time()
         self.redpanda.stop_node(second_down)
 
         def two_nodes_down():
@@ -112,6 +116,9 @@ class ClusterHealthOverviewTest(RedpandaTest):
             return True
 
         wait_until(two_nodes_down, 30, 2)
+
+        assert time(
+        ) - stopped_at > 10, "leaderless partitions reported earlier than 10s threshold"
 
         # restart both nodes, cluster should be healthy back again
         self.redpanda.start_node(first_down)
