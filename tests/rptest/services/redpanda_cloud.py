@@ -121,6 +121,7 @@ class CloudClusterConfig:
     provider: str = "AWS"
     type: str = "FMC"
     network: str = "public"
+    install_pack_ver: str = "latest"
 
 
 class CloudCluster():
@@ -209,10 +210,10 @@ class CloudCluster():
                 return (c['id'], c['spec']['networkId'])
         return None, None
 
-    def _get_install_pack_ver(self):
-        """Get the latest certified install pack version.
+    def _get_latest_install_pack_ver(self):
+        """Get latest certified install pack ver by searching list of avail.
 
-        :return: version, e.g. '23.2.20230707135118'
+        :return: version, e.g. '23.2.20230707135118', or None if not found
         """
 
         versions = self.cloudv2._http_get(
@@ -288,7 +289,9 @@ class CloudCluster():
 
         namespace_uuid = self._create_namespace()
         name = f'rp-ducktape-cluster-{self._unique_id}'  # e.g. rp-ducktape-cluster-3b36f516
-        install_pack_ver = self._get_install_pack_ver()
+        install_pack_ver = self.config.install_pack_ver
+        if install_pack_ver == 'latest':
+            install_pack_ver = self._get_latest_install_pack_ver()
         # 'FMC'
         cluster_type = self.config.type
         # 'AWS'
