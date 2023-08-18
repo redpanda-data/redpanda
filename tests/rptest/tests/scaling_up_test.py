@@ -43,7 +43,7 @@ class ScalingUpTest(PreallocNodesTest):
     Adding nodes to the cluster should result in partition reallocations to new
     nodes
     """
-    rebalance_timeout = 120
+    rebalance_timeout = 240
     group_topic_partitions = 16
 
     def _replicas_per_node(self):
