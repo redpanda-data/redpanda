@@ -8,6 +8,6 @@ find_package(GTest)
 v_cc_library(
   NAME gtest_main
   SRCS gtest_main.cc
-  DEPS Seastar::seastar Seastar::seastar_testing GTest::gtest)
+  DEPS Seastar::seastar Seastar::seastar_testing GTest::gtest GTest::gmock)
 
 add_subdirectory(tests)
