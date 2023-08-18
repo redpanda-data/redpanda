@@ -10,7 +10,6 @@
 package registry
 
 import (
-	"context"
 	"fmt"
 	"sort"
 	"sync"
@@ -45,7 +44,7 @@ func subjectListCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 		Aliases: []string{"ls"},
 		Short:   "Display all subjects",
 		Args:    cobra.ExactArgs(0),
-		Run: func(*cobra.Command, []string) {
+		Run: func(cmd *cobra.Command, _ []string) {
 			f := p.Formatter
 			if h, ok := f.Help([]string{}); ok {
 				out.Exit(h)
@@ -56,7 +55,7 @@ func subjectListCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 			cl, err := schemaregistry.NewClient(fs, p)
 			out.MaybeDie(err, "unable to initialize schema registry client: %v", err)
 
-			subjects, err := cl.Subjects(context.Background(), sr.HideShowDeleted(deleted))
+			subjects, err := cl.Subjects(cmd.Context(), sr.HideShowDeleted(deleted))
 			out.MaybeDieErr(err)
 
 			if isText, _, s, err := f.Format(subjects); !isText {
@@ -80,12 +79,12 @@ type deleteResponse struct {
 }
 
 func subjectDeleteCommand(fs afero.Fs, p *config.Params) *cobra.Command {
-	var permanent bool
+	var isPermanent bool
 	cmd := &cobra.Command{
 		Use:   "delete [SUBJECT...]",
 		Short: "Soft or hard deletion of subjects",
 		Args:  cobra.MinimumNArgs(1),
-		Run: func(_ *cobra.Command, subjects []string) {
+		Run: func(cmd *cobra.Command, subjects []string) {
 			f := p.Formatter
 			if h, ok := f.Help([]deleteResponse{}); ok {
 				out.Exit(h)
@@ -107,7 +106,21 @@ func subjectDeleteCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 				wg.Add(1)
 				go func() {
 					defer wg.Done()
-					versions, err := cl.DeleteSubject(context.Background(), subject, sr.DeleteHow(permanent))
+					var versions []int
+					var err error
+					if isPermanent {
+						versions, err = cl.DeleteSubject(cmd.Context(), subject, sr.SoftDelete)
+						if err == nil || schemaregistry.IsSubjectNotFoundError(err) {
+							versions, err = cl.DeleteSubject(cmd.Context(), subject, sr.HardDelete)
+							if err != nil {
+								err = fmt.Errorf("unable to perform hard-deletion: %w", err)
+							}
+						} else {
+							err = fmt.Errorf("unable to perform soft-deletion: %w", err)
+						}
+					} else {
+						versions, err = cl.DeleteSubject(cmd.Context(), subject, sr.SoftDelete)
+					}
 					mu.Lock()
 					defer mu.Unlock()
 					var errStr string
@@ -141,6 +154,6 @@ func subjectDeleteCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 			}
 		},
 	}
-	cmd.Flags().BoolVar(&permanent, "permanent", false, "Perform a hard (permanent) delete of the subject; requires a soft-delete first")
+	cmd.Flags().BoolVar(&isPermanent, "permanent", false, "Perform a hard (permanent) delete of the subject")
 	return cmd
 }

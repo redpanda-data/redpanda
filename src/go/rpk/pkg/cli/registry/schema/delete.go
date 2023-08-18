@@ -32,7 +32,6 @@ func newDeleteCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 		Use:   "delete SUBJECT --schema-version {version}",
 		Short: "Delete a specific schema for the given subject",
 		Args:  cobra.ExactArgs(1),
-
 		Run: func(cmd *cobra.Command, args []string) {
 			f := p.Formatter
 			if h, ok := f.Help(deleteResponse{}); ok {
@@ -48,8 +47,17 @@ func newDeleteCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 			out.MaybeDieErr(err)
 
 			subject := args[0]
-			err = cl.DeleteSchema(cmd.Context(), subject, version, sr.DeleteHow(isPermanent))
-			out.MaybeDieErr(err)
+			if isPermanent {
+				err = cl.DeleteSchema(cmd.Context(), subject, version, sr.SoftDelete)
+				if err == nil || schemaregistry.IsSoftDeleteError(err) {
+					err = cl.DeleteSchema(cmd.Context(), subject, version, sr.HardDelete)
+					out.MaybeDie(err, "unable to perform hard-deletion: %v", err)
+				}
+				out.MaybeDie(err, "unable to perform soft-deletion: %v", err)
+			} else {
+				err = cl.DeleteSchema(cmd.Context(), subject, version, sr.SoftDelete)
+				out.MaybeDieErr(err)
+			}
 			if isText, _, s, err := f.Format(deleteResponse{subject, sversion}); !isText {
 				out.MaybeDie(err, "unable to print in the required format %q: %v", f.Kind, err)
 				out.Exit(s)
@@ -59,7 +67,7 @@ func newDeleteCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	}
 
 	cmd.Flags().StringVar(&sversion, "schema-version", "", "Schema version to delete (latest, 0, 1...)")
-	cmd.Flags().BoolVar(&isPermanent, "permanent", false, "Perform a hard (permanent) delete of the schema; requires a soft-delete first")
+	cmd.Flags().BoolVar(&isPermanent, "permanent", false, "Perform a hard (permanent) delete of the schema")
 	cmd.MarkFlagRequired("schema-version")
 	return cmd
 }

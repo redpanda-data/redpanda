@@ -3,6 +3,7 @@ package schemaregistry
 import (
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/net"
@@ -55,4 +56,17 @@ func NewClient(fs afero.Fs, p *config.RpkProfile) (*sr.Client, error) {
 		opts = append(opts, sr.BasicAuth(p.KafkaAPI.SASL.User, p.KafkaAPI.SASL.Password))
 	}
 	return sr.NewClient(opts...)
+}
+
+// IsSoftDeleteError checks whether the error is a SoftDeleteError. This error
+// occurs when attempting to soft-delete a schema that was already marked as
+// soft deleted.
+func IsSoftDeleteError(err error) bool {
+	errMsg := err.Error()
+	return strings.Contains(errMsg, "was soft deleted")
+}
+
+func IsSubjectNotFoundError(err error) bool {
+	errMsg := err.Error()
+	return strings.Contains(errMsg, "Subject") && strings.Contains(errMsg, "not found")
 }
