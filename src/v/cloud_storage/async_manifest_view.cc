@@ -569,6 +569,13 @@ async_manifest_view::get_cursor(
               end_inclusive);
             co_return error_outcome::out_of_range;
         }
+        vlog(
+          _ctxlog.debug,
+          "creating_cursor: begin: {}, end: {}, stm_range[{}/{}]",
+          begin,
+          end,
+          _stm_manifest.get_start_offset(),
+          _stm_manifest.get_last_offset());
         auto cursor = std::make_unique<async_manifest_view_cursor>(
           *this, begin, end, _manifest_meta_ttl());
         // This calls 'get_materialized_manifest' internally which
@@ -773,8 +780,15 @@ bool async_manifest_view::in_archive(async_view_search_query_t o) {
                       kafka::offset::min());
       },
       [this](model::timestamp ts) {
-          auto bt = _stm_manifest.begin()->base_timestamp;
-          return ts < bt;
+          // The condition for timequery is tricky. With offsets there is a
+          // clear pivot point. The start_offset of the STM manifest separates
+          // the STM region from the archive. With timestamps it's not as
+          // simple.There could be a gap between the last segment in the archive
+          // and the first segment in the STM manifest. We need in_stm and
+          // in_archive to be consistent with each other. To do this we can use
+          // last timestamp in the archive as a pivot point.
+          return _stm_manifest.get_spillover_map().last_segment()->max_timestamp
+                 >= ts;
       });
 }
 
@@ -792,12 +806,19 @@ bool async_manifest_view::in_stm(async_view_search_query_t o) {
           return ko >= sko;
       },
       [this](model::timestamp ts) {
-          auto sm = _stm_manifest.timequery(ts);
-          if (!sm.has_value()) {
-              return false;
+          vlog(_ctxlog.debug, "Checking timestamp {} using timequery", ts);
+          if (_stm_manifest.get_spillover_map().empty()) {
+              // The STM manifest is empty, so the timestamp has to be directed
+              // to the STM manifest.
+              // Implicitly, this case also handles the empty manifest case
+              // because the STM manifest with spillover segments is never
+              // empty.
+              return true;
           }
-          return sm.value().base_timestamp <= ts
-                 && ts <= sm.value().max_timestamp;
+          // The last timestamp in the archive is used as a pivot point. See
+          // description in in_archive.
+          return _stm_manifest.get_spillover_map().last_segment()->max_timestamp
+                 < ts;
       });
 }
 
@@ -1340,31 +1361,46 @@ std::optional<segment_meta> async_manifest_view::search_spillover_manifests(
           return -1;
       },
       [&](model::timestamp t) {
+          if (manifests.empty()) {
+              return -1;
+          }
           vlog(
             _ctxlog.debug,
             "search_spillover_manifest query: {}, num manifests: {}, first: "
             "{}, last: {}",
             query,
             manifests.size(),
-            manifests.empty() ? model::timestamp{}
-                              : manifests.begin()->base_timestamp,
-            manifests.empty() ? model::timestamp{}
-                              : manifests.last_segment()->max_timestamp);
-          const auto& bt_col = manifests.get_base_timestamp_column();
-          const auto& mt_col = manifests.get_max_timestamp_column();
-          auto mt_it = mt_col.lower_bound(t.value());
-          if (mt_it.is_end()) {
+            manifests.begin()->base_timestamp,
+            manifests.last_segment()->max_timestamp);
+
+          auto first_manifest = manifests.begin();
+          auto base_t = first_manifest->base_timestamp;
+          auto max_t = manifests.last_segment()->max_timestamp;
+
+          // Edge cases
+          if (t < base_t || max_t == base_t) {
+              return 0;
+          } else if (t > max_t) {
               return -1;
           }
-          auto bt_it = bt_col.at_index(mt_it.index());
+
+          const auto& bt_col = manifests.get_base_timestamp_column();
+          const auto& mt_col = manifests.get_max_timestamp_column();
+          auto mt_it = mt_col.begin();
+          auto bt_it = bt_col.begin();
+          int target_ix = -1;
           while (!bt_it.is_end()) {
-              if (t.value() >= *bt_it && t.value() <= *mt_it) {
-                  return static_cast<int>(bt_it.index());
+              if (*mt_it >= t.value() || *bt_it > t.value()) {
+                  // Handle case when we're overshooting the target
+                  // (base_timestamp > t) or the case when the target is in the
+                  // middle of the manifest (max_timestamp >= t)
+                  target_ix = static_cast<int>(bt_it.index());
+                  break;
               }
               ++bt_it;
               ++mt_it;
           }
-          return -1;
+          return target_ix;
       });
 
     if (ix < 0) {
