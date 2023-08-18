@@ -64,6 +64,11 @@
             "name": "find_coordinator",
             "input_type": "find_coordinator_request",
             "output_type": "find_coordinator_reply"
+        },
+        {
+            "name": "set_draining_transactions",
+            "input_type": "set_draining_transactions_request",
+            "output_type": "set_draining_transactions_reply"
         }
     ]
 }
