@@ -6,6 +6,7 @@ import (
 	"sort"
 	"strconv"
 
+	"github.com/docker/go-units"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/adminapi"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/out"
@@ -18,6 +19,7 @@ func newDecommissionBrokerStatus(fs afero.Fs, p *config.Params) *cobra.Command {
 	var (
 		completion int
 		detailed   bool
+		human      bool
 	)
 	cmd := &cobra.Command{
 		Use:   "decommission-status [BROKER ID]",
@@ -25,7 +27,8 @@ func newDecommissionBrokerStatus(fs afero.Fs, p *config.Params) *cobra.Command {
 		Long: `Show the progrss of a node decommissioning.
 
 When a node is being decommissioned, this command reports the decommissioning
-progress as follows, where PARTITION-SIZE is in bytes.
+progress as follows, where PARTITION-SIZE is in bytes. Using -H, it prints the
+partition size in a human-readable format.
 
 $ rpk redpanda admin brokers decommission-status 4
 DECOMMISSION PROGRESS
@@ -108,6 +111,14 @@ using 'rpk cluster config get partition_autobalancing_mode'.
 			if detailed {
 				headers = append(headers, "Bytes-moved", "Bytes-remaining")
 			}
+
+			sizeFn := func(size int) string {
+				if human {
+					return units.HumanSize(float64(size))
+				}
+				return strconv.Itoa(size)
+			}
+
 			f := func(p *adminapi.DecommissionPartitions) interface{} {
 				nt := p.Ns + "/" + p.Topic
 				if p.PartitionSize > 0 {
@@ -119,17 +130,17 @@ using 'rpk cluster config get partition_autobalancing_mode'.
 						Partition      int
 						MovingTo       int
 						Completion     int
-						PartitionSize  int
-						BytesMoved     int
-						BytesRemaining int
+						PartitionSize  string
+						BytesMoved     string
+						BytesRemaining string
 					}{
 						nt,
 						p.Partition,
 						p.MovingTo.NodeID,
 						completion,
-						p.PartitionSize,
-						p.BytesMoved,
-						p.BytesLeftToMove,
+						sizeFn(p.PartitionSize),
+						sizeFn(p.BytesMoved),
+						sizeFn(p.BytesLeftToMove),
 					}
 				} else {
 					return struct {
@@ -137,13 +148,13 @@ using 'rpk cluster config get partition_autobalancing_mode'.
 						Partition     int
 						MovingTo      int
 						Completion    int
-						PartitionSize int
+						PartitionSize string
 					}{
 						nt,
 						p.Partition,
 						p.MovingTo.NodeID,
 						completion,
-						p.PartitionSize,
+						sizeFn(p.PartitionSize),
 					}
 				}
 			}
@@ -158,6 +169,7 @@ using 'rpk cluster config get partition_autobalancing_mode'.
 		},
 	}
 	cmd.Flags().BoolVarP(&detailed, "detailed", "d", false, "Print how much data moved and remaining in bytes")
+	cmd.Flags().BoolVarP(&human, "human-readable", "H", false, "Print the partition size in a human-readable form")
 
 	return cmd
 }
