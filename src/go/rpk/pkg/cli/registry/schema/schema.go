@@ -33,6 +33,7 @@ func NewCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 		newDeleteCommand(fs, p),
 		newGetCommand(fs, p),
 		newListCommand(fs, p),
+		newReferencesCommand(fs, p),
 	)
 	p.InstallFormatFlag(cmd)
 	return cmd
