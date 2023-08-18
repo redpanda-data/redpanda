@@ -1142,7 +1142,7 @@ class EndToEndSpilloverTest(RedpandaTest):
 
         consumer.free()
 
-    @cluster(num_nodes=4)
+    @cluster(num_nodes=4, log_allow_list=[r"cluster.*Can't add segment"])
     @matrix(cloud_storage_type=get_cloud_storage_type())
     def test_spillover(self, cloud_storage_type):
 
