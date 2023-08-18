@@ -69,6 +69,11 @@
             "name": "set_draining_transactions",
             "input_type": "set_draining_transactions_request",
             "output_type": "set_draining_transactions_reply"
+        },
+        {
+            "name": "get_draining_transactions",
+            "input_type": "get_draining_transactions_request",
+            "output_type": "get_draining_transactions_reply"
         }
     ]
 }
