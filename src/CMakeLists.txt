@@ -14,6 +14,7 @@ find_package(Boost REQUIRED
     iostreams
     unit_test_framework)
 find_package(absl REQUIRED)
+find_program(GO_PROGRAM go REQUIRED)
 add_subdirectory(v)
 add_subdirectory(go/kreq-gen)
 add_subdirectory(go/transform-sdk/internal/testdata)
