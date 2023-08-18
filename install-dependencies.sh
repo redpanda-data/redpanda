@@ -25,51 +25,72 @@ else
 fi
 
 deb_deps=(
-  ccache
+  cmake
+  ninja-build
   clang
-  curl
+  lld
   git
-  golang-go
-  libkrb5-dev
-  libgssapi-krb5-2
+  libboost-all-dev
+  libc-ares-dev
+  libcrypto++-dev
+  liblz4-dev
+  gnutls-dev
+  libsctp-dev
+  libyaml-cpp-dev
+  ragel
+  valgrind
   libsnappy-dev
+  libabsl-dev
   libxxhash-dev
   libzstd-dev
-  llvm
-  lld
-  pkg-config
-  procps
+  libprotobuf-dev
+  libprotoc-dev
+  protobuf-compiler
+  python3-jsonschema
   python3-jinja2
-  python3-venv
-  rapidjson-dev
-  zip
-  unzip
+  xfslibs-dev
   libre2-dev
+  systemtap-sdt-dev
+  libkrb5-dev
+  libgssapi-krb5-2
+  golang
+  python3
 )
 fedora_deps=(
-  ccache
+  cmake
+  ninja-build
   clang
-  curl
-  git
-  golang
-  krb5-libs
-  krb5-devel
-  libzstd-devel
-  libzstd-static
+  compiler-rt
   llvm
   lld
-  pkg-config
-  procps
-  python3-jinja2
-  python3-virtualenv
-  rapidjson-devel
+  git
+  boost-devel
+  c-ares-devel
+  cryptopp-devel
+  lz4-devel
+  gnutls-devel
+  hwloc-devel
+  lksctp-tools-devel
+  numactl-devel
+  yaml-cpp-devel
+  ragel-devel
+  valgrind-devel
+  xfsprogs-devel
+  systemtap-sdt-devel
   snappy-devel
-  which
+  abseil-cpp-devel
+  zlib-devel
   xxhash-devel
-  xz
-  zip
-  unzip
+  libzstd-devel
+  protobuf-devel
+  libxml2-devel
   re2-devel
+  krb5-devel
+  python3-jsonschema
+  python3-jinja2
+  golang
+  python3
+  procps
 )
 arch_deps=(
   ccache
@@ -109,6 +130,3 @@ case "$ID" in
     exit 1
     ;;
 esac
-# needed for unit tests
-sysctl -w fs.aio-max-nr=10485760 || true
-curl -1sLf "https://raw.githubusercontent.com/redpanda-data/seastar/master/install-dependencies.sh" | bash
