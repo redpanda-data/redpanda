@@ -67,9 +67,10 @@ type DecommissionMovingTo struct {
 }
 
 type DecommissionStatusResponse struct {
-	Finished     bool                     `json:"finished"`
-	ReplicasLeft int                      `json:"replicas_left"`
-	Partitions   []DecommissionPartitions `json:"partitions"`
+	Finished           bool                     `json:"finished"`
+	ReplicasLeft       int                      `json:"replicas_left"`
+	AllocationFailures []string                 `json:"allocation_failures"`
+	Partitions         []DecommissionPartitions `json:"partitions"`
 }
 
 // Brokers queries one of the client's hosts and returns the list of brokers.
