@@ -13,6 +13,12 @@ class GCPClient:
     def _make_client(self):
         return None
 
+    def create_vpc_peering(self, params):
+        return None
+
+    def get_vpc_by_network_id(self, network_id):
+        return None
+
     def find_vpc_peering_connection(self, state, params):
         return None
 
