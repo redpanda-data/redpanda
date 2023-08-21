@@ -114,6 +114,8 @@ class TieredStorageReaderStressTest(RedpandaTest):
             segment_reader_count = 0
             partition_reader_count = 0
             partition_reader_delay_count = 0
+            segment_reader_delay_count = 0
+            materialize_segment_delay_count = 0
             connection_count = 0
             for family in metrics:
                 for sample in family.samples:
@@ -123,14 +125,21 @@ class TieredStorageReaderStressTest(RedpandaTest):
                         partition_reader_count += int(sample.value)
                     if sample.name == "redpanda_cloud_storage_partition_readers_delayed_total":
                         partition_reader_delay_count += int(sample.value)
+                    if sample.name == "redpanda_cloud_storage_segment_readers_delayed_total":
+                        segment_reader_delay_count += int(sample.value)
+                    if sample.name == "redpanda_cloud_storage_segment_materializations_delayed_total":
+                        materialize_segment_delay_count += int(sample.value)
                     elif sample.name == "redpanda_rpc_active_connections":
                         if sample.labels["redpanda_server"] == "kafka":
                             connection_count += int(sample.value)
 
             stats = {
                 "segment_readers": segment_reader_count,
+                "segment_readers_delayed": segment_reader_delay_count,
                 "partition_readers": partition_reader_count,
                 "partition_readers_delayed": partition_reader_delay_count,
+                "materialize_segments_delayed":
+                materialize_segment_delay_count,
                 "connections": connection_count
             }
             self.logger.debug(f"stats[{node.name}] = {stats}")
@@ -269,11 +278,8 @@ class TieredStorageReaderStressTest(RedpandaTest):
             assert hwms[
                 'partition_readers'] <= self.readers_per_shard * self.redpanda.get_node_cpu_count(
                 )
-
-            # Segment reader limit is sloppy, but probabilistically it should not have overshot
-            # by more than a factor of 2 before getting trimmed.
             assert hwms[
-                'segment_readers'] <= 2 * self.readers_per_shard * self.redpanda.get_node_cpu_count(
+                'segment_readers'] <= self.readers_per_shard * self.redpanda.get_node_cpu_count(
                 )
 
         # TODO: assert on reader HWM once we enforce it more strongly
@@ -287,6 +293,7 @@ class TieredStorageReaderStressTest(RedpandaTest):
         for node, stats in stats.items():
             # The stats indicate saturation with tiered storage reads.
             assert stats['partition_readers_delayed']
+            assert stats['segment_readers_delayed']
             # There are still some segment readers cached as expected, they shouldn't
             # all have been trimmed.
             assert stats['segment_readers']
