@@ -34,6 +34,13 @@ static constexpr model::cloud_credentials_source config_file{
 
 struct cloud_storage_fixture : s3_imposter_fixture {
     cloud_storage_fixture() {
+        config::shard_local_cfg()
+          .cloud_storage_max_segment_readers_per_shard.reset();
+        config::shard_local_cfg()
+          .cloud_storage_max_partition_readers_per_shard.reset();
+        config::shard_local_cfg()
+          .cloud_storage_max_materialized_segments_per_shard.reset();
+
         tmp_directory.create().get();
         cache
           .start(
