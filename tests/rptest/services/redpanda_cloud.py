@@ -253,6 +253,9 @@ class CloudCluster():
             if c['name'] == self.current.name:
                 if c['state'] == 'ready':
                     return True
+                elif c['state'] == 'unknown':
+                    raise RuntimeError("Creation failed (state 'unknown') "
+                                       f"for '{self.config.provider}'")
         return False
 
     def _get_cluster_id_and_network_id(self):
@@ -335,9 +338,12 @@ class CloudCluster():
         for p in products:
             if p['redpandaConfigProfileName'] == config_profile_name:
                 return p['id']
+        self._logger.warning("CloudV2 API returned empty 'product_id' list "
+                             f"for request: '{params}'")
         return None
 
     def _create_cluster_payload(self):
+        _cidr = "10.1.0.0/16" if self.isPublicNetwork else self.config.network
         return {
             "cluster": {
                 "name": self.current.name,
@@ -361,7 +367,7 @@ class CloudCluster():
                 "displayName":
                 f"{self.current.connection_type}-network-{self.current.name}",
                 "spec": {
-                    "cidr": "10.1.0.0/16",
+                    "cidr": _cidr,
                     "deploymentType": self.config.type,
                     "installPackVersion": self.current.install_pack_ver,
                     "provider": self.config.provider,
@@ -394,7 +400,7 @@ class CloudCluster():
         self.current.zones = _c['spec']['zones']
         self.current.network_id = _c['spec']['networkId']
         self.current.network_cidr = _c['spec']['network']['networkCidr']
-
+        self.current.product_id = _c['productId']
         if self.current.region != self.config.region:
             raise RuntimeError("BYOC Cluster is in different region: "
                                f"'{self.current.region}'. Multi-region "
@@ -436,10 +442,23 @@ class CloudCluster():
         self.current.namespace_uuid = self._create_namespace()
         # name rp-ducktape-cluster-3b36f516
         self.current.name = f'rp-ducktape-cluster-{self._unique_id}'
-        self.current.install_pack_ver = self._get_install_pack_ver()
-        self.current.zones = ['usw2-az1']
-        self.current.product_id = self._get_product_id(config_profile_name)
+        # Install pack handling
+        if self.config.install_pack_ver == 'latest':
+            self.config.install_pack_ver = self._get_latest_install_pack_ver()
+        self.current.install_pack_ver = self.config.install_pack_ver
+        # Multi-zone not supported, so get a single one from the list
+        self.current.region = self.config.region
         self.current.region_id = self._get_region_id()
+        self.current.zones = self.provider_cli.get_single_zone(
+            self.current.region)
+        # Call CloudV2 API to determine Product ID
+        self.current.product_id = self._get_product_id(config_profile_name)
+        if self.current.product_id is None:
+            raise RuntimeError("ProductID failed to be determined for "
+                               f"'{self.config.provider}', "
+                               f"'{self.config.type}', "
+                               f"'{self.config.install_pack_ver}', "
+                               f"'{self.config.region}'")
 
         # Call Api to create cluster
         self._logger.info(f'creating cluster name {self.current.name}')

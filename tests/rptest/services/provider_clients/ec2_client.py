@@ -8,6 +8,8 @@ VPCS_PEERING_LABEL = "VpcPeeringConnections"
 VPCS_LABEL = "Vpcs"
 RTBS_LABEL = "RouteTables"
 RTB_ID_LABEL = "RouteTableId"
+AZS_LABEL = "AvailabilityZones"
+AZ_ID_LABEL = "ZoneId"
 
 
 class EC2Client:
@@ -174,3 +176,32 @@ class EC2Client:
             self._log.warning(f"Failed to create route in '{rtb_id}' "
                               f"for '{destCidrBlock}'")
         return _r
+
+    def get_single_zone(self, region):
+        """
+        Get list of available zones based on region
+
+        Sample return value
+        {
+            "AvailabilityZones": [
+                {
+                    "State": "available",
+                    "OptInStatus": "opt-in-not-required",
+                    "Messages": [],
+                    "RegionName": "us-west-2",
+                    "ZoneName": "us-west-2a",
+                    "ZoneId": "usw2-az2",
+                    "GroupName": "us-west-2",
+                    "NetworkBorderGroup": "us-west-2",
+                    "ZoneType": "availability-zone"
+                },
+                ...
+            ]
+        }
+        """
+        # Setup filter for current region just in case
+        # Althrough, by default, only zones from current region will be listed
+        _filters = [{"Name": "region-name", "Values": [region]}]
+        # Call EC2 to get the list
+        _r = self._cli.describe_availability_zones(Filters=_filters)
+        return _r[AZS_LABEL][0][AZ_ID_LABEL]
