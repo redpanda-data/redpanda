@@ -19,6 +19,7 @@
 #include <seastar/core/sharded.hh>
 
 #include <absl/container/btree_set.h>
+#include <absl/container/flat_hash_set.h>
 
 namespace cluster {
 
