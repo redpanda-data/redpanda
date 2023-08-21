@@ -205,13 +205,15 @@ private:
     borrow_result_t borrow_next_segment_reader(
       const partition_manifest& manifest,
       storage::log_reader_config config,
+      segment_units segment_unit,
+      segment_reader_units segment_reader_unit,
       model::offset hint = {});
 
     /// Materialize new segment
     /// @return iterator that points to newly added segment (always valid
     /// iterator)
-    iterator
-    materialize_segment(const remote_segment_path& path, const segment_meta&);
+    iterator materialize_segment(
+      const remote_segment_path& path, const segment_meta&, segment_units);
 
     retry_chain_node _rtc;
     retry_chain_logger _ctxlog;

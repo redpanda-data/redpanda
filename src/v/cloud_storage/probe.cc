@@ -203,9 +203,24 @@ remote_probe::remote_probe(
             sm::make_counter(
               "partition_readers_delayed",
               [&ms] { return ms.get_partition_readers_delayed(); },
-              sm::description("How many read requests were delayed due to "
-                              "hitting reader limit.  This indicates cluster "
+              sm::description("How many partition reades were delayed due to "
+                              "hitting reader limit. This indicates cluster "
                               "is saturated with tiered storage reads."))
+              .aggregate({sm::shard_label}),
+            sm::make_counter(
+              "segment_readers_delayed",
+              [&ms] { return ms.get_segment_readers_delayed(); },
+              sm::description("How many segment readers were delayed due to "
+                              "hitting reader limit. This indicates cluster "
+                              "is saturated with tiered storage reads."))
+              .aggregate({sm::shard_label}),
+            sm::make_counter(
+              "segment_materializations_delayed",
+              [&ms] { return ms.get_segments_delayed(); },
+              sm::description(
+                "How many segment materializations were delayed due to "
+                "hitting reader limit. This indicates cluster "
+                "is saturated with tiered storage reads."))
               .aggregate({sm::shard_label}),
             sm::make_counter(
               "segment_index_uploads_total",
