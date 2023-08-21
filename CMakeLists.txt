@@ -1,13 +1,15 @@
-cmake_minimum_required(VERSION 3.22)
-list(APPEND CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/cmake)
-
 # Redirect control for internal Redpanda builds
 if(VECTORIZED_CMAKE_DIR)
+  cmake_minimum_required(VERSION 3.22)
+  list(APPEND CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/cmake)
   include(${VECTORIZED_CMAKE_DIR}/main.cmake)
   return()
 endif()
 
+cmake_minimum_required(VERSION 3.24)
 project(redpanda LANGUAGES CXX)
+
+list(APPEND CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/cmake)
 
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_CXX_STANDARD 20)
