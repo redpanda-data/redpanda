@@ -32,7 +32,7 @@ std::chrono::time_point<clock_type, duration> round_to_interval(
     /// error if this cannot be done within some threshold.
     using namespace std::chrono_literals;
     const auto interval = usage_window_width_interval;
-    const auto err_threshold = interval < 2min ? 1s : 2min;
+    const auto err_threshold = interval < 2min ? 2s : 2min;
     const auto cur_interval_start = t - (t.time_since_epoch() % interval);
     const auto next_interval_start = cur_interval_start + interval;
     if (t - cur_interval_start <= err_threshold) {
