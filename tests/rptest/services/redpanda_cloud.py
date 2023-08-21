@@ -18,6 +18,16 @@ class RpCloudApiClient(object):
         self._config = config
         self._token = None
         self._logger = log
+        self.lasterror = None
+
+    def _handle_error(self, response):
+        try:
+            response.raise_for_status()
+        except requests.HTTPError as e:
+            self.lasterror = f'{e} {response.text}'
+            self._logger.error(self.lasterror)
+            return None
+        return response
 
     def _get_token(self):
         """
@@ -40,11 +50,9 @@ class RpCloudApiClient(object):
             resp = requests.post(f'{self._config.oauth_url}',
                                  headers=headers,
                                  data=data)
-            try:
-                resp.raise_for_status()
-            except requests.HTTPError as e:
-                self._logger.error(f'{e} {resp.text}')
-                return None
+            _r = self._handle_error(resp)
+            if _r is None:
+                return _r
             j = resp.json()
             self._token = j['access_token']
         return self._token
@@ -58,12 +66,8 @@ class RpCloudApiClient(object):
         resp = requests.get(f'{self._config.api_url}{endpoint}',
                             headers=headers,
                             **kwargs)
-        try:
-            resp.raise_for_status()
-        except requests.HTTPError as e:
-            self._logger.error(f'{e} {resp.text}')
-            return None
-        return resp.json()
+        _r = self._handle_error(resp)
+        return _r if _r is None else _r.json()
 
     def _http_post(self, base_url=None, endpoint='', **kwargs):
         token = self._get_token()
@@ -76,12 +80,8 @@ class RpCloudApiClient(object):
         resp = requests.post(f'{base_url}{endpoint}',
                              headers=headers,
                              **kwargs)
-        try:
-            resp.raise_for_status()
-        except requests.HTTPError as e:
-            self._logger.error(f'{e} {resp.text}')
-            return None
-        return resp.json()
+        _r = self._handle_error(resp)
+        return _r if _r is None else _r.json()
 
     def _http_delete(self, endpoint='', **kwargs):
         token = self._get_token()
@@ -92,12 +92,8 @@ class RpCloudApiClient(object):
         resp = requests.delete(f'{self._config.api_url}{endpoint}',
                                headers=headers,
                                **kwargs)
-        try:
-            resp.raise_for_status()
-        except requests.HTTPError as e:
-            self._logger.error(f'{e} {resp.text}')
-            return None
-        return resp.json()
+        _r = self._handle_error(resp)
+        return _r if _r is None else _r.json()
 
 
 @dataclass(kw_only=True)
@@ -190,6 +186,9 @@ class CloudCluster():
             if c['name'] == name:
                 if c['state'] == 'ready':
                     return True
+                elif c['state'] == 'unknown':
+                    raise RuntimeError("Creation failed (state 'unknown') "
+                                       f"for '{self.config.provider}'")
         return False
 
     def _get_cluster_id_and_network_id(self, namespace_uuid, name):
@@ -342,6 +341,10 @@ class CloudCluster():
 
         r = self.cloudv2._http_post(
             endpoint='/api/v1/workflows/network-cluster', json=body)
+
+        # handle error on CloudV2 side
+        if r is None:
+            raise RuntimeError(self.cloudv2.lasterror)
 
         self._logger.info(
             f'waiting for creation of cluster {name} namespaceUuid {r["namespaceUuid"]}, checking every {self.CHECK_BACKOFF_SEC} seconds'
