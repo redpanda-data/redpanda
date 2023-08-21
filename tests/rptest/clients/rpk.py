@@ -1040,7 +1040,7 @@ class RpkTool:
             ]
         return flags
 
-    def acl_list(self):
+    def acl_list(self, request_timeout_overhead=None):
         """
         Run `rpk acl list` and return the results.
 
@@ -1056,6 +1056,13 @@ class RpkTool:
             "acl",
             "list",
         ] + self._kafka_conn_settings()
+
+        # How long rpk will wait for a response from the broker, default is 5s
+        if request_timeout_overhead is not None:
+            cmd += [
+                "-X", "globals.request_timeout_overhead=" +
+                f'{str(request_timeout_overhead)}s'
+            ]
 
         output = self._execute(cmd)
 
