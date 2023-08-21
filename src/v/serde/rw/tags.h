@@ -14,6 +14,22 @@ class iobuf_parser;
 
 namespace serde {
 
+// How to use:
+//
+// template<typename T>
+// void tag_invoke(tag_t<write_tag>, iobuf& out, my_type<T> t) {
+//     // write `t` to `out`
+// }
+//
+// template<typename T>
+// void tag_invoke(
+//   tag_t<read_tag>,
+//   iobuf_parser& in,
+//   my_type<T>& t,
+//   std::size_t const bytes_left_limit) {
+//     t = ...; // read from `in` to `t`
+// }
+
 template<auto& CPO>
 using tag_t = std::remove_cvref_t<decltype(CPO)>;
 
