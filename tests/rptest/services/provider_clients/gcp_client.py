@@ -36,3 +36,12 @@ class GCPClient:
 
     def create_route(self, rtb_id, destCidrBlock, vpc_peering_id):
         return None
+
+    def get_single_zone(self, region):
+        """
+        Get list of available zones based on region
+        """
+        # TODO: Implement zones list
+        # Hardcoded to us-west2
+        z = {"us-west2": ['us-west2-a', 'us-west2-b', 'us-west2-c']}
+        return z[region][:1]
