@@ -74,3 +74,12 @@ rp_test(
   LIBRARIES Boost::unit_test_framework v::rpc
   LABELS rpc
 )
+
+rp_test(
+  UNIT_TEST
+  BINARY_NAME connection_cache
+  SOURCES connection_cache_test.cc
+  LIBRARIES v::seastar_testing_main v::rpc
+  LABELS rpc
+  ARGS "-- -c 1"
+)
