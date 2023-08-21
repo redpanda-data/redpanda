@@ -45,8 +45,8 @@ std::chrono::time_point<clock_type, duration> round_to_interval(
       "usage has detected a timestamp '{}' that exceeds the preconfigured "
       "threshold of {}s meaning a clock has fired later or earlier then "
       "expected, this is unexpected behavior and should be investigated.",
-      std::chrono::duration_cast<std::chrono::seconds>(interval),
-      t.time_since_epoch().count());
+      t.time_since_epoch().count(),
+      std::chrono::duration_cast<std::chrono::seconds>(err_threshold));
     return t;
 }
 
