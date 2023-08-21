@@ -45,7 +45,8 @@ struct materialized_segment_state {
     std::unique_ptr<remote_segment_batch_reader> borrow_reader(
       const storage::log_reader_config& cfg,
       retry_chain_logger& ctxlog,
-      partition_probe& probe);
+      partition_probe& probe,
+      segment_reader_units unit);
 
     ss::future<> stop();
 
