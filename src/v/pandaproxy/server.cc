@@ -15,6 +15,7 @@
 #include "pandaproxy/logger.h"
 #include "pandaproxy/probe.h"
 #include "pandaproxy/reply.h"
+#include "rpc/rpc_utils.h"
 
 #include <seastar/core/coroutine.hh>
 #include <seastar/http/function_handlers.hh>
@@ -209,7 +210,7 @@ ss::future<> server::start(
                   [](
                     const std::unordered_set<ss::sstring>& updated,
                     const std::exception_ptr& eptr) {
-                      cluster::log_certificate_reload_event(
+                      rpc::log_certificate_reload_event(
                         plog, "API TLS", updated, eptr);
                   });
             }

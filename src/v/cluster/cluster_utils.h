@@ -21,6 +21,7 @@
 #include "net/dns.h"
 #include "outcome_future_utils.h"
 #include "rpc/connection_cache.h"
+#include "rpc/rpc_utils.h"
 #include "rpc/types.h"
 
 #include <seastar/core/sharded.hh>
@@ -130,39 +131,6 @@ auto with_client(
 /// Creates current broker instance using its configuration.
 model::broker make_self_broker(const config::node_config& node_cfg);
 
-/// \brief Log reload credential event
-/// The function is supposed to be invoked from the callback passed to
-/// 'build_reloadable_*_credentials' methods.
-///
-/// \param log is a ss::logger instance that should be used
-/// \param system_name is a name of the subsystem that uses credentials
-/// \param updated is a set of updated credential names
-/// \param eptr is an exception ptr in case of error
-void log_certificate_reload_event(
-  ss::logger& log,
-  const char* system_name,
-  const std::unordered_set<ss::sstring>& updated,
-  const std::exception_ptr& eptr);
-
-inline ss::future<ss::shared_ptr<ss::tls::certificate_credentials>>
-maybe_build_reloadable_certificate_credentials(config::tls_config tls_config) {
-    return std::move(tls_config)
-      .get_credentials_builder()
-      .then([](std::optional<ss::tls::credentials_builder> credentials) {
-          if (credentials) {
-              return credentials->build_reloadable_certificate_credentials(
-                [](
-                  const std::unordered_set<ss::sstring>& updated,
-                  const std::exception_ptr& eptr) {
-                    log_certificate_reload_event(
-                      clusterlog, "Client TLS", updated, eptr);
-                });
-          }
-          return ss::make_ready_future<
-            ss::shared_ptr<ss::tls::certificate_credentials>>(nullptr);
-      });
-}
-
 template<typename Proto, typename Func>
 requires requires(Func&& f, Proto c) { f(c); }
 auto do_with_client_one_shot(
@@ -171,7 +139,8 @@ auto do_with_client_one_shot(
   rpc::clock_type::duration connection_timeout,
   rpc::transport_version v,
   Func&& f) {
-    return maybe_build_reloadable_certificate_credentials(std::move(tls_config))
+    return rpc::maybe_build_reloadable_certificate_credentials(
+             std::move(tls_config))
       .then([v,
              f = std::forward<Func>(f),
              connection_timeout,
