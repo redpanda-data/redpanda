@@ -21,6 +21,8 @@ import (
 	"github.com/twmb/franz-go/pkg/sr"
 )
 
+var supportedTypes = []string{"avro", "protobuf"}
+
 func NewCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "schema",
@@ -103,6 +105,12 @@ func resolveSchemaType(typeFlag, schemaFile string) (t sr.SchemaType, err error)
 	return
 }
 
+func validTypes() func(*cobra.Command, []string, string) ([]string, cobra.ShellCompDirective) {
+	return func(cmd *cobra.Command, _ []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+		return supportedTypes, cobra.ShellCompDirectiveDefault
+	}
+}
+
 func typeFromFlag(typeFlag string) (sr.SchemaType, error) {
 	switch strings.ToLower(typeFlag) {
 	case "avro", "avsc":
@@ -118,7 +126,7 @@ func typeFromFile(schemaFile string) (sr.SchemaType, error) {
 	switch {
 	case strings.HasSuffix(schemaFile, ".avro") || strings.HasSuffix(schemaFile, ".avsc"):
 		return sr.TypeAvro, nil
-	case strings.HasSuffix(schemaFile, ".proto"):
+	case strings.HasSuffix(schemaFile, ".proto") || strings.HasSuffix(schemaFile, ".protobuf"):
 		return sr.TypeProtobuf, nil
 	default:
 		return 0, fmt.Errorf("unable to determine the schema type from %q", schemaFile)

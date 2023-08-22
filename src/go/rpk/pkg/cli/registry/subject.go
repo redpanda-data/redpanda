@@ -116,7 +116,7 @@ func subjectDeleteCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 								err = fmt.Errorf("unable to perform hard-deletion: %w", err)
 							}
 						} else {
-							err = fmt.Errorf("unable to perform soft-deletion: %w", err)
+							err = fmt.Errorf("unable to perform initial soft-deletion that is required for hard-deletion: %w", err)
 						}
 					} else {
 						versions, err = cl.DeleteSubject(cmd.Context(), subject, sr.SoftDelete)

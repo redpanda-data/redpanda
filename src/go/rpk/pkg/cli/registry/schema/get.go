@@ -10,7 +10,9 @@
 package schema
 
 import (
+	"fmt"
 	"os"
+	"strings"
 
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/out"
@@ -114,8 +116,9 @@ potential (mutually exclusive) ways:
 	cmd.Flags().StringVar(&sversion, "schema-version", "", "Schema version to lookup (latest, 0, 1...); subject required")
 	cmd.Flags().IntVar(&id, "id", 0, "ID to lookup schemas usages of; subject optional")
 	cmd.Flags().StringVar(&schemaFile, "schema", "", "Schema file to check existence of, must be .avro or .proto; subject required")
-	cmd.Flags().StringVar(&schemaType, "type", "", "Schema type of the file used to lookup, one of protobuf or avro; overrides schema file extension")
+	cmd.Flags().StringVar(&schemaType, "type", "", fmt.Sprintf("Schema type of the file used to lookup (%v); overrides schema file extension", strings.Join(supportedTypes, ",")))
 	cmd.Flags().BoolVar(&deleted, "deleted", false, "If true, also return deleted schemas")
 
+	cmd.RegisterFlagCompletionFunc("type", validTypes())
 	return cmd
 }

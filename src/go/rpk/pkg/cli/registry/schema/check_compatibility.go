@@ -71,10 +71,12 @@ func newCheckCompatibilityCommand(fs afero.Fs, p *config.Params) *cobra.Command 
 	}
 
 	cmd.Flags().StringVar(&schemaFile, "schema", "", "Schema filepath to check, must be .avro or .proto")
-	cmd.Flags().StringVar(&schemaType, "type", "", "Schema type, one of protobuf or avro; overrides schema file extension")
+	cmd.Flags().StringVar(&schemaType, "type", "", fmt.Sprintf("Schema type (%v); overrides schema file extension", strings.Join(supportedTypes, ",")))
 	cmd.Flags().StringVar(&sversion, "schema-version", "", "Schema version to check compatibility with (latest, 0, 1...)")
 
 	cmd.MarkFlagRequired("schema")
 	cmd.MarkFlagRequired("schema-version")
+
+	cmd.RegisterFlagCompletionFunc("type", validTypes())
 	return cmd
 }

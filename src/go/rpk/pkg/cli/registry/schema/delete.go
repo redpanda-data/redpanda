@@ -53,7 +53,7 @@ func newDeleteCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 					err = cl.DeleteSchema(cmd.Context(), subject, version, sr.HardDelete)
 					out.MaybeDie(err, "unable to perform hard-deletion: %v", err)
 				}
-				out.MaybeDie(err, "unable to perform soft-deletion: %v", err)
+				out.MaybeDie(err, "unable to perform initial soft-deletion that is required for hard-deletion: %v", err)
 			} else {
 				err = cl.DeleteSchema(cmd.Context(), subject, version, sr.SoftDelete)
 				out.MaybeDieErr(err)

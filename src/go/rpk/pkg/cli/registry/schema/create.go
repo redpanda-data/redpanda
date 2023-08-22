@@ -10,7 +10,9 @@
 package schema
 
 import (
+	"fmt"
 	"os"
+	"strings"
 
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/out"
@@ -64,9 +66,11 @@ for Avro and ".proto" for Protobuf. You can manually specify the type with the
 		},
 	}
 
+	cmd.Flags().StringVar(&schemaType, "type", "", fmt.Sprintf("Schema type (%v); overrides schema file extension", strings.Join(supportedTypes, ",")))
 	cmd.Flags().StringVar(&schemaFile, "schema", "", "Schema filepath to upload, must be .avro, .avsc, or .proto")
 	cmd.Flags().StringVar(&schemaType, "type", "", "Schema type, one of protobuf or avro; overrides schema file extension")
 	cmd.MarkFlagRequired("schema")
 
+	cmd.RegisterFlagCompletionFunc("type", validTypes())
 	return cmd
 }
