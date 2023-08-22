@@ -165,6 +165,7 @@ v_cc_library(
     partition_recovery_manager.cc
     plugin_table.cc
     plugin_frontend.cc
+    plugin_backend.cc
     ../archival/archival_policy.cc
     ../archival/ntp_archiver_service.cc
     ../archival/probe.cc

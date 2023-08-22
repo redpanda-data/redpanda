@@ -170,6 +170,7 @@ ss::future<> controller_snapshot::serde_async_write(iobuf& out) {
     co_await serde::write_async(out, std::move(topics));
     co_await serde::write_async(out, std::move(security));
     co_await serde::write_async(out, std::move(metrics_reporter));
+    co_await serde::write_async(out, std::move(plugins));
 }
 
 ss::future<>
@@ -189,6 +190,11 @@ controller_snapshot::serde_async_read(iobuf_parser& in, serde::header const h) {
     metrics_reporter
       = co_await serde::read_async_nested<decltype(metrics_reporter)>(
         in, h._bytes_left_limit);
+
+    if (h._version >= 1) {
+        plugins = co_await serde::read_async_nested<decltype(plugins)>(
+          in, h._bytes_left_limit);
+    }
 
     if (in.bytes_left() > h._bytes_left_limit) {
         in.skip(in.bytes_left() - h._bytes_left_limit);
