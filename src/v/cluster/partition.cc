@@ -158,8 +158,7 @@ partition::partition(
                     _cloud_storage_api,
                     cloud_storage_cache,
                     _archival_meta_stm->manifest(),
-                    cloud_storage_clients::bucket_name{*bucket},
-                    *_cloud_storage_probe);
+                    cloud_storage_clients::bucket_name{*bucket});
 
                 _cloud_storage_partition
                   = ss::make_shared<cloud_storage::remote_partition>(

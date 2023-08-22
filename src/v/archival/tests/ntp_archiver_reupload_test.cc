@@ -208,8 +208,7 @@ struct reupload_fixture : public archiver_fixture {
           remote,
           app.shadow_index_cache,
           part->archival_meta_stm()->manifest(),
-          arch_conf->bucket_name,
-          part_probe.value());
+          arch_conf->bucket_name);
 
         archiver.emplace(
           get_ntp_conf(),

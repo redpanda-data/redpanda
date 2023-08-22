@@ -23,6 +23,21 @@ public:
 
     void add_bytes_read(uint64_t read) { _bytes_read += read; }
     void add_records_read(uint64_t read) { _records_read += read; }
+    void chunk_size(uint64_t size) { _chunk_size = size; }
+
+private:
+    uint64_t _bytes_read = 0;
+    uint64_t _records_read = 0;
+    uint64_t _chunk_size = 0;
+
+    ss::metrics::metric_groups _metrics;
+};
+
+class ts_read_path_probe {
+public:
+    using hist_t = hdr_hist;
+
+    explicit ts_read_path_probe();
 
     void segment_materialized() { ++_cur_materialized_segments; }
     void segment_offloaded() { --_cur_materialized_segments; }
@@ -54,12 +69,7 @@ public:
         return _chunk_hydration_latency.auto_measure();
     }
 
-    void chunk_size(uint64_t size) { _chunk_size = size; }
-
 private:
-    uint64_t _bytes_read = 0;
-    uint64_t _records_read = 0;
-
     int32_t _cur_materialized_segments = 0;
 
     int32_t _cur_readers = 0;
@@ -73,8 +83,6 @@ private:
     hdr_hist _spillover_mat_latency;
 
     hdr_hist _chunk_hydration_latency;
-
-    uint64_t _chunk_size = 0;
 
     ss::metrics::metric_groups _metrics;
 };

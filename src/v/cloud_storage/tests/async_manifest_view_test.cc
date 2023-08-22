@@ -66,7 +66,7 @@ public:
       , rtc(as)
       , ctxlog(test_log, rtc)
       , probe(manifest_ntp)
-      , view(api, cache, stm_manifest, bucket, probe) {
+      , view(api, cache, stm_manifest, bucket) {
         stm_manifest.set_archive_start_offset(
           model::offset{0}, model::offset_delta{0});
         stm_manifest.set_archive_clean_offset(model::offset{0}, 0);

@@ -254,6 +254,7 @@ private:
     eviction_list_t _eviction_pending;
     segment_map_t _segments;
     partition_probe& _probe;
+    ts_read_path_probe& _ts_probe;
 };
 
 } // namespace cloud_storage

@@ -167,7 +167,8 @@ remote_segment::remote_segment(
   const model::ntp& ntp,
   const segment_meta& meta,
   retry_chain_node& parent,
-  partition_probe& probe)
+  partition_probe& probe,
+  ts_read_path_probe& ts_probe)
   : _api(r)
   , _cache(c)
   , _bucket(std::move(bucket))
@@ -197,7 +198,8 @@ remote_segment::remote_segment(
   // segment may be hydrated at a time.
   , _chunks_in_segment(
       std::max(static_cast<uint64_t>(ceil(_size / _chunk_size)), 1UL))
-  , _probe(probe) {
+  , _probe(probe)
+  , _ts_probe(ts_probe) {
     vassert(_chunk_size != 0, "cloud_storage_cache_chunk_size should not be 0");
 
     if (
@@ -946,7 +948,7 @@ ss::future<> remote_segment::hydrate_chunk(segment_chunk_range range) {
     auto consumer = split_segment_into_chunk_range_consumer{
       *this, std::move(range)};
 
-    auto measurement = _probe.chunk_hydration_latency();
+    auto measurement = _ts_probe.chunk_hydration_latency();
     auto res = co_await _api.download_segment(
       _bucket, _path, std::move(consumer), rtc, std::make_pair(start, end));
     if (res != download_result::success) {
@@ -1265,16 +1267,18 @@ remote_segment_batch_reader::remote_segment_batch_reader(
   ss::lw_shared_ptr<remote_segment> s,
   const storage::log_reader_config& config,
   partition_probe& probe,
+  ts_read_path_probe& ts_probe,
   ssx::semaphore_units units) noexcept
   : _seg(std::move(s))
   , _config(config)
   , _probe(probe)
+  , _ts_probe(ts_probe)
   , _rtc(_seg->get_retry_chain_node())
   , _ctxlog(cst_log, _rtc, _seg->get_ntp().path())
   , _cur_rp_offset(_seg->get_base_rp_offset())
   , _cur_delta(_seg->get_base_offset_delta())
   , _units(std::move(units)) {
-    _probe.segment_reader_created();
+    _ts_probe.segment_reader_created();
 }
 
 ss::future<result<ss::circular_buffer<model::record_batch>>>
@@ -1376,7 +1380,7 @@ ss::future<> remote_segment_batch_reader::stop() {
 
 remote_segment_batch_reader::~remote_segment_batch_reader() noexcept {
     vassert(_stopped, "Destroyed without stopping");
-    _probe.segment_reader_destroyed();
+    _ts_probe.segment_reader_destroyed();
 }
 
 std::ostream& operator<<(std::ostream& os, hydration_request::kind kind) {

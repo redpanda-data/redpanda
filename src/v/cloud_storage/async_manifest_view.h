@@ -74,8 +74,7 @@ public:
       ss::sharded<remote>& remote,
       ss::sharded<cache>& cache,
       const partition_manifest& stm_manifest,
-      cloud_storage_clients::bucket_name bucket,
-      partition_probe& probe);
+      cloud_storage_clients::bucket_name bucket);
 
     ss::future<> start();
     ss::future<> stop();
@@ -187,7 +186,7 @@ private:
     cloud_storage_clients::bucket_name _bucket;
     ss::sharded<remote>& _remote;
     ss::sharded<cache>& _cache;
-    partition_probe& _probe;
+    ts_read_path_probe& _ts_probe;
 
     const partition_manifest& _stm_manifest;
     mutable retry_chain_node _rtcnode;
@@ -207,7 +206,7 @@ private:
     struct materialization_request_t {
         segment_meta search_vec;
         ss::promise<result<manifest_section_t, error_outcome>> promise;
-        std::unique_ptr<hdr_hist::measurement> _measurement;
+        std::unique_ptr<ts_read_path_probe::hist_t::measurement> _measurement;
     };
     std::deque<materialization_request_t> _requests;
     ss::condition_variable _cvar;
