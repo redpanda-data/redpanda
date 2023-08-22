@@ -136,6 +136,11 @@ ss::future<abs_configuration> abs_configuration::make_configuration(
         return ssx::sformat("{}.blob.core.windows.net", storage_account_name());
     }();
 
+    // The ABS TLS server misbehaves and does not send an EOF
+    // when prompted to close the connection. Thus, skip the wait
+    // in order to avoid Seastar's hardcoded 10s wait.
+    client_cfg.wait_for_tls_server_eof = false;
+
     client_cfg.tls_sni_hostname = endpoint_uri;
     client_cfg.storage_account_name = storage_account_name;
     client_cfg.shared_key = shared_key;
