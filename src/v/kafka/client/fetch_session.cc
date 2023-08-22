@@ -80,7 +80,7 @@ fetch_session::make_offset_commit_request() const {
 }
 
 std::ostream& operator<<(std::ostream& os, fetch_session const& fs) {
-    fmt::print(os, "{id={}, epoch={}}", fs.id(), fs.epoch());
+    fmt::print(os, "{{id={}, epoch={}}}", fs.id(), fs.epoch());
     return os;
 }
 
