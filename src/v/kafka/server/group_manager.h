@@ -44,6 +44,7 @@
 #include <cluster/partition_manager.h>
 
 #include <span>
+#include <system_error>
 
 namespace kafka {
 
@@ -253,7 +254,7 @@ private:
 
     ss::future<> gc_partition_state(ss::lw_shared_ptr<attached_partition>);
 
-    ss::future<> inject_noop(
+    ss::future<std::error_code> inject_noop(
       ss::lw_shared_ptr<cluster::partition> p,
       ss::lowres_clock::time_point timeout);
 
