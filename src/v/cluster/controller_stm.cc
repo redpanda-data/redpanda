@@ -175,7 +175,9 @@ ss::future<> controller_stm::apply_snapshot(
           std::get<config_manager&>(_state).apply_snapshot(offset, snapshot),
           std::get<topic_updates_dispatcher&>(_state).apply_snapshot(
             offset, snapshot),
+          std::get<plugin_backend&>(_state).apply_snapshot(offset, snapshot),
           std::get<security_manager&>(_state).apply_snapshot(offset, snapshot));
+
     } catch (const seastar::abort_requested_exception&) {
     } catch (const seastar::gate_closed_exception&) {
     } catch (const seastar::broken_semaphore&) {
