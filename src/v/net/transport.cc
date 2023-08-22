@@ -31,7 +31,8 @@ base_transport::base_transport(configuration c)
   : _probe(std::make_unique<client_probe>())
   , _server_addr(c.server_addr)
   , _creds(c.credentials)
-  , _tls_sni_hostname(c.tls_sni_hostname) {}
+  , _tls_sni_hostname(c.tls_sni_hostname)
+  , _wait_for_tls_server_eof(c.wait_for_tls_server_eof) {}
 
 ss::future<> base_transport::do_connect(clock_type::time_point timeout) {
     // hold invariant of having an always valid dispatch gate
@@ -52,7 +53,9 @@ ss::future<> base_transport::do_connect(clock_type::time_point timeout) {
             fd = co_await ss::tls::wrap_client(
               _creds,
               std::move(fd),
-              _tls_sni_hostname ? *_tls_sni_hostname : ss::sstring{});
+              _tls_sni_hostname ? *_tls_sni_hostname : ss::sstring{},
+              ss::tls::tls_options{
+                .wait_for_eof_on_shutdown = _wait_for_tls_server_eof});
         }
         _fd = std::make_unique<ss::connected_socket>(std::move(fd));
         _probe->connection_established();
