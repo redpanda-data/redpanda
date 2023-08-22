@@ -11,6 +11,7 @@
 #pragma once
 
 #include "cloud_storage/materialized_manifest_cache.h"
+#include "cloud_storage/partition_probe.h"
 #include "cloud_storage/remote_partition.h"
 #include "cloud_storage/segment_state.h"
 #include "config/property.h"
@@ -64,6 +65,8 @@ public:
     ss::future<segment_units> get_segment_units();
 
     materialized_manifest_cache& get_materialized_manifest_cache();
+
+    ts_read_path_probe& get_read_path_probe();
 
 private:
     /// Timer use to periodically evict stale segment readers
@@ -162,6 +165,8 @@ private:
     uint64_t _partition_readers_delayed{0};
     uint64_t _segment_readers_delayed{0};
     uint64_t _segments_delayed{0};
+
+    ts_read_path_probe _read_path_probe;
 };
 
 } // namespace cloud_storage

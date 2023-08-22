@@ -23,7 +23,7 @@ void materialized_segment_state::offload(remote_partition* partition) {
         partition->evict_segment_reader(std::move(rs));
     }
     partition->evict_segment(std::move(segment));
-    partition->_probe.segment_offloaded();
+    partition->_ts_probe.segment_offloaded();
 }
 
 materialized_segment_state::materialized_segment_state(
@@ -35,7 +35,15 @@ materialized_segment_state::materialized_segment_state(
   , parent(p.weak_from_this())
   , _units(std::move(u)) {
     segment = ss::make_lw_shared<remote_segment>(
-      p._api, p._cache, p._bucket, path, p.get_ntp(), meta, p._rtc, p._probe);
+      p._api,
+      p._cache,
+      p._bucket,
+      path,
+      p.get_ntp(),
+      meta,
+      p._rtc,
+      p._probe,
+      p._ts_probe);
     p.materialized().register_segment(*this);
 }
 
@@ -52,6 +60,7 @@ materialized_segment_state::borrow_reader(
   const storage::log_reader_config& cfg,
   retry_chain_logger& ctxlog,
   partition_probe& probe,
+  ts_read_path_probe& ts_probe,
   segment_reader_units unit) {
     atime = ss::lowres_clock::now();
     for (auto it = readers.begin(); it != readers.end(); it++) {
@@ -70,7 +79,7 @@ materialized_segment_state::borrow_reader(
     vlog(ctxlog.debug, "creating new reader, config: {}", cfg);
 
     return std::make_unique<remote_segment_batch_reader>(
-      segment, cfg, probe, std::move(unit));
+      segment, cfg, probe, ts_probe, std::move(unit));
 }
 
 ss::future<> materialized_segment_state::stop() {

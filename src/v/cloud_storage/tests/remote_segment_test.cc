@@ -11,6 +11,7 @@
 #include "bytes/iobuf.h"
 #include "bytes/iobuf_parser.h"
 #include "bytes/iostream.h"
+#include "cloud_storage/materialized_resources.h"
 #include "cloud_storage/offset_translation_layer.h"
 #include "cloud_storage/partition_manifest.h"
 #include "cloud_storage/remote.h"
@@ -105,6 +106,8 @@ FIXTURE_TEST(
     m.add(meta);
 
     partition_probe probe{manifest_ntp};
+    auto& ts_probe = api.local().materialized().get_read_path_probe();
+    ;
     remote_segment segment(
       api.local(),
       cache.local(),
@@ -113,7 +116,8 @@ FIXTURE_TEST(
       m.get_ntp(),
       meta,
       fib,
-      probe);
+      probe,
+      ts_probe);
 
     auto reader_handle
       = segment.data_stream(0, ss::default_priority_class()).get();
@@ -148,6 +152,7 @@ FIXTURE_TEST(test_remote_segment_timeout, cloud_storage_fixture) { // NOLINT
     retry_chain_node fib(never_abort, 100ms, 20ms);
     auto meta = *m.get(name);
     partition_probe probe{manifest_ntp};
+    auto& ts_probe = api.local().materialized().get_read_path_probe();
     remote_segment segment(
       api.local(),
       cache.local(),
@@ -156,7 +161,8 @@ FIXTURE_TEST(test_remote_segment_timeout, cloud_storage_fixture) { // NOLINT
       m.get_ntp(),
       meta,
       fib,
-      probe);
+      probe,
+      ts_probe);
 
     BOOST_REQUIRE_THROW(
       segment.data_stream(0, ss::default_priority_class()).get(),
@@ -233,6 +239,7 @@ FIXTURE_TEST(
       model::offset(1), model::offset(1), ss::default_priority_class());
 
     partition_probe probe(manifest_ntp);
+    auto& ts_probe = api.local().materialized().get_read_path_probe();
     auto segment = ss::make_lw_shared<remote_segment>(
       api.local(),
       cache.local(),
@@ -241,10 +248,11 @@ FIXTURE_TEST(
       m.get_ntp(),
       meta,
       fib,
-      probe);
+      probe,
+      ts_probe);
 
     remote_segment_batch_reader reader(
-      segment, reader_config, probe, ssx::semaphore_units());
+      segment, reader_config, probe, ts_probe, ssx::semaphore_units());
     storage::offset_translator_state ot_state(m.get_ntp());
 
     auto s = reader.read_some(model::no_timeout, ot_state).get();
@@ -334,6 +342,7 @@ void test_remote_segment_batch_reader(
     reader_config.max_bytes = std::numeric_limits<size_t>::max();
 
     partition_probe probe(manifest_ntp);
+    auto& ts_probe = fixture.api.local().materialized().get_read_path_probe();
     auto segment = ss::make_lw_shared<remote_segment>(
       fixture.api.local(),
       fixture.cache.local(),
@@ -342,10 +351,11 @@ void test_remote_segment_batch_reader(
       m.get_ntp(),
       meta,
       fib,
-      probe);
+      probe,
+      ts_probe);
 
     remote_segment_batch_reader reader(
-      segment, reader_config, probe, ssx::semaphore_units());
+      segment, reader_config, probe, ts_probe, ssx::semaphore_units());
     storage::offset_translator_state ot_state(m.get_ntp());
 
     size_t batch_ix = 0;
@@ -443,6 +453,7 @@ FIXTURE_TEST(
     m.add(meta);
 
     partition_probe probe(manifest_ntp);
+    auto& ts_probe = api.local().materialized().get_read_path_probe();
     auto segment = ss::make_lw_shared<remote_segment>(
       api.local(),
       cache.local(),
@@ -451,7 +462,8 @@ FIXTURE_TEST(
       m.get_ntp(),
       meta,
       fib,
-      probe);
+      probe,
+      ts_probe);
 
     remote_segment_batch_reader reader(
       segment,
@@ -460,6 +472,7 @@ FIXTURE_TEST(
         headers.at(0).last_offset(),
         ss::default_priority_class()),
       probe,
+      ts_probe,
       ssx::semaphore_units());
     storage::offset_translator_state ot_state(m.get_ntp());
 
@@ -553,6 +566,7 @@ FIXTURE_TEST(test_remote_segment_chunk_read, cloud_storage_fixture) {
     auto m = chunk_read_baseline(*this, key, fib, segment_bytes.copy());
     auto meta = *m.get(key);
     partition_probe probe(manifest_ntp);
+    auto& ts_probe = api.local().materialized().get_read_path_probe();
     remote_segment segment(
       api.local(),
       cache.local(),
@@ -561,7 +575,8 @@ FIXTURE_TEST(test_remote_segment_chunk_read, cloud_storage_fixture) {
       m.get_ntp(),
       meta,
       fib,
-      probe);
+      probe,
+      ts_probe);
 
     // The offset data stream uses an implementation which will iterate over all
     // chunks in the segment.
@@ -615,6 +630,7 @@ FIXTURE_TEST(test_remote_segment_chunk_read_fallback, cloud_storage_fixture) {
 
     auto meta = *m.get(key);
     partition_probe probe(manifest_ntp);
+    auto& ts_probe = api.local().materialized().get_read_path_probe();
     remote_segment segment(
       api.local(),
       cache.local(),
@@ -623,7 +639,8 @@ FIXTURE_TEST(test_remote_segment_chunk_read_fallback, cloud_storage_fixture) {
       m.get_ntp(),
       meta,
       fib,
-      probe);
+      probe,
+      ts_probe);
 
     auto stream = segment
                     .offset_data_stream(
@@ -696,6 +713,7 @@ FIXTURE_TEST(test_chunks_initialization, cloud_storage_fixture) {
 
     auto meta = *m.get(key);
     partition_probe probe(manifest_ntp);
+    auto& ts_probe = api.local().materialized().get_read_path_probe();
     remote_segment segment(
       api.local(),
       cache.local(),
@@ -704,7 +722,8 @@ FIXTURE_TEST(test_chunks_initialization, cloud_storage_fixture) {
       m.get_ntp(),
       meta,
       fib,
-      probe);
+      probe,
+      ts_probe);
 
     segment_chunks chunk_api{segment, segment.max_hydrated_chunks()};
 
@@ -756,6 +775,7 @@ FIXTURE_TEST(test_chunk_hydration, cloud_storage_fixture) {
 
     auto meta = *m.get(key);
     partition_probe probe(manifest_ntp);
+    auto& ts_probe = api.local().materialized().get_read_path_probe();
     remote_segment segment(
       api.local(),
       cache.local(),
@@ -764,7 +784,8 @@ FIXTURE_TEST(test_chunk_hydration, cloud_storage_fixture) {
       m.get_ntp(),
       meta,
       fib,
-      probe);
+      probe,
+      ts_probe);
 
     segment_chunks chunk_api{segment, segment.max_hydrated_chunks()};
 
@@ -838,6 +859,7 @@ FIXTURE_TEST(test_chunk_future_reader_stats, cloud_storage_fixture) {
 
     auto meta = *m.get(key);
     partition_probe probe(manifest_ntp);
+    auto& ts_probe = api.local().materialized().get_read_path_probe();
     remote_segment segment(
       api.local(),
       cache.local(),
@@ -846,7 +868,8 @@ FIXTURE_TEST(test_chunk_future_reader_stats, cloud_storage_fixture) {
       m.get_ntp(),
       meta,
       fib,
-      probe);
+      probe,
+      ts_probe);
 
     segment_chunks chunk_api{segment, segment.max_hydrated_chunks()};
     auto close_segment = ss::defer([&segment] { segment.stop().get(); });
@@ -889,6 +912,8 @@ FIXTURE_TEST(test_chunk_multiple_readers, cloud_storage_fixture) {
     auto meta = *m.get(key);
 
     partition_probe probe(manifest_ntp);
+    auto& ts_probe = api.local().materialized().get_read_path_probe();
+    ;
 
     auto segment = ss::make_lw_shared<remote_segment>(
       api.local(),
@@ -898,7 +923,8 @@ FIXTURE_TEST(test_chunk_multiple_readers, cloud_storage_fixture) {
       m.get_ntp(),
       meta,
       fib,
-      probe);
+      probe,
+      ts_probe);
 
     segment_chunks chunk_api{*segment, segment->max_hydrated_chunks()};
     auto close_segment = ss::defer([&segment] { segment->stop().get(); });
@@ -917,7 +943,7 @@ FIXTURE_TEST(test_chunk_multiple_readers, cloud_storage_fixture) {
 
     for (auto i = 0; i < 1000; ++i) {
         readers.push_back(std::make_unique<remote_segment_batch_reader>(
-          segment, reader_config, probe, ssx::semaphore_units()));
+          segment, reader_config, probe, ts_probe, ssx::semaphore_units()));
     }
 
     auto all_readers_done = [&readers] {
@@ -963,6 +989,8 @@ FIXTURE_TEST(test_chunk_prefetch, cloud_storage_fixture) {
     const auto m = chunk_read_baseline(*this, key, fib, segment_bytes.copy());
     const auto meta = *m.get(key);
     partition_probe probe(manifest_ntp);
+    auto& ts_probe = api.local().materialized().get_read_path_probe();
+    ;
     remote_segment segment(
       api.local(),
       cache.local(),
@@ -971,7 +999,8 @@ FIXTURE_TEST(test_chunk_prefetch, cloud_storage_fixture) {
       m.get_ntp(),
       meta,
       fib,
-      probe);
+      probe,
+      ts_probe);
 
     segment_chunks chunk_api{segment, segment.max_hydrated_chunks()};
 

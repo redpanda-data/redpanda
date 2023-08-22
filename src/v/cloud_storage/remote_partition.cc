@@ -72,7 +72,7 @@ remote_partition::iterator remote_partition::materialize_segment(
       base_kafka_offset,
       meta.committed_offset,
       iter->second->segment->get_max_rp_offset());
-    _probe.segment_materialized();
+    _ts_probe.segment_materialized();
     return iter;
 }
 
@@ -183,7 +183,7 @@ remote_partition::borrow_result_t remote_partition::borrow_next_segment_reader(
                                   : next_it->base_offset;
     return borrow_result_t{
       .reader = iter->second->borrow_reader(
-        config, _ctxlog, _probe, std::move(segment_reader_unit)),
+        config, _ctxlog, _probe, _ts_probe, std::move(segment_reader_unit)),
       .next_segment_offset = next_offset};
 }
 
@@ -222,13 +222,13 @@ public:
             }
         }
         co_await init_cursor(config);
-        _partition->_probe.reader_created();
+        _partition->_ts_probe.reader_created();
     }
 
     ~partition_record_batch_reader_impl() noexcept override {
         auto ntp = _partition->get_ntp();
         vlog(_ctxlog.trace, "Destructing reader {}", ntp);
-        _partition->_probe.reader_destroyed();
+        _partition->_ts_probe.reader_destroyed();
         if (_reader) {
             // We must not destroy this reader: it is not safe to do so
             // without calling stop() on it.  The remote_partition is
@@ -737,7 +737,8 @@ remote_partition::remote_partition(
   , _cache(c)
   , _manifest_view(m)
   , _bucket(std::move(bucket))
-  , _probe(probe) {}
+  , _probe(probe)
+  , _ts_probe(api.materialized().get_read_path_probe()) {}
 
 ss::future<> remote_partition::start() {
     // Fiber that consumers from _eviction_list and calls stop on items before

@@ -25,6 +25,7 @@ class remote_partition;
 struct materialized_segment_state;
 class remote_segment_batch_reader;
 class partition_probe;
+class ts_read_path_probe;
 
 /// State with materialized segment and cached reader
 ///
@@ -46,6 +47,7 @@ struct materialized_segment_state {
       const storage::log_reader_config& cfg,
       retry_chain_logger& ctxlog,
       partition_probe& probe,
+      ts_read_path_probe& ts_probe,
       segment_reader_units unit);
 
     ss::future<> stop();
