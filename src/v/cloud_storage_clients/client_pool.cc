@@ -172,9 +172,14 @@ ss::future<> client_pool::stop() {
     // Wait until all leased objects are returned
     co_await _gate.close();
 
+    std::vector<ss::future<>> stops;
+    stops.reserve(_pool.size());
+
     for (auto& it : _pool) {
-        co_await it->stop();
+        stops.emplace_back(it->stop());
     }
+
+    co_await ss::when_all_succeed(stops.begin(), stops.end());
 
     vlog(pool_log.info, "Stopped client pool");
     _probe = nullptr;
