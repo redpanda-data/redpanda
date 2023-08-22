@@ -13,6 +13,7 @@
 #include "vassert.h"
 
 #include <cstddef>
+#include <iterator>
 #include <stdexcept>
 #include <type_traits>
 #include <utility>
@@ -97,6 +98,16 @@ public:
     }
     ~fragmented_vector() noexcept = default;
 
+    template<typename Iter>
+    requires std::input_iterator<Iter> fragmented_vector(Iter begin, Iter end)
+      : fragmented_vector() {
+        // Improvement: Write a more efficient implementation for
+        // random_access_iterators
+        for (auto it = begin; it != end; ++it) {
+            push_back(*it);
+        }
+    }
+
     fragmented_vector copy() const noexcept { return *this; }
 
     void swap(fragmented_vector& other) noexcept {
@@ -113,10 +124,11 @@ public:
     }
 
     template<class... Args>
-    void emplace_back(Args&&... args) {
+    T& emplace_back(Args&&... args) {
         maybe_add_capacity();
         _frags.back().emplace_back(std::forward<Args>(args)...);
         ++_size;
+        return _frags.back().back();
     }
 
     void pop_back() {
@@ -126,6 +138,32 @@ public:
         if (_frags.back().empty()) {
             _frags.pop_back();
             _capacity -= elems_per_frag;
+        }
+    }
+
+    /*
+     * Replacement for `erase(some_it, end())` but more efficient than n
+     * `pop_back()s`
+     */
+    void pop_back_n(size_t n) {
+        vassert(
+          _size >= n, "Cannot pop more than size() elements in container");
+
+        if (_size == n) {
+            clear();
+            return;
+        }
+
+        _size -= n;
+
+        while (n >= _frags.back().size()) {
+            n -= _frags.back().size();
+            _frags.pop_back();
+            _capacity -= elems_per_frag;
+        }
+
+        for (size_t i = 0; i < n; ++i) {
+            _frags.back().pop_back();
         }
     }
 
@@ -141,6 +179,8 @@ public:
 
     const T& front() const { return _frags.front().front(); }
     const T& back() const { return _frags.back().back(); }
+    T& front() { return _frags.front().front(); }
+    T& back() { return _frags.back().back(); }
     bool empty() const noexcept { return _size == 0; }
     size_t size() const noexcept { return _size; }
 
