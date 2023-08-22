@@ -22,14 +22,19 @@
 #include "kafka/protocol/request_reader.h"
 #include "kafka/server/group_metadata.h"
 #include "kafka/server/group_recovery_consumer.h"
+#include "kafka/server/logger.h"
 #include "model/fundamental.h"
 #include "model/namespace.h"
 #include "model/record.h"
+#include "raft/errc.h"
+#include "raft/types.h"
 #include "resource_mgmt/io_priority.h"
 #include "ssx/future-util.h"
 
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/loop.hh>
+
+#include <system_error>
 
 namespace kafka {
 
@@ -275,17 +280,27 @@ void group_manager::handle_leader_change(
     });
 }
 
-ss::future<> group_manager::inject_noop(
+ss::future<std::error_code> group_manager::inject_noop(
   ss::lw_shared_ptr<cluster::partition> p,
-  [[maybe_unused]] ss::lowres_clock::time_point timeout) {
+  ss::lowres_clock::time_point timeout) {
     auto dirty_offset = p->dirty_offset();
     auto barrier_offset = co_await p->linearizable_barrier();
+    if (barrier_offset.has_error()) {
+        co_return barrier_offset.error();
+    }
     // synchronization provided by raft after future resolves is sufficient to
     // get an up-to-date commit offset as an upperbound for our reader.
     while (barrier_offset.has_value()
            && barrier_offset.value() < dirty_offset) {
         barrier_offset = co_await p->linearizable_barrier();
+        if (barrier_offset.has_error()) {
+            co_return barrier_offset.error();
+        }
+        if (ss::lowres_clock::now() > timeout) {
+            co_return raft::errc::timeout;
+        }
     }
+    co_return raft::errc::success;
 }
 
 ss::future<>
@@ -354,7 +369,17 @@ ss::future<> group_manager::handle_partition_leader_change(
     return p->catchup_lock->hold_write_lock().then(
       [this, term, timeout, p](ss::basic_rwlock<>::holder unit) {
           return inject_noop(p->partition, timeout)
-            .then([this, term, timeout, p] {
+            .then([this, term, timeout, p](std::error_code error) {
+                if (error) {
+                    vlog(
+                      klog.warn,
+                      "error injecting partition {} linearizable barrier - {}",
+                      p->partition->ntp(),
+                      error.message());
+                    return p->partition->raft()->step_down(
+                      "unable to recover group");
+                }
+
                 /*
                  * the full log is read and deduplicated. the dedupe
                  * processing is based on the record keys, so this code
