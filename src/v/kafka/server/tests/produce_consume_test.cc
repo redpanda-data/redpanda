@@ -785,3 +785,86 @@ FIXTURE_TEST(test_basic_delete_around_batch, prod_consume_fixture) {
     BOOST_REQUIRE(!consumed_records.empty());
     BOOST_REQUIRE_EQUAL("key7", consumed_records[0].key);
 }
+
+FIXTURE_TEST(test_produce_bad_timestamps, prod_consume_fixture) {
+    /*
+     * this tests produces messages with timestamps in the future and in the
+     * past, and checks that the metric
+     * vectorized_kafka_rpc_produces_with_timestamps_out_of_bounds is correctly
+     * incremented.
+     */
+
+    wait_for_controller_leadership().get0();
+    start();
+    auto ntp = model::ntp(
+      model::ns("kafka"), test_topic, model::partition_id(0));
+
+    auto producer = tests::kafka_produce_transport(make_kafka_client().get());
+    producer.start().get();
+
+    // helper to produce a bunch of messages with some drift applied to the
+    // timestamps. the drift is the same for all the messages, but a more
+    // advaced test would be to have a range of drifts from start to finish
+    auto produce_messages = [&](std::chrono::system_clock::duration drift) {
+        producer
+          .produce_to_partition(
+            ntp.tp.topic,
+            ntp.tp.partition,
+            {
+              {"key0", "val0"},
+              {"key1", "val1"},
+              {"key2", "val2"},
+            },
+            model::to_timestamp(std::chrono::system_clock::now() + drift))
+          .get();
+    };
+
+    BOOST_TEST_INFO("expect produce_bad_create_time to be 0");
+    auto bad_timestamps_metric
+      = app._kafka_server.local().probe().get_produce_bad_create_time();
+    BOOST_CHECK_EQUAL(0, bad_timestamps_metric);
+
+    BOOST_TEST_INFO("messages with no skew do not trigger the probe");
+    produce_messages(0s);
+    BOOST_CHECK_EQUAL(
+      0, app._kafka_server.local().probe().get_produce_bad_create_time());
+
+    BOOST_TEST_INFO(
+      "messages with a skew towards the future trigger the probe");
+    config::shard_local_cfg().log_message_timestamp_alert_after_ms.set_value(
+      std::chrono::duration_cast<std::chrono::milliseconds>(1h));
+    produce_messages(2h);
+    BOOST_CHECK_LT(
+      bad_timestamps_metric,
+      app._kafka_server.local().probe().get_produce_bad_create_time());
+
+    bad_timestamps_metric
+      = app._kafka_server.local().probe().get_produce_bad_create_time();
+
+    BOOST_TEST_INFO("messages with a skew towards the past trigger the probe");
+    config::shard_local_cfg().log_message_timestamp_alert_before_ms.set_value(
+      std::optional{std::chrono::duration_cast<std::chrono::milliseconds>(1h)});
+    produce_messages(-2h);
+    BOOST_CHECK_LT(
+      bad_timestamps_metric,
+      app._kafka_server.local().probe().get_produce_bad_create_time());
+
+    bad_timestamps_metric
+      = app._kafka_server.local().probe().get_produce_bad_create_time();
+
+    BOOST_TEST_INFO("messages within the bounds to not trigger the probe");
+    produce_messages(-30min);
+    produce_messages(30min);
+    BOOST_CHECK_EQUAL(
+      bad_timestamps_metric,
+      app._kafka_server.local().probe().get_produce_bad_create_time());
+
+    BOOST_TEST_INFO("disabling the alert for the past allows messages in the "
+                    "past without triggering the probe");
+    config::shard_local_cfg().log_message_timestamp_alert_before_ms.set_value(
+      std::optional<std::chrono::milliseconds>{});
+    produce_messages(-365 * 24h);
+    BOOST_CHECK_EQUAL(
+      bad_timestamps_metric,
+      app._kafka_server.local().probe().get_produce_bad_create_time());
+}
