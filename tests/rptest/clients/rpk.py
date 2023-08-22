@@ -1380,8 +1380,11 @@ class RpkTool:
 
         return self._run_registry(cmd)
 
-    def create_schema(self, subject, schema_path):
+    def create_schema(self, subject, schema_path, references=None):
         cmd = ["schema", "create", subject, "--schema", schema_path]
+
+        if references is not None:
+            cmd += ["--references", references]
 
         return self._run_registry(cmd)
 
@@ -1431,7 +1434,7 @@ class RpkTool:
         if deleted:
             cmd += ["--deleted"]
 
-        return self._run_registry(cmd, output_format="text")
+        return self._run_registry(cmd)
 
     def list_subjects(self, deleted=False):
         cmd = ["subject", "list"]

@@ -29,6 +29,15 @@ message Simple {
   string id = 1;
 }"""
 
+imported_proto_def = """
+syntax = "proto3";
+
+import "simple";
+
+message Test2 {
+  Simple id =  1;
+}"""
+
 
 class RpkRegistryTest(RedpandaTest):
     username = "red"
@@ -87,17 +96,20 @@ class RpkRegistryTest(RedpandaTest):
                                    self.admin_user.password,
                                    self.admin_user.algorithm)
 
-    def create_schema(self, subject, schema, suffix):
+    def create_schema(self, subject, schema, suffix, references=None):
         with tempfile.NamedTemporaryFile(suffix=suffix) as tf:
             tf.write(bytes(schema, 'UTF-8'))
             tf.seek(0)
-            out = self._rpk.create_schema(subject, tf.name)
+            out = self._rpk.create_schema(subject,
+                                          tf.name,
+                                          references=references)
             assert out["subject"] == subject
 
     @cluster(num_nodes=3)
     def test_registry_schema(self):
         subject_1 = "test_subject_1"
         subject_2 = "test_subject_2"
+        subject_3 = "test_subject_3"
 
         self.create_schema(subject_1, schema1_avro_def,
                            ".avro")  # version: 1, ID: 1
@@ -143,6 +155,19 @@ class RpkRegistryTest(RedpandaTest):
         assert find_subject(out, subject_1)
         assert find_subject(out, subject_2)
 
+        # References. Subject 3 references subject 2
+        self.create_schema(
+            subject_3,
+            imported_proto_def,
+            ".proto",
+            references=f"simple:{subject_2}:1")  # version: 1, ID: 3
+
+        out = self._rpk.schema_references(subject_2, "1")
+        assert len(out) == 1
+        assert out[0]["subject"] == subject_3
+        assert out[0]["version"] == 1
+        assert out[0]["id"] == 3
+
         # Soft Delete.
         self._rpk.delete_schema(subject_1, version="1")
         with expect_exception(RpkException, lambda e: "not found" in str(e)):
@@ -155,7 +180,15 @@ class RpkRegistryTest(RedpandaTest):
         out = self._rpk.list_schemas(deleted=True)
         assert find_subject(out, subject_1)
 
-        # Hard Delete
+        # We can't delete a schema if we still have a reference.
+        with expect_exception(
+                RpkException, lambda e:
+                "One or more references exist to the schema" in str(e)):
+            self._rpk.delete_schema(subject_2, version="1", permanent=True)
+
+        # First we delete the subject/schema that use the reference:
+        self._rpk.delete_schema(subject_3, version="1", permanent=True)
+        # Then we can Hard Delete the Subject.
         self._rpk.delete_schema(subject_2, version="1", permanent=True)
         out = self._rpk.list_schemas(deleted=True)
         assert not find_subject(out, subject_2)  # Not in the deleted list.

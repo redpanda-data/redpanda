@@ -12,6 +12,7 @@ package schema
 import (
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/out"
@@ -26,7 +27,12 @@ type compatCheckResponse struct {
 }
 
 func newCheckCompatibilityCommand(fs afero.Fs, p *config.Params) *cobra.Command {
-	var schemaFile, schemaType, sversion string
+	var (
+		refs       string
+		schemaFile string
+		schemaType string
+		sversion   string
+	)
 	cmd := &cobra.Command{
 		Use:   "check-compatibility SUBJECT",
 		Short: "Check schema compatibility with existing schemas in the subject",
@@ -51,10 +57,14 @@ func newCheckCompatibilityCommand(fs afero.Fs, p *config.Params) *cobra.Command 
 			t, err := resolveSchemaType(schemaType, schemaFile)
 			out.MaybeDieErr(err)
 
+			references, err := parseReferenceFlag(fs, refs)
+			out.MaybeDie(err, "unable to parse reference flag %q: %v", refs, err)
+
 			subject := args[0]
 			schema := sr.Schema{
-				Schema: string(file),
-				Type:   t,
+				Schema:     string(file),
+				Type:       t,
+				References: references,
 			}
 			compatible, err := cl.CheckCompatibility(cmd.Context(), subject, version, schema)
 			out.MaybeDie(err, "unable to check compatibility: %v", err)
@@ -73,6 +83,7 @@ func newCheckCompatibilityCommand(fs afero.Fs, p *config.Params) *cobra.Command 
 	cmd.Flags().StringVar(&schemaFile, "schema", "", "Schema filepath to check, must be .avro or .proto")
 	cmd.Flags().StringVar(&schemaType, "type", "", fmt.Sprintf("Schema type (%v); overrides schema file extension", strings.Join(supportedTypes, ",")))
 	cmd.Flags().StringVar(&sversion, "schema-version", "", "Schema version to check compatibility with (latest, 0, 1...)")
+	cmd.Flags().StringVar(&refs, "references", "", "Comma-separated list of references (name:subject:version) or path to reference file")
 
 	cmd.MarkFlagRequired("schema")
 	cmd.MarkFlagRequired("schema-version")

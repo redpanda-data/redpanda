@@ -132,3 +132,53 @@ func typeFromFile(schemaFile string) (sr.SchemaType, error) {
 		return 0, fmt.Errorf("unable to determine the schema type from %q", schemaFile)
 	}
 }
+
+// parseReferenceFlag parses the --reference flag which can be either a comma
+// separated list of name:subject:version or a path to a file containing the
+// schema references.
+func parseReferenceFlag(fs afero.Fs, referenceFlag string) ([]sr.SchemaReference, error) {
+	if referenceFlag == "" {
+		// An empty flag is ok. We just send an empty list.
+		return []sr.SchemaReference{}, nil
+	}
+	var references []sr.SchemaReference
+	if strings.Contains(referenceFlag, ":") {
+		split := strings.Split(referenceFlag, ",")
+		for _, v := range split {
+			s := strings.SplitN(v, ":", 3)
+			if len(s) != 3 {
+				return nil, fmt.Errorf("unexpected format %q, please use name:subject:version format", referenceFlag)
+			}
+			name, subject, versionString := s[0], s[1], s[2]
+			if name == "" || subject == "" || versionString == "" {
+				return nil, fmt.Errorf("invalid empty values in %q", referenceFlag)
+			}
+			version, err := strconv.Atoi(versionString)
+			if err != nil {
+				return nil, fmt.Errorf("unable to parse version %q: %v", versionString, err)
+			}
+			references = append(references, sr.SchemaReference{
+				Name:    name,
+				Subject: subject,
+				Version: version,
+			})
+		}
+	} else {
+		parsed, err := out.ParseFileArray[struct {
+			Name    string `json:"name" yaml:"name"`
+			Subject string `json:"subject" yaml:"subject"`
+			Version int    `json:"version" yaml:"version"`
+		}](fs, referenceFlag)
+		if err != nil {
+			return nil, fmt.Errorf("unable to parse reference file: %v", err)
+		}
+		for _, r := range parsed {
+			references = append(references, sr.SchemaReference{
+				Name:    r.Name,
+				Subject: r.Subject,
+				Version: r.Version,
+			})
+		}
+	}
+	return references, nil
+}
