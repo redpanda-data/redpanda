@@ -52,6 +52,7 @@ public:
       ss::sharded<cluster::members_table>&,
       ss::sharded<partition_manager>&,
       ss::sharded<shard_table>&,
+      plugin_table&,
       config::binding<unsigned>);
 
     ss::future<std::vector<topic_result>> create_topics(
@@ -239,6 +240,7 @@ private:
     ss::sharded<ss::abort_source>& _as;
     ss::sharded<cloud_storage::remote>& _cloud_storage_api;
     ss::sharded<features::feature_table>& _features;
+    plugin_table& _plugin_table;
 
     ss::sharded<cluster::members_table>& _members_table;
     ss::sharded<partition_manager>& _pm;
