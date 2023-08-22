@@ -21,6 +21,7 @@
 #include "cluster/members_manager.h"
 #include "cluster/metadata_cache.h"
 #include "cluster/partition_manager.h"
+#include "cluster/plugin_frontend.h"
 #include "cluster/security_frontend.h"
 #include "cluster/topics_frontend.h"
 #include "cluster/types.h"
@@ -33,12 +34,14 @@
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/future.hh>
 #include <seastar/core/sharded.hh>
+#include <seastar/coroutine/switch_to.hh>
 
 namespace cluster {
 service::service(
   ss::scheduling_group sg,
   ss::smp_service_group ssg,
   ss::sharded<topics_frontend>& tf,
+  ss::sharded<plugin_frontend>& pf,
   ss::sharded<members_manager>& mm,
   ss::sharded<metadata_cache>& cache,
   ss::sharded<security_frontend>& sf,
@@ -64,7 +67,8 @@ service::service(
   , _feature_table(feature_table)
   , _hm_frontend(hm_frontend)
   , _conn_cache(conn_cache)
-  , _partition_manager(partition_manager) {}
+  , _partition_manager(partition_manager)
+  , _plugin_frontend(pf) {}
 
 ss::future<join_node_reply>
 service::join_node(join_node_request&& req, rpc::streaming_context&) {
@@ -767,6 +771,22 @@ service::do_get_partition_state(partition_state_request req) {
           reply.error_code = errc::success;
           return ss::make_ready_future<partition_state_reply>(reply);
       });
+}
+
+ss::future<upsert_plugin_response>
+service::upsert_plugin(upsert_plugin_request&& req, rpc::streaming_context&) {
+    co_await ss::coroutine::switch_to(get_scheduling_group());
+    auto ec = co_await _plugin_frontend.local().upsert_transform(
+      std::move(req.transform), model::timeout_clock::now() + req.timeout);
+    co_return upsert_plugin_response{.ec = ec};
+}
+
+ss::future<remove_plugin_response>
+service::remove_plugin(remove_plugin_request&& req, rpc::streaming_context&) {
+    co_await ss::coroutine::switch_to(get_scheduling_group());
+    auto result = co_await _plugin_frontend.local().remove_transform(
+      std::move(req.name), model::timeout_clock::now() + req.timeout);
+    co_return remove_plugin_response{.uuid = result.uuid, .ec = result.ec};
 }
 
 } // namespace cluster
