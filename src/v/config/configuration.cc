@@ -480,6 +480,28 @@ configuration::configuration()
        .visibility = visibility::user},
       model::timestamp_type::create_time,
       {model::timestamp_type::create_time, model::timestamp_type::append_time})
+  , log_message_timestamp_alert_before_ms(
+      *this,
+      "log_message_timestamp_alert_before_ms",
+      "Threshold in milliseconds for alerting on messages with a timestamp "
+      "before the broker's time, meaning they are in the past relative to the "
+      "broker's clock. null to disable this check",
+      {.needs_restart = needs_restart::no,
+       .example = "604800000",
+       .visibility = visibility::tunable},
+      std::nullopt,
+      {.min = 5min})
+  , log_message_timestamp_alert_after_ms(
+      *this,
+      "log_message_timestamp_alert_after_ms",
+      "Threshold in milliseconds for alerting on messages with a timestamp "
+      "after the broker's time, meaning they are in the future relative to the "
+      "broker's clock.",
+      {.needs_restart = needs_restart::no,
+       .example = "3600000",
+       .visibility = visibility::tunable},
+      2h,
+      {.min = 5min})
   , log_compression_type(
       *this,
       "log_compression_type",
