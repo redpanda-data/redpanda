@@ -1480,6 +1480,8 @@ class RedpandaServiceCloud(RedpandaServiceK8s):
             self,
             remote_uri=remote_uri,
             cluster_id=self._cloud_cluster.config.id,
+            cluster_privider=self._cloud_cluster.config.provider,
+            cluster_region=self._cloud_cluster.config.region,
             tp_proxy=self._cloud_cluster.config.teleport_auth_server,
             tp_token=self._cloud_cluster.config.teleport_bot_token)
 
