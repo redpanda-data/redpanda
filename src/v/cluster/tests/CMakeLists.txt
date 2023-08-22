@@ -127,6 +127,7 @@ rp_test(
   BINARY_NAME plugin_test
   SOURCES 
     plugin_table_test.cc
+    plugin_frontend_validation_test.cc
   LIBRARIES 
     v::gtest_main 
     v::cluster
