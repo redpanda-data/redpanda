@@ -235,6 +235,84 @@ ss::future<produce_response::partition> finalize_request_with_error_code(
 }
 
 /**
+ * @brief Validate the timestamps of the batch, they have to be within a window
+ * to the broker's time. returns the new timestamp to set as max_timestamp to
+ * the batch, if present
+ */
+static auto validate_batch_timestamps(
+  model::ntp const& ntp,
+  model::record_batch_header const& header,
+  model::timestamp_type timestamp_type,
+  net::server_probe& probe) -> std::optional<model::timestamp> {
+    // we compute in std::chrono::timepoints, we print in model::timestamps
+    auto broker_time = model::timestamp::now();
+    auto broker_timepoint = model::duration_since_epoch(broker_time);
+
+    // alert if first_timestamp is too far in the past
+    // default value for threshold basically disables this check, so it's
+    // wrapped in a if check
+    if (auto max_before = config::shard_local_cfg()
+                            .log_message_timestamp_alert_before_ms.value();
+        unlikely(max_before)) {
+        auto first_timepoint = model::duration_since_epoch(
+          header.first_timestamp);
+        if (
+          broker_timepoint > first_timepoint
+          && std::chrono::duration_cast<std::chrono::milliseconds>(
+               broker_timepoint - first_timepoint)
+               > max_before.value()) {
+            // generate an alert
+            thread_local static ss::logger::rate_limit rate(despam_interval);
+            klog.log(
+              ss::log_level::warn,
+              rate,
+              "produce request timestamp for {} was before the alert "
+              "threshold, broker time: {}, timestamp: {}",
+              ntp,
+              broker_time,
+              header.first_timestamp);
+            // it's expected that to debug this, the observer will need to check
+            // the logs for the npt that triggered the alert
+            probe.produce_bad_create_time();
+        }
+    }
+
+    // alert if max_timestamp is too far in the future
+    if (timestamp_type == model::timestamp_type::create_time) {
+        auto max_after = config::shard_local_cfg()
+                           .log_message_timestamp_alert_after_ms.value();
+        auto max_timepoint = model::duration_since_epoch(header.max_timestamp);
+        if (
+          broker_timepoint < max_timepoint
+          && std::chrono::duration_cast<std::chrono::milliseconds>(
+               max_timepoint - broker_timepoint)
+               > max_after) {
+            // same as above, generate an alert
+            thread_local static ss::logger::rate_limit rate(despam_interval);
+            klog.log(
+              ss::log_level::warn,
+              rate,
+              "produce request timestamp for {} was past the alert threshold, "
+              "broker time: {}, timestamp: {}",
+              ntp,
+              broker_time,
+              header.max_timestamp);
+            probe.produce_bad_create_time();
+        }
+    }
+
+    /*
+     * For append time setting we have to recompute
+     * the CRC.
+     */
+    if (timestamp_type == model::timestamp_type::append_time) {
+        return broker_time;
+    } else {
+        return std::nullopt;
+    }
+}
+
+/**
  * \brief handle writing to a single topic partition.
  */
 static partition_produce_stages produce_topic_partition(
@@ -267,19 +345,18 @@ static partition_produce_stages produce_topic_partition(
           .partition_index = ntp.tp.partition,
           .error_code = error_code::unknown_topic_or_partition});
     }
-    /*
-     * grab timestamp type topic configuration option out of the
-     * metadata cache. For append time setting we have to recalculate
-     * the CRC.
-     */
+
     const auto timestamp_type = topic_cfg->properties.timestamp_type.value_or(
       octx.rctx.metadata_cache().get_default_timestamp_type());
     const auto batch_max_bytes = topic_cfg->properties.batch_max_bytes.value_or(
       octx.rctx.metadata_cache().get_default_batch_max_bytes());
 
-    if (timestamp_type == model::timestamp_type::append_time) {
+    // validate the batch timestamps by checking skew against broker time
+    if (
+      auto new_timestamp = validate_batch_timestamps(
+        ntp, batch.header(), timestamp_type, octx.rctx.server_probe())) {
         batch.set_max_timestamp(
-          model::timestamp_type::append_time, model::timestamp::now());
+          model::timestamp_type::append_time, new_timestamp.value());
     }
 
     const auto& hdr = batch.header();
