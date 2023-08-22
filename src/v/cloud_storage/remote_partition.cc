@@ -988,7 +988,7 @@ remote_partition::timequery(storage::timequery_config cfg) {
         co_return std::nullopt;
     }
 
-    auto start_offset = stm_manifest.get_start_kafka_offset().value();
+    auto start_offset = stm_manifest.full_log_start_kafka_offset().value();
 
     // Synthesize a log_reader_config from our timequery_config
     storage::log_reader_config config(
