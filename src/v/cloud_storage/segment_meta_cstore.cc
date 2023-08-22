@@ -37,15 +37,15 @@ using gauge_col_t = segment_meta_column<int64_t, int64_xor_alg>;
 
 /// Sampling rate of the indexer inside the column store, if
 /// sampling_rate == 1 every row is indexed, 2 - every second row, etc
-/// The value 8 with max_frame_size set to 64 will give us 8 hints per
+/// The value 8 with max_frame_size set to 1024 will give us 8 hints per
 /// frame (frame has 64 rows). There is no measurable difference between
 /// value 8 and smaller values.
-static constexpr uint32_t sampling_rate = 8;
-
 // Sampling rate should be proportional to max_frame_size so we will
 // sample first row of every frame.
 static_assert(
-  gauge_col_t::max_frame_size % sampling_rate == 0, "Invalid sampling rate");
+  cstore_max_frame_size % (details::FOR_buffer_depth * cstore_sampling_rate)
+    == 0,
+  "Invalid sampling rate");
 
 enum class segment_meta_ix {
     is_compacted,
@@ -286,7 +286,8 @@ public:
 
         if (
           ix
-            % static_cast<uint32_t>(::details::FOR_buffer_depth * sampling_rate)
+            % static_cast<uint32_t>(
+              ::details::FOR_buffer_depth * cstore_sampling_rate)
           == 0) {
             // At the beginning of every row we need to collect
             // a set of hints to speed up the subsequent random
@@ -552,14 +553,36 @@ public:
         }
         auto bo = *base_offset_iter;
         auto ix = base_offset_iter.index();
-        // escape hatch: disable the use of _hints if their value causes
-        // std::out_of_bound exceptions.
-        auto hint_it
-          = unlikely(
-              config::shard_local_cfg().storage_ignore_cstore_hints.value())
-              ? _hints.end()
-              : _hints.lower_bound(bo);
-        if (hint_it == _hints.end() || hint_it->second == std::nullopt) {
+
+        auto maybe_hint = [&]() -> std::optional<hint_vec_t> {
+            // escape hatch: disable the use of _hints if their value causes
+            // std::out_of_bound exceptions.
+            if (unlikely(config::shard_local_cfg()
+                           .storage_ignore_cstore_hints.value())) {
+                return std::nullopt;
+            }
+
+            auto hint_it = _hints.lower_bound(bo);
+            if (hint_it == _hints.end() || hint_it->second == std::nullopt) {
+                return std::nullopt;
+            }
+
+            auto& hint_vec = hint_it->second.value();
+            auto hint_threshold = base_offset_iter.get_frame_initial_value();
+            auto hint_initial
+              = hint_vec.at(static_cast<size_t>(segment_meta_ix::base_offset))
+                  .initial;
+
+            // The hint can only be applied within the same column_store_frame
+            // instance. If the hint belongs to the previous frame we need to
+            // materialize without optimization.
+            if (hint_initial < hint_threshold) {
+                return std::nullopt;
+            }
+            return hint_vec;
+        }();
+
+        if (!maybe_hint) {
             return iterators_t(
               _is_compacted.at_index(ix),
               _size_bytes.at_index(ix),
@@ -576,7 +599,7 @@ public:
               _metadata_size_hint.at_index(ix));
         }
 
-        auto hint = hint_it->second;
+        auto& hint = maybe_hint.value();
         return iterators_t(
           at_with_hint<segment_meta_ix::is_compacted>(_is_compacted, ix, hint),
           at_with_hint<segment_meta_ix::size_bytes>(_size_bytes, ix, hint),
