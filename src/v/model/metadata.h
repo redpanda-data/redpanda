@@ -291,6 +291,10 @@ struct topic_namespace_view {
         return H::combine(std::move(h), tp_ns.ns, tp_ns.tp);
     }
 
+    bool operator<(const topic_namespace_view& other) const {
+        return std::make_tuple(ns, tp) < std::make_tuple(other.ns, other.tp);
+    }
+
     const model::ns& ns;
     const model::topic& tp;
 
@@ -320,6 +324,13 @@ struct topic_namespace {
 
     friend bool operator==(const topic_namespace&, const topic_namespace&)
       = default;
+
+    bool operator<(const topic_namespace_view& other) const {
+        return topic_namespace_view(*this) < other;
+    }
+    bool operator<(const topic_namespace& other) const {
+        return *this < topic_namespace_view(other);
+    }
 
     template<typename H>
     friend H AbslHashValue(H h, const topic_namespace& tp_ns) {

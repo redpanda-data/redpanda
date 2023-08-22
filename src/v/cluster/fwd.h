@@ -31,6 +31,7 @@ class partition_manager;
 class shard_table;
 class topics_frontend;
 class topic_table;
+class plugin_table;
 struct topic_table_delta;
 class topic_table_partition_generator;
 class cloud_storage_size_reducer;
