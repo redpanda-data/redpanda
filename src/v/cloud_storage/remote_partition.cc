@@ -54,12 +54,13 @@ using data_t = model::record_batch_reader::data_t;
 using storage_t = model::record_batch_reader::storage_t;
 
 remote_partition::iterator remote_partition::materialize_segment(
-  const remote_segment_path& path, const segment_meta& meta) {
+  const remote_segment_path& path,
+  const segment_meta& meta,
+  segment_units unit) {
     _as.check();
     auto base_kafka_offset = meta.base_offset - meta.delta_offset;
-    auto units = materialized().get_segment_units();
     auto st = std::make_unique<materialized_segment_state>(
-      meta, path, *this, std::move(units));
+      meta, path, *this, std::move(unit));
     auto [iter, ok] = _segments.insert(
       std::make_pair(meta.base_offset, std::move(st)));
     vassert(
@@ -76,9 +77,10 @@ remote_partition::iterator remote_partition::materialize_segment(
 }
 
 remote_partition::borrow_result_t remote_partition::borrow_next_segment_reader(
-
   const partition_manifest& manifest,
   storage::log_reader_config config,
+  segment_units segment_unit,
+  segment_reader_units segment_reader_unit,
   model::offset hint) {
     // The code find the materialized that can satisfy the reader. If the
     // segment is not materialized it materializes it.
@@ -161,7 +163,7 @@ remote_partition::borrow_result_t remote_partition::borrow_next_segment_reader(
     }
     if (iter == _segments.end()) {
         auto path = manifest.generate_segment_path(*mit);
-        iter = materialize_segment(path, *mit);
+        iter = materialize_segment(path, *mit, std::move(segment_unit));
     }
     auto mit_committed_offset = mit->committed_offset;
     auto next_it = std::next(std::move(mit));
@@ -180,7 +182,8 @@ remote_partition::borrow_result_t remote_partition::borrow_next_segment_reader(
                                   ? model::offset{}
                                   : next_it->base_offset;
     return borrow_result_t{
-      .reader = iter->second->borrow_reader(config, _ctxlog, _probe),
+      .reader = iter->second->borrow_reader(
+        config, _ctxlog, _probe, std::move(segment_reader_unit)),
       .next_segment_offset = next_offset};
 }
 
@@ -464,6 +467,11 @@ private:
     }
 
     ss::future<> init_cursor(storage::log_reader_config config) {
+        auto segment_unit
+          = co_await _partition->materialized().get_segment_units();
+        auto segment_reader_unit
+          = co_await _partition->materialized().get_segment_reader_units();
+
         async_view_search_query_t query;
         if (config.first_timestamp.has_value()) {
             query = config.first_timestamp.value();
@@ -484,8 +492,16 @@ private:
         }
         _view_cursor = std::move(cur.value());
         co_await _view_cursor->with_manifest(
-          [this, config](const partition_manifest& manifest) {
-              initialize_reader_state(manifest, config);
+          [this,
+           config,
+           segment_unit = std::move(segment_unit),
+           segment_reader_unit = std::move(segment_reader_unit)](
+            const partition_manifest& manifest) mutable {
+              initialize_reader_state(
+                manifest,
+                config,
+                std::move(segment_unit),
+                std::move(segment_reader_unit));
           });
         co_return;
     }
@@ -493,11 +509,17 @@ private:
     // Initialize object using remote_partition as a source
     void initialize_reader_state(
       const partition_manifest& manifest,
-      const storage::log_reader_config& config) {
+      const storage::log_reader_config& config,
+      segment_units segment_unit,
+      segment_reader_units segment_reader_unit) {
         vlog(
           _ctxlog.debug,
           "partition_record_batch_reader_impl initialize reader state");
-        auto [reader, next_offset] = find_cached_reader(manifest, config);
+        auto [reader, next_offset] = find_cached_reader(
+          manifest,
+          config,
+          std::move(segment_unit),
+          std::move(segment_reader_unit));
         if (reader) {
             _reader = std::move(reader);
             _next_segment_base_offset = next_offset;
@@ -514,11 +536,17 @@ private:
 
     remote_partition::borrow_result_t find_cached_reader(
       const partition_manifest& manifest,
-      const storage::log_reader_config& config) {
+      const storage::log_reader_config& config,
+      segment_units segment_unit,
+      segment_reader_units segment_reader_unit) {
         if (!_partition || _partition->_manifest_view->stm_manifest().empty()) {
             return {};
         }
-        auto res = _partition->borrow_next_segment_reader(manifest, config);
+        auto res = _partition->borrow_next_segment_reader(
+          manifest,
+          config,
+          std::move(segment_unit),
+          std::move(segment_reader_unit));
         if (res.reader) {
             // Here we know the exact type of the reader_state because of
             // the invariant of the borrow_reader
@@ -590,6 +618,12 @@ private:
               config.start_offset,
               _next_segment_base_offset,
               _view_cursor->get_status());
+
+            auto segment_unit
+              = co_await _partition->materialized().get_segment_units();
+            auto segment_reader_unit
+              = co_await _partition->materialized().get_segment_reader_units();
+
             auto maybe_manifest = _view_cursor->manifest();
             if (
               maybe_manifest.has_value()
@@ -611,9 +645,14 @@ private:
                       _next_segment_base_offset);
                     co_return false;
                 }
+
                 auto [new_reader, new_next_offset]
                   = _partition->borrow_next_segment_reader(
-                    maybe_manifest.value(), config, _next_segment_base_offset);
+                    maybe_manifest.value(),
+                    config,
+                    std::move(segment_unit),
+                    std::move(segment_reader_unit),
+                    _next_segment_base_offset);
                 _next_segment_base_offset = new_next_offset;
                 _reader = std::move(new_reader);
             }
@@ -821,7 +860,8 @@ remote_partition::aborted_transactions(offset_range offsets) {
             auto m = _segments.find(it->base_offset);
             if (m == _segments.end()) {
                 auto path = stm_manifest.generate_segment_path(*it);
-                m = materialize_segment(path, *it);
+                auto segment_unit = co_await materialized().get_segment_units();
+                m = materialize_segment(path, *it, std::move(segment_unit));
             }
             remote_segs.emplace_back(m->second->segment);
         }
@@ -870,7 +910,8 @@ remote_partition::aborted_transactions(offset_range offsets) {
                 // Here the 'manifest' might not be the one that contain 'meta'
                 // but it doesn't matter because 'materialize_segment' method is
                 // only used to generate a segment path.
-                m = materialize_segment(path, meta);
+                auto segment_unit = co_await materialized().get_segment_units();
+                m = materialize_segment(path, meta, std::move(segment_unit));
             }
             auto tx = co_await m->second->segment->aborted_transactions(
               offsets.begin_rp, offsets.end_rp);

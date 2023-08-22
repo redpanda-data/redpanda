@@ -47,6 +47,11 @@ using local_segment_path
 /// Number of simultaneous connections to S3
 using connection_limit = named_type<size_t, struct archival_connection_limit_t>;
 
+using segment_reader_units
+  = named_type<ssx::semaphore_units, struct segment_reader_units_type>;
+using segment_units
+  = named_type<ssx::semaphore_units, struct segment_units_type>;
+
 /// Version of the segment name format
 enum class segment_name_format : int16_t {
     // Original metadata format, segment name has simple format (same as on
