@@ -98,6 +98,9 @@ public:
 
     latency_probe& probe() { return _conn->server().latency_probe(); }
 
+    // used to reach for server_probe::produce_bad_timestamp
+    net::server_probe& server_probe() { return _conn->server().probe(); }
+
     kafka::usage_manager& usage_mgr() const {
         return _conn->server().usage_mgr();
     }

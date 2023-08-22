@@ -60,6 +60,16 @@ public:
 
     void waiting_for_conection_rate() { ++_connections_wait_rate; }
 
+    // metric used to signal a produce request with a timestamp too far into the
+    // future or too far in the past see configuration
+    // log_message_timestamp_alert_after_ms and
+    // log_message_timestamp_alert_before_ms
+    void produce_bad_create_time() { _produce_bad_create_time++; }
+    // for testing
+    auto get_produce_bad_create_time() const {
+        return _produce_bad_create_time;
+    }
+
     void
     setup_metrics(ssx::metrics::metric_groups& mgs, std::string_view proto);
 
@@ -81,6 +91,7 @@ private:
     uint32_t _requests_blocked_memory = 0;
     uint32_t _declined_new_connections = 0;
     uint32_t _connections_wait_rate = 0;
+    uint32_t _produce_bad_create_time = 0;
     friend std::ostream& operator<<(std::ostream& o, const server_probe& p);
 };
 

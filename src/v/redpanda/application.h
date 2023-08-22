@@ -145,6 +145,8 @@ public:
 
     std::unique_ptr<ssx::thread_worker> thread_worker;
 
+    ss::sharded<kafka::server> _kafka_server;
+
     const std::unique_ptr<pandaproxy::schema_registry::api>& schema_registry() {
         return _schema_registry;
     }
@@ -259,7 +261,6 @@ private:
     ss::sharded<rpc::rpc_server> _rpc;
     ss::sharded<admin_server> _admin;
     ss::sharded<net::conn_quota> _kafka_conn_quotas;
-    ss::sharded<kafka::server> _kafka_server;
     std::unique_ptr<pandaproxy::rest::api> _proxy;
     std::unique_ptr<pandaproxy::schema_registry::api> _schema_registry;
     ss::sharded<storage::compaction_controller> _compaction_controller;
