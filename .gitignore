@@ -71,6 +71,7 @@ CPackSourceConfig.cmake
 CTestTestfile.cmake
 CMakeDoxyfile.in
 CMakeDoxygenDefaults.cmake
+CMakeUserPresets.json
 
 src/demo_apps/demo_client
 src/demo_apps/demo_server

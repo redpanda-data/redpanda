@@ -97,10 +97,12 @@ users leverage our pre-built stable releases which are vetted, tested, and repro
 versions of the entire transitive dependency graph, including exact compilers
 all built from source. The only thing we do not build yet is the Linux Kernel, but soon!
 
-For hackers, here is the short and sweet:
+Currently `clang 16` is required. We test the open-source build nightly using Fedora 38.
 
-```
-sudo ./install-dependencies.sh && CC=clang CXX=clang++ ./build.sh
+```bash
+sudo ./install-dependencies.sh
+cmake --preset release
+cmake --build --preset release
 ```
 
 For quicker dev setup, we provide a [docker image](tools/docker/README.md) with the toolchain installed.

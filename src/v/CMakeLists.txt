@@ -38,6 +38,33 @@ if(REDPANDA_RUN_CLANG_TIDY)
     unset(clang_tidy_checks)
 endif()
 
+# Redpanda's internal build system constructs a Python virtual environment
+# executable using pex that contains all of the Python build dependencies. If
+# this isn't found, then fall back to the system Python3 interpreter.
+find_program(REDPANDA_PYTHON_EXECUTABLE "kafka-codegen-venv")
+
+if(REDPANDA_PYTHON_EXECUTABLE)
+    add_executable(RedpandaPython::Interpreter IMPORTED)
+    set_property(TARGET RedpandaPython::Interpreter
+        PROPERTY IMPORTED_LOCATION "${REDPANDA_PYTHON_EXECUTABLE}")
+else()
+    find_package(Python3 REQUIRED COMPONENTS Interpreter)
+    add_executable(RedpandaPython::Interpreter ALIAS Python3::Interpreter)
+    set(REDPANDA_PYTHON_EXECUTABLE ${Python3_EXECUTABLE})
+endif()
+message(STATUS "Using Python interpeter: ${REDPANDA_PYTHON_EXECUTABLE}")
+
+foreach(PYTHON_DEPENDENCY jsonschema jinja2)
+    execute_process(
+        COMMAND ${REDPANDA_PYTHON_EXECUTABLE} -c "import ${PYTHON_DEPENDENCY}"
+        RESULT_VARIABLE EXIT_CODE
+        ERROR_QUIET
+        OUTPUT_QUIET)
+    if (NOT EXIT_CODE EQUAL 0)
+        message(FATAL_ERROR "Required Python module not found: ${PYTHON_DEPENDENCY}")
+    endif()
+endforeach()
+
 # libraries
 add_subdirectory(test_utils)
 add_subdirectory(ssx)

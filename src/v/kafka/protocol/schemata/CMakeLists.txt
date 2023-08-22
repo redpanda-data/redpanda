@@ -1,5 +1,3 @@
-find_program(KAFKA_CODEGEN_VENV "kafka-codegen-venv")
-
 set(schemata
   api_versions_request.json
   api_versions_response.json
