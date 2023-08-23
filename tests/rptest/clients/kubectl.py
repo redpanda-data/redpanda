@@ -10,6 +10,8 @@
 import os
 import subprocess
 
+SUPPORTED_PROVIDERS = ['aws', 'gcp']
+
 
 class KubectlTool:
     """
@@ -27,6 +29,8 @@ class KubectlTool:
         remote_uri=None,
         namespace='redpanda',
         cluster_id='',
+        cluster_privider='aws',
+        cluster_region='us-west-2',
         tp_proxy=None,
         tp_token=None,
     ):
@@ -34,6 +38,13 @@ class KubectlTool:
         self._remote_uri = remote_uri
         self._namespace = namespace
         self._cluster_id = cluster_id
+
+        self._provider = cluster_privider.lower()
+        if self._provider not in SUPPORTED_PROVIDERS:
+            raise RuntimeError("KubectlTool does not yet support "
+                               f"'{self._provider}' cloud provider")
+
+        self._region = cluster_region
         self._tp_proxy = tp_proxy
         self._tp_token = tp_token
         self._kubectl_installed = False
@@ -92,6 +103,18 @@ class KubectlTool:
             f'--identity={self.TELEPORT_IDENT_FILE}', src, dest
         ]
 
+    def _aws_config_cmd(self):
+        return [
+            'awscli2', 'eks', 'update-kubeconfig', '--name',
+            f'redpanda-{self._cluster_id}', '--region', self._region
+        ]
+
+    def _gcp_config_cmd(self):
+        return [
+            'gcloud', 'container', 'clusters', 'get-credentials',
+            f'redpanda-{self._cluster_id}', '--region', self._region
+        ]
+
     def _install(self):
         '''Installs kubectl on a remote target host
         '''
@@ -107,10 +130,12 @@ class KubectlTool:
                 '/usr/local/bin/kubectl'
             ]
             cleanup_cmd = ssh_prefix + ['rm', '-f', '/tmp/kubectl']
-            config_cmd = ssh_prefix + [
-                'awscli2', 'eks', 'update-kubeconfig', '--name',
-                f'redpanda-{self._cluster_id}', '--region', 'us-west-2'
-            ]
+
+            if self._provider == 'aws':
+                config_cmd = ssh_prefix + self._aws_config_cmd()
+            elif self._provider == 'gcp':
+                config_cmd = ssh_prefix + self._gcp_config_cmd()
+
             self._redpanda.logger.info(download_cmd)
             res = subprocess.check_output(download_cmd)
             self._redpanda.logger.info(install_cmd)
