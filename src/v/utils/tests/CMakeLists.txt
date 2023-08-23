@@ -5,6 +5,7 @@ rp_test(
   SOURCES
     base64_test.cc
     delta_for_test.cc
+    delta_for_characterization_data.cc
     directory_walker_test.cc
     expiring_promise_test.cc
     input_stream_fanout_test.cc
