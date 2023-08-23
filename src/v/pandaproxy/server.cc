@@ -92,12 +92,20 @@ struct handler_adaptor : ss::httpd::handler_base {
             set_reply_unavailable(*rp.rep);
             rp.mime_type = _exceptional_mime_type;
         } else {
+            auto method = rq.req->_method;
+            auto url = rq.req->_url;
             try {
                 rp = co_await _handler(std::move(rq), std::move(rp));
             } catch (...) {
+                auto ex = std::current_exception();
+                vlog(
+                  plog.warn,
+                  "Request: {} {} failed: {}",
+                  method,
+                  url,
+                  std::current_exception());
                 rp = server::reply_t{
-                  exception_reply(std::current_exception()),
-                  _exceptional_mime_type};
+                  exception_reply(ex), _exceptional_mime_type};
             }
         }
         set_mime_type(*rp.rep, rp.mime_type);

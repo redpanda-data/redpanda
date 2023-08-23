@@ -43,7 +43,9 @@ HTTP_POST_HEADERS = {
 }
 
 schema1_def = '{"type":"record","name":"myrecord","fields":[{"name":"f1","type":"string"}]}'
-schema2_def = '{"type":"record","name":"myrecord","fields":[{"name":"f1","type":"string"},{"name":"f2","type":"string","default":"foo"}]}'
+# Schema 2 is only backwards compatible
+schema2_def = '{"type":"record","name":"myrecord","fields":[{"name":"f1","type":["null","string"]},{"name":"f2","type":"string","default":"foo"}]}'
+# Schema 3 is not backwards compatible
 schema3_def = '{"type":"record","name":"myrecord","fields":[{"name":"f1","type":"string"},{"name":"f2","type":"string"}]}'
 invalid_avro = '{"type":"notatype","name":"myrecord","fields":[{"name":"f1","type":"string"}]}'
 
@@ -752,6 +754,7 @@ class SchemaRegistryTestMethods(SchemaRegistryEndpoints):
             subject=f"{topic}-key", data=schema_1_data)
         self.logger.debug(result_raw)
         assert result_raw.status_code == requests.codes.ok
+        v1_id = result_raw.json()["id"]
 
         self.logger.debug("Set subject config - NONE")
         result_raw = self._set_config_subject(subject=f"{topic}-key",
@@ -793,6 +796,25 @@ class SchemaRegistryTestMethods(SchemaRegistryEndpoints):
         result_raw = self._post_subjects_subject_versions(
             subject=f"{topic}-key", data=schema_2_data)
         assert result_raw.status_code == requests.codes.ok
+        v2_id = result_raw.json()["id"]
+        assert v1_id != v2_id
+
+        self.logger.debug("Posting schema 1 as a subject key again")
+        result_raw = self._post_subjects_subject_versions(
+            subject=f"{topic}-key", data=schema_1_data)
+        assert result_raw.status_code == requests.codes.ok
+        assert result_raw.json()["id"] == v1_id
+
+        self.logger.debug("Soft delete schema 1")
+        result_raw = self._delete_subject_version(subject=f"{topic}-key",
+                                                  version=1)
+        assert result_raw.status_code == requests.codes.ok
+
+        self.logger.debug("Posting schema 1 again, expect same version")
+        result_raw = self._post_subjects_subject_versions(
+            subject=f"{topic}-key", data=schema_1_data)
+        assert result_raw.status_code == requests.codes.ok
+        assert result_raw.json()["id"] == v1_id
 
     @cluster(num_nodes=3)
     def test_delete_subject(self):
@@ -1337,6 +1359,8 @@ class SchemaRegistryTestMethods(SchemaRegistryEndpoints):
                 "schema_ids": [],
                 "subject_versions": []
             }
+
+        self._set_config(data=json.dumps({"compatibility": "NONE"}))
 
         self.logger.debug("Register and check schemas before restart")
         for subject in subjects:
