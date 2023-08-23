@@ -19,6 +19,7 @@
 #include "raft/errc.h"
 #include "raft/logger.h"
 #include "raft/state_machine.h"
+#include "raft/state_machine_base.h"
 #include "raft/types.h"
 #include "storage/snapshot.h"
 #include "storage/types.h"
@@ -152,7 +153,7 @@ concept supported_stm_snapshot = requires(T s, stm_snapshot&& snapshot) {
 
 template<supported_stm_snapshot T = file_backed_stm_snapshot>
 class persisted_stm
-  : public raft::state_machine
+  : public raft::state_machine_base
   , public storage::snapshotable_stm {
 public:
     template<typename... Args>
@@ -177,33 +178,9 @@ public:
     virtual ss::future<> remove_persistent_state();
 
     const ss::sstring& name() override { return _snapshot_backend.name(); }
-    /*
-     * Usually start() acts as a barrier and we don't call any methods on the
-     * object before start returns control flow.
-     *
-     * With snapshot-enabled stm we have the following workflow around
-     * partition.h/.cc:
-     *
-     * 1. create consensus
-     * 2. create partition
-     * 3. pass consensus to partition
-     * 4. inside partition:
-     *    - create stm and pass consensus to constructor
-     *    - pass stm to consensus via stm_manager
-     *    - start consensus
-     *    - start stm
-     *
-     * We can't start stm before starting consensus but once consensus has
-     * started it may get a chance to invoke make_snapshot or
-     * ensure_snapshot_exists on stm before it's started.
-     *
-     * `wait_for_snapshot_hydrated` inside those methods protects from this
-     * scenario.
-     */
-    ss::future<> start() override;
 
     model::offset last_applied() const final {
-        return raft::state_machine::last_applied_offset();
+        return raft::state_machine_base::last_applied_offset();
     }
 
     ss::future<bool> wait_no_throw(
@@ -216,6 +193,10 @@ public:
       aborted_tx_ranges(model::offset, model::offset) override;
 
 protected:
+    ss::future<> start() override;
+
+    ss::future<> stop() override;
+
     /**
      * Called when local snapshot is applied to the state machine
      */
@@ -236,7 +217,9 @@ protected:
     bool _is_catching_up{false};
     model::term_id _insync_term;
     model::offset _insync_offset;
+    raft::consensus* _raft;
     prefix_logger _log;
+    ss::gate _gate;
 
 private:
     ss::future<> wait_offset_committed(

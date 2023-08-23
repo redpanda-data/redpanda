@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include "bytes/iobuf.h"
 #include "cluster/persisted_stm.h"
 #include "cluster/tx_utils.h"
 #include "cluster/types.h"
@@ -33,6 +34,7 @@
 #include "utils/prefix_logger.h"
 #include "utils/tracking_allocator.h"
 
+#include <seastar/core/abort_source.hh>
 #include <seastar/core/shared_ptr.hh>
 
 #include <absl/container/btree_map.h>
@@ -364,8 +366,11 @@ public:
 
     uint64_t get_local_snapshot_size() const override;
 
+    std::string_view get_name() const final { return "rm_stm"; }
+    ss::future<iobuf> take_snapshot(model::offset) final { co_return iobuf{}; }
+
 protected:
-    ss::future<> handle_raft_snapshot() override;
+    ss::future<> apply_raft_snapshot(const iobuf&) final;
 
 private:
     void setup_metrics();
@@ -445,7 +450,7 @@ private:
     abort_origin
     get_abort_origin(const model::producer_identity&, model::tx_seq) const;
 
-    ss::future<> apply(model::record_batch) override;
+    ss::future<> apply(const model::record_batch&) override;
     void apply_fence(model::record_batch&&);
     void apply_prepare(rm_stm::prepare_marker);
     ss::future<>
@@ -464,6 +469,11 @@ private:
 
         return std::nullopt;
     }
+
+    /**
+     * Return when the committed offset has been established when STM starts.
+     */
+    ss::future<model::offset> bootstrap_committed_offset();
 
     struct seq_entry_wrapper {
         seq_entry entry;
@@ -883,6 +893,7 @@ private:
     mutex _clean_old_pids_mtx;
     ssx::metrics::metric_groups _metrics
       = ssx::metrics::metric_groups::make_internal();
+    ss::abort_source _as;
 };
 
 struct fence_batch_data {

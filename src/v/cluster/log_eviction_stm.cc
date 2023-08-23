@@ -11,6 +11,7 @@
 
 #include "bytes/iostream.h"
 #include "cluster/prefix_truncate_record.h"
+#include "model/fundamental.h"
 #include "raft/consensus.h"
 #include "raft/types.h"
 #include "serde/serde.h"
@@ -36,12 +37,8 @@ struct snapshot_data
 };
 
 log_eviction_stm::log_eviction_stm(
-  raft::consensus* raft,
-  ss::logger& logger,
-  ss::abort_source& as,
-  storage::kvstore& kvstore)
-  : persisted_stm("log_eviction_stm.snapshot", logger, raft, kvstore)
-  , _as(as) {}
+  raft::consensus* raft, ss::logger& logger, storage::kvstore& kvstore)
+  : persisted_stm("log_eviction_stm.snapshot", logger, raft, kvstore) {}
 
 ss::future<> log_eviction_stm::start() {
     ssx::spawn_with_gate(_gate, [this] { return monitor_log_eviction(); });
@@ -51,6 +48,7 @@ ss::future<> log_eviction_stm::start() {
 }
 
 ss::future<> log_eviction_stm::stop() {
+    _as.request_abort();
     _has_pending_truncation.broken();
     co_await persisted_stm::stop();
 }
@@ -192,8 +190,10 @@ log_eviction_stm::do_write_raft_snapshot(model::offset truncation_point) {
       _log.debug,
       "Requesting raft snapshot with final offset: {}",
       truncation_point);
+    auto snapshot_data = co_await _raft->stm_manager()->take_snapshot(
+      truncation_point);
     co_await _raft->write_snapshot(
-      raft::write_snapshot_cfg(truncation_point, iobuf()));
+      raft::write_snapshot_cfg(truncation_point, std::move(snapshot_data)));
 }
 
 ss::future<result<model::offset, std::error_code>>
@@ -323,7 +323,7 @@ ss::future<log_eviction_stm::offset_result> log_eviction_stm::replicate_command(
     co_return result.value().last_offset;
 }
 
-ss::future<> log_eviction_stm::apply(model::record_batch batch) {
+ss::future<> log_eviction_stm::apply(const model::record_batch& batch) {
     if (likely(
           batch.header().type != model::record_batch_type::prefix_truncate)) {
         co_return;
@@ -372,23 +372,8 @@ ss::future<> log_eviction_stm::apply(model::record_batch batch) {
     }
 }
 
-ss::future<> log_eviction_stm::handle_raft_snapshot() {
-    /// In the case there is a gap detected in the log, the only path
-    /// forward is to read the raft snapshot and begin processing from the
-    /// raft last_snapshot_index
-    auto raft_snapshot = co_await _raft->open_snapshot();
-    if (!raft_snapshot) {
-        throw std::runtime_error{fmt_with_ctx(
-          fmt::format,
-          "encountered a gap in the raft log (last_applied: {}, log start "
-          "offset: {}), but can't find the snapshot - ntp: {}",
-          last_applied_offset(),
-          _raft->start_offset(),
-          _raft->ntp())};
-    }
-
-    auto last_snapshot_index = raft_snapshot->metadata.last_included_index;
-    co_await raft_snapshot->close();
+ss::future<> log_eviction_stm::apply_raft_snapshot(const iobuf&) {
+    auto last_snapshot_index = model::prev_offset(_raft->start_offset());
     _delete_records_eviction_offset = model::offset{};
     _storage_eviction_offset = last_snapshot_index;
     set_next(model::next_offset(last_snapshot_index));
@@ -396,6 +381,7 @@ ss::future<> log_eviction_stm::handle_raft_snapshot() {
       _log.info,
       "Handled log eviction new effective start offset: {}",
       effective_start_offset());
+    co_return;
 }
 
 ss::future<> log_eviction_stm::apply_local_snapshot(

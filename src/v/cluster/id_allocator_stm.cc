@@ -9,6 +9,7 @@
 
 #include "cluster/id_allocator_stm.h"
 
+#include "bytes/iobuf.h"
 #include "cluster/logger.h"
 #include "cluster/types.h"
 #include "config/configuration.h"
@@ -118,7 +119,7 @@ id_allocator_stm::do_allocate_id(model::timeout_clock::duration timeout) {
     co_return stm_allocation_result{id, raft::errc::success};
 }
 
-ss::future<> id_allocator_stm::apply(model::record_batch b) {
+ss::future<> id_allocator_stm::apply(const model::record_batch& b) {
     if (b.header().type != model::record_batch_type::id_allocator) {
         return ss::now();
     }
@@ -202,7 +203,7 @@ ss::future<stm_snapshot> id_allocator_stm::take_local_snapshot() {
       std::logic_error("id_allocator_stm doesn't support snapshots"));
 }
 
-ss::future<> id_allocator_stm::handle_raft_snapshot() {
+ss::future<> id_allocator_stm::apply_raft_snapshot(const iobuf&) {
     _next_snapshot = _raft->start_offset();
     _processed = 0;
     set_next(_next_snapshot);

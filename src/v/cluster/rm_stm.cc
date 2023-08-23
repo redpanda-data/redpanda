@@ -11,6 +11,7 @@
 
 #include "bytes/iostream.h"
 #include "cluster/logger.h"
+#include "cluster/persisted_stm.h"
 #include "cluster/tx_gateway_frontend.h"
 #include "cluster/tx_snapshot_adl_utils.h"
 #include "kafka/protocol/wire.h"
@@ -20,6 +21,7 @@
 #include "prometheus/prometheus_sanitize.h"
 #include "raft/consensus_utils.h"
 #include "raft/errc.h"
+#include "raft/state_machine_base.h"
 #include "raft/types.h"
 #include "ssx/future-util.h"
 #include "ssx/metrics.h"
@@ -321,6 +323,17 @@ rm_stm::rm_stm(
                 e);
           });
     });
+}
+
+ss::future<model::offset> rm_stm::bootstrap_committed_offset() {
+    /// It is useful for some STMs to know what the committed offset is so they
+    /// may do things like block until they have consumed all known committed
+    /// records. To achieve this, this method waits on offset 0, so on the first
+    /// call to `event_manager::notify_commit_index`, it is known that the
+    /// committed offset is in an initialized state.
+    return _raft->events()
+      .wait(model::offset(0), model::no_timeout, _as)
+      .then([this] { return _raft->committed_offset(); });
 }
 
 ss::future<checked<model::term_id, tx_errc>> rm_stm::begin_tx(
@@ -952,9 +965,10 @@ ss::future<result<kafka_result>> rm_stm::do_replicate(
 }
 
 ss::future<> rm_stm::stop() {
+    _as.request_abort();
     auto_abort_timer.cancel();
     _log_stats_timer.cancel();
-    return raft::state_machine::stop();
+    return persisted_stm<>::stop();
 }
 
 ss::future<> rm_stm::start() { return persisted_stm::start(); }
@@ -2112,15 +2126,15 @@ void rm_stm::apply_fence(model::record_batch&& b) {
     }
 }
 
-ss::future<> rm_stm::apply(model::record_batch b) {
+ss::future<> rm_stm::apply(const model::record_batch& b) {
     auto last_offset = b.last_offset();
 
     const auto& hdr = b.header();
 
     if (hdr.type == model::record_batch_type::tx_fence) {
-        apply_fence(std::move(b));
+        apply_fence(b.copy());
     } else if (hdr.type == model::record_batch_type::tx_prepare) {
-        apply_prepare(parse_prepare_batch(std::move(b)));
+        apply_prepare(parse_prepare_batch(b.copy()));
     } else if (hdr.type == model::record_batch_type::raft_data) {
         auto bid = model::batch_identity::from(hdr);
         if (hdr.attrs.is_control()) {
@@ -2712,7 +2726,7 @@ ss::future<> rm_stm::do_remove_persistent_state() {
     co_return co_await persisted_stm::remove_persistent_state();
 }
 
-ss::future<> rm_stm::handle_raft_snapshot() {
+ss::future<> rm_stm::apply_raft_snapshot(const iobuf&) {
     return _state_lock.hold_write_lock().then(
       [this]([[maybe_unused]] ss::basic_rwlock<>::holder unit) {
           vlog(_ctx_log.debug, "Resetting all state, reason: log eviction");

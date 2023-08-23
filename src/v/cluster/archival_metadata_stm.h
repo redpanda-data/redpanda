@@ -225,6 +225,9 @@ public:
 
     model::offset max_collectible_offset() override;
 
+    std::string_view get_name() const final { return "archival_metadata_stm"; }
+    ss::future<iobuf> take_snapshot(model::offset) final { co_return iobuf{}; }
+
 private:
     ss::future<std::error_code> do_add_segments(
       std::vector<cloud_storage::segment_meta>,
@@ -235,8 +238,8 @@ private:
     ss::future<std::error_code>
     do_replicate_commands(model::record_batch, ss::abort_source&);
 
-    ss::future<> apply(model::record_batch batch) override;
-    ss::future<> handle_raft_snapshot() override;
+    ss::future<> apply(const model::record_batch& batch) override;
+    ss::future<> apply_raft_snapshot(const iobuf&) override;
 
     ss::future<> apply_local_snapshot(stm_snapshot_header, iobuf&&) override;
     ss::future<stm_snapshot> take_local_snapshot() override;

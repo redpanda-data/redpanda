@@ -252,6 +252,31 @@ ss::future<checked<model::term_id, tm_stm::op_status>> tm_stm::do_barrier() {
         });
 }
 
+model::record_batch_reader make_checkpoint() {
+    storage::record_batch_builder builder(
+      model::record_batch_type::checkpoint, model::offset(0));
+    builder.add_raw_kv(iobuf(), iobuf());
+    return model::make_memory_record_batch_reader(std::move(builder).build());
+}
+
+ss::future<result<raft::replicate_result>>
+tm_stm::quorum_write_empty_batch(model::timeout_clock::time_point timeout) {
+    using ret_t = result<raft::replicate_result>;
+    // replicate checkpoint batch
+    return _raft
+      ->replicate(
+        make_checkpoint(),
+        raft::replicate_options(raft::consistency_level::quorum_ack))
+      .then([this, timeout](ret_t r) {
+          if (!r) {
+              return ss::make_ready_future<ret_t>(r);
+          }
+          return wait(r.value().last_offset, timeout).then([r]() mutable {
+              return r;
+          });
+      });
+}
+
 ss::future<> tm_stm::checkpoint_ongoing_txs() {
     if (!use_new_tx_version()) {
         co_return;
@@ -998,16 +1023,16 @@ ss::future<> tm_stm::apply_hosted_transactions(model::record_batch b) {
     return ss::now();
 }
 
-ss::future<> tm_stm::apply(model::record_batch b) {
+ss::future<> tm_stm::apply(const model::record_batch& b) {
     const auto& hdr = b.header();
     _insync_offset = b.last_offset();
 
     if (hdr.type == model::record_batch_type::tm_update) {
-        return apply_tm_update(std::move(hdr), std::move(b));
+        return apply_tm_update(hdr, b.copy());
     }
 
     if (hdr.type == model::record_batch_type::tx_tm_hosted_trasactions) {
-        return apply_hosted_transactions(std::move(b));
+        return apply_hosted_transactions(b.copy());
     }
 
     return ss::now();
@@ -1136,7 +1161,7 @@ tm_stm::expire_tx(model::term_id term, kafka::transactional_id tx_id) {
     co_return r0.error();
 }
 
-ss::future<> tm_stm::handle_raft_snapshot() {
+ss::future<> tm_stm::apply_raft_snapshot(const iobuf&) {
     return _cache->write_lock().then(
       [this]([[maybe_unused]] ss::basic_rwlock<>::holder unit) {
           _cache->clear_log();

@@ -10,6 +10,7 @@
 #include "cluster/errc.h"
 #include "cluster/rm_stm.h"
 #include "cluster/tests/randoms.h"
+#include "cluster/tests/rm_stm_test_fixture.h"
 #include "cluster/tx_snapshot_adl_utils.h"
 #include "finjector/hbadger.h"
 #include "model/fundamental.h"
@@ -20,7 +21,6 @@
 #include "model/timestamp.h"
 #include "raft/consensus_utils.h"
 #include "raft/tests/raft_group_fixture.h"
-#include "raft/tests/simple_raft_fixture.h"
 #include "raft/types.h"
 #include "random/generators.h"
 #include "storage/record_batch_builder.h"
@@ -38,26 +38,10 @@ using namespace std::chrono_literals;
 static const failure_type<cluster::errc>
   invalid_producer_epoch(cluster::errc::invalid_producer_epoch);
 
-static ss::logger logger{"rm_stm-test"};
-
 struct rich_reader {
     model::batch_identity id;
     model::record_batch_reader reader;
 };
-
-static config::binding<uint64_t> get_config_bound() {
-    static config::config_store store;
-    static config::bounded_property<uint64_t> max_saved_pids_count(
-      store,
-      "max_saved_pids_count",
-      "Max pids count inside rm_stm states",
-      {.needs_restart = config::needs_restart::no,
-       .visibility = config::visibility::user},
-      std::numeric_limits<uint64_t>::max(),
-      {.min = 1});
-
-    return max_saved_pids_count.bind();
-}
 
 static rich_reader make_rreader(
   model::producer_identity pid,
@@ -109,20 +93,11 @@ void check_snapshot_sizes(cluster::rm_stm& stm, raft::consensus* c) {
 // tests:
 //   - a simple tx execution succeeds
 //   - last_stable_offset doesn't advance past an ongoing transaction
-FIXTURE_TEST(test_tx_happy_tx, simple_raft_fixture) {
-    start_raft();
-
-    ss::sharded<cluster::tx_gateway_frontend> tx_gateway_frontend;
-    cluster::rm_stm stm(
-      logger,
-      _raft.get(),
-      tx_gateway_frontend,
-      _feature_table,
-      get_config_bound());
+FIXTURE_TEST(test_tx_happy_tx, rm_stm_test_fixture) {
+    create_stm_and_start_raft();
+    auto& stm = *_stm;
     stm.testing_only_disable_auto_abort();
 
-    stm.start().get0();
-    auto stop = ss::defer([&stm] { stm.stop().get0(); });
     auto tx_seq = model::tx_seq(0);
 
     wait_for_confirmed_leader();
@@ -190,20 +165,12 @@ FIXTURE_TEST(test_tx_happy_tx, simple_raft_fixture) {
 // tests:
 //   - a simple tx aborting before prepare succeeds
 //   - an aborted tx is reflected in aborted_transactions
-FIXTURE_TEST(test_tx_aborted_tx_1, simple_raft_fixture) {
-    start_raft();
-
-    ss::sharded<cluster::tx_gateway_frontend> tx_gateway_frontend;
-    cluster::rm_stm stm(
-      logger,
-      _raft.get(),
-      tx_gateway_frontend,
-      _feature_table,
-      get_config_bound());
+FIXTURE_TEST(test_tx_aborted_tx_1, rm_stm_test_fixture) {
+    create_stm_and_start_raft();
+    auto& stm = *_stm;
     stm.testing_only_disable_auto_abort();
 
     stm.start().get0();
-    auto stop = ss::defer([&stm] { stm.stop().get0(); });
     auto tx_seq = model::tx_seq(0);
 
     wait_for_confirmed_leader();
@@ -280,20 +247,13 @@ FIXTURE_TEST(test_tx_aborted_tx_1, simple_raft_fixture) {
 // tests:
 //   - a simple tx aborting after prepare succeeds
 //   - an aborted tx is reflected in aborted_transactions
-FIXTURE_TEST(test_tx_aborted_tx_2, simple_raft_fixture) {
-    start_raft();
-
-    ss::sharded<cluster::tx_gateway_frontend> tx_gateway_frontend;
-    cluster::rm_stm stm(
-      logger,
-      _raft.get(),
-      tx_gateway_frontend,
-      _feature_table,
-      get_config_bound());
+FIXTURE_TEST(test_tx_aborted_tx_2, rm_stm_test_fixture) {
+    create_stm_and_start_raft();
+    auto& stm = *_stm;
     stm.testing_only_disable_auto_abort();
 
     stm.start().get0();
-    auto stop = ss::defer([&stm] { stm.stop().get0(); });
+
     auto tx_seq = model::tx_seq(0);
 
     wait_for_confirmed_leader();
@@ -369,20 +329,12 @@ FIXTURE_TEST(test_tx_aborted_tx_2, simple_raft_fixture) {
 }
 
 // transactional writes of an unknown tx are rejected
-FIXTURE_TEST(test_tx_unknown_produce, simple_raft_fixture) {
-    start_raft();
-
-    ss::sharded<cluster::tx_gateway_frontend> tx_gateway_frontend;
-    cluster::rm_stm stm(
-      logger,
-      _raft.get(),
-      tx_gateway_frontend,
-      _feature_table,
-      get_config_bound());
+FIXTURE_TEST(test_tx_unknown_produce, rm_stm_test_fixture) {
+    create_stm_and_start_raft();
+    auto& stm = *_stm;
     stm.testing_only_disable_auto_abort();
 
     stm.start().get0();
-    auto stop = ss::defer([&stm] { stm.stop().get0(); });
 
     wait_for_confirmed_leader();
     wait_for_meta_initialized();
@@ -410,20 +362,13 @@ FIXTURE_TEST(test_tx_unknown_produce, simple_raft_fixture) {
 }
 
 // begin fences off old transactions
-FIXTURE_TEST(test_tx_begin_fences_produce, simple_raft_fixture) {
-    start_raft();
-
-    ss::sharded<cluster::tx_gateway_frontend> tx_gateway_frontend;
-    cluster::rm_stm stm(
-      logger,
-      _raft.get(),
-      tx_gateway_frontend,
-      _feature_table,
-      get_config_bound());
+FIXTURE_TEST(test_tx_begin_fences_produce, rm_stm_test_fixture) {
+    create_stm_and_start_raft();
+    auto& stm = *_stm;
     stm.testing_only_disable_auto_abort();
 
     stm.start().get0();
-    auto stop = ss::defer([&stm] { stm.stop().get0(); });
+
     auto tx_seq = model::tx_seq(0);
 
     wait_for_confirmed_leader();
@@ -475,20 +420,13 @@ FIXTURE_TEST(test_tx_begin_fences_produce, simple_raft_fixture) {
 }
 
 // transactional writes of an aborted tx are rejected
-FIXTURE_TEST(test_tx_post_aborted_produce, simple_raft_fixture) {
-    start_raft();
-
-    ss::sharded<cluster::tx_gateway_frontend> tx_gateway_frontend;
-    cluster::rm_stm stm(
-      logger,
-      _raft.get(),
-      tx_gateway_frontend,
-      _feature_table,
-      get_config_bound());
+FIXTURE_TEST(test_tx_post_aborted_produce, rm_stm_test_fixture) {
+    create_stm_and_start_raft();
+    auto& stm = *_stm;
     stm.testing_only_disable_auto_abort();
 
     stm.start().get0();
-    auto stop = ss::defer([&stm] { stm.stop().get0(); });
+
     auto tx_seq = model::tx_seq(0);
 
     wait_for_confirmed_leader();
@@ -544,21 +482,13 @@ FIXTURE_TEST(test_tx_post_aborted_produce, simple_raft_fixture) {
 // transactions. Multiple subsystems that interact with transactions rely on
 // aborted transactions for correctness. These serve as regression tests so that
 // we do not break the semantics.
-FIXTURE_TEST(test_aborted_transactions, simple_raft_fixture) {
-    start_raft();
-
-    ss::sharded<cluster::tx_gateway_frontend> tx_gateway_frontend;
-    cluster::rm_stm stm(
-      logger,
-      _raft.get(),
-      tx_gateway_frontend,
-      _feature_table,
-      get_config_bound());
+FIXTURE_TEST(test_aborted_transactions, rm_stm_test_fixture) {
+    create_stm_and_start_raft();
+    auto& stm = *_stm;
     stm.testing_only_disable_auto_abort();
 
     stm.start().get0();
 
-    auto stop = ss::defer([&stm] { stm.stop().get0(); });
     wait_for_confirmed_leader();
     wait_for_meta_initialized();
 

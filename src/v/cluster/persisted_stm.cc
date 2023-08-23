@@ -15,6 +15,7 @@
 #include "raft/consensus.h"
 #include "raft/errc.h"
 #include "raft/offset_monitor.h"
+#include "raft/state_machine_base.h"
 #include "raft/types.h"
 #include "ssx/sformat.h"
 #include "storage/kvstore.h"
@@ -61,7 +62,7 @@ persisted_stm<T>::persisted_stm(
   ss::logger& logger,
   raft::consensus* c,
   Args&&... args)
-  : raft::state_machine(c, logger, ss::default_priority_class())
+  : _raft(c)
   , _log(logger, ssx::sformat("[{} ({})]", _raft->ntp(), snapshot_mgr_name))
   , _snapshot_backend(snapshot_mgr_name, _log, c, std::forward<Args>(args)...) {
 }
@@ -70,6 +71,11 @@ template<supported_stm_snapshot T>
 ss::future<std::optional<stm_snapshot>>
 persisted_stm<T>::load_local_snapshot() {
     return _snapshot_backend.load_snapshot();
+}
+template<supported_stm_snapshot T>
+ss::future<> persisted_stm<T>::stop() {
+    co_await raft::state_machine_base::stop();
+    co_await _gate.close();
 }
 
 template<supported_stm_snapshot T>
@@ -83,7 +89,7 @@ file_backed_stm_snapshot::file_backed_stm_snapshot(
   , _log(log)
   , _snapshot_mgr(
       std::filesystem::path(c->log_config().work_directory()),
-      snapshot_name,
+      std::move(snapshot_name),
       ss::default_priority_class()) {}
 
 ss::future<> file_backed_stm_snapshot::remove_persistent_state() {
@@ -559,7 +565,6 @@ ss::future<> persisted_stm<T>::start() {
     }
     _snapshot_hydrated = true;
     _on_snapshot_hydrated.broadcast();
-    co_await state_machine::start();
 }
 
 template class persisted_stm<file_backed_stm_snapshot>;

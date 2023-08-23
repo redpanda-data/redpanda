@@ -9,6 +9,7 @@
 
 #include "cluster/archival_metadata_stm.h"
 
+#include "bytes/iobuf.h"
 #include "bytes/iostream.h"
 #include "cloud_storage/partition_manifest.h"
 #include "cloud_storage/remote.h"
@@ -708,7 +709,7 @@ ss::future<std::error_code> archival_metadata_stm::do_add_segments(
     co_return errc::success;
 }
 
-ss::future<> archival_metadata_stm::apply(model::record_batch b) {
+ss::future<> archival_metadata_stm::apply(const model::record_batch& b) {
     if (b.header().type == model::record_batch_type::prefix_truncate) {
         // Special case handling for prefix_truncate batches: these originate
         // in log_eviction_stm, but affect the entire partition, local and
@@ -801,7 +802,7 @@ ss::future<> archival_metadata_stm::apply(model::record_batch b) {
     _manifest->advance_insync_offset(b.last_offset());
 }
 
-ss::future<> archival_metadata_stm::handle_raft_snapshot() {
+ss::future<> archival_metadata_stm::apply_raft_snapshot(const iobuf&) {
     cloud_storage::partition_manifest new_manifest{
       _manifest->get_ntp(), _manifest->get_revision_id()};
 
@@ -1202,7 +1203,7 @@ archival_metadata_stm::get_segments_to_cleanup() const {
 
 ss::future<> archival_metadata_stm::stop() {
     _download_as.request_abort();
-    co_await raft::state_machine::stop();
+    co_await persisted_stm<>::stop();
 }
 
 const cloud_storage::partition_manifest&

@@ -46,6 +46,9 @@ public:
     ss::future<stm_allocation_result>
     allocate_id(model::timeout_clock::duration timeout);
 
+    std::string_view get_name() const final { return "id_allocator_stm"; }
+    ss::future<iobuf> take_snapshot(model::offset) final { co_return iobuf{}; }
+
 private:
     // legacy structs left for backward compatibility with the "old"
     // on-disk log format
@@ -95,12 +98,12 @@ private:
       do_allocate_id(model::timeout_clock::duration);
     ss::future<bool> set_state(int64_t, model::timeout_clock::duration);
 
-    ss::future<> apply(model::record_batch) override;
+    ss::future<> apply(const model::record_batch&) final;
 
     ss::future<> write_snapshot();
     ss::future<> apply_local_snapshot(stm_snapshot_header, iobuf&&) override;
     ss::future<stm_snapshot> take_local_snapshot() override;
-    ss::future<> handle_raft_snapshot() override;
+    ss::future<> apply_raft_snapshot(const iobuf&) final;
     ss::future<bool> sync(model::timeout_clock::duration);
 
     mutex _lock;

@@ -1,7 +1,7 @@
 #include "cluster/rm_stm.h"
+#include "cluster/tests/rm_stm_test_fixture.h"
 #include "config/config_store.h"
 #include "raft/tests/raft_group_fixture.h"
-#include "raft/tests/simple_raft_fixture.h"
 #include "storage/tests/utils/disk_log_builder.h"
 #include "tx_compaction_utils.h"
 
@@ -14,29 +14,14 @@ using cluster::random_tx_generator;
 #define STM_BOOTSTRAP()                                                        \
     storage::ntp_config::default_overrides o;                                  \
     o.cleanup_policy_bitflags = model::cleanup_policy_bitflags::compaction;    \
-    start_raft(o);                                                             \
-    ss::sharded<cluster::tx_gateway_frontend> tx_gateway_frontend;             \
-    config::config_store store;                                                \
-    config::bounded_property<uint64_t> max_saved_pids_count(                   \
-      store,                                                                   \
-      "max_saved_pids_count",                                                  \
-      "Max pids count inside rm_stm states",                                   \
-      {.needs_restart = config::needs_restart::no,                             \
-       .visibility = config::visibility::user},                                \
-      std::numeric_limits<uint64_t>::max(),                                    \
-      {.min = 1});                                                             \
-    auto stm = ss::make_shared<cluster::rm_stm>(                               \
-      test_logger,                                                             \
-      _raft.get(),                                                             \
-      tx_gateway_frontend,                                                     \
-      _feature_table,                                                          \
-      max_saved_pids_count.bind());                                            \
+                                                                               \
+    create_stm_and_start_raft(o);                                              \
+    auto stm = _stm;                                                           \
     stm->testing_only_disable_auto_abort();                                    \
-    stm->start().get0();                                                       \
     auto stop = ss::defer([&] {                                                \
         _data_dir = "test_dir_" + random_generators::gen_alphanum_string(6);   \
-        stm->stop().get0();                                                    \
         stop_all();                                                            \
+        _stm = nullptr;                                                        \
     });                                                                        \
     wait_for_confirmed_leader();                                               \
     wait_for_meta_initialized();                                               \
@@ -44,7 +29,7 @@ using cluster::random_tx_generator;
     log->stm_manager()->add_stm(stm);                                          \
     BOOST_REQUIRE(log);
 
-FIXTURE_TEST(test_tx_compaction_combinations, simple_raft_fixture) {
+FIXTURE_TEST(test_tx_compaction_combinations, rm_stm_test_fixture) {
     // This generates very interesting interleaved and non interleaved
     // transaction scopes with single and multi segment transactions. We
     // Validate that the resulting output segment file has all the aborted

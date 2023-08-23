@@ -46,8 +46,7 @@ class consensus;
 class log_eviction_stm : public persisted_stm<kvstore_backed_stm_snapshot> {
 public:
     using offset_result = result<model::offset, std::error_code>;
-    log_eviction_stm(
-      raft::consensus*, ss::logger&, ss::abort_source&, storage::kvstore&);
+    log_eviction_stm(raft::consensus*, ss::logger&, storage::kvstore&);
 
     ss::future<> start() override;
 
@@ -103,6 +102,9 @@ public:
         return model::next_offset(_delete_records_eviction_offset);
     }
 
+    std::string_view get_name() const final { return "log_eviction_stm"; }
+    ss::future<iobuf> take_snapshot(model::offset) final { co_return iobuf{}; }
+
 protected:
     ss::future<> apply_local_snapshot(stm_snapshot_header, iobuf&&) override;
 
@@ -117,8 +119,8 @@ private:
     ss::future<> monitor_log_eviction();
     ss::future<> do_write_raft_snapshot(model::offset);
     ss::future<> handle_log_eviction_events();
-    ss::future<> apply(model::record_batch) override;
-    ss::future<> handle_raft_snapshot() override;
+    ss::future<> apply(const model::record_batch&) final;
+    ss::future<> apply_raft_snapshot(const iobuf&) final;
 
     ss::future<offset_result> replicate_command(
       model::record_batch batch,
@@ -126,7 +128,7 @@ private:
       std::optional<std::reference_wrapper<ss::abort_source>> as);
 
 private:
-    ss::abort_source& _as;
+    ss::abort_source _as;
 
     // Offset we are able to truncate based on local retention policy, as
     // signaled by the storage layer. This value is not maintained via the

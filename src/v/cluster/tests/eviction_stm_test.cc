@@ -20,11 +20,8 @@ ss::logger logger("eviction_stm_test");
 class test_log_eviction_stm : public cluster::log_eviction_stm {
 public:
     test_log_eviction_stm(
-      raft::consensus* c,
-      ss::logger& logger,
-      ss::abort_source& as,
-      storage::kvstore& kvs)
-      : cluster::log_eviction_stm(c, logger, as, kvs) {}
+      raft::consensus* c, ss::logger& logger, storage::kvstore& kvs)
+      : cluster::log_eviction_stm(c, logger, kvs) {}
 
     /**
      * The two following methods can be used to drive the eviction stms
@@ -80,7 +77,6 @@ FIXTURE_TEST(test_eviction_stm_deadlock, raft_test_fixture) {
     test_log_eviction_stm eviction_stm(
       leader_raft.get(),
       logger,
-      as,
       gr.get_member(leader_id).storage.local().kvs());
     eviction_stm.start().get();
     auto cleanup = ss::defer([&] {
