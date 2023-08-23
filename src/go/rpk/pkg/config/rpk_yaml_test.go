@@ -25,7 +25,7 @@ func TestRpkYamlVersion(t *testing.T) {
 	shastr := hex.EncodeToString(sha[:])
 
 	const (
-		v1sha = "7cef6a7e7589bf0b31ab0ffab267a0605990c399358acd481f7ff3942563f450" // 23-08-09, still v1
+		v1sha = "0f2a75ecffb99a005778d4d6bf6227f3cf5500dcf35d5fdde39db09564a9e7a4" // 23-08-11
 	)
 
 	if shastr != v1sha {

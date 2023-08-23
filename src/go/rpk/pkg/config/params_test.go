@@ -709,7 +709,7 @@ rpk:
 pandaproxy: {}
 schema_registry: {}
 `,
-			expVirtualRpk: `version: 1
+			expVirtualRpk: `version: 2
 current_profile: default
 current_cloud_auth: default
 profiles:
@@ -721,6 +721,9 @@ profiles:
       admin_api:
         addresses:
             - 127.0.0.1:9644
+      schema_registry:
+        addresses:
+            - 127.0.0.1:8081
 cloud_auth:
     - name: default
       description: Default rpk cloud auth
@@ -784,7 +787,7 @@ rpk:
     tune_disk_write_cache: true
     tune_disk_irq: true
 `,
-			expVirtualRpk: `version: 1
+			expVirtualRpk: `version: 2
 current_profile: default
 current_cloud_auth: default
 profiles:
@@ -796,6 +799,9 @@ profiles:
       admin_api:
         addresses:
             - 0.0.0.3:9644
+      schema_registry:
+        addresses:
+            - 127.0.0.1:8081
 cloud_auth:
     - name: default
       description: Default rpk cloud auth
@@ -809,7 +815,7 @@ cloud_auth:
 		// * admin api is defaulted, using kafka broker ip
 		{
 			name: "rpk.yaml exists",
-			rpkYaml: `version: 1
+			rpkYaml: `version: 2
 current_profile: foo
 current_cloud_auth: fizz
 profiles:
@@ -818,6 +824,9 @@ profiles:
       kafka_api:
         brokers:
             - 0.0.0.3
+      schema_registry:
+        addresses:
+            - 0.0.0.2
 cloud_auth:
     - name: fizz
       description: fizzy
@@ -848,7 +857,7 @@ rpk:
 pandaproxy: {}
 schema_registry: {}
 `,
-			expVirtualRpk: `version: 1
+			expVirtualRpk: `version: 2
 current_profile: foo
 current_cloud_auth: fizz
 profiles:
@@ -860,6 +869,9 @@ profiles:
       admin_api:
         addresses:
             - 0.0.0.3:9644
+      schema_registry:
+        addresses:
+            - 0.0.0.2:8081
 cloud_auth:
     - name: fizz
       description: fizzy
@@ -892,7 +904,7 @@ rpk:
     tune_disk_write_cache: true
     tune_disk_irq: true
 `,
-			rpkYaml: `version: 1
+			rpkYaml: `version: 2
 current_profile: foo
 current_cloud_auth: default
 profiles:
@@ -927,7 +939,7 @@ rpk:
     tune_disk_irq: true
 `,
 
-			expVirtualRpk: `version: 1
+			expVirtualRpk: `version: 2
 current_profile: foo
 current_cloud_auth: default
 profiles:
@@ -939,6 +951,9 @@ profiles:
       admin_api:
         addresses:
             - 128.0.0.4:9644
+      schema_registry:
+        addresses:
+            - 127.0.0.1:8081
 cloud_auth:
     - name: default
       description: Default rpk cloud auth

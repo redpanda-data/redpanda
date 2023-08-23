@@ -1308,3 +1308,146 @@ class RpkTool:
 
         out = self._execute(cmd, env=envs)
         return json.loads(out)
+
+    def _schema_registry_host(self, node=None):
+        if node is None:
+            return ",".join([
+                f"{n.account.hostname}:8081"
+                for n in self._redpanda.started_nodes()
+            ])
+        else:
+            return f"{node.account.hostname}:8081"
+
+    def _schema_registry_conn_settings(self):
+        flags = [
+            "-X",
+            "registry.hosts=" + self._schema_registry_host(),
+        ]
+        if self._username:
+            flags += [
+                "-X",
+                "user=" + self._username,
+                "-X",
+                "pass=" + self._password,
+                "-X",
+                "sasl.mechanism=" + self._sasl_mechanism,
+            ]
+        if self._tls_cert:
+            flags += [
+                "-X",
+                "registry.tls.key=" + self._tls_cert.key,
+                "-X",
+                "registry.tls.cert=" + self._tls_cert.crt,
+                "-X",
+                "registry.tls.ca=" + self._tls_cert.ca.crt,
+            ]
+        if self._tls_enabled:
+            flags += [
+                "-X",
+                "registry.tls.enabled=" + str(self._tls_enabled),
+            ]
+        return flags
+
+    def _run_registry(self,
+                      cmd,
+                      stdin=None,
+                      timeout=None,
+                      output_format="json"):
+        cmd = [self._rpk_binary(), "registry", "--format", output_format
+               ] + self._schema_registry_conn_settings() + cmd
+        out = self._execute(cmd, stdin=stdin, timeout=timeout)
+        return json.loads(out) if output_format == "json" else out
+
+    def get_compatibility_level(self, subject="", include_global=True):
+        cmd = ["compatibility-level", "get", subject]
+        if include_global:
+            cmd += ["--global"]
+
+        return self._run_registry(cmd)
+
+    def set_compatibility_level(self, subject, level, include_global=False):
+        cmd = ["compatibility-level", "set", subject, "--level", level]
+        if include_global:
+            cmd += ["--global"]
+
+        return self._run_registry(cmd)
+
+    def check_compatibility(self, subject, version, schema_path):
+        cmd = [
+            "schema", "check-compatibility", subject, "--schema-version",
+            version, "--schema", schema_path
+        ]
+
+        return self._run_registry(cmd)
+
+    def create_schema(self, subject, schema_path, references=None):
+        cmd = ["schema", "create", subject, "--schema", schema_path]
+
+        if references is not None:
+            cmd += ["--references", references]
+
+        return self._run_registry(cmd)
+
+    def get_schema(self,
+                   subject=None,
+                   id=None,
+                   version=None,
+                   schema_path=None):
+        cmd = ["schema", "get"]
+
+        if subject is not None:
+            cmd += [subject]
+
+        if id is not None:
+            cmd += ["--id", id]
+
+        if version is not None:
+            cmd += ["--schema-version", version]
+
+        if schema_path is not None:
+            cmd += ["--schema", schema_path]
+
+        return self._run_registry(cmd)
+
+    def list_schemas(self, subjects=[], deleted=False):
+        cmd = ["schema", "list"]
+
+        if len(subjects) > 0:
+            cmd += subjects
+
+        if deleted:
+            cmd += ["--deleted"]
+
+        return self._run_registry(cmd)
+
+    def delete_schema(self, subject, version, permanent=False):
+        cmd = ["schema", "delete", subject, "--schema-version", version]
+
+        if permanent:
+            cmd += ["--permanent"]
+
+        return self._run_registry(cmd)
+
+    def schema_references(self, subject, version, deleted=False):
+        cmd = ["schema", "references", subject, "--schema-version", version]
+
+        if deleted:
+            cmd += ["--deleted"]
+
+        return self._run_registry(cmd)
+
+    def list_subjects(self, deleted=False):
+        cmd = ["subject", "list"]
+
+        if deleted:
+            cmd += ["--deleted"]
+
+        return self._run_registry(cmd)
+
+    def delete_subjects(self, subjects=[], permanent=False):
+        cmd = ["subject", "delete"] + subjects
+
+        if permanent:
+            cmd += ["--permanent"]
+
+        return self._run_registry(cmd)

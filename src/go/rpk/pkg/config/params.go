@@ -51,21 +51,26 @@ const (
 
 	// This block contains names X flags that are used for backcompat.
 	// All new X flags are defined directly into the xflags slice.
-	xKafkaBrokers       = "brokers"
-	xKafkaTLSEnabled    = "tls.enabled"
-	xKafkaCACert        = "tls.ca"
-	xKafkaClientCert    = "tls.cert"
-	xKafkaClientKey     = "tls.key"
-	xKafkaSASLMechanism = "sasl.mechanism"
-	xKafkaSASLUser      = "user"
-	xKafkaSASLPass      = "pass"
-	xAdminHosts         = "admin.hosts"
-	xAdminTLSEnabled    = "admin.tls.enabled"
-	xAdminCACert        = "admin.tls.ca"
-	xAdminClientCert    = "admin.tls.cert"
-	xAdminClientKey     = "admin.tls.key"
-	xCloudClientID      = "cloud.client_id"
-	xCloudClientSecret  = "cloud.client_secret"
+	xKafkaBrokers             = "brokers"
+	xKafkaTLSEnabled          = "tls.enabled"
+	xKafkaCACert              = "tls.ca"
+	xKafkaClientCert          = "tls.cert"
+	xKafkaClientKey           = "tls.key"
+	xKafkaSASLMechanism       = "sasl.mechanism"
+	xKafkaSASLUser            = "user"
+	xKafkaSASLPass            = "pass"
+	xAdminHosts               = "admin.hosts"
+	xAdminTLSEnabled          = "admin.tls.enabled"
+	xAdminCACert              = "admin.tls.ca"
+	xAdminClientCert          = "admin.tls.cert"
+	xAdminClientKey           = "admin.tls.key"
+	xCloudClientID            = "cloud.client_id"
+	xCloudClientSecret        = "cloud.client_secret"
+	xSchemaRegistryHosts      = "registry.hosts"
+	xSchemaRegistryTLSEnabled = "registry.tls.enabled"
+	xSchemaRegistryCACert     = "registry.tls.ca"
+	xSchemaRegistryClientCert = "registry.tls.cert"
+	xSchemaRegistryClientKey  = "registry.tls.key"
 )
 
 const (
@@ -73,6 +78,8 @@ const (
 	xkindCloudAuth        // configuration for the current cloud_auth
 	xkindGlobal           // configuration for rpk.yaml globals
 )
+
+const currentRpkYAMLVersion = 2
 
 type xflag struct {
 	path        string
@@ -109,6 +116,13 @@ func mkSASL(k *RpkKafkaAPI) *SASL {
 }
 
 func mkAdminTLS(a *RpkAdminAPI) *TLS {
+	if a.TLS == nil {
+		a.TLS = new(TLS)
+	}
+	return a.TLS
+}
+
+func mkSchemaRegistryTLS(a *RpkSchemaRegistryAPI) *TLS {
 	if a.TLS == nil {
 		a.TLS = new(TLS)
 	}
@@ -246,7 +260,55 @@ var xflags = map[string]xflag{
 			return nil
 		},
 	},
-
+	xSchemaRegistryHosts: {
+		"schema_registry.addresses",
+		"127.8.8.4,126.1.3.4:9093,localhost,example.com",
+		xkindProfile,
+		func(v string, y *RpkYaml) error {
+			p := y.Profile(y.CurrentProfile)
+			return splitCommaIntoStrings(v, &p.SR.Addresses)
+		},
+	},
+	xSchemaRegistryTLSEnabled: {
+		"schema_registry.tls.enabled",
+		"false",
+		xkindProfile,
+		func(_ string, y *RpkYaml) error {
+			p := y.Profile(y.CurrentProfile)
+			mkSchemaRegistryTLS(&p.SR)
+			return nil
+		},
+	},
+	xSchemaRegistryCACert: {
+		"schema_registry.tls.ca_file",
+		"noextension",
+		xkindProfile,
+		func(v string, y *RpkYaml) error {
+			p := y.Profile(y.CurrentProfile)
+			mkSchemaRegistryTLS(&p.SR).TruststoreFile = v
+			return nil
+		},
+	},
+	xSchemaRegistryClientCert: {
+		"schema_registry.tls.cert_file",
+		"cert.pem",
+		xkindProfile,
+		func(v string, y *RpkYaml) error {
+			p := y.Profile(y.CurrentProfile)
+			mkSchemaRegistryTLS(&p.SR).CertFile = v
+			return nil
+		},
+	},
+	xSchemaRegistryClientKey: {
+		"schema_registry.tls.key_file",
+		"key.pem",
+		xkindProfile,
+		func(v string, y *RpkYaml) error {
+			p := y.Profile(y.CurrentProfile)
+			mkSchemaRegistryTLS(&p.SR).KeyFile = v
+			return nil
+		},
+	},
 	xCloudClientID: {
 		"client_id",
 		"anystring",
@@ -500,6 +562,30 @@ admin.tls.key=/path/to/key.pem
   A filepath to a PEM encoded client key file to talk to your broker's Admin
   API listeners with mTLS.
 
+registry.hosts=localhost:8081,rp.example.com:8081
+  A comma separated list of host:ports that rpk talks to for the schema registry
+  API. By default, this is 127.0.0.1:8081.
+
+registry.tls.enabled=false
+  A boolean that enables rpk to speak TLS to your broker's schema registry API
+  listeners. You can use this if you have well known certificates setup on your 
+  schema registry API. If you use mTLS, specifying mTLS certificate filepaths 
+  automatically opts into TLS enabled.
+
+registry.tls.ca=/path/to/ca.pem
+  A filepath to a PEM encoded CA certificate file to talk to your broker's
+  schema registry API listeners with mTLS. You may also need this if your 
+  listeners are using a certificate by a well known authority that is not yet 
+  bundled on your operating system.
+
+registry.tls.cert=/path/to/cert.pem
+  A filepath to a PEM encoded client certificate file to talk to your broker's
+  schema registry API listeners with mTLS.
+
+registry.tls.key=/path/to/key.pem
+  A filepath to a PEM encoded client key file to talk to your broker's schema
+  registry API listeners with mTLS.
+
 cloud.client_id=somestring
   An oauth client ID to use for authenticating with the Redpanda Cloud API.
 
@@ -558,6 +644,11 @@ admin.tls.enabled=boolean
 admin.tls.ca=/path/to/ca.pem
 admin.tls.cert=/path/to/cert.pem
 admin.tls.key=/path/to/key.pem
+registry.hosts=comma,delimited,host:ports
+registry.tls.enabled=boolean
+registry.tls.ca=/path/to/ca.pem
+registry.tls.cert=/path/to/cert.pem
+registry.tls.key=/path/to/key.pem
 cloud.client_id=somestring
 cloud.client_secret=somelongerstring
 globals.prompt="%n"
@@ -912,7 +1003,9 @@ func (*Params) backcompatOldCloudYaml(fs afero.Fs) error {
 		}
 		if rpkYaml.Version < 1 {
 			return fmt.Errorf("%s is not in the expected rpk.yaml format", def)
-		} else if rpkYaml.Version > 1 {
+		} else if rpkYaml.Version < currentRpkYAMLVersion {
+			rpkYaml.Version = currentRpkYAMLVersion
+		} else if rpkYaml.Version > currentRpkYAMLVersion {
 			return fmt.Errorf("%s is using a newer rpk.yaml format than we understand, please upgrade rpk", def)
 		}
 	}
@@ -985,7 +1078,9 @@ func (p *Params) readRpkConfig(fs afero.Fs, c *Config) error {
 		}
 		c.rpkYaml = before // this config is not an rpk.yaml; preserve our defaults
 		return nil
-	} else if c.rpkYaml.Version > 1 {
+	} else if c.rpkYaml.Version < currentRpkYAMLVersion {
+		c.rpkYaml.Version = currentRpkYAMLVersion
+	} else if c.rpkYaml.Version > currentRpkYAMLVersion {
 		return fmt.Errorf("%s is using a newer rpk.yaml format than we understand, please upgrade rpk", def)
 	}
 	yaml.Unmarshal(file, &c.rpkYamlActual)
@@ -1117,6 +1212,14 @@ func (c *Config) ensureBrokerAddrs() {
 		}
 		if len(dst.AdminAPI.Addresses) == 0 {
 			dst.AdminAPI.Addresses = []string{net.JoinHostPort("127.0.0.1", strconv.Itoa(DefaultAdminPort))}
+		}
+	}
+	{
+		dst := c.rpkYaml.Profile(c.rpkYaml.CurrentProfile)
+		// Schema Registry is only supported in profiles. Not in old rpk section
+		// of our redpanda.yaml
+		if len(dst.SR.Addresses) == 0 {
+			dst.SR.Addresses = []string{net.JoinHostPort("127.0.0.1", strconv.Itoa(DefaultSchemaRegPort))}
 		}
 	}
 }
@@ -1299,6 +1402,23 @@ func (c *Config) fixSchemePorts() error {
 			continue // keep whatever port exists; empty ports will default to 80 or 443
 		default:
 			return fmt.Errorf("unable to fix admin address %v: unsupported scheme %q", a, scheme)
+		}
+	}
+	for i, a := range p.SR.Addresses {
+		scheme, host, port, err := rpknet.SplitSchemeHostPort(a)
+		if err != nil {
+			return fmt.Errorf("unable to fix schema registry address %v: %w", a, err)
+		}
+		switch scheme {
+		case "":
+			if port == "" {
+				port = strconv.Itoa(DefaultSchemaRegPort)
+			}
+			p.SR.Addresses[i] = net.JoinHostPort(host, port)
+		case "http", "https":
+			continue // keep whatever port exists; empty ports will default to 80 or 443
+		default:
+			return fmt.Errorf("unable to fix schema registry address %v: unsupported scheme %q", a, scheme)
 		}
 	}
 	return nil

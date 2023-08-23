@@ -24,7 +24,7 @@ var marshallerMap = map[string]func(any) ([]byte, error){
 // Format formats the input data based on the OutFormatter.Kind and returns the
 // formatted string, along with a boolean flag indicating if the 'kind' is plain
 // text (short) or wide text.
-func (f *OutFormatter) Format(data any) (isShort, isLong bool, s string, err error) { // TODO add isWide
+func (f *OutFormatter) Format(data any) (isShort, isLong bool, s string, err error) {
 	if f.t != nil && reflect.TypeOf(data) != f.t {
 		return false, false, "", fmt.Errorf("--help format type %s does not match serialize type %s, please open a bug report against rpk with the command you are running", f.t, reflect.TypeOf(data))
 	}
@@ -41,7 +41,7 @@ func (f *OutFormatter) Format(data any) (isShort, isLong bool, s string, err err
 	case "text", "short":
 		return true, false, "", nil
 	case "wide", "long":
-		return false, true, "", nil
+		return true, true, "", nil
 	default:
 		return false, false, "", fmt.Errorf("--format %q not supported", f.Kind)
 	}
