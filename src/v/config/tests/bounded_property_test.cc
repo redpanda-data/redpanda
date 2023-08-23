@@ -12,12 +12,15 @@
 
 #include <seastar/testing/thread_test_case.hh>
 
+#include <chrono>
 #include <optional>
 
 static_assert(config::detail::bounds<config::numeric_integral_bounds<int>>);
 static_assert(config::detail::bounds<config::numeric_bounds<double>>);
 
 namespace {
+
+using namespace std::literals;
 
 struct test_config : public config::config_store {
     config::bounded_property<int32_t> bounded_int;
@@ -26,6 +29,8 @@ struct test_config : public config::config_store {
     config::bounded_property<double, config::numeric_bounds> bounded_double;
     config::bounded_property<std::optional<double>, config::numeric_bounds>
       bounded_double_opt;
+    config::bounded_property<std::optional<std::chrono::milliseconds>>
+      bounded_opt_ms;
 
     test_config()
       : bounded_int(
@@ -62,7 +67,14 @@ struct test_config : public config::config_store {
           "An options float with some bounds set",
           {},
           std::nullopt,
-          {.min = -1, .max = 2.236067977}) {}
+          {.min = -1, .max = 2.236067977})
+      , bounded_opt_ms(
+          *this,
+          "bounded_opt_ms",
+          "An optional duration",
+          {},
+          std::nullopt,
+          {.min = 5ms}) {}
 };
 
 SEASTAR_THREAD_TEST_CASE(numeric_integral_bounds) {
@@ -163,6 +175,20 @@ SEASTAR_THREAD_TEST_CASE(numeric_fp_bounds) {
     // Too high: clamp to maximum
     cfg.bounded_double.set_value(YAML::Load("1000000"));
     BOOST_TEST(cfg.bounded_double() == 2.236067977);
+}
+
+SEASTAR_THREAD_TEST_CASE(bounded_property_set_value) {
+    auto cfg = test_config();
+
+    BOOST_TEST_INFO("fully specified optional");
+    cfg.bounded_opt_ms.set_value(std::optional{20ms});
+    BOOST_CHECK_EQUAL(cfg.bounded_opt_ms(), 20ms);
+    BOOST_TEST_INFO("std::nullopt");
+    cfg.bounded_opt_ms.set_value(std::nullopt);
+    BOOST_CHECK(!cfg.bounded_opt_ms());
+    BOOST_TEST_INFO("a value convertible to the optional::value type");
+    cfg.bounded_opt_ms.set_value(2h);
+    BOOST_CHECK_EQUAL(cfg.bounded_opt_ms(), 2h);
 }
 
 } // namespace
