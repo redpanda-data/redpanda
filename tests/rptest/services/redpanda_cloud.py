@@ -16,6 +16,10 @@ SaslCredentials = collections.namedtuple("SaslCredentials",
 
 CLOUD_TYPE_FMC = 'FMC'
 CLOUD_TYPE_BYOC = 'BYOC'
+PROVIDER_AWS = 'AWS'
+PROVIDER_GCP = 'GCP'
+
+TIER_DEFAULTS = {PROVIDER_AWS: "tier-1-aws", PROVIDER_GCP: "tier-1-gcp"}
 
 
 class RpCloudApiClient(object):
@@ -404,7 +408,7 @@ class CloudCluster():
         return
 
     def create(self,
-               config_profile_name: str = 'tier-1-aws',
+               config_profile_name: str = 'default',
                superuser: Optional[SaslCredentials] = None) -> str:
         """Create a cloud cluster and a new namespace; block until cluster is finished creating.
 
@@ -414,6 +418,9 @@ class CloudCluster():
 
         if not self.isPublicNetwork:
             self.current.connection_type = 'private'
+        # Handle default values
+        if config_profile_name == 'default':
+            config_profile_name = TIER_DEFAULTS[self.config.provider]
 
         if self.config.id != '':
             # Cluster already exist
