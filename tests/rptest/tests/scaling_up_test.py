@@ -342,6 +342,8 @@ class ScalingUpTest(PreallocNodesTest):
     def test_adding_node_with_unavailable_node(self):
         # start 3 nodes first
         self.redpanda.start(nodes=self.redpanda.nodes[0:3])
+        self.redpanda.set_cluster_config(
+            {"partition_autobalancing_mode": "off"})
         # create some topics
         total_replicas = self.create_topics(rf=3, partition_count=20)
         # add consumer group topic replicas
