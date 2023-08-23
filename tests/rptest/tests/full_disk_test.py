@@ -644,3 +644,6 @@ class LogStorageMaxSizeSI(RedpandaTest):
 
         # give it plenty of time. on debug it is hella slow
         wait_until(target_size_reached, timeout_sec=120, backoff_sec=5)
+
+
+# this is a mod to run ci
