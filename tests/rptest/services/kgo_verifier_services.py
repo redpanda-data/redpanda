@@ -68,6 +68,13 @@ class KgoVerifierService(Service):
         self._password = password
         self._enable_tls = enable_tls
 
+        # if testing redpanda cloud, override with default test super user/pass
+        if hasattr(redpanda, 'GLOBAL_CLOUD_CLUSTER_CONFIG'):
+            security_config = redpanda.security_config()
+            self._username = security_config.get('sasl_plain_username', None)
+            self._password = security_config.get('sasl_plain_password', None)
+            self._enable_tls = security_config.get('enable_tls', False)
+
         for node in self.nodes:
             if not hasattr(node, "kgo_verifier_ports"):
                 node.kgo_verifier_ports = {}
