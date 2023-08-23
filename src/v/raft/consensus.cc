@@ -29,6 +29,7 @@
 #include "raft/recovery_stm.h"
 #include "raft/replicate_entries_stm.h"
 #include "raft/rpc_client_protocol.h"
+#include "raft/state_machine_manager.h"
 #include "raft/types.h"
 #include "raft/vote_stm.h"
 #include "reflection/adl.h"
@@ -266,6 +267,9 @@ ss::future<> consensus::stop() {
         idx.second.follower_state_change.broken();
     }
     co_await _event_manager.stop();
+    if (_stm_manager) {
+        co_await _stm_manager->stop();
+    }
     co_await _append_requests_buffer.stop();
     co_await _batcher.stop();
 
@@ -1300,7 +1304,11 @@ ss::future<std::error_code> consensus::force_replace_configuration_locally(
     co_return errc::success;
 }
 
-ss::future<> consensus::start() {
+ss::future<> consensus::start(
+  std::optional<state_machine_manager_builder> stm_manager_builder) {
+    if (stm_manager_builder) {
+        _stm_manager = std::move(stm_manager_builder.value()).build(this);
+    }
     return ss::try_with_gate(_bg, [this] { return do_start(); });
 }
 
@@ -1497,6 +1505,9 @@ ss::future<> consensus::do_start() {
 
         co_await _event_manager.start();
         _append_requests_buffer.start();
+        if (_stm_manager) {
+            co_await _stm_manager->start();
+        }
 
         vlog(
           _ctxlog.info,
