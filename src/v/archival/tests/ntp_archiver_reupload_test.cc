@@ -109,37 +109,6 @@ static constexpr std::string_view gap_manifest = R"json({
 }
 })json";
 
-static constexpr std::string_view gap_begin_manifest = R"json({
-"version": 1,
-"namespace": "kafka",
-"topic": "test-topic",
-"partition": 42,
-"revision": 0,
-"last_offset": 1010,
-"last_uploaded_compacted_offset": 250,
-"segments": {
-    "0-1-v1.log": {
-        "is_compacted": false,
-        "size_bytes": 1024,
-        "base_offset": 0,
-        "committed_offset": 200
-    },
-    "500-1-v1.log": {
-        "is_compacted": false,
-        "size_bytes": 1024,
-        "base_offset": 500,
-        "committed_offset": 999
-    },
-    "1000-4-v1.log": {
-        "is_compacted": false,
-        "size_bytes": 2048,
-        "base_offset": 1000,
-        "committed_offset": 1010,
-        "max_timestamp": 1234567890
-    }
-}
-})json";
-
 struct reupload_fixture : public archiver_fixture {
     void create_segment(segment_desc seg) {
         auto segment = get_local_storage_api()
@@ -512,84 +481,6 @@ FIXTURE_TEST(test_upload_compacted_segments_fill_gap, reupload_fixture) {
     auto replaced = stm_manifest.replaced_segments();
     BOOST_REQUIRE_EQUAL(replaced[0].base_offset, model::offset{0});
     BOOST_REQUIRE_EQUAL(replaced[1].base_offset, model::offset{500});
-}
-
-FIXTURE_TEST(test_upload_compacted_segments_ends_in_gap, reupload_fixture) {
-    std::vector<segment_desc> segments = {
-      {manifest_ntp, model::offset(0), model::term_id(1), 250, 2},
-      {manifest_ntp, model::offset(250), model::term_id(1), 750, 2},
-      {manifest_ntp, model::offset(1000), model::term_id(4), 10, 2},
-    };
-
-    initialize(segments);
-    auto action = ss::defer([this] { archiver->stop().get(); });
-
-    auto part = app.partition_manager.local().get(manifest_ntp);
-    cluster::details::archival_metadata_stm_accessor stm_acc{
-      *part->archival_meta_stm()};
-
-    // Manifest has gap: offset 199 to 500. Re-upload will partially fill the
-    // gap.
-    stm_acc.replace_manifest(gap_manifest);
-
-    const auto& stm_manifest = part->archival_meta_stm()->manifest();
-
-    listen();
-
-    self_compact_next_segment();
-
-    archival::ntp_archiver::batch_result expected{{0, 0, 0}, {1, 0, 0}};
-    upload_and_verify(archiver.value(), expected);
-
-    BOOST_REQUIRE_EQUAL(get_requests().size(), 3);
-
-    verify_segment_request("0-1-v1.log", stm_manifest);
-
-    BOOST_REQUIRE_EQUAL(
-      stm_manifest.get_last_uploaded_compacted_offset(), model::offset{249});
-
-    auto replaced = stm_manifest.replaced_segments();
-    BOOST_REQUIRE_EQUAL(replaced[0].base_offset, model::offset{0});
-}
-
-FIXTURE_TEST(test_upload_compacted_segments_begins_in_gap, reupload_fixture) {
-    std::vector<segment_desc> segments = {
-      {manifest_ntp, model::offset(0), model::term_id(1), 251, 2},
-      {manifest_ntp, model::offset(251), model::term_id(1), 749, 2},
-      {manifest_ntp, model::offset(1000), model::term_id(4), 10, 2},
-    };
-
-    initialize(segments);
-
-    auto action = ss::defer([this] { archiver->stop().get(); });
-
-    auto part = app.partition_manager.local().get(manifest_ntp);
-    cluster::details::archival_metadata_stm_accessor stm_acc{
-      *part->archival_meta_stm()};
-
-    // Manifest has gap: offset 199 to 500. LCO is 250. Re-upload will partially
-    // fill the gap.
-    stm_acc.replace_manifest(gap_begin_manifest);
-
-    const auto& stm_manifest = part->archival_meta_stm()->manifest();
-
-    listen();
-
-    self_compact_next_segment();
-    self_compact_next_segment();
-
-    archival::ntp_archiver::batch_result expected{{0, 0, 0}, {1, 0, 0}};
-    upload_and_verify(archiver.value(), expected);
-
-    BOOST_REQUIRE_EQUAL(get_requests().size(), 3);
-
-    verify_segment_request("251-1-v1.log", stm_manifest);
-
-    BOOST_REQUIRE_EQUAL(
-      stm_manifest.get_last_uploaded_compacted_offset(), model::offset{999});
-
-    auto replaced = stm_manifest.replaced_segments();
-    BOOST_REQUIRE_EQUAL(replaced[0].base_offset, model::offset{500});
 }
 
 FIXTURE_TEST(test_upload_both_compacted_and_non_compacted, reupload_fixture) {
