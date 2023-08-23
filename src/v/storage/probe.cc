@@ -78,6 +78,8 @@ void probe::setup_metrics(const model::ntp& ntp) {
           ? std::vector<sm::label>{sm::shard_label, partition_label}
           : std::vector<sm::label>{};
 
+    return;
+
     _metrics.add_group(
       prometheus_sanitize::metrics_name("storage:log"),
       {sm::make_total_bytes(
@@ -200,6 +202,8 @@ void readers_cache_probe::setup_metrics(const model::ntp& ntp) {
       topic_label(ntp.tp.topic()),
       partition_label(ntp.tp.partition()),
     };
+
+    return;
 
     _metrics.add_group(
       prometheus_sanitize::metrics_name("storage:log"),

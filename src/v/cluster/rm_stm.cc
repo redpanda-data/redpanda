@@ -2900,6 +2900,8 @@ void rm_stm::setup_metrics() {
       partition_label(ntp.tp.partition()),
     };
 
+    return;
+
     _metrics.add_group(
       prometheus_sanitize::metrics_name("tx:partition"),
       {

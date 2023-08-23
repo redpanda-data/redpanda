@@ -45,6 +45,8 @@ void replicated_partition_probe::setup_internal_metrics(const model::ntp& ntp) {
         return;
     }
 
+    return;
+
     auto ns_label = sm::label("namespace");
     auto topic_label = sm::label("topic");
     auto partition_label = sm::label("partition");
