@@ -131,6 +131,8 @@ class ScaleParameters:
         # TODO: redpanda should figure this out automatically by
         #       rolling segments pre-emptively if low on disk space
         self.segment_size = int(self.retention_bytes / 4)
+        #CUST
+        # self.segment_size = 2**20
 
         # Tiered storage will have a warmup period where it will set the
         # segment size and local retention lower to ensure a large number of
@@ -555,6 +557,44 @@ class ManyPartitionsTest(PreallocNodesTest):
         time.sleep(180)
 
 
+    def _enter_maintenance(self, topic_names: list, n_partitions: int):
+        node = self.redpanda.nodes[-1]
+        node_id = self.redpanda.node_id(node)
+        rpk = RpkTool(self.redpanda)
+        self.logger.info(f"node {node.name} entering maintenance mode")
+        rpk.cluster_maintenance_enable(node, wait=True)
+        # Wait for leaderships to stabilize on the surviving nodes
+        wait_until(
+            lambda: self._node_leadership_evacuated(topic_names, n_partitions,
+                                                    node_id), 120, 5, err_msg="leadership not evacuated")
+        
+    def _leave_maintenance(self, topic_names: list, n_partitions: int):
+        node = self.redpanda.nodes[-1]
+        self.logger.info(f"node {node.name} leaving maintenance mode")
+        RpkTool(self.redpanda).cluster_maintenance_disable(node)
+
+        # Heuristic: in testing we see leaderships transfer at about 10
+        # per second.  2x margin for error.  Up to the leader balancer period
+        # wait for it to activate.
+        transfers_per_sec = 10
+        expect_leader_transfer_time = 2 * (
+            n_partitions / len(self.redpanda.nodes)) / transfers_per_sec + (
+                self.LEADER_BALANCER_PERIOD_MS / 1000) * 2
+
+        # Wait for leaderships to achieve balance.  This is bounded by:
+        #  - Time for leader_balancer to issue+await all the transfers
+        #  - Time for raft to achieve recovery, a prerequisite for
+        #    leadership.
+        t1 = time.time()
+        wait_until(
+            lambda: self._node_leadership_balanced(topic_names, n_partitions),
+            expect_leader_transfer_time,
+            10,
+            err_msg="Waiting for leadership balance after restart")
+        self.logger.info(
+            f"Leaderships balanced in {time.time() - t1:.2f} seconds")
+
+
     def _restart_stress(self, scale: ScaleParameters, topic_names: list,
                         n_partitions: int, inter_restart_check: callable, restart_count=2):
         """
@@ -938,7 +978,7 @@ class ManyPartitionsTest(PreallocNodesTest):
 
         # Partitions per topic
         # CUST
-        n_partitions = int(30_000 / n_topics)
+        n_partitions = int(20_000 / n_topics)
 
         self.logger.info(
             f"Running partition scale test with {n_partitions} partitions on {n_topics} topics"
@@ -1082,13 +1122,25 @@ class ManyPartitionsTest(PreallocNodesTest):
             # observe phase 2
             time.sleep(180)
 
+            # self._enter_maintenance(topic_names, n_partitions)
+            # # phase 3
+            # time.sleep(180)
+            
+            # self._leave_maintenance(topic_names, n_partitions)
+            # # phase 4
+            # time.sleep(180)
+
+            # self.logger.info("increasing raft election timeout...")
+            # self.redpanda.set_cluster_config({'election_timeout_ms': 5000})
+            # time.sleep(180)
+
             self.logger.info(f"Entering single node restart phase")
             self._single_node_restart(scale, topic_names, n_partitions)
             progress_check()
 
-            # self.logger.info(f"Entering restart stress test phase")
-            # self._restart_stress(scale, topic_names, n_partitions,
-            #                      progress_check, restart_count=2)
+            self.logger.info(f"Entering restart stress test phase")
+            self._restart_stress(scale, topic_names, n_partitions,
+                                 progress_check, restart_count=2)
 
             self.logger.info(
                 f"Post-restarts: checking repeater group is ready...")
