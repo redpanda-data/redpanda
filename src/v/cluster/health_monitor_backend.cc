@@ -785,6 +785,36 @@ health_monitor_backend::get_node_drain_status(
     co_return it->second.drain_status;
 }
 
+health_monitor_backend::aggregated_report
+health_monitor_backend::aggregate_reports(report_cache_t& reports) {
+    // The size of the health status must be bounded: if all partitions
+    // on a system with 50k partitions are under-replicated, it is not helpful
+    // to try and cram all 50k NTPs into a vector here.
+    constexpr size_t max_partitions_report = 128;
+
+    aggregated_report ret;
+
+    for (const auto& [_, report] : reports) {
+        for (const auto& [tp_ns, partitions] : report.topics) {
+            for (const auto& partition : partitions) {
+                if (
+                  !partition.leader_id.has_value()
+                  && ret.leaderless.size() < max_partitions_report) {
+                    ret.leaderless.emplace(tp_ns.ns, tp_ns.tp, partition.id);
+                }
+                if (
+                  partition.under_replicated_replicas.value_or(0) > 0
+                  && ret.under_replicated.size() < max_partitions_report) {
+                    ret.under_replicated.emplace(
+                      tp_ns.ns, tp_ns.tp, partition.id);
+                }
+            }
+        }
+    }
+
+    return ret;
+}
+
 ss::future<cluster_health_overview>
 health_monitor_backend::get_cluster_health_overview(
   model::timeout_clock::time_point deadline) {
@@ -809,41 +839,15 @@ health_monitor_backend::get_cluster_health_overview(
     std::sort(ret.all_nodes.begin(), ret.all_nodes.end());
     std::sort(ret.nodes_down.begin(), ret.nodes_down.end());
 
-    // The size of the health status must be bounded: if all partitions
-    // on a system with 50k partitions are under-replicated, it is not helpful
-    // to try and cram all 50k NTPs into a vector here.
-    size_t max_partitions_report = 128;
+    auto aggr_report = aggregate_reports(_reports);
 
-    absl::node_hash_set<model::ntp> leaderless;
-    absl::node_hash_set<model::ntp> under_replicated;
+    auto move_into = [](auto& dest, auto& src) {
+        dest.reserve(src.size());
+        std::move(src.begin(), src.end(), std::back_inserter(dest));
+    };
 
-    for (const auto& [_, report] : _reports) {
-        for (const auto& [tp_ns, partitions] : report.topics) {
-            for (const auto& partition : partitions) {
-                if (
-                  !partition.leader_id.has_value()
-                  && leaderless.size() < max_partitions_report) {
-                    leaderless.emplace(tp_ns.ns, tp_ns.tp, partition.id);
-                }
-                if (
-                  partition.under_replicated_replicas.value_or(0) > 0
-                  && under_replicated.size() < max_partitions_report) {
-                    under_replicated.emplace(tp_ns.ns, tp_ns.tp, partition.id);
-                }
-            }
-        }
-    }
-    ret.leaderless_partitions.reserve(leaderless.size());
-    std::move(
-      leaderless.begin(),
-      leaderless.end(),
-      std::back_inserter(ret.leaderless_partitions));
-
-    ret.under_replicated_partitions.reserve(under_replicated.size());
-    std::move(
-      under_replicated.begin(),
-      under_replicated.end(),
-      std::back_inserter(ret.under_replicated_partitions));
+    move_into(ret.leaderless_partitions, aggr_report.leaderless);
+    move_into(ret.under_replicated_partitions, aggr_report.under_replicated);
 
     ret.controller_id = _raft0->get_leader_id();
 
