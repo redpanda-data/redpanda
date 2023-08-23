@@ -216,7 +216,6 @@ protected:
 
     bool _is_catching_up{false};
     model::term_id _insync_term;
-    model::offset _insync_offset;
     raft::consensus* _raft;
     prefix_logger _log;
     ss::gate _gate;

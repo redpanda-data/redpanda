@@ -728,11 +728,10 @@ ss::future<> archival_metadata_stm::apply(const model::record_batch& b) {
                   apply_update_start_kafka_offset(val.kafka_start_offset);
               }
           });
-        _insync_offset = b.last_offset();
+
         co_return;
     }
     if (b.header().type != model::record_batch_type::archival_metadata) {
-        _insync_offset = b.last_offset();
         co_return;
     }
 
@@ -798,7 +797,6 @@ ss::future<> archival_metadata_stm::apply(const model::record_batch& b) {
         };
     });
 
-    _insync_offset = b.last_offset();
     _manifest->advance_insync_offset(b.last_offset());
 }
 
@@ -822,7 +820,6 @@ ss::future<> archival_metadata_stm::apply_raft_snapshot(const iobuf&) {
         cloud_storage_clients::bucket_name{*bucket}, new_manifest, rc_node);
 
     if (res == cloud_storage::download_result::notfound) {
-        _insync_offset = model::prev_offset(_raft->start_offset());
         set_next(_raft->start_offset());
         vlog(_logger.info, "handled log eviction, the manifest is absent");
         co_return;
@@ -843,12 +840,9 @@ ss::future<> archival_metadata_stm::apply_raft_snapshot(const iobuf&) {
     if (iso == model::offset{}) {
         // Handle legacy manifests which don't have the 'insync_offset'
         // field.
-        _insync_offset = _manifest->get_last_offset();
-    } else {
-        _insync_offset = iso;
+        iso = _manifest->get_last_offset();
     }
-    auto next_offset = std::max(
-      _raft->start_offset(), model::next_offset(_insync_offset));
+    auto next_offset = std::max(_raft->start_offset(), model::next_offset(iso));
     set_next(next_offset);
 
     vlog(
@@ -945,12 +939,12 @@ ss::future<stm_snapshot> archival_metadata_stm::take_local_snapshot() {
     vlog(
       _logger.debug,
       "creating snapshot at offset: {}, remote start_offset: {}, "
-      "last_offset: "
-      "{}",
-      _insync_offset,
+      "last_offset: {}",
+      last_applied_offset(),
       get_start_offset(),
       get_last_offset());
-    co_return stm_snapshot::create(0, _insync_offset, std::move(snap_data));
+    co_return stm_snapshot::create(
+      0, last_applied_offset(), std::move(snap_data));
 }
 
 model::offset archival_metadata_stm::max_collectible_offset() {

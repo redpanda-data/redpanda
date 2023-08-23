@@ -1241,7 +1241,7 @@ rm_stm::replicate_tx(model::batch_identity bid, model::record_batch_reader br) {
         // this is the first attempt in the tx, reset dedupe cache
         reset_seq(bid, synced_term);
 
-        _mem_state.estimated[bid.pid] = _insync_offset;
+        _mem_state.estimated[bid.pid] = last_applied_offset();
     }
 
     auto expiration_it = _log_state.expiration.find(bid.pid);
@@ -2144,8 +2144,6 @@ ss::future<> rm_stm::apply(const model::record_batch& b) {
         }
     }
 
-    _insync_offset = last_offset;
-
     compact_snapshot();
     if (_is_autoabort_enabled && !_is_autoabort_active) {
         abort_old_txes();
@@ -2498,7 +2496,7 @@ ss::future<stm_snapshot> rm_stm::take_local_snapshot() {
     vlog(
       _ctx_log.trace,
       "taking snapshot with last included offset of: {}",
-      model::prev_offset(_insync_offset));
+      last_applied_offset());
 
     fragmented_vector<abort_index> abort_indexes;
     fragmented_vector<abort_index> expired_abort_indexes;
@@ -2584,7 +2582,7 @@ ss::future<stm_snapshot> rm_stm::take_local_snapshot() {
                           tx_ss.seqs.push_back(entry.second.entry.copy());
                       }
                   }
-                  tx_ss.offset = _insync_offset;
+                  tx_ss.offset = last_applied_offset();
 
                   for (const auto& entry : _log_state.current_txes) {
                       tx_ss.tx_data.push_back(tx_snapshot::tx_data_snapshot{
@@ -2607,7 +2605,7 @@ ss::future<stm_snapshot> rm_stm::take_local_snapshot() {
                   for (const auto& entry : _log_state.seq_table) {
                       tx_ss.seqs.push_back(entry.second.entry.copy());
                   }
-                  tx_ss.offset = _insync_offset;
+                  tx_ss.offset = last_applied_offset();
 
                   for (const auto& entry : _log_state.current_txes) {
                       tx_ss.tx_seqs.push_back(tx_snapshot_v3::tx_seqs_snapshot{
@@ -2627,7 +2625,7 @@ ss::future<stm_snapshot> rm_stm::take_local_snapshot() {
               }
               return fut_serialize.then([version, &tx_ss_buf, this]() {
                   return stm_snapshot::create(
-                    version, _insync_offset, std::move(tx_ss_buf));
+                    version, last_applied_offset(), std::move(tx_ss_buf));
               });
           });
     });
@@ -2733,7 +2731,6 @@ ss::future<> rm_stm::apply_raft_snapshot(const iobuf&) {
           _log_state.reset();
           _mem_state = mem_state{_tx_root_tracker};
           set_next(_raft->start_offset());
-          _insync_offset = model::prev_offset(_raft->start_offset());
           return ss::now();
       });
 }

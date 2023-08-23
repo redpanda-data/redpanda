@@ -219,7 +219,7 @@ public:
 
     // Users of the stm need to know insync offset in order to pass
     // the proper value to mark_clean
-    model::offset get_insync_offset() const { return _insync_offset; }
+    model::offset get_insync_offset() const { return last_applied_offset(); }
 
     model::offset get_last_clean_at() const { return _last_clean_at; };
 
@@ -292,7 +292,7 @@ private:
     ss::shared_ptr<cloud_storage::partition_manifest> _manifest;
 
     // The offset of the last mark_clean_cmd applied: if the manifest is
-    // clean, this will equal _insync_offset.
+    // clean, this will equal last_applied_offset.
     model::offset _last_clean_at;
 
     // The offset of the last record that modified this stm

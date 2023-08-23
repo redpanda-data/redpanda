@@ -320,14 +320,13 @@ persisted_stm<T>::ensure_local_snapshot_exists(model::offset target_offset) {
             return wait(target_offset, model::no_timeout)
               .then([this, target_offset]() {
                   vassert(
-                    target_offset <= _insync_offset,
+                    target_offset < next(),
                     "[{} ({})]  after we waited for target_offset ({}) "
-                    "_insync_offset "
-                    "({}) should have matched it or bypassed",
+                    "next ({}) must be greater",
                     _raft->ntp(),
                     name(),
                     target_offset,
-                    _insync_offset);
+                    next());
                   return do_write_local_snapshot();
               });
         });
@@ -535,7 +534,6 @@ ss::future<> persisted_stm<T>::start() {
               snapshot.header, std::move(snapshot.data));
             set_next(next_offset);
             _last_snapshot_offset = snapshot.header.offset;
-            _insync_offset = snapshot.header.offset;
         } else {
             // This can happen on an out-of-date replica that re-joins the group
             // after other replicas have already evicted logs to some offset
@@ -550,7 +548,6 @@ ss::future<> persisted_stm<T>::start() {
               _log.debug,
               "start with non-applied snapshot, set_next {}",
               next_offset);
-            _insync_offset = model::prev_offset(next_offset);
             set_next(next_offset);
         }
 
@@ -559,7 +556,6 @@ ss::future<> persisted_stm<T>::start() {
         vlog(_log.debug, "start without snapshot, maybe set_next {}", offset);
 
         if (offset >= model::offset(0)) {
-            _insync_offset = model::prev_offset(offset);
             set_next(offset);
         }
     }

@@ -52,7 +52,7 @@ id_allocator_stm::sync(model::timeout_clock::duration timeout) {
             _curr_id = _state;
             _curr_batch = 0;
             _processed = 0;
-            _next_snapshot = _insync_offset;
+            _next_snapshot = last_applied_offset();
         }
         if (_procesing_legacy) {
             for (auto& cmd : _cache) {
@@ -129,8 +129,6 @@ ss::future<> id_allocator_stm::apply(const model::record_batch& b) {
     auto& record = *r.begin();
     auto rk = reflection::adl<uint8_t>{}.from(record.release_key());
 
-    _insync_offset = b.last_offset();
-
     if (rk == allocation_cmd::record_key) {
         allocation_cmd cmd = reflection::adl<allocation_cmd>{}.from(
           record.release_value());
@@ -162,7 +160,7 @@ ss::future<> id_allocator_stm::apply(const model::record_batch& b) {
         _state = cmd.next_state;
 
         if (_next_snapshot() < 0) {
-            _next_snapshot = _insync_offset;
+            _next_snapshot = last_applied_offset();
             _processed = 0;
         }
 
@@ -186,7 +184,7 @@ ss::future<> id_allocator_stm::write_snapshot() {
     return _raft
       ->write_snapshot(raft::write_snapshot_cfg(_next_snapshot, iobuf()))
       .then([this] {
-          _next_snapshot = _insync_offset;
+          _next_snapshot = last_applied_offset();
           _processed = 0;
       })
       .finally([this] { _is_writing_snapshot = false; });
@@ -206,8 +204,6 @@ ss::future<stm_snapshot> id_allocator_stm::take_local_snapshot() {
 ss::future<> id_allocator_stm::apply_raft_snapshot(const iobuf&) {
     _next_snapshot = _raft->start_offset();
     _processed = 0;
-    set_next(_next_snapshot);
-    _insync_offset = model::prev_offset(_next_snapshot);
     return ss::now();
 }
 

@@ -881,17 +881,17 @@ ss::future<stm_snapshot> tm_stm::do_take_snapshot() {
     auto snapshot_version = active_snapshot_version();
     if (snapshot_version == tm_snapshot_v0::version) {
         tm_snapshot_v0 tm_ss;
-        tm_ss.offset = _insync_offset;
+        tm_ss.offset = last_applied_offset();
         tm_ss.transactions = _cache->get_log_transactions();
 
         iobuf tm_ss_buf;
         reflection::adl<tm_snapshot_v0>{}.to(tm_ss_buf, std::move(tm_ss));
 
         co_return stm_snapshot::create(
-          tm_snapshot_v0::version, _insync_offset, std::move(tm_ss_buf));
+          tm_snapshot_v0::version, last_applied_offset(), std::move(tm_ss_buf));
     } else {
         tm_snapshot tm_ss;
-        tm_ss.offset = _insync_offset;
+        tm_ss.offset = last_applied_offset();
         tm_ss.transactions = _cache->get_log_transactions();
         tm_ss.hash_ranges = _hosted_txes;
 
@@ -899,7 +899,7 @@ ss::future<stm_snapshot> tm_stm::do_take_snapshot() {
         reflection::adl<tm_snapshot>{}.to(tm_ss_buf, std::move(tm_ss));
 
         co_return stm_snapshot::create(
-          tm_snapshot::version, _insync_offset, std::move(tm_ss_buf));
+          tm_snapshot::version, last_applied_offset(), std::move(tm_ss_buf));
     }
 }
 
@@ -1025,7 +1025,6 @@ ss::future<> tm_stm::apply_hosted_transactions(model::record_batch b) {
 
 ss::future<> tm_stm::apply(const model::record_batch& b) {
     const auto& hdr = b.header();
-    _insync_offset = b.last_offset();
 
     if (hdr.type == model::record_batch_type::tm_update) {
         return apply_tm_update(hdr, b.copy());
@@ -1167,8 +1166,6 @@ ss::future<> tm_stm::apply_raft_snapshot(const iobuf&) {
           _cache->clear_log();
           _cache->clear_mem();
           _pid_tx_id.clear();
-          set_next(_raft->start_offset());
-          _insync_offset = model::prev_offset(_raft->start_offset());
           return ss::now();
       });
 }
