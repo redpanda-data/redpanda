@@ -2439,3 +2439,184 @@ SEASTAR_THREAD_TEST_CASE(test_partition_manifest_outofbound_trigger) {
           size_sum);
     }
 }
+
+SEASTAR_THREAD_TEST_CASE(test_partition_manifest_unsafe_segment_add) {
+    auto manifest = partition_manifest{
+      manifest_ntp, model::initial_revision_id(0)};
+    // [3899366 4015450]
+    // [4015451 4133668]
+    // [4133669 4253000]
+    // [4253001 4371690]
+    // [4371691 4485596]
+    std::vector<segment_meta> segments = {
+      {.is_compacted = true,
+       .size_bytes = 107304760,
+       .base_offset = model::offset(3899366),
+       .committed_offset = model::offset(4015450),
+       .base_timestamp = model::timestamp{1689985196373},
+       .max_timestamp = model::timestamp{1689985643129},
+       .delta_offset = model::offset_delta(27),
+       .ntp_revision = model::initial_revision_id(1660922),
+       .archiver_term = model::term_id(16),
+       .segment_term = model::term_id(1),
+       .delta_offset_end = model::offset_delta(27),
+       .sname_format = segment_name_format::v3,
+       .metadata_size_hint = 0},
+      {.is_compacted = true,
+       .size_bytes = 107304760,
+       .base_offset = model::offset(4015451),
+       .committed_offset = model::offset(4133668),
+       .base_timestamp = model::timestamp{1689985196373},
+       .max_timestamp = model::timestamp{1689985643129},
+       .delta_offset = model::offset_delta(27),
+       .ntp_revision = model::initial_revision_id(1660922),
+       .archiver_term = model::term_id(16),
+       .segment_term = model::term_id(1),
+       .delta_offset_end = model::offset_delta(29),
+       .sname_format = segment_name_format::v3,
+       .metadata_size_hint = 0},
+      {.is_compacted = true,
+       .size_bytes = 107304760,
+       .base_offset = model::offset(4133669),
+       .committed_offset = model::offset(4253000),
+       .base_timestamp = model::timestamp{1689985196373},
+       .max_timestamp = model::timestamp{1689985643129},
+       .delta_offset = model::offset_delta(29),
+       .ntp_revision = model::initial_revision_id(1660922),
+       .archiver_term = model::term_id(16),
+       .segment_term = model::term_id(1),
+       .delta_offset_end = model::offset_delta(30),
+       .sname_format = segment_name_format::v3,
+       .metadata_size_hint = 0},
+      {.is_compacted = true,
+       .size_bytes = 107304760,
+       .base_offset = model::offset(4253001),
+       .committed_offset = model::offset(4371690),
+       .base_timestamp = model::timestamp{1689985196373},
+       .max_timestamp = model::timestamp{1689985643129},
+       .delta_offset = model::offset_delta(30),
+       .ntp_revision = model::initial_revision_id(1660922),
+       .archiver_term = model::term_id(16),
+       .segment_term = model::term_id(1),
+       .delta_offset_end = model::offset_delta(32),
+       .sname_format = segment_name_format::v3,
+       .metadata_size_hint = 0},
+      {.is_compacted = true,
+       .size_bytes = 107304760,
+       .base_offset = model::offset(4371691),
+       .committed_offset = model::offset(4485596),
+       .base_timestamp = model::timestamp{1689985196373},
+       .max_timestamp = model::timestamp{1689985643129},
+       .delta_offset = model::offset_delta(32),
+       .ntp_revision = model::initial_revision_id(1660922),
+       .archiver_term = model::term_id(16),
+       .segment_term = model::term_id(1),
+       .delta_offset_end = model::offset_delta(32),
+       .sname_format = segment_name_format::v3,
+       .metadata_size_hint = 0}};
+
+    for (auto m : segments) {
+        bool is_safe = manifest.safe_segment_meta_to_add(m);
+        BOOST_REQUIRE(is_safe);
+        manifest.add(m);
+    }
+
+    // Updates are safe to apply individually but not together
+    std::vector<segment_meta> normal = {
+      {.is_compacted = false,
+       .size_bytes = 107304760,
+       .base_offset = model::offset(3899366),
+       .committed_offset = model::offset(4253000),
+       .base_timestamp = model::timestamp{1689985196373},
+       .max_timestamp = model::timestamp{1689985643129},
+       .delta_offset = model::offset_delta(27),
+       .ntp_revision = model::initial_revision_id(1660922),
+       .archiver_term = model::term_id(16),
+       .segment_term = model::term_id(1),
+       .delta_offset_end = model::offset_delta(30),
+       .sname_format = segment_name_format::v3,
+       .metadata_size_hint = 0},
+      {.is_compacted = false,
+       .size_bytes = 120952194,
+       .base_offset = model::offset(4133669),
+       .committed_offset = model::offset(4485596),
+       .base_timestamp = model::timestamp{1689985493616},
+       .max_timestamp = model::timestamp{1689985943704},
+       .delta_offset = model::offset_delta(29),
+       .ntp_revision = model::initial_revision_id(1660922),
+       .archiver_term = model::term_id(16),
+       .segment_term = model::term_id(1),
+       .delta_offset_end = model::offset_delta(32),
+       .sname_format = segment_name_format::v3,
+       .metadata_size_hint = 0},
+    };
+
+    // Check that updates are safe to apply individually
+    for (auto m : normal) {
+        bool is_safe = manifest.safe_segment_meta_to_add(m);
+        BOOST_REQUIRE(is_safe);
+    }
+
+    // Check that updates are not safe to apply together
+    {
+        auto tmp = partition_manifest{
+          manifest_ntp, model::initial_revision_id(0)};
+        for (auto m : segments) {
+            bool is_safe = tmp.safe_segment_meta_to_add(m);
+            BOOST_REQUIRE(is_safe);
+            tmp.add(m);
+        }
+        BOOST_REQUIRE(tmp.safe_segment_meta_to_add(normal[0]));
+        tmp.add(normal[0]);
+        BOOST_REQUIRE(!tmp.safe_segment_meta_to_add(normal[1]));
+    }
+
+    std::vector<segment_meta> compacted = {
+      {.is_compacted = true,
+       .size_bytes = 10730476,
+       .base_offset = model::offset(3899366),
+       .committed_offset = model::offset(4253000),
+       .base_timestamp = model::timestamp{1689985196373},
+       .max_timestamp = model::timestamp{1689985643129},
+       .delta_offset = model::offset_delta(27),
+       .ntp_revision = model::initial_revision_id(1660922),
+       .archiver_term = model::term_id(16),
+       .segment_term = model::term_id(1),
+       .delta_offset_end = model::offset_delta(30),
+       .sname_format = segment_name_format::v3,
+       .metadata_size_hint = 0},
+      {.is_compacted = true,
+       .size_bytes = 12095219,
+       .base_offset = model::offset(4133669),
+       .committed_offset = model::offset(4485596),
+       .base_timestamp = model::timestamp{1689985493616},
+       .max_timestamp = model::timestamp{1689985943704},
+       .delta_offset = model::offset_delta(29),
+       .ntp_revision = model::initial_revision_id(1660922),
+       .archiver_term = model::term_id(16),
+       .segment_term = model::term_id(1),
+       .delta_offset_end = model::offset_delta(32),
+       .sname_format = segment_name_format::v3,
+       .metadata_size_hint = 0},
+    };
+
+    // Check that updates are safe to apply individually
+    for (auto m : compacted) {
+        bool is_safe = manifest.safe_segment_meta_to_add(m);
+        BOOST_REQUIRE(is_safe);
+    }
+
+    // Check that updates are not safe to apply together
+    {
+        auto tmp = partition_manifest{
+          manifest_ntp, model::initial_revision_id(0)};
+        for (auto m : segments) {
+            bool is_safe = tmp.safe_segment_meta_to_add(m);
+            BOOST_REQUIRE(is_safe);
+            tmp.add(m);
+        }
+        BOOST_REQUIRE(tmp.safe_segment_meta_to_add(compacted[0]));
+        tmp.add(compacted[0]);
+        BOOST_REQUIRE(!tmp.safe_segment_meta_to_add(compacted[1]));
+    }
+}

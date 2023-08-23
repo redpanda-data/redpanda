@@ -918,12 +918,6 @@ bool partition_manifest::safe_segment_meta_to_add(const segment_meta& m) {
         return _last_offset == model::offset{0}
                || model::next_offset(_last_offset) == m.base_offset;
     }
-    if (m.is_compacted) {
-        // For the compacted uploads we're actually allowing to start and
-        // stop inside the gap.
-        // TODO: consider making this more strict
-        return true;
-    }
     auto last = _segments.last_segment().value();
     auto next = model::next_offset(last.committed_offset);
     if (m.base_offset == next) {
