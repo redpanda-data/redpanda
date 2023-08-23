@@ -301,7 +301,7 @@ ss::future<log_eviction_stm::offset_result> log_eviction_stm::replicate_command(
 
     if (!result) {
         vlog(
-          _log.info,
+          _log.warn,
           "Failed to replicate prefix_truncate command, reason: {}",
           result.error());
         co_return result.error();
