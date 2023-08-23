@@ -464,6 +464,10 @@ public:
 
     void reset_last_sent_protocol_meta(const vnode&);
 
+    void update_election_timeout(timeout_jitter new_jit) {
+        _jit = std::move(new_jit);
+    }
+
 private:
     friend replicate_entries_stm;
     friend vote_stm;

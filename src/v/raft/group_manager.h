@@ -43,6 +43,7 @@ public:
         config::binding<std::chrono::milliseconds> heartbeat_timeout;
         config::binding<std::chrono::milliseconds> raft_io_timeout_ms;
         config::binding<bool> enable_lw_heartbeat;
+        config::binding<std::chrono::milliseconds> election_timeout_ms;
     };
     using config_provider_fn = ss::noncopyable_function<configuration()>;
 
@@ -88,6 +89,7 @@ public:
 private:
     void trigger_leadership_notification(raft::leadership_status);
     void setup_metrics();
+    ss::future<> do_update_election_timeout(std::chrono::milliseconds);
 
     raft::group_configuration create_initial_configuration(
       std::vector<model::broker>, model::revision_id) const;
