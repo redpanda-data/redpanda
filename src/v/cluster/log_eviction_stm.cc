@@ -291,6 +291,12 @@ ss::future<log_eviction_stm::offset_result> log_eviction_stm::replicate_command(
         }
     } catch (const ss::timed_out_error&) {
         result = errc::timeout;
+    } catch (...) {
+        vlog(
+          _log.warn,
+          "Replicating prefix_truncate failed with exception: {}",
+          std::current_exception());
+        result = errc::replication_error;
     }
 
     if (!result) {
