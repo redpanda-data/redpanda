@@ -144,6 +144,21 @@ private:
     void on_leadership_changed(
       raft::group_id, model::term_id, std::optional<model::node_id>);
 
+    struct aggregated_report {
+        absl::node_hash_set<model::ntp> leaderless, under_replicated;
+
+        /**
+         * The true count of leaderless and under-replicated partitions, not
+         * capped at max_partitions_report, and truncation of above the sets
+         * can be detected when the size is larger than the corresponding set.
+         */
+        size_t leaderless_count{}, under_replicated_count{};
+
+        bool operator==(const aggregated_report&) const = default;
+    };
+
+    static aggregated_report aggregate_reports(report_cache_t& reports);
+
     ss::lw_shared_ptr<raft::consensus> _raft0;
     ss::sharded<members_table>& _members;
     ss::sharded<rpc::connection_cache>& _connections;
