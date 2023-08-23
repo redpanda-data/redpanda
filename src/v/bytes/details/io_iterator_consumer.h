@@ -72,8 +72,7 @@ public:
     template<typename Output>
     [[gnu::always_inline]] void consume_to(size_t n, Output out) {
         size_t c = consume(n, [&out](const char* src, size_t max) {
-            std::copy_n(src, max, out);
-            out += max;
+            out = std::copy_n(src, max, out);
             return ss::stop_iteration::no;
         });
         if (unlikely(c != n)) {
