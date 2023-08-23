@@ -1526,6 +1526,9 @@ class RedpandaServiceCloud(RedpandaServiceK8s):
     def set_cluster_config(self, values: dict, timeout: int = 300):
         pass
 
+    def sockets_clear(self, node):
+        True
+
 
 class RedpandaService(RedpandaServiceBase):
     def __init__(self,
