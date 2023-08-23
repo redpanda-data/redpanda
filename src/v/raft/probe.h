@@ -52,6 +52,7 @@ public:
 
     void setup_metrics(const model::ntp& ntp);
     void setup_public_metrics(const model::ntp& ntp);
+    void setup_global_metrics();
 
     void heartbeat_request_error() { ++_heartbeat_request_error; };
     void replicate_request_error() { ++_replicate_request_error; };

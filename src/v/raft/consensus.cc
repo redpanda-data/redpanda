@@ -53,6 +53,20 @@
 #include <iterator>
 #include <system_error>
 
+raft::probe& get_global_probe() {
+    static thread_local raft::probe probe;
+    return probe;
+}
+
+void init_global_probe() {
+    static thread_local bool initialized = false;
+
+    if (!initialized) {
+        get_global_probe().setup_global_metrics();
+        initialized = true;
+    }
+}
+
 template<>
 struct fmt::formatter<raft::consensus::vote_state> final
   : fmt::formatter<std::string_view> {
@@ -122,7 +136,8 @@ consensus::consensus(
         .raft_max_concurrent_append_requests_per_follower())
   , _batcher(this, config::shard_local_cfg().raft_replicate_batch_window_size())
   , _event_manager(this)
-  , _probe(std::make_unique<probe>())
+  // , _probe(std::make_unique<probe>())
+  , _probe(&get_global_probe())
   , _ctxlog(group, _log->config().ntp())
   , _replicate_append_timeout(
       config::shard_local_cfg().replicate_append_timeout_ms())
@@ -157,6 +172,9 @@ void consensus::setup_metrics() {
     if (config::shard_local_cfg().disable_metrics()) {
         return;
     }
+
+    init_global_probe();
+    return;
 
     _probe->setup_metrics(_log->config().ntp());
     auto labels = probe::create_metric_labels(_log->config().ntp());

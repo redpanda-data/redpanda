@@ -766,7 +766,8 @@ private:
     mutex _snapshot_lock;
     /// used for notifying when commits happened to log
     event_manager _event_manager;
-    std::unique_ptr<probe> _probe;
+    // std::unique_ptr<probe> _probe;
+    probe* _probe = nullptr;
     ctx_log _ctxlog;
     ss::condition_variable _commit_index_updated;
 
