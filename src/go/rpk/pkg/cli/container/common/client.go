@@ -12,6 +12,7 @@ package common
 import (
 	"context"
 	"io"
+	"os"
 
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
@@ -101,9 +102,29 @@ type dockerClient struct {
 }
 
 func NewDockerClient() (Client, error) {
-	c, err := client.NewClientWithOpts(client.FromEnv)
-	if err != nil {
-		return nil, err
+	// First, we check if DOCKER_HOST is present or if /var/run/docker.sock
+	// exists. If either of these conditions is met, we can safely start the
+	// client using the pre-set client.FromEnv.
+	dockerHostEnv := "DOCKER_HOST"
+	dockerSocketDefaultPath := "/var/run/docker.sock"
+
+	_, err := os.Stat(dockerSocketDefaultPath)
+	socketNotPresent := err != nil && os.IsNotExist(err)
+
+	var c *client.Client
+	if _, ok := os.LookupEnv(dockerHostEnv); ok || !socketNotPresent {
+		c, err = client.NewClientWithOpts(client.FromEnv)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		// If we don't have either the Docker host environment variable or the
+		// socket in the default location, we must search for the socket in the
+		// Docker context.
+		c, err = clientFromDockerContext()
+		if err != nil {
+			return nil, err
+		}
 	}
 	c.NegotiateAPIVersion(context.Background())
 	return &dockerClient{c}, nil
