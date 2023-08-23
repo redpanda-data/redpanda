@@ -161,6 +161,14 @@ public:
         update_value(std::any_cast<T>(std::move(v)));
     }
 
+    template<typename U>
+    requires std::constructible_from<T, U>
+    void set_value(U&& v) {
+        // needs to go through virtual inheritance chain, since this class is
+        // not final
+        set_value(std::make_any<T>(std::forward<U>(v)));
+    }
+
     bool set_value(YAML::Node n) override {
         return update_value(std::move(n.as<T>()));
     }
@@ -864,9 +872,14 @@ class retention_duration_property final
   : public property<std::optional<std::chrono::milliseconds>> {
 public:
     using property::property;
+    using property::set_value;
+
     void set_value(std::any v) final {
-        update_value(std::any_cast<std::chrono::milliseconds>(std::move(v)));
+        update_value(
+          std::any_cast<std::optional<std::chrono::milliseconds>>(std::move(v))
+            .value_or(-1ms));
     }
+
     bool set_value(YAML::Node n) final {
         return update_value(n.as<std::chrono::milliseconds>());
     }
