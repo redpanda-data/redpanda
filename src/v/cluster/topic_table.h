@@ -96,6 +96,23 @@ public:
     //   * partition::get_revision_id()
     //   * raft::group_configuration::revision_id()
 
+    class concurrent_modification_error final : public std::exception {
+    public:
+        concurrent_modification_error(
+          model::revision_id initial_revision,
+          model::revision_id current_revision)
+          : _msg(ssx::sformat(
+            "Topic table was modified by concurrent fiber. (initial_revision: "
+            "{}, current_revision: {}) ",
+            initial_revision,
+            current_revision)) {}
+
+        const char* what() const noexcept final { return _msg.c_str(); }
+
+    private:
+        ss::sstring _msg;
+    };
+
     class in_progress_update {
     public:
         explicit in_progress_update(

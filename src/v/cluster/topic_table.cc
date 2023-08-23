@@ -1347,11 +1347,7 @@ const topic_table::underlying_t& topic_table::all_topics_metadata() const {
 
 void topic_table::check_topics_map_stable(model::revision_id start_rev) const {
     if (_topics_map_revision != start_rev) {
-        throw std::runtime_error(fmt::format(
-          "topic table modified, aborting iteration "
-          "(start revision: {}, current revision: {})",
-          start_rev,
-          _topics_map_revision));
+        throw concurrent_modification_error(start_rev, _topics_map_revision);
     }
 }
 
