@@ -1191,6 +1191,20 @@ class SchemaRegistryTestMethods(SchemaRegistryEndpoints):
         assert result_raw.status_code == requests.codes.ok
         assert result_raw.json() == [2]
 
+        # invalid subject should error with 40401
+        result_raw = self._get_subjects_subject_versions_version_referenced_by(
+            "invalid_subject", 1)
+        self.logger.info(result_raw)
+        assert result_raw.status_code == requests.codes.not_found
+        assert result_raw.json()["error_code"] == 40401
+
+        # invalid version should error with 40402
+        result_raw = self._get_subjects_subject_versions_version_referenced_by(
+            "simple", 2)
+        self.logger.info(result_raw)
+        assert result_raw.status_code == requests.codes.not_found
+        assert result_raw.json()["error_code"] == 40402
+
     @cluster(num_nodes=4)
     @parametrize(protocol=SchemaType.AVRO, client_type=SerdeClientType.Python)
     @parametrize(protocol=SchemaType.AVRO, client_type=SerdeClientType.Java)
