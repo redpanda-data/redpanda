@@ -152,6 +152,7 @@ public:
             conn->shutdown_input();
         }
         co_await _wait_input_shutdown.get_future();
+        co_await _as.request_abort_ex(ssx::connection_aborted_exception{});
         co_await _as.stop();
     }
 

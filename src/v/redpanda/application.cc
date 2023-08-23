@@ -84,6 +84,7 @@
 #include "redpanda/admin_server.h"
 #include "resource_mgmt/io_priority.h"
 #include "resource_mgmt/memory_sampling.h"
+#include "ssx/abort_source.h"
 #include "ssx/thread_worker.h"
 #include "storage/backlog_controller.h"
 #include "storage/chunk_cache.h"
@@ -1710,7 +1711,11 @@ application::set_proxy_client_config(ss::sstring name, std::any val) {
 }
 
 void application::trigger_abort_source() {
-    _as.invoke_on_all([](auto& local_as) { local_as.request_abort(); }).get();
+    _as
+      .invoke_on_all([](auto& local_as) {
+          local_as.request_abort_ex(ssx::shutdown_requested_exception{});
+      })
+      .get();
 }
 
 void application::wire_up_bootstrap_services() {
