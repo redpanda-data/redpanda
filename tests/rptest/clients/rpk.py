@@ -546,6 +546,9 @@ class RpkTool:
                 if 'unknown broker' in line:
                     return False
 
+                if "missing from list offsets" in line:
+                    return False
+
             return True
 
         def parse_partition(string):
