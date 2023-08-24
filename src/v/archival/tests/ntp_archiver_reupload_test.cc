@@ -10,7 +10,7 @@
 
 #include "archival/tests/service_fixture.h"
 #include "cloud_storage/async_manifest_view.h"
-#include "cloud_storage/partition_probe.h"
+#include "cloud_storage/read_path_probes.h"
 #include "cloud_storage_clients/client_pool.h"
 #include "config/configuration.h"
 #include "storage/ntp_config.h"

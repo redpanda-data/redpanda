@@ -8,7 +8,7 @@
  * https://github.com/redpanda-data/redpanda/blob/master/licenses/rcl.md
  */
 
-#include "cloud_storage/partition_probe.h"
+#include "cloud_storage/read_path_probes.h"
 
 #include "config/configuration.h"
 #include "prometheus/prometheus_sanitize.h"
@@ -63,6 +63,7 @@ ts_read_path_probe::ts_read_path_probe() {
     }
 
     namespace sm = ss::metrics;
+    auto aggregate_labels = std::vector<sm::label>{sm::shard_label};
 
     _metrics.add_group(
       prometheus_sanitize::metrics_name("cloud_storage:read_path"),
@@ -70,54 +71,62 @@ ts_read_path_probe::ts_read_path_probe() {
         sm::make_gauge(
           "materialized_segments",
           [this] { return _cur_materialized_segments; },
-          sm::description("Current number of materialized remote segments")),
+          sm::description("Current number of materialized remote segments"))
+          .aggregate(aggregate_labels),
 
         sm::make_gauge(
           "readers",
           [this] { return _cur_readers; },
-          sm::description("Current number of remote partition readers")),
+          sm::description("Current number of remote partition readers"))
+          .aggregate(aggregate_labels),
 
         sm::make_gauge(
           "spillover_manifest_bytes",
           [this] { return _spillover_manifest_bytes; },
-          sm::description(
-            "Total amount of memory used by spillover manifests")),
+          sm::description("Total amount of memory used by spillover manifests"))
+          .aggregate(aggregate_labels),
 
         sm::make_gauge(
           "spillover_manifest_instances",
           [this] { return _spillover_manifest_instances; },
           sm::description(
-            "Total number of spillover manifests stored in memory")),
+            "Total number of spillover manifests stored in memory"))
+          .aggregate(aggregate_labels),
 
         sm::make_counter(
           "spillover_manifest_hydrated",
           [this] { return _spillover_manifest_hydrated; },
           sm::description(
-            "Number of times spillover manifests were saved to the cache")),
+            "Number of times spillover manifests were saved to the cache"))
+          .aggregate(aggregate_labels),
 
         sm::make_counter(
           "spillover_manifest_materialized",
           [this] { return _spillover_manifest_materialized; },
           sm::description(
-            "Number of times spillover manifests were loaded from the cache")),
+            "Number of times spillover manifests were loaded from the cache"))
+          .aggregate(aggregate_labels),
 
         sm::make_gauge(
           "segment_readers",
           [this] { return _cur_segment_readers; },
-          sm::description("Current number of remote segment readers")),
+          sm::description("Current number of remote segment readers"))
+          .aggregate(aggregate_labels),
 
         sm::make_histogram(
           "spillover_manifest_latency",
           [this] { return _spillover_mat_latency.public_histogram_logform(); },
           sm::description(
-            "Spillover manifest materialization latency histogram")),
+            "Spillover manifest materialization latency histogram"))
+          .aggregate(aggregate_labels),
 
         sm::make_histogram(
           "chunk_hydration_latency",
           [this] {
               return _chunk_hydration_latency.public_histogram_logform();
           },
-          sm::description("Chunk hydration latency histogram")),
+          sm::description("Chunk hydration latency histogram"))
+          .aggregate(aggregate_labels),
       });
 }
 
