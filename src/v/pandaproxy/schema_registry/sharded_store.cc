@@ -369,10 +369,18 @@ ss::future<bool> sharded_store::is_referenced(subject sub, schema_version ver) {
 ss::future<std::vector<schema_id>> sharded_store::referenced_by(
   subject sub, std::optional<schema_version> opt_ver) {
     schema_version ver;
+    // Ensure the subject exists
+    auto versions = co_await get_versions(sub, include_deleted::no);
     if (opt_ver.has_value()) {
         ver = *opt_ver;
+        auto version_not_found = std::none_of(
+          versions.begin(), versions.end(), [ver](auto const& v) {
+              return ver == v;
+          });
+        if (version_not_found) {
+            throw as_exception(not_found(sub, ver));
+        }
     } else {
-        auto versions = co_await get_versions(sub, include_deleted::no);
         vassert(
           !versions.empty(), "get_versions should not return empty versions");
         ver = versions.back();
