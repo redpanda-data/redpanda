@@ -70,7 +70,8 @@ class ConsumerOffsetsConsistencyTest(PreallocNodesTest):
             do_list_groups,
             timeout_sec=30,
             backoff_sec=0.5,
-            err_msg="RPK failed to list consumer groups")
+            err_msg="RPK failed to list consumer groups",
+            retry_on_exc=True)
 
         return group_list_res[0]
 
