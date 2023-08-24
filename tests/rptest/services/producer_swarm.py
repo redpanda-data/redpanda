@@ -47,6 +47,16 @@ class ProducerSwarm(Service):
         self._max_record_size = max_record_size
         self._keys = keys
 
+        if hasattr(redpanda, 'GLOBAL_CLOUD_CLUSTER_CONFIG'):
+            security_config = redpanda.security_config()
+            properties['security.protocol'] = 'SASL_SSL'
+            properties['sasl.mechanism'] = security_config.get(
+                'sasl_mechanism', 'PLAIN')
+            properties['sasl.username'] = security_config.get(
+                'sasl_plain_username', None)
+            properties['sasl.password'] = security_config.get(
+                'sasl_plain_password', None)
+
     def clean_node(self, node):
         self._redpanda.logger.debug(f"{self.__class__.__name__}.clean_node")
         node.account.kill_process(self.EXE, clean_shutdown=False)
