@@ -123,6 +123,10 @@ server::routes_t get_schema_registry_routes(ss::gate& gate, one_shot& es) {
       wrap(gate, es, get_schemas_ids_id_versions)});
 
     routes.routes.emplace_back(server::route_t{
+      ss::httpd::schema_registry_json::get_schemas_ids_id_subjects,
+      wrap(gate, es, get_schemas_ids_id_subjects)});
+
+    routes.routes.emplace_back(server::route_t{
       ss::httpd::schema_registry_json::get_subjects,
       wrap(gate, es, get_subjects)});
 
