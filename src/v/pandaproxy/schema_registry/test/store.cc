@@ -32,6 +32,7 @@ const pps::canonical_schema_definition int_def0{
   pps::schema_type::avro};
 const pps::subject subject0{"subject0"};
 const pps::subject subject1{"subject1"};
+const pps::subject subject2{"subject2"};
 
 BOOST_AUTO_TEST_CASE(test_store_insert) {
     pps::store s;
@@ -245,6 +246,74 @@ BOOST_AUTO_TEST_CASE(test_store_get_schema_subject_versions) {
     BOOST_REQUIRE_EQUAL(versions.size(), 1);
     BOOST_REQUIRE_EQUAL(versions[0].sub, subject0);
     BOOST_REQUIRE_EQUAL(versions[0].version, pps::schema_version{2});
+}
+
+BOOST_AUTO_TEST_CASE(test_store_get_schema_subjects) {
+    auto is_equal = [](auto lhs) {
+        return [lhs](auto rhs) { return lhs == rhs; };
+    };
+
+    pps::store s;
+
+    pps::seq_marker dummy_marker;
+
+    // First insert, expect id{1}
+    auto ins_res = s.insert(
+      {subject0, pps::canonical_schema_definition(schema1)});
+    BOOST_REQUIRE(ins_res.inserted);
+    BOOST_REQUIRE_EQUAL(ins_res.id, pps::schema_id{1});
+    BOOST_REQUIRE_EQUAL(ins_res.version, pps::schema_version{1});
+
+    auto subjects = s.get_schema_subjects(
+      pps::schema_id{1}, pps::include_deleted::no);
+    BOOST_REQUIRE_EQUAL(subjects.size(), 1);
+    BOOST_REQUIRE_EQUAL(absl::c_count_if(subjects, is_equal(subject0)), 1);
+
+    // Second insert, same schema, expect id{1}
+    ins_res = s.insert({subject1, pps::canonical_schema_definition(schema1)});
+    BOOST_REQUIRE(ins_res.inserted);
+    BOOST_REQUIRE_EQUAL(ins_res.id, pps::schema_id{1});
+    BOOST_REQUIRE_EQUAL(ins_res.version, pps::schema_version{1});
+
+    // Insert yet another schema associated with a different subject
+    ins_res = s.insert({subject2, pps::canonical_schema_definition(schema2)});
+    BOOST_REQUIRE(ins_res.inserted);
+    BOOST_REQUIRE_EQUAL(ins_res.id, pps::schema_id{2});
+    BOOST_REQUIRE_EQUAL(ins_res.version, pps::schema_version{1});
+
+    subjects = s.get_schema_subjects(
+      pps::schema_id{1}, pps::include_deleted::no);
+    BOOST_REQUIRE_EQUAL(subjects.size(), 2);
+    BOOST_REQUIRE_EQUAL(absl::c_count_if(subjects, is_equal(subject0)), 1);
+    BOOST_REQUIRE_EQUAL(absl::c_count_if(subjects, is_equal(subject1)), 1);
+    BOOST_REQUIRE_EQUAL(absl::c_count_if(subjects, is_equal(subject2)), 0);
+
+    subjects = s.get_schema_subjects(
+      pps::schema_id{2}, pps::include_deleted::no);
+    BOOST_REQUIRE_EQUAL(subjects.size(), 1);
+    BOOST_REQUIRE_EQUAL(absl::c_count_if(subjects, is_equal(subject0)), 0);
+    BOOST_REQUIRE_EQUAL(absl::c_count_if(subjects, is_equal(subject1)), 0);
+    BOOST_REQUIRE_EQUAL(absl::c_count_if(subjects, is_equal(subject2)), 1);
+
+    // Test deletion
+
+    s.upsert_subject(
+      dummy_marker,
+      subject0,
+      pps::schema_version{1},
+      pps::schema_id{1},
+      pps::is_deleted::yes);
+
+    subjects = s.get_schema_subjects(
+      pps::schema_id{1}, pps::include_deleted::no);
+    BOOST_REQUIRE_EQUAL(subjects.size(), 1);
+    BOOST_REQUIRE_EQUAL(absl::c_count_if(subjects, is_equal(subject1)), 1);
+
+    subjects = s.get_schema_subjects(
+      pps::schema_id{1}, pps::include_deleted::yes);
+    BOOST_REQUIRE_EQUAL(subjects.size(), 2);
+    BOOST_REQUIRE_EQUAL(absl::c_count_if(subjects, is_equal(subject0)), 1);
+    BOOST_REQUIRE_EQUAL(absl::c_count_if(subjects, is_equal(subject1)), 1);
 }
 
 BOOST_AUTO_TEST_CASE(test_store_get_subject_schema) {
