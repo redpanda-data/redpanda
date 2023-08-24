@@ -88,6 +88,9 @@ ss::future<client::request_response_t> client::make_request(
     ss::sstring target_str(target.data(), target.size());
     prefix_logger ctxlog(http_log, ssx::sformat("[{}]", target_str));
     vlog(ctxlog.trace, "client.make_request {}", header);
+    if (header.count("Range") != 0) {
+        target_str = fmt::format("{}:{}", target_str, header.at("Range"));
+    }
 
     auto req = ss::make_shared<request_stream>(this, std::move(header));
     auto res = ss::make_shared<response_stream>(this, verb, target_str);
