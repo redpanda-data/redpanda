@@ -147,39 +147,40 @@ void materialized_resources::register_segment(materialized_segment_state& s) {
     _materialized.push_back(s);
 }
 
-ssx::semaphore_units materialized_resources::get_segment_reader_units() {
+ss::future<segment_reader_units>
+materialized_resources::get_segment_reader_units() {
     if (_segment_reader_units.available_units() <= 0) {
+        // Update metrics counter if we are trying to acquire units while
+        // saturated
+        _segment_readers_delayed += 1;
+
         trim_segment_readers(max_segment_readers() / 2);
     }
 
-    // TOOD: make this function async so that it can wait until we succeed
-    // in evicting some readers: trim_readers is not
-    // guaranteed to do this, if all readers are in use.
-
-    return _segment_reader_units.take(1).units;
+    auto semaphore_units = co_await _segment_reader_units.get_units(1);
+    co_return segment_reader_units{std::move(semaphore_units)};
 }
 
 ss::future<ssx::semaphore_units>
 materialized_resources::get_partition_reader_units(size_t n) {
     if (_partition_reader_units.available_units() <= 0) {
         // Update metrics counter if we are trying to acquire units while
-        // saturated saturated
+        // saturated
         _partition_readers_delayed += 1;
     }
     return _partition_reader_units.get_units(n);
 }
 
-ssx::semaphore_units materialized_resources::get_segment_units() {
+ss::future<segment_units> materialized_resources::get_segment_units() {
     if (_segment_units.available_units() <= 0) {
+        // Update metrics counter if we are trying to acquire units while
+        // saturated
+        _segments_delayed += 1;
+
         trim_segments(max_segments() / 2);
     }
-
-    vlog(
-      cst_log.debug,
-      "get_segment_units: taking 1 from {}",
-      _segment_units.available_units());
-
-    return _segment_units.take(1).units;
+    auto semaphore_units = co_await _segment_units.get_units(1);
+    co_return segment_units{std::move(semaphore_units)};
 }
 
 void materialized_resources::trim_segment_readers(size_t target_free) {
