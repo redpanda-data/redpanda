@@ -11,6 +11,7 @@
 #include "bytes/iostream.h"
 #include "random/generators.h"
 #include "seastarx.h"
+#include "storage/chunk_cache.h"
 #include "storage/segment_appender.h"
 #include "storage/storage_resources.h"
 
@@ -20,14 +21,30 @@
 
 // test gate
 #include <seastar/core/gate.hh>
+#include <seastar/util/defer.hh>
+#include <seastar/util/later.hh>
 
+#include <boost/test/tools/interface.hpp>
+#include <boost/test/tools/old/interface.hpp>
 #include <fmt/format.h>
 
 #include <string_view>
 
 using namespace storage; // NOLINT
+using namespace std::chrono;
+
+struct storage::segment_appender_test_accessor {
+    segment_appender& sa; // NOLINT
+
+    auto& inflight() { return sa._inflight; }
+    auto inflight_dispatched() { return sa._inflight_dispatched; }
+    auto total_dispatched() { return sa._dispatched_writes; }
+    auto total_merged() { return sa._merged_writes; }
+};
 
 namespace {
+
+segment_appender_test_accessor access(segment_appender& sa) { return {sa}; }
 
 ss::file open_file(std::string_view filename) {
     return ss::open_file_dma(
@@ -49,6 +66,17 @@ iobuf make_random_data(size_t len) {
     return bytes_to_iobuf(random_generators::get_bytes(len));
 }
 
+// fill an iobuf with len copies of char c
+iobuf make_iobuf_with_char(size_t len, unsigned char c) {
+    auto buf = ss::uninitialized_string<bytes>(len);
+    std::memset(buf.data(), c, len);
+    iobuf ret;
+    ret.append(buf.data(), buf.size());
+    return ret;
+}
+
+size_t default_chunk_size() { return internal::chunks().chunk_size(); }
+
 } // namespace
 
 static void run_test_can_append_multiple_flushes(size_t fallocate_size) {
@@ -57,6 +85,7 @@ static void run_test_can_append_multiple_flushes(size_t fallocate_size) {
     storage::storage_resources resources(
       config::mock_binding<size_t>(std::move(fallocate_size)));
     auto appender = make_segment_appender(f, resources);
+    auto close = ss::defer([&appender] { appender.close().get(); });
 
     iobuf expected;
     ss::sstring data = "123456789\n";
@@ -81,7 +110,6 @@ static void run_test_can_append_multiple_flushes(size_t fallocate_size) {
         BOOST_REQUIRE_EQUAL(result, expected);
         in.close().get();
     }
-    appender.close().get();
 }
 
 SEASTAR_THREAD_TEST_CASE(test_can_append_multiple_flushes) {
@@ -94,8 +122,10 @@ static void run_test_can_append_mixed(size_t fallocate_size) {
     storage::storage_resources resources(
       config::mock_binding<size_t>(std::move(fallocate_size)));
     auto appender = make_segment_appender(f, resources);
+    auto close = ss::defer([&appender] { appender.close().get(); });
     auto alignment = f.disk_write_dma_alignment();
-    for (size_t i = 0, acc = 0; i < 100; ++i) {
+    constexpr size_t iterations = 100;
+    for (size_t i = 0, acc = 0; i < iterations; ++i) {
         iobuf original;
         const size_t step = random_generators::get_int<size_t>(0, alignment * 2)
                             + 1;
@@ -108,6 +138,9 @@ static void run_test_can_append_mixed(size_t fallocate_size) {
         appender.append(original).get();
         appender.flush().get();
         BOOST_REQUIRE_EQUAL(acc + step, appender.file_byte_offset());
+        // now there should be nothing in-flight
+        BOOST_CHECK_EQUAL(access(appender).inflight_dispatched(), 0);
+        BOOST_CHECK_EQUAL(access(appender).inflight().size(), 0);
         auto in = make_file_input_stream(f, acc);
         iobuf result = read_iobuf_exactly(in, step).get0();
         fmt::print(
@@ -144,7 +177,16 @@ static void run_test_can_append_mixed(size_t fallocate_size) {
         acc += step;
         in.close().get();
     }
-    appender.close().get();
+
+    // every iteration we do a append+flush+get, so there will be at least as
+    // many writes as iterations, but actually somewhat more because about 1 of
+    // every 4 appends gets split across a chunk which means 2 writes
+    auto write_count = access(appender).total_dispatched();
+    BOOST_CHECK_GE(write_count, iterations);
+    BOOST_CHECK_LT(write_count, 2 * iterations);
+
+    // we expect 0 merges with the A+F pattern
+    BOOST_CHECK_EQUAL(access(appender).total_merged(), 0);
 }
 
 SEASTAR_THREAD_TEST_CASE(test_can_append_mixed) {
@@ -157,19 +199,37 @@ static void run_test_can_append_10MB(size_t fallocate_size) {
     storage::storage_resources resources(
       config::mock_binding<size_t>(std::move(fallocate_size)));
     auto appender = make_segment_appender(f, resources);
+    auto close = ss::defer([&appender] { appender.close().get(); });
 
-    for (size_t i = 0; i < 10; ++i) {
-        constexpr size_t one_meg = 1024 * 1024;
+    constexpr size_t iterations = 10;
+    constexpr size_t one_meg = 1024 * 1024;
+
+    for (size_t i = 0; i < iterations; ++i) {
         iobuf original = make_random_data(one_meg);
         appender.append(original).get();
         appender.flush().get();
+
+        // now there should be nothing in-flight
+        BOOST_CHECK_EQUAL(access(appender).inflight_dispatched(), 0);
+        BOOST_CHECK_EQUAL(access(appender).inflight().size(), 0);
 
         auto in = make_file_input_stream(f, i * one_meg);
         iobuf result = read_iobuf_exactly(in, one_meg).get0();
         BOOST_CHECK_EQUAL(original, result);
         in.close().get();
     }
-    appender.close().get();
+
+    // most of the writes will come from breaking the large 1 MiB writes up into
+    // chunks, the last term here is for the final flush of the partial chunk
+    // but is zero currently because the chunk size goes evenly into 1 MiB
+    auto expected_writes
+      = iterations
+        * (one_meg / default_chunk_size() + !!(one_meg % default_chunk_size()));
+    auto write_count = access(appender).total_dispatched();
+    BOOST_CHECK_EQUAL(write_count, expected_writes);
+
+    // we expect 0 merges with the A+F pattern
+    BOOST_CHECK_EQUAL(access(appender).total_merged(), 0);
 }
 
 SEASTAR_THREAD_TEST_CASE(test_can_append_10MB) {
@@ -183,6 +243,7 @@ static void run_test_can_append_10MB_sequential_write_sequential_read(
     storage::storage_resources resources(
       config::mock_binding<size_t>(std::move(fallocate_size)));
     auto appender = make_segment_appender(f, resources);
+    auto close = ss::defer([&appender] { appender.close().get(); });
 
     // write sequential. then read all
     constexpr size_t one_meg = 1024 * 1024;
@@ -201,7 +262,6 @@ static void run_test_can_append_10MB_sequential_write_sequential_read(
         BOOST_REQUIRE_EQUAL(tmp_o, result);
         in.close().get();
     }
-    appender.close().get();
 }
 
 SEASTAR_THREAD_TEST_CASE(
@@ -210,11 +270,124 @@ SEASTAR_THREAD_TEST_CASE(
     run_test_can_append_10MB_sequential_write_sequential_read(32_MiB);
 }
 
+static void run_concurrent_append_flush(
+  size_t fallocate_size,
+  const size_t max_buf_size,
+  const size_t buf_count = 10000) {
+    auto filename = fmt::format(
+      "run_concurrent_append_flush_{}_{}.log", fallocate_size, max_buf_size);
+    auto f = open_file(filename);
+    storage::storage_resources resources(
+      config::mock_binding<size_t>(std::move(fallocate_size)));
+    auto appender = make_segment_appender(f, resources);
+    auto close = ss::defer([&appender] { appender.close().get(); });
+
+    std::vector<iobuf> bufs(buf_count);
+    unsigned char v = 1;
+    for (auto& buf : bufs) {
+        buf = make_iobuf_with_char(random_generators::get_int(max_buf_size), v);
+        if (++v == 0) {
+            v = 1;
+        }
+    }
+
+    // we do one of the following actions with equal probability,
+    // respecting the rule that any previous append must have resolved before a
+    // new one is invoked
+    enum action { APPEND, FLUSH, WAIT_APPEND, YIELD, LAST };
+
+    std::optional<ss::future<>> last_append;
+    std::vector<ss::future<>> futs;
+
+    size_t max_inflight = 0, max_dispatched = 0;
+
+    for (size_t buf_index = 0; buf_index < bufs.size();) {
+        auto next_action = (action)random_generators::get_int(LAST - 1);
+
+        max_inflight = std::max(
+          max_inflight, access(appender).inflight().size());
+        max_dispatched = std::max(
+          max_dispatched, access(appender).inflight_dispatched());
+
+        switch (next_action) {
+        case APPEND:
+            if (!last_append) { // only if the previous append has finished
+                last_append = appender.append(bufs[buf_index++]);
+            }
+            break;
+        case FLUSH:
+            futs.push_back(appender.flush());
+            break;
+        case WAIT_APPEND:
+            if (last_append) {
+                last_append->get();
+                last_append.reset();
+            }
+            break;
+        case YIELD:
+            ss::yield().get();
+            break;
+        default:
+            BOOST_TEST_FAIL("bad action");
+        }
+    }
+
+    // check that we got some visible inflight and dispatched IOs
+    BOOST_CHECK_GT(max_inflight, 0);
+    BOOST_CHECK_GT(max_dispatched, 0);
+
+    // now we need to wait for the last append, if any
+    if (last_append) {
+        last_append->get();
+    }
+
+    // do a final flush and wait for it
+    appender.flush().get();
+
+    // now there should be nothing in-flight
+    BOOST_CHECK_EQUAL(access(appender).inflight_dispatched(), 0);
+    BOOST_CHECK_EQUAL(access(appender).inflight().size(), 0);
+
+    // now we expect all the prior flush futures to be available
+    // we don't guarantee this is in the API currently but it is how it
+    // works currently and we might as well assert it
+    for (auto& f : futs) {
+        BOOST_REQUIRE(f.available());
+        f.get(); // propagate any exception
+    }
+
+    // check that we got some writes and merges (we don't know how many)
+    BOOST_CHECK_GT(access(appender).total_dispatched(), 0);
+    BOOST_CHECK_GT(access(appender).total_merged(), 0);
+
+    // verify the output
+    auto in = make_file_input_stream(f);
+    auto closefile = ss::defer([&] { in.close().get(); });
+    for (auto& buf : bufs) {
+        size_t sz = buf.size_bytes();
+        iobuf result = read_iobuf_exactly(in, sz).get();
+        BOOST_REQUIRE_EQUAL(buf, result);
+    }
+}
+
+SEASTAR_THREAD_TEST_CASE(test_concurrent_append_flush) {
+    // we use smaller buffer counts for the large buffer size tests
+    // to keep the runtime manageable (less than ~2 seconds for this test)
+    run_concurrent_append_flush(16_KiB, 1);
+    run_concurrent_append_flush(16_KiB, 1000);
+    run_concurrent_append_flush(16_KiB, 20000, 100);
+
+    run_concurrent_append_flush(64_KiB, 1000);
+
+    run_concurrent_append_flush(32_MiB, 1000, 1000);
+}
+
 static void run_test_can_append_little_data(size_t fallocate_size) {
     auto f = open_file("test_segment_appender_little.log");
     storage::storage_resources resources(
       config::mock_binding<size_t>(std::move(fallocate_size)));
     auto appender = make_segment_appender(f, resources);
+    auto close = ss::defer([&appender] { appender.close().get(); });
     auto alignment = f.disk_write_dma_alignment();
     // at least 1 page and some 20 bytes to test boundary conditions
     const auto data = random_generators::gen_alphanum_string(alignment + 20);
@@ -243,7 +416,6 @@ static void run_test_can_append_little_data(size_t fallocate_size) {
         in.close().get();
     }
     BOOST_REQUIRE_EQUAL(appender.file_byte_offset(), data.size());
-    appender.close().get();
 }
 
 SEASTAR_THREAD_TEST_CASE(test_can_append_little_data) {
@@ -256,6 +428,7 @@ static void run_test_fallocate_size(size_t fallocate_size) {
     storage::storage_resources resources(
       config::mock_binding<size_t>(std::move(fallocate_size)));
     auto appender = make_segment_appender(f, resources);
+    auto close = ss::defer([&appender] { appender.close().get(); });
 
     for (size_t i = 0; i < 10; ++i) {
         iobuf original;
@@ -273,12 +446,15 @@ static void run_test_fallocate_size(size_t fallocate_size) {
         appender.append(original).get();
         appender.flush().get();
 
+        // now there should be nothing in-flight
+        BOOST_CHECK_EQUAL(access(appender).inflight_dispatched(), 0);
+        BOOST_CHECK_EQUAL(access(appender).inflight().size(), 0);
+
         auto in = make_file_input_stream(f, i * one_meg);
         iobuf result = read_iobuf_exactly(in, one_meg).get0();
         BOOST_CHECK_EQUAL(original, result);
         in.close().get();
     }
-    appender.close().get();
 }
 
 SEASTAR_THREAD_TEST_CASE(test_fallocate_size) {
