@@ -604,14 +604,14 @@ globals.dial_timeout=3s
   A duration that rpk will wait for a connection to be established before
   timing out.
 
-globals.request_timeout_overhead=10s
+globals.request_timeout_overhead=5s
   A duration that limits how long rpk waits for responses, *on top* of any
   request-internal timeout. For example, ListOffsets has no Timeout field so
   if request_timeout_overhead is 10s, rpk will wait for 10s for a response.
   However, JoinGroup has a RebalanceTimeoutMillis field, so the 10s is applied
   on top of the rebalance timeout.
 
-globals.retry_timeout=30s
+globals.retry_timeout=11s
   This timeout specifies how long rpk will retry Kafka API requests. This
   timeout is evaluated before any backoff -- if a request fails, we first check
   if the retry timeout has elapsed and if so, we stop retrying. If not, we wait
