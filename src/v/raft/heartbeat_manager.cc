@@ -181,7 +181,7 @@ heartbeat_manager::requests_for_range_v2() {
             }
             vlog(r->_ctxlog.trace, "[{}] full heartbeat", id);
             r->_probe->full_heartbeat();
-            auto const seq_id = ++follower_metadata.last_sent_seq;
+            auto const seq_id = follower_metadata.last_sent_seq++;
 
             follower_metadata.last_sent_protocol_meta = raft_metadata;
             group_beat.data = heartbeat_request_data{
