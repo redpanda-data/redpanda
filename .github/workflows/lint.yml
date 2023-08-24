@@ -106,3 +106,13 @@ jobs:
 
     - name: Run shfmt
       run: shfmt -i 2 -ci -s -d .
+
+  commit-messages:
+    name: Lint Git commit messages
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+    - name: Run Git commit message linter
+      run: .github/workflows/scripts/lint_git_commit_messages.sh ${{ github.event.pull_request.base.sha }}
+      shell: bash
