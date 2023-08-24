@@ -10,7 +10,7 @@
 
 #include "archival/tests/service_fixture.h"
 #include "cloud_storage/async_manifest_view.h"
-#include "cloud_storage/partition_probe.h"
+#include "cloud_storage/read_path_probes.h"
 #include "cloud_storage_clients/client_pool.h"
 #include "config/configuration.h"
 #include "storage/ntp_config.h"
@@ -207,8 +207,7 @@ struct reupload_fixture : public archiver_fixture {
           remote,
           app.shadow_index_cache,
           part->archival_meta_stm()->manifest(),
-          arch_conf->bucket_name,
-          part_probe.value());
+          arch_conf->bucket_name);
 
         archiver.emplace(
           get_ntp_conf(),

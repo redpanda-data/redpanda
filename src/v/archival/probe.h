@@ -11,7 +11,6 @@
 #pragma once
 
 #include "archival/types.h"
-#include "cloud_storage/probe.h"
 #include "model/fundamental.h"
 #include "seastarx.h"
 #include "ssx/metrics.h"

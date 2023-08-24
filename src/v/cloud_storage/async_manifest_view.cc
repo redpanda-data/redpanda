@@ -14,7 +14,7 @@
 #include "cloud_storage/logger.h"
 #include "cloud_storage/materialized_resources.h"
 #include "cloud_storage/partition_manifest.h"
-#include "cloud_storage/partition_probe.h"
+#include "cloud_storage/read_path_probes.h"
 #include "cloud_storage/remote.h"
 #include "cloud_storage/spillover_manifest.h"
 #include "cloud_storage/types.h"
@@ -359,12 +359,11 @@ async_manifest_view::async_manifest_view(
   ss::sharded<remote>& remote,
   ss::sharded<cache>& cache,
   const partition_manifest& stm_manifest,
-  cloud_storage_clients::bucket_name bucket,
-  partition_probe& probe)
+  cloud_storage_clients::bucket_name bucket)
   : _bucket(bucket)
   , _remote(remote)
   , _cache(cache)
-  , _probe(probe)
+  , _ts_probe(remote.local().materialized().get_read_path_probe())
   , _stm_manifest(stm_manifest)
   , _rtcnode(_as)
   , _ctxlog(cst_log, _rtcnode, _stm_manifest.get_ntp().path())
@@ -468,9 +467,9 @@ ss::future<> async_manifest_view::run_bg_loop() {
                       _manifest_cache.size_bytes());
                     _manifest_cache.put(
                       std::move(u), std::move(m_res.value()), _ctxlog);
-                    _probe.set_spillover_manifest_bytes(
+                    _ts_probe.set_spillover_manifest_bytes(
                       static_cast<int64_t>(_manifest_cache.size_bytes()));
-                    _probe.set_spillover_manifest_instances(
+                    _ts_probe.set_spillover_manifest_instances(
                       static_cast<int32_t>(_manifest_cache.size()));
                     vlog(
                       _ctxlog.debug,
@@ -1226,7 +1225,7 @@ async_manifest_view::get_materialized_manifest(
         // Send materialization request to background loop
         materialization_request_t request{
           .search_vec = *meta,
-          ._measurement = _probe.spillover_manifest_latency(),
+          ._measurement = _ts_probe.spillover_manifest_latency(),
         };
         auto fut = request.promise.get_future();
         _requests.emplace_back(std::move(request));
@@ -1275,7 +1274,7 @@ async_manifest_view::hydrate_manifest(
           str,
           reservation,
           priority_manager::local().shadow_indexing_priority());
-        _probe.on_spillover_manifest_hydration();
+        _ts_probe.on_spillover_manifest_hydration();
         vlog(
           _ctxlog.debug,
           "hydrated manifest {} with {} elements",
@@ -1493,7 +1492,7 @@ async_manifest_view::materialize_manifest(
             }
         } break;
         }
-        _probe.on_spillover_manifest_materialization();
+        _ts_probe.on_spillover_manifest_materialization();
         co_return manifest;
     } catch (...) {
         vlog(

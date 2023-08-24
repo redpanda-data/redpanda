@@ -16,7 +16,7 @@
 #include "bytes/iostream.h"
 #include "cloud_storage/async_manifest_view.h"
 #include "cloud_storage/fwd.h"
-#include "cloud_storage/partition_probe.h"
+#include "cloud_storage/read_path_probes.h"
 #include "cloud_storage/remote.h"
 #include "cloud_storage/types.h"
 #include "cloud_storage_clients/client_pool.h"
@@ -143,13 +143,11 @@ FIXTURE_TEST(test_upload_segments, archiver_fixture) {
 
     listen();
     auto [arch_conf, remote_conf] = get_configurations();
-    cloud_storage::partition_probe probe(manifest_ntp);
     auto amv = ss::make_shared<cloud_storage::async_manifest_view>(
       remote,
       app.shadow_index_cache,
       part->archival_meta_stm()->manifest(),
-      arch_conf->bucket_name,
-      probe);
+      arch_conf->bucket_name);
     archival::ntp_archiver archiver(
       get_ntp_conf(),
       arch_conf,
@@ -276,13 +274,11 @@ FIXTURE_TEST(test_upload_after_failure, archiver_fixture) {
     listen();
 
     auto [arch_conf, remote_conf] = get_configurations();
-    cloud_storage::partition_probe probe(manifest_ntp);
     auto amv = ss::make_shared<cloud_storage::async_manifest_view>(
       remote,
       app.shadow_index_cache,
       part->archival_meta_stm()->manifest(),
-      arch_conf->bucket_name,
-      probe);
+      arch_conf->bucket_name);
     archival::ntp_archiver archiver(
       get_ntp_conf(),
       arch_conf,
@@ -372,13 +368,11 @@ FIXTURE_TEST(
     listen();
 
     auto [arch_conf, remote_conf] = get_configurations();
-    cloud_storage::partition_probe probe(manifest_ntp);
     auto amv = ss::make_shared<cloud_storage::async_manifest_view>(
       remote,
       app.shadow_index_cache,
       part->archival_meta_stm()->manifest(),
-      arch_conf->bucket_name,
-      probe);
+      arch_conf->bucket_name);
     archival::ntp_archiver archiver(
       get_ntp_conf(),
       arch_conf,
@@ -458,13 +452,11 @@ FIXTURE_TEST(test_retention, archiver_fixture) {
     listen();
 
     auto [arch_conf, remote_conf] = get_configurations();
-    cloud_storage::partition_probe probe(manifest_ntp);
     auto amv = ss::make_shared<cloud_storage::async_manifest_view>(
       remote,
       app.shadow_index_cache,
       part->archival_meta_stm()->manifest(),
-      arch_conf->bucket_name,
-      probe);
+      arch_conf->bucket_name);
     archival::ntp_archiver archiver(
       get_ntp_conf(),
       arch_conf,
@@ -580,13 +572,11 @@ FIXTURE_TEST(test_archive_retention, archiver_fixture) {
 
     // Instantiate archiver
     auto [arch_conf, remote_conf] = get_configurations();
-    cloud_storage::partition_probe probe(manifest_ntp);
     auto amv = ss::make_shared<cloud_storage::async_manifest_view>(
       remote,
       app.shadow_index_cache,
       part->archival_meta_stm()->manifest(),
-      arch_conf->bucket_name,
-      probe);
+      arch_conf->bucket_name);
     archival::ntp_archiver archiver(
       get_ntp_conf(),
       arch_conf,
@@ -756,13 +746,11 @@ FIXTURE_TEST(test_segments_pending_deletion_limit, archiver_fixture) {
       .cloud_storage_max_segments_pending_deletion_per_partition(2);
 
     auto [arch_conf, remote_conf] = get_configurations();
-    cloud_storage::partition_probe probe(manifest_ntp);
     auto amv = ss::make_shared<cloud_storage::async_manifest_view>(
       remote,
       app.shadow_index_cache,
       part->archival_meta_stm()->manifest(),
-      arch_conf->bucket_name,
-      probe);
+      arch_conf->bucket_name);
     archival::ntp_archiver archiver(
       get_ntp_conf(),
       arch_conf,
@@ -1142,13 +1130,11 @@ FIXTURE_TEST(test_upload_segments_leadership_transfer, archiver_fixture) {
 
     auto [arch_conf, remote_conf] = get_configurations();
 
-    cloud_storage::partition_probe probe(manifest_ntp);
     auto amv = ss::make_shared<cloud_storage::async_manifest_view>(
       remote,
       app.shadow_index_cache,
       part->archival_meta_stm()->manifest(),
-      arch_conf->bucket_name,
-      probe);
+      arch_conf->bucket_name);
     archival::ntp_archiver archiver(
       get_ntp_conf(),
       arch_conf,
@@ -1366,13 +1352,11 @@ static void test_partial_upload_impl(
 
     aconf->time_limit = segment_time_limit(0s);
 
-    cloud_storage::partition_probe probe(manifest_ntp);
     auto amv = ss::make_shared<cloud_storage::async_manifest_view>(
       test.remote,
       test.app.shadow_index_cache,
       part->archival_meta_stm()->manifest(),
-      aconf->bucket_name,
-      probe);
+      aconf->bucket_name);
 
     archival::ntp_archiver archiver(
       get_ntp_conf(),
@@ -1715,13 +1699,11 @@ static void test_manifest_spillover_impl(
 
     aconf->time_limit = segment_time_limit(0s);
 
-    cloud_storage::partition_probe probe(manifest_ntp);
     auto amv = ss::make_shared<cloud_storage::async_manifest_view>(
       test.remote,
       test.app.shadow_index_cache,
       part->archival_meta_stm()->manifest(),
-      aconf->bucket_name,
-      probe);
+      aconf->bucket_name);
 
     archival::ntp_archiver archiver(
       get_ntp_conf(),
@@ -1823,14 +1805,12 @@ FIXTURE_TEST(test_upload_with_gap_blocked, archiver_fixture) {
     listen();
 
     auto [arch_conf, remote_conf] = get_configurations();
-    cloud_storage::partition_probe probe(manifest_ntp);
 
     auto manifest_view = ss::make_shared<cloud_storage::async_manifest_view>(
       remote,
       app.shadow_index_cache,
       part->archival_meta_stm()->manifest(),
-      arch_conf->bucket_name,
-      probe);
+      arch_conf->bucket_name);
 
     archival::ntp_archiver archiver(
       get_ntp_conf(),
