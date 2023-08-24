@@ -31,9 +31,7 @@ partition_probe::partition_probe(const model::ntp& ntp) {
       partition_label(ntp.tp.partition()),
     };
 
-    auto aggregate_labels = config::shard_local_cfg().aggregate_metrics()
-                              ? std::vector<sm::label>{partition_label}
-                              : std::vector<sm::label>{};
+    auto aggregate_labels = std::vector<sm::label>{sm::shard_label};
 
     _metrics.add_group(
       prometheus_sanitize::metrics_name("cloud_storage:partition"),
@@ -42,18 +40,22 @@ partition_probe::partition_probe(const model::ntp& ntp) {
           "read_bytes",
           [this] { return _bytes_read; },
           sm::description("Total bytes read from remote partition"),
-          partition_labels),
+          partition_labels)
+          .aggregate(aggregate_labels),
+
         sm::make_counter(
           "read_records",
           [this] { return _records_read; },
           sm::description("Total number of records read from remote partition"),
-          partition_labels),
+          partition_labels)
+          .aggregate(aggregate_labels),
 
         sm::make_gauge(
           "chunk_size",
           [this] { return _chunk_size; },
           sm::description("Size of chunk downloaded from cloud storage"),
-          partition_labels),
+          partition_labels)
+          .aggregate(aggregate_labels),
       });
 }
 
