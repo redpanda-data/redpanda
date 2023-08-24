@@ -112,6 +112,21 @@ public:
         return svs;
     }
 
+    ///\brief Return a list of subjects for the schema id.
+    std::vector<subject>
+    get_schema_subjects(schema_id id, include_deleted inc_del) {
+        std::vector<subject> subs;
+        for (const auto& s : _subjects) {
+            if (absl::c_any_of(
+                  s.second.versions, [id, inc_del](const auto& vs) {
+                      return vs.id == id && (inc_del || !vs.deleted);
+                  })) {
+                subs.emplace_back(s.first);
+            }
+        }
+        return subs;
+    }
+
     ///\brief Return subject_version_id for a subject and version
     result<subject_version_entry> get_subject_version_id(
       const subject& sub,
