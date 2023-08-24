@@ -42,7 +42,7 @@ public:
       find_coordinator(kafka::transactional_id, model::timeout_clock::duration);
 
     ss::future<find_coordinator_reply>
-      find_coordinator_locally(kafka::transactional_id);
+    route_locally(find_coordinator_request&&);
 
     ss::future<> stop() {
         _as.request_abort();
@@ -73,8 +73,8 @@ private:
     ss::future<find_coordinator_reply> dispatch_find_coordinator(
       model::node_id, kafka::transactional_id, model::timeout_clock::duration);
 
-    ss::future<find_coordinator_reply> do_find_coordinator_locally(
-      ss::shared_ptr<cluster::tx_registry_stm>, kafka::transactional_id);
+    ss::future<find_coordinator_reply> process_locally(
+      ss::shared_ptr<cluster::tx_registry_stm>, find_coordinator_request&&);
 
     ss::future<find_coordinator_reply>
       find_coordinator_statically(kafka::transactional_id);

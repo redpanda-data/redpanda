@@ -187,7 +187,7 @@ ss::future<find_coordinator_reply> tx_registry_frontend::find_coordinator(
         auto leader = leader_opt.value();
 
         if (leader == _self) {
-            r = co_await find_coordinator_locally(tid);
+            r = co_await route_locally(find_coordinator_request(tid));
         } else {
             vlog(
               clusterlog.trace,
@@ -258,48 +258,18 @@ tx_registry_frontend::dispatch_find_coordinator(
 }
 
 ss::future<find_coordinator_reply>
-tx_registry_frontend::find_coordinator_locally(kafka::transactional_id tid) {
-    auto shard = _shard_table.local().shard_for(model::tx_registry_ntp);
-
-    if (!shard) {
-        vlog(
-          clusterlog.warn,
-          "can't find {} in the shard table",
-          model::tx_registry_ntp);
-        co_return find_coordinator_reply(
-          std::nullopt, std::nullopt, errc::not_leader);
-    }
-
-    gate_guard guard{_gate};
-
-    co_return co_await container().invoke_on(
-      *shard, _ssg, [tid](tx_registry_frontend& self) mutable {
-          return ss::with_gate(self._gate, [&self, tid]() {
-              return self.with_stm(
-                [&self,
-                 tid](checked<ss::shared_ptr<tx_registry_stm>, tx_errc> r) {
-                    if (!r) {
-                        return ss::make_ready_future<find_coordinator_reply>(
-                          find_coordinator_reply(
-                            std::nullopt,
-                            std::nullopt,
-                            errc::generic_tx_error));
-                    }
-                    auto stm = r.value();
-                    return self.do_find_coordinator_locally(stm, tid);
-                });
-          });
-      });
+tx_registry_frontend::route_locally(find_coordinator_request&& r) {
+    return do_route_locally(std::move(r));
 }
 
-ss::future<find_coordinator_reply>
-tx_registry_frontend::do_find_coordinator_locally(
-  ss::shared_ptr<cluster::tx_registry_stm> stm, kafka::transactional_id tid) {
+ss::future<find_coordinator_reply> tx_registry_frontend::process_locally(
+  ss::shared_ptr<cluster::tx_registry_stm> stm, find_coordinator_request&& r) {
+    auto tid = r.tid;
+
     auto term_opt = co_await stm->sync();
     if (!term_opt.has_value()) {
         vlog(clusterlog.info, "can't sync tx registry");
-        co_return find_coordinator_reply(
-          std::nullopt, std::nullopt, errc::not_leader);
+        co_return find_coordinator_reply(errc::not_leader);
     }
     auto term = term_opt.value();
 
@@ -316,15 +286,13 @@ tx_registry_frontend::do_find_coordinator_locally(
           clusterlog.warn,
           "can't find {} in the metadata cache",
           model::tx_manager_nt);
-        co_return find_coordinator_reply(
-          std::nullopt, std::nullopt, errc::topic_not_exists);
+        co_return find_coordinator_reply(errc::topic_not_exists);
     }
 
     auto wunits = co_await stm->write_lock();
     auto inited = co_await stm->try_init_mapping(term, cfg->partition_count);
     if (!inited) {
-        co_return find_coordinator_reply(
-          std::nullopt, std::nullopt, errc::not_leader);
+        co_return find_coordinator_reply(errc::not_leader);
     }
     wunits.return_all();
 
@@ -332,8 +300,7 @@ tx_registry_frontend::do_find_coordinator_locally(
 
     auto partition = stm->find_hosting_partition(tid);
     if (!partition) {
-        co_return find_coordinator_reply(
-          std::nullopt, std::nullopt, errc::generic_tx_error);
+        co_return find_coordinator_reply(errc::generic_tx_error);
     }
 
     auto ntp = model::ntp(
