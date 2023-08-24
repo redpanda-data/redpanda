@@ -85,11 +85,12 @@ auto tx_registry_frontend::with_stm(Func&& func) {
         return func(tx_errc::not_coordinator);
     }
 
-    return ss::with_gate(stm->gate(), [func = std::forward<Func>(func), stm]() {
-        vlog(txlog.trace, "entered tx_registry_stm's gate");
-        return func(stm).finally(
-          [] { vlog(txlog.trace, "leaving tx_registry_stm's gate"); });
-    });
+    return ss::with_gate(
+      stm->gate(), [func = std::forward<Func>(func), stm]() mutable {
+          vlog(txlog.trace, "entered tx_registry_stm's gate");
+          return func(stm).finally(
+            [] { vlog(txlog.trace, "leaving tx_registry_stm's gate"); });
+      });
 }
 
 ss::future<bool> tx_registry_frontend::ensure_tx_topic_exists() {
@@ -449,6 +450,51 @@ ss::future<bool> tx_registry_frontend::try_create_tx_topic() {
             model::tx_manager_topic,
             e);
           return false;
+      });
+}
+
+template<typename T>
+ss::future<typename T::reply>
+tx_registry_frontend::do_route_locally(T&& request) {
+    vlog(txlog.trace, "processing name:{} {}", T::name, request);
+
+    auto shard = _shard_table.local().shard_for(model::tx_registry_ntp);
+
+    if (!shard.has_value()) {
+        vlog(
+          txlog.warn,
+          "sending name:{} {} ec:{}",
+          T::name,
+          request,
+          tx_errc::shard_not_found);
+        co_return typename T::reply(tx_errc::shard_not_found);
+    }
+
+    gate_guard guard{_gate};
+
+    co_return co_await container().invoke_on(
+      *shard,
+      _ssg,
+      [request = std::move(request)](tx_registry_frontend& self) mutable {
+          return ss::with_gate(
+            self._gate, [&self, request = std::move(request)]() mutable {
+                return self.with_stm(
+                  [&self, request = std::move(request)](
+                    checked<ss::shared_ptr<tx_registry_stm>, tx_errc>
+                      r) mutable {
+                      if (!r) {
+                          return ss::make_ready_future<typename T::reply>(
+                            typename T::reply(r.error()));
+                      }
+                      auto stm = r.value();
+                      return self.process_locally(stm, std::move(request))
+                        .then([](typename T::reply r) {
+                            vlog(txlog.trace, "sending name:{} {}", T::name, r);
+                            return r;
+                        });
+                      ;
+                  });
+            });
       });
 }
 

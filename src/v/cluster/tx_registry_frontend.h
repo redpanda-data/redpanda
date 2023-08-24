@@ -64,6 +64,9 @@ private:
     int16_t _metadata_dissemination_retries{1};
     std::chrono::milliseconds _metadata_dissemination_retry_delay_ms;
 
+    template<typename T>
+    ss::future<typename T::reply> do_route_locally(T&&);
+
     template<typename Func>
     auto with_stm(Func&& func);
 
