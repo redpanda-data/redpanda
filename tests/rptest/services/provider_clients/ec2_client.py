@@ -16,6 +16,11 @@ class EC2Client:
     """
     This almost mimics S3Client from archival.
     """
+
+    VPC_ID_LABEL = "VpcId"
+    OWNER_ID_LABEL = "OwnerId"
+    CIDR_LABEL = "CidrBlock"
+
     def __init__(self,
                  region,
                  key,
@@ -63,12 +68,16 @@ class EC2Client:
         # Return
         return _r[VPC_PEERING_LABEL][VPC_PEERING_ID_LABEL]
 
-    def get_vpc_by_network_id(self, network_id):
+    def get_vpc_by_network_id(self, network_id, prefix=None):
         """
         Get VPC from AWS using network id from CloudV2
         """
         # Create a filter to search for the vpc
-        _filters = [{"Name": "tag:Name", "Values": [f"network-{network_id}"]}]
+        if prefix is None:
+            _name = f"network-{network_id}"
+        else:
+            _name = f"{prefix}{network_id}"
+        _filters = [{"Name": "tag:Name", "Values": [_name]}]
         # Get all available peering connections
         _resp = self._cli.describe_vpcs(Filters=_filters)
         _vpcs = _resp[VPCS_LABEL]

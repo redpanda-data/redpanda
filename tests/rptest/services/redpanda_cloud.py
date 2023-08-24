@@ -121,7 +121,7 @@ class CloudClusterConfig:
     teleport_bot_token: str = ""
     id: str = ""  # empty string makes it easier to pass thru default value from duck.py
     delete_cluster: bool = True
-
+    gcp_keyfile: str = ""
     region: str = "us-west-2"
     provider: str = "AWS"
     type: str = "FMC"
@@ -149,7 +149,7 @@ class LiveClusterParams:
     peer_owner_id: str = None
     rp_vpc_id: str = None
     rp_owner_id: str = None
-    aws_vpc_peering_id: str = None
+    vpc_peering_id: str = None
 
     # Can't use mutables in defaults of dataclass
     # https://docs.python.org/3/library/dataclasses.html#dataclasses.field
@@ -209,13 +209,35 @@ class CloudCluster():
 
         # init live cluster params
         self.current = LiveClusterParams()
-        # Saving key in case of cloud has different region
-        self.provider_key = provider_config['access_key']
-        self.provider_secret = provider_config['secret_key']
+        # Provider specific actions
+        if self.config.provider not in [PROVIDER_AWS, PROVIDER_GCP]:
+            raise RuntimeError(f"Provider '{self.config.provider}' "
+                               "is not yet supported by CloudV2")
+
+        if self.config.provider == PROVIDER_AWS:
+            self.provider_key = provider_config['access_key']
+            self.provider_secret = provider_config['secret_key']
+        elif self.config.provider == PROVIDER_GCP:
+            self.provider_key = self.config.gcp_keyfile
+            self.provider_secret = None
+        # Create client for the provider
         self.provider_cli = make_provider_client(self.config.provider, logger,
                                                  self.config.region,
                                                  self.provider_key,
                                                  self.provider_secret)
+        self._ducktape_meta = self.get_ducktape_meta()
+        if self.config.provider == PROVIDER_AWS:
+            self.current.peer_vpc_id = self._ducktape_meta['vpc-id']
+            self.current.peer_owner_id = self._ducktape_meta['owner-id']
+        elif self.config.provider == PROVIDER_GCP:
+            # In case of GCP, we should have full URL not partial
+            _net = self.provider_cli.get_vpc_by_network_id(
+                self._ducktape_meta['network-interfaces-0-network'].split(
+                    '/')[-1],
+                prefix="")
+            self.current.peer_vpc_id = _net[self.provider_cli.VPC_ID_LABEL]
+            self.current.peer_owner_id = self.provider_cli.project_id
+
         # Currently we need provider client only for VCP in private networking
         # Raise exception is client in not implemented yet
         if self.provider_cli is None and self.config.network != 'public':
@@ -231,6 +253,12 @@ class CloudCluster():
         """
 
         return self.config.id
+
+    def get_ducktape_meta(self):
+        """
+        Returns instance metadata based on current provider
+        """
+        return self.provider_cli.get_instance_meta()
 
     def _create_namespace(self):
         # format namespace name as 'rp-ducktape-ns-3b36f516
@@ -589,7 +617,7 @@ class CloudCluster():
             endpoint=f'/api/v1/clusters/{self.config.id}')
         return cluster['status']['installPackVersion']
 
-    def _create_network_peering_payload(self):
+    def _create_network_peering_payload_aws(self):
         return {
             "networkPeering": {
                 "displayName": f'peer-{self.current.name}',
@@ -606,60 +634,23 @@ class CloudCluster():
             "namespaceUuid": self.current.namespace_uuid
         }
 
-    def _get_ducktape_client_mac_uri(self):
-        """
-        Get MAC address from current interface.
-        Function assumes that there is a single interface on ducktape node
-        """
-        _url = "http://169.254.169.254/latest/meta-data/network/interfaces/macs"
-        resp = requests.get(_url)
-        if not resp.ok:
-            self._logger.error("failed to get MAC for Ducktape node: "
-                               f"'{_url}'")
-            return None
-        else:
-            # Example: '0a:97:f4:40:30:93/'
-            return f"{_url}/{resp.text}"
-
-    def _get_ducktape_meta(self):
-        """
-        Query meta from local node.
-        Source: https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/instancedata-data-categories.html
-        Available for AWS instance:
-            device-number
-            interface-id
-            ipv4-associations/
-            local-hostname
-            local-ipv4s
-            mac
-            owner-id
-            public-hostname
-            public-ipv4s
-            security-group-ids
-            security-groups
-            subnet-id
-            subnet-ipv4-cidr-block
-            vpc-id
-            vpc-ipv4-cidr-block
-            vpc-ipv4-cidr-blocks
-        """
-        _url = self._get_ducktape_client_mac_uri()
-        resp = requests.get(_url)
-        if not resp.ok:
-            self._logger.error(
-                "failed to get metadata list from Ducktape node: "
-                f"'{_url}'")
-            return None
-        else:
-            # Assume that since first request passed,
-            # There is no need to validate each one.
-            # build dict with meta
-            _keys = resp.text.split()
-            _values = [requests.get(f"{_url}/{key}").text for key in _keys]
-            _meta = {}
-            for item in zip(_keys, _values):
-                _meta[item[0]] = item[1]
-            return _meta
+    def _create_network_peering_payload_gcp(self):
+        return {
+            "networkPeering": {
+                "displayName": f'peer-{self.current.name}',
+                "spec": {
+                    "provider": "GCP",
+                    "cloudProvider": {
+                        "gcp": {
+                            "peerProjectId": self.current.peer_owner_id,
+                            "peerVpcName":
+                            self.current.peer_vpc_id.split('/')[-1]
+                        }
+                    }
+                }
+            },
+            "namespaceUuid": self.current.namespace_uuid
+        }
 
     def _prepare_fmc_network_vpc_info(self):
         """
@@ -671,16 +662,21 @@ class CloudCluster():
         _net = self._get_network()
         _info = _net['status']['created']['providerNetworkDetails'][
             'cloudProvider'][self.config.provider.lower()]
-        self.current.rp_vpc_id = _info['vpcId']
-        self.current.rp_owner_id = _info['ownerId']
-        self.current.network_cidr = _info['cidrBlock']
+        if self.config.provider == PROVIDER_AWS:
+            self.current.rp_vpc_id = _info['vpcId']
+            self.current.rp_owner_id = _info['ownerId']
+            self.current.network_cidr = _info['cidrBlock']
+        elif self.config.provider == PROVIDER_GCP:
+            self.current.rp_vpc_id = _info['networkName']
+            self.current.rp_owner_id = _info['projectId']
+            self.current.network_cidr = self.config.network
 
     def _prepare_byoc_network_vpc_info(self):
         # Network is handled by provider
         _net = self.provider_cli.get_vpc_by_network_id(self.current.network_id)
-        self.current.rp_vpc_id = _net['VpcId']
-        self.current.rp_owner_id = _net['OwnerId']
-        self.current.network_cidr = _net['CidrBlock']
+        self.current.rp_vpc_id = _net[self.provider_cli.VPC_ID_LABEL]
+        self.current.rp_owner_id = _net[self.provider_cli.OWNER_ID_LABEL]
+        self.current.network_cidr = _net[self.provider_cli.CIDR_LABEL]
 
         return
 
@@ -724,7 +720,7 @@ class CloudCluster():
     def _wait_peering_status_provider(self, state):
         # Wait for 'active' on AWS side
         wait_until(lambda: self._check_peering_status_provider(
-            self.current.aws_vpc_peering_id, state),
+            self.current.vpc_peering_id, state),
                    timeout_sec=self.CHECK_TIMEOUT_SEC,
                    backoff_sec=self.CHECK_BACKOFF_SEC,
                    err_msg=f'Timeout waiting for {state} status '
@@ -742,8 +738,8 @@ class CloudCluster():
         for _rtb_id in _rtbs:
             self.provider_cli.create_route(
                 _rtb_id,
-                self.current.aws_vpc_peering['AccepterVpcInfo']['CidrBlock'],
-                self.current.aws_vpc_peering_id)
+                self.current.vpc_peering['AccepterVpcInfo']['CidrBlock'],
+                self.current.vpc_peering_id)
 
         return
 
@@ -755,8 +751,8 @@ class CloudCluster():
         for _rtb_id in _rtbs:
             self.provider_cli.create_route(
                 _rtb_id,
-                self.current.aws_vpc_peering['RequesterVpcInfo']['CidrBlock'],
-                self.current.aws_vpc_peering_id)
+                self.current.vpc_peering['RequesterVpcInfo']['CidrBlock'],
+                self.current.vpc_peering_id)
 
         return
 
@@ -775,34 +771,54 @@ class CloudCluster():
 
         # 2. Use Cloud API to create peering
         # Alternatively, Use manual AWS commands to do the same
-        _body = self._create_network_peering_payload()
-        self._logger.debug(f"body: '{_body}'")
+        if self.config.provider == PROVIDER_AWS:
+            _body = self._create_network_peering_payload_aws()
+            self._logger.debug(f"body: '{_body}'")
 
-        # Create peering
-        resp = self.cloudv2._http_post(endpoint=self.current.network_endpoint,
-                                       json=_body)
-        self._logger.debug(f"Created VPC peering: '{resp}'")
-        self.vpc_peering = resp
+            # Create peering
+            resp = self.cloudv2._http_post(
+                endpoint=self.current.network_endpoint, json=_body)
+            self._logger.debug(f"Created VPC peering: '{resp}'")
+            self.vpc_peering = resp
 
-        # 3.
-        # Wait for "pending acceptance"
-        self._wait_peering_status_cluster("pending acceptance")
+            # 3.
+            # Wait for "pending acceptance"
+            self._wait_peering_status_cluster("pending acceptance")
 
-        # Find id of the correct peering VPC
-        self.current.aws_vpc_peering_id = self.provider_cli.find_vpc_peering_connection(
-            "pending-acceptance", self.current)
+            # Find id of the correct peering VPC
+            self.current.vpc_peering_id = self.provider_cli.find_vpc_peering_connection(
+                "pending-acceptance", self.current)
 
-        # 4. Accept it on AWS
-        self.current.aws_vpc_peering = self.provider_cli.accept_vpc_peering(
-            self.current.aws_vpc_peering_id)
+            # 4. Accept it on AWS
+            self.current.aws_vpc_peering = self.provider_cli.accept_vpc_peering(
+                self.current.vpc_peering_id)
 
-        # 5.
-        self._create_routes_to_ducktape()
-        self._create_routes_to_cluster()
+            # 5.
+            self._create_routes_to_ducktape()
+            self._create_routes_to_cluster()
 
-        # 6.
-        self._wait_peering_status_provider("active")
-        self._wait_peering_status_cluster("ready")
+            # 6.
+            self._wait_peering_status_provider("active")
+            self._wait_peering_status_cluster("ready")
+        elif self.config.provider == PROVIDER_GCP:
+            # In scope of GCP, VCP peerings should face each other
+            # But for FMC, there might be no access to cluster project
+            # so use CloudV2 REST handle
+            # RP -> Ducktape
+            _body = self._create_network_peering_payload_gcp()
+            self._logger.debug(f"body: '{_body}'")
+
+            # Create peering
+            resp = self.cloudv2._http_post(
+                endpoint=self.current.network_endpoint, json=_body)
+            self._logger.debug(f"Created VPC peering: '{resp}'")
+            self.vpc_peering = resp
+
+            # Ducktape -> RP
+            # facing_vpcs=False turns off RP peering creation
+            # that was created already above
+            self.current.vpc_peering_id = self.provider_cli.create_vpc_peering(
+                self.current, facing_vpcs=False)
 
         return
 
@@ -823,52 +839,50 @@ class CloudCluster():
 
         # 2.
         # AWS will not create duplicate peering connection
+        # GCP will fall to error if such peering exists
         # Will just return existing one
-        self.current.aws_vpc_peering_id = self.provider_cli.create_vpc_peering(
+        self.current.vpc_peering_id = self.provider_cli.create_vpc_peering(
             self.current)
 
-        # 3.
-        # Check if this is active already
-        _is_active = self._check_peering_status_provider(
-            self.current.aws_vpc_peering_id, "active")
-        if not _is_active:
-            self._wait_peering_status_provider("pending-acceptance")
-            # 4.
-            # If this is freshly created, accept it
-            self.current.aws_vpc_peering = self.provider_cli.accept_vpc_peering(
-                self.current.aws_vpc_peering_id)
-        else:
-            self.current.aws_vpc_peering = \
-                self.provider_cli.get_vpc_peering_connection(
-                    self.current.aws_vpc_peering_id)
+        if self.config.provider == PROVIDER_AWS:
+            # 3.
+            # Check if this is active already
+            _is_active = self._check_peering_status_provider(
+                self.current.vpc_peering_id, "active")
+            if not _is_active:
+                self._wait_peering_status_provider("pending-acceptance")
+                # 4.
+                # If this is freshly created, accept it
+                self.current.aws_vpc_peering = self.provider_cli.accept_vpc_peering(
+                    self.current.vpc_peering_id)
+            else:
+                self.current.aws_vpc_peering = \
+                    self.provider_cli.get_vpc_peering_connection(
+                        self.current.vpc_peering_id)
 
-        # 5.
-        self._create_routes_to_ducktape()
-        self._create_routes_to_cluster()
+            # 5.
+            if self.config.provider == PROVIDER_AWS:
+                # Only AWS needs route creation
+                # GCP does this by default
+                self._create_routes_to_ducktape()
+                self._create_routes_to_cluster()
 
-        # 6.
-        # No need to wait if its active already
-        if not _is_active:
-            self._wait_peering_status_provider('active')
+            # 6.
+            # No need to wait if its active already
+            if not _is_active:
+                self._wait_peering_status_provider('active')
+        elif self.config.provider == PROVIDER_GCP:
+            # In case of GCP nothing more is needed
+            pass
 
         return
 
     def create_vpc_peering(self):
         """
-        Create VPC peering for deployed cloud with private network
-
-        Steps:
-        1. Get VPC of the ducktape client instance
-        2. Detect cloud type and run corresponding workflow
+        Create VPC peering for deployed cloud with private network.
+        Detect cloud type and run corresponding workflow
 
         """
-
-        # 1.
-        self._ducktape_meta = self._get_ducktape_meta()
-        self.current.peer_vpc_id = self._ducktape_meta['vpc-id']
-        self.current.peer_owner_id = self._ducktape_meta['owner-id']
-        # 2.
-        # Prepare vpc_id, owner_id and cidrBlock for cloud cluster
         if self.config.type == CLOUD_TYPE_FMC:
             # Workflow for FMC cloud
             self._create_vpc_peering_fmc()
